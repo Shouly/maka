@@ -1616,7 +1616,7 @@ pre[class*="language-"] {
 :root {
   /* Must equal main's TITLEBAR_OVERLAY_HEIGHT (main-window.ts). The window is
      frameless with a native overlay; this is the strip the app must leave. */
-  --h-titlebar: 44px;
+  --h-titlebar: 48px;
 
   /* The always-dark console surface. It pairs with `--on-overlay` (white in
      both themes), so it cannot be a surface from the light/dark ladder. The
@@ -1655,7 +1655,7 @@ html.dark {
 }
 
 /* Window titlebar geometry (plan §2.12). The window is frameless; one fixed
-   44px row (`.maka-window-titlebar`) spans the window above both columns and
+   48px row (`.maka-window-titlebar`) spans the window above both columns and
    its gutters clear what the OS paints there: macOS traffic lights top-left
    (`titleBarStyle: hiddenInset`, x 17 / y 14, ~70px wide), Windows caption
    buttons top-right (`titleBarOverlay`, reported through
@@ -1690,8 +1690,8 @@ html[data-maka-platform="darwin"] {
   height: var(--h-titlebar);
   flex-shrink: 0;
   box-sizing: border-box;
-  /* Controls centre in the 44px row (y 22). main-window.ts places the traffic
-     lights at y = 44/2 - 7 = 15, so their centre is the same line — the
+  /* Controls centre in the 48px row (y 24). main-window.ts places the traffic
+     lights at y = 48/2 - 7 = 17, so their centre is the same line — the
      Electron custom-title-bar practice: position the lights to the header,
      never pad the header to the lights. */
   -webkit-app-region: drag;

@@ -135,10 +135,10 @@ export function safeSendToRenderer(channel: string, ...args: unknown[]): void {
 // padding or icon slot and this has to move with it.
 // ENTERPRISE-SHELL: y follows the Electron custom-title-bar practice — the
 // lights are positioned to the header, never the header padded to the lights:
-// y = TITLEBAR_OVERLAY_HEIGHT / 2 - 7 = 44 / 2 - 7 = 15, so their centre (y +
-// 7 = 22) is the centre line of the renderer's 44px titlebar row, where the
+// y = TITLEBAR_OVERLAY_HEIGHT / 2 - 7 = 48 / 2 - 7 = 17, so their centre (y +
+// 7 = 24) is the centre line of the renderer's 48px titlebar row, where the
 // sidebar toggle and search buttons are centred too.
-const MAIN_WINDOW_TRAFFIC_LIGHT_POSITION = { x: 17, y: 15 } as const;
+const MAIN_WINDOW_TRAFFIC_LIGHT_POSITION = { x: 17, y: 17 } as const;
 const HIDDEN_TRAFFIC_LIGHT_POSITION = { x: -100, y: -100 } as const;
 
 // PR-SHOW-AFTER-FIRST-COMMIT: fallback reveal delay for a renderer that never
@@ -156,7 +156,7 @@ const SHOW_FALLBACK_TIMEOUT_MS = 4000;
 // creation (to avoid a first-frame flash against the window `backgroundColor`)
 // and on runtime mode/palette changes via `setTitleBarOverlayTheme` — Windows
 // only, which is why macOS passes the height alone.
-const TITLEBAR_OVERLAY_HEIGHT = 44;
+const TITLEBAR_OVERLAY_HEIGHT = 48;
 const titleBarOverlayOptions = (
   isDark: boolean,
   color = isDark ? '#191a18' : '#ffffff',
