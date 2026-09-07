@@ -76,5 +76,12 @@ export default defineConfig({
     // tokens resolve against the nearest color-scheme; downleveling the
     // function computes both branches at :root before that scope is known.
     cssTarget: 'chrome150',
+    // Vite inlines any asset under 4KB as a `data:` URL, and the renderer's
+    // CSP is `default-src 'self'` with no `font-src` — so an inlined face is
+    // not merely larger, it is BLOCKED, silently, at load. KaTeX ships several
+    // faces under the limit. Fonts always ship as files; `undefined` leaves
+    // every other asset on the default rule.
+    assetsInlineLimit: (filePath: string) =>
+      /\.(?:woff2?|ttf|otf|eot)$/iu.test(filePath) ? false : undefined,
   },
 });

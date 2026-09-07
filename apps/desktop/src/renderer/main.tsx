@@ -17,50 +17,74 @@
  * under the License.
  */
 
-// Phase 0a placeholder entry for the enterprise renderer rewrite. It exists to
-// keep the three fixed contracts alive while the old Astryx shell is gone:
-// the single `/main.tsx` module the entry-contract plugin pins, the `.appFrame`
-// root the main-process window probe and the real-window smoke gate look for,
-// and the `notifyRendererReady` handshake that reveals the window (the window
-// is created with `show: false`; main falls back after 4s).
+// The renderer entry. Its path and shape are pinned:
+// `scripts/vite-renderer-entry-contract.ts` requires `index.html` to load
+// exactly this one module, and `check-renderer-architecture.mjs` re-checks it.
 //
-// Phase 0b replaces this with the real bootstrap (cached theme + locale
-// pre-mount, e2e fixture application, providers, error boundary) and Phase 1
-// moves the `window.maka` call below behind `src/renderer/bridge/`.
+// The order below is the whole point of this file. Everything that must be
+// true of the FIRST PAINTED FRAME happens before `createRoot(...).render`:
+//
+//   1. cached theme + font size — otherwise a dark-theme user gets a light
+//      flash while settings.json loads;
+//   2. the e2e fixture's document state — the clock, the attributes, and
+//      above all the locale, which has to be pinned before any
+//      locale-dependent copy enters the tree;
+//   3. the locale itself, written to `<html>` synchronously.
+//
+// and the reveal handshake happens strictly after: main creates the window
+// with `show: false` and waits for `notifyRendererReady` (4s fallback), so it
+// is sent from inside two nested frames — the first is scheduled before paint,
+// the second runs once the frame that painted the app has been committed.
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { syncUiLocaleDocument } from '@maka/ui';
+import { notifyRendererReady } from './bridge/app-window.js';
+import { App } from './app.js';
+import {
+  applyDocumentE2eFixture,
+  readFixtureLocaleOverride,
+  type PendingE2eFixtureUiState,
+} from './lib/fixture.js';
+import { readSystemUiLocale } from './lib/ported/use-system-ui-locale.js';
+import { applyCachedThemeBeforeMount, readCachedThemePreference } from './lib/theme.js';
 import './styles/globals.css';
 
-function applyInitialColorScheme(): void {
-  const prefersDark =
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-color-scheme: dark)').matches;
-  document.documentElement.style.colorScheme = prefersDark ? 'dark' : 'light';
-  document.documentElement.classList.toggle('dark', prefersDark);
-}
+async function bootstrap(): Promise<void> {
+  const container = document.getElementById('root');
+  if (!container) throw new Error('Renderer root element #root is missing');
 
-function notifyRendererReadyAfterFirstPaint(): void {
-  // Two nested frames: the first is scheduled before paint, the second runs
-  // once the frame that painted the app has been committed.
+  applyCachedThemeBeforeMount();
+
+  // Awaited before the root is created: the fixture's own contract is that its
+  // document state is in place before the first locale-dependent render.
+  let fixture: PendingE2eFixtureUiState | null = null;
+  try {
+    fixture = await applyDocumentE2eFixture();
+  } catch {
+    // A fixture that cannot be read is a fixture that is not there.
+  }
+
+  const localeOverride = readFixtureLocaleOverride();
+  const locale = localeOverride ?? readSystemUiLocale();
+  syncUiLocaleDocument(locale, localeOverride);
+
+  createRoot(container).render(
+    <StrictMode>
+      <App
+        initialTheme={readCachedThemePreference()}
+        locale={locale}
+        localeOverride={localeOverride}
+        fixture={fixture}
+      />
+    </StrictMode>,
+  );
+
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      window.maka?.appWindow?.notifyRendererReady?.();
+      notifyRendererReady();
     });
   });
 }
 
-function PlaceholderApp() {
-  return <div className="appFrame">Maka enterprise renderer — Phase 0</div>;
-}
-
-const container = document.getElementById('root');
-if (!container) throw new Error('Renderer root element #root is missing');
-
-applyInitialColorScheme();
-createRoot(container).render(
-  <StrictMode>
-    <PlaceholderApp />
-  </StrictMode>,
-);
-notifyRendererReadyAfterFirstPaint();
+void bootstrap();

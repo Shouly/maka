@@ -3311,3 +3311,147 @@ describe('validated copy catalog dependencies', () => {
     );
   });
 });
+
+// The colour rule (rewrite plan §2.11). `styles/globals.css` is the whole
+// palette; a component that writes a colour instead of naming one has written
+// a colour that exists in one theme and cannot be re-themed.
+describe('component colour rule', () => {
+  function colourConfig() {
+    return architectureConfig({
+      legacyGrowthDirectories: ['src/renderer/components'],
+      legacyRendererFiles: [],
+    });
+  }
+
+  function colourViolations(desktopRoot, files) {
+    const config = colourConfig();
+    config.legacyRendererFiles = Object.keys(files).sort();
+    return violationsFor(desktopRoot, config);
+  }
+
+  it('rejects an arbitrary Tailwind colour value in a component', async () => {
+    const files = {
+      'src/renderer/components/ui/console.tsx':
+        "export const Console = () => <div className=\"bg-[#2e2e2b]\" />;\n",
+    };
+    await withDesktopFixture(files, (desktopRoot) => {
+      assertHasViolation(
+        colourViolations(desktopRoot, files),
+        /components\/ui\/console\.tsx:1: arbitrary Tailwind colour value bg-\[#/,
+      );
+    });
+  });
+
+  it('rejects every arbitrary-colour utility prefix the rule names', async () => {
+    for (const utility of [
+      'bg-[#fff]',
+      'text-[rgb(0,0,0)]',
+      'border-[hsl(0,0%,0%)]',
+      'ring-[oklch(0.2_0_0)]',
+      'shadow-[color-mix(in_srgb,#000,#fff)]',
+      'decoration-[#abc]',
+    ]) {
+      const files = {
+        'src/renderer/components/ui/probe.tsx': `export const Probe = () => <i className="${utility}" />;\n`,
+      };
+      await withDesktopFixture(files, (desktopRoot) => {
+        assertHasViolation(
+          colourViolations(desktopRoot, files),
+          /arbitrary Tailwind colour value/,
+        );
+      });
+    }
+  });
+
+  it('admits bg-[var(--token)] — that names a token, it does not write a colour', async () => {
+    const files = {
+      'src/renderer/components/ui/console.tsx':
+        "export const Console = () => <div className=\"bg-[var(--console-surface)]\" />;\n",
+    };
+    await withDesktopFixture(files, (desktopRoot) => {
+      assert.deepEqual(colourViolations(desktopRoot, files), []);
+    });
+  });
+
+  it('rejects a raw colour literal inside an inline style', async () => {
+    const files = {
+      'src/renderer/components/ui/swatch.tsx':
+        "export const Swatch = () => <div style={{ backgroundColor: '#d97757' }} />;\n",
+    };
+    await withDesktopFixture(files, (desktopRoot) => {
+      assertHasViolation(
+        colourViolations(desktopRoot, files),
+        /components\/ui\/swatch\.tsx:1: raw colour literal #d97757/,
+      );
+    });
+  });
+
+  it('rejects a raw colour literal in a class-string module', async () => {
+    const files = {
+      'src/renderer/components/ui/card-surface.ts':
+        "export const cardSurfaceClass = 'shadow-sm text-[#0b0b0b]';\n",
+    };
+    await withDesktopFixture(files, (desktopRoot) => {
+      const violations = colourViolations(desktopRoot, files);
+      assertHasViolation(violations, /raw colour literal #0b0b0b/);
+      assertHasViolation(violations, /arbitrary Tailwind colour value text-\[#/);
+    });
+  });
+
+  it('reads colours out of comments as prose, not as violations', async () => {
+    const files = {
+      'src/renderer/components/ui/code.tsx': [
+        'export const Code = () => (',
+        '  <span',
+        '    style={{',
+        '      // 原来写死 #a0a1a7,深色下不跟主题翻',
+        "      color: 'var(--code-comment)',",
+        '    }}',
+        '  />',
+        ');',
+        '',
+      ].join('\n'),
+    };
+    await withDesktopFixture(files, (desktopRoot) => {
+      assert.deepEqual(colourViolations(desktopRoot, files), []);
+    });
+  });
+
+  it('does not mistake a URL in a string for a comment', async () => {
+    const files = {
+      'src/renderer/components/ui/link.tsx': [
+        "const HREF = 'https://example.com'; const STYLE = { color: '#ff0000' };",
+        'export const Link = () => <a href={HREF} style={STYLE} />;',
+        '',
+      ].join('\n'),
+    };
+    await withDesktopFixture(files, (desktopRoot) => {
+      // The literal is outside `style={{ … }}`, so the rule is silent — but it
+      // must be silent because it parsed the file, not because it swallowed
+      // the rest of the line at `//`.
+      assert.deepEqual(colourViolations(desktopRoot, files), []);
+    });
+  });
+
+  it('scans app.tsx, and exempts brand marks and the design smoke page', async () => {
+    const files = {
+      'src/renderer/app.tsx': "export const App = () => <div className=\"bg-[#123456]\" />;\n",
+      'src/renderer/components/icons/BrandMark.tsx':
+        "export const BrandMark = () => <svg><path fill=\"#d97757\" /></svg>;\n",
+      'src/renderer/components/dev/DesignSmoke.tsx':
+        "export const Smoke = () => <div className=\"bg-[#123456]\" />;\n",
+    };
+    await withDesktopFixture(files, (desktopRoot) => {
+      const config = colourConfig();
+      config.legacyRendererFiles = Object.keys(files).sort();
+      config.rewriteBaseline = { phase: 'test', resetPaths: ['src/renderer/app.tsx'] };
+      const violations = violationsFor(desktopRoot, config);
+      assertHasViolation(violations, /^src\/renderer\/app\.tsx:1: arbitrary Tailwind colour value/);
+      assert.equal(
+        violations.filter((violation) => violation.includes('components/')).length,
+        0,
+        `icons/ and dev/ must stay exempt, received:\n${violations.join('\n')}`,
+      );
+    });
+  });
+});

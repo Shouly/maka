@@ -36,7 +36,7 @@
 // color into the Windows overlay color and macOS hides its traffic lights;
 // when the last one closes, the strip restores.
 
-import { setTitlebarModalDimmed } from './theme';
+import { setTitlebarModalDimmed } from '../theme.js';
 
 function subtreeTouchesDialog(nodes: NodeList): boolean {
   for (const node of nodes) {

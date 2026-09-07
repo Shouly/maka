@@ -71,6 +71,16 @@
       "trailingCommas": "all"
     }
   },
+  // The renderer's design tokens are a CSS-first Tailwind 4 configuration:
+  // `styles/globals.css` IS the config (rewrite plan §2.2), so it carries
+  // `@theme`, `@utility` and `@apply`. Without this the parser rejects those
+  // at-rules outright and the file cannot be linted at all — which is the
+  // opposite of what turning the gate off would achieve.
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
   "linter": {
     "enabled": true,
     // Admission bar for this gate (PR #1019 review). This is an EXPLICIT

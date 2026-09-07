@@ -17,20 +17,1662 @@
  * under the License.
  */
 
-/* Phase 0a placeholder. Phase 0b replaces this with the relx token file
-   (`@theme inline`, fonts, utilities) per the rewrite plan §2.6. The two
-   opaque body colours below stand in for relx surface-1 light/dark so the
-   titlebar overlay has something real to sample. */
+/* The enterprise design tokens, copied from the reference design system
+ * (relx-copilot `src/app/globals.css`) per rewrite plan §2.6. The only edits
+ * to the copied body are: `url()` paths pointed at `../assets/fonts/anthropic`,
+ * and the removal of four blocks that only serve relx-server features
+ * (group-chat typing dots, the inline visualizer, `@media print`, and the
+ * `--series-1..8` dataviz palette). Everything Maka needs on top lives in the
+ * clearly delimited additions block at the end of this file — keep new rules
+ * there so the copied region stays diffable against its source.
+ */
 
 @import "tailwindcss";
 
-body {
-  margin: 0;
-  background: #fcfcfb;
-  color: #0b0b0b;
+/* 全局边框宽度 - 0.5px */
+@utility border {
+  border-width: 0.5px;
 }
 
-.dark body {
-  background: #151515;
-  color: #f0efec;
+@utility border-t {
+  border-top-width: 0.5px;
+}
+
+@utility border-r {
+  border-right-width: 0.5px;
+}
+
+@utility border-b {
+  border-bottom-width: 0.5px;
+}
+
+@utility border-l {
+  border-left-width: 0.5px;
+}
+
+@utility border-x {
+  border-left-width: 0.5px;
+  border-right-width: 0.5px;
+}
+
+@utility border-y {
+  border-top-width: 0.5px;
+  border-bottom-width: 0.5px;
+}
+
+@font-face {
+  font-family: 'Anthropicons-Variable';
+  /* 纯 format('woff2'):与同目录另外几个可变字体一致。'woff2-variations' 是早期
+     草案语法,浏览器不认时会整条 src 作废 —— 图标字体一旦作废,整片导航渲染成
+     PUA 豆腐块,代价远大于收益;可变轴仍由 font-variation-settings 驱动。 */
+  src: url('../assets/fonts/anthropic/anthropicons-variable.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: block;
+}
+
+/* 品牌字体,本地镜像。语义角色分开保留,让界面、正文、代码可以
+   evolve independently. */
+@font-face {
+  font-family: 'anthropic-sans';
+  src: url('../assets/fonts/anthropic/anthropic-sans.woff2') format('woff2');
+  font-weight: 300 800;
+  font-style: normal;
+  font-display: swap;
+  font-feature-settings: "dlig" 0;
+}
+
+@font-face {
+  font-family: 'anthropic-sans';
+  src: url('../assets/fonts/anthropic/anthropic-sans-italic.woff2') format('woff2');
+  font-weight: 300 800;
+  font-style: italic;
+  font-display: swap;
+  font-feature-settings: "dlig" 0;
+}
+
+@font-face {
+  font-family: 'anthropic-serif';
+  src: url('../assets/fonts/anthropic/anthropic-serif.woff2') format('woff2');
+  font-weight: 300 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'anthropic-serif';
+  src: url('../assets/fonts/anthropic/anthropic-serif-italic.woff2') format('woff2');
+  font-weight: 300 800;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'anthropic-mono';
+  src: url('../assets/fonts/anthropic/anthropic-mono.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'anthropic-mono';
+  src: url('../assets/fonts/anthropic/anthropic-mono-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* 度量兼容的回退字体。 */
+@font-face {
+  font-family: 'Anthropic Serif Fallback Georgia';
+  src: local('Georgia');
+  size-adjust: 104.79%;
+  ascent-override: 94.71%;
+  descent-override: 24.57%;
+  line-gap-override: 0%;
+  unicode-range: U+20-7E, U+A0-B4, U+B6-17F, U+2012-2015, U+2018-2022, U+2026, U+2030, U+2032-2034, U+2039-203A, U+2044;
+}
+
+@font-face {
+  font-family: 'Anthropic Serif Fallback Times';
+  src: local('Times New Roman'), local('TimesNewRomanPSMT'), local('Liberation Serif'), local('LiberationSerif');
+  size-adjust: 114.99%;
+  ascent-override: 86.31%;
+  descent-override: 22.39%;
+  line-gap-override: 0%;
+  unicode-range: U+20-7E, U+A0-B4, U+B6-17F, U+2012-2015, U+2018-2022, U+2026, U+2030, U+2032-2034, U+2039-203A, U+2044;
+}
+
+@font-face {
+  font-family: 'Anthropic Serif Fallback DejaVu';
+  src: local('DejaVu Serif'), local('DejaVuSerif');
+  size-adjust: 90.15%;
+  ascent-override: 110.1%;
+  descent-override: 28.56%;
+  line-gap-override: 0%;
+  unicode-range: U+20-7E, U+A0-B4, U+B6-17F, U+2012-2015, U+2018-2022, U+2026, U+2030, U+2032-2034, U+2039-203A, U+2044;
+}
+
+@font-face {
+  font-family: 'Anthropic Serif Fallback Noto';
+  src: local('Noto Serif'), local('NotoSerif'), local('NotoSerif-Regular');
+  size-adjust: 97.12%;
+  ascent-override: 102.19%;
+  descent-override: 26.51%;
+  line-gap-override: 0%;
+  unicode-range: U+20-7E, U+A0-B4, U+B6-17F, U+2012-2015, U+2018-2022, U+2026, U+2030, U+2032-2034, U+2039-203A, U+2044;
+}
+
+:root {
+  /* 浅色主题的表面阶梯 */
+  --surface-0: #f9f9f7;
+  --surface-1: #fcfcfb;
+  --surface-2: #ffffff;
+  --surface-3: #ffffff;
+  /* 中性透明阶梯的基色。深色下翻成**纯白**而不是 text-primary(#f0efec 暖白):
+     两者只在浅色下恰好重合,挂错会让深色下所有 hairline/hover/ring 泛黄。 */
+  --alpha-base: var(--sidebar-text-primary);
+  /* 中性色按百分比压淡一律从这里取,别就地写 hsl(from ... / N%)。
+     只有彩色(accent/danger/warning)才用自由百分比 —— 阶梯只管中性。 */
+  --alpha-0: hsl(from var(--alpha-base) h s l / 0%);
+  --alpha-1: hsl(from var(--alpha-base) h s l / 5%);
+  --alpha-2: hsl(from var(--alpha-base) h s l / 10%);
+  --alpha-3: hsl(from var(--alpha-base) h s l / 20%);
+  --alpha-4: hsl(from var(--alpha-base) h s l / 35%);
+  --alpha-5: hsl(from var(--alpha-base) h s l / 50%);
+  --alpha-6: hsl(from var(--alpha-base) h s l / 60%);
+  --alpha-7: hsl(from var(--alpha-base) h s l / 70%);
+  --alpha-8: hsl(from var(--alpha-base) h s l / 85%);
+  --alpha-9: hsl(from var(--alpha-base) h s l / 95%);
+  --sidebar-background: color-mix(in srgb, var(--surface-0) 50%, var(--surface-1));
+  --sidebar-hover: #f0efec;
+  --sidebar-selected: #edece8;
+  /* 弹框内分区导航的 hover 与选中共用一个值,靠字重(400/580)区分。 */
+  --nav-active: #f6f6f4;
+  /* 值同 --nav-active 但**别复用**,语义不同、以后各调各的。
+     也别改成 alpha-2(10%):骨架实测就是这一档,10% 明显偏深。 */
+  --skeleton-fill: #f6f6f4;
+  --sidebar-text-primary: #0b0b0b;
+  --sidebar-text-secondary: #52514e;
+  --sidebar-text-muted: #898781;
+  /* 文件预览(pdf/docx)纸下的底台。上游实测 gutter ≈ rgb(242,243,245),
+     alpha-1(5% 墨)叠在白面上正好落到 242;深色两份定义里显式改走 surface-0 暗房。 */
+  --preview-backdrop: var(--alpha-1);
+  /* New 行 "+" 的圆形底衬,实测值不走派生。 */
+  --sidebar-add-chip: #eae9e4;
+  /* ── accent(蓝)四角色 ──────────────────────────────────────────
+     和 danger / warning 同构。**不要合并回一个 token**:当字和当底对深色的
+     要求是相反的 —— 把蓝提亮对"当字"是对的,对"当底"就让白字掉到 2.95。
+       text  当字        blue-600/300  翻转
+       fill  当底/描边    blue-450      明暗同色
+       border 描边       blue-250/700  翻转
+       bg    chip 淡底   blue-100/800  翻转 */
+  --text-accent: #184f95;
+  --fill-accent: #2a78d6;
+  /* hover 是**更亮**的一档实色,不是把 fill 压透明度。 */
+  --fill-accent-hover: #3987e5;
+  --on-accent: #ffffff;
+  /* 压在遮罩上的文字/图标(图片灯箱)。遮罩明暗都是 rgba(0,0,0,.4),所以恒为白。
+     **不能**用 --on-primary:那个跟 surface-3 走,深色下会变成深字压深底。 */
+  --on-overlay: #ffffff;
+  --sidebar-control-hover: var(--alpha-2);
+  --sidebar-menu-hover: var(--alpha-1);
+  /* ── 焦点环:全站唯一一档 ───────────────────────────────────────────
+     三段各有分工,少一段都不对:
+       inset 1px 控件所在的底色 —— 把蓝环从控件自身的边缘推开一格。少了它,
+         蓝线直接压在控件描边上,两条线糊成一条粗边,看着像"控件变粗了"
+         而不是"控件被选中了"。
+       0 0 0 1px 实蓝           —— 定形的那道线,画在**外面**。
+       0 0 6px 1px 淡蓝辉光     —— 把焦点从背景里托起来。
+     --focus-ring-bg 可以就地覆盖:控件所在的面不是 surface-1 时(侧栏、
+     菜单、深色卡片),在容器上重定义它,inset 那圈才隐形。
+
+     ! 曾经有三个 token 干这一件事:本档(141 处)写的是 inset 蓝环 + 20% 辉光,
+       而 --field-focus-shadow(输入框)和 --sidebar-resizer-focus-shadow(分栏条)
+       各自是这个正确形状的变体。实拍对过,上游只有一档,就是下面这个。 */
+  --focus-ring-bg: var(--surface-1);
+  --sidebar-focus-shadow:
+    inset 0 0 0 1px var(--focus-ring-bg),
+    0 0 0 1px var(--fill-accent),
+    0 0 6px 1px var(--bg-accent);
+  --hairline: var(--alpha-2);
+  /* 描边分级:普通 / strong / stronger。 */
+  --border-strong: var(--alpha-3);
+  /* 40% 不在 alpha 阶梯上(阶梯是 …35/50…),CDS 这一档就是 40%,所以保留百分比、
+     只把基色换成 --alpha-base:原来派生自 --sidebar-text-primary,深色下是 #f0efec
+     暖白,描边被染上暖调 —— 正是 --alpha-base 注释里点名要防的那个问题。 */
+  --border-stronger: hsl(from var(--alpha-base) h s l / 40%);
+  /* ── 文字三档 ──────────────────────────────────────────────────────
+       primary    #0b0b0b  标题、正文、控件文字
+       secondary  #52514e  次要正文:说明、描述、代码块内容
+       muted      #898781  元信息:12–13px 小字、时间戳、空状态、占位符
+
+     三档用量接近(实测 93/68/81),是并重的三档,别默认次要文字都塞 secondary。
+     判据是**用途**不是字号:"12px 的时间戳"和"12px 的操作文案"是两回事。
+
+     ! 硬下限:**能点的文字最低 secondary**。muted 白底上只有 3.5,14px 的
+        AA 线是 4.5,当按钮文案不合格。两个例外:
+        · 纯图标按钮 —— 图标视觉重量大,静止 muted / hover 提 primary
+        · 侧栏列表末尾的次级出口(View all、More)—— 侧栏是低对比 chrome 区,
+          压到 secondary(7.6:1) 会追平会话标题、反而抢戏。可点性由交互承担:
+          View all 靠 hover 提 primary,More 靠悬停即展开菜单(不动字色)。
+          这条来回改过两次,**别再按上面的下限"顺手修正"回去**。 */
+  --text-primary: var(--sidebar-text-primary);
+  --text-secondary: var(--sidebar-text-secondary);
+  --text-muted: var(--sidebar-text-muted);
+  /* 禁用态拆成文字与填充两个角色,而不是整体 opacity —— 后者会把图标
+     和文字一起压暗,层级关系反而糊掉。 */
+  --text-disabled: var(--alpha-4);
+  --fill-primary: var(--text-primary);
+  /* 实测值,不是派生:比 86% 混白偏暖。 */
+  --fill-primary-hover: #2c2c2a;
+  --on-primary: var(--surface-3);
+  --fill-secondary: rgb(255 255 255 / 10%);
+  --fill-secondary-hover: var(--sidebar-menu-hover);
+  --fill-field: rgb(255 255 255 / 50%);
+  --field-shadow: inset 0 0 0 1px var(--hairline), 0 1px 2px rgb(0 0 0 / 5%);
+  --field-shadow-hover: inset 0 0 0 1px var(--border-strong), 0 1px 2px rgb(0 0 0 / 5%);
+  /* 校验不通过的输入框。与上面三档同构:描边同样走 inset ring,这样出错时
+     只是换一层 shadow,不会因为改用真 border 而让控件宽高跳一下。 */
+  --field-error-shadow: inset 0 0 0 1px var(--border-danger), 0 1px 2px rgb(0 0 0 / 5%);
+  /* 浮起面板(输入框上方的问答面板):投影 + 0.5px 描边环,两层都随主题翻转。 */
+  --panel-shadow-color: hsl(from var(--sidebar-text-primary) h s l / 8%);
+  /* 投影两档浓度:近距压边 + 远处扩散。面板/卡片/tooltip 共用。
+     ! 写死黑色,**绝不能挂 --alpha-base 或 --alpha-N** —— 那条阶梯深色下翻成
+        纯白,挂上去投影会变成白色辉光。阴影不随主题翻转,深色下反而要更浓,
+        所以 dark 块里是加倍而不是取反。 */
+  --shadow-near: rgb(11 11 11 / 6%);
+  --shadow-far: rgb(11 11 11 / 8%);
+  /* 右侧预览面板的三层:1px 描边环 + 近距投影 + 扩散投影。实测 10% / 6% / 8%。
+     只有描边环跟着主题翻(它是 hairline),两层投影不翻,见上。
+     描边走 box-shadow 而不是 border —— 面板宽度由拖拽百分比控制,border 占布局盒
+     会让内容宽比设定值少 2px,拖到最小宽时对不上 minWidth。 */
+  --pane-shadow:
+    0 0 0 1px var(--hairline),
+    0 1px 2px 0 var(--shadow-near),
+    0 2px 8px 0 var(--shadow-far);
+  --panel-ring-color: color-mix(in srgb, var(--border-strong) 30%, transparent);
+  --card-shadow: 0 1px 2px 0 var(--shadow-near), 0 2px 8px 0 var(--shadow-far);
+  /* hover 是**换一层**更远更散的,浓度取远档 */
+  --card-shadow-hover: 0 4px 20px 0 var(--shadow-far);
+  --control-spring: linear(0, .2459, .6526, .9468, 1.0764, 1.0915, 1.0585, 1.0219, .9993, .9914, .9921, .9957, .9988, 1.0004, 1);
+  /* 界面级过渡时长(快 / 慢两档)。行尾操作按钮
+     浮现、分组展开这类"跟手"的反馈一律用 fast,不要再就地写 duration-150。 */
+  --dur-fast: .12s;
+  /* Composer 的表面与宽度。放在 :root 而不是 .chat-area —— 群聊用的是另一个
+     组件(group-chat/message-input),但它是同一个功能,必须长一样。 */
+  /* AI 回复正文的字与色。放在 :root 而不是 .chat-area —— 群聊走的是另一个组件
+     (group-chat/message-item),但那是同一种内容,必须同一套读感。
+     与 --chat-composer-* 上移同一个理由。 */
+  --chat-text-primary: var(--text-primary);
+  --chat-response-font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --chat-composer-background: var(--surface-3);
+  /* 实测上游 --cds-radius-composer。配套的内节律(2026-09-06 CDP 复测 claude.ai
+     会话页:白面 48 高、内边距 8、文字起点 x=48):内边距 8、文本行 22 + 上下各 5 = 32
+     (= --cds-h-control),文本行与底部 32px 按钮共用中线;单行形态整框 8+32+8 = 48。
+     堆叠形态文字再内缩 8,图标按钮不缩 —— 两者本就不该对齐成同一条竖线。 */
+  --chat-composer-radius: 14px;
+  /* ── composer 投影:三态 + 拖拽高亮 ─────────────────────────────────
+     必须是 token。写在 class 串里深色没机会翻 —— 原来四个 composer 各手抄一份
+     浅色的 `0 0 0 .5px 黑15%`,深色下那圈落在 #0b0b0b 画布上算出 #090909,和底色
+     差 2/255,描边等于消失(实测)。
+     上游深色不是换颜色而是**换结构**:外描边环 → inset 1px,并改挂 border token。
+     基色照抄上游的 hsl(60 2% 12%)。别写成 #20201f —— 那是 --surface-3 的深色底。 */
+  --composer-shadow:
+    0 .25rem 1.25rem color-mix(in srgb, #000 3.5%, transparent),
+    0 0 0 .5px color-mix(in srgb, hsl(60 2% 12%) 15%, transparent);
+  --composer-shadow-hover:
+    0 .25rem 1.25rem color-mix(in srgb, #000 3.5%, transparent),
+    0 0 0 .5px color-mix(in srgb, hsl(60 2% 12%) 30%, transparent);
+  --composer-shadow-focus:
+    0 .25rem 1.25rem color-mix(in srgb, #000 7.5%, transparent),
+    0 0 0 .5px color-mix(in srgb, hsl(60 2% 12%) 30%, transparent);
+  /* 拖拽悬停:明暗同色(--fill-accent 不翻),深色块里不重复定义。 */
+  --composer-shadow-drag:
+    0 .25rem 1.25rem color-mix(in srgb, #000 3.5%, transparent),
+    0 0 0 1px var(--fill-accent);
+  --chat-content-max: 50.5rem;
+  --chat-feed-max: 48rem;
+  /* 全局菜单语义,下拉基元统一消费这些;sidebar-* 只管行/chrome 状态。 */
+  --menu-surface: var(--surface-3);
+  --menu-text-primary: var(--sidebar-text-primary);
+  --menu-text-muted: var(--sidebar-text-muted);
+  --menu-hover: var(--sidebar-menu-hover);
+  /* 菜单勾选标记是**字**,取 text 档不是 fill 档。 */
+  --menu-accent: var(--text-accent);
+  --menu-hairline: var(--hairline);
+  /* 浮层投影(下拉菜单 / popover / 富内容面板共用)。整条包含描边环一起,
+     调用点写 shadow-[var(--menu-shadow)] 就行。
+     ! 必须是 token 不能写死在 class 串里 —— 原来 menu-variants.ts 里直接写的是
+        浅色这三段,深色**根本没机会翻**,近黑底上 12%/8% 的黑影等于没有,
+        菜单浮不起来。深色那份见 .dark 块(32%/20%,上游同款)。 */
+  --menu-shadow:
+    0 0 0 1px var(--menu-hairline),
+    0 8px 24px rgb(0 0 0 / 12%),
+    0 2px 6px rgb(0 0 0 / 8%);
+  /* 提示气泡。几何与动效也走 token,调用点不各写各的。
+     ! 这一组逐项等于 CDS Tooltip 原语,别动;长描述走下面的 --tooltip-desc-*。 */
+  --tooltip-surface: #0b0b0b;
+  --tooltip-foreground: #ffffff;
+  --tooltip-shadow: 0 1px 2px rgb(11 11 11 / 6%), 0 2px 8px rgb(11 11 11 / 8%);
+  --tooltip-radius: 6px;
+  --tooltip-min-height: 24px;
+  --tooltip-max-width: 240px;
+  --tooltip-padding-block: 3px;
+  --tooltip-padding-inline: 8px;
+  --tooltip-gap: 8px;
+  --tooltip-font-size: 13px;
+  --tooltip-line-height: 18px;
+  --tooltip-font-weight: 400;
+  --tooltip-duration: 120ms;
+  --tooltip-easing: cubic-bezier(.32, .72, 0, 1);
+
+  /* 第二套:长描述气泡。不是上面那套的尺寸档,是另起的一组值。
+     面是**恒定黑**,不跟主题翻(.dark 里只加浓投影)。 */
+  --tooltip-desc-surface: rgb(0 0 0 / 80%);
+  --tooltip-desc-foreground: #ffffff;
+  --tooltip-desc-blur: blur(8px);
+  --tooltip-desc-shadow: 0 2px 4px 0 rgb(11 11 11 / 7%), 0 6px 16px 0 rgb(11 11 11 / 8%);
+  --tooltip-desc-max-width: min(26rem, calc(100vw - 4rem));
+  --tooltip-desc-font-size: 12px;
+  --tooltip-desc-line-height: 15px;
+  --tooltip-desc-padding-block: 4px;
+  --tooltip-desc-padding-inline: 8px;
+
+  /* 品牌橙。**不是**主按钮色 —— 主按钮是 --fill-primary(近黑)。明暗同色。 */
+  --fill-brand: #c6613f;
+  --fill-brand-hover: #d97757;
+
+  /* 群聊"自己发的"气泡底。单聊用 alpha-1(中性),群聊要能从多人气泡里
+     一眼认出自己,所以给一档冷色。 */
+  --gc-user-message: #dfecf8;
+
+  /* ── danger(红)四角色 ──────────────────────────────────────────
+     **别合并成一个 token**:文字要够深(#8e2626)才有对比度,填充要够亮
+     (#d03b3b)才配得住白字。accent / warning 同理,见各自那组。 */
+  --text-danger: #8e2626;
+  --fill-danger: #d03b3b;
+  --fill-danger-hover: #e34948;
+  --border-danger: #f09595;
+  --bg-danger: #fad6d6;
+  --on-danger: #ffffff;
+
+  /* ── warning(琥珀) ────────────────────────────────────────────── */
+  --text-warning: #734500;
+  --fill-warning: #fab219;
+  --fill-warning-hover: #eda100;
+  --border-warning: #eda100;
+  --bg-warning: #f9dca4;
+  --on-warning: #0b0b0b;
+
+  /* ── success(绿) ────────────────────────────────────────────────
+     bg 是芯片淡底(green-100),别拿 text 档压透明度顶替:那是描边/图标用的
+     深绿,压淡后偏灰,和这个带饱和度的浅绿不是一回事。 */
+  --text-success: #006300;
+  --fill-success: #009300;
+  --fill-success-hover: #0ca30c;
+  --border-success: #73cb6d;
+  --bg-success: #caeac7;
+  --on-success: #0b0b0b;
+
+  /* accent 的描边与芯片淡底,补齐上面 accent 那组。压在 bg-accent 上的字用
+     --text-accent(blue-600),别用 --fill-accent(blue-450) —— 对比度不够。 */
+  --border-accent: #86b6ef;
+  --bg-accent: #cde2fb;
+
+  /* accent 的"淡填充":徽章、状态卡这类要蓝色存在感但不能抢主体的地方。
+     名字里的 soft 指档位不是状态 —— 13 个用法里只有 1 处真是 hover。 */
+  /* status-dot 呼吸渐变的两端。预算成实色:构建链会丢弃 keyframes 里含 var
+     的 color-mix。 */
+  --status-dot-strong: #73726C;
+  --status-dot-soft: #D1D0CC;
+  --scrollbar: #AEACA9;
+
+  /* 弹框遮罩:0.4 配 2px 模糊。0.6 无模糊更黑,但底下界面反而更"清晰",
+     像盖了层黑纸而不是把焦点推到弹框上。
+     深色下加到 0.5(见 .dark) —— 上游明暗是 40%/50% 两档,不是同一个值。 */
+  --dialog-overlay: rgba(0, 0, 0, 0.4);
+  /* 弹框:1px ring 代替实边(不占布局、不吃圆角)+ 两层投影,近的定形远的托起。
+     两层投影的几何与浓度**逐字节抄自上游的 shadow-lg**:
+       0 4px 8px 0 (黑 8%)  ,  0 12px 28px -2px (--cds-shadow-color)
+       上游 shadow-color:浅 8% / 深 24%。只有**远层**随主题加重,近层两边都是 8%。
+     我们的 --panel-shadow-color 恰好就是这个值(浅 8% / 深 24%),直接用。
+
+     ! 两层投影必须是**黑色**。原来三段全挂 var(--alpha-2) —— alpha 阶梯深色下
+        翻成纯白,弹框周围整圈变成白色辉光,实拍确认过。这正是 --shadow-near
+        上面那条注释点名警告的坑,--dialog-shadow 自己踩了进去。
+     ! 近层写死 rgb(11 11 11 / 8%) 而不是挂 --shadow-near(6%/12%):上游这一层
+        明暗同为 8%,不随主题变;挂上去会两边都对不上。
+     只有**描边环**那一段走 alpha 阶梯 —— 它是 hairline,本来就该随主题翻。
+
+     顺带:原来浅色是 10%/10%,比上游深一档。所以这次不是"把浅色改坏了",
+     是浅色本来就没对齐。 */
+  --dialog-shadow:
+    0 0 0 1px var(--alpha-2),
+    0 4px 8px rgb(11 11 11 / 8%),
+    0 12px 28px -2px var(--panel-shadow-color);
+
+
+
+  /* 代码高亮(Prism)。原来这 30 条规则写的是**写死的十六进制**、且只有浅色
+     一份 —— 深色下正文与标点仍是 #393A43,实测对比度 1.74:1(WCAG 要 4.5),
+     代码的骨架糊在底色里。色值按 claude.ai CDP 实测抄,明暗两套都测过
+     (python/javascript/bash/json/diff 五种语言)。
+     注意 number 与 boolean/null **同色**(青),不是红 —— 原来归到红色那档
+     是色相就错了。参数与内建在上游是两个相邻值(#b84f05/#b34a00),肉眼不可
+     辨,这里收成一档 --code-variable。 */
+  --code-text: #14181f;
+  --code-punctuation: #2b303b;
+  --code-keyword: #8100c2;
+  --code-function: #0051c2;
+  --code-variable: #b84f05;
+  --code-string: #008000;
+  --code-number: #008080;
+  --code-comment: #6e7687;
+  --code-property: #b80a18;
+}
+
+/* 暗色主题 - 使用 .dark 类选择器以支持 next-themes */
+.dark {
+  /* surface 四档,实测值。和浅色一样是**严格单调**的:0 最贴近画布,3 抬得最高,
+     深色下"抬高 = 变亮"。
+
+     ! 原先这里是 #201f1a / #262624 / #201f1a / #262420 —— 手搓的,
+     surface-2 比 surface-1 还暗,阶梯是断的,所以卡片 hover 抬一层反而变暗;
+     而且 .dark 与 @media 两份的 surface-1 一个 #262624 一个 #161512,
+     显式深色和跟随系统的深色页面底色都不一样。 */
+  --surface-0: #0b0b0b;
+  --surface-1: #151515;
+  --surface-2: #1a1a19;
+  --surface-3: #20201f;
+  --sidebar-background: var(--surface-1);
+  /* 深色下预览底台不走 alpha(那会比面板还亮):surface-0 当暗房,白纸更跳。 */
+  --preview-backdrop: var(--surface-0);
+  /* 行的 hover / 选中在深色下也走 alpha,和紧跟着的 nav-active / skeleton 同理:
+     它们要压在好几档 surface 上,实色只能对准其中一档。
+     ! 原来这两个是实色 #38342a / #2e2b24 —— 既和下面这条注释自己的原则打架,
+       又比上游亮一截而且发暖(那是褐色不是中性灰)。上游深色对应的是
+       白 7.5% / 白 15%,逐档抄过来。
+     7.5% 和 15% **都不在 alpha 阶梯上**(阶梯是 …5/10/20…),这是上游给这两档
+     定的值,照抄;别"顺手"归到 alpha-1/alpha-2 去。 */
+  --sidebar-hover: hsl(from var(--alpha-base) h s l / 7.5%);
+  --sidebar-selected: hsl(from var(--alpha-base) h s l / 15%);
+  /* 选中/骨架在深色下走 alpha 而不是实色:它们要压在好几档 surface 上,
+     实色只能对准其中一档,半透明才能各处都是"比身下亮一档"。 */
+  --nav-active: var(--sidebar-menu-hover);
+  --skeleton-fill: var(--sidebar-menu-hover);
+  /* alpha 阶梯翻到**纯白**,不跟 text-primary 走 —— 见浅色块 --alpha-base。 */
+  --alpha-base: #ffffff;
+
+  /* ── 深色下交互反馈要整体提档 ───────────────────────────────────────
+     白色压在近黑底上,远比黑色压在白底上弱。上游因此在深色把这几档抬高,
+     浅色沿用过来的话深色下的 hover / 按压反馈会普遍"按不出来"。
+     这几个值都不在 alpha 阶梯上,是上游给这几档定死的,照抄,别归档。 */
+  --sidebar-menu-hover: hsl(from var(--alpha-base) h s l / 7.5%);   /* 浅色 5% */
+  --fill-secondary-hover: #ffffff24;                                /* 14%,浅色 5% */
+  /* 浮层投影同理:深色下要浓得多才浮得起来(浅色 12%/8%)。描边环仍走
+     --menu-hairline,它自己会翻成白 10%。 */
+  --menu-shadow:
+    0 0 0 1px var(--menu-hairline),
+    0 8px 24px rgb(0 0 0 / 32%),
+    0 2px 6px rgb(0 0 0 / 20%);
+
+  /* 投影例外:深色下**不翻白**,仍是黑,只是更重(实测 24%)。翻白的话
+     "阴影"会变成一圈光晕。 */
+  --panel-shadow-color: rgb(0 0 0 / 24%);
+  /* composer:深色改 inset 描边,理由见 :root 那份。 */
+  --composer-shadow:
+    0 .25rem 1.25rem color-mix(in srgb, #000 3.5%, transparent),
+    inset 0 0 0 1px var(--hairline);
+  --composer-shadow-hover:
+    0 .25rem 1.25rem color-mix(in srgb, #000 3.5%, transparent),
+    inset 0 0 0 1px var(--border-strong);
+  --composer-shadow-focus:
+    0 .25rem 1.25rem color-mix(in srgb, #000 7.5%, transparent),
+    inset 0 0 0 1px var(--border-strong);
+  /* 文字三档:三个不透明值,实测抄来的。
+     注意 muted **明暗同值** —— #898781 是灰阶支点,不参与主题翻转。
+     原先这档写成 secondary 压 72% 透明,半透明会随底色浮动,深色下三档
+     实际塌成两档半。 */
+  --sidebar-text-primary: #f0efec;
+  --sidebar-text-secondary: #c3c2b7;
+  --sidebar-text-muted: #898781;
+  --sidebar-add-chip: var(--alpha-2);
+  --text-accent: #6da7ec;
+  /* 实测是白 5%(= alpha-1),不是 text-primary 压 8% —— 后者带暖调。
+     浅色那档白 50% 也是实测值,两边同为"白色压透明",只是档位不同。 */
+  --fill-field: var(--alpha-1);
+  /* 辉光那段深色下不跟 --bg-accent 翻:那一档翻过去是 blue-800(#032042),
+     压在深底上等于没有。改用调色板的 blue-600 压 60% —— 上游深色态就是
+     这么写的。这里只能写死 #184f95:blue-600 的语义位 --text-accent 在深色
+     下已经翻成 blue-300 了,拿它去派生会得到一个更亮的蓝,不是这一档。 */
+  --sidebar-focus-shadow:
+    inset 0 0 0 1px var(--focus-ring-bg),
+    0 0 0 1px var(--fill-accent),
+    0 0 6px 1px color-mix(in srgb, #184f95 60%, transparent);
+  /* 主按钮在深色下是**纯白配近黑字**,不跟 text-primary / surface-3 走:
+     那两个是暖调(#f0efec / #20201f),派生出来的按钮偏黄、对比度也低一档。
+     CDS 实测就是 #fff / #0b0b0b。浅色下派生结果本来就与 CDS 相同,不用覆盖。 */
+  --fill-primary: #ffffff;
+  --on-primary: #0b0b0b;
+  /* 亮色是实测的 #2c2c2a;暗色下 fill-primary 是浅色,仍走混合派生。 */
+  --fill-primary-hover: #e1e0d9;
+  /* 暗色的 danger 角色:色阶不变,只换档位(red-300/700/800)。 */
+  --text-danger: #ec7e7e;
+  --border-danger: #641919;
+  --bg-danger: #3c0e0e;
+  --bg-success: #11260f;
+  --border-accent: #0d366b;
+  --bg-accent: #032042;
+  --tooltip-surface: var(--surface-3);
+  --tooltip-foreground: var(--text-primary);
+  --tooltip-shadow: 0 1px 2px rgb(0 0 0 / 12%), 0 2px 8px rgb(0 0 0 / 18%);
+  --tooltip-desc-shadow: 0 2px 4px 0 rgb(0 0 0 / 12%), 0 6px 16px 0 rgb(0 0 0 / 24%);
+  /* 投影不取反,只加浓 —— 深色底吃光,浅色那档 6%/8% 在这儿基本看不见。
+     浓度跟 --tooltip-shadow 走同一档。 */
+  --shadow-near: rgb(0 0 0 / 12%);
+  --shadow-far: rgb(0 0 0 / 18%);
+  /* --hairline / --border-strong / --alpha-* 都由 --alpha-base 派生,上面已翻成
+     纯白,这里不再重复定义。 */
+
+  /* 明暗同色、不在这里覆盖的:--fill-brand / --fill-brand-hover / --fill-danger /
+     --fill-warning / --fill-accent / --text-muted。 */
+  --gc-user-message: #2a4a6b;
+  --text-success: #0ca30c;
+  --border-success: #074506;
+  --text-warning: #db9300;
+  --border-warning: #512e00;
+  --bg-warning: #311a00;
+  --status-dot-strong: #f2f1ee;
+  --status-dot-soft: #636361;
+  --scrollbar: #6b6964;
+  /* 深色遮罩比浅色深一档(上游 40%/50%)。深底本来就暗,40% 压不出层次。 */
+  --dialog-overlay: rgba(0, 0, 0, 0.5);
+
+  /* 代码高亮的深色一份。语义与浅色逐条对应,见 :root 那边的说明。 */
+  --code-text: #eaecf0;
+  --code-punctuation: #d3d7de;
+  --code-keyword: #cc7bf4;
+  --code-function: #70b8ff;
+  --code-variable: #f7ab5f;
+  --code-string: #9be963;
+  --code-number: #5eeded;
+  --code-comment: #818898;
+  --code-property: #f47b85;
+}
+
+/* 系统偏好的深色。**必须和上面 .dark 那份逐值相同** —— 两块任何一处改动都要
+   同步改另一处,否则「显式切深色」和「跟随系统深色」会长得不一样。
+   理由与实测依据全部写在 .dark 那份,这里不重复。 */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --surface-0: #0b0b0b;
+    --surface-1: #151515;
+    --surface-2: #1a1a19;
+    --surface-3: #20201f;
+    --sidebar-background: var(--surface-1);
+    --preview-backdrop: var(--surface-0);
+    /* 见 .dark 块里同名各条的说明:深色交互反馈整体提档,行 hover/选中走 alpha。 */
+    --sidebar-hover: hsl(from var(--alpha-base) h s l / 7.5%);
+    --sidebar-selected: hsl(from var(--alpha-base) h s l / 15%);
+    --nav-active: var(--sidebar-menu-hover);
+    --skeleton-fill: var(--sidebar-menu-hover);
+    --alpha-base: #ffffff;
+    --sidebar-menu-hover: hsl(from var(--alpha-base) h s l / 7.5%);
+    --fill-secondary-hover: #ffffff24;
+    --menu-shadow:
+      0 0 0 1px var(--menu-hairline),
+      0 8px 24px rgb(0 0 0 / 32%),
+      0 2px 6px rgb(0 0 0 / 20%);
+    --panel-shadow-color: rgb(0 0 0 / 24%);
+    /* composer:深色改 inset 描边,理由见 :root 那份。 */
+    --composer-shadow:
+      0 .25rem 1.25rem color-mix(in srgb, #000 3.5%, transparent),
+      inset 0 0 0 1px var(--hairline);
+    --composer-shadow-hover:
+      0 .25rem 1.25rem color-mix(in srgb, #000 3.5%, transparent),
+      inset 0 0 0 1px var(--border-strong);
+    --composer-shadow-focus:
+      0 .25rem 1.25rem color-mix(in srgb, #000 7.5%, transparent),
+      inset 0 0 0 1px var(--border-strong);
+    --sidebar-text-primary: #f0efec;
+    --sidebar-text-secondary: #c3c2b7;
+    --sidebar-text-muted: #898781;
+    --sidebar-add-chip: var(--alpha-2);
+    --text-accent: #6da7ec;
+    --fill-field: var(--alpha-1);
+    /* 见 .dark 里同名那条的说明:辉光走 blue-600 60%,不跟 --bg-accent 翻。 */
+    --sidebar-focus-shadow:
+      inset 0 0 0 1px var(--focus-ring-bg),
+      0 0 0 1px var(--fill-accent),
+      0 0 6px 1px color-mix(in srgb, #184f95 60%, transparent);
+    --fill-primary: #ffffff;
+    --on-primary: #0b0b0b;
+    --fill-primary-hover: #e1e0d9;
+    --text-danger: #ec7e7e;
+    --border-danger: #641919;
+    --bg-danger: #3c0e0e;
+    --bg-success: #11260f;
+    --border-accent: #0d366b;
+    --bg-accent: #032042;
+    --tooltip-surface: var(--surface-3);
+    --tooltip-foreground: var(--text-primary);
+    --tooltip-shadow: 0 1px 2px rgb(0 0 0 / 12%), 0 2px 8px rgb(0 0 0 / 18%);
+    --tooltip-desc-shadow: 0 2px 4px 0 rgb(0 0 0 / 12%), 0 6px 16px 0 rgb(0 0 0 / 24%);
+    --shadow-near: rgb(0 0 0 / 12%);
+    --shadow-far: rgb(0 0 0 / 18%);
+    --gc-user-message: #2a4a6b;
+    --text-success: #0ca30c;
+    --border-success: #074506;
+    --text-warning: #db9300;
+    --border-warning: #512e00;
+    --bg-warning: #311a00;
+    --status-dot-strong: #f2f1ee;
+    --status-dot-soft: #636361;
+    --scrollbar: #6b6964;
+    /* 见 .dark 里同名那条:深色 0.5。 */
+    --dialog-overlay: rgba(0, 0, 0, 0.5);
+
+  /* 代码高亮的深色一份。语义与浅色逐条对应,见 :root 那边的说明。 */
+  --code-text: #eaecf0;
+  --code-punctuation: #d3d7de;
+  --code-keyword: #cc7bf4;
+  --code-function: #70b8ff;
+  --code-variable: #f7ab5f;
+  --code-string: #9be963;
+  --code-number: #5eeded;
+  --code-comment: #818898;
+  --code-property: #f47b85;
+  }
+}
+
+@theme inline {
+  --color-fill-brand: var(--fill-brand);
+  --color-gc-user-message: var(--gc-user-message);
+  /* ── 语义色四族 → Tailwind 类名 ───────────────────────────────────
+     四族同构,命名按"用哪个 utility"读:
+       text-<族>          文字        ← --text-*
+       bg/border-<族>-fill 实心填充    ← --fill-*
+       border-<族>-line   描边        ← --border-*
+       bg-<族>-subtle     芯片淡底     ← --bg-*
+       text-on-<族>       实心底上的前景 ← --on-*
+     accent 的 fill 另有 hover 档(bg-accent-fill-hover)。 */
+  --color-danger: var(--text-danger);
+  --color-danger-fill: var(--fill-danger);
+  --color-danger-fill-hover: var(--fill-danger-hover);
+  --color-danger-line: var(--border-danger);
+  --color-danger-subtle: var(--bg-danger);
+  --color-on-danger: var(--on-danger);
+
+  --color-warning: var(--text-warning);
+  --color-warning-fill: var(--fill-warning);
+  --color-warning-fill-hover: var(--fill-warning-hover);
+  --color-warning-line: var(--border-warning);
+  --color-warning-subtle: var(--bg-warning);
+  --color-on-warning: var(--on-warning);
+
+  --color-success: var(--text-success);
+  --color-success-fill: var(--fill-success);
+  --color-success-fill-hover: var(--fill-success-hover);
+  --color-success-line: var(--border-success);
+  --color-success-subtle: var(--bg-success);
+  --color-on-success: var(--on-success);
+
+  --color-accent: var(--text-accent);
+  --color-accent-line: var(--border-accent);
+  --color-accent-subtle: var(--bg-accent);
+  --color-scrollbar: var(--scrollbar);
+  --color-dialog-overlay: var(--dialog-overlay);
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-sidebar: var(--sidebar-background);
+  --color-sidebar-hover: var(--sidebar-hover);
+  --color-nav-active: var(--nav-active);
+  --color-skeleton: var(--skeleton-fill);
+  --color-sidebar-selected: var(--sidebar-selected);
+  --color-accent-fill-hover: var(--fill-accent-hover);
+  --color-sidebar-text-primary: var(--sidebar-text-primary);
+  --color-sidebar-text-secondary: var(--sidebar-text-secondary);
+  --color-sidebar-text-muted: var(--sidebar-text-muted);
+  --color-sidebar-add-chip: var(--sidebar-add-chip);
+  --color-accent-fill: var(--fill-accent);
+  --color-on-accent: var(--on-accent);
+  --color-on-overlay: var(--on-overlay);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-text-disabled: var(--text-disabled);
+  /* alpha 阶梯也暴露成颜色,组件里就能直接 bg-alpha-1 / border-alpha-2,
+     不必再写 bg-muted-foreground/5 这种"借另一个 token 的色再压透明度"。 */
+  --color-alpha-1: var(--alpha-1);
+  --color-alpha-2: var(--alpha-2);
+  --color-alpha-3: var(--alpha-3);
+  --color-alpha-4: var(--alpha-4);
+  --color-alpha-5: var(--alpha-5);
+  --color-alpha-6: var(--alpha-6);
+  --color-alpha-7: var(--alpha-7);
+  --color-alpha-8: var(--alpha-8);
+  --color-alpha-9: var(--alpha-9);
+  --color-border-strong: var(--border-strong);
+  --color-border-stronger: var(--border-stronger);
+  --color-fill-primary: var(--fill-primary);
+  --color-fill-primary-hover: var(--fill-primary-hover);
+  --color-on-primary: var(--on-primary);
+  --color-fill-secondary: var(--fill-secondary);
+  --color-fill-secondary-hover: var(--fill-secondary-hover);
+  --color-fill-field: var(--fill-field);
+  --color-sidebar-control-hover: var(--sidebar-control-hover);
+  --color-sidebar-menu-hover: var(--sidebar-menu-hover);
+  --color-hairline: var(--hairline);
+  --color-menu-surface: var(--menu-surface);
+  --color-menu-text-primary: var(--menu-text-primary);
+  --color-menu-text-muted: var(--menu-text-muted);
+  --color-menu-hover: var(--menu-hover);
+  --color-menu-accent: var(--menu-accent);
+  --color-menu-hairline: var(--menu-hairline);
+  --color-tooltip: var(--tooltip-surface);
+  --color-tooltip-foreground: var(--tooltip-foreground);
+  --shadow-tooltip: var(--tooltip-shadow);
+  --radius-tooltip: var(--tooltip-radius);
+  /* 字重刻度。Tailwind 默认是 500/600/700,这套可变字体的刻度实测是
+     500/580/600 —— semibold 和 bold 都比 Tailwind 轻一档。
+     以前只有 `.font-tool.font-semibold` 这类组合选择器在改,于是同一个
+     font-semibold 在带不带那个类的地方渲染出两种字重;定义在这里是全局的。 */
+  --font-weight-medium: 500;
+  --font-weight-semibold: 580;
+  --font-weight-bold: 600;
+  /* anthropic-sans/serif/mono 都不含 CJK 与 emoji 字形。字体回退是逐字符的,
+     所以在栈尾显式补上中文与 emoji 兜底:mac/Win 上 system-ui 已能接住中文,
+     但 Linux/Android 需要 Noto 才确定;emoji 一族不补就会掉到 last-resort。 */
+  --font-sans: 'anthropic-sans', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-display: 'anthropic-serif', system-ui, -apple-system, BlinkMacSystemFont, 'Anthropic Serif Fallback Georgia', 'Anthropic Serif Fallback Times', 'Anthropic Serif Fallback DejaVu', 'Anthropic Serif Fallback Noto', Georgia, "Arial Hebrew", "Noto Sans Hebrew", "Times New Roman", Times, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC", "Hiragino Sans", "Yu Gothic", Meiryo, "Noto Sans CJK JP", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR", serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-mono: 'anthropic-mono', 'SF Mono', ui-monospace, 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
+/* 按钮按压反馈。只有视觉表面缩放;内容
+   and the control's hit area remain stable. */
+.ui-control-squish {
+  --control-fill: var(--fill-secondary);
+  --control-fill-hover: var(--fill-secondary-hover);
+  --control-inset: 0px;
+  --control-shadow: var(--field-shadow);
+  --control-shadow-hover: var(--field-shadow-hover);
+  background: transparent;
+  box-shadow: none;
+  isolation: isolate;
+  position: relative;
+}
+
+/* ! 上面那句 position:relative 是给 ::before 那层填充当定位上下文用的,但它
+   会**悄悄吃掉**元素上的定位工具类:这条规则不在 @layer 里,而 Tailwind 的
+   .absolute 在 utilities 层 —— 不分层的规则永远赢过分层的,与选择器权重无关。
+   结果是 `ui-control-squish absolute top-2 right-2` 的按钮 position 仍是
+   relative,top/right 变成"相对静态位置的偏移",按钮往左上飘 8px 飘出容器
+   (JSON 面板的复制按钮就这么飘的)。这里把定位工具类显式赢回来。
+   absolute/fixed 自身就是定位上下文,::before 照常工作。 */
+.ui-control-squish.absolute { position: absolute; }
+.ui-control-squish.fixed { position: fixed; }
+.ui-control-squish.sticky { position: sticky; }
+
+.ui-control-squish::before {
+  background: var(--control-fill);
+  border-radius: inherit;
+  box-shadow: var(--control-shadow);
+  content: "";
+  inset: var(--control-inset);
+  pointer-events: none;
+  position: absolute;
+  transform-origin: 50%;
+  transition:
+    transform 450ms var(--control-spring),
+    background-color 60ms ease-out,
+    box-shadow 60ms ease-out;
+  z-index: -1;
+}
+
+/* 打开态与 hover 同底。
+   除了 [data-state="open"] 还要认 aria-expanded:触发器外面套一层
+   <TooltipTrigger asChild> 时,Radix 是"先写自己的属性、再展开传入的
+   props",外层 Tooltip 的 data-state 会盖掉内层菜单的,而 Tooltip 只有
+   closed/delayed-open/instant-open,永远不是 open —— 光靠 data-state
+   这些按钮的打开态就永远不亮。aria-expanded 没有第二个人写,穿得过去。
+   限定 [aria-haspopup] 是为了只认"能开弹框的触发器":分组折叠、
+   TaskSidebar 那类 disclosure 按钮同样有 aria-expanded,但它们不该在
+   展开期间一直挂着 hover 底色。 */
+.ui-control-squish:hover::before,
+.ui-control-squish[data-state="open"]::before,
+.ui-control-squish[aria-haspopup][aria-expanded="true"]::before {
+  background: var(--control-fill-hover);
+  box-shadow: var(--control-shadow-hover);
+}
+
+.ui-control-squish:active:not(:disabled)::before {
+  transform: scale(.975);
+  transition:
+    transform 60ms ease-out,
+    background-color 60ms ease-out,
+    box-shadow 60ms ease-out;
+}
+
+.ui-control-squish-primary {
+  --control-fill: var(--fill-primary);
+  --control-fill-hover: var(--fill-primary-hover);
+  --control-inset: .5px;
+  --control-shadow: none;
+  --control-shadow-hover: none;
+}
+
+.ui-control-squish-brand {
+  --control-fill: var(--fill-brand);
+  --control-fill-hover: var(--fill-brand-hover);
+  --control-inset: .5px;
+  --control-shadow: none;
+  --control-shadow-hover: none;
+}
+
+.ui-control-squish-ghost {
+  --control-fill: transparent;
+  --control-fill-hover: var(--fill-secondary-hover);
+  --control-shadow: none;
+  --control-shadow-hover: none;
+}
+
+/* secondary 底色但无描边 ring(输入框停止键)。! 同 -accent 的警告:
+   --control-shadow 不在 @layer 里,调用点 [--control-shadow:none] 赢不了基类,
+   只能走变体类。 */
+.ui-control-squish-flat {
+  --control-shadow: none;
+  --control-shadow-hover: none;
+}
+
+/* accent 实心,给"已选中"的 chip 用。底/字实测与上游同款 chip 逐值相同。
+   ! 必须做成变体类:.ui-control-squish 的 background 和 --control-fill 都不在
+   @layer 里,调用点写 `bg-*` 或 `[--control-fill:…]` 都赢不了它。 */
+.ui-control-squish-accent {
+  --control-fill: var(--bg-accent);
+  --control-fill-hover: var(--border-accent);
+  --control-shadow: none;
+  --control-shadow-hover: none;
+}
+
+/* 危险实心。hover 是**更亮**的一档红(#e34948),不是把 #d03b3b 压 90% 透明度
+   —— 后者在白底上会变浅变灰,读起来像"禁用"而不是"更危险"。 */
+.ui-control-squish-danger {
+  --control-fill: var(--fill-danger);
+  --control-fill-hover: var(--fill-danger-hover);
+  --control-inset: .5px;
+  --control-shadow: none;
+  --control-shadow-hover: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-control-squish::before,
+  .ui-control-squish:active:not(:disabled)::before {
+    transition: none;
+  }
+}
+
+/* 侧栏滚动区与上方固定头部的交接:顶部 12px 渐隐。
+   实测上游 `.dframe-nav-scroll[data-scrolled]` 就是这一条,连数值一起抄。
+
+   ! 必须挂在 `[data-scrolled]` 上,不能无条件加:滚动位置为 0 时列表第一行
+   本来就完整可见,加了遮罩等于凭空把它啃掉一截。data-scrolled 由
+   SidebarTabPanel 在 onScroll 里开关。
+
+   用 mask 而不是在上面叠一层同底色的渐变块:mask 不关心背后是什么颜色
+   (侧栏底色随主题变),也不需要处理 pointer-events。 */
+.sidebar-nav-scroll[data-scrolled] {
+  mask-image: linear-gradient(transparent 0, #000 12px);
+}
+
+/* 焦点环最里面那圈"底色"要跟**元素自己**的底色走(见 --focus-ring-bg)。
+   全站量下来只有选中态的侧栏行例外:它比页面底深一档(#edece8),不跟着换
+   就会在蓝环内侧露出一道浅缝 —— 实拍确认可见,其余各档差 2~3/255,看不出来。
+
+   写成选择器而不是在十来个调用点各加一个类:凡是用这档底色的行自动配套,
+   以后新增选中行不会漏。
+   `bg-sidebar-selected/60`(骨架屏)和 `data-[state=open]:bg-sidebar-selected`
+   生成的是**别的类名**,匹配不到这里 —— 前者本来就不该被当成实底,后者展开时
+   连带弹出菜单,焦点不在那颗按钮上。 */
+.bg-sidebar-selected {
+  --focus-ring-bg: var(--sidebar-selected);
+}
+
+/* 图标按钮按压回弹。数值抄 claude.ai 的 .cds-btn-squish;transition 必须整条声明,
+   拆开写会盖掉按钮自己的 Tailwind 过渡。 */
+.sidebar-icon-btn {
+  transition:
+    color 150ms,
+    background-color 150ms,
+    box-shadow 150ms,
+    transform 450ms linear(
+      0 0%, 0.2459 7.14286%, 0.6526 14.2857%, 0.9468 21.4286%, 1.0764 28.5714%,
+      1.0915 35.7143%, 1.0585 42.8571%, 1.0219 50%, 0.9993 57.1429%,
+      0.9914 64.2857%, 0.9921 71.4286%, 0.9957 78.5714%, 0.9988 85.7143%,
+      1.0004 92.8571%, 1 100%
+    );
+}
+
+.sidebar-icon-btn:active {
+  transform: scale(0.975);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-icon-btn:active {
+    transform: none;
+  }
+}
+
+/* Toast:从右下角**升起**,退场原地淡出并微缩(origin-bottom)。
+   ! 不能写 tailwindcss-animate 那套 `animate-in slide-in-from-bottom-*` ——
+   本仓没装那个插件,那些类名全是死类,原来的 `slide-in-from-right-full` 一直
+   没生效过,toast 其实是硬闪出来的。 */
+@keyframes toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes toast-exit {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(.85);
+  }
+}
+
+.ui-toast[data-state="open"] {
+  animation: toast-enter .3s cubic-bezier(.16, 1, .3, 1);
+}
+
+.ui-toast[data-state="closed"] {
+  animation: toast-exit .2s ease-out;
+}
+
+/* 手势拖动期间不要动画:动画会和手指位置打架 */
+.ui-toast[data-swipe="move"] {
+  animation: none;
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-toast[data-state="open"],
+  .ui-toast[data-state="closed"] {
+    animation: none;
+  }
+}
+
+@keyframes tooltip-enter {
+  from {
+    opacity: 0;
+    transform: scale(.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes tooltip-exit {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(.98);
+  }
+}
+
+.ui-tooltip {
+  transform-origin: var(--radix-tooltip-content-transform-origin);
+  overflow-wrap: anywhere;
+  will-change: opacity, transform;
+}
+
+/* 描述档:断词回到 break-word —— `anywhere` 会把 min-content 压到单字,
+   长描述于是贴着 max-width 的下限一路长高。 */
+.ui-tooltip[data-variant="description"] {
+  overflow-wrap: break-word;
+  text-wrap: pretty;
+  /* 只写标准写法,前缀交给 Lightning CSS 补 */
+  backdrop-filter: var(--tooltip-desc-blur);
+}
+
+.ui-tooltip[data-state="delayed-open"] {
+  animation: tooltip-enter var(--tooltip-duration) var(--tooltip-easing);
+}
+
+.ui-tooltip[data-state="instant-open"] {
+  animation: tooltip-enter 0ms var(--tooltip-easing);
+}
+
+.ui-tooltip[data-state="closed"] {
+  animation: tooltip-exit var(--tooltip-duration) var(--tooltip-easing);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-tooltip {
+    animation: none !important;
+  }
+}
+
+/* 滚动区顶/底的 28px 渐隐遮罩,scroll-driven animation 驱动,无 JS。
+
+   ! `--scroll-fade-active` 是能力探测开关(fill-mode: none):浏览器不支持
+   scroll 时间线时它落回 0,两段 fade 长度被乘成 0,遮罩自动失效。所以别给
+   它包 @supports,也别给这三个变量写非 0 的 initial-value。 */
+@property --scroll-fade-top-raw {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
+@property --scroll-fade-bottom-raw {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
+@property --scroll-fade-active {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
+@keyframes scroll-fade-top {
+  from { --scroll-fade-top-raw: 0px; }
+  to { --scroll-fade-top-raw: var(--scroll-fade-size); }
+}
+
+@keyframes scroll-fade-bottom {
+  from { --scroll-fade-bottom-raw: var(--scroll-fade-size); }
+  to { --scroll-fade-bottom-raw: 0px; }
+}
+
+@keyframes scroll-fade-active {
+  from, to { --scroll-fade-active: 1; }
+}
+
+@utility scroll-fade-y {
+  --scroll-fade-size: 28px;
+  --scroll-fade-top: calc(var(--scroll-fade-top-raw) * var(--scroll-fade-active));
+  --scroll-fade-bottom: calc(var(--scroll-fade-bottom-raw) * var(--scroll-fade-active));
+  /* 键盘滚动落点避开渐隐带 */
+  scroll-padding-block: var(--scroll-fade-size);
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #0000000d calc(var(--scroll-fade-top) * .15),
+    #00000026 calc(var(--scroll-fade-top) * .3),
+    #0000004d calc(var(--scroll-fade-top) * .45),
+    #00000080 calc(var(--scroll-fade-top) * .6),
+    #000000b3 calc(var(--scroll-fade-top) * .75),
+    #000000d9 calc(var(--scroll-fade-top) * .87),
+    #000 var(--scroll-fade-top),
+    #000 calc(100% - var(--scroll-fade-bottom)),
+    #000000d9 calc(100% - var(--scroll-fade-bottom) * .87),
+    #000000b3 calc(100% - var(--scroll-fade-bottom) * .75),
+    #00000080 calc(100% - var(--scroll-fade-bottom) * .6),
+    #0000004d calc(100% - var(--scroll-fade-bottom) * .45),
+    #00000026 calc(100% - var(--scroll-fade-bottom) * .3),
+    #0000000d calc(100% - var(--scroll-fade-bottom) * .15),
+    transparent
+  );
+  animation-name: scroll-fade-top, scroll-fade-bottom, scroll-fade-active;
+  animation-timing-function: linear;
+  animation-fill-mode: both, both, none;
+  animation-duration: auto;
+  animation-timeline: scroll(self);
+  animation-range:
+    0px var(--scroll-fade-size),
+    calc(100% - var(--scroll-fade-size)) 100%,
+    0px 101%;
+}
+
+body {
+  background: var(--surface-1);
+  /* 上一代的 --foreground 已废弃,兜底色跟着新的三档走。
+     换之前扫过 11 个页面:真正继承 body 颜色的可见文字是 0 处 —— 各处都由
+     自己的 text-* 显式指定,所以这一改在现有页面上是零视觉变化,只是把最后
+     一个指向废弃 token 的引用点摘掉。深色下 #ebe9e6 → #f0efec,同样跟阶梯。 */
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  height: 100dvh;
+  overflow: hidden;
+  /* 保留灰度抗锯齿,但留着
+     text-rendering and OpenType feature selection at their browser defaults. */
+  font-display: swap;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* The collapsed desktop opener occupies x=8..40. Keep the top-level Header
+   slot on the x=56 line, leaving 16px after the control. Context icons
+   and breadcrumb insets belong to the Header structure, not empty clearance. */
+@media (min-width: 768px) {
+  [data-app-shell][data-sidebar-collapsed="true"]
+    [data-sidebar-main]
+    .app-header-sidebar-clearance {
+    padding-inline-start: 56px;
+  }
+}
+
+/* 消息定位高亮动画 */
+@keyframes message-highlight {
+  0% { background-color: var(--bg-accent); }
+  100% { background-color: transparent; }
+}
+.highlight-message {
+  animation: message-highlight 2s ease-out;
+  border-radius: 0.75rem;
+}
+
+/* 移除页面级别的focus outline */
+*:focus {
+  outline: none;
+}
+
+/* 覆盖Prism.js的字体设置 */
+code[class*="language-"],
+pre[class*="language-"] {
+  font-family: var(--font-mono) !important;
+}
+
+/* Prism 代码高亮。色值全部走 --code-* token(见 :root),明暗各一套。
+   分组按 claude.ai 实测的**语义**,不是照 Prism 的 token 名平铺:
+   number 与 boolean/null 同档(青,不是红)、operator 归标点、参数与内建同档。 */
+.custom-code-highlight code,
+.custom-json-highlight code {
+  color: var(--code-text);
+}
+
+/* 标点单独一档,比正文略浅。上游把 `;` `->` 都算这档,Prism 里 `->` 归
+   operator,所以 operator 一并挂过来(js 的 `=>` 会因此拿到标点色而非
+   关键字色,是这套映射里唯一对不齐的一处)。 */
+.custom-code-highlight .token.punctuation,
+.custom-code-highlight .token.operator,
+.custom-json-highlight .token.punctuation,
+.custom-json-highlight .token.operator {
+  color: var(--code-punctuation);
+}
+
+.custom-code-highlight .token.keyword {
+  color: var(--code-keyword);
+}
+
+.custom-code-highlight .token.function {
+  color: var(--code-function);
+}
+
+/* 参数、变量引用(bash 的 $file)、内建类型、类名同一档 */
+.custom-code-highlight .token.parameter,
+.custom-code-highlight .token.variable,
+.custom-code-highlight .token.builtin,
+.custom-code-highlight .token.class-name,
+.custom-code-highlight .token.important {
+  color: var(--code-variable);
+}
+
+/* 字符串档:含 docstring、bash 的裸参数、diff 新增行 */
+.custom-code-highlight .token.string,
+.custom-code-highlight .token.attr-value,
+.custom-code-highlight .token.char,
+.custom-code-highlight .token.regex,
+.custom-code-highlight .token.inserted,
+.custom-json-highlight .token.string,
+.custom-json-highlight .token.attr-value {
+  color: var(--code-string);
+}
+
+/* number / boolean / null 同一档(青) —— 上游实测就是同色。
+   **必须排在 .token.keyword 之后**:Prism 给 null 同时打了 null 和 keyword
+   两个类,同特异性下写在前面会被 keyword 的紫色盖掉。 */
+.custom-code-highlight .token.number,
+.custom-code-highlight .token.boolean,
+.custom-code-highlight .token.null,
+.custom-code-highlight .token.constant,
+.custom-json-highlight .token.number,
+.custom-json-highlight .token.boolean,
+.custom-json-highlight .token.null {
+  color: var(--code-number);
+}
+
+/* JSON 的 key、XML 标签名、diff 删除行同一档 */
+.custom-code-highlight .token.property,
+.custom-code-highlight .token.attr-name,
+.custom-code-highlight .token.tag,
+.custom-code-highlight .token.deleted,
+.custom-json-highlight .token.property,
+.custom-json-highlight .token.attr-name {
+  color: var(--code-property);
+}
+
+.custom-code-highlight .token.comment,
+.custom-code-highlight .token.doctype,
+.custom-code-highlight .token.prolog,
+.custom-code-highlight .token.cdata {
+  color: var(--code-comment);
+}
+
+/* 代码选中文本样式 */
+.custom-code-highlight ::selection {
+  background-color: var(--fill-accent);
+  color: var(--on-accent);
+}
+
+/* 全局滚动条样式 - 统一滚动条外观 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar);
+  border-radius: 4px;
+  transition: background-color 0.2s ease;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(from var(--scrollbar) h s l / 0.6);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Standard Markdown 容器 - 只对特定元素添加 padding */
+.standard-markdown :is(p, blockquote, h1, h2, h3, h4, h5, h6) {
+  padding-left: 0.5rem;
+}
+
+.standard-markdown :is(p, blockquote, ul, ol, h1, h2, h3, h4, h5, h6) {
+  padding-right: 2rem;
+}
+
+/* GFM 脚注(remark-gfm 产出的结构固定:正文 <sup><a data-footnote-ref>,文末
+   <section data-footnotes> 内 sr-only <h3> + <ol> + <a data-footnote-backref>)。
+   数值全部按 claude.ai CDP 实测,明暗都验过。写在 CSS 而非组件里,是因为 hast
+   节点没有 parent 引用,ol/li 渲染器拿不到"我在脚注区内"这个上下文。 */
+
+/* 角标:12px + line-height 0 + relative/top,不是 vertical-align:super ——
+   实测 claude.ai 带角标的段落高度仍是 24px,换原生 super 会把那行顶高。
+   不用 :has(> a[data-footnote-ref]) 精确限定:本仓没有 :has 先例,而作者手写
+   的 <sup> 同样需要这套不撑行高的上标(claude.ai 的规则也是同范围)。 */
+.markdown-body sup {
+  font-size: 0.75rem;      /* 12px */
+  line-height: 0;
+  position: relative;
+  top: -6px;
+}
+
+/* 脚注区降一档字号 + 次要色,上方 12px,**没有**分隔线(实测 border-top 就是
+   0,别按"脚注该有条横线"的印象加)。区内 sr-only 的 <h3> 由 Tailwind 隐藏。 */
+.markdown-body section[data-footnotes] {
+  margin-top: 0.75rem;     /* 12px */
+  font-size: 0.875rem;     /* 14px */
+  color: var(--text-secondary);
+}
+
+/* 脚注列表实测是普通 block ol(不是本仓正文 ol 的 flex),缩进窄一档
+   (正文 pl-8=32px)。特异性 0,2,1 盖得住渲染器上的 Tailwind 类。 */
+.markdown-body section[data-footnotes] ol {
+  display: block;
+  padding-left: 1.75rem;   /* 28px */
+  gap: 0;
+}
+
+.markdown-body section[data-footnotes] li {
+  padding-left: 7px;
+}
+
+/* 单聊的几何与消息表面。
+   Scope everything to .chat-area: ChatMessages/TipTap/Markdown are also reused
+   by Knowledge, Project, and Group Chat surfaces that must keep their current
+   density and typography. */
+.chat-area {
+  /* --chat-content-max / --chat-feed-max 已上移到 :root(composer 共用) */
+  /* 用户气泡底 = 中性阶梯第一档。**只定义这一次**,不给深色单独指一个不透明
+     色:--alpha-1 派生自 --sidebar-text-primary,主题翻转靠基色自己走。
+     ! --chat-text-primary / --chat-response-font 已上移到 :root,见那边。 */
+  --chat-user-background: var(--alpha-1);
+}
+
+.chat-area .chat-feed {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--chat-content-max);
+  margin-inline: auto;
+}
+
+.chat-area .chat-user-bubble {
+  background-color: var(--chat-user-background);
+  color: var(--chat-text-primary);
+  font-family: var(--font-sans);
+}
+
+/* 用户消息正文。**不限定 .chat-area** —— 单聊(UserMessage)、群聊
+   (group-chat/message-item 的自己/他人两支)、分享页都挂这个类,同一种内容
+   要同一套排版。气泡底色不在这里:群聊有自己的 own/other 两档底,
+   .chat-user-bubble 仍限定在 .chat-area 内。 */
+.chat-user-content,
+.chat-user-content p {
+  color: var(--chat-text-primary);
+  font-size: 15px;
+  line-height: 20px;
+}
+
+/* AI 回复正文。**不限定 .chat-area** —— 单聊(TaskAssistantMessage)和群聊
+   (group-chat/message-item)都经 AssistantText 挂这个类,两处必须同一套排版。
+   全仓只有这两个产出点;Knowledge / Project 不走 AssistantText,不受影响。 */
+.chat-assistant-response {
+  color: var(--chat-text-primary);
+  font-family: var(--chat-response-font);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 24px;
+}
+
+.chat-composer-surface {
+  background-color: var(--chat-composer-background);
+  border-radius: var(--chat-composer-radius);
+  /* 整个白面都是"可以开始打字的地方" */
+  cursor: text;
+  /* 内边距必须在白面自己身上:没有 border/padding 就不成 BFC,子元素的上下
+     margin 会塌出白面(实测 114 → 94)。值见 --chat-composer-radius 的注释。 */
+  padding: 8px;
+}
+
+/* 输入区排版按 composer 表面定,不按所在页面定 —— 单聊/群聊共用。 */
+.chat-composer-surface .tiptap.ProseMirror {
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 22px;
+}
+
+/* 新页面输入框用界面字体 16/22(同 .chat-composer-surface);问候语走 serif。 */
+.task-welcome .tiptap.ProseMirror {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 22px;
+}
+
+/* composer placeholder 轮播的换入淡入 */
+@keyframes composer-hint-fade-in {
+  0% {
+    opacity: 0;
+  }
+}
+
+/* At desktop widths this is visually equivalent to an 808px outer
+   frame (20px inset) plus 768px feed (16px inset): 736px prose width. */
+@media (min-width: 768px) {
+  .chat-area .chat-feed {
+    padding-inline: 2.25rem;
+  }
+
+  .chat-composer-frame {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: var(--chat-content-max);
+    margin-inline: auto;
+    padding-inline: 1.25rem;
+  }
+
+  .chat-composer-width {
+    width: 100%;
+    max-width: var(--chat-feed-max);
+    margin-inline: auto;
+  }
+}
+
+/* 深色只需要翻转基色:--chat-user-background 派生自 --alpha-1、--alpha-1 又
+   派生自 --sidebar-text-primary,跟着主题自己走,不用在这里重指一次。
+   原来这里写的是 var(--accent)(#38342a,遗留暖棕、还是不透明的),和浅色
+   那档 5% 中性完全不是一个东西 —— 两个主题该用同一个 token。 */
+
+/* 🎯 Shimmer 动画 - 使用 CSS 动画替代 motion，避免被 React 重新渲染打断 */
+@keyframes shimmer {
+  0% {
+    background-position: 100% center;
+  }
+  100% {
+    background-position: 0% center;
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer var(--shimmer-duration, 2s) linear infinite;
+  will-change: background-position;
+}
+
+/* 侧栏会话行 status-dot:生成中的呼吸渐变 —— 不是透明度闪烁,而是实色
+   accent 与偏背景的 muted 色之间平滑往返(点始终实心,只有颜色深浅在变,
+   运行中的呼吸点)。reduced-motion 下退回 bg 类的常亮实色。 */
+@keyframes status-dot-breathe {
+  0%, 100% {
+    background-color: var(--status-dot-strong);
+  }
+  50% {
+    background-color: var(--status-dot-soft);
+  }
+}
+
+.animate-status-dot-breathe {
+  animation: status-dot-breathe 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-status-dot-breathe {
+    animation: none;
+  }
+}
+
+/* 行标题右缘渐隐裁剪(取代省略号)。
+   标题 span 须占满剩余行宽(flex-1 min-w-0),短标题够不到
+   渐隐区、不受影响。 */
+.fade-clip-end {
+  -webkit-mask-image: linear-gradient(to right, #000 85%, transparent 99%);
+  mask-image: linear-gradient(to right, #000 85%, transparent 99%);
+}
+
+/* 行尾操作按钮浮现时(行 hover / 键盘聚焦 / 菜单打开 / 触屏常显),
+   渐隐区加宽提前淡出,给 absolute 浮现的按钮让位 —— 平时标题用满整行,
+   只有按钮真出现才"遮挡"(同款行为)。
+   依赖 Tailwind 的 .group 类(行容器);.fade-clip-wide 由菜单打开态附加。 */
+.group:where(:hover, :focus-within) .fade-clip-end,
+.fade-clip-end.fade-clip-wide {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 44px), transparent calc(100% - 20px));
+  mask-image: linear-gradient(to right, #000 calc(100% - 44px), transparent calc(100% - 20px));
+}
+
+@media (hover: none) {
+  /* 触屏无 hover,操作按钮常显 → 渐隐常宽 */
+  .fade-clip-end {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 44px), transparent calc(100% - 20px));
+    mask-image: linear-gradient(to right, #000 calc(100% - 44px), transparent calc(100% - 20px));
+  }
+}
+
+/* 流式新文本入场淡入(群聊 AI 消息流式期最后一段);此前引用 fadeIn 却未定义 → 静默 no-op */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 单聊/群聊流式"尾部渐显":rehype-stream-pop 切出的
+   token span 新挂载时用较长的纯 opacity 渐入(复用上方 fadeIn 关键帧)——
+   淡入时长远大于攒批间隔,流式期间尾部几批文字同时处于不同透明度阶段,
+   视觉上就是最新文字淡淡浮现、逐渐凝实的一条渐隐尾迹。已挂载的 span 被
+   React 原地复用,动画不重放。纯 opacity 无 transform → span 保持 inline,
+   折行/长串断行行为与普通文本完全一致。
+   时长由 StreamPopMarkdown 注入 --stream-pop-duration(TS 侧 FADE_MS 是
+   单一事实源,与攒批间隔的比例不变量写在那里);这里只留 fallback。 */
+.stream-pop {
+  animation: fadeIn var(--stream-pop-duration, 0.8s) ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .stream-pop {
+    animation: none;
+  }
+}
+
+/* 🎯 渐变流动动画 - 用于按钮从上到下的流动效果 */
+@keyframes gradient-flow {
+  0% {
+    background-position: 0% 0%;
+  }
+  100% {
+    background-position: 0% 100%;
+  }
+}
+
+/* Context-usage ring: heartbeat fired once on each AI-reply token update. */
+/* 输入框上方通知卡的入场,同上游 cds-reveal-in。位移必须小(4px):数据 ~230ms
+   才到,位移一大每进一次页面就"顶"一下。 */
+@keyframes composer-notice-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes ring-pulse-once {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.12); }
+}
+.animate-ring-pulse {
+  animation: ring-pulse-once 300ms ease-out;
+}
+
+/* Breathing once past the attention threshold. Opacity-led with a
+   touch of scale — calm rhythm, not alarmed. */
+@keyframes ring-breathe {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.72; transform: scale(1.02); }
+}
+.animate-ring-breathe {
+  animation: ring-breathe 2.6s ease-in-out infinite;
+}
+
+/* Halo — one-shot when the ring crosses into warning/critical tier. */
+@keyframes ring-halo {
+  0%   { transform: scale(1); opacity: 0.45; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+.animate-ring-halo {
+  animation: ring-halo 700ms ease-out forwards;
+}
+
+/* 移动端:FilesSidebar 是 fixed 覆盖,聊天区不让位 */
+@media (max-width: 767px) {
+  /* ChatArea - 移动端始终 100% 宽度（FilesSidebar 是 fixed 覆盖的） */
+  .chat-area {
+    width: 100% !important;
+    min-width: 100% !important;
+  }
+}
+
+/* 搜索结果命中高亮 - 仅作用在 .search-highlight 容器内的 <mark> 标签
+   避免影响业务里其它语义性 mark 用法。
+   复用 accent 配色体系: 命中文字加重显示, 背景用淡填充一档,
+   亮色/暗色都通过 token 自动切换。 */
+.search-highlight mark {
+  background: var(--bg-accent);
+  color: var(--text-accent);
+  padding: 0 1px;
+  border-radius: 2px;
+  font-weight: inherit;
+}
+
+/* === Maka desktop additions === */
+/* Everything below this line is Maka's, not the reference design system's.
+ * Each rule exists because the Electron main process or an automated gate
+ * requires it (contract doc §4); nothing here restyles a ported component. */
+
+:root {
+  /* Must equal main's TITLEBAR_OVERLAY_HEIGHT (main-window.ts). The window is
+     frameless with a native overlay; this is the strip the app must leave. */
+  --h-titlebar: 36px;
+
+  /* The always-dark console surface. It pairs with `--on-overlay` (white in
+     both themes), so it cannot be a surface from the light/dark ladder. The
+     reference design writes the value inline in `ui/Console.tsx` as
+     `bg-[#2e2e2b]`, which the colour lint in
+     `scripts/check-renderer-architecture.mjs` forbids under `components/**` —
+     same colour, declared once, where a colour is allowed to live. */
+  --console-surface: #2e2e2b;
+}
+
+/* main samples the *painted* `<html>` background through a 1x1 canvas
+   (`paintedBackgroundToHex` in lib/theme.ts) and feeds it to
+   `setTitleBarOverlayTheme`, so `<html>` must paint an opaque colour that
+   follows the theme — the reference design paints `body` only. `color-scheme`
+   is declared on both branches for the same reason it is set inline before the
+   first paint: native scrollbars and form controls must not resolve against
+   the OS preference when the user has chosen the other mode. */
+html {
+  background-color: var(--surface-1);
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+/* The root element every main-process DOM probe looks for
+   (`main-window.ts` diagnostics, `scripts/desktop-real-window-smoke.mjs`).
+   `width: 100%` is Maka's: `index.html`'s preload skeleton centres `#root`
+   with flexbox, and a flex item with no width would shrink to its content. */
+.appFrame {
+  width: 100%;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The one and only `-webkit-app-region: drag` surface in the tree. Anything
+   interactive inside it must opt back out with `.maka-no-drag`. */
+.maka-titlebar-drag {
+  -webkit-app-region: drag;
+  height: var(--h-titlebar);
+}
+
+.maka-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Justified: e2e/accessibility override. The fixture sets this attribute
+   (`lib/fixture.ts`) so a reduced-motion variant is reachable without
+   depending on the host OS accessibility setting; `@maka/ui`
+   `streaming-presentation.ts` reads the same attribute from script. */
+[data-maka-reduced-motion="true"] *,
+[data-maka-reduced-motion="true"] *::before,
+[data-maka-reduced-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
 }

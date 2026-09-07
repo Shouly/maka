@@ -20,36 +20,53 @@
 # Renderer (`apps/desktop/src/renderer`)
 
 **Status: mid-rewrite.** The Astryx-based renderer was removed in Phase 0a of
-the enterprise renderer rewrite. What lives here now is the skeleton the rest of
-the phases build on; the plan of record is
+the enterprise renderer rewrite and Phase 0b laid the design system down in its
+place. The plan of record is
 [`docs/enterprise/frontend-rewrite-plan.md`](../../../../docs/enterprise/frontend-rewrite-plan.md),
 with the contract the new UI must program against in
-[`docs/enterprise/research/maka-renderer-contract.md`](../../../../docs/enterprise/research/maka-renderer-contract.md)
+[`maka-renderer-contract.md`](../../../../docs/enterprise/research/maka-renderer-contract.md),
+the design system it reproduces in
+[`relx-frontend-inventory.md`](../../../../docs/enterprise/research/relx-frontend-inventory.md),
 and the feature inventory it must not lose in
 [`maka-renderer-feature-inventory.md`](../../../../docs/enterprise/research/maka-renderer-feature-inventory.md).
 
-## What is here today
+## Layout
+
+The tree is plan §5. Phases 1–5 fill in the empty rooms; nothing here moves.
 
 | Path | What it is |
 | --- | --- |
-| `index.html` | The pinned entry document. Three `<meta>` (charset, viewport, exact CSP), one `<script type="module" src="/main.tsx">`, and the inline `.maka-preload` skeleton. `scripts/vite-renderer-entry-contract.ts` fails the build on any other shape. |
-| `main.tsx` | Phase 0a placeholder. Mounts a `.appFrame` root, sets `colorScheme` from `prefers-color-scheme`, and calls `window.maka.appWindow.notifyRendererReady()` inside two nested `requestAnimationFrame`s so the main process reveals the window. Phase 0b replaces it with the real bootstrap. |
-| `styles/globals.css` | Phase 0a placeholder: `@import "tailwindcss"` plus two opaque body colours. Phase 0b replaces it with the relx token file (`@theme inline`, fonts, utilities, the Maka additions in plan §2.6). |
-| `lib/ported/` | Pure and portable modules carried over from the old renderer — transcript range store, live-turn snapshot, session health/settlement, workbar and session-rail layout, theme and titlebar sync, brand marks, copy helpers. Phase 1 re-homes them into `bridge/`, `store/` and `lib/`; until then they are the only renderer code with real behaviour. |
-| `locales/` | The 28 typed `*-copy.ts` catalogs (`UiCatalog` shape, zh-CN / zh-TW / en). Kept verbatim; `scripts/check-locale-hygiene.mjs` and the copy-catalog validator in `check-renderer-architecture.mjs` gate them. |
-| `assets/` | `fonts/anthropic/*.woff2` and the provider brand SVGs. |
+| `index.html` | The pinned entry document. Three `<meta>` (charset, viewport, exact CSP), one `<script type="module" src="/main.tsx">`, and the inline `.maka-preload` skeleton in the design system's surface-1 colours. `scripts/vite-renderer-entry-contract.ts` fails the build on any other shape. |
+| `main.tsx` | Bootstrap. Cached theme + font size, the e2e fixture's document state and the UI locale, all before `createRoot`; `notifyRendererReady` after, inside two nested frames, so main reveals the window. |
+| `app.tsx` | Providers (locale, tooltip, toaster), the error boundary, the `.appFrame` root and the one draggable titlebar strip. |
+| `styles/globals.css` | The whole palette. Copied from the reference design system (`@theme inline`, the 0.5px hairline utilities, fonts, motion, Prism roles) with the relx-server-only blocks removed, plus a delimited *Maka desktop additions* block for what the main process requires. There is no `tailwind.config`: this file is the configuration. |
+| `bridge/` | The only modules allowed to name `window.maka`. Typed, optional-chained wrappers; `check-renderer-architecture.mjs` enforces the boundary. |
+| `components/ui/` | The ported design-system primitives — button, dialog, dropdown-menu, popover, select, switch, scroll-area, toast, tooltip, fields, skeletons, shimmer, the markdown/code/diff/json renderers, and the class-string modules. |
+| `components/icons/` | `Anthropicon.tsx` (the icon font is the icon system — no icon library) and the wordmark. |
+| `components/layout/`, `components/dev/` | `MainHeader` geometry; the temporary design smoke page Phase 2 replaces. |
+| `lib/` | `cn`, `theme.ts` (light/dark/auto, titlebar sampling and modal dim), `fixture.ts`, the markdown pipeline helpers, and `ported/` — pure modules carried over from the old renderer that Phase 1 re-homes. |
+| `store/` | Zustand stores. Only the toast store exists so far. |
+| `locales/` | The 28 typed `*-copy.ts` catalogs (`UiCatalog` shape, zh-CN / zh-TW / en). |
+| `assets/` | `fonts/anthropic/*.woff2` (7 files, Anthropicons included) and the provider brand SVGs. |
 | `public/THIRD_PARTY_LICENSES.txt` | Byte-compared against the packaged copy by `build:renderer`; regenerate with `npm run generate:third-party-notices`. |
 | `computer-use-overlay/engine/` | Not renderer UI. `src/overlay/cursor-overlay.ts` and `src/main/computer-use/` import this engine, so it stays at this path. |
 | `maka-tokens.css`, `astryx-theme/maka.css` | Also not renderer UI: `scripts/build-cursor-overlay.mjs` slices their token prefixes into `dist/overlay/browser-dialog-design-tokens.css`, which `src/main/browser-message-box.ts` loads. They leave when that seam does. |
 
 ## Rules that outlive the rewrite
 
-- `window.maka` is reachable only from `src/renderer/bridge/` (Phase 1) and
-  `main.tsx`. `check-renderer-architecture.mjs` enforces it; the files still
-  carrying the old access are listed in `renderer-architecture.json` under
+- `window.maka` is reachable only from `src/renderer/bridge/` and `main.tsx`.
+  `check-renderer-architecture.mjs` enforces it; the files still carrying the
+  old access are listed in `renderer-architecture.json` under
   `windowMakaPortedDebt` and that list may only shrink.
-- No `electron` and no Node builtins anywhere in the renderer.
-- Every user-visible string goes through a `UiCatalog` with zh-CN, zh-TW and en.
+- Colours are named, never written. Under `components/**` and in `app.tsx` the
+  architecture check rejects Tailwind arbitrary colour values (`bg-[#…]`) and
+  raw colour literals in inline styles and class-string modules; use a
+  semantic class from `@theme inline`, or `bg-[var(--token)]` for a token that
+  has no utility. `components/icons/**` (brand marks) and `components/dev/**`
+  are exempt.
+- No `electron` and no Node builtins anywhere in the renderer. No `next/*`.
+- Every user-visible string goes through a `UiCatalog` with zh-CN, zh-TW and
+  en. The one exception is `components/dev/`, which Phase 2 deletes.
 - Every source file carries the ASF header.
 - The fixed main-process contracts: `.appFrame`, `.maka-error-surface`,
   `notifyRendererReady`, `data-maka-file-drop-target`,

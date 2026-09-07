@@ -1,14 +1,77 @@
 {
   "version": 1,
   "legacyRendererFiles": [
+    "src/renderer/app.tsx",
+    "src/renderer/bridge/app-window.ts",
+    "src/renderer/bridge/diagnostics.ts",
+    "src/renderer/bridge/e2e-fixture.ts",
+    "src/renderer/components/ErrorBoundary.tsx",
+    "src/renderer/components/dev/DesignSmoke.tsx",
+    "src/renderer/components/icons/Anthropicon.tsx",
+    "src/renderer/components/icons/RelxLogo.tsx",
+    "src/renderer/components/icons/index.ts",
+    "src/renderer/components/layout/MainHeader.tsx",
+    "src/renderer/components/ui/CodeRenderer.tsx",
+    "src/renderer/components/ui/Console.tsx",
+    "src/renderer/components/ui/DiffRenderer.tsx",
+    "src/renderer/components/ui/JsonHighlight.tsx",
+    "src/renderer/components/ui/LoadingSpinner.tsx",
+    "src/renderer/components/ui/Markdown.tsx",
+    "src/renderer/components/ui/StreamPopMarkdown.tsx",
+    "src/renderer/components/ui/avatar.tsx",
+    "src/renderer/components/ui/button.tsx",
+    "src/renderer/components/ui/card-surface.ts",
+    "src/renderer/components/ui/chat-skeleton.tsx",
+    "src/renderer/components/ui/chats-list-skeleton.tsx",
+    "src/renderer/components/ui/checkbox-box.ts",
+    "src/renderer/components/ui/confirm-dialog.tsx",
+    "src/renderer/components/ui/content-well.ts",
+    "src/renderer/components/ui/count-badge.ts",
+    "src/renderer/components/ui/dialog.tsx",
+    "src/renderer/components/ui/dropdown-menu.tsx",
+    "src/renderer/components/ui/field-surface.ts",
+    "src/renderer/components/ui/input.tsx",
+    "src/renderer/components/ui/label.tsx",
+    "src/renderer/components/ui/list-toolbar.ts",
+    "src/renderer/components/ui/menu-variants.ts",
+    "src/renderer/components/ui/pane-resizer.tsx",
+    "src/renderer/components/ui/popover.tsx",
+    "src/renderer/components/ui/projects-list-skeleton.tsx",
+    "src/renderer/components/ui/right-pane-shell.tsx",
+    "src/renderer/components/ui/scroll-area.tsx",
+    "src/renderer/components/ui/segmented-control.tsx",
+    "src/renderer/components/ui/select.tsx",
+    "src/renderer/components/ui/shimmer-title.tsx",
+    "src/renderer/components/ui/sidebar-tooltip.tsx",
+    "src/renderer/components/ui/skeleton.tsx",
+    "src/renderer/components/ui/sort-select.tsx",
+    "src/renderer/components/ui/split-button.tsx",
+    "src/renderer/components/ui/status-chip.ts",
+    "src/renderer/components/ui/switch.tsx",
+    "src/renderer/components/ui/text-shimmer.tsx",
+    "src/renderer/components/ui/textarea.tsx",
+    "src/renderer/components/ui/toast.tsx",
+    "src/renderer/components/ui/toaster.tsx",
+    "src/renderer/components/ui/tooltip.tsx",
+    "src/renderer/components/ui/user-avatar.tsx",
     "src/renderer/computer-use-overlay/engine/cursor-candidate-grid.ts",
     "src/renderer/computer-use-overlay/engine/cursor-engine.ts",
     "src/renderer/computer-use-overlay/engine/palette.ts",
-    "src/renderer/lib/ported/app-shell-e2e-fixture.ts",
+    "src/renderer/lib/avatar-warm-palette.ts",
+    "src/renderer/lib/cn.ts",
+    "src/renderer/lib/composer-surface.ts",
+    "src/renderer/lib/fixture.ts",
+    "src/renderer/lib/markdown/color-utils.tsx",
+    "src/renderer/lib/markdown/hast-node.ts",
+    "src/renderer/lib/markdown/highlight.ts",
+    "src/renderer/lib/markdown/inline-tokens.tsx",
+    "src/renderer/lib/markdown/normalize-math.ts",
+    "src/renderer/lib/markdown/rehype-stream-pop.ts",
+    "src/renderer/lib/markdown/rehype-strip-break-newlines.ts",
+    "src/renderer/lib/markdown/remark-inline-math.ts",
     "src/renderer/lib/ported/attachment-preflight.ts",
     "src/renderer/lib/ported/branch-banner.ts",
     "src/renderer/lib/ported/browser-storage.ts",
-    "src/renderer/lib/ported/cached-theme-bootstrap.ts",
     "src/renderer/lib/ported/composer-attachments.ts",
     "src/renderer/lib/ported/connection-error-cleaner.ts",
     "src/renderer/lib/ported/derive-turn-lineage-badges.ts",
@@ -47,7 +110,6 @@
     "src/renderer/lib/ported/side-chat-command.ts",
     "src/renderer/lib/ported/stale-sessions.ts",
     "src/renderer/lib/ported/task-readiness-notice.ts",
-    "src/renderer/lib/ported/theme.ts",
     "src/renderer/lib/ported/titlebar-dim-color.ts",
     "src/renderer/lib/ported/titlebar-modal-sync.ts",
     "src/renderer/lib/ported/transcript-reading-position.ts",
@@ -60,6 +122,7 @@
     "src/renderer/lib/ported/workbar-tabs.ts",
     "src/renderer/lib/ported/workbar-tool-definitions.ts",
     "src/renderer/lib/ported/workspace-readiness-recovery.ts",
+    "src/renderer/lib/theme.ts",
     "src/renderer/locales/agent-graph-copy.ts",
     "src/renderer/locales/artifact-copy.ts",
     "src/renderer/locales/browser-copy.ts",
@@ -88,7 +151,8 @@
     "src/renderer/locales/shell-copy.ts",
     "src/renderer/locales/shell-remaining-copy.ts",
     "src/renderer/locales/task-readiness-copy.ts",
-    "src/renderer/main.tsx"
+    "src/renderer/main.tsx",
+    "src/renderer/store/toast-store.ts"
   ],
   "legacyGrowthDirectories": [
     "src/renderer/bridge",
@@ -108,31 +172,127 @@
   },
   "rootDebt": {
     "src/renderer/main.tsx": {
-      "importDeclarations": 3,
-      "bridgePaths": {
-        "window.maka.appWindow.notifyRendererReady": 1
-      },
+      "importDeclarations": 9,
+      "bridgePaths": {},
       "environmentCapabilities": {
-        "document.documentElement.classList.toggle": 1,
-        "document.documentElement.style.colorScheme": 1,
         "document.getElementById": 1,
-        "requestAnimationFrame": 2,
-        "window.matchMedia": 2
+        "requestAnimationFrame": 2
       },
       "hookCalls": {},
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "./app.js": 1,
+        "./bridge/app-window.js": 1,
+        "./lib/fixture.js": 1,
+        "./lib/ported/use-system-ui-locale.js": 1,
+        "./lib/theme.js": 1,
         "./styles/globals.css": 1,
+        "@maka/ui": 1,
         "react": 1,
         "react-dom/client": 1
       },
-      "importSpecifiers": 2,
-      "nonTriviaTokens": 194
+      "importSpecifiers": 10,
+      "nonTriviaTokens": 245
     }
   },
-  "rootDebtClosure": {},
+  "rootDebtClosure": {
+    "src/preload/diagnostics-contract.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/preload/external-session-catalog.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../shared/runtime-host-identity.js": 1
+      }
+    },
+    "src/preload/external-session-import-result.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/preload/runtime-host-renderer-operations.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/preload/transcript-contract.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/shared/desktop-connection-snapshot.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/shared/desktop-session-projection.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./runtime-host-identity.js": 1
+      }
+    },
+    "src/shared/goal-arm.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/shared/runtime-host-identity.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/shared/work-board-ipc.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    }
+  },
   "ownership": [
     {
       "capability": "renderer-bootstrap-entry",
@@ -143,15 +303,14 @@
     }
   ],
   "windowMakaPortedDebt": [
-    "src/renderer/lib/ported/app-shell-e2e-fixture.ts",
-    "src/renderer/lib/ported/session-message-settlement.ts",
-    "src/renderer/lib/ported/theme.ts"
+    "src/renderer/lib/ported/session-message-settlement.ts"
   ],
   "rewriteBaseline": {
-    "phase": "0a",
+    "phase": "0b",
     "plan": "docs/enterprise/frontend-rewrite-plan.md",
-    "note": "The Astryx renderer was deleted wholesale; the pre-rewrite ledger describes files that no longer exist. Phase 6 removes this field and the monotonic ratchet resumes at full strength.",
+    "note": "The Astryx renderer was deleted wholesale and the new tree is being written in its place; the pre-rewrite ledger describes files that no longer exist. While this field is present, files the rewrite authors (the plan §5 directories, plus the roots named in resetPaths) are not treated as drift into the legacy zone, and the entry's transitive closure stops at them. Phase 6 removes this field and the monotonic ratchet resumes at full strength against the tree the rewrite produced.",
     "resetPaths": [
+      "src/renderer/app.tsx",
       "src/renderer/main.tsx"
     ]
   }

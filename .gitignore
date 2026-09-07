@@ -48,3 +48,6 @@ release/asf/
 
 # Astro type generation
 .astro
+
+# Launch screenshots taken during the enterprise renderer rewrite.
+.maka-shots/enterprise/

@@ -1693,6 +1693,29 @@ function isAllowedLegacyGrowthPath(config, path) {
   return config.legacyGrowthDirectories.some((directory) => path.startsWith(`${directory}/`));
 }
 
+/**
+ * A path the enterprise renderer rewrite is authoring from scratch: either
+ * inside one of the directories the new tree declares (plan §5) or named
+ * outright in `rewriteBaseline.resetPaths`, which is how a root-level file
+ * like `app.tsx` — a directory prefix cannot describe it — gets in.
+ *
+ * The rewrite deletes a renderer and writes another one in its place, so the
+ * usual reading of a new file ("drift into the legacy zone") is wrong for the
+ * duration: there is nothing to drift from. The relaxation is scoped by the
+ * presence of `rewriteBaseline`, which Phase 6 removes; the ratchet then
+ * resumes at full strength against the tree the rewrite produced.
+ */
+function isRewriteResetPath(config, path) {
+  const rewriteBaseline = rewriteBaselineOf(config);
+  if (!rewriteBaseline) return false;
+  return Array.isArray(rewriteBaseline.resetPaths) && rewriteBaseline.resetPaths.includes(path);
+}
+
+function isRewriteAuthoredPath(config, path) {
+  if (!rewriteBaselineOf(config)) return false;
+  return isAllowedLegacyGrowthPath(config, path) || isRewriteResetPath(config, path);
+}
+
 function capabilityDebtMetrics(analysis) {
   return {
     bridgePaths: analysis.bridgePaths,
@@ -2261,6 +2284,136 @@ function validateDependencies({
   }
 }
 
+/**
+ * The colour rule (rewrite plan §2.11).
+ *
+ * `styles/globals.css` is the whole palette: `@theme inline` turns every token
+ * into a Tailwind class, and light/dark are two synchronized declarations of
+ * the same names. A component that writes a colour instead of naming one is
+ * therefore not "a slightly different blue" — it is a colour that exists in
+ * exactly one theme, cannot be re-themed, and will not move when the palette
+ * does. The two forms that do this are Tailwind's arbitrary-value escape
+ * hatch (`bg-[#2e2e2b]`) and a literal in an inline `style`, so those are what
+ * this forbids, under `components/**` and in `app.tsx`.
+ *
+ * `bg-[var(--token)]` stays legal: it names a token, it just names one that
+ * `@theme inline` does not expose as a utility. That is the supported way to
+ * reach a raw custom property, and the reference design system uses it
+ * throughout (`shadow-[var(--pane-shadow)]`).
+ *
+ * Two directories are exempt. `components/icons/**` carries brand marks, whose
+ * colours are the brand's and not ours to re-theme. `components/dev/**` is the
+ * temporary design smoke page.
+ */
+const COLOUR_LINT_FILES = ['src/renderer/app.tsx'];
+const COLOUR_LINT_DIRECTORIES = ['src/renderer/components/'];
+const COLOUR_LINT_EXEMPT_DIRECTORIES = [
+  'src/renderer/components/dev/',
+  'src/renderer/components/icons/',
+];
+const TAILWIND_ARBITRARY_COLOUR =
+  /\b(?:bg|text|border|ring|fill|stroke|shadow|from|to|via|outline|decoration|accent|caret)-\[(?:#|rgb|hsl|oklch|color-mix)/gu;
+const RAW_COLOUR_LITERAL = /#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(|oklch\(/gu;
+
+function isColourLintPath(path) {
+  if (COLOUR_LINT_EXEMPT_DIRECTORIES.some((directory) => path.startsWith(directory))) return false;
+  return (
+    COLOUR_LINT_FILES.includes(path) ||
+    COLOUR_LINT_DIRECTORIES.some((directory) => path.startsWith(directory))
+  );
+}
+
+/**
+ * The source with every comment blanked to spaces, indices preserved.
+ *
+ * Comments are where the reference design system records the measured values
+ * it derived a token from ("原来写死 #a0a1a7"), and a rule that reads those as
+ * violations would push exactly the wrong edit: delete the rationale, keep the
+ * colour. Babel is already parsing this file, so the comment ranges are exact
+ * — no hand-rolled scanner that mistakes a URL in a string for a comment.
+ */
+function sourceWithoutComments(source, file) {
+  let ast;
+  try {
+    ast = parse(source, {
+      createImportExpressions: true,
+      errorRecovery: true,
+      plugins: PARSER_PLUGINS,
+      sourceFilename: file,
+      sourceType: 'module',
+    });
+  } catch {
+    return source;
+  }
+  const characters = source.split('');
+  for (const comment of ast.comments ?? []) {
+    for (let index = comment.start; index < comment.end; index += 1) {
+      if (characters[index] !== '\n') characters[index] = ' ';
+    }
+  }
+  return characters.join('');
+}
+
+/** The `style={{ … }}` regions of a source, as `[start, end)` index pairs. */
+function inlineStyleRegions(source) {
+  const regions = [];
+  const opener = /style=\{\{/gu;
+  let match;
+  while ((match = opener.exec(source)) !== null) {
+    let depth = 0;
+    let index = match.index + 'style={'.length;
+    for (; index < source.length; index += 1) {
+      if (source[index] === '{') depth += 1;
+      else if (source[index] === '}') {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+    }
+    regions.push([match.index, Math.min(index + 1, source.length)]);
+    opener.lastIndex = Math.min(index + 1, source.length);
+  }
+  return regions;
+}
+
+function lineOf(source, index) {
+  let line = 1;
+  for (let cursor = 0; cursor < index; cursor += 1) {
+    if (source[cursor] === '\n') line += 1;
+  }
+  return line;
+}
+
+function validateComponentColours({ fileRelative, source, violations }) {
+  if (!isColourLintPath(fileRelative)) return;
+  const scannable = sourceWithoutComments(source, fileRelative);
+
+  TAILWIND_ARBITRARY_COLOUR.lastIndex = 0;
+  let match;
+  while ((match = TAILWIND_ARBITRARY_COLOUR.exec(scannable)) !== null) {
+    violations.push(
+      `${fileRelative}:${lineOf(scannable, match.index)}: arbitrary Tailwind colour value ${match[0]}…]; name a semantic class from styles/globals.css @theme inline, or a token with bg-[var(--token)]`,
+    );
+  }
+
+  // A `.ts` under components/ is a class-string module: it is all class names,
+  // so the whole file is scanned. A `.tsx` is scanned inside `style={{ … }}`,
+  // the one place a component can smuggle a colour past the class names.
+  const regions = DECLARATION_FILE.test(fileRelative)
+    ? []
+    : /\.tsx$/u.test(fileRelative)
+      ? inlineStyleRegions(scannable)
+      : [[0, scannable.length]];
+  for (const [start, end] of regions) {
+    const region = scannable.slice(start, end);
+    RAW_COLOUR_LITERAL.lastIndex = 0;
+    while ((match = RAW_COLOUR_LITERAL.exec(region)) !== null) {
+      violations.push(
+        `${fileRelative}:${lineOf(scannable, start + match.index)}: raw colour literal ${match[0]}; use a design token from styles/globals.css`,
+      );
+    }
+  }
+}
+
 function validateStrictZone({ fileRelative, analysis, violations }) {
   const zone = zoneFor(fileRelative);
   if (['application', 'bootstrap', 'composition', 'feature', 'shell'].includes(zone.kind)) {
@@ -2397,7 +2550,12 @@ function validateLegacyLedger(desktopRoot, config, violations) {
   const appShellDebtPaths = new Set([...expectedFiles, ...expectedClosure]);
   const rootDebtPaths = Object.keys(config.rootDebt).sort();
   const actualRootClosure = collectRootDependencyClosure(desktopRoot, rootDebtPaths, violations, 'renderer root')
-    .filter((path) => !appShellDebtPaths.has(path));
+    .filter((path) => !appShellDebtPaths.has(path))
+    // The entry now reaches the whole new tree, and pinning per-file capability
+    // counts on files that are still being written would ratchet the rewrite
+    // shut one phase in. The closure keeps describing everything OUTSIDE the
+    // rewrite's own directories, which is what it was measuring before.
+    .filter((path) => !isRewriteAuthoredPath(config, path));
   const expectedRootClosure = Object.keys(config.rootDebtClosure).sort();
   if (JSON.stringify(actualRootClosure) !== JSON.stringify(expectedRootClosure)) {
     violations.push(
@@ -3203,12 +3361,18 @@ export function generateArchitectureConfig(desktopRoot, config) {
     if (existsSync(resolve(desktopRoot, path))) rootDebt[path] = debtForPath(desktopRoot, path, 'rootDebt');
   }
   const appShellDebtPaths = new Set([...appShellFiles, ...closureFiles]);
+  const generatedConfig = {
+    ...config,
+    legacyGrowthDirectories: config.legacyGrowthDirectories ?? DEFAULT_LEGACY_GROWTH_DIRECTORIES,
+  };
   const rootDebtClosureFiles = collectRootDependencyClosure(
     desktopRoot,
     Object.keys(rootDebt),
     closureViolations,
     'renderer root',
-  ).filter((path) => !appShellDebtPaths.has(path));
+  )
+    .filter((path) => !appShellDebtPaths.has(path))
+    .filter((path) => !isRewriteAuthoredPath(generatedConfig, path));
   if (closureViolations.length > 0) {
     throw new Error(`cannot generate renderer root closure:\n${closureViolations.join('\n')}`);
   }
@@ -3290,7 +3454,15 @@ function validateMonotonicDebt(config, baseConfig, desktopRoot, violations) {
         !baseFiles[path] &&
         !shiftedAppShellBase &&
         !resetPaths.has(path) &&
-        !(section.endsWith('Closure') && isValidatedCopyCatalog(desktopRoot, path))
+        !(section.endsWith('Closure') && isValidatedCopyCatalog(desktopRoot, path)) &&
+        // The rewrite replaced the entry, so its transitive closure is new by
+        // construction — the contracts under src/preload and src/shared that
+        // the old AppShell closure carried now hang off `main.tsx` instead.
+        // Recording them is the point; calling each one "new debt" would only
+        // say that the entry changed, which the ledger already says. Scoped to
+        // the root closure and to the rewrite: the per-file ratchet still
+        // applies to every entry once it is in the base.
+        !(section === 'rootDebtClosure' && rewriteBaseline)
       ) {
         violations.push(`${path}: new ${section} debt entries are forbidden`);
       }
@@ -3362,7 +3534,11 @@ function validateMonotonicDebt(config, baseConfig, desktopRoot, violations) {
   }
   const baseLegacyFiles = new Set(baseConfig.legacyRendererFiles);
   for (const path of config.legacyRendererFiles) {
-    if (!baseLegacyFiles.has(path) && !isAllowedLegacyGrowthPath(config, path)) {
+    if (
+      !baseLegacyFiles.has(path) &&
+      !isAllowedLegacyGrowthPath(config, path) &&
+      !isRewriteResetPath(config, path)
+    ) {
       violations.push(`${path}: new unclassified renderer source files are forbidden outside approved legacy directories`);
     }
   }
@@ -3414,15 +3590,17 @@ export function checkRendererArchitecture({
   for (const scanRoot of ['src', 'e2e']) {
     for (const file of sourceFiles(resolve(resolvedDesktopRoot, scanRoot))) {
       const fileRelative = normalizePath(relative(resolvedDesktopRoot, file));
+      const source = readFileSync(file, 'utf8');
       let analysis;
       try {
-        analysis = analyzeRendererSource(readFileSync(file, 'utf8'), fileRelative);
+        analysis = analyzeRendererSource(source, fileRelative);
       } catch (error) {
         violations.push(`${fileRelative}: could not parse source: ${error instanceof Error ? error.message : String(error)}`);
         continue;
       }
       sourceAnalyses.set(fileRelative, { analysis, file });
       validateStrictZone({ fileRelative, analysis, violations });
+      validateComponentColours({ fileRelative, source, violations });
       validateDependencies({
         allowedLegacyFeatureImports,
         allowedLegacyPlatformImports,
