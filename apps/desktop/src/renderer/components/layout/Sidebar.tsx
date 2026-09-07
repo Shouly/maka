@@ -38,6 +38,7 @@ import { useStore } from 'zustand';
 import { useRovingRowFocus, useUiLocale } from '@maka/ui';
 import { Anthropicon } from '../icons/Anthropicon.js';
 import { SidebarTooltipProvider } from '../ui/sidebar-tooltip.js';
+import { SidebarControls } from './SidebarControls.js';
 import { Input } from '../ui/input.js';
 import { cn } from '../../lib/cn.js';
 import {
@@ -72,6 +73,7 @@ export interface SidebarProps {
   onFilterChange: (filter: string) => void;
   filterInputRef: React.RefObject<HTMLInputElement | null>;
   onNewTask: () => void;
+  onOpenSearch: () => void;
   onOpenSettings: () => void;
   onSelectModule: (module: 'skills' | 'mcp' | 'scheduled-tasks') => void;
   sessionActions: SessionRowActions;
@@ -176,11 +178,22 @@ export function Sidebar(props: SidebarProps) {
             ? 'pointer-events-none w-0 overflow-hidden'
             : layout.isPeekOpen
               ? // The reference design's peek surface: raised, hairline edge, its
-                // own three-layer shadow (not the right pane's).
-                'absolute left-0 top-0 z-40 h-full w-[var(--sidebar-expanded-width)] border-r border-hairline bg-surface-2 shadow-[var(--sidebar-peek-shadow)]'
+                // own three-layer shadow. It starts at the WINDOW's top edge and
+                // carries its own control row, so panel and titlebar are one
+                // surface (below: `maka-sidebar-peek-row`).
+                'fixed left-0 top-0 z-40 h-dvh w-[var(--sidebar-expanded-width)] border-r border-hairline bg-surface-2 shadow-[var(--sidebar-peek-shadow)]'
               : 'w-[var(--sidebar-expanded-width)] border-r border-hairline bg-sidebar',
         )}
       >
+        {layout.isPeekOpen && (
+          <div
+            className="maka-titlebar-row maka-titlebar-gutter-left flex shrink-0 items-center gap-0.5"
+            role="group"
+            aria-label={copy.panelLabel}
+          >
+            <SidebarControls layout={layout} onOpenSearch={props.onOpenSearch} place="peek" />
+          </div>
+        )}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <SidebarTabPanel
             scrollLabel={copy.listLabel}

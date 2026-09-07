@@ -43,6 +43,7 @@ import { SessionIdentity } from './SessionIdentity.js';
 import { WindowTitlebar } from './WindowTitlebar.js';
 import { TaskWelcomeContent } from '../welcome/TaskWelcomeContent.js';
 import { SessionView } from '../session/SessionView.js';
+import { ModelSwitcher } from '../session/ModelSwitcher.js';
 import { CommandPalette } from '../palette/CommandPalette.js';
 import { KeyboardHelp } from '../palette/KeyboardHelp.js';
 import { SearchModal } from '../palette/SearchModal.js';
@@ -438,6 +439,15 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
             />
           ) : undefined
         }
+        actions={
+          view === 'session' && activeId ? (
+            <ModelSwitcher
+              sessionId={activeId}
+              onOpenSettings={() => openSettings('models')}
+              onError={reportError}
+            />
+          ) : undefined
+        }
       />
       <AppLayout
         collapsed={layout.collapsed}
@@ -448,6 +458,7 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
             onFilterChange={setFilter}
             filterInputRef={filterInputRef}
             onNewTask={newTask}
+            onOpenSearch={() => uiStore.setSearchOpen(true)}
             onOpenSettings={() => openSettings()}
             onSelectModule={selectModule}
             sessionActions={sessionActions}
@@ -478,7 +489,11 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
             description={placeholder.automationsDescription}
           />
         ) : view === 'session' && activeId ? (
-          <SessionView sessionId={activeId} />
+          <SessionView
+            sessionId={activeId}
+            onOpenSettings={(section) => openSettings(section ?? 'models')}
+            onError={reportError}
+          />
         ) : (
           <TaskWelcomeContent
             onOpenSettings={() => openSettings('projects')}

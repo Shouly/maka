@@ -1731,6 +1731,12 @@ html[data-maka-platform="darwin"] {
 .maka-titlebar-gutter-left {
   padding-left: var(--maka-titlebar-gutter-left);
 }
+/* The hover-peek panel's top row: the titlebar's height, so the controls it
+   redraws land exactly where the titlebar drew them. */
+.maka-titlebar-row {
+  height: var(--h-titlebar);
+  box-sizing: border-box;
+}
 .maka-titlebar-gutter-right {
   padding-right: var(--maka-titlebar-gutter-right);
 }

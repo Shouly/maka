@@ -23,23 +23,21 @@
 //   [traffic lights] [sidebar toggle] [search] | [session identity] … [actions]
 //
 // The row is a normal flow row at the top of `.appFrame`; the sidebar and
-// the content column start BELOW it, and so does the hover-peek panel — so
-// nothing ever covers the toggle, and it never moves, whatever the sidebar's
-// state. The row is the app's only drag surface; its controls are `no-drag`.
-// The left segment is as wide as the sidebar and paints the sidebar's
-// background, so the sidebar reads as one column up to the window edge.
+// the content column start BELOW it. The hover-peek panel is the exception:
+// it slides in from the window's top edge OVER the left segment and redraws
+// the same two controls (`SidebarControls`) at the same coordinates, so panel
+// and titlebar read as one surface and the toggle never appears to move. The
+// row is the app's only drag surface; its controls are `no-drag`. The left
+// segment is as wide as the sidebar and paints the sidebar's background and
+// hairline edge, so the sidebar reads as one column up to the window edge.
 
 import type { ReactNode } from 'react';
 import { useUiLocale } from '@maka/ui';
-import { Anthropicon } from '../icons/Anthropicon.js';
-import { SidebarTooltip, SidebarTooltipProvider } from '../ui/sidebar-tooltip.js';
+import { SidebarTooltipProvider } from '../ui/sidebar-tooltip.js';
+import { SidebarControls } from './SidebarControls.js';
 import { cn } from '../../lib/cn.js';
 import { getShellCopy } from '../../locales/shell-copy.js';
-import { getSidebarCopy } from '../../locales/sidebar-copy.js';
 import type { SidebarLayout } from '../../hooks/use-sidebar-layout.js';
-
-const iconButtonClass =
-  'sidebar-icon-btn maka-no-drag flex size-7 cursor-pointer items-center justify-center rounded-md text-sidebar-text-secondary hover:bg-sidebar-hover hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none';
 
 export interface WindowTitlebarProps {
   layout: SidebarLayout;
@@ -53,7 +51,6 @@ export interface WindowTitlebarProps {
 export function WindowTitlebar(props: WindowTitlebarProps) {
   const locale = useUiLocale();
   const chrome = getShellCopy(locale).chrome;
-  const sidebar = getSidebarCopy(locale);
   const layout = props.layout;
   const collapsed = layout.collapsed;
   return (
@@ -79,43 +76,7 @@ export function WindowTitlebar(props: WindowTitlebarProps) {
           // Collapsed: hovering the toggle peeks the sidebar open below this row.
           {...(collapsed ? layout.openerHoverProps : {})}
         >
-          <SidebarTooltip
-            content={collapsed ? chrome.expandSidebar : chrome.collapseSidebar}
-            alwaysShow
-            side="bottom"
-          >
-            <button
-              ref={(element) => {
-                // The same button is the collapsed-state opener and the
-                // expanded-state close the layout hook hands focus to.
-                layout.peekOpenerRef.current = element;
-                layout.sidebarCloseButtonRef.current = element;
-              }}
-              type="button"
-              onClick={() => {
-                layout.closePeek();
-                layout.toggle();
-              }}
-              aria-label={collapsed ? chrome.expandSidebar : chrome.collapseSidebar}
-              aria-controls="app-sidebar"
-              aria-expanded={!collapsed}
-              aria-keyshortcuts="Meta+B"
-              className={iconButtonClass}
-            >
-              <Anthropicon name="sidebar" />
-            </button>
-          </SidebarTooltip>
-          <SidebarTooltip content={sidebar.search} alwaysShow side="bottom">
-            <button
-              type="button"
-              onClick={props.onOpenSearch}
-              aria-label={sidebar.search}
-              data-maka-search-trigger=""
-              className={iconButtonClass}
-            >
-              <Anthropicon name="search" />
-            </button>
-          </SidebarTooltip>
+          <SidebarControls layout={layout} onOpenSearch={props.onOpenSearch} place="titlebar" />
         </div>
         <div className="maka-titlebar-identity">{props.identity}</div>
         <div className="maka-titlebar-actions maka-titlebar-gutter-right">{props.actions}</div>
