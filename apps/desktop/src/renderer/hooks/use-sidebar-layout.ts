@@ -129,6 +129,11 @@ export function useSidebarLayout(): SidebarLayout {
 
   const publish = useCallback((width: number) => {
     sidebarRef.current?.style.setProperty('--sidebar-expanded-width', `${width}px`);
+    // The titlebar's left segment reads the same live width, so its edge
+    // tracks the drag frame by frame instead of waiting for the React commit.
+    sidebarRef.current
+      ?.closest<HTMLElement>('.appFrame')
+      ?.style.setProperty('--maka-sidenav-width', `${width}px`);
     resizeHandleRef.current?.setAttribute('aria-valuenow', String(width));
     resizeHandleRef.current?.setAttribute('aria-valuetext', `${width}px`);
   }, []);

@@ -64,12 +64,15 @@ export function WindowTitlebar(props: WindowTitlebarProps) {
             'maka-titlebar-rail maka-titlebar-gutter-left',
             // Expanded: this segment is the top of the sidebar column, so it
             // carries the column's background and its hairline right edge.
-            collapsed ? 'maka-titlebar-rail-collapsed' : 'border-r border-hairline bg-sidebar',
+            // Width = the sidebar's LIVE width (`--maka-sidenav-width`, written
+            // per frame by the resize drag), never a React-committed number.
+            collapsed
+              ? 'maka-titlebar-rail-collapsed'
+              : 'w-[var(--maka-sidenav-width)] border-r border-hairline bg-sidebar',
             layout.isResizing
               ? 'transition-none'
               : 'transition-[width] duration-200 ease-out motion-reduce:transition-none',
           )}
-          style={collapsed ? undefined : { width: layout.width }}
           data-maka-contract="shell-topbar-rail"
           role="group"
           aria-label={chrome.windowActions}
