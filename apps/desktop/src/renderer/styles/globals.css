@@ -1674,9 +1674,11 @@ html.dark {
   --maka-sidenav-width: 0px;
 }
 html[data-maka-platform="darwin"] {
-  /* The traffic lights end around x = 70; the floor keeps the first control
-     clear of them even where `env(titlebar-area-x)` reports nothing. */
-  --maka-titlebar-gutter-left: max(78px, var(--maka-titlebar-area-x));
+  /* Traffic lights: x 17, three 12px circles 8px apart -> the green one ends
+     at x 69. Native macOS toolbars put the first control ~10px after it, and
+     that is a fixed number, not the WCO safe area (which reports ~94px and
+     reads as a gap). */
+  --maka-titlebar-gutter-left: 80px;
 }
 
 /* The window titlebar: one fixed flow row at the top of `.appFrame` and the
@@ -1689,7 +1691,9 @@ html[data-maka-platform="darwin"] {
   height: var(--h-titlebar);
   flex-shrink: 0;
   box-sizing: border-box;
-  padding-top: 2px;
+  /* Controls centre on the traffic lights' centre line: y 14 + 6 = 20. With a
+     36px row and 4px top padding the content box is 32px, centred at 20. */
+  padding-top: 4px;
   -webkit-app-region: drag;
 }
 /* Left segment: the sidebar's share of the row (its width follows the
