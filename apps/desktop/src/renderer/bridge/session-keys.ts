@@ -17,20 +17,14 @@
  * under the License.
  */
 
-// The `diagnostics` namespace of the preload bridge, wrapped.
+// Desktop session keys.
 //
-// Main assembles the report (app/runtime versions, recent logs, the target's
-// execution context) and puts it on the clipboard; the renderer only says
-// which surface asked and what it was showing.
+// A renderer session id is `desktopSessionKey({hostId, sessionId})` —
+// `JSON.stringify([hostId, sessionId])` (contract doc §1). UI code treats it as
+// opaque; only the handful of places that must build or split one import these
+// re-exports, so a grep for `parseDesktopSessionKey` finds every such place.
 
-import { tryNamespace } from './bridge.js';
-import type { DesktopDiagnosticInput } from '../../preload/diagnostics-contract.js';
-
-export async function copyDiagnosticReport(input: DesktopDiagnosticInput): Promise<boolean> {
-  try {
-    await tryNamespace('diagnostics')?.copyReport?.(input);
-    return true;
-  } catch {
-    return false;
-  }
-}
+export {
+  desktopSessionKey,
+  parseDesktopSessionKey,
+} from '../../shared/runtime-host-identity.js';

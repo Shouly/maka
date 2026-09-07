@@ -1676,3 +1676,14 @@ html.dark {
   animation-iteration-count: 1 !important;
   transition-duration: 0.01ms !important;
 }
+
+/* Keyboard focus for links inside rendered markdown. relx resets outlines
+   globally because its primitives paint their own focus ring; markdown links
+   have no ring of their own, so they get one here. `a:focus-visible` (0,1,1)
+   outranks the global `*:focus` (0,1,0) reset. */
+.standard-markdown a:focus-visible,
+.markdown-body a:focus-visible,
+.chat-assistant-response a:focus-visible {
+  outline: 2px solid var(--fill-accent);
+  outline-offset: 2px;
+}

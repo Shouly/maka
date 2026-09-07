@@ -17,20 +17,18 @@
  * under the License.
  */
 
-// The `diagnostics` namespace of the preload bridge, wrapped.
+// The `workspace` namespace of the preload bridge, wrapped.
 //
-// Main assembles the report (app/runtime versions, recent logs, the target's
-// execution context) and puts it on the clipboard; the renderer only says
-// which surface asked and what it was showing.
+// One method: the `@`-mention file search for the active session's project.
 
-import { tryNamespace } from './bridge.js';
-import type { DesktopDiagnosticInput } from '../../preload/diagnostics-contract.js';
+import type { MakaBridge } from '../../preload/bridge-contract.js';
+import { requireNamespace } from './bridge.js';
 
-export async function copyDiagnosticReport(input: DesktopDiagnosticInput): Promise<boolean> {
-  try {
-    await tryNamespace('diagnostics')?.copyReport?.(input);
-    return true;
-  } catch {
-    return false;
-  }
+export type WorkspaceFileSearchResult = Awaited<ReturnType<MakaBridge['workspace']['searchFiles']>>;
+
+export function searchWorkspaceFiles(
+  query: string,
+  options?: { sessionId?: string; limit?: number },
+): Promise<WorkspaceFileSearchResult> {
+  return requireNamespace('workspace').searchFiles(query, options);
 }

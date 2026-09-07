@@ -30,11 +30,14 @@ import { LocaleProvider } from '@maka/ui';
 import type { UiLocale } from '@maka/core/ui-locale';
 import type { ThemePreference } from '@maka/core/settings';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
-import { DesignSmoke } from './components/dev/DesignSmoke.js';
+import { RuntimeDebug } from './components/dev/RuntimeDebug.js';
+import { useStore } from 'zustand';
+import { sessionsStore, settingsStore, uiStore } from './store/index.js';
+import { useSystemUiLocale } from './lib/ported/use-system-ui-locale.js';
 import { Toaster } from './components/ui/toaster.js';
 import { TooltipProvider } from './components/ui/tooltip.js';
 import type { PendingE2eFixtureUiState } from './lib/fixture.js';
-import { applyTheme } from './lib/theme.js';
+import { applyTheme, applyUiFontSize, applyTerminalFontSize } from './lib/theme.js';
 import { startTitlebarModalSync } from './lib/ported/titlebar-modal-sync.js';
 
 export interface AppProps {
@@ -43,34 +46,50 @@ export interface AppProps {
   locale: UiLocale;
   localeOverride: UiLocale | null;
   /**
-   * The e2e fixture's UI state. Nothing consumes it yet — Phase 2 owns the
-   * stores it describes — but it is threaded through so the fixture's
-   * contract is visible at the top of the tree instead of being dropped.
+   * The e2e fixture's UI state. It seeds session selection and layout for the runtime debug view.
    */
   fixture: PendingE2eFixtureUiState | null;
 }
 
-export function App({ initialTheme, locale, localeOverride }: AppProps): ReactNode {
+export function App({ initialTheme, locale, localeOverride, fixture }: AppProps): ReactNode {
+  const client = useStore(settingsStore.client, (state) => state.data);
+  const systemLocale = useSystemUiLocale();
+  const preference = client?.personalization.uiLocale;
+  const resolvedLocale =
+    localeOverride ??
+    (preference && preference !== 'auto' ? preference : client ? systemLocale : locale);
+  const theme = fixture ? initialTheme : (client?.appearance.theme ?? initialTheme);
+  useEffect(() => {
+    if (!client) return;
+    if (client.appearance.uiFontSize !== undefined) applyUiFontSize(client.appearance.uiFontSize);
+    if (client.appearance.terminalFontSize !== undefined)
+      applyTerminalFontSize(client.appearance.terminalFontSize);
+  }, [client?.appearance.uiFontSize, client?.appearance.terminalFontSize]);
+  useEffect(() => {
+    if (!fixture) return;
+    if (fixture.activeSessionId) sessionsStore.select(fixture.activeSessionId);
+    uiStore.applyFixture(fixture);
+  }, [fixture]);
   useEffect(() => {
     // The pre-paint bootstrap set the DOM from cache; this is what tells the
     // main process (native chrome, titlebar overlay colour) about it.
-    const stopThemeWatch = applyTheme(initialTheme);
+    const stopThemeWatch = applyTheme(theme);
     const stopModalSync = startTitlebarModalSync();
     return () => {
       stopThemeWatch();
       stopModalSync();
     };
-  }, [initialTheme]);
+  }, [theme]);
 
   return (
-    <LocaleProvider locale={locale} override={localeOverride}>
+    <LocaleProvider locale={resolvedLocale} override={localeOverride}>
       <TooltipProvider delayDuration={300}>
         <div className="appFrame">
           {/* The one draggable surface. Anything interactive placed inside it
               must opt back out with `.maka-no-drag`. */}
           <div className="maka-titlebar-drag shrink-0" />
           <ErrorBoundary>
-            <DesignSmoke />
+            <RuntimeDebug />
           </ErrorBoundary>
         </div>
         <Toaster />

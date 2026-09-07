@@ -17,20 +17,10 @@
  * under the License.
  */
 
-// The `diagnostics` namespace of the preload bridge, wrapped.
-//
-// Main assembles the report (app/runtime versions, recent logs, the target's
-// execution context) and puts it on the clipboard; the renderer only says
-// which surface asked and what it was showing.
-
-import { tryNamespace } from './bridge.js';
-import type { DesktopDiagnosticInput } from '../../preload/diagnostics-contract.js';
-
-export async function copyDiagnosticReport(input: DesktopDiagnosticInput): Promise<boolean> {
-  try {
-    await tryNamespace('diagnostics')?.copyReport?.(input);
-    return true;
-  } catch {
-    return false;
-  }
+import type { SessionEvent } from '@maka/core/events';
+export interface MessageQueueUiState {
+  queueRevision: number | undefined;
+  entries: NonNullable<
+    Extract<SessionEvent, { type: 'queue_update' }>['followupEntries']
+  >[number][];
 }

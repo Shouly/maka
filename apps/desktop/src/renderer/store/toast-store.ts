@@ -229,3 +229,4 @@ function useToast() {
 }
 
 export { useToast, toast }
+export function dismissToastById(toastId: string): void { dispatch({ type: 'DISMISS_TOAST', toastId }); }

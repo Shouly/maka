@@ -18,7 +18,7 @@
  */
 
 import type { StoredMessage } from '@maka/core/session';
-import type { MakaBridge } from '../../../preload/bridge-contract.js';
+import { openTranscript } from '../../bridge/transcripts.js';
 import { DesktopTranscriptRangeStore } from './desktop-transcript-range-store.js';
 
 const COMMITTED_ASSISTANT_SETTLE_TIMEOUT_MS = 480;
@@ -28,7 +28,9 @@ export interface RefreshMessagesOptions {
   signal?: AbortSignal;
 }
 
-export type TranscriptSettlementSource = Pick<MakaBridge['transcripts'], 'open'>;
+export interface TranscriptSettlementSource {
+  open: typeof openTranscript;
+}
 
 export async function readSettledMessagesFrom(
   transcripts: TranscriptSettlementSource,
@@ -42,7 +44,7 @@ export async function readSettledMessages(
   sessionId: string,
   options: RefreshMessagesOptions = {},
 ): Promise<{ messages: StoredMessage[]; settled: boolean }> {
-  return readSettledMessagesUsing(window.maka.transcripts, sessionId, options);
+  return readSettledMessagesUsing({ open: openTranscript }, sessionId, options);
 }
 
 async function readSettledMessagesUsing(

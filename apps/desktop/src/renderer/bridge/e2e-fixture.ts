@@ -23,11 +23,12 @@
 // under `MAKA_E2E_FIXTURE`. Everything downstream of this module therefore
 // treats null as "this is a normal launch", never as an error.
 
+import { tryNamespace } from './bridge.js';
 import type { E2eFixtureState } from '@maka/core/e2e-fixture';
 
 export async function getE2eFixtureState(): Promise<E2eFixtureState | null> {
   try {
-    return (await window.maka?.e2eFixture?.getState?.()) ?? null;
+    return (await tryNamespace('e2eFixture')?.getState?.()) ?? null;
   } catch {
     return null;
   }

@@ -17,20 +17,20 @@
  * under the License.
  */
 
-// The `diagnostics` namespace of the preload bridge, wrapped.
+// The `notifications` namespace of the preload bridge, wrapped.
 //
-// Main assembles the report (app/runtime versions, recent logs, the target's
-// execution context) and puts it on the clipboard; the renderer only says
-// which surface asked and what it was showing.
+// Fire-and-forget by contract: main gates on the product toggle and window
+// focus before it raises anything, so a rejection here is not the caller's
+// problem and never becomes one.
 
 import { tryNamespace } from './bridge.js';
-import type { DesktopDiagnosticInput } from '../../preload/diagnostics-contract.js';
 
-export async function copyDiagnosticReport(input: DesktopDiagnosticInput): Promise<boolean> {
-  try {
-    await tryNamespace('diagnostics')?.copyReport?.(input);
-    return true;
-  } catch {
-    return false;
-  }
+export function notifyRunEnded(payload: {
+  kind: 'completed' | 'errored';
+  title?: string;
+  body?: string;
+}): void {
+  void tryNamespace('notifications')
+    ?.runEnded(payload)
+    .catch(() => {});
 }

@@ -1,0 +1,91 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+import { createStore } from 'zustand/vanilla';
+import {
+  getDefaultRuntimeHost,
+  subscribeRuntimeHostProfileChanges,
+  type DesktopRuntimeHostRef,
+} from '../bridge/runtime-host-profiles.js';
+import { createActiveSessionStore } from './active-session-store.js';
+import { createTurnActionsStore } from './turn-actions-store.js';
+import { sessionsStore } from './sessions-store.js';
+import { settingsStore } from './settings-store.js';
+import { connectionsStore } from './connections-store.js';
+import { projectsStore } from './projects-store.js';
+import { toastApi } from './toast-api.js';
+import { errorMessage } from './resource-store.js';
+
+export { sessionsStore, settingsStore, connectionsStore, projectsStore };
+export { uiStore } from './ui-store.js';
+export const activeSessionStore = createActiveSessionStore({
+  refreshSessions: sessionsStore.refresh,
+  toast: toastApi,
+  sessionTitle: (sessionId) =>
+    sessionsStore.getState().sessions.find((row) => row.id === sessionId)?.name,
+});
+export const turnActionsStore = createTurnActionsStore({
+  refresh: sessionsStore.refresh,
+  onCopy(sourceId, row) {
+    sessionsStore.upsert(row);
+    if (sessionsStore.getState().activeId === sourceId) sessionsStore.select(row.id);
+  },
+});
+export const hostScopeStore = createStore<{
+  host: DesktopRuntimeHostRef | undefined;
+  revision: number;
+  error: string | undefined;
+}>(() => ({ host: undefined, revision: 0, error: undefined }));
+
+/** One app lifetime. Host changes invalidate scoped reads before asking for the new default. */
+export function startRendererStores(): () => void {
+  let closed = false;
+  let generation = 0;
+  const refreshHost = async () => {
+    const request = ++generation;
+    hostScopeStore.setState((s) => ({
+      host: undefined,
+      revision: s.revision + 1,
+      error: undefined,
+    }));
+    try {
+      const host = await getDefaultRuntimeHost();
+      if (!closed && request === generation) hostScopeStore.setState({ host });
+    } catch (error) {
+      if (!closed && request === generation)
+        hostScopeStore.setState({ error: errorMessage(error) });
+    }
+  };
+  const offHosts = subscribeRuntimeHostProfileChanges(() => {
+    void refreshHost();
+    void sessionsStore.refresh();
+  });
+  const offSessions = sessionsStore.start();
+  const offSettings = settingsStore.startClient();
+  const offLocal = projectsStore.connectLocal();
+  void refreshHost();
+  return () => {
+    closed = true;
+    generation++;
+    offHosts();
+    offSessions();
+    offSettings();
+    offLocal();
+  };
+}

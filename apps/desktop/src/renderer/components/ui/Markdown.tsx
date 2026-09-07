@@ -25,8 +25,9 @@ import {
   INLINE_CODE_COLOR_CLASS,
 } from '../../lib/markdown/color-utils'
 import 'katex/dist/katex.min.css'
-import React, { useId, useMemo, useState } from 'react'
+import React, { createContext, useContext, useId, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
+import { getSharedUiCopy, useUiLocale } from '@maka/ui'
 import rehypeKatex from 'rehype-katex'
 import rehypeRaw from 'rehype-raw'
 import remarkGfm from 'remark-gfm'
@@ -37,6 +38,8 @@ import { rehypeStripBreakNewlines } from '../../lib/markdown/rehype-strip-break-
 import { rehypeStreamPop } from '../../lib/markdown/rehype-stream-pop'
 import { normalizeMathDelimiters } from '../../lib/markdown/normalize-math'
 import { remarkInlineDollarMath } from '../../lib/markdown/remark-inline-math'
+
+const CodeBlockContext = createContext(false)
 
 interface MarkdownProps {
   children: string
@@ -69,6 +72,7 @@ interface MarkdownProps {
 
 
 export default function Markdown({ children, className = '', noPadding = false, variant = 'default', processInlineTokens = false, inlineTokenNames, disableRawHtml = false, streamPop = false, onOpenExternal }: MarkdownProps) {
+  const copy = getSharedUiCopy(useUiLocale()).markdown
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
 
   const copyToClipboard = async (text: string) => {
@@ -125,25 +129,24 @@ export default function Markdown({ children, className = '', noPadding = false, 
           // 是 ^_),别嫌下划线多余把它去掉 —— 去掉就是 19 条 warning。
           // 不抽公共 helper 去剥:流式期间每个 token 都整棵重渲染,那是热
           // 路径,解构是零成本的,helper 会给每个元素多一次调用+一次分配。
-          // 代码块
-          code({ node, className, children, ...props }: any) {
+          // Block context comes from the actual <pre> tree, including single-line/empty fences.
+          pre({ children }) {
+            return <CodeBlockContext.Provider value={true}>{children}</CodeBlockContext.Provider>
+          },
+          code: function Code({ node: _node, className, children, ...props }) {
+            const block = useContext(CodeBlockContext)
             const match = /language-(\w+)/.exec(className || '')
             const language = match ? match[1] : ''
             const codeString = String(children).replace(/\n$/, '')
 
-            // 更可靠的行内代码判断：
-            // 1. 检查父节点是否是 <pre>（代码块会被包裹在 <pre> 中）
-            // 2. 检查内容是否包含换行符（行内代码通常不包含换行）
-            const hasParentPre = node?.parent?.tagName === 'pre'
-            const hasMultipleLines = codeString.includes('\n')
-            const inline = !hasParentPre && !hasMultipleLines
-
-            if (!inline && language) {
+            if (block && language) {
               return (
                 <div className="relative group/code border border-hairline rounded-lg bg-surface-2/50">
                   {/* 复制按钮 */}
                   <button
-                    className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-md hover:bg-alpha-1 active:scale-95 transition-colors z-10 opacity-0 group-hover/code:opacity-100 cursor-pointer"
+                    className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-md hover:bg-alpha-1 active:scale-95 transition-colors z-10 opacity-0 group-hover/code:opacity-100 focus-visible:opacity-100 cursor-pointer"
+                    type="button"
+                    aria-label={copiedCode === codeString ? copy.copiedCode : copy.copyCode}
                     onClick={() => copyToClipboard(codeString)}
                   >
                     {copiedCode === codeString ? (
@@ -170,12 +173,14 @@ export default function Markdown({ children, className = '', noPadding = false, 
             }
 
             // 无语言的代码块
-            if (!inline) {
+            if (block) {
               return (
                 <div className="relative group/code border border-hairline rounded-lg bg-surface-2/50">
                   {/* 复制按钮 */}
                   <button
-                    className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-md hover:bg-alpha-1 active:scale-95 transition-colors z-10 opacity-0 group-hover/code:opacity-100 cursor-pointer"
+                    className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-md hover:bg-alpha-1 active:scale-95 transition-colors z-10 opacity-0 group-hover/code:opacity-100 focus-visible:opacity-100 cursor-pointer"
+                    type="button"
+                    aria-label={copiedCode === codeString ? copy.copiedCode : copy.copyCode}
                     onClick={() => copyToClipboard(codeString)}
                   >
                     {copiedCode === codeString ? (

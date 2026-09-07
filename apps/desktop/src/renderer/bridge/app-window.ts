@@ -29,25 +29,29 @@
 // name `window.maka`; `scripts/check-renderer-architecture.mjs` enforces it
 // (`validateBridgeOwnership`).
 
+import { tryNamespace } from './bridge.js';
 import type { WindowCommand } from '../../preload/bridge-contract.js';
 import type { ThemePreference } from '@maka/core/settings';
 
 /** Native chrome (`nativeTheme.themeSource`) follows the user's preference. */
 export function setThemeSource(preference: ThemePreference): void {
-  void window.maka?.appWindow?.setThemeSource?.(preference).catch(() => {});
+  void tryNamespace('appWindow')
+    ?.setThemeSource?.(preference)
+    .catch(() => {});
 }
 
 /** macOS traffic lights. No-op elsewhere (main gates on darwin). */
 export function setTitlebarControlsVisible(visible: boolean): void {
-  void window.maka?.appWindow?.setTitlebarControlsVisible?.(visible).catch(() => {});
+  void tryNamespace('appWindow')
+    ?.setTitlebarControlsVisible?.(visible)
+    .catch(() => {});
 }
 
 /** Windows `titleBarOverlay` colours. No-op elsewhere. */
-export function setTitleBarOverlayTheme(theme: {
-  isDark: boolean;
-  backgroundColor: string;
-}): void {
-  void window.maka?.appWindow?.setTitleBarOverlayTheme?.(theme).catch(() => {});
+export function setTitleBarOverlayTheme(theme: { isDark: boolean; backgroundColor: string }): void {
+  void tryNamespace('appWindow')
+    ?.setTitleBarOverlayTheme?.(theme)
+    .catch(() => {});
 }
 
 /**
@@ -56,7 +60,9 @@ export function setTitleBarOverlayTheme(theme: {
  * painted frame — see `main.tsx`.
  */
 export function notifyRendererReady(): void {
-  void window.maka?.appWindow?.notifyRendererReady?.().catch(() => {});
+  void tryNamespace('appWindow')
+    ?.notifyRendererReady?.()
+    .catch(() => {});
 }
 
 /**
@@ -64,6 +70,6 @@ export function notifyRendererReady(): void {
  * unsubscribe; subscribing late drops the commands sent before it.
  */
 export function subscribeWindowCommand(handler: (command: WindowCommand) => void): () => void {
-  const unsubscribe = window.maka?.appWindow?.subscribeCommand?.(handler);
+  const unsubscribe = tryNamespace('appWindow')?.subscribeCommand?.(handler);
   return () => unsubscribe?.();
 }

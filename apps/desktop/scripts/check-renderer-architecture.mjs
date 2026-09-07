@@ -2137,7 +2137,7 @@ function validateDependencies({
   const sourceZone = zoneFor(fileRelative);
   for (const dependency of analysis.dependencies) {
     if (
-      ['application', 'bootstrap', 'composition', 'feature', 'platform', 'shell'].includes(sourceZone.kind) &&
+      fileRelative.startsWith('src/renderer/') &&
       !isTestConsumer(file) &&
       isForbiddenEnvironmentDependency(dependency)
     ) {

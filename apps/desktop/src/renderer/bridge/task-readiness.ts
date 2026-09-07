@@ -17,20 +17,20 @@
  * under the License.
  */
 
-// The `diagnostics` namespace of the preload bridge, wrapped.
+// The `taskReadiness` namespace of the preload bridge, wrapped.
 //
-// Main assembles the report (app/runtime versions, recent logs, the target's
-// execution context) and puts it on the clipboard; the renderer only says
-// which surface asked and what it was showing.
+// The Host's answer to "can this session accept a send right now" — the
+// authority the composer's blocked hints and the sidebar's stale rows read.
 
-import { tryNamespace } from './bridge.js';
-import type { DesktopDiagnosticInput } from '../../preload/diagnostics-contract.js';
+import type { TaskSubmissionReadinessSnapshot } from '@maka/core/task-submission-readiness';
+import type { DesktopTaskSubmissionReadinessRequest } from '../../preload/bridge-contract.js';
+import { requireNamespace } from './bridge.js';
 
-export async function copyDiagnosticReport(input: DesktopDiagnosticInput): Promise<boolean> {
-  try {
-    await tryNamespace('diagnostics')?.copyReport?.(input);
-    return true;
-  } catch {
-    return false;
-  }
+export type { TaskSubmissionReadinessSnapshot, DesktopTaskSubmissionReadinessRequest };
+
+export function getTaskReadinessSnapshot(
+  input?: DesktopTaskSubmissionReadinessRequest,
+  sessionId?: string,
+): Promise<TaskSubmissionReadinessSnapshot> {
+  return requireNamespace('taskReadiness').getSnapshot(input, sessionId);
 }

@@ -17,20 +17,17 @@
  * under the License.
  */
 
-// The `diagnostics` namespace of the preload bridge, wrapped.
-//
-// Main assembles the report (app/runtime versions, recent logs, the target's
-// execution context) and puts it on the clipboard; the renderer only says
-// which surface asked and what it was showing.
+// The `gitReview` namespace of the preload bridge, wrapped.
 
-import { tryNamespace } from './bridge.js';
-import type { DesktopDiagnosticInput } from '../../preload/diagnostics-contract.js';
+import type { GitReviewReadResult, GitReviewSource } from '@maka/core/git-review';
+import { requireNamespace } from './bridge.js';
 
-export async function copyDiagnosticReport(input: DesktopDiagnosticInput): Promise<boolean> {
-  try {
-    await tryNamespace('diagnostics')?.copyReport?.(input);
-    return true;
-  } catch {
-    return false;
-  }
+export type { GitReviewReadResult, GitReviewSource };
+
+export function readGitReview(input: {
+  sessionId: string;
+  source: GitReviewSource;
+  baseBranch?: string;
+}): Promise<GitReviewReadResult> {
+  return requireNamespace('gitReview').read(input);
 }

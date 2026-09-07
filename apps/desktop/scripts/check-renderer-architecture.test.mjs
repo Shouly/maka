@@ -699,6 +699,25 @@ describe('renderer architecture checker fixtures', () => {
     );
   });
 
+  it('rejects environment imports throughout the rewritten renderer, even after ledger regeneration', async () => {
+    const directories = ['bridge', 'store', 'components/ui', 'hooks', 'lib', 'locales'];
+    const files = Object.fromEntries(directories.map(directory => [
+      `src/renderer/${directory}/probe.ts`,
+      "import { ipcRenderer } from 'electron'; import { readFile } from 'node:fs/promises'; export const probe = [ipcRenderer, readFile];",
+    ]));
+    files['src/renderer/store/__tests__/probe.test.ts'] = "import assert from 'node:assert/strict'; assert.ok(true);";
+    await withDesktopFixture(files, desktopRoot => {
+      const config = generateArchitectureConfig(desktopRoot, architectureConfig());
+      const violations = violationsFor(desktopRoot, config);
+      for (const directory of directories) {
+        for (const dependency of ['electron', 'node:fs/promises']) {
+          assert.ok(violations.some(item => item.includes(`${directory}/probe.ts:`) && item.includes(`forbidden environment module: ${dependency}`)));
+        }
+      }
+      assert.ok(!violations.some(item => item.includes('__tests__/probe.test.ts')));
+    });
+  });
+
   it('keeps Desktop platform adapters free of UI lifecycle and runtime module loading', async () => {
     await withDesktopFixture(
       {

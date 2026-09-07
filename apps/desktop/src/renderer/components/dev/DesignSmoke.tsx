@@ -191,7 +191,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-export function DesignSmoke() {
+export function DesignSmoke({ showThemeControl = true }: { showThemeControl?: boolean } = {}) {
   const [theme, setTheme] = useState<'light' | 'dark' | 'auto'>('auto');
   const [switched, setSwitched] = useState(true);
   const [segment, setSegment] = useState<'chat' | 'files' | 'terminal'>('chat');
@@ -216,10 +216,10 @@ export function DesignSmoke() {
               Phase 0b smoke page — tokens, fonts, icons and primitives.
             </p>
           </div>
-          <Button variant="secondary" onClick={cycleTheme}>
+          {showThemeControl && <Button variant="secondary" onClick={cycleTheme}>
             <Anthropicon name={theme === 'dark' ? 'moon' : theme === 'light' ? 'sun' : 'sunHorizon'} size={16} />
             Theme: {theme}
-          </Button>
+          </Button>}
         </header>
 
         <Section title="Surfaces">

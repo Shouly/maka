@@ -19,20 +19,21 @@
 
 # Renderer (`apps/desktop/src/renderer`)
 
-**Status: mid-rewrite.** The Astryx-based renderer was removed in Phase 0a of
-the enterprise renderer rewrite and Phase 0b laid the design system down in its
-place. The plan of record is
-[`docs/enterprise/frontend-rewrite-plan.md`](../../../../docs/enterprise/frontend-rewrite-plan.md),
-with the contract the new UI must program against in
-[`maka-renderer-contract.md`](../../../../docs/enterprise/research/maka-renderer-contract.md),
-the design system it reproduces in
-[`relx-frontend-inventory.md`](../../../../docs/enterprise/research/relx-frontend-inventory.md),
-and the feature inventory it must not lose in
-[`maka-renderer-feature-inventory.md`](../../../../docs/enterprise/research/maka-renderer-feature-inventory.md).
+**Status: Phase 1 bridge and state implemented; Phase 2 shell is next.**
+The default entry is `components/dev/RuntimeDebug.tsx`, a temporary acceptance
+surface over real Runtime Host sessions. It lists sessions, submits/stops turns,
+shows the `TurnViewModel[]` projection, pages history, and exposes interaction
+responses. The Design system button retains the Phase 0b component preview.
+
+The plan of record is
+[`docs/enterprise/frontend-rewrite-plan.md`](../../../../docs/enterprise/frontend-rewrite-plan.md).
+The preload and turn contracts remain those in
+[`maka-renderer-contract.md`](../../../../docs/enterprise/research/maka-renderer-contract.md).
+See [PHASE1.md](./PHASE1.md) for the handoff, verification commands and limits.
 
 ## Layout
 
-The tree is plan §5. Phases 1–5 fill in the empty rooms; nothing here moves.
+The tree follows plan §5. Phase 2 consumes the existing stores and hooks; it does not introduce another event pipeline.
 
 | Path | What it is |
 | --- | --- |
@@ -40,13 +41,14 @@ The tree is plan §5. Phases 1–5 fill in the empty rooms; nothing here moves.
 | `main.tsx` | Bootstrap. Cached theme + font size, the e2e fixture's document state and the UI locale, all before `createRoot`; `notifyRendererReady` after, inside two nested frames, so main reveals the window. |
 | `app.tsx` | Providers (locale, tooltip, toaster), the error boundary, the `.appFrame` root and the one draggable titlebar strip. |
 | `styles/globals.css` | The whole palette. Copied from the reference design system (`@theme inline`, the 0.5px hairline utilities, fonts, motion, Prism roles) with the relx-server-only blocks removed, plus a delimited *Maka desktop additions* block for what the main process requires. There is no `tailwind.config`: this file is the configuration. |
+| `hooks/` | Renderer lifetime, scoped subscriptions, `useActiveTurns`, `useLiveTurnSnapshot`, and `useProjectContext`. |
 | `bridge/` | The only modules allowed to name `window.maka`. Typed, optional-chained wrappers; `check-renderer-architecture.mjs` enforces the boundary. |
 | `components/ui/` | The ported design-system primitives — button, dialog, dropdown-menu, popover, select, switch, scroll-area, toast, tooltip, fields, skeletons, shimmer, the markdown/code/diff/json renderers, and the class-string modules. |
 | `components/icons/` | `Anthropicon.tsx` (the icon font is the icon system — no icon library) and the wordmark. |
-| `components/layout/`, `components/dev/` | `MainHeader` geometry; the temporary design smoke page Phase 2 replaces. |
-| `lib/` | `cn`, `theme.ts` (light/dark/auto, titlebar sampling and modal dim), `fixture.ts`, the markdown pipeline helpers, and `ported/` — pure modules carried over from the old renderer that Phase 1 re-homes. |
-| `store/` | Zustand stores. Only the toast store exists so far. |
-| `locales/` | The 28 typed `*-copy.ts` catalogs (`UiCatalog` shape, zh-CN / zh-TW / en). |
+| `components/layout/`, `components/dev/` | `MainHeader` geometry; temporary runtime and design-system acceptance pages. Phase 2 replaces the runtime debug surface. |
+| `lib/` | `cn`, `theme.ts` (light/dark/auto, titlebar sampling and modal dim), `fixture.ts`, the markdown pipeline helpers, and `ported/` — reused pure modules carried over from the old renderer; existing paths remain stable for main-process contract tests. |
+| `store/` | Zustand stores. Session catalog, active transcript/live events/interactions/queue, turn operations, scoped projects/connections/settings, UI/workbar layout and toasts. |
+| `locales/` | Typed `*-copy.ts` catalogs (`UiCatalog` shape, zh-CN / zh-TW / en). |
 | `assets/` | `fonts/anthropic/*.woff2` (7 files, Anthropicons included) and the provider brand SVGs. |
 | `public/THIRD_PARTY_LICENSES.txt` | Byte-compared against the packaged copy by `build:renderer`; regenerate with `npm run generate:third-party-notices`. |
 | `computer-use-overlay/engine/` | Not renderer UI. `src/overlay/cursor-overlay.ts` and `src/main/computer-use/` import this engine, so it stays at this path. |
@@ -64,7 +66,7 @@ The tree is plan §5. Phases 1–5 fill in the empty rooms; nothing here moves.
   semantic class from `@theme inline`, or `bg-[var(--token)]` for a token that
   has no utility. `components/icons/**` (brand marks) and `components/dev/**`
   are exempt.
-- No `electron` and no Node builtins anywhere in the renderer. No `next/*`.
+- No `electron` or Node builtins in shipped renderer code. Node-only test runners live under `store/__tests__/` and are never imported by the app. No `next/*`.
 - Every user-visible string goes through a `UiCatalog` with zh-CN, zh-TW and
   en. The one exception is `components/dev/`, which Phase 2 deletes.
 - Every source file carries the ASF header.

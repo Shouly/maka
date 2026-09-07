@@ -1,0 +1,144 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+import { useEffect, useLayoutEffect } from 'react';
+import { useStore } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
+import { useTranscriptProjection, useUiLocale } from '@maka/ui';
+import { deriveLiveTurnSnapshot } from '../lib/ported/live-turn-snapshot.js';
+import {
+  activeSessionStore,
+  sessionsStore,
+  settingsStore,
+  projectsStore,
+  connectionsStore,
+  hostScopeStore,
+  startRendererStores,
+  uiStore,
+} from '../store/index.js';
+
+export function useRendererStores(): void {
+  const locale = useUiLocale();
+  const activeId = useStore(sessionsStore, (s) => s.activeId);
+  const selectedHost = useStore(
+    sessionsStore,
+    useShallow((s) => {
+      const row = s.sessions.find((session) => session.id === s.activeId);
+      return row ? { hostId: row.runtimeHostId, profileId: row.profileId } : undefined;
+    }),
+  );
+  const projectIdentity = useStore(
+    sessionsStore,
+    useShallow((s) => {
+      const row = s.sessions.find((session) => session.id === s.activeId);
+      return [row?.projectId, row?.cwd] as const;
+    }),
+  );
+  const defaultHost = useStore(hostScopeStore, (s) => s.host);
+  const hostRevision = useStore(hostScopeStore, (s) => s.revision);
+  const host = activeId ? selectedHost : defaultHost;
+  useEffect(startRendererStores, []);
+  useLayoutEffect(
+    () => activeSessionStore.observe(activeId, locale),
+    [activeId, locale, selectedHost?.profileId, hostRevision],
+  );
+  useEffect(() => {
+    uiStore.dispatchWorkbar({ type: 'activate-session', sessionId: activeId });
+  }, [activeId]);
+  useLayoutEffect(() => {
+    if (!defaultHost) {
+      projectsStore.defaults.disconnect();
+      return;
+    }
+    return projectsStore.connectDefault(defaultHost);
+  }, [defaultHost?.profileId, defaultHost?.hostId]);
+  useLayoutEffect(() => {
+    if (!host) {
+      connectionsStore.disconnect();
+      settingsStore.host.disconnect();
+      return;
+    }
+    const offConnections = connectionsStore.observe(activeId, host);
+    const offSettings = settingsStore.observeHost(host);
+    return () => {
+      offConnections();
+      offSettings();
+    };
+  }, [activeId, host?.profileId, host?.hostId, hostRevision]);
+  useLayoutEffect(() => {
+    if (!activeId || !host) {
+      projectsStore.active.disconnect();
+      projectsStore.activeInfo.disconnect();
+      return;
+    }
+    return projectsStore.connectActive(activeId, host);
+  }, [
+    activeId,
+    host?.profileId,
+    host?.hostId,
+    hostRevision,
+    projectIdentity[0],
+    projectIdentity[1],
+  ]);
+}
+
+const NO_MESSAGES: readonly import('@maka/core/session').StoredMessage[] = [];
+export function useActiveTurns() {
+  const selectedId = useStore(sessionsStore, (s) => s.activeId);
+  const locale = useUiLocale();
+  const input = useStore(
+    activeSessionStore,
+    useShallow((s) => ({
+      sessionId: s.sessionId,
+      messages: s.messages,
+      liveTurn: s.sessionId ? s.liveTurns[s.sessionId] : undefined,
+      shellRunUpdates: s.shellUpdates,
+    })),
+  );
+  return useTranscriptProjection(
+    input.sessionId === selectedId
+      ? { ...input, locale }
+      : { sessionId: selectedId, locale, messages: NO_MESSAGES },
+  );
+}
+export function useLiveTurnSnapshot() {
+  return useStore(
+    activeSessionStore,
+    useShallow((s) => deriveLiveTurnSnapshot(s.sessionId ? s.liveTurns[s.sessionId] : undefined)),
+  );
+}
+export function useProjectContext() {
+  const activeId = useStore(sessionsStore, (s) => s.activeId);
+  const active = useStore(projectsStore.active, (s) => s.data);
+  const activeInfo = useStore(projectsStore.activeInfo, (s) => s.data);
+  const defaults = useStore(projectsStore.defaults, (s) => s.data);
+  const local = useStore(projectsStore.local, (s) => s.data);
+  const selected = useStore(sessionsStore, (s) => s.sessions.find((row) => row.id === s.activeId));
+  const snapshot = activeId ? active : defaults?.snapshot;
+  const projectId = activeId ? selected?.projectId : defaults?.info.projectId;
+  return {
+    snapshot,
+    projects: snapshot?.projects ?? [],
+    capabilities: snapshot?.capabilities,
+    currentProject: snapshot?.projects.find((row) => row.id === projectId),
+    projectId,
+    localProjects: local?.projects ?? [],
+    info: activeId ? activeInfo : defaults?.info,
+  };
+}

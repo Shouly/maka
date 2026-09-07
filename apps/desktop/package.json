@@ -38,14 +38,16 @@
     "package:linux-appimage-arm64": "electron-builder --config electron-builder.config.mjs --linux AppImage --arm64 --publish never",
     "package:linux-deb-arm64": "electron-builder --config electron-builder.config.mjs --linux deb --arm64 --publish never",
     "typecheck": "tsc -p tsconfig.preload.json --noEmit && tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
-    "test:dist": "node --test \"dist/main/**/*.test.js\" scripts/dev-app-runtime.test.mjs scripts/vite-workspace-packages.test.mjs",
+    "test:dist": "node --test \"dist/main/**/*.test.js\" scripts/dev-app-runtime.test.mjs scripts/vite-workspace-packages.test.mjs && npm run test:renderer-state",
     "e2e": "npm run build:with-deps && playwright test --config e2e/playwright.config.ts",
     "build:with-deps": "npm run build:workspace-deps && npm run build",
     "smoke:real-window": "npm run build:with-deps && node ../../scripts/desktop-real-window-smoke.mjs",
     "smoke:programmatic-window": "npm run build:with-deps && node ../../scripts/desktop-real-window-smoke.mjs --programmatic-only",
     "launch:fixture": "npm run build:with-deps && node ../../scripts/desktop-real-window-smoke.mjs --manual",
     "smoke:browser": "npm run build:workspace-deps && npm run build:main && npm run smoke:browser:run",
-    "smoke:browser:run": "electron scripts/browser-observe-act-smoke.mjs"
+    "smoke:browser:run": "electron scripts/browser-observe-act-smoke.mjs",
+    "test:renderer-state": "node src/renderer/store/__tests__/run.mjs",
+    "test:renderer-smoke": "node src/renderer/store/__tests__/electron-smoke.mjs"
   },
   "dependencies": {
     "@jackwener/opencli": "1.8.7",
