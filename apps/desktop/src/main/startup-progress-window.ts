@@ -18,7 +18,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { MAKA_WORDMARK_PATH } from '@maka/core/maka-wordmark';
+import { MAKA_WORDMARK_PATH, MAKA_WORDMARK_VIEW_BOX } from '@maka/core/maka-wordmark';
 import type { UiLocale } from '@maka/core/ui-locale';
 import type { BrowserWindow, BrowserWindowConstructorOptions } from 'electron';
 
@@ -88,7 +88,7 @@ export function createStartupProgressWindow(input: {
   const win = input.createWindow({
     width: 520, height: 390, title: 'Maka', icon: input.icon,
     show: false, resizable: false, maximizable: false, fullscreenable: false,
-    backgroundColor: input.dark ? '#1c1d21' : '#ffffff',
+    backgroundColor: input.dark ? '#191a18' : '#ffffff',
     webPreferences: {
       contextIsolation: true, nodeIntegration: false, sandbox: true,
       webSecurity: true, allowRunningInsecureContent: false,
@@ -168,9 +168,9 @@ export function renderStartupProgressHtml(locale: UiLocale, dark: boolean): stri
 <html lang="${locale}"><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; base-uri 'none'; form-action 'none'">
 <title>Maka</title><style nonce="${nonce}">
-:root { color-scheme: ${dark ? 'dark' : 'light'}; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: ${dark ? '#1c1d21' : '#fff'}; color: ${dark ? '#f1f1f3' : '#202127'}; }
+:root { color-scheme: ${dark ? 'dark' : 'light'}; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: ${dark ? '#191a18' : '#fff'}; color: ${dark ? '#efeeeb' : '#0b0b0a'}; }
 * { box-sizing: border-box; } body { margin: 0; padding: 30px 36px; }
-svg { width: 94px; height: 30px; fill: currentColor; } h1 { margin: 24px 0 6px; font-size: 21px; font-weight: 600; letter-spacing: -.4px; }
+svg { width: 136px; height: 20px; fill: currentColor; } h1 { margin: 24px 0 6px; font-size: 21px; font-weight: 600; letter-spacing: -.4px; }
 p { margin: 0; opacity: .65; } .status { display: flex; gap: 10px; align-items: center; margin-top: 26px; }
 .spinner { width: 15px; height: 15px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 1s linear infinite; opacity: .6; flex-shrink: 0; }
 #slow { margin-top: 12px; font-size: 12px; min-height: 54px; visibility: hidden; }
@@ -182,7 +182,7 @@ button { font: inherit; color: inherit; background: transparent; border: 1px sol
 button:hover { background: ${dark ? '#303137' : '#f4f4f6'}; } button:focus-visible { outline: 2px solid #788aff; outline-offset: 3px; }
 @keyframes spin { to { transform: rotate(360deg); } } @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
 </style></head><body>
-<svg viewBox="0 0 460 120" role="img" aria-label="Maka"><g transform="translate(0,120) scale(0.1,-0.1)"><path d="${MAKA_WORDMARK_PATH}"/></g></svg>
+<svg viewBox="${MAKA_WORDMARK_VIEW_BOX}" role="img" aria-label="Maka"><path d="${MAKA_WORDMARK_PATH}" fill="currentColor" fill-rule="evenodd" clip-rule="evenodd"/></svg>
 <h1>${copy.title}</h1><p>${copy.detail}</p>
 <div class="status" role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span><span id="phase">${copy.phases.prepare}</span></div>
 <p id="slow">${copy.slow}</p>

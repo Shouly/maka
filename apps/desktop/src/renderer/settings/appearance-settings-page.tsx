@@ -121,7 +121,7 @@ const APP_ICON_GROUPS: ReadonlyArray<{
     | 'highContrast';
   icons: ReadonlyArray<AppIcon>;
 }> = [
-  { id: 'mascot', icons: ['default', 'mono'] },
+  { id: 'mascot', icons: ['relx', 'default', 'mono'] },
   { id: 'blue', icons: ['sky', 'cyan', 'ice', 'pale-inverted'] },
   { id: 'contrast', icons: ['ink', 'paper', 'graphite'] },
   { id: 'pencil', icons: ['pencil-kraft', 'pencil-sky', 'pencil-navy'] },

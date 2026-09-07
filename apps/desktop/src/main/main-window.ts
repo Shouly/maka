@@ -154,7 +154,7 @@ const SHOW_FALLBACK_TIMEOUT_MS = 4000;
 const TITLEBAR_OVERLAY_HEIGHT = 36;
 const titleBarOverlayOptions = (
   isDark: boolean,
-  color = isDark ? '#1c1d21' : '#ffffff',
+  color = isDark ? '#191a18' : '#ffffff',
 ): { color: string; symbolColor: string; height: number } => ({
   // The light overlay color must match the renderer's `--background`
   // (maka-tokens.css :root, oklch(1 0 0) == #ffffff) so the top-right
@@ -162,7 +162,7 @@ const titleBarOverlayOptions = (
   // strip — otherwise a visible color seam splits the titlebar. The dark
   // value mirrors the dark-mode `--background` anchor.
   color,
-  symbolColor: isDark ? '#e6e6e8' : '#1c1d21',
+  symbolColor: isDark ? '#e6e6e3' : '#191a18',
   height: TITLEBAR_OVERLAY_HEIGHT,
 });
 
@@ -303,7 +303,7 @@ export function createMainWindowController(deps: MainWindowControllerDeps): Main
     if (signal.aborted) return;
     const themePref = e2eFixture?.theme ?? persistedTheme;
     const isDark = isDarkAppearance(themePref, nativeTheme.shouldUseDarkColors);
-    const initialBg = isDark ? '#1c1d21' : '#ffffff';
+    const initialBg = isDark ? '#191a18' : '#ffffff';
     // Astro-Han review (#493): sync nativeTheme here too, not only via the
     // renderer's later setThemeSource() IPC call -- otherwise the vibrancy
     // material behind the sidebar can still flash the *system* theme's tint

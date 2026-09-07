@@ -43,6 +43,8 @@ const NOT_GENERATED = new Set([
   'default',
   // Its grayscale companion is a derived export of that same mark.
   'mono',
+  // ENTERPRISE-RESKIN-1: the RELX flower mark is hand-supplied artwork.
+  'relx',
 ]);
 
 function python() {

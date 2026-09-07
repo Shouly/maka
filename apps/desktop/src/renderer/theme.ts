@@ -216,7 +216,7 @@ function syncTitleBarOverlay(root: HTMLElement): void {
   // Sample the actual painted --background color instead of approximating it
   // with one hard-coded light and dark pair; this also follows every palette.
   const isDark = root.classList.contains(DARK_CLASS);
-  const backgroundColor = paintedBackgroundToHex(root, isDark ? '#1c1d21' : '#ffffff');
+  const backgroundColor = paintedBackgroundToHex(root, isDark ? '#191a18' : '#ffffff');
   void window.maka?.appWindow
     ?.setTitleBarOverlayTheme?.({
       isDark,

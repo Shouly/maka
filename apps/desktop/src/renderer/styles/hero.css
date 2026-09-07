@@ -83,6 +83,9 @@
   }
 .maka-hero h1 {
     font: var(--maka-text-display-1);
+    /* ENTERPRISE-RESKIN-1: display copy takes the brand serif. `font:` above
+       resets the family, so the override has to follow it. */
+    font-family: var(--font-family-display);
     margin: 0;
     max-width: 34ch;
     /* Hero typography uses

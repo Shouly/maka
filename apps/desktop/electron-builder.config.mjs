@@ -237,7 +237,7 @@ const baseDesktopBuilderConfig = {
     // default; pointing the bundle at it would leave every surface outside the
     // running app on the old artwork. Kept in step with `DEFAULT_APP_ICON` by
     // a test in scripts/verify-packaged-app-icons.test.mjs.
-    icon: 'assets/app-icons/sky.png',
+    icon: 'assets/app-icons/relx.png',
     forceCodeSigning: true,
     hardenedRuntime: true,
     notarize: true,
@@ -269,7 +269,7 @@ const baseDesktopBuilderConfig = {
     artifactName: 'Maka-${version}-win-${arch}.${ext}',
     // Same reason as `mac.icon` above: the .exe, the installer and the
     // shortcut are drawn by the OS from this file, not by us.
-    icon: 'assets/app-icons/sky.png',
+    icon: 'assets/app-icons/relx.png',
     // No Authenticode certificate yet. Being unsigned is the absence of one:
     // electron-builder skips signing when no certificate is configured, and
     // `forceCodeSigning` is left off so that skip is not an error. Nothing here
@@ -287,7 +287,7 @@ const baseDesktopBuilderConfig = {
     // Same reason as `mac.icon` above: the launcher entry and the window
     // decoration are drawn by the desktop environment from this file, not by
     // the running app, so it cannot follow the user's icon choice.
-    icon: 'assets/app-icons/sky.png',
+    icon: 'assets/app-icons/relx.png',
     category: 'Development',
     // Without this electron-builder names the binary after the npm package, and
     // this one is scoped: `@maka/desktop` sanitizes to `@makadesktop`, which is

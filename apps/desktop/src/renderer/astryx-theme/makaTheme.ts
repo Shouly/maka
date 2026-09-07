@@ -91,21 +91,24 @@ export const makaTheme = defineTheme({
   // are gone, and maka-tokens.css reads these directly (#1875).
   typography: {
     scale: { base: TYPE_SCALE_BASE_PX, ratio: 1.125 },
-    // PR-UI-ALIGN-0's "clean native" feel comes from the SYSTEM font (SF Pro
-    // on macOS), not a bundled geometric face; Geist stays a late fallback.
+    // ENTERPRISE-RESKIN-1: the bundled brand sans leads (styles/fonts.css);
+    // the system stack stays right behind it so CJK and emoji keep resolving
+    // to platform faces, and Geist remains the late fallback.
     body: {
-      family: '-apple-system',
+      family: 'anthropic-sans',
       fallbacks:
-        'BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, ' +
+        '-apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, ' +
         '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Microsoft YaHei UI", ' +
         '"Noto Sans CJK SC", "Noto Sans SC", "WenQuanYi Micro Hei", "Source Han Sans SC", ' +
         '"Geist Variable", sans-serif',
     },
     // heading intentionally omitted — it inherits body's family/fallbacks.
+    // Display copy (hero headlines) takes the brand serif through
+    // --font-family-display in maka-tokens.css, not through this role.
     code: {
-      family: 'Geist Mono Variable',
+      family: 'anthropic-mono',
       fallbacks:
-        '"JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, ' +
+        '"Geist Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, ' +
         '"Liberation Mono", monospace',
     },
   },

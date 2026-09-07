@@ -19,7 +19,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createDefaultSettings } from '@maka/core/settings';
+import { DEFAULT_APP_ICON, createDefaultSettings } from '@maka/core/settings';
 import { createClientSettingsEffects } from '../client-settings-effects.js';
 
 test('applies each client settings snapshot once across local writes and file watcher echoes', async () => {
@@ -100,7 +100,9 @@ test('an OS appearance flip re-applies the icon without any setting changing', a
   let systemDark = false;
   const current = createDefaultSettings();
   current.appearance.theme = 'auto';
-  current.appearance.appIcon = 'sky';
+  // The light slot keeps the shipped default: that is what startup already
+  // painted, so the first refresh must apply nothing.
+  current.appearance.appIcon = DEFAULT_APP_ICON;
   current.appearance.appIconDark = 'midnight';
   const applied: string[] = [];
   const effects = createClientSettingsEffects({
@@ -129,7 +131,7 @@ test('an OS appearance flip re-applies the icon without any setting changing', a
 
   systemDark = false;
   await effects.refresh(false);
-  assert.deepEqual(applied, ['midnight', 'sky']);
+  assert.deepEqual(applied, ['midnight', DEFAULT_APP_ICON]);
 });
 
 test('with one icon for both appearances a theme flip changes nothing', async () => {

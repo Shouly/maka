@@ -32,11 +32,11 @@
  * they want rather than baking a tint in here.
  */
 
-import { MAKA_WORDMARK_PATH } from '@maka/core/maka-wordmark';
+import { MAKA_WORDMARK_PATH, MAKA_WORDMARK_VIEW_BOX } from '@maka/core/maka-wordmark';
 import type { CSSProperties } from 'react';
 
 export interface MakaWordmarkProps {
-  /** Rendered width in px; height follows the 460:120 aspect ratio. */
+  /** Rendered width in px; height follows the 109:16 aspect ratio. */
   width?: number | string;
   className?: string;
   style?: CSSProperties;
@@ -51,7 +51,7 @@ export interface MakaWordmarkProps {
 export function MakaWordmark({ width = 104, className, style, title }: MakaWordmarkProps) {
   return (
     <svg
-      viewBox="0 0 460 120"
+      viewBox={MAKA_WORDMARK_VIEW_BOX}
       width={width}
       className={className}
       style={style}
@@ -60,9 +60,7 @@ export function MakaWordmark({ width = 104, className, style, title }: MakaWordm
       aria-label={title}
     >
       {title && <title>{title}</title>}
-      <g transform="translate(0,120) scale(0.1,-0.1)" fill="currentColor" stroke="none">
-        <path d={MAKA_WORDMARK_PATH} />
-      </g>
+      <path d={MAKA_WORDMARK_PATH} fill="currentColor" fillRule="evenodd" clipRule="evenodd" />
     </svg>
   );
 }

@@ -110,7 +110,7 @@ export function EmptyChatHero(props: {
           104px it shipped with, the two were within 8% of each other and
           neither led. */}
       <div className="maka-hero-visual">
-        <MakaWordmark width={160} />
+        <MakaWordmark width={218} />
       </div>
       <header>
         <h1>

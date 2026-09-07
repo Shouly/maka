@@ -213,6 +213,10 @@ export const exclusionRules = [
         'packages/ui/src/astryx-chat-reasoning.tsx',
       )(path) ||
       isUnder('apps/desktop/src/renderer/assets/provider-brands', '.svg')(path) ||
+      // ENTERPRISE-RESKIN-1: bundled brand typefaces. Binary font programs are
+      // third-party work under their own (pending) license; see
+      // apps/desktop/src/renderer/styles/fonts.css for the provenance note.
+      isUnder('apps/desktop/src/renderer/assets/fonts', '.woff2')(path) ||
       isUnder('patches', '.patch')(path),
   },
   {

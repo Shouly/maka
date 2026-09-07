@@ -20,7 +20,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { MAKA_WORDMARK_PATH } from '@maka/core/maka-wordmark';
+import { MAKA_WORDMARK_PATH, MAKA_WORDMARK_VIEW_BOX } from '@maka/core/maka-wordmark';
 import { isThemePalette, type ThemePalette } from '@maka/core/settings';
 import type { UiLocale } from '@maka/core/ui-locale';
 import type {
@@ -430,7 +430,7 @@ function renderBrowserMessageBoxHtml(input: BrowserMessageBoxPresentation): stri
       -webkit-app-region: drag;
     }
     .wordmark {
-      width: 68px;
+      width: 96px;
       height: auto;
       color: var(--maka-brand);
     }
@@ -585,7 +585,7 @@ function renderBrowserMessageBoxHtml(input: BrowserMessageBoxPresentation): stri
 <body>
   <main class="card ${input.type}" role="alertdialog" aria-labelledby="dialog-title" aria-describedby="dialog-message">
     <div class="drag-region">
-      <svg class="wordmark" viewBox="0 0 460 120" aria-hidden="true"><g transform="translate(0,120) scale(0.1,-0.1)" fill="currentColor"><path d="${MAKA_WORDMARK_PATH}" /></g></svg>
+      <svg class="wordmark" viewBox="${MAKA_WORDMARK_VIEW_BOX}" aria-hidden="true"><path d="${MAKA_WORDMARK_PATH}" fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" /></svg>
       ${closeButton}
     </div>
     <section class="content">

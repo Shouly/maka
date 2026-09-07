@@ -79,7 +79,12 @@
 
      PR-GRAY-CARD-LIFT-0: dark mode follows the same neutral gray (hue 0, no
      chroma) hierarchy. Lightness anchors keep existing contrast tuning. */
-  --background: light-dark(oklch(1.000 0 0), oklch(0.205 0.004 286));
+  /* ENTERPRISE-RESKIN-0: default palette re-tuned to the relx-copilot design
+     tokens (warm-neutral hue ~106 instead of zinc 286). Dark card = relx
+     surface-2 #1a1a19; the ladder then lands on relx surface-1/0/3 by itself:
+     base #141412, sunken #0b0b0a, overlay #1e1e1c. Light stays white with a
+     hair of warmth so the derived canvas reads #f7f7f5, not a cool grey. */
+  --background: light-dark(oklch(1.000 0.003 106), oklch(0.215 0.003 107));
   /* Derived from --background, not hardcoded (PALETTE-LEAK-0: palettes
      override --background and never this token, so a hardcoded zinc plate
      survived every palette switch).
@@ -170,7 +175,8 @@
 
      Dark's 0.95: 0.92 measured 14.11:1, just under the 15:1 the reading tier
      asks for. */
-  --foreground: light-dark(oklch(0.17 0.005 286), oklch(0.95 0.004 286));
+  /* ENTERPRISE-RESKIN-0: relx ink — light #0b0b0b, dark #f0efec (warm white). */
+  --foreground: light-dark(oklch(0.15 0.002 95), oklch(0.95 0.004 95));
   /* Prose has exactly two rungs — --foreground and --muted-foreground — and
      everything below them is size, weight and case. The two retired middle
      greys stay retired, enforced by ink-ladder-contract. See DESIGN.md §3. */
@@ -180,7 +186,12 @@
      an independent green
      (connected/ok semantics); running/focus-ring/nav-active/selection follow
      --accent, while link text follows the solid tier below. */
-  --accent: light-dark(oklch(0.70 0.135 250), oklch(0.74 0.15 250));
+  /* ENTERPRISE-RESKIN-0: relx product blue. Light = relx --fill-accent-hover
+     #3987e5 (the wash/focus tier); dark = relx dark --text-accent #6da7ec.
+     The solid tier below derives L0.48/L0.76 from this hue as before, which
+     lands near relx --text-accent #184f95 in light. Brand mark stays
+     --maka-brand. */
+  --accent: light-dark(oklch(0.62 0.16 255), oklch(0.72 0.12 254));
   /* The SOLID accent tier: a filled accent surface that carries TEXT, and
      accent-colored text/icons on a plain surface. --action (L0.85 chip) is too
      light to clear 1.4.3's 4.5:1 for text, so it cannot back a solid button
@@ -231,7 +242,7 @@
      gone — a hue cannot lose its dark side when the two sit in one value. */
   --success: light-dark(oklch(0.50 0.17 145), oklch(0.60 0.17 145));  /* green — connected, ok */
   --destructive: light-dark(oklch(0.50 0.24 28), oklch(0.70 0.19 22)); /* red — errors, denied */
-  --warning: light-dark(oklch(0.50 0.18 55), oklch(0.66 0.18 55));    /* orange — caution */
+  --warning: light-dark(oklch(0.50 0.15 75), oklch(0.72 0.15 76));    /* amber — caution (ENTERPRISE-RESKIN-0: relx hue ~75, dark ≈ #db9300) */
 
   /* Legacy brand affordance for a few emphasized surfaces.
      PR-THEME-APPLY-AND-DONE-POLISH-0 (WAWQAQ msg `dec85e5b`): was a static
@@ -375,7 +386,7 @@
      Dark takes a slate bubble — distinct from --accent and readable against
      the dark background. PR-DEFAULT-CANVAS-DEYELLOW-0: hue 250 to match the
      cool-neutral canvas in dark mode too. */
-  --chat-user-bg: light-dark(oklch(0.935 0 0), oklch(0.30 0.010 250));
+  --chat-user-bg: light-dark(oklch(0.945 0.003 106), oklch(0.30 0.003 107)); /* ENTERPRISE-RESKIN-0: relx --sidebar-selected #edece8 / warm-neutral dark */
   --chat-user-foreground: light-dark(
     var(--foreground),
     oklch(from var(--foreground) 0.96 min(c, 0.004) h));
@@ -450,7 +461,16 @@
   --z-settings-fullpage: 35;
 
   /* === typography ===
-     The product used to alias four ladder rungs here — heading 16 / stat 20 /
+     ENTERPRISE-RESKIN-1: the one product-owned family stack. Display copy
+     (hero headlines) reads the brand serif; every other role inherits the
+     Astryx stacks (--font-family-body / -code) declared in makaTheme.ts.
+     The CJK tail mirrors body's so a mixed headline does not swap metrics
+     between Latin and Han glyphs. */
+  --font-family-display: 'anthropic-serif', Georgia, "Times New Roman", Times,
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC",
+    "Source Han Serif SC", serif;
+
+  /* The product used to alias four ladder rungs here — heading 16 / stat 20 /
      ui 14 / caption 12 — so a call site could name a size. A call site names a
      ROLE now (see the role table below), and the size is the role's own atom,
      so all four reached zero consumers and are gone.

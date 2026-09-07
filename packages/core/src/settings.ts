@@ -200,6 +200,10 @@ export const APP_ICONS = [
   // The brand mark and its grayscale companion.
   'default',
   'mono',
+  // ENTERPRISE-RESKIN-1: the RELX flower mark, shipped as the default tile.
+  // Hand-supplied artwork, not a generator colourway (see NOT_GENERATED in
+  // scripts/generate-app-icons.test.mjs).
+  'relx',
   // The geometric M set: one drawing, recoloured. Ids name the colourway, not
   // the artwork, so a repaint never invalidates a settings file already on
   // disk. Ordered by family, following the order the icon discussion used —
@@ -336,7 +340,7 @@ export function isAppIconTarget(value: unknown): value is AppIconTarget {
  * recommendation offered at that moment, not something applied behind their
  * back.
  */
-export const DEFAULT_APP_ICON: AppIcon = 'sky';
+export const DEFAULT_APP_ICON: AppIcon = 'relx';
 export const DEFAULT_APP_ICON_DARK: AppIcon = 'ink';
 
 /** The icon half of a fresh install's appearance, for resolving startup state. */

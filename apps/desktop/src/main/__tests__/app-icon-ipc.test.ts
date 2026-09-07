@@ -265,9 +265,9 @@ test('removing an icon used in both slots clears both', async () => {
   const result = (await h.remove(ICON)) as { ok: boolean; selection: string };
 
   assert.equal(result.ok, true);
-  assert.equal(h.current(), 'sky');
+  assert.equal(h.current(), DEFAULT_APP_ICON);
   assert.equal(h.currentDark(), undefined);
-  assert.equal(result.selection, 'sky');
+  assert.equal(result.selection, DEFAULT_APP_ICON);
 });
 
 test('removing an unrelated icon leaves a dark choice alone', async () => {
