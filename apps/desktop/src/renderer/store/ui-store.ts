@@ -123,7 +123,12 @@ export function createUiStore() {
     },
     dispatchWorkbar(action: WorkbarLayoutAction) {
       if (action.type === 'resize' && !Number.isFinite(action.size)) return;
-      const workbar = reduceWorkbarLayout(store.getState().workbar, action);
+      const current = store.getState().workbar;
+      const workbar = reduceWorkbarLayout(current, action);
+      // The reducer returns the same object when nothing moved, and selecting
+      // a task dispatches on every change of the active id — writing four
+      // localStorage keys for a no-op would make every navigation a disk write.
+      if (workbar === current) return;
       store.setState({ workbar });
       persistWorkbarLayout(workbar);
     },

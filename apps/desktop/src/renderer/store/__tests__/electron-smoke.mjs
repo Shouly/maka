@@ -355,6 +355,155 @@ try {
   await page.waitForFunction(() => !document.documentElement.classList.contains('dark'));
   checks.push('the transcript renders in both themes');
 
+  // ── Phase 4: the right pane ───────────────────────────────────────────────
+  //
+  // These run on the task the earlier steps built, so the faces have a real
+  // session behind them: a Host with a trace and a usage ledger, a workspace
+  // that is not a git repository, an artifact catalog with nothing user-visible
+  // in it, and a Runtime Host that can start a real PTY.
+
+  // 4.1 ⌘⌥S reveals the pane, and the titlebar toggle reports what is open.
+  const pane = page.locator('#maka-workbar-pane');
+  const toggle = page.locator('[data-maka-contract="session-workbar-toggle"]');
+  await toggle.waitFor();
+  await page.keyboard.press('ControlOrMeta+Alt+s');
+  await pane.waitFor();
+  await page.locator('[data-maka-contract="session-artifacts"]').waitFor();
+  await page.locator('[data-maka-contract="session-workbar-count"]').waitFor();
+  checks.push('⌘⌥S opens the right pane on the Files face and the titlebar counts it');
+
+  // 4.2 The Files face lists the task's artifacts. The deterministic backend
+  //     writes none that are user-visible, so what must be on screen is the
+  //     empty state — not a spinner and not a blank panel.
+  await page
+    .locator('[data-maka-contract="session-artifacts"]')
+    .getByText('No generated files', { exact: false })
+    .waitFor();
+  await page.screenshot({ path: SHOT('phase4-files-light.png') });
+  checks.push('the Files face reads the artifact catalog and states that it is empty');
+
+  // 4.3 ⌃⇧G opens Changes. The fixture workspace is not a git repository, and
+  //     that is a FAILURE with a retry, never the "nothing changed" empty state.
+  await page.keyboard.press('Control+Shift+G');
+  const review = page.locator('[data-maka-contract="session-review"]');
+  await review.waitFor();
+  await review.getByRole('status').first().waitFor();
+  await page.screenshot({ path: SHOT('phase4-review-light.png') });
+  checks.push('⌃⇧G opens Changes and it reports why there is no diff');
+
+  // 4.4 ⌃` opens Terminal, starts a real PTY through the Runtime Host, and the
+  //     shell's own output comes back into xterm.
+  await page.keyboard.press('Control+`');
+  const terminal = page.locator('[data-maka-contract="session-terminal"]');
+  await terminal.waitFor();
+  await terminal.getByRole('button', { name: 'New terminal', exact: true }).first().click();
+  const xterm = page.locator('[data-maka-contract="session-terminal-xterm"]');
+  await xterm.waitFor();
+  await xterm.locator('.xterm-rows').waitFor();
+  // Wait for the shell to finish starting: zsh redraws its line while it reads
+  // its rc files, and characters typed into that redraw are reordered on
+  // screen. The prompt is settled when the rows stop changing.
+  await page.waitForFunction(
+    () => {
+      const rows = document.querySelector(
+        '[data-maka-contract="session-terminal-xterm"] .xterm-rows',
+      );
+      const text = rows?.textContent?.trim() ?? '';
+      const previous = window.__makaTerminalSettle;
+      window.__makaTerminalSettle = {
+        text,
+        since: previous?.text === text ? previous.since : Date.now(),
+      };
+      return text.length > 0 && Date.now() - window.__makaTerminalSettle.since > 750;
+    },
+    undefined,
+    { timeout: 30000, polling: 100 },
+  );
+  await xterm.click();
+  await page.keyboard.type('echo mk-p4-$((2+2))', { delay: 30 });
+  await page.keyboard.press('Enter');
+  // The echoed input reads `mk-p4-$((2+2))`; only the shell can produce this.
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[data-maka-contract="session-terminal-xterm"] .xterm-rows')
+        ?.textContent?.includes('mk-p4-4') === true,
+    undefined,
+    { timeout: 30000 },
+  );
+  await page.screenshot({ path: SHOT('phase4-terminal-light.png') });
+  checks.push('⌃` opens Terminal, starts a PTY, and a typed command prints its output');
+
+  // 4.5 The Trace face, opened from the strip's [+] menu (it has no chord).
+  await page.locator('[data-maka-contract="session-workbar-launcher"]').click();
+  await page.getByRole('menuitemcheckbox', { name: 'Trace', exact: true }).click();
+  await page.keyboard.press('Escape');
+  const inspector = page.locator('[data-maka-contract="session-inspector"]');
+  await inspector.waitFor();
+  // The task has run several turns, so the causal timeline has turns in it and
+  // each one is priced or explicitly says it could not be. The session-wide
+  // usage ledger is NOT asserted: the deterministic backend meters no tokens,
+  // and the overview correctly draws nothing rather than a row of zeros.
+  await page.locator('[data-maka-contract="session-inspector-trace"]').waitFor();
+  const turn = page.locator('[data-maka-contract="session-inspector-turn"]').first();
+  await turn.waitFor();
+  await turn.getByText('cost unknown', { exact: false }).waitFor();
+  await page.screenshot({ path: SHOT('phase4-inspector-light.png') });
+  checks.push('the Trace face renders the turn timeline and states an unpriced cost as words');
+
+  // 4.6 ⌘T opens Browser. No page is loaded, so the chrome is what must be
+  //     there — and the reserved strip must show the DOM empty state through it.
+  await page.keyboard.press('ControlOrMeta+t');
+  const browser = page.locator('[data-maka-contract="session-browser"]');
+  await browser.waitFor();
+  await browser.getByLabel('Browser address', { exact: true }).waitFor();
+  await browser.getByRole('button', { name: 'Go back in browser', exact: true }).waitFor();
+  await page.screenshot({ path: SHOT('phase4-browser-light.png') });
+  checks.push('⌘T opens the Browser face with its address bar and navigation controls');
+
+  // 4.7 Five faces open, and the strip lists every one of them.
+  assert.equal(await page.locator('[role="tab"][data-maka-workbar-tab]').count(), 5);
+  assert.equal(await page.locator('[data-maka-contract="session-workbar-count"]').innerText(), '5');
+  checks.push('all five faces stay open in the strip and the titlebar badge counts them');
+
+  // 4.8 The pane in the dark theme.
+  await runPaletteCommand(page, 'Theme · Dark');
+  await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
+  await pane.waitFor();
+  await page.screenshot({ path: SHOT('phase4-pane-dark.png') });
+  await runPaletteCommand(page, 'Theme · Light');
+  await page.waitForFunction(() => !document.documentElement.classList.contains('dark'));
+  checks.push('the right pane renders in both themes');
+
+  // 4.9 The toggle puts the pane away and records that, per task, under the v2
+  //     key. (v1 was global and has no owner; `workbar-layout.ts` removes it.)
+  await toggle.click();
+  await pane.waitFor({ state: 'detached' });
+  const collapsed = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('maka-session-workbar-collapsed-v2') ?? '{}'),
+  );
+  assert.equal(
+    Object.values(collapsed).some((value) => value === true),
+    true,
+  );
+  // The pre-rewrite GLOBAL collapse key has no owner and must not come back.
+  assert.equal(
+    await page.evaluate(() => localStorage.getItem('maka-session-workbar-collapsed-v1')),
+    null,
+  );
+  const panels = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('maka-session-workbar-panels-v3') ?? '{}'),
+  );
+  assert.equal(panels.version, 3);
+  // Terminal is transient by definition; the other four survive a restart.
+  assert.deepEqual(panels.right.tabs.map((tab) => tab.kind).sort(), [
+    'browser',
+    'files',
+    'inspector',
+    'review',
+  ]);
+  checks.push('the titlebar toggle collapses the pane and persists the workbar keys');
+
   // 3a.7 The four timeline shapes, opened.
   //
   // The deterministic test backend emits text and one tool call and nothing
@@ -529,6 +678,12 @@ try {
           'phase3a-model-switcher.png',
           'phase3a-revision-banner.png',
           'phase3a-tool-row.png',
+          'phase4-files-light.png',
+          'phase4-review-light.png',
+          'phase4-terminal-light.png',
+          'phase4-inspector-light.png',
+          'phase4-browser-light.png',
+          'phase4-pane-dark.png',
         ],
       },
       null,

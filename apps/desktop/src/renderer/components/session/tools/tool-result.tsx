@@ -190,3 +190,28 @@ export function ToolResultRow({
     </div>
   );
 }
+
+/**
+ * "Open in Files" / "Open in Terminal": the row's handle on the right pane.
+ *
+ * A transcript row is a record of something that happened; the pane is where
+ * that thing can still be USED — the file re-read, the shell typed into. The
+ * button lives on the result panel's label row so it reads as an action on the
+ * block it belongs to rather than a second status.
+ *
+ * Absent when the pane cannot take the handoff, which is why every caller
+ * passes it conditionally instead of disabling it: a control that is always
+ * there and never works is worse than one that appears when it can act.
+ */
+export function ToolHandoffButton(props: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      data-maka-tool-handoff=""
+      className="ui-control-squish ui-control-squish-ghost inline-flex h-5 shrink-0 cursor-pointer items-center rounded-md px-1.5 text-[0.6875rem] leading-none text-text-secondary outline-none hover:text-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)]"
+    >
+      {props.label}
+    </button>
+  );
+}

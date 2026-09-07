@@ -49,10 +49,13 @@ import { KeyboardHelp } from '../palette/KeyboardHelp.js';
 import { SearchModal } from '../palette/SearchModal.js';
 import { ModulePlaceholder, SettingsPlaceholder } from '../placeholder/ModulePlaceholder.js';
 import { RuntimeDebug } from '../dev/RuntimeDebug.js';
+import { WorkbarPane } from '../workbar/WorkbarPane.js';
+import { WorkbarToggle } from '../workbar/WorkbarToggle.js';
 import { useRendererStores } from '../../hooks/use-workspace.js';
 import { useSessionList } from '../../hooks/use-session-list.js';
 import { useSidebarLayout } from '../../hooks/use-sidebar-layout.js';
 import { useShellHotkeys } from '../../hooks/use-hotkeys.js';
+import { useWorkbar } from '../../hooks/use-workbar.js';
 import {
   connectionsStore,
   hostScopeStore,
@@ -110,6 +113,7 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
   const connections = useStore(connectionsStore, (state) => state.data);
   const defaultHost = useStore(hostScopeStore, (state) => state.host);
   const { model } = useSessionList(filter);
+  const workbar = useWorkbar(activeId);
   const activeRow = model.rows.find((row) => row.id === activeId);
   const parentRow = activeRow?.branchOf
     ? model.rows.find((row) => row.id === activeRow.branchOf?.id)
@@ -193,6 +197,11 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
       else if (settingsOpen) uiStore.closeSettings();
       else if (filter) setFilter('');
     },
+    toggleWorkbar: workbar.toggle,
+    workbarFiles: () => workbar.toggleFace('files'),
+    workbarReview: () => workbar.toggleFace('review'),
+    workbarTerminal: () => workbar.toggleFace('terminal'),
+    workbarBrowser: () => workbar.toggleFace('browser'),
     focusFilter: () => {
       // Only when the list already has focus: `f` is a letter, and stealing it
       // from anywhere would make the rest of the shell feel unresponsive.
@@ -445,11 +454,16 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
         }
         actions={
           view === 'session' && activeId ? (
-            <ModelSwitcher
-              sessionId={activeId}
-              onOpenSettings={() => openSettings('models')}
-              onError={reportError}
-            />
+            <>
+              <ModelSwitcher
+                sessionId={activeId}
+                onOpenSettings={() => openSettings('models')}
+                onError={reportError}
+              />
+              {/* Right-most control in the row (plan §2.12): the workbar's
+                  switch has to be reachable while the pane is not on screen. */}
+              <WorkbarToggle workbar={workbar} />
+            </>
           ) : undefined
         }
       />
@@ -492,11 +506,24 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
             description={placeholder.automationsDescription}
           />
         ) : view === 'session' && activeId ? (
-          <SessionView
-            sessionId={activeId}
-            onOpenSettings={(section) => openSettings(section ?? 'models')}
-            onError={reportError}
-          />
+          // The conversation and the right pane share the content column: the
+          // pane narrows the transcript, never the sidebar, and both start
+          // below the window titlebar (plan §2.12).
+          <div className="flex min-h-0 flex-1 flex-row">
+            <SessionView
+              sessionId={activeId}
+              onOpenSettings={(section) => openSettings(section ?? 'models')}
+              onError={reportError}
+            />
+            {!workbar.collapsed && (
+              <WorkbarPane
+                sessionId={activeId}
+                workbar={workbar}
+                sidebarCollapsed={layout.collapsed}
+                onOpenSidebar={() => uiStore.setSidebarCollapsed(false)}
+              />
+            )}
+          </div>
         ) : (
           <TaskWelcomeContent
             onOpenSettings={() => openSettings('projects')}

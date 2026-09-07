@@ -18,7 +18,7 @@
  */
 
 import { createStore } from 'zustand/vanilla';
-import type { ContextCompactionOutcome, ShellRunUpdate } from '@maka/core/events';
+import type { ContextCompactionOutcome, SessionEvent, ShellRunUpdate } from '@maka/core/events';
 import type { StoredMessage } from '@maka/core/session';
 import type { SessionEventStreamSnapshot } from '@maka/core/session-event-health';
 import type { ExecutionBoundaryReadModel } from '@maka/core/sandbox-boundary';
@@ -133,6 +133,13 @@ export function createActiveSessionStore(
   const shellApi = options.shellRuns ?? shellRuns;
   const store = createStore<ActiveSessionState>(initialState);
   const historyGates: TranscriptHistoryGates = new WeakMap();
+  // Read-only observers of the ACTIVE session's event stream: the workbar's
+  // Review and Inspector faces re-read their own Host projections when a turn
+  // appends to a ledger. They fan out from the one subscription this store
+  // already owns rather than opening a second observer per face — the preload
+  // mints an observer id per `subscribeEvents`, and three of them on one
+  // session would triple the seed traffic to say the same thing.
+  const eventListeners = new Set<(sessionId: string, event: SessionEvent) => void>();
   let dispose = () => {};
   let controller: RecoveringDesktopTranscriptRangeController | undefined;
   let currentRefresh: ((options?: RefreshMessagesOptions) => Promise<boolean>) | undefined;
@@ -380,6 +387,10 @@ export function createActiveSessionStore(
             const health = store.getState().health;
             if (health) commit({ health: recordSessionEventStreamEvent(health, Date.now()) });
             handlers.handleEvent(sessionId, event);
+            // After the shell's own handling: an observer that re-reads a Host
+            // projection must see the state this event produced, not the one
+            // before it.
+            for (const listener of eventListeners) listener(sessionId, event);
           },
           () => {
             if (owner === attempt) ready();
@@ -482,6 +493,19 @@ export function createActiveSessionStore(
   return {
     ...store,
     observe,
+    /**
+     * Watch the active session's event stream without opening one.
+     *
+     * The handler is called after the shell has applied the event, and only
+     * for the session that is in front — a face is only ever looking at that
+     * one. Returns the release; calling it twice is safe.
+     */
+    subscribeSessionEvents(listener: (sessionId: string, event: SessionEvent) => void): () => void {
+      eventListeners.add(listener);
+      return () => {
+        eventListeners.delete(listener);
+      };
+    },
     disconnect() {
       dispose();
       selectionGeneration++;

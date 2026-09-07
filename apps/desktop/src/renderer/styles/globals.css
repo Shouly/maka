@@ -28,6 +28,14 @@
  */
 
 @import "tailwindcss";
+/* xterm's own layout rules (the row grid, the cursor, the viewport). Maka's,
+ * not the reference design's, and it has to sit here rather than in the
+ * additions block at the end because CSS requires every `@import` to precede
+ * the first rule. The colours are NOT taken from this file: the Terminal face
+ * builds an xterm theme from the design tokens at mount (`TerminalTab.tsx`).
+ * `@xterm/xterm` is inside `maka.rendererBundledDependencies`, so the
+ * third-party-notice closure already covers it. */
+@import "@xterm/xterm/css/xterm.css";
 
 /* 全局边框宽度 - 0.5px */
 @utility border {

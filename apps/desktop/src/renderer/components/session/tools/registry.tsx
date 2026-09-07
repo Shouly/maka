@@ -54,6 +54,16 @@ export interface ToolContentContext {
   readonly onOpenSession: (sessionId: string) => void;
   /** Hands a URL to the host; the renderer never navigates itself. */
   readonly onOpenExternal: (url: string) => void;
+  /**
+   * Opens the right pane's Files face on the artifact a row produced.
+   *
+   * The row knows a workspace PATH; the pane owns the artifact catalog and
+   * resolves the two. A row with no path (an image whose ref is not a session
+   * file) still opens the face, which is the useful half of the answer.
+   */
+  readonly onOpenFile?: (path: string | undefined) => void;
+  /** Attaches the right pane's Terminal face to a live shell run. */
+  readonly onOpenTerminal?: (ref: string) => void;
 }
 
 /**
@@ -71,13 +81,26 @@ export function renderToolContent(item: ToolActivityItem, context: ToolContentCo
       return null;
     case 'diff':
       return result?.kind === 'file_diff' ? (
-        <DiffResult paths={result.paths} diff={result.diff} />
+        <DiffResult
+          paths={result.paths}
+          diff={result.diff}
+          {...(context.onOpenFile ? { onOpenFile: context.onOpenFile } : {})}
+        />
       ) : null;
     case 'file_write':
-      return result?.kind === 'file_write' ? <FileWriteResult result={result} /> : null;
+      return result?.kind === 'file_write' ? (
+        <FileWriteResult
+          result={result}
+          {...(context.onOpenFile ? { onOpenFile: context.onOpenFile } : {})}
+        />
+      ) : null;
     case 'terminal':
       return result?.kind === 'terminal' || result?.kind === 'shell_run' ? (
-        <TerminalResult item={item} result={result} />
+        <TerminalResult
+          item={item}
+          result={result}
+          {...(context.onOpenTerminal ? { onOpenTerminal: context.onOpenTerminal } : {})}
+        />
       ) : null;
     case 'web_search':
       return result?.kind === 'web_search' ? (
@@ -96,7 +119,13 @@ export function renderToolContent(item: ToolActivityItem, context: ToolContentCo
     case 'json':
       return result?.kind === 'json' ? <JsonResult result={result} /> : null;
     case 'image':
-      return result?.kind === 'image' ? <ImageResult item={item} result={result} /> : null;
+      return result?.kind === 'image' ? (
+        <ImageResult
+          item={item}
+          result={result}
+          {...(context.onOpenFile ? { onOpenFile: context.onOpenFile } : {})}
+        />
+      ) : null;
     case 'archived':
       return result?.kind === 'archived_tool_result' ? <ArchivedResult result={result} /> : null;
     case 'workflow':

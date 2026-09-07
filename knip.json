@@ -27,8 +27,6 @@
         "@tiptap/extension-mention",
         "@tiptap/suggestion",
         "@types/katex",
-        "@xterm/addon-fit",
-        "@xterm/xterm",
         "fast-deep-equal",
         "mermaid",
         "partial-json",

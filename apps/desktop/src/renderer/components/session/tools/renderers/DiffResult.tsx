@@ -33,11 +33,13 @@ import { useUiLocale } from '@maka/ui';
 import { cn } from '../../../../lib/cn.js';
 import { getTranscriptCopy } from '../../../../locales/transcript-copy.js';
 import {
+  ToolHandoffButton,
   ToolResultPanel,
   toolResultBlockClass,
   toolResultBlockLabelClass,
   toolResultBlockLabelRowClass,
 } from '../tool-result.js';
+import { getWorkbarCopy } from '../../../../locales/workbar-copy.js';
 
 type DiffLineKind = 'added' | 'removed' | 'context' | 'meta';
 
@@ -79,10 +81,13 @@ function renderTokens(text: string, tokens: TokenLine | undefined): ReactNode {
 export const DiffResult = memo(function DiffResult(props: {
   paths: readonly string[];
   diff: string;
+  /** Opens this file in the right pane's Files face. Absent when it cannot. */
+  onOpenFile?: (path: string | undefined) => void;
 }) {
   const locale = useUiLocale();
   const copy = getTranscriptCopy(locale).result;
   const toolCopy = getToolActivityCopy(locale);
+  const handoff = getWorkbarCopy(locale).handoff;
   const model = useMemo(() => {
     const { body, capped } = capLines(props.diff);
     const lines = body.split('\n');
@@ -102,6 +107,12 @@ export const DiffResult = memo(function DiffResult(props: {
           <span className="flex items-center gap-1.5 font-mono text-[0.6875rem] leading-none">
             <span className="text-success">{copy.linesAdded(added)}</span>
             <span className="text-danger">{copy.linesRemoved(removed)}</span>
+            {props.onOpenFile && (
+              <ToolHandoffButton
+                label={handoff.openInFiles}
+                onClick={() => props.onOpenFile?.(props.paths[0])}
+              />
+            )}
           </span>
         </div>
         <div className="custom-code-highlight min-w-0 overflow-x-auto font-mono text-xs leading-5">

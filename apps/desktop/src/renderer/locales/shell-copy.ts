@@ -1224,6 +1224,16 @@ const SHELL_COPY_BY_LOCALE = {
           ],
         },
         {
+          heading: '任务工作栏',
+          rows: [
+            { keys: ['⌘', '⌥', 'S'], description: '显示 / 隐藏任务工作栏' },
+            { keys: ['⌘', 'P'], description: '打开「文件」面' },
+            { keys: ['⌃', '⇧', 'G'], description: '打开「改动」面' },
+            { keys: ['⌃', '`'], description: '打开「终端」面' },
+            { keys: ['⌘', 'T'], description: '打开「浏览器」面' },
+          ],
+        },
+        {
           heading: '面板调整',
           rows: [
             { keys: ['Tab'], description: '聚焦左右分割条' },
@@ -1722,6 +1732,16 @@ const SHELL_COPY_BY_LOCALE = {
           rows: [
             { keys: ['Tab'], description: '聚焦工具活動 / 複製按鈕' },
             { keys: ['Space', 'Enter'], description: '展開 / 摺疊工具呼叫' },
+          ],
+        },
+        {
+          heading: '任務工作欄',
+          rows: [
+            { keys: ['⌘', '⌥', 'S'], description: '顯示 / 隱藏任務工作欄' },
+            { keys: ['⌘', 'P'], description: '開啟「檔案」面' },
+            { keys: ['⌃', '⇧', 'G'], description: '開啟「變更」面' },
+            { keys: ['⌃', '`'], description: '開啟「終端機」面' },
+            { keys: ['⌘', 'T'], description: '開啟「瀏覽器」面' },
           ],
         },
         {
@@ -2266,6 +2286,16 @@ const SHELL_COPY_BY_LOCALE = {
               keys: ['Space', 'Enter'],
               description: 'Expand or collapse a tool call',
             },
+          ],
+        },
+        {
+          heading: 'Task workbar',
+          rows: [
+            { keys: ['⌘', '⌥', 'S'], description: 'Show or hide the task workbar' },
+            { keys: ['⌘', 'P'], description: 'Open the Files face' },
+            { keys: ['⌃', '⇧', 'G'], description: 'Open the Changes face' },
+            { keys: ['⌃', '`'], description: 'Open the Terminal face' },
+            { keys: ['⌘', 'T'], description: 'Open the Browser face' },
           ],
         },
         {

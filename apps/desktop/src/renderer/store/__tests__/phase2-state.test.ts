@@ -501,6 +501,11 @@ test('every hotkey action has exactly one binding path', () => {
     'palette',
     'settings',
     'toggleSidebar',
+    'toggleWorkbar',
+    'workbarBrowser',
+    'workbarFiles',
+    'workbarReview',
+    'workbarTerminal',
   ]);
   // ⌘B toggles the sidebar from anywhere, the composer included (plan §2.12).
   assert.equal(

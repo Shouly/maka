@@ -41,11 +41,13 @@ import CodeRenderer from '../../../ui/CodeRenderer.js';
 import { cn } from '../../../../lib/cn.js';
 import { getTranscriptCopy } from '../../../../locales/transcript-copy.js';
 import {
+  ToolHandoffButton,
   ToolResultPanel,
   toolResultBlockClass,
   toolResultBlockLabelClass,
   toolResultBlockLabelRowClass,
 } from '../tool-result.js';
+import { getWorkbarCopy } from '../../../../locales/workbar-copy.js';
 
 type TerminalResultContent = Extract<
   ToolResultContent,
@@ -77,9 +79,12 @@ function Block(props: { label: string; children: React.ReactNode; action?: React
 export const TerminalResult = memo(function TerminalResult(props: {
   item: ToolActivityItem;
   result: TerminalResultContent;
+  /** Attaches the right pane's Terminal face to this run. Background runs only. */
+  onOpenTerminal?: (ref: string) => void;
 }) {
   const locale = useUiLocale();
   const copy = getTranscriptCopy(locale).result;
+  const handoff = getWorkbarCopy(locale).handoff;
   const toolCopy = getToolActivityCopy(locale).result;
   const outputCopy = getToolActivityCopy(locale).output;
   const merged = withLiveStreamFallback(props.result, props.item.outputChunks, {
@@ -115,11 +120,21 @@ export const TerminalResult = memo(function TerminalResult(props: {
       <Block
         label={copy.command}
         action={
-          backgroundLabel ? (
-            <span className={cn('text-[0.6875rem] leading-none', BACKGROUND_STATUS_TONE[status])}>
-              {backgroundLabel}
-            </span>
-          ) : undefined
+          <span className="flex items-center gap-2">
+            {/* A live shell run is the only one the pane can attach to: a
+                finished foreground command has no PTY left to type into. */}
+            {props.onOpenTerminal && merged.kind === 'shell_run' && (
+              <ToolHandoffButton
+                label={handoff.openInTerminal}
+                onClick={() => props.onOpenTerminal?.(merged.ref)}
+              />
+            )}
+            {backgroundLabel ? (
+              <span className={cn('text-[0.6875rem] leading-none', BACKGROUND_STATUS_TONE[status])}>
+                {backgroundLabel}
+              </span>
+            ) : null}
+          </span>
         }
       >
         <CodeRenderer

@@ -40,11 +40,13 @@ import {
 } from '@maka/ui';
 import { getTranscriptCopy } from '../../../../locales/transcript-copy.js';
 import {
+  ToolHandoffButton,
   ToolResultPanel,
   toolResultBlockClass,
   toolResultBlockLabelClass,
   toolResultBlockLabelRowClass,
 } from '../tool-result.js';
+import { getWorkbarCopy } from '../../../../locales/workbar-copy.js';
 
 export const TextResult = memo(function TextResult(props: {
   result: Extract<ToolResultContent, { kind: 'text' } | { kind: 'summary' }>;
@@ -91,12 +93,23 @@ export const JsonResult = memo(function JsonResult(props: {
 
 export const FileWriteResult = memo(function FileWriteResult(props: {
   result: Extract<ToolResultContent, { kind: 'file_write' }>;
+  /** Opens the written file in the right pane's Files face. */
+  onOpenFile?: (path: string | undefined) => void;
 }) {
   const locale = useUiLocale();
   const copy = getToolActivityCopy(locale).result;
+  const handoff = getWorkbarCopy(locale).handoff;
   return (
-    <span className="truncate font-mono text-xs leading-4 text-text-muted">
-      {copy.fileWritten(props.result.bytes, props.result.path)}
+    <span className="flex min-w-0 items-center gap-2">
+      <span className="truncate font-mono text-xs leading-4 text-text-muted">
+        {copy.fileWritten(props.result.bytes, props.result.path)}
+      </span>
+      {props.onOpenFile && (
+        <ToolHandoffButton
+          label={handoff.openInFiles}
+          onClick={() => props.onOpenFile?.(props.result.path)}
+        />
+      )}
     </span>
   );
 });
@@ -110,9 +123,12 @@ export const FileWriteResult = memo(function FileWriteResult(props: {
 export const ImageResult = memo(function ImageResult(props: {
   item: ToolActivityItem;
   result: Extract<ToolResultContent, { kind: 'image' }>;
+  /** Opens the image in the right pane's Files face. */
+  onOpenFile?: (path: string | undefined) => void;
 }) {
   const locale = useUiLocale();
   const copy = getTranscriptCopy(locale);
+  const handoff = getWorkbarCopy(locale).handoff;
   // Only a session file has bytes the attachment authority can read back; a
   // workspace or external path is a location, not a stored artifact.
   const source = useAttachmentImageSource(
@@ -123,6 +139,21 @@ export const ImageResult = memo(function ImageResult(props: {
   return (
     <ToolResultPanel>
       <div className={toolResultBlockClass}>
+        {props.onOpenFile && (
+          <div className={toolResultBlockLabelRowClass}>
+            <span />
+            <ToolHandoffButton
+              label={handoff.openInFiles}
+              onClick={() =>
+                props.onOpenFile?.(
+                  props.result.ref.kind === 'session_file'
+                    ? props.result.ref.relativePath
+                    : undefined,
+                )
+              }
+            />
+          </div>
+        )}
         {source ? (
           <img
             src={source}

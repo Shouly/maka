@@ -39,10 +39,22 @@ export type HotkeyAction =
   | 'keyboardHelp'
   | 'escape'
   | 'focusFilter'
-  | 'toggleSidebar';
+  | 'toggleSidebar'
+  | 'toggleWorkbar'
+  | 'workbarFiles'
+  | 'workbarReview'
+  | 'workbarTerminal'
+  | 'workbarBrowser';
 
 export interface HotkeyEventShape {
   readonly key: string;
+  /**
+   * The physical key, when the caller has one.
+   *
+   * Only Option chords need it: on macOS, holding Option composes the
+   * character, so ⌘⌥S can arrive as `key: 'ß'`. `code` says `KeyS` either way.
+   */
+  readonly code?: string;
   readonly metaKey: boolean;
   readonly ctrlKey: boolean;
   readonly altKey: boolean;
@@ -54,6 +66,13 @@ export interface HotkeyBinding {
   readonly action: HotkeyAction;
   readonly key: string;
   readonly mod?: boolean;
+  /**
+   * Literal Control on EVERY platform, `mod`'s opposite number. The workbar
+   * inherits ⌃⇧G and ⌃` from the pre-rewrite key map, where they were Control
+   * on macOS too — ⌘` is the OS window cycler and ⌘⇧G is "go to folder" in
+   * every file dialog, so neither could be taken.
+   */
+  readonly ctrl?: boolean;
   readonly shift?: boolean;
   readonly alt?: boolean;
   /** Fires even while a text field has focus. */
@@ -75,6 +94,16 @@ export const SHELL_HOTKEYS: readonly HotkeyBinding[] = [
   { action: 'keyboardHelp', key: '/', mod: true, allowInTextEntry: true },
   { action: 'escape', key: 'Escape', allowInTextEntry: true },
   { action: 'focusFilter', key: 'f' },
+  // The workbar. Every one is a modifier chord, so all of them stay live
+  // inside the composer — opening Files or the Terminal mid-sentence is the
+  // normal way to reach them. The chords are the pre-rewrite ones
+  // (`workbar-tool-definitions.ts`), except ⌘⌥S which toggled the deferred
+  // Side chat and now shows or hides the pane itself.
+  { action: 'toggleWorkbar', key: 's', mod: true, alt: true, allowInTextEntry: true },
+  { action: 'workbarFiles', key: 'p', mod: true, allowInTextEntry: true },
+  { action: 'workbarBrowser', key: 't', mod: true, allowInTextEntry: true },
+  { action: 'workbarReview', key: 'g', ctrl: true, shift: true, allowInTextEntry: true },
+  { action: 'workbarTerminal', key: '`', ctrl: true, allowInTextEntry: true },
 ];
 
 export function isApplePlatform(platform: string = globalThis.navigator?.platform ?? ''): boolean {
@@ -93,13 +122,20 @@ export function matchHotkey(
   binding: HotkeyBinding,
   apple: boolean,
 ): boolean {
-  if (event.key.toLowerCase() !== binding.key.toLowerCase()) return false;
+  if (!matchesKey(event, binding)) return false;
   const wantsMod = binding.mod === true;
-  if (wantsMod !== (apple ? event.metaKey : event.ctrlKey)) return false;
-  // On Apple, Ctrl is a separate modifier and must not be held for a ⌘ chord.
-  if (apple && wantsMod && event.ctrlKey) return false;
-  if (!apple && wantsMod && event.metaKey) return false;
-  if (!wantsMod && (event.metaKey || event.ctrlKey)) return false;
+  if (binding.ctrl === true) {
+    // A literal-Control chord: Control down, the platform modifier up. On
+    // Windows and Linux `mod` IS Control, so a `ctrl` binding and a `mod`
+    // binding for the same key would be the same chord — none exist.
+    if (!event.ctrlKey || event.metaKey) return false;
+  } else {
+    if (wantsMod !== (apple ? event.metaKey : event.ctrlKey)) return false;
+    // On Apple, Ctrl is a separate modifier and must not be held for a ⌘ chord.
+    if (apple && wantsMod && event.ctrlKey) return false;
+    if (!apple && wantsMod && event.metaKey) return false;
+    if (!wantsMod && (event.metaKey || event.ctrlKey)) return false;
+  }
   if ((binding.alt === true) !== event.altKey) return false;
   // Shift is only pinned when the binding names it; `?` already implies it on
   // most layouts and pinning it there would make the binding layout-specific.
@@ -111,6 +147,13 @@ export function matchHotkey(
 }
 
 /** The action a key event maps to, or nothing. Pure; used by the tests. */
+/** The binding's key, by character or — for Option chords — by physical key. */
+function matchesKey(event: HotkeyEventShape, binding: HotkeyBinding): boolean {
+  if (event.key.toLowerCase() === binding.key.toLowerCase()) return true;
+  if (binding.alt !== true || binding.key.length !== 1) return false;
+  return event.code === `Key${binding.key.toUpperCase()}`;
+}
+
 export function resolveHotkey(
   event: HotkeyEventShape & { readonly inTextEntry?: boolean },
   apple: boolean,
@@ -135,6 +178,7 @@ export function useShellHotkeys(handlers: HotkeyHandlers): void {
       const action = resolveHotkey(
         {
           key: event.key,
+          code: event.code,
           metaKey: event.metaKey,
           ctrlKey: event.ctrlKey,
           altKey: event.altKey,

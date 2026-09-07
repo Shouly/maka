@@ -50,6 +50,7 @@ import {
 import { openExternal } from '../../bridge/external-links.js';
 import { readAttachmentBytes } from '../../bridge/attachments.js';
 import { useActiveTurns, useLiveTurnSnapshot } from '../../hooks/use-workspace.js';
+import { openWorkbarFile, openWorkbarTerminal } from '../../hooks/use-workbar.js';
 import { useTurnPresentation, pendingTurnActionKey } from '../../hooks/use-turn-presentation.js';
 import {
   activeSessionStore,
@@ -182,8 +183,13 @@ function SessionTranscript(props: SessionViewProps) {
       onOpenExternal: (url: string) => {
         openExternal(url);
       },
+      // The two handoffs into the right pane (Phase 4). They are bound to THIS
+      // session rather than read from the pane, so a row in a child task's
+      // transcript cannot open a file in its parent's pane.
+      onOpenFile: (path: string | undefined) => openWorkbarFile(sessionId, path),
+      onOpenTerminal: (ref: string) => openWorkbarTerminal(sessionId, ref),
     }),
-    [],
+    [sessionId],
   );
 
   const onFooterAction = useCallback(
