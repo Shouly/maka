@@ -39,7 +39,14 @@
 
 import { useCallback, useLayoutEffect, useState, type KeyboardEvent, type FocusEvent, type RefObject } from 'react';
 
-/** The design system renders one invisible button per interactive row. */
+/**
+ * The design system renders one invisible button per interactive row.
+ *
+ * A caller whose rows are not `li button` — the enterprise renderer's sidebar
+ * marks each row's own control with a data attribute, because its rows also
+ * contain an action-menu trigger that `li button` would wrongly count as a row
+ * — passes its own selector instead.
+ */
 const ROW_BUTTON_SELECTOR = 'li button';
 
 export interface RovingRowFocusProps {
@@ -52,13 +59,16 @@ export interface RovingRowFocusProps {
  * from the DOM rather than tracked as refs because the list markup belongs to
  * the design system, and the row order is exactly the DOM order.
  */
-export function useRovingRowFocus(containerRef: RefObject<HTMLElement | null>): RovingRowFocusProps {
+export function useRovingRowFocus(
+  containerRef: RefObject<HTMLElement | null>,
+  rowSelector: string = ROW_BUTTON_SELECTOR,
+): RovingRowFocusProps {
   const [activeIndex, setActiveIndex] = useState(0);
   // Read inside every callback: the effect below runs after each render, but a
   // key press can land between a data update and that render.
   const readRows = useCallback(
-    () => Array.from(containerRef.current?.querySelectorAll<HTMLElement>(ROW_BUTTON_SELECTOR) ?? []),
-    [containerRef],
+    () => Array.from(containerRef.current?.querySelectorAll<HTMLElement>(rowSelector) ?? []),
+    [containerRef, rowSelector],
   );
   // No dependency array on purpose, and it is load-bearing twice over. React
   // never wrote these tabindexes, so it cannot restore them: any render that

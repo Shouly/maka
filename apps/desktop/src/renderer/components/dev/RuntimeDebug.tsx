@@ -24,7 +24,6 @@ import {
   useActiveTurns,
   useLiveTurnSnapshot,
   useProjectContext,
-  useRendererStores,
 } from '../../hooks/use-workspace.js';
 import {
   sessionsStore,
@@ -41,9 +40,14 @@ import { DesignSmoke } from './DesignSmoke.js';
 import { Button } from '../ui/button.js';
 import { Textarea } from '../ui/textarea.js';
 
-/** Temporary acceptance surface. It uses the same stores Phase 2 will consume. */
+/**
+ * Temporary acceptance surface, reachable from the command palette.
+ *
+ * It does NOT start the stores: the Phase 2 shell owns their lifetime and this
+ * page renders inside it, so mounting them again here would double every
+ * subscription.
+ */
 export function RuntimeDebug() {
-  useRendererStores();
   const copy = getRuntimeDebugCopy(useUiLocale());
   const catalog = useStore(sessionsStore);
   const active = useStore(activeSessionStore);

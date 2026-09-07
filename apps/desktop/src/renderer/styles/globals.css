@@ -1654,15 +1654,107 @@ html.dark {
   flex-direction: column;
 }
 
-/* The one and only `-webkit-app-region: drag` surface in the tree. Anything
-   interactive inside it must opt back out with `.maka-no-drag`. */
-.maka-titlebar-drag {
+/* Window titlebar geometry (plan §2.12). The window is frameless: on macOS
+   `titleBarStyle: hiddenInset` paints the traffic lights at x 17 / y 14, on
+   Windows `titleBarOverlay` paints caption buttons on the right, Linux paints
+   neither. What the OS reserves is reported through `env(titlebar-area-*)`;
+   the gutters below are that, floored at 24px so the strip never starts flush
+   with the window edge. */
+:root {
+  --maka-window-resize-edge: 4px;
+  --maka-titlebar-gap: 8px;
+  --maka-titlebar-area-x: env(titlebar-area-x, 0px);
+  --maka-titlebar-area-width: env(titlebar-area-width, 100vw);
+  --maka-titlebar-gutter-left: max(24px, var(--maka-titlebar-area-x));
+  --maka-titlebar-gutter-right: max(
+    24px,
+    calc(100vw - var(--maka-titlebar-area-x) - var(--maka-titlebar-area-width))
+  );
+  /* Published by the sidebar; the titlebar's first column aligns to it. */
+  --maka-sidenav-width: 0px;
+}
+
+/* The one and only `-webkit-app-region: drag` surface in the tree: one
+   transparent strip across the top of the window. It paints nothing — the
+   sidebar and content columns extend up under it and own the colour — and it
+   is hit-test chrome only, so every control inside it opts back out with
+   `.maka-no-drag`. Chromium builds drag regions in document order, so this
+   node precedes the columns and the columns' controls can subtract from it.
+   The 4px inset keeps the drag rect off the window's resize corridor. */
+.maka-window-titlebar {
+  position: absolute;
+  z-index: 40;
+  top: var(--maka-window-resize-edge);
+  left: var(--maka-window-resize-edge);
+  right: var(--maka-window-resize-edge);
+  height: calc(var(--h-titlebar) - var(--maka-window-resize-edge));
+  box-sizing: border-box;
+  padding-left: var(--maka-titlebar-gutter-left);
+  padding-right: var(--maka-titlebar-gutter-right);
+  background: transparent;
   -webkit-app-region: drag;
-  height: var(--h-titlebar);
+  /* Three columns aligned to the shell below: the sidebar column (its width
+     less what already sits between it and the window edge), the content
+     column, and the right-side actions. Each child names its column so a
+     missing identity never slides the actions into the middle. */
+  display: grid;
+  align-items: center;
+  column-gap: var(--maka-titlebar-gap);
+  grid-template-columns:
+    minmax(
+      calc(
+        var(--maka-sidenav-width) - var(--maka-window-resize-edge) -
+          var(--maka-titlebar-gutter-left) - var(--maka-titlebar-gap)
+      ),
+      auto
+    )
+    minmax(0, 1fr)
+    auto;
+}
+
+.maka-titlebar-rail {
+  grid-column: 1;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+}
+
+.maka-titlebar-identity {
+  grid-column: 2;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.maka-titlebar-actions {
+  grid-column: 3;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  -webkit-app-region: no-drag;
 }
 
 .maka-no-drag {
   -webkit-app-region: no-drag;
+}
+
+/* Drag regions are hit-tested from element rects and the top layer is
+   invisible to that pass: a `showModal()` dialog paints over the titlebar,
+   but its controls inside the titlebar rect would still reach the OS as
+   window drags. */
+dialog:modal {
+  -webkit-app-region: no-drag;
+}
+
+/* The two shell columns run the full window height (they paint the titlebar's
+   background) and start their content below the strip. */
+.maka-shell-column {
+  padding-top: var(--h-titlebar);
+}
+
+.appFrame {
+  position: relative;
 }
 
 /* Justified: e2e/accessibility override. The fixture sets this attribute

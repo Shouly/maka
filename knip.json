@@ -36,12 +36,10 @@
         "@xterm/xterm",
         "fast-deep-equal",
         "mermaid",
-        "motion",
         "partial-json",
         "tailwindcss",
         "throttleit",
-        "tiptap-markdown",
-        "zustand"
+        "tiptap-markdown"
       ],
       "ignoreUnresolved": ["../src/renderer/features/connection-settings"]
     },

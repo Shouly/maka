@@ -1104,6 +1104,7 @@ const SHELL_COPY_BY_LOCALE = {
             },
             { keys: ['?'], description: '打开 / 关闭此快捷键面板' },
             { keys: ['⌘', 'N'], description: '新建任务' },
+            { keys: ['⌘', 'B'], description: '收起或展开侧边栏' },
             { keys: ['⌘', ','], description: '打开设置' },
             {
               keys: ['⌘', 'Shift', 'D'],
@@ -1597,6 +1598,7 @@ const SHELL_COPY_BY_LOCALE = {
             },
             { keys: ['?'], description: '開啟 / 關閉此快捷鍵面板' },
             { keys: ['⌘', 'N'], description: '建立任務' },
+            { keys: ['⌘', 'B'], description: '收起或展開側邊欄' },
             { keys: ['⌘', ','], description: '開啟設定' },
             {
               keys: ['⌘', 'Shift', 'D'],
@@ -2102,6 +2104,7 @@ const SHELL_COPY_BY_LOCALE = {
             },
             { keys: ['?'], description: 'Open or close this shortcuts panel' },
             { keys: ['⌘', 'N'], description: 'Create a new task' },
+            { keys: ['⌘', 'B'], description: 'Collapse or expand the sidebar' },
             { keys: ['⌘', ','], description: 'Open Settings' },
             {
               keys: ['⌘', 'Shift', 'D'],

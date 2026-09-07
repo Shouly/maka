@@ -92,13 +92,38 @@ async function seedE2eConnection(userDataDir) {
 
 const desktop = fileURLToPath(new URL('../../../../', import.meta.url));
 const shots = fileURLToPath(new URL('../../../../../../.maka-shots/enterprise/', import.meta.url));
-const userDataDir = await mkdtemp(path.join(tmpdir(), 'maka-phase1-smoke-'));
+const userDataDir = await mkdtemp(path.join(tmpdir(), 'maka-phase2-smoke-'));
 await mkdir(path.join(userDataDir, 'home'));
 await mkdir(shots, { recursive: true });
 let app;
 let page;
 const errors = [];
 const checks = [];
+
+const SHOT = (name) => path.join(shots, name);
+/** The rail animates its width over 200ms; a screenshot mid-transition is a lie. */
+async function settleSidebar(page) {
+  await page.waitForFunction(() => {
+    const rail = document.querySelector('#app-sidebar');
+    if (!rail) return false;
+    const width = rail.getBoundingClientRect().width;
+    return width >= Number.parseInt(getComputedStyle(rail).getPropertyValue('--sidebar-expanded-width'), 10) - 1;
+  });
+}
+/** The theme control lives in Settings (Phase 5); the palette is how the shell changes it. */
+async function runPaletteCommand(page, label) {
+  await page.keyboard.press('ControlOrMeta+k');
+  await page.locator('[data-maka-contract="command-palette"]').waitFor();
+  await page.getByRole('option', { name: label, exact: true }).first().click();
+  await page.locator('[data-maka-contract="command-palette"]').waitFor({ state: 'detached' });
+}
+
+async function startTask(page, prompt) {
+  await page.locator('[data-maka-contract="welcome-surface"]').waitFor();
+  await page.getByLabel('Task', { exact: true }).fill(prompt);
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+}
+
 try {
   await seedE2eConnection(userDataDir);
   app = await electron.launch({
@@ -108,192 +133,165 @@ try {
     timeout: 30000,
   });
   page = await app.firstWindow();
-  page.setDefaultTimeout(15000);
+  page.setDefaultTimeout(20000);
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.locator('[data-maka-runtime-debug]').waitFor();
-  await page.getByRole('button', { name: 'New session', exact: true }).click();
-  await page.getByText('Event stream connected', { exact: true }).waitFor();
-  const prompt = 'Phase 1 smoke test';
-  await page.getByLabel('Message', { exact: true }).fill(prompt);
-  await page.getByRole('button', { name: 'Send', exact: true }).click();
+
+  // 1. The shell paints: the app frame, the rail, and the welcome surface.
+  //
+  // A fresh profile starts with the rail COLLAPSED (`maka-chat-list-collapsed-v1`
+  // defaults to true, as it did before the rewrite), so the first thing the
+  // test does is what a first-run user does: open it.
+  await page.locator('.appFrame').waitFor();
+  await page.locator('[data-maka-contract="welcome-surface"]').waitFor();
   await page.waitForFunction(
-    () => {
-      const turns = JSON.parse(
-        document.querySelector('[data-maka-turn-projection]')?.textContent ?? '[]',
-      );
-      return turns.some(
-        (turn) =>
-          turn.assistant?.text?.includes('renderer loop are connected.') &&
-          turn.status === 'completed',
-      );
-    },
-    undefined,
-    { timeout: 20000 },
+    () => document.querySelector('.appFrame')?.getAttribute('data-sidebar-state') === 'collapsed',
   );
-  checks.push('new session, send, streamed assistant, terminal projection');
-  const before = await page.locator('[data-maka-turn-projection]').textContent();
-  assert.ok(before.includes(prompt));
-  const firstKey = await page
-    .locator('aside button[aria-pressed="true"]')
-    .getAttribute('data-session-key');
-  await page.screenshot({ path: path.join(shots, 'phase1-light.png') });
+  await page.getByRole('button', { name: 'Expand sidebar', exact: true }).first().click();
+  await page.locator('#app-sidebar').waitFor();
+  await page.locator('[data-maka-contract="shell-topbar-rail"]').waitFor();
+  await settleSidebar(page);
+  assert.equal(await page.locator('[data-maka-runtime-debug]').count(), 0);
+  checks.push('shell mounts with the sidebar and the welcome surface, not the debug page');
+  await page.screenshot({ path: SHOT('phase2-welcome-light.png') });
 
-  // A second session must not inherit the first session's transcript or draft.
-  await page.getByRole('button', { name: 'New session', exact: true }).click();
+  // 2. A task created from the welcome composer streams a reply.
+  const firstPrompt = 'Phase 2 smoke test';
+  await startTask(page, firstPrompt);
+  await page.locator('[data-maka-contract="titlebar-identity"]').waitFor();
+  await page.locator('[data-maka-contract="transcript"]').waitFor();
+  await page
+    .locator('[data-maka-contract="transcript"]')
+    .getByText('renderer loop are connected.', { exact: false })
+    .waitFor();
+  checks.push('new task from the welcome composer creates a session and streams a reply');
+
+  // 3. The sidebar lists it.
+  const rows = page.locator('[data-maka-contract="session-row"]');
+  await rows.first().waitFor();
+  const firstKey = await rows.first().getAttribute('data-session-key');
+  assert.ok(firstKey);
+  checks.push('the sidebar lists the session it just created');
+
+  // 4. Rename through the row menu, and read it back after a reload — a rename
+  // that only changed the DOM would not survive one.
+  const rowFor = (key) =>
+    page.locator(`[data-maka-contract="session-row"][data-session-key=${JSON.stringify(key)}]`);
+  const RENAMED = 'Renamed by the smoke test';
+  await rowFor(firstKey).hover();
+  await rowFor(firstKey).getByRole('button', { name: /Actions for/u }).click();
+  await page.getByRole('menuitem', { name: 'Rename', exact: true }).click();
+  const renameInput = page.getByLabel('Task name', { exact: true });
+  await renameInput.fill(RENAMED);
+  await renameInput.press('Enter');
   await page.waitForFunction(
-    (key) =>
-      document.querySelector('[data-maka-runtime-debug]')?.getAttribute('data-active-session') !==
-      key,
-    firstKey,
+    ([key, name]) =>
+      document
+        .querySelector(`[data-maka-contract="session-row"][data-session-key=${JSON.stringify(key)}]`)
+        ?.textContent?.includes(name) === true,
+    [firstKey, RENAMED],
   );
-  await page.getByText('Event stream connected', { exact: true }).waitFor();
-  assert.equal(await page.getByLabel('Message', { exact: true }).inputValue(), '');
-  assert.equal(await page.locator('[data-maka-turn-projection]').textContent(), '[]');
-  await page.locator(`aside button[data-session-key=${JSON.stringify(firstKey)}]`).click();
-  await page.waitForFunction(() =>
-    document
-      .querySelector('[data-maka-turn-projection]')
-      ?.textContent?.includes('Phase 1 smoke test'),
-  );
-  checks.push('switch sessions without leaked messages');
-
-  await page.getByLabel('Message', { exact: true }).fill('__e2e_ask_user_question__');
-  await page.getByRole('button', { name: 'Send', exact: true }).click();
-  await page.getByLabel('Response JSON', { exact: true }).waitFor();
-  const request = JSON.parse(
-    await page
-      .locator('details')
-      .filter({ has: page.getByText('Pending interactions', { exact: true }) })
-      .locator('pre')
-      .textContent(),
-  )[0];
-  await page.getByLabel('Response JSON', { exact: true }).fill(
-    JSON.stringify({
-      requestId: request.requestId,
-      answers: ['invite only', 'next week', 'yes'],
-    }),
-  );
-  await page.getByRole('button', { name: 'Submit response', exact: true }).click();
-  await page.getByLabel('Response JSON', { exact: true }).waitFor({ state: 'detached' });
-  await page.waitForFunction(() => {
-    const turns = JSON.parse(
-      document.querySelector('[data-maka-turn-projection]')?.textContent ?? '[]',
-    );
-    return turns.some(
-      (turn) => turn.user?.text === '__e2e_ask_user_question__' && turn.status === 'completed',
-    );
-  });
-  checks.push('tool request, live interaction, response acknowledgement and completed turn');
-
-  await page.getByLabel('Message', { exact: true }).fill('__e2e_hold_open__');
-  await page.getByRole('button', { name: 'Send', exact: true }).click();
-  await page.waitForFunction(() =>
-    document
-      .querySelector('[data-maka-turn-projection]')
-      ?.textContent?.includes('waiting for the test to stop'),
-  );
-  await page.getByLabel('Message', { exact: true }).fill('Phase 1 steering');
-  await page.getByRole('button', { name: 'Send', exact: true }).click();
-  await page.waitForFunction(() =>
-    document
-      .querySelector('[data-maka-turn-projection]')
-      ?.textContent?.includes('Acknowledged steering: Phase 1 steering'),
-  );
-  checks.push('steering admission and event projection while running');
-  await page.getByRole('button', { name: 'Stop', exact: true }).click();
-  await page.waitForFunction(() => {
-    const turns = JSON.parse(
-      document.querySelector('[data-maka-turn-projection]')?.textContent ?? '[]',
-    );
-    return turns.some(
-      (turn) =>
-        turn.user?.text === '__e2e_hold_open__' &&
-        (turn.status === 'interrupted' || turn.status === 'aborted'),
-    );
-  });
-  checks.push('stop an open streaming turn');
-
   await page.reload();
-  await page.locator('aside button[aria-pressed]').first().waitFor();
-  await page.locator(`aside button[data-session-key=${JSON.stringify(firstKey)}]`).click();
-  await page.waitForFunction(() =>
-    document
-      .querySelector('[data-maka-turn-projection]')
-      ?.textContent?.includes('Phase 1 smoke test'),
+  await rows.first().waitFor();
+  await page.waitForFunction(
+    ([key, name]) =>
+      document
+        .querySelector(`[data-maka-contract="session-row"][data-session-key=${JSON.stringify(key)}]`)
+        ?.textContent?.includes(name) === true,
+    [firstKey, RENAMED],
   );
-  checks.push('reload persisted transcript through Runtime Host');
-  // Change appearance through the real settings IPC. Renderer must consume the change subscription.
-  await page.getByLabel('Theme', { exact: true }).selectOption('dark');
-  await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
-  await page.screenshot({ path: path.join(shots, 'phase1-dark.png') });
-  checks.push('settings round-trip and dark theme');
-  await page.getByLabel('Theme', { exact: true }).selectOption('light');
-  await page.getByRole('button', { name: 'Design system', exact: true }).click();
-  await page.screenshot({ path: path.join(shots, 'design-review-light.png') });
-  await page.getByLabel('Theme', { exact: true }).selectOption('dark');
-  await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
-  await page.screenshot({ path: path.join(shots, 'design-review-dark.png') });
-  if (process.platform === 'darwin') {
-    await app.evaluate(({ BrowserWindow }) => {
-      globalThis.__modalVisibility = [];
-      for (const win of BrowserWindow.getAllWindows()) {
-        const original = win.setWindowButtonVisibility.bind(win);
-        win.setWindowButtonVisibility = (visible) => {
-          globalThis.__modalVisibility.push(visible);
-          return original(visible);
-        };
-      }
-    });
-  }
-  await page.getByRole('button', { name: 'Open dialog', exact: true }).click();
-  await page.locator('[data-app-dialog-overlay][data-state="open"]').waitFor();
-  if (process.platform === 'darwin') {
-    await page.waitForTimeout(50);
-    assert.equal((await app.evaluate(() => globalThis.__modalVisibility)).at(-1), false);
-  }
-  await page.screenshot({ path: path.join(shots, 'design-review-dialog.png') });
-  await page.keyboard.press('Escape');
-  await page.locator('[data-app-dialog-overlay][data-state="open"]').waitFor({ state: 'detached' });
-  if (process.platform === 'darwin') {
-    await page.waitForTimeout(50);
-    assert.equal((await app.evaluate(() => globalThis.__modalVisibility)).at(-1), true);
-  }
-  checks.push('Radix modal dims native chrome and restores it on close');
-  const visibilityBeforePopover =
-    process.platform === 'darwin'
-      ? await app.evaluate(() => globalThis.__modalVisibility.length)
-      : 0;
-  await page.getByRole('button', { name: 'Popover', exact: true }).click();
-  await page.getByRole('dialog').waitFor();
-  assert.equal(await page.locator('[data-app-dialog-overlay][data-state="open"]').count(), 0);
-  if (process.platform === 'darwin')
-    assert.equal(
-      await app.evaluate(() => globalThis.__modalVisibility.length),
-      visibilityBeforePopover,
-    );
-  await page.keyboard.press('Escape');
-  await page.getByRole('dialog').waitFor({ state: 'detached' });
-  await page.waitForFunction(() => document.activeElement?.textContent?.trim() === 'Popover');
-  await app.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows()[0]?.focus(); });
-  await page.waitForFunction(() => document.hasFocus());
-  await page.keyboard.press('Tab');
-  const link = page.getByRole('link', { name: 'external link', exact: true });
-  await link.focus();
-  assert.equal(await link.evaluate((element) => element.matches(':focus-visible')), true);
-  assert.notEqual(await link.evaluate((element) => getComputedStyle(element).outlineStyle), 'none');
-  checks.push(
-    'nonmodal Popover leaves native chrome unchanged; Markdown links retain keyboard focus',
+  checks.push('rename from the row menu persists through the Host');
+
+  // A second task, so filtering has something to exclude.
+  await page.getByRole('button', { name: 'New task', exact: true }).first().click();
+  await startTask(page, 'Second smoke task');
+  await page.locator('[data-maka-contract="transcript"]').waitFor();
+  await page
+    .locator('[data-maka-contract="transcript"]')
+    .getByText('renderer loop are connected.', { exact: false })
+    .waitFor();
+  await page.waitForFunction(
+    () => document.querySelectorAll('[data-maka-contract="session-row"]').length >= 2,
   );
+  await page.screenshot({ path: SHOT('phase2-session-list.png') });
+
+  const before = await rows.count();
+  assert.ok(before >= 2);
+  await page.getByLabel('Filter tasks', { exact: true }).fill('Renamed by');
+  await page.waitForFunction(
+    () => document.querySelectorAll('[data-maka-contract="session-row"]').length === 1,
+  );
+  await page.getByLabel('Clear filter', { exact: true }).click();
+  await page.waitForFunction(
+    (count) => document.querySelectorAll('[data-maka-contract="session-row"]').length === count,
+    before,
+  );
+  checks.push('the sidebar filter narrows the list to one row and clears back');
+
+  // 5. ⌘K opens the palette and its rows are reachable.
+  await page.keyboard.press('ControlOrMeta+k');
+  const palette = page.locator('[data-maka-contract="command-palette"]');
+  await palette.waitFor();
+  assert.ok((await palette.getByRole('option').count()) > 0);
+  await page.screenshot({ path: SHOT('phase2-palette.png') });
+  await page.keyboard.press('Escape');
+  await palette.waitFor({ state: 'detached' });
+  checks.push('⌘K opens the command palette and Escape closes it');
+
+  // 6. The search modal, and the attribute the main process probes for.
+  await page.getByRole('button', { name: 'Search tasks', exact: true }).first().click();
+  const search = page.locator('[data-maka-contract="search-modal"]');
+  await search.waitFor();
+  await page.getByLabel('Search', { exact: true }).fill('smoke');
+  await page.getByRole('option').first().waitFor();
+  await page.screenshot({ path: SHOT('phase2-search.png') });
+  assert.equal(
+    await page.evaluate(
+      () => document.querySelectorAll('[data-maka-contract="search-modal"]').length,
+    ),
+    1,
+  );
+  await page.keyboard.press('Escape');
+  await search.waitFor({ state: 'detached' });
+  checks.push('the search modal opens, finds a thread, and carries its contract attribute');
+
+  // 7. Theme through the palette, which round-trips settings IPC.
+  await runPaletteCommand(page, 'Theme · Dark');
+  await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
+  await page.locator('[data-maka-contract="session-row"]').first().waitFor();
+  await settleSidebar(page);
+  await page.screenshot({ path: SHOT('phase2-welcome-dark.png') });
+  checks.push('the palette switches the theme through the real settings IPC');
+  await runPaletteCommand(page, 'Theme · Light');
+  await page.waitForFunction(() => !document.documentElement.classList.contains('dark'));
+
+  // 8. Collapse, which must publish the shell state the main process reads.
+  await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).first().click();
+  await page.waitForFunction(
+    () => document.querySelector('.appFrame')?.getAttribute('data-sidebar-state') === 'collapsed',
+  );
+  await page.screenshot({ path: SHOT('phase2-sidebar-collapsed.png') });
+  await page.getByRole('button', { name: 'Expand sidebar', exact: true }).first().click();
+  await page.waitForFunction(
+    () => document.querySelector('.appFrame')?.getAttribute('data-sidebar-state') === null,
+  );
+  checks.push('sidebar collapse publishes data-sidebar-state and restores');
 
   assert.deepEqual(errors, []);
   await writeFile(
-    path.join(shots, 'phase1-smoke-result.json'),
+    path.join(shots, 'phase2-smoke-result.json'),
     JSON.stringify(
       {
         checks,
         rendererErrors: errors,
         modelBackend: 'FakeBackend through real Electron preload, Runtime Host and SQLite',
-        screenshots: ['phase1-light.png', 'phase1-dark.png'],
+        screenshots: [
+          'phase2-welcome-light.png',
+          'phase2-welcome-dark.png',
+          'phase2-session-list.png',
+          'phase2-palette.png',
+          'phase2-search.png',
+          'phase2-sidebar-collapsed.png',
+        ],
       },
       null,
       2,
@@ -303,7 +301,7 @@ try {
 } catch (error) {
   if (page && !page.isClosed()) {
     console.error((await page.locator('body').innerText()).slice(-7000));
-    await page.screenshot({ path: path.join(shots, 'phase1-failure.png') }).catch(() => {});
+    await page.screenshot({ path: SHOT('phase2-failure.png') }).catch(() => {});
   }
   throw error;
 } finally {

@@ -30,9 +30,14 @@ import { settingsStore } from './settings-store.js';
 import { connectionsStore } from './connections-store.js';
 import { projectsStore } from './projects-store.js';
 import { toastApi } from './toast-api.js';
+import { newTaskStore } from './new-task-store.js';
+import { onboardingStore } from './onboarding-store.js';
+import { scheduledTasksStore } from './scheduled-tasks-store.js';
+import { updateStore } from './update-store.js';
 import { errorMessage } from './resource-store.js';
 
 export { sessionsStore, settingsStore, connectionsStore, projectsStore };
+export { newTaskStore, onboardingStore, scheduledTasksStore, updateStore };
 export { uiStore } from './ui-store.js';
 export const activeSessionStore = createActiveSessionStore({
   refreshSessions: sessionsStore.refresh,
@@ -79,6 +84,12 @@ export function startRendererStores(): () => void {
   const offSessions = sessionsStore.start();
   const offSettings = settingsStore.startClient();
   const offLocal = projectsStore.connectLocal();
+  const offNewTasks = newTaskStore.start();
+  const offSchedules = scheduledTasksStore.start();
+  const offUpdates = updateStore.start();
+  // Deferred, not raced against the reveal handshake: the onboarding snapshot
+  // is a composite read and nothing on the first frame depends on it.
+  const cancelOnboarding = onboardingStore.prefetch();
   void refreshHost();
   return () => {
     closed = true;
@@ -87,5 +98,9 @@ export function startRendererStores(): () => void {
     offSessions();
     offSettings();
     offLocal();
+    offNewTasks();
+    offSchedules();
+    offUpdates();
+    cancelOnboarding();
   };
 }

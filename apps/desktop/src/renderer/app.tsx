@@ -24,15 +24,19 @@
 // it. So is the single `-webkit-app-region: drag` strip below — the window is
 // frameless with a 36px native overlay, and that strip is the only surface in
 // the whole tree allowed to be draggable (styles/globals.css).
+//
+// Everything the shell DOES lives in `components/layout/AppShell.tsx`. This
+// file is only the things that must wrap it: locale, tooltips, toasts, the
+// error boundary, and the theme/titlebar effects that talk to the main process.
 
 import { useEffect, type ReactNode } from 'react';
 import { LocaleProvider } from '@maka/ui';
 import type { UiLocale } from '@maka/core/ui-locale';
 import type { ThemePreference } from '@maka/core/settings';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
-import { RuntimeDebug } from './components/dev/RuntimeDebug.js';
+import { AppShell } from './components/layout/AppShell.js';
 import { useStore } from 'zustand';
-import { sessionsStore, settingsStore, uiStore } from './store/index.js';
+import { settingsStore } from './store/index.js';
 import { useSystemUiLocale } from './lib/ported/use-system-ui-locale.js';
 import { Toaster } from './components/ui/toaster.js';
 import { TooltipProvider } from './components/ui/tooltip.js';
@@ -45,9 +49,7 @@ export interface AppProps {
   initialTheme: ThemePreference;
   locale: UiLocale;
   localeOverride: UiLocale | null;
-  /**
-   * The e2e fixture's UI state. It seeds session selection and layout for the runtime debug view.
-   */
+  /** The e2e fixture's UI state, applied by the shell once the stores exist. */
   fixture: PendingE2eFixtureUiState | null;
 }
 
@@ -66,11 +68,6 @@ export function App({ initialTheme, locale, localeOverride, fixture }: AppProps)
       applyTerminalFontSize(client.appearance.terminalFontSize);
   }, [client?.appearance.uiFontSize, client?.appearance.terminalFontSize]);
   useEffect(() => {
-    if (!fixture) return;
-    if (fixture.activeSessionId) sessionsStore.select(fixture.activeSessionId);
-    uiStore.applyFixture(fixture);
-  }, [fixture]);
-  useEffect(() => {
     // The pre-paint bootstrap set the DOM from cache; this is what tells the
     // main process (native chrome, titlebar overlay colour) about it.
     const stopThemeWatch = applyTheme(theme);
@@ -85,11 +82,10 @@ export function App({ initialTheme, locale, localeOverride, fixture }: AppProps)
     <LocaleProvider locale={resolvedLocale} override={localeOverride}>
       <TooltipProvider delayDuration={300}>
         <div className="appFrame">
-          {/* The one draggable surface. Anything interactive placed inside it
-              must opt back out with `.maka-no-drag`. */}
-          <div className="maka-titlebar-drag shrink-0" />
+          {/* The window titlebar strip (the one draggable surface) is rendered
+              by AppShell so its columns can align to the sidebar. */}
           <ErrorBoundary>
-            <RuntimeDebug />
+            <AppShell fixture={fixture} />
           </ErrorBoundary>
         </div>
         <Toaster />

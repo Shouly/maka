@@ -34,3 +34,28 @@ export async function copyDiagnosticReport(input: DesktopDiagnosticInput): Promi
     return false;
   }
 }
+
+/**
+ * Whether the previous run of the app ended in a main-process interruption.
+ *
+ * "Take" is literal: main clears the marker when it is read, so exactly one
+ * surface reports one crash once. The renderer only decides whether to show a
+ * notice; the report itself is assembled by `copyPreviousMainProcessInterruption`.
+ */
+export async function takePreviousMainProcessInterruption(): Promise<boolean> {
+  try {
+    return (await tryNamespace('diagnostics')?.takePreviousMainProcessInterruption()) === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Put the previous run's interruption report on the clipboard. */
+export async function copyPreviousMainProcessInterruption(): Promise<boolean> {
+  try {
+    await tryNamespace('diagnostics')?.copyPreviousMainProcessInterruption();
+    return true;
+  } catch {
+    return false;
+  }
+}

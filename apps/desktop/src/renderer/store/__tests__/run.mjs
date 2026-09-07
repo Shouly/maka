@@ -25,12 +25,16 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 const output = await mkdtemp(join(tmpdir(), 'maka-renderer-state-'));
 try {
-  const entries = ['renderer-state.test.ts', 'presentation.test.tsx'].map((name) =>
-    fileURLToPath(new URL(name, import.meta.url)),
-  );
-  const files = ['renderer-state.test.mjs', 'presentation.test.mjs'].map((name) =>
-    join(output, name),
-  );
+  const entries = [
+    'renderer-state.test.ts',
+    'phase2-state.test.ts',
+    'presentation.test.tsx',
+  ].map((name) => fileURLToPath(new URL(name, import.meta.url)));
+  const files = [
+    'renderer-state.test.mjs',
+    'phase2-state.test.mjs',
+    'presentation.test.mjs',
+  ].map((name) => join(output, name));
   await build({
     entryPoints: entries,
     outdir: output,
