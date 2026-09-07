@@ -65,7 +65,9 @@ export function WindowTitlebar(props: WindowTitlebarProps) {
         <div
           className={cn(
             'maka-titlebar-rail maka-titlebar-gutter-left',
-            collapsed ? 'maka-titlebar-rail-collapsed' : 'bg-sidebar',
+            // Expanded: this segment is the top of the sidebar column, so it
+            // carries the column's background and its hairline right edge.
+            collapsed ? 'maka-titlebar-rail-collapsed' : 'border-r border-hairline bg-sidebar',
             layout.isResizing
               ? 'transition-none'
               : 'transition-[width] duration-200 ease-out motion-reduce:transition-none',

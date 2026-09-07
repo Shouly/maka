@@ -1625,6 +1625,13 @@ pre[class*="language-"] {
      `scripts/check-renderer-architecture.mjs` forbids under `components/**` —
      same colour, declared once, where a colour is allowed to live. */
   --console-surface: #2e2e2b;
+  /* The hover-peek sidebar's shadow, verbatim from the reference `Sidebar`
+     (written inline there as a Tailwind arbitrary value, which the colour
+     lint forbids under components/** — so it lives here as a token). */
+  --sidebar-peek-shadow:
+    0 0 0 0.5px rgb(0 0 0 / 5%),
+    0 2px 8px rgb(0 0 0 / 4%),
+    0 12px 32px rgb(0 0 0 / 3%);
 }
 
 /* main samples the *painted* `<html>` background through a 1x1 canvas

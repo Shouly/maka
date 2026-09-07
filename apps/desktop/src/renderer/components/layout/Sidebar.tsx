@@ -175,8 +175,10 @@ export function Sidebar(props: SidebarProps) {
           !layout.visible
             ? 'pointer-events-none w-0 overflow-hidden'
             : layout.isPeekOpen
-              ? 'absolute left-0 top-0 z-40 h-full w-[var(--sidebar-expanded-width)] border-r border-hairline bg-surface-2 shadow-[var(--pane-shadow)]'
-              : 'w-[var(--sidebar-expanded-width)] bg-sidebar',
+              ? // The reference design's peek surface: raised, hairline edge, its
+                // own three-layer shadow (not the right pane's).
+                'absolute left-0 top-0 z-40 h-full w-[var(--sidebar-expanded-width)] border-r border-hairline bg-surface-2 shadow-[var(--sidebar-peek-shadow)]'
+              : 'w-[var(--sidebar-expanded-width)] border-r border-hairline bg-sidebar',
         )}
       >
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
