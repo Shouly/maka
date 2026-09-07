@@ -35,8 +35,6 @@ import { cn } from '../../lib/cn.js';
 
 export function AppLayout(props: {
   sidebar: ReactNode;
-  /** The content column's titlebar row (plan §2.12); renders first in `<main>`. */
-  titlebar?: ReactNode;
   collapsed: boolean;
   children: ReactNode;
   className?: string;
@@ -52,7 +50,6 @@ export function AppLayout(props: {
         data-sidebar-main=""
         className="relative flex min-w-0 flex-1 flex-col overflow-hidden"
       >
-        {props.titlebar}
         {props.children}
       </main>
     </div>

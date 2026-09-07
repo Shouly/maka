@@ -1654,9 +1654,9 @@ html.dark {
   flex-direction: column;
 }
 
-/* Window titlebar geometry (plan §2.12). The window is frameless; each
-   shell column owns its own 36px titlebar row (`.maka-titlebar-row`) and the
-   gutters clear what the OS paints there: macOS traffic lights top-left
+/* Window titlebar geometry (plan §2.12). The window is frameless; one fixed
+   36px row (`.maka-window-titlebar`) spans the window above both columns and
+   its gutters clear what the OS paints there: macOS traffic lights top-left
    (`titleBarStyle: hiddenInset`, x 17 / y 14, ~70px wide), Windows caption
    buttons top-right (`titleBarOverlay`, reported through
    `env(titlebar-area-*)`), Linux neither. `data-maka-platform` is set on
@@ -1679,50 +1679,49 @@ html[data-maka-platform="darwin"] {
   --maka-titlebar-gutter-left: max(78px, var(--maka-titlebar-area-x));
 }
 
-/* The one and only `-webkit-app-region: drag` surface in the tree: one
-   transparent strip across the top of the window that carries NO controls.
-   Chromium computes draggable regions from element rects (minus every
-   `no-drag` rect, in document order), so it needs no pointer events of its
-   own — the columns paint the titlebar's background and take the clicks —
-   and it must precede the columns so their controls can carve themselves
-   out of it. The 4px inset keeps the drag rect off the resize corridor. */
+/* The window titlebar: one fixed flow row at the top of `.appFrame` and the
+   app's only `-webkit-app-region: drag` surface. Its controls opt out with
+   `.maka-no-drag`. The sidebar, the content column and the hover-peek panel
+   all start below it, so nothing ever covers the toggle. */
 .maka-window-titlebar {
-  position: absolute;
-  top: var(--maka-window-resize-edge);
-  left: var(--maka-window-resize-edge);
-  right: var(--maka-window-resize-edge);
-  height: calc(var(--h-titlebar) - var(--maka-window-resize-edge));
-  background: transparent;
-  pointer-events: none;
-  -webkit-app-region: drag;
-}
-
-/* A column's titlebar row: the strip's height, controls vertically centred on
-   the traffic lights (y 14 + 6). */
-.maka-titlebar-row {
+  display: flex;
+  align-items: center;
   height: var(--h-titlebar);
   flex-shrink: 0;
   box-sizing: border-box;
   padding-top: 2px;
+  -webkit-app-region: drag;
+}
+/* Left segment: the sidebar's share of the row (its width follows the
+   sidebar; collapsed it only wraps the two buttons). */
+.maka-titlebar-rail {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 100%;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  padding-right: 8px;
+}
+.maka-titlebar-identity {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
+  padding-left: 12px;
+}
+.maka-titlebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
 }
 .maka-titlebar-gutter-left {
   padding-left: var(--maka-titlebar-gutter-left);
 }
 .maka-titlebar-gutter-right {
   padding-right: var(--maka-titlebar-gutter-right);
-}
-/* The collapsed sidebar's two buttons, fixed where the sidebar's own row
-   draws them. Below the hover-peek panel (z 40), which repaints the same row. */
-.maka-collapsed-rail {
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 30;
-}
-/* The content column's row clears that rail while the sidebar is collapsed:
-   gutter + two 28px buttons + gap. */
-.maka-content-titlebar-clears-rail {
-  padding-left: calc(var(--maka-titlebar-gutter-left) + 68px);
 }
 
 .maka-no-drag {

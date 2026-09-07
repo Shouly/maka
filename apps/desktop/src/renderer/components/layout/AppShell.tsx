@@ -41,8 +41,6 @@ import { AppLayout } from './AppLayout.js';
 import { Sidebar } from './Sidebar.js';
 import { SessionIdentity } from './SessionIdentity.js';
 import { WindowTitlebar } from './WindowTitlebar.js';
-import { ContentTitlebar } from './ContentTitlebar.js';
-import { CollapsedSidebarRail } from './CollapsedSidebarRail.js';
 import { TaskWelcomeContent } from '../welcome/TaskWelcomeContent.js';
 import { SessionView } from '../session/SessionView.js';
 import { CommandPalette } from '../palette/CommandPalette.js';
@@ -426,28 +424,23 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
 
   return (
     <>
-      {/* The drag strip (no controls) must precede every `no-drag` control so
-          they can carve themselves out of it. */}
-      <WindowTitlebar />
-      {layout.collapsed && (
-        <CollapsedSidebarRail layout={layout} onOpenSearch={() => uiStore.setSearchOpen(true)} />
-      )}
+      {/* Row 1: the window titlebar — traffic lights, sidebar toggle, search,
+          session identity, actions. Everything below starts under it. */}
+      <WindowTitlebar
+        layout={layout}
+        onOpenSearch={() => uiStore.setSearchOpen(true)}
+        identity={
+          view === 'session' && activeId ? (
+            <SessionIdentity
+              row={activeRow}
+              parentName={parentRow?.displayName}
+              onOpenParent={selectSession}
+            />
+          ) : undefined
+        }
+      />
       <AppLayout
         collapsed={layout.collapsed}
-        titlebar={
-          <ContentTitlebar
-            sidebarCollapsed={layout.collapsed}
-            identity={
-              view === 'session' && activeId ? (
-                <SessionIdentity
-                  row={activeRow}
-                  parentName={parentRow?.displayName}
-                  onOpenParent={selectSession}
-                />
-              ) : undefined
-            }
-          />
-        }
         sidebar={
           <Sidebar
             layout={layout}
@@ -455,7 +448,6 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
             onFilterChange={setFilter}
             filterInputRef={filterInputRef}
             onNewTask={newTask}
-            onOpenSearch={() => uiStore.setSearchOpen(true)}
             onOpenSettings={() => openSettings()}
             onSelectModule={selectModule}
             sessionActions={sessionActions}
