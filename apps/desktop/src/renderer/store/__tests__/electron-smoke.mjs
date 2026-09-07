@@ -23,6 +23,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createProjectCatalog } from '@maka/storage/project-catalog';
 import { resolveStorageRoot, tryAcquireInteractiveRootOwner } from '@maka/storage/root-authority';
 import { openInteractiveRuntimePolicyStoresForWrite } from '@maka/storage/runtime-policy-stores';
 import { buildFixtureEnv } from '../../../../../../scripts/fixture-env.mjs';
@@ -107,7 +108,10 @@ async function settleSidebar(page) {
     const rail = document.querySelector('#app-sidebar');
     if (!rail) return false;
     const width = rail.getBoundingClientRect().width;
-    return width >= Number.parseInt(getComputedStyle(rail).getPropertyValue('--sidebar-expanded-width'), 10) - 1;
+    return (
+      width >=
+      Number.parseInt(getComputedStyle(rail).getPropertyValue('--sidebar-expanded-width'), 10) - 1
+    );
   });
 }
 /** The theme control lives in Settings (Phase 5); the palette is how the shell changes it. */
@@ -138,6 +142,25 @@ async function startTask(page, prompt) {
 
 try {
   await seedE2eConnection(userDataDir);
+  const workspaceRoot = path.join(userDataDir, 'workspaces', 'default');
+  const projectRoot = path.join(userDataDir, 'composer-project');
+  await mkdir(path.join(projectRoot, '.maka', 'skills', 'composer-review'), { recursive: true });
+  await writeFile(path.join(projectRoot, 'mention-example.txt'), 'Composer reference test.');
+  await writeFile(
+    path.join(projectRoot, '.maka', 'skills', 'composer-review', 'SKILL.md'),
+    '---\nname: Composer Review\ndescription: Check composer references.\n---\nRead the user request and reply briefly.',
+  );
+  const rootAuthority = await resolveStorageRoot({ path: workspaceRoot, kind: 'interactive' });
+  const catalog = createProjectCatalog(workspaceRoot);
+  try {
+    const project = await catalog.register(projectRoot);
+    await writeFile(
+      path.join(workspaceRoot, 'project-preferences.json'),
+      JSON.stringify({ version: 1, selections: { [rootAuthority.rootId]: project.id } }),
+    );
+  } finally {
+    catalog.close();
+  }
   app = await electron.launch({
     args: ['.'],
     cwd: desktop,
@@ -199,25 +222,28 @@ try {
   const switcher = page.locator('[data-maka-contract="model-switcher"]');
   await switcher.waitFor();
   await switcher.click();
-  await page.getByRole('menuitem', { name: /Sonnet/u }).first().waitFor();
+  await page
+    .getByRole('menuitem', { name: /Sonnet/u })
+    .first()
+    .waitFor();
   await page.screenshot({ path: SHOT('phase3a-model-switcher.png') });
   await page.keyboard.press('Escape');
-  await page.getByRole('menuitem', { name: /Sonnet/u }).first().waitFor({ state: 'detached' });
+  await page
+    .getByRole('menuitem', { name: /Sonnet/u })
+    .first()
+    .waitFor({ state: 'detached' });
   checks.push('the titlebar model switcher lists the seeded connection');
 
   // 3a.3 Regenerate produces a second turn from the same ask.
   const firstTurnId = await turns.first().getAttribute('data-turn-id');
   await turns.first().hover();
   await transcript.getByRole('button', { name: 'Regenerate', exact: true }).first().click();
-  await page.waitForFunction(
-    (previous) => {
-      const ids = [...document.querySelectorAll('[data-turn-id]')].map(
-        (node) => node.getAttribute('data-turn-id'),
-      );
-      return ids.length >= 1 && ids.some((id) => id !== previous);
-    },
-    firstTurnId,
-  );
+  await page.waitForFunction((previous) => {
+    const ids = [...document.querySelectorAll('[data-turn-id]')].map((node) =>
+      node.getAttribute('data-turn-id'),
+    );
+    return ids.length >= 1 && ids.some((id) => id !== previous);
+  }, firstTurnId);
   checks.push('regenerate produces a new turn');
 
   // 3a.4 A tool request row renders, and the interaction it is waiting on is
@@ -237,8 +263,70 @@ try {
   await page.locator('[data-maka-contract="interaction-pending"]').waitFor();
   await page.screenshot({ path: SHOT('phase3a-tool-row.png') });
   checks.push('a tool request renders a timeline row and the pending answer is announced');
-  await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  const promptPanel = page.locator('[data-maka-contract="interaction-prompt"]');
+  // The wizard advances on each pick; the last pick submits (relx AskUserPanel).
+  await promptPanel.getByRole('option', { name: /邀请制/ }).click();
+  await promptPanel.getByRole('option', { name: /下周/ }).click();
+  await promptPanel.getByRole('option', { name: /^是/ }).click();
+  await promptPanel.waitFor({ state: 'detached' });
   await page.locator('[data-maka-contract="interaction-pending"]').waitFor({ state: 'detached' });
+  checks.push('multi-question prompt submits answers through the real Host');
+  await page.waitForFunction(
+    () => document.querySelectorAll('[data-turn-status="running"]').length === 0,
+  );
+  const composer = page.getByRole('textbox', { name: 'Message input', exact: true });
+  await composer.fill('@mention');
+  await page.getByRole('option', { name: 'mention-example.txt', exact: true }).click();
+  assert.equal(await composer.locator('[data-composer-reference="file"]').count(), 1);
+  await composer.press('End');
+  await composer.pressSequentially(' /Composer');
+  await page.getByRole('option', { name: /Composer Review/ }).click();
+  assert.equal(await composer.locator('[data-composer-reference="skill"]').count(), 1);
+  await page.locator('[data-maka-file-drop-target]').evaluate((element) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(
+      new File(['attachment content'], 'composer-note.txt', { type: 'text/plain' }),
+    );
+    element.dispatchEvent(
+      new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }),
+    );
+  });
+  await page.getByRole('button', { name: 'Remove composer-note.txt', exact: true }).waitFor();
+  await composer.press('End');
+  await composer.pressSequentially(' Check these references.');
+  await transcript.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.waitForFunction(
+    () =>
+      [...document.querySelectorAll('[data-turn-status="completed"]')].some((e) =>
+        e.textContent?.includes('Check these references'),
+      ) && document.querySelector('[data-maka-contract="composer-input"]')?.textContent === '',
+  );
+  await page
+    .getByRole('button', { name: 'Remove composer-note.txt', exact: true })
+    .waitFor({ state: 'detached' });
+  checks.push(
+    'file and skill mention atoms, dropped attachment, transmission and successful draft cleanup',
+  );
+
+  await page.getByRole('combobox', { name: /Permission mode/ }).click();
+  await page.getByRole('option', { name: 'Full access', exact: true }).click();
+  const bypass = page.getByRole('dialog', { name: 'Switch to full access?', exact: true });
+  await bypass.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('combobox', { name: /Permission mode/ }).click();
+  await page.getByRole('option', { name: 'Full access', exact: true }).click();
+  await bypass.getByRole('button', { name: 'Switch to full access', exact: true }).click();
+  await bypass.waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'Plan', exact: true }).click();
+  await page.waitForFunction(
+    () =>
+      document.querySelector('button[aria-pressed="true"]')?.textContent?.includes('Plan') ||
+      [...document.querySelectorAll('button[aria-pressed="true"]')].some(
+        (e) => e.textContent === 'Plan',
+      ),
+  );
+  await page.getByRole('button', { name: 'Plan', exact: true }).click();
+  checks.push('full-access confirmation can cancel or commit, and Plan mode round-trips');
+  await page.screenshot({ path: SHOT('phase3b-composer.png') });
 
   // 3a.5 Edit-and-resend forks a revision and says so.
   const editable = transcript.locator('[data-turn-id]').first();
@@ -293,7 +381,6 @@ try {
   await page.waitForFunction(() => !document.documentElement.classList.contains('dark'));
   checks.push('every timeline renderer opens: reasoning, a diff, a shell run and a subtask');
 
-
   // 3. The sidebar lists it.
   //
   // The rail can be collapsed at this point — a first-run profile starts
@@ -314,7 +401,9 @@ try {
     page.locator(`[data-maka-contract="session-row"][data-session-key=${JSON.stringify(key)}]`);
   const RENAMED = 'Renamed by the smoke test';
   await rowFor(firstKey).hover();
-  await rowFor(firstKey).getByRole('button', { name: /Actions for/u }).click();
+  await rowFor(firstKey)
+    .getByRole('button', { name: /Actions for/u })
+    .click();
   await page.getByRole('menuitem', { name: 'Rename', exact: true }).click();
   const renameInput = page.getByLabel('Task name', { exact: true });
   await renameInput.fill(RENAMED);
@@ -322,7 +411,9 @@ try {
   await page.waitForFunction(
     ([key, name]) =>
       document
-        .querySelector(`[data-maka-contract="session-row"][data-session-key=${JSON.stringify(key)}]`)
+        .querySelector(
+          `[data-maka-contract="session-row"][data-session-key=${JSON.stringify(key)}]`,
+        )
         ?.textContent?.includes(name) === true,
     [firstKey, RENAMED],
   );
@@ -331,7 +422,9 @@ try {
   await page.waitForFunction(
     ([key, name]) =>
       document
-        .querySelector(`[data-maka-contract="session-row"][data-session-key=${JSON.stringify(key)}]`)
+        .querySelector(
+          `[data-maka-contract="session-row"][data-session-key=${JSON.stringify(key)}]`,
+        )
         ?.textContent?.includes(name) === true,
     [firstKey, RENAMED],
   );
@@ -413,7 +506,6 @@ try {
     () => document.querySelector('.appFrame')?.getAttribute('data-sidebar-state') === null,
   );
   checks.push('sidebar collapse publishes data-sidebar-state and restores');
-
 
   assert.deepEqual(errors, []);
   await writeFile(

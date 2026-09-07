@@ -64,7 +64,9 @@ import { getTranscriptCopy } from '../../locales/transcript-copy.js';
 import type { TurnFooterActionId } from '../../lib/ported/turn-footer-actions.js';
 import { ChatSkeleton } from '../ui/chat-skeleton.js';
 import { cn } from '../../lib/cn.js';
-import { ComposerPlaceholder } from './ComposerPlaceholder.js';
+import { composerInputStore } from '../../store/composer-input-store.js';
+import { ChatInput } from '../composer/ChatInput.js';
+import { InteractionPrompts } from '../composer/InteractionPrompts.js';
 import { JumpToLatest, TranscriptGapRow } from './HistoryControls.js';
 import { MessageQueue } from './MessageQueue.js';
 import { SelectionQuote } from './SelectionQuote.js';
@@ -131,10 +133,7 @@ function SessionTranscript(props: SessionViewProps) {
 
   // Bring the remembered turn back into the range before the scroller looks
   // for it. A cancelled restore is a task the reader already left.
-  useEffect(
-    () => activeSessionStore.restoreReadingPosition(),
-    [sessionId, feed.observationReady],
-  );
+  useEffect(() => activeSessionStore.restoreReadingPosition(), [sessionId, feed.observationReady]);
 
   const turnIds = useMemo(() => turns.map((turn) => turn.turnId), [turns]);
   const pendingTurnActions = usePendingTurnActions(sessionId, pending, turnIds);
@@ -240,7 +239,14 @@ function SessionTranscript(props: SessionViewProps) {
       })
       .then(async (row) => {
         revisionDraftStore.markForked(row.id);
-        await turnActionsStore.send(row.id, { type: 'send', turnId: crypto.randomUUID(), text });
+        composerInputStore.setText(row.id, text);
+        const result = await turnActionsStore.send(row.id, {
+          type: 'send',
+          turnId: current.copyId,
+          text,
+        });
+        if (!result.ok) throw new Error(result.reason);
+        composerInputStore.setText(row.id, '');
         revisionDraftStore.complete();
       })
       .catch((error) => {
@@ -264,10 +270,14 @@ function SessionTranscript(props: SessionViewProps) {
   );
 
   const running = live.phase !== undefined || pending.includes('send');
-  const historyPending = feed.historyPending?.sessionId === sessionId ? feed.historyPending : undefined;
+  const historyPending =
+    feed.historyPending?.sessionId === sessionId ? feed.historyPending : undefined;
 
   return (
-    <div className="chat-area relative flex min-h-0 flex-1 flex-col" data-maka-contract="transcript">
+    <div
+      className="chat-area relative flex min-h-0 flex-1 flex-col"
+      data-maka-contract="transcript"
+    >
       <div className="relative min-h-0 flex-1">
         <div
           ref={scrollRef}
@@ -291,10 +301,10 @@ function SessionTranscript(props: SessionViewProps) {
                   <TranscriptGapRow
                     key={`gap-${row.direction}`}
                     direction={row.direction}
-                    pending={historyPending?.target === (row.direction === 'older' ? 'earlier' : 'later')}
-                    onLoad={() =>
-                      void loadHistory(row.direction === 'older' ? 'earlier' : 'later')
+                    pending={
+                      historyPending?.target === (row.direction === 'older' ? 'earlier' : 'later')
                     }
+                    onLoad={() => void loadHistory(row.direction === 'older' ? 'earlier' : 'later')}
                   />
                 );
               }
@@ -385,12 +395,9 @@ function SessionTranscript(props: SessionViewProps) {
             onSelectSession={(id) => sessionsStore.select(id)}
           />
           <MessageQueue sessionId={sessionId} onError={reportError} />
+          <InteractionPrompts sessionId={sessionId} />
           {props.composerSlot ?? (
-            <ComposerPlaceholder
-              sessionId={sessionId}
-              running={running}
-              onError={reportError}
-            />
+            <ChatInput sessionId={sessionId} running={running} onError={reportError} />
           )}
         </div>
       </div>

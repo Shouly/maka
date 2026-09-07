@@ -57,9 +57,7 @@ export function createComposerDraftStore() {
     addQuote(sessionId: string, quote: QuoteRef): PendingQuote | undefined {
       const existing = store.getState().quotes[sessionId] ?? [];
       if (
-        existing.some(
-          (row) => row.text === quote.text && row.sourceTurnId === quote.sourceTurnId,
-        )
+        existing.some((row) => row.text === quote.text && row.sourceTurnId === quote.sourceTurnId)
       ) {
         return undefined;
       }
@@ -75,6 +73,12 @@ export function createComposerDraftStore() {
       store.setState((state) => ({
         quotes: { ...state.quotes, [sessionId]: existing.filter((row) => row.id !== id) },
       }));
+    },
+    transferQuotes(from: string, to: string) {
+      store.setState((state) => {
+        const { [from]: moving, ...rest } = state.quotes;
+        return { quotes: { ...rest, [to]: [...(rest[to] ?? []), ...(moving ?? [])] } };
+      });
     },
     clearQuotes(sessionId: string) {
       if (!store.getState().quotes[sessionId]) return;

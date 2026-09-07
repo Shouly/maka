@@ -24,12 +24,7 @@
       "project": ["src/**/*.{ts,tsx}", "e2e/**/*.ts", "scripts/**/*.mjs"],
       "ignoreBinaries": ["plutil", "pgrep"],
       "ignoreDependencies": [
-        "@tiptap/core",
         "@tiptap/extension-mention",
-        "@tiptap/extension-placeholder",
-        "@tiptap/pm",
-        "@tiptap/react",
-        "@tiptap/starter-kit",
         "@tiptap/suggestion",
         "@types/katex",
         "@xterm/addon-fit",

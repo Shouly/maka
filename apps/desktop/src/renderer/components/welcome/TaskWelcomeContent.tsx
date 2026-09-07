@@ -31,17 +31,13 @@
 // turn actions every later message uses, so nothing about this surface is a
 // special case downstream.
 
-import { useState } from 'react';
 import { useStore } from 'zustand';
 import { getConversationCopy, getPromptSuggestions, useUiLocale } from '@maka/ui';
-import { Anthropicon } from '../icons/Anthropicon.js';
-import { Button } from '../ui/button.js';
-import { Textarea } from '../ui/textarea.js';
+import { ChatInput, newComposerKey } from '../composer/ChatInput.js';
+import { composerInputStore } from '../../store/composer-input-store.js';
 import { cn } from '../../lib/cn.js';
-import { newTaskStore, sessionsStore, turnActionsStore } from '../../store/index.js';
+import { newTaskStore } from '../../store/index.js';
 import { getWelcomeCopy } from '../../locales/welcome-copy.js';
-import { WorkspacePicker } from './WorkspacePicker.js';
-import { ModelPicker } from './ModelPicker.js';
 import { OnboardingHero } from './OnboardingHero.js';
 import { ReadinessNotice } from './ReadinessNotice.js';
 
@@ -71,38 +67,12 @@ export function TaskWelcomeContent(props: {
   const locale = useUiLocale();
   const copy = getWelcomeCopy(locale);
   const conversation = getConversationCopy(locale).empty;
-  const [draft, setDraft] = useState('');
-  const creating = useStore(newTaskStore, (state) => state.creating);
   const target = useStore(newTaskStore, (state) => state.target);
-  const model = useStore(newTaskStore, (state) => state.model);
   const period = detectDayPeriod();
   const greeting = conversation.headlineFallback(
     conversation.greeting[period],
     conversation.greetingTail[period],
   );
-  const blocked = !target
-    ? copy.composer.blockedNoWorkspace
-    : !model
-      ? copy.composer.blockedNoModel
-      : undefined;
-
-  const submit = async () => {
-    const text = draft.trim();
-    if (!text || creating || blocked) return;
-    try {
-      const session = await newTaskStore.create();
-      sessionsStore.upsert(session);
-      sessionsStore.select(session.id);
-      setDraft('');
-      await turnActionsStore.send(session.id, {
-        type: 'send',
-        turnId: crypto.randomUUID(),
-        text,
-      });
-    } catch (error) {
-      props.onError(copy.composer.failedTitle, error);
-    }
-  };
 
   return (
     <div
@@ -129,42 +99,11 @@ export function TaskWelcomeContent(props: {
               />
               <ReadinessNotice onOpenWorkspacePicker={props.onOpenSettings} />
 
-              <div className="chat-composer-surface flex w-full flex-col gap-2 rounded-[var(--chat-composer-radius)] p-2">
-                <Textarea
-                  value={draft}
-                  aria-label={copy.composer.label}
-                  placeholder={copy.composer.placeholder}
-                  data-maka-contract="composer-input"
-                  rows={3}
-                  onChange={(event) => setDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' && !event.shiftKey) {
-                      event.preventDefault();
-                      void submit();
-                    }
-                  }}
-                  className="min-h-20 resize-none border-0 bg-transparent shadow-none focus-visible:shadow-none"
-                />
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <WorkspacePicker />
-                  <ModelPicker onOpenSettings={props.onOpenModels} />
-                  <span className="ml-auto flex items-center gap-2">
-                    {blocked && (
-                      <span className="text-xs leading-4 text-text-muted" role="status">
-                        {blocked}
-                      </span>
-                    )}
-                    <Button
-                      size="icon"
-                      aria-label={copy.composer.send}
-                      disabled={!draft.trim() || creating || Boolean(blocked)}
-                      onClick={() => void submit()}
-                    >
-                      <Anthropicon name={creating ? 'spinner' : 'arrowUp'} size={20} />
-                    </Button>
-                  </span>
-                </div>
-              </div>
+              <ChatInput
+                label={copy.composer.label}
+                onOpenSettings={props.onOpenModels}
+                onError={props.onError}
+              />
 
               <ul
                 aria-label={copy.suggestionsLabel}
@@ -174,7 +113,9 @@ export function TaskWelcomeContent(props: {
                   <li key={suggestion.label}>
                     <button
                       type="button"
-                      onClick={() => setDraft(suggestion.prompt)}
+                      onClick={() =>
+                        composerInputStore.setText(newComposerKey(target), suggestion.prompt)
+                      }
                       className={cn(
                         'ui-control-squish ui-control-squish-ghost inline-flex h-8 cursor-pointer items-center rounded-full border border-hairline px-3 text-[13px] leading-5 text-text-secondary outline-none',
                         'hover:text-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)]',
