@@ -23,7 +23,7 @@ import {
   describeFailedTurnExecutionState,
   describeTurnErrorClass,
   deriveFailedTurnSeverity,
-} from '../../renderer/session-status-presentation.js';
+} from '../../renderer/lib/ported/session-status-presentation.js';
 
 const NOTHING_RAN = {
   partialOutputRetained: false,

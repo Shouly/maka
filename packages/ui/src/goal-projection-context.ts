@@ -18,18 +18,51 @@
  */
 
 import { createContext, useContext } from 'react';
-import type { ChatViewGoalIndicatorProps } from './chat-view.js';
-import type { ComposerGoalProps } from './composer.js';
 
-/** The required transport shape for the optional Goal props on Composer. */
-export interface ComposerGoalProjection {
-  readonly goalActive: NonNullable<ComposerGoalProps['goalActive']>;
-  readonly onSetGoal: ComposerGoalProps['onSetGoal'] | undefined;
+interface SessionContextGoalBase {
+  condition: string;
+  iterations: number;
+  maxIterations: number;
+  /** Epoch ms when the goal was armed; the chip derives wall-clock elapsed. */
+  setAt: number;
+  tokensSpent?: number;
+  /** When present (a budget exists), the chip shows spent / budget. */
+  tokenBudget?: number;
+  onClear(): void;
 }
 
-/** The required transport shape for the optional Goal indicator on ChatView. */
+/**
+ * An autonomous goal running in a session, as the transcript chip needs it.
+ * Moved here from the deleted `session-context-layer.tsx` in the enterprise
+ * renderer rewrite (Phase 0a): the shape is a product model, only its renderer
+ * was Astryx.
+ */
+export type SessionContextGoal =
+  | (SessionContextGoalBase & {
+      status: 'active' | 'waiting';
+      pausedAt?: never;
+      /** Present when the goal can be paused (active/waiting). */
+      onPause?(): void;
+      onResume?: never;
+    })
+  | (SessionContextGoalBase & {
+      status: 'paused';
+      /** Epoch ms when the goal was paused; freezes the chip clock while paused. */
+      pausedAt: number;
+      onPause?: never;
+      /** Present when the goal is paused and can be resumed. */
+      onResume?(): void;
+    });
+
+/** The required transport shape for the optional Goal props on the composer. */
+export interface ComposerGoalProjection {
+  readonly goalActive: boolean;
+  readonly onSetGoal: (() => void | Promise<void>) | undefined;
+}
+
+/** The required transport shape for the optional Goal indicator on the chat view. */
 export interface ChatViewGoalProjection {
-  readonly goalIndicator: ChatViewGoalIndicatorProps['goalIndicator'] | undefined;
+  readonly goalIndicator: SessionContextGoal | undefined;
 }
 
 const inactiveComposerGoalProjection: ComposerGoalProjection = {

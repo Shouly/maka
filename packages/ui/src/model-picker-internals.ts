@@ -17,7 +17,23 @@
  * under the License.
  */
 
-import type { SelectorDivider, SelectorOptionData } from '@astryxdesign/core/Selector';
+import type { ReactNode } from 'react';
+
+/**
+ * The option shapes the model picker hands its select control. Defined locally
+ * since the enterprise renderer rewrite (Phase 0a) dropped the Astryx
+ * `Selector` these used to alias; Phase 3b re-points them at the Radix-backed
+ * select the new design system ships.
+ */
+export type SelectorOptionData = {
+  value: string;
+  label?: string;
+  description?: ReactNode;
+  disabled?: boolean;
+  icon?: ReactNode;
+};
+
+export type SelectorDivider = { type: 'divider' };
 import type { ProviderType } from '@maka/core/llm-connections';
 import type { UiLocale } from '@maka/core/ui-locale';
 import {

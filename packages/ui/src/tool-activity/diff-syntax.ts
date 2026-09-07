@@ -22,36 +22,43 @@
  *
  * The diff body used to paint every line one flat colour — green for an
  * addition, red for a deletion, grey for context — so a fifty-line hunk read
- * as three blocks of tint with no structure inside them. Astryx's `CodeBlock`
- * cannot supply the missing half: it highlights a whole buffer in one
- * language, and a diff is neither (its marker column is not code, and its
- * lines are two files interleaved).
+ * as three blocks of tint with no structure inside them. A whole-buffer
+ * highlighter cannot supply the missing half: it highlights one language, and
+ * a diff is neither (its marker column is not code, and its lines are two
+ * files interleaved). What a diff can use is a *stateless per-line*
+ * tokenizer — the rows tokenize as one buffer of stripped code and the results
+ * still line up row for row, with no pretence that the old and new sides are
+ * each a compilable file.
  *
- * What Astryx does ship is the tokenizer underneath that component, and it
- * carries no state between lines: `tokenize` returns one token array per line,
- * each starting from that line's own offset with nothing inherited from the
- * one above. That is what a diff can use — the rows tokenize as one buffer of
- * stripped code and the results still line up row for row, with no pretence
- * that the old and new sides are each a compilable file.
- *
- * Stateless is not the same as line-bounded, and the difference is visible.
- * `tokenizeLine` bounds where a match may *start*, not how far it may run, and
- * several patterns span newlines — the JS block comment `/\*[\s\S]*?\*\/`, the
- * HTML `<!-- -->`, Python's triple-quoted strings. A row that opens one gets a
- * token reaching into the rows below (clamped where it is rendered), and those
- * rows, having inherited nothing, colour as ordinary code. So the interior of a
- * multi-line comment reads as code rather than as comment. That is a colour
- * being wrong, never a character: it is strictly better than the flat tint it
- * replaced, and fixing it means carrying an "inside a construct" flag across
- * rows here — a real feature, not a clamp, and not worth it until someone
- * misreads a diff because of it.
- *
- * The `astryx-token-*` classes the spans carry are Astryx's own span-mode
- * fallback classes, injected by `ensureHighlightStyles()`; the product's
- * `--color-syntax-*` theme tokens are what they resolve against.
+ * TODO(phase-3): Prism-based highlighting. The enterprise renderer rewrite
+ * (Phase 0a) removed the Astryx tokenizer this module used to call, and the
+ * replacement below returns one empty token array per line — every row renders
+ * as plain text, which is exactly the result the diff had before colouring was
+ * added and never a wrong colouring. Phase 3 swaps `tokenizeLines` for a
+ * `prismjs` implementation that emits the same `TokenLine` shape.
  */
 
-import { tokenize, type TokenLine } from '@astryxdesign/core';
+/** One highlight span inside a line, at line-relative offsets. */
+export type SyntaxToken = {
+  type: string;
+  start: number;
+  end: number;
+};
+
+/**
+ * Per-line token structure. Each line stores its own tokens with
+ * line-relative start/end offsets (0 = start of line).
+ */
+export type TokenLine = SyntaxToken[];
+
+/**
+ * Placeholder tokenizer: one empty token array per line, so consumers keep
+ * their row-for-row alignment and render plain text until Phase 3 lands Prism.
+ */
+function tokenizeLines(code: string, _language: string): TokenLine[] {
+  return code.split('\n').map(() => []);
+}
+
 
 /**
  * File extension → the language identifier Astryx's tokenizer knows. The table
@@ -112,7 +119,7 @@ export function diffSyntaxTokens(paths: readonly string[], code: readonly string
     if (language !== undefined && language !== candidate) return [];
     language = candidate;
   }
-  return language === undefined ? [] : tokenize(code.join('\n'), language);
+  return language === undefined ? [] : tokenizeLines(code.join('\n'), language);
 }
 
 export function syntaxLanguageForPath(path: string): string | undefined {

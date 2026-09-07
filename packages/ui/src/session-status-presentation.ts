@@ -19,8 +19,7 @@
 
 import type { SessionBlockedReason, SessionStatus } from '@maka/core/session';
 import type { UiLocale } from '@maka/core/ui-locale';
-import type { StatusDotVariant } from '@astryxdesign/core/StatusDot';
-import { dotForStatus, type StatusSemantic } from './status-vocabulary.js';
+import { dotForStatus, type StatusDotVariant, type StatusSemantic } from './status-vocabulary.js';
 import { getConversationCopy } from './conversation-copy.js';
 
 export interface SessionStatusPresentation {

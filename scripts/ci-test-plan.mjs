@@ -210,28 +210,7 @@ const E2E_DRIVING_SCRIPTS = new Set([
   'scripts/ax-tree-audit.mjs',
 ]);
 
-// Scripts / paths that can break the built Storybook catalog. Product stories
-// mount the UI package and desktop renderer, so runtime export/render changes
-// there belong to this surface even when no story file changes. Main-process
-// and e2e-only desktop changes stay outside it.
-const STORYBOOK_DRIVING_SCRIPTS = new Set([
-  'scripts/ax-tree-audit.mjs',
-  'scripts/storybook-visual-smoke.mjs',
-]);
-
-// .storybook/preview.tsx imports THEME_PALETTES from this module. Narrower
-// than "any packages/core change".
-const STORYBOOK_CORE_SETTINGS = 'packages/core/src/settings.ts';
-
-function isStorybookCatalogPath(path) {
-  if (path === 'apps/desktop/.storybook' || path.startsWith('apps/desktop/.storybook/'))
-    return true;
-  if (path === 'apps/desktop/stories' || path.startsWith('apps/desktop/stories/')) return true;
-  if (path === 'packages/ui/stories' || path.startsWith('packages/ui/stories/')) return true;
-  return false;
-}
-
-/** Unit / contract tests under src — not the Storybook catalog mount surface. */
+/** Unit / contract tests under src — not product mount surface. */
 function isPackageTestPath(path) {
   if (path.includes('/__tests__/')) return true;
   if (/\.test\.(ts|tsx|js|mjs)$/.test(path)) return true;
@@ -239,9 +218,8 @@ function isPackageTestPath(path) {
 }
 
 /**
- * Product UI that product stories import. Test files under packages/ui/src
- * only need the unit lane — forcing Storybook (~2m wall with Chromium +
- * build-storybook) on every presentation unit edit was pure wall-clock waste.
+ * Product UI the desktop renderer mounts. Test files under packages/ui/src only
+ * need the unit lane.
  */
 function isUiProductSourcePath(path) {
   if (path === 'packages/ui/src' || path.startsWith('packages/ui/src/')) {
@@ -250,39 +228,10 @@ function isUiProductSourcePath(path) {
   return false;
 }
 
-function isStorybookPath(path) {
-  if (STORYBOOK_DRIVING_SCRIPTS.has(path) || path === STORYBOOK_CORE_SETTINGS) return true;
-  if (isDocumentation(path)) return false;
-  if (path === 'apps/desktop/src/renderer' || path.startsWith('apps/desktop/src/renderer/')) {
-    // Renderer unit tests do not change Storybook mount code.
-    return !isPackageTestPath(path);
-  }
-  if (isStorybookCatalogPath(path)) return true;
-  // packages/ui product sources (not __tests__) ship into the catalog.
-  if (isUiProductSourcePath(path)) return true;
-  return false;
-}
-
 /**
  * Electron e2e should pay cold install/boot only when the real window surface
  * or e2e driver changed — not when only packages/ui unit tests changed.
  */
-function isAstryxSurfaceInventoryPath(path) {
-  if (
-    path === 'docs/astryx-surface-file-inventory.md' ||
-    path === 'docs/astryx-surface-file-inventory.paths' ||
-    path === 'scripts/generate-astryx-surface-inventory.mjs' ||
-    path === 'scripts/check-astryx-surface-inventory.mjs'
-  ) {
-    return true;
-  }
-  if (isDocumentation(path)) return false;
-  if (path === 'apps/desktop/src/renderer' || path.startsWith('apps/desktop/src/renderer/')) {
-    return !isPackageTestPath(path);
-  }
-  return isUiProductSourcePath(path);
-}
-
 /**
  * The two app-icon drift tests read exactly this surface: the committed
  * artwork, the generator that must still reproduce it, the `APP_ICONS` catalog
@@ -307,11 +256,7 @@ function isAppIconPath(path) {
 function isE2eProductPath(path) {
   if (E2E_DRIVING_SCRIPTS.has(path)) return true;
   if (isDocumentation(path)) return false;
-  if (path === 'apps/desktop' || path.startsWith('apps/desktop/')) {
-    // Storybook catalog under desktop never needs a real Electron window.
-    if (isStorybookCatalogPath(path)) return false;
-    return true;
-  }
+  if (path === 'apps/desktop' || path.startsWith('apps/desktop/')) return true;
   if (isUiProductSourcePath(path)) return true;
   return false;
 }
@@ -412,7 +357,6 @@ export function planTests(changedFiles, options = {}) {
     return {
       appIcons: true,
       asfSource: true,
-      astryxSurface: true,
       cliPackage: true,
       code: true,
       e2e: true,
@@ -425,7 +369,6 @@ export function planTests(changedFiles, options = {}) {
       // every unrelated merge into a 10K-chunk pressure run.
       stateRootCompat: true,
       storageStress: false,
-      storybook: true,
       workspaces,
       ...workspaceLanes(workspaces, graph),
     };
@@ -447,14 +390,6 @@ export function planTests(changedFiles, options = {}) {
     // workspace and product-surface membership; dedicated legal, release, and
     // generated-authority gates still inspect the complete file list below.
     if (isDocumentation(path)) continue;
-    // Catalog/config changes are fully exercised by Storybook's build + render
-    // smoke. They do not change the shipped Electron app, so do not route them
-    // through workspace tests or real-window E2E merely because they live
-    // inside an application workspace.
-    if (isStorybookCatalogPath(path)) {
-      code = true;
-      continue;
-    }
     const workspace = graph.dirs.find((dir) => path === dir || path.startsWith(`${dir}/`));
     if (workspace) {
       code = true;
@@ -477,7 +412,7 @@ export function planTests(changedFiles, options = {}) {
     // Rust. Each of these crates has an admission lane that owns `cargo fmt`
     // and `cargo test` for it, and `native/runtime-host-peer` additionally
     // reaches CLI packaging through `isCliPackagePath` above. Nothing under
-    // either is read by lint, typecheck, Storybook, or a real window, so
+    // either is read by lint, typecheck, or a real window, so
     // falling through to the guard below made this directory the largest
     // single source of full-suite runs.
     //
@@ -514,7 +449,6 @@ export function planTests(changedFiles, options = {}) {
   return {
     appIcons: files.some((path) => isAppIconPath(path)),
     asfSource: files.some((path) => isAsfSourcePath(path)),
-    astryxSurface: files.some((path) => isAstryxSurfaceInventoryPath(path)),
     cliPackage,
     code,
     // Electron E2E + alignment audit (same job). Product desktop/ui sources and
@@ -537,10 +471,6 @@ export function planTests(changedFiles, options = {}) {
         /^packages\/storage\/src\/sqlite-[^/]*schema[^/]*\.ts$/u.test(path),
     ),
     storageStress,
-    // Storybook build + smoke: catalog/harness only. Not every desktop/ui/core
-    // PR — product ship gates are typecheck, unit, and Electron e2e. See
-    // isStorybookPath.
-    storybook: files.some((path) => isStorybookPath(path)),
     workspaces,
     ...workspaceLanes(workspaces, graph),
   };
@@ -550,7 +480,6 @@ export function formatGitHubOutputs(plan) {
   return [
     `app_icons=${plan.appIcons}`,
     `asf_source=${plan.asfSource}`,
-    `astryx_surface=${plan.astryxSurface}`,
     `cli_package=${plan.cliPackage}`,
     `code=${plan.code}`,
     `e2e=${plan.e2e}`,
@@ -559,7 +488,6 @@ export function formatGitHubOutputs(plan) {
     `release_contract=${plan.releaseContract}`,
     `state_root_compat=${plan.stateRootCompat}`,
     `storage_stress=${plan.storageStress}`,
-    `storybook=${plan.storybook}`,
     `standard_workspaces=${plan.standardWorkspaces.join(',')}`,
   ].join('\n');
 }

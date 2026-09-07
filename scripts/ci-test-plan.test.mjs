@@ -107,7 +107,6 @@ test('mixed documentation and code changes still select code validation', () => 
 test('documentation with a dedicated contract still selects that contract', () => {
   for (const path of [
     'LICENSE',
-    'docs/astryx-surface-file-inventory.md',
     'apps/desktop/resources/licenses/renderer/SIMPLE_ICONS_LICENSE.md',
   ]) {
     const plan = planTests([path], { graph });
@@ -152,35 +151,16 @@ test('type changes remain in the PR-owned delta', () => {
   assert.equal(planTests(changedFiles, { graph }).code, true);
 });
 
-test('the Astryx inventory can run without selecting the code suite', () => {
-  const plan = planTests(['docs/astryx-surface-file-inventory.md'], { graph });
-
-  assert.equal(plan.code, false);
-  assert.equal(plan.astryxSurface, true);
-});
-
-test('desktop renderer changes retain Electron and Storybook coverage', () => {
-  const plan = planTests(['apps/desktop/src/renderer/app.tsx'], { graph });
+test('desktop renderer changes retain Electron coverage', () => {
+  const plan = planTests(['apps/desktop/src/renderer/main.tsx'], { graph });
 
   assert.equal(plan.code, true);
   assert.equal(plan.e2e, true);
-  assert.equal(plan.storybook, true);
-  assert.equal(plan.astryxSurface, true);
   assert.deepEqual(plan.standardWorkspaces, ['apps/desktop']);
 });
 
-test('Storybook catalog changes avoid real-window E2E and workspace tests', () => {
-  const plan = planTests(['apps/desktop/stories/settings.stories.tsx'], { graph });
-
-  assert.equal(plan.code, true);
-  assert.equal(plan.e2e, false);
-  assert.equal(plan.storybook, true);
-  assert.deepEqual(plan.workspaces, []);
-});
-
-test('AX audit contract test edits avoid the Storybook browser pipeline', () => {
+test('AX audit contract test edits avoid the real-window pipeline', () => {
   const plan = planTests(['scripts/ax-tree-audit.test.mjs'], { graph });
-  assert.equal(plan.storybook, false);
   assert.equal(plan.e2e, false);
 });
 
@@ -381,7 +361,6 @@ test('full selection covers every live surface', () => {
   assert.equal(plan.cliPackage, true);
   assert.equal(plan.code, true);
   assert.equal(plan.e2e, true);
-  assert.equal(plan.storybook, true);
   assert.equal(plan.runtimeHost, true);
   assert.equal(plan.releaseContract, true);
   assert.deepEqual(plan.workspaces, dirs);
@@ -412,7 +391,7 @@ test('a Rust crate with its own admission lane selects no JavaScript surface', (
 test('the direct-peer crate and its lint policy select CLI packaging alone', () => {
   // `release:cli:pack` builds this addon into the tarball and runs `cargo deny`
   // against that policy, so CLI packaging is the one JavaScript gate with a
-  // stake here. Lint, typecheck, Storybook, and a real window have none.
+  // stake here. Lint, typecheck, and a real window have none.
   for (const path of [
     'native/runtime-host-peer/src/engine.rs',
     'native/runtime-host-peer/Cargo.lock',
@@ -423,7 +402,6 @@ test('the direct-peer crate and its lint policy select CLI packaging alone', () 
     assert.equal(plan.cliPackage, true, path);
     assert.equal(plan.releaseContract, true, path);
     assert.equal(plan.e2e, false, path);
-    assert.equal(plan.storybook, false, path);
     assert.equal(plan.appIcons, false, path);
     assert.deepEqual(plan.workspaces, [], path);
   }

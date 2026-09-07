@@ -19,7 +19,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { preflightAttachmentItems } from '../../renderer/attachment-preflight.js';
+import { preflightAttachmentItems } from '../../renderer/lib/ported/attachment-preflight.js';
 
 const CAP = 50 * 1024 * 1024;
 

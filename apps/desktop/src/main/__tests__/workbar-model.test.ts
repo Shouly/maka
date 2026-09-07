@@ -17,25 +17,27 @@
  * under the License.
  */
 
-import { createSessionCatalogController, selectAuthoritativeSessionIds } from '../../renderer/session-catalog-state.js';
-import { sessionIdSetsEqual } from '../../renderer/live-turn-snapshot.js';
+import { createSessionCatalogController, selectAuthoritativeSessionIds } from '../../renderer/lib/ported/session-catalog-state.js';
+import { sessionIdSetsEqual } from '../../renderer/lib/ported/live-turn-snapshot.js';
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 import {
-  createSessionWorkbarPanelsState,
-  createSessionWorkbarTabsState,
   loadWorkbarLayout,
   isSessionWorkbarCollapsed,
   persistWorkbarLayout,
-  persistableSessionWorkbarPanels,
-  readSessionWorkbarPanels,
   reduceWorkbarLayout,
-  reduceWorkbarPanels,
   SESSION_BOTTOM_PANEL_MAX_HEIGHT,
   SESSION_WORKBAR_MIN_WIDTH,
+} from '../../renderer/lib/ported/workbar-layout.js';
+import {
+  createSessionWorkbarPanelsState,
+  createSessionWorkbarTabsState,
+  persistableSessionWorkbarPanels,
+  readSessionWorkbarPanels,
+  reduceWorkbarPanels,
   terminalSessionWorkbarTabId,
-  WORKBAR_TOOL_DEFINITIONS,
-} from '../../renderer/features/workbar/testing.js';
+} from '../../renderer/lib/ported/workbar-tabs.js';
+import { WORKBAR_TOOL_DEFINITIONS } from '../../renderer/lib/ported/workbar-tool-definitions.js';
 
 function installMemoryLocalStorage(initial: Record<string, string> = {}) {
   const store = new Map<string, string>(Object.entries(initial));

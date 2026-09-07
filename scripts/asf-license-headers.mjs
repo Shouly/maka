@@ -210,12 +210,12 @@ export const exclusionRules = [
         // Adapted from Vercel AI SDK material; recorded by the #2907 origin audit.
         'packages/runtime/src/model-protocol.ts',
         'packages/eval/harbor/deepseek-harness-profile/cordis.patch.yml',
-        'packages/ui/src/astryx-chat-reasoning.tsx',
       )(path) ||
       isUnder('apps/desktop/src/renderer/assets/provider-brands', '.svg')(path) ||
       // ENTERPRISE-RESKIN-1: bundled brand typefaces. Binary font programs are
-      // third-party work under their own (pending) license; see
-      // apps/desktop/src/renderer/styles/fonts.css for the provenance note.
+      // third-party work under their own (pending) license; the provenance note
+      // moves to `styles/globals.css` when Phase 0b re-declares the @font-face
+      // rules.
       isUnder('apps/desktop/src/renderer/assets/fonts', '.woff2')(path) ||
       isUnder('patches', '.patch')(path),
   },
@@ -224,11 +224,10 @@ export const exclusionRules = [
     justification:
       'Mechanically derived from a generator in this repository. A hand-written header would be reverted by the next regeneration; the generators themselves carry the header.',
     matches: isOneOf(
+      // Kept by the enterprise renderer rewrite (Phase 0a) as the token source
+      // `scripts/build-cursor-overlay.mjs` slices for the main-process browser
+      // dialog; its generator went with the rest of the Astryx layer.
       'apps/desktop/src/renderer/astryx-theme/maka.css',
-      'apps/desktop/src/renderer/astryx-theme/maka.d.ts',
-      'apps/desktop/src/renderer/astryx-theme/maka.js',
-      'docs/astryx-surface-file-inventory.md',
-      'docs/astryx-surface-file-inventory.paths',
       'docs/windows-test-inventory.md',
       'native/gitoxide-helper/Cargo.lock',
       'native/runtime-host-peer/Cargo.lock',

@@ -17,7 +17,13 @@
  * under the License.
  */
 
-import type { StatusDotVariant } from '@astryxdesign/core/StatusDot';
+/**
+ * The status-dot variants this vocabulary resolves to. Defined locally since
+ * the enterprise renderer rewrite (Phase 0a) dropped the Astryx `StatusDot`
+ * whose variant map used to name them; the new design system's dot component
+ * (Phase 0b) implements exactly these five.
+ */
+export type StatusDotVariant = 'success' | 'warning' | 'error' | 'accent' | 'neutral';
 
 /**
  * What a state MEANS, named once for the whole app.

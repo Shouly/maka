@@ -19,7 +19,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { parseNavigationState } from '../../renderer/nav-selection.js';
+import { parseNavigationState } from '../../renderer/lib/ported/nav-selection.js';
 
 describe('Navigation selection persistence', () => {
   it('hydrates the hub-shaped navigation state written by supported versions', () => {

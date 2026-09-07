@@ -65,6 +65,7 @@ function architectureConfig({
   rootDebtClosure = {},
   legacyRendererFiles = Object.keys(rootDebt),
   ownership = [],
+  windowMakaPortedDebt,
 } = {}) {
   return {
     version: 1,
@@ -84,6 +85,7 @@ function architectureConfig({
     rootDebt,
     rootDebtClosure,
     ownership,
+    ...(windowMakaPortedDebt ? { windowMakaPortedDebt: [...windowMakaPortedDebt].sort() } : {}),
   };
 }
 
@@ -232,6 +234,7 @@ function rendererEntryContractFiles(overrides = {}) {
       }
     `,
     'vite.config.ts': `
+      import tailwindcss from '@tailwindcss/vite';
       import react from '@vitejs/plugin-react';
       import { resolve } from 'node:path';
       import { defineConfig } from 'vite';
@@ -248,6 +251,7 @@ function rendererEntryContractFiles(overrides = {}) {
           workspacePackagesPlugin(REPO_ROOT),
           bundledNpmPackagesPlugin(),
           rendererEntryContractPlugin(resolve(import.meta.dirname, 'src/renderer')),
+          tailwindcss(),
         ],
         build: { outDir: '../../dist-renderer' },
       });
@@ -723,8 +727,7 @@ describe('renderer architecture checker fixtures', () => {
         `,
         'src/renderer/platform/desktop/allowed-capabilities.ts': `
           export function createAllowedCapabilities() {
-            localStorage.getItem('desktop-adapter');
-            return window.maka.sessions.list();
+            return localStorage.getItem('desktop-adapter');
           }
         `,
       },
@@ -756,7 +759,70 @@ describe('renderer architecture checker fixtures', () => {
         );
         assert.ok(
           !violations.some((violation) => violation.includes('allowed-capabilities.ts')),
-          `Desktop adapters may own the bridge and browser environment:\n${violations.join('\n')}`,
+          `Desktop adapters may own the browser environment:\n${violations.join('\n')}`,
+        );
+      },
+    );
+  });
+
+  it('confines window.maka to the bridge zone, the entry, and the declared ported debt', async () => {
+    await withDesktopFixture(
+      {
+        'src/renderer/bridge/sessions.ts': `
+          export function listSessions() { return window.maka.sessions.list(); }
+        `,
+        'src/renderer/lib/ported/settlement.ts': `
+          export function readSettled() { return window.maka.transcripts.open('s'); }
+        `,
+        'src/renderer/lib/ported/stray.ts': `
+          export function stray() { return window.maka.sessions.list(); }
+        `,
+      },
+      (desktopRoot) => {
+        const violations = violationsFor(
+          desktopRoot,
+          architectureConfig({
+            legacyGrowthDirectories: ['src/renderer/bridge', 'src/renderer/lib'],
+            legacyRendererFiles: [
+              'src/renderer/bridge/sessions.ts',
+              'src/renderer/lib/ported/settlement.ts',
+              'src/renderer/lib/ported/stray.ts',
+            ],
+            windowMakaPortedDebt: ['src/renderer/lib/ported/settlement.ts'],
+          }),
+        );
+        assertHasViolation(
+          violations,
+          /lib\/ported\/stray\.ts: window\.maka is reachable only from src\/renderer\/bridge\/ and src\/renderer\/main\.tsx/u,
+        );
+        assert.ok(
+          !violations.some((violation) => violation.includes('bridge/sessions.ts')),
+          `the bridge zone owns window.maka:\n${violations.join('\n')}`,
+        );
+        assert.ok(
+          !violations.some((violation) => violation.includes('lib/ported/settlement.ts')),
+          `declared ported debt is budgeted:\n${violations.join('\n')}`,
+        );
+      },
+    );
+  });
+
+  it('rejects a stale windowMakaPortedDebt budget once the file stops using the bridge', async () => {
+    await withDesktopFixture(
+      {
+        'src/renderer/lib/ported/settled.ts': 'export const settled = true;',
+      },
+      (desktopRoot) => {
+        assertHasViolation(
+          violationsFor(
+            desktopRoot,
+            architectureConfig({
+              legacyGrowthDirectories: ['src/renderer/lib'],
+              legacyRendererFiles: ['src/renderer/lib/ported/settled.ts'],
+              windowMakaPortedDebt: ['src/renderer/lib/ported/settled.ts'],
+            }),
+          ),
+          /lib\/ported\/settled\.ts: stale windowMakaPortedDebt budget/u,
         );
       },
     );

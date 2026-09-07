@@ -19,7 +19,7 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { compositeScrimOverBackground, parseCssRgbColor } from '../../renderer/titlebar-dim-color.js';
+import { compositeScrimOverBackground, parseCssRgbColor } from '../../renderer/lib/ported/titlebar-dim-color.js';
 
 // The two scrim values the app theme pins (astryx-theme/maka.css:
 // light-dark(#00000080, #000000CC)).

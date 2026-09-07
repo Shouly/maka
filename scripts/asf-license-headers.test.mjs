@@ -227,7 +227,6 @@ describe('ASF header classification', () => {
       'package.json': 'no-comment-syntax',
       'apps/desktop/assets/icon.png': 'binary-files',
       'patches/node-pty+1.2.0-beta.15.patch': 'third-party-source',
-      'packages/ui/src/astryx-chat-reasoning.tsx': 'third-party-source',
       'packages/runtime/src/bundled-skill-catalog.generated.ts': 'generated-files',
       'scripts/model-metadata/models-dev-api.snapshot.json': 'no-comment-syntax',
       'packages/runtime/resources/bundled-skills/computer-use/SKILL.md':

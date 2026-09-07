@@ -46,45 +46,14 @@
  * within `@maka/ui`.
  */
 
-import { createContext, lazy, Suspense } from 'react';
-import { redactSecrets } from './redact.js';
-import { isProgressiveStreamingEnabled } from './streaming-presentation.js';
+import { createContext } from 'react';
 
-// Heavy pipeline — parsed on first `<Markdown>` mount, not at app boot.
-const MarkdownBody = lazy(() => import('./markdown-body.js').then((m) => ({ default: m.MarkdownBody })));
-
-export function Markdown(props: {
-  text: string;
-  streaming?: boolean;
-  settledText?: string;
-  /** Block rhythm. Transcript turns pass `compact`; documents leave it. */
-  density?: 'default' | 'compact';
-}) {
-  const safeText = redactSecrets(props.text);
-  const safeSettledText = props.settledText === undefined
-    ? undefined
-    : redactSecrets(props.settledText);
-  const streaming = isProgressiveStreamingEnabled(props.streaming);
-  return (
-    <Suspense
-      // Settled history can show the safe source while the renderer loads.
-      // A live stream must stay behind Astryx's display cursor; showing the
-      // full source here would flash the unreached tail before Astryx mounts.
-      fallback={streaming ? null : (
-        <div className="maka-markdown maka-markdown-pending" style={{ whiteSpace: 'pre-wrap' }}>
-          {safeText}
-        </div>
-      )}
-    >
-      <MarkdownBody
-        text={safeText}
-        streaming={streaming}
-        settledText={safeSettledText}
-        density={props.density}
-      />
-    </Suspense>
-  );
-}
+// TODO(phase-3): the `Markdown` component that used to live here rendered the
+// Astryx-backed `markdown-body.tsx` behind a `lazy()` boundary; both went with
+// the enterprise renderer rewrite (Phase 0a). Phase 3a rebuilds it on
+// react-markdown + remark-gfm/math + rehype-katex. `MakaUriContext` below is
+// the part that had to survive: the renderer installs the internal-link
+// dispatcher against this module's identity.
 
 /**
  * PR-UI-RENDER-2 — context for the internal-link dispatcher.

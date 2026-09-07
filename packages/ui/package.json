@@ -10,9 +10,7 @@
     ".": "./dist/index.js",
     "./artifact-preview-registry": "./dist/artifact-preview-registry.js",
     "./assistant-stream": "./dist/assistant-stream.js",
-    "./icons": "./dist/icons.js",
-    "./maka-uri": "./dist/maka-uri.js",
-    "./styles.css": "./src/styles.css"
+    "./maka-uri": "./dist/maka-uri.js"
   },
   "scripts": {
     "clean": "node ../../scripts/clean-paths.mjs dist tsconfig.tsbuildinfo",
@@ -22,12 +20,9 @@
     "test:dist": "node --test \"dist/**/*.test.js\""
   },
   "dependencies": {
-    "@astryxdesign/core": "0.5.2",
     "@maka/core": "0.1.0",
     "clsx": "^2.1.1",
-    "katex": "0.18.5",
-    "lucide-react": "^1.38.0",
-    "mermaid": "^11.17.2",
+    "katex": "^0.18.7",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

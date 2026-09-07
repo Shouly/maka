@@ -19,11 +19,11 @@
 
 import assert from 'node:assert/strict';
 import { afterEach, describe, it, mock } from 'node:test';
+import { createSessionRailLayoutStore } from '../../renderer/lib/ported/session-rail-layout-store.js';
 import {
-  createSessionRailLayoutStore,
   readSessionListViewMode,
   writeSessionListViewMode,
-} from '../../renderer/features/session-navigation/testing.js';
+} from '../../renderer/lib/ported/session-list-layout.js';
 
 const VIEW_MODE_KEY = 'maka-chat-list-view-mode-v1';
 const WIDTH_KEY = 'maka-chat-list-width-v1';

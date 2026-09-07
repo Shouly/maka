@@ -19,7 +19,7 @@
 
 import type { OnboardingState } from '@maka/core/onboarding';
 import type { UiCatalog, UiLocale } from '@maka/core/ui-locale';
-import type { OnboardingHeroCopy } from '../onboarding-hero-copy.js';
+import type { OnboardingHeroCopy } from '../lib/ported/onboarding-hero-copy.js';
 
 // Blocked states are keyed by reason, not just by kind: a new blocked reason
 // then cannot ship without its own copy.

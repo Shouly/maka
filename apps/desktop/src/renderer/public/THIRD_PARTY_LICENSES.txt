@@ -47,7 +47,7 @@ This file records notices for third-party source assets vendored into the Maka d
     - Upstream commit: `e4302041fbb3039608d25f9f618bd462783b875e`
     - Upstream path: `packages/static-svg/icons/cloudflare-color.svg`
     - SHA-256: `cee35d3f0ecb7925ce0a89aeaff8b907cadae7c3fe44a23e4001cc8d5ee57502`
-  - `apps/desktop/src/renderer/settings/provider-brand-marks.tsx` `Ollama` path
+  - `apps/desktop/src/renderer/lib/ported/provider-brand-marks.tsx` `Ollama` path
     - Upstream commit: `32f4083f7a20b67ecdc7b29c0af031ada5a29c52`
     - Upstream path: `packages/static-svg/icons/ollama.svg`
     - SHA-256: `fe847dff4bb6ae25ebec9a7def819ec2583023552b2e88a572c481aad2d32433`
@@ -170,12 +170,12 @@ SOFTWARE.
     (upstream later removed some of these marks, so the pins stay at the
     version they were copied from):
     - `packages/ui/src/bot-brand-logo.tsx`: Telegram, Discord, WeChat, QQ and Slack paths
-    - `apps/desktop/src/renderer/mcp-brand-marks.tsx`: Slack paths
+    - `apps/desktop/src/renderer/lib/ported/mcp-brand-marks.tsx`: Slack paths
   - Imported at build time from the installed `simple-icons` package, so the
     bundled version is the one package-lock.json pins; that copy is licensed
     through the generated `licenses/npm/THIRD_PARTY_NOTICES.txt`:
-    - `apps/desktop/src/renderer/mcp-brand-marks.tsx`: LINE, Google Calendar, Figma, Vercel, Supabase, Notion and Apple paths
-    - `apps/desktop/src/renderer/settings/provider-brand-marks.tsx`: MiniMax path
+    - `apps/desktop/src/renderer/lib/ported/mcp-brand-marks.tsx`: LINE, Google Calendar, Figma, Vercel, Supabase, Notion and Apple paths
+    - `apps/desktop/src/renderer/lib/ported/provider-brand-marks.tsx`: MiniMax path
 - Full license text: packaged as `licenses/renderer/SIMPLE_ICONS_LICENSE.md`.
 - Trademark boundary: CC0 does not grant trademark rights. The marks are used only to identify the corresponding services.
 
@@ -213,7 +213,7 @@ SOFTWARE.
 - Package: `@ant-design/icons-svg` version `4.5.0`
 - Source: `DingtalkOutlined`
 - License: MIT
-- Covered source asset: `apps/desktop/src/renderer/mcp-brand-marks.tsx` `DINGTALK_MARK`
+- Covered source asset: `apps/desktop/src/renderer/lib/ported/mcp-brand-marks.tsx` `DINGTALK_MARK`
 - Full license text: packaged as `licenses/renderer/ANT_DESIGN_ICONS_LICENSE.txt`.
 - Trademark boundary: DingTalk and its logo remain trademarks of their owner.
 
@@ -222,7 +222,7 @@ SOFTWARE.
 - Repository: https://github.com/DouyinFE/semi-design
 - Package/source: `@douyinfe/semi-icons@2.101.0`, `packages/semi-icons/src/svgs/feishu_logo.svg`
 - License: MIT
-- Covered source asset: `apps/desktop/src/renderer/mcp-brand-marks.tsx` `FEISHU_MARK`
+- Covered source asset: `apps/desktop/src/renderer/lib/ported/mcp-brand-marks.tsx` `FEISHU_MARK`
 - Source SHA-256: `5f9a5066c702ada4acdb752521a7d70293fbe5166ac4a7fa256cff8778670e2d`
 - Full license text: packaged as `licenses/renderer/SEMI_ICONS_LICENSE.txt`.
 - Trademark boundary: Feishu/Lark and its logo remain trademarks of ByteDance.

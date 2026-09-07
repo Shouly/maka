@@ -29,8 +29,8 @@ import {
   type ModelCatalogEntry,
 } from '@maka/core/model-catalog';
 import { buildChatModelChoices } from '@maka/core/chat-model-choice';
-import { pickNewChatModel } from '../../renderer/shell-chat-model-selection.js';
-import { buildCatalogDailyReviewModelOptions } from '../../renderer/model-catalog-choices.js';
+import { pickNewChatModel } from '../../renderer/lib/ported/shell-chat-model-selection.js';
+import { buildCatalogDailyReviewModelOptions } from '../../renderer/lib/ported/model-catalog-choices.js';
 
 function connection(
   overrides: Partial<IdentifiedLlmConnection> &

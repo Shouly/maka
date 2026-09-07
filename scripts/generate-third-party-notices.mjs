@@ -67,8 +67,8 @@ const REQUIRED_ASSET_NOTICE_MARKERS = [
   '## Ant Design Icons DingTalk mark',
   '## Semi Design Feishu mark',
   'packages/ui/src/bot-brand-logo.tsx',
-  'apps/desktop/src/renderer/mcp-brand-marks.tsx',
-  'apps/desktop/src/renderer/settings/provider-brand-marks.tsx',
+  'apps/desktop/src/renderer/lib/ported/mcp-brand-marks.tsx',
+  'apps/desktop/src/renderer/lib/ported/provider-brand-marks.tsx',
 ];
 const REQUIRED_ASSET_LICENSE_FILES = [
   // Vendored from the installed simple-icons tarball (CC0-1.0); the package
@@ -162,6 +162,13 @@ const MIT_COPYRIGHT_OVERRIDES = new Map([
   // repo root; the per-package tarball ships no license file.
   ['proxy-agent-negotiate@1.1.0', 'Copyright (c) 2013 Nathan Rajlich <nathan@tootallnate.net>'],
   ['lazy-val@1.0.5', 'Copyright (c) Vladimir Krivosheev'],
+  // Published from theKashey/react-remove-scroll-bar, whose tarball ships no
+  // license file; the sibling react-remove-scroll package carries the notice.
+  ['react-remove-scroll-bar@2.3.8', 'Copyright (c) 2017 Anton Korzunov'],
+  // Published from the remarkjs/remark-math monorepo, which keeps one `license`
+  // at the repo root; the per-package tarballs ship none.
+  ['rehype-katex@7.0.1', 'Copyright (c) 2017 Junyoung Choi <fluke8259@gmail.com>'],
+  ['remark-math@6.0.0', 'Copyright (c) 2017 Junyoung Choi <fluke8259@gmail.com>'],
 ]);
 
 const MIT_TEXT = (copyrightNotice) => `MIT License

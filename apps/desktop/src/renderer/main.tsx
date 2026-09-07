@@ -17,58 +17,50 @@
  * under the License.
  */
 
+// Phase 0a placeholder entry for the enterprise renderer rewrite. It exists to
+// keep the three fixed contracts alive while the old Astryx shell is gone:
+// the single `/main.tsx` module the entry-contract plugin pins, the `.appFrame`
+// root the main-process window probe and the real-window smoke gate look for,
+// and the `notifyRendererReady` handshake that reveals the window (the window
+// is created with `show: false`; main falls back after 4s).
+//
+// Phase 0b replaces this with the real bootstrap (cached theme + locale
+// pre-mount, e2e fixture application, providers, error boundary) and Phase 1
+// moves the `window.maka` call below behind `src/renderer/bridge/`.
+
+import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { syncUiLocaleDocument } from '@maka/ui';
-import { App } from './app';
-import { applyCachedThemeBeforeMount } from './cached-theme-bootstrap';
-import type { OnboardingSnapshot } from '../preload/bridge-contract.js';
-import './styles.css';
-import { readSystemUiLocale } from './use-system-ui-locale';
-import {
-  createDesktopFeatureServices,
-  DesktopFeatureServicesProvider,
-} from './composition/desktop-feature-services';
+import './styles/globals.css';
 
-const ONBOARDING_SNAPSHOT_RETRY_DELAY_MS = 150;
-const ONBOARDING_SNAPSHOT_TIMEOUT_MS = 2_500;
-
-syncUiLocaleDocument(readSystemUiLocale());
-applyCachedThemeBeforeMount();
-const desktopFeatureServices = createDesktopFeatureServices();
-
-/**
- * Prefetch the onboarding snapshot BEFORE mounting React. The preload
- * skeleton (index.html) stays on screen while this resolves, so the first
- * React commit already has sessions + connections and paints the real
- * chat surface directly — no intermediate loading card, no layout jump
- * (the "配置页闪了一下" startup flash).
- *
- * Fail-open: one quick retry (the IPC handler may not be registered in
- * the first milliseconds), then a hard timeout so a wedged main process
- * can never block the renderer from mounting. On timeout/failure React
- * mounts with `null` and the classic in-app loading path takes over.
- */
-async function prefetchOnboardingSnapshot(): Promise<OnboardingSnapshot | null> {
-  const attempt = async (): Promise<OnboardingSnapshot | null> => {
-    try {
-      return await window.maka.onboarding.getSnapshot();
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, ONBOARDING_SNAPSHOT_RETRY_DELAY_MS));
-      try {
-        return await window.maka.onboarding.getSnapshot();
-      } catch {
-        return null;
-      }
-    }
-  };
-  const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), ONBOARDING_SNAPSHOT_TIMEOUT_MS));
-  return Promise.race([attempt(), timeout]);
+function applyInitialColorScheme(): void {
+  const prefersDark =
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.style.colorScheme = prefersDark ? 'dark' : 'light';
+  document.documentElement.classList.toggle('dark', prefersDark);
 }
 
-void prefetchOnboardingSnapshot().then((initialOnboardingSnapshot) => {
-  createRoot(document.getElementById('root')!).render(
-    <DesktopFeatureServicesProvider services={desktopFeatureServices}>
-      <App initialOnboardingSnapshot={initialOnboardingSnapshot} />
-    </DesktopFeatureServicesProvider>,
-  );
-});
+function notifyRendererReadyAfterFirstPaint(): void {
+  // Two nested frames: the first is scheduled before paint, the second runs
+  // once the frame that painted the app has been committed.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      window.maka?.appWindow?.notifyRendererReady?.();
+    });
+  });
+}
+
+function PlaceholderApp() {
+  return <div className="appFrame">Maka enterprise renderer — Phase 0</div>;
+}
+
+const container = document.getElementById('root');
+if (!container) throw new Error('Renderer root element #root is missing');
+
+applyInitialColorScheme();
+createRoot(container).render(
+  <StrictMode>
+    <PlaceholderApp />
+  </StrictMode>,
+);
+notifyRendererReadyAfterFirstPaint();

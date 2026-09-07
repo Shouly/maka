@@ -24,7 +24,7 @@ import {
   deriveTaskReadinessNotice,
   isTaskSubmissionHardBlocked,
   resolveTaskReadinessModelTarget,
-} from '../../renderer/task-readiness-notice.js';
+} from '../../renderer/lib/ported/task-readiness-notice.js';
 
 test('an unlocked stale session keeps its stored target until explicit recovery', () => {
   assert.deepEqual(

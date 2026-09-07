@@ -21,6 +21,7 @@ import { defineConfig } from 'vite';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import { dependencyPatchesCachePlugin } from './vite-dependency-patches.js';
 import { bundledNpmPackagesPlugin } from './vite-bundled-packages.js';
 import { rendererEntryContractPlugin } from './scripts/vite-renderer-entry-contract.js';
@@ -43,18 +44,21 @@ export default defineConfig({
   base: './',
   // Vite hashes plugin names into its dependency-cache key. patch-package does
   // not change package-lock.json, so carry the patch contents in that key while
-  // keeping every Astryx entry in one optimized module graph.
+  // keeping the renderer's npm entries in one optimized module graph.
   plugins: [
     react(),
     dependencyPatchesCachePlugin(REPO_ROOT),
     workspacePackagesPlugin(REPO_ROOT),
     bundledNpmPackagesPlugin(),
     rendererEntryContractPlugin(resolve(import.meta.dirname, 'src/renderer')),
+    // CSS-first Tailwind 4: `styles/globals.css` is the whole configuration, so
+    // there is no tailwind.config to keep in sync (rewrite plan §2.2). Pinned
+    // last so the five entry-contract plugins keep their indices.
+    tailwindcss(),
   ],
   resolve: {
     dedupe: ['react', 'react-dom'],
     alias: [
-      { find: '@maka/ui/icons', replacement: resolve(UI_SRC, 'icons.tsx') },
       { find: '@maka/ui/artifact-preview-registry', replacement: resolve(UI_SRC, 'artifact-preview-registry.ts') },
       { find: '@maka/ui/assistant-stream', replacement: resolve(UI_SRC, 'assistant-stream.ts') },
       { find: '@maka/ui/maka-uri', replacement: resolve(UI_SRC, 'maka-uri.ts') },
@@ -68,8 +72,8 @@ export default defineConfig({
     // dist-renderer, leaving those side-files intact. See check-stale-dist.mjs.
     outDir: '../../dist-renderer',
     emptyOutDir: true,
-    // Electron 43 embeds Chromium 150. Preserve native light-dark() so Astryx
-    // tokens resolve against the nearest Theme color-scheme; downleveling the
+    // Electron 43 embeds Chromium 150. Preserve native light-dark() so theme
+    // tokens resolve against the nearest color-scheme; downleveling the
     // function computes both branches at :root before that scope is known.
     cssTarget: 'chrome150',
   },

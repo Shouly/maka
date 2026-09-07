@@ -44,7 +44,6 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { ChatLayoutScrollButton } from '@astryxdesign/core/Chat';
 
 /** Astryx's own thresholds, so the affordance keeps the feel readers learnt. */
 const PIN_THRESHOLD_PX = 10;
@@ -317,33 +316,7 @@ export function useTranscriptScrollAuthority(): TranscriptScrollAuthority {
   return authority;
 }
 
-/**
- * The dock's scroll-to-bottom affordance, driven by Maka's pin rather than
- * Astryx's — with auto-scroll off, `isScrolledUp` never updates again, so the
- * stock button would be permanently invisible.
- *
- * The label stays unset on purpose: `ChatSurfaceLayout` overrides Astryx's
- * `scrollToBottom` string through the locale provider that wraps this.
- */
-export function TranscriptScrollButton({
-  onActivate,
-}: {
-  onActivate?: () => Promise<void> | void;
-}) {
-  const authority = useTranscriptScrollAuthority();
-  const snapshot = useSyncExternalStore(
-    authority.subscribe,
-    authority.getSnapshot,
-    authority.getSnapshot,
-  );
-  return (
-    <ChatLayoutScrollButton
-      isVisible={snapshot.awayFromTail || onActivate !== undefined}
-      onClick={() => {
-        authority.pinToTail();
-        const activation = onActivate?.();
-        if (activation) void activation.catch(() => undefined);
-      }}
-    />
-  );
-}
+// TODO(phase-3): the dock's scroll-to-bottom affordance (`TranscriptScrollButton`)
+// lived here and rendered Astryx's `ChatLayoutScrollButton`. It comes back on
+// the new design system's button in Phase 3a; the authority above is the part
+// that had to survive the renderer rewrite.

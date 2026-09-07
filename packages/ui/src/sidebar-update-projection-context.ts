@@ -18,7 +18,15 @@
  */
 
 import { createContext, useContext } from 'react';
-import type { SidebarUpdateReminder } from './session-sidebar-nav.js';
+
+/**
+ * The sidebar footer's update chip state. Moved here from the deleted
+ * `session-sidebar-nav.tsx` in the enterprise renderer rewrite (Phase 0a).
+ */
+export type SidebarUpdateReminder = {
+  state: 'downloaded' | 'error';
+  latestVersion: string;
+};
 
 /** The updater-owned projection consumed only by the sidebar footer. */
 export interface SidebarUpdateProjection {

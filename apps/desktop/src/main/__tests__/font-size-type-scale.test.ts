@@ -20,8 +20,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DEFAULT_UI_FONT_SIZE } from '@maka/core/settings';
-import { TYPE_SCALE_BASE_PX } from '../../renderer/astryx-theme/type-scale.js';
-import { makaTheme } from '../../renderer/astryx-theme/makaTheme.js';
+import { TYPE_SCALE_BASE_PX } from '../../renderer/lib/ported/type-scale.js';
 
 // `DEFAULT_UI_FONT_SIZE` (in @maka/core, which cannot import renderer code)
 // means "the type scale as designed, no root scaling" — it is only true while
@@ -32,9 +31,7 @@ test('default UI font size equals the renderer type-scale base', () => {
   assert.equal(DEFAULT_UI_FONT_SIZE, TYPE_SCALE_BASE_PX);
 });
 
-test('makaTheme generates its type scale from the shared base constant', () => {
-  // `--font-size-base` is step 0 of the expanded scale: base px over the 16px
-  // browser root. If makaTheme's scale and TYPE_SCALE_BASE_PX ever diverge,
-  // this stops holding.
-  assert.equal(makaTheme.tokens['--font-size-base'], `${TYPE_SCALE_BASE_PX / 16}rem`);
-});
+// The companion assertion — that the generated theme's `--font-size-base` is
+// `TYPE_SCALE_BASE_PX / 16` rem — went with `astryx-theme/makaTheme.ts` in the
+// enterprise renderer rewrite (Phase 0a). Phase 0b re-pins it against the new
+// design system's type scale in `styles/globals.css`.

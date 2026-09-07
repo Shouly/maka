@@ -18,7 +18,22 @@
  */
 
 import katex from 'katex';
-import type { MarkdownInlinePlugin } from '@astryxdesign/core/Markdown';
+import type { ReactNode } from 'react';
+
+/**
+ * An inline markdown plugin: a pattern plus a renderer for what it matches.
+ * Defined locally since the enterprise renderer rewrite (Phase 0a) dropped the
+ * Astryx `Markdown` component whose plugin contract this used to alias; Phase
+ * 3a rewires it onto react-markdown + rehype-katex.
+ */
+export interface MarkdownInlinePlugin {
+  /** Regex with global flag. Matched against text nodes only. */
+  pattern: RegExp;
+  /** Refine the match boundary after the regex hits; false rejects the match. */
+  getEndIndex?: (text: string, match: RegExpMatchArray) => number | false;
+  /** Render the match as a React element. */
+  render: (match: RegExpMatchArray, key: string) => ReactNode;
+}
 
 const TOKEN_START = '\uE000MAKA_MATH:';
 const TOKEN_END = '\uE001';

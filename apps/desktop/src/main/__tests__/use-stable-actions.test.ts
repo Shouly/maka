@@ -21,7 +21,7 @@ import { strict as assert } from 'node:assert';
 import { afterEach, describe, it } from 'node:test';
 import { act, createElement, useState } from 'react';
 import { cleanupFakeDom, installReactRenderer } from './fake-dom.js';
-import { useStableActions } from '../../renderer/use-stable-actions.js';
+import { useStableActions } from '../../renderer/lib/ported/use-stable-actions.js';
 
 /**
  * Action identity is a contract in this renderer, not an implementation

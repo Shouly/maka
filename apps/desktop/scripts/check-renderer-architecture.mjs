@@ -123,12 +123,26 @@ const ROOT_DEBT_METRICS = [
   'importSpecifiers',
   'nonTriviaTokens',
 ];
+// The directories the enterprise renderer rewrite lays the new tree out in
+// (rewrite plan §5). They are still `legacy` to `zoneFor` — the zone taxonomy
+// describes the shell being replaced — so they are declared here instead.
 const DEFAULT_LEGACY_GROWTH_DIRECTORIES = [
-  'src/renderer/astryx-theme',
+  'src/renderer/bridge',
+  'src/renderer/components',
   'src/renderer/computer-use-overlay',
+  'src/renderer/lib',
   'src/renderer/locales',
-  'src/renderer/settings',
+  'src/renderer/store',
+  'src/renderer/styles',
 ];
+/**
+ * `window.maka` has exactly two homes in the new renderer: the typed wrappers
+ * under `src/renderer/bridge/` (Phase 1) and the Phase 0 placeholder entry,
+ * which calls `notifyRendererReady` to reveal the window before the bridge
+ * exists. Anything else must go through the bridge.
+ */
+const BRIDGE_ZONE_PREFIX = 'src/renderer/bridge/';
+const BRIDGE_ENTRY_EXEMPTION = RENDERER_ENTRY_SOURCE;
 const PARSER_PLUGINS = [
   'explicitResourceManagement',
   'importAttributes',
@@ -169,6 +183,22 @@ function validateCountMap(value) {
   );
 }
 
+function windowMakaPortedDebtOf(config) {
+  return config.windowMakaPortedDebt ?? [];
+}
+
+/**
+ * Present only while a wholesale renderer replacement is in flight (the
+ * enterprise rewrite, `docs/enterprise/frontend-rewrite-plan.md`). The
+ * monotonic ratchet measures a tree against its predecessor; when the
+ * predecessor was deleted outright, the entries it recorded describe files
+ * that no longer exist and the comparison has nothing to say. Phase 6 removes
+ * the field and the ratchet resumes at full strength.
+ */
+function rewriteBaselineOf(config) {
+  return isRecord(config.rewriteBaseline) ? config.rewriteBaseline : undefined;
+}
+
 function controllerOwnersOf(config) {
   return config.controllerOwners ?? [];
 }
@@ -202,6 +232,21 @@ function validateArchitectureConfig(config, label, violations) {
   }
   for (const field of ['legacyFeatureImports', 'legacyPlatformImports']) {
     if (!isSortedUniqueStrings(config[field])) reject(`${field} must be sorted unique strings`);
+  }
+  // Phase-1 debt: renderer files ported out of the deleted shell that still
+  // reach `window.maka` directly. The list may only shrink — see
+  // `validateBridgeOwnership`.
+  if (!isSortedUniqueStrings(windowMakaPortedDebtOf(config))) {
+    reject('windowMakaPortedDebt must be sorted unique strings');
+  } else if (
+    windowMakaPortedDebtOf(config).some(
+      (path) => !path.startsWith('src/renderer/') || path.includes('..') || path.includes('\\'),
+    )
+  ) {
+    reject('windowMakaPortedDebt must contain normalized renderer source paths');
+  }
+  if (config.rewriteBaseline !== undefined && !isRecord(config.rewriteBaseline)) {
+    reject('rewriteBaseline must be an object when present');
   }
   if (!Array.isArray(controllerOwnersOf(config))) reject('controllerOwners must be an array');
   if (
@@ -2249,6 +2294,33 @@ function validateStrictZone({ fileRelative, analysis, violations }) {
   }
 }
 
+/**
+ * `window.maka` belongs to `src/renderer/bridge/` and to the renderer entry.
+ * Every other renderer file that still reaches it must be declared in
+ * `windowMakaPortedDebt`, and a declared file that has stopped reaching it is
+ * a stale budget — so the list can only shrink.
+ */
+function validateBridgeOwnership({ config, sourceAnalyses, violations }) {
+  const declared = new Set(windowMakaPortedDebtOf(config));
+  const observed = new Set();
+  for (const [fileRelative, { analysis }] of sourceAnalyses) {
+    if (!fileRelative.startsWith('src/renderer/')) continue;
+    if (Object.keys(analysis.bridgePaths).length === 0) continue;
+    observed.add(fileRelative);
+    if (fileRelative.startsWith(BRIDGE_ZONE_PREFIX)) continue;
+    if (fileRelative === BRIDGE_ENTRY_EXEMPTION) continue;
+    if (declared.has(fileRelative)) continue;
+    violations.push(
+      `${fileRelative}: window.maka is reachable only from ${BRIDGE_ZONE_PREFIX} and ${BRIDGE_ENTRY_EXEMPTION}`,
+    );
+  }
+  for (const path of declared) {
+    if (!observed.has(path)) {
+      violations.push(`${path}: stale windowMakaPortedDebt budget`);
+    }
+  }
+}
+
 function validateMetric(path, metric, actual, expected, violations) {
   if (metric === 'actionFactories') {
     if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -2772,6 +2844,10 @@ function validateViteEntryContract(desktopRoot, violations) {
   const workspacePackagesCall = pluginCall(2, 'workspacePackagesPlugin', 1);
   const bundledPackagesCall = pluginCall(3, 'bundledNpmPackagesPlugin', 0);
   const rendererContractCall = pluginCall(4, 'rendererEntryContractPlugin', 1);
+  // Tailwind 4 is CSS-first: the plugin compiles `styles/globals.css`, which is
+  // the whole design-system configuration (rewrite plan §2.2). It is pinned
+  // last so the five entry-contract plugins keep their indices.
+  const tailwindCall = pluginCall(5, 'tailwindcss', 0);
   const rendererContractRoot = unwrapExpression(rendererContractCall?.arguments[0]);
   const hasPinnedRendererContractRoot =
     rendererContractRoot?.type === 'CallExpression' &&
@@ -2790,9 +2866,10 @@ function validateViteEntryContract(desktopRoot, violations) {
       program,
       './scripts/vite-renderer-entry-contract.js',
       'rendererEntryContractPlugin',
-    );
+    ) &&
+    hasDefaultImport(program, '@tailwindcss/vite', 'tailwindcss');
   const hasPinnedPlugins =
-    pluginElements.length === 5 &&
+    pluginElements.length === 6 &&
     Boolean(reactCall) &&
     Boolean(dependencyPatchesCall) &&
     isIdentifier(dependencyPatchesCall.arguments[0], 'REPO_ROOT') &&
@@ -2800,7 +2877,8 @@ function validateViteEntryContract(desktopRoot, violations) {
     isIdentifier(workspacePackagesCall.arguments[0], 'REPO_ROOT') &&
     Boolean(bundledPackagesCall) &&
     Boolean(rendererContractCall) &&
-    hasPinnedRendererContractRoot;
+    hasPinnedRendererContractRoot &&
+    Boolean(tailwindCall);
   if (
     roots.length !== 1 ||
     staticString(roots[0]) !== 'src/renderer' ||
@@ -3150,11 +3228,15 @@ export function generateArchitectureConfig(desktopRoot, config) {
       rootDebtClosureFiles.map((path) => [path, capabilityDebtForPath(desktopRoot, path)]),
     ),
     ownership: config.ownership ?? [],
+    ...(config.windowMakaPortedDebt ? { windowMakaPortedDebt: [...config.windowMakaPortedDebt].sort() } : {}),
+    ...(rewriteBaselineOf(config) ? { rewriteBaseline: config.rewriteBaseline } : {}),
   };
 }
 
 function validateMonotonicDebt(config, baseConfig, desktopRoot, violations) {
   if (!baseConfig) return;
+  const rewriteBaseline = rewriteBaselineOf(config);
+  const resetPaths = new Set(rewriteBaseline?.resetPaths ?? []);
   const currentControllerOwners = new Map(
     controllerOwnersOf(config).map((owner) => [controllerOwnerKey(owner), owner]),
   );
@@ -3162,6 +3244,13 @@ function validateMonotonicDebt(config, baseConfig, desktopRoot, violations) {
     const key = controllerOwnerKey(baseOwner);
     const currentOwner = currentControllerOwners.get(key);
     if (!currentOwner) {
+      // A controller whose implementation file is gone was not quietly dropped
+      // from the ledger — it was deleted from the tree. The enterprise renderer
+      // rewrite removes the whole feature-slice layer, so requiring the entry
+      // to survive would require the ledger to describe files that do not
+      // exist. Removing an entry while its implementation is still there is
+      // still a violation.
+      if (!existsSync(resolve(desktopRoot, baseOwner.implementation ?? ''))) continue;
       violations.push(`${key}: historical controller owner entries cannot be removed`);
       continue;
     }
@@ -3200,6 +3289,7 @@ function validateMonotonicDebt(config, baseConfig, desktopRoot, violations) {
       if (
         !baseFiles[path] &&
         !shiftedAppShellBase &&
+        !resetPaths.has(path) &&
         !(section.endsWith('Closure') && isValidatedCopyCatalog(desktopRoot, path))
       ) {
         violations.push(`${path}: new ${section} debt entries are forbidden`);
@@ -3213,6 +3303,9 @@ function validateMonotonicDebt(config, baseConfig, desktopRoot, violations) {
       }
     }
     for (const [path, current] of Object.entries(currentFiles)) {
+      // A reset path was rewritten from scratch in this phase; its base numbers
+      // measure a file that no longer exists in any recognisable form.
+      if (resetPaths.has(path)) continue;
       const base =
         baseFiles[path] ??
         (section === 'rootDebtClosure' ? baseConfig.legacyAppShell.closure[path] : undefined);
@@ -3275,6 +3368,10 @@ function validateMonotonicDebt(config, baseConfig, desktopRoot, violations) {
   }
   const baseLegacyGrowthDirectories = new Set(baseConfig.legacyGrowthDirectories);
   for (const path of config.legacyGrowthDirectories) {
+    // The rewrite lays out a new renderer tree in one step; the directories it
+    // declares are its layout, not drift. Without a rewrite baseline the guard
+    // is unchanged.
+    if (rewriteBaseline) break;
     if (!baseLegacyGrowthDirectories.has(path)) {
       violations.push(`${path}: new legacy growth directories are forbidden`);
     }
@@ -3314,7 +3411,7 @@ export function checkRendererArchitecture({
   const observedLegacyPlatformImports = new Set();
   const sourceAnalyses = new Map();
 
-  for (const scanRoot of ['src', 'stories', 'e2e']) {
+  for (const scanRoot of ['src', 'e2e']) {
     for (const file of sourceFiles(resolve(resolvedDesktopRoot, scanRoot))) {
       const fileRelative = normalizePath(relative(resolvedDesktopRoot, file));
       let analysis;
@@ -3346,6 +3443,7 @@ export function checkRendererArchitecture({
     sourceAnalyses,
     violations,
   });
+  validateBridgeOwnership({ config: resolvedConfig, sourceAnalyses, violations });
 
   for (const edge of allowedLegacyFeatureImports) {
     if (!observedLegacyFeatureImports.has(edge)) violations.push(`${edge}: stale feature-to-legacy import budget`);
