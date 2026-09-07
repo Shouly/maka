@@ -1616,7 +1616,7 @@ pre[class*="language-"] {
 :root {
   /* Must equal main's TITLEBAR_OVERLAY_HEIGHT (main-window.ts). The window is
      frameless with a native overlay; this is the strip the app must leave. */
-  --h-titlebar: 36px;
+  --h-titlebar: 44px;
 
   /* The always-dark console surface. It pairs with `--on-overlay` (white in
      both themes), so it cannot be a surface from the light/dark ladder. The
@@ -1655,7 +1655,7 @@ html.dark {
 }
 
 /* Window titlebar geometry (plan §2.12). The window is frameless; one fixed
-   36px row (`.maka-window-titlebar`) spans the window above both columns and
+   44px row (`.maka-window-titlebar`) spans the window above both columns and
    its gutters clear what the OS paints there: macOS traffic lights top-left
    (`titleBarStyle: hiddenInset`, x 17 / y 14, ~70px wide), Windows caption
    buttons top-right (`titleBarOverlay`, reported through
@@ -1674,11 +1674,10 @@ html.dark {
   --maka-sidenav-width: 0px;
 }
 html[data-maka-platform="darwin"] {
-  /* Traffic lights: x 17, three 12px circles 8px apart -> the green one ends
-     at x 69. Native macOS toolbars put the first control ~10px after it, and
-     that is a fixed number, not the WCO safe area (which reports ~94px and
-     reads as a gap). */
-  --maka-titlebar-gutter-left: 80px;
+  /* Traffic lights: x 17, three 14px discs on 20px centres -> the green one
+     ends at x 71. The first control starts ~20px after it, the spacing Claude
+     Desktop and Codex use; a fixed number, not the WCO safe area. */
+  --maka-titlebar-gutter-left: 92px;
 }
 
 /* The window titlebar: one fixed flow row at the top of `.appFrame` and the
@@ -1691,9 +1690,10 @@ html[data-maka-platform="darwin"] {
   height: var(--h-titlebar);
   flex-shrink: 0;
   box-sizing: border-box;
-  /* Controls centre on the traffic lights' centre line: y 14 + 6 = 20. With a
-     36px row and 4px top padding the content box is 32px, centred at 20. */
-  padding-top: 4px;
+  /* Controls centre in the 44px row (y 22). main-window.ts places the traffic
+     lights at y = 44/2 - 7 = 15, so their centre is the same line — the
+     Electron custom-title-bar practice: position the lights to the header,
+     never pad the header to the lights. */
   -webkit-app-region: drag;
 }
 /* Left segment: the sidebar's share of the row (its width follows the
