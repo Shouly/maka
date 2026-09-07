@@ -38,6 +38,7 @@ import { useStore } from 'zustand';
 import { useRovingRowFocus, useUiLocale } from '@maka/ui';
 import { Anthropicon } from '../icons/Anthropicon.js';
 import { SidebarTooltipProvider } from '../ui/sidebar-tooltip.js';
+import { SidebarChrome } from './SidebarChrome.js';
 import { Input } from '../ui/input.js';
 import { cn } from '../../lib/cn.js';
 import {
@@ -72,6 +73,7 @@ export interface SidebarProps {
   onFilterChange: (filter: string) => void;
   filterInputRef: React.RefObject<HTMLInputElement | null>;
   onNewTask: () => void;
+  onOpenSearch: () => void;
   onOpenSettings: () => void;
   onSelectModule: (module: 'skills' | 'mcp' | 'scheduled-tasks') => void;
   sessionActions: SessionRowActions;
@@ -168,7 +170,7 @@ export function Sidebar(props: SidebarProps) {
         inert={!layout.visible || undefined}
         {...layout.panelHoverProps}
         className={cn(
-          'group/sidebar maka-shell-column relative flex h-full shrink-0 select-none flex-col text-sidebar-text-secondary',
+          'group/sidebar relative flex h-full shrink-0 select-none flex-col text-sidebar-text-secondary',
           layout.isResizing
             ? 'transition-none'
             : 'transition-[width] duration-200 ease-out motion-reduce:transition-none',
@@ -179,6 +181,9 @@ export function Sidebar(props: SidebarProps) {
               : 'w-[var(--sidebar-expanded-width)] bg-sidebar',
         )}
       >
+        {/* Row 1 of this column is the window titlebar: traffic-light gutter,
+            collapse toggle, search (plan §2.12). */}
+        <SidebarChrome layout={layout} onOpenSearch={props.onOpenSearch} />
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <SidebarTabPanel
             scrollLabel={copy.listLabel}

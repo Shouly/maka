@@ -1654,85 +1654,75 @@ html.dark {
   flex-direction: column;
 }
 
-/* Window titlebar geometry (plan §2.12). The window is frameless: on macOS
-   `titleBarStyle: hiddenInset` paints the traffic lights at x 17 / y 14, on
-   Windows `titleBarOverlay` paints caption buttons on the right, Linux paints
-   neither. What the OS reserves is reported through `env(titlebar-area-*)`;
-   the gutters below are that, floored at 24px so the strip never starts flush
-   with the window edge. */
+/* Window titlebar geometry (plan §2.12). The window is frameless; each
+   shell column owns its own 36px titlebar row (`.maka-titlebar-row`) and the
+   gutters clear what the OS paints there: macOS traffic lights top-left
+   (`titleBarStyle: hiddenInset`, x 17 / y 14, ~70px wide), Windows caption
+   buttons top-right (`titleBarOverlay`, reported through
+   `env(titlebar-area-*)`), Linux neither. `data-maka-platform` is set on
+   <html> before first paint (lib/platform.ts). */
 :root {
   --maka-window-resize-edge: 4px;
-  --maka-titlebar-gap: 8px;
   --maka-titlebar-area-x: env(titlebar-area-x, 0px);
   --maka-titlebar-area-width: env(titlebar-area-width, 100vw);
-  --maka-titlebar-gutter-left: max(24px, var(--maka-titlebar-area-x));
+  --maka-titlebar-gutter-left: max(12px, var(--maka-titlebar-area-x));
   --maka-titlebar-gutter-right: max(
-    24px,
+    12px,
     calc(100vw - var(--maka-titlebar-area-x) - var(--maka-titlebar-area-width))
   );
-  /* Published by the sidebar; the titlebar's first column aligns to it. */
+  /* Published by the sidebar for anything that measures the shell. */
   --maka-sidenav-width: 0px;
+}
+html[data-maka-platform="darwin"] {
+  /* The traffic lights end around x = 70; the floor keeps the first control
+     clear of them even where `env(titlebar-area-x)` reports nothing. */
+  --maka-titlebar-gutter-left: max(78px, var(--maka-titlebar-area-x));
 }
 
 /* The one and only `-webkit-app-region: drag` surface in the tree: one
-   transparent strip across the top of the window. It paints nothing — the
-   sidebar and content columns extend up under it and own the colour — and it
-   is hit-test chrome only, so every control inside it opts back out with
-   `.maka-no-drag`. Chromium builds drag regions in document order, so this
-   node precedes the columns and the columns' controls can subtract from it.
-   The 4px inset keeps the drag rect off the window's resize corridor. */
+   transparent strip across the top of the window that carries NO controls.
+   Chromium computes draggable regions from element rects (minus every
+   `no-drag` rect, in document order), so it needs no pointer events of its
+   own — the columns paint the titlebar's background and take the clicks —
+   and it must precede the columns so their controls can carve themselves
+   out of it. The 4px inset keeps the drag rect off the resize corridor. */
 .maka-window-titlebar {
   position: absolute;
-  z-index: 40;
   top: var(--maka-window-resize-edge);
   left: var(--maka-window-resize-edge);
   right: var(--maka-window-resize-edge);
   height: calc(var(--h-titlebar) - var(--maka-window-resize-edge));
-  box-sizing: border-box;
-  padding-left: var(--maka-titlebar-gutter-left);
-  padding-right: var(--maka-titlebar-gutter-right);
   background: transparent;
+  pointer-events: none;
   -webkit-app-region: drag;
-  /* Three columns aligned to the shell below: the sidebar column (its width
-     less what already sits between it and the window edge), the content
-     column, and the right-side actions. Each child names its column so a
-     missing identity never slides the actions into the middle. */
-  display: grid;
-  align-items: center;
-  column-gap: var(--maka-titlebar-gap);
-  grid-template-columns:
-    minmax(
-      calc(
-        var(--maka-sidenav-width) - var(--maka-window-resize-edge) -
-          var(--maka-titlebar-gutter-left) - var(--maka-titlebar-gap)
-      ),
-      auto
-    )
-    minmax(0, 1fr)
-    auto;
 }
 
-.maka-titlebar-rail {
-  grid-column: 1;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  -webkit-app-region: no-drag;
+/* A column's titlebar row: the strip's height, controls vertically centred on
+   the traffic lights (y 14 + 6). */
+.maka-titlebar-row {
+  height: var(--h-titlebar);
+  flex-shrink: 0;
+  box-sizing: border-box;
+  padding-top: 2px;
 }
-
-.maka-titlebar-identity {
-  grid-column: 2;
-  min-width: 0;
-  display: flex;
-  align-items: center;
+.maka-titlebar-gutter-left {
+  padding-left: var(--maka-titlebar-gutter-left);
 }
-
-.maka-titlebar-actions {
-  grid-column: 3;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  -webkit-app-region: no-drag;
+.maka-titlebar-gutter-right {
+  padding-right: var(--maka-titlebar-gutter-right);
+}
+/* The collapsed sidebar's two buttons, fixed where the sidebar's own row
+   draws them. Below the hover-peek panel (z 40), which repaints the same row. */
+.maka-collapsed-rail {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 30;
+}
+/* The content column's row clears that rail while the sidebar is collapsed:
+   gutter + two 28px buttons + gap. */
+.maka-content-titlebar-clears-rail {
+  padding-left: calc(var(--maka-titlebar-gutter-left) + 68px);
 }
 
 .maka-no-drag {
@@ -1745,12 +1735,6 @@ html.dark {
    window drags. */
 dialog:modal {
   -webkit-app-region: no-drag;
-}
-
-/* The two shell columns run the full window height (they paint the titlebar's
-   background) and start their content below the strip. */
-.maka-shell-column {
-  padding-top: var(--h-titlebar);
 }
 
 .appFrame {

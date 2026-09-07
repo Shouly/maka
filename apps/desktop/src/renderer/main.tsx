@@ -48,6 +48,7 @@ import {
 } from './lib/fixture.js';
 import { readSystemUiLocale } from './lib/ported/use-system-ui-locale.js';
 import { applyCachedThemeBeforeMount, readCachedThemePreference } from './lib/theme.js';
+import { applyPlatformAttribute } from './lib/platform.js';
 import './styles/globals.css';
 
 async function bootstrap(): Promise<void> {
@@ -55,6 +56,8 @@ async function bootstrap(): Promise<void> {
   if (!container) throw new Error('Renderer root element #root is missing');
 
   applyCachedThemeBeforeMount();
+  // The titlebar gutters (traffic lights / caption buttons) are per platform.
+  applyPlatformAttribute();
 
   // Awaited before the root is created: the fixture's own contract is that its
   // document state is in place before the first locale-dependent render.
