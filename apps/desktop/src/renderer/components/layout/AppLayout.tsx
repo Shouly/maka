@@ -43,7 +43,9 @@ export function AppLayout(props: {
     <div
       data-app-shell=""
       data-sidebar-collapsed={props.collapsed ? 'true' : 'false'}
-      className={cn('flex min-h-0 flex-1 bg-surface-1', props.className)}
+      // `relative`: the hover-peek sidebar is `absolute top-0` and must be
+      // positioned against THIS box (below the titlebar row), never the window.
+      className={cn('relative flex min-h-0 flex-1 bg-surface-1', props.className)}
     >
       {props.sidebar}
       <main
