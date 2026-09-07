@@ -1713,6 +1713,11 @@ html[data-maka-platform="darwin"] {
   flex-shrink: 0;
   box-sizing: border-box;
   padding-right: 8px;
+  /* Above the hover-peek panel (z 40): the panel slides in underneath this
+     segment, which is transparent while collapsed, so the ONE set of buttons
+     stays put and keeps its hover state. */
+  position: relative;
+  z-index: 41;
 }
 .maka-titlebar-identity {
   display: flex;

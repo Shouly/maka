@@ -18,12 +18,11 @@
  */
 
 // The sidebar toggle and the search button — the two controls that sit right
-// of the traffic lights. Rendered in two places with identical geometry: the
-// window titlebar's left segment, and the top row of the hover-peek panel,
-// which slides over that segment from the window's top edge so the panel
-// and the titlebar read as one surface (the reference desktop pattern). The
-// pointer never sees the buttons move: the peek row draws them where the
-// titlebar drew them.
+// of the traffic lights, in the window titlebar's left segment. There is ONE
+// copy: when the hover-peek panel slides in from the window's top edge, the
+// segment stays stacked above it (transparent, so the panel's surface shows
+// through), and the same buttons keep their hover state, tooltip and place —
+// nothing remounts, so nothing flickers or moves.
 
 import { useUiLocale } from '@maka/ui';
 import { Anthropicon } from '../icons/Anthropicon.js';
@@ -38,19 +37,12 @@ export const sidebarControlButtonClass =
 export function SidebarControls(props: {
   layout: SidebarLayout;
   onOpenSearch: () => void;
-  /**
-   * `titlebar`: the persistent copy (owns the layout hook's opener/close refs
-   * and the collapsed-state hover). `peek`: the copy inside the peek panel,
-   * whose toggle pins the panel open.
-   */
-  place: 'titlebar' | 'peek';
 }) {
   const locale = useUiLocale();
   const chrome = getShellCopy(locale).chrome;
   const sidebar = getSidebarCopy(locale);
   const layout = props.layout;
   const collapsed = layout.collapsed;
-  const inTitlebar = props.place === 'titlebar';
   return (
     <>
       <SidebarTooltip
@@ -59,14 +51,12 @@ export function SidebarControls(props: {
         side="bottom"
       >
         <button
-          ref={
-            inTitlebar
-              ? (element) => {
-                  layout.peekOpenerRef.current = element;
-                  layout.sidebarCloseButtonRef.current = element;
-                }
-              : undefined
-          }
+          ref={(element) => {
+            // The collapsed-state opener and the expanded-state close the
+            // layout hook hands focus to are this one button.
+            layout.peekOpenerRef.current = element;
+            layout.sidebarCloseButtonRef.current = element;
+          }}
           type="button"
           onClick={() => {
             layout.closePeek();
@@ -86,7 +76,7 @@ export function SidebarControls(props: {
           type="button"
           onClick={props.onOpenSearch}
           aria-label={sidebar.search}
-          data-maka-search-trigger={inTitlebar ? '' : undefined}
+          data-maka-search-trigger=""
           className={sidebarControlButtonClass}
         >
           <Anthropicon name="search" />

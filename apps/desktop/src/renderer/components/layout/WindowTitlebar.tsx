@@ -76,7 +76,7 @@ export function WindowTitlebar(props: WindowTitlebarProps) {
           // Collapsed: hovering the toggle peeks the sidebar open below this row.
           {...(collapsed ? layout.openerHoverProps : {})}
         >
-          <SidebarControls layout={layout} onOpenSearch={props.onOpenSearch} place="titlebar" />
+          <SidebarControls layout={layout} onOpenSearch={props.onOpenSearch} />
         </div>
         <div className="maka-titlebar-identity">{props.identity}</div>
         <div className="maka-titlebar-actions maka-titlebar-gutter-right">{props.actions}</div>

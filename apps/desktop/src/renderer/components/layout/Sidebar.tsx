@@ -38,7 +38,6 @@ import { useStore } from 'zustand';
 import { useRovingRowFocus, useUiLocale } from '@maka/ui';
 import { Anthropicon } from '../icons/Anthropicon.js';
 import { SidebarTooltipProvider } from '../ui/sidebar-tooltip.js';
-import { SidebarControls } from './SidebarControls.js';
 import { Input } from '../ui/input.js';
 import { cn } from '../../lib/cn.js';
 import {
@@ -73,7 +72,6 @@ export interface SidebarProps {
   onFilterChange: (filter: string) => void;
   filterInputRef: React.RefObject<HTMLInputElement | null>;
   onNewTask: () => void;
-  onOpenSearch: () => void;
   onOpenSettings: () => void;
   onSelectModule: (module: 'skills' | 'mcp' | 'scheduled-tasks') => void;
   sessionActions: SessionRowActions;
@@ -185,15 +183,12 @@ export function Sidebar(props: SidebarProps) {
               : 'w-[var(--sidebar-expanded-width)] border-r border-hairline bg-sidebar',
         )}
       >
-        {layout.isPeekOpen && (
-          <div
-            className="maka-titlebar-row maka-titlebar-gutter-left flex shrink-0 items-center gap-0.5"
-            role="group"
-            aria-label={copy.panelLabel}
-          >
-            <SidebarControls layout={layout} onOpenSearch={props.onOpenSearch} place="peek" />
-          </div>
-        )}
+        {/* Peek: the panel starts at the window's top edge, under the titlebar's
+            left segment (which stays on top and keeps the SAME toggle/search
+            buttons — nothing remounts, so nothing flickers or moves). This row
+            only reserves that height so the panel's edge and shadow run up to
+            the top. */}
+        {layout.isPeekOpen && <div className="maka-titlebar-row shrink-0" aria-hidden="true" />}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <SidebarTabPanel
             scrollLabel={copy.listLabel}

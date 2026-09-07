@@ -458,7 +458,6 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
             onFilterChange={setFilter}
             filterInputRef={filterInputRef}
             onNewTask={newTask}
-            onOpenSearch={() => uiStore.setSearchOpen(true)}
             onOpenSettings={() => openSettings()}
             onSelectModule={selectModule}
             sessionActions={sessionActions}
