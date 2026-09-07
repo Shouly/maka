@@ -275,7 +275,12 @@ const SIDEBAR_COPY = {
     projectsSection: 'Projects',
     untitled: 'Untitled task',
     running: 'Running',
-    turnStatus: { running: 'Running', completed: 'Completed', aborted: 'Stopped', failed: 'Failed' },
+    turnStatus: {
+      running: 'Running',
+      completed: 'Completed',
+      aborted: 'Stopped',
+      failed: 'Failed',
+    },
     stale: 'Needs attention',
     flaggedBadge: 'Flagged',
     branchBadge: 'Branch',

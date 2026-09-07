@@ -17,8 +17,8 @@
  * under the License.
  */
 
-import { Anthropicon, type AnthropiconName } from '../icons/Anthropicon'
-import { cn } from '../../lib/cn'
+import { Anthropicon, type AnthropiconName } from '../icons/Anthropicon';
+import { cn } from '../../lib/cn';
 
 /**
  * 分段控件。两档尺寸,实测都在用:
@@ -37,21 +37,21 @@ import { cn } from '../../lib/cn'
 const TRACK_CLASS = {
   default: 'h-8 rounded-lg',
   sm: 'h-7 rounded-[7px]',
-} as const
+} as const;
 
 const SEGMENT_CLASS = {
   default: 'rounded-md',
   sm: 'rounded-[5px]',
-} as const
+} as const;
 
 export interface SegmentedOption<T extends string> {
-  value: T
+  value: T;
   /** 纯图标时作为 aria-label,带文字时作为可见文案 */
-  label: string
-  icon?: AnthropiconName
+  label: string;
+  icon?: AnthropiconName;
   /** 有图标时是否同时显示文字(默认只显示图标) */
-  showLabel?: boolean
-  disabled?: boolean
+  showLabel?: boolean;
+  disabled?: boolean;
 }
 
 export function SegmentedControl<T extends string>({
@@ -62,12 +62,12 @@ export function SegmentedControl<T extends string>({
   size = 'default',
   className,
 }: {
-  value: T
-  onChange: (value: T) => void
-  options: readonly SegmentedOption<T>[]
-  ariaLabel: string
-  size?: keyof typeof TRACK_CLASS
-  className?: string
+  value: T;
+  onChange: (value: T) => void;
+  options: readonly SegmentedOption<T>[];
+  ariaLabel: string;
+  size?: keyof typeof TRACK_CLASS;
+  className?: string;
 }) {
   return (
     <div
@@ -80,8 +80,8 @@ export function SegmentedControl<T extends string>({
       )}
     >
       {options.map((option) => {
-        const checked = option.value === value
-        const iconOnly = Boolean(option.icon) && !option.showLabel
+        const checked = option.value === value;
+        const iconOnly = Boolean(option.icon) && !option.showLabel;
 
         return (
           <button
@@ -104,8 +104,8 @@ export function SegmentedControl<T extends string>({
             {option.icon && <Anthropicon name={option.icon} size={20} />}
             {!iconOnly && <span>{option.label}</span>}
           </button>
-        )
+        );
       })}
     </div>
-  )
+  );
 }

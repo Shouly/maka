@@ -17,12 +17,12 @@
  * under the License.
  */
 
-import { cn } from "../../lib/cn"
-import { Anthropicon, type AnthropiconName } from '../icons'
-import * as ToastPrimitives from '@radix-ui/react-toast'
-import * as React from 'react'
+import { cn } from '../../lib/cn';
+import { Anthropicon, type AnthropiconName } from '../icons';
+import * as ToastPrimitives from '@radix-ui/react-toast';
+import * as React from 'react';
 
-const ToastProvider = ToastPrimitives.Provider
+const ToastProvider = ToastPrimitives.Provider;
 
 const ToastViewport = React.forwardRef<
   React.ComponentRef<typeof ToastPrimitives.Viewport>,
@@ -39,14 +39,14 @@ const ToastViewport = React.forwardRef<
       // 默认 0 时就等价于纯 bottom-4;哪个页面被挡住了,在那个页面上把这个变量
       // 设成被挡高度即可,不用改这里。
       'right-4 bottom-[calc(var(--toast-clearance,0px)+1rem)]',
-      className
+      className,
     )}
     {...props}
   />
-))
-ToastViewport.displayName = ToastPrimitives.Viewport.displayName
+));
+ToastViewport.displayName = ToastPrimitives.Viewport.displayName;
 
-export type ToastVariant = 'default' | 'info' | 'success' | 'warning' | 'destructive'
+export type ToastVariant = 'default' | 'info' | 'success' | 'warning' | 'destructive';
 
 /**
  * 语义色只落在**图标**上,卡面和正文一律中性。
@@ -62,12 +62,12 @@ const toastToneClass: Record<ToastVariant, string> = {
   success: 'text-accent',
   warning: 'text-warning',
   destructive: 'text-danger',
-}
+};
 
 const Toast = React.forwardRef<
   React.ComponentRef<typeof ToastPrimitives.Root>,
   React.ComponentPropsWithoutRef<typeof ToastPrimitives.Root> & {
-    variant?: ToastVariant
+    variant?: ToastVariant;
   }
 >(({ className, ...props }, ref) => {
   return (
@@ -89,13 +89,13 @@ const Toast = React.forwardRef<
         // 手势方向跟着位置走:右下角的卡片往**下**划走,所以取 swipe 的 Y 轴量
         // (ToastProvider 的 swipeDirection 也一起改成了 down)。
         'transition-transform data-[swipe=cancel]:translate-y-0 data-[swipe=end]:translate-y-[var(--radix-toast-swipe-end-y)] data-[swipe=move]:translate-y-[var(--radix-toast-swipe-move-y)]',
-        className
+        className,
       )}
       {...props}
     />
-  )
-})
-Toast.displayName = ToastPrimitives.Root.displayName
+  );
+});
+Toast.displayName = ToastPrimitives.Root.displayName;
 
 const ToastAction = React.forwardRef<
   React.ComponentRef<typeof ToastPrimitives.Action>,
@@ -105,12 +105,12 @@ const ToastAction = React.forwardRef<
     ref={ref}
     className={cn(
       'inline-flex h-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-hairline bg-transparent px-3 text-sm font-medium outline-none transition-colors hover:bg-fill-secondary-hover focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-50 group-[.destructive]:border-danger-line group-[.destructive]:hover:bg-danger-fill group-[.destructive]:hover:text-on-danger',
-      className
+      className,
     )}
     {...props}
   />
-))
-ToastAction.displayName = ToastPrimitives.Action.displayName
+));
+ToastAction.displayName = ToastPrimitives.Action.displayName;
 
 const ToastClose = React.forwardRef<
   React.ComponentRef<typeof ToastPrimitives.Close>,
@@ -126,15 +126,15 @@ const ToastClose = React.forwardRef<
       // 行内盒排版,会吃到父级 20px 的 line-height 再加基线下沉,实测长成 29 高
       // (应该是 4+16+4=24),把整条 toast 顶高 3px。
       'inline-flex shrink-0 items-center justify-center cursor-pointer rounded-md p-1 text-text-muted outline-none transition-colors hover:bg-alpha-1 hover:text-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)]',
-      className
+      className,
     )}
     toast-close=""
     {...props}
   >
     <Anthropicon name="x" size={16} />
   </ToastPrimitives.Close>
-))
-ToastClose.displayName = ToastPrimitives.Close.displayName
+));
+ToastClose.displayName = ToastPrimitives.Close.displayName;
 
 const ToastTitle = React.forwardRef<
   React.ComponentRef<typeof ToastPrimitives.Title>,
@@ -145,8 +145,8 @@ const ToastTitle = React.forwardRef<
     className={cn('text-sm font-medium [&+div]:text-xs', className)}
     {...props}
   />
-))
-ToastTitle.displayName = ToastPrimitives.Title.displayName
+));
+ToastTitle.displayName = ToastPrimitives.Title.displayName;
 
 const ToastDescription = React.forwardRef<
   React.ComponentRef<typeof ToastPrimitives.Description>,
@@ -157,12 +157,12 @@ const ToastDescription = React.forwardRef<
     className={cn('text-sm opacity-90', className)}
     {...props}
   />
-))
-ToastDescription.displayName = ToastPrimitives.Description.displayName
+));
+ToastDescription.displayName = ToastPrimitives.Description.displayName;
 
-type ToastProps = React.ComponentPropsWithoutRef<typeof Toast>
+type ToastProps = React.ComponentPropsWithoutRef<typeof Toast>;
 
-type ToastActionElement = React.ReactElement<typeof ToastAction>
+type ToastActionElement = React.ReactElement<typeof ToastAction>;
 
 // success 用带圈的勾:裸 check 在一句通知前面像个勾选框,圈起来才是"完成"。
 const TOAST_ICONS: Record<ToastVariant, AnthropiconName> = {
@@ -171,15 +171,24 @@ const TOAST_ICONS: Record<ToastVariant, AnthropiconName> = {
   success: 'checkCircle',
   warning: 'warning',
   destructive: 'warning',
-}
+};
 
 /** 20px —— 参照实测值,和 14px/20行高 的标题在同一行等高。 */
 const ToastIcon = ({ variant }: { variant: ToastVariant }) => (
   <span className={cn('flex h-5 shrink-0 items-center', toastToneClass[variant])}>
     <Anthropicon name={TOAST_ICONS[variant]} size={20} />
   </span>
-)
+);
 
 export {
-  Toast, ToastAction, ToastClose, ToastDescription, ToastIcon, ToastProvider, ToastTitle, ToastViewport, type ToastActionElement, type ToastProps
-}
+  Toast,
+  ToastAction,
+  ToastClose,
+  ToastDescription,
+  ToastIcon,
+  ToastProvider,
+  ToastTitle,
+  ToastViewport,
+  type ToastActionElement,
+  type ToastProps,
+};

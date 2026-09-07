@@ -62,7 +62,9 @@ const NO_LIVE_TURN: LiveTurnSnapshot = {
   hasInFlightTools: false,
 };
 
-export function deriveLiveTurnSnapshot(projection: LiveTurnProjection | undefined): LiveTurnSnapshot {
+export function deriveLiveTurnSnapshot(
+  projection: LiveTurnProjection | undefined,
+): LiveTurnSnapshot {
   if (!projection) return NO_LIVE_TURN;
   const steps = projection.steps;
   const textStep = findLast(steps, (step) => Boolean(step.text));
@@ -104,7 +106,8 @@ export function selectStreamingSessionIds(
 ): Set<string> {
   const streaming = new Set<string>();
   for (const [sessionId, projection] of Object.entries(liveTurnBySession)) {
-    if (projection.steps.some((step) => step.text?.text && !step.text.complete)) streaming.add(sessionId);
+    if (projection.steps.some((step) => step.text?.text && !step.text.complete))
+      streaming.add(sessionId);
   }
   return streaming;
 }

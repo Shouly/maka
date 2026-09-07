@@ -128,10 +128,7 @@ export const DiffResult = memo(function DiffResult(props: {
                   {kind === 'added' ? '+' : kind === 'removed' ? '-' : ''}
                 </span>
                 <code
-                  className={cn(
-                    'flex-1 whitespace-pre px-2',
-                    kind === 'meta' && 'text-text-muted',
-                  )}
+                  className={cn('flex-1 whitespace-pre px-2', kind === 'meta' && 'text-text-muted')}
                 >
                   {kind === 'meta'
                     ? model.stripped[index]

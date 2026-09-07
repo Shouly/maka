@@ -75,10 +75,7 @@ export interface TurnPresentation {
 }
 
 export interface TurnPresentationDerivation {
-  derive(
-    turns: readonly TurnViewModel[],
-    context: TurnPresentationContext,
-  ): TurnPresentation;
+  derive(turns: readonly TurnViewModel[], context: TurnPresentationContext): TurnPresentation;
 }
 
 /** What one turn contributes to the presentation; cached against that turn. */
@@ -247,7 +244,7 @@ function deriveTurnPresentationEntry(input: {
     hasContent: finalAssistantReplyText(turn).trim().length > 0,
     // Match the badge lineage rule (regenerate ?? legacy retry) so a turn that
     // already has a parallel answer hints at it in the tooltip too.
-    ...(lineageEntry?.regeneratedToTurnId ?? lineageEntry?.retriedToTurnId
+    ...((lineageEntry?.regeneratedToTurnId ?? lineageEntry?.retriedToTurnId)
       ? { alreadyRegenerated: true }
       : {}),
     ...(pendingForTurn.size > 0 ? { pendingActions: pendingForTurn } : {}),
@@ -273,9 +270,7 @@ function deriveTurnPresentationEntry(input: {
   const lineageBadges = deriveTurnLineageBadges({
     turnId: turn.turnId,
     ...(turn.retriedFromTurnId ? { retriedFromTurnId: turn.retriedFromTurnId } : {}),
-    ...(turn.regeneratedFromTurnId
-      ? { regeneratedFromTurnId: turn.regeneratedFromTurnId }
-      : {}),
+    ...(turn.regeneratedFromTurnId ? { regeneratedFromTurnId: turn.regeneratedFromTurnId } : {}),
     ...(lineageEntry?.retriedToTurnId ? { retriedToTurnId: lineageEntry.retriedToTurnId } : {}),
     ...(lineageEntry?.regeneratedToTurnId
       ? { regeneratedToTurnId: lineageEntry.regeneratedToTurnId }

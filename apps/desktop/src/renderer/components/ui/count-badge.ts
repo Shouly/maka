@@ -54,13 +54,13 @@
  */
 
 const BASE =
-  'inline-flex shrink-0 items-center justify-center rounded-full font-medium leading-none tabular-nums'
+  'inline-flex shrink-0 items-center justify-center rounded-full font-medium leading-none tabular-nums';
 
 /** 侧栏行尾。16px 高。 */
-export const countBadgeClass = `${BASE} h-[16px] min-w-[16px] px-1 text-[10px]`
+export const countBadgeClass = `${BASE} h-[16px] min-w-[16px] px-1 text-[10px]`;
 
 /** 列表页行尾 + 滚到底浮标。20px 高。 */
-export const countBadgeLargeClass = `${BASE} h-[20px] min-w-[20px] px-1.5 text-[11px]`
+export const countBadgeLargeClass = `${BASE} h-[20px] min-w-[20px] px-1.5 text-[11px]`;
 
 /**
  * 图标肩章。15px 高、9px 字。
@@ -70,16 +70,16 @@ export const countBadgeLargeClass = `${BASE} h-[20px] min-w-[20px] px-1.5 text-[
  * 是全仓 13 颗计数丸里唯一的淡底档 —— 同一个部件在一个应用里不该有两种
  * 底色语言,统一到实底。
  */
-export const countBadgeShoulderClass = `${BASE} h-[15px] min-w-[15px] px-1 text-[9px]`
+export const countBadgeShoulderClass = `${BASE} h-[15px] min-w-[15px] px-1 text-[9px]`;
 
 /** 未读:体系主色。 */
-export const countBadgeAccentClass = 'bg-accent-fill text-on-accent'
+export const countBadgeAccentClass = 'bg-accent-fill text-on-accent';
 
 /**
  * @提及:warning 族。明暗同色,黑字压琥珀 10.73:1;和相邻蓝丸的亮度差
  * 2.41:1(原来手写的绿丸浅色下只有 1.14:1,色觉受限基本分不出)。
  */
-export const countBadgeMentionClass = 'bg-warning-fill text-on-warning'
+export const countBadgeMentionClass = 'bg-warning-fill text-on-warning';
 
 /**
  * 带字形前缀的变体(新文件丸)。附加在尺寸类之后。
@@ -92,7 +92,7 @@ export const countBadgeMentionClass = 'bg-warning-fill text-on-warning'
  * twMerge 的"后者胜"把 `px-1.5` 盖掉尺寸档里的 `px-1`。裸拼两个 padding 都会
  * 落到 class 上,最终哪个生效由 Tailwind 生成的 CSS 顺序决定,不由这里决定。
  */
-export const countBadgeWithGlyphClass = 'gap-0.5 px-1.5'
+export const countBadgeWithGlyphClass = 'gap-0.5 px-1.5';
 
 /** 超过两位数截断。见上面"硬约束"第二条。 */
-export const formatCount = (n: number): string => (n > 99 ? '99+' : String(n))
+export const formatCount = (n: number): string => (n > 99 ? '99+' : String(n));

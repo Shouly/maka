@@ -32,14 +32,14 @@
  *
  * hover 态依赖调用点在外层挂 `group/cb`。
  */
-import { cn } from '../../lib/cn'
+import { cn } from '../../lib/cn';
 
 const CHECKBOX_SIZE = {
   default: 'size-5 rounded-[5px]',
   xs: 'size-4 rounded-[4px]',
-} as const
+} as const;
 
-export type CheckboxBoxSize = keyof typeof CHECKBOX_SIZE
+export type CheckboxBoxSize = keyof typeof CHECKBOX_SIZE;
 
 export function checkboxBoxClass(checked: boolean, size: CheckboxBoxSize = 'default') {
   return cn(
@@ -48,7 +48,7 @@ export function checkboxBoxClass(checked: boolean, size: CheckboxBoxSize = 'defa
     checked
       ? 'border-transparent bg-accent-fill text-on-accent group-hover/cb:bg-accent-fill-hover'
       : 'border-border-strong bg-transparent group-hover/cb:border-border-stronger',
-  )
+  );
 }
 
 /**
@@ -56,4 +56,4 @@ export function checkboxBoxClass(checked: boolean, size: CheckboxBoxSize = 'defa
  * 明显显小(框里空一圈)。default 档的 16 是沿用改造前的既有值,没有实测对照,
  * 按 xs 的 1:1 关系推该是 20,等量到再说。
  */
-export const CHECKBOX_TICK_SIZE = { default: 16, xs: 16 } as const
+export const CHECKBOX_TICK_SIZE = { default: 16, xs: 16 } as const;

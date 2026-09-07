@@ -51,47 +51,50 @@
  * 随时可以把它请回来，面板跟着让位。侧栏的联动写在 uiStore.setRightPaneExpanded。
  */
 
-import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react'
-import { cn } from '../../lib/cn'
-import { Anthropicon } from '../icons'
-import { Button } from './button'
-import { PaneResizer, type PaneResizerProps } from './pane-resizer'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './tooltip'
+import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
+import { cn } from '../../lib/cn';
+import { Anthropicon } from '../icons';
+import { Button } from './button';
+import { PaneResizer, type PaneResizerProps } from './pane-resizer';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './tooltip';
 
 interface RightPaneContextValue {
-  isExpanded: boolean
+  isExpanded: boolean;
   /** 不在外壳里时为 null —— 展开按钮据此自行隐藏，而不是抛错。 */
-  toggleExpanded: (() => void) | null
+  toggleExpanded: (() => void) | null;
 }
 
-const RightPaneContext = createContext<RightPaneContextValue>({ isExpanded: false, toggleExpanded: null })
+const RightPaneContext = createContext<RightPaneContextValue>({
+  isExpanded: false,
+  toggleExpanded: null,
+});
 
 /** 面板内部读展开态。外壳之外调用会拿到一个不可展开的空实现。 */
 export function useRightPane() {
-  return useContext(RightPaneContext)
+  return useContext(RightPaneContext);
 }
 
 export interface RightPaneShellProps {
-  children: ReactNode
+  children: ReactNode;
   /**
    * 全屏态。参照实现把它放在 uiStore 里(侧栏要据此把浮动开关交给面板 header);
    * Maka 的面板由 workbar 布局拥有,所以外壳只做受控组件 —— 状态和联动都在调用方,
    * 外壳既不持有也不在卸载时归零。不传 `onExpandedChange` 即不可展开,
    * `RightPaneExpandButton` 据此自行隐藏。
    */
-  expanded?: boolean
-  onExpandedChange?: (expanded: boolean) => void
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
   /**
    * 面板宽度。不传则 `flex-1` 吃掉剩余空间 —— 单聊那边是「正文带百分比宽、
    * 预览吃剩下」的排法，宽度不在这一侧。
    */
-  width?: string
+  width?: string;
   /** 最小宽度，防止拖到看不见。只在显式给 width 时有意义。 */
-  minWidth?: string
+  minWidth?: string;
   /** 拖拽把手。不传则面板不可拖。 */
-  resizer?: PaneResizerProps
-  className?: string
-  id?: string
+  resizer?: PaneResizerProps;
+  className?: string;
+  id?: string;
 }
 
 export function RightPaneShell({
@@ -105,27 +108,27 @@ export function RightPaneShell({
   onExpandedChange,
 }: RightPaneShellProps) {
   // 参照实现在 uiStore 里持有全屏态;这里是受控 prop,见 RightPaneShellProps。
-  const isExpanded = expanded
+  const isExpanded = expanded;
   const toggleExpanded = useMemo(
     () => (onExpandedChange ? () => onExpandedChange(!isExpanded) : null),
     [isExpanded, onExpandedChange],
-  )
+  );
 
   // Escape 退出全屏。面板里能开出对话框(发布 artifact / 分享文件),Radix 自己
   // 也监听 Escape —— 两边都响应的话一次 Escape 会同时关掉对话框和全屏。有对话框
   // 开着就让它先接,用户再按一次才退全屏。
   useEffect(() => {
-    if (!isExpanded || !onExpandedChange) return
+    if (!isExpanded || !onExpandedChange) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      if (document.querySelector('[role="dialog"][data-state="open"]')) return
-      onExpandedChange(false)
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isExpanded, onExpandedChange])
+      if (e.key !== 'Escape') return;
+      if (document.querySelector('[role="dialog"][data-state="open"]')) return;
+      onExpandedChange(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isExpanded, onExpandedChange]);
 
-  const context = useMemo(() => ({ isExpanded, toggleExpanded }), [isExpanded, toggleExpanded])
+  const context = useMemo(() => ({ isExpanded, toggleExpanded }), [isExpanded, toggleExpanded]);
 
   return (
     <RightPaneContext.Provider value={context}>
@@ -164,7 +167,11 @@ export function RightPaneShell({
       >
         {/* 全屏时没有可拖的边；移动端是整屏覆盖，也没有可拖的分栏 */}
         {resizer && !isExpanded && (
-          <PaneResizer side="left" {...resizer} className={cn('max-md:hidden', resizer.className)} />
+          <PaneResizer
+            side="left"
+            {...resizer}
+            className={cn('max-md:hidden', resizer.className)}
+          />
         )}
         {/*
           全屏铺满「侧栏右边的那块」，不是铺满窗口 —— 侧栏进出时那块变宽变窄，
@@ -194,7 +201,7 @@ export function RightPaneShell({
         </div>
       </div>
     </RightPaneContext.Provider>
-  )
+  );
 }
 
 /**
@@ -202,16 +209,16 @@ export function RightPaneShell({
  * 展开用 expand(E067)、已展开用 collapse(E04D)，与上游一致。
  */
 export function RightPaneExpandButton() {
-  const { isExpanded, toggleExpanded } = useRightPane()
-  if (!toggleExpanded) return null
-  const label = isExpanded ? 'Collapse' : 'Expand'
+  const { isExpanded, toggleExpanded } = useRightPane();
+  if (!toggleExpanded) return null;
+  const label = isExpanded ? 'Collapse' : 'Expand';
   return (
     <RightPaneTip label={label}>
       <Button variant="ghost" size="iconSm" onClick={toggleExpanded} aria-label={label}>
         <Anthropicon name={isExpanded ? 'collapse' : 'expand'} size={20} />
       </Button>
     </RightPaneTip>
-  )
+  );
 }
 
 /**
@@ -226,13 +233,13 @@ export function RightPaneHeader({
   className,
   sidebarOpener,
 }: {
-  children: ReactNode
-  className?: string
+  children: ReactNode;
+  className?: string;
   /**
    * 全屏时寄居在 header 里的「展开侧栏」键。参照实现直接读 uiStore;这里是插槽,
    * 由拥有侧栏状态的调用方(Phase 2/4)决定是否给、给什么。
    */
-  sidebarOpener?: ReactNode
+  sidebarOpener?: ReactNode;
 }) {
   return (
     // Provider 放在 header 上而不是让三个预览各自去套：header 里全是纯图标键，
@@ -248,7 +255,7 @@ export function RightPaneHeader({
         {children}
       </div>
     </TooltipProvider>
-  )
+  );
 }
 
 /**
@@ -274,7 +281,7 @@ export function RightPaneSidebarOpener({ onOpen }: { onOpen: () => void }) {
         <Anthropicon name="sidebar" />
       </Button>
     </RightPaneTip>
-  )
+  );
 }
 
 /**
@@ -289,5 +296,5 @@ export function RightPaneTip({ label, children }: { label: string; children: Rea
       <TooltipTrigger asChild>{children}</TooltipTrigger>
       <TooltipContent side="bottom">{label}</TooltipContent>
     </Tooltip>
-  )
+  );
 }

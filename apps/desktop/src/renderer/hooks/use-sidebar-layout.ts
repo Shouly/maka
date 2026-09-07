@@ -230,7 +230,8 @@ export function useSidebarLayout(): SidebarLayout {
   );
 
   const onResizeLostPointerCapture = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => finishResize(event.currentTarget, event.pointerId),
+    (event: ReactPointerEvent<HTMLDivElement>) =>
+      finishResize(event.currentTarget, event.pointerId),
     [finishResize],
   );
 

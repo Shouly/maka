@@ -22,24 +22,24 @@
  * 20 处 <textarea> 各自手抄样式,是弹框内输入框长得不一样的主因。
  */
 
-import * as React from "react"
-import { cn } from "../../lib/cn"
-import { fieldSurfaceClass } from "./field-surface"
+import * as React from 'react';
+import { cn } from '../../lib/cn';
+import { fieldSurfaceClass } from './field-surface';
 
-export type TextareaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement>
+export type TextareaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement>;
 
 const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ className, ...props }, ref) => {
     return (
       <textarea
         // py-2 而不是 Input 的定高:多行高度由 rows/min-h 决定
-        className={cn(fieldSurfaceClass, "px-3 py-2 resize-y", className)}
+        className={cn(fieldSurfaceClass, 'px-3 py-2 resize-y', className)}
         ref={ref}
         {...props}
       />
-    )
-  }
-)
-Textarea.displayName = "Textarea"
+    );
+  },
+);
+Textarea.displayName = 'Textarea';
 
-export { Textarea }
+export { Textarea };

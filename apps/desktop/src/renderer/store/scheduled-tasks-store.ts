@@ -29,7 +29,8 @@ import type { ScheduledTask } from '../bridge/scheduled-tasks.js';
 import { createResourceStore } from './resource-store.js';
 
 export function pendingScheduledTaskCount(tasks: readonly ScheduledTask[] | undefined): number {
-  return (tasks ?? []).filter((task) => task.status === 'active' && task.nextFireAt !== null).length;
+  return (tasks ?? []).filter((task) => task.status === 'active' && task.nextFireAt !== null)
+    .length;
 }
 
 export function createScheduledTasksStore(bridge = api) {

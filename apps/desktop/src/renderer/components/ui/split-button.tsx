@@ -17,27 +17,27 @@
  * under the License.
  */
 
-import React, { useState } from 'react'
-import { Button } from './button'
-import { Popover, PopoverContent, PopoverTrigger } from './popover'
-import { menuActionItemClass } from './menu-variants'
-import { Anthropicon } from '../icons'
-import { cn } from '../../lib/cn'
+import React, { useState } from 'react';
+import { Button } from './button';
+import { Popover, PopoverContent, PopoverTrigger } from './popover';
+import { menuActionItemClass } from './menu-variants';
+import { Anthropicon } from '../icons';
+import { cn } from '../../lib/cn';
 
 interface SplitButtonAction {
-  label: string
-  onClick: () => void
+  label: string;
+  onClick: () => void;
 }
 
 interface SplitButtonProps {
-  primaryLabel: string
-  primaryAction: () => void
-  actions: SplitButtonAction[]
-  disabled?: boolean
-  size?: 'sm' | 'lg' | 'default'
-  variant?: 'default' | 'ghost' | 'outline'
-  primaryIcon?: React.ReactNode
-  showPrimaryIcon?: boolean
+  primaryLabel: string;
+  primaryAction: () => void;
+  actions: SplitButtonAction[];
+  disabled?: boolean;
+  size?: 'sm' | 'lg' | 'default';
+  variant?: 'default' | 'ghost' | 'outline';
+  primaryIcon?: React.ReactNode;
+  showPrimaryIcon?: boolean;
 }
 
 export default function SplitButton({
@@ -56,9 +56,9 @@ export default function SplitButton({
   // ——填充 + 1px 内嵌描边,自带按压回弹,不用手画。
   variant = 'outline',
   primaryIcon,
-  showPrimaryIcon = false
+  showPrimaryIcon = false,
 }: SplitButtonProps) {
-  const [isOpen, setIsOpen] = useState(false)
+  const [isOpen, setIsOpen] = useState(false);
 
   // 如果没有actions，只显示普通按钮
   if (!actions || actions.length === 0) {
@@ -71,14 +71,12 @@ export default function SplitButton({
         className="min-w-16 gap-2 px-3"
       >
         {showPrimaryIcon && primaryIcon ? (
-          <span className="flex items-center justify-center w-full">
-            {primaryIcon}
-          </span>
+          <span className="flex items-center justify-center w-full">{primaryIcon}</span>
         ) : (
           primaryLabel
         )}
       </Button>
-    )
+    );
   }
 
   return (
@@ -96,9 +94,7 @@ export default function SplitButton({
         className="min-w-16 gap-2 rounded-r-none px-3"
       >
         {showPrimaryIcon && primaryIcon ? (
-          <span className="flex items-center justify-center w-full">
-            {primaryIcon}
-          </span>
+          <span className="flex items-center justify-center w-full">{primaryIcon}</span>
         ) : (
           primaryLabel
         )}
@@ -120,18 +116,14 @@ export default function SplitButton({
             <Anthropicon name="caretDown" size={16} className="text-text-muted" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent
-          align="end"
-          side="bottom"
-          sideOffset={4}
-        >
+        <PopoverContent align="end" side="bottom" sideOffset={4}>
           <div className="flex flex-col min-w-[100px]">
             {actions.map((action, index) => (
               <button
                 key={index}
                 onClick={() => {
-                  action.onClick()
-                  setIsOpen(false)
+                  action.onClick();
+                  setIsOpen(false);
                 }}
                 className={cn(menuActionItemClass, 'whitespace-nowrap')}
               >
@@ -142,5 +134,5 @@ export default function SplitButton({
         </PopoverContent>
       </Popover>
     </div>
-  )
+  );
 }

@@ -128,8 +128,8 @@ export function deriveTurnFooterActions(input: TurnFooterContext): TurnFooterAct
           status === 'running'
             ? copyText.regenerateRunning
             : alreadyRegenerated
-            ? copyText.regenerateAgain
-            : copyText.regenerate,
+              ? copyText.regenerateAgain
+              : copyText.regenerate,
       };
   const branch: TurnFooterAction = isPending('branch')
     ? { id: 'branch', label: actionLabel.branch, enabled: false, tooltip: PENDING_TOOLTIP }
@@ -141,8 +141,8 @@ export function deriveTurnFooterActions(input: TurnFooterContext): TurnFooterAct
           status === 'running'
             ? copyText.branchRunning
             : status === 'aborted'
-            ? copyText.branchAborted
-            : copyText.branch,
+              ? copyText.branchAborted
+              : copyText.branch,
       };
   const copy: TurnFooterAction = {
     id: 'copy',

@@ -96,7 +96,10 @@ test('groups by time, with flagged tasks lifted out of their bucket', () => {
     model.groups.map((group) => group.key),
     ['flagged', 'today', 'yesterday'],
   );
-  assert.deepEqual(model.groups[0]?.rows.map((row) => row.id), ['c']);
+  assert.deepEqual(
+    model.groups[0]?.rows.map((row) => row.id),
+    ['c'],
+  );
 });
 
 test('groups by project, keeping catalog order and giving loose tasks a home', () => {
@@ -122,10 +125,7 @@ test('groups by project, keeping catalog order and giving loose tasks a home', (
 });
 
 test('the filter reads the name, the project and the Host, and reports itself', () => {
-  const rows = [
-    session('alpha', { projectId: 'p1' }),
-    session('beta', { projectId: 'p1' }),
-  ];
+  const rows = [session('alpha', { projectId: 'p1' }), session('beta', { projectId: 'p1' })];
   const projects = [{ id: 'p1', name: 'Reporting' }];
   assert.equal(listModel(rows, { filter: 'alp', projects }).total, 1);
   assert.equal(listModel(rows, { filter: 'REPORT', projects }).total, 2);
@@ -152,7 +152,10 @@ test('a revision family occupies one row and carries its own size', () => {
 });
 
 test('a branch names the parent it descends from, and only while the parent is listed', () => {
-  const withParent = listModel([session('parent'), session('child', { parentSessionId: 'parent' })]);
+  const withParent = listModel([
+    session('parent'),
+    session('child', { parentSessionId: 'parent' }),
+  ]);
   assert.deepEqual(withParent.rows.find((row) => row.id === 'child')?.branchOf, {
     id: 'parent',
     name: 'parent',
@@ -211,7 +214,12 @@ function fakeNewTaskBridge(overrides: Record<string, unknown> = {}) {
     bridge: {
       getNewTaskCatalog: async () => ({
         defaultProfileId: 'local',
-        hosts: [readyHost([{ id: 'p1', name: 'One' }, { id: 'p2', name: 'Two' }])],
+        hosts: [
+          readyHost([
+            { id: 'p1', name: 'One' },
+            { id: 'p2', name: 'Two' },
+          ]),
+        ],
       }),
       subscribeNewTaskChanges: () => () => {},
       getNewTaskConnections: async () => ({
@@ -231,7 +239,9 @@ function fakeNewTaskBridge(overrides: Record<string, unknown> = {}) {
         ],
       }),
       getNewTaskReadiness: async () => ({
-        blockers: [{ id: 'workspace', state: 'blocked', repairTarget: { kind: 'workspace_picker' } }],
+        blockers: [
+          { id: 'workspace', state: 'blocked', repairTarget: { kind: 'workspace_picker' } },
+        ],
       }),
       createNewTask: async (target: unknown, input: unknown) => {
         calls.push(JSON.stringify([target, input]));
@@ -265,7 +275,9 @@ test('the new-task catalog flattens to workspace rows and picks a default target
 test('an unreachable Host is still listed, so its projects do not silently vanish', () => {
   const options = workspaceOptionsOf({
     defaultProfileId: 'local',
-    hosts: [{ profile: { id: 'far', name: 'Server' }, readiness: 'unavailable', message: 'offline' }],
+    hosts: [
+      { profile: { id: 'far', name: 'Server' }, readiness: 'unavailable', message: 'offline' },
+    ],
   } as never);
   assert.equal(options.length, 1);
   assert.equal(options[0]?.available, false);
@@ -325,14 +337,23 @@ test('selecting a target reloads only the reads that are scoped to it', async ()
 test('the update chip shows only what the user can act on', () => {
   assert.equal(updateChipOf(undefined), undefined);
   assert.equal(updateChipOf({ state: 'checking', currentVersion: '1' }), undefined);
-  assert.equal(updateChipOf({ state: 'downloading', currentVersion: '1', latestVersion: '2', progress: {} } as never), undefined);
+  assert.equal(
+    updateChipOf({
+      state: 'downloading',
+      currentVersion: '1',
+      latestVersion: '2',
+      progress: {},
+    } as never),
+    undefined,
+  );
   assert.deepEqual(updateChipOf({ state: 'downloaded', currentVersion: '1', latestVersion: '2' }), {
     kind: 'downloaded',
     version: '2',
     message: undefined,
   });
   assert.equal(
-    updateChipOf({ state: 'error', currentVersion: '1', message: 'boom', operation: 'download' })?.kind,
+    updateChipOf({ state: 'error', currentVersion: '1', message: 'boom', operation: 'download' })
+      ?.kind,
     'error',
   );
 });
@@ -426,7 +447,13 @@ test('native menu commands route to the shell, and unknown ids are ignored', () 
 
 const chord = (
   key: string,
-  modifiers: Partial<{ metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; inTextEntry: boolean }> = {},
+  modifiers: Partial<{
+    metaKey: boolean;
+    ctrlKey: boolean;
+    altKey: boolean;
+    shiftKey: boolean;
+    inTextEntry: boolean;
+  }> = {},
 ) => ({
   key,
   metaKey: false,
@@ -443,7 +470,10 @@ test('the hotkey map resolves the shell chords on both platforms', () => {
   assert.equal(resolveHotkey(chord('k', { ctrlKey: true }), true), undefined);
   assert.equal(resolveHotkey(chord(',', { metaKey: true }), true), 'settings');
   assert.equal(resolveHotkey(chord('n', { metaKey: true }), true), 'newTask');
-  assert.equal(resolveHotkey(chord('d', { metaKey: true, shiftKey: true }), true), 'copyDiagnostics');
+  assert.equal(
+    resolveHotkey(chord('d', { metaKey: true, shiftKey: true }), true),
+    'copyDiagnostics',
+  );
   assert.equal(resolveHotkey(chord('?'), true), 'keyboardHelp');
   assert.equal(resolveHotkey(chord('/', { metaKey: true }), true), 'keyboardHelp');
   assert.equal(resolveHotkey(chord('f'), true), 'focusFilter');
@@ -462,21 +492,21 @@ test('typing wins: only Escape survives a text field', () => {
 
 test('every hotkey action has exactly one binding path', () => {
   const actions = new Set(SHELL_HOTKEYS.map((binding) => binding.action));
-  assert.deepEqual(
-    [...actions].sort(),
-    [
-      'copyDiagnostics',
-      'escape',
-      'focusFilter',
-      'keyboardHelp',
-      'newTask',
-      'palette',
-      'settings',
-      'toggleSidebar',
-    ],
-  );
+  assert.deepEqual([...actions].sort(), [
+    'copyDiagnostics',
+    'escape',
+    'focusFilter',
+    'keyboardHelp',
+    'newTask',
+    'palette',
+    'settings',
+    'toggleSidebar',
+  ]);
   // ⌘B toggles the sidebar from anywhere, the composer included (plan §2.12).
-  assert.equal(resolveHotkey(chord('b', { metaKey: true, inTextEntry: true }), true), 'toggleSidebar');
+  assert.equal(
+    resolveHotkey(chord('b', { metaKey: true, inTextEntry: true }), true),
+    'toggleSidebar',
+  );
 });
 
 test('the fixture seeds selection, layout and the settings section', () => {
@@ -547,8 +577,20 @@ test('the project-folder command needs a task, and the connection commands need 
     paletteInput({
       defaultSlug: 'first',
       connections: [
-        { slug: 'first', name: 'First', providerType: 'anthropic', enabled: true, defaultModel: 'm' },
-        { slug: 'second', name: 'Second', providerType: 'anthropic', enabled: true, defaultModel: 'm' },
+        {
+          slug: 'first',
+          name: 'First',
+          providerType: 'anthropic',
+          enabled: true,
+          defaultModel: 'm',
+        },
+        {
+          slug: 'second',
+          name: 'Second',
+          providerType: 'anthropic',
+          enabled: true,
+          defaultModel: 'm',
+        },
         { slug: 'off', name: 'Off', providerType: 'anthropic', enabled: false, defaultModel: 'm' },
         { slug: 'nomodel', name: 'No model', providerType: 'anthropic', enabled: true },
       ],

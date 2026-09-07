@@ -17,10 +17,7 @@
  * under the License.
  */
 
-import type {
-  SessionWorkbarPlacement,
-  SessionWorkbarTabKind,
-} from './workbar-tabs.js';
+import type { SessionWorkbarPlacement, SessionWorkbarTabKind } from './workbar-tabs.js';
 
 export interface WorkbarToolDefinition {
   readonly kind: SessionWorkbarTabKind;
@@ -119,8 +116,9 @@ export type RegisteredWorkbarToolDefinition =
  * Typed as the declared shape rather than the const union so a reader can ask
  * every entry for its optional `shortcut`.
  */
-export const WORKBAR_TOOL_DEFINITIONS: readonly WorkbarToolDefinition[] =
-  Object.values(WORKBAR_TOOL_DEFINITION_BY_KIND);
+export const WORKBAR_TOOL_DEFINITIONS: readonly WorkbarToolDefinition[] = Object.values(
+  WORKBAR_TOOL_DEFINITION_BY_KIND,
+);
 
 export function workbarToolDefinition(
   kind: SessionWorkbarTabKind,
@@ -128,8 +126,6 @@ export function workbarToolDefinition(
   return WORKBAR_TOOL_DEFINITION_BY_KIND[kind];
 }
 
-export function isPersistedWorkbarTool(
-  kind: SessionWorkbarTabKind,
-): boolean {
+export function isPersistedWorkbarTool(kind: SessionWorkbarTabKind): boolean {
   return workbarToolDefinition(kind).persisted;
 }

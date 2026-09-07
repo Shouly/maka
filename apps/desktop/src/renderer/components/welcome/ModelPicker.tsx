@@ -49,8 +49,7 @@ export function ModelPicker(props: { onOpenSettings: () => void; className?: str
   const choices = connections?.chatModelChoices ?? [];
   const groups = modelMenuGroups(choices, locale);
   const current = choices.find(
-    (choice) =>
-      choice.connectionSlug === model?.llmConnectionSlug && choice.model === model?.model,
+    (choice) => choice.connectionSlug === model?.llmConnectionSlug && choice.model === model?.model,
   );
 
   if (choices.length === 0) {
@@ -95,8 +94,7 @@ export function ModelPicker(props: { onOpenSettings: () => void; className?: str
             <DropdownMenuLabel>{group.heading}</DropdownMenuLabel>
             {group.choices.map((choice) => {
               const selected =
-                choice.connectionSlug === model?.llmConnectionSlug &&
-                choice.model === model?.model;
+                choice.connectionSlug === model?.llmConnectionSlug && choice.model === model?.model;
               const subline = modelChoiceDescription(choice, locale);
               return (
                 <DropdownMenuItem

@@ -161,10 +161,7 @@ export function toolRowTitle(item: ToolActivityItem, locale: UiLocale): string {
 }
 
 /** The header's trailing note: the outcome in a word, when there is one to say. */
-export function toolRowStatusLabel(
-  item: ToolActivityItem,
-  locale: UiLocale,
-): string | undefined {
+export function toolRowStatusLabel(item: ToolActivityItem, locale: UiLocale): string | undefined {
   const copy = getToolActivityCopy(locale);
   const status = toolRowStatus(item);
   if (status === 'sandbox_blocked') return getTranscriptCopy(locale).sandbox.blockedLabel;
@@ -208,10 +205,7 @@ export const TOOL_SUMMARY_MAX_PHRASES = 3;
  * few phrases survive: the header is one line wide and a full enumeration is
  * several.
  */
-export function summarizeToolGroup(
-  items: readonly ToolActivityItem[],
-  locale: UiLocale,
-): string {
+export function summarizeToolGroup(items: readonly ToolActivityItem[], locale: UiLocale): string {
   const copy = getTranscriptCopy(locale).tools;
   const buckets = new Map<ToolActivityKind, SummaryBucket>();
   for (const item of items) {
@@ -232,10 +226,7 @@ export function summarizeToolGroup(
 }
 
 /** What the group header says while its last row is still running. */
-export function activeToolLabel(
-  items: readonly ToolActivityItem[],
-  locale: UiLocale,
-): string {
+export function activeToolLabel(items: readonly ToolActivityItem[], locale: UiLocale): string {
   const copy = getTranscriptCopy(locale).tools;
   const running = [...items].reverse().find((item) => item.status === 'running');
   if (!running) return copy.working;

@@ -17,23 +17,23 @@
  * under the License.
  */
 
-import { Button } from './button'
-import { Anthropicon, type AnthropiconName } from '../icons'
-import { useEffect, useRef } from 'react'
+import { Button } from './button';
+import { Anthropicon, type AnthropiconName } from '../icons';
+import { useEffect, useRef } from 'react';
 
 export interface ConsoleMessage {
-  id: string
-  level: 'log' | 'error' | 'warn' | 'info'
-  message: string
-  timestamp: Date
-  source?: string
+  id: string;
+  level: 'log' | 'error' | 'warn' | 'info';
+  message: string;
+  timestamp: Date;
+  source?: string;
 }
 
 interface ConsoleProps {
-  messages: ConsoleMessage[]
-  onClose: () => void
-  className?: string
-  maxHeight?: number
+  messages: ConsoleMessage[];
+  onClose: () => void;
+  className?: string;
+  maxHeight?: number;
 }
 
 const levelConfig = {
@@ -42,76 +42,75 @@ const levelConfig = {
     bg: 'bg-transparent',
     icon: 'info' as AnthropiconName,
     iconColor: 'text-on-overlay',
-    prefix: ''
+    prefix: '',
   },
   info: {
     text: 'text-on-overlay',
     bg: 'bg-transparent',
     icon: 'info' as AnthropiconName,
     iconColor: 'text-on-overlay',
-    prefix: ''
+    prefix: '',
   },
   warn: {
     text: 'text-warning',
     bg: 'bg-warning-fill/10',
     icon: 'warning' as AnthropiconName,
     iconColor: 'text-warning',
-    prefix: 'Warning:'
+    prefix: 'Warning:',
   },
   error: {
     text: 'text-danger',
     bg: 'bg-danger-fill/10',
     icon: 'x' as AnthropiconName,
     iconColor: 'text-danger',
-    prefix: 'Error:'
-  }
-}
+    prefix: 'Error:',
+  },
+};
 
 export default function Console({
   messages,
   onClose,
   className = '',
-  maxHeight = 300
+  maxHeight = 300,
 }: ConsoleProps) {
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const consoleRef = useRef<HTMLDivElement>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const consoleRef = useRef<HTMLDivElement>(null);
 
   // 自动滚动到底部
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   // 显示所有消息
-  const filteredMessages = messages
+  const filteredMessages = messages;
 
   const renderMessage = (msg: ConsoleMessage) => {
-    const config = levelConfig[msg.level]
-    const iconName = config.icon
-    const showIcon = msg.level === 'error' || msg.level === 'warn'
+    const config = levelConfig[msg.level];
+    const iconName = config.icon;
+    const showIcon = msg.level === 'error' || msg.level === 'warn';
 
     return (
-      <div
-        key={msg.id}
-        className={`px-3 py-1 text-sm ${config.bg} rounded font-mono font-normal`}
-      >
+      <div key={msg.id} className={`px-3 py-1 text-sm ${config.bg} rounded font-mono font-normal`}>
         <div className="flex items-center gap-2">
-          {showIcon && (
-            <Anthropicon name={iconName} size={16} className={config.iconColor} />
-          )}
+          {showIcon && <Anthropicon name={iconName} size={16} className={config.iconColor} />}
           <div className="flex-1 min-w-0">
-            <div className={`${config.text} whitespace-pre-wrap break-words leading-relaxed font-medium`}>
+            <div
+              className={`${config.text} whitespace-pre-wrap break-words leading-relaxed font-medium`}
+            >
               {config.prefix && <span>{config.prefix} </span>}
               {msg.message}
             </div>
           </div>
         </div>
       </div>
-    )
-  }
-
+    );
+  };
 
   return (
-    <div className={`bg-[var(--console-surface)] text-on-overlay relative flex flex-col ${className}`} style={{ height: maxHeight }}>
+    <div
+      className={`bg-[var(--console-surface)] text-on-overlay relative flex flex-col ${className}`}
+      style={{ height: maxHeight }}
+    >
       {/* Floating Header */}
       <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between">
         <div className="border border-hairline rounded-md px-2 py-1 text-xs text-on-overlay/80 flex items-center gap-1.5">
@@ -129,10 +128,7 @@ export default function Console({
       </div>
 
       {/* Messages */}
-      <div
-        ref={consoleRef}
-        className="flex-1 overflow-y-auto pt-16 px-3 pb-3"
-      >
+      <div ref={consoleRef} className="flex-1 overflow-y-auto pt-16 px-3 pb-3">
         {filteredMessages.length === 0 ? (
           <div className="flex items-center justify-center h-20 text-on-overlay text-sm font-medium">
             No console output
@@ -145,5 +141,5 @@ export default function Console({
         )}
       </div>
     </div>
-  )
+  );
 }

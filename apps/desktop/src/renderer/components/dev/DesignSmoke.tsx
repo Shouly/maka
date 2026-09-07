@@ -56,13 +56,7 @@ import { Label } from '../ui/label';
 import Markdown from '../ui/Markdown';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { SegmentedControl } from '../ui/segmented-control';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Skeleton } from '../ui/skeleton';
 import SplitButton from '../ui/split-button';
 import { Switch } from '../ui/switch';
@@ -280,11 +274,12 @@ const TRANSCRIPT_FIXTURE: TurnViewModel = (() => {
   };
 })();
 
-const TRANSCRIPT_FIXTURE_ACTIONS = deriveTurnPresentation([TRANSCRIPT_FIXTURE], {
-  activeId: 'preview-session',
-  pendingTurnActions: new Set<string>(),
-  uiLocale: 'en',
-}).footerActionsByTurn['preview-turn'] ?? [];
+const TRANSCRIPT_FIXTURE_ACTIONS =
+  deriveTurnPresentation([TRANSCRIPT_FIXTURE], {
+    activeId: 'preview-session',
+    pendingTurnActions: new Set<string>(),
+    uiLocale: 'en',
+  }).footerActionsByTurn['preview-turn'] ?? [];
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -320,10 +315,15 @@ export function DesignSmoke({ showThemeControl = true }: { showThemeControl?: bo
               Phase 0b smoke page — tokens, fonts, icons and primitives.
             </p>
           </div>
-          {showThemeControl && <Button variant="secondary" onClick={cycleTheme}>
-            <Anthropicon name={theme === 'dark' ? 'moon' : theme === 'light' ? 'sun' : 'sunHorizon'} size={16} />
-            Theme: {theme}
-          </Button>}
+          {showThemeControl && (
+            <Button variant="secondary" onClick={cycleTheme}>
+              <Anthropicon
+                name={theme === 'dark' ? 'moon' : theme === 'light' ? 'sun' : 'sunHorizon'}
+                size={16}
+              />
+              Theme: {theme}
+            </Button>
+          )}
         </header>
 
         <Section title="Surfaces">

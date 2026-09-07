@@ -551,7 +551,9 @@ export function createActiveSessionStore(
         ...(turnId ? { turnId } : {}),
         ...(controller ? { controller } : {}),
         setAnchor: (id, anchor) => {
-          store.setState((state) => ({ readingAnchors: { ...state.readingAnchors, [id]: anchor } }));
+          store.setState((state) => ({
+            readingAnchors: { ...state.readingAnchors, [id]: anchor },
+          }));
         },
       });
     },
@@ -580,8 +582,7 @@ export function createActiveSessionStore(
         sessionId,
         readingAnchor: anchor,
         controller: active,
-        isCurrent: (id, candidate) =>
-          candidate === controller && store.getState().sessionId === id,
+        isCurrent: (id, candidate) => candidate === controller && store.getState().sessionId === id,
         // The range publishes through its own batch handler; asking it to
         // refresh is what turns a loaded page into rendered messages.
         setMessages: () => {

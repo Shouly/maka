@@ -17,40 +17,33 @@
  * under the License.
  */
 
-import * as PopoverPrimitive from "@radix-ui/react-popover"
-import * as React from "react"
+import * as PopoverPrimitive from '@radix-ui/react-popover';
+import * as React from 'react';
 
-import { cn } from "../../lib/cn"
-import {
-  menuContentClass,
-  menuPanelClass,
-  type MenuVariant,
-} from "./menu-variants"
+import { cn } from '../../lib/cn';
+import { menuContentClass, menuPanelClass, type MenuVariant } from './menu-variants';
 
-const Popover = PopoverPrimitive.Root
+const Popover = PopoverPrimitive.Root;
 
-const PopoverTrigger = PopoverPrimitive.Trigger
+const PopoverTrigger = PopoverPrimitive.Trigger;
 
 const PopoverContent = React.forwardRef<
   React.ComponentRef<typeof PopoverPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Content> & {
-    variant?: MenuVariant
+    variant?: MenuVariant;
   }
->(({ className, align = "center", sideOffset = 4, variant = "menu", ...props }, ref) => (
+>(({ className, align = 'center', sideOffset = 4, variant = 'menu', ...props }, ref) => (
   <PopoverPrimitive.Portal>
     <PopoverPrimitive.Content
       ref={ref}
       align={align}
       sideOffset={sideOffset}
-      data-sidebar-overlay={variant === "sidebar" ? "true" : undefined}
-      className={cn(
-        variant === "panel" ? menuPanelClass : menuContentClass,
-        className
-      )}
+      data-sidebar-overlay={variant === 'sidebar' ? 'true' : undefined}
+      className={cn(variant === 'panel' ? menuPanelClass : menuContentClass, className)}
       {...props}
     />
   </PopoverPrimitive.Portal>
-))
-PopoverContent.displayName = PopoverPrimitive.Content.displayName
+));
+PopoverContent.displayName = PopoverPrimitive.Content.displayName;
 
-export { Popover, PopoverContent, PopoverTrigger }
+export { Popover, PopoverContent, PopoverTrigger };

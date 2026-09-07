@@ -31,5 +31,4 @@
  * 原来这串 class 在 6 个文件里各抄了一遍(AttachmentViewer 里那份还带着完整
  * 的说明注释)。表面部分收在这里,改一次全都跟上。
  */
-export const contentWellClass =
-  'rounded-xl border-[1px] border-hairline bg-surface-1'
+export const contentWellClass = 'rounded-xl border-[1px] border-hairline bg-surface-1';

@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { cn } from '../../lib/cn'
+import { cn } from '../../lib/cn';
 
 /**
  * Shared Claude-style menu primitives.
@@ -36,7 +36,7 @@ import { cn } from '../../lib/cn'
  *  - `panel`:富内容面板(表单、搜索、网格)。只给表面色、圆角和阴影,
  *    padding / 宽高一律由调用点自己控制,不要在这里塞几何。
  */
-export type MenuVariant = 'menu' | 'sidebar' | 'panel'
+export type MenuVariant = 'menu' | 'sidebar' | 'panel';
 
 /**
  * 列表型菜单的浮层容器。
@@ -44,14 +44,14 @@ export type MenuVariant = 'menu' | 'sidebar' | 'panel'
  * 只会长出视口。非 popper 的浮层拿不到这个变量,声明失效退回 none。
  */
 export const menuContentClass =
-  'z-50 min-w-32 max-w-80 max-h-[var(--radix-popper-available-height)] overflow-hidden overflow-y-auto rounded-xl border-0 bg-menu-surface p-1 text-sm leading-5 font-normal text-menu-text-primary backdrop-blur-none shadow-[var(--menu-shadow)] outline-none'
+  'z-50 min-w-32 max-w-80 max-h-[var(--radix-popper-available-height)] overflow-hidden overflow-y-auto rounded-xl border-0 bg-menu-surface p-1 text-sm leading-5 font-normal text-menu-text-primary backdrop-blur-none shadow-[var(--menu-shadow)] outline-none';
 
 /** 叠在 menuContentClass 上:根节点交出 padding 和滚动,给 shell 布局用。 */
-export const menuShellClass = 'flex flex-col overflow-y-hidden p-0'
+export const menuShellClass = 'flex flex-col overflow-y-hidden p-0';
 
 /** 富内容面板的浮层容器:与 menu 同一套表面语义,但不预设几何。 */
 export const menuPanelClass =
-  'z-50 overflow-hidden rounded-2xl border-0 bg-menu-surface text-sm leading-5 text-menu-text-primary backdrop-blur-none shadow-[var(--menu-shadow)] outline-none'
+  'z-50 overflow-hidden rounded-2xl border-0 bg-menu-surface text-sm leading-5 text-menu-text-primary backdrop-blur-none shadow-[var(--menu-shadow)] outline-none';
 
 /**
  * Radix 菜单项(DropdownMenuItem / CheckboxItem / RadioItem)。
@@ -63,23 +63,19 @@ export const menuPanelClass =
  * Radix 自己的菜单另有 `data-[highlighted]`,不受影响。
  */
 export const menuItemClass =
-  'group relative flex min-h-8 cursor-pointer select-none items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-sm leading-5 outline-none transition-colors hover:bg-menu-hover focus:outline-none focus-visible:bg-menu-hover disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 data-[disabled]:pointer-events-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-menu-hover'
+  'group relative flex min-h-8 cursor-pointer select-none items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-sm leading-5 outline-none transition-colors hover:bg-menu-hover focus:outline-none focus-visible:bg-menu-hover disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 data-[disabled]:pointer-events-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-menu-hover';
 
 /**
  * 手写 `<button>` 菜单行。Popover 里的菜单不是 Radix 菜单项,没有 indicator
  * 要靠 `justify-between` 推到右边,所以改成左对齐并占满整行。
  */
-export const menuActionItemClass = cn(
-  menuItemClass,
-  'h-8 w-full justify-start text-left',
-)
+export const menuActionItemClass = cn(menuItemClass, 'h-8 w-full justify-start text-left');
 
 /** 破坏性菜单项,叠加在 menuItemClass / menuActionItemClass 之上。 */
 export const menuDangerItemClass =
-  'text-danger hover:!bg-danger-fill hover:!text-on-danger focus:!bg-danger-fill focus:!text-on-danger data-[highlighted]:!bg-danger-fill data-[highlighted]:!text-on-danger'
+  'text-danger hover:!bg-danger-fill hover:!text-on-danger focus:!bg-danger-fill focus:!text-on-danger data-[highlighted]:!bg-danger-fill data-[highlighted]:!text-on-danger';
 
-export const menuSeparatorClass =
-  'mx-2.5 my-1 h-px bg-menu-hairline'
+export const menuSeparatorClass = 'mx-2.5 my-1 h-px bg-menu-hairline';
 
 /**
  * 行尾的"更多操作"触发按钮(⋮)。Cowork 实测:
@@ -93,10 +89,10 @@ export const menuSeparatorClass =
  * text-muted-foreground`,改一处等于改不动 —— 统一到这里。
  */
 export const menuTriggerButtonClass =
-  'inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-text-primary outline-none transition-colors hover:bg-sidebar-menu-hover focus-visible:shadow-[var(--sidebar-focus-shadow)]'
+  'inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-text-primary outline-none transition-colors hover:bg-sidebar-menu-hover focus-visible:shadow-[var(--sidebar-focus-shadow)]';
 
 /** 展开态:与 hover 同底。用在调用点的 `isOpen && menuTriggerOpenClass`。 */
-export const menuTriggerOpenClass = 'bg-sidebar-menu-hover'
+export const menuTriggerOpenClass = 'bg-sidebar-menu-hover';
 
 /**
  * 上面那颗是 32×32 · r8 的「更多操作」档;这里是**另一档**:28×28 · r7 的
@@ -111,4 +107,4 @@ export const menuTriggerOpenClass = 'bg-sidebar-menu-hover'
  * 再叠 hover:bg-* 会把按压反馈盖掉。方形图标按钮目前只能走裸 button。
  */
 export const inlineIconButtonClass =
-  'flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-[7px] text-text-primary outline-none transition-colors hover:bg-alpha-1 focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-50'
+  'flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-[7px] text-text-primary outline-none transition-colors hover:bg-alpha-1 focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-50';

@@ -19,7 +19,10 @@
 
 import type { SessionSendProjection } from '@maka/core/session-send-projection';
 
-import type { TaskSubmissionReadinessDimension, TaskSubmissionReadinessSnapshot } from '@maka/core/task-submission-readiness';
+import type {
+  TaskSubmissionReadinessDimension,
+  TaskSubmissionReadinessSnapshot,
+} from '@maka/core/task-submission-readiness';
 
 import type { UiLocale } from '@maka/core/ui-locale';
 import { getTaskReadinessCopy } from '../../locales/task-readiness-copy.js';
@@ -75,8 +78,7 @@ export function deriveTaskReadinessNotice(
   if (!snapshot) return undefined;
   const blocker = snapshot.blockers.find(
     (candidate) =>
-      candidate.state !== 'unknown' &&
-      (candidate.id === 'runtime' || candidate.id === 'workspace'),
+      candidate.state !== 'unknown' && (candidate.id === 'runtime' || candidate.id === 'workspace'),
   );
   if (!blocker) return undefined;
   return noticeForBlocker(blocker, locale);

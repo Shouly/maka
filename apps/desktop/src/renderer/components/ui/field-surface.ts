@@ -29,11 +29,11 @@
  * 顺序,不该赌)。
  */
 export const fieldSurfaceClass = [
-  "w-full rounded-lg text-sm",
-  "bg-fill-field text-text-primary placeholder:text-text-muted",
-  "shadow-[var(--field-shadow)]",
-  "[&:hover:not(:focus):not(:disabled)]:shadow-[var(--field-shadow-hover)]",
-  "outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] focus:shadow-[var(--sidebar-focus-shadow)]",
-  "transition-shadow duration-[var(--dur-fast)] ease-out",
-  "disabled:cursor-not-allowed disabled:opacity-50",
-].join(" ")
+  'w-full rounded-lg text-sm',
+  'bg-fill-field text-text-primary placeholder:text-text-muted',
+  'shadow-[var(--field-shadow)]',
+  '[&:hover:not(:focus):not(:disabled)]:shadow-[var(--field-shadow-hover)]',
+  'outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] focus:shadow-[var(--sidebar-focus-shadow)]',
+  'transition-shadow duration-[var(--dur-fast)] ease-out',
+  'disabled:cursor-not-allowed disabled:opacity-50',
+].join(' ');

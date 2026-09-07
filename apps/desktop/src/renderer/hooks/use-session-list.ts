@@ -128,7 +128,16 @@ export function useSessionList(filter: string): SessionListSelection {
         copy: getSidebarCopy(locale),
         now: Date.now(),
       }),
-    [catalog.sessions, catalog.activeId, catalog.revision, filter, mode, projects, sendOutcomes, locale],
+    [
+      catalog.sessions,
+      catalog.activeId,
+      catalog.revision,
+      filter,
+      mode,
+      projects,
+      sendOutcomes,
+      locale,
+    ],
   );
   return {
     model,

@@ -37,27 +37,27 @@
  * 两个换行 —— 这是 pre-wrap 对源文本的忠实语义,属接受的边缘残留。
  */
 
-import type { HastNode } from './hast-node'
+import type { HastNode } from './hast-node';
 
 export function rehypeStripBreakNewlines() {
-  return (tree: HastNode) => strip(tree)
+  return (tree: HastNode) => strip(tree);
 }
 
 function strip(node: HastNode): void {
-  const children = node.children
-  if (!children) return
+  const children = node.children;
+  if (!children) return;
   for (let i = children.length - 1; i >= 0; i--) {
-    const child = children[i]
+    const child = children[i];
     if (child.type === 'text' && i > 0 && child.value?.startsWith('\n')) {
-      const prev = children[i - 1]
+      const prev = children[i - 1];
       if (prev.type === 'element' && prev.tagName === 'br') {
         // 防御分支:若上游插件把 "\n" 与后续文本合并过,只剥第一个换行。
         // 当前管线(插件在 rehypeRaw 之前)里 "\n" 恒为独立节点。
-        if (child.value === '\n') children.splice(i, 1)
-        else child.value = child.value.slice(1)
-        continue
+        if (child.value === '\n') children.splice(i, 1);
+        else child.value = child.value.slice(1);
+        continue;
       }
     }
-    strip(child)
+    strip(child);
   }
 }

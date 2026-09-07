@@ -74,92 +74,221 @@ export type HealthCenterCopy = {
 
 const layersZh: HealthCenterCopy['layers'] = {
   configuration: { label: '配置', description: '是否填齐了设置页里的必填项。' },
-  validation: { label: '验证', description: '凭据 / 端点的连通性测试结果，仅代表验证通过，不等于发送通路可用。' },
+  validation: {
+    label: '验证',
+    description: '凭据 / 端点的连通性测试结果，仅代表验证通过，不等于发送通路可用。',
+  },
   permission: { label: '系统权限', description: '所需 OS / TCC 权限是否已授权。' },
   feature: { label: '功能开关', description: '功能是否被显式启用、当前是否可使用。' },
   action_approval: { label: '操作审批', description: '每次工具调用 / 高危操作的审批策略状态。' },
-  memory_acceptance: { label: '记忆写入', description: '是否接受了记忆写入约定、是否启用了记忆写入。' },
-  runtime_probe: { label: '运行态探测', description: '最近一次真实运行（发送 / 流式 / 接收事件）的探测结果。' },
+  memory_acceptance: {
+    label: '记忆写入',
+    description: '是否接受了记忆写入约定、是否启用了记忆写入。',
+  },
+  runtime_probe: {
+    label: '运行态探测',
+    description: '最近一次真实运行（发送 / 流式 / 接收事件）的探测结果。',
+  },
   storage: { label: '存储', description: '工作区文件、JSONL、SQLite 等本地存储健康度。' },
 };
 
 const layersZhTw: HealthCenterCopy['layers'] = {
   configuration: { label: '設定', description: '設定頁中的必填項目是否完整。' },
-  validation: { label: '驗證', description: '憑證與端點的連線測試結果；驗證通過不代表傳送路徑可用。' },
+  validation: {
+    label: '驗證',
+    description: '憑證與端點的連線測試結果；驗證通過不代表傳送路徑可用。',
+  },
   permission: { label: '系統權限', description: '所需的 OS 與 TCC 權限是否已授權。' },
   feature: { label: '功能狀態', description: '功能是否已明確啟用，以及目前是否可用。' },
   action_approval: { label: '操作核准', description: '工具呼叫與高風險操作的核准原則狀態。' },
-  memory_acceptance: { label: '記憶寫入', description: '是否已接受記憶寫入約定，以及是否已啟用寫入。' },
-  runtime_probe: { label: '執行狀態探測', description: '最近一次實際傳送、串流或事件接收的探測結果。' },
-  storage: { label: '儲存空間', description: '工作區檔案、JSONL、SQLite 和其他本機儲存空間的健康狀態。' },
+  memory_acceptance: {
+    label: '記憶寫入',
+    description: '是否已接受記憶寫入約定，以及是否已啟用寫入。',
+  },
+  runtime_probe: {
+    label: '執行狀態探測',
+    description: '最近一次實際傳送、串流或事件接收的探測結果。',
+  },
+  storage: {
+    label: '儲存空間',
+    description: '工作區檔案、JSONL、SQLite 和其他本機儲存空間的健康狀態。',
+  },
 };
 
 const layersEn: HealthCenterCopy['layers'] = {
   configuration: { label: 'Configuration', description: 'Whether required settings are complete.' },
-  validation: { label: 'Validation', description: 'Credential and endpoint connectivity results. A passing validation does not prove the send path works.' },
-  permission: { label: 'System permissions', description: 'Whether required OS and TCC permissions are granted.' },
-  feature: { label: 'Feature state', description: 'Whether the feature is explicitly enabled and currently available.' },
-  action_approval: { label: 'Action approval', description: 'Approval policy for tool calls and high-risk actions.' },
-  memory_acceptance: { label: 'Memory writes', description: 'Whether the memory-write agreement was accepted and writes are enabled.' },
-  runtime_probe: { label: 'Runtime probe', description: 'The latest real send, stream, or event-receipt observation.' },
-  storage: { label: 'Storage', description: 'Health of workspace files, JSONL, SQLite, and other local storage.' },
+  validation: {
+    label: 'Validation',
+    description:
+      'Credential and endpoint connectivity results. A passing validation does not prove the send path works.',
+  },
+  permission: {
+    label: 'System permissions',
+    description: 'Whether required OS and TCC permissions are granted.',
+  },
+  feature: {
+    label: 'Feature state',
+    description: 'Whether the feature is explicitly enabled and currently available.',
+  },
+  action_approval: {
+    label: 'Action approval',
+    description: 'Approval policy for tool calls and high-risk actions.',
+  },
+  memory_acceptance: {
+    label: 'Memory writes',
+    description: 'Whether the memory-write agreement was accepted and writes are enabled.',
+  },
+  runtime_probe: {
+    label: 'Runtime probe',
+    description: 'The latest real send, stream, or event-receipt observation.',
+  },
+  storage: {
+    label: 'Storage',
+    description: 'Health of workspace files, JSONL, SQLite, and other local storage.',
+  },
 };
 
 const SETTINGS_HEALTH_COPY = {
   'zh-CN': {
-    loading: '正在加载健康快照', readFailed: '无法读取健康快照', noData: '健康服务未返回数据。', readAgain: '重新读取',
-    title: '健康中心', subtitle: '各项能力当前的运行状况检查。',
-    badge: '只读快照', lastRead: '最近一次读取：', refresh: '刷新', summaryAria: '按状态筛选健康信号', summaryFilterAria: (label, count, selected) => selected ? `${label} ${count} 项，当前筛选；再次按下显示全部` : `仅显示${label}健康信号，共 ${count} 项`,
+    loading: '正在加载健康快照',
+    readFailed: '无法读取健康快照',
+    noData: '健康服务未返回数据。',
+    readAgain: '重新读取',
+    title: '健康中心',
+    subtitle: '各项能力当前的运行状况检查。',
+    badge: '只读快照',
+    lastRead: '最近一次读取：',
+    refresh: '刷新',
+    summaryAria: '按状态筛选健康信号',
+    summaryFilterAria: (label, count, selected) =>
+      selected
+        ? `${label} ${count} 项，当前筛选；再次按下显示全部`
+        : `仅显示${label}健康信号，共 ${count} 项`,
     blockers: {
       send: (count, totalCount) => `全部健康信号中，${count}/${totalCount} 条会阻塞发送`,
       capability: (count, totalCount) => `全部健康信号中，${count}/${totalCount} 条会阻塞能力`,
     },
-    layerAria: (label) => `${label}健康信号`, layerListAria: (label) => `${label}健康信号列表`,
-    footnote: '本页不直接执行测试、修复或权限变更；它只汇总当前已记录的健康信号。需要处理问题时，请进入对应设置页或重新触发相关功能。',
+    layerAria: (label) => `${label}健康信号`,
+    layerListAria: (label) => `${label}健康信号列表`,
+    footnote:
+      '本页不直接执行测试、修复或权限变更；它只汇总当前已记录的健康信号。需要处理问题时，请进入对应设置页或重新触发相关功能。',
     layers: layersZh,
-    statuses: { ok: { label: '正常', tone: 'neutral' }, info: { label: '提示', tone: 'neutral' }, warning: { label: '警告', tone: 'attention' }, error: { label: '错误', tone: 'error' }, unknown: { label: '未知', tone: 'neutral' } },
+    statuses: {
+      ok: { label: '正常', tone: 'neutral' },
+      info: { label: '提示', tone: 'neutral' },
+      warning: { label: '警告', tone: 'attention' },
+      error: { label: '错误', tone: 'error' },
+      unknown: { label: '未知', tone: 'neutral' },
+    },
     scopes: { llm_connection: 'LLM 连接', bot: '机器人', capability: '能力' },
-    sources: { connection_test: '连接测试', capability_snapshot: '能力快照', permission_snapshot: '权限快照', runtime_probe: '运行态探测', settings: '设置' },
-    source: '来源：', blocksSend: '阻塞发送', blocksCapability: '阻塞能力',
-    signalLabel: (signal) => (signal.id.endsWith(':runtime') ? `${signal.label} 运行态` : signal.label),
+    sources: {
+      connection_test: '连接测试',
+      capability_snapshot: '能力快照',
+      permission_snapshot: '权限快照',
+      runtime_probe: '运行态探测',
+      settings: '设置',
+    },
+    source: '来源：',
+    blocksSend: '阻塞发送',
+    blocksCapability: '阻塞能力',
+    signalLabel: (signal) =>
+      signal.id.endsWith(':runtime') ? `${signal.label} 运行态` : signal.label,
     signalMessage: (signal) => signalMessagesZh[signal.message],
     signalDetail: (signal) => signalDetailZh(signal),
   },
   'zh-TW': {
-    loading: '正在載入健康快照', readFailed: '無法讀取健康快照', noData: '健康服務未返回資料。', readAgain: '重新讀取',
-    title: '健康中心', subtitle: '各項能力目前的執行狀況檢查。',
-    badge: '只讀快照', lastRead: '最近一次讀取：', refresh: '重新整理', summaryAria: '按狀態篩選健康訊號', summaryFilterAria: (label, count, selected) => selected ? `${label} ${count} 項，目前篩選；再次按下顯示全部` : `僅顯示${label}健康訊號，共 ${count} 項`,
+    loading: '正在載入健康快照',
+    readFailed: '無法讀取健康快照',
+    noData: '健康服務未返回資料。',
+    readAgain: '重新讀取',
+    title: '健康中心',
+    subtitle: '各項能力目前的執行狀況檢查。',
+    badge: '只讀快照',
+    lastRead: '最近一次讀取：',
+    refresh: '重新整理',
+    summaryAria: '按狀態篩選健康訊號',
+    summaryFilterAria: (label, count, selected) =>
+      selected
+        ? `${label} ${count} 項，目前篩選；再次按下顯示全部`
+        : `僅顯示${label}健康訊號，共 ${count} 項`,
     blockers: {
       send: (count, totalCount) => `全部健康訊號中，${count}/${totalCount} 條會阻塞傳送`,
       capability: (count, totalCount) => `全部健康訊號中，${count}/${totalCount} 條會阻塞能力`,
     },
-    layerAria: (label) => `${label}健康訊號`, layerListAria: (label) => `${label}健康訊號列表`,
-    footnote: '本頁不直接執行測試、修復或權限變更；它只彙總目前已記錄的健康訊號。需要處理問題時，請進入對應設定頁或重新觸發相關功能。',
+    layerAria: (label) => `${label}健康訊號`,
+    layerListAria: (label) => `${label}健康訊號列表`,
+    footnote:
+      '本頁不直接執行測試、修復或權限變更；它只彙總目前已記錄的健康訊號。需要處理問題時，請進入對應設定頁或重新觸發相關功能。',
     layers: layersZhTw,
-    statuses: { ok: { label: '正常', tone: 'neutral' }, info: { label: '提示', tone: 'neutral' }, warning: { label: '警告', tone: 'attention' }, error: { label: '錯誤', tone: 'error' }, unknown: { label: '未知', tone: 'neutral' } },
+    statuses: {
+      ok: { label: '正常', tone: 'neutral' },
+      info: { label: '提示', tone: 'neutral' },
+      warning: { label: '警告', tone: 'attention' },
+      error: { label: '錯誤', tone: 'error' },
+      unknown: { label: '未知', tone: 'neutral' },
+    },
     scopes: { llm_connection: 'LLM 連線', bot: '機器人', capability: '能力' },
-    sources: { connection_test: '連線測試', capability_snapshot: '能力快照', permission_snapshot: '權限快照', runtime_probe: '執行態探測', settings: '設定' },
-    source: '來源：', blocksSend: '阻塞傳送', blocksCapability: '阻塞能力',
-    signalLabel: (signal) => (signal.id.endsWith(':runtime') ? `${signal.label} 執行狀態` : signal.label),
+    sources: {
+      connection_test: '連線測試',
+      capability_snapshot: '能力快照',
+      permission_snapshot: '權限快照',
+      runtime_probe: '執行態探測',
+      settings: '設定',
+    },
+    source: '來源：',
+    blocksSend: '阻塞傳送',
+    blocksCapability: '阻塞能力',
+    signalLabel: (signal) =>
+      signal.id.endsWith(':runtime') ? `${signal.label} 執行狀態` : signal.label,
     signalMessage: (signal) => signalMessagesZhTw[signal.message],
     signalDetail: (signal) => signalDetailZhTw(signal),
   },
   en: {
-    loading: 'Loading health snapshot', readFailed: 'Could not read health snapshot', noData: 'The health service returned no data.', readAgain: 'Read again',
-    title: 'Health center', subtitle: 'How each capability is currently doing.',
-    badge: 'Read-only snapshot', lastRead: 'Last read: ', refresh: 'Refresh', summaryAria: 'Filter health signals by status', summaryFilterAria: (label, count, selected) => selected ? `${label}, ${count}; filter selected. Press again to show all signals` : `Show only ${label.toLowerCase()} health signals, ${count}`,
+    loading: 'Loading health snapshot',
+    readFailed: 'Could not read health snapshot',
+    noData: 'The health service returned no data.',
+    readAgain: 'Read again',
+    title: 'Health center',
+    subtitle: 'How each capability is currently doing.',
+    badge: 'Read-only snapshot',
+    lastRead: 'Last read: ',
+    refresh: 'Refresh',
+    summaryAria: 'Filter health signals by status',
+    summaryFilterAria: (label, count, selected) =>
+      selected
+        ? `${label}, ${count}; filter selected. Press again to show all signals`
+        : `Show only ${label.toLowerCase()} health signals, ${count}`,
     blockers: {
-      send: (count, totalCount) => `Across all health signals, ${count} of ${totalCount} ${count === 1 ? 'blocks' : 'block'} sending`,
-      capability: (count, totalCount) => `Across all health signals, ${count} of ${totalCount} ${count === 1 ? 'blocks' : 'block'} capabilities`,
+      send: (count, totalCount) =>
+        `Across all health signals, ${count} of ${totalCount} ${count === 1 ? 'blocks' : 'block'} sending`,
+      capability: (count, totalCount) =>
+        `Across all health signals, ${count} of ${totalCount} ${count === 1 ? 'blocks' : 'block'} capabilities`,
     },
-    layerAria: (label) => `${label} health signals`, layerListAria: (label) => `${label} health signal list`,
-    footnote: 'This page does not run tests, repairs, or permission changes. It only summarizes recorded health signals. Open the relevant settings page or retry the related feature to address an issue.',
+    layerAria: (label) => `${label} health signals`,
+    layerListAria: (label) => `${label} health signal list`,
+    footnote:
+      'This page does not run tests, repairs, or permission changes. It only summarizes recorded health signals. Open the relevant settings page or retry the related feature to address an issue.',
     layers: layersEn,
-    statuses: { ok: { label: 'Healthy', tone: 'neutral' }, info: { label: 'Info', tone: 'neutral' }, warning: { label: 'Warning', tone: 'attention' }, error: { label: 'Error', tone: 'error' }, unknown: { label: 'Unknown', tone: 'neutral' } },
+    statuses: {
+      ok: { label: 'Healthy', tone: 'neutral' },
+      info: { label: 'Info', tone: 'neutral' },
+      warning: { label: 'Warning', tone: 'attention' },
+      error: { label: 'Error', tone: 'error' },
+      unknown: { label: 'Unknown', tone: 'neutral' },
+    },
     scopes: { llm_connection: 'LLM connection', bot: 'Bot', capability: 'Capability' },
-    sources: { connection_test: 'Connection test', capability_snapshot: 'Capability snapshot', permission_snapshot: 'Permission snapshot', runtime_probe: 'Runtime probe', settings: 'Settings' },
-    source: 'Source: ', blocksSend: 'Blocks sending', blocksCapability: 'Blocks capability',
-    signalLabel: (signal) => (signal.id.endsWith(':runtime') ? `${signal.label} runtime` : signal.label),
+    sources: {
+      connection_test: 'Connection test',
+      capability_snapshot: 'Capability snapshot',
+      permission_snapshot: 'Permission snapshot',
+      runtime_probe: 'Runtime probe',
+      settings: 'Settings',
+    },
+    source: 'Source: ',
+    blocksSend: 'Blocks sending',
+    blocksCapability: 'Blocks capability',
+    signalLabel: (signal) =>
+      signal.id.endsWith(':runtime') ? `${signal.label} runtime` : signal.label,
     signalMessage: (signal) => signalMessagesEn[signal.message],
     signalDetail: (signal) => signalDetailEn(signal),
   },
@@ -269,7 +398,9 @@ function signalDetailZh(signal: HealthSignal): string | undefined {
       return [
         `模型=${detail.modelId}`,
         `延迟=${detail.latencyMs}ms`,
-        ...(detail.errorClass ? [`错误类型=${localizedRuntimeErrorClass(detail.errorClass, 'zh-CN')}`] : []),
+        ...(detail.errorClass
+          ? [`错误类型=${localizedRuntimeErrorClass(detail.errorClass, 'zh-CN')}`]
+          : []),
       ].join(' · ');
     case 'capability_reason':
       // Interim: capability-snapshot still emits zh-CN prose; code it as a
@@ -301,7 +432,9 @@ function signalDetailZhTw(signal: HealthSignal): string | undefined {
       return [
         `模型=${detail.modelId}`,
         `延遲=${detail.latencyMs}ms`,
-        ...(detail.errorClass ? [`錯誤類型=${localizedRuntimeErrorClass(detail.errorClass, 'zh-TW')}`] : []),
+        ...(detail.errorClass
+          ? [`錯誤類型=${localizedRuntimeErrorClass(detail.errorClass, 'zh-TW')}`]
+          : []),
       ].join(' · ');
     case 'capability_reason':
       return '狀態詳細資料請參閱對應的設定頁。';
@@ -330,7 +463,9 @@ function signalDetailEn(signal: HealthSignal): string | undefined {
       return [
         `Model=${detail.modelId}`,
         `Latency=${detail.latencyMs}ms`,
-        ...(detail.errorClass ? [`Error type=${localizedRuntimeErrorClass(detail.errorClass, 'en')}`] : []),
+        ...(detail.errorClass
+          ? [`Error type=${localizedRuntimeErrorClass(detail.errorClass, 'en')}`]
+          : []),
       ].join(' · ');
     case 'capability_reason':
       return 'See the corresponding settings page for details.';
@@ -352,7 +487,8 @@ const unknownRuntimeErrorClass = {
 // Runtime probes carry the turn's failure class (rate_limit, context_overflow,
 // …), a wider vocabulary than connection tests; unmapped classes stay visible.
 function localizedRuntimeErrorClass(errorClass: string, locale: UiLocale): string {
-  const messages: Readonly<Record<string, string | undefined>> = connectionTestErrorMessages[locale];
+  const messages: Readonly<Record<string, string | undefined>> =
+    connectionTestErrorMessages[locale];
   const normalized = errorClass.toLowerCase();
   if (normalized === 'unknown') return unknownRuntimeErrorClass[locale];
   return messages[normalized] ?? errorClass;

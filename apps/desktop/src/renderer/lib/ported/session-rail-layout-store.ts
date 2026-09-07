@@ -17,14 +17,17 @@
  * under the License.
  */
 
-
 /**
  * Local stand-in for the side-nav collapse handle the shell hands this store.
  * The enterprise rewrite (Phase 0a) dropped the Astryx `SideNav` type it used
  * to alias; Phase 2 re-points it at the new sidebar's own handle.
  */
 export interface SessionRailCollapseHandle {
-  getCollapseState: () => { isCollapsed: boolean; toggle: () => void; isCollapsible: boolean } | null;
+  getCollapseState: () => {
+    isCollapsed: boolean;
+    toggle: () => void;
+    isCollapsible: boolean;
+  } | null;
 }
 import type { SessionViewMode } from '@maka/ui';
 import { safeLocalStorageSet } from './browser-storage.js';

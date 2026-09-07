@@ -39,9 +39,7 @@ export type ComposerIngestInput =
   | { file: File };
 
 /** Stable identity across preview-URL merges. */
-export function pendingAttachmentSourceKey(
-  attachment: PendingAttachment,
-): unknown {
+export function pendingAttachmentSourceKey(attachment: PendingAttachment): unknown {
   if (attachment.source.type === 'approval') {
     return `approval:${attachment.source.approvalId}`;
   }
@@ -66,12 +64,8 @@ export function toComposerIngestItems(
   });
 }
 
-export function retainedAttachmentRefs(
-  pending: readonly PendingAttachment[],
-): AttachmentRef[] {
+export function retainedAttachmentRefs(pending: readonly PendingAttachment[]): AttachmentRef[] {
   return pending.flatMap((item) =>
-    item.source.type === 'retained'
-      ? [structuredClone(item.source.attachment)]
-      : [],
+    item.source.type === 'retained' ? [structuredClone(item.source.attachment)] : [],
   );
 }

@@ -20,10 +20,7 @@
 import type { ChatConfigurationReason } from '@maka/core/connection-readiness';
 import type { SessionEvent } from '@maka/core/events';
 import type { UiLocale } from '@maka/core/ui-locale';
-import {
-  NO_REAL_CONNECTION_CODE,
-  parseNoRealConnectionError,
-} from './connection-error-cleaner.js';
+import { NO_REAL_CONNECTION_CODE, parseNoRealConnectionError } from './connection-error-cleaner.js';
 import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
 import { localizedShellErrorMessage } from '../../locales/shell-copy.js';
 import { describeSessionErrorReason } from './session-error-presentation.js';
@@ -33,20 +30,27 @@ export function isNoRealConnectionError(error: unknown): boolean {
 }
 
 export function isNoRealConnectionEvent(event: Extract<SessionEvent, { type: 'error' }>): boolean {
-  return event.code === NO_REAL_CONNECTION_CODE || parseNoRealConnectionError(event.message).matched;
+  return (
+    event.code === NO_REAL_CONNECTION_CODE || parseNoRealConnectionError(event.message).matched
+  );
 }
 
 export function noRealConnectionReasonFromError(error: unknown): string | undefined {
   return parseNoRealConnectionError(error).reason;
 }
 
-export function noRealConnectionReasonFromEvent(event: Extract<SessionEvent, { type: 'error' }>): string | undefined {
+export function noRealConnectionReasonFromEvent(
+  event: Extract<SessionEvent, { type: 'error' }>,
+): string | undefined {
   return parseNoRealConnectionError(
     event.reason ? `${NO_REAL_CONNECTION_CODE}:${event.reason}` : event.message,
   ).reason;
 }
 
-export function noRealConnectionSetupDescription(reason: string | undefined, locale: UiLocale): string {
+export function noRealConnectionSetupDescription(
+  reason: string | undefined,
+  locale: UiLocale,
+): string {
   const copy = getDesktopConversationCopy(locale).model;
   return reason && Object.hasOwn(copy.configurationReason, reason)
     ? copy.configurationReason[reason as ChatConfigurationReason]

@@ -49,6 +49,7 @@ export function isSessionWorkspaceUnavailableError(error: unknown): boolean {
   const event = error as { code?: unknown; message?: unknown };
   return (
     event.code === SESSION_WORKSPACE_UNAVAILABLE_CODE ||
-    (typeof event.message === 'string' && event.message.includes(`${SESSION_WORKSPACE_UNAVAILABLE_CODE}:`))
+    (typeof event.message === 'string' &&
+      event.message.includes(`${SESSION_WORKSPACE_UNAVAILABLE_CODE}:`))
   );
 }

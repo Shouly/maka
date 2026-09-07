@@ -17,10 +17,7 @@
  * under the License.
  */
 
-import {
-  safeLocalStorageGet,
-  safeLocalStorageSet,
-} from './browser-storage.js';
+import { safeLocalStorageGet, safeLocalStorageSet } from './browser-storage.js';
 import {
   persistableSessionWorkbarPanels,
   readSessionWorkbarPanels,
@@ -167,10 +164,7 @@ export function persistWorkbarLayout(
     );
   }
   if (target === 'all' || target === 'right-visibility') {
-    safeLocalStorageSet(
-      SESSION_COLLAPSE_KEY,
-      JSON.stringify(state.collapsedBySession),
-    );
+    safeLocalStorageSet(SESSION_COLLAPSE_KEY, JSON.stringify(state.collapsedBySession));
     // The old global preference has no Session owner and cannot be migrated
     // without giving an unrelated conversation its expanded state.
     try {
@@ -180,22 +174,13 @@ export function persistWorkbarLayout(
     }
   }
   if (target === 'all' || target === 'bottom-visibility') {
-    safeLocalStorageSet(
-      'maka-session-bottom-panel-open-v1',
-      state.bottomOpen ? 'true' : 'false',
-    );
+    safeLocalStorageSet('maka-session-bottom-panel-open-v1', state.bottomOpen ? 'true' : 'false');
   }
   if (target === 'all' || target === 'right-size') {
-    safeLocalStorageSet(
-      'maka-session-workbar-width-v1',
-      String(state.rightWidth),
-    );
+    safeLocalStorageSet('maka-session-workbar-width-v1', String(state.rightWidth));
   }
   if (target === 'all' || target === 'bottom-size') {
-    safeLocalStorageSet(
-      'maka-session-bottom-panel-height-v1',
-      String(state.bottomHeight),
-    );
+    safeLocalStorageSet('maka-session-bottom-panel-height-v1', String(state.bottomHeight));
   }
 }
 
@@ -221,9 +206,7 @@ export function reduceWorkbarLayout(
       return withRightCollapsed(state, action.collapsed);
     }
     const bottomOpen = !action.collapsed;
-    return state.bottomOpen === bottomOpen
-      ? state
-      : { ...state, bottomOpen };
+    return state.bottomOpen === bottomOpen ? state : { ...state, bottomOpen };
   }
   if (action.type === 'resize') {
     if (action.placement === 'right') {
@@ -232,18 +215,14 @@ export function reduceWorkbarLayout(
         SESSION_WORKBAR_MIN_WIDTH,
         SESSION_WORKBAR_MAX_WIDTH,
       );
-      return state.rightWidth === rightWidth
-        ? state
-        : { ...state, rightWidth };
+      return state.rightWidth === rightWidth ? state : { ...state, rightWidth };
     }
     const bottomHeight = clampSize(
       action.size,
       SESSION_BOTTOM_PANEL_MIN_HEIGHT,
       SESSION_BOTTOM_PANEL_MAX_HEIGHT,
     );
-    return state.bottomHeight === bottomHeight
-      ? state
-      : { ...state, bottomHeight };
+    return state.bottomHeight === bottomHeight ? state : { ...state, bottomHeight };
   }
 
   const panels = reduceWorkbarPanels(

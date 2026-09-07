@@ -379,7 +379,8 @@ export function TipTapEditor(props: {
       }
       if (event.key === ' ' && query.kind === '/') {
         const exact = items.find(
-          (item) => item.kind !== 'command' && item.label.toLowerCase() === query.text.toLowerCase(),
+          (item) =>
+            item.kind !== 'command' && item.label.toLowerCase() === query.text.toLowerCase(),
         );
         if (exact) {
           event.preventDefault();

@@ -123,13 +123,7 @@ function InteractionPrompt({
 
   if (request.type === 'user_question_request') {
     return (
-      <QuestionWizard
-        sessionId={sessionId}
-        request={request}
-        busy={busy}
-        error={error}
-        run={run}
-      />
+      <QuestionWizard sessionId={sessionId} request={request} busy={busy} error={error} run={run} />
     );
   }
 
@@ -469,7 +463,10 @@ function QuestionWizard({
                       )}
                     >
                       {/* The ordinal is decoration: the option's name is its label. */}
-                      <span aria-hidden className="flex size-7 shrink-0 items-center justify-center">
+                      <span
+                        aria-hidden
+                        className="flex size-7 shrink-0 items-center justify-center"
+                      >
                         <span
                           className={cn(
                             'flex size-7 items-center justify-center rounded-lg text-sm',
@@ -535,11 +532,7 @@ function QuestionWizard({
         <div
           className={cn(
             'flex h-11 w-full cursor-text items-center gap-2.5 rounded-xl px-2.5',
-            custom.trim()
-              ? 'bg-accent-subtle'
-              : activeRow === options.length
-                ? 'bg-alpha-1'
-                : '',
+            custom.trim() ? 'bg-accent-subtle' : activeRow === options.length ? 'bg-alpha-1' : '',
           )}
           onMouseEnter={() => setActiveRow(options.length)}
           onClick={() => customInputRef.current?.focus()}
@@ -562,9 +555,7 @@ function QuestionWizard({
             value={custom}
             disabled={busy}
             onChange={(event) =>
-              setDraft(
-                event.target.value ? { kind: 'other', value: event.target.value } : null,
-              )
+              setDraft(event.target.value ? { kind: 'other', value: event.target.value } : null)
             }
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing) return;

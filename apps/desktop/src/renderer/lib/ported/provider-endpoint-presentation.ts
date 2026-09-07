@@ -56,18 +56,17 @@ export interface ProviderEndpointPresentation {
  * connection. Derived endpoints (for example Cloudflare account URLs) are
  * concrete once persisted, but are never hand-edited here.
  */
-export function providerEndpointPresentation(
-  connection: {
-    providerType: LlmConnection['providerType'];
-    baseUrl?: string;
-  },
-): ProviderEndpointPresentation {
+export function providerEndpointPresentation(connection: {
+  providerType: LlmConnection['providerType'];
+  baseUrl?: string;
+}): ProviderEndpointPresentation {
   const defaults = PROVIDER_REGISTRY[connection.providerType];
   const effective = effectiveBaseUrl(connection).trim();
   const value = endpointForDisplay(effective);
-  const editable = defaults.authKind !== 'oauth_token'
-    && !defaults.baseUrlTemplate
-    && (!defaults.baseUrl || defaults.category === 'local');
+  const editable =
+    defaults.authKind !== 'oauth_token' &&
+    !defaults.baseUrlTemplate &&
+    (!defaults.baseUrl || defaults.category === 'local');
 
   return {
     value: value || null,
@@ -86,9 +85,10 @@ const modelOverrideRouteCache = new Map<LlmConnection['providerType'], boolean>(
  * `resolveModelRuntime`: a configured baseUrl always wins, and only without
  * one can a model-level override replace the provider default.
  */
-function providerRoutesModelsElsewhere(
-  connection: { providerType: LlmConnection['providerType']; baseUrl?: string },
-): boolean {
+function providerRoutesModelsElsewhere(connection: {
+  providerType: LlmConnection['providerType'];
+  baseUrl?: string;
+}): boolean {
   if (connection.baseUrl?.trim()) return false;
   const defaultBaseUrl = providerDefaultsOf(connection.providerType)?.baseUrl;
   if (!defaultBaseUrl) return false;

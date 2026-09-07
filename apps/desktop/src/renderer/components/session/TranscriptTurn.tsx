@@ -47,10 +47,7 @@ import StreamPopMarkdown from '../ui/StreamPopMarkdown.js';
 import { Anthropicon } from '../icons/Anthropicon.js';
 import { cn } from '../../lib/cn.js';
 import type { FailedTurnSeverity } from '../../lib/ported/session-status-presentation.js';
-import type {
-  TurnFooterAction,
-  TurnFooterActionId,
-} from '../../lib/ported/turn-footer-actions.js';
+import type { TurnFooterAction, TurnFooterActionId } from '../../lib/ported/turn-footer-actions.js';
 import type { TurnLineageBadge } from '@maka/ui';
 import { getTranscriptCopy } from '../../locales/transcript-copy.js';
 import { ThinkingBlock } from './ThinkingBlock.js';
@@ -137,9 +134,7 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
           {...(turn.user.directoryReferences
             ? { directoryReferences: turn.user.directoryReferences }
             : {})}
-          {...(turn.user.inlineReferences
-            ? { inlineReferences: turn.user.inlineReferences }
-            : {})}
+          {...(turn.user.inlineReferences ? { inlineReferences: turn.user.inlineReferences } : {})}
           {...(turn.user.hostOrigin ? { hostOrigin: true } : {})}
           {...(props.onEditUserMessage
             ? { onEdit: () => props.onEditUserMessage?.(turn.turnId) }
@@ -211,9 +206,7 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
                 {entry.text}
               </Renderer>
               {entry.truncated && (
-                <p className="mt-1 text-xs leading-4 text-text-muted">
-                  {copy.thinking.truncated}
-                </p>
+                <p className="mt-1 text-xs leading-4 text-text-muted">{copy.thinking.truncated}</p>
               )}
             </div>
           );

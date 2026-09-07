@@ -31,7 +31,12 @@
 // show them something they did not write.
 
 import { memo, useEffect, useId, useRef, useState } from 'react';
-import type { AttachmentRef, DirectoryReference, InlineReference, QuoteRef } from '@maka/core/events';
+import type {
+  AttachmentRef,
+  DirectoryReference,
+  InlineReference,
+  QuoteRef,
+} from '@maka/core/events';
 import {
   getConversationCopy,
   resolvePreviewKind,
@@ -53,7 +58,11 @@ const CLIP_HEIGHT_PX = 200;
 const chipClass =
   'inline-flex max-w-full items-center gap-1 rounded-md bg-alpha-1 px-1.5 py-0.5 text-[0.6875rem] leading-4 text-text-muted';
 
-function Chip(props: { icon: Parameters<typeof Anthropicon>[0]['name']; label: string; title?: string }) {
+function Chip(props: {
+  icon: Parameters<typeof Anthropicon>[0]['name'];
+  label: string;
+  title?: string;
+}) {
   return (
     <span className={chipClass} title={props.title ?? props.label}>
       <Anthropicon name={props.icon} size={12} className="shrink-0" />
@@ -353,7 +362,10 @@ export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRow
         </Tooltip>
       </div>
 
-      <Dialog open={lightbox !== undefined} onOpenChange={(open) => !open && setLightbox(undefined)}>
+      <Dialog
+        open={lightbox !== undefined}
+        onOpenChange={(open) => !open && setLightbox(undefined)}
+      >
         <DialogContent className="md:max-w-3xl">
           <DialogTitle className="sr-only">{copy.turn.attachmentsLabel}</DialogTitle>
           {lightbox && (

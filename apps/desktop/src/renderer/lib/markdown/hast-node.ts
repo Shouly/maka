@@ -25,9 +25,9 @@
  * package.json 声明,包管理器换严格解析就会挂。
  */
 export interface HastNode {
-  type: string
-  tagName?: string
-  properties?: Record<string, unknown>
-  value?: string
-  children?: HastNode[]
+  type: string;
+  tagName?: string;
+  properties?: Record<string, unknown>;
+  value?: string;
+  children?: HastNode[];
 }

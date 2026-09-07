@@ -146,7 +146,9 @@ export function WorkspacePicker(props: { className?: string }) {
                   const selected =
                     option.profileId === target?.profileId &&
                     option.projectId === target?.projectId;
-                  const path = option.path ? projectPathDisplay(option.path, { maxLength: 40 }) : undefined;
+                  const path = option.path
+                    ? projectPathDisplay(option.path, { maxLength: 40 })
+                    : undefined;
                   return (
                     <button
                       key={`${option.profileId}:${option.projectId ?? 'none'}`}

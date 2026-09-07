@@ -124,7 +124,9 @@ const SETTINGS_TASKS_COPY_BY_LOCALE = {
     purgeAllConfirmTitle: (count: number) =>
       count === 1 ? 'Clear the 1 archived task?' : `Clear all ${count} archived tasks?`,
     purgeMatchesConfirmTitle: (count: number) =>
-      count === 1 ? 'Delete the 1 task you searched for?' : `Delete the ${count} tasks you searched for?`,
+      count === 1
+        ? 'Delete the 1 task you searched for?'
+        : `Delete the ${count} tasks you searched for?`,
     purgeConfirmBody:
       'The tasks and all of their messages are removed permanently. This cannot be undone.',
     purgeSubtaskNote: 'Any ordinary subtasks are kept and moved to Archived.',
@@ -138,8 +140,11 @@ const SETTINGS_TASKS_COPY_BY_LOCALE = {
         : `${count} more were restored meanwhile and kept.`,
     purgeFailedTitle: 'Could not delete the tasks',
     purgeFailedBody: (count: number) =>
-      count === 1 ? '1 task is still there. Try again.' : `${count} tasks are still there. Try again.`,
-    purgeUnverified: 'The tasks were deleted, but the list could not be read back to confirm. Reopen this page to check.',
+      count === 1
+        ? '1 task is still there. Try again.'
+        : `${count} tasks are still there. Try again.`,
+    purgeUnverified:
+      'The tasks were deleted, but the list could not be read back to confirm. Reopen this page to check.',
     noMatchTitle: 'No matching tasks',
     noMatchBody: 'Try a different search.',
     moreActions: (name: string) => `More actions for ${name}`,

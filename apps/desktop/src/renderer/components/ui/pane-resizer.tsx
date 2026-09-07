@@ -33,33 +33,33 @@
  * 用固定高度就没法从 48 长到满高。
  */
 
-import { cn } from '../../lib/cn'
+import { cn } from '../../lib/cn';
 
 export interface PaneResizerProps {
   /** 把手贴在哪一侧的容器边缘。left = 面板左缘（正文↔预览）。 */
-  side?: 'left' | 'right'
+  side?: 'left' | 'right';
   /** 拖拽中：握把常驻、去掉延迟、**加深一档**（muted → secondary）。 */
-  isResizing?: boolean
-  ariaLabel: string
-  ariaControls?: string
-  valueMin?: number
-  valueMax?: number
-  valueNow?: number
-  valueText?: string
-  className?: string
+  isResizing?: boolean;
+  ariaLabel: string;
+  ariaControls?: string;
+  valueMin?: number;
+  valueMax?: number;
+  valueNow?: number;
+  valueText?: string;
+  className?: string;
   // 两套指针事件都放行:侧栏走 Pointer Events(带捕获),右侧预览目前还是
   // mouse/touch 一套。统一到 Pointer 是另一件事,不塞进这次改造。
-  onPointerDown?: (e: React.PointerEvent<HTMLDivElement>) => void
-  onPointerMove?: (e: React.PointerEvent<HTMLDivElement>) => void
-  onPointerUp?: (e: React.PointerEvent<HTMLDivElement>) => void
-  onPointerCancel?: (e: React.PointerEvent<HTMLDivElement>) => void
-  onLostPointerCapture?: (e: React.PointerEvent<HTMLDivElement>) => void
-  onMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void
-  onTouchStart?: (e: React.TouchEvent<HTMLDivElement>) => void
-  onMouseEnter?: (e: React.MouseEvent<HTMLDivElement>) => void
-  onMouseLeave?: (e: React.MouseEvent<HTMLDivElement>) => void
-  onDoubleClick?: (e: React.MouseEvent<HTMLDivElement>) => void
-  onKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => void
+  onPointerDown?: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onPointerMove?: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onPointerUp?: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onPointerCancel?: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onLostPointerCapture?: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onTouchStart?: (e: React.TouchEvent<HTMLDivElement>) => void;
+  onMouseEnter?: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onMouseLeave?: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onDoubleClick?: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => void;
 }
 
 export function PaneResizer({
@@ -105,5 +105,5 @@ export function PaneResizer({
         )}
       />
     </div>
-  )
+  );
 }

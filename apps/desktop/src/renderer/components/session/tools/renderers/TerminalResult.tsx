@@ -90,7 +90,8 @@ export const TerminalResult = memo(function TerminalResult(props: {
 
   const streams: { label: string; text: string; tone: 'normal' | 'error' }[] = [];
   if (output?.mode === 'pipes') {
-    if (output.stdout.trim()) streams.push({ label: 'stdout', text: output.stdout, tone: 'normal' });
+    if (output.stdout.trim())
+      streams.push({ label: 'stdout', text: output.stdout, tone: 'normal' });
     if (output.stderr.trim()) streams.push({ label: 'stderr', text: output.stderr, tone: 'error' });
   } else if (output?.mode === 'pty') {
     const screen = output.screen || output.scrollback;
@@ -121,7 +122,12 @@ export const TerminalResult = memo(function TerminalResult(props: {
           ) : undefined
         }
       >
-        <CodeRenderer content={merged.cmd} language="bash" showLineNumbers={false} fontSize="12px" />
+        <CodeRenderer
+          content={merged.cmd}
+          language="bash"
+          showLineNumbers={false}
+          fontSize="12px"
+        />
         {merged.cwd && (
           <p className="truncate font-mono text-[0.6875rem] leading-4 text-text-muted">
             {copy.workingDirectory}: {merged.cwd}
@@ -171,9 +177,7 @@ export const TerminalResult = memo(function TerminalResult(props: {
         {merged.failureMessage && (
           <p className="text-xs leading-5 text-danger">{merged.failureMessage}</p>
         )}
-        {output?.redacted && (
-          <p className={toolResultBlockLabelClass}>{outputCopy.redacted}</p>
-        )}
+        {output?.redacted && <p className={toolResultBlockLabelClass}>{outputCopy.redacted}</p>}
         {((output?.mode === 'pipes' && (output.stdoutTruncated || output.stderrTruncated)) ||
           (output?.mode === 'pty' && output.truncated)) && (
           <p className={toolResultBlockLabelClass}>{outputCopy.truncated}</p>

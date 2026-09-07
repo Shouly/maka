@@ -48,15 +48,20 @@ export function compositeScrimOverBackground(
 export function parseCssRgbColor(
   used: string,
 ): { r: number; g: number; b: number; a: number } | null {
-  const match = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/.exec(used);
+  const match =
+    /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/.exec(used);
   if (!match) return null;
   const alphaRaw = match[4];
-  const alpha = alphaRaw === undefined
-    ? 1
-    : alphaRaw.endsWith('%')
-      ? Number.parseFloat(alphaRaw) / 100
-      : Number.parseFloat(alphaRaw);
-  if ([match[1], match[2], match[3]].some((c) => Number.isNaN(Number.parseFloat(c))) || Number.isNaN(alpha)) {
+  const alpha =
+    alphaRaw === undefined
+      ? 1
+      : alphaRaw.endsWith('%')
+        ? Number.parseFloat(alphaRaw) / 100
+        : Number.parseFloat(alphaRaw);
+  if (
+    [match[1], match[2], match[3]].some((c) => Number.isNaN(Number.parseFloat(c))) ||
+    Number.isNaN(alpha)
+  ) {
     return null;
   }
   return {

@@ -24,7 +24,7 @@ export interface CursorCandidatePair {
 
 function symmetricWeights(count: number): number[] {
   if (count === 1) return [0];
-  return Array.from({ length: count }, (_, index) => index / (count - 1) * 2 - 1);
+  return Array.from({ length: count }, (_, index) => (index / (count - 1)) * 2 - 1);
 }
 
 /** Internal normalized candidate pairs consumed by the Maka cubic planner. */

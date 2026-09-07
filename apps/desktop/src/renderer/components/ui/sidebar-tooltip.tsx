@@ -17,21 +17,21 @@
  * under the License.
  */
 
-import * as React from "react"
+import * as React from 'react';
 
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./tooltip"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './tooltip';
 
 interface SidebarTooltipProps {
-  children: React.ReactNode
-  content: React.ReactNode
-  side?: "top" | "right" | "bottom" | "left"
-  sideOffset?: number
+  children: React.ReactNode;
+  content: React.ReactNode;
+  side?: 'top' | 'right' | 'bottom' | 'left';
+  sideOffset?: number;
   /** 只在收起态显示。侧栏已无收起态图标轨,那边一律配合 alwaysShow 使用。 */
-  isCollapsed?: boolean
-  alwaysShow?: boolean  // 新增：始终显示tooltip的选项
+  isCollapsed?: boolean;
+  alwaysShow?: boolean; // 新增：始终显示tooltip的选项
 }
 
-const SidebarTooltipGroupContext = React.createContext(false)
+const SidebarTooltipGroupContext = React.createContext(false);
 
 /**
  * 相邻按钮的提示要归到同一个 Provider 才会就地交接;各自成组时旧的退场和新的入场
@@ -44,36 +44,34 @@ export function SidebarTooltipProvider({ children }: { children: React.ReactNode
         {children}
       </TooltipProvider>
     </SidebarTooltipGroupContext.Provider>
-  )
+  );
 }
 
 export function SidebarTooltip({
   children,
   content,
-  side = "right",
+  side = 'right',
   sideOffset = 6,
   isCollapsed = false,
-  alwaysShow = false
+  alwaysShow = false,
 }: SidebarTooltipProps) {
-  const hasGroup = React.useContext(SidebarTooltipGroupContext)
+  const hasGroup = React.useContext(SidebarTooltipGroupContext);
 
   // 如果设置了alwaysShow，则始终显示tooltip
   // 否则只在collapsed状态显示
   if (!alwaysShow && !isCollapsed) {
-    return <>{children}</>
+    return <>{children}</>;
   }
 
   const tooltip = (
     <Tooltip>
-      <TooltipTrigger asChild>
-        {children}
-      </TooltipTrigger>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
       <TooltipContent side={side} sideOffset={sideOffset}>
         {content}
       </TooltipContent>
     </Tooltip>
-  )
+  );
 
   // Radix 要求必须有 Provider 祖先,没有会抛错。
-  return hasGroup ? tooltip : <SidebarTooltipProvider>{tooltip}</SidebarTooltipProvider>
+  return hasGroup ? tooltip : <SidebarTooltipProvider>{tooltip}</SidebarTooltipProvider>;
 }

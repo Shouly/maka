@@ -89,11 +89,7 @@ export interface PaletteCommandInput {
 export function buildPaletteCommands(input: PaletteCommandInput): PaletteCommand[] {
   const copy = getShellCopy(input.locale).commandPalette;
   const palette = getPaletteCopy(input.locale);
-  const staticCommand = (
-    id: StaticCommandId,
-    run: () => void,
-    hint?: string,
-  ): PaletteCommand => ({
+  const staticCommand = (id: StaticCommandId, run: () => void, hint?: string): PaletteCommand => ({
     id,
     kind: 'action',
     label: copy.commands[id].label,

@@ -50,7 +50,10 @@ export function ReadinessNotice(props: { onOpenWorkspacePicker: () => void }) {
       <Anthropicon
         name="warningCircle"
         size={18}
-        className={cn('mt-0.5 shrink-0', notice.tone === 'destructive' ? 'text-danger' : 'text-warning')}
+        className={cn(
+          'mt-0.5 shrink-0',
+          notice.tone === 'destructive' ? 'text-danger' : 'text-warning',
+        )}
       />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium leading-5 text-text-primary">{notice.title}</p>

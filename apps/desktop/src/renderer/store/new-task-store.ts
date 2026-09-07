@@ -181,8 +181,7 @@ export function createNewTaskStore(bridge = api) {
     ]);
     if (request !== targetGeneration) return;
     store.setState((state) => {
-      const snapshot =
-        connections.status === 'fulfilled' ? connections.value : state.connections;
+      const snapshot = connections.status === 'fulfilled' ? connections.value : state.connections;
       return {
         connections: snapshot,
         readiness: readiness.status === 'fulfilled' ? readiness.value : undefined,

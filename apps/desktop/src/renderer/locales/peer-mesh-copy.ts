@@ -162,8 +162,7 @@ const PEER_MESH_COPY = {
     loading: '正在读取 Mesh 状态…',
     checkingPeerConnection: '正在检查此 Runtime Host 的 Peer 连接…',
     peerConnectionDisabled: '此 Runtime Host 尚未开启 Peer 连接',
-    peerConnectionDisabledHint:
-      '开启后，此 Host 才能创建或加入 Mesh；现有 SSH 连接会继续保留。',
+    peerConnectionDisabledHint: '开启后，此 Host 才能创建或加入 Mesh；现有 SSH 连接会继续保留。',
     peerConnectionDisableProfileFirst:
       '此 Host 的 Direct peer 连接正在使用中，请先在 Host 列表中将它停用。',
     enablePeerConnection: '开启 Peer 连接',
@@ -200,21 +199,17 @@ const PEER_MESH_COPY = {
     connectivityPolicyLoadFailed: '无法读取连接策略',
     connectivityPolicySaveFailed: '无法保存连接策略',
     restoreDefaultConnectivityPolicy: '恢复默认设置',
-    connectivityPolicyRestartRequired:
-      '重启 Maka 后，已保存的连接策略变更会应用到新连接。',
+    connectivityPolicyRestartRequired: '重启 Maka 后，已保存的连接策略变更会应用到新连接。',
     publicAddressDiscovery: '公网地址发现',
     publicStunDefault: '公共 STUN（推荐）',
     publicStunDisabled: '不使用公共 STUN',
     publicStunCustom: '自定义 STUN',
     customStunUrls: 'STUN 地址',
-    customStunUrlsInvalid:
-      '请输入以逗号分隔的 stun:主机[:端口] 地址，最多 8 个。',
+    customStunUrlsInvalid: '请输入以逗号分隔的 stun:主机[:端口] 地址，最多 8 个。',
     publicStunDefaultHelp:
       '使用 Cloudflare 公共 STUN 尽力发现公网映射。它不承载 Maka 流量，但提供方可观察源 IP 和请求时间；Maka 不保证其可用性。',
-    publicStunDisabledHelp:
-      '仅尝试本地地址和其他已知直连路径；跨 NAT 的直连成功率可能降低。',
-    publicStunCustomHelp:
-      '使用逗号分隔的 stun: 地址。STUN 只发现网络地址，不承载 Session 内容。',
+    publicStunDisabledHelp: '仅尝试本地地址和其他已知直连路径；跨 NAT 的直连成功率可能降低。',
+    publicStunCustomHelp: '使用逗号分隔的 stun: 地址。STUN 只发现网络地址，不承载 Session 内容。',
     saveConnectivityPolicy: '保存更改',
     peerId: 'Peer ID',
     peerIdHelp: '此 endpoint 在 Mesh 中的技术身份；点击 ID 可复制完整值。',
@@ -284,8 +279,7 @@ const PEER_MESH_COPY = {
     invitationTitle: '邀请成员',
     invitationFor: (value: string) => `Mesh ${value}`,
     invitationWarning: '该代码只能使用一次；获得代码的人可以让一个 peer 加入此 Mesh。',
-    invitationDirectOnly:
-      '尚未连接到协调节点。此邀请码只包含直接地址，跨 NAT 时可能无法连接。',
+    invitationDirectOnly: '尚未连接到协调节点。此邀请码只包含直接地址，跨 NAT 时可能无法连接。',
     invitationExpires: (value: string) => `有效期至 ${value}`,
     invitationCopied: '邀请码已复制',
     copyInvitation: '复制邀请码',
@@ -321,8 +315,7 @@ const PEER_MESH_COPY = {
     loading: '正在讀取 Mesh 狀態…',
     checkingPeerConnection: '正在檢查此 Runtime Host 的 Peer 連線…',
     peerConnectionDisabled: '此 Runtime Host 尚未開啟 Peer 連線',
-    peerConnectionDisabledHint:
-      '開啟後，此 Host 才能建立或加入 Mesh；現有 SSH 連線會繼續保留。',
+    peerConnectionDisabledHint: '開啟後，此 Host 才能建立或加入 Mesh；現有 SSH 連線會繼續保留。',
     peerConnectionDisableProfileFirst:
       '此 Host 的 Direct peer 連線正在使用中，請先在 Host 列表中將它停用。',
     enablePeerConnection: '開啟 Peer 連線',
@@ -359,8 +352,7 @@ const PEER_MESH_COPY = {
     connectivityPolicyLoadFailed: '無法讀取連線策略',
     connectivityPolicySaveFailed: '無法儲存連線策略',
     restoreDefaultConnectivityPolicy: '恢復預設設定',
-    connectivityPolicyRestartRequired:
-      '重新啟動 Maka 後，已儲存的連線策略變更會套用至新連線。',
+    connectivityPolicyRestartRequired: '重新啟動 Maka 後，已儲存的連線策略變更會套用至新連線。',
     publicAddressDiscovery: '公網位址探索',
     publicStunDefault: '公共 STUN（建議）',
     publicStunDisabled: '不使用公共 STUN',
@@ -371,8 +363,7 @@ const PEER_MESH_COPY = {
       '使用 Cloudflare 公共 STUN 盡力探索公網對映。它不承載 Maka 流量，但提供者可觀察來源 IP 和請求時間；Maka 不保證其可用性。',
     publicStunDisabledHelp:
       '僅嘗試本機位址和其他已知直接連線路徑；跨 NAT 的直接連線成功率可能降低。',
-    publicStunCustomHelp:
-      '使用逗號分隔的 stun: 位址。STUN 只探索網路位址，不承載 Session 內容。',
+    publicStunCustomHelp: '使用逗號分隔的 stun: 位址。STUN 只探索網路位址，不承載 Session 內容。',
     saveConnectivityPolicy: '儲存變更',
     peerId: 'Peer ID',
     peerIdHelp: '此 endpoint 在 Mesh 中的技術身分；點選 ID 可複製完整值。',
@@ -442,8 +433,7 @@ const PEER_MESH_COPY = {
     invitationTitle: '邀請成員',
     invitationFor: (value: string) => `Mesh ${value}`,
     invitationWarning: '此代碼只能使用一次；取得代碼的人可以讓一個 peer 加入此 Mesh。',
-    invitationDirectOnly:
-      '尚未連線至協調節點。此邀請碼只包含直接位址，跨 NAT 時可能無法連線。',
+    invitationDirectOnly: '尚未連線至協調節點。此邀請碼只包含直接位址，跨 NAT 時可能無法連線。',
     invitationExpires: (value: string) => `有效期限至 ${value}`,
     invitationCopied: '邀請碼已複製',
     copyInvitation: '複製邀請碼',
@@ -525,8 +515,7 @@ const PEER_MESH_COPY = {
     publicStunDisabled: 'No public STUN',
     publicStunCustom: 'Custom STUN',
     customStunUrls: 'STUN addresses',
-    customStunUrlsInvalid:
-      'Enter up to 8 comma-separated stun:host[:port] addresses.',
+    customStunUrlsInvalid: 'Enter up to 8 comma-separated stun:host[:port] addresses.',
     publicStunDefaultHelp:
       'Uses Cloudflare public STUN on a best-effort basis to discover public mappings. It never carries Maka traffic, but the provider can observe source IPs and request timing; Maka provides no availability guarantee.',
     publicStunDisabledHelp:
@@ -562,7 +551,7 @@ const PEER_MESH_COPY = {
     authority: 'Owner',
     member: 'Member',
     closed: 'Closed',
-    memberCount: (value: number) => value === 1 ? '1 member' : `${value} members`,
+    memberCount: (value: number) => (value === 1 ? '1 member' : `${value} members`),
     pending: (value: number) => `${value} pending invites`,
     transit: 'Member transit',
     transitHelp: 'Let members of this Mesh connect through this device using its bandwidth.',
@@ -589,9 +578,11 @@ const PEER_MESH_COPY = {
       unknown: 'Unidentified peer',
     },
     endpointKindHelp: {
-      client: 'A Client is the interface that connects to Hosts, browses tasks, and starts actions. It does not own tasks.',
+      client:
+        'A Client is the interface that connects to Hosts, browses tasks, and starts actions. It does not own tasks.',
       host: 'A Runtime Host owns tasks and runtime state, and executes authorized work.',
-      unknown: 'This peer has not reported whether it is a Client or Runtime Host, usually because it uses an older build.',
+      unknown:
+        'This peer has not reported whether it is a Client or Runtime Host, usually because it uses an older build.',
     },
     joinTitle: 'Join a Mesh',
     joinHint: 'Paste a one-time invitation created by another peer.',
@@ -601,8 +592,7 @@ const PEER_MESH_COPY = {
     invite: 'Invite member',
     invitationTitle: 'Invite a member',
     invitationFor: (value: string) => `Mesh ${value}`,
-    invitationWarning:
-      'This code works once. Anyone holding it can admit one peer to this Mesh.',
+    invitationWarning: 'This code works once. Anyone holding it can admit one peer to this Mesh.',
     invitationDirectOnly:
       'No coordination peer is available yet. This invitation contains direct routes only and may not work across NATs.',
     invitationExpires: (value: string) => `Expires ${value}`,

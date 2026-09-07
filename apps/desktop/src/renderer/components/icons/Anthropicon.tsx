@@ -17,15 +17,15 @@
  * under the License.
  */
 
-import type { CSSProperties } from 'react'
+import type { CSSProperties } from 'react';
 
 interface AnthropiconSpec {
-  glyph: string
-  size: AnthropiconSize
-  weight: number
+  glyph: string;
+  size: AnthropiconSize;
+  weight: number;
 }
 
-export type AnthropiconSize = 12 | 16 | 18 | 20 | 24 | 32
+export type AnthropiconSize = 12 | 16 | 18 | 20 | 24 | 32;
 
 // Canonical names and codepoints come from the `er.icons` registry shipped in
 // Claude's current shared-frame bundle. Keep these names literal: call sites
@@ -177,15 +177,15 @@ export const ANTHROPICON_SPECS = {
   x: { glyph: '\uE10F', size: 20, weight: 433.25 },
   /** 圈内叉。取消/中止态,与 checkCircle、warningCircle 成一组。 */
   xCircle: { glyph: '\uE110', size: 20, weight: 433.25 },
-} as const satisfies Record<string, AnthropiconSpec>
+} as const satisfies Record<string, AnthropiconSpec>;
 
-export type AnthropiconName = keyof typeof ANTHROPICON_SPECS
+export type AnthropiconName = keyof typeof ANTHROPICON_SPECS;
 
 export interface AnthropiconProps {
-  name: AnthropiconName
-  className?: string
-  size?: AnthropiconSize
-  weight?: number
+  name: AnthropiconName;
+  className?: string;
+  size?: AnthropiconSize;
+  weight?: number;
 }
 
 // 尺寸越大字重越小(16→20 每 1px 减 25),用来抵消"字号变大 = 描边变粗",
@@ -202,21 +202,25 @@ const REGULAR_WEIGHT_BY_SIZE: Record<AnthropiconSize, number> = {
   20: 433.25,
   24: 400,
   32: 400,
-}
+};
 
 /**
  * Claude's variable icon-font glyph with its live size and weight locked to the
  * semantic name. Icons are always decorative; the containing control owns the
  * accessible label.
  */
-export function Anthropicon({ name, className, size: sizeOverride, weight: weightOverride }: AnthropiconProps) {
-  const spec = ANTHROPICON_SPECS[name]
-  const size = sizeOverride ?? spec.size
-  const weight = weightOverride ?? (
-    size === spec.size ? spec.weight : REGULAR_WEIGHT_BY_SIZE[size]
-  )
-  const { glyph } = spec
-  const dimension = `${size}px`
+export function Anthropicon({
+  name,
+  className,
+  size: sizeOverride,
+  weight: weightOverride,
+}: AnthropiconProps) {
+  const spec = ANTHROPICON_SPECS[name];
+  const size = sizeOverride ?? spec.size;
+  const weight =
+    weightOverride ?? (size === spec.size ? spec.weight : REGULAR_WEIGHT_BY_SIZE[size]);
+  const { glyph } = spec;
+  const dimension = `${size}px`;
   const style: CSSProperties = {
     alignItems: 'center',
     display: 'inline-flex',
@@ -237,16 +241,11 @@ export function Anthropicon({ name, className, size: sizeOverride, weight: weigh
     textTransform: 'none',
     userSelect: 'none',
     width: dimension,
-  }
+  };
 
   return (
-    <span
-      aria-hidden="true"
-      className={className}
-      data-anthropicon={name}
-      style={style}
-    >
+    <span aria-hidden="true" className={className} data-anthropicon={name} style={style}>
       {glyph}
     </span>
-  )
+  );
 }

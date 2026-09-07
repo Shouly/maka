@@ -47,8 +47,8 @@ export const CURSOR_MOTION = {
   boundsMargin: 23,
   startHandle: 1 / 3,
   endpointHandle: 1 / 3,
-  arcSize: 0.30,
-  arcFlow: 0.50,
+  arcSize: 0.3,
+  arcFlow: 0.5,
   straightPathDistanceThreshold: 60,
   springResponseScaler: 1 / 2400,
   springResponseMin: 0.18,
@@ -71,7 +71,7 @@ export const CURSOR_MOTION = {
   scootRotationResponse: 0.16,
   scootRotationDampingFraction: 1.0,
   scootRotationMax: PI / 8,
-  terminalTangentBlendStart: 0.80,
+  terminalTangentBlendStart: 0.8,
 } as const;
 
 /**
@@ -125,9 +125,7 @@ function integrateSpringStep(spring: SpringValue, dt: number): void {
   const omega = TAU / response;
   const stiffness = omega * omega;
   const damping = 2 * spring.damping * omega;
-  spring.velocity += (
-    stiffness * (spring.target - spring.value) - damping * spring.velocity
-  ) * dt;
+  spring.velocity += (stiffness * (spring.target - spring.value) - damping * spring.velocity) * dt;
   spring.value += spring.velocity * dt;
 }
 
@@ -153,14 +151,11 @@ export function cursorPresentationReadyDeadlineMs(): number {
     damping: CURSOR_MOTION.springDampingFraction,
   };
   let steps = 0;
-  while (
-    spring.value < CURSOR_CLOSE_ENOUGH.progress
-    && steps < SPRING_INTEGRATION_HZ * 30
-  ) {
+  while (spring.value < CURSOR_CLOSE_ENOUGH.progress && steps < SPRING_INTEGRATION_HZ * 30) {
     integrateSpringStep(spring, SPRING_INTEGRATION_STEP);
     steps++;
   }
-  const releaseMs = steps / SPRING_INTEGRATION_HZ * 1000;
+  const releaseMs = (steps / SPRING_INTEGRATION_HZ) * 1000;
   const observableAtOneFpsMs = Math.ceil(releaseMs / 1000) * 1000;
   return observableAtOneFpsMs + 100;
 }
@@ -216,7 +211,7 @@ export const CURSOR_GLYPH = {
   // are encoded endpoint first, then control 1 and control 2.
   start: [0, 0] as const,
   curve1: [
-    [0.20, 0.83],
+    [0.2, 0.83],
     [0.03, 0.23],
     [0.11, 0.51],
   ] as const,
@@ -224,14 +219,14 @@ export const CURSOR_GLYPH = {
   curve2: [
     [0.63, 0.69],
     [0.49, 0.57],
-    [0.57, 0.60],
+    [0.57, 0.6],
   ] as const,
-  line2: [0.80, 1.00] as const,
-  line3: [1.00, 0.89] as const,
+  line2: [0.8, 1.0] as const,
+  line3: [1.0, 0.89] as const,
   curve3: [
     [0, 0],
     [0.86, 0.63],
-    [0.69, 0.40],
+    [0.69, 0.4],
   ] as const,
 } as const;
 
@@ -263,12 +258,12 @@ export class CubicCursorPath {
     const t = clamp(tIn, 0, 1);
     const u = 1 - t;
     return [
-      3 * u * u * (this.p1[0] - this.p0[0])
-        + 6 * u * t * (this.p2[0] - this.p1[0])
-        + 3 * t * t * (this.p3[0] - this.p2[0]),
-      3 * u * u * (this.p1[1] - this.p0[1])
-        + 6 * u * t * (this.p2[1] - this.p1[1])
-        + 3 * t * t * (this.p3[1] - this.p2[1]),
+      3 * u * u * (this.p1[0] - this.p0[0]) +
+        6 * u * t * (this.p2[0] - this.p1[0]) +
+        3 * t * t * (this.p3[0] - this.p2[0]),
+      3 * u * u * (this.p1[1] - this.p0[1]) +
+        6 * u * t * (this.p2[1] - this.p1[1]) +
+        3 * t * t * (this.p3[1] - this.p2[1]),
     ];
   }
 }
@@ -294,8 +289,10 @@ function stepSpring(spring: SpringValue, dt: number): void {
 }
 
 function springSettled(spring: SpringValue, valueEpsilon = 0.001, velocityEpsilon = 0.01): boolean {
-  return Math.abs(spring.target - spring.value) <= valueEpsilon
-    && Math.abs(spring.velocity) <= velocityEpsilon;
+  return (
+    Math.abs(spring.target - spring.value) <= valueEpsilon &&
+    Math.abs(spring.velocity) <= velocityEpsilon
+  );
 }
 
 function makeSpring(value: number, response: number, damping: number): SpringValue {
@@ -314,7 +311,7 @@ function directCursorPath(start: Point, end: Point): CubicCursorPath {
   return new CubicCursorPath(
     start,
     [start[0] + dx / 3, start[1] + dy / 3],
-    [start[0] + dx * 2 / 3, start[1] + dy * 2 / 3],
+    [start[0] + (dx * 2) / 3, start[1] + (dy * 2) / 3],
     end,
   );
 }
@@ -364,9 +361,12 @@ export function measureCursorPath(
   viewport: Viewport | null,
 ): PathMeasurement {
   const bounds = pathBounds(start, end, viewport);
-  const inside = (point: Point): boolean => !bounds
-    || (point[0] >= bounds.minX && point[0] <= bounds.maxX
-      && point[1] >= bounds.minY && point[1] <= bounds.maxY);
+  const inside = (point: Point): boolean =>
+    !bounds ||
+    (point[0] >= bounds.minX &&
+      point[0] <= bounds.maxX &&
+      point[1] >= bounds.minY &&
+      point[1] <= bounds.maxY);
 
   let length = 0;
   let angleChangeEnergy = 0;
@@ -415,29 +415,33 @@ export function scoreCursorPath(
   chordLength: number,
   clickDirection: Point,
 ): number {
-  const detour = chordLength === 0
-    ? (measurement.length === 0 ? 0 : Number.POSITIVE_INFINITY)
-    : Math.max(0, measurement.length / chordLength - 1);
-  const dot = measurement.arrivalDirection[0] * clickDirection[0]
-    + measurement.arrivalDirection[1] * clickDirection[1];
+  const detour =
+    chordLength === 0
+      ? measurement.length === 0
+        ? 0
+        : Number.POSITIVE_INFINITY
+      : Math.max(0, measurement.length / chordLength - 1);
+  const dot =
+    measurement.arrivalDirection[0] * clickDirection[0] +
+    measurement.arrivalDirection[1] * clickDirection[1];
   // travelDirection · clickAngleDirection, bound to the arrival direction:
   // a candidate that arrives opposite the angle the glyph snaps to would force
   // a near-180° rotation inside the terminal blend, which is the spin this
   // penalty exists to price. The ramp only opens once the arrival is genuinely
   // backwards, so ordinary sideways approaches pay nothing.
-  const backwards = clamp(
-    (SCORE_BACKWARDS_ONSET - dot) / (1 + SCORE_BACKWARDS_ONSET),
-    0,
-    1,
-  ) * SCORE_BACKWARDS_PENALTY;
+  const backwards =
+    clamp((SCORE_BACKWARDS_ONSET - dot) / (1 + SCORE_BACKWARDS_ONSET), 0, 1) *
+    SCORE_BACKWARDS_PENALTY;
 
-  return measurement.length
-    + SCORE_DETOUR_WEIGHT * detour
-    + SCORE_ANGLE_ENERGY_WEIGHT * measurement.angleChangeEnergy
-    + SCORE_MAX_ANGLE_WEIGHT * measurement.maxAngleChange
-    + SCORE_TOTAL_TURN_WEIGHT * measurement.totalTurn
-    + (measurement.staysInBounds ? 0 : SCORE_OUT_OF_BOUNDS_PENALTY)
-    + backwards;
+  return (
+    measurement.length +
+    SCORE_DETOUR_WEIGHT * detour +
+    SCORE_ANGLE_ENERGY_WEIGHT * measurement.angleChangeEnergy +
+    SCORE_MAX_ANGLE_WEIGHT * measurement.maxAngleChange +
+    SCORE_TOTAL_TURN_WEIGHT * measurement.totalTurn +
+    (measurement.staysInBounds ? 0 : SCORE_OUT_OF_BOUNDS_PENALTY) +
+    backwards
+  );
 }
 
 /**
@@ -472,9 +476,10 @@ export function planCursorPath(
   // From rest there is no heading to honour, so the whole budget goes to arc
   // resolution. Interrupting a move fans the start handle from "straight at the
   // target" to "keep going the way we were", and lets the scorer choose.
-  const headingDelta = incomingHeading !== null && Number.isFinite(incomingHeading)
-    ? wrapAngle(incomingHeading - directAngle)
-    : 0;
+  const headingDelta =
+    incomingHeading !== null && Number.isFinite(incomingHeading)
+      ? wrapAngle(incomingHeading - directAngle)
+      : 0;
   // The selected set always contains nine candidates. Fresh motion spends all
   // nine on symmetric direct-departure arcs. Interrupted motion preserves all
   // five DEPARTURE_FAN weights: five symmetric arcs at direct departure, then
@@ -492,16 +497,20 @@ export function planCursorPath(
     const departure: Point = [Math.cos(departureAngle), Math.sin(departureAngle)];
     const arc = arcWeight * maxArc;
     const p1: Point = [
-      start[0] + departure[0] * distance * config.startHandle
-        + perpendicular[0] * arc * config.arcFlow,
-      start[1] + departure[1] * distance * config.startHandle
-        + perpendicular[1] * arc * config.arcFlow,
+      start[0] +
+        departure[0] * distance * config.startHandle +
+        perpendicular[0] * arc * config.arcFlow,
+      start[1] +
+        departure[1] * distance * config.startHandle +
+        perpendicular[1] * arc * config.arcFlow,
     ];
     const p2: Point = [
-      end[0] - direction[0] * distance * config.endpointHandle
-        + perpendicular[0] * arc * (1 - config.arcFlow),
-      end[1] - direction[1] * distance * config.endpointHandle
-        + perpendicular[1] * arc * (1 - config.arcFlow),
+      end[0] -
+        direction[0] * distance * config.endpointHandle +
+        perpendicular[0] * arc * (1 - config.arcFlow),
+      end[1] -
+        direction[1] * distance * config.endpointHandle +
+        perpendicular[1] * arc * (1 - config.arcFlow),
     ];
     const candidate = new CubicCursorPath(start, p1, p2, end);
     const score = scoreCursorPath(
@@ -590,9 +599,10 @@ export class CursorEngine {
   }
 
   setViewport(width: number, height: number): void {
-    this.viewport = Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0
-      ? { width, height }
-      : null;
+    this.viewport =
+      Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0
+        ? { width, height }
+        : null;
   }
 
   moveTo(x: number, y: number, _endHeading?: number, clickOnArrive = false): void {
@@ -625,9 +635,8 @@ export class CursorEngine {
     //
     // A null heading also leaves the configured candidate budget entirely for
     // arc resolution; an in-flight heading distributes it over DEPARTURE_FAN.
-    const incomingHeading = this.path !== null && Number.isFinite(this.heading)
-      ? this.heading
-      : null;
+    const incomingHeading =
+      this.path !== null && Number.isFinite(this.heading) ? this.heading : null;
     this.path = planCursorPath(start, destination, incomingHeading, this.viewport);
     this.target = destination;
     this.moveDistance = distance;
@@ -687,12 +696,14 @@ export class CursorEngine {
   }
 
   isMoving(): boolean {
-    return this.path !== null
-      || this.fadingIn
-      || this.clickT !== null
-      || !springSettled(this.stretchX)
-      || !springSettled(this.stretchY)
-      || !springSettled(this.rotationOffset);
+    return (
+      this.path !== null ||
+      this.fadingIn ||
+      this.clickT !== null ||
+      !springSettled(this.stretchX) ||
+      !springSettled(this.stretchY) ||
+      !springSettled(this.rotationOffset)
+    );
   }
 
   isVisible(): boolean {
@@ -783,7 +794,8 @@ export class CursorEngine {
 
       this.pos = [sampled[0], sampled[1]];
       this.heading = tangentAngle;
-      const speed = dt > 0 ? Math.hypot(sampled[0] - previous[0], sampled[1] - previous[1]) / dt : 0;
+      const speed =
+        dt > 0 ? Math.hypot(sampled[0] - previous[0], sampled[1] - previous[1]) / dt : 0;
       const scootEnabled = this.moveDistance >= CURSOR_MOTION.scootDistanceThreshold;
       const intensity = scootEnabled ? clamp(speed / 900, 0, 1) : 0;
 
@@ -795,11 +807,10 @@ export class CursorEngine {
       // clamp is applied once, so the glyph cannot exceed scootRotationMax.
       const headingDeviation = wrapAngle(tangentAngle - CURSOR_MOTION.clickAngle) / PI;
       const sway = this.progress.velocity * ROTATION_SWAY_COEFFICIENT;
-      this.rotationOffset.target = intensity * clamp(
-        ROTATION_HEADING_WEIGHT * headingDeviation + sway,
-        -1,
-        1,
-      ) * CURSOR_MOTION.scootRotationMax;
+      this.rotationOffset.target =
+        intensity *
+        clamp(ROTATION_HEADING_WEIGHT * headingDeviation + sway, -1, 1) *
+        CURSOR_MOTION.scootRotationMax;
 
       const progressSettled = springSettled(this.progress, 0.0005, 0.005);
       if (progressSettled) {
@@ -885,22 +896,31 @@ export class CursorEngine {
     ctx.beginPath();
     ctx.moveTo(start[0], start[1]);
     ctx.bezierCurveTo(
-      curve1Control1[0], curve1Control1[1],
-      curve1Control2[0], curve1Control2[1],
-      curve1End[0], curve1End[1],
+      curve1Control1[0],
+      curve1Control1[1],
+      curve1Control2[0],
+      curve1Control2[1],
+      curve1End[0],
+      curve1End[1],
     );
     ctx.lineTo(line1[0], line1[1]);
     ctx.bezierCurveTo(
-      curve2Control1[0], curve2Control1[1],
-      curve2Control2[0], curve2Control2[1],
-      curve2End[0], curve2End[1],
+      curve2Control1[0],
+      curve2Control1[1],
+      curve2Control2[0],
+      curve2Control2[1],
+      curve2End[0],
+      curve2End[1],
     );
     ctx.lineTo(line2[0], line2[1]);
     ctx.lineTo(line3[0], line3[1]);
     ctx.bezierCurveTo(
-      curve3Control1[0], curve3Control1[1],
-      curve3Control2[0], curve3Control2[1],
-      curve3End[0], curve3End[1],
+      curve3Control1[0],
+      curve3Control1[1],
+      curve3Control2[0],
+      curve3Control2[1],
+      curve3End[0],
+      curve3End[1],
     );
     ctx.lineTo(start[0], start[1]);
     ctx.closePath();

@@ -58,7 +58,15 @@ import type { AbstractNode } from '@ant-design/icons-svg/es/types.js';
 import DingtalkOutlined from '@ant-design/icons-svg/es/asn/DingtalkOutlined.js';
 import type { CSSProperties, ReactElement } from 'react';
 import type { SimpleIcon } from 'simple-icons';
-import { siApple, siFigma, siGooglecalendar, siLine, siNotion, siSupabase, siVercel } from 'simple-icons';
+import {
+  siApple,
+  siFigma,
+  siGooglecalendar,
+  siLine,
+  siNotion,
+  siSupabase,
+  siVercel,
+} from 'simple-icons';
 import { shouldUseCurrentColorOnDark } from './mcp-brand-contrast.js';
 import type { McpCatalogEntry } from './mcp-catalog';
 

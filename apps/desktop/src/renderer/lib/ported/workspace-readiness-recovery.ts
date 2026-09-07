@@ -19,10 +19,7 @@
 
 import type { OnboardingState } from '@maka/core/onboarding';
 import type { UiLocale } from '@maka/core/ui-locale';
-import {
-  getOnboardingHeroCopy,
-  type OnboardingActionTarget,
-} from './onboarding-hero-copy.js';
+import { getOnboardingHeroCopy, type OnboardingActionTarget } from './onboarding-hero-copy.js';
 
 export interface WorkspaceReadinessRecovery {
   tone: 'warning' | 'destructive';

@@ -25,8 +25,8 @@
  * 描边透明度的做法(现在卡没有描边,只有一圈 ring)。
  */
 
-import { cn } from '../../lib/cn'
-import { listCardSurfaceClass } from './card-surface'
+import { cn } from '../../lib/cn';
+import { listCardSurfaceClass } from './card-surface';
 
 // 每张卡:[标题宽度, 整卡透明度]。透明度必须是字面量,Tailwind 扫不到拼接出来的类名。
 const CARD_CONFIGS = [
@@ -38,9 +38,9 @@ const CARD_CONFIGS = [
   ['w-1/2', 'opacity-30'],
   ['w-3/5', 'opacity-20'],
   ['w-1/2', 'opacity-10'],
-] as const
+] as const;
 
-const barClass = 'rounded-md bg-skeleton animate-pulse'
+const barClass = 'rounded-md bg-skeleton animate-pulse';
 
 export function ProjectsListSkeleton() {
   return (
@@ -65,5 +65,5 @@ export function ProjectsListSkeleton() {
         </div>
       ))}
     </div>
-  )
+  );
 }

@@ -74,8 +74,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             Something went wrong
           </h1>
           <p className="text-sm leading-5 text-text-secondary">
-            The interface stopped rendering. The report below has everything needed to file a
-            bug; the window keeps running, so nothing was lost.
+            The interface stopped rendering. The report below has everything needed to file a bug;
+            the window keeps running, so nothing was lost.
           </p>
           <p className="rounded-lg border border-hairline bg-surface-2 p-3 text-left font-mono text-xs leading-5 text-danger">
             {error.message || String(error)}

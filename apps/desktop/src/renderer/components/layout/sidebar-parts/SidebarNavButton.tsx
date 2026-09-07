@@ -50,7 +50,9 @@ export function SidebarNavButton(props: {
       )}
     >
       <div className="mr-2 flex h-8 w-7 shrink-0 items-center justify-center">{props.icon}</div>
-      <span className="min-w-0 flex-1 truncate text-left text-sm leading-[21px]">{props.label}</span>
+      <span className="min-w-0 flex-1 truncate text-left text-sm leading-[21px]">
+        {props.label}
+      </span>
       {props.trailing}
     </button>
   );

@@ -62,8 +62,10 @@ export function pickNewChatModel(input: {
       (entry) =>
         entry.connectionSlug === candidate.llmConnectionSlug && entry.model === candidate.model,
     );
-    if (choice &&
-      (candidate.llmConnectionId === undefined || candidate.llmConnectionId === choice.connectionId)) {
+    if (
+      choice &&
+      (candidate.llmConnectionId === undefined || candidate.llmConnectionId === choice.connectionId)
+    ) {
       return {
         llmConnectionId: choice.connectionId,
         llmConnectionSlug: choice.connectionSlug,

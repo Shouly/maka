@@ -17,7 +17,10 @@
  * under the License.
  */
 
-import { sessionRevisionFamilyId, visibleSessionRevisionMembers } from '@maka/core/session-revisions';
+import {
+  sessionRevisionFamilyId,
+  visibleSessionRevisionMembers,
+} from '@maka/core/session-revisions';
 
 import { type SessionSummary } from '@maka/core/session';
 

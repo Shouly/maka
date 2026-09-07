@@ -53,7 +53,10 @@ export function ComposerSelect(props: {
       </SelectTrigger>
       <SelectContent>
         {props.options.map((option) => (
-          <SelectItem key={option.value || DEFAULT_SENTINEL} value={option.value || DEFAULT_SENTINEL}>
+          <SelectItem
+            key={option.value || DEFAULT_SENTINEL}
+            value={option.value || DEFAULT_SENTINEL}
+          >
             {option.label}
           </SelectItem>
         ))}

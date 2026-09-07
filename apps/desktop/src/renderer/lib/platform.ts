@@ -28,7 +28,9 @@
 
 export type MakaPlatform = 'darwin' | 'win32' | 'linux';
 
-export function detectPlatform(platform: string = globalThis.navigator?.platform ?? ''): MakaPlatform {
+export function detectPlatform(
+  platform: string = globalThis.navigator?.platform ?? '',
+): MakaPlatform {
   if (/mac|iphone|ipad|ipod/i.test(platform)) return 'darwin';
   if (/win/i.test(platform)) return 'win32';
   return 'linux';

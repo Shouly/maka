@@ -34,10 +34,7 @@ import type { SidebarLayout } from '../../hooks/use-sidebar-layout.js';
 export const sidebarControlButtonClass =
   'sidebar-icon-btn maka-no-drag flex size-7 cursor-pointer items-center justify-center rounded-md text-sidebar-text-secondary hover:bg-sidebar-hover hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none';
 
-export function SidebarControls(props: {
-  layout: SidebarLayout;
-  onOpenSearch: () => void;
-}) {
+export function SidebarControls(props: { layout: SidebarLayout; onOpenSearch: () => void }) {
   const locale = useUiLocale();
   const chrome = getShellCopy(locale).chrome;
   const sidebar = getSidebarCopy(locale);

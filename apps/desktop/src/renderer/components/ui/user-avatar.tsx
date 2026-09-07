@@ -34,61 +34,60 @@
  * snippets — drift kills consistency and we lose the avatar_seed signal.
  */
 
-import Avvvatars from 'avvvatars-react'
+import Avvvatars from 'avvvatars-react';
 
-import { Anthropicon } from '../icons'
-import { cn } from '../../lib/cn'
-import { AVATAR_WARM_PAIRS, hashAvatarSeed } from '../../lib/avatar-warm-palette'
+import { Anthropicon } from '../icons';
+import { cn } from '../../lib/cn';
+import { AVATAR_WARM_PAIRS, hashAvatarSeed } from '../../lib/avatar-warm-palette';
 
 interface UserLike {
-  id?: string
-  email?: string | null
-  nickname?: string | null
-  full_name?: string | null
-  avatar_url?: string | null
-  avatar_seed?: string | null
+  id?: string;
+  email?: string | null;
+  nickname?: string | null;
+  full_name?: string | null;
+  avatar_url?: string | null;
+  avatar_seed?: string | null;
 }
 
 interface UserAvatarProps {
-  user: UserLike
-  size?: number
+  user: UserLike;
+  size?: number;
   /** Render the Notes-to-self tile (Bookmark icon on neutral bg). */
-  isSelf?: boolean
-  className?: string
+  isSelf?: boolean;
+  className?: string;
 }
 
 function deriveInitials(user: UserLike): string {
-  const nickname = user.nickname?.trim()
-  if (nickname) return nickname.slice(0, 2).toUpperCase()
+  const nickname = user.nickname?.trim();
+  if (nickname) return nickname.slice(0, 2).toUpperCase();
   // The reference design calls `getUserAvatarInitials`, which takes relx's
   // REST `User` shape. Maka has no such record, so the same rules are applied
   // to the fields this component already declares.
-  const fullName = user.full_name?.trim()
+  const fullName = user.full_name?.trim();
   if (fullName) {
-    if (fullName.length <= 3 && /^[A-Z]+$/.test(fullName)) return fullName
-    const words = fullName.split(/\s+/).filter(Boolean)
-    if (words.length >= 2) return words.slice(0, 2).map((word) => word[0].toUpperCase()).join('')
-    if (words.length === 1) return words[0].slice(0, 2).toUpperCase()
+    if (fullName.length <= 3 && /^[A-Z]+$/.test(fullName)) return fullName;
+    const words = fullName.split(/\s+/).filter(Boolean);
+    if (words.length >= 2)
+      return words
+        .slice(0, 2)
+        .map((word) => word[0].toUpperCase())
+        .join('');
+    if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
   }
-  const email = user.email?.trim()
-  if (email) return email.split('@')[0].slice(0, 2).toUpperCase()
-  return ''
+  const email = user.email?.trim();
+  if (email) return email.split('@')[0].slice(0, 2).toUpperCase();
+  return '';
 }
 
-export function UserAvatar({
-  user,
-  size = 36,
-  isSelf = false,
-  className,
-}: UserAvatarProps) {
-  const displayName = user.nickname || user.full_name || user.email || 'User'
+export function UserAvatar({ user, size = 36, isSelf = false, className }: UserAvatarProps) {
+  const displayName = user.nickname || user.full_name || user.email || 'User';
 
   if (isSelf) {
     return (
       <div
         className={cn(
           'rounded-full bg-fill-primary text-on-primary flex items-center justify-center flex-shrink-0',
-          className
+          className,
         )}
         style={{ width: size, height: size }}
         aria-label="Notes to self"
@@ -97,11 +96,11 @@ export function UserAvatar({
         {/* Anthropicon 没有 bookmark,"Notes to self" 取语义最近的 note */}
         <Anthropicon name="note" size={size >= 32 ? 20 : 16} />
       </div>
-    )
+    );
   }
 
   if (user.avatar_seed) {
-    const [bg, fg] = AVATAR_WARM_PAIRS[hashAvatarSeed(user.avatar_seed) % AVATAR_WARM_PAIRS.length]
+    const [bg, fg] = AVATAR_WARM_PAIRS[hashAvatarSeed(user.avatar_seed) % AVATAR_WARM_PAIRS.length];
     return (
       <div
         className={cn(
@@ -123,17 +122,12 @@ export function UserAvatar({
         aria-label={displayName}
         title={displayName}
       >
-        <Avvvatars
-          value={user.avatar_seed}
-          size={size}
-          style="shape"
-          radius={size}
-        />
+        <Avvvatars value={user.avatar_seed} size={size} style="shape" radius={size} />
       </div>
-    )
+    );
   }
 
-  const initials = deriveInitials(user) || '?'
+  const initials = deriveInitials(user) || '?';
 
   return (
     <div
@@ -151,5 +145,5 @@ export function UserAvatar({
     >
       {initials}
     </div>
-  )
+  );
 }

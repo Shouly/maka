@@ -313,7 +313,9 @@ export function Sidebar(props: SidebarProps) {
           {chip && (
             <button
               type="button"
-              onClick={() => (chip.kind === 'downloaded' ? updateStore.install() : updateStore.retry())}
+              onClick={() =>
+                chip.kind === 'downloaded' ? updateStore.install() : updateStore.retry()
+              }
               className={cn(
                 'mb-1 flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-sm leading-[21px] transition-colors hover:bg-sidebar-hover focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none',
                 chip.kind === 'downloaded' ? 'text-accent' : 'text-danger',
@@ -372,7 +374,8 @@ export function Sidebar(props: SidebarProps) {
               aria-hidden="true"
               className={cn(
                 'pointer-events-none absolute left-1/2 top-1/2 h-full max-h-12 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-sidebar-text-muted opacity-0 transition-[opacity,background-color,max-height] delay-200 duration-200 group-hover/resize:opacity-100 group-focus-visible/resize:max-h-none group-focus-visible/resize:bg-accent-fill group-focus-visible/resize:opacity-100 group-focus-visible/resize:delay-0',
-                layout.isResizing && 'max-h-12 bg-sidebar-text-secondary opacity-100 transition-none delay-0',
+                layout.isResizing &&
+                  'max-h-12 bg-sidebar-text-secondary opacity-100 transition-none delay-0',
               )}
             />
           </div>

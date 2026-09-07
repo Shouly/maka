@@ -26,15 +26,15 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { TOOL_ACTIVITY_KINDS, type ToolActivityKind, type ToolResultContent } from '@maka/core/events';
+import {
+  TOOL_ACTIVITY_KINDS,
+  type ToolActivityKind,
+  type ToolResultContent,
+} from '@maka/core/events';
 import type { StoredMessage, TurnStatus } from '@maka/core/session';
 import type { ToolActivityItem, TurnViewModel } from '@maka/ui';
 import { diffSyntaxTokens } from '@maka/ui';
-import {
-  createRevisionDraftStore,
-  revisionCopyId,
-  revisionRefusalFor,
-} from '../revision-draft.js';
+import { createRevisionDraftStore, revisionCopyId, revisionRefusalFor } from '../revision-draft.js';
 import { createContextUsageStore, projectContextUsage } from '../context-usage-store.js';
 import { createComposerDraftStore } from '../composer-draft-store.js';
 import { reorderQueue } from '../../components/session/MessageQueue.js';
@@ -81,10 +81,9 @@ function turn(overrides: Partial<TurnViewModel> = {}): TurnViewModel {
   };
 }
 
-function userMessage(overrides: Record<string, unknown> = {}): Extract<
-  StoredMessage,
-  { type: 'user' }
-> {
+function userMessage(
+  overrides: Record<string, unknown> = {},
+): Extract<StoredMessage, { type: 'user' }> {
   return {
     type: 'user',
     id: 'message-1',
@@ -156,7 +155,10 @@ test('a sandbox denial is its own row status, not a generic error', () => {
   });
   assert.equal(toolRowStatus(denied), 'sandbox_blocked');
   // The same failure without the signal stays an ordinary error.
-  assert.equal(toolRowStatus(tool({ status: 'errored', result: { kind: 'text', text: 'nope' } })), 'errored');
+  assert.equal(
+    toolRowStatus(tool({ status: 'errored', result: { kind: 'text', text: 'nope' } })),
+    'errored',
+  );
 });
 
 test('a shell run reads its presentation status from the run, not the call', () => {
@@ -502,7 +504,16 @@ test('a usage read that lands after the task changed is dropped', async () => {
   stop();
   store.observe('s2');
   await Promise.resolve();
-  resolveFirst?.({ ok: true, data: { status: 'available', providerId: 'p', modelId: 'first', completedAt: 0, inputTokens: 1 } });
+  resolveFirst?.({
+    ok: true,
+    data: {
+      status: 'available',
+      providerId: 'p',
+      modelId: 'first',
+      completedAt: 0,
+      inputTokens: 1,
+    },
+  });
   await new Promise((resolve) => setTimeout(resolve, 0));
   const settled = store.getState().data;
   assert.ok(settled && settled.status === 'available');

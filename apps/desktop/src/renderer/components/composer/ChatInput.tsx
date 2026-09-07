@@ -477,7 +477,8 @@ function OwnedChatInput(props: {
     }
   };
 
-  const hasChips = draft.attachments.length > 0 || draft.directories.length > 0 || quotes.length > 0;
+  const hasChips =
+    draft.attachments.length > 0 || draft.directories.length > 0 || quotes.length > 0;
 
   return (
     <div
@@ -559,7 +560,9 @@ function OwnedChatInput(props: {
                         type="button"
                         disabled={disabled}
                         aria-label={copy.attachments.remove(item.displayName)}
-                        onClick={() => composerInputStore.removeAttachment(scopeKey, item.stagingKey)}
+                        onClick={() =>
+                          composerInputStore.removeAttachment(scopeKey, item.stagingKey)
+                        }
                         className={CHIP_REMOVE_CLASS}
                       >
                         <Anthropicon name="x" size={16} />
@@ -905,7 +908,11 @@ function GoalControl(props: {
     }
     const maxIterations = Number(iterations);
     const tokenBudget = budget.trim() ? Number(budget) : undefined;
-    if (!Number.isInteger(maxIterations) || maxIterations < 1 || maxIterations > GOAL_MAX_ITERATIONS) {
+    if (
+      !Number.isInteger(maxIterations) ||
+      maxIterations < 1 ||
+      maxIterations > GOAL_MAX_ITERATIONS
+    ) {
       setFieldError(copy.iterationsInvalid);
       return;
     }

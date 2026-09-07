@@ -61,7 +61,11 @@ export function SidebarGroupModeMenu(props: {
         <button
           type="button"
           aria-label={props.copy.groupBy}
-          className={cn(labelActionButtonClass, 'cursor-pointer', open && 'bg-sidebar-menu-hover text-sidebar-text-primary')}
+          className={cn(
+            labelActionButtonClass,
+            'cursor-pointer',
+            open && 'bg-sidebar-menu-hover text-sidebar-text-primary',
+          )}
         >
           <Anthropicon name="filter" />
         </button>

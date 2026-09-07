@@ -17,12 +17,7 @@
  * under the License.
  */
 
-import type {
-  AutomationModule,
-  ExtensionModule,
-  NavModuleMemory,
-  NavSelection,
-} from '@maka/ui';
+import type { AutomationModule, ExtensionModule, NavModuleMemory, NavSelection } from '@maka/ui';
 import { safeLocalStorageGet } from './browser-storage.js';
 
 export type NavigationState = {
@@ -73,8 +68,12 @@ function parseModuleMemory(value: unknown): NavModuleMemory {
   if (!value || typeof value !== 'object') return { ...DEFAULT_MODULE_MEMORY };
   const candidate = value as { extensions?: unknown; automations?: unknown };
   return {
-    extensions: isExtensionModule(candidate.extensions) ? candidate.extensions : DEFAULT_MODULE_MEMORY.extensions,
-    automations: isAutomationModule(candidate.automations) ? candidate.automations : DEFAULT_MODULE_MEMORY.automations,
+    extensions: isExtensionModule(candidate.extensions)
+      ? candidate.extensions
+      : DEFAULT_MODULE_MEMORY.extensions,
+    automations: isAutomationModule(candidate.automations)
+      ? candidate.automations
+      : DEFAULT_MODULE_MEMORY.automations,
   };
 }
 
@@ -98,9 +97,10 @@ export function parseNavigationState(raw: string | null): NavigationState {
   if (!raw) return defaultNavigationState();
   try {
     const parsed = JSON.parse(raw) as unknown;
-    const candidate = parsed && typeof parsed === 'object'
-      ? parsed as { selection?: unknown; moduleMemory?: unknown }
-      : null;
+    const candidate =
+      parsed && typeof parsed === 'object'
+        ? (parsed as { selection?: unknown; moduleMemory?: unknown })
+        : null;
     const selection = parseSelection(candidate?.selection ?? parsed);
     if (!selection) return defaultNavigationState();
     return selectNavigation(

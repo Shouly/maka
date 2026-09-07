@@ -21,23 +21,21 @@
  * Label 标签组件 - 简化版本，不依赖额外包
  */
 
-import * as React from "react"
-import { cn } from "../../lib/cn"
+import * as React from 'react';
+import { cn } from '../../lib/cn';
 
-export type LabelProps = React.LabelHTMLAttributes<HTMLLabelElement>
+export type LabelProps = React.LabelHTMLAttributes<HTMLLabelElement>;
 
-const Label = React.forwardRef<HTMLLabelElement, LabelProps>(
-  ({ className, ...props }, ref) => (
-    <label
-      ref={ref}
-      className={cn(
-        "text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
-        className
-      )}
-      {...props}
-    />
-  )
-)
-Label.displayName = "Label"
+const Label = React.forwardRef<HTMLLabelElement, LabelProps>(({ className, ...props }, ref) => (
+  <label
+    ref={ref}
+    className={cn(
+      'text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70',
+      className,
+    )}
+    {...props}
+  />
+));
+Label.displayName = 'Label';
 
-export { Label }
+export { Label };

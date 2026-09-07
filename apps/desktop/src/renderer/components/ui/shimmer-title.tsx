@@ -17,7 +17,6 @@
  * under the License.
  */
 
-
 import React from 'react';
 import { TextShimmer } from './text-shimmer';
 
@@ -31,44 +30,40 @@ interface ShimmerTitleProps {
 }
 
 // 专门用于工具标题的shimmer组件
-export const ShimmerTitle = React.memo(function ShimmerTitle({
-  title,
-  isLoading = true,
-  className = "text-sm flex-1 min-w-0 truncate",
-  duration = 2,
-  spread = 3,
-  as = 'span'
-}: ShimmerTitleProps) {
-  if (!isLoading) {
-    const Component = as;
-    return (
-      // 和 TextShimmer 的基色同为 text-secondary:加载结束时标题不该换颜色。
-      // 原来这里是 text-muted-foreground、扫光基色却是 accent-foreground,
-      // 两者差一档,"Thinking…" 停下的瞬间会跳一下。
-      <Component className={`${className} text-text-secondary`}>
-        {title}
-      </Component>
-    );
-  }
+export const ShimmerTitle = React.memo(
+  function ShimmerTitle({
+    title,
+    isLoading = true,
+    className = 'text-sm flex-1 min-w-0 truncate',
+    duration = 2,
+    spread = 3,
+    as = 'span',
+  }: ShimmerTitleProps) {
+    if (!isLoading) {
+      const Component = as;
+      return (
+        // 和 TextShimmer 的基色同为 text-secondary:加载结束时标题不该换颜色。
+        // 原来这里是 text-muted-foreground、扫光基色却是 accent-foreground,
+        // 两者差一档,"Thinking…" 停下的瞬间会跳一下。
+        <Component className={`${className} text-text-secondary`}>{title}</Component>
+      );
+    }
 
-  return (
-    <TextShimmer
-      duration={duration}
-      spread={spread}
-      className={className}
-      as={as}
-    >
-      {title}
-    </TextShimmer>
-  );
-}, (prevProps, nextProps) => {
-  // 🎯 自定义比较：只比较真正影响渲染的属性
-  return (
-    prevProps.title === nextProps.title &&
-    prevProps.isLoading === nextProps.isLoading &&
-    prevProps.className === nextProps.className &&
-    prevProps.duration === nextProps.duration &&
-    prevProps.spread === nextProps.spread &&
-    prevProps.as === nextProps.as
-  );
-});
+    return (
+      <TextShimmer duration={duration} spread={spread} className={className} as={as}>
+        {title}
+      </TextShimmer>
+    );
+  },
+  (prevProps, nextProps) => {
+    // 🎯 自定义比较：只比较真正影响渲染的属性
+    return (
+      prevProps.title === nextProps.title &&
+      prevProps.isLoading === nextProps.isLoading &&
+      prevProps.className === nextProps.className &&
+      prevProps.duration === nextProps.duration &&
+      prevProps.spread === nextProps.spread &&
+      prevProps.as === nextProps.as
+    );
+  },
+);

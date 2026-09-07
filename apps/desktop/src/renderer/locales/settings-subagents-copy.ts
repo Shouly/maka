@@ -168,9 +168,18 @@ const SETTINGS_SUBAGENTS_COPY_BY_LOCALE = {
       rejected: '配置没有被保存。请确认名称长度和配置数量都在上限之内。',
     },
     profiles: {
-      local_read: { label: '代码阅读', description: '只读访问当前工作区，适合搜索、理解和总结代码。' },
-      web_research: { label: '网络研究', description: '只使用联网搜索，适合查找外部资料和最新信息。' },
-      implementation: { label: '实现代码', description: '可以读写文件并执行命令，在隔离 worktree 中完成改动。' },
+      local_read: {
+        label: '代码阅读',
+        description: '只读访问当前工作区，适合搜索、理解和总结代码。',
+      },
+      web_research: {
+        label: '网络研究',
+        description: '只使用联网搜索，适合查找外部资料和最新信息。',
+      },
+      implementation: {
+        label: '实现代码',
+        description: '可以读写文件并执行命令，在隔离 worktree 中完成改动。',
+      },
     },
     thinking: {
       off: '关闭',
@@ -226,7 +235,8 @@ const SETTINGS_SUBAGENTS_COPY_BY_LOCALE = {
       model: '模型',
       thinking: '思考級別',
       defaultThinking: '跟隨模型預設',
-      implementationWarning: '實現程式碼 Profile 可以寫檔案和執行命令，並會在隔離 worktree 中執行。',
+      implementationWarning:
+        '實現程式碼 Profile 可以寫檔案和執行命令，並會在隔離 worktree 中執行。',
       noConnection: '請先在“模型”頁啟用一個模型連線。',
       noModel: '所選連線沒有已啟用的模型。',
       requiredName: '請輸入顯示名稱。',
@@ -250,9 +260,18 @@ const SETTINGS_SUBAGENTS_COPY_BY_LOCALE = {
       rejected: '設定沒有被儲存。請確認名稱長度和設定數量都在上限之內。',
     },
     profiles: {
-      local_read: { label: '程式碼閱讀', description: '只讀存取目前工作區，適合搜尋、理解和總結程式碼。' },
-      web_research: { label: '網路研究', description: '只使用聯網搜尋，適合查詢外部資料和最新資訊。' },
-      implementation: { label: '實現程式碼', description: '可以讀寫檔案並執行命令，在隔離 worktree 中完成改動。' },
+      local_read: {
+        label: '程式碼閱讀',
+        description: '只讀存取目前工作區，適合搜尋、理解和總結程式碼。',
+      },
+      web_research: {
+        label: '網路研究',
+        description: '只使用聯網搜尋，適合查詢外部資料和最新資訊。',
+      },
+      implementation: {
+        label: '實現程式碼',
+        description: '可以讀寫檔案並執行命令，在隔離 worktree 中完成改動。',
+      },
     },
     thinking: {
       off: '關閉',
@@ -270,7 +289,8 @@ const SETTINGS_SUBAGENTS_COPY_BY_LOCALE = {
       count: (total) => `${total} presets`,
       add: 'Add subagent',
       emptyTitle: 'No subagent presets yet',
-      emptyDescription: 'Add a preset so the main agent can delegate suitable work to a separate model.',
+      emptyDescription:
+        'Add a preset so the main agent can delegate suitable work to a separate model.',
     },
     row: {
       enabled: 'Enabled',
@@ -288,18 +308,21 @@ const SETTINGS_SUBAGENTS_COPY_BY_LOCALE = {
       createSubtitle: 'Create a model preset that the main agent can select automatically.',
       editSubtitle: 'Change its usage guidance, capability boundary, and model route.',
       groupPurpose: 'Purpose',
-      groupPurposeHelp: 'The main agent selects a preset primarily from the name and guidance here.',
+      groupPurposeHelp:
+        'The main agent selects a preset primarily from the name and guidance here.',
       groupRoute: 'Capability and model',
       groupRouteHelp: 'Fix what this subagent may do, and which model it runs on.',
       dangerZone: 'Remove subagent',
       dangerZoneHelp: 'This cannot be undone.',
       delete: 'Remove',
       enabled: 'Enabled',
-      enabledDescription: 'Turn this off to keep the preset without letting the main agent select it.',
+      enabledDescription:
+        'Turn this off to keep the preset without letting the main agent select it.',
       name: 'Display name',
       namePlaceholder: 'Fast code reader',
       id: 'subagent_id',
-      idDescription: 'Stable after creation. The main agent and task history use it to identify this preset.',
+      idDescription:
+        'Stable after creation. The main agent and task history use it to identify this preset.',
       idPlaceholder: 'fast-reader',
       description: 'When to use',
       descriptionPlaceholder: 'Fast, low-cost exploration of large repositories',
@@ -308,11 +331,13 @@ const SETTINGS_SUBAGENTS_COPY_BY_LOCALE = {
       model: 'Model',
       thinking: 'Thinking level',
       defaultThinking: 'Use model default',
-      implementationWarning: 'The Implementation profile can write files and run commands inside an isolated worktree.',
+      implementationWarning:
+        'The Implementation profile can write files and run commands inside an isolated worktree.',
       noConnection: 'Enable a model connection on the Models page first.',
       noModel: 'The selected connection has no enabled models.',
       requiredName: 'Enter a display name.',
-      invalidId: (max) => `Use only letters, numbers, dots, underscores, colons, and hyphens, up to ${max} characters.`,
+      invalidId: (max) =>
+        `Use only letters, numbers, dots, underscores, colons, and hyphens, up to ${max} characters.`,
       duplicateId: 'That subagent_id already exists.',
       invalidConnection: 'Select an enabled model connection.',
       invalidModel: 'Select an enabled model.',
@@ -323,18 +348,30 @@ const SETTINGS_SUBAGENTS_COPY_BY_LOCALE = {
     },
     remove: {
       title: (name) => `Remove “${name}”?`,
-      description: 'The main agent will no longer see this preset. Existing child tasks are not deleted.',
+      description:
+        'The main agent will no longer see this preset. Existing child tasks are not deleted.',
       confirm: 'Remove',
       cancel: 'Cancel',
     },
     toast: {
       saveFailed: 'Failed to save subagent presets',
-      rejected: 'The preset was not saved. Check that its name length and the preset count are within their limits.',
+      rejected:
+        'The preset was not saved. Check that its name length and the preset count are within their limits.',
     },
     profiles: {
-      local_read: { label: 'Code reading', description: 'Read-only access to the current workspace for search, understanding, and summaries.' },
-      web_research: { label: 'Web research', description: 'Web search only, for external sources and current information.' },
-      implementation: { label: 'Implementation', description: 'Read and write files and run commands in an isolated worktree.' },
+      local_read: {
+        label: 'Code reading',
+        description:
+          'Read-only access to the current workspace for search, understanding, and summaries.',
+      },
+      web_research: {
+        label: 'Web research',
+        description: 'Web search only, for external sources and current information.',
+      },
+      implementation: {
+        label: 'Implementation',
+        description: 'Read and write files and run commands in an isolated worktree.',
+      },
     },
     thinking: {
       off: 'Off',

@@ -67,9 +67,7 @@ import {
  * (`packages/runtime/src/mcp-tools.ts`). Splitting it back out is how a row
  * says which server answered without the transcript carrying a second field.
  */
-export function parseMcpToolName(
-  name: string,
-): { serverId: string; toolName: string } | undefined {
+export function parseMcpToolName(name: string): { serverId: string; toolName: string } | undefined {
   if (!name.startsWith('mcp__')) return undefined;
   const rest = name.slice('mcp__'.length);
   const separator = rest.indexOf('__');
@@ -148,9 +146,7 @@ export const ToolRow = memo(function ToolRow(props: ToolRowProps) {
           <button
             type="button"
             aria-expanded={expanded}
-            aria-label={
-              expanded ? copy.tools.collapse(title) : copy.tools.expand(title)
-            }
+            aria-label={expanded ? copy.tools.collapse(title) : copy.tools.expand(title)}
             onClick={() => setExpanded((open) => !open)}
             className={cn(stepBodyClass, stepBodyInteractiveClass)}
           >

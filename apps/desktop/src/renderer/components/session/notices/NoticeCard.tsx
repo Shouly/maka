@@ -70,7 +70,10 @@ export function NoticeCard(props: {
   return (
     <div
       role={role}
-      className={cn('flex w-full items-start gap-3 rounded-xl border p-3', TONE_SURFACE[props.tone])}
+      className={cn(
+        'flex w-full items-start gap-3 rounded-xl border p-3',
+        TONE_SURFACE[props.tone],
+      )}
     >
       <Anthropicon
         name={TONE_GLYPH[props.tone]}

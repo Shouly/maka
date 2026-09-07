@@ -74,7 +74,12 @@ import {
 import { openPath } from '../../bridge/app.js';
 import { previewSessionRemoval } from '../../bridge/sessions.js';
 import { testNetworkProxy } from '../../bridge/settings.js';
-import { revealProject, archiveProject, restoreProject, renameProject } from '../../bridge/projects.js';
+import {
+  revealProject,
+  archiveProject,
+  restoreProject,
+  renameProject,
+} from '../../bridge/projects.js';
 import { getShellCopy, localizedShellErrorMessage } from '../../locales/shell-copy.js';
 import { getSidebarCopy } from '../../locales/sidebar-copy.js';
 import { getSharedPlaceholderCopy } from '../../locales/placeholder-copy.js';
@@ -160,17 +165,14 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
     setDebugOpen(false);
   }, []);
 
-  const selectModule = useCallback(
-    (module: 'sessions' | 'skills' | 'mcp' | 'scheduled-tasks') => {
-      uiStore.closeSettings();
-      setDebugOpen(false);
-      if (module === 'sessions') uiStore.navigate({ section: 'sessions' });
-      else if (module === 'scheduled-tasks')
-        uiStore.navigate({ section: 'automations', module: 'scheduled-tasks' });
-      else uiStore.navigate({ section: 'extensions', module });
-    },
-    [],
-  );
+  const selectModule = useCallback((module: 'sessions' | 'skills' | 'mcp' | 'scheduled-tasks') => {
+    uiStore.closeSettings();
+    setDebugOpen(false);
+    if (module === 'sessions') uiStore.navigate({ section: 'sessions' });
+    else if (module === 'scheduled-tasks')
+      uiStore.navigate({ section: 'automations', module: 'scheduled-tasks' });
+    else uiStore.navigate({ section: 'extensions', module });
+  }, []);
 
   useShellHotkeys({
     palette: () => setPaletteOpen((open) => !open),
@@ -267,7 +269,9 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
           );
       },
       onArchive: (row: SessionListRow, archived: boolean) => {
-        const operation = archived ? sessionsStore.archive(row.id) : sessionsStore.unarchive(row.id);
+        const operation = archived
+          ? sessionsStore.archive(row.id)
+          : sessionsStore.unarchive(row.id);
         void operation.catch((error) =>
           reportError(
             archived
@@ -519,7 +523,9 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
         onOpenChange={(open) => {
           if (!open) setPendingDelete(null);
         }}
-        title={pendingDelete ? shell.sessionRowActions.deleteTitle(pendingDelete.row.displayName) : ''}
+        title={
+          pendingDelete ? shell.sessionRowActions.deleteTitle(pendingDelete.row.displayName) : ''
+        }
         description={
           pendingDelete && pendingDelete.count > 1
             ? `${shell.sessionRowActions.deleteDescription} ${shell.sessionRowActions.deletedSubtaskNote(pendingDelete.count)}`
@@ -534,7 +540,8 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
           if (!target) return;
           try {
             await sessionsStore.remove(target.row.id, { revisionFamily: true });
-            if (sessionsStore.getState().activeId === target.row.id) sessionsStore.select(undefined);
+            if (sessionsStore.getState().activeId === target.row.id)
+              sessionsStore.select(undefined);
             toast({
               title: shell.sessionRowActions.deletedTitle(target.row.displayName),
               variant: 'success',

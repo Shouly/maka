@@ -28,7 +28,7 @@
  * padding 得由它拿着,否则边上一圈 16px 点不动。所以 surface 和 body 分开。
  */
 export const cardSurfaceClass =
-  'rounded-2xl border border-hairline bg-surface-3 shadow-[var(--card-shadow)] transition-all duration-200'
+  'rounded-2xl border border-hairline bg-surface-3 shadow-[var(--card-shadow)] transition-all duration-200';
 
 /**
  * hover:描边加深一档,投影**换成**更远更散的一层(不是在静止态上叠加)。
@@ -41,10 +41,10 @@ export const cardSurfaceClass =
  * 主题下是近黑的 #141413),描边会比预期深一大截,而且只在 hover 时才露出来。
  */
 export const cardSurfaceHoverClass =
-  'hover:border-border-strong hover:shadow-[var(--card-shadow-hover)]'
+  'hover:border-border-strong hover:shadow-[var(--card-shadow-hover)]';
 
 /** 卡内容的排布。真卡的 button 与 skeleton 共用,免得两者长歪。 */
-export const cardBodyClass = 'flex h-full flex-col gap-3 p-4'
+export const cardBodyClass = 'flex h-full flex-col gap-3 p-4';
 
 /* ------------------------------------------------------------------ *
  * 列表页卡片(projects / agents / knowledge bases / schedules / ...)
@@ -70,35 +70,33 @@ export const cardBodyClass = 'flex h-full flex-col gap-3 p-4'
 // 字号压在卡上(而不是只压在每个子元素上):否则卡内任何没显式带 text-sm 的
 // 文字都会继承页面的 16px。Cowork 的卡本身就带 text-body。
 export const listCardSurfaceClass =
-  'flex h-full w-full flex-col gap-2 rounded-xl bg-surface-1 p-4 text-sm leading-5 shadow-[inset_0_0_0_1px_var(--hairline)]'
+  'flex h-full w-full flex-col gap-2 rounded-xl bg-surface-1 p-4 text-sm leading-5 shadow-[inset_0_0_0_1px_var(--hairline)]';
 
 /** 可点的卡。骨架屏用上面那个静态版,免得骨架也跟着 hover 变色。 */
-export const listCardClass = `${listCardSurfaceClass} outline-none hover:bg-surface-2 focus-visible:shadow-[var(--sidebar-focus-shadow)]`
+export const listCardClass = `${listCardSurfaceClass} outline-none hover:bg-surface-2 focus-visible:shadow-[var(--sidebar-focus-shadow)]`;
 
 /** 卡外壳:hover 组的锚点、⋯ 的定位基准、按下时整卡回弹。 */
 export const listCardShellClass =
-  'group relative h-full transition-transform duration-200 ease-[cubic-bezier(.165,.84,.44,1)] has-[a:active]:scale-[0.98] has-[a:active]:duration-[var(--dur-fast)]'
+  'group relative h-full transition-transform duration-200 ease-[cubic-bezier(.165,.84,.44,1)] has-[a:active]:scale-[0.98] has-[a:active]:duration-[var(--dur-fast)]';
 
 /**
  * ⋯ 槽位。纯 CSS 浮现,别再拿 isHovered/isMenuActive 两个 state 驱动 —— 那会让
  * 每张卡在指针经过时重渲染一次。菜单展开中靠 Radix 写的 aria-expanded 保持可见。
  */
 export const listCardActionsSlotClass =
-  'absolute right-3 top-3 opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100 has-[[aria-expanded=true]]:opacity-100'
+  'absolute right-3 top-3 opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100 has-[[aria-expanded=true]]:opacity-100';
 
 /** pr-10 是给 ⋯ 让位:它 32px 宽、距右 12px,吃掉内容区 28px。 */
-export const listCardTitleRowClass = 'flex items-center gap-2 overflow-hidden pr-10'
+export const listCardTitleRowClass = 'flex items-center gap-2 overflow-hidden pr-10';
 
-export const listCardTitleClass =
-  'truncate text-sm font-medium leading-5 text-text-primary'
+export const listCardTitleClass = 'truncate text-sm font-medium leading-5 text-text-primary';
 
 /** 描述为空时**不要渲染这个元素**:Cowork 的无描述卡直接塌到 77px,不留空行。 */
-export const listCardDescClass =
-  'mb-4 line-clamp-3 text-sm leading-5 text-text-secondary'
+export const listCardDescClass = 'mb-4 line-clamp-3 text-sm leading-5 text-text-secondary';
 
 /** 13px/17 这档 Tailwind 没有,对应 CDS 的 text-footnote。 */
 export const listCardFooterClass =
-  'mt-auto flex items-center justify-between text-[13px] leading-[17px] text-text-muted'
+  'mt-auto flex items-center justify-between text-[13px] leading-[17px] text-text-muted';
 
 /* ------------------------------------------------------------------ *
  * 带缩略图的列表卡(files)。几何取自 Claude artifacts 列表实测。
@@ -111,16 +109,16 @@ export const listCardFooterClass =
  * ------------------------------------------------------------------ */
 
 export const mediaCardSurfaceClass =
-  'relative flex h-full flex-col overflow-hidden rounded-xl bg-surface-2 text-sm leading-5 group-hover:bg-surface-1 after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:shadow-[inset_0_0_0_1px_var(--hairline)] after:content-[""]'
+  'relative flex h-full flex-col overflow-hidden rounded-xl bg-surface-2 text-sm leading-5 group-hover:bg-surface-1 after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:shadow-[inset_0_0_0_1px_var(--hairline)] after:content-[""]';
 
 /** 缩略图区。**定高 160**,不是 aspect-*。 */
-export const mediaCardThumbClass = 'relative h-[160px] select-none overflow-hidden'
+export const mediaCardThumbClass = 'relative h-[160px] select-none overflow-hidden';
 
 /** 缩略图与信息区之间的分隔线。mx-px 让它不压到卡的 ring 上;1px 是实测值。 */
-export const mediaCardDividerClass = 'mx-px border-t-[1px] border-alpha-1'
+export const mediaCardDividerClass = 'mx-px border-t-[1px] border-alpha-1';
 
-export const mediaCardBodyClass = 'flex flex-1 flex-col gap-2 p-3.5'
+export const mediaCardBodyClass = 'flex flex-1 flex-col gap-2 p-3.5';
 
 /** 12/17 = CDS text-caption,比纯文字卡页脚的 13/17 再小一档。 */
 export const mediaCardMetaClass =
-  'mt-auto flex items-center gap-1 text-[12px] leading-[17px] text-text-muted'
+  'mt-auto flex items-center gap-1 text-[12px] leading-[17px] text-text-muted';

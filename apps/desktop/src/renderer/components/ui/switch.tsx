@@ -17,13 +17,13 @@
  * under the License.
  */
 
-import * as React from "react"
-import * as SwitchPrimitives from "@radix-ui/react-switch"
+import * as React from 'react';
+import * as SwitchPrimitives from '@radix-ui/react-switch';
 
-import { cn } from "../../lib/cn"
+import { cn } from '../../lib/cn';
 
 interface SwitchProps extends React.ComponentPropsWithoutRef<typeof SwitchPrimitives.Root> {
-  size?: 'sm' | 'default'
+  size?: 'sm' | 'default';
 }
 
 /**
@@ -41,55 +41,55 @@ interface SwitchProps extends React.ComponentPropsWithoutRef<typeof SwitchPrimit
  * 关态**不用描边**:原来是 bg-secondary(#e8e6dc 暖米)+ 0.5px ring,在浅底上
  * 轨道本体几乎看不见,全靠那圈 ring 撑出形状。改成实心 alpha 后形状自己成立。
  */
-const Switch = React.forwardRef<
-  React.ComponentRef<typeof SwitchPrimitives.Root>,
-  SwitchProps
->(({ className, size = 'default', ...props }, ref) => {
-  // 两档都是把上面那条公式代进去。! sm 的 h 是 **18 不是 16**。
-  const sizeClasses = {
-    sm: {
-      root: "h-[18px] w-[32.4px]",
-      thumb: "size-3.5 data-[state=checked]:translate-x-[14.4px] data-[state=unchecked]:translate-x-0",
-    },
-    default: {
-      root: "h-5 w-9",
-      thumb: "size-4 data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0",
-    },
-  }
+const Switch = React.forwardRef<React.ComponentRef<typeof SwitchPrimitives.Root>, SwitchProps>(
+  ({ className, size = 'default', ...props }, ref) => {
+    // 两档都是把上面那条公式代进去。! sm 的 h 是 **18 不是 16**。
+    const sizeClasses = {
+      sm: {
+        root: 'h-[18px] w-[32.4px]',
+        thumb:
+          'size-3.5 data-[state=checked]:translate-x-[14.4px] data-[state=unchecked]:translate-x-0',
+      },
+      default: {
+        root: 'h-5 w-9',
+        thumb: 'size-4 data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0',
+      },
+    };
 
-  const sizes = sizeClasses[size]
+    const sizes = sizeClasses[size];
 
-  return (
-    <SwitchPrimitives.Root
-      className={cn(
-        "group/switch peer inline-flex shrink-0 cursor-pointer items-center rounded-full p-0.5 outline-none transition-colors",
-        // 变体顺序:状态在前、hover 在后(与 Cowork 的 data-[checked]:hover: 一致)。
-        // 反过来写 hover:data-[state=...] 特异性相同但排序更靠前,会被后面的
-        // 静止态规则盖掉 —— hover 就完全不生效。
-        "data-[state=unchecked]:bg-alpha-3 data-[state=unchecked]:hover:bg-alpha-4",
-        "data-[state=checked]:bg-accent-fill data-[state=checked]:hover:bg-accent-fill-hover",
-        // 禁用态取消 hover,否则鼠标移上去仍会变色
-        "disabled:hover:bg-alpha-3 data-[state=checked]:disabled:hover:bg-accent-fill",
-        "focus-visible:shadow-[var(--sidebar-focus-shadow)]",
-        "disabled:cursor-not-allowed disabled:opacity-50",
-        sizes.root,
-        className
-      )}
-      {...props}
-      ref={ref}
-    >
-      <SwitchPrimitives.Thumb
+    return (
+      <SwitchPrimitives.Root
         className={cn(
-          // 回弹缓动取自 Cowork 的 knob(ease-overshoot)。
-          // ! 投影别写成 Tailwind 的 shadow-sm:同名两仓不同值,上游那一组
-          //   就是本仓的 --card-shadow。
-          "pointer-events-none block rounded-full bg-surface-2 shadow-[var(--card-shadow)] transition-transform duration-200 ease-[cubic-bezier(.2,1.3,.6,1)]",
-          sizes.thumb
+          'group/switch peer inline-flex shrink-0 cursor-pointer items-center rounded-full p-0.5 outline-none transition-colors',
+          // 变体顺序:状态在前、hover 在后(与 Cowork 的 data-[checked]:hover: 一致)。
+          // 反过来写 hover:data-[state=...] 特异性相同但排序更靠前,会被后面的
+          // 静止态规则盖掉 —— hover 就完全不生效。
+          'data-[state=unchecked]:bg-alpha-3 data-[state=unchecked]:hover:bg-alpha-4',
+          'data-[state=checked]:bg-accent-fill data-[state=checked]:hover:bg-accent-fill-hover',
+          // 禁用态取消 hover,否则鼠标移上去仍会变色
+          'disabled:hover:bg-alpha-3 data-[state=checked]:disabled:hover:bg-accent-fill',
+          'focus-visible:shadow-[var(--sidebar-focus-shadow)]',
+          'disabled:cursor-not-allowed disabled:opacity-50',
+          sizes.root,
+          className,
         )}
-      />
-    </SwitchPrimitives.Root>
-  )
-})
-Switch.displayName = SwitchPrimitives.Root.displayName
+        {...props}
+        ref={ref}
+      >
+        <SwitchPrimitives.Thumb
+          className={cn(
+            // 回弹缓动取自 Cowork 的 knob(ease-overshoot)。
+            // ! 投影别写成 Tailwind 的 shadow-sm:同名两仓不同值,上游那一组
+            //   就是本仓的 --card-shadow。
+            'pointer-events-none block rounded-full bg-surface-2 shadow-[var(--card-shadow)] transition-transform duration-200 ease-[cubic-bezier(.2,1.3,.6,1)]',
+            sizes.thumb,
+          )}
+        />
+      </SwitchPrimitives.Root>
+    );
+  },
+);
+Switch.displayName = SwitchPrimitives.Root.displayName;
 
-export { Switch }
+export { Switch };

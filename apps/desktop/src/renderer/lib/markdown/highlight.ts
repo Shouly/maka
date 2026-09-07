@@ -38,16 +38,14 @@
 
 /** 把后端返回的高亮 HTML sanitize 成安全可渲染的字符串 */
 export function sanitizeHighlight(input: string | null | undefined): string {
-  if (!input) return ""
+  if (!input) return '';
   // 1. 全量 escape: 任何 HTML 特殊字符都被 escape, 一切标签变文本
   const escaped = input
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;")
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
   // 2. 只把 escape 后的 <mark> / </mark> 反转回真标签
-  return escaped
-    .replace(/&lt;mark&gt;/g, "<mark>")
-    .replace(/&lt;\/mark&gt;/g, "</mark>")
+  return escaped.replace(/&lt;mark&gt;/g, '<mark>').replace(/&lt;\/mark&gt;/g, '</mark>');
 }

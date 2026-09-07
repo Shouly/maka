@@ -17,23 +17,19 @@
  * under the License.
  */
 
-import * as SelectPrimitive from "@radix-ui/react-select"
-import * as React from "react"
+import * as SelectPrimitive from '@radix-ui/react-select';
+import * as React from 'react';
 
-import { Anthropicon } from '../icons/Anthropicon'
-import { cn } from "../../lib/cn"
-import { fieldSurfaceClass } from "./field-surface"
-import {
-  menuContentClass,
-  menuItemClass,
-  menuSeparatorClass,
-} from "./menu-variants"
+import { Anthropicon } from '../icons/Anthropicon';
+import { cn } from '../../lib/cn';
+import { fieldSurfaceClass } from './field-surface';
+import { menuContentClass, menuItemClass, menuSeparatorClass } from './menu-variants';
 
-const Select = SelectPrimitive.Root
+const Select = SelectPrimitive.Root;
 
-const SelectGroup = SelectPrimitive.Group
+const SelectGroup = SelectPrimitive.Group;
 
-const SelectValue = SelectPrimitive.Value
+const SelectValue = SelectPrimitive.Value;
 
 const SelectTrigger = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Trigger>,
@@ -46,12 +42,12 @@ const SelectTrigger = React.forwardRef<
       // 长成两个样。原来是 h-10(40px) + 真 border + bg-background(页面底色),
       // 比同一行的 Input(32) 高 8px。
       fieldSurfaceClass,
-      "h-9 md:h-8 px-3 flex items-center justify-between gap-2 text-left cursor-pointer",
+      'h-9 md:h-8 px-3 flex items-center justify-between gap-2 text-left cursor-pointer',
       // 展开时保持 hover 的描边,让"这个字段正被操作"一直可见
-      "data-[state=open]:shadow-[var(--field-shadow-hover)]",
+      'data-[state=open]:shadow-[var(--field-shadow-hover)]',
       // SelectValue 的 placeholder 态由触发器承载
-      "data-[placeholder]:text-text-muted",
-      className
+      'data-[placeholder]:text-text-muted',
+      className,
     )}
     {...props}
   >
@@ -60,13 +56,13 @@ const SelectTrigger = React.forwardRef<
       <Anthropicon name="caretDown" className="text-text-muted" />
     </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
-))
-SelectTrigger.displayName = SelectPrimitive.Trigger.displayName
+));
+SelectTrigger.displayName = SelectPrimitive.Trigger.displayName;
 
 const SelectContent = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
->(({ className, children, position = "popper", ...props }, ref) => (
+>(({ className, children, position = 'popper', ...props }, ref) => (
   <SelectPrimitive.Portal>
     <SelectPrimitive.Content
       ref={ref}
@@ -75,30 +71,30 @@ const SelectContent = React.forwardRef<
         // p-0:内边距由 Viewport 承担(它才是滚动容器),不能和 menu 的 p-1 叠加。
         // max-w-none:触发器是整行宽的表单字段,Viewport 又要求
         // min-width = 触发器宽度,菜单默认的 max-w-80 会把它夹住。
-        "relative p-0 max-w-none",
+        'relative p-0 max-w-none',
         // 高度上限用 Radix 算好的"到视口边缘还剩多少",超出才滚动。
-        position === "popper" &&
-        "max-h-[var(--radix-select-content-available-height)] data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
-        className
+        position === 'popper' &&
+          'max-h-[var(--radix-select-content-available-height)] data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1',
+        className,
       )}
       position={position}
       {...props}
     >
       <SelectPrimitive.Viewport
         className={cn(
-          "p-1 overflow-y-auto",
+          'p-1 overflow-y-auto',
           // 只约束宽度。不要写 h-[var(--radix-select-trigger-height)] ——
           // 那会把整个下拉面板压成触发器那么高(32px),所有选项挤进一个
           // 内部滚动条里。
-          position === "popper" && "w-full min-w-[var(--radix-select-trigger-width)]"
+          position === 'popper' && 'w-full min-w-[var(--radix-select-trigger-width)]',
         )}
       >
         {children}
       </SelectPrimitive.Viewport>
     </SelectPrimitive.Content>
   </SelectPrimitive.Portal>
-))
-SelectContent.displayName = SelectPrimitive.Content.displayName
+));
+SelectContent.displayName = SelectPrimitive.Content.displayName;
 
 const SelectLabel = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Label>,
@@ -107,13 +103,13 @@ const SelectLabel = React.forwardRef<
   <SelectPrimitive.Label
     ref={ref}
     className={cn(
-      "flex min-h-8 items-center px-2.5 py-1.5 text-sm leading-5 font-normal text-menu-text-muted",
-      className
+      'flex min-h-8 items-center px-2.5 py-1.5 text-sm leading-5 font-normal text-menu-text-muted',
+      className,
     )}
     {...props}
   />
-))
-SelectLabel.displayName = SelectPrimitive.Label.displayName
+));
+SelectLabel.displayName = SelectPrimitive.Label.displayName;
 
 const SelectItem = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Item>,
@@ -124,8 +120,8 @@ const SelectItem = React.forwardRef<
     className={cn(
       // 勾选标记绝对定位在右侧,给它留出 pr-8 的落位空间
       menuItemClass,
-      "w-full pr-8",
-      className
+      'w-full pr-8',
+      className,
     )}
     {...props}
   >
@@ -137,21 +133,24 @@ const SelectItem = React.forwardRef<
       </SelectPrimitive.ItemIndicator>
     </span>
   </SelectPrimitive.Item>
-))
-SelectItem.displayName = SelectPrimitive.Item.displayName
+));
+SelectItem.displayName = SelectPrimitive.Item.displayName;
 
 const SelectSeparator = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Separator>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Separator>
 >(({ className, ...props }, ref) => (
-  <SelectPrimitive.Separator
-    ref={ref}
-    className={cn(menuSeparatorClass, className)}
-    {...props}
-  />
-))
-SelectSeparator.displayName = SelectPrimitive.Separator.displayName
+  <SelectPrimitive.Separator ref={ref} className={cn(menuSeparatorClass, className)} {...props} />
+));
+SelectSeparator.displayName = SelectPrimitive.Separator.displayName;
 
 export {
-  Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue
-}
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+};

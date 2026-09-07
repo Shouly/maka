@@ -20,76 +20,69 @@
 import { memo } from 'react';
 
 interface DiffRendererProps {
-    content: string | string[]
-    className?: string
+  content: string | string[];
+  className?: string;
 }
 
 // Diff 渲染组件
-const DiffRenderer = memo(function DiffRenderer({
-    content,
-    className = ""
-}: DiffRendererProps) {
-    // 处理内容，确保是字符串数组
-    const lines = Array.isArray(content) ? content : content.split('\n')
+const DiffRenderer = memo(function DiffRenderer({ content, className = '' }: DiffRendererProps) {
+  // 处理内容，确保是字符串数组
+  const lines = Array.isArray(content) ? content : content.split('\n');
 
-    const renderDiffLine = (line: string, index: number) => {
-        const trimmedLine = line.trim()
+  const renderDiffLine = (line: string, index: number) => {
+    const trimmedLine = line.trim();
 
-        // 检测行类型
-        if (trimmedLine.startsWith('+')) {
-            // 添加的行
-            return (
-                <div key={index} className="flex">
-                    <span className="w-6 text-xs text-center text-accent bg-accent-fill/10 select-none flex items-center justify-center">
-                        +
-                    </span>
-                    <pre className="flex-1 px-3 py-1 bg-accent-fill/5 text-accent overflow-x-auto leading-5">
-                        {line.substring(1)} {/* 移除 + 前缀 */}
-                    </pre>
-                </div>
-            )
-        } else if (trimmedLine.startsWith('-')) {
-            // 删除的行
-            return (
-                <div key={index} className="flex">
-                    <span className="w-6 text-xs text-center text-danger bg-danger-fill/10 select-none flex items-center justify-center">
-                        -
-                    </span>
-                    <pre className="flex-1 px-3 py-1 bg-danger-fill/5 text-danger overflow-x-auto leading-5">
-                        {line.substring(1)} {/* 移除 - 前缀 */}
-                    </pre>
-                </div>
-            )
-        } else {
-            // 上下文行（未修改）
-            return (
-                <div key={index} className="flex">
-                    {/* 上下文行不上底色:+/- 靠色块跳出来,靠的就是它们之间这片留白 */}
-                    <span className="w-6 text-xs text-center text-text-muted select-none flex items-center justify-center">
-
-                    </span>
-                    <pre className="flex-1 px-3 py-1 text-text-secondary overflow-x-auto leading-5">
-                        {line.startsWith(' ') ? line.substring(1) : line} {/* 移除可能的空格前缀 */}
-                    </pre>
-                </div>
-            )
-        }
-    }
-
-    return (
-        <div className={`rounded overflow-hidden ${className}`}>
-            {/* Diff 内容 */}
-            <div className="font-mono font-normal text-sm max-h-96 overflow-y-auto">
-                {lines.length > 0 ? (
-                    lines.map((line, index) => renderDiffLine(line, index))
-                ) : (
-                    <div className="px-3 py-2 text-text-muted text-center">
-                        No changes
-                    </div>
-                )}
-            </div>
+    // 检测行类型
+    if (trimmedLine.startsWith('+')) {
+      // 添加的行
+      return (
+        <div key={index} className="flex">
+          <span className="w-6 text-xs text-center text-accent bg-accent-fill/10 select-none flex items-center justify-center">
+            +
+          </span>
+          <pre className="flex-1 px-3 py-1 bg-accent-fill/5 text-accent overflow-x-auto leading-5">
+            {line.substring(1)} {/* 移除 + 前缀 */}
+          </pre>
         </div>
-    )
-})
+      );
+    } else if (trimmedLine.startsWith('-')) {
+      // 删除的行
+      return (
+        <div key={index} className="flex">
+          <span className="w-6 text-xs text-center text-danger bg-danger-fill/10 select-none flex items-center justify-center">
+            -
+          </span>
+          <pre className="flex-1 px-3 py-1 bg-danger-fill/5 text-danger overflow-x-auto leading-5">
+            {line.substring(1)} {/* 移除 - 前缀 */}
+          </pre>
+        </div>
+      );
+    } else {
+      // 上下文行（未修改）
+      return (
+        <div key={index} className="flex">
+          {/* 上下文行不上底色:+/- 靠色块跳出来,靠的就是它们之间这片留白 */}
+          <span className="w-6 text-xs text-center text-text-muted select-none flex items-center justify-center"></span>
+          <pre className="flex-1 px-3 py-1 text-text-secondary overflow-x-auto leading-5">
+            {line.startsWith(' ') ? line.substring(1) : line} {/* 移除可能的空格前缀 */}
+          </pre>
+        </div>
+      );
+    }
+  };
 
-export default DiffRenderer
+  return (
+    <div className={`rounded overflow-hidden ${className}`}>
+      {/* Diff 内容 */}
+      <div className="font-mono font-normal text-sm max-h-96 overflow-y-auto">
+        {lines.length > 0 ? (
+          lines.map((line, index) => renderDiffLine(line, index))
+        ) : (
+          <div className="px-3 py-2 text-text-muted text-center">No changes</div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+export default DiffRenderer;

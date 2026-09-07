@@ -17,49 +17,49 @@
  * under the License.
  */
 
-import {Anthropicon} from '../icons'
+import { Anthropicon } from '../icons';
 import {
   processChildrenColorValues,
   hasColorValue,
   INLINE_CODE_CLASS,
   INLINE_CODE_COLOR_CLASS,
-} from '../../lib/markdown/color-utils'
-import 'katex/dist/katex.min.css'
-import React, { createContext, useContext, useId, useMemo, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import { getSharedUiCopy, useUiLocale } from '@maka/ui'
-import rehypeKatex from 'rehype-katex'
-import rehypeRaw from 'rehype-raw'
-import remarkGfm from 'remark-gfm'
-import remarkMath from 'remark-math'
-import CodeRenderer from './CodeRenderer'
-import { processTokenChildren } from '../../lib/markdown/inline-tokens'
-import { rehypeStripBreakNewlines } from '../../lib/markdown/rehype-strip-break-newlines'
-import { rehypeStreamPop } from '../../lib/markdown/rehype-stream-pop'
-import { normalizeMathDelimiters } from '../../lib/markdown/normalize-math'
-import { remarkInlineDollarMath } from '../../lib/markdown/remark-inline-math'
+} from '../../lib/markdown/color-utils';
+import 'katex/dist/katex.min.css';
+import React, { createContext, useContext, useId, useMemo, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import { getSharedUiCopy, useUiLocale } from '@maka/ui';
+import rehypeKatex from 'rehype-katex';
+import rehypeRaw from 'rehype-raw';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import CodeRenderer from './CodeRenderer';
+import { processTokenChildren } from '../../lib/markdown/inline-tokens';
+import { rehypeStripBreakNewlines } from '../../lib/markdown/rehype-strip-break-newlines';
+import { rehypeStreamPop } from '../../lib/markdown/rehype-stream-pop';
+import { normalizeMathDelimiters } from '../../lib/markdown/normalize-math';
+import { remarkInlineDollarMath } from '../../lib/markdown/remark-inline-math';
 
-const CodeBlockContext = createContext(false)
+const CodeBlockContext = createContext(false);
 
 interface MarkdownProps {
-  children: string
-  className?: string
-  noPadding?: boolean // 是否禁用默认padding
-  variant?: 'default' | 'muted' // 文本颜色变体
+  children: string;
+  className?: string;
+  noPadding?: boolean; // 是否禁用默认padding
+  variant?: 'default' | 'muted'; // 文本颜色变体
   /** 把 @kebab-name / /kebab-name 渲染成 styled token(text-accent 文字色)。
    *  仅用于用户消息(user 输入的 mention/skill 召唤)。AI 消息不开,避免
    *  误识别 AI 输出里的路径或代码片段为 mention。 */
-  processInlineTokens?: boolean
+  processInlineTokens?: boolean;
   /** processInlineTokens 之外再按名单识别 @真人名(频道消息的 mentions);见 inline-tokens */
-  inlineTokenNames?: string[]
+  inlineTokenNames?: string[];
   /** Drop rehypeRaw so embedded raw HTML is rendered as inert text, not live
    *  DOM. Use for UNTRUSTED free-text (e.g. a responder's typed answer shown to
    *  another user) — prevents stored XSS. Markdown formatting still works. */
-  disableRawHtml?: boolean
+  disableRawHtml?: boolean;
   /** 流式"尾部渐显"入场:把文本切成 token span,新挂载的 span 播放入场
    *  动画(见 rehype-stream-pop / globals.css 的 .stream-pop)。只给流式
    *  草稿期用(通常经由 StreamPopMarkdown 攒批调用);定稿渲染不要开。 */
-  streamPop?: boolean
+  streamPop?: boolean;
   /**
    * 外部 http(s) 链接的去处。参照实现开 `target="_blank"` 交给浏览器;桌面端
    * 主进程会拦下所有导航和新窗口(`will-navigate` preventDefault、
@@ -67,44 +67,59 @@ interface MarkdownProps {
    * preventDefault 后交给这个回调,由 Phase 1 接到 `app.openPath` / shell。
    * 不给回调时外链渲染成不可点的文字,不会假装能跳转。
    */
-  onOpenExternal?: (url: string) => void
+  onOpenExternal?: (url: string) => void;
 }
 
-
-export default function Markdown({ children, className = '', noPadding = false, variant = 'default', processInlineTokens = false, inlineTokenNames, disableRawHtml = false, streamPop = false, onOpenExternal }: MarkdownProps) {
-  const copy = getSharedUiCopy(useUiLocale()).markdown
-  const [copiedCode, setCopiedCode] = useState<string | null>(null)
+export default function Markdown({
+  children,
+  className = '',
+  noPadding = false,
+  variant = 'default',
+  processInlineTokens = false,
+  inlineTokenNames,
+  disableRawHtml = false,
+  streamPop = false,
+  onOpenExternal,
+}: MarkdownProps) {
+  const copy = getSharedUiCopy(useUiLocale()).markdown;
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   const copyToClipboard = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(text)
-      setCopiedCode(text)
-      setTimeout(() => setCopiedCode(null), 2000)
+      await navigator.clipboard.writeText(text);
+      setCopiedCode(text);
+      setTimeout(() => setCopiedCode(null), 2000);
     } catch (err) {
-      console.error('Failed to copy text: ', err)
+      console.error('Failed to copy text: ', err);
     }
-  }
+  };
 
   // 根据 variant 决定文本颜色类
-  const textColorClass = variant === 'muted' ? 'text-text-secondary' : 'text-text-primary'
+  const textColorClass = variant === 'muted' ? 'text-text-secondary' : 'text-text-primary';
 
   // 数学分隔符规范化(详见 normalize-math.ts)。无分隔符时原样返回。
-  const source = useMemo(() => normalizeMathDelimiters(children), [children])
+  const source = useMemo(() => normalizeMathDelimiters(children), [children]);
 
   // 脚注 id 的每实例前缀:remark-rehype 默认给所有消息发同一套
   // `user-content-fn-1`,同一会话里两条带脚注的消息会撞 id,点第二条的角标
   // 跳到第一条。React 19 的 useId 不含冒号,可直接进 href。
-  const footnotePrefix = `fn-${useId()}-`
+  const footnotePrefix = `fn-${useId()}-`;
 
   return (
     // 块间距 = 容器 gap-3(12px,claude.ai Cowork 实测),标题/列表/表格再用
     // 自身的 mt/-mb 做增减。最后一块清零,避免容器尾部多出一段空白。
-    <div className={`markdown-body ${textColorClass} leading-[1.65rem] whitespace-normal break-words relative grid grid-cols-1 gap-3 [&>*]:min-w-0 [&>*:last-child]:mb-0 ${noPadding ? '' : 'standard-markdown'} ${className}`}>
+    <div
+      className={`markdown-body ${textColorClass} leading-[1.65rem] whitespace-normal break-words relative grid grid-cols-1 gap-3 [&>*]:min-w-0 [&>*:last-child]:mb-0 ${noPadding ? '' : 'standard-markdown'} ${className}`}
+    >
       <ReactMarkdown
         // remarkMath 只管 `$$…$$`;singleDollarTextMath 必须保持关闭 ——
         // 打开会把 "It costs $100 and $200" 里的 "100 and " 当成公式。
         // `$x$` 由 remarkInlineDollarMath 在 mdast 上按启发式切。
-        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }], remarkInlineDollarMath]}
+        remarkPlugins={[
+          remarkGfm,
+          [remarkMath, { singleDollarTextMath: false }],
+          remarkInlineDollarMath,
+        ]}
         remarkRehypeOptions={{ clobberPrefix: footnotePrefix }}
         rehypePlugins={[
           // 排在 rehypeRaw 之前:raw 节点对 strip 插件不透明,作者手写 HTML
@@ -131,13 +146,13 @@ export default function Markdown({ children, className = '', noPadding = false, 
           // 路径,解构是零成本的,helper 会给每个元素多一次调用+一次分配。
           // Block context comes from the actual <pre> tree, including single-line/empty fences.
           pre({ children }) {
-            return <CodeBlockContext.Provider value={true}>{children}</CodeBlockContext.Provider>
+            return <CodeBlockContext.Provider value={true}>{children}</CodeBlockContext.Provider>;
           },
           code: function Code({ node: _node, className, children, ...props }) {
-            const block = useContext(CodeBlockContext)
-            const match = /language-(\w+)/.exec(className || '')
-            const language = match ? match[1] : ''
-            const codeString = String(children).replace(/\n$/, '')
+            const block = useContext(CodeBlockContext);
+            const match = /language-(\w+)/.exec(className || '');
+            const language = match ? match[1] : '';
+            const codeString = String(children).replace(/\n$/, '');
 
             if (block && language) {
               return (
@@ -169,7 +184,7 @@ export default function Markdown({ children, className = '', noPadding = false, 
                     />
                   </div>
                 </div>
-              )
+              );
             }
 
             // 无语言的代码块
@@ -194,7 +209,7 @@ export default function Markdown({ children, className = '', noPadding = false, 
                     <code className="font-mono font-normal text-sm">{codeString}</code>
                   </pre>
                 </div>
-              )
+              );
             }
 
             // 行内代码
@@ -202,15 +217,17 @@ export default function Markdown({ children, className = '', noPadding = false, 
             // 直接子节点插在文本前;色值用 bare 模式渲染,不再自带壳。
             // (外层 p/li/td 的 processChildrenColorValues 会跳过 code 子树,
             //  否则那边先包一层带壳的 ColorSwatch,跟这层壳叠成两个背景框。)
-            const hasColor = hasColorValue(codeString)
+            const hasColor = hasColorValue(codeString);
             return (
               <code
-                className={hasColor ? `${INLINE_CODE_CLASS} ${INLINE_CODE_COLOR_CLASS}` : INLINE_CODE_CLASS}
+                className={
+                  hasColor ? `${INLINE_CODE_CLASS} ${INLINE_CODE_COLOR_CLASS}` : INLINE_CODE_CLASS
+                }
                 {...props}
               >
                 {hasColor ? processChildrenColorValues(children, { bare: true }) : children}
               </code>
-            )
+            );
           },
 
           // 链接。claude.ai 实测(明暗都测):文字 --text-accent(色值逐位相同),
@@ -220,14 +237,14 @@ export default function Markdown({ children, className = '', noPadding = false, 
             // 页内锚点(脚注角标/回跳)留给浏览器自己滚,不当外链处理。除它和外链
             // 之外的一切 href 都渲染成不可点:主进程拦下所有导航,让它们看着能点
             // 只会得到一次静默的无事发生。
-            const isAnchor = typeof href === 'string' && href.startsWith('#')
+            const isAnchor = typeof href === 'string' && href.startsWith('#');
             // 外链交给宿主打开(见 onOpenExternal 的注释)。`maka://` 的处理
             // TODO(phase-3):接 `@maka/ui` 的 `maka-uri.ts`(parseMakaUri /
             // 资源跳转),那时这里会多一个分支,不要在 Phase 0b 抢跑。
-            const isExternal = typeof href === 'string' && /^https?:\/\//i.test(href)
+            const isExternal = typeof href === 'string' && /^https?:\/\//i.test(href);
             // className 必须合并:remark-gfm 给回跳链接挂了 data-footnote-backref
             // 类,而 {...props} 摊在 className 之后会把链接样式整个替掉。
-            const isBackref = 'data-footnote-backref' in props
+            const isBackref = 'data-footnote-backref' in props;
             return (
               <a
                 href={href}
@@ -235,8 +252,8 @@ export default function Markdown({ children, className = '', noPadding = false, 
                   ? {
                       rel: 'noopener noreferrer',
                       onClick: (event: React.MouseEvent<HTMLAnchorElement>) => {
-                        event.preventDefault()
-                        onOpenExternal?.(href as string)
+                        event.preventDefault();
+                        onOpenExternal?.(href as string);
                       },
                     }
                   : {})}
@@ -247,18 +264,21 @@ export default function Markdown({ children, className = '', noPadding = false, 
                     图标(实测截图确认),color 也就压不住了。补 U+FE0E 强制文本呈现。 */}
                 {isBackref ? '\u21a9\ufe0e' : children}
               </a>
-            )
+            );
           },
 
           // 表格
           table({ node: _node, children, ...props }) {
             return (
               <div className="overflow-x-auto w-full px-2 mb-6">
-                <table className="min-w-full border-collapse text-sm leading-[1.7] whitespace-normal" {...props}>
+                <table
+                  className="min-w-full border-collapse text-sm leading-[1.7] whitespace-normal"
+                  {...props}
+                >
                   {children}
                 </table>
               </div>
-            )
+            );
           },
 
           thead({ node: _node, children, ...props }) {
@@ -266,7 +286,7 @@ export default function Markdown({ children, className = '', noPadding = false, 
               <thead className="text-left" {...props}>
                 {children}
               </thead>
-            )
+            );
           },
 
           // 表头 font-bold 是 600 那一档(见 globals.css 的字重刻度):上游实测
@@ -276,7 +296,7 @@ export default function Markdown({ children, className = '', noPadding = false, 
               <th className="border-b border-alpha-6 py-2 pr-4 align-top font-bold" {...props}>
                 {processChildrenColorValues(children)}
               </th>
-            )
+            );
           },
 
           td({ node: _node, children, ...props }) {
@@ -284,23 +304,15 @@ export default function Markdown({ children, className = '', noPadding = false, 
               <td className="border-b border-alpha-4 py-2 pr-4 align-top" {...props}>
                 {processChildrenColorValues(children)}
               </td>
-            )
+            );
           },
 
           tbody({ node: _node, children, ...props }) {
-            return (
-              <tbody {...props}>
-                {children}
-              </tbody>
-            )
+            return <tbody {...props}>{children}</tbody>;
           },
 
           tr({ node: _node, children, ...props }) {
-            return (
-              <tr {...props}>
-                {children}
-              </tr>
-            )
+            return <tr {...props}>{children}</tr>;
           },
 
           // 引用块
@@ -312,7 +324,7 @@ export default function Markdown({ children, className = '', noPadding = false, 
               >
                 {processChildrenColorValues(children)}
               </blockquote>
-            )
+            );
           },
 
           // 列表
@@ -321,7 +333,7 @@ export default function Markdown({ children, className = '', noPadding = false, 
               <ul className="list-disc flex flex-col gap-2 pl-8 mb-3" {...props}>
                 {children}
               </ul>
-            )
+            );
           },
 
           ol({ node: _node, children, ...props }) {
@@ -329,23 +341,23 @@ export default function Markdown({ children, className = '', noPadding = false, 
               <ol className="list-decimal flex flex-col gap-2 pl-8 mb-3" {...props}>
                 {children}
               </ol>
-            )
+            );
           },
 
           li({ node: _node, children, ...props }) {
-            const processed = processChildrenColorValues(children)
+            const processed = processChildrenColorValues(children);
             return (
               <li className="whitespace-normal break-words pl-2" {...props}>
-                {processInlineTokens ? processTokenChildren(processed, inlineTokenNames) : processed}
+                {processInlineTokens
+                  ? processTokenChildren(processed, inlineTokenNames)
+                  : processed}
               </li>
-            )
+            );
           },
 
           // 分隔线
           hr({ node: _node, ...props }) {
-            return (
-              <hr className="border-t border-hairline mx-1.5 my-3" {...props} />
-            )
+            return <hr className="border-t border-hairline mx-1.5 my-3" {...props} />;
           },
 
           // 标题
@@ -354,7 +366,7 @@ export default function Markdown({ children, className = '', noPadding = false, 
               <h1 className="text-[1.375rem] leading-[1.65rem] font-semibold mt-3 -mb-1" {...props}>
                 {processChildrenColorValues(children)}
               </h1>
-            )
+            );
           },
 
           h2({ node: _node, children, ...props }) {
@@ -362,7 +374,7 @@ export default function Markdown({ children, className = '', noPadding = false, 
               <h2 className="text-[1.125rem] leading-[1.65rem] font-semibold mt-3 -mb-1" {...props}>
                 {processChildrenColorValues(children)}
               </h2>
-            )
+            );
           },
 
           h3({ node: _node, children, ...props }) {
@@ -370,7 +382,7 @@ export default function Markdown({ children, className = '', noPadding = false, 
               <h3 className="text-base leading-[1.65rem] font-semibold mt-2 -mb-1" {...props}>
                 {processChildrenColorValues(children)}
               </h3>
-            )
+            );
           },
 
           h4({ node: _node, children, ...props }) {
@@ -378,7 +390,7 @@ export default function Markdown({ children, className = '', noPadding = false, 
               <h4 className="text-base leading-[1.65rem] font-semibold mt-2 -mb-1" {...props}>
                 {processChildrenColorValues(children)}
               </h4>
-            )
+            );
           },
 
           h5({ node: _node, children, ...props }) {
@@ -386,17 +398,19 @@ export default function Markdown({ children, className = '', noPadding = false, 
               <h5 className="text-base leading-[1.65rem] font-semibold mt-2 -mb-1" {...props}>
                 {processChildrenColorValues(children)}
               </h5>
-            )
+            );
           },
 
           // 段落
           p({ node: _node, children, ...props }) {
-            const processed = processChildrenColorValues(children)
+            const processed = processChildrenColorValues(children);
             return (
               <p className="whitespace-normal break-words" {...props}>
-                {processInlineTokens ? processTokenChildren(processed, inlineTokenNames) : processed}
+                {processInlineTokens
+                  ? processTokenChildren(processed, inlineTokenNames)
+                  : processed}
               </p>
-            )
+            );
           },
 
           // 加粗:浏览器默认 <strong> 是 700,claude.ai 实测 600 —— 700 太重,
@@ -409,13 +423,12 @@ export default function Markdown({ children, className = '', noPadding = false, 
               <strong className="font-bold" {...props}>
                 {processChildrenColorValues(children)}
               </strong>
-            )
+            );
           },
-
         }}
       >
         {source}
       </ReactMarkdown>
     </div>
-  )
+  );
 }

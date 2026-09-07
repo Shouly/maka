@@ -40,52 +40,55 @@
  * 端口(@host:8080)、时间(12:30)不受影响。
  */
 
-import React, { Children } from 'react'
+import React, { Children } from 'react';
 
-const TOKEN_REGEX = /(?<![\w/])([@/])([a-z][a-z0-9-]*(?::[a-z][a-z0-9-]*)?)/g
+const TOKEN_REGEX = /(?<![\w/])([@/])([a-z][a-z0-9-]*(?::[a-z][a-z0-9-]*)?)/g;
 
 /** 单一样式:仅 text-accent 文字色。字号/字重沿用所在段落,不强加。 */
-const TOKEN_CLASS = 'text-accent'
+const TOKEN_CLASS = 'text-accent';
 
 /** 按名单认出来的 @真人:accent 淡底的小胶囊,和 Y 状态芯片同一档色 */
-const NAMED_MENTION_CLASS = 'rounded-[4px] bg-accent-subtle px-1 py-px text-accent'
+const NAMED_MENTION_CLASS = 'rounded-[4px] bg-accent-subtle px-1 py-px text-accent';
 
-const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * 频道消息里 @ 的是真人,名字不是 kebab(中文、大写、空格都有),靠消息自带的 mentions 名单认:
  * 名字最长优先拼进同一条正则,所以「张三」「张三丰」同在时 @张三丰 不会被拆开。
  */
 function tokenRegex(names?: string[]): RegExp {
-  if (!names || names.length === 0) return TOKEN_REGEX
-  const alt = [...new Set(names)].sort((a, b) => b.length - a.length).map(escapeRegExp).join('|')
-  return new RegExp(`(?<![\\w/])([@/])([a-z][a-z0-9-]*(?::[a-z][a-z0-9-]*)?)|(@(?:${alt}))`, 'g')
+  if (!names || names.length === 0) return TOKEN_REGEX;
+  const alt = [...new Set(names)]
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRegExp)
+    .join('|');
+  return new RegExp(`(?<![\\w/])([@/])([a-z][a-z0-9-]*(?::[a-z][a-z0-9-]*)?)|(@(?:${alt}))`, 'g');
 }
 
 /** 把一段纯字符串切成 [text...span...text] 节点数组;无匹配则返回单元素数组。 */
 export function renderInlineTokens(text: string, names?: string[]): React.ReactNode[] {
-  const parts: React.ReactNode[] = []
-  let lastIndex = 0
-  let key = 0
-  let match: RegExpExecArray | null
-  const re = tokenRegex(names)
-  re.lastIndex = 0
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let key = 0;
+  let match: RegExpExecArray | null;
+  const re = tokenRegex(names);
+  re.lastIndex = 0;
   while ((match = re.exec(text)) !== null) {
     if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index))
+      parts.push(text.slice(lastIndex, match.index));
     }
-    const [whole, , , named] = match
+    const [whole, , , named] = match;
     parts.push(
       <span key={`tok-${key++}`} className={named ? NAMED_MENTION_CLASS : TOKEN_CLASS}>
         {whole}
       </span>,
-    )
-    lastIndex = re.lastIndex
+    );
+    lastIndex = re.lastIndex;
   }
   if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex))
+    parts.push(text.slice(lastIndex));
   }
-  return parts
+  return parts;
 }
 
 /** 对 React children 做一遍 inline token replacement,只换 string,
@@ -93,8 +96,8 @@ export function renderInlineTokens(text: string, names?: string[]): React.ReactN
 export function processTokenChildren(children: React.ReactNode, names?: string[]): React.ReactNode {
   return Children.map(children, (child) => {
     if (typeof child === 'string') {
-      return renderInlineTokens(child, names)
+      return renderInlineTokens(child, names);
     }
-    return child
-  })
+    return child;
+  });
 }

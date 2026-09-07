@@ -71,33 +71,60 @@ type CommandCopy = {
 
 const STATIC_COMMAND_KEYWORDS: Record<StaticCommandId, readonly string[]> = {
   'action:new-chat': ['new', 'chat', 'start', '新', '建', '任务'],
-  'action:side-chat': [
-    'side',
-    'chat',
-    'btw',
-    'ask',
+  'action:side-chat': ['side', 'chat', 'btw', 'ask', 'explore', '侧边', '侧聊', '任务', '追问'],
+  'action:new-deep-research': [
+    'deep',
+    'research',
     'explore',
-    '侧边',
-    '侧聊',
-    '任务',
-    '追问',
+    'readonly',
+    '研究',
+    '深度',
+    '探索',
+    '只读',
   ],
-  'action:new-deep-research': ['deep', 'research', 'explore', 'readonly', '研究', '深度', '探索', '只读'],
-  'action:new-scheduled-task': ['plan', 'task', 'schedule', 'new', 'create', '计划', '提醒', '新建', '创建'],
+  'action:new-scheduled-task': [
+    'plan',
+    'task',
+    'schedule',
+    'new',
+    'create',
+    '计划',
+    '提醒',
+    '新建',
+    '创建',
+  ],
   'action:open-settings': ['settings', 'preferences', '设置', 'options'],
   'action:keyboard-help': ['shortcuts', 'keyboard', 'help', '快捷键', '帮助'],
   'theme:light': ['light', 'theme', '浅色', '主题'],
   'theme:dark': ['dark', 'theme', '深色', 'night', '主题'],
   'theme:auto': ['auto', 'system', 'theme', '跟随', '系统', '主题'],
   'nav:sessions': ['sessions', 'chats', '任务', '会话', '对话', 'left'],
-  'nav:automations': ['automations', 'plan', 'task', 'schedule', 'cron', '定时任务', '计划', '提醒'],
+  'nav:automations': [
+    'automations',
+    'plan',
+    'task',
+    'schedule',
+    'cron',
+    '定时任务',
+    '计划',
+    '提醒',
+  ],
   'nav:skills': ['skills', '技能'],
   'nav:mcp': ['mcp', 'server', 'tools', '扩展', '工具'],
   'nav:daily-review': ['daily', 'review', 'today', '每日', '回顾', '今天'],
   'diag:open-workspace': ['workspace', 'folder', 'open', 'finder', '工作区', '文件夹', '目录'],
   'diag:open-project-folder': ['project', 'folder', 'open', 'finder', '项目', '目录', '文件夹'],
   'diag:open-skills': ['skills', 'folder', 'open', 'finder', '技能', '文件夹'],
-  'diag:export-conversation': ['export', 'markdown', 'copy', 'conversation', '导出', '任务', '剪贴板', 'md'],
+  'diag:export-conversation': [
+    'export',
+    'markdown',
+    'copy',
+    'conversation',
+    '导出',
+    '任务',
+    '剪贴板',
+    'md',
+  ],
   'diag:save-conversation-file': [
     'save',
     'file',
@@ -110,8 +137,27 @@ const STATIC_COMMAND_KEYWORDS: Record<StaticCommandId, readonly string[]> = {
     '导出',
     'md',
   ],
-  'diag:copy-today-daily-review': ['daily', 'review', 'today', 'copy', 'markdown', '今日', '回顾', '复制', '剪贴板'],
-  'diag:paste-today-daily-review': ['daily', 'review', 'paste', 'composer', '今日', '回顾', '粘贴', '输入框'],
+  'diag:copy-today-daily-review': [
+    'daily',
+    'review',
+    'today',
+    'copy',
+    'markdown',
+    '今日',
+    '回顾',
+    '复制',
+    '剪贴板',
+  ],
+  'diag:paste-today-daily-review': [
+    'daily',
+    'review',
+    'paste',
+    'composer',
+    '今日',
+    '回顾',
+    '粘贴',
+    '输入框',
+  ],
   'diag:save-today-daily-review': [
     'daily',
     'review',
@@ -141,7 +187,17 @@ const STATIC_COMMAND_KEYWORDS: Record<StaticCommandId, readonly string[]> = {
     '诊断',
     '汇报',
   ],
-  'diag:test-network-proxy': ['network', 'proxy', 'test', 'ping', '网络', '代理', '测试', '连接', '诊断'],
+  'diag:test-network-proxy': [
+    'network',
+    'proxy',
+    'test',
+    'ping',
+    '网络',
+    '代理',
+    '测试',
+    '连接',
+    '诊断',
+  ],
   'diag:open-local-memory': ['memory', 'md', 'open', '记忆', '本地', '编辑', 'edit'],
 };
 
@@ -218,7 +274,10 @@ type ShellCopy = {
     connectionTestFailed(name: string): string;
     testErrorTitle: string;
     connectionUnavailable: string;
-    connectionFailures: Record<'rateLimit' | 'timeout' | 'auth' | 'network' | 'provider' | 'unknown', string>;
+    connectionFailures: Record<
+      'rateLimit' | 'timeout' | 'auth' | 'network' | 'provider' | 'unknown',
+      string
+    >;
     setDefaultSuccess(name: string): string;
     setDefaultFailedTitle: string;
     setDefaultFallback: string;
@@ -324,17 +383,31 @@ type ShellCopy = {
       'invalid_id' | 'missing' | 'blocked_path' | 'not_file' | 'not_directory' | 'open_failed',
       string
     >;
-    sourceFailures: Record<'invalid_skill' | 'already_exists' | 'blocked_path' | 'write_failed' | 'cancelled', string>;
-    installFailures: Record<'not_found' | 'already_exists' | 'blocked_path' | 'write_failed', string>;
+    sourceFailures: Record<
+      'invalid_skill' | 'already_exists' | 'blocked_path' | 'write_failed' | 'cancelled',
+      string
+    >;
+    installFailures: Record<
+      'not_found' | 'already_exists' | 'blocked_path' | 'write_failed',
+      string
+    >;
     updateFailures: Record<
-      'not_managed' | 'source_missing' | 'local_modified' | 'metadata_error' | 'blocked_path' | 'write_failed',
+      | 'not_managed'
+      | 'source_missing'
+      | 'local_modified'
+      | 'metadata_error'
+      | 'blocked_path'
+      | 'write_failed',
       string
     >;
     previewFailures: Record<
       'not_managed' | 'source_missing' | 'metadata_error' | 'blocked_path' | 'read_failed',
       string
     >;
-    deleteFailures: Record<'not_found' | 'blocked_path' | 'blocked_scope' | 'delete_failed', string>;
+    deleteFailures: Record<
+      'not_found' | 'blocked_path' | 'blocked_scope' | 'delete_failed',
+      string
+    >;
     runtimeFailures: Record<'not_found' | 'blocked_path' | 'state_error' | 'write_failed', string>;
   };
   sessionSettingsActions: {
@@ -447,10 +520,13 @@ type ShellCopy = {
     compactUnchangedDescription: string;
     compactErrorTitle: string;
     compactErrorFallback: string;
-    slashCommands: Record<SlashCommandIdForSurface<'desktop'>, {
-      name: string;
-      description: string;
-    }>;
+    slashCommands: Record<
+      SlashCommandIdForSurface<'desktop'>,
+      {
+        name: string;
+        description: string;
+      }
+    >;
     sideChatUnavailableTitle: string;
     sideChatUnavailableDescription: string;
     sideChatContextPendingTitle: string;
@@ -862,7 +938,8 @@ const SHELL_COPY_BY_LOCALE = {
       memoryOpenFallback: '无法打开 MEMORY.md，请稍后重试。',
       today: '今天',
       reviewCopiedTitle: '已复制今日回顾为 Markdown',
-      reviewSummary: (sessions: number, requests: number) => `${sessions} 个任务 · ${requests} 个请求`,
+      reviewSummary: (sessions: number, requests: number) =>
+        `${sessions} 个任务 · ${requests} 个请求`,
       reviewCopyFallback: '今日回顾暂时不可用，或剪贴板被系统拒绝。',
       reviewPastedTitle: '已追加今日回顾到输入框',
       reviewCopied: (label: string) => `已复制${label}回顾`,
@@ -1003,7 +1080,8 @@ const SHELL_COPY_BY_LOCALE = {
     },
     goalDialog: {
       title: '设定 Goal',
-      description: 'Goal 会在每轮结束后自动续行，直到达成、判定不可行，或触及下面的预算。随时可在输入框上方停止。',
+      description:
+        'Goal 会在每轮结束后自动续行，直到达成、判定不可行，或触及下面的预算。随时可在输入框上方停止。',
       conditionLabel: '达成条件',
       conditionDescription: '用一句话说明什么算做完；Maka 每轮都据此判断。',
       conditionPlaceholder: '例如：所有测试通过，且 lint 无告警',
@@ -1033,7 +1111,8 @@ const SHELL_COPY_BY_LOCALE = {
       reconciledDifferent: (condition, status) =>
         `已重新读取当前 Goal：“${condition}”（${status}）。它与本次请求不同。`,
       reconciledNoGoal: '已重新读取当前状态：当前未读到 Goal。',
-      reconciliationUnavailable: '连接中断后暂时无法确认当前 Goal 状态。请关闭后重新打开再检查；此窗口不会重复提交。',
+      reconciliationUnavailable:
+        '连接中断后暂时无法确认当前 Goal 状态。请关闭后重新打开再检查；此窗口不会重复提交。',
     },
     errorBoundary: {
       copyPending: '复制中…',
@@ -1080,7 +1159,12 @@ const SHELL_COPY_BY_LOCALE = {
       testDefaultConnection: (name: string) => `测试默认连接 · ${name}`,
       setDefaultConnection: (name: string) => `设为默认 · ${name}`,
       testConnection: (name: string) => `测试连接 · ${name}`,
-      settingsKeywords: (section: SettingsSection, label: string) => [section, label, 'settings', '设置'],
+      settingsKeywords: (section: SettingsSection, label: string) => [
+        section,
+        label,
+        'settings',
+        '设置',
+      ],
       permissionKeywords: (mode: PermissionMode) => [mode, 'permission', 'mode', '权限', '模式'],
       connectionKeywords: (action: 'default' | 'test', name: string, providerType: string) => [
         action,
@@ -1200,8 +1284,7 @@ const SHELL_COPY_BY_LOCALE = {
       memoryLoadErrorTitle: '载入本地记忆状态失败',
       memoryErrorFallback: '本地记忆状态暂时无法刷新，请稍后重试。',
       openModelSettings: '打开设置 · 模型',
-      configureModelsOnHost: (hostName: string) =>
-        `请先在 ${hostName} 上配置模型连接。`,
+      configureModelsOnHost: (hostName: string) => `请先在 ${hostName} 上配置模型连接。`,
       sidebarCollapsed: '侧边栏已收起',
       resizeConversationList: '调整任务列表宽度',
       skipErrorTitle: '跳过失败',
@@ -1356,7 +1439,8 @@ const SHELL_COPY_BY_LOCALE = {
       memoryOpenFallback: '無法開啟 MEMORY.md，請稍後重試。',
       today: '今天',
       reviewCopiedTitle: '已複製今日回顧為 Markdown',
-      reviewSummary: (sessions: number, requests: number) => `${sessions} 個任務 · ${requests} 個請求`,
+      reviewSummary: (sessions: number, requests: number) =>
+        `${sessions} 個任務 · ${requests} 個請求`,
       reviewCopyFallback: '今日回顧暫時不可用，或剪貼簿被系統拒絕。',
       reviewPastedTitle: '已追加今日回顧到輸入框',
       reviewCopied: (label: string) => `已複製${label}回顧`,
@@ -1497,7 +1581,8 @@ const SHELL_COPY_BY_LOCALE = {
     },
     goalDialog: {
       title: '設定 Goal',
-      description: 'Goal 會在每輪結束後自動續行，直到達成、判定不可行，或觸及下面的預算。隨時可在輸入框上方停止。',
+      description:
+        'Goal 會在每輪結束後自動續行，直到達成、判定不可行，或觸及下面的預算。隨時可在輸入框上方停止。',
       conditionLabel: '達成條件',
       conditionDescription: '用一句話說明什麼算做完；Maka 每輪都據此判斷。',
       conditionPlaceholder: '例如：所有測試透過，且 lint 無告警',
@@ -1527,7 +1612,8 @@ const SHELL_COPY_BY_LOCALE = {
       reconciledDifferent: (condition, status) =>
         `已重新讀取目前 Goal：“${condition}”（${status}）。它與本次請求不同。`,
       reconciledNoGoal: '已重新讀取目前狀態：目前未讀到 Goal。',
-      reconciliationUnavailable: '連線中斷後暫時無法確認目前 Goal 狀態。請關閉後重新開啟再檢查；此視窗不會重複提交。',
+      reconciliationUnavailable:
+        '連線中斷後暫時無法確認目前 Goal 狀態。請關閉後重新開啟再檢查；此視窗不會重複提交。',
     },
     errorBoundary: {
       copyPending: '複製中…',
@@ -1574,7 +1660,12 @@ const SHELL_COPY_BY_LOCALE = {
       testDefaultConnection: (name: string) => `測試預設連線 · ${name}`,
       setDefaultConnection: (name: string) => `設為預設 · ${name}`,
       testConnection: (name: string) => `測試連線 · ${name}`,
-      settingsKeywords: (section: SettingsSection, label: string) => [section, label, 'settings', '設定'],
+      settingsKeywords: (section: SettingsSection, label: string) => [
+        section,
+        label,
+        'settings',
+        '設定',
+      ],
       permissionKeywords: (mode: PermissionMode) => [mode, 'permission', 'mode', '權限', '模式'],
       connectionKeywords: (action: 'default' | 'test', name: string, providerType: string) => [
         action,
@@ -1694,8 +1785,7 @@ const SHELL_COPY_BY_LOCALE = {
       memoryLoadErrorTitle: '載入本地記憶狀態失敗',
       memoryErrorFallback: '本地記憶狀態暫時無法重新整理，請稍後重試。',
       openModelSettings: '開啟設定 · 模型',
-      configureModelsOnHost: (hostName: string) =>
-        `請先在 ${hostName} 上設定模型連線。`,
+      configureModelsOnHost: (hostName: string) => `請先在 ${hostName} 上設定模型連線。`,
       sidebarCollapsed: '側邊欄已收起',
       resizeConversationList: '調整任務列表寬度',
       skipErrorTitle: '跳過失敗',
@@ -1758,7 +1848,8 @@ const SHELL_COPY_BY_LOCALE = {
       sendFailedTitle: 'Message not sent',
       sendFailedFallback: 'The message could not be sent. Try again later.',
       skillInvocationBlockedTitle: 'Skill invocation failed; message not sent',
-      skillInvocationBlockedDescription: (items) => `${items.join(', ')}. Adjust the selection and try again.`,
+      skillInvocationBlockedDescription: (items) =>
+        `${items.join(', ')}. Adjust the selection and try again.`,
       skillInvocationFailedTitle: 'Some Skills were not invoked',
       skillInvocationFailedDescription: (items) =>
         `${items.join(', ')}. The remaining Skills were invoked.`,
@@ -1852,7 +1943,8 @@ const SHELL_COPY_BY_LOCALE = {
       memoryOpenFallback: 'MEMORY.md could not be opened. Try again later.',
       today: 'Today',
       reviewCopiedTitle: "Today's review copied as Markdown",
-      reviewSummary: (sessions: number, requests: number) => `${sessions} tasks · ${requests} requests`,
+      reviewSummary: (sessions: number, requests: number) =>
+        `${sessions} tasks · ${requests} requests`,
       reviewCopyFallback: "Today's review is unavailable, or the clipboard was denied.",
       reviewPastedTitle: "Today's review added to the composer",
       reviewCopied: (label: string) => `${label} review copied`,
@@ -1918,14 +2010,16 @@ const SHELL_COPY_BY_LOCALE = {
       updateFallback: 'The Skill could not be updated. Try again later.',
       updatedTitle: 'Skill updated',
       forceUpdatedTitle: 'Skill update overwritten',
-      updatedDescription: (id: string) => `${id}/SKILL.md was updated to the source-library version.`,
+      updatedDescription: (id: string) =>
+        `${id}/SKILL.md was updated to the source-library version.`,
       toggleFailedTitle: 'Could not change Skill status',
       toggleFallback: 'The Skill status could not be changed. Try again later.',
       enabledTitle: 'Skill enabled',
       disabledTitle: 'Skill disabled',
       pinnedTitle: 'Skill pinned to context',
       unpinnedTitle: 'Skill unpinned',
-      runtimeDescription: (name: string) => `${name} runtime status was updated for the current project.`,
+      runtimeDescription: (name: string) =>
+        `${name} runtime status was updated for the current project.`,
       deleteFailedTitle: 'Could not delete Skill',
       deleteFallback: 'The Skill could not be deleted. Try again later.',
       deletedTitle: 'Skill deleted',
@@ -1935,7 +2029,8 @@ const SHELL_COPY_BY_LOCALE = {
       openFailures: {
         invalid_id: 'The Skill name is not allowed.',
         missing: 'The matching SKILL.md was not found.',
-        blocked_path: 'The Skill path is outside the workspace skills folder, so opening was blocked.',
+        blocked_path:
+          'The Skill path is outside the workspace skills folder, so opening was blocked.',
         not_file: 'The target is not an openable SKILL.md file.',
         not_directory: 'The target is not an openable folder.',
         open_failed: 'The system could not open the file.',
@@ -1972,14 +2067,16 @@ const SHELL_COPY_BY_LOCALE = {
       deleteFailures: {
         not_found: 'This Skill was not found in the current workspace.',
         blocked_path: 'The Skill path cannot be deleted.',
-        blocked_scope: 'Project Skills are managed by the repository. Delete it from the project instead.',
+        blocked_scope:
+          'Project Skills are managed by the repository. Delete it from the project instead.',
         delete_failed: 'The Skill could not be deleted. Check file permissions.',
       },
       runtimeFailures: {
         not_found: 'This Skill was not found in the current workspace.',
         blocked_path: 'The Skill status path cannot be written.',
         state_error: 'The Skill status file in this workspace is invalid and must be fixed first.',
-        write_failed: 'The Skill status for the current project could not be written. Check file permissions.',
+        write_failed:
+          'The Skill status for the current project could not be written. Check file permissions.',
       },
     },
     sessionSettingsActions: {
@@ -1997,9 +2094,11 @@ const SHELL_COPY_BY_LOCALE = {
     },
     goalDialog: {
       title: 'Set a goal',
-      description: 'Maka continues on its own after each turn until the goal is met, judged impossible, or a budget below is reached. You can stop it any time from above the composer.',
+      description:
+        'Maka continues on its own after each turn until the goal is met, judged impossible, or a budget below is reached. You can stop it any time from above the composer.',
       conditionLabel: 'Completion condition',
-      conditionDescription: 'One sentence for what counts as done; Maka checks it after every turn.',
+      conditionDescription:
+        'One sentence for what counts as done; Maka checks it after every turn.',
       conditionPlaceholder: 'e.g. all tests pass and lint reports no warnings',
       maxIterationsLabel: 'Maximum turns',
       maxIterationsDescription: 'Leave empty to use the default.',
@@ -2027,7 +2126,8 @@ const SHELL_COPY_BY_LOCALE = {
       reconciledDifferent: (condition, status) =>
         `Current Goal after reconnect: “${condition}” (${status}). It differs from this request.`,
       reconciledNoGoal: 'Current state after reconnect: no Goal was found.',
-      reconciliationUnavailable: 'The connection was interrupted and the current Goal cannot be confirmed yet. Close and reopen to check again; this dialog will not submit twice.',
+      reconciliationUnavailable:
+        'The connection was interrupted and the current Goal cannot be confirmed yet. Close and reopen to check again; this dialog will not submit twice.',
     },
     errorBoundary: {
       copyPending: 'Copying…',
@@ -2080,7 +2180,12 @@ const SHELL_COPY_BY_LOCALE = {
       testDefaultConnection: (name: string) => `Test default connection · ${name}`,
       setDefaultConnection: (name: string) => `Set as default · ${name}`,
       testConnection: (name: string) => `Test connection · ${name}`,
-      settingsKeywords: (section: SettingsSection, label: string) => [section, label, 'settings', '设置'],
+      settingsKeywords: (section: SettingsSection, label: string) => [
+        section,
+        label,
+        'settings',
+        '设置',
+      ],
       permissionKeywords: (mode: PermissionMode) => [mode, 'permission', 'mode', '权限', '模式'],
       connectionKeywords: (action: 'default' | 'test', name: string, providerType: string) => [
         action,
@@ -2207,14 +2312,16 @@ const SHELL_COPY_BY_LOCALE = {
       compactErrorTitle: 'Compaction failed',
       compactErrorFallback: 'The task could not be compacted. Try again later.',
       slashCommands: {
-        compact: { name: 'Compact context', description: 'Compact older history while preserving the current task' },
+        compact: {
+          name: 'Compact context',
+          description: 'Compact older history while preserving the current task',
+        },
         graph: { name: 'Use Graph', description: 'Inspect, switch, or run Graph once' },
         side: { name: 'Open side chat', description: 'Start a specific topic in the side panel' },
         swarm: { name: 'Use Swarm', description: 'Inspect, switch, or run Swarm once' },
       },
       sideChatUnavailableTitle: 'Side chat is not available yet',
-      sideChatUnavailableDescription:
-        'Send a message in the main task before using /side.',
+      sideChatUnavailableDescription: 'Send a message in the main task before using /side.',
       sideChatContextPendingTitle: 'Resolve pending context first',
       sideChatContextPendingDescription:
         'The Composer still has attachments, quotes, or file mentions. Send or remove them before using /side.',
@@ -2229,7 +2336,8 @@ const SHELL_COPY_BY_LOCALE = {
       goalResumeFailedTitle: 'Could not resume the goal',
       goalResumeFailedFallback: 'The goal is still paused. Try again.',
       appearanceLoadErrorTitle: 'Could not load appearance settings',
-      appearanceLoadErrorFallback: 'Appearance settings are temporarily unavailable. Try again later.',
+      appearanceLoadErrorFallback:
+        'Appearance settings are temporarily unavailable. Try again later.',
       memoryRefreshErrorTitle: 'Could not refresh local memory status',
       memoryLoadErrorTitle: 'Could not load local memory status',
       memoryErrorFallback: 'Local memory status could not be refreshed. Try again later.',
@@ -2249,13 +2357,17 @@ const SHELL_COPY_BY_LOCALE = {
       boundaryUnreadableRetrying: 'Trying again…',
       permissionModeStreaming:
         'This task is streaming. Wait for it to finish before changing the permission mode.',
-      permissionModeRunning: 'This task is running. Wait for it to finish before changing the permission mode.',
-      permissionModeWaiting: 'A tool call is waiting for confirmation. Respond before changing the permission mode.',
+      permissionModeRunning:
+        'This task is running. Wait for it to finish before changing the permission mode.',
+      permissionModeWaiting:
+        'A tool call is waiting for confirmation. Respond before changing the permission mode.',
       modeChangeLoading: 'This session is still loading. Its mode can be changed in a moment.',
       modeChanging: 'The mode is changing. Wait for it to finish before continuing.',
-      modeChangeStreaming: 'This task is streaming. Wait for it to finish before changing the mode.',
+      modeChangeStreaming:
+        'This task is streaming. Wait for it to finish before changing the mode.',
       modeChangeRunning: 'This task is running. Wait for it to finish before changing the mode.',
-      modeChangeWaiting: 'A tool call is waiting for confirmation. Respond before changing the mode.',
+      modeChangeWaiting:
+        'A tool call is waiting for confirmation. Respond before changing the mode.',
       goalTurnActive:
         'A goal takes hold on the next turn. Wait for this one to finish before setting one.',
       planModeFailedTitle: 'Could not change Plan mode',
@@ -2268,7 +2380,8 @@ const SHELL_COPY_BY_LOCALE = {
       planModeExitConfirm: 'Abandon and leave',
       planModeExitCancel: 'Keep planning',
       planModeExecutionActiveTitle: 'The plan is still running',
-      planModeExecutionActiveDescription: 'Interrupt the active execution before entering Plan Mode to revise it.',
+      planModeExecutionActiveDescription:
+        'Interrupt the active execution before entering Plan Mode to revise it.',
       swarmModeEnabledTitle: 'Swarm Mode is on',
       swarmModeDisabledTitle: 'Swarm Mode is off',
       swarmModeStatusDescription: 'Use /swarm on, /swarm off, or /swarm <task> for one turn.',
@@ -2286,7 +2399,11 @@ export function getShellCopy(locale: UiLocale): ShellCopy {
   return SHELL_COPY_BY_LOCALE[locale];
 }
 
-export function localizedShellErrorMessage(error: unknown, fallback: string, locale: UiLocale): string {
+export function localizedShellErrorMessage(
+  error: unknown,
+  fallback: string,
+  locale: UiLocale,
+): string {
   return generalizedErrorMessageForLocale(error, fallback, locale);
 }
 
@@ -2296,15 +2413,28 @@ export function sessionSettingFailureCopy(
   error: unknown,
 ): { title: string; description: string } {
   const copy = getShellCopy(locale);
-  const failure = setting === 'model'
-    ? { title: copy.sessionSettingsActions.modelFailedTitle, fallback: copy.sessionSettingsActions.modelFallback }
-    : setting === 'thinking'
-      ? { title: copy.sessionSettingsActions.thinkingFailedTitle, fallback: copy.sessionSettingsActions.thinkingFallback }
-      : setting === 'permission'
-        ? { title: copy.sessionSettingsActions.permissionFailedTitle, fallback: copy.sessionSettingsActions.permissionFallback }
-        : setting === 'plan'
-          ? { title: copy.app.planModeFailedTitle, fallback: copy.app.planModeFallback }
-          : { title: copy.app.orchestrationModeFailedTitle, fallback: copy.app.orchestrationModeFallback };
+  const failure =
+    setting === 'model'
+      ? {
+          title: copy.sessionSettingsActions.modelFailedTitle,
+          fallback: copy.sessionSettingsActions.modelFallback,
+        }
+      : setting === 'thinking'
+        ? {
+            title: copy.sessionSettingsActions.thinkingFailedTitle,
+            fallback: copy.sessionSettingsActions.thinkingFallback,
+          }
+        : setting === 'permission'
+          ? {
+              title: copy.sessionSettingsActions.permissionFailedTitle,
+              fallback: copy.sessionSettingsActions.permissionFallback,
+            }
+          : setting === 'plan'
+            ? { title: copy.app.planModeFailedTitle, fallback: copy.app.planModeFallback }
+            : {
+                title: copy.app.orchestrationModeFailedTitle,
+                fallback: copy.app.orchestrationModeFallback,
+              };
   return {
     title: failure.title,
     description: localizedShellErrorMessage(error, failure.fallback, locale),

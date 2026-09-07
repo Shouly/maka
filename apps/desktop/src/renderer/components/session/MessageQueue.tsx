@@ -52,11 +52,7 @@ import { messageActionButtonClass } from './message-action-bar.js';
  * Out-of-range indices return the list unchanged rather than clamping, so a
  * drop past the end is a no-op instead of a silent move to the last position.
  */
-export function reorderQueue(
-  ids: readonly string[],
-  from: number,
-  to: number,
-): readonly string[] {
+export function reorderQueue(ids: readonly string[], from: number, to: number): readonly string[] {
   if (from === to) return ids;
   if (from < 0 || from >= ids.length || to < 0 || to >= ids.length) return ids;
   const next = [...ids];
@@ -174,11 +170,7 @@ export const MessageQueue = memo(function MessageQueue(props: {
                       >
                         {copy.save}
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setEditing(undefined)}
-                      >
+                      <Button size="sm" variant="outline" onClick={() => setEditing(undefined)}>
                         {copy.cancel}
                       </Button>
                     </div>

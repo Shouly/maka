@@ -17,7 +17,11 @@
  * under the License.
  */
 
-import { mergeShellRunUpdate, projectShellRunUpdateForSession, ShellRunUpdateBuffer } from '@maka/core/shell-run-result';
+import {
+  mergeShellRunUpdate,
+  projectShellRunUpdateForSession,
+  ShellRunUpdateBuffer,
+} from '@maka/core/shell-run-result';
 
 import { type ShellRunUpdate } from '@maka/core/events';
 
@@ -31,11 +35,7 @@ export function mergeShellRunUpdates(
   for (const update of updates) {
     const session = next[update.sessionId] ?? {};
     const previous = session[update.sourceToolCallId];
-    const merged = mergeShellRunUpdate(
-      previous,
-      update,
-      'desktop.shell-run-update-state',
-    );
+    const merged = mergeShellRunUpdate(previous, update, 'desktop.shell-run-update-state');
     if (!merged.changed) continue;
     if (next === current) next = { ...current };
     next[update.sessionId] = {
@@ -53,11 +53,7 @@ export function mergeShellRunNotification(
 ): ShellRunUpdatesBySession {
   return mergeShellRunUpdates(
     current,
-    projectShellRunUpdateForSession(
-      sessionId,
-      Object.values(current[sessionId] ?? {}),
-      update,
-    ),
+    projectShellRunUpdateForSession(sessionId, Object.values(current[sessionId] ?? {}), update),
   );
 }
 

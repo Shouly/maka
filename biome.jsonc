@@ -54,7 +54,27 @@
       // assertions plus ~45 contracts introspecting packages/ui. Formatting
       // the UI surface lands as a follow-up once those contract tests are
       // made format-tolerant. See #415.
-      "!apps/desktop/**",
+      //
+      // Enterprise rewrite: the NEW renderer (`apps/desktop/src/renderer`)
+      // has no source-contract tests reading its text, so it is formatter-
+      // OWNED from the start. Biome's negations are not order-sensitive (a
+      // later positive glob cannot re-include), so the desktop exclusion is
+      // spelled out per sibling of `src/renderer` instead of `!apps/desktop/**`.
+      // Inside the renderer only TS/TSX/MJS is formatted: `styles/globals.css`
+      // is relx's token file, kept verbatim.
+      "!apps/desktop/*.*",
+      "!apps/desktop/assets/**",
+      "!apps/desktop/build/**",
+      "!apps/desktop/e2e/**",
+      "!apps/desktop/resources/**",
+      "!apps/desktop/scripts/**",
+      "!apps/desktop/tests/**",
+      "!apps/desktop/src/*.*",
+      "!apps/desktop/src/main/**",
+      "!apps/desktop/src/overlay/**",
+      "!apps/desktop/src/preload/**",
+      "!apps/desktop/src/shared/**",
+      "!apps/desktop/src/renderer/**/*.{css,html,json,md,svg,txt}",
       "!packages/ui/**",
       // Byte-sensitive provenance / generated artifacts — NOT hand-authored
       // source. These are read whole and SHA-256'd + size-checked by the

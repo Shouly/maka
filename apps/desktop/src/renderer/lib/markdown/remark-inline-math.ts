@@ -33,34 +33,34 @@
  */
 
 interface MdNode {
-  type: string
-  value?: string
-  children?: MdNode[]
-  data?: Record<string, unknown>
+  type: string;
+  value?: string;
+  children?: MdNode[];
+  data?: Record<string, unknown>;
 }
 
 function isDigit(ch: string | undefined): boolean {
-  return ch !== undefined && ch >= '0' && ch <= '9'
+  return ch !== undefined && ch >= '0' && ch <= '9';
 }
 
 function isSpace(ch: string | undefined): boolean {
-  return ch === undefined || ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r'
+  return ch === undefined || ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r';
 }
 
 /** 从 open 处的 `$` 找合格闭合,失败返回 -1。 */
 function findClose(value: string, open: number): number {
-  const first = value[open + 1]
-  if (first === undefined || isSpace(first) || first === '$') return -1
+  const first = value[open + 1];
+  if (first === undefined || isSpace(first) || first === '$') return -1;
 
   for (let j = open + 1; j < value.length; j++) {
-    const ch = value[j]
-    if (ch === '\n') return -1
-    if (ch !== '$') continue
-    if (isSpace(value[j - 1])) return -1
-    if (isDigit(value[j + 1])) return -1
-    return j
+    const ch = value[j];
+    if (ch === '\n') return -1;
+    if (ch !== '$') continue;
+    if (isSpace(value[j - 1])) return -1;
+    if (isDigit(value[j + 1])) return -1;
+    return j;
   }
-  return -1
+  return -1;
 }
 
 /**
@@ -74,60 +74,60 @@ function inlineMath(tex: string): MdNode {
     value: tex,
     children: [{ type: 'text', value: tex }],
     data: { hName: 'span', hProperties: { className: ['math', 'math-inline'] } },
-  }
+  };
 }
 
 /** 无公式时返回 null,省下整个数组重建。 */
 function splitText(value: string): MdNode[] | null {
-  let out: MdNode[] | null = null
-  let last = 0
-  let i = 0
+  let out: MdNode[] | null = null;
+  let last = 0;
+  let i = 0;
 
   while (i < value.length) {
     if (value[i] !== '$') {
-      i++
-      continue
+      i++;
+      continue;
     }
-    const close = findClose(value, i)
+    const close = findClose(value, i);
     if (close === -1) {
-      i++
-      continue
+      i++;
+      continue;
     }
-    if (!out) out = []
-    if (i > last) out.push({ type: 'text', value: value.slice(last, i) })
-    out.push(inlineMath(value.slice(i + 1, close)))
-    i = close + 1
-    last = i
+    if (!out) out = [];
+    if (i > last) out.push({ type: 'text', value: value.slice(last, i) });
+    out.push(inlineMath(value.slice(i + 1, close)));
+    i = close + 1;
+    last = i;
   }
 
-  if (!out) return null
-  if (last < value.length) out.push({ type: 'text', value: value.slice(last) })
-  return out
+  if (!out) return null;
+  if (last < value.length) out.push({ type: 'text', value: value.slice(last) });
+  return out;
 }
 
 function walk(node: MdNode): void {
-  const children = node.children
-  if (!children) return
-  let out: MdNode[] | null = null
+  const children = node.children;
+  if (!children) return;
+  let out: MdNode[] | null = null;
 
   for (let i = 0; i < children.length; i++) {
-    const child = children[i]
+    const child = children[i];
     if (child.type === 'text' && child.value !== undefined && child.value.includes('$')) {
-      const parts = splitText(child.value)
+      const parts = splitText(child.value);
       if (parts) {
-        if (!out) out = children.slice(0, i)
-        for (const p of parts) out.push(p)
-        continue
+        if (!out) out = children.slice(0, i);
+        for (const p of parts) out.push(p);
+        continue;
       }
     } else if (child.children) {
-      walk(child)
+      walk(child);
     }
-    if (out) out.push(child)
+    if (out) out.push(child);
   }
 
-  if (out) node.children = out
+  if (out) node.children = out;
 }
 
 export function remarkInlineDollarMath() {
-  return (tree: MdNode) => walk(tree)
+  return (tree: MdNode) => walk(tree);
 }

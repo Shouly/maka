@@ -70,7 +70,10 @@ export function SessionIdentity(props: {
           <button
             type="button"
             onClick={() => props.onOpenParent(row.branchOf!.id)}
-            className={cn(textControlClass, 'maka-no-drag cursor-pointer text-sidebar-text-secondary')}
+            className={cn(
+              textControlClass,
+              'maka-no-drag cursor-pointer text-sidebar-text-secondary',
+            )}
           >
             <span className="truncate">{props.parentName ?? row.branchOf.name}</span>
           </button>
@@ -111,7 +114,10 @@ export function SessionIdentity(props: {
               <button
                 type="button"
                 onClick={() => void openPath('project', row.id)}
-                className={cn(textControlClass, 'maka-no-drag cursor-pointer text-sidebar-text-secondary')}
+                className={cn(
+                  textControlClass,
+                  'maka-no-drag cursor-pointer text-sidebar-text-secondary',
+                )}
               >
                 <span className="truncate">{row.projectName}</span>
               </button>

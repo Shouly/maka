@@ -21,19 +21,19 @@
  * Avvvatars Avatar 组件 - 生成多样化的头像
  */
 
-import Avvvatars from 'avvvatars-react'
-import { cn } from '../../lib/cn'
+import Avvvatars from 'avvvatars-react';
+import { cn } from '../../lib/cn';
 
 export interface AvatarProps {
-  value: string
-  size?: number
-  className?: string
-  style?: 'character' | 'shape'
-  shadow?: boolean
-  radius?: number
-  border?: boolean
-  borderSize?: number
-  borderColor?: string
+  value: string;
+  size?: number;
+  className?: string;
+  style?: 'character' | 'shape';
+  shadow?: boolean;
+  radius?: number;
+  border?: boolean;
+  borderSize?: number;
+  borderColor?: string;
 }
 
 export function Avatar({
@@ -45,10 +45,10 @@ export function Avatar({
   radius,
   border = false,
   borderSize,
-  borderColor
+  borderColor,
 }: AvatarProps) {
   return (
-    <div className={cn("flex-shrink-0", className)}>
+    <div className={cn('flex-shrink-0', className)}>
       <Avvvatars
         value={value}
         size={size}
@@ -60,5 +60,5 @@ export function Avatar({
         borderColor={borderColor}
       />
     </div>
-  )
+  );
 }

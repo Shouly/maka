@@ -25,12 +25,12 @@
  * 原来默认 80、调用点传 48,那是 phosphor 时代的量级,现在一律封顶 32。
  */
 
-import { Anthropicon, type AnthropiconSize } from '../icons'
+import { Anthropicon, type AnthropiconSize } from '../icons';
 
 interface LoadingSpinnerProps {
-  size?: AnthropiconSize
-  className?: string
-  fullScreen?: boolean
+  size?: AnthropiconSize;
+  className?: string;
+  fullScreen?: boolean;
 }
 
 export function LoadingSpinner({
@@ -40,20 +40,14 @@ export function LoadingSpinner({
 }: LoadingSpinnerProps) {
   const spinner = (
     <Anthropicon name="spinner" size={size} className={`animate-spin ${className}`} />
-  )
+  );
 
   if (fullScreen) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-surface-1">
-        {spinner}
-      </div>
-    )
+      <div className="flex min-h-screen items-center justify-center bg-surface-1">{spinner}</div>
+    );
   }
 
   // fullScreen={false} 时也提供居中容器
-  return (
-    <div className="flex items-center justify-center">
-      {spinner}
-    </div>
-  )
+  return <div className="flex items-center justify-center">{spinner}</div>;
 }

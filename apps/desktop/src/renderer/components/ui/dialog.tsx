@@ -17,19 +17,19 @@
  * under the License.
  */
 
-import * as React from "react"
-import * as DialogPrimitive from "@radix-ui/react-dialog"
+import * as React from 'react';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
 
-import { Anthropicon } from "../icons"
-import { cn } from "../../lib/cn"
+import { Anthropicon } from '../icons';
+import { cn } from '../../lib/cn';
 
-const Dialog = DialogPrimitive.Root
+const Dialog = DialogPrimitive.Root;
 
-const DialogTrigger = DialogPrimitive.Trigger
+const DialogTrigger = DialogPrimitive.Trigger;
 
-const DialogPortal = DialogPrimitive.Portal
+const DialogPortal = DialogPrimitive.Portal;
 
-const DialogClose = DialogPrimitive.Close
+const DialogClose = DialogPrimitive.Close;
 
 const DialogOverlay = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Overlay>,
@@ -38,14 +38,11 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     data-app-dialog-overlay=""
     ref={ref}
-    className={cn(
-      "fixed inset-0 z-50 bg-dialog-overlay backdrop-blur-[2px]",
-      className
-    )}
+    className={cn('fixed inset-0 z-50 bg-dialog-overlay backdrop-blur-[2px]', className)}
     {...props}
   />
-))
-DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
+));
+DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 const DialogContent = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Content>,
@@ -68,8 +65,8 @@ const DialogContent = React.forwardRef<
         //
         // className 落在 **root** 上。要改内边距/间距请改基元,不要在调用点
         // 传 p-* / gap-*,那会落到 root 上、对不上内容(root 没有 padding)。
-        "fixed left-[50%] top-[50%] z-50 flex flex-col w-full max-w-[calc(100%-2rem)] md:max-w-md translate-x-[-50%] translate-y-[-50%] max-h-[calc(100dvh-2rem)] bg-surface-3 rounded-xl shadow-[var(--dialog-shadow)]",
-        className
+        'fixed left-[50%] top-[50%] z-50 flex flex-col w-full max-w-[calc(100%-2rem)] md:max-w-md translate-x-[-50%] translate-y-[-50%] max-h-[calc(100dvh-2rem)] bg-surface-3 rounded-xl shadow-[var(--dialog-shadow)]',
+        className,
       )}
       {...props}
     >
@@ -78,32 +75,24 @@ const DialogContent = React.forwardRef<
       </div>
     </DialogPrimitive.Content>
   </DialogPortal>
-))
-DialogContent.displayName = DialogPrimitive.Content.displayName
+));
+DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 interface DialogHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
-  hideCloseButton?: boolean
-  closeLabel?: string
+  hideCloseButton?: boolean;
+  closeLabel?: string;
 }
 
 const DialogHeader = ({
   className,
   children,
   hideCloseButton = false,
-  closeLabel = "Close",
+  closeLabel = 'Close',
   ...props
 }: DialogHeaderProps) => (
-  <div
-    className={cn(
-      "flex items-start justify-between gap-4",
-      className
-    )}
-    {...props}
-  >
+  <div className={cn('flex items-start justify-between gap-4', className)} {...props}>
     {/* gap-1 = 4px:Cowork 的标题↔描述间距 */}
-    <div className="flex flex-col gap-1 text-left flex-1 min-w-0">
-      {children}
-    </div>
+    <div className="flex flex-col gap-1 text-left flex-1 min-w-0">{children}</div>
     {/* 关闭按钮静止态就是文字主色(Cowork 实测 rgb(11,11,11)),hover 只加 5%
         底、不变色 —— 关闭是弹框里唯一的常驻操作,不该默认压成次要灰。 */}
     {!hideCloseButton && (
@@ -113,24 +102,21 @@ const DialogHeader = ({
       </DialogPrimitive.Close>
     )}
   </div>
-)
-DialogHeader.displayName = "DialogHeader"
+);
+DialogHeader.displayName = 'DialogHeader';
 
-const DialogFooter = ({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) => (
+const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
       // gap-3 = 12px(Cowork 实测)。原来是 space-x-2 = 8px,且 space-x 在
       // flex-col-reverse 的移动端布局下不生效,gap 两个方向都对。
-      "flex flex-col-reverse gap-3 md:flex-row md:justify-end",
-      className
+      'flex flex-col-reverse gap-3 md:flex-row md:justify-end',
+      className,
     )}
     {...props}
   />
-)
-DialogFooter.displayName = "DialogFooter"
+);
+DialogFooter.displayName = 'DialogFooter';
 
 const DialogTitle = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Title>,
@@ -142,13 +128,13 @@ const DialogTitle = React.forwardRef<
       // 22/28 + semibold(580),三项都是 Cowork 实测值。
       // 本仓的字重刻度已按 CDS 定成 medium 500 / semibold 580 / bold 600,
       // 所以这里的 font-semibold 直接就是 580,不用再写死数值。
-      "text-[22px] font-semibold leading-7 text-text-primary",
-      className
+      'text-[22px] font-semibold leading-7 text-text-primary',
+      className,
     )}
     {...props}
   />
-))
-DialogTitle.displayName = DialogPrimitive.Title.displayName
+));
+DialogTitle.displayName = DialogPrimitive.Title.displayName;
 
 const DialogDescription = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Description>,
@@ -156,11 +142,11 @@ const DialogDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Description
     ref={ref}
-    className={cn("text-sm leading-5 text-text-secondary", className)}
+    className={cn('text-sm leading-5 text-text-secondary', className)}
     {...props}
   />
-))
-DialogDescription.displayName = DialogPrimitive.Description.displayName
+));
+DialogDescription.displayName = DialogPrimitive.Description.displayName;
 
 export {
   Dialog,
@@ -173,4 +159,4 @@ export {
   DialogFooter,
   DialogTitle,
   DialogDescription,
-}
+};

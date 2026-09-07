@@ -61,10 +61,7 @@ export interface ToolContentContext {
  * switch rather than a component map so the narrowing of `item.result` by kind
  * is the compiler's, not a cast's.
  */
-export function renderToolContent(
-  item: ToolActivityItem,
-  context: ToolContentContext,
-): ReactNode {
+export function renderToolContent(item: ToolActivityItem, context: ToolContentContext): ReactNode {
   const id: ToolRendererId = resolveToolRendererId(item);
   const result = item.result;
   switch (id) {

@@ -35,10 +35,7 @@ export interface ShellCommandHandlers {
 }
 
 /** Dispatch one command id. Unknown ids are ignored, not thrown. */
-export function dispatchShellCommand(
-  id: string,
-  handlers: ShellCommandHandlers,
-): boolean {
+export function dispatchShellCommand(id: string, handlers: ShellCommandHandlers): boolean {
   if (id === 'newTask' || id === 'openSettings' || id === 'openHelp') {
     handlers[id]();
     return true;

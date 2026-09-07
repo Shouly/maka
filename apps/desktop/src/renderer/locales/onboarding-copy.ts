@@ -26,10 +26,7 @@ import type { OnboardingHeroCopy } from '../lib/ported/onboarding-hero-copy.js';
 type VisibleOnboardingKind =
   | Exclude<OnboardingState['kind'], 'ready_with_history' | 'ready_empty' | 'blocked'>
   | `blocked:${Extract<OnboardingState, { kind: 'blocked' }>['reason']}`;
-type LocalizedOnboardingHeroCopy = Omit<
-  OnboardingHeroCopy,
-  'kind' | 'connectionSlug' | 'cta'
-> & {
+type LocalizedOnboardingHeroCopy = Omit<OnboardingHeroCopy, 'kind' | 'connectionSlug' | 'cta'> & {
   cta: Pick<OnboardingHeroCopy['cta'], 'label'>;
 };
 

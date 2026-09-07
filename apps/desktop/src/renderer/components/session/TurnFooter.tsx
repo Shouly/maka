@@ -32,10 +32,7 @@ import { Anthropicon } from '../icons/Anthropicon.js';
 import type { AnthropiconName } from '../icons/Anthropicon.js';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.js';
 import { cn } from '../../lib/cn.js';
-import type {
-  TurnFooterAction,
-  TurnFooterActionId,
-} from '../../lib/ported/turn-footer-actions.js';
+import type { TurnFooterAction, TurnFooterActionId } from '../../lib/ported/turn-footer-actions.js';
 import { getTranscriptCopy } from '../../locales/transcript-copy.js';
 import { messageActionBarClass, messageActionButtonClass } from './message-action-bar.js';
 

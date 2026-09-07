@@ -139,8 +139,7 @@ test('a sidebar row is one selectable option carrying the contract attribute', (
   assert.ok(document.documentElement.textContent?.includes('Wire the sidebar'));
   // Every actionable element carries an accessible name.
   for (const button of document.querySelectorAll('button')) {
-    const named =
-      (button.textContent ?? '').trim().length > 0 || button.hasAttribute('aria-label');
+    const named = (button.textContent ?? '').trim().length > 0 || button.hasAttribute('aria-label');
     assert.ok(named, 'every row control has an accessible name');
   }
 });
@@ -148,7 +147,9 @@ test('a sidebar row is one selectable option carrying the contract attribute', (
 test('a stale row announces the blocker instead of the running dot', () => {
   const document = renderTree(
     createElement(SessionRow, {
-      row: sessionRow({ sendOutcomes: { 'task-1': { kind: 'blocked', reason: 'connection_missing' } } }),
+      row: sessionRow({
+        sendOutcomes: { 'task-1': { kind: 'blocked', reason: 'connection_missing' } },
+      }),
       isActive: false,
       copy: sidebarCopy,
       actions: noopRowActions,

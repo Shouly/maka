@@ -117,9 +117,7 @@ export function terminalSessionWorkbarTabId(ref: string): string {
   return `terminal:${encodeURIComponent(ref)}`;
 }
 
-export function terminalRefFromWorkbarTab(
-  tab: SessionWorkbarTab,
-): string | null {
+export function terminalRefFromWorkbarTab(tab: SessionWorkbarTab): string | null {
   if (tab.kind !== 'terminal') return null;
   if (tab.resourceRef) return tab.resourceRef;
   if (!tab.id.startsWith('terminal:')) return null;
@@ -137,7 +135,7 @@ export function createSessionWorkbarTabsState(
   const normalized = dedupeTabs(tabs);
   const active = normalized.some((tab) => tab.id === activeTabId)
     ? activeTabId
-    : normalized[0]?.id ?? null;
+    : (normalized[0]?.id ?? null);
   return {
     tabs: normalized,
     activeTabId: active,
@@ -228,11 +226,7 @@ export function openSessionWorkbarPanelLauncher(
   state: SessionWorkbarPanelsState,
   placement: SessionWorkbarPlacement,
 ): SessionWorkbarPanelsState {
-  const next = updateSessionWorkbarPanel(
-    state,
-    placement,
-    openSessionWorkbarLauncher,
-  );
+  const next = updateSessionWorkbarPanel(state, placement, openSessionWorkbarLauncher);
   return { ...next, focusedPanel: placement };
 }
 
@@ -282,9 +276,7 @@ export function openSessionWorkbarTab(
     const next = { ...existing, ...tab };
     return {
       ...state,
-      tabs: state.tabs.map((candidate) =>
-        candidate.id === tab.id ? next : candidate,
-      ),
+      tabs: state.tabs.map((candidate) => (candidate.id === tab.id ? next : candidate)),
       activeTabId: tab.id,
       launcherOpen: false,
       activationHistory: recordSessionWorkbarActivation(
@@ -380,24 +372,16 @@ export function closeSessionWorkbarTabs(
     return { ...state, tabs, activationHistory };
   }
   const next =
-    [...activationHistory].reverse().find((tabId) =>
-      tabs.some((tab) => tab.id === tabId),
-    ) ??
-    state.tabs
-      .slice(Math.max(0, activeIndex + 1))
-      .find((tab) => !closing.has(tab.id))?.id ??
-    [...state.tabs.slice(0, Math.max(0, activeIndex))]
-      .reverse()
-      .find((tab) => !closing.has(tab.id))?.id ??
+    [...activationHistory].reverse().find((tabId) => tabs.some((tab) => tab.id === tabId)) ??
+    state.tabs.slice(Math.max(0, activeIndex + 1)).find((tab) => !closing.has(tab.id))?.id ??
+    [...state.tabs.slice(0, Math.max(0, activeIndex))].reverse().find((tab) => !closing.has(tab.id))
+      ?.id ??
     tabs[0]!.id;
   return {
     tabs,
     activeTabId: next,
     launcherOpen: false,
-    activationHistory: recordSessionWorkbarActivation(
-      activationHistory,
-      next,
-    ),
+    activationHistory: recordSessionWorkbarActivation(activationHistory, next),
   };
 }
 
@@ -412,7 +396,7 @@ export function persistableSessionWorkbarTabs(
     tabs,
     activeTabId: tabs.some((tab) => tab.id === state.activeTabId)
       ? state.activeTabId
-      : tabs[0]?.id ?? null,
+      : (tabs[0]?.id ?? null),
   };
 }
 
@@ -490,15 +474,10 @@ function dedupeTabs(tabs: readonly SessionWorkbarTab[]): SessionWorkbarTab[] {
   });
 }
 
-function recordSessionWorkbarActivation(
-  history: readonly string[],
-  tabId: string,
-): string[] {
+function recordSessionWorkbarActivation(history: readonly string[], tabId: string): string[] {
   return [...history.filter((candidate) => candidate !== tabId), tabId];
 }
 
-function sessionWorkbarActivationHistory(
-  state: SessionWorkbarTabsState,
-): readonly string[] {
+function sessionWorkbarActivationHistory(state: SessionWorkbarTabsState): readonly string[] {
   return state.activationHistory ?? (state.activeTabId ? [state.activeTabId] : []);
 }

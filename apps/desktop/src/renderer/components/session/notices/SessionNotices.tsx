@@ -146,7 +146,9 @@ export function SessionNotices(props: {
   const streamStatus = health?.status;
   const resuming = pending.includes('resume');
   const compactionNotice =
-    compaction && compaction !== dismissedCompaction ? compactionText(compaction, copy.notices) : undefined;
+    compaction && compaction !== dismissedCompaction
+      ? compactionText(compaction, copy.notices)
+      : undefined;
 
   const anything =
     awaitingAnswer ||
@@ -252,7 +254,9 @@ export function SessionNotices(props: {
         <NoticeCard
           tone="warning"
           role="status"
-          title={streamStatus === 'closed' ? copy.notices.streamStalled : copy.notices.streamDegraded}
+          title={
+            streamStatus === 'closed' ? copy.notices.streamStalled : copy.notices.streamDegraded
+          }
         />
       )}
 

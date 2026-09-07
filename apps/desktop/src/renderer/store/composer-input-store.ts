@@ -123,9 +123,7 @@ function isEmptyDocument(document: JSONContent): boolean {
   return !(document.content ?? []).some((node) => (node.content ?? []).length > 0);
 }
 
-export function createComposerInputStore(
-  storage: ComposerDraftStorage = localStorageDraftStorage,
-) {
+export function createComposerInputStore(storage: ComposerDraftStorage = localStorageDraftStorage) {
   const store = createStore<{ drafts: Record<string, InputDraft> }>(() => ({ drafts: {} }));
 
   // Hydrate: every persisted draft becomes an in-memory draft at revision 0.

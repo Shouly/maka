@@ -48,10 +48,7 @@ export function AppLayout(props: {
       className={cn('relative flex min-h-0 flex-1 bg-surface-1', props.className)}
     >
       {props.sidebar}
-      <main
-        data-sidebar-main=""
-        className="relative flex min-w-0 flex-1 flex-col overflow-hidden"
-      >
+      <main data-sidebar-main="" className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         {props.children}
       </main>
     </div>

@@ -17,24 +17,24 @@
  * under the License.
  */
 
-import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react'
+import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 
-import { cn } from '../../lib/cn'
+import { cn } from '../../lib/cn';
 
 // [&>span]:min-w-0 —— 与 Claude 的 header 按钮一致。控件里包一层 span 再放
 // truncate 文本是常见写法(要跟图标并排时尤其如此),而中间这层 span 若是
 // inline-flex 且没有 overflow:hidden,min-width:auto 会让它拒绝收窄到内容宽度
 // 以下,里层的 truncate 就永远轮不到生效,整个标题把 header 顶出去。
 export const mainHeaderTextControlClass =
-  'relative inline-flex h-7 min-w-0 items-center rounded-[7px] px-2.5 text-sm leading-5 text-sidebar-text-primary transition-[background-color,color,box-shadow] hover:bg-sidebar-menu-hover focus-visible:outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] [&>span]:min-w-0'
+  'relative inline-flex h-7 min-w-0 items-center rounded-[7px] px-2.5 text-sm leading-5 text-sidebar-text-primary transition-[background-color,color,box-shadow] hover:bg-sidebar-menu-hover focus-visible:outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] [&>span]:min-w-0';
 
 export const mainHeaderTextLabelClass =
-  'inline-flex h-7 min-w-0 items-center px-2.5 text-sm leading-5 text-sidebar-text-primary'
+  'inline-flex h-7 min-w-0 items-center px-2.5 text-sm leading-5 text-sidebar-text-primary';
 
 export const mainHeaderIconControlClass =
   // hover 用 5%(ghost 档),与同一行的标题/动作按钮一致 —— 之前这里是 10%
   // (sidebar-control-hover),紧挨着标题时明显比标题的底色深一档。
-  'relative inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-[7px] text-sidebar-text-muted transition-[background-color,color,box-shadow] hover:bg-sidebar-menu-hover hover:text-sidebar-text-primary focus-visible:outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)]'
+  'relative inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-[7px] text-sidebar-text-muted transition-[background-color,color,box-shadow] hover:bg-sidebar-menu-hover hover:text-sidebar-text-primary focus-visible:outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)]';
 
 // 里面的图标显式传 size,别吃 Anthropicon 的默认:同一排里各图标在 spec 表登记
 // 的默认有 16 也有 20,不传就会大小不一。字号是内联 style,类名压不过去。
@@ -43,32 +43,28 @@ export const mainHeaderIconControlClass =
 // 显小),后来连头像堆一起收到 20 + ring-2(视觉外径 24),18 的图标就不再显小了
 // —— 两处一起改才成立,只改一边会把那排重新拉花。
 export const mainHeaderActionControlClass =
-  'relative inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-[7px] text-sidebar-text-primary transition-[background-color,box-shadow] hover:bg-sidebar-menu-hover focus-visible:outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)]'
+  'relative inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-[7px] text-sidebar-text-primary transition-[background-color,box-shadow] hover:bg-sidebar-menu-hover focus-visible:outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)]';
 
 interface MainHeaderActionButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  active?: boolean
+  active?: boolean;
 }
 
-export const MainHeaderActionButton = forwardRef<
-  HTMLButtonElement,
-  MainHeaderActionButtonProps
->(function MainHeaderActionButton(
-  { active = false, className, type = 'button', ...props },
-  ref,
-) {
-  return (
-    <button
-      ref={ref}
-      type={type}
-      className={cn(
-        mainHeaderActionControlClass,
-        active && 'bg-sidebar-menu-hover text-sidebar-text-primary',
-        className,
-      )}
-      {...props}
-    />
-  )
-})
+export const MainHeaderActionButton = forwardRef<HTMLButtonElement, MainHeaderActionButtonProps>(
+  function MainHeaderActionButton({ active = false, className, type = 'button', ...props }, ref) {
+    return (
+      <button
+        ref={ref}
+        type={type}
+        className={cn(
+          mainHeaderActionControlClass,
+          active && 'bg-sidebar-menu-hover text-sidebar-text-primary',
+          className,
+        )}
+        {...props}
+      />
+    );
+  },
+);
 
 interface MainHeaderBreadcrumbProps {
   /**
@@ -76,10 +72,10 @@ interface MainHeaderBreadcrumbProps {
    * (`will-navigate` preventDefault),渲染进程里没有 URL 路由,所以面包屑的
    * 那一段是个按钮 + 回调,不是链接。
    */
-  onClick: () => void
-  children: ReactNode
-  className?: string
-  linkClassName?: string
+  onClick: () => void;
+  children: ReactNode;
+  className?: string;
+  linkClassName?: string;
 }
 
 export function MainHeaderBreadcrumb({
@@ -97,15 +93,17 @@ export function MainHeaderBreadcrumb({
       >
         {children}
       </button>
-      <span aria-hidden="true" className="px-0.5 text-sidebar-text-muted opacity-50">/</span>
+      <span aria-hidden="true" className="px-0.5 text-sidebar-text-muted opacity-50">
+        /
+      </span>
     </div>
-  )
+  );
 }
 
 interface MainHeaderTitleLabelProps {
-  children: ReactNode
-  weight?: 'regular' | 'medium'
-  className?: string
+  children: ReactNode;
+  weight?: 'regular' | 'medium';
+  className?: string;
 }
 
 export function MainHeaderTitleLabel({
@@ -123,25 +121,25 @@ export function MainHeaderTitleLabel({
     >
       {children}
     </div>
-  )
+  );
 }
 
 interface MainHeaderProps {
   /** The title/breadcrumb/session controls rendered after the context glyph. */
-  title: ReactNode
+  title: ReactNode;
   /** Desktop context glyph. Hidden on mobile where the Sidebar toggle owns the slot. */
-  contextIcon?: ReactNode
+  contextIcon?: ReactNode;
   /** Mobile-only Sidebar control retained by the existing page. */
-  mobileToggle?: ReactNode
+  mobileToggle?: ReactNode;
   /** Connection or generation state placed directly after the title slot. */
-  status?: ReactNode
+  status?: ReactNode;
   /** Page actions aligned to the right edge of the same Header row. */
-  actions?: ReactNode
+  actions?: ReactNode;
   /** Detail pages use sticky; conversation headers use relative. */
-  position?: 'relative' | 'sticky'
-  className?: string
-  rowClassName?: string
-  titleSlotClassName?: string
+  position?: 'relative' | 'sticky';
+  className?: string;
+  rowClassName?: string;
+  titleSlotClassName?: string;
 }
 
 /**
@@ -183,12 +181,7 @@ export function MainHeader({
         )}
       >
         {mobileToggle}
-        <div
-          className={cn(
-            'flex min-w-0 shrink items-center gap-2',
-            titleSlotClassName,
-          )}
-        >
+        <div className={cn('flex min-w-0 shrink items-center gap-2', titleSlotClassName)}>
           {contextIcon && (
             <span className="hidden size-4 shrink-0 items-center justify-center text-sidebar-text-secondary md:flex">
               {contextIcon}
@@ -200,11 +193,7 @@ export function MainHeader({
         </div>
         {status}
         <div aria-hidden="true" className="min-w-0 flex-1" />
-        {actions && (
-          <div className="flex shrink-0 items-center gap-1">
-            {actions}
-          </div>
-        )}
+        {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
       </div>
 
       {/* header 的底色 + 下缘淡出,一个元素画完。
@@ -221,5 +210,5 @@ export function MainHeader({
         className="pointer-events-none absolute inset-0 -bottom-6 z-[-1] bg-surface-1 [mask-image:linear-gradient(to_bottom,black_66.67%,transparent)]"
       />
     </header>
-  )
+  );
 }

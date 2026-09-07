@@ -107,7 +107,10 @@ function startOfDay(ts: number): number {
   return date.getTime();
 }
 
-export function timeBucketOf(activityAt: number, now: number): Exclude<SidebarGroupKey, 'flagged' | 'none'> {
+export function timeBucketOf(
+  activityAt: number,
+  now: number,
+): Exclude<SidebarGroupKey, 'flagged' | 'none'> {
   const today = startOfDay(now);
   if (activityAt >= today) return 'today';
   if (activityAt >= today - DAY_MS) return 'yesterday';
@@ -175,12 +178,12 @@ export function buildSessionListModel(input: SessionListInput): SessionListModel
       flagged: session.isFlagged,
       unread: session.hasUnread,
       archived: session.isArchived,
-      branchOf: banner
-        ? { id: banner.parentSessionId, name: banner.parentSessionName }
-        : undefined,
+      branchOf: banner ? { id: banner.parentSessionId, name: banner.parentSessionName } : undefined,
       revisionCount: new Set(
         listed
-          .filter((candidate) => sessionRevisionFamilyId(candidate) === sessionRevisionFamilyId(session))
+          .filter(
+            (candidate) => sessionRevisionFamilyId(candidate) === sessionRevisionFamilyId(session),
+          )
           .map((candidate) => candidate.id),
       ).size,
       familyIds,
@@ -212,7 +215,10 @@ function groupByTime(rows: readonly SessionListRow[], input: SessionListInput): 
     .map((key) => ({ key, label: input.copy.groups[key], rows: buckets.get(key) ?? [] }));
 }
 
-function groupByProject(rows: readonly SessionListRow[], input: SessionListInput): SessionListGroup[] {
+function groupByProject(
+  rows: readonly SessionListRow[],
+  input: SessionListInput,
+): SessionListGroup[] {
   const byProject = new Map<string, SessionListRow[]>();
   for (const row of rows) {
     const key = row.projectId ?? '';

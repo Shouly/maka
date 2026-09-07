@@ -65,7 +65,8 @@ const TASK_READINESS_COPY = {
     },
     workspace: {
       title: 'This task workspace is unavailable.',
-      description: 'The folder may have moved, been deleted, or become inaccessible. Choose an available workspace.',
+      description:
+        'The folder may have moved, been deleted, or become inaccessible. Choose an available workspace.',
       actionLabel: { workspace_picker: 'Choose workspace', retry: 'Check again' },
     },
   },

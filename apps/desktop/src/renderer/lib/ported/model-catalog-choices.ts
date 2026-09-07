@@ -57,7 +57,11 @@ export function buildCatalogDailyReviewModelOptions(
 
   for (const connection of connections) {
     if (!isModelConsumerConnection(connection)) continue;
-    const safeSourceLabel = safeConnectionLabel(connection.providerType, connection.slug, providerCounts);
+    const safeSourceLabel = safeConnectionLabel(
+      connection.providerType,
+      connection.slug,
+      providerCounts,
+    );
     // The Host decides what is offerable; the caller appends a saved-but-
     // unavailable selection itself, with a label that says so.
     for (const entry of offerableCatalogEntries(connection)) {
@@ -74,17 +78,24 @@ export function buildCatalogDailyReviewModelOptions(
     modelCounts.set(candidate.label, (modelCounts.get(candidate.label) ?? 0) + 1);
   }
   for (const candidate of candidates) {
-    const label = (modelCounts.get(candidate.label) ?? 0) > 1
-      ? `${candidate.label} · ${candidate.safeSourceLabel}`
-      : candidate.label;
+    const label =
+      (modelCounts.get(candidate.label) ?? 0) > 1
+        ? `${candidate.label} · ${candidate.safeSourceLabel}`
+        : candidate.label;
     options.push([candidate.key, label]);
   }
 
   const trimmedCurrent = currentModelKey.trim();
   if (trimmedCurrent && !options.some(([value]) => value === trimmedCurrent)) {
-    const label = current?.model || trimmedCurrent.split(DAILY_REVIEW_MODEL_KEY_SEPARATOR).pop() || trimmedCurrent;
+    const label =
+      current?.model ||
+      trimmedCurrent.split(DAILY_REVIEW_MODEL_KEY_SEPARATOR).pop() ||
+      trimmedCurrent;
     const sourceLabel = current?.connectionSlug ? ` · ${current.connectionSlug}` : '';
-    options.push([trimmedCurrent, `${label}${sourceLabel} · ${getShellRemainingCopy(locale).models.unavailable}`]);
+    options.push([
+      trimmedCurrent,
+      `${label}${sourceLabel} · ${getShellRemainingCopy(locale).models.unavailable}`,
+    ]);
   }
 
   return options;
@@ -94,7 +105,9 @@ function modelDisplayLabel(entry: Pick<ModelCatalogEntry, 'id' | 'displayName'>)
   return entry.displayName?.trim() || entry.id;
 }
 
-function isModelConsumerConnection(connection: Pick<LlmConnection, 'enabled' | 'providerType'>): boolean {
+function isModelConsumerConnection(
+  connection: Pick<LlmConnection, 'enabled' | 'providerType'>,
+): boolean {
   // Unknown providerType (legacy seed, or a connection persisted on a branch
   // that registers a provider this build doesn't know) → not a model consumer.
   // Mirrors `isRealConnection` in connection-readiness.ts.
@@ -123,7 +136,9 @@ function dailyReviewModelKey(connectionSlug: string, model: string): string {
   return `${connectionSlug}${DAILY_REVIEW_MODEL_KEY_SEPARATOR}${model}`;
 }
 
-function parseDailyReviewModelKey(value: string): { connectionSlug: string; model: string } | undefined {
+function parseDailyReviewModelKey(
+  value: string,
+): { connectionSlug: string; model: string } | undefined {
   const trimmed = value.trim();
   const index = trimmed.indexOf(DAILY_REVIEW_MODEL_KEY_SEPARATOR);
   if (index <= 0) return undefined;

@@ -116,7 +116,8 @@ const COPY = {
     // only ever learns which sources *were* detected — nothing but a copy
     // string can tell someone with none what to go install. The second half is
     // the promise that earns the permission to read another app's files.
-    unavailableDescription: '在本机使用过 Codex 后，它的对话会出现在这里。Maka 只读取这些文件，不会修改。',
+    unavailableDescription:
+      '在本机使用过 Codex 后，它的对话会出现在这里。Maka 只读取这些文件，不会修改。',
     loadFailedTitle: '无法读取外部对话',
     loadFailedFallback: '外部对话目录暂时无法读取，请重试。',
     retry: '重试',
@@ -137,8 +138,10 @@ const COPY = {
     importInProgressDescription: (name) => `正在导入「${name}」，完成后会直接打开这个任务。`,
     importFailedTitle: '导入失败',
     importFailedFallback: '该对话无法转换或保存。请检查来源后重试。',
-    importFailedNoModel: '没有可用的模型连接，无法为导入的任务选择模型。请先在 设置 · 模型 中配置并启用一个模型后再导入。',
-    importFailedSourceUnreadable: '无法读取或转换该对话，它可能过大、已损坏或暂时无法读取。请检查来源后重试。',
+    importFailedNoModel:
+      '没有可用的模型连接，无法为导入的任务选择模型。请先在 设置 · 模型 中配置并启用一个模型后再导入。',
+    importFailedSourceUnreadable:
+      '无法读取或转换该对话，它可能过大、已损坏或暂时无法读取。请检查来源后重试。',
     importRecoveredTitle: '已确认导入',
     importRecoveredDescription: (name) => `「${name}」导入的任务现已可用。`,
     importNotRecordedTitle: '没有发现新任务',
@@ -174,7 +177,8 @@ const COPY = {
     // only ever learns which sources *were* detected — nothing but a copy
     // string can tell someone with none what to go install. The second half is
     // the promise that earns the permission to read another app's files.
-    unavailableDescription: '在本機使用過 Codex 後，它的對話會出現在這裡。Maka 只讀取這些檔案，不會修改。',
+    unavailableDescription:
+      '在本機使用過 Codex 後，它的對話會出現在這裡。Maka 只讀取這些檔案，不會修改。',
     loadFailedTitle: '無法讀取外部對話',
     loadFailedFallback: '外部對話目錄暫時無法讀取，請重試。',
     retry: '重試',
@@ -195,8 +199,10 @@ const COPY = {
     importInProgressDescription: (name) => `正在匯入「${name}」，完成後會直接開啟這個任務。`,
     importFailedTitle: '匯入失敗',
     importFailedFallback: '該對話無法轉換或儲存。請檢查來源後重試。',
-    importFailedNoModel: '沒有可用的模型連線，無法為匯入的任務選擇模型。請先在 設定 · 模型 中設定並啟用一個模型後再匯入。',
-    importFailedSourceUnreadable: '無法讀取或轉換該對話，它可能過大、已損毀或暫時無法讀取。請檢查來源後重試。',
+    importFailedNoModel:
+      '沒有可用的模型連線，無法為匯入的任務選擇模型。請先在 設定 · 模型 中設定並啟用一個模型後再匯入。',
+    importFailedSourceUnreadable:
+      '無法讀取或轉換該對話，它可能過大、已損毀或暫時無法讀取。請檢查來源後重試。',
     importRecoveredTitle: '已確認匯入',
     importRecoveredDescription: (name) => `「${name}」匯入的任務現已可用。`,
     importNotRecordedTitle: '沒有發現新任務',
@@ -249,14 +255,14 @@ const COPY = {
     importInProgressDescription: (name) =>
       `Importing “${name}”. Maka opens the task as soon as it lands.`,
     importFailedTitle: 'Import failed',
-    importFailedFallback: 'This conversation could not be converted or saved. Check the source and try again.',
+    importFailedFallback:
+      'This conversation could not be converted or saved. Check the source and try again.',
     importFailedNoModel:
       'No usable model connection to attach the imported task to. Configure and enable a model in Settings · Models, then import again.',
     importFailedSourceUnreadable:
       'This conversation could not be read or converted — it may be too large, malformed, or temporarily unreadable. Check the source and try again.',
     importRecoveredTitle: 'Import confirmed',
-    importRecoveredDescription: (name) =>
-      `The imported task is available now for “${name}”.`,
+    importRecoveredDescription: (name) => `The imported task is available now for “${name}”.`,
     importNotRecordedTitle: 'No new task found',
     importNotRecordedDescription: 'No new task was recorded, so it is safe to retry.',
     importOutcomeUnknownTitle: 'Check the import result',
@@ -266,8 +272,7 @@ const COPY = {
     importSelected: 'Import selected',
     batchProgress: (done, total) => `Importing ${done} / ${total}`,
     batchDoneTitle: (imported) => `Imported ${imported} conversations`,
-    batchDuplicated: (count) =>
-      `${count} of them had been imported before and now exist twice.`,
+    batchDuplicated: (count) => `${count} of them had been imported before and now exist twice.`,
     batchFailed: (count) => `${count} more could not be imported.`,
     batchNothingImported: 'No conversation was imported.',
     importOutcomeUnknownDescription: (names) =>

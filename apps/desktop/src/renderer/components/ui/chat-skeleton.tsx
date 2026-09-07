@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { mainHeaderTextLabelClass } from '../layout/MainHeader'
+import { mainHeaderTextLabelClass } from '../layout/MainHeader';
 
 /**
  * 会话首屏骨架。
@@ -56,7 +56,7 @@ const ASSISTANT_LINES = [
   { width: 'w-10/12', opacity: 'opacity-30' },
   { width: 'w-9/12', opacity: 'opacity-20' },
   { width: 'w-4/12', opacity: 'opacity-10' },
-] as const
+] as const;
 
 export function ChatSkeleton() {
   return (
@@ -97,5 +97,5 @@ export function ChatSkeleton() {
         </div>
       </div>
     </div>
-  )
+  );
 }

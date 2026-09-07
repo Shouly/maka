@@ -17,30 +17,30 @@
  * under the License.
  */
 
-import { cn } from '../../lib/cn'
-import { listToolbarButtonClass } from './list-toolbar'
-import { Anthropicon } from '../icons/Anthropicon'
+import { cn } from '../../lib/cn';
+import { listToolbarButtonClass } from './list-toolbar';
+import { Anthropicon } from '../icons/Anthropicon';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from './dropdown-menu'
+} from './dropdown-menu';
 
 export interface SortOption<T extends string = string> {
-  value: T
-  label: string
-  shortLabel?: string
+  value: T;
+  label: string;
+  shortLabel?: string;
 }
 
 interface SortSelectProps<T extends string = string> {
-  options: SortOption<T>[]
-  value: T
-  onChange: (value: T) => void
-  label?: string
-  align?: 'start' | 'center' | 'end'
-  className?: string
+  options: SortOption<T>[];
+  value: T;
+  onChange: (value: T) => void;
+  label?: string;
+  align?: 'start' | 'center' | 'end';
+  className?: string;
 }
 
 export function SortSelect<T extends string = string>({
@@ -51,7 +51,7 @@ export function SortSelect<T extends string = string>({
   align = 'end',
   className,
 }: SortSelectProps<T>) {
-  const currentOption = options.find(opt => opt.value === value)
+  const currentOption = options.find((opt) => opt.value === value);
 
   return (
     <DropdownMenu>
@@ -59,11 +59,7 @@ export function SortSelect<T extends string = string>({
         <button
           type="button"
           aria-label={`${label}: ${currentOption?.label ?? ''}`}
-          className={cn(
-            listToolbarButtonClass,
-            'flex items-center gap-1.5',
-            className
-          )}
+          className={cn(listToolbarButtonClass, 'flex items-center gap-1.5', className)}
         >
           {label && <span className="hidden text-text-muted sm:inline">{label}</span>}
           {currentOption?.shortLabel || currentOption?.label}
@@ -83,5 +79,5 @@ export function SortSelect<T extends string = string>({
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
-  )
+  );
 }

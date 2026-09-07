@@ -55,9 +55,10 @@ async function readSettledMessagesUsing(
   const deadline = Date.now() + COMMITTED_ASSISTANT_SETTLE_TIMEOUT_MS;
   const store = new DesktopTranscriptRangeStore(sessionId);
   let notify: () => void = () => {};
-  const changed = () => new Promise<void>((resolve) => {
-    notify = resolve;
-  });
+  const changed = () =>
+    new Promise<void>((resolve) => {
+      notify = resolve;
+    });
   let nextChange = changed();
   let cancelOpen = () => {};
   let rejectCancellation!: (error: Error) => void;

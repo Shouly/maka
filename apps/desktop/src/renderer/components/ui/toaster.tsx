@@ -17,17 +17,11 @@
  * under the License.
  */
 
-import { useToast } from '../../store/toast-store'
-import {
-  Toast,
-  ToastClose,
-  ToastProvider,
-  ToastViewport,
-  ToastIcon,
-} from './toast'
+import { useToast } from '../../store/toast-store';
+import { Toast, ToastClose, ToastProvider, ToastViewport, ToastIcon } from './toast';
 
 export function Toaster() {
-  const { toasts } = useToast()
+  const { toasts } = useToast();
 
   return (
     // 卡片落在右下角,手势方向也跟着改成向下划走(默认是 right)。
@@ -49,9 +43,9 @@ export function Toaster() {
               <ToastClose className="-mr-1 -mt-0.5 -mb-1" />
             </div>
           </Toast>
-        )
+        );
       })}
       <ToastViewport />
     </ToastProvider>
-  )
+  );
 }

@@ -71,10 +71,7 @@ export function normalizeSessionSummaryForDisplay<T extends SessionSummary>(sess
     session.status === 'running' && session.runningTurnIds?.length === 0
       ? ({ ...session, status: 'active' as const } as T)
       : session;
-  if (
-    liveNormalized.status !== 'blocked' ||
-    isActionableBlocked(liveNormalized.blockedReason)
-  ) {
+  if (liveNormalized.status !== 'blocked' || isActionableBlocked(liveNormalized.blockedReason)) {
     return liveNormalized;
   }
   const { blockedReason: _blockedReason, ...rest } = liveNormalized;
@@ -108,16 +105,18 @@ export function describeTurnErrorClass(errorClass: string | undefined, locale: U
   // (#1612), and it must never fall through to the "permission"/"tool" catch-alls.
   if (lower === SANDBOX_BOUNDARY_RESTART_CLOSURE_CLASS) return copy.sandboxBoundaryClosed;
   if (lower === 'timeout' || lower.includes('timeout')) return copy.timeout;
-  if (lower === 'auth' || lower.includes('auth') || lower === '401' || lower === '403') return copy.auth;
+  if (lower === 'auth' || lower.includes('auth') || lower === '401' || lower === '403')
+    return copy.auth;
   if (lower === 'rate_limit' || lower.includes('rate')) return copy.rateLimit;
-  if (lower === 'network' || lower.includes('network') || lower.includes('fetch') || lower.includes('econn')) {
+  if (
+    lower === 'network' ||
+    lower.includes('network') ||
+    lower.includes('fetch') ||
+    lower.includes('econn')
+  ) {
     return copy.network;
   }
-  if (
-    lower === 'provider_unavailable' ||
-    lower === 'server_error' ||
-    /\b5\d\d\b/.test(lower)
-  )
+  if (lower === 'provider_unavailable' || lower === 'server_error' || /\b5\d\d\b/.test(lower))
     return copy.provider;
   if (lower === 'tool_step_cap_reached') return copy.stepCap;
   if (lower === 'tool_failed' || lower.includes('tool')) return copy.tool;

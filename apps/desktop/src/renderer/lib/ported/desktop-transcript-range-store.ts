@@ -65,7 +65,7 @@ export function createDesktopTranscriptRangeController(
       await (await current()).loadBefore(
         anchorTurnId === undefined
           ? range.oldestSequence
-          : store.sequenceForTurn(anchorTurnId) ?? range.oldestSequence,
+          : (store.sequenceForTurn(anchorTurnId) ?? range.oldestSequence),
         maxBytes,
       );
     },
@@ -78,7 +78,7 @@ export function createDesktopTranscriptRangeController(
       await (await current()).loadAfter(
         anchorTurnId === undefined
           ? range.newestSequence
-          : store.sequenceForTurn(anchorTurnId, 'last') ?? range.newestSequence,
+          : (store.sequenceForTurn(anchorTurnId, 'last') ?? range.newestSequence),
         maxBytes,
       );
     },
@@ -143,11 +143,8 @@ export function createDesktopTranscriptReconnectRecovery(options: {
     const settle = () => {
       if (recoveryTask !== task) return;
       recoveryTask = undefined;
-      if (
-        needsRecovery
-        && observationReady
-        && readinessGeneration > admittedReadinessGeneration
-      ) recover();
+      if (needsRecovery && observationReady && readinessGeneration > admittedReadinessGeneration)
+        recover();
     };
     void task.then(settle, settle);
   };
@@ -424,10 +421,7 @@ export class DesktopTranscriptRangeStore {
       throw new Error('Desktop transcript fragment identity changed');
     }
     const bytes = fragment.data;
-    if (
-      fragment.byteOffset < 0 ||
-      fragment.byteOffset + bytes.byteLength > fragment.totalBytes
-    ) {
+    if (fragment.byteOffset < 0 || fragment.byteOffset + bytes.byteLength > fragment.totalBytes) {
       throw new Error('Desktop transcript fragment is outside its record');
     }
     if (fragment.byteOffset !== pending.receivedBytes) {
@@ -437,10 +431,12 @@ export class DesktopTranscriptRangeStore {
     pending.receivedBytes += bytes.byteLength;
     if (pending.receivedBytes < pending.totalBytes) return false;
     const encoded = new TextDecoder('utf-8', { fatal: true }).decode(pending.bytes);
-    const message = freezeTranscriptValue(projectDesktopStoredMessage(
-      { hostId: this.#hostId },
-      decodeStoredMessage(markPersisted<StoredMessage>(JSON.parse(encoded))),
-    ));
+    const message = freezeTranscriptValue(
+      projectDesktopStoredMessage(
+        { hostId: this.#hostId },
+        decodeStoredMessage(markPersisted<StoredMessage>(JSON.parse(encoded))),
+      ),
+    );
     const projected = JSON.stringify(message);
     this.#pending.delete(key);
     if (pending.source === 'durable') {
@@ -469,11 +465,7 @@ export class DesktopTranscriptRangeStore {
       throw new Error('Invalid Desktop transcript overlay order');
     }
     const existing = this.#overlay.get(pending.identity);
-    if (
-      existing
-      && existing.encoded === projected
-      && existing.order === pending.order
-    ) {
+    if (existing && existing.encoded === projected && existing.order === pending.order) {
       return false;
     }
     if (existing) removeOrdered(this.#overlayOrder, pending.identity);
@@ -482,19 +474,16 @@ export class DesktopTranscriptRangeStore {
       encoded: projected,
       order: pending.order,
     });
-    insertOrdered(
-      this.#overlayOrder,
-      pending.identity,
-      (left, right) => {
-        const order = this.#overlay.get(left)!.order - this.#overlay.get(right)!.order;
-        return order === 0 ? left.localeCompare(right) : order;
-      },
-    );
+    insertOrdered(this.#overlayOrder, pending.identity, (left, right) => {
+      const order = this.#overlay.get(left)!.order - this.#overlay.get(right)!.order;
+      return order === 0 ? left.localeCompare(right) : order;
+    });
     return true;
   }
 
   #refreshSequenceBounds(deletedSequence: number): void {
-    if (deletedSequence !== this.#oldestSequence && deletedSequence !== this.#newestSequence) return;
+    if (deletedSequence !== this.#oldestSequence && deletedSequence !== this.#newestSequence)
+      return;
     this.#oldestSequence = this.#durableOrder[0] ?? null;
     this.#newestSequence = this.#durableOrder.at(-1) ?? null;
   }
@@ -517,11 +506,7 @@ function freezeTranscriptValue<T>(value: T): T {
   return Object.freeze(value);
 }
 
-function insertOrdered<T>(
-  items: T[],
-  value: T,
-  compare: (left: T, right: T) => number,
-): void {
+function insertOrdered<T>(items: T[], value: T, compare: (left: T, right: T) => number): void {
   let low = 0;
   let high = items.length;
   while (low < high) {

@@ -17,30 +17,30 @@
  * under the License.
  */
 
-import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu"
-import { Anthropicon } from '../icons'
-import * as React from "react"
+import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
+import { Anthropicon } from '../icons';
+import * as React from 'react';
 
-import { cn } from "../../lib/cn"
+import { cn } from '../../lib/cn';
 import {
   menuContentClass,
   menuItemClass,
   menuSeparatorClass,
   menuShellClass,
   type MenuVariant,
-} from "./menu-variants"
+} from './menu-variants';
 
-const DropdownMenu = DropdownMenuPrimitive.Root
+const DropdownMenu = DropdownMenuPrimitive.Root;
 
-const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger
+const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
 
-const DropdownMenuGroup = DropdownMenuPrimitive.Group
+const DropdownMenuGroup = DropdownMenuPrimitive.Group;
 
-const DropdownMenuPortal = DropdownMenuPrimitive.Portal
+const DropdownMenuPortal = DropdownMenuPrimitive.Portal;
 
-const DropdownMenuSub = DropdownMenuPrimitive.Sub
+const DropdownMenuSub = DropdownMenuPrimitive.Sub;
 
-const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup
+const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
 
 /**
  * 所有 variant 共用同一套视觉(Claude 的菜单只有一种长相,全局最小宽度
@@ -52,10 +52,10 @@ const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup
  * Item / CheckboxItem / RadioItem / Separator 收不到这个标记,也就不接这个 prop。
  */
 /** DropdownMenu 只渲染列表型菜单,富内容面板走 Popover 的 `panel` 档。 */
-type DropdownMenuVariant = Exclude<MenuVariant, 'panel'>
+type DropdownMenuVariant = Exclude<MenuVariant, 'panel'>;
 
 const sidebarOverlayAttr = (variant: DropdownMenuVariant) =>
-  variant === 'sidebar' ? 'true' : undefined
+  variant === 'sidebar' ? 'true' : undefined;
 
 /**
  * 子菜单触发器
@@ -63,17 +63,12 @@ const sidebarOverlayAttr = (variant: DropdownMenuVariant) =>
 const DropdownMenuSubTrigger = React.forwardRef<
   React.ComponentRef<typeof DropdownMenuPrimitive.SubTrigger>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubTrigger> & {
-    inset?: boolean
+    inset?: boolean;
   }
 >(({ className, inset, children, ...props }, ref) => (
   <DropdownMenuPrimitive.SubTrigger
     ref={ref}
-    className={cn(
-      menuItemClass,
-      "data-[state=open]:bg-menu-hover",
-      inset && "pl-8",
-      className
-    )}
+    className={cn(menuItemClass, 'data-[state=open]:bg-menu-hover', inset && 'pl-8', className)}
     {...props}
   >
     {children}
@@ -81,8 +76,8 @@ const DropdownMenuSubTrigger = React.forwardRef<
       <Anthropicon name="caretRight" size={16} className="text-menu-text-muted" />
     </div>
   </DropdownMenuPrimitive.SubTrigger>
-))
-DropdownMenuSubTrigger.displayName = DropdownMenuPrimitive.SubTrigger.displayName
+));
+DropdownMenuSubTrigger.displayName = DropdownMenuPrimitive.SubTrigger.displayName;
 
 /**
  * 子菜单内容。
@@ -93,66 +88,51 @@ DropdownMenuSubTrigger.displayName = DropdownMenuPrimitive.SubTrigger.displayNam
 const DropdownMenuSubContent = React.forwardRef<
   React.ComponentRef<typeof DropdownMenuPrimitive.SubContent>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubContent> & {
-    variant?: DropdownMenuVariant
-    shell?: boolean
+    variant?: DropdownMenuVariant;
+    shell?: boolean;
   }
->(({ className, sideOffset = 6, variant = "menu", shell, children, ...props }, ref) => (
+>(({ className, sideOffset = 6, variant = 'menu', shell, children, ...props }, ref) => (
   <DropdownMenuPrimitive.Portal>
     <DropdownMenuPrimitive.SubContent
       ref={ref}
       sideOffset={sideOffset}
       collisionPadding={8}
       data-sidebar-overlay={sidebarOverlayAttr(variant)}
-      className={cn(
-        menuContentClass,
-        shell && menuShellClass,
-        className
-      )}
+      className={cn(menuContentClass, shell && menuShellClass, className)}
       {...props}
     >
       {shell ? (
-        <div className="flex min-h-0 flex-col overflow-hidden rounded-[inherit]">
-          {children}
-        </div>
+        <div className="flex min-h-0 flex-col overflow-hidden rounded-[inherit]">{children}</div>
       ) : (
         children
       )}
     </DropdownMenuPrimitive.SubContent>
   </DropdownMenuPrimitive.Portal>
-))
-DropdownMenuSubContent.displayName = DropdownMenuPrimitive.SubContent.displayName
+));
+DropdownMenuSubContent.displayName = DropdownMenuPrimitive.SubContent.displayName;
 
 /**
  * shell 布局:PinnedTop? → ScrollArea → PinnedBottom?,配 <SubContent shell>。
  * 只有变长的列表进 ScrollArea,固定行留在外面(否则列表一长就把它顶没了)。
  * padding 从根节点搬到这三块,PinnedBottom 的 -mt-1 抵掉滚动区那 4px。
  */
-const DropdownMenuScrollArea = ({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) => (
-  <div
-    className={cn('min-h-0 flex-1 overflow-y-auto scroll-fade-y p-1', className)}
-    {...props}
-  />
-)
-DropdownMenuScrollArea.displayName = 'DropdownMenuScrollArea'
+const DropdownMenuScrollArea = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+  <div className={cn('min-h-0 flex-1 overflow-y-auto scroll-fade-y p-1', className)} {...props} />
+);
+DropdownMenuScrollArea.displayName = 'DropdownMenuScrollArea';
 
-const DropdownMenuPinnedTop = ({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) => (
+const DropdownMenuPinnedTop = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div className={cn('shrink-0 px-1 pt-1', className)} {...props} />
-)
-DropdownMenuPinnedTop.displayName = 'DropdownMenuPinnedTop'
+);
+DropdownMenuPinnedTop.displayName = 'DropdownMenuPinnedTop';
 
 const DropdownMenuPinnedBottom = ({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div className={cn('-mt-1 shrink-0 px-1 pb-1', className)} {...props} />
-)
-DropdownMenuPinnedBottom.displayName = 'DropdownMenuPinnedBottom'
+);
+DropdownMenuPinnedBottom.displayName = 'DropdownMenuPinnedBottom';
 
 /**
  * 主菜单内容
@@ -160,24 +140,21 @@ DropdownMenuPinnedBottom.displayName = 'DropdownMenuPinnedBottom'
 const DropdownMenuContent = React.forwardRef<
   React.ComponentRef<typeof DropdownMenuPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Content> & {
-    variant?: DropdownMenuVariant
+    variant?: DropdownMenuVariant;
   }
->(({ className, sideOffset = 4, collisionPadding = 8, variant = "menu", ...props }, ref) => (
+>(({ className, sideOffset = 4, collisionPadding = 8, variant = 'menu', ...props }, ref) => (
   <DropdownMenuPrimitive.Portal>
     <DropdownMenuPrimitive.Content
       ref={ref}
       sideOffset={sideOffset}
       collisionPadding={collisionPadding}
       data-sidebar-overlay={sidebarOverlayAttr(variant)}
-      className={cn(
-        menuContentClass,
-        className
-      )}
+      className={cn(menuContentClass, className)}
       {...props}
     />
   </DropdownMenuPrimitive.Portal>
-))
-DropdownMenuContent.displayName = DropdownMenuPrimitive.Content.displayName
+));
+DropdownMenuContent.displayName = DropdownMenuPrimitive.Content.displayName;
 
 /**
  * 普通菜单项
@@ -185,20 +162,16 @@ DropdownMenuContent.displayName = DropdownMenuPrimitive.Content.displayName
 const DropdownMenuItem = React.forwardRef<
   React.ComponentRef<typeof DropdownMenuPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Item> & {
-    inset?: boolean
+    inset?: boolean;
   }
 >(({ className, inset, ...props }, ref) => (
   <DropdownMenuPrimitive.Item
     ref={ref}
-    className={cn(
-      menuItemClass,
-      inset && "pl-8",
-      className
-    )}
+    className={cn(menuItemClass, inset && 'pl-8', className)}
     {...props}
   />
-))
-DropdownMenuItem.displayName = DropdownMenuPrimitive.Item.displayName
+));
+DropdownMenuItem.displayName = DropdownMenuPrimitive.Item.displayName;
 
 /**
  * 复选框菜单项 - 选中时显示统一的蓝色 Anthropicon 对号
@@ -206,28 +179,23 @@ DropdownMenuItem.displayName = DropdownMenuPrimitive.Item.displayName
 const DropdownMenuCheckboxItem = React.forwardRef<
   React.ComponentRef<typeof DropdownMenuPrimitive.CheckboxItem>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.CheckboxItem> & {
-    indicator?: React.ReactNode
+    indicator?: React.ReactNode;
   }
 >(({ className, children, checked, indicator, ...props }, ref) => (
   <DropdownMenuPrimitive.CheckboxItem
     ref={ref}
-    className={cn(
-      menuItemClass,
-      className
-    )}
+    className={cn(menuItemClass, className)}
     checked={checked}
     {...props}
   >
-    <div className="flex gap-2 truncate items-center flex-1">
-      {children}
-    </div>
+    <div className="flex gap-2 truncate items-center flex-1">{children}</div>
     {/* 选中时显示勾选图标 */}
     <DropdownMenuPrimitive.ItemIndicator className="ml-auto flex size-5 items-center justify-center text-menu-accent">
       {indicator ?? <Anthropicon name="check" size={20} weight={566.5} />}
     </DropdownMenuPrimitive.ItemIndicator>
   </DropdownMenuPrimitive.CheckboxItem>
-))
-DropdownMenuCheckboxItem.displayName = DropdownMenuPrimitive.CheckboxItem.displayName
+));
+DropdownMenuCheckboxItem.displayName = DropdownMenuPrimitive.CheckboxItem.displayName;
 
 /**
  * 单选菜单项
@@ -235,28 +203,17 @@ DropdownMenuCheckboxItem.displayName = DropdownMenuPrimitive.CheckboxItem.displa
 const DropdownMenuRadioItem = React.forwardRef<
   React.ComponentRef<typeof DropdownMenuPrimitive.RadioItem>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.RadioItem> & {
-    indicator?: React.ReactNode
+    indicator?: React.ReactNode;
   }
 >(({ className, children, indicator, ...props }, ref) => (
-  <DropdownMenuPrimitive.RadioItem
-    ref={ref}
-    className={cn(
-      menuItemClass,
-      className
-    )}
-    {...props}
-  >
-    <div className="flex gap-2 truncate items-center flex-1">
-      {children}
-    </div>
-    <DropdownMenuPrimitive.ItemIndicator
-      className="ml-auto flex size-5 items-center justify-center text-menu-accent"
-    >
+  <DropdownMenuPrimitive.RadioItem ref={ref} className={cn(menuItemClass, className)} {...props}>
+    <div className="flex gap-2 truncate items-center flex-1">{children}</div>
+    <DropdownMenuPrimitive.ItemIndicator className="ml-auto flex size-5 items-center justify-center text-menu-accent">
       {indicator ?? <Anthropicon name="check" size={20} weight={566.5} />}
     </DropdownMenuPrimitive.ItemIndicator>
   </DropdownMenuPrimitive.RadioItem>
-))
-DropdownMenuRadioItem.displayName = DropdownMenuPrimitive.RadioItem.displayName
+));
+DropdownMenuRadioItem.displayName = DropdownMenuPrimitive.RadioItem.displayName;
 
 /**
  * 菜单标签
@@ -264,20 +221,20 @@ DropdownMenuRadioItem.displayName = DropdownMenuPrimitive.RadioItem.displayName
 const DropdownMenuLabel = React.forwardRef<
   React.ComponentRef<typeof DropdownMenuPrimitive.Label>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Label> & {
-    inset?: boolean
+    inset?: boolean;
   }
 >(({ className, inset, ...props }, ref) => (
   <DropdownMenuPrimitive.Label
     ref={ref}
     className={cn(
-      "flex min-h-8 items-center px-2.5 py-1.5 text-sm leading-5 font-normal text-menu-text-primary",
-      inset && "pl-8",
-      className
+      'flex min-h-8 items-center px-2.5 py-1.5 text-sm leading-5 font-normal text-menu-text-primary',
+      inset && 'pl-8',
+      className,
     )}
     {...props}
   />
-))
-DropdownMenuLabel.displayName = DropdownMenuPrimitive.Label.displayName
+));
+DropdownMenuLabel.displayName = DropdownMenuPrimitive.Label.displayName;
 
 /**
  * 分隔符 - Claude menu 的 1px hairline
@@ -291,25 +248,22 @@ const DropdownMenuSeparator = React.forwardRef<
     className={cn(menuSeparatorClass, className)}
     {...props}
   />
-))
-DropdownMenuSeparator.displayName = DropdownMenuPrimitive.Separator.displayName
+));
+DropdownMenuSeparator.displayName = DropdownMenuPrimitive.Separator.displayName;
 
 /** 快捷键提示：Claude 菜单中始终可见。 */
-const DropdownMenuShortcut = ({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLSpanElement>) => {
+const DropdownMenuShortcut = ({ className, ...props }: React.HTMLAttributes<HTMLSpanElement>) => {
   return (
     <span
       className={cn(
-        "ml-auto min-w-0 shrink overflow-hidden text-ellipsis whitespace-nowrap text-right text-[13px] leading-4 text-menu-text-muted",
-        className
+        'ml-auto min-w-0 shrink overflow-hidden text-ellipsis whitespace-nowrap text-right text-[13px] leading-4 text-menu-text-muted',
+        className,
       )}
       {...props}
     />
-  )
-}
-DropdownMenuShortcut.displayName = "DropdownMenuShortcut"
+  );
+};
+DropdownMenuShortcut.displayName = 'DropdownMenuShortcut';
 
 /**
  * 菜单项图标容器 - 20x20 尺寸
@@ -320,15 +274,12 @@ const DropdownMenuItemIcon = ({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => {
   return (
-    <div
-      className={cn("size-5 flex items-center justify-center shrink-0", className)}
-      {...props}
-    >
+    <div className={cn('size-5 flex items-center justify-center shrink-0', className)} {...props}>
       {children}
     </div>
-  )
-}
-DropdownMenuItemIcon.displayName = "DropdownMenuItemIcon"
+  );
+};
+DropdownMenuItemIcon.displayName = 'DropdownMenuItemIcon';
 
 /**
  * 菜单项骨架屏 - 用于加载状态
@@ -338,8 +289,8 @@ const DropdownMenuItemSkeleton = ({
   count = 3,
   className,
 }: {
-  count?: number
-  className?: string
+  count?: number;
+  className?: string;
 }) => {
   return (
     // ! 不要加行间距:真实菜单行之间没有 margin,骨架写 space-y-1 会比 N 条真实
@@ -359,9 +310,9 @@ const DropdownMenuItemSkeleton = ({
         </div>
       ))}
     </div>
-  )
-}
-DropdownMenuItemSkeleton.displayName = "DropdownMenuItemSkeleton"
+  );
+};
+DropdownMenuItemSkeleton.displayName = 'DropdownMenuItemSkeleton';
 
 export {
   DropdownMenu,
@@ -384,4 +335,4 @@ export {
   DropdownMenuScrollArea,
   DropdownMenuPinnedTop,
   DropdownMenuPinnedBottom,
-}
+};

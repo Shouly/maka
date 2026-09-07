@@ -27,11 +27,11 @@
  * 比骨架该有的深一大截,而分隔线现在也不再是 border-dark。
  */
 
-import { cn } from '../../lib/cn'
+import { cn } from '../../lib/cn';
 
 interface ChatsListSkeletonProps {
   /** 显示行数，默认 8 */
-  count?: number
+  count?: number;
 }
 
 // [标题宽度, 整行透明度]。透明度必须是字面量,Tailwind 扫不到拼接出来的类名。
@@ -44,17 +44,17 @@ const ROW_CONFIGS = [
   ['w-1/4', 'opacity-30'],
   ['w-1/5', 'opacity-20'],
   ['w-1/6', 'opacity-10'],
-] as const
+] as const;
 
-const barClass = 'rounded-md bg-skeleton animate-pulse'
+const barClass = 'rounded-md bg-skeleton animate-pulse';
 
 export function ChatsListSkeleton({ count = 8 }: ChatsListSkeletonProps) {
-  const rowCount = Math.min(count, ROW_CONFIGS.length)
+  const rowCount = Math.min(count, ROW_CONFIGS.length);
 
   return (
     <div>
       {Array.from({ length: rowCount }).map((_, index) => {
-        const [width, rowOpacity] = ROW_CONFIGS[index]
+        const [width, rowOpacity] = ROW_CONFIGS[index];
 
         return (
           <div
@@ -70,8 +70,8 @@ export function ChatsListSkeleton({ count = 8 }: ChatsListSkeletonProps) {
             <div className={cn(barClass, 'h-4', width)} />
             <div className={cn(barClass, 'ml-auto h-3 w-16 shrink-0')} />
           </div>
-        )
+        );
       })}
     </div>
-  )
+  );
 }

@@ -30,7 +30,9 @@ function createDelegatingActions<A extends object>(latestRef: { current: A }): A
   const facade: Record<string, (...args: unknown[]) => unknown> = {};
   for (const key of Object.keys(latestRef.current)) {
     facade[key] = (...args: unknown[]) => {
-      const action = Reflect.get(latestRef.current, key) as unknown as (...args: unknown[]) => unknown;
+      const action = Reflect.get(latestRef.current, key) as unknown as (
+        ...args: unknown[]
+      ) => unknown;
       return action(...args);
     };
   }

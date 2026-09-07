@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import * as React from "react"
+import * as React from 'react';
 
 import {
   Dialog,
@@ -26,23 +26,23 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "./dialog"
-import { Button } from "./button"
-import { cn } from "../../lib/cn"
+} from './dialog';
+import { Button } from './button';
+import { cn } from '../../lib/cn';
 
 interface ConfirmDialogProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  title: string
-  description: string
-  confirmText?: string
-  cancelText?: string
-  closeLabel?: string
-  variant?: "default" | "destructive" | "secondary"
-  onConfirm: () => void | Promise<void>
-  waitForConfirm?: boolean
-  restoreFocus?: boolean
-  fallbackFocusRef?: React.RefObject<HTMLElement | null>
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  description: string;
+  confirmText?: string;
+  cancelText?: string;
+  closeLabel?: string;
+  variant?: 'default' | 'destructive' | 'secondary';
+  onConfirm: () => void | Promise<void>;
+  waitForConfirm?: boolean;
+  restoreFocus?: boolean;
+  fallbackFocusRef?: React.RefObject<HTMLElement | null>;
 }
 
 export function ConfirmDialog({
@@ -50,57 +50,57 @@ export function ConfirmDialog({
   onOpenChange,
   title,
   description,
-  confirmText = "Confirm",
-  cancelText = "Cancel",
-  closeLabel = "Close",
-  variant = "default",
+  confirmText = 'Confirm',
+  cancelText = 'Cancel',
+  closeLabel = 'Close',
+  variant = 'default',
   onConfirm,
   waitForConfirm = false,
   restoreFocus = false,
   fallbackFocusRef,
 }: ConfirmDialogProps) {
-  const [isConfirming, setIsConfirming] = React.useState(false)
-  const returnFocusRef = React.useRef<HTMLElement | null>(null)
+  const [isConfirming, setIsConfirming] = React.useState(false);
+  const returnFocusRef = React.useRef<HTMLElement | null>(null);
 
   React.useEffect(() => {
-    if (!open) setIsConfirming(false)
-  }, [open])
+    if (!open) setIsConfirming(false);
+  }, [open]);
 
   const handleConfirm = async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    e.preventDefault()
-    if (isConfirming) return
+    e.stopPropagation();
+    e.preventDefault();
+    if (isConfirming) return;
 
     if (!waitForConfirm) {
-      onConfirm()
-      onOpenChange(false)
-      return
+      onConfirm();
+      onOpenChange(false);
+      return;
     }
 
-    setIsConfirming(true)
+    setIsConfirming(true);
     try {
-      await onConfirm()
-      onOpenChange(false)
+      await onConfirm();
+      onOpenChange(false);
     } catch (error) {
-      console.error('Confirmation action failed:', error)
+      console.error('Confirmation action failed:', error);
     } finally {
-      setIsConfirming(false)
+      setIsConfirming(false);
     }
-  }
+  };
 
   const handleCancel = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    e.preventDefault()
-    if (isConfirming) return
-    onOpenChange(false)
-  }
+    e.stopPropagation();
+    e.preventDefault();
+    if (isConfirming) return;
+    onOpenChange(false);
+  };
 
   return (
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
-        if (!nextOpen && isConfirming) return
-        onOpenChange(nextOpen)
+        if (!nextOpen && isConfirming) return;
+        onOpenChange(nextOpen);
       }}
     >
       <DialogContent
@@ -109,9 +109,9 @@ export function ConfirmDialog({
         onOpenAutoFocus={
           restoreFocus
             ? () => {
-                const activeElement = document.activeElement
+                const activeElement = document.activeElement;
                 if (activeElement instanceof HTMLElement) {
-                  returnFocusRef.current = activeElement
+                  returnFocusRef.current = activeElement;
                 }
               }
             : undefined
@@ -119,17 +119,17 @@ export function ConfirmDialog({
         onCloseAutoFocus={
           restoreFocus
             ? (event) => {
-                event.preventDefault()
-                const target = returnFocusRef.current
-                const fallbackTarget = fallbackFocusRef?.current
-                returnFocusRef.current = null
+                event.preventDefault();
+                const target = returnFocusRef.current;
+                const fallbackTarget = fallbackFocusRef?.current;
+                returnFocusRef.current = null;
                 window.requestAnimationFrame(() => {
                   if (target?.isConnected) {
-                    target.focus()
+                    target.focus();
                   } else if (fallbackTarget?.isConnected) {
-                    fallbackTarget.focus()
+                    fallbackTarget.focus();
                   }
-                })
+                });
               }
             : undefined
         }
@@ -137,8 +137,7 @@ export function ConfirmDialog({
         <DialogHeader
           closeLabel={closeLabel}
           className={cn(
-            restoreFocus &&
-              '[&>button:focus-visible]:shadow-[var(--sidebar-focus-shadow)]',
+            restoreFocus && '[&>button:focus-visible]:shadow-[var(--sidebar-focus-shadow)]',
           )}
         >
           <DialogTitle>{title}</DialogTitle>
@@ -154,8 +153,7 @@ export function ConfirmDialog({
             disabled={isConfirming}
             className={cn(
               'w-full md:w-auto',
-              restoreFocus &&
-                'focus-visible:shadow-[var(--sidebar-focus-shadow)]',
+              restoreFocus && 'focus-visible:shadow-[var(--sidebar-focus-shadow)]',
             )}
           >
             {cancelText}
@@ -167,8 +165,7 @@ export function ConfirmDialog({
             aria-busy={isConfirming}
             className={cn(
               'w-full md:w-auto',
-              restoreFocus &&
-                'focus-visible:shadow-[var(--sidebar-focus-shadow)]',
+              restoreFocus && 'focus-visible:shadow-[var(--sidebar-focus-shadow)]',
             )}
           >
             {confirmText}
@@ -176,5 +173,5 @@ export function ConfirmDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

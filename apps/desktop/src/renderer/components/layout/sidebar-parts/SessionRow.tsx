@@ -97,7 +97,11 @@ export function SessionRow(props: {
       <TooltipContent side="top">{copy.running}</TooltipContent>
     </Tooltip>
   ) : row.flagged ? (
-    <span role="img" aria-label={copy.flaggedBadge} className="flex items-center text-sidebar-text-secondary">
+    <span
+      role="img"
+      aria-label={copy.flaggedBadge}
+      className="flex items-center text-sidebar-text-secondary"
+    >
       <Anthropicon name="starFilled" />
     </span>
   ) : (

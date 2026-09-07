@@ -24,7 +24,7 @@
  * 否则按钮自己的 hover 和整框的环会叠成两层反馈。拖拽态是互斥的另一档,调用方自己选。
  */
 export const COMPOSER_SHADOW_CLASS =
-  'shadow-[var(--composer-shadow)] hover:[&:not(:where(:has(button:hover,a:hover,[role=button]:hover,label:hover)))]:shadow-[var(--composer-shadow-hover)] focus-within:shadow-[var(--composer-shadow-focus)]'
+  'shadow-[var(--composer-shadow)] hover:[&:not(:where(:has(button:hover,a:hover,[role=button]:hover,label:hover)))]:shadow-[var(--composer-shadow-hover)] focus-within:shadow-[var(--composer-shadow-focus)]';
 
 /**
  * meta 行的 chip,Project / Agents 共用 —— 同一行同一档,各写各的迟早分叉。
@@ -34,14 +34,15 @@ export const COMPOSER_SHADOW_CLASS =
  * `--control-fill` 都不在 @layer 里,`bg-*` 和 `[--control-fill:…]` 都赢不了它。
  */
 export const COMPOSER_META_CHIP =
-  'ui-control-squish inline-flex h-6 min-w-0 cursor-pointer items-center gap-1 rounded-md border-0 px-2 text-[13px] leading-[1.4] outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-60'
+  'ui-control-squish inline-flex h-6 min-w-0 cursor-pointer items-center gap-1 rounded-md border-0 px-2 text-[13px] leading-[1.4] outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-60';
 
-export const COMPOSER_META_CHIP_IDLE = 'ui-control-squish-ghost text-text-secondary'
+export const COMPOSER_META_CHIP_IDLE = 'ui-control-squish-ghost text-text-secondary';
 
-export const COMPOSER_META_CHIP_ACTIVE = 'ui-control-squish-accent text-accent'
+export const COMPOSER_META_CHIP_ACTIVE = 'ui-control-squish-accent text-accent';
 
 /** meta 行左侧没有任何 chip 时的补位文案 —— 不是常驻信息,也不会为它单独撑出一行。 */
-export const COMPOSER_DISCLAIMER = 'Copilot can make mistakes. Please double-check important information.'
+export const COMPOSER_DISCLAIMER =
+  'Copilot can make mistakes. Please double-check important information.';
 
 export const COMPOSER_DISCLAIMER_CLASS =
-  'min-w-0 truncate text-[13px] leading-[1.4] text-text-muted'
+  'min-w-0 truncate text-[13px] leading-[1.4] text-text-muted';

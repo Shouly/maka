@@ -58,7 +58,12 @@ export function recordSessionEventStreamChange(
 ): SessionEventStreamSnapshot {
   return {
     ...previous,
-    status: previous.status === 'stale' ? 'recovered' : previous.status === 'closed' ? 'connected' : previous.status,
+    status:
+      previous.status === 'stale'
+        ? 'recovered'
+        : previous.status === 'closed'
+          ? 'connected'
+          : previous.status,
     checkedAt: now,
     lastChangedAt: now,
     staleSince: undefined,
@@ -94,7 +99,7 @@ export function evaluateSessionEventStreamSnapshot(input: {
       ...previous,
       status,
       checkedAt: input.now,
-      staleSince: status === 'stale' ? previous.staleSince ?? input.now : undefined,
+      staleSince: status === 'stale' ? (previous.staleSince ?? input.now) : undefined,
       refreshRequestedAt: refreshDue ? input.now : previous.refreshRequestedAt,
     },
     shouldRefresh: refreshDue,

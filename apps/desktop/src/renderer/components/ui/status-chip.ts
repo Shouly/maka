@@ -24,22 +24,22 @@
  * 图文间距 4。**没有描边** —— 只有一层淡底,描边会让它在卡里显得比标题还重。
  */
 export const statusChipClass =
-  'inline-flex h-[18px] shrink-0 items-center gap-1 rounded-[4.5px] px-1.5 text-[11px] font-medium leading-tight'
+  'inline-flex h-[18px] shrink-0 items-center gap-1 rounded-[4.5px] px-1.5 text-[11px] font-medium leading-tight';
 
 /** 生效中。底走 --bg-success(CDS green-100),不是 --success 压透明度。 */
-export const statusChipSuccessClass = 'bg-success-subtle text-success'
+export const statusChipSuccessClass = 'bg-success-subtle text-success';
 
 /**
  * 中性(暂停、角色标记这类)。底走 alpha-1 —— CDS 的 --cds-bg-neutral 就是
  * alpha-1(实测),不是某个实心灰;字色是按 CDS 的配对推的,没有实测对照。
  */
-export const statusChipNeutralClass = 'bg-alpha-1 text-text-secondary'
+export const statusChipNeutralClass = 'bg-alpha-1 text-text-secondary';
 
 /** 强调(Public 这类)。CDS --cds-bg-accent / --cds-text-accent。 */
-export const statusChipAccentClass = 'bg-accent-subtle text-accent'
+export const statusChipAccentClass = 'bg-accent-subtle text-accent';
 
 /** 出错。同样走 --bg-danger 这层淡底,不要 danger-fill 压透明度。 */
-export const statusChipDangerClass = 'bg-danger-subtle text-danger'
+export const statusChipDangerClass = 'bg-danger-subtle text-danger';
 
 /**
  * 大一档的芯片。Claude 的 scheduled-task **详情页**用的是这一档,列表页才是
@@ -53,7 +53,7 @@ export const statusChipDangerClass = 'bg-danger-subtle text-danger'
  * 两个作用域把它分别解析成了 11 和 12。所以别拿类名反推像素。
  */
 export const statusChipLargeClass =
-  'inline-flex h-[22px] shrink-0 items-center gap-1.5 rounded-md border-[0.5px] border-current/40 px-1.5 text-[12px] font-medium leading-[17px]'
+  'inline-flex h-[22px] shrink-0 items-center gap-1.5 rounded-md border-[0.5px] border-current/40 px-1.5 text-[12px] font-medium leading-[17px]';
 
 /**
  * 图标槽。Claude 实测:图标**画 16px、只占 12px** —— 靠 flex 居中往四周各溢出
@@ -63,11 +63,11 @@ export const statusChipLargeClass =
  * 不套槽的 16px 又会把芯片撑宽 4px —— 两件事得分开。
  */
 export const statusChipIconSlotClass =
-  'inline-flex size-3 shrink-0 items-center justify-center -ml-0.5 -mr-[0.8px]'
+  'inline-flex size-3 shrink-0 items-center justify-center -ml-0.5 -mr-[0.8px]';
 
 /** 大档的图标槽:同样是 16 画在 12 里,但**不带负边距**(实测就是不带)。 */
 export const statusChipLargeIconSlotClass =
-  'inline-flex size-3 shrink-0 items-center justify-center'
+  'inline-flex size-3 shrink-0 items-center justify-center';
 
 /** 槽里那颗图标的字号(视觉尺寸)。 */
-export const STATUS_CHIP_ICON_SIZE = 16
+export const STATUS_CHIP_ICON_SIZE = 16;

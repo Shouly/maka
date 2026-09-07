@@ -165,17 +165,21 @@ const SETTINGS_SHARED_COPY_BY_LOCALE = {
     settingsLoadFailed: 'Could not load settings',
     usageLoadFailed: 'Could not load usage statistics',
     runtimeHost: 'Runtime Host',
-    runtimeHostUnavailable: 'This Runtime Host is unavailable. Choose another Host or retry the connection under Projects.',
+    runtimeHostUnavailable:
+      'This Runtime Host is unavailable. Choose another Host or retry the connection under Projects.',
     unknownError: 'Something went wrong. Try again.',
-    unavailablePage: 'This page is part of the Maka settings tree and will activate with its runtime capability.',
+    unavailablePage:
+      'This page is part of the Maka settings tree and will activate with its runtime capability.',
     showDetails: 'Show details',
     hideDetails: 'Hide details',
     ready: 'Ready',
     groups: {
       memorySources: 'Memory',
-      memorySourcesHelp: 'Maka remembers information you confirm in chat and uses it in later answers.',
+      memorySourcesHelp:
+        'Maka remembers information you confirm in chat and uses it in later answers.',
       memoryDocument: 'Memory file and backups',
-      memoryDocumentHelp: 'Memory lives in a local MEMORY.md; edit the raw file or restore a backup here.',
+      memoryDocumentHelp:
+        'Memory lives in a local MEMORY.md; edit the raw file or restore a backup here.',
       memoryEntries: 'What Maka remembers',
       memoryEntriesHelp: 'Filter entries, add one manually, or archive what is no longer needed.',
       searchProvider: 'Search provider',
@@ -183,7 +187,8 @@ const SETTINGS_SHARED_COPY_BY_LOCALE = {
       searchBehavior: 'Search behavior',
       searchBehaviorHelp: 'When a search runs, and how many results it returns.',
       dataLocation: 'Data location',
-      dataLocationHelp: 'Tasks, settings, usage statistics, and credentials are stored as files in this location on your machine.',
+      dataLocationHelp:
+        'Tasks, settings, usage statistics, and credentials are stored as files in this location on your machine.',
       reviewSchedule: 'Review schedule',
       reviewScheduleHelp: 'When the daily review runs, and which model writes it.',
     },

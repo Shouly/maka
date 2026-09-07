@@ -70,19 +70,22 @@ export function OnboardingHero(props: {
               : 'bg-accent-subtle text-accent',
           )}
         >
-          <Anthropicon name={hero.tone === 'destructive' ? 'warningCircle' : 'lightbulb'} size={20} />
+          <Anthropicon
+            name={hero.tone === 'destructive' ? 'warningCircle' : 'lightbulb'}
+            size={20}
+          />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-xs uppercase leading-4 tracking-wide text-text-muted">{hero.eyebrow}</p>
-          <h2 className="mt-0.5 font-display text-base leading-6 text-text-primary">{hero.title}</h2>
+          <p className="text-xs uppercase leading-4 tracking-wide text-text-muted">
+            {hero.eyebrow}
+          </p>
+          <h2 className="mt-0.5 font-display text-base leading-6 text-text-primary">
+            {hero.title}
+          </h2>
           <p className="mt-1 text-sm leading-5 text-text-secondary">{hero.body}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => onboardingStore.dismiss()}
-          >
+          <Button size="sm" variant="ghost" onClick={() => onboardingStore.dismiss()}>
             {copy.dismiss}
           </Button>
           <Button

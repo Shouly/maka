@@ -153,7 +153,10 @@ export function SearchModal(props: {
                     props.onOpenChange(false);
                     props.onSelectSession(target.sessionId);
                   }}
-                  className={cn(menuItemClass, 'w-full items-start justify-start gap-2 py-2 text-left')}
+                  className={cn(
+                    menuItemClass,
+                    'w-full items-start justify-start gap-2 py-2 text-left',
+                  )}
                 >
                   <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center text-text-muted">
                     <Anthropicon name="chat" size={20} />
