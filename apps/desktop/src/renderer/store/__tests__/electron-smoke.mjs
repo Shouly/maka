@@ -118,6 +118,18 @@ async function runPaletteCommand(page, label) {
   await page.locator('[data-maka-contract="command-palette"]').waitFor({ state: 'detached' });
 }
 
+/** Open the rail if it is collapsed, and wait for it to finish widening. */
+async function ensureSidebarExpanded(page) {
+  const collapsed = await page.evaluate(
+    () => document.querySelector('.appFrame')?.getAttribute('data-sidebar-state') === 'collapsed',
+  );
+  if (collapsed) {
+    await page.getByRole('button', { name: 'Expand sidebar', exact: true }).first().click();
+  }
+  await page.locator('#app-sidebar').waitFor();
+  await settleSidebar(page);
+}
+
 async function startTask(page, prompt) {
   await page.locator('[data-maka-contract="welcome-surface"]').waitFor();
   await page.getByLabel('Task', { exact: true }).fill(prompt);
@@ -165,7 +177,131 @@ try {
     .waitFor();
   checks.push('new task from the welcome composer creates a session and streams a reply');
 
+  // ── Phase 3a: the transcript ──────────────────────────────────────────────
+
+  // These run on the task step 2 just created, before any rail interaction:
+  // the transcript and the titlebar are what they exercise, and neither needs
+  // the sidebar open.
+  //
+  // 3a.1 The streamed reply settles as rendered markdown, not as raw text.
+  const transcript = page.locator('[data-maka-contract="transcript"]');
+  await transcript.waitFor();
+  await transcript
+    .locator('[data-maka-contract="markdown"]')
+    .getByText('renderer loop are connected.', { exact: false })
+    .waitFor();
+  const turns = page.locator('[data-turn-id]');
+  await page.waitForFunction(() => document.querySelectorAll('[data-turn-id]').length === 1);
+  checks.push('a streamed reply settles inside rendered markdown');
+  await page.screenshot({ path: SHOT('phase3a-session-light.png') });
+
+  // 3a.2 The model switcher lives in the titlebar and lists the seeded model.
+  const switcher = page.locator('[data-maka-contract="model-switcher"]');
+  await switcher.waitFor();
+  await switcher.click();
+  await page.getByRole('menuitem', { name: /Sonnet/u }).first().waitFor();
+  await page.screenshot({ path: SHOT('phase3a-model-switcher.png') });
+  await page.keyboard.press('Escape');
+  await page.getByRole('menuitem', { name: /Sonnet/u }).first().waitFor({ state: 'detached' });
+  checks.push('the titlebar model switcher lists the seeded connection');
+
+  // 3a.3 Regenerate produces a second turn from the same ask.
+  const firstTurnId = await turns.first().getAttribute('data-turn-id');
+  await turns.first().hover();
+  await transcript.getByRole('button', { name: 'Regenerate', exact: true }).first().click();
+  await page.waitForFunction(
+    (previous) => {
+      const ids = [...document.querySelectorAll('[data-turn-id]')].map(
+        (node) => node.getAttribute('data-turn-id'),
+      );
+      return ids.length >= 1 && ids.some((id) => id !== previous);
+    },
+    firstTurnId,
+  );
+  checks.push('regenerate produces a new turn');
+
+  // 3a.4 A tool request row renders, and the interaction it is waiting on is
+  //      visible while the prompt itself waits for Phase 3b.
+  // A message sent while a turn is still running is STEERING — the Host folds
+  // it into that turn instead of starting one, and no new tool call follows.
+  // So this waits for the regenerated turn to settle first.
+  await page.waitForFunction(
+    () =>
+      document.querySelectorAll('[data-turn-status="running"]').length === 0 &&
+      document.querySelectorAll('[data-maka-contract="transcript"] button[aria-label="Send"]')
+        .length === 1,
+  );
+  await page.getByLabel('Message input', { exact: true }).fill('__e2e_ask_user_question__');
+  await transcript.getByRole('button', { name: 'Send', exact: true }).click();
+  await transcript.locator('[data-maka-tool-row]').first().waitFor();
+  await page.locator('[data-maka-contract="interaction-pending"]').waitFor();
+  await page.screenshot({ path: SHOT('phase3a-tool-row.png') });
+  checks.push('a tool request renders a timeline row and the pending answer is announced');
+  await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  await page.locator('[data-maka-contract="interaction-pending"]').waitFor({ state: 'detached' });
+
+  // 3a.5 Edit-and-resend forks a revision and says so.
+  const editable = transcript.locator('[data-turn-id]').first();
+  await editable.hover();
+  await editable.getByRole('button', { name: 'Edit and resend', exact: true }).first().click();
+  // The editor and every other turn's Edit button share an accessible name,
+  // so this names the control by element rather than by label.
+  const editor = transcript.locator('textarea[aria-label="Edit and resend"]');
+  await editor.waitFor();
+  await editor.fill('Phase 3a transcript, revised');
+  await transcript.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByRole('group', { name: 'Task versions' }).waitFor();
+  // The fork is a different Session with its own transcript, so the edited
+  // text landing there is what proves the resend went through rather than
+  // just the banner appearing.
+  await transcript.getByText('Phase 3a transcript, revised', { exact: false }).waitFor();
+  await page.screenshot({ path: SHOT('phase3a-revision-banner.png') });
+  checks.push('edit and resend forks a revision and the version navigation appears');
+
+  // 3a.6 The same transcript in the dark theme.
+  await runPaletteCommand(page, 'Theme · Dark');
+  await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
+  await transcript.waitFor();
+  await page.screenshot({ path: SHOT('phase3a-session-dark.png') });
+  await runPaletteCommand(page, 'Theme · Light');
+  await page.waitForFunction(() => !document.documentElement.classList.contains('dark'));
+  checks.push('the transcript renders in both themes');
+
+  // 3a.7 The four timeline shapes, opened.
+  //
+  // The deterministic test backend emits text and one tool call and nothing
+  // else — no reasoning, no diff, no shell run — so the only place all four
+  // renderers can be SEEN is the design preview's fixture turn. These are the
+  // real components with fixture data, opened by clicking, not a mock.
+  await runPaletteCommand(page, 'Open runtime debug');
+  await page.getByRole('button', { name: 'Design system', exact: true }).click();
+  const preview = page.locator('[data-maka-contract="transcript-preview"]');
+  await preview.scrollIntoViewIfNeeded();
+  await preview.locator('[data-maka-tool-group] button[aria-expanded]').first().click();
+  const previewRows = preview.locator('[data-maka-tool-row] button[aria-expanded]');
+  await previewRows.first().waitFor();
+  await previewRows.nth(0).click();
+  await previewRows.nth(1).click();
+  await preview.locator('.custom-code-highlight').first().waitFor();
+  await preview.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: SHOT('phase3a-transcript-light.png') });
+  await runPaletteCommand(page, 'Theme · Dark');
+  await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
+  await preview.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: SHOT('phase3a-transcript-dark.png') });
+  await runPaletteCommand(page, 'Theme · Light');
+  await page.waitForFunction(() => !document.documentElement.classList.contains('dark'));
+  checks.push('every timeline renderer opens: reasoning, a diff, a shell run and a subtask');
+
+
   // 3. The sidebar lists it.
+  //
+  // The rail can be collapsed at this point — a first-run profile starts
+  // collapsed, and the hover peek that opened it in step 1 closes as soon as
+  // the pointer leaves the toggle. A collapsed rail's rows are laid out but
+  // clipped, which Playwright reads as hidden, so the rail is opened again
+  // rather than waited on.
+  await ensureSidebarExpanded(page);
   const rows = page.locator('[data-maka-contract="session-row"]');
   await rows.first().waitFor();
   const firstKey = await rows.first().getAttribute('data-session-key');
@@ -202,6 +338,7 @@ try {
   checks.push('rename from the row menu persists through the Host');
 
   // A second task, so filtering has something to exclude.
+  await ensureSidebarExpanded(page);
   await page.getByRole('button', { name: 'New task', exact: true }).first().click();
   await startTask(page, 'Second smoke task');
   await page.locator('[data-maka-contract="transcript"]').waitFor();
@@ -214,6 +351,7 @@ try {
   );
   await page.screenshot({ path: SHOT('phase2-session-list.png') });
 
+  await ensureSidebarExpanded(page);
   const before = await rows.count();
   assert.ok(before >= 2);
   await page.getByLabel('Filter tasks', { exact: true }).fill('Renamed by');
@@ -276,9 +414,10 @@ try {
   );
   checks.push('sidebar collapse publishes data-sidebar-state and restores');
 
+
   assert.deepEqual(errors, []);
   await writeFile(
-    path.join(shots, 'phase2-smoke-result.json'),
+    path.join(shots, 'phase3a-smoke-result.json'),
     JSON.stringify(
       {
         checks,
@@ -291,6 +430,13 @@ try {
           'phase2-palette.png',
           'phase2-search.png',
           'phase2-sidebar-collapsed.png',
+          'phase3a-session-light.png',
+          'phase3a-session-dark.png',
+          'phase3a-transcript-light.png',
+          'phase3a-transcript-dark.png',
+          'phase3a-model-switcher.png',
+          'phase3a-revision-banner.png',
+          'phase3a-tool-row.png',
         ],
       },
       null,
@@ -301,7 +447,7 @@ try {
 } catch (error) {
   if (page && !page.isClosed()) {
     console.error((await page.locator('body').innerText()).slice(-7000));
-    await page.screenshot({ path: SHOT('phase2-failure.png') }).catch(() => {});
+    await page.screenshot({ path: SHOT('phase3a-failure.png') }).catch(() => {});
   }
   throw error;
 } finally {

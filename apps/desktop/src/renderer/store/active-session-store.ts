@@ -45,6 +45,17 @@ import {
   type RecoveringDesktopTranscriptRangeController,
   type DesktopTranscriptRangeState,
 } from '../lib/ported/desktop-transcript-range-store.js';
+import { DESKTOP_TRANSCRIPT_RANGE_MAX_BYTES } from '../../preload/transcript-contract.js';
+import {
+  captureTranscriptReadingAnchor,
+  loadTranscriptHistory,
+  restoreSessionTranscriptRange,
+  transcriptRestoreTarget,
+  type TranscriptHistoryGates,
+  type TranscriptHistoryPending,
+  type TranscriptHistoryRequest,
+  type TranscriptReadingAnchor,
+} from '../lib/ported/transcript-reading-position.js';
 import {
   createSessionEventStreamSubscription,
   recordSessionEventStreamEvent,
@@ -74,6 +85,15 @@ export interface ActiveSessionState {
   shellUpdates: readonly ShellRunUpdate[];
   executionBoundary: ExecutionBoundaryReadModel | undefined;
   compactionOutcome: ContextCompactionOutcome | undefined;
+  /** Which direction a history page is loading in, when one is. */
+  historyPending: TranscriptHistoryPending | undefined;
+  /**
+   * Where the reader was parked, per Session. Survives a selection change —
+   * that is the whole point — so it is restored rather than reset below.
+   */
+  readingAnchors: Readonly<Record<string, TranscriptReadingAnchor | undefined>>;
+  /** A remembered anchor whose turn the range could not produce. */
+  unavailableAnchorTurnId: string | undefined;
 }
 const initialState = (): ActiveSessionState => ({
   sessionId: undefined,
@@ -90,6 +110,9 @@ const initialState = (): ActiveSessionState => ({
   shellUpdates: [],
   executionBoundary: undefined,
   compactionOutcome: undefined,
+  historyPending: undefined,
+  readingAnchors: {},
+  unavailableAnchorTurnId: undefined,
 });
 
 export function createActiveSessionStore(
@@ -109,6 +132,7 @@ export function createActiveSessionStore(
   const transcriptApi = options.transcripts ?? transcripts;
   const shellApi = options.shellRuns ?? shellRuns;
   const store = createStore<ActiveSessionState>(initialState);
+  const historyGates: TranscriptHistoryGates = new WeakMap();
   let dispose = () => {};
   let controller: RecoveringDesktopTranscriptRangeController | undefined;
   let currentRefresh: ((options?: RefreshMessagesOptions) => Promise<boolean>) | undefined;
@@ -117,7 +141,12 @@ export function createActiveSessionStore(
   function observe(sessionId: string | undefined, locale: UiLocale): () => void {
     dispose();
     const generation = ++selectionGeneration;
-    store.setState({ ...initialState(), sessionId, loading: !!sessionId });
+    store.setState({
+      ...initialState(),
+      readingAnchors: store.getState().readingAnchors,
+      sessionId,
+      loading: !!sessionId,
+    });
     if (!sessionId) {
       dispose = () => {};
       return dispose;
@@ -456,21 +485,114 @@ export function createActiveSessionStore(
     disconnect() {
       dispose();
       selectionGeneration++;
-      store.setState(initialState());
+      store.setState({ ...initialState(), readingAnchors: store.getState().readingAnchors });
     },
     refreshMessages: (input?: RefreshMessagesOptions) =>
       currentRefresh?.(input) ?? Promise.resolve(false),
-    async loadBefore() {
-      await controller?.loadBefore();
+    async loadBefore(maxBytes?: number, anchorTurnId?: string) {
+      await controller?.loadBefore(maxBytes, anchorTurnId);
     },
-    async loadAfter() {
-      await controller?.loadAfter();
+    async loadAfter(maxBytes?: number, anchorTurnId?: string) {
+      await controller?.loadAfter(maxBytes, anchorTurnId);
     },
     async loadLatest() {
       await controller?.loadLatest();
     },
     async loadAround(sequence: number) {
       await controller?.loadAround(sequence);
+    },
+    /**
+     * One paging request, gated per controller.
+     *
+     * The scroller asks on every reader movement near an edge, so an ungated
+     * loader would issue a request per frame; `loadTranscriptHistory` keeps at
+     * most one in flight and remembers the last request made behind it, which
+     * is what stops a reader who keeps scrolling from being stranded when
+     * their request was dropped.
+     */
+    loadHistory(request: TranscriptHistoryRequest): Promise<void> {
+      const sessionId = store.getState().sessionId;
+      const active = controller;
+      if (!sessionId || !active) return Promise.resolve();
+      return loadTranscriptHistory({
+        gates: historyGates,
+        sessionId,
+        request,
+        controller: active,
+        maxBytes: DESKTOP_TRANSCRIPT_RANGE_MAX_BYTES,
+        isCurrent: () => controller === active && store.getState().sessionId === sessionId,
+        setPending: (update) => {
+          store.setState((state) => ({ historyPending: update(state.historyPending) }));
+        },
+        onError: (error) => store.setState({ error: errorMessage(error) }),
+      });
+    },
+    /** Where a turn sits in the durable range, or `null` when it is not resident. */
+    sequenceForTurn(turnId: string): number | null {
+      try {
+        const range = controller?.store;
+        if (!range || range.range().sessionId !== store.getState().sessionId) return null;
+        return range.sequenceForTurn(turnId);
+      } catch {
+        return null;
+      }
+    },
+    /**
+     * Remember where the reader was parked, so returning to this task lands
+     * there rather than at the tail.
+     *
+     * Kept outside `initialState()` on purpose: the whole point is to survive
+     * the selection change that resets everything else.
+     */
+    setReadingAnchor(sessionId: string, turnId: string | undefined) {
+      captureTranscriptReadingAnchor({
+        sessionId,
+        currentSessionId: store.getState().sessionId,
+        ...(turnId ? { turnId } : {}),
+        ...(controller ? { controller } : {}),
+        setAnchor: (id, anchor) => {
+          store.setState((state) => ({ readingAnchors: { ...state.readingAnchors, [id]: anchor } }));
+        },
+      });
+    },
+    /** The turn `useChatScroll` should restore to, and whether it is gone. */
+    restoreTarget(sessionId: string): { turnId: string; unavailable: boolean } | undefined {
+      return transcriptRestoreTarget(
+        store.getState().readingAnchors[sessionId],
+        store.getState().unavailableAnchorTurnId,
+      );
+    },
+    /**
+     * Bring the remembered turn back into the range, if it is not already
+     * resident. Returns the canceller for the effect that asked.
+     *
+     * A remembered anchor whose turn the Host can no longer produce is
+     * reported as unavailable rather than silently dropped: the scroller has
+     * to know it should stop waiting and take the tail instead.
+     */
+    restoreReadingPosition(): (() => void) | undefined {
+      const sessionId = store.getState().sessionId;
+      const active = controller;
+      if (!sessionId || !active) return undefined;
+      const anchor = store.getState().readingAnchors[sessionId];
+      if (!anchor) return undefined;
+      return restoreSessionTranscriptRange({
+        sessionId,
+        readingAnchor: anchor,
+        controller: active,
+        isCurrent: (id, candidate) =>
+          candidate === controller && store.getState().sessionId === id,
+        // The range publishes through its own batch handler; asking it to
+        // refresh is what turns a loaded page into rendered messages.
+        setMessages: () => {
+          void currentRefresh?.();
+        },
+        setReadingAnchor: (id, next) => {
+          store.setState((state) => ({ readingAnchors: { ...state.readingAnchors, [id]: next } }));
+        },
+        onRestoreUnavailable: (_id, turnId) => store.setState({ unavailableAnchorTurnId: turnId }),
+        onError: (error) => store.setState({ error: errorMessage(error) }),
+      });
     },
   };
 }

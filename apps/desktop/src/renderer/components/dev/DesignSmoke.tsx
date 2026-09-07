@@ -27,6 +27,9 @@
 // (plan §7). When this file goes, that exemption goes with it.
 
 import { useState } from 'react';
+import type { ToolActivityItem, TurnViewModel } from '@maka/ui';
+import { TranscriptTurn } from '../session/TranscriptTurn';
+import { deriveTurnPresentation } from '../../hooks/use-turn-presentation';
 import { Anthropicon, type AnthropiconName } from '../icons';
 import { Avatar } from '../ui/avatar';
 import { Button } from '../ui/button';
@@ -181,6 +184,107 @@ $$
 
 > A blockquote, for the quiet tier of text.
 `;
+
+/** One turn holding every timeline shape, so all four renderers are visible. */
+const TRANSCRIPT_FIXTURE: TurnViewModel = (() => {
+  const diff: ToolActivityItem = {
+    toolUseId: 'preview-diff',
+    toolName: 'Edit',
+    activityKind: 'edit',
+    status: 'completed',
+    args: { path: 'src/session/transcript.ts' },
+    result: {
+      kind: 'file_diff',
+      paths: ['src/session/transcript.ts'],
+      diff: [
+        '@@ -12,7 +12,8 @@',
+        ' export function project(input: Input) {',
+        '-  const rows = input.turns.map(toRow);',
+        '+  // Keep the previous object when the value did not move.',
+        '+  const rows = reconcile(previous, input.turns.map(toRow));',
+        '   return rows;',
+        ' }',
+      ].join('\n'),
+    },
+  };
+  const terminal: ToolActivityItem = {
+    toolUseId: 'preview-terminal',
+    toolName: 'Bash',
+    activityKind: 'command',
+    status: 'completed',
+    args: { command: 'npm test -- transcript' },
+    result: {
+      kind: 'terminal',
+      cwd: '/Users/dev/maka',
+      cmd: 'npm test -- transcript',
+      status: 'completed',
+      exitCode: 0,
+      output: {
+        mode: 'pipes',
+        stdout: '# tests 96\n# pass 96\n# fail 0\n',
+        stderr: '',
+        stdoutTruncated: false,
+        stderrTruncated: false,
+        redacted: false,
+      },
+    },
+  };
+  const subagent: ToolActivityItem = {
+    toolUseId: 'preview-agent',
+    toolName: 'Agent',
+    activityKind: 'tool',
+    status: 'completed',
+    args: { profile: 'reviewer' },
+    result: {
+      kind: 'subagent',
+      childSessionId: 'preview-child',
+      agentName: 'reviewer',
+      turnId: 'preview-child-turn',
+      status: 'completed',
+      permissionMode: 'explore',
+      summary: 'Reviewed the projection change and found no regressions.',
+      artifactIds: [],
+      durationMs: 8200,
+    },
+  };
+  return {
+    turnId: 'preview-turn',
+    status: 'completed',
+    partialOutputRetained: false,
+    user: {
+      id: 'preview-user',
+      role: 'user',
+      text: 'Keep the transcript from re-rendering every turn on each token.',
+      ts: Date.UTC(2026, 8, 7, 9, 30),
+    },
+    assistant: { id: 'preview-assistant', role: 'assistant', text: 'Done.' },
+    tools: [diff, terminal, subagent],
+    timeline: [
+      {
+        kind: 'thinking',
+        messageId: 'preview-step-1',
+        text: 'The projection already knows which turns moved. If it hands the previous object back for the rest, the memo above it can compare by identity instead of by value.',
+      },
+      { kind: 'tools', items: [diff, terminal, subagent] },
+      {
+        kind: 'text',
+        messageId: 'preview-step-2',
+        complete: true,
+        text: 'Reconciled the projection so a turn keeps its object identity unless its value changed. `npm test -- transcript` passes.',
+      },
+    ],
+    notes: [],
+    startedAt: Date.UTC(2026, 8, 7, 9, 30),
+    modelId: 'claude-sonnet-4-5',
+    durationMs: 12_400,
+  };
+})();
+
+const TRANSCRIPT_FIXTURE_ACTIONS = deriveTurnPresentation([TRANSCRIPT_FIXTURE], {
+  activeId: 'preview-session',
+  pendingTurnActions: new Set<string>(),
+  uiLocale: 'en',
+}).footerActionsByTurn['preview-turn'] ?? [];
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -436,6 +540,28 @@ export function DesignSmoke({ showThemeControl = true }: { showThemeControl?: bo
             <Markdown noPadding onOpenExternal={(url) => toast({ description: `Open ${url}` })}>
               {MARKDOWN_SAMPLE}
             </Markdown>
+          </div>
+        </Section>
+
+        {/* Phase 3a. A whole turn, from a fixture: the ask, reasoning, the tool
+            timeline with three different result renderers, the answer and the
+            footer. The deterministic test backend emits none of these shapes,
+            so this is the only place the diff / terminal / subagent bodies can
+            be looked at rather than read about. */}
+        <Section title="Transcript">
+          <div
+            className="chat-area rounded-lg border border-hairline bg-surface-1 p-4"
+            data-maka-contract="transcript-preview"
+          >
+            <TranscriptTurn
+              turn={TRANSCRIPT_FIXTURE}
+              live={false}
+              footerActions={TRANSCRIPT_FIXTURE_ACTIONS}
+              toolContext={{ onOpenSession: () => {}, onOpenExternal: () => {} }}
+              onFooterAction={() => {}}
+              onOpenLineage={() => {}}
+              onOpenExternal={() => {}}
+            />
           </div>
         </Section>
       </div>

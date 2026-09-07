@@ -23,10 +23,12 @@
     "@maka/core": "0.1.0",
     "clsx": "^2.1.1",
     "katex": "^0.18.7",
+    "prismjs": "^1.30.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@types/prismjs": "^1.26.6",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "linkedom": "^0.18.13"

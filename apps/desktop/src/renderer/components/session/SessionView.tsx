@@ -17,91 +17,415 @@
  * under the License.
  */
 
-// The conversation surface — PLACEHOLDER.
+// The conversation surface.
 //
-// Phase 3 replaces this file with the real transcript: user rows with
-// attachments and quotes, assistant markdown streamed through
-// `StreamPopMarkdown`, the tool timeline and its renderer registry, turn
-// footers, revision navigation and history paging. What is here now is the
-// smallest thing that proves the pipeline underneath is connected: the same
-// `TurnViewModel[]` Phase 3 will render, laid out as plain cards.
+// Three things meet here and each has exactly one owner:
 //
-// Deliberately NOT here: any of the scroll authority, folding or paging
-// machinery. Half an implementation of those would have to be unpicked rather
-// than extended.
+//   WHAT is on screen — `useActiveTurns()`, the same `TurnViewModel[]` the
+//   projection produces. Nothing here reads raw events.
+//
+//   HOW MUCH is on screen — the range store's byte-budgeted window. A long
+//   conversation is never fully resident, so the feed has two edges and
+//   `projectTranscriptRows` puts a gap row at each.
+//
+//   WHERE it is looking — `TranscriptScrollAuthority`, and only it. Three
+//   writers used to move `scrollTop` and avoid each other through flags; the
+//   authority is one boolean instead (pinned → growth writes, released →
+//   nothing here writes, ever). Every command releases the pin first, which is
+//   why a command can never race the policy.
 
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useStore } from 'zustand';
-import { useUiLocale } from '@maka/ui';
-import Markdown from '../ui/Markdown.js';
-import { Anthropicon } from '../icons/Anthropicon.js';
-import { cn } from '../../lib/cn.js';
-import { activeSessionStore, turnActionsStore } from '../../store/index.js';
+import { useShallow } from 'zustand/react/shallow';
+import { userFacingText, type StoredMessage } from '@maka/core/session';
+import {
+  SessionAttachmentProvider,
+  TranscriptScrollAuthorityProvider,
+  projectTranscriptRows,
+  useChatScroll,
+  useTranscriptScrollAuthority,
+  useUiLocale,
+  type TurnViewModel,
+} from '@maka/ui';
+import { openExternal } from '../../bridge/external-links.js';
+import { readAttachmentBytes } from '../../bridge/attachments.js';
 import { useActiveTurns, useLiveTurnSnapshot } from '../../hooks/use-workspace.js';
-import { getConversationCopy } from '@maka/ui';
-import { getSidebarCopy } from '../../locales/sidebar-copy.js';
+import { useTurnPresentation, pendingTurnActionKey } from '../../hooks/use-turn-presentation.js';
+import {
+  activeSessionStore,
+  revisionDraftStore,
+  sessionsStore,
+  turnActionsStore,
+} from '../../store/index.js';
+import { revisionRefusalFor } from '../../store/revision-draft.js';
+import { pendingActionsOf } from '../../store/turn-actions-store.js';
+import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
+import { getTranscriptCopy } from '../../locales/transcript-copy.js';
+import type { TurnFooterActionId } from '../../lib/ported/turn-footer-actions.js';
+import { ChatSkeleton } from '../ui/chat-skeleton.js';
+import { cn } from '../../lib/cn.js';
+import { ComposerPlaceholder } from './ComposerPlaceholder.js';
+import { JumpToLatest, TranscriptGapRow } from './HistoryControls.js';
+import { MessageQueue } from './MessageQueue.js';
+import { SelectionQuote } from './SelectionQuote.js';
+import { TranscriptTurn } from './TranscriptTurn.js';
+import { RevisionBanner } from './notices/RevisionBanner.js';
+import { SessionNotices } from './notices/SessionNotices.js';
 
-export function SessionView(props: { sessionId: string }) {
+export interface SessionViewProps {
+  sessionId: string;
+  /** Phase 3b swaps the composer in here without touching the transcript. */
+  composerSlot?: ReactNode;
+  onOpenSettings?: (section?: 'models' | 'projects') => void;
+  onError?: (title: string, error: unknown) => void;
+}
+
+export function SessionView(props: SessionViewProps) {
+  return (
+    <TranscriptScrollAuthorityProvider>
+      <SessionAttachmentProvider sessionId={props.sessionId} readBytes={readAttachmentBytes}>
+        <SessionTranscript {...props} />
+      </SessionAttachmentProvider>
+    </TranscriptScrollAuthorityProvider>
+  );
+}
+
+function SessionTranscript(props: SessionViewProps) {
   const locale = useUiLocale();
-  const conversation = getConversationCopy(locale);
-  const sidebar = getSidebarCopy(locale);
+  const copy = getTranscriptCopy(locale);
+  const actions = getDesktopConversationCopy(locale).actions;
+  const sessionId = props.sessionId;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const authority = useTranscriptScrollAuthority();
+  const [awayFromTail, setAwayFromTail] = useState(false);
+  const [switchingToolUseId, setSwitchingToolUseId] = useState<string | undefined>(undefined);
+
   const turns = useActiveTurns();
   const live = useLiveTurnSnapshot();
-  const observationReady = useStore(activeSessionStore, (state) => state.observationReady);
-  const pending = useStore(turnActionsStore, (state) => state.pending[props.sessionId] ?? []);
+  const draft = useStore(revisionDraftStore, (state) => state.draft);
+  const pending = useStore(turnActionsStore, (state) => pendingActionsOf(state, sessionId));
+  const feed = useStore(
+    activeSessionStore,
+    useShallow((state) => ({
+      messages: state.messages,
+      observationReady: state.observationReady,
+      hasOlder: state.range?.hasOlder === true,
+      hasNewer: state.range?.hasNewer === true,
+      historyPending: state.historyPending,
+    })),
+  );
+
+  const reportError = useCallback(
+    (title: string, error: unknown) => props.onError?.(title, error),
+    [props],
+  );
+
+  // The pin state drives one affordance and nothing else, so it subscribes
+  // rather than being lifted into a provider that would re-render the whole
+  // transcript on every threshold crossing.
+  useEffect(() => {
+    const read = () => setAwayFromTail(authority.getSnapshot().awayFromTail);
+    read();
+    return authority.subscribe(read);
+  }, [authority]);
+
+  // Bring the remembered turn back into the range before the scroller looks
+  // for it. A cancelled restore is a task the reader already left.
+  useEffect(
+    () => activeSessionStore.restoreReadingPosition(),
+    [sessionId, feed.observationReady],
+  );
+
+  const turnIds = useMemo(() => turns.map((turn) => turn.turnId), [turns]);
+  const pendingTurnActions = usePendingTurnActions(sessionId, pending, turnIds);
+  const presentation = useTurnPresentation(turns, {
+    activeId: sessionId,
+    pendingTurnActions,
+    uiLocale: locale,
+  });
+
+  const rows = useMemo(
+    () =>
+      projectTranscriptRows<TurnViewModel>({
+        turns,
+        hasOlder: feed.hasOlder,
+        hasNewer: feed.hasNewer,
+      }),
+    [turns, feed.hasOlder, feed.hasNewer],
+  );
+
+  const loadHistory = useCallback(
+    (target: 'earlier' | 'later' | 'latest', anchorTurnId?: string) =>
+      activeSessionStore.loadHistory({
+        target,
+        ...(anchorTurnId ? { anchorTurnId } : {}),
+      }),
+    [],
+  );
+
+  const restoreTarget = activeSessionStore.restoreTarget(sessionId);
+  const { highlightedTurnId } = useChatScroll({
+    scrollRef,
+    sessionId,
+    messages: feed.messages,
+    ...(restoreTarget ? { restoreTarget } : {}),
+    behavior: 'smooth',
+    hasOlderHistory: feed.hasOlder,
+    onLoadEarlierHistory: (anchorTurnId) => loadHistory('earlier', anchorTurnId),
+    hasNewerHistory: feed.hasNewer,
+    onLoadLaterHistory: (anchorTurnId) => loadHistory('later', anchorTurnId),
+    onReadingAnchorChange: (turnId) => activeSessionStore.setReadingAnchor(sessionId, turnId),
+  });
+
+  const toolContext = useMemo(
+    () => ({
+      onOpenSession: (childSessionId: string) => sessionsStore.select(childSessionId),
+      onOpenExternal: (url: string) => {
+        openExternal(url);
+      },
+    }),
+    [],
+  );
+
+  const onFooterAction = useCallback(
+    (turnId: string, id: TurnFooterActionId) => {
+      const turn = turns.find((row) => row.turnId === turnId);
+      if (!turn) return;
+      if (id === 'copy') {
+        const text = turn.assistant?.text ?? '';
+        void navigator.clipboard.writeText(text).catch(() => undefined);
+        return;
+      }
+      if (id === 'info') return;
+      if (id === 'regenerate') {
+        void turnActionsStore
+          .regenerate(sessionId, turnId)
+          .catch((error) => reportError(actions.operationFailedTitle, error));
+        return;
+      }
+      void turnActionsStore
+        .branch(sessionId, { sourceTurnId: turnId, copyId: crypto.randomUUID() })
+        .catch((error) => reportError(actions.operationFailedTitle, error));
+    },
+    [actions, reportError, sessionId, turns],
+  );
+
+  const onOpenLineage = useCallback((turnId: string) => {
+    const element = document.querySelector(`[data-turn-id="${CSS.escape(turnId)}"]`);
+    element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
+
+  const beginEdit = useCallback(
+    (turnId: string) => {
+      const message = feed.messages.find(
+        (row): row is Extract<StoredMessage, { type: 'user' }> =>
+          row.type === 'user' && row.turnId === turnId,
+      );
+      if (!message) return;
+      revisionDraftStore.begin({ sessionId, turnId, text: userFacingText(message) });
+    },
+    [feed.messages, sessionId],
+  );
+
+  const submitEdit = useCallback(() => {
+    const current = revisionDraftStore.getState().draft;
+    if (!current || current.phase !== 'editing') return;
+    const text = current.text.trim();
+    if (!text) return;
+    revisionDraftStore.markPreparing();
+    void turnActionsStore
+      .revise(current.sourceSessionId, {
+        sourceTurnId: current.sourceTurnId,
+        copyId: current.copyId,
+      })
+      .then(async (row) => {
+        revisionDraftStore.markForked(row.id);
+        await turnActionsStore.send(row.id, { type: 'send', turnId: crypto.randomUUID(), text });
+        revisionDraftStore.complete();
+      })
+      .catch((error) => {
+        revisionDraftStore.fail(
+          error instanceof Error ? error.message : actions.operationFailedFallback,
+        );
+        reportError(actions.revisionUnavailableTitle, error);
+      });
+  }, [actions, reportError]);
+
+  const switchToFullAccessAndRetry = useCallback(
+    (turnId: string) => (toolUseId: string) => {
+      setSwitchingToolUseId(toolUseId);
+      void turnActionsStore
+        .setPermission(sessionId, 'bypass')
+        .then(() => turnActionsStore.regenerate(sessionId, turnId))
+        .catch((error) => reportError(copy.sandbox.failedTitle, error))
+        .finally(() => setSwitchingToolUseId(undefined));
+    },
+    [copy, reportError, sessionId],
+  );
+
+  const running = live.phase !== undefined || pending.includes('send');
+  const historyPending = feed.historyPending?.sessionId === sessionId ? feed.historyPending : undefined;
 
   return (
-    <div className="chat-area flex min-h-0 flex-1 flex-col" data-maka-contract="transcript">
-      <div
-        className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-2"
-        role="log"
-        aria-live="polite"
-        aria-busy={!observationReady || undefined}
-      >
-        <div className="mx-auto flex w-full max-w-[var(--chat-feed-max)] flex-col gap-4">
-          {turns.length === 0 && (
-            <p className="py-16 text-center text-sm text-text-muted" role="status">
-              {observationReady ? conversation.empty.ariaLabel : sidebar.loading}
-            </p>
-          )}
-          {turns.map((turn) => (
-            <article
-              key={turn.turnId}
-              data-maka-transcript-turn={turn.turnId}
-              className="flex flex-col gap-2"
-            >
-              {turn.user?.text && (
-                <div className="chat-user-bubble self-end rounded-xl bg-surface-2 px-3 py-2 text-sm leading-6 text-text-primary">
-                  {turn.user.text}
-                </div>
-              )}
-              {turn.assistant?.text && (
-                <div className="chat-assistant-response standard-markdown text-sm leading-6 text-chat-text-primary">
-                  <Markdown>{turn.assistant.text}</Markdown>
-                </div>
-              )}
-              <div className="flex items-center gap-3 text-xs leading-4 text-text-muted">
-                <span>{sidebar.turnStatus[turn.status]}</span>
-                {turn.tools.length > 0 && (
-                  <span className="inline-flex items-center gap-1">
-                    <Anthropicon name="tool" size={12} />
-                    {turn.tools.length}
-                  </span>
-                )}
-              </div>
-            </article>
-          ))}
+    <div className="chat-area relative flex min-h-0 flex-1 flex-col" data-maka-contract="transcript">
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={scrollRef}
+          className="absolute inset-0 overflow-y-auto"
+          data-maka-transcript-boundary=""
+          role="log"
+          aria-live="polite"
+          aria-label={copy.feed.ariaLabel}
+          aria-busy={!feed.observationReady || undefined}
+        >
+          <div className="chat-feed mx-auto w-full max-w-[var(--chat-feed-max)] px-4 pb-8 pt-4">
+            {!feed.observationReady && turns.length === 0 && <ChatSkeleton />}
+            {feed.observationReady && turns.length === 0 && (
+              <p className="py-16 text-center text-sm text-text-muted" role="status">
+                {copy.feed.empty}
+              </p>
+            )}
+            {rows.map((row) => {
+              if (row.kind === 'gap') {
+                return (
+                  <TranscriptGapRow
+                    key={`gap-${row.direction}`}
+                    direction={row.direction}
+                    pending={historyPending?.target === (row.direction === 'older' ? 'earlier' : 'later')}
+                    onLoad={() =>
+                      void loadHistory(row.direction === 'older' ? 'earlier' : 'later')
+                    }
+                  />
+                );
+              }
+              const turn = row.turn;
+              const editingThisTurn =
+                draft?.sourceSessionId === sessionId && draft.sourceTurnId === turn.turnId;
+              const message = feed.messages.find(
+                (item): item is Extract<StoredMessage, { type: 'user' }> =>
+                  item.type === 'user' && item.turnId === turn.turnId,
+              );
+              const refusal = revisionRefusalFor(message);
+              return (
+                <TranscriptTurn
+                  key={turn.turnId}
+                  turn={turn}
+                  live={live.turnId === turn.turnId}
+                  footerActions={presentation.footerActionsByTurn[turn.turnId] ?? []}
+                  {...(presentation.lineageBadgesByTurn[turn.turnId]
+                    ? { lineageBadges: presentation.lineageBadgesByTurn[turn.turnId] }
+                    : {})}
+                  {...(presentation.failedReasonLabels[turn.turnId]
+                    ? { failedReasonLabel: presentation.failedReasonLabels[turn.turnId] }
+                    : {})}
+                  {...(presentation.failedSeverities[turn.turnId]
+                    ? { failedSeverity: presentation.failedSeverities[turn.turnId] }
+                    : {})}
+                  {...(presentation.failedExecutionStateLabels[turn.turnId]
+                    ? {
+                        failedExecutionStateLabel:
+                          presentation.failedExecutionStateLabels[turn.turnId],
+                      }
+                    : {})}
+                  highlighted={highlightedTurnId === turn.turnId}
+                  toolContext={toolContext}
+                  onFooterAction={onFooterAction}
+                  onOpenLineage={onOpenLineage}
+                  {...(message && !refusal && !draft ? { onEditUserMessage: beginEdit } : {})}
+                  {...(refusal
+                    ? {
+                        editDisabledReason:
+                          refusal === 'attachments'
+                            ? actions.revisionAttachmentsUnsupported
+                            : actions.revisionTransformedTextUnsupported,
+                      }
+                    : {})}
+                  {...(editingThisTurn
+                    ? {
+                        editing: true,
+                        editText: draft.text,
+                        onEditTextChange: (text: string) => revisionDraftStore.setText(text),
+                        onEditSubmit: submitEdit,
+                        onEditCancel: () => revisionDraftStore.cancel(),
+                        editPending: draft.phase !== 'editing',
+                      }
+                    : {})}
+                  onSwitchToFullAccessAndRetry={switchToFullAccessAndRetry(turn.turnId)}
+                  {...(switchingToolUseId ? { switchingToolUseId } : {})}
+                  onOpenExternal={toolContext.onOpenExternal}
+                />
+              );
+            })}
+          </div>
         </div>
-      </div>
-      <div
-        className={cn(
-          'shrink-0 border-t border-hairline px-4 py-3 text-center text-xs leading-4 text-text-muted',
+        {awayFromTail && (
+          <JumpToLatest
+            streaming={running}
+            onJump={() => {
+              authority.pinToTail();
+              void loadHistory('latest');
+            }}
+          />
         )}
-        role="status"
-      >
-        {live.phase !== undefined || pending.includes('send')
-          ? sidebar.running
-          : conversation.composer.placeholder}
+        <SelectionQuote sessionId={sessionId} scrollRef={scrollRef} enabled={!draft} />
+      </div>
+
+      <div className={cn('shrink-0 px-4 pb-4')}>
+        <div className="mx-auto flex w-full max-w-[var(--chat-feed-max)] flex-col gap-2">
+          <SessionNotices
+            sessionId={sessionId}
+            {...(presentation.resumeCandidateTurnId
+              ? { resumeCandidateTurnId: presentation.resumeCandidateTurnId }
+              : {})}
+            onOpenModelPicker={() => props.onOpenSettings?.('models')}
+            onOpenSettings={(section) => props.onOpenSettings?.(section)}
+          />
+          <RevisionBanner
+            sessionId={sessionId}
+            onSelectSession={(id) => sessionsStore.select(id)}
+          />
+          <MessageQueue sessionId={sessionId} onError={reportError} />
+          {props.composerSlot ?? (
+            <ComposerPlaceholder
+              sessionId={sessionId}
+              running={running}
+              onError={reportError}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
+}
+
+/**
+ * The footer actions currently in flight, as the exact key set the
+ * presentation derivation expects.
+ *
+ * The turn-actions store locks per Session and per KIND, not per turn — the
+ * Host takes one regenerate at a time for a Session — so a running regenerate
+ * marks every turn's regenerate busy. Spelling that out for each turn is what
+ * makes the disabled state honest instead of leaving three other rows
+ * clickable into a rejection.
+ *
+ * Memoized so the derivation's identity comparison keeps working: a fresh Set
+ * per render would invalidate the whole per-turn cache on every token.
+ */
+function usePendingTurnActions(
+  sessionId: string,
+  pending: readonly string[],
+  turnIds: readonly string[],
+): ReadonlySet<string> {
+  const regenerating = pending.includes('regenerate');
+  const branching = pending.includes('copy');
+  const key = turnIds.join(' ');
+  return useMemo(() => {
+    const keys = new Set<string>();
+    if (!regenerating && !branching) return keys;
+    for (const turnId of key === '' ? [] : key.split(' ')) {
+      if (regenerating) keys.add(pendingTurnActionKey(sessionId, turnId, 'regenerate'));
+      if (branching) keys.add(pendingTurnActionKey(sessionId, turnId, 'branch'));
+    }
+    return keys;
+  }, [branching, key, regenerating, sessionId]);
 }

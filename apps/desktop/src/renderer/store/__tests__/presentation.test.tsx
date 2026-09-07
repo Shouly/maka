@@ -19,10 +19,10 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createElement } from 'react';
+import { createElement, Fragment } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { parseHTML } from 'linkedom';
-import { LocaleProvider } from '@maka/ui';
+import { LocaleProvider, type ToolActivityItem, type TurnViewModel } from '@maka/ui';
 import Markdown from '../../components/ui/Markdown.js';
 import { TooltipProvider } from '../../components/ui/tooltip.js';
 import { SessionRow } from '../../components/layout/sidebar-parts/SessionRow.js';
@@ -31,6 +31,14 @@ import { buildSessionListModel } from '../session-list-model.js';
 import { getSidebarCopy } from '../../locales/sidebar-copy.js';
 import { getShellCopy } from '../../locales/shell-copy.js';
 import { buildPaletteCommands } from '../../components/palette/commands.js';
+import { TranscriptTurn } from '../../components/session/TranscriptTurn.js';
+import { renderToolContent } from '../../components/session/tools/registry.js';
+import {
+  toolRowStatus,
+  toolRowStatusLabel,
+} from '../../components/session/tools/tool-presentation.js';
+import { deriveTurnPresentation } from '../../hooks/use-turn-presentation.js';
+import { getTranscriptCopy } from '../../locales/transcript-copy.js';
 
 function render(text: string) {
   const html = renderToStaticMarkup(
@@ -225,4 +233,202 @@ test('an empty palette says so through a live status, not an empty list', () => 
   );
   assert.ok(document.querySelector('[role="status"]'));
   assert.ok(document.documentElement.textContent?.includes(copy.emptyTitle));
+});
+
+// ── Phase 3a: the transcript ────────────────────────────────────────────────
+
+/**
+ * One turn carrying every shape the timeline can hold: the ask, reasoning, an
+ * answer, and three tool rows whose results take three different renderers.
+ *
+ * The turn is `running` so the tool group renders its window of steps — a
+ * settled group collapses to its summary line, which is correct behaviour and
+ * would leave nothing here to assert about the rows themselves.
+ */
+function transcriptFixture(): TurnViewModel {
+  const diff: ToolActivityItem = {
+    toolUseId: 'tool-diff',
+    toolName: 'Edit',
+    activityKind: 'edit',
+    status: 'completed',
+    args: { path: 'src/a.ts' },
+    result: {
+      kind: 'file_diff',
+      paths: ['src/a.ts'],
+      diff: '@@ -1 +1 @@\n-const x = 1;\n+const x = 2;',
+    },
+  };
+  const terminal: ToolActivityItem = {
+    toolUseId: 'tool-terminal',
+    toolName: 'Bash',
+    activityKind: 'command',
+    status: 'completed',
+    args: { command: 'npm test' },
+    result: {
+      kind: 'terminal',
+      cwd: '/workspace',
+      cmd: 'npm test',
+      status: 'completed',
+      exitCode: 0,
+      output: {
+        mode: 'pipes',
+        stdout: 'ok 1 passing\n',
+        stderr: '',
+        stdoutTruncated: false,
+        stderrTruncated: false,
+        redacted: false,
+      },
+    },
+  };
+  const subagent: ToolActivityItem = {
+    toolUseId: 'tool-agent',
+    toolName: 'Agent',
+    activityKind: 'tool',
+    status: 'running',
+    args: { profile: 'reviewer' },
+    result: {
+      kind: 'subagent',
+      childSessionId: 'child-1',
+      agentName: 'reviewer',
+      turnId: 'child-turn',
+      status: 'running',
+      permissionMode: 'explore',
+      summary: 'Reviewing the change',
+      artifactIds: [],
+    },
+  };
+  return {
+    turnId: 'turn-fixture',
+    status: 'running',
+    partialOutputRetained: false,
+    user: { id: 'user-1', role: 'user', text: 'Fix the constant', ts: NOW },
+    assistant: { id: 'assistant-1', role: 'assistant', text: 'Done.' },
+    tools: [diff, terminal, subagent],
+    timeline: [
+      { kind: 'thinking', text: 'Weighing two options.', messageId: 'step-1' },
+      { kind: 'tools', items: [diff, terminal, subagent] },
+      { kind: 'text', text: 'Done.', messageId: 'step-2', complete: true },
+    ],
+    notes: [{ id: 'note-1', role: 'system', text: 'Earlier history compacted' }],
+    startedAt: NOW,
+  };
+}
+
+test('a turn renders its ask, its reasoning, its answer and every tool row', () => {
+  const turn = transcriptFixture();
+  const presentation = deriveTurnPresentation([turn], {
+    activeId: 'session-1',
+    pendingTurnActions: new Set(),
+    uiLocale: 'en',
+  });
+  const document = renderTree(
+    createElement(TranscriptTurn, {
+      turn,
+      live: false,
+      footerActions: presentation.footerActionsByTurn[turn.turnId] ?? [],
+      toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
+      onFooterAction: () => {},
+      onOpenLineage: () => {},
+      onOpenExternal: () => {},
+    }),
+  );
+
+  const article = document.querySelector(`[data-turn-id="${turn.turnId}"]`);
+  assert.ok(article, 'the turn carries the id the scroll authority and quoting resolve against');
+
+  const text = document.documentElement.textContent ?? '';
+  assert.ok(text.includes('Fix the constant'), 'the ask is verbatim');
+  assert.ok(text.includes('Weighing two options.'), 'reasoning is on screen');
+  assert.ok(text.includes('Done.'), 'the answer is on screen');
+  assert.ok(text.includes('Earlier history compacted'), 'the system note is a row of its own');
+
+  // Markdown carries the contract attribute the main process and e2e probe.
+  assert.ok(document.querySelector('[data-maka-contract="markdown"]'));
+
+  // Three rows, one per tool, each with its own identity.
+  const rows = [...document.querySelectorAll('[data-maka-tool-row]')].map((row) =>
+    row.getAttribute('data-maka-tool-row'),
+  );
+  assert.deepEqual(rows, ['tool-diff', 'tool-terminal', 'tool-agent']);
+
+  // Every actionable control has an accessible name (ax-tree-audit rule).
+  for (const button of document.querySelectorAll('button')) {
+    const name = button.getAttribute('aria-label') ?? button.textContent?.trim() ?? '';
+    assert.ok(name.length > 0, 'every button in a turn has an accessible name');
+  }
+});
+
+test('each result kind renders its own body, and a diff keeps its markers', () => {
+  const turn = transcriptFixture();
+  const context = { onOpenSession: () => {}, onOpenExternal: () => {} };
+  const bodies = turn.tools.map((tool) =>
+    renderTree(createElement(Fragment, null, renderToolContent(tool, context))),
+  );
+
+  const diff = bodies[0]!.documentElement.textContent ?? '';
+  assert.ok(diff.includes('const x = 2;'), 'the added line is on screen');
+  assert.ok(diff.includes('+1'), 'the added-line count is on screen');
+  assert.equal(bodies[0]!.querySelectorAll('.custom-code-highlight').length, 1);
+
+  const terminal = bodies[1]!.documentElement.textContent ?? '';
+  assert.ok(terminal.includes('npm test'), 'the command is on screen');
+  assert.ok(terminal.includes('ok 1 passing'), 'the output is on screen');
+  assert.ok(terminal.includes('/workspace'), 'the working directory is on screen');
+
+  const agent = bodies[2]!;
+  const open = agent.querySelector('button[aria-label]');
+  assert.ok(open?.getAttribute('aria-label')?.includes('reviewer'), 'the child task is reachable');
+  assert.ok(
+    (agent.documentElement.textContent ?? '').includes('Read only'),
+    'an explore-mode child says so',
+  );
+});
+
+test('a web search result is text, never markup from the page it found', () => {
+  const document = renderTree(
+    createElement(
+      Fragment,
+      null,
+      renderToolContent(
+        {
+          toolUseId: 'tool-web',
+          toolName: 'WebSearch',
+          activityKind: 'websearch',
+          status: 'completed',
+          args: { query: 'x' },
+          result: {
+            kind: 'web_search',
+            provider: 'tavily',
+            query: 'x',
+            rows: [
+              {
+                title: '<script>alert(1)</script>',
+                url: 'https://example.com/a',
+                snippet: '**not bold**',
+                source: 'example',
+              },
+            ],
+          },
+        },
+        { onOpenSession: () => {}, onOpenExternal: () => {} },
+      ),
+    ),
+  );
+  assert.equal(document.querySelectorAll('script').length, 0);
+  assert.equal(document.querySelectorAll('strong').length, 0);
+  assert.ok(document.documentElement.textContent?.includes('<script>alert(1)</script>'));
+  assert.ok(document.documentElement.textContent?.includes('example.com'));
+});
+
+test('a sandbox-denied row offers the way past it, and only then', () => {
+  const denied: ToolActivityItem = {
+    toolUseId: 'tool-denied',
+    toolName: 'Bash',
+    activityKind: 'command',
+    status: 'errored',
+    args: { command: 'sudo ls' },
+    result: { kind: 'text', text: 'denied', sandboxDenial: { likely: true } },
+  };
+  assert.equal(toolRowStatus(denied), 'sandbox_blocked');
+  assert.equal(toolRowStatusLabel(denied, 'en'), getTranscriptCopy('en').sandbox.blockedLabel);
 });

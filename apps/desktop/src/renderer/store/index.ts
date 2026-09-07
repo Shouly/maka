@@ -39,6 +39,9 @@ import { errorMessage } from './resource-store.js';
 export { sessionsStore, settingsStore, connectionsStore, projectsStore };
 export { newTaskStore, onboardingStore, scheduledTasksStore, updateStore };
 export { uiStore } from './ui-store.js';
+export { composerDraftStore } from './composer-draft-store.js';
+export { contextUsageStore } from './context-usage-store.js';
+export { revisionDraftStore } from './revision-draft.js';
 export const activeSessionStore = createActiveSessionStore({
   refreshSessions: sessionsStore.refresh,
   toast: toastApi,

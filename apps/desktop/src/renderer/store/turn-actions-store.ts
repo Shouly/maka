@@ -21,11 +21,29 @@ import { createStore } from 'zustand/vanilla';
 import * as api from '../bridge/sessions.js';
 import { errorMessage } from './resource-store.js';
 
-interface TurnActionsState {
+export interface TurnActionsState {
   pending: Readonly<Record<string, readonly string[]>>;
   errors: Readonly<Record<string, string | undefined>>;
   sendResults: Readonly<Record<string, api.SessionSendResult | undefined>>;
 }
+/**
+ * The operations in flight for one Session, or an empty list.
+ *
+ * The empty case is a shared frozen constant, not a fresh `[]`. This is read
+ * through `useStore`, whose snapshot must be stable between renders: a new
+ * array per call reads as "the store changed" on every render and loops until
+ * React gives up (#185). A Session with no operation yet has no key at all,
+ * which is exactly the state a freshly forked revision is in.
+ */
+const NO_PENDING_ACTIONS: readonly string[] = Object.freeze([]);
+
+export function pendingActionsOf(
+  state: TurnActionsState,
+  sessionId: string | undefined,
+): readonly string[] {
+  return (sessionId ? state.pending[sessionId] : undefined) ?? NO_PENDING_ACTIONS;
+}
+
 /** Operations capture their Session at invocation; selection changes never retarget a command. */
 export function createTurnActionsStore(
   options: {

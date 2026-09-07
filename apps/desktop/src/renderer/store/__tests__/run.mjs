@@ -28,11 +28,13 @@ try {
   const entries = [
     'renderer-state.test.ts',
     'phase2-state.test.ts',
+    'phase3-state.test.ts',
     'presentation.test.tsx',
   ].map((name) => fileURLToPath(new URL(name, import.meta.url)));
   const files = [
     'renderer-state.test.mjs',
     'phase2-state.test.mjs',
+    'phase3-state.test.mjs',
     'presentation.test.mjs',
   ].map((name) => join(output, name));
   await build({
