@@ -24,6 +24,7 @@ import type { SessionEventStreamSnapshot } from '@maka/core/session-event-health
 import type { ExecutionBoundaryReadModel } from '@maka/core/sandbox-boundary';
 import type { UiLocale } from '@maka/core/ui-locale';
 import {
+  createTranscriptViewportNavigation,
   reconcileInteractions,
   type InteractionQueues,
   type LiveTurnProjection,
@@ -48,13 +49,18 @@ import {
 import { DESKTOP_TRANSCRIPT_RANGE_MAX_BYTES } from '../../preload/transcript-contract.js';
 import {
   captureTranscriptReadingAnchor,
+  createTranscriptRestoreLifecycle,
+  currentTranscriptRange,
   loadTranscriptHistory,
+  prepareTranscriptForSend,
   restoreSessionTranscriptRange,
   transcriptRestoreTarget,
+  type TranscriptHistoryGate,
   type TranscriptHistoryGates,
   type TranscriptHistoryPending,
   type TranscriptHistoryRequest,
   type TranscriptReadingAnchor,
+  type TranscriptRestoreLifecycle,
 } from '../lib/ported/transcript-reading-position.js';
 import {
   createSessionEventStreamSubscription,
@@ -140,14 +146,58 @@ export function createActiveSessionStore(
   // mints an observer id per `subscribeEvents`, and three of them on one
   // session would triple the seed traffic to say the same thing.
   const eventListeners = new Set<(sessionId: string, event: SessionEvent) => void>();
+  // One explicit viewport channel for the app's lifetime: a send publishes a
+  // pin here and `useChatScroll` consumes it once. It is deliberately not
+  // store state — a command is an event, and replaying it on the next render
+  // would take the viewport back from a reader who has since scrolled away.
+  const viewportNavigation = createTranscriptViewportNavigation();
   let dispose = () => {};
   let controller: RecoveringDesktopTranscriptRangeController | undefined;
   let currentRefresh: ((options?: RefreshMessagesOptions) => Promise<boolean>) | undefined;
+  // A bookmark survives navigation; the command to restore it does not. One
+  // lifecycle per selection is what makes the restore happen once per
+  // activation rather than on every batch that changes the messages.
+  let restoreLifecycle: TranscriptRestoreLifecycle = createTranscriptRestoreLifecycle();
   let selectionGeneration = 0;
+
+  const setAnchor = (sessionId: string, anchor: TranscriptReadingAnchor | undefined) => {
+    store.setState((state) => ({
+      readingAnchors: { ...state.readingAnchors, [sessionId]: anchor },
+    }));
+  };
+  const isCurrentController = (sessionId: string, candidate: object) =>
+    candidate === controller && store.getState().sessionId === sessionId;
+  /**
+   * Drop the paging gate and the pending indicator for a Session.
+   *
+   * A navigation command has to enter the range controller immediately so it
+   * invalidates older pages; leaving it queued behind an in-flight one would
+   * let that page land last and take the viewport back.
+   */
+  const cancelHistory = (sessionId: string) => {
+    const active = controller;
+    if (currentTranscriptRange(active, sessionId) === undefined) return;
+    if (active) historyGates.delete(active);
+    store.setState((state) => ({
+      historyPending:
+        state.historyPending?.sessionId === sessionId ? undefined : state.historyPending,
+    }));
+  };
+  /** Cancel a restore in flight; `clearAnchor` also forgets the bookmark. */
+  const cancelRestore = (sessionId: string, clearAnchor: boolean) => {
+    restoreLifecycle.cancel(sessionId);
+    if (!clearAnchor) return;
+    setAnchor(sessionId, undefined);
+    store.setState({ unavailableAnchorTurnId: undefined });
+  };
 
   function observe(sessionId: string | undefined, locale: UiLocale): () => void {
     dispose();
     const generation = ++selectionGeneration;
+    // Entering a Session is what captures a bookmark to restore. Clearing one
+    // inside the activation must not restart the old restore.
+    const lifecycle = createTranscriptRestoreLifecycle();
+    restoreLifecycle = lifecycle;
     store.setState({
       ...initialState(),
       readingAnchors: store.getState().readingAnchors,
@@ -472,6 +522,7 @@ export function createActiveSessionStore(
     dispose = () => {
       if (closed) return;
       closed = true;
+      lifecycle.deactivate();
       attempt++;
       clearTimeout(retry);
       clearTimeout(shellRetry);
@@ -533,24 +584,55 @@ export function createActiveSessionStore(
      * most one in flight and remembers the last request made behind it, which
      * is what stops a reader who keeps scrolling from being stranded when
      * their request was dropped.
+     *
+     * A `latest` command is the exception: it is the reader saying "take me
+     * back to the tail", so it abandons the bookmark and enters the range
+     * controller now rather than queuing behind the page it supersedes.
      */
     loadHistory(request: TranscriptHistoryRequest): Promise<void> {
       const sessionId = store.getState().sessionId;
       const active = controller;
-      if (!sessionId || !active) return Promise.resolve();
+      if (!sessionId || !active || !isCurrentController(sessionId, active))
+        return Promise.resolve();
+      cancelRestore(sessionId, request.target === 'latest');
+      if (request.target === 'latest' || historyGates.get(active)?.active?.target === 'latest') {
+        cancelHistory(sessionId);
+      }
+      const gate: TranscriptHistoryGate = historyGates.get(active) ?? { pending: false };
+      historyGates.set(active, gate);
       return loadTranscriptHistory({
         gates: historyGates,
         sessionId,
         request,
         controller: active,
         maxBytes: DESKTOP_TRANSCRIPT_RANGE_MAX_BYTES,
-        isCurrent: () => controller === active && store.getState().sessionId === sessionId,
+        isCurrent: () =>
+          isCurrentController(sessionId, active) && historyGates.get(active) === gate,
         setPending: (update) => {
           store.setState((state) => ({ historyPending: update(state.historyPending) }));
         },
         onError: (error) => store.setState({ error: errorMessage(error) }),
       });
     },
+    /**
+     * A send takes the viewport back to the tail and abandons the bookmark.
+     *
+     * Local admission never waits for it: the pin is published synchronously
+     * and the catch-up page runs in the background, so an unopened, slow or
+     * offline transcript cannot delay saving the user's message.
+     */
+    prepareSend(sessionId: string): Promise<boolean> {
+      cancelHistory(sessionId);
+      return prepareTranscriptForSend({
+        sessionId,
+        currentSessionId: { current: store.getState().sessionId },
+        controller: { current: controller },
+        cancel: cancelRestore,
+        followLatest: viewportNavigation.followLatest,
+      });
+    },
+    /** The one explicit viewport channel, for `useChatScroll`. */
+    viewportNavigation,
     /** Where a turn sits in the durable range, or `null` when it is not resident. */
     sequenceForTurn(turnId: string): number | null {
       try {
@@ -569,16 +651,35 @@ export function createActiveSessionStore(
      * the selection change that resets everything else.
      */
     setReadingAnchor(sessionId: string, turnId: string | undefined) {
+      const active = controller;
+      if (store.getState().sessionId !== sessionId) return;
+      const previous = store.getState().readingAnchors[sessionId];
+      store.setState({ unavailableAnchorTurnId: undefined });
       captureTranscriptReadingAnchor({
         sessionId,
         currentSessionId: store.getState().sessionId,
         ...(turnId ? { turnId } : {}),
-        ...(controller ? { controller } : {}),
-        setAnchor: (id, anchor) => {
-          store.setState((state) => ({
-            readingAnchors: { ...state.readingAnchors, [id]: anchor },
-          }));
-        },
+        ...(active ? { controller: active } : {}),
+        setAnchor,
+      });
+      const range = currentTranscriptRange(active, sessionId);
+      if (range === undefined) return;
+      const sequence = turnId ? active?.store.sequenceForTurn(turnId) : undefined;
+      // The send command already cleared its bookmark before publishing the
+      // pin. Its empty-anchor acknowledgement is not another reader intent.
+      if (previous?.turnId === turnId && previous?.sequence === (sequence ?? undefined)) return;
+      cancelHistory(sessionId);
+      let navigation: Promise<void> | undefined;
+      if (turnId) navigation = active?.setReadingAnchor(sequence ?? null, turnId);
+      else if (previous && !range.hasNewer) {
+        // The reader walked back to the tail with nothing newer to fetch: the
+        // bookmark is spent, and following the tail is the standing intent.
+        cancelRestore(sessionId, true);
+        navigation = active?.loadLatest();
+      }
+      void navigation?.catch((error) => {
+        if (active && isCurrentController(sessionId, active))
+          store.setState({ error: errorMessage(error) });
       });
     },
     /** The turn `useChatScroll` should restore to, and whether it is gone. */
@@ -590,31 +691,29 @@ export function createActiveSessionStore(
     },
     /**
      * Bring the remembered turn back into the range, if it is not already
-     * resident. Returns the canceller for the effect that asked.
+     * resident.
+     *
+     * Safe to call on every batch: the lifecycle admits one restore per
+     * activation, so a re-run while the first one is still in flight is a
+     * no-op rather than a second navigation command. The range publishes
+     * through its own batch handler, so nothing here has to set messages.
      *
      * A remembered anchor whose turn the Host can no longer produce is
      * reported as unavailable rather than silently dropped: the scroller has
-     * to know it should stop waiting and take the tail instead.
+     * to know it should stop waiting and take the tail instead. An
+     * overlay-only live turn is not that case — it is already on screen
+     * without a durable sequence.
      */
-    restoreReadingPosition(): (() => void) | undefined {
+    restoreReadingPosition(): void {
       const sessionId = store.getState().sessionId;
-      const active = controller;
-      if (!sessionId || !active) return undefined;
-      const anchor = store.getState().readingAnchors[sessionId];
-      if (!anchor) return undefined;
-      return restoreSessionTranscriptRange({
+      restoreSessionTranscriptRange({
+        lifecycle: restoreLifecycle,
         sessionId,
-        readingAnchor: anchor,
-        controller: active,
-        isCurrent: (id, candidate) => candidate === controller && store.getState().sessionId === id,
-        // The range publishes through its own batch handler; asking it to
-        // refresh is what turns a loaded page into rendered messages.
-        setMessages: () => {
-          void currentRefresh?.();
-        },
-        setReadingAnchor: (id, next) => {
-          store.setState((state) => ({ readingAnchors: { ...state.readingAnchors, [id]: next } }));
-        },
+        readingAnchor: sessionId ? store.getState().readingAnchors[sessionId] : undefined,
+        controller,
+        isCurrent: isCurrentController,
+        isLiveTurn: (id, turnId) => store.getState().liveTurns[id]?.turnId === turnId,
+        setReadingAnchor: setAnchor,
         onRestoreUnavailable: (_id, turnId) => store.setState({ unavailableAnchorTurnId: turnId }),
         onError: (error) => store.setState({ error: errorMessage(error) }),
       });

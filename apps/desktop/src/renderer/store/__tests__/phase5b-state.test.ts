@@ -242,6 +242,30 @@ test("an OAuth kill-switch reads as Maka's, not as the provider refusing", () =>
   );
 });
 
+test('a coded Copilot outcome (#4551) reads from the catalog, never from the machine message', () => {
+  const result = {
+    reason: 'refresh_failed' as const,
+    code: 'copilot_subscription_unavailable',
+    message: 'copilot_subscription_unavailable',
+  };
+  assert.equal(
+    oauthFailureMessage(result, 'fallback', 'zh-CN'),
+    '当前 GitHub 账号没有可用的 Copilot 订阅权限。',
+  );
+  assert.equal(
+    oauthFailureMessage(result, 'fallback', 'en'),
+    'This GitHub account has no usable Copilot subscription.',
+  );
+  // A code this build does not know falls through to the caller's sentence
+  // rather than leaking the identifier — and prototype names are not codes.
+  for (const code of ['future_host_code', 'toString', '__proto__']) {
+    assert.equal(
+      oauthFailureMessage({ reason: 'refresh_failed', code, message: '' }, 'fallback', 'en'),
+      'fallback',
+    );
+  }
+});
+
 // ── subagents ──────────────────────────────────────────────────────────────
 
 const preset = (patch: Partial<SubagentPreset> = {}): SubagentPreset => ({

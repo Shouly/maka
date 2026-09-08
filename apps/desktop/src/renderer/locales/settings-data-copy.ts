@@ -44,7 +44,7 @@ export type DataSettingsCopy = {
   tryAgain: string;
   imported: string;
   importFailed: string;
-  invalidFile: string;
+  importFailures: Record<'not_json' | 'malformed' | 'unsupported_version', string>;
   rows: {
     workspace: string;
     workspaceDetail: string;
@@ -111,7 +111,11 @@ const SETTINGS_DATA_COPY = {
     tryAgain: '请稍后重试',
     imported: '已导入配置',
     importFailed: '导入失败',
-    invalidFile: '文件无效或版本不受支持。',
+    importFailures: {
+      not_json: '文件不是有效的 JSON。',
+      malformed: '配置文件结构无效。',
+      unsupported_version: '配置文件版本不受支持。',
+    },
     rows: {
       workspace: '工作区路径',
       workspaceDetail: '任务、设置、凭据和技能文件都存在这个目录下。',
@@ -179,7 +183,11 @@ const SETTINGS_DATA_COPY = {
     tryAgain: '請稍後重試',
     imported: '已匯入設定',
     importFailed: '匯入失敗',
-    invalidFile: '檔案無效或版本不受支援。',
+    importFailures: {
+      not_json: '檔案不是有效的 JSON。',
+      malformed: '設定檔結構無效。',
+      unsupported_version: '設定檔版本不受支援。',
+    },
     rows: {
       workspace: '工作區路徑',
       workspaceDetail: '任務、設定、憑據和技能檔案都存在這個目錄下。',
@@ -255,7 +263,11 @@ const SETTINGS_DATA_COPY = {
     tryAgain: 'Try again later',
     imported: 'Configuration imported',
     importFailed: 'Import failed',
-    invalidFile: 'The file is invalid or its version is unsupported.',
+    importFailures: {
+      not_json: 'The file is not valid JSON.',
+      malformed: 'The config bundle is malformed.',
+      unsupported_version: 'The config file version is unsupported.',
+    },
     rows: {
       workspace: 'Workspace path',
       workspaceDetail:

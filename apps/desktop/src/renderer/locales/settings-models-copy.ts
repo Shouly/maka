@@ -29,6 +29,7 @@
 // to one locale and not the others fails the build rather than falling back to
 // a language the reader did not pick.
 
+import type { SubscriptionActionCode } from '@maka/core/oauth-subscription';
 import type { UiCatalog, UiLocale } from '@maka/core/ui-locale';
 
 type WidenCopy<T> = T extends string
@@ -425,6 +426,20 @@ const zhCopy = {
     logoutFailedRetry: '退出登录失败，请稍后重试。',
     serviceUnavailable: '登录服务暂时不可用，请检查网络后重试。',
     logoutTitle: (name: string) => `退出 ${name} 登录？`,
+    resultCodes: {
+      copilot_classic_pat_unsupported:
+        'GitHub Copilot 不支持 classic PAT；请使用兼容 OAuth 登录或具有 Copilot Requests 权限的 fine-grained PAT。',
+      copilot_credential_type_unsupported:
+        '当前 GitHub 凭据类型不受支持；请使用兼容 OAuth 登录或 fine-grained PAT。',
+      copilot_local_credential_missing:
+        '未找到可导入的 GitHub 凭据；请先使用 gh 登录或配置兼容凭据。',
+      copilot_import_no_credential: 'GitHub Copilot 登录没有产生可用凭据。',
+      copilot_import_superseded: 'GitHub Copilot 账号在导入期间发生变化，请重试。',
+      copilot_subscription_unavailable: '当前 GitHub 账号没有可用的 Copilot 订阅权限。',
+      copilot_credential_import_rejected: '当前 GitHub 凭据无法导入，请检查凭据后重试。',
+      copilot_subscription_check_failed: '暂时无法验证 GitHub Copilot 订阅状态，请稍后重试。',
+      copilot_import_commit_failed: 'GitHub Copilot 登录未能写入 Runtime Host。',
+    } satisfies Record<SubscriptionActionCode, string>,
   },
   oauthSection: {
     signedIn: '已登录',
@@ -804,6 +819,20 @@ const zhTwCopy = {
     logoutFailedRetry: '退出登入失敗，請稍後重試。',
     serviceUnavailable: '登入服務暫時不可用，請檢查網路後重試。',
     logoutTitle: (name: string) => `退出 ${name} 登入？`,
+    resultCodes: {
+      copilot_classic_pat_unsupported:
+        'GitHub Copilot 不支援 classic PAT；請使用相容 OAuth 登入或具有 Copilot Requests 權限的 fine-grained PAT。',
+      copilot_credential_type_unsupported:
+        '目前的 GitHub 憑據類型不受支援；請使用相容 OAuth 登入或 fine-grained PAT。',
+      copilot_local_credential_missing:
+        '找不到可匯入的 GitHub 憑據；請先使用 gh 登入或設定相容憑據。',
+      copilot_import_no_credential: 'GitHub Copilot 登入沒有產生可用憑據。',
+      copilot_import_superseded: 'GitHub Copilot 帳號在匯入期間發生變化，請重試。',
+      copilot_subscription_unavailable: '目前的 GitHub 帳號沒有可用的 Copilot 訂閱權限。',
+      copilot_credential_import_rejected: '目前的 GitHub 憑據無法匯入，請檢查憑據後重試。',
+      copilot_subscription_check_failed: '暫時無法驗證 GitHub Copilot 訂閱狀態，請稍後重試。',
+      copilot_import_commit_failed: 'GitHub Copilot 登入未能寫入 Runtime Host。',
+    },
   },
   oauthSection: {
     signedIn: '已登入',
@@ -1208,6 +1237,23 @@ const enCopy: SettingsModelsCopy = {
     serviceUnavailable:
       'The sign-in service is temporarily unavailable. Check the network and try again.',
     logoutTitle: (name: string) => `Sign out of ${name}?`,
+    resultCodes: {
+      copilot_classic_pat_unsupported:
+        'GitHub Copilot does not accept classic PATs. Use a compatible OAuth login or a fine-grained PAT with the Copilot Requests permission.',
+      copilot_credential_type_unsupported:
+        'This GitHub credential type is not supported. Use a compatible OAuth login or a fine-grained PAT.',
+      copilot_local_credential_missing:
+        'No importable GitHub credential was found. Sign in with gh or configure a compatible credential first.',
+      copilot_import_no_credential: 'The GitHub Copilot login produced no usable credential.',
+      copilot_import_superseded: 'The GitHub Copilot account changed during import. Try again.',
+      copilot_subscription_unavailable: 'This GitHub account has no usable Copilot subscription.',
+      copilot_credential_import_rejected:
+        'This GitHub credential could not be imported. Check it and try again.',
+      copilot_subscription_check_failed:
+        'Could not verify the GitHub Copilot subscription right now. Try again later.',
+      copilot_import_commit_failed:
+        'The GitHub Copilot login could not be committed to Runtime Host.',
+    },
   },
   oauthSection: {
     signedIn: 'Signed in',

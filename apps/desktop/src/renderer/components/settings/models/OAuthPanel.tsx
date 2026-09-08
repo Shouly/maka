@@ -39,6 +39,8 @@ import { cn } from '../../../lib/cn.js';
 import { ProviderBrandMark } from '../../../lib/ported/provider-brand-marks.js';
 import { providerDisplay } from '../../../lib/ported/provider-display-copy.js';
 import { useOAuthLoginFlow } from '../../../hooks/use-oauth-login-flow.js';
+import { oauthFailureMessage } from '../../../lib/ported/provider-oauth-message.js';
+import { toast } from '../../../store/toast-store.js';
 import {
   importLocalCopilotCredential,
   oauthProviderCapabilities,
@@ -185,7 +187,15 @@ export function OAuthPanel(props: {
                 void importLocalCopilotCredential(props.host)
                   .then((result) => {
                     if (!result.ok) {
-                      props.onError(section.copilotActionFailed, new Error(result.message));
+                      toast({
+                        title: section.copilotActionFailed,
+                        description: oauthFailureMessage(
+                          result,
+                          section.copilotActionFailed,
+                          locale,
+                        ),
+                        variant: 'destructive',
+                      });
                       return;
                     }
                     return flow.reloadAccount();

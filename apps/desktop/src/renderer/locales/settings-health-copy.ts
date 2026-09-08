@@ -194,7 +194,7 @@ const SETTINGS_HEALTH_COPY = {
     signalLabel: (signal) =>
       signal.id.endsWith(':runtime') ? `${signal.label} 运行态` : signal.label,
     signalMessage: (signal) => signalMessagesZh[signal.message],
-    signalDetail: (signal) => signalDetailZh(signal),
+    signalDetail: (signal) => signalDetailZh(signal.detail),
   },
   'zh-TW': {
     loading: '正在載入健康快照',
@@ -241,7 +241,7 @@ const SETTINGS_HEALTH_COPY = {
     signalLabel: (signal) =>
       signal.id.endsWith(':runtime') ? `${signal.label} 執行狀態` : signal.label,
     signalMessage: (signal) => signalMessagesZhTw[signal.message],
-    signalDetail: (signal) => signalDetailZhTw(signal),
+    signalDetail: (signal) => signalDetailZhTw(signal.detail),
   },
   en: {
     loading: 'Loading health snapshot',
@@ -290,7 +290,7 @@ const SETTINGS_HEALTH_COPY = {
     signalLabel: (signal) =>
       signal.id.endsWith(':runtime') ? `${signal.label} runtime` : signal.label,
     signalMessage: (signal) => signalMessagesEn[signal.message],
-    signalDetail: (signal) => signalDetailEn(signal),
+    signalDetail: (signal) => signalDetailEn(signal.detail),
   },
 } satisfies UiCatalog<HealthCenterCopy>;
 
@@ -382,8 +382,7 @@ const connectionTestErrorMessages = {
   },
 } satisfies UiCatalog<Record<HealthConnectionTestErrorClass, string>>;
 
-function signalDetailZh(signal: HealthSignal): string | undefined {
-  const detail = signal.detail;
+function signalDetailZh(detail: HealthSignalDetail | undefined): string | undefined {
   if (!detail) return undefined;
   switch (detail.kind) {
     case 'validation_scope_note':
@@ -403,10 +402,7 @@ function signalDetailZh(signal: HealthSignal): string | undefined {
           : []),
       ].join(' · ');
     case 'capability_reason':
-      // Interim: capability-snapshot still emits zh-CN prose; code it as a
-      // CapabilityReasonCode to drop this sniff. Bot reasons pre-resolve at the
-      // page layer (copy catalogs may not runtime-import each other).
-      return /[\u3400-\u9fff]/u.test(detail.reason) ? detail.reason : '状态详情请见对应设置页。';
+      return '状态详情请见对应设置页。';
     case 'last_test_error_class':
       return connectionTestErrorMessages['zh-CN'][detail.errorClass];
     case 'last_test_message':
@@ -416,8 +412,7 @@ function signalDetailZh(signal: HealthSignal): string | undefined {
   }
 }
 
-function signalDetailZhTw(signal: HealthSignal): string | undefined {
-  const detail = signal.detail;
+function signalDetailZhTw(detail: HealthSignalDetail | undefined): string | undefined {
   if (!detail) return undefined;
   switch (detail.kind) {
     case 'validation_scope_note':
@@ -447,8 +442,7 @@ function signalDetailZhTw(signal: HealthSignal): string | undefined {
   }
 }
 
-function signalDetailEn(signal: HealthSignal): string | undefined {
-  const detail = signal.detail;
+function signalDetailEn(detail: HealthSignalDetail | undefined): string | undefined {
   if (!detail) return undefined;
   switch (detail.kind) {
     case 'validation_scope_note':

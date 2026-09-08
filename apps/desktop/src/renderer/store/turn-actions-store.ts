@@ -50,6 +50,14 @@ export function createTurnActionsStore(
     api?: typeof api;
     refresh?: () => Promise<unknown>;
     onCopy?: (sourceId: string, result: api.DesktopSessionSummary) => void;
+    /**
+     * Take the transcript back to the tail before a user message is admitted.
+     *
+     * Fire-and-forget on purpose: the pin and the cancellation are
+     * synchronous, the catch-up page is not, and an unopened or offline
+     * transcript must never delay saving what the user typed.
+     */
+    onFollowLatest?: (sessionId: string) => void;
   } = {},
 ) {
   const bridge = options.api ?? api;
@@ -84,6 +92,7 @@ export function createTurnActionsStore(
   return {
     ...store,
     send(id: string, command: api.SessionSendCommand) {
+      options.onFollowLatest?.(id);
       return run(id, 'send', async () => {
         const result = await bridge.sendMessage(id, command);
         store.setState((s) => ({ sendResults: { ...s.sendResults, [id]: result } }));
@@ -94,7 +103,10 @@ export function createTurnActionsStore(
       id: string,
       placement: api.SessionSubmitPlacement,
       command: api.SessionSubmitCommand,
-    ) => run(id, 'send', () => bridge.submitMessage(id, placement, command)),
+    ) => {
+      options.onFollowLatest?.(id);
+      return run(id, 'send', () => bridge.submitMessage(id, placement, command));
+    },
     stop: (id: string, input?: api.SessionStopInput) =>
       run(id, 'stop', () => bridge.stopSession(id, input)),
     regenerate: (id: string, turnId: string) =>

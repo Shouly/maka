@@ -43,7 +43,10 @@ import { cn } from '../../lib/cn.js';
 import { SettingsRow, SettingsSection } from './settings-row.js';
 import { getHealthSnapshot } from '../../bridge/permissions.js';
 import { useAsync } from '../../hooks/use-async.js';
-import { getHealthCenterCopy } from '../../locales/settings-health-copy.js';
+import { capabilityReasonMessage } from '../../locales/capability-reason-copy.js';
+import { botStatusReasonCopy } from '../../locales/settings-bot-copy.js';
+import { getHealthCenterCopy, type HealthCenterCopy } from '../../locales/settings-health-copy.js';
+import type { UiLocale } from '@maka/core/ui-locale';
 import { getSettingsSharedCopy } from '../../locales/settings-shared-copy.js';
 import type { DesktopRuntimeHostRef } from '../../bridge/projects.js';
 
@@ -133,7 +136,9 @@ export function HealthSettings(props: { host: DesktopRuntimeHostRef | undefined 
                 description={
                   <span className="flex flex-col gap-0.5">
                     <span>{copy.signalMessage(signal)}</span>
-                    {copy.signalDetail(signal) && <span>{copy.signalDetail(signal)}</span>}
+                    {signalDetail(signal, copy, locale) && (
+                      <span>{signalDetail(signal, copy, locale)}</span>
+                    )}
                     <span className="flex flex-wrap items-center gap-1.5 pt-0.5">
                       {signal.source !== 'capability_snapshot' && (
                         <span className="text-text-muted">
@@ -180,5 +185,20 @@ function HealthSkeleton(props: { label: string }) {
         <Skeleton key={index} className="h-12 w-full rounded-xl" />
       ))}
     </div>
+  );
+}
+
+// Capability reasons are machine codes (#4551): the shared capability catalog
+// first, then the bot bridge's own status reasons, then the health catalog's
+// per-locale fallback sentence.
+function signalDetail(signal: HealthSignal, copy: HealthCenterCopy, locale: UiLocale) {
+  const detail = signal.detail;
+  if (detail?.kind !== 'capability_reason') return copy.signalDetail(signal);
+  return (
+    capabilityReasonMessage(detail.reason, locale) ??
+    (signal.relatedCapabilityId?.startsWith('bot:')
+      ? botStatusReasonCopy(detail.reason, locale)
+      : undefined) ??
+    copy.signalDetail(signal)
   );
 }

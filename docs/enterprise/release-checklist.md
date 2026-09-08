@@ -127,3 +127,11 @@ item when it lands; do not let this file become a second plan.
   `packages/cli/src/tui-copy-catalog.ts` trips it. Run the other three hook
   steps by hand and commit with `--no-verify` when that is the only failure.
 - `@maka/runtime` tests need `rg` on `PATH` (see the first item).
+- Upstream #5001 (transcript navigation) shipped two tests the enterprise
+  renderer cannot host: `transcript-send-viewport.test.ts` and the five
+  paging-gate cases of `transcript-reading-position-controller.test.ts` drove
+  the old React controller through a fake DOM. That logic now lives in
+  `renderer/store/active-session-store.ts` (`loadHistory`, `prepareSend`,
+  `setReadingAnchor`); the `partial-history-notice` and `transcript-scroll-cost`
+  e2e specs cover it end to end, but a renderer-state unit test for the gate
+  replacement rules would close the gap.

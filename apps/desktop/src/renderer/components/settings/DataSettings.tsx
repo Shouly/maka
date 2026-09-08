@@ -267,7 +267,7 @@ export function DataSettings(props: { host: DesktopRuntimeHostRef | undefined })
                       else if (result.reason !== 'canceled')
                         toast({
                           title: copy.importFailed,
-                          description: copy.invalidFile,
+                          description: copy.importFailures[result.reason],
                           variant: 'destructive',
                         });
                     })

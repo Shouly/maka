@@ -289,6 +289,7 @@
     "src/renderer/locales/agent-graph-copy.ts",
     "src/renderer/locales/artifact-copy.ts",
     "src/renderer/locales/browser-copy.ts",
+    "src/renderer/locales/capability-reason-copy.ts",
     "src/renderer/locales/composer-copy.ts",
     "src/renderer/locales/conversation-copy.ts",
     "src/renderer/locales/external-session-import-copy.ts",
@@ -2442,6 +2443,8 @@
         "../../bridge/permissions.js": 1,
         "../../hooks/use-async.js": 1,
         "../../lib/cn.js": 1,
+        "../../locales/capability-reason-copy.js": 1,
+        "../../locales/settings-bot-copy.js": 1,
         "../../locales/settings-health-copy.js": 1,
         "../../locales/settings-shared-copy.js": 1,
         "../ui/button.js": 1,
@@ -2539,6 +2542,7 @@
         "../../bridge/permissions.js": 1,
         "../../hooks/use-async.js": 1,
         "../../lib/cn.js": 1,
+        "../../locales/capability-reason-copy.js": 1,
         "../../locales/permission-center-copy.js": 1,
         "../../store/toast-store.js": 1,
         "../ui/button.js": 1,
@@ -2984,7 +2988,9 @@
         "../../../lib/cn.js": 1,
         "../../../lib/ported/provider-brand-marks.js": 1,
         "../../../lib/ported/provider-display-copy.js": 1,
+        "../../../lib/ported/provider-oauth-message.js": 1,
         "../../../locales/settings-models-copy.js": 1,
+        "../../../store/toast-store.js": 1,
         "../../ui/button.js": 1,
         "../../ui/skeleton.js": 1,
         "../../ui/status-chip.js": 1,
@@ -4804,7 +4810,8 @@
       "actionFactories": [],
       "dependencyPaths": {
         "../../locales/settings-models-copy.js": 1,
-        "@maka/core/redaction": 1
+        "@maka/core/redaction": 1,
+        "@maka/core/ui-locale": 1
       }
     },
     "src/renderer/lib/ported/scheduled-task-form-payload.ts": {
@@ -5192,6 +5199,17 @@
       "actionFactories": [],
       "dependencyPaths": {}
     },
+    "src/renderer/locales/capability-reason-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/core/ui-locale": 1
+      }
+    },
     "src/renderer/locales/composer-copy.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -5264,6 +5282,17 @@
       "actionFactories": [],
       "dependencyPaths": {}
     },
+    "src/renderer/locales/settings-bot-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/core/ui-locale": 1
+      }
+    },
     "src/renderer/locales/settings-copy.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -5298,7 +5327,9 @@
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
-      "dependencyPaths": {}
+      "dependencyPaths": {
+        "@maka/core/ui-locale": 1
+      }
     },
     "src/renderer/locales/settings-models-copy.ts": {
       "bridgePaths": {},

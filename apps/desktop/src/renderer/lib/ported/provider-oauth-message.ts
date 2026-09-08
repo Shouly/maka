@@ -31,7 +31,7 @@
 
 import { generalizedErrorMessageForLocale, redactSecrets } from '@maka/core/redaction';
 import type { SubscriptionActionResult } from '@maka/core/oauth-subscription';
-import type { UiLocale } from '@maka/core/ui-locale';
+import { lookupCopy, type UiLocale } from '@maka/core/ui-locale';
 import { getSettingsModelsCopy } from '../../locales/settings-models-copy.js';
 
 type OAuthFailure = Exclude<SubscriptionActionResult, { readonly ok: true }>;
@@ -44,11 +44,16 @@ type OAuthFailure = Exclude<SubscriptionActionResult, { readonly ok: true }>;
  * only the caller knows which step it was.
  */
 export function oauthFailureMessage(
-  failure: Pick<OAuthFailure, 'reason' | 'message'>,
+  failure: Pick<OAuthFailure, 'reason' | 'message'> & { readonly code?: string },
   fallback: string,
   locale: UiLocale,
 ): string {
   const copy = getSettingsModelsCopy(locale).oauthFlow;
+  // A coded outcome (#4551) is the most specific thing the Host can say; the
+  // catalog owns its sentence per locale. `code` stays `string` on the wire so
+  // a newer Host's code this build does not know falls through, never leaks.
+  const coded = lookupCopy(copy.resultCodes, failure.code);
+  if (coded) return coded;
   // The install's own kill-switch, not the provider refusing the account. The
   // copy has to say "Maka has not enabled this", or the user goes looking for
   // a problem with their subscription.

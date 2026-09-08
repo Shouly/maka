@@ -134,7 +134,14 @@ function SessionTranscript(props: SessionViewProps) {
 
   // Bring the remembered turn back into the range before the scroller looks
   // for it. A cancelled restore is a task the reader already left.
-  useEffect(() => activeSessionStore.restoreReadingPosition(), [sessionId, feed.observationReady]);
+  //
+  // Re-run on every published range: the bookmark's turn may only become
+  // resident several batches in. The store's restore lifecycle admits one
+  // command per activation, so this is idempotent rather than a page per
+  // batch.
+  useEffect(() => {
+    activeSessionStore.restoreReadingPosition();
+  }, [sessionId, feed.observationReady, feed.messages]);
 
   const turnIds = useMemo(() => turns.map((turn) => turn.turnId), [turns]);
   const pendingTurnActions = usePendingTurnActions(sessionId, pending, turnIds);
@@ -169,6 +176,9 @@ function SessionTranscript(props: SessionViewProps) {
     sessionId,
     messages: feed.messages,
     ...(restoreTarget ? { restoreTarget } : {}),
+    // A send publishes one pin here; the hook consumes it once rather than
+    // replaying it on the next growth.
+    viewportNavigation: activeSessionStore.viewportNavigation,
     behavior: 'smooth',
     hasOlderHistory: feed.hasOlder,
     onLoadEarlierHistory: (anchorTurnId) => loadHistory('earlier', anchorTurnId),

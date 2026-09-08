@@ -99,6 +99,7 @@ export * from './transcript-projection.js';
 export * from './transcript-row-projection.js';
 export * from './transcript-scroll-authority.js';
 export * from './use-chat-scroll.js';
+export * from './transcript-viewport-navigation.js';
 export * from './use-composer-draft.js';
 export * from './use-composer-history.js';
 export * from './use-message-selection-quote.js';

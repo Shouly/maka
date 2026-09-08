@@ -32,11 +32,13 @@
 
 import { useEffect, useState } from 'react';
 import {
+  isCapabilityReasonCode,
   isDragGrantPermissionId,
   OS_PERMISSION_IDS,
   type CapabilitySnapshot,
   type OsPermissionId,
 } from '@maka/core/capabilities';
+import type { UiLocale } from '@maka/core/ui-locale';
 import { useUiLocale } from '@maka/ui';
 import { Button } from '../ui/button.js';
 import { Skeleton } from '../ui/skeleton.js';
@@ -52,6 +54,7 @@ import {
 } from '../../bridge/permissions.js';
 import { useAsync } from '../../hooks/use-async.js';
 import { toast } from '../../store/toast-store.js';
+import { getCapabilityReasonCopy } from '../../locales/capability-reason-copy.js';
 import { getPermissionCenterCopy } from '../../locales/permission-center-copy.js';
 import type { PermissionCenterCopy } from '../../locales/permission-center-copy.js';
 import type { DesktopRuntimeHostRef } from '../../bridge/projects.js';
@@ -155,7 +158,11 @@ export function PermissionsSettings(props: { host: DesktopRuntimeHostRef | undef
                     <span className="text-text-muted">
                       {`${copy.impact} ${copy.osPermissions[id].impact}`}
                     </span>
-                    {snapshot.reason && <span className="text-text-muted">{snapshot.reason}</span>}
+                    {snapshot.reason && (
+                      <span className="text-text-muted">
+                        {permissionReasonText(snapshot.reason, copy, locale)}
+                      </span>
+                    )}
                   </span>
                 }
                 control={
@@ -271,18 +278,17 @@ function CapabilityRow(props: { capability: CapabilitySnapshot; copy: Permission
             .join(' · ')}`}
         </p>
       )}
-      {capability.guidance.length > 0 && (
-        <ul
-          className="flex list-disc flex-col gap-1 pl-4 text-[13px] leading-[18px] text-text-secondary"
-          aria-label={copy.guidance}
-        >
-          {capability.guidance.map((line) => (
-            <li key={line}>{line}</li>
-          ))}
-        </ul>
-      )}
     </SettingsRow>
   );
+}
+
+// Producers emit machine codes (#4551); anything else — a newer Host's code
+// this build does not know — reads as the catalog's fallback sentence rather
+// than leaking through untranslated.
+function permissionReasonText(reason: string, copy: PermissionCenterCopy, locale: UiLocale) {
+  return isCapabilityReasonCode(reason)
+    ? getCapabilityReasonCopy(locale)[reason]
+    : copy.reasonFallback;
 }
 
 function SettingsSkeletonRows(props: { label: string }) {

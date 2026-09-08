@@ -1782,6 +1782,20 @@ dialog:modal {
   transition-duration: 0.01ms !important;
 }
 
+/* Justified: e2e fixture override. A fixture render is a settled state, never
+   an entry frame, so the fixture collapses transitions outright rather than
+   shortening them: a near-zero duration still fires transitionrun/start/end
+   on every style recalculation and leaves "unfinished" animations at sample
+   time, which is exactly what `e2e/transcript-scroll-cost.spec.ts` measures.
+   Hover-revealed chrome (the message action bars) otherwise transitions when
+   content scrolls under the pointer. Animations are left alone: streaming
+   indicators are asserted on by other specs. */
+[data-maka-e2e-fixture="true"] *,
+[data-maka-e2e-fixture="true"] *::before,
+[data-maka-e2e-fixture="true"] *::after {
+  transition-property: none !important;
+}
+
 /* Keyboard focus for links inside rendered markdown. relx resets outlines
    globally because its primitives paint their own focus ring; markdown links
    have no ring of their own, so they get one here. `a:focus-visible` (0,1,1)

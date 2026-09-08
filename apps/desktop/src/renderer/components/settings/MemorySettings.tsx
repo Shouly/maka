@@ -61,7 +61,7 @@ import {
   setMemoryEnabled,
 } from '../../bridge/memory.js';
 import { toast } from '../../store/toast-store.js';
-import { getMemorySettingsCopy } from '../../locales/settings-memory-copy.js';
+import { getMemorySettingsCopy, memoryResultMessage } from '../../locales/settings-memory-copy.js';
 import { getSettingsSharedCopy } from '../../locales/settings-shared-copy.js';
 import type { DesktopRuntimeHostRef } from '../../bridge/projects.js';
 
@@ -282,7 +282,7 @@ export function MemorySettings(props: { host: DesktopRuntimeHostRef | undefined 
                     if (!result.ok) {
                       toast({
                         title: text.openFailed,
-                        description: result.message,
+                        description: memoryResultMessage(result, copy, text.openFailed),
                         variant: 'destructive',
                       });
                     }
@@ -461,7 +461,7 @@ export function MemorySettings(props: { host: DesktopRuntimeHostRef | undefined 
             } else {
               toast({
                 title: text.restoreLatestFailed,
-                description: result.message,
+                description: memoryResultMessage(result, copy, text.restoreLatestFailed),
                 variant: 'destructive',
               });
             }
