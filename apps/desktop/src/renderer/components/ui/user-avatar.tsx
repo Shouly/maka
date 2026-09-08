@@ -36,7 +36,9 @@
 
 import Avvvatars from 'avvvatars-react';
 
+import { useUiLocale } from '@maka/ui';
 import { Anthropicon } from '../icons';
+import { getUiCopy } from '../../locales/ui-copy';
 import { cn } from '../../lib/cn';
 import { AVATAR_WARM_PAIRS, hashAvatarSeed } from '../../lib/avatar-warm-palette';
 
@@ -80,7 +82,8 @@ function deriveInitials(user: UserLike): string {
 }
 
 export function UserAvatar({ user, size = 36, isSelf = false, className }: UserAvatarProps) {
-  const displayName = user.nickname || user.full_name || user.email || 'User';
+  const notesToSelf = getUiCopy(useUiLocale()).notesToSelf;
+  const displayName = user.nickname || user.full_name || user.email || '';
 
   if (isSelf) {
     return (
@@ -90,8 +93,8 @@ export function UserAvatar({ user, size = 36, isSelf = false, className }: UserA
           className,
         )}
         style={{ width: size, height: size }}
-        aria-label="Notes to self"
-        title="Notes to self"
+        aria-label={notesToSelf}
+        title={notesToSelf}
       >
         {/* Anthropicon 没有 bookmark,"Notes to self" 取语义最近的 note */}
         <Anthropicon name="note" size={size >= 32 ? 20 : 16} />

@@ -136,9 +136,7 @@
     "src/renderer/components/settings/settings-sections.ts",
     "src/renderer/components/settings/subagents/SubagentEditor.tsx",
     "src/renderer/components/ui/CodeRenderer.tsx",
-    "src/renderer/components/ui/Console.tsx",
     "src/renderer/components/ui/DiffRenderer.tsx",
-    "src/renderer/components/ui/JsonHighlight.tsx",
     "src/renderer/components/ui/LoadingSpinner.tsx",
     "src/renderer/components/ui/Markdown.tsx",
     "src/renderer/components/ui/StreamPopMarkdown.tsx",
@@ -146,29 +144,23 @@
     "src/renderer/components/ui/button.tsx",
     "src/renderer/components/ui/card-surface.ts",
     "src/renderer/components/ui/chat-skeleton.tsx",
-    "src/renderer/components/ui/chats-list-skeleton.tsx",
     "src/renderer/components/ui/checkbox-box.ts",
     "src/renderer/components/ui/confirm-dialog.tsx",
-    "src/renderer/components/ui/content-well.ts",
     "src/renderer/components/ui/count-badge.ts",
     "src/renderer/components/ui/dialog.tsx",
     "src/renderer/components/ui/dropdown-menu.tsx",
     "src/renderer/components/ui/field-surface.ts",
     "src/renderer/components/ui/input.tsx",
     "src/renderer/components/ui/label.tsx",
-    "src/renderer/components/ui/list-toolbar.ts",
     "src/renderer/components/ui/menu-variants.ts",
     "src/renderer/components/ui/pane-resizer.tsx",
     "src/renderer/components/ui/popover.tsx",
-    "src/renderer/components/ui/projects-list-skeleton.tsx",
     "src/renderer/components/ui/right-pane-shell.tsx",
-    "src/renderer/components/ui/scroll-area.tsx",
     "src/renderer/components/ui/segmented-control.tsx",
     "src/renderer/components/ui/select.tsx",
     "src/renderer/components/ui/shimmer-title.tsx",
     "src/renderer/components/ui/sidebar-tooltip.tsx",
     "src/renderer/components/ui/skeleton.tsx",
-    "src/renderer/components/ui/sort-select.tsx",
     "src/renderer/components/ui/split-button.tsx",
     "src/renderer/components/ui/status-chip.ts",
     "src/renderer/components/ui/switch.tsx",
@@ -216,7 +208,6 @@
     "src/renderer/lib/fixture.ts",
     "src/renderer/lib/markdown/color-utils.tsx",
     "src/renderer/lib/markdown/hast-node.ts",
-    "src/renderer/lib/markdown/highlight.ts",
     "src/renderer/lib/markdown/inline-tokens.tsx",
     "src/renderer/lib/markdown/normalize-math.ts",
     "src/renderer/lib/markdown/rehype-stream-pop.ts",
@@ -247,6 +238,7 @@
     "src/renderer/lib/ported/model-wait-state.ts",
     "src/renderer/lib/ported/nav-group-summary.ts",
     "src/renderer/lib/ported/nav-selection.ts",
+    "src/renderer/lib/ported/new-task-reload-intent.ts",
     "src/renderer/lib/ported/observable-state.ts",
     "src/renderer/lib/ported/onboarding-hero-copy.ts",
     "src/renderer/lib/ported/optimistic-settings-draft.ts",
@@ -255,7 +247,6 @@
     "src/renderer/lib/ported/provider-brand-marks.tsx",
     "src/renderer/lib/ported/provider-connection-status.ts",
     "src/renderer/lib/ported/provider-display-copy.ts",
-    "src/renderer/lib/ported/provider-display.tsx",
     "src/renderer/lib/ported/provider-endpoint-presentation.ts",
     "src/renderer/lib/ported/provider-oauth-message.ts",
     "src/renderer/lib/ported/scheduled-task-form-payload.ts",
@@ -275,7 +266,6 @@
     "src/renderer/lib/ported/session-terminal-hydration.ts",
     "src/renderer/lib/ported/session-terminal-query.ts",
     "src/renderer/lib/ported/session-trace-refresh.ts",
-    "src/renderer/lib/ported/session-workspace-errors.ts",
     "src/renderer/lib/ported/settled-message-merge.ts",
     "src/renderer/lib/ported/shell-chat-model-selection.ts",
     "src/renderer/lib/ported/shell-run-update-state.ts",
@@ -332,6 +322,7 @@
     "src/renderer/locales/sidebar-copy.ts",
     "src/renderer/locales/task-readiness-copy.ts",
     "src/renderer/locales/transcript-copy.ts",
+    "src/renderer/locales/ui-copy.ts",
     "src/renderer/locales/welcome-copy.ts",
     "src/renderer/locales/workbar-copy.ts",
     "src/renderer/main.tsx",
@@ -465,6 +456,5374 @@
       "actionFactories": [],
       "dependencyPaths": {}
     },
+    "src/renderer/app.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 2,
+        "useStore": 1,
+        "useSystemUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./components/ErrorBoundary.js": 1,
+        "./components/layout/AppShell.js": 1,
+        "./components/ui/toaster.js": 1,
+        "./components/ui/tooltip.js": 1,
+        "./lib/ported/titlebar-modal-sync.js": 1,
+        "./lib/ported/use-system-ui-locale.js": 1,
+        "./lib/theme.js": 1,
+        "./store/index.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/bridge/app-window.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/app.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/artifacts.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/attachments.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/bridge.ts": {
+      "bridgePaths": {
+        "window.maka": 1
+      },
+      "environmentCapabilities": {
+        "window": 2,
+        "window.window.maka": 1
+      },
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/bridge/browser.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/config.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/connections.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/diagnostics.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/e2e-fixture.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/external-links.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "window": 2,
+        "window.window": 2,
+        "window.window.open": 2
+      },
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/ui/maka-uri": 1
+      }
+    },
+    "src/renderer/bridge/git-review.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/goal.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/inspector.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/mcp.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/memory.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/new-tasks.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/notifications.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/oauth.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/onboarding.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/permissions.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/projects.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/runtime-host-profiles.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/scheduled-tasks.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/search.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/sessions.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/settings.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/shell-runs.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/skills.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/task-readiness.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/transcripts.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/web-search.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/workspace.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/components/ErrorBoundary.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {
+        "componentDidCatch": 1,
+        "getDerivedStateFromError": 1,
+        "setState": 2,
+        "state": 3
+      },
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/diagnostics.js": 1,
+        "../locales/shell-copy.js": 1,
+        "./ui/button.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/composer/ChatInput.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useComposerHistory": 1,
+        "useEffect": 2,
+        "useRef": 4,
+        "useState": 13,
+        "useStore": 7,
+        "useUiLocale": 2
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/attachments.js": 1,
+        "../../bridge/goal.js": 1,
+        "../../bridge/new-tasks.js": 1,
+        "../../bridge/sessions.js": 1,
+        "../../bridge/task-readiness.js": 1,
+        "../../lib/cn.js": 1,
+        "../../lib/composer-document.js": 1,
+        "../../lib/composer-surface.js": 1,
+        "../../lib/ported/attachment-preflight.js": 1,
+        "../../lib/ported/composer-attachments.js": 1,
+        "../../locales/composer-copy.js": 1,
+        "../../store/composer-draft-store.js": 1,
+        "../../store/composer-input-store.js": 1,
+        "../../store/index.js": 1,
+        "../../store/new-task-store.js": 1,
+        "../../store/turn-actions-store.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../session/notices/ContextUsageIndicator.js": 1,
+        "../ui/button.js": 1,
+        "../ui/confirm-dialog.js": 1,
+        "../ui/dialog.js": 1,
+        "../ui/input.js": 1,
+        "../ui/label.js": 1,
+        "../ui/tooltip.js": 1,
+        "../welcome/ModelPicker.js": 1,
+        "../welcome/WorkspacePicker.js": 1,
+        "./ComposerSelect.js": 1,
+        "./TipTapEditor.js": 1,
+        "@maka/core/attachments": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/composer/ComposerSelect.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../../lib/composer-surface.js": 1,
+        "../ui/select.js": 1
+      }
+    },
+    "src/renderer/components/composer/InteractionPrompts.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 1,
+        "useRef": 2,
+        "useState": 7,
+        "useStore": 1,
+        "useUiLocale": 5
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../../locales/composer-copy.js": 1,
+        "../../store/index.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/button.js": 1,
+        "../ui/checkbox-box.js": 1,
+        "../ui/input.js": 1,
+        "../ui/select.js": 1,
+        "@maka/ui": 1,
+        "motion/react": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/composer/TipTapEditor.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "clearTimeout": 1,
+        "setTimeout": 1
+      },
+      "hookCalls": {
+        "useEditor": 1,
+        "useEffect": 6,
+        "useRef": 3,
+        "useState": 4,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/new-tasks.js": 1,
+        "../../bridge/skills.js": 1,
+        "../../bridge/workspace.js": 1,
+        "../../lib/cn.js": 1,
+        "../../locales/composer-copy.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/menu-variants.js": 1,
+        "@maka/ui": 1,
+        "@tiptap/core": 1,
+        "@tiptap/extension-placeholder": 1,
+        "@tiptap/react": 1,
+        "@tiptap/starter-kit": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/dev/DesignSmoke.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useState": 4,
+        "useToast": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../hooks/use-turn-presentation": 1,
+        "../../lib/theme": 1,
+        "../../store/toast-store": 1,
+        "../icons": 1,
+        "../session/TranscriptTurn": 1,
+        "../ui/avatar": 1,
+        "../ui/button": 1,
+        "../ui/dialog": 1,
+        "../ui/dropdown-menu": 1,
+        "../ui/input": 1,
+        "../ui/label": 1,
+        "../ui/Markdown": 1,
+        "../ui/menu-variants": 1,
+        "../ui/popover": 1,
+        "../ui/segmented-control": 1,
+        "../ui/select": 1,
+        "../ui/skeleton": 1,
+        "../ui/split-button": 1,
+        "../ui/switch": 1,
+        "../ui/text-shimmer": 1,
+        "../ui/textarea": 1,
+        "../ui/tooltip": 1,
+        "../ui/user-avatar": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/dev/RuntimeDebug.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useActiveTurns": 1,
+        "useLiveTurnSnapshot": 1,
+        "useProjectContext": 1,
+        "useState": 4,
+        "useStore": 8,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../hooks/use-workspace.js": 1,
+        "../../locales/runtime-debug-copy.js": 1,
+        "../../store/index.js": 1,
+        "../../store/resource-store.js": 1,
+        "../ui/button.js": 1,
+        "../ui/textarea.js": 1,
+        "./DesignSmoke.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/icons/Anthropicon.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/components/icons/RelxLogo.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "react": 1
+      }
+    },
+    "src/renderer/components/icons/index.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./Anthropicon": 1,
+        "./RelxLogo": 1
+      }
+    },
+    "src/renderer/components/layout/AppLayout.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1
+      }
+    },
+    "src/renderer/components/layout/AppShell.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 4,
+        "useRendererStores": 1,
+        "useScopedRuntimeHost": 1,
+        "useSessionList": 1,
+        "useShellHotkeys": 1,
+        "useSidebarLayout": 1,
+        "useState": 4,
+        "useStore": 8,
+        "useUiLocale": 1,
+        "useWorkbar": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/app.js": 1,
+        "../../bridge/diagnostics.js": 1,
+        "../../bridge/projects.js": 1,
+        "../../bridge/sessions.js": 1,
+        "../../bridge/settings.js": 1,
+        "../../hooks/use-hotkeys.js": 1,
+        "../../hooks/use-session-list.js": 1,
+        "../../hooks/use-sidebar-layout.js": 1,
+        "../../hooks/use-workbar.js": 1,
+        "../../hooks/use-workspace.js": 1,
+        "../../locales/shell-copy.js": 1,
+        "../../locales/sidebar-copy.js": 1,
+        "../../store/index.js": 1,
+        "../../store/toast-store.js": 1,
+        "../../store/window-commands.js": 1,
+        "../dev/RuntimeDebug.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../modules/mcp/McpModule.js": 1,
+        "../modules/scheduled/ScheduledTasksModule.js": 1,
+        "../modules/skills/SkillsModule.js": 1,
+        "../palette/CommandPalette.js": 1,
+        "../palette/KeyboardHelp.js": 1,
+        "../palette/SearchModal.js": 1,
+        "../session/ModelSwitcher.js": 1,
+        "../session/SessionView.js": 1,
+        "../settings/SettingsIdentity.js": 1,
+        "../settings/SettingsView.js": 1,
+        "../ui/confirm-dialog.js": 1,
+        "../ui/toast.js": 1,
+        "../welcome/TaskWelcomeContent.js": 1,
+        "../workbar/WorkbarPane.js": 1,
+        "../workbar/WorkbarToggle.js": 1,
+        "./AppLayout.js": 1,
+        "./SessionIdentity.js": 1,
+        "./Sidebar.js": 1,
+        "./WindowTitlebar.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/layout/MainHeader.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/layout/SessionIdentity.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useProjectContext": 1,
+        "useState": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/app.js": 1,
+        "../../hooks/use-workspace.js": 1,
+        "../../lib/cn.js": 1,
+        "../../locales/shell-copy.js": 1,
+        "../../locales/sidebar-copy.js": 1,
+        "../../store/index.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/tooltip.js": 1,
+        "./sidebar-parts/InlineRename.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/layout/Sidebar.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "document.querySelector": 1
+      },
+      "hookCalls": {
+        "useEffect": 2,
+        "useProjectRows": 1,
+        "useRef": 1,
+        "useRovingRowFocus": 1,
+        "useSessionList": 1,
+        "useState": 3,
+        "useStore": 3,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../hooks/use-session-list.js": 1,
+        "../../lib/cn.js": 1,
+        "../../lib/ported/session-list-layout.js": 1,
+        "../../locales/sidebar-copy.js": 1,
+        "../../store/index.js": 1,
+        "../../store/scheduled-tasks-store.js": 1,
+        "../../store/update-store.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/sidebar-tooltip.js": 1,
+        "./sidebar-parts/index.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/layout/SidebarControls.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/shell-copy.js": 1,
+        "../../locales/sidebar-copy.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/sidebar-tooltip.js": 1,
+        "@maka/ui": 1
+      }
+    },
+    "src/renderer/components/layout/WindowTitlebar.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../../locales/shell-copy.js": 1,
+        "../ui/sidebar-tooltip.js": 1,
+        "./SidebarControls.js": 1,
+        "@maka/ui": 1
+      }
+    },
+    "src/renderer/components/layout/sidebar-parts/InlineRename.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 1,
+        "useRef": 2,
+        "useState": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/layout/sidebar-parts/ProjectRow.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "requestAnimationFrame": 1
+      },
+      "hookCalls": {
+        "useRef": 3,
+        "useState": 3
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../../lib/ported/project-path-display.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/dropdown-menu.js": 1,
+        "../../ui/tooltip.js": 1,
+        "./InlineRename.js": 1,
+        "./sidebar-row-motion.js": 1,
+        "./SidebarRowActionTrigger.js": 1,
+        "motion/react": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/layout/sidebar-parts/SessionRow.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "requestAnimationFrame": 1
+      },
+      "hookCalls": {
+        "useRef": 3,
+        "useState": 3
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/dropdown-menu.js": 1,
+        "../../ui/menu-variants.js": 1,
+        "../../ui/tooltip.js": 1,
+        "./InlineRename.js": 1,
+        "./sidebar-row-motion.js": 1,
+        "./SidebarRowActionTrigger.js": 1,
+        "@maka/ui": 1,
+        "motion/react": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/layout/sidebar-parts/SidebarGroup.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 2,
+        "useRef": 2,
+        "useState": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "motion/react": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/layout/sidebar-parts/SidebarNavButton.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1
+      }
+    },
+    "src/renderer/components/layout/sidebar-parts/SidebarNewButton.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../icons/Anthropicon.js": 1
+      }
+    },
+    "src/renderer/components/layout/sidebar-parts/SidebarRowActionTrigger.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/layout/sidebar-parts/SidebarTabPanel.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 1,
+        "useRef": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/layout/sidebar-parts/index.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./InlineRename.js": 1,
+        "./ProjectRow.js": 1,
+        "./SessionRow.js": 1,
+        "./sidebar-row-motion.js": 1,
+        "./SidebarGroup.js": 1,
+        "./SidebarNavButton.js": 1,
+        "./SidebarNewButton.js": 1,
+        "./SidebarRowActionTrigger.js": 1,
+        "./SidebarTabPanel.js": 1
+      }
+    },
+    "src/renderer/components/layout/sidebar-parts/sidebar-row-motion.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/components/modules/ExtensionsTabs.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/modules-copy.js": 1,
+        "../ui/segmented-control.js": 1,
+        "@maka/ui": 1
+      }
+    },
+    "src/renderer/components/modules/mcp/McpMarket.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../../lib/ported/mcp-brand-marks.js": 1,
+        "../../../lib/ported/mcp-catalog.js": 1,
+        "../../../locales/mcp-copy.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/card-surface.js": 1,
+        "../../ui/status-chip.js": 1,
+        "@maka/ui": 1
+      }
+    },
+    "src/renderer/components/modules/mcp/McpModule.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 1,
+        "useSettingsErrorReporter": 1,
+        "useState": 4,
+        "useStore": 3,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../hooks/use-settings.js": 1,
+        "../../../lib/cn.js": 1,
+        "../../../lib/ported/mcp-server-draft.js": 1,
+        "../../../locales/mcp-copy.js": 1,
+        "../../../locales/modules-copy.js": 1,
+        "../../../store/index.js": 1,
+        "../../../store/toast-store.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../settings/settings-row.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/confirm-dialog.js": 1,
+        "../../ui/dropdown-menu.js": 1,
+        "../../ui/menu-variants.js": 1,
+        "../../ui/status-chip.js": 1,
+        "../../ui/switch.js": 1,
+        "../ExtensionsTabs.js": 1,
+        "../module-page.js": 1,
+        "./McpMarket.js": 1,
+        "./McpServerDialog.js": 1,
+        "@maka/core/mcp": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/modules/mcp/McpServerDialog.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 1,
+        "useState": 3,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../../lib/ported/mcp-server-draft.js": 1,
+        "../../../locales/mcp-copy.js": 1,
+        "../../../locales/modules-copy.js": 1,
+        "../../../locales/settings-shared-copy.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/dialog.js": 1,
+        "../../ui/input.js": 1,
+        "../../ui/label.js": 1,
+        "../../ui/segmented-control.js": 1,
+        "../../ui/select.js": 1,
+        "../../ui/switch.js": 1,
+        "../../ui/textarea.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/modules/module-page.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../icons/Anthropicon.js": 1,
+        "../layout/MainHeader.js": 1
+      }
+    },
+    "src/renderer/components/modules/scheduled/ScheduleFormDialog.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 1,
+        "useState": 2,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/ported/scheduled-task-form-payload.js": 1,
+        "../../../locales/modules-copy.js": 1,
+        "../../../locales/settings-shared-copy.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/dialog.js": 1,
+        "../../ui/input.js": 1,
+        "../../ui/label.js": 1,
+        "../../ui/select.js": 1,
+        "../../ui/textarea.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/modules/scheduled/ScheduledTasksModule.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useSettingsErrorReporter": 1,
+        "useState": 3,
+        "useStore": 3,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../hooks/use-settings.js": 1,
+        "../../../lib/cn.js": 1,
+        "../../../locales/modules-copy.js": 1,
+        "../../../locales/settings-shared-copy.js": 1,
+        "../../../store/index.js": 1,
+        "../../../store/toast-store.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../settings/settings-row.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/confirm-dialog.js": 1,
+        "../../ui/dropdown-menu.js": 1,
+        "../../ui/menu-variants.js": 1,
+        "../../ui/status-chip.js": 1,
+        "../../ui/switch.js": 1,
+        "../module-page.js": 1,
+        "./ScheduleFormDialog.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/modules/skills/SkillsModule.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useAsync": 3,
+        "useSettingsErrorReporter": 1,
+        "useState": 2,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../bridge/skills.js": 1,
+        "../../../hooks/use-async.js": 1,
+        "../../../hooks/use-settings.js": 1,
+        "../../../lib/cn.js": 1,
+        "../../../locales/modules-copy.js": 1,
+        "../../../store/toast-store.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../settings/settings-row.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/confirm-dialog.js": 1,
+        "../../ui/dropdown-menu.js": 1,
+        "../../ui/menu-variants.js": 1,
+        "../../ui/status-chip.js": 1,
+        "../../ui/switch.js": 1,
+        "../ExtensionsTabs.js": 1,
+        "../module-page.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/palette/CommandPalette.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 2,
+        "useRef": 1,
+        "useSessionList": 1,
+        "useState": 2,
+        "useStore": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../hooks/use-session-list.js": 1,
+        "../../lib/cn.js": 1,
+        "../../locales/shell-copy.js": 1,
+        "../../store/index.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/dialog.js": 1,
+        "../ui/menu-variants.js": 1,
+        "./commands.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/palette/KeyboardHelp.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/shell-copy.js": 1,
+        "../ui/dialog.js": 1,
+        "@maka/ui": 1
+      }
+    },
+    "src/renderer/components/palette/SearchModal.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "clearTimeout": 1,
+        "setTimeout": 1
+      },
+      "hookCalls": {
+        "useEffect": 2,
+        "useRef": 1,
+        "useState": 2,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/search.js": 1,
+        "../../lib/cn.js": 1,
+        "../../locales/palette-copy.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/dialog.js": 1,
+        "../ui/menu-variants.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/palette/commands.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/palette-copy.js": 1,
+        "../../locales/shell-copy.js": 1,
+        "@maka/core/provider-registry": 1,
+        "@maka/core/settings": 1
+      }
+    },
+    "src/renderer/components/session/HistoryControls.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 2
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../../locales/transcript-copy.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/session/MessageQueue.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useState": 2,
+        "useStore": 2,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../../locales/transcript-copy.js": 1,
+        "../../store/index.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/button.js": 1,
+        "../ui/textarea.js": 1,
+        "../ui/tooltip.js": 1,
+        "./message-action-bar.js": 1,
+        "@maka/ui": 1,
+        "motion/react": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/session/ModelSwitcher.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useStore": 3,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../../lib/ported/provider-brand-marks.js": 1,
+        "../../lib/ported/shell-chat-model-selection.js": 1,
+        "../../locales/transcript-copy.js": 1,
+        "../../store/index.js": 1,
+        "../../store/turn-actions-store.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/dropdown-menu.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/session/SelectionQuote.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useMessageSelectionQuote": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/transcript-copy.js": 1,
+        "../../store/index.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/session/SessionView.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "document.querySelector": 1,
+        "navigator.clipboard.writeText": 1
+      },
+      "hookCalls": {
+        "useActiveTurns": 1,
+        "useChatScroll": 1,
+        "useEffect": 2,
+        "useLiveTurnSnapshot": 1,
+        "useRef": 1,
+        "useShallow": 1,
+        "useState": 2,
+        "useStore": 3,
+        "useTranscriptScrollAuthority": 1,
+        "useTurnPresentation": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/attachments.js": 1,
+        "../../bridge/external-links.js": 1,
+        "../../hooks/use-turn-presentation.js": 1,
+        "../../hooks/use-workbar.js": 1,
+        "../../hooks/use-workspace.js": 1,
+        "../../lib/cn.js": 1,
+        "../../locales/conversation-copy.js": 1,
+        "../../locales/transcript-copy.js": 1,
+        "../../store/composer-input-store.js": 1,
+        "../../store/index.js": 1,
+        "../../store/revision-draft.js": 1,
+        "../../store/turn-actions-store.js": 1,
+        "../composer/ChatInput.js": 1,
+        "../composer/InteractionPrompts.js": 1,
+        "../ui/chat-skeleton.js": 1,
+        "./HistoryControls.js": 1,
+        "./MessageQueue.js": 1,
+        "./notices/RevisionBanner.js": 1,
+        "./notices/SessionNotices.js": 1,
+        "./SelectionQuote.js": 1,
+        "./TranscriptTurn.js": 1,
+        "@maka/core/session": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1,
+        "zustand/react/shallow": 1
+      }
+    },
+    "src/renderer/components/session/ThinkingBlock.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "window.cancelAnimationFrame": 1,
+        "window.requestAnimationFrame": 1
+      },
+      "hookCalls": {
+        "useEffect": 1,
+        "useRef": 1,
+        "useState": 2,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../../locales/transcript-copy.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/Markdown.js": 1,
+        "../ui/StreamPopMarkdown.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/session/TranscriptTurn.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../../locales/transcript-copy.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/Markdown.js": 1,
+        "../ui/StreamPopMarkdown.js": 1,
+        "./ThinkingBlock.js": 1,
+        "./tools/ToolGroup.js": 1,
+        "./TurnFooter.js": 1,
+        "./UserMessageRow.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/session/TurnFooter.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "window.setTimeout": 1
+      },
+      "hookCalls": {
+        "useState": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../../locales/transcript-copy.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/tooltip.js": 1,
+        "./message-action-bar.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/session/UserMessageRow.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "navigator.clipboard.writeText": 1,
+        "window.cancelAnimationFrame": 1,
+        "window.requestAnimationFrame": 1,
+        "window.setTimeout": 1
+      },
+      "hookCalls": {
+        "useAttachmentImageSource": 1,
+        "useEffect": 2,
+        "useRef": 2,
+        "useState": 4,
+        "useUiLocale": 2
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../../locales/transcript-copy.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/button.js": 1,
+        "../ui/dialog.js": 1,
+        "../ui/textarea.js": 1,
+        "../ui/tooltip.js": 1,
+        "./message-action-bar.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/session/message-action-bar.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1
+      }
+    },
+    "src/renderer/components/session/notices/ContextUsageIndicator.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 1,
+        "useStore": 2,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../../locales/transcript-copy.js": 1,
+        "../../../store/context-usage-store.js": 1,
+        "../../../store/index.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/popover.js": 1,
+        "../../ui/tooltip.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/session/notices/NoticeCard.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/button.js": 1
+      }
+    },
+    "src/renderer/components/session/notices/RevisionBanner.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useStore": 2,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../../lib/ported/session-revisions.js": 1,
+        "../../../locales/conversation-copy.js": 1,
+        "../../../store/index.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/button.js": 1,
+        "../message-action-bar.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/session/notices/SessionNotices.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 1,
+        "useState": 3,
+        "useStore": 8,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../bridge/task-readiness.js": 1,
+        "../../../lib/ported/session-health-notice.js": 1,
+        "../../../lib/ported/task-readiness-notice.js": 1,
+        "../../../lib/ported/workspace-readiness-recovery.js": 1,
+        "../../../locales/transcript-copy.js": 1,
+        "../../../store/index.js": 1,
+        "../../../store/turn-actions-store.js": 1,
+        "./NoticeCard.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/session/tools/ToolGroup.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useState": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../../locales/transcript-copy.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "./tool-presentation.js": 1,
+        "./ToolRow.js": 1,
+        "@maka/ui": 1,
+        "motion/react": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/session/tools/ToolRow.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "navigator.clipboard.writeText": 1,
+        "window.setTimeout": 1
+      },
+      "hookCalls": {
+        "useState": 2,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../../lib/ported/mcp-brand-marks.js": 1,
+        "../../../lib/ported/mcp-catalog.js": 1,
+        "../../../locales/transcript-copy.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/shimmer-title.js": 1,
+        "./registry.js": 1,
+        "./tool-presentation.js": 1,
+        "./tool-result.js": 1,
+        "@maka/ui": 1,
+        "motion/react": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/session/tools/registry.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./renderers/DiffResult.js": 1,
+        "./renderers/SimpleResults.js": 1,
+        "./renderers/SubagentResult.js": 1,
+        "./renderers/TerminalResult.js": 1,
+        "./renderers/WebSearchResult.js": 1,
+        "./tool-presentation.js": 1
+      }
+    },
+    "src/renderer/components/session/tools/renderers/DiffResult.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../../lib/cn.js": 1,
+        "../../../../locales/transcript-copy.js": 1,
+        "../../../../locales/workbar-copy.js": 1,
+        "../tool-result.js": 1,
+        "@maka/ui": 3,
+        "react": 1
+      }
+    },
+    "src/renderer/components/session/tools/renderers/SimpleResults.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useAttachmentImageSource": 1,
+        "useUiLocale": 7
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../../locales/transcript-copy.js": 1,
+        "../../../../locales/workbar-copy.js": 1,
+        "../tool-result.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/session/tools/renderers/SubagentResult.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 3
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../../lib/cn.js": 1,
+        "../../../../locales/transcript-copy.js": 1,
+        "../tool-result.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/session/tools/renderers/TerminalResult.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../../lib/cn.js": 1,
+        "../../../../locales/transcript-copy.js": 1,
+        "../../../../locales/workbar-copy.js": 1,
+        "../../../ui/CodeRenderer.js": 1,
+        "../tool-result.js": 1,
+        "@maka/core/shell-run": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/session/tools/renderers/WebSearchResult.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 2
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../../locales/transcript-copy.js": 1,
+        "../../../icons/Anthropicon.js": 1,
+        "../tool-result.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/session/tools/tool-presentation.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../locales/transcript-copy.js": 1,
+        "@maka/ui": 1
+      }
+    },
+    "src/renderer/components/session/tools/tool-result.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1
+      }
+    },
+    "src/renderer/components/settings/AboutSettings.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useAsync": 1,
+        "useSettingsErrorReporter": 1,
+        "useState": 2,
+        "useStore": 2,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/app.js": 1,
+        "../../bridge/diagnostics.js": 1,
+        "../../bridge/external-links.js": 1,
+        "../../hooks/use-async.js": 1,
+        "../../hooks/use-settings.js": 1,
+        "../../lib/ported/about-update-status.js": 1,
+        "../../locales/settings-copy.js": 1,
+        "../../locales/settings-preferences-copy.js": 1,
+        "../../locales/settings-shared-copy.js": 1,
+        "../../store/index.js": 1,
+        "../../store/toast-store.js": 1,
+        "../ui/button.js": 1,
+        "./settings-row.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/settings/AppearanceSettings.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useAsync": 1,
+        "useClientSettings": 1,
+        "useSettingsErrorReporter": 1,
+        "useState": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/app.js": 1,
+        "../../hooks/use-async.js": 1,
+        "../../hooks/use-settings.js": 1,
+        "../../lib/cn.js": 1,
+        "../../locales/settings-preferences-copy.js": 1,
+        "../../locales/settings-shared-copy.js": 1,
+        "../../store/index.js": 1,
+        "../../store/toast-store.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/button.js": 1,
+        "../ui/input.js": 1,
+        "../ui/segmented-control.js": 1,
+        "../ui/skeleton.js": 1,
+        "./settings-row.js": 1,
+        "@maka/core/settings": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/settings/ArchivedTasksSettings.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useProjectContext": 1,
+        "useSettingsErrorReporter": 1,
+        "useState": 3,
+        "useStore": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/sessions.js": 1,
+        "../../hooks/use-settings.js": 1,
+        "../../hooks/use-workspace.js": 1,
+        "../../locales/settings-tasks-copy.js": 1,
+        "../../locales/shell-copy.js": 1,
+        "../../locales/sidebar-copy.js": 1,
+        "../../store/index.js": 1,
+        "../../store/session-list-model.js": 1,
+        "../../store/toast-store.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/button.js": 1,
+        "../ui/confirm-dialog.js": 1,
+        "../ui/input.js": 1,
+        "./settings-row.js": 1,
+        "@maka/core/relative-time": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/settings/DataSettings.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "navigator.clipboard.writeText": 1
+      },
+      "hookCalls": {
+        "useAsync": 1,
+        "useSettingsErrorReporter": 1,
+        "useState": 3,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/app.js": 1,
+        "../../bridge/config.js": 1,
+        "../../hooks/use-async.js": 1,
+        "../../hooks/use-settings.js": 1,
+        "../../locales/settings-copy.js": 1,
+        "../../locales/settings-data-copy.js": 1,
+        "../../locales/settings-shared-copy.js": 1,
+        "../../locales/shell-copy.js": 1,
+        "../../store/composer-input-store.js": 1,
+        "../../store/toast-store.js": 1,
+        "../ui/button.js": 1,
+        "../ui/select.js": 1,
+        "../ui/switch.js": 1,
+        "./settings-row.js": 1,
+        "@maka/storage/config-transfer": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/settings/DirectoryBrowserDialog.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 1,
+        "useRef": 1,
+        "useState": 8,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/projects.js": 1,
+        "../../lib/cn.js": 1,
+        "../../locales/settings-copy.js": 1,
+        "../../locales/settings-shared-copy.js": 1,
+        "../../locales/shell-copy.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/button.js": 1,
+        "../ui/dialog.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/settings/GeneralSettings.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useClientSettings": 1,
+        "useEffect": 1,
+        "useHostSettings": 1,
+        "useSettingsErrorReporter": 1,
+        "useState": 2,
+        "useStore": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../hooks/use-settings.js": 1,
+        "../../locales/settings-preferences-copy.js": 1,
+        "../../locales/settings-shared-copy.js": 1,
+        "../../locales/shell-copy.js": 1,
+        "../../store/index.js": 1,
+        "../ui/button.js": 1,
+        "../ui/confirm-dialog.js": 1,
+        "../ui/input.js": 1,
+        "../ui/select.js": 1,
+        "../ui/skeleton.js": 1,
+        "../ui/switch.js": 1,
+        "./NetworkProxySection.js": 1,
+        "./settings-row.js": 1,
+        "@maka/core/model-thinking": 1,
+        "@maka/core/settings": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/settings/HealthSettings.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useAsync": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/permissions.js": 1,
+        "../../hooks/use-async.js": 1,
+        "../../lib/cn.js": 1,
+        "../../locales/settings-health-copy.js": 1,
+        "../../locales/settings-shared-copy.js": 1,
+        "../ui/button.js": 1,
+        "../ui/skeleton.js": 1,
+        "../ui/status-chip.js": 1,
+        "./settings-row.js": 1,
+        "@maka/core/health": 1,
+        "@maka/ui": 1
+      }
+    },
+    "src/renderer/components/settings/MemorySettings.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useMemoryState": 1,
+        "useSettingsErrorReporter": 1,
+        "useState": 5,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/memory.js": 1,
+        "../../hooks/use-memory-state.js": 1,
+        "../../hooks/use-settings.js": 1,
+        "../../lib/ported/memory-settings-presentation.js": 1,
+        "../../locales/settings-memory-copy.js": 1,
+        "../../locales/settings-shared-copy.js": 1,
+        "../../store/toast-store.js": 1,
+        "../ui/button.js": 1,
+        "../ui/confirm-dialog.js": 1,
+        "../ui/input.js": 1,
+        "../ui/skeleton.js": 1,
+        "../ui/status-chip.js": 1,
+        "../ui/switch.js": 1,
+        "../ui/textarea.js": 1,
+        "./memory/MemoryEntryList.js": 1,
+        "./settings-row.js": 1,
+        "@maka/core/local-memory": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/settings/NetworkProxySection.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useHostSettings": 1,
+        "useSettingsDraft": 1,
+        "useSettingsErrorReporter": 1,
+        "useState": 2,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/settings.js": 1,
+        "../../hooks/use-settings-draft.js": 1,
+        "../../hooks/use-settings.js": 1,
+        "../../locales/settings-preferences-copy.js": 1,
+        "../../locales/settings-test-result-copy.js": 1,
+        "../../store/index.js": 1,
+        "../../store/toast-store.js": 1,
+        "../ui/button.js": 1,
+        "../ui/input.js": 1,
+        "../ui/select.js": 1,
+        "../ui/skeleton.js": 1,
+        "../ui/switch.js": 1,
+        "./settings-row.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/settings/PermissionsSettings.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "document.addEventListener": 1,
+        "document.removeEventListener": 1,
+        "document.visibilityState": 1,
+        "window.addEventListener": 1,
+        "window.removeEventListener": 1
+      },
+      "hookCalls": {
+        "useAsync": 2,
+        "useEffect": 1,
+        "useState": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/permissions.js": 1,
+        "../../hooks/use-async.js": 1,
+        "../../lib/cn.js": 1,
+        "../../locales/permission-center-copy.js": 1,
+        "../../store/toast-store.js": 1,
+        "../ui/button.js": 1,
+        "../ui/skeleton.js": 1,
+        "../ui/status-chip.js": 1,
+        "./settings-row.js": 1,
+        "@maka/core/capabilities": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/settings/RuntimeHostProfilesSection.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 1,
+        "useSettingsErrorReporter": 1,
+        "useState": 4,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/runtime-host-profiles.js": 1,
+        "../../hooks/use-settings.js": 1,
+        "../../lib/cn.js": 1,
+        "../../locales/settings-copy.js": 1,
+        "../../locales/settings-projects-copy.js": 1,
+        "../ui/button.js": 1,
+        "../ui/input.js": 1,
+        "../ui/segmented-control.js": 1,
+        "../ui/select.js": 1,
+        "../ui/skeleton.js": 1,
+        "../ui/status-chip.js": 1,
+        "../ui/switch.js": 1,
+        "./settings-row.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/settings/SettingsIdentity.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useStore": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/settings-copy.js": 1,
+        "../../locales/settings-navigation-copy.js": 1,
+        "../../store/index.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "./settings-sections.js": 1,
+        "@maka/ui": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/settings/SettingsNav.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "./settings-sections.js": 1
+      }
+    },
+    "src/renderer/components/settings/SettingsView.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useScopedRuntimeHost": 1,
+        "useStore": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../hooks/use-workspace.js": 1,
+        "../../locales/settings-copy.js": 1,
+        "../../locales/settings-navigation-copy.js": 1,
+        "../../store/index.js": 1,
+        "./AboutSettings.js": 1,
+        "./AppearanceSettings.js": 1,
+        "./ArchivedTasksSettings.js": 1,
+        "./DataSettings.js": 1,
+        "./GeneralSettings.js": 1,
+        "./HealthSettings.js": 1,
+        "./MemorySettings.js": 1,
+        "./models/ModelsSettings.js": 1,
+        "./PermissionsSettings.js": 1,
+        "./settings-sections.js": 1,
+        "./SettingsNav.js": 1,
+        "./SubagentsSettings.js": 1,
+        "./UsageSettings.js": 1,
+        "./WebSearchSettings.js": 1,
+        "./WorkspaceSettings.js": 1,
+        "@maka/ui": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/settings/SubagentsSettings.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useHostSettings": 1,
+        "useSettingsErrorReporter": 1,
+        "useState": 3,
+        "useStore": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../hooks/use-settings.js": 1,
+        "../../lib/ported/subagent-preset-presentation.js": 1,
+        "../../locales/settings-subagents-copy.js": 1,
+        "../../store/index.js": 1,
+        "../../store/toast-store.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/button.js": 1,
+        "../ui/confirm-dialog.js": 1,
+        "../ui/skeleton.js": 1,
+        "../ui/status-chip.js": 1,
+        "../ui/switch.js": 1,
+        "./settings-row.js": 1,
+        "./subagents/SubagentEditor.js": 1,
+        "@maka/core/subagent-settings": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/settings/UsageSettings.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useAsync": 1,
+        "useClientSettings": 1,
+        "useSettingsErrorReporter": 1,
+        "useState": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/settings.js": 1,
+        "../../hooks/use-async.js": 1,
+        "../../hooks/use-settings.js": 1,
+        "../../lib/cn.js": 1,
+        "../../locales/settings-copy.js": 1,
+        "../../locales/settings-navigation-copy.js": 1,
+        "../../locales/settings-shared-copy.js": 1,
+        "../../locales/settings-usage-copy.js": 1,
+        "../../store/index.js": 1,
+        "../ui/button.js": 1,
+        "../ui/segmented-control.js": 1,
+        "../ui/skeleton.js": 1,
+        "./settings-row.js": 1,
+        "@maka/core/usage-ledger-merge": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/settings/WebSearchSettings.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useHostSettings": 1,
+        "useSettingsErrorReporter": 1,
+        "useState": 6,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/external-links.js": 1,
+        "../../bridge/web-search.js": 1,
+        "../../hooks/use-settings.js": 1,
+        "../../locales/settings-shared-copy.js": 1,
+        "../../locales/settings-web-search-copy.js": 1,
+        "../../store/index.js": 1,
+        "../../store/toast-store.js": 1,
+        "../ui/button.js": 1,
+        "../ui/input.js": 1,
+        "../ui/select.js": 1,
+        "../ui/skeleton.js": 1,
+        "../ui/status-chip.js": 1,
+        "../ui/switch.js": 1,
+        "./settings-row.js": 1,
+        "@maka/core/search": 1,
+        "@maka/core/web-search": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/settings/WorkspaceSettings.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useAsync": 2,
+        "useClientSettings": 1,
+        "useEffect": 1,
+        "useSettingsErrorReporter": 1,
+        "useState": 5,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/app.js": 1,
+        "../../bridge/projects.js": 1,
+        "../../hooks/use-async.js": 1,
+        "../../hooks/use-settings.js": 1,
+        "../../lib/cn.js": 1,
+        "../../lib/ported/project-path-display.js": 1,
+        "../../locales/settings-copy.js": 1,
+        "../../locales/settings-projects-copy.js": 1,
+        "../../locales/settings-shared-copy.js": 1,
+        "../../locales/shell-copy.js": 1,
+        "../../store/index.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/button.js": 1,
+        "../ui/confirm-dialog.js": 1,
+        "../ui/input.js": 1,
+        "../ui/skeleton.js": 1,
+        "../ui/status-chip.js": 1,
+        "./DirectoryBrowserDialog.js": 1,
+        "./RuntimeHostProfilesSection.js": 1,
+        "./settings-row.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/settings/memory/MemoryEntryList.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../locales/settings-memory-copy.js": 1,
+        "../../ui/status-chip.js": 1,
+        "@maka/ui": 1
+      }
+    },
+    "src/renderer/components/settings/models/AddConnection.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../locales/settings-models-copy.js": 1,
+        "../../../store/index.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/button.js": 1,
+        "../settings-row.js": 1,
+        "./OAuthPanel.js": 1,
+        "./ProviderCatalog.js": 1,
+        "@maka/ui": 1
+      }
+    },
+    "src/renderer/components/settings/models/AddModelDialog.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "window": 4
+      },
+      "hookCalls": {
+        "useEffect": 1,
+        "useState": 3,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../locales/settings-models-copy.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/dialog.js": 1,
+        "../../ui/input.js": 1,
+        "../../ui/label.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/settings/models/ConnectionDetail.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useConnectionAction": 1,
+        "useConnectionDetailReads": 1,
+        "useEffect": 3,
+        "useState": 7,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../bridge/connections.js": 1,
+        "../../../hooks/use-connection-detail.js": 1,
+        "../../../lib/cn.js": 1,
+        "../../../lib/ported/provider-brand-marks.js": 1,
+        "../../../lib/ported/provider-connection-status.js": 1,
+        "../../../lib/ported/provider-display-copy.js": 1,
+        "../../../lib/ported/provider-endpoint-presentation.js": 1,
+        "../../../locales/settings-models-copy.js": 1,
+        "../../../store/index.js": 1,
+        "../../../store/toast-store.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/confirm-dialog.js": 1,
+        "../../ui/input.js": 1,
+        "../../ui/skeleton.js": 1,
+        "../../ui/status-chip.js": 1,
+        "../../ui/switch.js": 1,
+        "../settings-row.js": 1,
+        "./ConnectionModelsSection.js": 1,
+        "./RequestHeadersEditor.js": 1,
+        "@maka/core/llm-connections": 1,
+        "@maka/core/provider-registry": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/settings/models/ConnectionModelsSection.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useState": 3,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../locales/settings-models-copy.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/checkbox-box.js": 1,
+        "../../ui/input.js": 1,
+        "../../ui/switch.js": 1,
+        "../settings-row.js": 1,
+        "./AddModelDialog.js": 1,
+        "@maka/core/llm-connections": 1,
+        "@maka/core/model-thinking": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/settings/models/ConnectionsList.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useState": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../../lib/ported/provider-brand-marks.js": 1,
+        "../../../lib/ported/provider-connection-status.js": 1,
+        "../../../lib/ported/provider-display-copy.js": 1,
+        "../../../locales/settings-models-copy.js": 1,
+        "../../../store/index.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/confirm-dialog.js": 1,
+        "../../ui/dropdown-menu.js": 1,
+        "../../ui/menu-variants.js": 1,
+        "../../ui/select.js": 1,
+        "../../ui/skeleton.js": 1,
+        "../../ui/status-chip.js": 1,
+        "../settings-row.js": 1,
+        "@maka/core/llm-connections": 1,
+        "@maka/core/provider-registry": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/settings/models/ModelsSettings.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 1,
+        "useSettingsErrorReporter": 1,
+        "useState": 1,
+        "useStore": 3,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../hooks/use-settings.js": 1,
+        "../../../locales/settings-models-copy.js": 1,
+        "../../../store/index.js": 1,
+        "../../../store/toast-store.js": 1,
+        "./AddConnection.js": 1,
+        "./ConnectionDetail.js": 1,
+        "./ConnectionsList.js": 1,
+        "./models-view.js": 1,
+        "./ProviderSetupForm.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/settings/models/OAuthPanel.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useOAuthLoginFlow": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../bridge/oauth.js": 1,
+        "../../../hooks/use-oauth-login-flow.js": 1,
+        "../../../lib/cn.js": 1,
+        "../../../lib/ported/provider-brand-marks.js": 1,
+        "../../../lib/ported/provider-display-copy.js": 1,
+        "../../../locales/settings-models-copy.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/skeleton.js": 1,
+        "../../ui/status-chip.js": 1,
+        "../settings-row.js": 1,
+        "@maka/ui": 1
+      }
+    },
+    "src/renderer/components/settings/models/ProviderCatalog.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useState": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../../lib/ported/provider-brand-marks.js": 1,
+        "../../../lib/ported/provider-display-copy.js": 1,
+        "../../../locales/settings-models-copy.js": 1,
+        "../../ui/card-surface.js": 1,
+        "../../ui/input.js": 1,
+        "../../ui/status-chip.js": 1,
+        "@maka/core/provider-registry": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/settings/models/ProviderSetupForm.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useState": 9,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../bridge/connections.js": 1,
+        "../../../lib/ported/model-catalog-choices.js": 1,
+        "../../../lib/ported/provider-add-submission.js": 1,
+        "../../../lib/ported/provider-brand-marks.js": 1,
+        "../../../lib/ported/provider-display-copy.js": 1,
+        "../../../locales/settings-models-copy.js": 1,
+        "../../../store/index.js": 1,
+        "../../../store/toast-store.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/checkbox-box.js": 1,
+        "../../ui/input.js": 1,
+        "../../ui/select.js": 1,
+        "../settings-row.js": 1,
+        "@maka/core/llm-connections": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/settings/models/RequestHeadersEditor.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useState": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../locales/settings-models-copy.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/input.js": 1,
+        "@maka/core/runtime-policy": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/settings/models/models-view.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/components/settings/settings-row.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1
+      }
+    },
+    "src/renderer/components/settings/settings-sections.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/core/settings": 1
+      }
+    },
+    "src/renderer/components/settings/subagents/SubagentEditor.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useState": 3,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/ported/subagent-preset-presentation.js": 1,
+        "../../../locales/settings-subagents-copy.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/input.js": 1,
+        "../../ui/select.js": 1,
+        "../../ui/switch.js": 1,
+        "../../ui/textarea.js": 1,
+        "../settings-row.js": 1,
+        "@maka/core/llm-connections": 1,
+        "@maka/core/subagent-settings": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/ui/CodeRenderer.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "requestAnimationFrame": 1
+      },
+      "hookCalls": {
+        "useEffect": 1,
+        "useRef": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "prismjs": 1,
+        "prismjs/components/prism-bash": 1,
+        "prismjs/components/prism-css": 1,
+        "prismjs/components/prism-javascript": 1,
+        "prismjs/components/prism-json": 1,
+        "prismjs/components/prism-jsx": 1,
+        "prismjs/components/prism-markup": 1,
+        "prismjs/components/prism-mermaid": 1,
+        "prismjs/components/prism-python": 1,
+        "prismjs/components/prism-sql": 1,
+        "prismjs/components/prism-tsx": 1,
+        "prismjs/components/prism-typescript": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/ui/DiffRenderer.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/ui-copy": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/ui/LoadingSpinner.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../icons": 1
+      }
+    },
+    "src/renderer/components/ui/Markdown.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "navigator.clipboard.writeText": 1,
+        "setTimeout": 1
+      },
+      "hookCalls": {
+        "useState": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/markdown/color-utils": 1,
+        "../../lib/markdown/inline-tokens": 1,
+        "../../lib/markdown/normalize-math": 1,
+        "../../lib/markdown/rehype-stream-pop": 1,
+        "../../lib/markdown/rehype-strip-break-newlines": 1,
+        "../../lib/markdown/remark-inline-math": 1,
+        "../icons": 1,
+        "./CodeRenderer": 1,
+        "@maka/ui": 1,
+        "katex/dist/katex.min.css": 1,
+        "react": 1,
+        "react-markdown": 1,
+        "rehype-katex": 1,
+        "rehype-raw": 1,
+        "remark-gfm": 1,
+        "remark-math": 1
+      }
+    },
+    "src/renderer/components/ui/StreamPopMarkdown.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "clearTimeout": 1,
+        "setTimeout": 1
+      },
+      "hookCalls": {
+        "useEffect": 2,
+        "useLayoutEffect": 1,
+        "useRef": 4,
+        "useState": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./Markdown": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/ui/avatar.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn": 1,
+        "avvvatars-react": 1
+      }
+    },
+    "src/renderer/components/ui/button.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn": 1,
+        "@radix-ui/react-slot": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/ui/card-surface.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/components/ui/chat-skeleton.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../layout/MainHeader": 1
+      }
+    },
+    "src/renderer/components/ui/checkbox-box.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn": 1
+      }
+    },
+    "src/renderer/components/ui/confirm-dialog.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "document.activeElement": 4,
+        "window.requestAnimationFrame": 1
+      },
+      "hookCalls": {
+        "useEffect": 1,
+        "useRef": 1,
+        "useState": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn": 1,
+        "../../locales/ui-copy": 1,
+        "./button": 1,
+        "./dialog": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/ui/count-badge.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/components/ui/dialog.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn": 1,
+        "../../locales/ui-copy": 1,
+        "../icons": 1,
+        "@maka/ui": 1,
+        "@radix-ui/react-dialog": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/ui/dropdown-menu.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn": 1,
+        "../icons": 1,
+        "./menu-variants": 1,
+        "@radix-ui/react-dropdown-menu": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/ui/field-surface.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/components/ui/input.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn": 1,
+        "./field-surface": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/ui/label.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/ui/menu-variants.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn": 1
+      }
+    },
+    "src/renderer/components/ui/pane-resizer.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn": 1
+      }
+    },
+    "src/renderer/components/ui/popover.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn": 1,
+        "./menu-variants": 1,
+        "@radix-ui/react-popover": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/ui/right-pane-shell.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "document.querySelector": 1,
+        "window.addEventListener": 1,
+        "window.removeEventListener": 1
+      },
+      "hookCalls": {
+        "useEffect": 1,
+        "useUiLocale": 2
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn": 1,
+        "../../locales/workbar-copy": 1,
+        "../icons": 1,
+        "./button": 1,
+        "./pane-resizer": 1,
+        "./tooltip": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/ui/segmented-control.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn": 1,
+        "../icons/Anthropicon": 1
+      }
+    },
+    "src/renderer/components/ui/select.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn": 1,
+        "../icons/Anthropicon": 1,
+        "./field-surface": 1,
+        "./menu-variants": 1,
+        "@radix-ui/react-select": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/ui/shimmer-title.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./text-shimmer": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/ui/sidebar-tooltip.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./tooltip": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/ui/skeleton.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn": 1
+      }
+    },
+    "src/renderer/components/ui/split-button.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useState": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn": 1,
+        "../../locales/ui-copy": 1,
+        "../icons": 1,
+        "./button": 1,
+        "./menu-variants": 1,
+        "./popover": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/ui/status-chip.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/components/ui/switch.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn": 1,
+        "@radix-ui/react-switch": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/ui/text-shimmer.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/ui/textarea.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn": 1,
+        "./field-surface": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/ui/toast.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn": 1,
+        "../icons": 1,
+        "@radix-ui/react-toast": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/ui/toaster.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useToast": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../store/toast-store": 1,
+        "./toast": 1
+      }
+    },
+    "src/renderer/components/ui/tooltip.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn": 1,
+        "@radix-ui/react-tooltip": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/ui/user-avatar.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/avatar-warm-palette": 1,
+        "../../lib/cn": 1,
+        "../../locales/ui-copy": 1,
+        "../icons": 1,
+        "@maka/ui": 1,
+        "avvvatars-react": 1
+      }
+    },
+    "src/renderer/components/welcome/ModelPicker.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useStore": 2,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../../lib/ported/provider-brand-marks.js": 1,
+        "../../locales/welcome-copy.js": 1,
+        "../../store/index.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/dropdown-menu.js": 1,
+        "@maka/ui": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/welcome/OnboardingHero.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useStore": 2,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../../lib/ported/onboarding-hero-copy.js": 1,
+        "../../locales/welcome-copy.js": 1,
+        "../../store/index.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/button.js": 1,
+        "@maka/ui": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/welcome/ReadinessNotice.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useStore": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../../lib/ported/task-readiness-notice.js": 1,
+        "../../store/index.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/button.js": 1,
+        "@maka/ui": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/welcome/TaskWelcomeContent.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useStore": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../../locales/welcome-copy.js": 1,
+        "../../store/composer-input-store.js": 1,
+        "../../store/index.js": 1,
+        "../composer/ChatInput.js": 1,
+        "./OnboardingHero.js": 1,
+        "./ReadinessNotice.js": 1,
+        "@maka/ui": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/welcome/WorkspacePicker.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "clearTimeout": 1,
+        "setTimeout": 1
+      },
+      "hookCalls": {
+        "useEffect": 1,
+        "useRef": 1,
+        "useState": 2,
+        "useStore": 3,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../../lib/ported/project-path-display.js": 1,
+        "../../locales/welcome-copy.js": 1,
+        "../../store/index.js": 1,
+        "../../store/new-task-store.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/menu-variants.js": 1,
+        "../ui/popover.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/workbar/ArtifactPreview.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 2,
+        "useState": 3,
+        "useUiLocale": 3
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/artifacts.js": 1,
+        "../../lib/ported/artifact-preview-text.js": 1,
+        "../../locales/artifact-copy.js": 1,
+        "../../locales/workbar-copy.js": 1,
+        "../ui/CodeRenderer.js": 1,
+        "../ui/DiffRenderer.js": 1,
+        "../ui/LoadingSpinner.js": 1,
+        "../ui/Markdown.js": 1,
+        "../ui/segmented-control.js": 1,
+        "./PreviewNotice.js": 1,
+        "@maka/ui": 1,
+        "@maka/ui/artifact-preview-registry": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/workbar/BrowserTab.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "cancelAnimationFrame": 1,
+        "document.querySelector": 1,
+        "requestAnimationFrame": 2
+      },
+      "hookCalls": {
+        "useEffect": 3,
+        "useRef": 2,
+        "useState": 2,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/browser.js": 1,
+        "../../locales/browser-copy.js": 1,
+        "../../store/toast-store.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/button.js": 1,
+        "../ui/input.js": 1,
+        "./PreviewNotice.js": 1,
+        "@maka/core/browser": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/workbar/FilesTab.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "clearTimeout": 2,
+        "navigator.clipboard.writeText": 1,
+        "requestAnimationFrame": 1,
+        "setTimeout": 1
+      },
+      "hookCalls": {
+        "useEffect": 4,
+        "useRef": 2,
+        "useState": 5,
+        "useStore": 2,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/app.js": 1,
+        "../../bridge/artifacts.js": 1,
+        "../../lib/cn.js": 1,
+        "../../lib/ported/artifact-list-keyboard.js": 1,
+        "../../locales/artifact-copy.js": 1,
+        "../../store/index.js": 1,
+        "../../store/toast-store.js": 1,
+        "../../store/workbar-store.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/button.js": 1,
+        "../ui/confirm-dialog.js": 1,
+        "../ui/dropdown-menu.js": 1,
+        "../ui/menu-variants.js": 1,
+        "./ArtifactPreview.js": 1,
+        "./PreviewNotice.js": 1,
+        "@maka/core/artifacts": 1,
+        "@maka/core/redaction": 1,
+        "@maka/core/relative-time": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/workbar/InspectorTab.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "navigator.clipboard.writeText": 1
+      },
+      "hookCalls": {
+        "useSessionTrace": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../hooks/use-session-trace.js": 1,
+        "../../lib/cn.js": 1,
+        "../../lib/ported/session-inspector-overview-model.js": 1,
+        "../../lib/ported/session-inspector-panel-model.js": 1,
+        "../../locales/conversation-copy.js": 1,
+        "../../store/toast-store.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/button.js": 1,
+        "./PreviewNotice.js": 1,
+        "@maka/core/session-trace": 1,
+        "@maka/core/ui-locale": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/workbar/PreviewNotice.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/button.js": 1
+      }
+    },
+    "src/renderer/components/workbar/ReviewTab.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "clearTimeout": 2,
+        "document.addEventListener": 1,
+        "document.removeEventListener": 1,
+        "document.visibilityState": 1,
+        "setTimeout": 1,
+        "window.addEventListener": 1,
+        "window.removeEventListener": 1
+      },
+      "hookCalls": {
+        "useEffect": 3,
+        "useRef": 1,
+        "useState": 5,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/git-review.js": 1,
+        "../../lib/cn.js": 1,
+        "../../locales/conversation-copy.js": 1,
+        "../../store/index.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/button.js": 1,
+        "../ui/DiffRenderer.js": 1,
+        "../ui/LoadingSpinner.js": 1,
+        "./PreviewNotice.js": 1,
+        "@maka/core/display-redaction": 1,
+        "@maka/core/redaction": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/workbar/TerminalTab.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "document.documentElement": 1,
+        "MutationObserver": 1,
+        "ResizeObserver": 1
+      },
+      "hookCalls": {
+        "useEffect": 2,
+        "useRef": 5,
+        "useState": 2,
+        "useStore": 2,
+        "useUiLocale": 2
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/shell-runs.js": 1,
+        "../../lib/ported/session-terminal-frame.js": 1,
+        "../../lib/ported/session-terminal-hydration.js": 1,
+        "../../lib/ported/session-terminal-query.js": 1,
+        "../../lib/theme.js": 1,
+        "../../locales/conversation-copy.js": 1,
+        "../../locales/workbar-copy.js": 1,
+        "../../store/index.js": 1,
+        "../../store/workbar-store.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/button.js": 1,
+        "../ui/select.js": 1,
+        "./PreviewNotice.js": 1,
+        "@maka/core/redaction": 1,
+        "@maka/ui": 1,
+        "@xterm/addon-fit": 1,
+        "@xterm/xterm": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/workbar/WorkbarPane.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useRef": 2,
+        "useState": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/workbar-copy.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/button.js": 1,
+        "../ui/right-pane-shell.js": 1,
+        "../ui/tooltip.js": 1,
+        "./BrowserTab.js": 1,
+        "./FilesTab.js": 1,
+        "./InspectorTab.js": 1,
+        "./ReviewTab.js": 1,
+        "./TerminalTab.js": 1,
+        "./WorkbarTabStrip.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/workbar/WorkbarTabStrip.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 1,
+        "useRef": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../hooks/use-hotkeys.js": 1,
+        "../../hooks/use-workbar.js": 1,
+        "../../lib/cn.js": 1,
+        "../../locales/conversation-copy.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/dropdown-menu.js": 1,
+        "../ui/sidebar-tooltip.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/workbar/WorkbarToggle.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../../locales/shell-copy.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../layout/SidebarControls.js": 1,
+        "../ui/count-badge.js": 1,
+        "../ui/sidebar-tooltip.js": 1,
+        "@maka/ui": 1
+      }
+    },
+    "src/renderer/hooks/use-async.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 1,
+        "useState": 2
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "react": 1
+      }
+    },
+    "src/renderer/hooks/use-connection-detail.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useAsync": 2,
+        "useState": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/connections.js": 1,
+        "./use-async.js": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/hooks/use-hotkeys.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "document.addEventListener": 1,
+        "document.removeEventListener": 1,
+        "window.navigator.platform": 1
+      },
+      "hookCalls": {
+        "useEffect": 1,
+        "useRef": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "react": 1
+      }
+    },
+    "src/renderer/hooks/use-memory-state.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 1,
+        "useRef": 1,
+        "useState": 4
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/memory.js": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/hooks/use-oauth-login-flow.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 3,
+        "useRef": 3,
+        "useState": 6,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/oauth.js": 1,
+        "../lib/ported/provider-oauth-message.js": 1,
+        "../locales/settings-models-copy.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/hooks/use-session-list.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useShallow": 1,
+        "useStore": 4,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../locales/sidebar-copy.js": 1,
+        "../store/index.js": 1,
+        "../store/new-task-store.js": 1,
+        "../store/onboarding-store.js": 1,
+        "../store/session-list-model.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1,
+        "zustand/react/shallow": 1
+      }
+    },
+    "src/renderer/hooks/use-session-trace.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "clearTimeout": 2,
+        "setTimeout": 2
+      },
+      "hookCalls": {
+        "useEffect": 1,
+        "useRef": 5,
+        "useState": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/inspector.js": 1,
+        "../lib/ported/session-trace-refresh.js": 1,
+        "../store/index.js": 1,
+        "@maka/core/redaction": 1,
+        "@maka/core/session-trace": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/hooks/use-settings-draft.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 2,
+        "useRef": 4,
+        "useState": 2
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../lib/ported/optimistic-settings-draft.js": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/hooks/use-settings.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useStore": 6,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../locales/shell-copy.js": 2,
+        "../store/index.js": 1,
+        "../store/toast-store.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/hooks/use-sidebar-layout.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "cancelAnimationFrame": 1,
+        "clearTimeout": 1,
+        "document.activeElement": 6,
+        "document.body.style.cursor": 3,
+        "document.body.style.userSelect": 3,
+        "document.querySelector": 2,
+        "requestAnimationFrame": 1,
+        "setTimeout": 2,
+        "window.addEventListener": 6,
+        "window.cancelAnimationFrame": 2,
+        "window.removeEventListener": 6,
+        "window.requestAnimationFrame": 1
+      },
+      "hookCalls": {
+        "useEffect": 8,
+        "useRef": 14,
+        "useState": 2,
+        "useStore": 2
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../lib/ported/session-list-layout.js": 1,
+        "../store/index.js": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/hooks/use-turn-presentation.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useRef": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../lib/ported/derive-turn-lineage-badges.js": 1,
+        "../lib/ported/interrupted-resume.js": 1,
+        "../lib/ported/session-status-presentation.js": 1,
+        "../lib/ported/turn-footer-actions.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/hooks/use-workbar.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 1,
+        "useStore": 2
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../lib/ported/workbar-layout.js": 1,
+        "../lib/ported/workbar-tabs.js": 1,
+        "../lib/ported/workbar-tool-definitions.js": 1,
+        "../store/index.js": 1,
+        "../store/workbar-store.js": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/hooks/use-workspace.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 2,
+        "useLayoutEffect": 4,
+        "useRef": 1,
+        "useShallow": 5,
+        "useStore": 17,
+        "useTranscriptProjection": 1,
+        "useUiLocale": 2
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../lib/ported/live-turn-snapshot.js": 1,
+        "../store/index.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1,
+        "zustand/react/shallow": 1
+      }
+    },
+    "src/renderer/lib/avatar-warm-palette.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/cn.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "clsx": 1,
+        "tailwind-merge": 1
+      }
+    },
+    "src/renderer/lib/composer-document.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/ui": 1
+      }
+    },
+    "src/renderer/lib/composer-surface.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/fixture.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "document.documentElement": 2,
+        "document.documentElement.getAttribute": 1,
+        "document.documentElement.setAttribute": 4
+      },
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/e2e-fixture.js": 1,
+        "./theme.js": 1,
+        "@maka/core/ui-locale": 1
+      }
+    },
+    "src/renderer/lib/markdown/color-utils.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "react": 1
+      }
+    },
+    "src/renderer/lib/markdown/hast-node.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/markdown/inline-tokens.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "react": 1
+      }
+    },
+    "src/renderer/lib/markdown/normalize-math.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/markdown/rehype-stream-pop.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/markdown/rehype-strip-break-newlines.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/markdown/remark-inline-math.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/platform.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "document.documentElement": 1,
+        "window.navigator.platform": 1
+      },
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/about-update-status.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/artifact-list-keyboard.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/artifact-preview-text.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/attachment-preflight.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/conversation-copy.js": 1,
+        "@maka/core/attachments": 1
+      }
+    },
+    "src/renderer/lib/ported/branch-banner.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/browser-storage.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "localStorage.getItem": 1,
+        "localStorage.setItem": 1
+      },
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/composer-attachments.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/connection-error-cleaner.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/core/connection-error-copy": 1
+      }
+    },
+    "src/renderer/lib/ported/derive-turn-lineage-badges.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/conversation-copy.js": 1
+      }
+    },
+    "src/renderer/lib/ported/desktop-transcript-range-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "window.clearTimeout": 1,
+        "window.setTimeout": 1
+      },
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../shared/desktop-session-projection.js": 1,
+        "../../../shared/runtime-host-identity.js": 1,
+        "@maka/core/persisted-value": 1,
+        "@maka/core/session": 1
+      }
+    },
+    "src/renderer/lib/ported/interrupted-resume.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/live-turn-snapshot.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./session-event-health.js": 1
+      }
+    },
+    "src/renderer/lib/ported/mcp-brand-contrast.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/mcp-brand-marks.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./mcp-brand-contrast.js": 1,
+        "@ant-design/icons-svg/es/asn/DingtalkOutlined.js": 1,
+        "simple-icons": 1
+      }
+    },
+    "src/renderer/lib/ported/mcp-catalog.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/mcp-server-command-line.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/mcp-server-draft.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./mcp-server-command-line.js": 1,
+        "@maka/core/mcp": 1
+      }
+    },
+    "src/renderer/lib/ported/memory-settings-presentation.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/core/local-memory": 1
+      }
+    },
+    "src/renderer/lib/ported/model-catalog-choices.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/shell-remaining-copy.js": 1,
+        "@maka/core/llm-connections": 1,
+        "@maka/core/model-catalog": 1
+      }
+    },
+    "src/renderer/lib/ported/model-connection-errors.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/conversation-copy.js": 1,
+        "../../locales/shell-copy.js": 1,
+        "./connection-error-cleaner.js": 1,
+        "./session-error-presentation.js": 1
+      }
+    },
+    "src/renderer/lib/ported/model-wait-state.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/nav-group-summary.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/nav-selection.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./browser-storage.js": 1
+      }
+    },
+    "src/renderer/lib/ported/new-task-reload-intent.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "sessionStorage": 2
+      },
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/onboarding-hero-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/onboarding-copy.js": 1
+      }
+    },
+    "src/renderer/lib/ported/optimistic-settings-draft.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/project-path-display.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/provider-add-submission.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/core/llm-connections": 1
+      }
+    },
+    "src/renderer/lib/ported/provider-brand-marks.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../assets/provider-brands/alibabacloud.svg": 1,
+        "../../assets/provider-brands/cerebras.svg": 1,
+        "../../assets/provider-brands/cloudflare.svg": 1,
+        "../../assets/provider-brands/cohere.svg": 1,
+        "../../assets/provider-brands/deepinfra.svg": 1,
+        "../../assets/provider-brands/fireworks.svg": 1,
+        "../../assets/provider-brands/groq.svg": 1,
+        "../../assets/provider-brands/huggingface.svg": 1,
+        "../../assets/provider-brands/hunyuan.svg": 1,
+        "../../assets/provider-brands/lmstudio.svg": 1,
+        "../../assets/provider-brands/localai.svg": 1,
+        "../../assets/provider-brands/mistral.svg": 1,
+        "../../assets/provider-brands/nvidia.svg": 1,
+        "../../assets/provider-brands/opencode.svg": 1,
+        "../../assets/provider-brands/openrouter.svg": 1,
+        "../../assets/provider-brands/stepfun.svg": 1,
+        "../../assets/provider-brands/tencentcloud.svg": 1,
+        "../../assets/provider-brands/together.svg": 1,
+        "../../assets/provider-brands/vercel.svg": 1,
+        "../../assets/provider-brands/volcengine.svg": 1,
+        "../../assets/provider-brands/xai.svg": 1,
+        "../../assets/provider-brands/xiaomimimo.svg": 1,
+        "../../assets/provider-brands/zai.svg": 1,
+        "../../assets/provider-brands/zenmux.svg": 1,
+        "simple-icons": 1
+      }
+    },
+    "src/renderer/lib/ported/provider-connection-status.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/settings-models-copy.js": 1,
+        "@maka/core/provider-registry": 1
+      }
+    },
+    "src/renderer/lib/ported/provider-display-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/provider-endpoint-presentation.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/core/display-redaction": 1,
+        "@maka/core/llm-connections": 1,
+        "@maka/core/model-metadata": 1
+      }
+    },
+    "src/renderer/lib/ported/provider-oauth-message.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/settings-models-copy.js": 1,
+        "@maka/core/redaction": 1
+      }
+    },
+    "src/renderer/lib/ported/scheduled-task-form-payload.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/session-error-presentation.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/conversation-copy.js": 1
+      }
+    },
+    "src/renderer/lib/ported/session-event-health.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/core/session-event-health": 1,
+        "@maka/core/tool-result-status": 1
+      }
+    },
+    "src/renderer/lib/ported/session-health-notice.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/conversation-copy.js": 1
+      }
+    },
+    "src/renderer/lib/ported/session-inspector-overview-model.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/session-inspector-panel-model.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/core/usage-stats/pricing": 1
+      }
+    },
+    "src/renderer/lib/ported/session-list-layout.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./browser-storage.js": 1
+      }
+    },
+    "src/renderer/lib/ported/session-message-settlement.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "window.clearTimeout": 2,
+        "window.setTimeout": 2
+      },
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/transcripts.js": 1,
+        "./desktop-transcript-range-store.js": 1
+      }
+    },
+    "src/renderer/lib/ported/session-nav-filter.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/session-revisions.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/core/session-revisions": 1
+      }
+    },
+    "src/renderer/lib/ported/session-status-presentation.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/conversation-copy.js": 1,
+        "./session-error-presentation.js": 1,
+        "@maka/core/sandbox-boundary": 1
+      }
+    },
+    "src/renderer/lib/ported/session-terminal-frame.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "cancelAnimationFrame": 1,
+        "requestAnimationFrame": 1
+      },
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/session-terminal-hydration.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/session-terminal-query.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/session-trace-refresh.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/shell-chat-model-selection.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/shell-run-update-state.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/core/shell-run-result": 1
+      }
+    },
+    "src/renderer/lib/ported/stale-sessions.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/subagent-preset-presentation.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/core/llm-connections": 1,
+        "@maka/core/provider-registry": 1
+      }
+    },
+    "src/renderer/lib/ported/task-readiness-notice.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/task-readiness-copy.js": 1
+      }
+    },
+    "src/renderer/lib/ported/titlebar-dim-color.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/titlebar-modal-sync.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "document.documentElement": 1,
+        "document.querySelector": 1,
+        "MutationObserver": 1
+      },
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../theme.js": 1
+      }
+    },
+    "src/renderer/lib/ported/transcript-reading-position.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/transient-message-projection.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/turn-footer-actions.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/conversation-copy.js": 1
+      }
+    },
+    "src/renderer/lib/ported/type-scale.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/use-system-ui-locale.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "navigator": 1,
+        "navigator.languages": 1,
+        "window": 1,
+        "window.addEventListener": 1,
+        "window.removeEventListener": 1
+      },
+      "hookCalls": {
+        "useEffect": 1,
+        "useState": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/core/ui-locale": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/lib/ported/workbar-layout.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "localStorage.removeItem": 1
+      },
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./browser-storage.js": 1,
+        "./workbar-tabs.js": 1
+      }
+    },
+    "src/renderer/lib/ported/workbar-tabs.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./browser-storage.js": 1,
+        "./workbar-tool-definitions.js": 1
+      }
+    },
+    "src/renderer/lib/ported/workbar-tool-definitions.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/workspace-readiness-recovery.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./onboarding-hero-copy.js": 1
+      }
+    },
+    "src/renderer/lib/theme.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "document.createElement": 1,
+        "document.documentElement": 9,
+        "document.documentElement.classList.contains": 1,
+        "document.documentElement.classList.toggle": 2,
+        "document.documentElement.removeAttribute": 1,
+        "document.documentElement.style.colorScheme": 1,
+        "document.documentElement.style.fontSize": 1,
+        "document.querySelector": 1,
+        "window.matchMedia": 2
+      },
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/app-window.js": 1,
+        "./ported/browser-storage.js": 1,
+        "./ported/titlebar-dim-color.js": 1,
+        "./ported/type-scale.js": 1,
+        "@maka/core/settings": 1
+      }
+    },
+    "src/renderer/locales/artifact-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/browser-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/composer-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/conversation-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/mcp-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/modules-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/onboarding-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/palette-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/permission-center-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/runtime-debug-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/settings-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/settings-data-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/settings-health-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/settings-memory-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/settings-models-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/settings-navigation-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/settings-preferences-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/settings-projects-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/core/ui-locale": 1
+      }
+    },
+    "src/renderer/locales/settings-shared-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/settings-subagents-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/settings-tasks-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/settings-test-result-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/core/ui-locale": 1
+      }
+    },
+    "src/renderer/locales/settings-usage-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/settings-web-search-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/shell-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/core/redaction": 1
+      }
+    },
+    "src/renderer/locales/shell-remaining-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/sidebar-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/task-readiness-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/transcript-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/ui-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/welcome-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/workbar-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/store/active-session-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "clearTimeout": 3,
+        "setTimeout": 2
+      },
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../preload/transcript-contract.js": 1,
+        "../bridge/notifications.js": 1,
+        "../bridge/sessions.js": 1,
+        "../bridge/shell-runs.js": 1,
+        "../bridge/transcripts.js": 1,
+        "../lib/ported/desktop-transcript-range-store.js": 1,
+        "../lib/ported/session-event-health.js": 1,
+        "../lib/ported/shell-run-update-state.js": 1,
+        "../lib/ported/transcript-reading-position.js": 1,
+        "../lib/ported/transient-message-projection.js": 1,
+        "./resource-store.js": 1,
+        "./session-event-handlers.js": 1,
+        "@maka/ui": 1,
+        "zustand/vanilla": 1
+      }
+    },
+    "src/renderer/store/composer-draft-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "zustand/vanilla": 1
+      }
+    },
+    "src/renderer/store/composer-input-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "localStorage.getItem": 1,
+        "localStorage.setItem": 1
+      },
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../lib/composer-document.js": 1,
+        "zustand/vanilla": 1
+      }
+    },
+    "src/renderer/store/connections-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/connections.js": 1,
+        "./resource-store.js": 1
+      }
+    },
+    "src/renderer/store/context-usage-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/inspector.js": 1,
+        "./resource-store.js": 1,
+        "zustand/vanilla": 1
+      }
+    },
+    "src/renderer/store/index.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/runtime-host-profiles.js": 1,
+        "./active-session-store.js": 1,
+        "./composer-draft-store.js": 1,
+        "./connections-store.js": 1,
+        "./context-usage-store.js": 1,
+        "./mcp-store.js": 1,
+        "./new-task-store.js": 1,
+        "./onboarding-store.js": 1,
+        "./projects-store.js": 1,
+        "./resource-store.js": 1,
+        "./revision-draft.js": 1,
+        "./scheduled-tasks-store.js": 1,
+        "./sessions-store.js": 1,
+        "./settings-store.js": 1,
+        "./toast-api.js": 1,
+        "./turn-actions-store.js": 1,
+        "./ui-store.js": 1,
+        "./update-store.js": 1,
+        "zustand/vanilla": 1
+      }
+    },
+    "src/renderer/store/mcp-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/mcp.js": 1,
+        "./resource-store.js": 1
+      }
+    },
+    "src/renderer/store/new-task-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/new-tasks.js": 1,
+        "../lib/ported/shell-chat-model-selection.js": 1,
+        "./resource-store.js": 1,
+        "zustand/vanilla": 1
+      }
+    },
+    "src/renderer/store/onboarding-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "clearTimeout": 1,
+        "setTimeout": 1
+      },
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/onboarding.js": 1,
+        "./resource-store.js": 1,
+        "zustand/vanilla": 1
+      }
+    },
+    "src/renderer/store/projects-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/app.js": 1,
+        "../bridge/projects.js": 1,
+        "./resource-store.js": 1
+      }
+    },
+    "src/renderer/store/resource-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "zustand/vanilla": 1
+      }
+    },
+    "src/renderer/store/revision-draft.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "zustand/vanilla": 1
+      }
+    },
+    "src/renderer/store/scheduled-tasks-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/scheduled-tasks.js": 1,
+        "./resource-store.js": 1
+      }
+    },
+    "src/renderer/store/session-event-handlers.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "requestAnimationFrame": 1,
+        "window.setTimeout": 2
+      },
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [
+        "createAppShellSessionDisplayBatch",
+        "createAppShellSessionEventHandlers"
+      ],
+      "dependencyPaths": {
+        "../lib/ported/model-connection-errors.js": 1,
+        "../locales/conversation-copy.js": 1,
+        "@maka/ui": 1
+      }
+    },
+    "src/renderer/store/session-list-model.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../lib/ported/branch-banner.js": 1,
+        "../lib/ported/session-nav-filter.js": 1,
+        "../lib/ported/stale-sessions.js": 1,
+        "@maka/core/session-revisions": 1
+      }
+    },
+    "src/renderer/store/session-state.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/store/sessions-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/sessions.js": 1,
+        "../lib/ported/new-task-reload-intent.js": 1,
+        "./resource-store.js": 1,
+        "zustand/vanilla": 1
+      }
+    },
+    "src/renderer/store/settings-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../shared/settings-ownership.js": 1,
+        "../bridge/settings.js": 1,
+        "./resource-store.js": 1
+      }
+    },
+    "src/renderer/store/toast-api.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./toast-store.js": 1
+      }
+    },
+    "src/renderer/store/toast-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "setTimeout": 1
+      },
+      "hookCalls": {
+        "useEffect": 1,
+        "useState": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "react": 1
+      }
+    },
+    "src/renderer/store/turn-actions-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/sessions.js": 1,
+        "./resource-store.js": 1,
+        "zustand/vanilla": 1
+      }
+    },
+    "src/renderer/store/ui-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../lib/ported/browser-storage.js": 1,
+        "../lib/ported/nav-selection.js": 1,
+        "../lib/ported/session-list-layout.js": 1,
+        "../lib/ported/workbar-layout.js": 1,
+        "../lib/ported/workbar-tabs.js": 1,
+        "zustand/vanilla": 1
+      }
+    },
+    "src/renderer/store/update-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/app.js": 1,
+        "./resource-store.js": 1,
+        "zustand/vanilla": 1
+      }
+    },
+    "src/renderer/store/window-commands.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/app-window.js": 1
+      }
+    },
+    "src/renderer/store/workbar-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "zustand/vanilla": 1
+      }
+    },
     "src/shared/desktop-connection-snapshot.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -531,14 +5890,5 @@
       ]
     }
   ],
-  "windowMakaPortedDebt": [],
-  "rewriteBaseline": {
-    "phase": "0b",
-    "plan": "docs/enterprise/frontend-rewrite-plan.md",
-    "note": "The Astryx renderer was deleted wholesale and the new tree is being written in its place; the pre-rewrite ledger describes files that no longer exist. While this field is present, files the rewrite authors (the plan §5 directories, plus the roots named in resetPaths) are not treated as drift into the legacy zone, and the entry's transitive closure stops at them. Phase 6 removes this field and the monotonic ratchet resumes at full strength against the tree the rewrite produced.",
-    "resetPaths": [
-      "src/renderer/app.tsx",
-      "src/renderer/main.tsx"
-    ]
-  }
+  "windowMakaPortedDebt": []
 }

@@ -21,7 +21,9 @@ import React, { useState } from 'react';
 import { Button } from './button';
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
 import { menuActionItemClass } from './menu-variants';
+import { useUiLocale } from '@maka/ui';
 import { Anthropicon } from '../icons';
+import { getUiCopy } from '../../locales/ui-copy';
 import { cn } from '../../lib/cn';
 
 interface SplitButtonAction {
@@ -110,7 +112,7 @@ export default function SplitButton({
             size={size}
             disabled={disabled}
             className="-ml-px aspect-square rounded-l-none px-0"
-            aria-label="More actions"
+            aria-label={getUiCopy(useUiLocale()).moreActions}
           >
             {/* caret 压到 muted:它是"还有别的选择"的提示,不该和主键文案抢注意 */}
             <Anthropicon name="caretDown" size={16} className="text-text-muted" />

@@ -42,11 +42,13 @@ async function sendNativeText(app: ElectronApplication, value: string): Promise<
 
 async function expectSelected(input: Locator): Promise<void> {
   await expect
-    .poll(() => input.evaluate((element: HTMLInputElement) => ({
-      start: element.selectionStart,
-      end: element.selectionEnd,
-      length: element.value.length,
-    })))
+    .poll(() =>
+      input.evaluate((element: HTMLInputElement) => ({
+        start: element.selectionStart,
+        end: element.selectionEnd,
+        length: element.value.length,
+      })),
+    )
     .toEqual(expect.objectContaining({ start: 0 }));
   await expect
     .poll(() => input.evaluate((element: HTMLInputElement) => element.selectionEnd))
@@ -60,35 +62,37 @@ test('rename inputs own native focus for menu and double-click entry', async ({
   await page.keyboard.press('Escape');
   await expect(page.locator('[data-maka-contract="search-modal"]')).not.toBeVisible();
 
-  const sidebar = page.getByRole('navigation', { name: '任务列表' });
-  const rowButton = sidebar.getByRole('button', { name: /^任务 00 / }).first();
+  const sidebar = page.getByLabel('任务列表', { exact: true });
+  const rowButton = sidebar.getByRole('option', { name: /^任务 00/ }).first();
   const row = rowButton.locator('..');
-  const taskActions = sidebar.getByRole('button', { name: /^任务 00 .*任务操作$/ });
+  const taskActions = row.getByRole('button', { name: /操作/ });
 
   await row.hover();
   await taskActions.click();
   await page.getByRole('menuitem', { name: '重命名', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: '任务名称' })).toBeFocused();
   await sendNativeText(app, 'MENU');
-  const taskInput = page.getByRole('textbox', { name: '重命名任务' });
+  const taskInput = page.getByRole('textbox', { name: '任务名称' });
   await expect(taskInput).toHaveValue('MENU');
   await page.keyboard.press('Escape');
   await expect(taskActions).toBeFocused();
 
   await rowButton.dblclick();
-  const doubleClickInput = page.getByRole('textbox', { name: '重命名任务' });
+  const doubleClickInput = page.getByRole('textbox', { name: '任务名称' });
   await expectSelected(doubleClickInput);
   await sendNativeText(app, 'DOUBLE');
   await expect(doubleClickInput).toHaveValue('DOUBLE');
   await page.keyboard.press('Escape');
   await expect(rowButton).toBeFocused();
 
-  await sidebar.getByRole('radio', { name: '按项目', exact: true }).click();
   const projectActions = page.getByRole('button', {
-    name: '示例项目 项目操作',
+    name: '项目「示例项目」的操作',
     exact: true,
   });
+  await projectActions.locator('xpath=ancestor::*[@data-maka-contract="project-row"][1]').hover();
   await projectActions.click();
-  await page.getByRole('menuitem', { name: '重命名', exact: true }).click();
+  await page.getByRole('menuitem', { name: '重命名项目', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: '重命名项目' })).toBeFocused();
   await sendNativeText(app, 'PROJECT');
   const projectInput = page.getByRole('textbox', { name: '重命名项目' });
   await expect(projectInput).toHaveValue('PROJECT');

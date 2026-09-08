@@ -47,6 +47,7 @@
 import { execFileSync } from 'node:child_process';
 import {
   existsSync,
+  lstatSync,
   readFileSync,
   readdirSync,
   realpathSync,
@@ -521,7 +522,9 @@ function listCheckoutFiles(root) {
   )
     .split('\0')
     .filter(Boolean);
-  const unique = [...new Set(names)].sort();
+  const unique = [...new Set(names)]
+    .filter((path) => lstatSync(join(root, path), { throwIfNoEntry: false }) !== undefined)
+    .sort();
   const ignored = exportIgnoredPaths(root, unique);
   const released = unique.filter((path) =>
     path

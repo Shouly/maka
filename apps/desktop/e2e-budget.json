@@ -1,17 +1,17 @@
 {
   "policy": [
-    "A test belongs in this tier only when it needs a real Electron window: an OS dialog, a main-process round trip, input released outside the window, persistence across a renderer reload, or a cross-process lifecycle.",
-    "Layout geometry, renderer state machines and pure CSS go to a Storybook play function; main-process logic goes to node --test. See #4761.",
-    "Every spec below records the Electron-owned mechanism it needs. If you cannot name one, the test does not belong here."
+    "Use Electron for native input, IPC, restart persistence, PTY lifecycle and real accessibility-tree checks.",
+    "Pure renderer decisions belong in renderer state or component tests; Storybook is not installed.",
+    "Every spec names the cross-process or native contract. Scope-deferred contracts are documented in docs/enterprise/phase-reports/phase-6.md."
   ],
   "specs": {
+    "accessibility.spec.ts": {
+      "tests": 1,
+      "electron": "Chromium accessibility tree for the real Electron shell and IPC-backed pages"
+    },
     "composer-directory-reference.spec.ts": {
       "tests": 1,
       "electron": "the folder reference has to survive a renderer reload and still agree with the Host's session record"
-    },
-    "context-window-save.spec.ts": {
-      "tests": 1,
-      "electron": "the saved window is read back from the Host's connection snapshot, not from renderer state"
     },
     "new-task-reload.spec.ts": {
       "tests": 2,
@@ -19,11 +19,11 @@
     },
     "partial-history-notice.spec.ts": {
       "tests": 1,
-      "electron": "bounded paging crosses renderer, preload and Host transcript storage; the return-to-tail assertion also uses a real pointer hit-test"
+      "electron": "bounded history paging and tail restoration cross renderer, preload and Host storage"
     },
     "proxy-password-editing.spec.ts": {
       "tests": 1,
-      "electron": "the password never reaches the renderer; only the Host can report passwordConfigured and authenticate offline"
+      "electron": "write-only credential persistence and actual authentication against a loopback proxy"
     },
     "quote-window-boundary.spec.ts": {
       "tests": 1,
@@ -39,23 +39,23 @@
     },
     "session-local-recovery.spec.ts": {
       "tests": 3,
-      "electron": "SQLite admission crosses preload and main, survives both renderer reload and complete Electron restart, and cached history must render when the live IPC endpoint is unavailable"
+      "electron": "durable desktop admission survives Electron restart, an unsent draft persists, and an injected admission failure retries exactly once"
     },
     "session-workbar.spec.ts": {
-      "tests": 6,
-      "electron": "Git changes re-read on window focus, terminal PTY ownership across Sessions, Side Chat's fork lifecycle, a first send that has to reach the Host, and per-Session collapse persisted across a renderer reload; the composer-usage test is renderer-only and rides along on those windows until app-shell.tsx's composer-to-workbar wiring has a story host"
+      "tests": 3,
+      "electron": "per-session pane persistence, Git focus refresh, and real PTY ownership and stop across sessions"
     },
     "settings.spec.ts": {
-      "tests": 4,
-      "electron": "the preload makaE2eLatch holds the settings chunk mid-load, and the rename it commits is a Host write; the workbar-chrome test rides along on that window and would move to a story the day app-shell.tsx's settings wiring has one"
+      "tests": 2,
+      "electron": "Host settings writes survive renderer reload, while settings navigation restores the active session workbar"
     },
     "sidebar-project-reload.spec.ts": {
       "tests": 1,
-      "electron": "rail grouping has to be rebuilt from persisted project state after a renderer reload"
+      "electron": "Projects and Recents rebuild the real Host catalog after renderer reload"
     },
     "skill-draft-lifecycle.spec.ts": {
-      "tests": 2,
-      "electron": "revision retry and cancel are Host-owned draft transitions across a parent and a child Session"
+      "tests": 1,
+      "electron": "persisted skill document reload and submission through preload to the real Host"
     },
     "slash-command-compact.spec.ts": {
       "tests": 1,
@@ -68,14 +68,6 @@
     "transcript-scroll-cost.spec.ts": {
       "tests": 3,
       "electron": "the perf budget is measured from CDP wheel input and the browser's own render skipping"
-    },
-    "workhub-layout.spec.ts": {
-      "tests": 1,
-      "electron": "Coordination startup failure comes from the Host, and recovery needs a default model written back to it"
-    },
-    "workhub-reconstruction.spec.ts": {
-      "tests": 2,
-      "electron": "delegation linkage is rebuilt by the Host across navigation and across Sessions"
     },
     "zh-tw-locale.spec.ts": {
       "tests": 1,

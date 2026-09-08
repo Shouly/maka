@@ -24,8 +24,6 @@
       "project": ["src/**/*.{ts,tsx}", "e2e/**/*.ts", "scripts/**/*.mjs"],
       "ignoreBinaries": ["plutil", "pgrep"],
       "ignoreDependencies": [
-        "@tiptap/extension-mention",
-        "@tiptap/suggestion",
         "@types/katex",
         "fast-deep-equal",
         "mermaid",
@@ -34,7 +32,6 @@
         "throttleit",
         "tiptap-markdown"
       ],
-      "ignoreUnresolved": ["../src/renderer/features/connection-settings"],
       "ignore": ["src/shared/session-local-contract.d.ts"]
     },
     "packages/ui": {

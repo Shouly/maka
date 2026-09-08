@@ -17,60 +17,65 @@
   under the License.
 -->
 
-# Renderer (`apps/desktop/src/renderer`)
+# Desktop renderer
 
-**Status: Phase 1 bridge and state implemented; Phase 2 shell is next.**
-The default entry is `components/dev/RuntimeDebug.tsx`, a temporary acceptance
-surface over real Runtime Host sessions. It lists sessions, submits/stops turns,
-shows the `TurnViewModel[]` projection, pages history, and exposes interaction
-responses. The Design system button retains the Phase 0b component preview.
+The enterprise renderer implements the shell, transcript and TipTap composer, interaction prompts,
+five right-pane faces, settings and the Skills/MCP/Scheduled module pages. Phase reports and
+remaining acceptance limits live in [`docs/enterprise`](../../../../docs/enterprise/).
 
-The plan of record is
-[`docs/enterprise/frontend-rewrite-plan.md`](../../../../docs/enterprise/frontend-rewrite-plan.md).
-The preload and turn contracts remain those in
-[`maka-renderer-contract.md`](../../../../docs/enterprise/research/maka-renderer-contract.md).
-See [PHASE1.md](./PHASE1.md) for the handoff, verification commands and limits.
+## Data flow
 
-## Layout
+`bridge/` is the only production renderer entry to `window.maka`. Zustand stores own the
+session catalog, active-session subscriptions, Host-scoped resources, mutation state and layout.
+`hooks/` binds those lifetimes to React; components consume projections and call store actions.
+The active-session pipeline reuses `@maka/ui`'s event projection and `TurnViewModel`, with a
+bounded transcript range. Do not create a second event reducer inside a component.
 
-The tree follows plan §5. Phase 2 consumes the existing stores and hooks; it does not introduce another event pipeline.
-
-| Path | What it is |
+| Path | Responsibility |
 | --- | --- |
-| `index.html` | The pinned entry document. Three `<meta>` (charset, viewport, exact CSP), one `<script type="module" src="/main.tsx">`, and the inline `.maka-preload` skeleton in the design system's surface-1 colours. `scripts/vite-renderer-entry-contract.ts` fails the build on any other shape. |
-| `main.tsx` | Bootstrap. Cached theme + font size, the e2e fixture's document state and the UI locale, all before `createRoot`; `notifyRendererReady` after, inside two nested frames, so main reveals the window. |
-| `app.tsx` | Providers (locale, tooltip, toaster), the error boundary, the `.appFrame` root and the one draggable titlebar strip. |
-| `styles/globals.css` | The whole palette. Copied from the reference design system (`@theme inline`, the 0.5px hairline utilities, fonts, motion, Prism roles) with the relx-server-only blocks removed, plus a delimited *Maka desktop additions* block for what the main process requires. There is no `tailwind.config`: this file is the configuration. |
-| `hooks/` | Renderer lifetime, scoped subscriptions, `useActiveTurns`, `useLiveTurnSnapshot`, and `useProjectContext`. |
-| `bridge/` | The only modules allowed to name `window.maka`. Typed, optional-chained wrappers; `check-renderer-architecture.mjs` enforces the boundary. |
-| `components/ui/` | The ported design-system primitives — button, dialog, dropdown-menu, popover, select, switch, scroll-area, toast, tooltip, fields, skeletons, shimmer, the markdown/code/diff/json renderers, and the class-string modules. |
-| `components/icons/` | `Anthropicon.tsx` (the icon font is the icon system — no icon library) and the wordmark. |
-| `components/layout/`, `components/dev/` | `MainHeader` geometry; temporary runtime and design-system acceptance pages. Phase 2 replaces the runtime debug surface. |
-| `lib/` | `cn`, `theme.ts` (light/dark/auto, titlebar sampling and modal dim), `fixture.ts`, the markdown pipeline helpers, and `ported/` — reused pure modules carried over from the old renderer; existing paths remain stable for main-process contract tests. |
-| `store/` | Zustand stores. Session catalog, active transcript/live events/interactions/queue, turn operations, scoped projects/connections/settings, UI/workbar layout and toasts. |
-| `locales/` | Typed `*-copy.ts` catalogs (`UiCatalog` shape, zh-CN / zh-TW / en). |
-| `assets/` | `fonts/anthropic/*.woff2` (7 files, Anthropicons included) and the provider brand SVGs. |
-| `public/THIRD_PARTY_LICENSES.txt` | Byte-compared against the packaged copy by `build:renderer`; regenerate with `npm run generate:third-party-notices`. |
-| `computer-use-overlay/engine/` | Not renderer UI. `src/overlay/cursor-overlay.ts` and `src/main/computer-use/` import this engine, so it stays at this path. |
-| `maka-tokens.css`, `astryx-theme/maka.css` | Also not renderer UI: `scripts/build-cursor-overlay.mjs` slices their token prefixes into `dist/overlay/browser-dialog-design-tokens.css`, which `src/main/browser-message-box.ts` loads. They leave when that seam does. |
+| `main.tsx`, `app.tsx` | Cached theme/locale bootstrap, fixtures, providers, error boundary and renderer-ready handshake |
+| `components/layout/` | Desktop titlebar, sidebar, shell navigation and global overlays |
+| `components/session/`, `components/composer/` | Transcript, history, tool timeline, drafts, steering and interaction prompts |
+| `components/workbar/` | Files, Git changes, xterm, trace and native browser viewport |
+| `components/settings/`, `components/modules/` | Host-scoped settings and module management |
+| `components/ui/`, `styles/globals.css` | Shared primitives and design tokens |
+| `store/`, `hooks/`, `bridge/` | State ownership, subscriptions and typed preload wrappers |
+| `lib/ported/` | Reused pure models and browser persistence helpers |
+| `locales/` | Typed zh-CN / zh-TW / en catalogs |
+| `components/dev/` | Explicit debug views; not the default application surface |
 
-## Rules that outlive the rewrite
+The composer persists document/folder drafts under `maka-composer-drafts`; File objects stay
+process-local. Successful admission clears only the submitted snapshot. Unknown outcomes retain
+the draft and admission id. `maka-new-task-reload-intent-v1` preserves an explicit welcome
+surface during renderer reload; ordinary startup restores available non-archived history.
 
-- `window.maka` is reachable only from `src/renderer/bridge/` and `main.tsx`.
-  `check-renderer-architecture.mjs` enforces it; the files still carrying the
-  old access are listed in `renderer-architecture.json` under
-  `windowMakaPortedDebt` and that list may only shrink.
-- Colours are named, never written. Under `components/**` and in `app.tsx` the
-  architecture check rejects Tailwind arbitrary colour values (`bg-[#…]`) and
-  raw colour literals in inline styles and class-string modules; use a
-  semantic class from `@theme inline`, or `bg-[var(--token)]` for a token that
-  has no utility. `components/icons/**` (brand marks) and `components/dev/**`
-  are exempt.
-- No `electron` or Node builtins in shipped renderer code. Node-only test runners live under `store/__tests__/` and are never imported by the app. No `next/*`.
-- Every user-visible string goes through a `UiCatalog` with zh-CN, zh-TW and
-  en. The one exception is `components/dev/`, which Phase 2 deletes.
-- Every source file carries the ASF header.
-- The fixed main-process contracts: `.appFrame`, `.maka-error-surface`,
-  `notifyRendererReady`, `data-maka-file-drop-target`,
-  `data-maka-contract="search-modal"`, `--h-titlebar: 36px`, one
-  `-webkit-app-region: drag` surface, and the `maka-*-v1` localStorage keys.
+## Contracts and checks
+
+Preserve `index.html`'s exact CSP and entry shape, `.appFrame`, `.maka-error-surface`,
+`notifyRendererReady`, `data-maka-file-drop-target`, search-modal diagnostics, existing storage
+keys, and the single titlebar drag surface. No Node/Electron imports in production renderer
+code. Legacy overlay/browser-dialog token assets still have native consumers; they are not
+unused renderer CSS.
+
+From the repository root:
+
+```sh
+npm run build
+npm --workspace @maka/desktop run typecheck
+npm run lint
+npm run format:check
+npm run check:renderer-architecture
+npm run check:locale-hygiene
+npm run check:third-party-notices
+npm run check:e2e-budget
+npm --workspace @maka/desktop run e2e
+npm --workspace @maka/desktop run test:renderer-smoke
+npm --workspace @maka/desktop run test:composer-prompts
+npm test
+```
+
+E2E uses disposable profiles and FakeBackend with real preload, Runtime Host and SQLite.
+`e2e/accessibility.spec.ts` audits Chromium's accessibility tree using the repository's
+unnamed-actionable-role rules. `scripts/desktop-real-window-smoke.mjs --programmatic-only`
+checks native window flags and search-modal diagnostics. Manual OS edge dragging and live
+provider credentials remain separate acceptance evidence; automated passes do not certify them.

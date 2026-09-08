@@ -1,15 +1,3 @@
----
-doc_id: frontend-css-governance.zh-CN
-title: "Frontend CSS governance"
-language: zh-CN
-source_language: en
-implementation_status: current
-document_status: current
-translation_status: synced
-last_verified: 2026-09-04
-owners:
-  - maka-backend
----
 <!--
   Licensed to the Apache Software Foundation (ASF) under one
   or more contributor license agreements.  See the NOTICE file
@@ -29,75 +17,19 @@ owners:
   under the License.
 -->
 
-# 前端 CSS 治理规范
+# 企业版前端 CSS 约定
 
-[English](./frontend-css-governance.md)
+当前设计以 [globals.css](../apps/desktop/src/renderer/styles/globals.css) 和
+`components/ui/` 为准。旧 Astryx 契约、文字仅两档规则及 Storybook 流程已退出本分支。
 
-本仓库的前端样式体系由 Astryx、`@maka/ui` 产品组合样式和 renderer surface CSS 组成。级联顺序必须被明确约束，不能随意改动。
+- 组件使用语义颜色；新增颜色放入 token 文件。架构检查禁止组件中的任意色值。
+- 菜单、对话框和输入控件复用现有 Radix 基元。布局由所属组件管理，共享行为和原生窗口适配才进入全局 CSS。
+- 同时验证亮色、暗色和减少动态效果模式。图标按钮必须有本地化名称和可见的键盘焦点。
+- 保留标题栏拖拽边界、模态层级、内嵌浏览器隐藏规则和有界历史的滚动控制。长列表避免 `transition-all`。
+- 新渲染层已纳入 Biome。提交前运行格式、lint、架构、多语言检查以及 `git diff --check`。
+- 状态判断放入 renderer state 测试；跨 IPC、重启持久化、原生输入和终端生命周期放入有预算的 Electron E2E。
+- 涉及视觉变化时附受影响页面的亮暗截图及测试结果。E2E 的 AX 检查核验可操作控件的可访问名称。
 
-## 1. 入口文件规则
+架构清单和第三方许可证由脚本生成。原生覆盖层和浏览器对话框仍使用部分旧样式资源，不能因为 React 未引用就删除。
 
-- `apps/desktop/src/renderer/styles.css` 只能作为样式入口文件使用。
-- 它只允许包含 `@import` 和顶层入口编排语句。
-- 新增的 per-surface selector 规则块必须放在 `apps/desktop/src/renderer/styles/**/*.css`。
-- `maka-tokens.css` 尾部的历史 recipe 和 `reference-shell.css` 是待收敛的 transitional exceptions；不要继续向这两个例外增加 surface 规则。
-
-### Selector 命名
-
-- renderer 与 `@maka/ui` 的共享 selector 使用 kebab-case `.maka-*` 方言。
-- 已有的 `styles/settings/**` surface 使用 camelCase `.settings*` selector；settings 内的新 selector 应延续该方言，避免同一 surface 混用两套命名。
-- 在 settings 的 concern 文件之间移动现有 selector 时不要求全仓重命名；未来若统一命名，应作为显式兼容性改动单独推进。
-
-## 2. Layer 规则
-
-- 纯展示规则应尽量放进：
-  - `@layer base`
-  - `@layer components`
-- 只有在构建链明确支持时，才使用 `@import "./file.css" layer(components)`。
-- 不要使用 `@layer { @import ... }` 这种写法。
-
-Astryx reset 和组件层在前，Maka base token 与产品 `components` 在后。应在最近的现有职责缝隙解决覆盖，不再增加更高优先级的兼容层。
-
-## 4. `!important` 使用规则
-
-- 默认只允许两类场景使用 `!important`：
-  - 无障碍辅助规则，例如 `.maka-visually-hidden`
-  - reduced-motion / e2e-fixture 这类测试或可访问性覆盖
-- 其他任何 `!important` 都必须同时满足：
-  - 就地写明 `Justified:` 注释
-- 如果 primitive API 或语义类可以直接表达，优先在该职责层解决，不要继续叠更多 `!important`。
-
-## 5. Token 规则
-
-- 自定义 CSS 变量统一放在：
-  - `apps/desktop/src/renderer/maka-tokens.css`
-- 只有组件局部变量允许例外，但必须带：
-  - `/* local: ... */`
-- 禁止新增以下硬编码值：
-  - 颜色
-  - radius
-  - 未纳入约束体系的 z-index
-
-## 6. 这些规则靠什么保证
-
-这些规则靠评审保证。静态正确性交给 Biome、Knip 和 typecheck；accessibility
-保留聚焦的检查。CSS 使用关系和 Story 文案不再由全仓 regex baseline 决定。
-
-- renderer CSS 的行为在它真正渲染的地方验证：Storybook、app，或对真实界面的 e2e 断言。
-- selector 应随其 source 或 surface 一起删除，不维护运行时字符串 allowlist。
-
-## 7. 推荐改动顺序
-
-调整 renderer CSS 时，建议按下面顺序推进：
-
-1. 把 `styles.css` 中的真实规则块迁到子文件。
-2. 通用组件外观留给 Astryx，产品组合样式放在 `@maka/ui` 或对应 renderer surface。
-3. 清理 dead selector。
-4. 只有在 primitive / layer 架构已经稳定后，再移除剩余 `!important`。
-
-## 8. 当前治理原则
-
-- 先保证 CI 护栏可信，再做结构收敛。
-- 先删 dead CSS，再谈样式“美化性重构”。
-- 对共享 `Button` / `Textarea` / `EmptyState` 这类 primitive 的覆盖，优先从组件接口层解决，不要长期依赖 renderer CSS 强压。
-- 任何会影响级联顺序的改动，都必须配合对真实渲染结果的最小回归验证一起提交。
+范围与未完成验收分别见[重写计划](enterprise/frontend-rewrite-plan.md)和[发布清单](enterprise/release-checklist.md)。

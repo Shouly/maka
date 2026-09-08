@@ -32,7 +32,7 @@ export function InlineRename(props: {
   value: string;
   label: string;
   onCommit: (name: string) => void;
-  onCancel: () => void;
+  onCancel: (restoreFocus?: boolean) => void;
   className?: string;
 }) {
   const [draft, setDraft] = useState(props.value);
@@ -47,13 +47,13 @@ export function InlineRename(props: {
     if (settled.current) return;
     settled.current = true;
     const name = draft.trim();
-    if (!name || name === props.value) props.onCancel();
+    if (!name || name === props.value) props.onCancel(false);
     else props.onCommit(name);
   };
   const cancel = () => {
     if (settled.current) return;
     settled.current = true;
-    props.onCancel();
+    props.onCancel(true);
   };
   return (
     <input

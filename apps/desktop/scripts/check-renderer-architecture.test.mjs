@@ -687,10 +687,7 @@ describe('renderer architecture checker fixtures', () => {
           violations,
           /features\/alpha\/electron-import\.ts:.*feature.*electron/iu,
         );
-        assertHasViolation(
-          violations,
-          /features\/alpha\/node-import\.ts:.*feature.*node:fs/iu,
-        );
+        assertHasViolation(violations, /features\/alpha\/node-import\.ts:.*feature.*node:fs/iu);
         assert.ok(
           !violations.some((violation) => violation.includes('controller.test.ts')),
           `Feature tests may use the Node test environment:\n${violations.join('\n')}`,
@@ -701,20 +698,29 @@ describe('renderer architecture checker fixtures', () => {
 
   it('rejects environment imports throughout the rewritten renderer, even after ledger regeneration', async () => {
     const directories = ['bridge', 'store', 'components/ui', 'hooks', 'lib', 'locales'];
-    const files = Object.fromEntries(directories.map(directory => [
-      `src/renderer/${directory}/probe.ts`,
-      "import { ipcRenderer } from 'electron'; import { readFile } from 'node:fs/promises'; export const probe = [ipcRenderer, readFile];",
-    ]));
-    files['src/renderer/store/__tests__/probe.test.ts'] = "import assert from 'node:assert/strict'; assert.ok(true);";
-    await withDesktopFixture(files, desktopRoot => {
+    const files = Object.fromEntries(
+      directories.map((directory) => [
+        `src/renderer/${directory}/probe.ts`,
+        "import { ipcRenderer } from 'electron'; import { readFile } from 'node:fs/promises'; export const probe = [ipcRenderer, readFile];",
+      ]),
+    );
+    files['src/renderer/store/__tests__/probe.test.ts'] =
+      "import assert from 'node:assert/strict'; assert.ok(true);";
+    await withDesktopFixture(files, (desktopRoot) => {
       const config = generateArchitectureConfig(desktopRoot, architectureConfig());
       const violations = violationsFor(desktopRoot, config);
       for (const directory of directories) {
         for (const dependency of ['electron', 'node:fs/promises']) {
-          assert.ok(violations.some(item => item.includes(`${directory}/probe.ts:`) && item.includes(`forbidden environment module: ${dependency}`)));
+          assert.ok(
+            violations.some(
+              (item) =>
+                item.includes(`${directory}/probe.ts:`) &&
+                item.includes(`forbidden environment module: ${dependency}`),
+            ),
+          );
         }
       }
-      assert.ok(!violations.some(item => item.includes('__tests__/probe.test.ts')));
+      assert.ok(!violations.some((item) => item.includes('__tests__/probe.test.ts')));
     });
   });
 
@@ -868,24 +874,17 @@ describe('renderer architecture checker fixtures', () => {
       export const legacySessionHelper = 'legacy-session';
     `;
 
-    await withDesktopFixture(
-      transitiveAppShellFiles(helperSource),
-      (desktopRoot) => {
-        const generated = generateArchitectureConfig(
-          desktopRoot,
-          transitiveAppShellSeedConfig(),
-        );
+    await withDesktopFixture(transitiveAppShellFiles(helperSource), (desktopRoot) => {
+      const generated = generateArchitectureConfig(desktopRoot, transitiveAppShellSeedConfig());
 
-        assert.deepEqual(
-          Object.keys(generated.legacyAppShell.closure),
-          [TRANSITIVE_LEGACY_HELPER_PATH],
-        );
-        assert.deepEqual(
-          generated.legacyAppShell.closure[TRANSITIVE_LEGACY_HELPER_PATH],
-          capabilityDebtForSource(helperSource, TRANSITIVE_LEGACY_HELPER_PATH),
-        );
-      },
-    );
+      assert.deepEqual(Object.keys(generated.legacyAppShell.closure), [
+        TRANSITIVE_LEGACY_HELPER_PATH,
+      ]);
+      assert.deepEqual(
+        generated.legacyAppShell.closure[TRANSITIVE_LEGACY_HELPER_PATH],
+        capabilityDebtForSource(helperSource, TRANSITIVE_LEGACY_HELPER_PATH),
+      );
+    });
   });
 
   it('prefers runtime source over a same-stem declaration in the AppShell closure', async () => {
@@ -908,10 +907,7 @@ describe('renderer architecture checker fixtures', () => {
         [runtimePath]: runtimeSource,
       },
       (desktopRoot) => {
-        const generated = generateArchitectureConfig(
-          desktopRoot,
-          transitiveAppShellSeedConfig(),
-        );
+        const generated = generateArchitectureConfig(desktopRoot, transitiveAppShellSeedConfig());
 
         assert.deepEqual(Object.keys(generated.legacyAppShell.closure), [runtimePath]);
         assert.deepEqual(
@@ -947,10 +943,9 @@ describe('renderer architecture checker fixtures', () => {
           desktopRoot,
           transitiveAppShellSeedConfig(),
         );
-        assert.deepEqual(
-          Object.keys(currentConfig.legacyAppShell.closure),
-          [TRANSITIVE_LEGACY_HELPER_PATH],
-        );
+        assert.deepEqual(Object.keys(currentConfig.legacyAppShell.closure), [
+          TRANSITIVE_LEGACY_HELPER_PATH,
+        ]);
 
         const baseConfig = structuredClone(currentConfig);
         const baseHelperDebt = baseConfig.legacyAppShell.closure[TRANSITIVE_LEGACY_HELPER_PATH];
@@ -997,10 +992,10 @@ describe('renderer architecture checker fixtures', () => {
           desktopRoot,
           transitiveAppShellSeedConfig(),
         );
-        assert.deepEqual(
-          Object.keys(currentConfig.legacyAppShell.closure),
-          [TRANSITIVE_LEGACY_HELPER_PATH, 'src/shared/root-bridge.ts'],
-        );
+        assert.deepEqual(Object.keys(currentConfig.legacyAppShell.closure), [
+          TRANSITIVE_LEGACY_HELPER_PATH,
+          'src/shared/root-bridge.ts',
+        ]);
 
         const baseConfig = structuredClone(currentConfig);
         baseConfig.legacyAppShell.closure[TRANSITIVE_LEGACY_HELPER_PATH].bridgePaths = {};
@@ -1116,17 +1111,10 @@ describe('renderer architecture checker fixtures', () => {
         const rootOwnedConfig = generateArchitectureConfig(desktopRoot, appShellOwnedConfig);
         assert.deepEqual(Object.keys(rootOwnedConfig.legacyAppShell.closure), []);
         assert.deepEqual(Object.keys(rootOwnedConfig.rootDebtClosure), [sharedPath]);
-        assert.deepEqual(
-          violationsFor(desktopRoot, rootOwnedConfig, appShellOwnedConfig),
-          [],
-        );
+        assert.deepEqual(violationsFor(desktopRoot, rootOwnedConfig, appShellOwnedConfig), []);
 
         await writeFile(join(desktopRoot, compositionPath), compositionUsesAppShell, 'utf8');
-        await writeFile(
-          join(desktopRoot, TRANSITIVE_APP_SHELL_PATH),
-          appShellOwnsSupport,
-          'utf8',
-        );
+        await writeFile(join(desktopRoot, TRANSITIVE_APP_SHELL_PATH), appShellOwnsSupport, 'utf8');
         const regressedConfig = generateArchitectureConfig(desktopRoot, rootOwnedConfig);
         assertHasViolation(
           violationsFor(desktopRoot, regressedConfig, rootOwnedConfig),
@@ -1191,15 +1179,8 @@ describe('renderer architecture checker fixtures', () => {
           `,
           'utf8',
         );
-        const regressedConfig = generateArchitectureConfig(
-          desktopRoot,
-          providerOwnedConfig,
-        );
-        const violations = violationsFor(
-          desktopRoot,
-          regressedConfig,
-          providerOwnedConfig,
-        );
+        const regressedConfig = generateArchitectureConfig(desktopRoot, providerOwnedConfig);
+        const violations = violationsFor(desktopRoot, regressedConfig, providerOwnedConfig);
 
         assertHasViolation(
           violations,
@@ -1283,10 +1264,7 @@ describe('renderer architecture checker fixtures', () => {
         export const legacySessionHelper = 'legacy-session';
       `),
       async (desktopRoot) => {
-        const staleConfig = generateArchitectureConfig(
-          desktopRoot,
-          transitiveAppShellSeedConfig(),
-        );
+        const staleConfig = generateArchitectureConfig(desktopRoot, transitiveAppShellSeedConfig());
         const expandedHelperSource = `
           import { legacySessionStore } from './legacy-session-store.js';
           export const legacySessionHelper = legacySessionStore;
@@ -1493,13 +1471,10 @@ describe('renderer architecture checker fixtures', () => {
   });
 
   it('accepts the single pinned renderer module entry', async () => {
-    await withDesktopFixture(
-      rendererEntryContractFiles(),
-      (desktopRoot) => {
-        const config = generateArchitectureConfig(desktopRoot, rendererEntrySeedConfig());
-        assert.deepEqual(checkRendererArchitecture({ config, desktopRoot }), []);
-      },
-    );
+    await withDesktopFixture(rendererEntryContractFiles(), (desktopRoot) => {
+      const config = generateArchitectureConfig(desktopRoot, rendererEntrySeedConfig());
+      assert.deepEqual(checkRendererArchitecture({ config, desktopRoot }), []);
+    });
   });
 
   it('rejects replacing the pinned renderer module entry with an alternate source', async () => {
@@ -1729,7 +1704,10 @@ describe('renderer architecture checker fixtures', () => {
   it('rejects shadowing the pinned Vite config factory behind a local binding', async () => {
     const files = rendererEntryContractFiles();
     files['vite.config.ts'] = files['vite.config.ts']
-      .replace("import { defineConfig } from 'vite';", "import { defineConfig as viteDefineConfig } from 'vite';")
+      .replace(
+        "import { defineConfig } from 'vite';",
+        "import { defineConfig as viteDefineConfig } from 'vite';",
+      )
       .replace(
         "const REPO_ROOT = '/fixture';",
         `
@@ -1806,9 +1784,7 @@ describe('renderer architecture checker fixtures', () => {
       '/main.tsx',
       './assets/index-canonical.js',
     );
-    assert.doesNotThrow(() =>
-      assertRendererEntryHtml(emittedHtml, './assets/index-canonical.js'),
-    );
+    assert.doesNotThrow(() => assertRendererEntryHtml(emittedHtml, './assets/index-canonical.js'));
     assert.throws(
       () => assertRendererEntryHtml(emittedHtml, './assets/index-other.js'),
       /renderer entry HTML contract forbids transformed executable or navigation surfaces/u,
@@ -2108,7 +2084,10 @@ describe('renderer architecture checker fixtures', () => {
       },
       (desktopRoot) => {
         const violations = violationsFor(desktopRoot);
-        assertHasViolation(violations, /bridge-aliases\.ts: application code accesses the Desktop global bridge/u);
+        assertHasViolation(
+          violations,
+          /bridge-aliases\.ts: application code accesses the Desktop global bridge/u,
+        );
         assertHasViolation(violations, /aliased-hook\.ts: shell code owns stateful React hooks/u);
       },
     );
@@ -2245,7 +2224,10 @@ describe('renderer architecture checker fixtures', () => {
       },
       (desktopRoot) => {
         const violations = violationsFor(desktopRoot);
-        assertHasViolation(violations, /shell\/react-use\.tsx: shell code owns stateful React hooks/u);
+        assertHasViolation(
+          violations,
+          /shell\/react-use\.tsx: shell code owns stateful React hooks/u,
+        );
         assertHasViolation(
           violations,
           /composition\/react-namespace-use\.tsx: composition code owns stateful React hooks/u,
@@ -2282,10 +2264,16 @@ describe('renderer architecture checker fixtures', () => {
       (desktopRoot) => {
         const violations = violationsFor(desktopRoot);
         assertHasViolation(violations, /import-equals\.ts: feature alpha imports feature beta/u);
-        assertHasViolation(violations, /dynamic\.ts: feature code contains a non-static import or require/u);
+        assertHasViolation(
+          violations,
+          /dynamic\.ts: feature code contains a non-static import or require/u,
+        );
         assertHasViolation(violations, /deep-type\.ts: feature imports must use index/u);
         assertHasViolation(violations, /static-template\.ts: feature imports must use index/u);
-        assertHasViolation(violations, /import-meta-glob\.ts: composition code contains a non-static import or require/u);
+        assertHasViolation(
+          violations,
+          /import-meta-glob\.ts: composition code contains a non-static import or require/u,
+        );
       },
     );
   });
@@ -2297,10 +2285,7 @@ describe('renderer architecture checker fixtures', () => {
         'src/renderer/features/alpha/testing.ts': 'export const fake = true;',
       },
       (desktopRoot) => {
-        assertHasViolation(
-          violationsFor(desktopRoot),
-          /feature .*testing entry/u,
-        );
+        assertHasViolation(violationsFor(desktopRoot), /feature .*testing entry/u);
       },
     );
   });
@@ -2377,7 +2362,10 @@ describe('renderer architecture checker fixtures', () => {
           [targetPath]: `export function reportFixture(scope: string): string { return scope; }`,
         },
         (desktopRoot) => {
-          const currentConfig = generateArchitectureConfig(desktopRoot, transitiveAppShellSeedConfig());
+          const currentConfig = generateArchitectureConfig(
+            desktopRoot,
+            transitiveAppShellSeedConfig(),
+          );
           const baseConfig = structuredClone(currentConfig);
           Object.assign(baseConfig.legacyAppShell.files[TRANSITIVE_APP_SHELL_PATH], {
             importDeclarations: 0,
@@ -2438,8 +2426,7 @@ describe('renderer architecture checker fixtures', () => {
 
   it('enforces a unique feature owner for registered controllers', async () => {
     const controllerOwner = {
-      implementation:
-        'src/renderer/features/alpha/controller/use-alpha-controller.ts',
+      implementation: 'src/renderer/features/alpha/controller/use-alpha-controller.ts',
       symbol: 'useAlphaController',
       owner: 'src/renderer/features/alpha/ui/alpha-provider.tsx',
       ownerSymbol: 'AlphaProvider',
@@ -2473,10 +2460,7 @@ describe('renderer architecture checker fixtures', () => {
       },
       (desktopRoot) => {
         const config = architectureConfig({ controllerOwners: [controllerOwner] });
-        assert.deepEqual(
-          violationsFor(desktopRoot, config, architectureConfig()),
-          [],
-        );
+        assert.deepEqual(violationsFor(desktopRoot, config, architectureConfig()), []);
         assertHasViolation(
           violationsFor(
             desktopRoot,
@@ -2484,8 +2468,7 @@ describe('renderer architecture checker fixtures', () => {
               controllerOwners: [
                 {
                   ...controllerOwner,
-                  owner:
-                    'src/renderer/features/alpha/ui/alpha-provider.test.tsx',
+                  owner: 'src/renderer/features/alpha/ui/alpha-provider.test.tsx',
                 },
               ],
             }),
@@ -2498,8 +2481,7 @@ describe('renderer architecture checker fixtures', () => {
 
   it('keeps the registered owner as a JSX-only component inside its own file', async () => {
     const controllerOwner = {
-      implementation:
-        'src/renderer/features/alpha/controller/use-alpha-controller.ts',
+      implementation: 'src/renderer/features/alpha/controller/use-alpha-controller.ts',
       symbol: 'useAlphaController',
       owner: 'src/renderer/features/alpha/ui/alpha-provider.tsx',
       ownerSymbol: 'AlphaProvider',
@@ -2521,10 +2503,7 @@ describe('renderer architecture checker fixtures', () => {
       },
       (desktopRoot) => {
         assertHasViolation(
-          violationsFor(
-            desktopRoot,
-            architectureConfig({ controllerOwners: [controllerOwner] }),
-          ),
+          violationsFor(desktopRoot, architectureConfig({ controllerOwners: [controllerOwner] })),
           /owner must expose AlphaProvider only as a JSX component/u,
         );
       },
@@ -2533,8 +2512,7 @@ describe('renderer architecture checker fixtures', () => {
 
   it('binds controller calls to the registered import instead of a same-name hook', async () => {
     const controllerOwner = {
-      implementation:
-        'src/renderer/features/alpha/controller/use-alpha-controller.ts',
+      implementation: 'src/renderer/features/alpha/controller/use-alpha-controller.ts',
       symbol: 'useAlphaController',
       owner: 'src/renderer/features/alpha/ui/alpha-provider.tsx',
       ownerSymbol: 'AlphaProvider',
@@ -2559,10 +2537,7 @@ describe('renderer architecture checker fixtures', () => {
       },
       (desktopRoot) => {
         assertHasViolation(
-          violationsFor(
-            desktopRoot,
-            architectureConfig({ controllerOwners: [controllerOwner] }),
-          ),
+          violationsFor(desktopRoot, architectureConfig({ controllerOwners: [controllerOwner] })),
           /must call the controller 1 time\(s\), received 0/u,
         );
       },
@@ -2571,8 +2546,7 @@ describe('renderer architecture checker fixtures', () => {
 
   it('requires consumers to mount the registered owner through JSX', async () => {
     const controllerOwner = {
-      implementation:
-        'src/renderer/features/alpha/controller/use-alpha-controller.ts',
+      implementation: 'src/renderer/features/alpha/controller/use-alpha-controller.ts',
       symbol: 'useAlphaController',
       owner: 'src/renderer/features/alpha/ui/alpha-provider.tsx',
       ownerSymbol: 'AlphaProvider',
@@ -2616,10 +2590,7 @@ describe('renderer architecture checker fixtures', () => {
           desktopRoot,
           architectureConfig({ controllerOwners: [controllerOwner] }),
         );
-        assertHasViolation(
-          violations,
-          /direct-provider\.ts must mount AlphaProvider through JSX/u,
-        );
+        assertHasViolation(violations, /direct-provider\.ts must mount AlphaProvider through JSX/u);
         assertHasViolation(
           violations,
           /aliased-provider\.ts must mount AlphaProvider through JSX/u,
@@ -2642,8 +2613,7 @@ describe('renderer architecture checker fixtures', () => {
 
   it('rejects controller imports, runtime loading, and public re-exports outside the owner', async () => {
     const controllerOwner = {
-      implementation:
-        'src/renderer/features/alpha/controller/use-alpha-controller.ts',
+      implementation: 'src/renderer/features/alpha/controller/use-alpha-controller.ts',
       symbol: 'useAlphaController',
       owner: 'src/renderer/features/alpha/ui/alpha-provider.tsx',
       ownerSymbol: 'AlphaProvider',
@@ -2713,22 +2683,15 @@ describe('renderer architecture checker fixtures', () => {
           violations,
           /controller implementation is re-exported by .*private-controller\.ts/u,
         );
-        assertHasViolation(
-          violations,
-          /controller implementation is re-exported by .*index\.ts/u,
-        );
-        assertHasViolation(
-          violations,
-          /public feature entry must not expose the controller/u,
-        );
+        assertHasViolation(violations, /controller implementation is re-exported by .*index\.ts/u);
+        assertHasViolation(violations, /public feature entry must not expose the controller/u);
       },
     );
   });
 
   it('requires the registered owner to import and call its controller exactly once', async () => {
     const controllerOwner = {
-      implementation:
-        'src/renderer/features/alpha/controller/use-alpha-controller.ts',
+      implementation: 'src/renderer/features/alpha/controller/use-alpha-controller.ts',
       symbol: 'useAlphaController',
       owner: 'src/renderer/features/alpha/ui/alpha-provider.tsx',
       ownerSymbol: 'AlphaProvider',
@@ -2750,10 +2713,7 @@ describe('renderer architecture checker fixtures', () => {
       },
       (desktopRoot) => {
         assertHasViolation(
-          violationsFor(
-            desktopRoot,
-            architectureConfig({ controllerOwners: [controllerOwner] }),
-          ),
+          violationsFor(desktopRoot, architectureConfig({ controllerOwners: [controllerOwner] })),
           /must call the controller 1 time\(s\), received 2/u,
         );
       },
@@ -2762,8 +2722,7 @@ describe('renderer architecture checker fixtures', () => {
 
   it('ratchets controller owner contracts against their base configuration', async () => {
     const controllerOwner = {
-      implementation:
-        'src/renderer/features/alpha/controller/use-alpha-controller.ts',
+      implementation: 'src/renderer/features/alpha/controller/use-alpha-controller.ts',
       symbol: 'useAlphaController',
       owner: 'src/renderer/features/alpha/ui/alpha-provider.tsx',
       ownerSymbol: 'AlphaProvider',
@@ -2815,8 +2774,7 @@ describe('renderer architecture checker fixtures', () => {
 
   it('allows a registered controller to retire without allowing it to return', async () => {
     const activeOwner = {
-      implementation:
-        'src/renderer/features/alpha/controller/use-alpha-controller.ts',
+      implementation: 'src/renderer/features/alpha/controller/use-alpha-controller.ts',
       symbol: 'useAlphaController',
       owner: 'src/renderer/features/alpha/ui/alpha-provider.tsx',
       ownerSymbol: 'AlphaProvider',
@@ -2850,8 +2808,7 @@ describe('renderer architecture checker fixtures', () => {
 
   it('preserves hand-authored controller owner policy when regenerating debt', async () => {
     const controllerOwner = {
-      implementation:
-        'src/renderer/features/alpha/controller/use-alpha-controller.ts',
+      implementation: 'src/renderer/features/alpha/controller/use-alpha-controller.ts',
       symbol: 'useAlphaController',
       owner: 'src/renderer/features/alpha/ui/alpha-provider.tsx',
       ownerSymbol: 'AlphaProvider',
@@ -2884,10 +2841,14 @@ describe('renderer architecture checker fixtures', () => {
       cwd: repoRoot,
       encoding: 'utf8',
     });
-    const invalid = spawnSync(process.execPath, [checker, '--base', 'definitely-not-a-renderer-architecture-ref'], {
-      cwd: repoRoot,
-      encoding: 'utf8',
-    });
+    const invalid = spawnSync(
+      process.execPath,
+      [checker, '--base', 'definitely-not-a-renderer-architecture-ref'],
+      {
+        cwd: repoRoot,
+        encoding: 'utf8',
+      },
+    );
 
     assert.notEqual(missing.status, 0);
     assert.match(missing.stderr, /usage: check-renderer-architecture/u);
@@ -2953,7 +2914,7 @@ describe('validated copy catalog dependencies', () => {
     );
   });
 
-  it('does not price a catalog\'s own bare package runtime import', async () => {
+  it("does not price a catalog's own bare package runtime import", async () => {
     await withDesktopFixture(
       transitiveAppShellFiles(
         `
@@ -2977,24 +2938,36 @@ describe('validated copy catalog dependencies', () => {
   });
 
   const INVALID_CATALOGS = [
-    ['a hook call', catalogSource(`
+    [
+      'a hook call',
+      catalogSource(`
       import { useState } from 'react';
       export function useFixtureCopy() { return useState(FIXTURE_COPY); }
-    `)],
-    ['a relative implementation import', catalogSource(`
+    `),
+    ],
+    [
+      'a relative implementation import',
+      catalogSource(`
       import { legacySessionStore } from '../legacy-session-store.js';
       export const smuggled = legacySessionStore;
-    `)],
-    ['a @maka/desktop self-import', catalogSource(`
+    `),
+    ],
+    [
+      'a @maka/desktop self-import',
+      catalogSource(`
       import { legacySessionStore } from '@maka/desktop/src/renderer/legacy-session-store.js';
       export const smuggled = legacySessionStore;
-    `)],
-    ['no UiCatalog marker', `
+    `),
+    ],
+    [
+      'no UiCatalog marker',
+      `
       export const FIXTURE_COPY = {
         en: { notice: 'Notice' },
         zh: { notice: '通知' },
       };
-    `],
+    `,
+    ],
   ];
 
   for (const [flaw, source] of INVALID_CATALOGS) {
@@ -3065,7 +3038,7 @@ describe('validated copy catalog dependencies', () => {
     );
   });
 
-  it('exempts a validated catalog\'s own type-only contract imports from dependency debt', async () => {
+  it("exempts a validated catalog's own type-only contract imports from dependency debt", async () => {
     await withDesktopFixture(
       transitiveAppShellFiles(
         `
@@ -3116,7 +3089,11 @@ describe('validated copy catalog dependencies', () => {
     it(`prices only the runtime part of \`${source.split(';')[0]}\``, () => {
       const debt = debtForSource(source, 'src/renderer/fixture.ts');
       assert.deepEqual(
-        { importDeclarations: debt.importDeclarations, importSpecifiers: debt.importSpecifiers, dependencyPaths: debt.dependencyPaths },
+        {
+          importDeclarations: debt.importDeclarations,
+          importSpecifiers: debt.importSpecifiers,
+          dependencyPaths: debt.dependencyPaths,
+        },
         { importDeclarations, importSpecifiers, dependencyPaths },
       );
     });
@@ -3192,7 +3169,9 @@ describe('validated copy catalog dependencies', () => {
             import { reportFixture } from '${specifier}';
             export const legacySessionHelper = reportFixture('legacy');
           `,
-          { [targetPath]: `export function reportFixture(scope: string): string { return scope; }` },
+          {
+            [targetPath]: `export function reportFixture(scope: string): string { return scope; }`,
+          },
         ),
         (desktopRoot) => {
           const currentConfig = generateArchitectureConfig(desktopRoot, catalogSeedConfig());
@@ -3215,16 +3194,25 @@ describe('validated copy catalog dependencies', () => {
           import type { FixtureService } from './application/sessions/fixture-service.js';
           export const legacySessionHelper: FixtureService = { kind: 'legacy' };
         `,
-        { 'src/renderer/application/sessions/fixture-service.ts': `export interface FixtureService { kind: string }` },
+        {
+          'src/renderer/application/sessions/fixture-service.ts': `export interface FixtureService { kind: string }`,
+        },
       ),
       (desktopRoot) => {
         const currentConfig = generateArchitectureConfig(desktopRoot, catalogSeedConfig());
-        const violations = violationsFor(desktopRoot, currentConfig, structuredClone(currentConfig));
+        const violations = violationsFor(
+          desktopRoot,
+          currentConfig,
+          structuredClone(currentConfig),
+        );
         assertHasViolation(
           violations,
           /^src\/renderer\/legacy-session-helper\.ts: legacy renderer code imports application implementation instead of a public entry: \.\/application\/sessions\/fixture-service\.js$/u,
         );
-        assert.ok(!violations.some((violation) => violation.includes('dependency debt')), violations.join('\n'));
+        assert.ok(
+          !violations.some((violation) => violation.includes('dependency debt')),
+          violations.join('\n'),
+        );
       },
     );
   });
@@ -3248,8 +3236,14 @@ describe('validated copy catalog dependencies', () => {
         const baseConfig = structuredClone(currentConfig);
         baseConfig.rootDebt[RENDERER_ENTRY_PATH].dependencyPaths = {};
         const violations = violationsFor(desktopRoot, currentConfig, baseConfig);
-        assertHasViolation(violations, /^src\/renderer\/main\.tsx: new dependency debt \.\/features\/alpha\/index\.js$/u);
-        assert.ok(!violations.some((violation) => violation.includes('fixture-copy')), violations.join('\n'));
+        assertHasViolation(
+          violations,
+          /^src\/renderer\/main\.tsx: new dependency debt \.\/features\/alpha\/index\.js$/u,
+        );
+        assert.ok(
+          !violations.some((violation) => violation.includes('fixture-copy')),
+          violations.join('\n'),
+        );
       },
     );
   });
@@ -3351,7 +3345,7 @@ describe('component colour rule', () => {
   it('rejects an arbitrary Tailwind colour value in a component', async () => {
     const files = {
       'src/renderer/components/ui/console.tsx':
-        "export const Console = () => <div className=\"bg-[#2e2e2b]\" />;\n",
+        'export const Console = () => <div className="bg-[#2e2e2b]" />;\n',
     };
     await withDesktopFixture(files, (desktopRoot) => {
       assertHasViolation(
@@ -3374,10 +3368,7 @@ describe('component colour rule', () => {
         'src/renderer/components/ui/probe.tsx': `export const Probe = () => <i className="${utility}" />;\n`,
       };
       await withDesktopFixture(files, (desktopRoot) => {
-        assertHasViolation(
-          colourViolations(desktopRoot, files),
-          /arbitrary Tailwind colour value/,
-        );
+        assertHasViolation(colourViolations(desktopRoot, files), /arbitrary Tailwind colour value/);
       });
     }
   });
@@ -3385,7 +3376,7 @@ describe('component colour rule', () => {
   it('admits bg-[var(--token)] — that names a token, it does not write a colour', async () => {
     const files = {
       'src/renderer/components/ui/console.tsx':
-        "export const Console = () => <div className=\"bg-[var(--console-surface)]\" />;\n",
+        'export const Console = () => <div className="bg-[var(--console-surface)]" />;\n',
     };
     await withDesktopFixture(files, (desktopRoot) => {
       assert.deepEqual(colourViolations(desktopRoot, files), []);
@@ -3454,16 +3445,15 @@ describe('component colour rule', () => {
 
   it('scans app.tsx, and exempts brand marks and the design smoke page', async () => {
     const files = {
-      'src/renderer/app.tsx': "export const App = () => <div className=\"bg-[#123456]\" />;\n",
+      'src/renderer/app.tsx': 'export const App = () => <div className="bg-[#123456]" />;\n',
       'src/renderer/components/icons/BrandMark.tsx':
-        "export const BrandMark = () => <svg><path fill=\"#d97757\" /></svg>;\n",
+        'export const BrandMark = () => <svg><path fill="#d97757" /></svg>;\n',
       'src/renderer/components/dev/DesignSmoke.tsx':
-        "export const Smoke = () => <div className=\"bg-[#123456]\" />;\n",
+        'export const Smoke = () => <div className="bg-[#123456]" />;\n',
     };
     await withDesktopFixture(files, (desktopRoot) => {
       const config = colourConfig();
       config.legacyRendererFiles = Object.keys(files).sort();
-      config.rewriteBaseline = { phase: 'test', resetPaths: ['src/renderer/app.tsx'] };
       const violations = violationsFor(desktopRoot, config);
       assertHasViolation(violations, /^src\/renderer\/app\.tsx:1: arbitrary Tailwind colour value/);
       assert.equal(

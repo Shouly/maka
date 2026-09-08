@@ -25,7 +25,9 @@
 // restyle of this component.
 
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { useUiLocale } from '@maka/ui';
 import { copyDiagnosticReport } from '../bridge/diagnostics.js';
+import { getShellCopy } from '../locales/shell-copy.js';
 import { Button } from './ui/button.js';
 
 interface ErrorBoundaryProps {
@@ -54,8 +56,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     const { error, componentStack } = this.state;
     void copyDiagnosticReport({
       surface: 'renderer_crash',
-      title: error?.name ?? 'Renderer error',
-      description: error?.message ?? 'The renderer stopped rendering.',
+      // Main localizes the report's own headings; these two are the raw error facts.
+      title: error?.name ?? 'Error',
+      description: error?.message ?? '',
       // Main owns the rest of the report (versions, logs, host state); the
       // renderer contributes only what main cannot see.
       details: [error?.stack, componentStack].filter(Boolean).join('\n\n') || undefined,
@@ -67,24 +70,27 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   render(): ReactNode {
     const { error, copied } = this.state;
     if (!error) return this.props.children;
-    return (
-      <div className="maka-error-surface flex min-h-0 flex-1 flex-col items-center justify-center gap-4 bg-surface-1 p-8 text-center">
-        <div className="flex max-w-lg flex-col gap-2">
-          <h1 className="font-display text-2xl leading-8 text-text-primary">
-            Something went wrong
-          </h1>
-          <p className="text-sm leading-5 text-text-secondary">
-            The interface stopped rendering. The report below has everything needed to file a bug;
-            the window keeps running, so nothing was lost.
-          </p>
-          <p className="rounded-lg border border-hairline bg-surface-2 p-3 text-left font-mono text-xs leading-5 text-danger">
-            {error.message || String(error)}
-          </p>
-        </div>
-        <Button variant="secondary" onClick={this.handleCopyReport}>
-          {copied ? 'Report copied' : 'Copy report'}
-        </Button>
-      </div>
-    );
+    return <ErrorSurface error={error} copied={copied} onCopyReport={this.handleCopyReport} />;
   }
+}
+
+// The boundary is a class (React requires one) but it renders inside
+// `LocaleProvider`, so the surface itself is a function component that reads
+// the locale the normal way.
+function ErrorSurface(props: { error: Error; copied: boolean; onCopyReport: () => void }) {
+  const copy = getShellCopy(useUiLocale()).errorBoundary;
+  return (
+    <div className="maka-error-surface flex min-h-0 flex-1 flex-col items-center justify-center gap-4 bg-surface-1 p-8 text-center">
+      <div className="flex max-w-lg flex-col gap-2">
+        <h1 className="font-display text-2xl leading-8 text-text-primary">{copy.title}</h1>
+        <p className="text-sm leading-5 text-text-secondary">{copy.description}</p>
+        <p className="rounded-lg border border-hairline bg-surface-2 p-3 text-left font-mono text-xs leading-5 text-danger">
+          {props.error.message || String(props.error)}
+        </p>
+      </div>
+      <Button variant="secondary" onClick={props.onCopyReport}>
+        {props.copied ? copy.copied : copy.copyReport}
+      </Button>
+    </div>
+  );
 }

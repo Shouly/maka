@@ -38,12 +38,12 @@ test('activating a session row with an unsent draft keeps focus on the row', asy
   await expect(composer).toHaveText('an unsent draft');
 
   await ensureSidebarExpanded(page);
-  const sidebar = page.getByRole('navigation', { name: '任务列表' });
-  await sidebar.getByRole('button', { name: '新任务', exact: true }).click();
+  const sidebar = page.getByLabel('任务列表', { exact: true });
+  await sidebar.getByRole('button', { name: '新建任务', exact: true }).click();
   await expect(composer).toHaveText('');
 
-  const sessionRow = sidebar.locator('[data-session-id]').first();
-  await sessionRow.click();
+  const sessionRow = sidebar.locator('[data-session-key]').first();
+  await sessionRow.getByRole('option').click();
   await expect(composer).toHaveText('an unsent draft');
   await expect(composer).not.toBeFocused();
   await expect(sessionRow.locator(':focus')).toHaveCount(1);

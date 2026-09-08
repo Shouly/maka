@@ -85,10 +85,10 @@ item when it lands; do not let this file become a second plan.
 - Bottom workbar placement, multi-instance terminals, Trace donut charts.
 - `/side`, `/graph`, `/swarm` composer commands (their surfaces are in the
   plan's defer list).
-- `@tiptap/extension-mention` and `@tiptap/suggestion` are installed but
-  unused (knip-ignored); removing them is a lockfile + notices change.
-- Upstream's local message delivery status (#4956): the fields are on
-  `TransientUserMessageProjection` but the transcript does not render them.
+- Upstream's local message delivery status (#4956): preload still durably admits
+  through the desktop outbox, but the renderer does not show pending local messages
+  or recover from the desktop transcript cache when the live endpoint is unavailable.
+  Phase 6 verifies durable delivery/restart and separately records these UI gaps.
 - Carried from Phase 3: thinking-block duration, mermaid and `attachment://`
   images in markdown, branch banner / goal chip placement.
 - Phase 5a: per-request usage log grid; Runtime Host add form is TLS/plain

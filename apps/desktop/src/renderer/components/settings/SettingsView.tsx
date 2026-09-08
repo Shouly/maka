@@ -77,7 +77,7 @@ export function SettingsView(props: { onOpenKeyboardHelp: () => void }) {
         </div>
       </header>
 
-      <main className="mx-auto mt-4 w-full max-w-7xl flex-1 px-4 md:px-8 lg:mt-6">
+      <div className="mx-auto mt-4 w-full max-w-7xl flex-1 px-4 md:px-8 lg:mt-6">
         <div className="my-4 grid w-full max-w-6xl grid-cols-1 gap-x-8 md:my-8 md:grid-cols-[220px_minmax(0px,1fr)]">
           <SettingsNav
             section={section}
@@ -120,7 +120,7 @@ export function SettingsView(props: { onOpenKeyboardHelp: () => void }) {
             ) : null}
           </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }

@@ -75,9 +75,9 @@ export const PROGRAMMATIC_SMOKE_CHECKS = [
     prompt: 'Renderer does not show the React ErrorBoundary surface.',
   },
   {
-    id: 'programmatic-dock-visible',
+    id: 'programmatic-dock-policy',
     prompt:
-      'macOS: the app keeps its Dock tile, so a reviewer who switches away can switch back via Dock or Cmd+Tab.',
+      'macOS: the isolated inactive fixture keeps its Dock tile hidden, as required by dock-presentation.ts.',
   },
 ];
 
@@ -504,9 +504,9 @@ function buildProgrammaticResults(args, diagnostics) {
     },
     {
       check: PROGRAMMATIC_SMOKE_CHECKS[6],
-      // Only macOS has a dock; elsewhere the diagnostic reports null and the
-      // check is vacuously satisfied.
-      ok: process.platform !== 'darwin' || diagnostic?.dockVisible === true,
+      // This launcher requests inactive fixture presentation, which intentionally
+      // hides the Dock tile. Normal active launches have a separate policy.
+      ok: process.platform !== 'darwin' || diagnostic?.dockVisible === false,
       note:
         process.platform === 'darwin'
           ? `dockVisible=${diagnostic?.dockVisible ?? 'unknown'}`

@@ -778,3 +778,37 @@ test('a captured mutation cannot invalidate reads after disconnecting and reconn
   assert.equal(store.getState().data, 'new');
   store.disconnect();
 });
+
+test('bootstrap restores only active history and later catalog refreshes preserve a new task', async () => {
+  const rows = [
+    { ...row('archived'), isArchived: true, lastMessageAt: 30 },
+    { ...row('older'), lastMessageAt: 10 },
+    { ...row('recent'), lastMessageAt: 20 },
+  ];
+  const store = createSessionsStore({
+    ...sessions,
+    async listSessionsWithCoverage() {
+      return { sessions: rows, completeHostIds: ['A'] };
+    },
+  });
+  await store.refresh();
+  assert.equal(store.getState().activeId, 'recent');
+  store.select(undefined);
+  await store.refresh();
+  assert.equal(store.getState().activeId, undefined);
+});
+
+test('a selected task disappears from the active surface when archived', async () => {
+  let selected = row('selected');
+  const store = createSessionsStore({
+    ...sessions,
+    async listSessionsWithCoverage() {
+      return { sessions: [selected], completeHostIds: ['A'] };
+    },
+  });
+  await store.refresh();
+  store.select(selected.id);
+  selected = { ...selected, isArchived: true };
+  await store.refresh();
+  assert.equal(store.getState().activeId, undefined);
+});

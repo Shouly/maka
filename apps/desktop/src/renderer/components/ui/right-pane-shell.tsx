@@ -57,6 +57,8 @@ import { Anthropicon } from '../icons';
 import { Button } from './button';
 import { PaneResizer, type PaneResizerProps } from './pane-resizer';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './tooltip';
+import { useUiLocale } from '@maka/ui';
+import { getWorkbarCopy } from '../../locales/workbar-copy';
 
 interface RightPaneContextValue {
   isExpanded: boolean;
@@ -210,8 +212,9 @@ export function RightPaneShell({
  */
 export function RightPaneExpandButton() {
   const { isExpanded, toggleExpanded } = useRightPane();
+  const pane = getWorkbarCopy(useUiLocale()).pane;
   if (!toggleExpanded) return null;
-  const label = isExpanded ? 'Collapse' : 'Expand';
+  const label = isExpanded ? pane.collapse : pane.expand;
   return (
     <RightPaneTip label={label}>
       <Button variant="ghost" size="iconSm" onClick={toggleExpanded} aria-label={label}>
@@ -268,13 +271,14 @@ export function RightPaneHeader({
  * 键的两个居所,不会同时出现。是否渲染、以及键盘激活后的焦点交接由调用方决定。
  */
 export function RightPaneSidebarOpener({ onOpen }: { onOpen: () => void }) {
+  const label = getWorkbarCopy(useUiLocale()).pane.openSidebar;
   return (
-    <RightPaneTip label="Open sidebar">
+    <RightPaneTip label={label}>
       <Button
         variant="ghost"
         size="icon"
         onClick={onOpen}
-        aria-label="Open sidebar"
+        aria-label={label}
         aria-controls="app-sidebar"
         className="text-sidebar-text-primary"
       >

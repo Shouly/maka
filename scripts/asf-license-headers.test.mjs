@@ -18,6 +18,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -35,6 +36,7 @@ import {
   hasHeader,
   HeaderNotWritableError,
   licenseLines,
+  listSourceFiles,
   renderHeader,
 } from './asf-license-headers.mjs';
 
@@ -414,4 +416,14 @@ describe('ASF header audit over an extracted candidate', () => {
     assert.deepEqual(result.unreviewedProvenance, []);
     assert.equal(result.covered, 2);
   });
+});
+
+test('checkout enumeration excludes deleted index entries and keeps new source files', () => {
+  const root = fixtureTree({ 'removed.ts': blockHeader, 'new.ts': blockHeader });
+  execFileSync('git', ['init', '-q'], { cwd: root });
+  execFileSync('git', ['add', 'removed.ts'], { cwd: root });
+  rmSync(join(root, 'removed.ts'));
+  assert.deepEqual(listSourceFiles(root).files, ['new.ts']);
+  symlinkSync('missing-target', join(root, 'dangling.ts'));
+  assert.deepEqual(listSourceFiles(root).files, ['dangling.ts', 'new.ts']);
 });

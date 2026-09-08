@@ -18,154 +18,104 @@
  */
 
 import { resolve } from 'node:path';
-import { COMPOSER_INPUT, awaitSendReady, ensureSidebarExpanded, expect, test } from './fixtures';
+import {
+  COMPOSER_INPUT,
+  awaitSendReady,
+  ensureSidebarExpanded,
+  expect,
+  test,
+  sendPrompt,
+} from './fixtures';
 
-test('a locally saved message survives renderer and application restart, then executes once', async ({
-  sessionLocalWindow,
-}, testInfo) => {
-  let { page } = sessionLocalWindow;
-  const { app, restart } = sessionLocalWindow;
-  const first = 'durable history before restart';
-  await page.locator(COMPOSER_INPUT).fill(first);
-  await awaitSendReady(page);
-  await page.locator(COMPOSER_INPUT).press('Enter');
-  await expect(page.getByText(`Fake backend received: ${first}`)).toBeVisible();
-  await ensureSidebarExpanded(page);
-  const sessionId = await page
-    .locator('[data-session-id]:has([aria-current="page"])')
-    .getAttribute('data-session-id');
-  expect(sessionId).toBeTruthy();
-  await expect
-    .poll(() =>
-      page.evaluate(
-        async (id) => !!(await window.maka.sessionLocal.readTranscript(id)),
-        sessionId!,
-      ),
-    )
-    .toBe(true);
-
-  // Pause only the delivery scheduler in this isolated main process. Admission,
-  // SQLite, renderer/preload, and the later Host execution all remain real.
-  await app.evaluate((_electron, modulePath) => {
-    const require = process.getBuiltinModule('module').createRequire(`${process.cwd()}/`);
-    const { DesktopSessionLocalService } = require(modulePath);
-    DesktopSessionLocalService.prototype.wake = () => {};
-  }, resolve('dist/main/session-local-service.js'));
-  const pending = 'saved locally across a complete application restart';
-  await page.locator(COMPOSER_INPUT).fill(pending);
-  await awaitSendReady(page);
-  await page.locator(COMPOSER_INPUT).press('Enter');
-  await expect(page.locator(COMPOSER_INPUT)).toHaveText('');
-  await expect(page.getByText('已本地保存 · 等待发送')).toBeVisible();
-  const before = await page.evaluate((id) => window.maka.sessionLocal.listMessages(id), sessionId!);
-  const message = before.find((item) => item.text === pending)!;
-  expect(message.state).toBe('saved');
-  await page.screenshot({ path: testInfo.outputPath('locally-saved.png') });
-
-  await page.reload();
-  await ensureSidebarExpanded(page);
-  await page.locator(`[data-session-id=${JSON.stringify(sessionId)}]`).click();
-  await expect(page.getByText('已本地保存 · 等待发送')).toBeVisible();
-  expect(
-    (await page.evaluate((id) => window.maka.sessionLocal.listMessages(id), sessionId!)).find(
-      (item) => item.text === pending,
-    )?.messageId,
-  ).toBe(message.messageId);
-
-  page = await restart();
-  await ensureSidebarExpanded(page);
-  await page.locator(`[data-session-id=${JSON.stringify(sessionId)}]`).click();
-  await expect(
-    page.getByLabel('Maka 的回答').getByText(`Fake backend received: ${pending}`),
-  ).toBeVisible({ timeout: 20_000 });
-  await expect(
-    page.getByLabel('Maka 的回答').getByText(`Fake backend received: ${pending}`),
-  ).toHaveCount(1);
-  await expect
-    .poll(() =>
-      page.evaluate(
-        async (id) => (await window.maka.sessionLocal.listMessages(id)).length,
-        sessionId!,
-      ),
-    )
-    .toBe(0);
-  await page.screenshot({ path: testInfo.outputPath('recovered.png') });
-});
-
-test('cached history remains readable when the live transcript endpoint is unavailable', async ({
-  sessionLocalWindow,
-}, testInfo) => {
-  const { page, app } = sessionLocalWindow;
-  const prompt = 'history available without a live transcript';
-  await page.locator(COMPOSER_INPUT).fill(prompt);
-  await awaitSendReady(page);
-  await page.locator(COMPOSER_INPUT).press('Enter');
-  await expect(
-    page.getByLabel('Maka 的回答').getByText(`Fake backend received: ${prompt}`),
-  ).toBeVisible();
-  await ensureSidebarExpanded(page);
-  const sessionId = await page
-    .locator('[data-session-id]:has([aria-current="page"])')
-    .getAttribute('data-session-id');
-  await expect
-    .poll(() =>
-      page.evaluate(
-        async (id) => !!(await window.maka.sessionLocal.readTranscript(id)),
-        sessionId!,
-      ),
-    )
-    .toBe(true);
-  // Fault only the live endpoint, not the cache bridge or renderer projection.
-  await app.evaluate(({ ipcMain }) => {
-    ipcMain.removeHandler('sessions:transcript:open');
-    ipcMain.handle('sessions:transcript:open', () => {
-      throw new Error('E2E live transcript unavailable');
-    });
-  });
-  await page.reload();
-  await ensureSidebarExpanded(page);
-  await page.locator(`[data-session-id=${JSON.stringify(sessionId)}]`).click();
-  await expect(
-    page.getByLabel('Maka 的回答').getByText(`Fake backend received: ${prompt}`),
-  ).toBeVisible();
-  await expect(page.locator('.maka-chat-recovery-notice')).toHaveCount(0);
-  await page.screenshot({ path: testInfo.outputPath('cached-history.png') });
-});
-
-test('a new task is readable locally before the Host session exists', async ({
+// The preload durably admits through the desktop outbox. Its pending status
+// and offline cache UI are not ported; phase-6.md records those gaps.
+test('a submitted turn and an unsent draft survive an application restart', async ({
   sessionLocalWindow,
 }) => {
   let { page } = sessionLocalWindow;
+  await sendPrompt(page, 'durable history before restart');
+  await page.locator(COMPOSER_INPUT).fill('unsent across application restart');
+  page = await sessionLocalWindow.restart();
+  await expect(page.getByRole('log')).toContainText(
+    'Fake backend received: durable history before restart',
+  );
+  await expect(page.locator(COMPOSER_INPUT)).toHaveText('unsent across application restart');
+  await awaitSendReady(page);
+  await page.locator(COMPOSER_INPUT).press('Enter');
+  await expect(
+    page.getByText('Fake backend received: unsent across application restart'),
+  ).toHaveCount(1);
+});
+
+test('an admission failure keeps the draft and retry sends it once', async ({
+  sessionLocalWindow: { page, app },
+}) => {
+  await sendPrompt(page, 'admission retry source');
+  // Fail one IPC invocation while keeping the original handler for retry.
+  await app.evaluate(({ ipcMain }) => {
+    const handlers = (
+      ipcMain as typeof ipcMain & { _invokeHandlers: Map<string, (...args: any[]) => any> }
+    )._invokeHandlers;
+    const original = handlers.get('session-local:submit');
+    if (!original) throw new Error('Missing submit handler');
+    ipcMain.removeHandler('session-local:submit');
+    ipcMain.handle('session-local:submit', (...args) => {
+      ipcMain.removeHandler('session-local:submit');
+      ipcMain.handle('session-local:submit', original);
+      throw new Error('E2E admission unavailable');
+    });
+  });
+  await page.locator(COMPOSER_INPUT).fill('retry keeps this draft');
+  await awaitSendReady(page);
+  await page.locator(COMPOSER_INPUT).press('Enter');
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'E2E admission unavailable' }).first(),
+  ).toBeVisible();
+  await expect(page.locator(COMPOSER_INPUT)).toHaveText('retry keeps this draft');
+  await awaitSendReady(page);
+  await page.locator(COMPOSER_INPUT).press('Enter');
+  await expect(page.getByText('Fake backend received: retry keeps this draft')).toHaveCount(1);
+});
+
+test('a durably admitted message survives reload and executes once after restarting delivery', async ({
+  sessionLocalWindow,
+}) => {
+  let { page } = sessionLocalWindow;
+  await sendPrompt(page, 'outbox recovery source');
+  const sessionId = await page.evaluate(async () => (await window.maka.sessions.list())[0]!.id);
   await sessionLocalWindow.app.evaluate((_electron, modulePath) => {
     const require = process.getBuiltinModule('module').createRequire(`${process.cwd()}/`);
     const { DesktopSessionLocalService } = require(modulePath);
     DesktopSessionLocalService.prototype.wake = () => {};
   }, resolve('dist/main/session-local-service.js'));
-  const prompt = 'first message saved before Host creation';
-  await page.locator(COMPOSER_INPUT).fill(prompt);
+  const pending = 'durable outbox pending message';
+  await page.locator(COMPOSER_INPUT).fill(pending);
   await awaitSendReady(page);
   await page.locator(COMPOSER_INPUT).press('Enter');
   await expect(page.locator(COMPOSER_INPUT)).toHaveText('');
-  await expect(page.getByText('已本地保存 · 等待发送')).toBeVisible();
-  await ensureSidebarExpanded(page);
-  const sessionId = await page
-    .locator('[data-session-id]:has([aria-current="page"])')
-    .getAttribute('data-session-id');
-  expect(sessionId).toBeTruthy();
-  await expect(page.getByText('读取任务失败', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('Graph 状态刷新失败。', { exact: true })).toHaveCount(0);
+  const messages = await page.evaluate(
+    (id) => window.maka.sessionLocal.listMessages(id),
+    sessionId,
+  );
+  const saved = messages.find((item) => item.text === pending)!;
+  expect(saved.state).toBe('saved');
   await page.reload();
-  await ensureSidebarExpanded(page);
-  await page.locator(`[data-session-id=${JSON.stringify(sessionId)}]`).click();
-  await expect(page.getByText('已本地保存 · 等待发送')).toBeVisible();
-  await expect(page.getByText('读取任务失败', { exact: true })).toHaveCount(0);
+  await expect(page.locator(COMPOSER_INPUT)).toBeVisible();
+  expect(
+    (await page.evaluate((id) => window.maka.sessionLocal.listMessages(id), sessionId)).find(
+      (item) => item.text === pending,
+    )?.messageId,
+  ).toBe(saved.messageId);
   page = await sessionLocalWindow.restart();
-  await ensureSidebarExpanded(page);
-  await page.locator(`[data-session-id=${JSON.stringify(sessionId)}]`).click();
-  await expect(
-    page.getByLabel('Maka 的回答').getByText(`Fake backend received: ${prompt}`),
-  ).toBeVisible({ timeout: 20_000 });
-  await expect(
-    page.getByLabel('Maka 的回答').getByText(`Fake backend received: ${prompt}`),
-  ).toHaveCount(1);
+  await expect(page.getByText(`Fake backend received: ${pending}`)).toHaveCount(1, {
+    timeout: 20_000,
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        async (id) => (await window.maka.sessionLocal.listMessages(id)).length,
+        sessionId,
+      ),
+    )
+    .toBe(0);
 });

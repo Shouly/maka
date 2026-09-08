@@ -19,6 +19,11 @@
 
 import { createStore } from 'zustand/vanilla';
 import * as bridge from '../bridge/sessions.js';
+import {
+  hasNewTaskReloadIntent,
+  markNewTaskReloadIntent,
+  clearNewTaskReloadIntent,
+} from '../lib/ported/new-task-reload-intent.js';
 import { errorMessage } from './resource-store.js';
 import type { DesktopSessionSummary, SessionRevisionFamilyOptions } from '../bridge/sessions.js';
 
@@ -40,6 +45,7 @@ export function createSessionsStore(api = bridge) {
     completeHostIds: [],
   }));
   let generation = 0;
+  let selectionInitialized = false;
   let lifetime = 0;
   const refresh = async () => {
     const request = ++generation;
@@ -51,10 +57,19 @@ export function createSessionsStore(api = bridge) {
       const rows = result.sessions;
       store.setState((s) => {
         const selected = s.sessions.find((row) => row.id === s.activeId);
-        const removed = selected && !rows.some((row) => row.id === selected.id);
+        const removed = selected && !rows.some((row) => row.id === selected.id && !row.isArchived);
+        // Bootstrap only once. A late catalog refresh must never steal an explicit
+        // new-task selection or reopen an archived task.
+        const bootstrap = !selectionInitialized && !hasNewTaskReloadIntent();
+        selectionInitialized = true;
+        const initial = bootstrap
+          ? rows
+              .filter((row) => !row.isArchived)
+              .sort((a, b) => (b.lastMessageAt ?? 0) - (a.lastMessageAt ?? 0))[0]?.id
+          : undefined;
         return {
           sessions: rows,
-          activeId: removed ? undefined : s.activeId,
+          activeId: removed ? undefined : (s.activeId ?? initial),
           completeHostIds: result.completeHostIds,
           revision: s.revision + 1,
           loading: false,
@@ -64,7 +79,12 @@ export function createSessionsStore(api = bridge) {
       if (request === generation) store.setState({ error: errorMessage(error), loading: false });
     }
   };
-  const select = (activeId: string | undefined) => store.setState({ activeId });
+  const select = (activeId: string | undefined) => {
+    selectionInitialized = true;
+    if (activeId) clearNewTaskReloadIntent();
+    else markNewTaskReloadIntent();
+    store.setState({ activeId });
+  };
   const upsert = (row: DesktopSessionSummary) => {
     generation++;
     store.setState((s) => ({

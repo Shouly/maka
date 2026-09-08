@@ -374,7 +374,7 @@ function SessionTranscript(props: SessionViewProps) {
             })}
           </div>
         </div>
-        {awayFromTail && (
+        {(awayFromTail || feed.hasNewer) && (
           <JumpToLatest
             streaming={running}
             onJump={() => {

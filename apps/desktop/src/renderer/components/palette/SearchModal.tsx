@@ -20,10 +20,13 @@
 // Full-text search across every Host's transcripts.
 //
 // `data-maka-contract="search-modal"` is a hard contract: `main-window.ts`'s
-// diagnostic probe looks for that attribute, and for an OPEN one, to decide
-// whether the renderer is showing a modal. A Radix dialog content element
-// carrying it satisfies both readings — Radix only mounts the content while
-// the dialog is open, so "present" and "open" coincide.
+// diagnostic probe looks for that attribute (`searchModalPresent`) AND for
+// `dialog[data-maka-contract="search-modal"][open]` (`searchModalOpen`), which
+// `scripts/desktop-real-window-smoke.mjs` gates on. The second reading is an
+// element-tag test, so the content root is rendered as a native `<dialog open>`
+// (`nativeDialogElement`) rather than Radix's default `<div role="dialog">`.
+// Radix only mounts the content while the dialog is open, so "present" and
+// "open" coincide.
 //
 // The query is debounced rather than sent per keystroke: `search.thread` walks
 // stored transcripts on every Host, which is not a per-character operation.
@@ -91,6 +94,7 @@ export function SearchModal(props: {
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent
+        nativeDialogElement
         data-maka-contract="search-modal"
         className="top-[18%] max-h-[70vh] translate-y-0 md:max-w-xl"
       >

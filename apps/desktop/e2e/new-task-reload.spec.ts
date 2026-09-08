@@ -31,23 +31,45 @@ test('archived-only history boots into a usable new task', async ({ window: page
   // Prove bootstrap can restore this history before archiving it.
   await page.reload();
   await expect(reply).toBeVisible();
-  await page.evaluate(async () => {
-    const sessions = await window.maka.sessions.list();
-    for (const session of sessions) await window.maka.sessions.archive(session.id);
-  });
-  await expect.poll(async () =>
-    page.evaluate(async () => (await window.maka.sessions.list()).map(({ isArchived }) => isArchived)),
-  ).toEqual([true]);
+  // The Host refuses to archive a Session while a derived effect (the tail of
+  // the reply's turn) is still live, so wait for the transcript to settle and
+  // let the archive settle on its own timing rather than assuming one call.
+  await expect(page.locator('[data-turn-status="running"]')).toHaveCount(0);
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(async () => {
+          const sessions = await window.maka.sessions.list();
+          const pending = sessions.filter((session) => !session.isArchived);
+          for (const session of pending) {
+            try {
+              await window.maka.sessions.archive(session.id);
+            } catch {
+              // Still winding down; the next poll retries.
+            }
+          }
+          return (await window.maka.sessions.list()).every((session) => session.isArchived);
+        }),
+      { timeout: 20_000 },
+    )
+    .toBe(true);
+  await expect
+    .poll(async () =>
+      page.evaluate(async () =>
+        (await window.maka.sessions.list()).map(({ isArchived }) => isArchived),
+      ),
+    )
+    .toEqual([true]);
   // A cold window has no explicit new-task reload intent. Keep this test on
   // automatic bootstrap even if retirement starts recording that intent.
   await page.evaluate(() => sessionStorage.removeItem('maka-new-task-reload-intent-v1'));
   await page.reload();
   await expect(composer).toBeVisible();
   await ensureSidebarExpanded(page);
-  await expect(page.locator('[data-session-id]')).toHaveCount(0);
+  await expect(page.locator('[data-session-key]')).toHaveCount(0);
   try {
     await expect(page.locator('.maka-titlebar-identity__segment--session')).toHaveCount(0);
-    await expect(page.locator('.maka-turn')).toHaveCount(0);
+    await expect(page.locator('[data-maka-transcript-turn]')).toHaveCount(0);
   } finally {
     await testInfo.attach('archived-only-startup', {
       body: await page.screenshot({ animations: 'disabled' }),
@@ -58,17 +80,20 @@ test('archived-only history boots into a usable new task', async ({ window: page
   await composer.fill('new task after archived history');
   await awaitSendReady(page);
   await composer.press('Enter');
-  await expect(page.getByText(/Fake backend received: new task after archived history/))
-    .toBeVisible({ timeout: 20_000 });
-  await expect.poll(async () =>
-    page.evaluate(async () => {
-      const sessions = await window.maka.sessions.list();
-      return {
-        archived: sessions.filter((session) => session.isArchived).length,
-        active: sessions.filter((session) => !session.isArchived).length,
-      };
-    }),
-  ).toEqual({ archived: 1, active: 1 });
+  await expect(
+    page.getByText(/Fake backend received: new task after archived history/),
+  ).toBeVisible({ timeout: 20_000 });
+  await expect
+    .poll(async () =>
+      page.evaluate(async () => {
+        const sessions = await window.maka.sessions.list();
+        return {
+          archived: sessions.filter((session) => session.isArchived).length,
+          active: sessions.filter((session) => !session.isArchived).length,
+        };
+      }),
+    )
+    .toEqual({ archived: 1, active: 1 });
 });
 
 test('an explicit new task survives a renderer reload without reopening history', async ({
@@ -83,13 +108,13 @@ test('an explicit new task survives a renderer reload without reopening history'
   });
 
   await ensureSidebarExpanded(page);
-  await page.getByRole('button', { name: '新任务', exact: true }).click();
-  await expect(page.locator('.maka-turn')).toHaveCount(0);
+  await page.getByRole('button', { name: '新建任务', exact: true }).click();
+  await expect(page.locator('[data-maka-transcript-turn]')).toHaveCount(0);
   await composer.fill('draft survives renderer replacement');
 
   await page.reload();
 
   await expect(page.locator(COMPOSER_INPUT)).toBeVisible();
   await expect(page.locator(COMPOSER_INPUT)).toHaveText('draft survives renderer replacement');
-  await expect(page.locator('.maka-turn')).toHaveCount(0);
+  await expect(page.locator('[data-maka-transcript-turn]')).toHaveCount(0);
 });

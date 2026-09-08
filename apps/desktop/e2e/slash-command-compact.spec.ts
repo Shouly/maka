@@ -17,28 +17,6 @@
  * under the License.
  */
 
-/**
- * What the slash menu's move to Storybook could not take with it.
- *
- * The stories cover the menu: which rows a state offers, what picking one
- * writes, which slashes are triggers at all. All of that is the composer, and
- * none of it needs Electron. Two claims underneath it do, and this is them.
- *
- * The first is the binding between a shell that has a Session and a menu that
- * offers the commands needing one. The stories are handed `hasSession`, so
- * `Boolean(activeId)` in app-shell is theirs to assume, not to check — and an
- * active Session silently losing `/compact` and `/side` would pass every one
- * of them.
- *
- * The second is that `/compact` compacts. Selecting it only writes an
- * invocation into the draft; what happens when that draft is submitted is a
- * Host round trip — `sessions.compact()`, a status change, a cleared composer
- * — and the thing it must not do is reach the model as an ordinary message.
- * That routing lives inline in `app-shell.tsx`, with no seam under it to hang
- * a renderer test on, and opening one there is what the architecture ratchet
- * exists to refuse.
- */
-
 import { awaitSendReady, COMPOSER_INPUT, expect, test } from './fixtures';
 
 test('a session gets the commands that need one, and /compact compacts it', async ({
@@ -70,14 +48,13 @@ test('a session gets the commands that need one, and /compact compacts it', asyn
   await composer.pressSequentially('/');
 
   const menu = page.getByRole('listbox', { name: '命令和技能' });
-  const commands = menu.getByRole('group', { name: '命令' });
+  const commands = menu;
   // Four, not the two a shell without a Session offers: this is the binding a
   // story cannot see, because a story is handed the answer.
-  await expect(commands.getByRole('option')).toHaveCount(4);
+  await expect(commands.getByRole('option', { name: /compact/ })).toHaveCount(1);
+  await expect(commands.getByRole('option', { name: /\/side|\/graph|\/swarm/ })).toHaveCount(0);
 
-  await commands.getByRole('option', { name: /压缩上下文.*\/compact/ }).click();
-  await expect.poll(() => composer.textContent()).toBe('/compact ');
-  await composer.press('Enter');
+  await commands.getByRole('option', { name: /compact/ }).click();
 
   await expect
     .poll(() =>

@@ -27,7 +27,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from './dialog';
+import { useUiLocale } from '@maka/ui';
 import { Button } from './button';
+import { getUiCopy } from '../../locales/ui-copy';
 import { cn } from '../../lib/cn';
 
 interface ConfirmDialogProps {
@@ -50,15 +52,19 @@ export function ConfirmDialog({
   onOpenChange,
   title,
   description,
-  confirmText = 'Confirm',
-  cancelText = 'Cancel',
-  closeLabel = 'Close',
+  confirmText,
+  cancelText,
+  closeLabel,
   variant = 'default',
   onConfirm,
   waitForConfirm = false,
   restoreFocus = false,
   fallbackFocusRef,
 }: ConfirmDialogProps) {
+  const uiCopy = getUiCopy(useUiLocale());
+  const resolvedConfirmText = confirmText ?? uiCopy.confirm;
+  const resolvedCancelText = cancelText ?? uiCopy.cancel;
+  const resolvedCloseLabel = closeLabel ?? uiCopy.close;
   const [isConfirming, setIsConfirming] = React.useState(false);
   const returnFocusRef = React.useRef<HTMLElement | null>(null);
 
@@ -135,7 +141,7 @@ export function ConfirmDialog({
         }
       >
         <DialogHeader
-          closeLabel={closeLabel}
+          closeLabel={resolvedCloseLabel}
           className={cn(
             restoreFocus && '[&>button:focus-visible]:shadow-[var(--sidebar-focus-shadow)]',
           )}
@@ -156,7 +162,7 @@ export function ConfirmDialog({
               restoreFocus && 'focus-visible:shadow-[var(--sidebar-focus-shadow)]',
             )}
           >
-            {cancelText}
+            {resolvedCancelText}
           </Button>
           <Button
             variant={variant}
@@ -168,7 +174,7 @@ export function ConfirmDialog({
               restoreFocus && 'focus-visible:shadow-[var(--sidebar-focus-shadow)]',
             )}
           >
-            {confirmText}
+            {resolvedConfirmText}
           </Button>
         </DialogFooter>
       </DialogContent>

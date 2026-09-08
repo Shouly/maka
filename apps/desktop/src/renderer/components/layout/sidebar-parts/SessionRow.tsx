@@ -67,6 +67,8 @@ export function SessionRow(props: {
   const { row, copy, actions } = props;
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const rowRoot = useRef<HTMLDivElement>(null);
+  const renameFromMenu = useRef(false);
   const titleRef = useRef<HTMLSpanElement>(null);
   const [titleClipped, setTitleClipped] = useState(false);
   // Measured on pointer entry rather than on mount: the sidebar is resizable,
@@ -116,6 +118,7 @@ export function SessionRow(props: {
 
   return (
     <motion.div
+      ref={rowRoot}
       {...sidebarRowFadeProps}
       data-maka-contract="session-row"
       data-session-key={row.id}
@@ -137,7 +140,16 @@ export function SessionRow(props: {
               setRenaming(false);
               actions.onRename(row, name);
             }}
-            onCancel={() => setRenaming(false)}
+            onCancel={(restoreFocus) => {
+              setRenaming(false);
+              if (restoreFocus)
+                requestAnimationFrame(() => {
+                  const selector = renameFromMenu.current
+                    ? '[aria-haspopup="menu"]'
+                    : '[data-roving-row]';
+                  rowRoot.current?.querySelector<HTMLButtonElement>(selector)?.focus();
+                });
+            }}
           />
         </div>
       ) : (
@@ -150,7 +162,10 @@ export function SessionRow(props: {
           // onto the rows it finds through this attribute.
           data-roving-row=""
           onClick={() => actions.onOpen(row)}
-          onDoubleClick={() => setRenaming(true)}
+          onDoubleClick={() => {
+            renameFromMenu.current = false;
+            setRenaming(true);
+          }}
           className={cn(
             'group/item relative flex h-8 w-full items-center rounded-lg px-[2px] py-0 text-left text-sm leading-[21px] text-sidebar-text-secondary transition-[color,box-shadow] hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none',
             props.isActive && 'text-sidebar-text-primary',
@@ -223,7 +238,13 @@ export function SessionRow(props: {
               <DropdownMenuItem onSelect={() => actions.onOpen(row)}>
                 {row.stale ? copy.rowActions.retryOpen : copy.rowActions.open}
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setRenaming(true)}>
+              <DropdownMenuItem
+                onSelect={() => {
+                  renameFromMenu.current = true;
+                  setMenuOpen(false);
+                  setRenaming(true);
+                }}
+              >
                 {copy.rowActions.rename}
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => actions.onSetFlagged(row, !row.flagged)}>

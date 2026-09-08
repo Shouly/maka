@@ -24,7 +24,7 @@ test('switches General Settings from Simplified to Traditional Chinese', async (
 }) => {
   await ensureSidebarExpanded(page);
   await page.getByRole('button', { name: '设置', exact: true }).click();
-  await expect(page.getByRole('main', { name: '设置内容' })).toBeVisible();
+  await expect(page.getByLabel('设置内容', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '通用', exact: true }).click();
   await expect(page.getByText('界面语言', { exact: true }).first()).toBeVisible();
   await page.keyboard.press('Escape');
@@ -33,10 +33,10 @@ test('switches General Settings from Simplified to Traditional Chinese', async (
     await window.maka.settings.update({ personalization: { uiLocale: 'zh-TW' } });
   });
   await page.reload();
-  await page.waitForSelector('.maka-composer-editor');
+  await page.waitForSelector('[data-maka-contract="composer-input"]');
   await ensureSidebarExpanded(page);
   await page.getByRole('button', { name: '設定', exact: true }).click();
-  await expect(page.getByRole('main', { name: '設定內容' })).toBeVisible();
+  await expect(page.getByLabel('設定內容', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '通用', exact: true }).click();
   await expect(page.getByText('介面語言', { exact: true }).first()).toBeVisible();
 });

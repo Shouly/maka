@@ -179,13 +179,19 @@ function historicalGraphSnapshot(graphId: string): AgentGraphClientSnapshot {
 /** Catalog API-key providers as wizard entries with no existing connection —
  *  the default `/setup` provider list for tests that don't need configured state. */
 function defaultOnboardingProviders(): OnboardingProviderEntry[] {
-  return listApiKeyOnboardableProviders().map((provider) => ({
-    ...provider,
-    target: { kind: 'create', providerType: provider.providerType },
-    label: provider.label,
-    suggestedSlug: deriveConnectionSlug(provider.providerType),
-    enabledModelIds: [],
-  }));
+  // These keyboard journeys exercise key entry, not catalog ordering. Keep
+  // two endpoint-free providers first even when a deployment adds a gateway.
+  const priority = (providerType: string) =>
+    providerType === 'openai' ? 0 : providerType === 'anthropic' ? 1 : 2;
+  return listApiKeyOnboardableProviders()
+    .sort((a, b) => priority(a.providerType) - priority(b.providerType))
+    .map((provider) => ({
+      ...provider,
+      target: { kind: 'create', providerType: provider.providerType },
+      label: provider.label,
+      suggestedSlug: deriveConnectionSlug(provider.providerType),
+      enabledModelIds: [],
+    }));
 }
 
 interface FakeOnboardingOpts {
@@ -1098,6 +1104,12 @@ describe('Maka Pi TUI runner', () => {
         return false;
       }
     });
+    // Select OpenAI explicitly from the real fallback catalog.
+    const providerIndex = listApiKeyOnboardableProviders().findIndex(
+      (provider) => provider.providerType === 'openai',
+    );
+    assert.ok(providerIndex >= 0);
+    for (let index = 0; index < providerIndex; index += 1) terminal.input('\u001b[B');
     terminal.input('\r'); // pick provider -> key phase
     terminal.input('\r'); // accept default name -> slug field
     terminal.input('\r'); // accept derived slug -> key phase

@@ -19,66 +19,26 @@
 
 import { expect, test } from './fixtures';
 
-const GAP = '.maka-transcript-gap-row';
-const TURN = '.maka-transcript-turn';
-
-test('bounded transcript ranges expose only their truthful boundary gaps', async ({
+test('history pages stay bounded and can return to the latest persisted turn', async ({
   partialHistoryWindow: page,
 }) => {
-  await page.setViewportSize({ width: 1_400, height: 800 });
-
-  const olderGap = page.locator('[data-transcript-gap="older"]');
-  const newerGap = page.locator('[data-transcript-gap="newer"]');
-  await expect(olderGap).toBeVisible();
-  await expect(olderGap.getByRole('button', {
-    name: /^(?:加载较早消息|Load earlier messages)$/,
-  })).toBeVisible();
-  await expect(newerGap).toHaveCount(0);
-  await expect(page.locator('.maka-transcript-history-controls')).toHaveCount(0);
-
-  const oldestPrompt = page.locator(
-    '.maka-prompt-rail-tick[data-prompt-turn-id="turn-partial-history-1"]',
-  );
-  await expect(oldestPrompt).toBeVisible();
-  await oldestPrompt.click();
-
-  const firstTurn = page.locator('[data-turn-id="turn-partial-history-1"]');
-  await expect(firstTurn).toBeVisible();
-  await expect(firstTurn).toHaveAttribute('data-search-highlight', 'true');
-  await expect(olderGap).toHaveCount(0);
-  await expect(newerGap).toBeVisible();
-  await expect(newerGap.getByRole('button', {
-    name: /^(?:加载较新消息|Load newer messages)$/,
-  })).toBeVisible();
-  await expect(page.locator(GAP)).toHaveCount(1);
-  expect(await page.locator(TURN).count()).toBeLessThanOrEqual(10);
-
-  const loadNewer = newerGap.getByRole('button', {
-    name: /^(?:加载较新消息|Load newer messages)$/,
-  });
-  await loadNewer.click();
-  await expect(page.locator('[data-turn-id="turn-partial-history-2"]')).toBeVisible();
-  await expect(olderGap).toHaveCount(0);
-  await expect(newerGap).toBeVisible();
-  await expect(loadNewer).toBeEnabled();
-
-  await loadNewer.click();
-  await expect(page.locator('[data-turn-id="turn-partial-history-3"]')).toBeVisible();
-  await expect(olderGap).toBeVisible();
-  await expect(newerGap).toBeVisible();
-  await expect(loadNewer).toBeEnabled();
-  await expect(oldestPrompt).toBeVisible();
-  await expect(page.locator(GAP)).toHaveCount(2);
-  expect(await page.locator(TURN).count()).toBeLessThanOrEqual(10);
-
-  const returnToLatest = page.getByRole('button', {
-    name: /^(?:滚动主对话到底部|Scroll main conversation to bottom)$/,
-  });
-  await expect(returnToLatest).toBeVisible();
-  await returnToLatest.click();
-
-  await expect(page.locator('[data-turn-id="turn-partial-history-18"]')).toBeVisible();
-  await expect(newerGap).toHaveCount(0);
-  await expect(oldestPrompt).toBeVisible();
-  expect(await page.locator(TURN).count()).toBeLessThanOrEqual(10);
+  const turns = page.locator('[data-maka-transcript-turn]');
+  await expect(turns.last()).toHaveAttribute('data-turn-id', 'turn-partial-history-18');
+  expect(await turns.count()).toBeLessThanOrEqual(10);
+  const earlier = page.locator('[data-maka-transcript-gap="older"] button');
+  await expect(earlier).toBeVisible();
+  // One page can still include the tail. Cross the bounded range before
+  // asserting a jump that reloads newer history rather than merely scrolling.
+  for (let pageIndex = 0; pageIndex < 18; pageIndex += 1) {
+    if (await page.locator('[data-maka-transcript-gap="newer"]').count()) break;
+    const initial = await turns.first().getAttribute('data-turn-id');
+    await earlier.click();
+    await expect(turns.first()).not.toHaveAttribute('data-turn-id', initial!);
+    expect(await turns.count()).toBeLessThanOrEqual(10);
+  }
+  await expect(page.locator('[data-maka-transcript-gap="newer"]')).toBeVisible();
+  const latest = page.getByRole('button', { name: /滚动.*底部|最新|Scroll.*bottom/ });
+  await latest.click();
+  await expect(turns.last()).toHaveAttribute('data-turn-id', 'turn-partial-history-18');
+  await expect(page.locator('[data-maka-transcript-gap="newer"]')).toHaveCount(0);
 });

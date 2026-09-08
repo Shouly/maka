@@ -76,6 +76,8 @@ export function ProjectRow(props: {
   const { project, label, copy, actions } = props;
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const rowRoot = useRef<HTMLDivElement>(null);
+  const renameFromMenu = useRef(false);
   const nameRef = useRef<HTMLSpanElement>(null);
   const [clipped, setClipped] = useState(false);
   const checkClipped = useCallback(() => {
@@ -87,6 +89,7 @@ export function ProjectRow(props: {
 
   return (
     <motion.div
+      ref={rowRoot}
       {...sidebarRowFadeProps}
       data-maka-contract="project-row"
       data-project-id={project?.id ?? props.projectKey}
@@ -105,7 +108,16 @@ export function ProjectRow(props: {
               setRenaming(false);
               actions.onRename(project, name);
             }}
-            onCancel={() => setRenaming(false)}
+            onCancel={(restoreFocus) => {
+              setRenaming(false);
+              if (restoreFocus)
+                requestAnimationFrame(() => {
+                  const selector = renameFromMenu.current
+                    ? '[aria-haspopup="menu"]'
+                    : '[data-roving-row]';
+                  rowRoot.current?.querySelector<HTMLButtonElement>(selector)?.focus();
+                });
+            }}
           />
         </div>
       ) : (
@@ -190,7 +202,13 @@ export function ProjectRow(props: {
               <DropdownMenuItem onSelect={() => actions.onNewTask(project)}>
                 {copy.projectRowActions.newTask}
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setRenaming(true)}>
+              <DropdownMenuItem
+                onSelect={() => {
+                  renameFromMenu.current = true;
+                  setMenuOpen(false);
+                  setRenaming(true);
+                }}
+              >
                 {copy.projectRowActions.rename}
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => actions.onReveal(project)}>

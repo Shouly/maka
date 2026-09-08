@@ -18,6 +18,8 @@
  */
 
 import { memo } from 'react';
+import { useUiLocale } from '@maka/ui';
+import { getUiCopy } from '../../locales/ui-copy';
 
 interface DiffRendererProps {
   content: string | string[];
@@ -26,6 +28,7 @@ interface DiffRendererProps {
 
 // Diff 渲染组件
 const DiffRenderer = memo(function DiffRenderer({ content, className = '' }: DiffRendererProps) {
+  const noChanges = getUiCopy(useUiLocale()).noChanges;
   // 处理内容，确保是字符串数组
   const lines = Array.isArray(content) ? content : content.split('\n');
 
@@ -78,7 +81,7 @@ const DiffRenderer = memo(function DiffRenderer({ content, className = '' }: Dif
         {lines.length > 0 ? (
           lines.map((line, index) => renderDiffLine(line, index))
         ) : (
-          <div className="px-3 py-2 text-text-muted text-center">No changes</div>
+          <div className="px-3 py-2 text-text-muted text-center">{noChanges}</div>
         )}
       </div>
     </div>

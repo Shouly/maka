@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Markdown from './Markdown';
 
 /** 一批文字的攒批窗口:窗口内到达的 delta 合并成一批同时开始淡入。 */
@@ -40,10 +40,9 @@ const FADE_MS = 800;
  * 只在流式期用本组件;定稿后换回普通 <Markdown>(无 span、无节流),
  * 未刷出的尾巴随之立刻补齐。noPadding/variant 与 Markdown 同义透传。
  *
- * 已知且有意的入场行为:挂载瞬间的初始内容(会话切走再切回、刷新续流等
- * 场景下可能是整条已有消息)会整体淡入一次。这是"内容进入视野"的自然
- * 入场;想只动画增量需要 源文本偏移→渲染文本偏移 的映射,markdown 语法
- * 剥离使其不可靠,且任何容器级 CSS 开关都会在下一帧重触发动画,故不做。
+ * Remounts show the accumulated text settled. Only newly mounted token spans
+ * animate after that first layout; suppressing initial spans before paint avoids
+ * replaying an entire answer when the user returns from another task.
  */
 export default function StreamPopMarkdown({
   children,
@@ -58,6 +57,12 @@ export default function StreamPopMarkdown({
   variant?: 'default' | 'muted';
   onOpenExternal?: (url: string) => void;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    containerRef.current?.querySelectorAll<HTMLElement>('.stream-pop').forEach((span) => {
+      span.style.animation = 'none';
+    });
+  }, []);
   const [display, setDisplay] = useState(children);
   const latestRef = useRef(children);
   const lastFlushRef = useRef(0);
@@ -68,7 +73,7 @@ export default function StreamPopMarkdown({
   useEffect(() => {
     if (children === display) return;
     const elapsed = Date.now() - lastFlushRef.current;
-    if (elapsed >= FLUSH_INTERVAL_MS) {
+    if (!children.startsWith(display) || elapsed >= FLUSH_INTERVAL_MS) {
       lastFlushRef.current = Date.now();
       setDisplay(children);
       return;
@@ -98,6 +103,7 @@ export default function StreamPopMarkdown({
   return useMemo(
     () => (
       <div
+        ref={containerRef}
         style={
           { display: 'contents', '--stream-pop-duration': `${FADE_MS}ms` } as React.CSSProperties
         }

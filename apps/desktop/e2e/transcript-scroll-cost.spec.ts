@@ -40,8 +40,8 @@ import { PROMPT_RAIL_PROMPT_COUNT } from '../src/main/e2e-fixture/seed-helpers';
 import { DESKTOP_TRANSCRIPT_ACTIVE_RANGE_MAX_TURNS } from '../src/preload/transcript-contract';
 import { expect, test } from './fixtures';
 
-const SCROLLER = '[data-chat-scroll-container="true"]';
-const TURN = '.maka-transcript-turn';
+const SCROLLER = '[data-maka-transcript-boundary]';
+const TURN = '[data-maka-transcript-turn]';
 
 declare global {
   interface Window {
@@ -67,7 +67,10 @@ async function wheel(
 ): Promise<void> {
   const box = await page.locator(SCROLLER).boundingBox();
   if (!box) throw new Error('the chat scroll container has no box');
-  const x = box.x + box.width / 2;
+  // Wheel from the scroller's right gutter, not its centre: the feed is a
+  // centred column, and content scrolling under a pointer parked over it
+  // toggles row hover states whose transitions the harness would then count.
+  const x = box.x + box.width - 12;
   const y = box.y + box.height / 2;
   for (let tick = 0; tick < options.ticks; tick += 1) {
     await cdp.send('Input.dispatchMouseEvent', {
@@ -77,11 +80,16 @@ async function wheel(
       deltaX: 0,
       deltaY: options.deltaY,
     });
-    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    await page.evaluate(
+      () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+    );
   }
-  await page.evaluate(() => new Promise<void>((resolve) =>
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-  ));
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
 }
 
 /**
@@ -104,11 +112,23 @@ async function observe(page: Page): Promise<void> {
       skippedCount: 0,
     };
     window.__makaTranscriptCost = state;
-    document.addEventListener('transitionrun', () => { state.transitionRuns += 1; }, true);
-    document.addEventListener('animationstart', () => { state.animationStarts += 1; }, true);
+    document.addEventListener(
+      'transitionrun',
+      () => {
+        state.transitionRuns += 1;
+      },
+      true,
+    );
+    document.addEventListener(
+      'animationstart',
+      () => {
+        state.animationStarts += 1;
+      },
+      true,
+    );
     const bound = new WeakSet<Element>();
     const bind = (): void => {
-      for (const turn of document.querySelectorAll('.maka-transcript-turn')) {
+      for (const turn of document.querySelectorAll('[data-maka-transcript-turn]')) {
         if (bound.has(turn)) continue;
         bound.add(turn);
         turn.addEventListener('contentvisibilityautostatechange', (event) => {
@@ -151,9 +171,12 @@ async function sample(page: Page): Promise<CostSample> {
 
 async function moveToTail(page: Page): Promise<void> {
   await page.locator(TURN).last().scrollIntoViewIfNeeded();
-  await page.evaluate(() => new Promise<void>((resolve) =>
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-  ));
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
 }
 
 /**
@@ -165,7 +188,7 @@ async function moveToTail(page: Page): Promise<void> {
  */
 async function returnToLatest(page: Page): Promise<void> {
   const returnLatest = page.getByRole('button', {
-    name: /^(?:滚动主对话到底部|Scroll main conversation to bottom)$/,
+    name: /^(?:回到最新|Scroll main conversation to bottom)$/,
   });
   await expect(returnLatest).toBeVisible();
   await returnLatest.click();
@@ -190,8 +213,9 @@ test('a scroll through the fixture transcript starts no transitions', async ({
   promptRailWindow: page,
 }) => {
   await page.setViewportSize({ width: 1_000, height: 700 });
-  await expect(page.locator(`[data-turn-id="turn-prompt-rail-${PROMPT_RAIL_PROMPT_COUNT}"]`))
-    .toHaveCount(1);
+  await expect(
+    page.locator(`[data-turn-id="turn-prompt-rail-${PROMPT_RAIL_PROMPT_COUNT}"]`),
+  ).toHaveCount(1);
   const cdp = await page.context().newCDPSession(page);
   await observe(page);
   await moveToTail(page);
@@ -217,8 +241,9 @@ test('the browser skips the Turns the reader has scrolled past', async ({
   promptRailWindow: page,
 }) => {
   await page.setViewportSize({ width: 1_000, height: 700 });
-  await expect(page.locator(`[data-turn-id="turn-prompt-rail-${PROMPT_RAIL_PROMPT_COUNT}"]`))
-    .toHaveCount(1);
+  await expect(
+    page.locator(`[data-turn-id="turn-prompt-rail-${PROMPT_RAIL_PROMPT_COUNT}"]`),
+  ).toHaveCount(1);
   const cdp = await page.context().newCDPSession(page);
   await observe(page);
   await moveToTail(page);
@@ -241,8 +266,9 @@ test('paging back through the whole history keeps the mounted range bounded', as
 }) => {
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 1_000, height: 700 });
-  await expect(page.locator(`[data-turn-id="turn-prompt-rail-${PROMPT_RAIL_PROMPT_COUNT}"]`))
-    .toHaveCount(1);
+  await expect(
+    page.locator(`[data-turn-id="turn-prompt-rail-${PROMPT_RAIL_PROMPT_COUNT}"]`),
+  ).toHaveCount(1);
   const cdp = await page.context().newCDPSession(page);
   const turns = page.locator('[data-turn-id]');
   let mountedMax = 0;
@@ -274,7 +300,8 @@ test('paging back through the whole history keeps the mounted range bounded', as
   // suite's 10s expect timeout is sized for UI that is already on screen, and
   // this step measured past it on a loaded CI runner.
   await returnToLatest(page);
-  await expect(page.locator(`[data-turn-id="turn-prompt-rail-${PROMPT_RAIL_PROMPT_COUNT}"]`))
-    .toHaveCount(1, { timeout: 30_000 });
+  await expect(
+    page.locator(`[data-turn-id="turn-prompt-rail-${PROMPT_RAIL_PROMPT_COUNT}"]`),
+  ).toHaveCount(1, { timeout: 30_000 });
   expect(await turns.count()).toBeLessThanOrEqual(DESKTOP_TRANSCRIPT_ACTIVE_RANGE_MAX_TURNS);
 });

@@ -1804,3 +1804,10 @@ dialog:modal {
   --control-shadow: none;
   --control-shadow-hover: none;
 }
+
+/* Keep settled history outside the viewport cheap to paint; live output and
+   active editors need their actual geometry on every frame. */
+[data-maka-transcript-turn]:not([data-turn-status="running"]):not(:focus-within) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 240px;
+}

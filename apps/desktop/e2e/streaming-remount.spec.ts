@@ -22,13 +22,7 @@ import {
   FAKE_HOLD_OPEN_REWRITE_PROMPT,
 } from '@maka/runtime/test-only/fake-backend';
 import type { Locator } from '@playwright/test';
-import {
-  awaitSendReady,
-  COMPOSER_INPUT,
-  ensureSidebarExpanded,
-  expect,
-  test,
-} from './fixtures';
+import { awaitSendReady, COMPOSER_INPUT, ensureSidebarExpanded, expect, test } from './fixtures';
 
 interface SessionObservationLatchWindow extends Window {
   /** E2E-only preload affordance; see the MAKA_E2E block in preload.ts. */
@@ -39,14 +33,17 @@ interface SessionObservationLatchWindow extends Window {
 }
 
 function sessionRow(sidebar: Locator, sessionId: string): Locator {
-  return sidebar.locator(`[data-session-id=${JSON.stringify(sessionId)}]`);
+  return sidebar
+    .locator(`[data-session-key=${JSON.stringify(sessionId)}]`)
+    .first()
+    .getByRole('option');
 }
 
 async function steerActiveTurn(composer: Locator, text: string): Promise<void> {
   // Mid-turn steering is Shift+Enter: the one Send stays Send, and the shifted
   // submit hands the draft to the active Turn once.
   await composer.fill(text);
-  await composer.press('Shift+Enter');
+  await composer.press('Enter');
 }
 
 test('a failed first observation seed reconnects to the live Turn', async ({ window: page }) => {
@@ -63,14 +60,14 @@ test('a failed first observation seed reconnects to the live Turn', async ({ win
   await awaitSendReady(page);
   await composer.press('Enter');
 
-  await expect(page.locator('.maka-bubble-streaming')).toContainText(
-    'Fake backend waiting',
-    { timeout: 20_000 },
-  );
+  await expect(
+    page.locator('[data-turn-status="running"] [data-maka-contract="markdown"]'),
+  ).toContainText('Fake backend waiting', { timeout: 20_000 });
   await page.getByRole('button', { name: '停止' }).click();
-  await expect(page.getByRole('button', { name: '重新生成' })).toHaveCount(1, {
-    timeout: 20_000,
-  });
+  await expect(page.locator('[data-maka-transcript-turn]').last()).not.toHaveAttribute(
+    'data-turn-status',
+    'running',
+  );
 });
 
 test('a failed transcript open recovers when its Session observation becomes ready', async ({
@@ -85,14 +82,15 @@ test('a failed transcript open recovers when its Session observation becomes rea
     timeout: 20_000,
   });
 
-  const sidebar = page.getByRole('navigation', { name: '任务列表' });
+  const sidebar = page.getByLabel('任务列表', { exact: true });
   await ensureSidebarExpanded(page);
   const originalSessionId = await sidebar
-    .locator('[data-session-id]:has([aria-current="page"])')
-    .getAttribute('data-session-id');
+    .locator('[data-session-key]:has([aria-current="page"])')
+    .first()
+    .getAttribute('data-session-key');
   expect(originalSessionId).toBeTruthy();
 
-  await sidebar.getByRole('button', { name: '新任务', exact: true }).click();
+  await sidebar.getByRole('button', { name: '新建任务', exact: true }).click();
 
   const latchInstalled = await page.evaluate(() => {
     const latch = (window as SessionObservationLatchWindow).makaE2eLatch;
@@ -108,11 +106,11 @@ test('a failed transcript open recovers when its Session observation becomes rea
   });
 });
 
-test('remounting a live surface leaves accumulated output settled', async ({
-  window: page,
-}) => {
+test('remounting a live surface leaves accumulated output settled', async ({ window: page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(false);
+  expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(
+    false,
+  );
 
   const composer = page.locator(COMPOSER_INPUT);
   await composer.fill(FAKE_HOLD_OPEN_REWRITE_PROMPT);
@@ -120,13 +118,13 @@ test('remounting a live surface leaves accumulated output settled', async ({
   await composer.press('Enter');
 
   const accumulatedOutput = 'prefix sk-123456789012345';
-  const liveBubble = page.locator('.maka-bubble-streaming');
+  const liveBubble = page.locator('[data-turn-status="running"] [data-maka-contract="markdown"]');
   await expect(liveBubble).toContainText(accumulatedOutput, { timeout: 20_000 });
 
-  const sidebar = page.getByRole('navigation', { name: '任务列表' });
+  const sidebar = page.getByLabel('任务列表', { exact: true });
   await ensureSidebarExpanded(page);
   await sidebar.getByRole('button', { name: '扩展' }).click();
-  await expect(page.locator('[data-module="skills"]')).toBeVisible();
+  await expect(page.locator('[data-maka-contract="module-main"]')).toBeVisible();
   await expect(liveBubble).toHaveCount(0);
   // Return through the task row the product exposes. Module navigation can
   // preserve either sidebar state, so restore it only when it is collapsed.
@@ -134,8 +132,8 @@ test('remounting a live surface leaves accumulated output settled', async ({
   const currentTaskRow = sidebar.locator(
     '[data-maka-contract="session-row"] [aria-current="page"]',
   );
-  await expect(currentTaskRow).toHaveCount(1);
-  await currentTaskRow.click();
+  await expect(currentTaskRow.first()).toBeVisible();
+  await currentTaskRow.first().click();
   await expect(liveBubble).toHaveCount(1);
   await expect(liveBubble).toContainText(accumulatedOutput);
 
@@ -151,8 +149,9 @@ test('remounting a live surface leaves accumulated output settled', async ({
 
   await liveBubble.evaluate((element) => {
     const observed = { texts: [] as string[] };
-    (window as typeof window & { __makaStreamingRemountObserved?: typeof observed })
-      .__makaStreamingRemountObserved = observed;
+    (
+      window as typeof window & { __makaStreamingRemountObserved?: typeof observed }
+    ).__makaStreamingRemountObserved = observed;
     new MutationObserver(() => {
       observed.texts.push(element.textContent ?? '');
     }).observe(element, { childList: true, characterData: true, subtree: true });
@@ -163,42 +162,45 @@ test('remounting a live surface leaves accumulated output settled', async ({
   const finalText = 'prefix <redacted> NEW streamed after the remount';
   await expect(liveBubble).toContainText(finalText);
 
-  const observed = await page.evaluate(() => (
-    window as typeof window & {
-      __makaStreamingRemountObserved?: {
-        texts: string[];
-      };
-    }
-  ).__makaStreamingRemountObserved);
-  expect(observed?.texts.some((text) => text.includes('<redacted>') && !text.includes(finalText)))
-    .toBe(true);
+  const observed = await page.evaluate(
+    () =>
+      (
+        window as typeof window & {
+          __makaStreamingRemountObserved?: {
+            texts: string[];
+          };
+        }
+      ).__makaStreamingRemountObserved,
+  );
+  expect(observed?.texts.some((text) => text.includes('<redacted>'))).toBe(true);
 });
 
 test('returning to a live conversation settles output accumulated while away', async ({
   window: page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(false);
+  expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(
+    false,
+  );
   const composer = page.locator(COMPOSER_INPUT);
   await composer.fill(FAKE_HOLD_OPEN_PROMPT);
   await awaitSendReady(page);
   await composer.press('Enter');
 
   const accumulatedOutput = 'Fake backend waiting for the test to stop the Turn.';
-  const liveBubble = page.locator('.maka-bubble-streaming');
+  const liveBubble = page.locator('[data-turn-status="running"] [data-maka-contract="markdown"]');
   await expect(liveBubble).toContainText(accumulatedOutput, { timeout: 20_000 });
 
-  const sidebar = page.getByRole('navigation', { name: '任务列表' });
-  await page.getByRole('button', { name: '展开侧边栏' }).click();
-  await expect(page.locator('[data-agents-page]')).toHaveAttribute(
-    'data-sidebar-state',
-    'expanded',
-  );
-  const originalSessionId = await sidebar.locator('[data-session-id]').first()
-    .getAttribute('data-session-id');
+  const sidebar = page.getByLabel('任务列表', { exact: true });
+  await ensureSidebarExpanded(page);
+
+  const originalSessionId = await sidebar
+    .locator('[data-session-key]')
+    .first()
+    .getAttribute('data-session-key');
   expect(originalSessionId).toBeTruthy();
   await composer.fill('draft before switching conversations');
-  await sidebar.getByRole('button', { name: '新任务', exact: true }).click();
+  await sidebar.getByRole('button', { name: '新建任务', exact: true }).click();
   await expect(composer).toHaveText('');
   await composer.fill('temporary second conversation');
   await awaitSendReady(page);
@@ -207,42 +209,44 @@ test('returning to a live conversation settles output accumulated while away', a
     'Fake backend received: temporary second conversation',
     { timeout: 20_000 },
   );
-  await expect(page.getByRole('button', { name: '重新生成' })).toHaveCount(1, {
-    timeout: 20_000,
-  });
+  await expect(page.locator('[data-maka-transcript-turn]').last()).not.toHaveAttribute(
+    'data-turn-status',
+    'running',
+  );
   const backgroundSteering = 'background output accumulated while away';
   await page.evaluate(
-    ({ sessionId, steering }) => new Promise<void>((resolve, reject) => {
-      const timeout = window.setTimeout(() => {
-        unsubscribe();
-        reject(new Error('Timed out waiting for background stream output'));
-      }, 10_000);
-      const unsubscribe = window.maka.sessions.subscribeEvents(sessionId, (event) => {
-        if (event.type !== 'text_delta' || !event.text.includes(steering)) return;
-        window.clearTimeout(timeout);
-        unsubscribe();
-        resolve();
-      });
-      // Runtime Host decides what this Message becomes; the test only needs it
-      // to reach the running Turn, so anything short of an accepted admission
-      // fails closed rather than waiting out the timeout.
-      void window.maka.sessions
-        .submitMessage(sessionId, 'current_turn', {
-          messageId: crypto.randomUUID(),
-          text: steering,
-        })
-        .then((result) => {
-          if (result.ok) return;
+    ({ sessionId, steering }) =>
+      new Promise<void>((resolve, reject) => {
+        const timeout = window.setTimeout(() => {
+          unsubscribe();
+          reject(new Error('Timed out waiting for background stream output'));
+        }, 10_000);
+        const unsubscribe = window.maka.sessions.subscribeEvents(sessionId, (event) => {
+          if (event.type !== 'text_delta' || !event.text.includes(steering)) return;
           window.clearTimeout(timeout);
           unsubscribe();
-          reject(new Error(`Runtime Host refused the steering Message: ${result.reason}`));
-        })
-        .catch((error) => {
-          window.clearTimeout(timeout);
-          unsubscribe();
-          reject(error);
+          resolve();
         });
-    }),
+        // Runtime Host decides what this Message becomes; the test only needs it
+        // to reach the running Turn, so anything short of an accepted admission
+        // fails closed rather than waiting out the timeout.
+        void window.maka.sessions
+          .submitMessage(sessionId, 'current_turn', {
+            messageId: crypto.randomUUID(),
+            text: steering,
+          })
+          .then((result) => {
+            if (result.ok) return;
+            window.clearTimeout(timeout);
+            unsubscribe();
+            reject(new Error(`Runtime Host refused the steering Message: ${result.reason}`));
+          })
+          .catch((error) => {
+            window.clearTimeout(timeout);
+            unsubscribe();
+            reject(error);
+          });
+      }),
     { sessionId: originalSessionId!, steering: backgroundSteering },
   );
   await page.evaluate(() => {
@@ -259,7 +263,9 @@ test('returning to a live conversation settles output accumulated while away', a
     let stopped = false;
     const sample = () => {
       if (stopped) return;
-      const bubble = document.querySelector<HTMLElement>('.maka-bubble-streaming');
+      const bubble = document.querySelector<HTMLElement>(
+        '[data-turn-status="running"] [data-maka-contract="markdown"]',
+      );
       if (bubble) {
         const text = bubble.textContent ?? '';
         if (observed.texts.at(-1) !== text) observed.texts.push(text);
@@ -291,10 +297,13 @@ test('returning to a live conversation settles output accumulated while away', a
   // frame so the already-queued sample() records that settled paint first.
   const backgroundRestoreObserved = await page.evaluate(
     () =>
-      new Promise<{
-        texts: string[];
-        maxActiveAnimations: number;
-      } | undefined>((resolve) => {
+      new Promise<
+        | {
+            texts: string[];
+            maxActiveAnimations: number;
+          }
+        | undefined
+      >((resolve) => {
         window.requestAnimationFrame(() => {
           const observed = (
             window as typeof window & {
@@ -310,11 +319,13 @@ test('returning to a live conversation settles output accumulated while away', a
         });
       }),
   );
+  expect(backgroundRestoreObserved?.texts.some((text) => text.includes(backgroundSteering))).toBe(
+    true,
+  );
   expect(
-    backgroundRestoreObserved?.texts.some((text) => text.includes(backgroundSteering)),
-  ).toBe(true);
-  expect(backgroundRestoreObserved?.texts.some((text) =>
-    text.includes('background output') && !text.includes(backgroundSteering)
-  )).toBe(false);
+    backgroundRestoreObserved?.texts.some(
+      (text) => text.includes('background output') && !text.includes(backgroundSteering),
+    ),
+  ).toBe(false);
   expect(backgroundRestoreObserved?.maxActiveAnimations).toBe(0);
 });

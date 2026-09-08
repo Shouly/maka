@@ -20,7 +20,9 @@
 import * as React from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 
+import { useUiLocale } from '@maka/ui';
 import { Anthropicon } from '../icons';
+import { getUiCopy } from '../../locales/ui-copy';
 import { cn } from '../../lib/cn';
 
 const Dialog = DialogPrimitive.Root;
@@ -46,12 +48,26 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 const DialogContent = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+    /**
+     * Render the content root as a native `<dialog open>` instead of a `<div>`.
+     *
+     * Only the search modal needs this: `main-window.ts`'s diagnostic probe
+     * (and `scripts/desktop-real-window-smoke.mjs` through it) asks for
+     * `dialog[data-maka-contract="search-modal"][open]`, which is an element
+     * *tag* test a Radix `<div role="dialog">` cannot satisfy. The dialog is
+     * opened by attribute rather than `showModal()`, so it stays a Radix layer
+     * — same overlay, same focus scope, same dismiss behaviour — and does not
+     * enter the top layer, where it would paint over the titlebar sync.
+     */
+    nativeDialogElement?: boolean;
+  }
+>(({ className, children, nativeDialogElement = false, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
+      asChild={nativeDialogElement || undefined}
       // 模态对话框的稳定标记。Radix 的 Popover 内容同样带 role="dialog",
       // 靠角色分不出"真模态"和"浮层",需要识别时认这个属性。
       data-app-dialog=""
@@ -66,13 +82,23 @@ const DialogContent = React.forwardRef<
         // className 落在 **root** 上。要改内边距/间距请改基元,不要在调用点
         // 传 p-* / gap-*,那会落到 root 上、对不上内容(root 没有 padding)。
         'fixed left-[50%] top-[50%] z-50 flex flex-col w-full max-w-[calc(100%-2rem)] md:max-w-md translate-x-[-50%] translate-y-[-50%] max-h-[calc(100dvh-2rem)] bg-surface-3 rounded-xl shadow-[var(--dialog-shadow)]',
+        // A `<dialog>` inherits UA colour and overflow that a `<div>` does not.
+        nativeDialogElement && 'text-inherit overflow-visible',
         className,
       )}
       {...props}
     >
-      <div className="isolate flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto rounded-[inherit] p-6">
-        {children}
-      </div>
+      {nativeDialogElement ? (
+        <dialog open>
+          <div className="isolate flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto rounded-[inherit] p-6">
+            {children}
+          </div>
+        </dialog>
+      ) : (
+        <div className="isolate flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto rounded-[inherit] p-6">
+          {children}
+        </div>
+      )}
     </DialogPrimitive.Content>
   </DialogPortal>
 ));
@@ -87,22 +113,26 @@ const DialogHeader = ({
   className,
   children,
   hideCloseButton = false,
-  closeLabel = 'Close',
+  closeLabel,
   ...props
-}: DialogHeaderProps) => (
-  <div className={cn('flex items-start justify-between gap-4', className)} {...props}>
-    {/* gap-1 = 4px:Cowork 的标题↔描述间距 */}
-    <div className="flex flex-col gap-1 text-left flex-1 min-w-0">{children}</div>
-    {/* 关闭按钮静止态就是文字主色(Cowork 实测 rgb(11,11,11)),hover 只加 5%
+}: DialogHeaderProps) => {
+  const uiCopy = getUiCopy(useUiLocale());
+  const resolvedCloseLabel = closeLabel ?? uiCopy.close;
+  return (
+    <div className={cn('flex items-start justify-between gap-4', className)} {...props}>
+      {/* gap-1 = 4px:Cowork 的标题↔描述间距 */}
+      <div className="flex flex-col gap-1 text-left flex-1 min-w-0">{children}</div>
+      {/* 关闭按钮静止态就是文字主色(Cowork 实测 rgb(11,11,11)),hover 只加 5%
         底、不变色 —— 关闭是弹框里唯一的常驻操作,不该默认压成次要灰。 */}
-    {!hideCloseButton && (
-      <DialogPrimitive.Close className="shrink-0 rounded-lg text-text-primary transition-colors hover:bg-sidebar-menu-hover focus:outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none h-8 w-8 flex items-center justify-center -mr-1 -mt-1 cursor-pointer">
-        <Anthropicon name="x" size={20} />
-        <span className="sr-only">{closeLabel}</span>
-      </DialogPrimitive.Close>
-    )}
-  </div>
-);
+      {!hideCloseButton && (
+        <DialogPrimitive.Close className="shrink-0 rounded-lg text-text-primary transition-colors hover:bg-sidebar-menu-hover focus:outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none h-8 w-8 flex items-center justify-center -mr-1 -mt-1 cursor-pointer">
+          <Anthropicon name="x" size={20} />
+          <span className="sr-only">{resolvedCloseLabel}</span>
+        </DialogPrimitive.Close>
+      )}
+    </div>
+  );
+};
 DialogHeader.displayName = 'DialogHeader';
 
 const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (

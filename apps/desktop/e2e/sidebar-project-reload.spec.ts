@@ -17,33 +17,20 @@
  * under the License.
  */
 
-import { expect, test } from './fixtures';
+import { COMPOSER_INPUT, ensureSidebarExpanded, expect, test, sendPrompt } from './fixtures';
 
-// This stays in Electron: the contract is persistence across a real renderer
-// reload, not SessionRail's rendering or interaction behavior. Those three
-// component-owned journeys live in Product/Sidebar Session List/Project Groups.
-test('rail grouping survives a renderer reload', async ({ projectSidebarWindow: page }) => {
-  await page.keyboard.press('Escape');
-  await expect(page.locator('[data-maka-contract="search-modal"]')).not.toBeVisible();
-
-  const sidebar = page.getByRole('navigation', { name: '任务列表' });
-  const byTime = sidebar.getByRole('radio', { name: '按时间', exact: true });
-  const byProject = sidebar.getByRole('radio', { name: '按项目', exact: true });
-
-  await expect(byTime).toBeChecked();
-  await byProject.click();
-  await expect(byProject).toBeChecked();
-  await expect
-    .poll(() => page.evaluate(() => localStorage.getItem('maka-chat-list-view-mode-v1')))
-    .toBe('project');
-
+test('project tasks and Recents are rebuilt from the Host after reload', async ({
+  newTaskTargetWindow: page,
+}) => {
+  await sendPrompt(page, 'project reload contract');
+  await ensureSidebarExpanded(page);
+  const projects = page.getByRole('region', { name: '项目', exact: true });
+  const recents = page.getByRole('region', { name: '最近', exact: true });
+  await expect(projects.getByRole('option', { name: 'project reload contract' })).toBeVisible();
+  await expect(recents.getByRole('option', { name: 'project reload contract' })).toBeVisible();
   await page.reload();
-  await expect(page.locator('[data-maka-contract="search-modal"][open]')).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(page.locator('[data-maka-contract="search-modal"]')).not.toBeVisible();
-
-  await expect(sidebar.getByRole('radio', { name: '按项目', exact: true })).toBeChecked();
-  await expect
-    .poll(() => page.evaluate(() => localStorage.getItem('maka-chat-list-view-mode-v1')))
-    .toBe('project');
+  await expect(page.locator(COMPOSER_INPUT)).toBeVisible();
+  await ensureSidebarExpanded(page);
+  await expect(projects.getByRole('option', { name: 'project reload contract' })).toBeVisible();
+  await expect(recents.getByRole('option', { name: 'project reload contract' })).toBeVisible();
 });

@@ -1,15 +1,3 @@
----
-doc_id: frontend-css-governance
-title: "Frontend CSS governance"
-language: en
-source_language: en
-implementation_status: current
-document_status: current
-translation_status: synced
-last_verified: 2026-09-04
-owners:
-  - maka-backend
----
 <!--
   Licensed to the Apache Software Foundation (ASF) under one
   or more contributor license agreements.  See the NOTICE file
@@ -29,67 +17,32 @@ owners:
   under the License.
 -->
 
-# Frontend CSS governance
+# Frontend CSS governance — enterprise renderer
 
-[中文](./frontend-css-governance.zh-CN.md)
+The current design authority is [globals.css](../apps/desktop/src/renderer/styles/globals.css),
+with shared primitives in `components/ui/`. The previous Astryx-specific contracts, two-size
+text rule and Storybook workflow have been retired for the enterprise branch.
 
-Maka's frontend styling combines Astryx, `@maka/ui` product compositions, and renderer surface CSS. Cascade order is an explicit contract rather than an implementation detail.
+- Use semantic token utilities; place any new colour in the token file. The architecture gate
+  rejects arbitrary colour values in feature components and inline styles.
+- Reuse the existing Radix primitives and class variants for menus, dialogs, controls and rows.
+  Keep layout in the owning component; add global CSS only for shared behavior or native seams.
+- Keep `.dark` and automatic theme behavior consistent. Test both themes and reduced motion.
+- All icon-only actions need localized accessible names and visible keyboard focus. Use the
+  Electron AX audit for controls crossing native or preload boundaries.
+- Preserve titlebar drag/no-drag boundaries, modal layering, native browser viewport hiding,
+  and the bounded transcript's scrolling authority. Avoid `transition-all` on long lists.
+- Biome now formats the enterprise renderer. Run `npm run format:check` as well as lint,
+  renderer architecture, locale hygiene and `git diff --check`.
 
-## 1. Entry file
+For a UI change, record affected surfaces, light/dark screenshots where appearance changed,
+and the relevant test result. Pure state decisions belong in renderer state tests; IPC,
+restart persistence, native input and PTY lifecycle belong in the budgeted Electron E2E suite.
+Storybook is not installed in this branch.
 
-- `apps/desktop/src/renderer/styles.css` is an entry file only.
-- It may contain `@import` and other top-level orchestration statements.
-- New per-surface selector blocks belong in `apps/desktop/src/renderer/styles/**/*.css`.
-- Historical recipes at the end of `maka-tokens.css` and `reference-shell.css` are transitional exceptions. Do not add new surface rules to them.
+Generated `renderer-architecture.json` and third-party notices must be regenerated through
+their scripts. Native overlay/browser-dialog styles retain separate consumers; do not delete
+them merely because the React renderer does not import them.
 
-### Selector naming
-
-- Shared renderer and `@maka/ui` selectors use the kebab-case `.maka-*` dialect.
-- The established `styles/settings/**` surface uses camelCase `.settings*` selectors. Keep that dialect for settings-local selectors instead of mixing both forms within one surface.
-- Moving existing settings selectors between concern files does not require a repository-wide rename; any future naming migration should be handled as an explicit compatibility change.
-
-## 2. Layers
-
-- Pure presentation rules should use `@layer base` or `@layer components` where practical.
-- Use `@import "./file.css" layer(components)` only when the build chain explicitly supports it.
-- Do not place `@import` inside an `@layer` block.
-
-Astryx reset and component layers come first; Maka base tokens and product `components` come later. Keep layer ownership at the closest existing seam instead of adding a higher-priority compatibility layer.
-
-## 4. `!important`
-
-- `!important` is allowed by default only for accessibility helpers such as `.maka-visually-hidden`, and for reduced-motion or e2e-fixture overrides.
-- Every other use requires an adjacent `Justified:` comment.
-- Prefer fixing the primitive API or semantic class when it can express the behavior directly.
-
-## 5. Tokens
-
-- Shared custom properties belong in `apps/desktop/src/renderer/maka-tokens.css`.
-- Component-local properties are allowed only with a `/* local: ... */` comment.
-- Do not add raw colors, radii, or ungoverned z-index values.
-
-## 6. How these rules are checked
-
-These rules are conventions enforced in review. Static correctness belongs to
-Biome, Knip, and typecheck; accessibility keeps its focused check. CSS usage and
-Story prose are not decided by repository-wide regex baselines.
-
-- Renderer CSS behavior is verified where it renders: Storybook, the app, or an
-  e2e assertion on the real surface.
-- Remove selectors with the source or surface that owned them instead of
-  maintaining an allowlist of strings that may be generated at runtime.
-
-## 7. Change order
-
-When changing renderer CSS:
-
-1. Move real rule blocks out of `styles.css` into surface files.
-2. Keep generic component chrome in Astryx and product composition in `@maka/ui` or the matching renderer surface.
-3. Remove dead selectors.
-4. Remove remaining `!important` only after primitive and layer ownership is stable.
-
-## 8. Governing principles
-
-- Delete dead CSS before aesthetic refactoring.
-- Resolve shared `Button`, `Textarea`, and `EmptyState` overrides at the component API seam instead of accumulating renderer specificity.
-- Every change to cascade order requires the narrowest relevant regression check on the rendered surface.
+See the [rewrite plan](enterprise/frontend-rewrite-plan.md) and
+[release checklist](enterprise/release-checklist.md) for scope and deferred work.
