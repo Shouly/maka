@@ -64,8 +64,17 @@ import {
 } from '../lib/ported/transcript-reading-position.js';
 import {
   createSessionEventStreamSubscription,
+  evaluateSessionEventStreamSnapshot,
+  recordSessionEventStreamChange,
   recordSessionEventStreamEvent,
 } from '../lib/ported/session-event-health.js';
+import { sessionExpectsEventStream } from '@maka/core/session-event-health';
+import type { SessionChangedEvent, SessionStatus } from '@maka/core/session';
+import { deriveLiveTurnSnapshot } from '../lib/ported/live-turn-snapshot.js';
+import { reconcileSettledSessionTransients } from '../lib/ported/settled-session-transients.js';
+import { readExecutionBoundaryWithRetry } from '../lib/ported/execution-boundary-read.js';
+import { mergeTransientMessageProjection } from '../lib/ported/transient-message-projection.js';
+import type { DesktopSessionSummary } from '../bridge/sessions.js';
 import {
   projectQueuedTransientMessages,
   reconcileTransientMessages,
@@ -83,6 +92,12 @@ export interface ActiveSessionState {
   loading: boolean;
   observationReady: boolean;
   error: string | undefined;
+  /**
+   * The transcript itself could not be opened or read (upstream
+   * `messageLoadError`). Separate from `error` so the notice that offers a
+   * retry only fires for the thing the retry reloads.
+   */
+  transcriptError: string | undefined;
   health: SessionEventStreamSnapshot | undefined;
   liveTurns: Record<string, LiveTurnProjection>;
   interactions: InteractionQueues;
@@ -90,6 +105,10 @@ export interface ActiveSessionState {
   transientMessages: readonly TransientUserMessageProjection[];
   shellUpdates: readonly ShellRunUpdate[];
   executionBoundary: ExecutionBoundaryReadModel | undefined;
+  /** Main was asked for the boundary and every attempt failed (#1629). */
+  boundaryUnreadable: boolean;
+  /** A boundary read is in flight. */
+  boundaryReading: boolean;
   compactionOutcome: ContextCompactionOutcome | undefined;
   /** Which direction a history page is loading in, when one is. */
   historyPending: TranscriptHistoryPending | undefined;
@@ -108,6 +127,7 @@ const initialState = (): ActiveSessionState => ({
   loading: false,
   observationReady: false,
   error: undefined,
+  transcriptError: undefined,
   health: undefined,
   liveTurns: {},
   interactions: {},
@@ -115,6 +135,8 @@ const initialState = (): ActiveSessionState => ({
   transientMessages: [],
   shellUpdates: [],
   executionBoundary: undefined,
+  boundaryUnreadable: false,
+  boundaryReading: false,
   compactionOutcome: undefined,
   historyPending: undefined,
   readingAnchors: {},
@@ -132,6 +154,12 @@ export function createActiveSessionStore(
     notifications?: Pick<typeof notifications, 'notifyRunEnded'>;
     /** Session display name for the OS "run ended" notification title. */
     sessionTitle?: (sessionId: string) => string | undefined;
+    /** The catalog's status for a Session — the health probe's expectation input. */
+    sessionStatus?: (sessionId: string) => SessionStatus | undefined;
+    /** Injectable for tests: the boundary read's retry schedule. */
+    boundaryRetryDelaysMs?: readonly number[];
+    /** Injectable for tests: the event-stream health probe interval. */
+    healthProbeIntervalMs?: number;
   } = {},
 ) {
   const api = options.sessions ?? sessions;
@@ -155,6 +183,9 @@ export function createActiveSessionStore(
   let controller: RecoveringDesktopTranscriptRangeController | undefined;
   let currentRefresh: ((options?: RefreshMessagesOptions) => Promise<boolean>) | undefined;
   let currentPublishTransient: (() => void) | undefined;
+  let currentEvaluateHealth: (() => void) | undefined;
+  let currentRefreshBoundary: (() => void) | undefined;
+  let currentFailTranscript: ((error: unknown) => void) | undefined;
   // The user's own sends, shown the instant they leave the composer and
   // retired when the Host's durable copy carries the same id (upstream
   // `showTransientUserMessage`). Kept per Session and outside the selection
@@ -229,6 +260,10 @@ export function createActiveSessionStore(
       if (current()) store.setState(patch);
     };
     const fail = (error: unknown) => commit({ error: errorMessage(error), loading: false });
+    // The transcript could not be opened or read. Kept apart from `fail` so
+    // the retry the notice offers reloads exactly what failed.
+    const failTranscript = (error: unknown) =>
+      commit({ transcriptError: errorMessage(error), error: errorMessage(error), loading: false });
     const transient = new Map<string, TransientUserMessageProjection>();
     const optimistic = optimisticFor(sessionId);
     const transcript = new DesktopTranscriptRangeStore(sessionId);
@@ -266,7 +301,7 @@ export function createActiveSessionStore(
         applyTranscript();
         return settled;
       } catch (error) {
-        fail(error);
+        failTranscript(error);
         return false;
       }
     };
@@ -283,14 +318,30 @@ export function createActiveSessionStore(
         fail(error);
       }
     };
+    // #1629: a boundary that cannot be read is a state the user is told about,
+    // not a silent gap. The bounded retry rides out a main process still
+    // settling the Session; after that the composer yields to a notice with
+    // another attempt, because sending into permissions the client cannot
+    // describe is the one thing this read exists to prevent.
     const refreshBoundary = async () => {
       const request = ++boundaryRequest;
-      try {
-        const executionBoundary = await api.readExecutionBoundary(sessionId);
-        if (request === boundaryRequest) commit({ executionBoundary });
-      } catch (error) {
-        fail(error);
-      }
+      commit({ boundaryReading: true });
+      const result = await readExecutionBoundaryWithRetry({
+        read: () => api.readExecutionBoundary(sessionId),
+        wait: (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
+        cancelled: () => !current() || request !== boundaryRequest,
+        ...(options.boundaryRetryDelaysMs ? { retryDelaysMs: options.boundaryRetryDelaysMs } : {}),
+      });
+      if (result.outcome === 'cancelled') return;
+      commit(
+        result.outcome === 'read'
+          ? {
+              executionBoundary: result.boundary,
+              boundaryUnreadable: false,
+              boundaryReading: false,
+            }
+          : { executionBoundary: undefined, boundaryUnreadable: true, boundaryReading: false },
+      );
     };
     const handlers = createAppShellSessionEventHandlers({
       uiLocale: locale,
@@ -366,7 +417,7 @@ export function createActiveSessionStore(
       commit({
         messages: snapshot.messages,
         range: snapshot,
-        ...(snapshot.ready ? { loading: false, error: undefined } : {}),
+        ...(snapshot.ready ? { loading: false, error: undefined, transcriptError: undefined } : {}),
       });
       handlers.reconcilePersistedMessages(sessionId!, snapshot.messages);
       publishTransient();
@@ -381,7 +432,7 @@ export function createActiveSessionStore(
             try {
               if (transcript.accept(batch)) applyTranscript();
             } catch (error) {
-              fail(error);
+              failTranscript(error);
             }
           },
           (cancel) => {
@@ -390,13 +441,52 @@ export function createActiveSessionStore(
           },
         );
       },
-      { onError: fail },
+      { onError: failTranscript },
     );
     controller = rangeController;
     currentRefresh = refresh;
     currentPublishTransient = publishTransient;
+    currentRefreshBoundary = () => void refreshBoundary();
+    currentFailTranscript = failTranscript;
     publishTransient();
     commit({ health: createSessionEventStreamSubscription({ sessionId, now: Date.now() }) });
+    // The event-stream health probe (upstream `useSessionEventHealthPolling`).
+    // A stream nobody expects has nothing to observe, so an idle Session gets
+    // no probe; a running one is checked every few seconds and on return to
+    // the foreground, and a stalled one asks the Host for the catalog and the
+    // transcript again — the only way a wedged stream ever self-heals.
+    const evaluateHealth = () => {
+      if (!current()) return;
+      const state = store.getState();
+      const live = deriveLiveTurnSnapshot(state.liveTurns[sessionId]);
+      const hasLiveActivity =
+        (live.hasStreamingText && live.streamingMessageId === undefined) ||
+        live.hasInFlightTools ||
+        (state.interactions[sessionId]?.length ?? 0) > 0;
+      const sessionStatus = options.sessionStatus?.(sessionId);
+      if (!sessionExpectsEventStream(sessionStatus, hasLiveActivity)) return;
+      const result = evaluateSessionEventStreamSnapshot({
+        previous: state.health,
+        now: Date.now(),
+        sessionStatus,
+        hasLiveActivity,
+      });
+      if (!result.snapshot) return;
+      commit({ health: result.snapshot });
+      if (result.shouldRefresh) {
+        void options.refreshSessions?.();
+        void refresh();
+      }
+    };
+    const healthTimer = setInterval(evaluateHealth, options.healthProbeIntervalMs ?? 5_000);
+    // A probe must never be what keeps a process alive (node test runners).
+    (healthTimer as { unref?: () => void }).unref?.();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') evaluateHealth();
+    };
+    const hasDocument = typeof document !== 'undefined';
+    if (hasDocument) document.addEventListener('visibilitychange', onVisible);
+    currentEvaluateHealth = evaluateHealth;
 
     const beginSeed = () => {
       handlers.dropDisplayEvents(sessionId);
@@ -552,6 +642,9 @@ export function createActiveSessionStore(
       attempt++;
       clearTimeout(retry);
       clearTimeout(shellRetry);
+      clearInterval(healthTimer);
+      if (hasDocument) document.removeEventListener('visibilitychange', onVisible);
+      if (currentEvaluateHealth === evaluateHealth) currentEvaluateHealth = undefined;
       handlers.dropDisplayEvents(sessionId);
       unsubscribe();
       offInteractions();
@@ -562,6 +655,8 @@ export function createActiveSessionStore(
         controller = undefined;
         currentRefresh = undefined;
         currentPublishTransient = undefined;
+        currentRefreshBoundary = undefined;
+        currentFailTranscript = undefined;
       }
       if (generation === selectionGeneration)
         store.setState({ observationReady: false, loading: false });
@@ -600,7 +695,84 @@ export function createActiveSessionStore(
      */
     showTransientUserMessage(sessionId: string, message: TransientUserMessageProjection) {
       optimisticFor(sessionId).set(message.id, message);
+      if (store.getState().sessionId === sessionId) {
+        // A send is the user's answer to a failed load: the transcript is
+        // about to be asked for again, so the stale verdict comes down.
+        if (store.getState().transcriptError !== undefined)
+          store.setState({ transcriptError: undefined });
+        currentPublishTransient?.();
+      }
+    },
+    /**
+     * What the Host made of a submitted message: the Turn it landed in, the
+     * attachments it resolved, the inline references it kept. A Host-named
+     * Turn outranks a later local update that has none.
+     */
+    updateTransientMessage(sessionId: string, message: TransientUserMessageProjection) {
+      const map = optimisticFor(sessionId);
+      const existing = map.get(message.id);
+      // The durable copy already retired it; a late update must not resurrect it.
+      if (!existing) return;
+      map.set(message.id, mergeTransientMessageProjection(existing, message));
       if (store.getState().sessionId === sessionId) currentPublishTransient?.();
+    },
+    /** Ask for the transcript again after a failed open or read. */
+    retryTranscript() {
+      const active = controller;
+      if (!active) return;
+      store.setState({ transcriptError: undefined, loading: true });
+      void active.reload().catch((error) => {
+        if (controller === active) currentFailTranscript?.(error);
+      });
+    },
+    /** Another attempt at the boundary read (#1629). */
+    reloadExecutionBoundary() {
+      currentRefreshBoundary?.();
+    },
+    /**
+     * A catalog change about the observed Session. A named turn's start,
+     * refusal or end confirms the local claim; an appended message is read
+     * back at once; either counts as the stream speaking for health.
+     */
+    recordSessionChange(event: SessionChangedEvent) {
+      const sessionId = store.getState().sessionId;
+      if (!sessionId || event.sessionId !== sessionId) return;
+      const health = store.getState().health;
+      if (health) store.setState({ health: recordSessionEventStreamChange(health, event.ts) });
+      if (event.reason === 'message-appended') void currentRefresh?.();
+    },
+    /** The catalog was read; the live projections as they stood before that read. */
+    observeLiveTurns(): Readonly<Record<string, LiveTurnProjection>> {
+      return store.getState().liveTurns;
+    },
+    /**
+     * Retire the live turn of any Session the authority says has settled.
+     *
+     * Compared against the projections observed before the catalog read
+     * began: a turn that advanced while the read was in flight is not retired
+     * by that older snapshot. Without this a dropped terminal event leaves
+     * the composer locked in "running" until the task is re-selected.
+     */
+    reconcileSettledLiveTurns(
+      sessions: readonly DesktopSessionSummary[],
+      observed: Readonly<Record<string, LiveTurnProjection>>,
+    ) {
+      reconcileSettledSessionTransients({
+        activeId: store.getState().sessionId,
+        sessions,
+        observedLiveTurnBySession: observed,
+        clearTurnTransientStateIfCurrent: (sessionId, expected) => {
+          const live = store.getState().liveTurns;
+          if (expected === undefined || live[sessionId] !== expected) return;
+          const next = { ...live };
+          delete next[sessionId];
+          store.setState({ liveTurns: next });
+        },
+      });
+    },
+    /** Test seam: run the health probe now. */
+    probeHealth() {
+      currentEvaluateHealth?.();
     },
     removeTransientMessage(sessionId: string, messageId: string) {
       optimisticBySession.get(sessionId)?.delete(messageId);

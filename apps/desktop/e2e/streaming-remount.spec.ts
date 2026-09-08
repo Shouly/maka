@@ -43,7 +43,7 @@ async function steerActiveTurn(composer: Locator, text: string): Promise<void> {
   // Mid-turn steering is Shift+Enter: the one Send stays Send, and the shifted
   // submit hands the draft to the active Turn once.
   await composer.fill(text);
-  await composer.press('Enter');
+  await composer.press('Shift+Enter');
 }
 
 test('a failed first observation seed reconnects to the live Turn', async ({ window: page }) => {

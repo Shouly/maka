@@ -114,7 +114,8 @@ export function TipTapEditor(props: {
   target?: DesktopNewTaskTarget;
   document: JSONContent;
   onChange: (doc: JSONContent) => void;
-  onSubmit: () => void;
+  /** `steer` is the one-shot Shift+Enter into the running turn. */
+  onSubmit: (mode?: 'steer') => void;
   onCommand: (command: string) => void;
   onEditor: (editor: Editor | null) => void;
   onArrow: (event: KeyboardEvent) => boolean;
@@ -389,9 +390,12 @@ export function TipTapEditor(props: {
         }
       }
     }
-    if (event.key === 'Enter' && !event.shiftKey) {
+    // Plain Enter sends; while a turn runs it queues. Shift+Enter breaks the
+    // line when idle and steers this one draft into the running turn
+    // otherwise (upstream's routing: queue is the safe default mid-turn).
+    if (event.key === 'Enter' && (!event.shiftKey || props.running)) {
       event.preventDefault();
-      props.onSubmit();
+      props.onSubmit(props.running && event.shiftKey ? 'steer' : undefined);
       return true;
     }
     if (event.key === 'ArrowUp' || event.key === 'ArrowDown') return props.onArrow(event);

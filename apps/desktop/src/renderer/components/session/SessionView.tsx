@@ -41,6 +41,7 @@ import { userFacingText, type StoredMessage } from '@maka/core/session';
 import {
   SessionAttachmentProvider,
   TranscriptScrollAuthorityProvider,
+  getConversationCopy,
   projectTranscriptRows,
   useChatScroll,
   useTranscriptScrollAuthority,
@@ -49,7 +50,11 @@ import {
 } from '@maka/ui';
 import { openExternal } from '../../bridge/external-links.js';
 import { readAttachmentBytes } from '../../bridge/attachments.js';
-import { useActiveTurns, useLiveTurnSnapshot } from '../../hooks/use-workspace.js';
+import {
+  useActiveTurns,
+  useLiveTurnSnapshot,
+  useShellLiveTurn,
+} from '../../hooks/use-workspace.js';
 import { openWorkbarFile, openWorkbarTerminal } from '../../hooks/use-workbar.js';
 import { useTurnPresentation, pendingTurnActionKey } from '../../hooks/use-turn-presentation.js';
 import {
@@ -61,6 +66,7 @@ import {
 import { revisionRefusalFor } from '../../store/revision-draft.js';
 import { pendingActionsOf } from '../../store/turn-actions-store.js';
 import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
+import { getShellCopy } from '../../locales/shell-copy.js';
 import { getTranscriptCopy } from '../../locales/transcript-copy.js';
 import type { TurnFooterActionId } from '../../lib/ported/turn-footer-actions.js';
 import { ChatSkeleton } from '../ui/chat-skeleton.js';
@@ -72,6 +78,7 @@ import { JumpToLatest, TranscriptGapRow } from './HistoryControls.js';
 import { MessageQueue } from './MessageQueue.js';
 import { SelectionQuote } from './SelectionQuote.js';
 import { TranscriptTurn } from './TranscriptTurn.js';
+import { NoticeCard } from './notices/NoticeCard.js';
 import { RevisionBanner } from './notices/RevisionBanner.js';
 import { SessionNotices } from './notices/SessionNotices.js';
 
@@ -105,6 +112,7 @@ function SessionTranscript(props: SessionViewProps) {
 
   const turns = useActiveTurns();
   const live = useLiveTurnSnapshot();
+  const shellLive = useShellLiveTurn(sessionId);
   const draft = useStore(revisionDraftStore, (state) => state.draft);
   const pending = useStore(turnActionsStore, (state) => pendingActionsOf(state, sessionId));
   const feed = useStore(
@@ -115,6 +123,13 @@ function SessionTranscript(props: SessionViewProps) {
       hasOlder: state.range?.hasOlder === true,
       hasNewer: state.range?.hasNewer === true,
       historyPending: state.historyPending,
+      // The composer yields to a turn-scoped prompt: an answer typed beside
+      // it would race the one the prompt is waiting for.
+      interactionPending: (state.interactions[sessionId]?.length ?? 0) > 0,
+      // #1629: no boundary, no composer — but never silently. The notice
+      // stands where the composer would be and hands the user another read.
+      boundaryUnreadable: state.boundaryUnreadable,
+      boundaryReading: state.boundaryReading,
     })),
   );
 
@@ -285,7 +300,18 @@ function SessionTranscript(props: SessionViewProps) {
     [copy, reportError, sessionId],
   );
 
-  const running = live.phase !== undefined || pending.includes('send');
+  // #646: Stop must be available for the WHOLE turn — the moment the user
+  // most wants to interrupt is a long wait with nothing on screen. The live
+  // stream is folded in defensively for the rare replay where the projection
+  // was over-cleared.
+  const running = shellLive.turnActive || shellLive.activeStreamingLive;
+  const composerCopy = getConversationCopy(locale).composer;
+  const waitCue = shellLive.showProcessingIndicator
+    ? composerCopy.processing
+    : shellLive.showContinuingIndicator
+      ? composerCopy.continuing
+      : undefined;
+  const shellCopy = getShellCopy(locale).app;
   const historyPending =
     feed.historyPending?.sessionId === sessionId ? feed.historyPending : undefined;
 
@@ -412,9 +438,33 @@ function SessionTranscript(props: SessionViewProps) {
           />
           <MessageQueue sessionId={sessionId} onError={reportError} />
           <InteractionPrompts sessionId={sessionId} />
-          {props.composerSlot ?? (
-            <ChatInput sessionId={sessionId} running={running} onError={reportError} />
+          {feed.boundaryUnreadable && !feed.interactionPending && (
+            <NoticeCard
+              tone="warning"
+              role="status"
+              title={shellCopy.boundaryUnreadableTitle}
+              description={shellCopy.boundaryUnreadableDetail}
+              actions={[
+                {
+                  label: feed.boundaryReading
+                    ? shellCopy.boundaryUnreadableRetrying
+                    : shellCopy.boundaryUnreadableRetry,
+                  disabled: feed.boundaryReading,
+                  onClick: () => activeSessionStore.reloadExecutionBoundary(),
+                },
+              ]}
+            />
           )}
+          {!feed.interactionPending &&
+            !feed.boundaryUnreadable &&
+            (props.composerSlot ?? (
+              <ChatInput
+                sessionId={sessionId}
+                running={running}
+                {...(waitCue ? { waitCue } : {})}
+                onError={reportError}
+              />
+            ))}
         </div>
       </div>
     </div>

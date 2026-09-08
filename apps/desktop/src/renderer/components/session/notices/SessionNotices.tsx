@@ -111,6 +111,10 @@ export function SessionNotices(props: {
     (state) => (state.interactions[props.sessionId]?.length ?? 0) > 0,
   );
   const compaction = useStore(activeSessionStore, (state) => state.compactionOutcome);
+  const transcriptError = useStore(activeSessionStore, (state) =>
+    state.sessionId === props.sessionId ? state.transcriptError : undefined,
+  );
+  const transcriptLoading = useStore(activeSessionStore, (state) => state.loading);
   const pending = useStore(turnActionsStore, (state) => pendingActionsOf(state, props.sessionId));
   const readiness = useSessionReadiness(props.sessionId);
   const [dismissedCompaction, setDismissedCompaction] = useState<
@@ -151,6 +155,7 @@ export function SessionNotices(props: {
       : undefined;
 
   const anything =
+    transcriptError !== undefined ||
     awaitingAnswer ||
     healthNotice ||
     workspace ||
@@ -168,6 +173,21 @@ export function SessionNotices(props: {
       aria-label={copy.notices.ariaLabel}
       data-maka-contract="session-notices"
     >
+      {transcriptError !== undefined && (
+        <NoticeCard
+          tone="destructive"
+          title={copy.notices.transcriptLoadFailed}
+          description={copy.notices.transcriptLoadFailedDetail}
+          actions={[
+            {
+              label: copy.notices.retry,
+              disabled: transcriptLoading,
+              onClick: () => activeSessionStore.retryTranscript(),
+            },
+          ]}
+        />
+      )}
+
       {awaitingAnswer && (
         <div data-maka-contract="interaction-pending">
           <NoticeCard

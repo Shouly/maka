@@ -127,6 +127,8 @@ export function ChatInput(props: {
   label?: string;
   sessionId?: string;
   running?: boolean;
+  /** The #646 turn-wait cue ("正在处理…" / "继续中…"), when one is due. */
+  waitCue?: string;
   onError?: (title: string, error: unknown) => void;
   onOpenSettings?: () => void;
 }) {
@@ -142,6 +144,7 @@ function OwnedChatInput(props: {
   sessionId?: string;
   target?: DesktopNewTaskTarget;
   running?: boolean;
+  waitCue?: string;
   onError?: (title: string, error: unknown) => void;
   onOpenSettings?: () => void;
 }) {
@@ -163,7 +166,10 @@ function OwnedChatInput(props: {
   const [dragging, setDragging] = useState(false);
   const [bypassOpen, setBypassOpen] = useState(false);
   const [preview, setPreview] = useState<{ name: string; url: string }>();
-  const [placement, setPlacement] = useState<'current_turn' | 'next_turn'>('current_turn');
+  // Mid-turn submits queue by default; steering the running turn is the
+  // explicit choice (the picker, or a one-shot Shift+Enter). The other way
+  // round, a habitual Enter interrupts the answer in progress.
+  const [placement, setPlacement] = useState<'current_turn' | 'next_turn'>('next_turn');
 
   const editor = useRef<Editor | null>(null);
   const mounted = useRef(true);
@@ -247,7 +253,7 @@ function OwnedChatInput(props: {
   // -------------------------------------------------------------------------
   // Send
 
-  async function submit() {
+  async function submit(mode?: 'steer') {
     if (lock.current || blocked || !hasContent) return;
     lock.current = true;
     setBusy(true);
@@ -309,7 +315,11 @@ function OwnedChatInput(props: {
 
       // The message is on screen before the Host has it (upstream
       // `showTransientUserMessage`); the durable copy retires it by id.
-      const transientPlacement = props.running ? placement : 'current_turn';
+      const transientPlacement = props.running
+        ? mode === 'steer'
+          ? 'current_turn'
+          : placement
+        : 'current_turn';
       activeSessionStore.showTransientUserMessage(owner, {
         id: messageId,
         ts: Date.now(),
@@ -344,6 +354,22 @@ function OwnedChatInput(props: {
         );
       }
       optimisticId = undefined;
+      // What the Host made of it: the Turn it landed in, the attachments it
+      // resolved, the inline references it kept. `locally_saved` answered
+      // nothing about a Turn, so the first projection stands as it is.
+      if (result.disposition !== 'locally_saved') {
+        activeSessionStore.updateTransientMessage(owner, {
+          id: messageId,
+          ts: Date.now(),
+          text: serialized.text,
+          attachments: result.attachments,
+          directoryReferences: [...sent.directories],
+          quotes: sentQuotes.map(({ id: _id, ...quote }) => quote),
+          inlineReferences: result.inlineReferences,
+          transientPlacement,
+          ...(result.turnId ? { hostTurnId: result.turnId } : {}),
+        });
+      }
       composerInputStore.acknowledge(draftOwner, sent);
       for (const quote of sentQuotes) composerDraftStore.removeQuote(draftOwner, quote.id);
       history.rememberSentEntry(serialized.text);
@@ -652,7 +678,7 @@ function OwnedChatInput(props: {
             onEditor={(value) => {
               editor.current = value;
             }}
-            onSubmit={() => void submit()}
+            onSubmit={(mode) => void submit(mode)}
             onCommand={(command) => {
               if (command === 'compact' && sessionId) {
                 void turnActionsStore.compact(sessionId).catch(report);
@@ -805,9 +831,9 @@ function OwnedChatInput(props: {
         </div>
       </TooltipProvider>
 
-      {(blocked || status) && (
+      {(blocked || status || props.waitCue) && (
         <p role="status" className="px-2 text-xs leading-4 text-text-muted">
-          {blocked || status}
+          {blocked || status || props.waitCue}
         </p>
       )}
       {(error || draft.error) && (

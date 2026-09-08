@@ -26,6 +26,19 @@ import {
 } from '../lib/ported/new-task-reload-intent.js';
 import { errorMessage } from './resource-store.js';
 import type { DesktopSessionSummary, SessionRevisionFamilyOptions } from '../bridge/sessions.js';
+import type { SessionChangedEvent } from '@maka/core/session';
+
+/**
+ * What an authority read of the catalog reports to the stores that keep
+ * per-Session transients: `before` captures what they held as the read began,
+ * `after` hands them the accepted rows with that capture, so a turn that
+ * advanced while the read was in flight is never retired by the older
+ * snapshot (upstream `reconcileSettledSessionTransients`).
+ */
+export interface CatalogReadHook<Observed = unknown> {
+  before(): Observed;
+  after(sessions: readonly DesktopSessionSummary[], observed: Observed): void;
+}
 
 export interface SessionsState {
   sessions: readonly DesktopSessionSummary[];
@@ -47,14 +60,18 @@ export function createSessionsStore(api = bridge) {
   let generation = 0;
   let selectionInitialized = false;
   let lifetime = 0;
+  const changeListeners = new Set<(event: SessionChangedEvent) => void>();
+  const catalogHooks = new Set<CatalogReadHook>();
   const refresh = async () => {
     const request = ++generation;
     store.setState({ loading: true, error: undefined });
+    const observed = [...catalogHooks].map((hook) => [hook, hook.before()] as const);
     try {
       const result = await api.listSessionsWithCoverage();
       if (request !== generation) return;
       // Preload already reconciles offline Hosts, removed profiles and Guest access.
       const rows = result.sessions;
+      for (const [hook, capture] of observed) hook.after(rows, capture);
       store.setState((s) => {
         const selected = s.sessions.find((row) => row.id === s.activeId);
         const removed = selected && !rows.some((row) => row.id === selected.id && !row.isArchived);
@@ -97,10 +114,26 @@ export function createSessionsStore(api = bridge) {
     refresh,
     select,
     upsert,
+    /** Hear every catalog change event before the refresh it triggers. */
+    onChange(listener: (event: SessionChangedEvent) => void): () => void {
+      changeListeners.add(listener);
+      return () => {
+        changeListeners.delete(listener);
+      };
+    },
+    /** Take part in every catalog read; see `CatalogReadHook`. */
+    onCatalogRead<Observed>(hook: CatalogReadHook<Observed>): () => void {
+      catalogHooks.add(hook as CatalogReadHook);
+      return () => {
+        catalogHooks.delete(hook as CatalogReadHook);
+      };
+    },
     start() {
       const owner = ++lifetime;
-      const off = api.subscribeSessionChanges(() => {
-        if (owner === lifetime) void refresh();
+      const off = api.subscribeSessionChanges((event) => {
+        if (owner !== lifetime) return;
+        for (const listener of changeListeners) listener(event);
+        void refresh();
       });
       void refresh();
       return () => {

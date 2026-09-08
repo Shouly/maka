@@ -68,6 +68,40 @@ item when it lands; do not let this file become a second plan.
 - **MCP brand marks are monochrome.** Their colour rule died with
   `styles/module-pages/mcp.css`; restoring it is a rule in `styles/globals.css`.
 
+## Conversation-core gaps still open (audit 2026-09-08)
+
+An audit of the rewrite against upstream's `app-shell-chat-actions.ts` and
+session-event handling found 24 gaps; the first batch (optimistic message
+reconciled with the Host's answer, #646 wait cues, stale live-turn
+retirement, event-stream health probe, transcript load error + retry,
+queue-by-default mid-turn routing, composer yielding to prompts and to an
+unreadable boundary) landed the same day. Still open, in the order to fix:
+
+- **Ghost user bubbles.** Stop does not retract the queued messages it
+  interrupted (`DesktopSessionStopResult.retractedMessageIds`); deleting the
+  last queue entry leaves its bubble (`projectQueuedTransientMessages`
+  returns early on an empty list); an optimistic message the Host cancelled is
+  never retired after a reseed (`queryCancelledMessages` is not in
+  `bridge/sessions.ts`; upstream `retireCancelledTransientMessages`).
+- Escape does not stop a running turn; skill-invocation feedback
+  (`skill-invocation-feedback.ts`) is not ported, so a blocked `/skill:x` reads
+  as a generic failure; `SESSION_WORKSPACE_UNAVAILABLE` has no dedicated
+  toast; Resume's `park` disposition is silent.
+- Edit-and-resend: `abandonSessionCopy` is never called on cancel/failure
+  (orphan forks in the rail); the fork is sent into before its transcript
+  settles (`readSettledMessages` unused); no `waitForHostAdmission`.
+- New-task creation sends only the model and then issues up to three extra
+  IPCs, and writes `permissionMode: 'ask'` as an explicit override on every
+  first send (upstream sends it only when the user chose one, plus
+  `orchestrationMode`).
+- `sessions:changed` side effects beyond a refresh: `clearPendingTurnActions`
+  on turn/message changes, the `rebound` model toast, `retireSession`.
+- Transients are not hidden while reading history (`includeTransient` from
+  `range.hasNewer`); `flushDisplayEvents` is not called on seed completion;
+  `settleAssistantStreaming` (primary handoff) has no caller; the persisted
+  composer model default (`composer-defaults.ts`) is not ported; the
+  slash-command catalog port has no caller (`/compact` is hard-coded).
+
 ## Known defects outside the renderer allow-list
 
 - **Archiving an edit-and-resend family is a silent no-op.** `sessions:archive`

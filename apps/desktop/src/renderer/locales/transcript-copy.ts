@@ -151,6 +151,8 @@ export interface TranscriptCopy {
     readonly dismiss: string;
     readonly streamDegraded: string;
     readonly streamStalled: string;
+    readonly transcriptLoadFailed: string;
+    readonly transcriptLoadFailedDetail: string;
     readonly resumeTitle: string;
     readonly resumeDescription: string;
     readonly resumeAction: string;
@@ -373,6 +375,8 @@ const TRANSCRIPT_COPY = {
       dismiss: '知道了',
       streamDegraded: '事件流不稳定，显示的内容可能滞后。',
       streamStalled: '事件流已中断，正在重新连接。',
+      transcriptLoadFailed: '消息加载失败',
+      transcriptLoadFailedDetail: '没有读到这个任务的对话记录。可以重试，或稍后再打开。',
       resumeTitle: '上一轮被中断',
       resumeDescription: '可以安全地从中断处继续。',
       resumeAction: '继续',
@@ -500,6 +504,8 @@ const TRANSCRIPT_COPY = {
       dismiss: '知道了',
       streamDegraded: '事件流不穩定，顯示的內容可能落後。',
       streamStalled: '事件流已中斷，正在重新連線。',
+      transcriptLoadFailed: '訊息載入失敗',
+      transcriptLoadFailedDetail: '沒有讀到這個任務的對話記錄。可以重試，或稍後再開啟。',
       resumeTitle: '上一輪被中斷',
       resumeDescription: '可以安全地從中斷處繼續。',
       resumeAction: '繼續',
@@ -627,6 +633,9 @@ const TRANSCRIPT_COPY = {
       dismiss: 'Dismiss',
       streamDegraded: 'The event stream is unsteady; what you see may lag behind.',
       streamStalled: 'The event stream dropped; reconnecting.',
+      transcriptLoadFailed: 'Messages failed to load',
+      transcriptLoadFailedDetail:
+        "This task's conversation could not be read. Try again, or reopen it later.",
       resumeTitle: 'The last run was interrupted',
       resumeDescription: 'It is safe to continue from where it stopped.',
       resumeAction: 'Continue',

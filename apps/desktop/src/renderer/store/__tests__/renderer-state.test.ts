@@ -91,7 +91,13 @@ function batch(id: string, messages: StoredMessage[] = [], reset = true): Deskto
     }),
   };
 }
-function fakeRuntime() {
+function fakeRuntime(
+  overrides: Partial<Parameters<typeof createActiveSessionStore>[0]> & {
+    failBoundaryReads?: () => boolean;
+    failTranscriptOpen?: () => boolean;
+  } = {},
+) {
+  const { failBoundaryReads, failTranscriptOpen, ...storeOverrides } = overrides;
   type Observer = {
     id: string;
     event: (event: SessionEvent) => void;
@@ -134,6 +140,7 @@ function fakeRuntime() {
         return interactionRead ? interactionRead() : interactions;
       },
       async readExecutionBoundary() {
+        if (failBoundaryReads?.()) throw new Error('boundary unavailable');
         return {} as Awaited<ReturnType<typeof sessions.readExecutionBoundary>>;
       },
       subscribeActiveInteractions(handler) {
@@ -144,6 +151,7 @@ function fakeRuntime() {
     transcripts: {
       ...transcripts,
       async openTranscript(id, receive, cancellation) {
+        if (failTranscriptOpen?.()) throw new Error('transcript unavailable');
         const reader = { id, receive, closed: false, cancelled: false };
         readers.push(reader);
         cancellation?.(() => {
@@ -170,6 +178,7 @@ function fakeRuntime() {
         } satisfies DesktopTranscriptHandle;
       },
     },
+    ...storeOverrides,
     shellRuns: {
       ...shellRuns,
       listShellRuns: (id) => shellRead(id),
@@ -537,6 +546,150 @@ test('an optimistic user message shows before its Session is observed and retire
   );
   f.store.removeTransientMessage(id, 'm-2');
   assert.deepEqual(f.store.getState().transientMessages, [], 'a refused send withdraws it');
+  f.store.disconnect();
+});
+test('a transcript that fails to open is reported and a retry reloads it', async () => {
+  let failOpens = true;
+  const f = fakeRuntime({ failTranscriptOpen: () => failOpens });
+  const id = sid('a');
+  f.store.observe(id, 'en');
+  await tick();
+  await tick();
+  assert.equal(typeof f.store.getState().transcriptError, 'string', 'the failure is on record');
+  failOpens = false;
+  f.store.retryTranscript();
+  assert.equal(f.store.getState().transcriptError, undefined, 'the retry clears the verdict');
+  await tick();
+  await tick();
+  assert.equal(f.store.getState().transcriptError, undefined);
+  assert.ok(f.readers.length >= 1, 'the reload opened the transcript again');
+  f.store.disconnect();
+});
+test('a boundary that cannot be read after the retry schedule is reported as unreadable', async () => {
+  let failBoundary = true;
+  const f = fakeRuntime({
+    failBoundaryReads: () => failBoundary,
+    boundaryRetryDelaysMs: [0, 0, 0],
+  });
+  const id = sid('a');
+  f.store.observe(id, 'en');
+  for (let i = 0; i < 8; i += 1) await tick();
+  assert.equal(f.store.getState().boundaryUnreadable, true);
+  assert.equal(f.store.getState().boundaryReading, false);
+  assert.equal(f.store.getState().error, undefined, 'not a transcript failure');
+  failBoundary = false;
+  f.store.reloadExecutionBoundary();
+  assert.equal(f.store.getState().boundaryReading, true);
+  await tick();
+  await tick();
+  assert.equal(f.store.getState().boundaryUnreadable, false);
+  assert.equal(f.store.getState().boundaryReading, false);
+  f.store.disconnect();
+});
+test('a stalled event stream on a running Session asks for the catalog and the transcript again', async () => {
+  let refreshes = 0;
+  const f = fakeRuntime({
+    sessionStatus: () => 'running' as const,
+    refreshSessions: async () => {
+      refreshes++;
+    },
+    healthProbeIntervalMs: 60_000,
+  });
+  const id = sid('a');
+  f.store.observe(id, 'en');
+  await tick();
+  f.store.probeHealth();
+  assert.equal(f.store.getState().health?.status, 'connected');
+  // Twenty seconds without a word from a stream the catalog says is running.
+  const health = f.store.getState().health!;
+  f.store.setState({
+    health: { ...health, subscribedAt: Date.now() - 20_000, lastEventAt: Date.now() - 20_000 },
+  });
+  f.store.probeHealth();
+  assert.equal(f.store.getState().health?.status, 'stale');
+  assert.equal(refreshes, 1, 'the catalog is re-read once');
+  await tick();
+  f.store.probeHealth();
+  assert.equal(refreshes, 1, 'the refresh is on cooldown');
+  f.observers[0]!.event(delta('hi'));
+  assert.equal(f.store.getState().health?.status, 'recovered');
+  f.store.disconnect();
+});
+test('an idle Session gets no health verdict at all', async () => {
+  const f = fakeRuntime({ sessionStatus: () => 'active' as const });
+  const id = sid('a');
+  f.store.observe(id, 'en');
+  await tick();
+  const health = f.store.getState().health!;
+  f.store.setState({
+    health: { ...health, subscribedAt: Date.now() - 60_000, lastEventAt: Date.now() - 60_000 },
+  });
+  f.store.probeHealth();
+  assert.equal(f.store.getState().health?.status, 'connected');
+  f.store.disconnect();
+});
+test('a catalog read that says the turn is over retires the live projection, unless it moved on', async () => {
+  const f = fakeRuntime();
+  const id = sid('a');
+  f.store.observe(id, 'en');
+  await tick();
+  // Deltas batch per frame; the fixture hands the frames back to flush.
+  const flush = () => {
+    for (const frame of f.frames.splice(0)) frame();
+  };
+  f.observers[0]!.event(delta('streaming'));
+  flush();
+  assert.ok(f.store.getState().liveTurns[id], 'the stream armed a live turn');
+  const settled = [
+    { id, status: 'active', runningTurnIds: [] } as unknown as sessions.DesktopSessionSummary,
+  ];
+  // The read began, the turn advanced meanwhile: the older snapshot may not retire it.
+  const observedBefore = f.store.observeLiveTurns();
+  f.observers[0]!.event(delta(' more'));
+  flush();
+  f.store.reconcileSettledLiveTurns(settled, observedBefore);
+  assert.ok(f.store.getState().liveTurns[id], 'a projection that moved on survives');
+  // A read against the exact projection retires it.
+  f.store.reconcileSettledLiveTurns(settled, f.store.observeLiveTurns());
+  assert.equal(f.store.getState().liveTurns[id], undefined);
+  // The authority still running the turn keeps it.
+  f.observers[0]!.event(delta('again'));
+  flush();
+  f.store.reconcileSettledLiveTurns(
+    [
+      {
+        id,
+        status: 'running',
+        runningTurnIds: ['turn'],
+      } as unknown as sessions.DesktopSessionSummary,
+    ],
+    f.store.observeLiveTurns(),
+  );
+  assert.ok(f.store.getState().liveTurns[id]);
+  f.store.disconnect();
+});
+test("the Host's answer to a send updates the optimistic row without losing its Turn", async () => {
+  const f = fakeRuntime();
+  const id = sid('a');
+  f.store.observe(id, 'en');
+  await tick();
+  const base = {
+    ts: 1,
+    text: 'hello',
+    inlineReferences: [],
+    transientPlacement: 'current_turn' as const,
+  };
+  f.store.showTransientUserMessage(id, { id: 'm-1', ...base });
+  f.store.updateTransientMessage(id, { id: 'm-1', ...base, hostTurnId: 't-9' });
+  assert.equal(f.store.getState().transientMessages[0]?.hostTurnId, 't-9');
+  // A later local update with no Turn cannot take the Host's name away.
+  f.store.updateTransientMessage(id, { id: 'm-1', ...base, text: 'hello!' });
+  assert.equal(f.store.getState().transientMessages[0]?.hostTurnId, 't-9');
+  assert.equal(f.store.getState().transientMessages[0]?.text, 'hello!');
+  // An update for a row the durable copy already retired must not resurrect it.
+  f.store.removeTransientMessage(id, 'm-1');
+  f.store.updateTransientMessage(id, { id: 'm-1', ...base, hostTurnId: 't-9' });
+  assert.deepEqual(f.store.getState().transientMessages, []);
   f.store.disconnect();
 });
 test('history controls use the existing bounded paging handle', async () => {

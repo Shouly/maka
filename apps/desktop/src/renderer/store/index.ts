@@ -51,6 +51,16 @@ export const activeSessionStore = createActiveSessionStore({
   toast: toastApi,
   sessionTitle: (sessionId) =>
     sessionsStore.getState().sessions.find((row) => row.id === sessionId)?.name,
+  sessionStatus: (sessionId) =>
+    sessionsStore.getState().sessions.find((row) => row.id === sessionId)?.status,
+});
+// The catalog is the authority on whether a turn is over; the active store
+// holds the live projection that says it is running. Each read reconciles the
+// two, and each change event about the observed Session reaches it first.
+sessionsStore.onChange((event) => activeSessionStore.recordSessionChange(event));
+sessionsStore.onCatalogRead({
+  before: () => activeSessionStore.observeLiveTurns(),
+  after: (sessions, observed) => activeSessionStore.reconcileSettledLiveTurns(sessions, observed),
 });
 export const turnActionsStore = createTurnActionsStore({
   refresh: sessionsStore.refresh,

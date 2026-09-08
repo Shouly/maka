@@ -190,6 +190,7 @@
     "src/renderer/computer-use-overlay/engine/palette.ts",
     "src/renderer/hooks/use-async.ts",
     "src/renderer/hooks/use-connection-detail.ts",
+    "src/renderer/hooks/use-delayed-flag.ts",
     "src/renderer/hooks/use-hotkeys.ts",
     "src/renderer/hooks/use-memory-state.ts",
     "src/renderer/hooks/use-oauth-login-flow.ts",
@@ -225,6 +226,7 @@
     "src/renderer/lib/ported/derive-turn-lineage-badges.ts",
     "src/renderer/lib/ported/desktop-slash-command.ts",
     "src/renderer/lib/ported/desktop-transcript-range-store.ts",
+    "src/renderer/lib/ported/execution-boundary-read.ts",
     "src/renderer/lib/ported/interrupted-resume.ts",
     "src/renderer/lib/ported/live-turn-snapshot.ts",
     "src/renderer/lib/ported/mcp-brand-contrast.ts",
@@ -267,6 +269,7 @@
     "src/renderer/lib/ported/session-terminal-query.ts",
     "src/renderer/lib/ported/session-trace-refresh.ts",
     "src/renderer/lib/ported/settled-message-merge.ts",
+    "src/renderer/lib/ported/settled-session-transients.ts",
     "src/renderer/lib/ported/shell-chat-model-selection.ts",
     "src/renderer/lib/ported/shell-run-update-state.ts",
     "src/renderer/lib/ported/side-chat-command.ts",
@@ -1821,6 +1824,7 @@
         "useLiveTurnSnapshot": 1,
         "useRef": 1,
         "useShallow": 1,
+        "useShellLiveTurn": 1,
         "useState": 2,
         "useStore": 3,
         "useTranscriptScrollAuthority": 1,
@@ -1838,6 +1842,7 @@
         "../../hooks/use-workspace.js": 1,
         "../../lib/cn.js": 1,
         "../../locales/conversation-copy.js": 1,
+        "../../locales/shell-copy.js": 1,
         "../../locales/transcript-copy.js": 1,
         "../../store/composer-input-store.js": 1,
         "../../store/index.js": 1,
@@ -1848,6 +1853,7 @@
         "../ui/chat-skeleton.js": 1,
         "./HistoryControls.js": 1,
         "./MessageQueue.js": 1,
+        "./notices/NoticeCard.js": 1,
         "./notices/RevisionBanner.js": 1,
         "./notices/SessionNotices.js": 1,
         "./SelectionQuote.js": 1,
@@ -2037,7 +2043,7 @@
       "hookCalls": {
         "useEffect": 1,
         "useState": 3,
-        "useStore": 8,
+        "useStore": 10,
         "useUiLocale": 1
       },
       "lifecycleMethods": {},
@@ -4068,6 +4074,25 @@
         "react": 1
       }
     },
+    "src/renderer/hooks/use-delayed-flag.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "window.clearTimeout": 1,
+        "window.setTimeout": 1
+      },
+      "hookCalls": {
+        "useEffect": 2,
+        "useRef": 1,
+        "useState": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../lib/ported/model-wait-state.js": 1,
+        "react": 1
+      }
+    },
     "src/renderer/hooks/use-hotkeys.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {
@@ -4277,11 +4302,12 @@
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
+        "useDelayedFlag": 2,
         "useEffect": 2,
         "useLayoutEffect": 4,
         "useRef": 1,
         "useShallow": 5,
-        "useStore": 17,
+        "useStore": 19,
         "useTranscriptProjection": 1,
         "useUiLocale": 2
       },
@@ -4290,7 +4316,9 @@
       "actionFactories": [],
       "dependencyPaths": {
         "../lib/ported/live-turn-snapshot.js": 1,
+        "../lib/ported/model-wait-state.js": 1,
         "../store/index.js": 1,
+        "./use-delayed-flag.js": 1,
         "@maka/ui": 1,
         "react": 1,
         "zustand": 1,
@@ -4541,6 +4569,15 @@
         "@maka/core/persisted-value": 1,
         "@maka/core/session": 1
       }
+    },
+    "src/renderer/lib/ported/execution-boundary-read.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
     },
     "src/renderer/lib/ported/interrupted-resume.ts": {
       "bridgePaths": {},
@@ -4967,6 +5004,15 @@
       "dependencyPaths": {}
     },
     "src/renderer/lib/ported/session-trace-refresh.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/ported/settled-session-transients.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {},
@@ -5502,8 +5548,14 @@
     "src/renderer/store/active-session-store.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {
+        "clearInterval": 1,
         "clearTimeout": 3,
-        "setTimeout": 2
+        "document": 1,
+        "document.addEventListener": 1,
+        "document.removeEventListener": 1,
+        "document.visibilityState": 1,
+        "setInterval": 1,
+        "setTimeout": 3
       },
       "hookCalls": {},
       "lifecycleMethods": {},
@@ -5516,12 +5568,16 @@
         "../bridge/shell-runs.js": 1,
         "../bridge/transcripts.js": 1,
         "../lib/ported/desktop-transcript-range-store.js": 1,
+        "../lib/ported/execution-boundary-read.js": 1,
+        "../lib/ported/live-turn-snapshot.js": 1,
         "../lib/ported/session-event-health.js": 1,
+        "../lib/ported/settled-session-transients.js": 1,
         "../lib/ported/shell-run-update-state.js": 1,
         "../lib/ported/transcript-reading-position.js": 1,
-        "../lib/ported/transient-message-projection.js": 1,
+        "../lib/ported/transient-message-projection.js": 2,
         "./resource-store.js": 1,
         "./session-event-handlers.js": 1,
+        "@maka/core/session-event-health": 1,
         "@maka/ui": 1,
         "zustand/vanilla": 1
       }
