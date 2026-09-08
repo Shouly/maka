@@ -138,8 +138,6 @@ export function ChatInput(props: {
   label?: string;
   sessionId?: string;
   running?: boolean;
-  /** The #646 turn-wait cue ("正在处理…" / "继续中…"), when one is due. */
-  waitCue?: string;
   onError?: (title: string, error: unknown) => void;
   onOpenSettings?: () => void;
 }) {
@@ -155,7 +153,6 @@ function OwnedChatInput(props: {
   sessionId?: string;
   target?: DesktopNewTaskTarget;
   running?: boolean;
-  waitCue?: string;
   onError?: (title: string, error: unknown) => void;
   onOpenSettings?: () => void;
 }) {
@@ -871,9 +868,9 @@ function OwnedChatInput(props: {
         </div>
       </TooltipProvider>
 
-      {(blocked || status || props.waitCue) && (
+      {(blocked || status) && (
         <p role="status" className="px-2 text-xs leading-4 text-text-muted">
-          {blocked || status || props.waitCue}
+          {blocked || status}
         </p>
       )}
       {(error || draft.error) && (

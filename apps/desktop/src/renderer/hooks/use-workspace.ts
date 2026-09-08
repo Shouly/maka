@@ -29,12 +29,7 @@ import {
   type TurnViewModel,
 } from '@maka/ui';
 import { deriveLiveTurnSnapshot } from '../lib/ported/live-turn-snapshot.js';
-import {
-  MODEL_CONTINUING_DELAY_MS,
-  MODEL_PROCESSING_DELAY_MS,
-  deriveModelWait,
-  deriveTurnActive,
-} from '../lib/ported/model-wait-state.js';
+import { RUNNING_STATUS_DELAY_MS, deriveTurnActive } from '../lib/ported/model-wait-state.js';
 import { useDelayedFlag } from './use-delayed-flag.js';
 import {
   activeSessionStore,
@@ -242,25 +237,24 @@ export function useLiveTurnSnapshot() {
 /**
  * Everything the shell derives from the active Session's live turn (upstream
  * `useShellLiveTurn`, #646): whether a turn is running at all — the Stop
- * affordance and the composer lock — and the two turn-wait cues.
+ * affordance and the composer lock — and whether the transcript's running
+ * status line (label + elapsed clock) should be up.
  *
  * `turnActive` unions the live projection with the catalog's `runningTurnIds`
  * (turns this renderer did not send: another client, a scheduled task, one
- * still running across a reload) so neither witness can veto the other.
+ * still running across a reload) so neither witness can veto the other. The
+ * unacknowledged send counts as active too: between the composer and the
+ * Host's first word, nothing else moves.
  *
- * The cues ride the turn PHASE: before the first content event the screen is
- * otherwise empty, so the wait earns the prominent "正在处理…"; a later lull
- * between steps earns only the calm "继续中…". Both are rising-edge delayed so
- * a fast turn never flashes them. The unacknowledged send counts as
- * processing too: between the composer and the Host's first word, nothing
- * else moves.
+ * The status line rides `turnActive` with a rising-edge delay, so a turn that
+ * finishes inside the window never flashes it, and stays up for the whole
+ * turn — it asks "is the model working?", not "is anything streaming?".
  */
 export function useShellLiveTurn(sessionId: string | undefined): {
   turnActive: boolean;
   activeStreamingLive: boolean;
   hasInFlightLiveTools: boolean;
-  showProcessingIndicator: boolean;
-  showContinuingIndicator: boolean;
+  showRunningStatus: boolean;
 } {
   const live = useLiveTurnSnapshot();
   const runningTurnIds = useStore(
@@ -277,26 +271,12 @@ export function useShellLiveTurn(sessionId: string | undefined): {
     armedTurnId: live.turnId,
     runningTurnIds,
   });
-  const waitKind = deriveModelWait({
-    turnPhase: live.phase,
-    hasStreamingText: live.hasStreamingText,
-    hasThinkingText: live.hasThinkingText,
-    hasInFlightTools: live.hasInFlightTools,
-  });
-  const showProcessingIndicator = useDelayedFlag(
-    waitKind === 'processing' || (submitting && live.phase === undefined),
-    MODEL_PROCESSING_DELAY_MS,
-  );
-  const showContinuingIndicator = useDelayedFlag(
-    waitKind === 'continuing',
-    MODEL_CONTINUING_DELAY_MS,
-  );
+  const showRunningStatus = useDelayedFlag(turnActive || submitting, RUNNING_STATUS_DELAY_MS);
   return {
     turnActive,
     activeStreamingLive,
     hasInFlightLiveTools: live.hasInFlightTools,
-    showProcessingIndicator: showProcessingIndicator && !activeStreamingLive,
-    showContinuingIndicator: showContinuingIndicator && !activeStreamingLive,
+    showRunningStatus,
   };
 }
 export function useProjectContext() {

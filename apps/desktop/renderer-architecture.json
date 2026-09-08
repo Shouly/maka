@@ -86,6 +86,7 @@
     "src/renderer/components/session/ThinkingBlock.tsx",
     "src/renderer/components/session/TranscriptTurn.tsx",
     "src/renderer/components/session/TurnFooter.tsx",
+    "src/renderer/components/session/TurnRunningStatus.tsx",
     "src/renderer/components/session/UserMessageRow.tsx",
     "src/renderer/components/session/message-action-bar.ts",
     "src/renderer/components/session/notices/ContextUsageIndicator.tsx",
@@ -1867,6 +1868,7 @@
         "./notices/SessionNotices.js": 1,
         "./SelectionQuote.js": 1,
         "./TranscriptTurn.js": 1,
+        "./TurnRunningStatus.js": 1,
         "@maka/core/session": 1,
         "@maka/ui": 1,
         "react": 1,
@@ -1917,6 +1919,7 @@
         "./ThinkingBlock.js": 1,
         "./tools/ToolGroup.js": 1,
         "./TurnFooter.js": 1,
+        "./TurnRunningStatus.js": 1,
         "./UserMessageRow.js": 1,
         "@maka/ui": 1,
         "react": 1
@@ -1940,6 +1943,27 @@
         "../icons/Anthropicon.js": 1,
         "../ui/tooltip.js": 1,
         "./message-action-bar.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/session/TurnRunningStatus.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "window.clearInterval": 1,
+        "window.setInterval": 1
+      },
+      "hookCalls": {
+        "useEffect": 1,
+        "useRef": 1,
+        "useState": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../icons/Anthropicon.js": 1,
         "@maka/ui": 1,
         "react": 1
       }
@@ -4313,7 +4337,7 @@
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
-        "useDelayedFlag": 2,
+        "useDelayedFlag": 1,
         "useEffect": 2,
         "useLayoutEffect": 4,
         "useRef": 1,

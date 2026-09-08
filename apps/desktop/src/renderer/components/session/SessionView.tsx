@@ -41,7 +41,6 @@ import { userFacingText, type StoredMessage } from '@maka/core/session';
 import {
   SessionAttachmentProvider,
   TranscriptScrollAuthorityProvider,
-  getConversationCopy,
   projectTranscriptRows,
   useChatScroll,
   useTranscriptScrollAuthority,
@@ -83,6 +82,7 @@ import { JumpToLatest, TranscriptGapRow } from './HistoryControls.js';
 import { MessageQueue } from './MessageQueue.js';
 import { SelectionQuote } from './SelectionQuote.js';
 import { TranscriptTurn } from './TranscriptTurn.js';
+import { TurnRunningStatus } from './TurnRunningStatus.js';
 import { NoticeCard } from './notices/NoticeCard.js';
 import { RevisionBanner } from './notices/RevisionBanner.js';
 import { SessionNotices } from './notices/SessionNotices.js';
@@ -318,12 +318,12 @@ function SessionTranscript(props: SessionViewProps) {
   // stream is folded in defensively for the rare replay where the projection
   // was over-cleared.
   const running = shellLive.turnActive || shellLive.activeStreamingLive;
-  const composerCopy = getConversationCopy(locale).composer;
-  const waitCue = shellLive.showProcessingIndicator
-    ? composerCopy.processing
-    : shellLive.showContinuingIndicator
-      ? composerCopy.continuing
-      : undefined;
+  // No committed turn to own the status line yet — the send is still on its
+  // way to the Host, or the turn it opened has not reached the transcript.
+  // Mirrors upstream's bare running phrase (no clock, since there is no
+  // `startedAt` to measure from).
+  const orphanRunningStatus =
+    shellLive.showRunningStatus && !turns.some((turn) => turn.turnId === live.turnId);
   const shellCopy = getShellCopy(locale).app;
   const historyPending =
     feed.historyPending?.sessionId === sessionId ? feed.historyPending : undefined;
@@ -376,6 +376,7 @@ function SessionTranscript(props: SessionViewProps) {
                   key={turn.turnId}
                   turn={turn}
                   live={live.turnId === turn.turnId}
+                  runningStatus={shellLive.showRunningStatus}
                   footerActions={presentation.footerActionsByTurn[turn.turnId] ?? []}
                   {...(presentation.lineageBadgesByTurn[turn.turnId]
                     ? { lineageBadges: presentation.lineageBadgesByTurn[turn.turnId] }
@@ -421,6 +422,7 @@ function SessionTranscript(props: SessionViewProps) {
                 />
               );
             })}
+            {orphanRunningStatus && <TurnRunningStatus />}
           </div>
         </div>
         {(awayFromTail || feed.hasNewer) && (
@@ -471,12 +473,7 @@ function SessionTranscript(props: SessionViewProps) {
           {!feed.interactionPending &&
             !feed.boundaryUnreadable &&
             (props.composerSlot ?? (
-              <ChatInput
-                sessionId={sessionId}
-                running={running}
-                {...(waitCue ? { waitCue } : {})}
-                onError={reportError}
-              />
+              <ChatInput sessionId={sessionId} running={running} onError={reportError} />
             ))}
         </div>
       </div>
