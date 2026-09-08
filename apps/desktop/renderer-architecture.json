@@ -5793,7 +5793,9 @@
     },
     "src/renderer/store/turn-actions-store.ts": {
       "bridgePaths": {},
-      "environmentCapabilities": {},
+      "environmentCapabilities": {
+        "setTimeout": 1
+      },
       "hookCalls": {},
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,

@@ -505,6 +505,40 @@ test('shell hydration buffers updates and retains the highest revision', async (
   assert.equal(f.store.getState().shellUpdates[0]?.result.revision, 3);
   f.store.disconnect();
 });
+test('an optimistic user message shows before its Session is observed and retires on the durable copy', async () => {
+  const f = fakeRuntime();
+  const id = sid('a');
+  const sent = {
+    id: 'm-1',
+    ts: 5,
+    text: 'hello',
+    inlineReferences: [],
+    transientPlacement: 'current_turn' as const,
+  };
+  // A send from the welcome surface lands before the new Session is selected.
+  f.store.showTransientUserMessage(id, sent);
+  assert.deepEqual(f.store.getState().transientMessages, []);
+  f.store.observe(id, 'en');
+  await tick();
+  assert.deepEqual(
+    f.store.getState().transientMessages.map((message) => message.id),
+    ['m-1'],
+    "the observation seed keeps the user's own send",
+  );
+  f.readers[0]!.receive(
+    batch(id, [{ type: 'user', id: 'm-1', turnId: 't-1', ts: 5, text: 'hello' } as StoredMessage]),
+  );
+  assert.deepEqual(f.store.getState().transientMessages, [], 'the durable copy retires it');
+  assert.equal(f.store.getState().messages[0]?.id, 'm-1');
+  f.store.showTransientUserMessage(id, { ...sent, id: 'm-2' });
+  assert.deepEqual(
+    f.store.getState().transientMessages.map((message) => message.id),
+    ['m-2'],
+  );
+  f.store.removeTransientMessage(id, 'm-2');
+  assert.deepEqual(f.store.getState().transientMessages, [], 'a refused send withdraws it');
+  f.store.disconnect();
+});
 test('history controls use the existing bounded paging handle', async () => {
   const f = fakeRuntime();
   const id = sid('a');

@@ -54,7 +54,12 @@ import {
   type InputDraft,
 } from '../../store/composer-input-store.js';
 import { composerDraftStore, type PendingQuote } from '../../store/composer-draft-store.js';
-import { sessionsStore, turnActionsStore, connectionsStore } from '../../store/index.js';
+import {
+  activeSessionStore,
+  sessionsStore,
+  turnActionsStore,
+  connectionsStore,
+} from '../../store/index.js';
 import { newTaskStore } from '../../store/new-task-store.js';
 import { pendingActionsOf } from '../../store/turn-actions-store.js';
 import { serializeComposer } from '../../lib/composer-document.js';
@@ -255,6 +260,8 @@ function OwnedChatInput(props: {
     const serialized = serializeComposer(sent.document);
     const sentQuotes = [...quotes];
     let owner = sessionId;
+    // The optimistic copy to withdraw if the send never reaches the Host.
+    let optimisticId: string | undefined;
     try {
       preflightAttachmentItems(sent.attachments, locale);
 
@@ -300,29 +307,43 @@ function OwnedChatInput(props: {
         sessionsStore.select(owner);
       }
 
-      const result = await turnActionsStore.submit(
-        owner,
-        props.running ? placement : 'current_turn',
-        {
-          text: serialized.text,
-          skillIds: serialized.skillIds,
-          workspaceFileReferences: serialized.workspaceFileReferences,
-          attachmentItems: toComposerIngestItems(sent.attachments),
-          retainedAttachments: retainedAttachmentRefs(sent.attachments),
-          directoryReferences: [...sent.directories],
-          quotes: sentQuotes.map(({ id: _id, ...quote }) => quote),
-          messageId,
-        },
-      );
+      // The message is on screen before the Host has it (upstream
+      // `showTransientUserMessage`); the durable copy retires it by id.
+      const transientPlacement = props.running ? placement : 'current_turn';
+      activeSessionStore.showTransientUserMessage(owner, {
+        id: messageId,
+        ts: Date.now(),
+        text: serialized.text,
+        attachments: retainedAttachmentRefs(sent.attachments),
+        directoryReferences: [...sent.directories],
+        quotes: sentQuotes.map(({ id: _id, ...quote }) => quote),
+        inlineReferences: [],
+        transientPlacement,
+      });
+      optimisticId = messageId;
+      const result = await turnActionsStore.submit(owner, transientPlacement, {
+        text: serialized.text,
+        skillIds: serialized.skillIds,
+        workspaceFileReferences: serialized.workspaceFileReferences,
+        attachmentItems: toComposerIngestItems(sent.attachments),
+        retainedAttachments: retainedAttachmentRefs(sent.attachments),
+        directoryReferences: [...sent.directories],
+        quotes: sentQuotes.map(({ id: _id, ...quote }) => quote),
+        messageId,
+      });
       // After a transfer the draft lives under the new Session's key.
       const draftOwner = sessionId ? scopeKey : owner;
       if (!result.ok) {
+        // `outcome_unknown` may still have been admitted; only a refusal is
+        // certain not to appear, so only that withdraws the optimistic copy.
+        if (result.reason === 'outcome_unknown') optimisticId = undefined;
         throw new Error(
           result.reason === 'outcome_unknown'
             ? copy.send.outcomeUnknownDescription
             : copy.send.skillFailedFallback,
         );
       }
+      optimisticId = undefined;
       composerInputStore.acknowledge(draftOwner, sent);
       for (const quote of sentQuotes) composerDraftStore.removeQuote(draftOwner, quote.id);
       history.rememberSentEntry(serialized.text);
@@ -330,6 +351,7 @@ function OwnedChatInput(props: {
         setStatus(copy.send.steeredTitle);
       }
     } catch (cause) {
+      if (owner && optimisticId) activeSessionStore.removeTransientMessage(owner, optimisticId);
       // A failed first send still leaves a real, selected Session with the
       // draft in it — never an invisible lost message.
       if (!sessionId && owner && mounted.current) sessionsStore.select(owner);

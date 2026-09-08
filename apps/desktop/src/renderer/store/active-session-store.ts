@@ -154,6 +154,21 @@ export function createActiveSessionStore(
   let dispose = () => {};
   let controller: RecoveringDesktopTranscriptRangeController | undefined;
   let currentRefresh: ((options?: RefreshMessagesOptions) => Promise<boolean>) | undefined;
+  let currentPublishTransient: (() => void) | undefined;
+  // The user's own sends, shown the instant they leave the composer and
+  // retired when the Host's durable copy carries the same id (upstream
+  // `showTransientUserMessage`). Kept per Session and outside the selection
+  // because a send from the welcome surface lands before its Session has
+  // been observed, and switching tasks must not forget an unacknowledged one.
+  const optimisticBySession = new Map<string, Map<string, TransientUserMessageProjection>>();
+  const optimisticFor = (sessionId: string) => {
+    let map = optimisticBySession.get(sessionId);
+    if (!map) {
+      map = new Map();
+      optimisticBySession.set(sessionId, map);
+    }
+    return map;
+  };
   // A bookmark survives navigation; the command to restore it does not. One
   // lifecycle per selection is what makes the restore happen once per
   // activation rather than on every batch that changes the messages.
@@ -215,6 +230,7 @@ export function createActiveSessionStore(
     };
     const fail = (error: unknown) => commit({ error: errorMessage(error), loading: false });
     const transient = new Map<string, TransientUserMessageProjection>();
+    const optimistic = optimisticFor(sessionId);
     const transcript = new DesktopTranscriptRangeStore(sessionId);
     let interactionsRequest = 0;
     let interactionEvents = 0;
@@ -229,10 +245,16 @@ export function createActiveSessionStore(
       },
     };
     let rangeController: RecoveringDesktopTranscriptRangeController;
-    const publishTransient = () =>
+    const publishTransient = () => {
+      const messages = store.getState().messages;
+      // The user's sends first: they precede anything the Host has queued.
       commit({
-        transientMessages: reconcileTransientMessages(transient, store.getState().messages),
+        transientMessages: [
+          ...reconcileTransientMessages(optimistic, messages),
+          ...reconcileTransientMessages(transient, messages),
+        ],
       });
+    };
     const refresh = async (input?: RefreshMessagesOptions) => {
       if (!current()) return false;
       try {
@@ -300,6 +322,7 @@ export function createActiveSessionStore(
       removeTransientMessage: (_id, messageId) => {
         if (current()) {
           transient.delete(messageId);
+          optimistic.delete(messageId);
           publishTransient();
         }
       },
@@ -371,6 +394,8 @@ export function createActiveSessionStore(
     );
     controller = rangeController;
     currentRefresh = refresh;
+    currentPublishTransient = publishTransient;
+    publishTransient();
     commit({ health: createSessionEventStreamSubscription({ sessionId, now: Date.now() }) });
 
     const beginSeed = () => {
@@ -383,7 +408,8 @@ export function createActiveSessionStore(
         liveTurns: {},
         interactions: {},
         queues: {},
-        transientMessages: [],
+        // A reseed forgets what the Host had queued, not what the user sent.
+        transientMessages: [...optimistic.values()],
       });
     };
     const ready = () => {
@@ -535,6 +561,7 @@ export function createActiveSessionStore(
       if (controller === rangeController) {
         controller = undefined;
         currentRefresh = undefined;
+        currentPublishTransient = undefined;
       }
       if (generation === selectionGeneration)
         store.setState({ observationReady: false, loading: false });
@@ -564,6 +591,21 @@ export function createActiveSessionStore(
     },
     refreshMessages: (input?: RefreshMessagesOptions) =>
       currentRefresh?.(input) ?? Promise.resolve(false),
+    /**
+     * Show the user's message the moment it leaves the composer.
+     *
+     * The durable copy the Host writes carries the same id, and the next
+     * transcript batch that contains it retires this one; a send that never
+     * reaches the Host is withdrawn by its caller (`removeTransientMessage`).
+     */
+    showTransientUserMessage(sessionId: string, message: TransientUserMessageProjection) {
+      optimisticFor(sessionId).set(message.id, message);
+      if (store.getState().sessionId === sessionId) currentPublishTransient?.();
+    },
+    removeTransientMessage(sessionId: string, messageId: string) {
+      optimisticBySession.get(sessionId)?.delete(messageId);
+      if (store.getState().sessionId === sessionId) currentPublishTransient?.();
+    },
     async loadBefore(maxBytes?: number, anchorTurnId?: string) {
       await controller?.loadBefore(maxBytes, anchorTurnId);
     },

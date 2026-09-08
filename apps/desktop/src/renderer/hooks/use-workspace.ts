@@ -20,10 +20,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
+import type { StoredMessage } from '@maka/core/session';
 import {
   useTranscriptProjection,
   useUiLocale,
   type LiveTurnProjection,
+  type TransientUserMessageProjection,
   type TurnViewModel,
 } from '@maka/ui';
 import { deriveLiveTurnSnapshot } from '../lib/ported/live-turn-snapshot.js';
@@ -124,7 +126,7 @@ export function useRendererStores(): void {
   ]);
 }
 
-const NO_MESSAGES: readonly import('@maka/core/session').StoredMessage[] = [];
+const NO_MESSAGES: readonly StoredMessage[] = [];
 export function useActiveTurns() {
   const selectedId = useStore(sessionsStore, (s) => s.activeId);
   const locale = useUiLocale();
@@ -133,16 +135,56 @@ export function useActiveTurns() {
     useShallow((s) => ({
       sessionId: s.sessionId,
       messages: s.messages,
+      transientMessages: s.transientMessages,
       liveTurn: s.sessionId ? s.liveTurns[s.sessionId] : undefined,
       shellRunUpdates: s.shellUpdates,
     })),
   );
+  const { transientMessages, ...projected } = input;
+  const messages = useMemo(
+    () => withTransientUserMessages(projected.messages, transientMessages),
+    [projected.messages, transientMessages],
+  );
   const turns = useTranscriptProjection(
     input.sessionId === selectedId
-      ? { ...input, locale }
+      ? { ...projected, messages, locale }
       : { sessionId: selectedId, locale, messages: NO_MESSAGES },
   );
   return useLiveStatusOverlay(turns, input.sessionId === selectedId ? input.liveTurn : undefined);
+}
+
+/**
+ * The user's unacknowledged sends, appended to the durable transcript as the
+ * user messages they are about to become.
+ *
+ * Until the Host names a Turn for one, it is its own Turn at the tail, which
+ * is where the reader expects the message they just typed. The projection
+ * only ever sees StoredMessages, so this is the one place a transient one is
+ * dressed as durable; it is never written back anywhere.
+ */
+function withTransientUserMessages(
+  durable: readonly StoredMessage[],
+  transient: readonly TransientUserMessageProjection[],
+): readonly StoredMessage[] {
+  if (transient.length === 0) return durable;
+  return [
+    ...durable,
+    ...transient.map(
+      (message): StoredMessage => ({
+        type: 'user',
+        id: message.id,
+        turnId: message.hostTurnId ?? `transient:${message.id}`,
+        ts: message.ts,
+        text: message.text,
+        ...(message.attachments?.length ? { attachments: [...message.attachments] } : {}),
+        ...(message.directoryReferences?.length
+          ? { directoryReferences: [...message.directoryReferences] }
+          : {}),
+        ...(message.quotes?.length ? { quotes: [...message.quotes] } : {}),
+        inlineReferences: [...(message.inlineReferences ?? [])],
+      }),
+    ),
+  ];
 }
 
 /**
