@@ -65,7 +65,7 @@ async function harness(selected: string, options: {
       return { canceled: true, filePaths: [] };
     },
     listPreviews: async () => [],
-    importArtwork: async () => 'default',
+    importArtwork: async () => 'relx',
     settingsStore: {
       update: async (patch: UpdateAppSettingsInput) => {
         settings = {
@@ -140,12 +140,12 @@ test('removing the current icon resets the selection before the file goes away',
 });
 
 test('removing an icon that is not selected leaves the selection alone', async () => {
-  const h = await harness('sky');
+  const h = await harness('relx');
   const result = (await h.remove(ICON)) as { ok: boolean; selection?: string };
 
   assert.equal(result.ok, true);
-  assert.equal(result.selection, 'sky');
-  assert.equal(h.current(), 'sky');
+  assert.equal(result.selection, 'relx');
+  assert.equal(h.current(), 'relx');
   assert.deepEqual(await readdir(customAppIconDirectory(h.root)), []);
   assert.equal(h.applied.length, 0);
 });
@@ -157,7 +157,7 @@ test('removing an icon that is not selected leaves the selection alone', async (
  */
 test('shipped ids and malformed references are refused without touching disk', async () => {
   const h = await harness(ICON);
-  for (const bad of ['default', 'sky', 'custom:../../etc/passwd', 'custom:', 42, null]) {
+  for (const bad of ['default', 'relx', 'custom:../../etc/passwd', 'custom:', 42, null]) {
     const result = (await h.remove(bad)) as { ok: boolean; reason?: string };
     assert.equal(result.ok, false, `${String(bad)} should be refused`);
     assert.equal(result.reason, 'invalid_id');
@@ -172,7 +172,7 @@ test('shipped ids and malformed references are refused without touching disk', a
  * unconditionally would stamp `default` over a choice the user just made.
  */
 test('a selection landing during removal wins, and the file still goes', async () => {
-  const newer = 'sky';
+  const newer = 'relx';
   const h = await harness(ICON, { onCompareAndSet: () => h.forceSelect(newer) });
 
   const result = (await h.remove(ICON)) as { ok: boolean; selection?: string };
@@ -232,13 +232,13 @@ test('an open file dialog does not hold the queue', async () => {
   const dialogOpen = new Promise<void>((resolve) => {
     releaseDialog = resolve;
   });
-  const h = await harness('sky', { onShowOpenDialog: () => dialogOpen });
+  const h = await harness('relx', { onShowOpenDialog: () => dialogOpen });
 
   const importing = h.importIcon();
   // The dialog is still open; a selection issued now must not wait for it.
-  const selected = (await h.select('ink')) as { ok: boolean };
+  const selected = (await h.select(ICON)) as { ok: boolean };
   assert.equal(selected.ok, true);
-  assert.equal(h.current(), 'ink');
+  assert.equal(h.current(), ICON);
 
   releaseDialog();
   await importing;
@@ -248,12 +248,12 @@ test('removing an icon used only in dark mode clears the dark slot', async () =>
   // The dangling-reference case: the light slot names something else, so the
   // light-slot predicate does not match and an earlier version of this handler
   // deleted the file while leaving `appIconDark` pointing at it.
-  const h = await harness('sky', { dark: ICON });
+  const h = await harness('relx', { dark: ICON });
 
   const result = (await h.remove(ICON)) as { ok: boolean; darkSelection?: string };
 
   assert.equal(result.ok, true);
-  assert.equal(h.current(), 'sky', 'the light choice is untouched');
+  assert.equal(h.current(), 'relx', 'the light choice is untouched');
   assert.equal(h.currentDark(), undefined, 'the dark slot no longer names deleted artwork');
   assert.equal(result.darkSelection, undefined);
   assert.equal(h.applied.length, 1, 'the dock was re-applied for the cleared slot');
@@ -272,12 +272,12 @@ test('removing an icon used in both slots clears both', async () => {
 
 test('removing an unrelated icon leaves a dark choice alone', async () => {
   const other = `custom:${'d'.repeat(32)}`;
-  const h = await harness('sky', { dark: 'ink' });
+  const h = await harness('relx', { dark: ICON });
 
   await h.remove(other);
 
-  assert.equal(h.current(), 'sky');
-  assert.equal(h.currentDark(), 'ink', 'an unrelated removal must not disturb the split');
+  assert.equal(h.current(), 'relx');
+  assert.equal(h.currentDark(), ICON, 'an unrelated removal must not disturb the split');
 });
 
 test('a failed reset commits nothing and leaves the dock alone', async () => {

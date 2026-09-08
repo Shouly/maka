@@ -25,9 +25,8 @@
  * assets carry their own module.
  *
  * Outlines were traced (potrace, deterministic) from the `maka` lockup in
- * `apps/desktop/assets/icon.png`, which is the app icon shipped with the
- * desktop build — so the empty-state mark and the dock icon cannot drift
- * apart. Paths are filled with `currentColor` so the mark inherits the
+ * the retired mascot artwork. The outline remains the shared Maka wordmark;
+ * the enterprise application icon is a separate asset. Paths are filled with `currentColor` so the mark inherits the
  * surface's text colour and works in both themes; callers set the opacity
  * they want rather than baking a tint in here.
  */

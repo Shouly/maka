@@ -18,7 +18,7 @@
 -->
 
 <h1 align="center">
-  <img src="apps/desktop/assets/app-icons/sky.png" alt="Maka" width="72" valign="middle" /> Apache Maka (Incubating)
+  <img src="apps/desktop/assets/app-icons/relx.png" alt="Maka" width="72" valign="middle" /> Apache Maka (Incubating)
 </h1>
 
 <h3 align="center">Apache Maka (Incubating) is a high-performance agent workspace that keeps a complete record of everything it did.</h3>

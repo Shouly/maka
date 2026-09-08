@@ -232,7 +232,7 @@ The exact boundary, locally authored divergences, and artifact reproducibility l
 
 A maintainer confirmed that the following assets were AI-generated and that no third-party image, logo, or artwork was uploaded as input:
 
-- `apps/desktop/assets/icon.png`
+- `apps/desktop/assets/icon.png` (retired from the enterprise build on 2026-09-08)
 - `apps/desktop/resources/status/cu-status.png`
 - `apps/desktop/resources/status/cu-status@2x.png`
 
@@ -247,8 +247,8 @@ non-text image must match one of these paths; executable and archive magic is
 rejected even if a path is listed here.
 
 - `.github/assets/*.png`: the README hero images rendered from the website, recorded above.
-- `apps/desktop/assets/icon.png`: the AI-generated application mark recorded above.
-- `apps/desktop/assets/app-icons/*.png`: `mono.png` is the contributor-submitted grayscale derivative of the application mark from pull request #3431; the remaining variants are reproducibly rendered from the Apache-licensed geometry and palette in `scripts/generate-app-icons.py` and byte-checked by `scripts/generate-app-icons.test.mjs`.
+- `apps/desktop/assets/app-icons/relx.png`: rendered by `scripts/generate-relx-icon.mjs` from the owner-supplied eight-petal SVG in `assets/brand/relx-symbol.svg` and the renderer brand colour tokens. The old mascot and geometric colourway PNGs have been removed.
+- `apps/desktop/assets/brand/relx.icns`: the same artwork encoded at native macOS icon sizes by that generator.
 - `apps/desktop/build/*.png`: contributor-submitted DMG artwork from pull request #3817; that contribution records Codex as review and verification assistance, not as the source of the artwork.
 - `apps/desktop/resources/status/*.png`: the status images recorded above and reproducibly rendered by `scripts/generate-cu-status-icons.mjs`.
 - `docs/images/**/*.png`: screenshots of Maka's own user interface committed as review evidence, including pull requests #3584 and #3588.

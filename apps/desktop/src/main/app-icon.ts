@@ -18,18 +18,11 @@
  */
 
 import { join } from 'node:path';
-import type { AppIcon, AppIconChoice } from '@maka/core/settings';
+import { DEFAULT_APP_ICON, type AppIcon, type AppIconChoice } from '@maka/core/settings';
 
-/**
- * Where one icon choice's artwork lives, relative to `apps/desktop`.
- *
- * `default` deliberately keeps pointing at the long-standing
- * `assets/icon.png` instead of moving under `assets/app-icons/`: that path is
- * also what the packaging config and the window `icon` option name, so moving
- * it to make the set look tidy would be a rename with no product value.
- */
+/** The sole bundled image is also the fallback for missing imported artwork. */
 export function appIconAssetSegments(icon: AppIcon): readonly string[] {
-  return icon === 'default' ? ['assets', 'icon.png'] : ['assets', 'app-icons', `${icon}.png`];
+  return ['assets', 'app-icons', `${icon}.png`];
 }
 
 export function resolveAppIconPath(desktopRoot: string, icon: AppIcon): string {
@@ -43,7 +36,7 @@ export function resolveAppIconPath(desktopRoot: string, icon: AppIcon): string {
  * the OS placeholder, which on macOS is the generic Electron rocket.
  */
 export function appIconLoadOrder(icon: AppIconChoice): readonly AppIconChoice[] {
-  return icon === 'default' ? ['default'] : [icon, 'default'];
+  return icon === DEFAULT_APP_ICON ? [DEFAULT_APP_ICON] : [icon, DEFAULT_APP_ICON];
 }
 
 /**
@@ -64,5 +57,5 @@ export function pickReadableAppIconPath(
     const path = toPath(candidate);
     if (isReadable(path)) return path;
   }
-  return toPath('default');
+  return toPath(DEFAULT_APP_ICON);
 }

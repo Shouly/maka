@@ -269,7 +269,7 @@ export const exclusionRules = [
     id: 'binary-files',
     justification:
       'Binary image and database content. There is no text position in these formats where a header could be added without corrupting the file.',
-    matches: hasExtension('.png', '.sqlite'),
+    matches: hasExtension('.png', '.icns', '.sqlite'),
   },
   {
     id: 'no-creative-content',
@@ -381,6 +381,7 @@ export function renderHeader(styleName) {
 }
 
 export function commentStyleFor(path) {
+  if (isUnder('apps/desktop/assets/brand', '.svg')(path)) return 'html';
   const name = basename(path);
   if (coveredNames.has(name)) return coveredNames.get(name);
   const extension = name.includes('.') ? name.slice(name.lastIndexOf('.')) : '';

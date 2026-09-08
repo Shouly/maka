@@ -71,28 +71,16 @@ test('a packaged build reads artwork from the copy beside the app', () => {
   assert.equal(
     resolveAppIconPath(
       desktopAssetRoot({ isPackaged: true, resourcesPath: join('/Apps', 'Maka.app', 'Contents', 'Resources') }),
-      'sky',
+      'relx',
     ),
-    join('/Apps', 'Maka.app', 'Contents', 'Resources', 'assets', 'app-icons', 'sky.png'),
+    join('/Apps', 'Maka.app', 'Contents', 'Resources', 'assets', 'app-icons', 'relx.png'),
   );
 });
 
-test('the default keeps its long-standing path while variants live in their own directory', () => {
-  assert.deepEqual(appIconAssetSegments('default'), ['assets', 'icon.png']);
-  assert.deepEqual(appIconAssetSegments('mono'), ['assets', 'app-icons', 'mono.png']);
-  assert.equal(
-    resolveAppIconPath(join('/tmp', 'desktop'), 'mono'),
-    join('/tmp', 'desktop', 'assets', 'app-icons', 'mono.png'),
-  );
-});
-
-test('a variant falls back to the brand mark, and the brand mark has nothing to fall back to', () => {
-  // A build that lost assets/app-icons/ — a packaging filter, a half-applied
-  // update — should land on the brand mark rather than on the OS placeholder.
-  assert.deepEqual(appIconLoadOrder('mono'), ['mono', 'default']);
-  // No self-referential retry: if the brand mark itself is unreadable there is
-  // nothing left to try, and looping over it twice would only hide that.
-  assert.deepEqual(appIconLoadOrder('default'), ['default']);
+test('the current mark is the sole shipped path and imported artwork falls back to it', () => {
+  assert.deepEqual(appIconAssetSegments('relx'), ['assets', 'app-icons', 'relx.png']);
+  assert.deepEqual(appIconLoadOrder(`custom:${'a'.repeat(32)}`), [`custom:${'a'.repeat(32)}`, 'relx']);
+  assert.deepEqual(appIconLoadOrder('relx'), ['relx']);
 });
 
 test('a malformed choice cannot become a path outside the asset root', () => {
@@ -108,7 +96,7 @@ test('a malformed choice cannot become a path outside the asset root', () => {
       `${String(escape)} resolved to ${resolved}, outside ${root}`,
     );
     // And it lands on the brand mark rather than on some other shipped file.
-    assert.equal(resolved, join(root, 'assets', 'icon.png'));
+    assert.equal(resolved, join(root, 'assets', 'app-icons', 'relx.png'));
   }
 });
 
@@ -122,9 +110,9 @@ test('a persisted custom id whose file disappeared falls back to the brand mark'
 
   // Only the brand mark reads; the imported file was deleted behind the app.
   const resolved = pickReadableAppIconPath(gone, toPath, (path) =>
-    path === join(root, 'assets', 'icon.png'),
+    path === join(root, 'assets', 'app-icons', 'relx.png'),
   );
-  assert.equal(resolved, join(root, 'assets', 'icon.png'));
+  assert.equal(resolved, join(root, 'assets', 'app-icons', 'relx.png'));
 
   // And when it does read, the choice is honoured rather than always falling back.
   assert.equal(

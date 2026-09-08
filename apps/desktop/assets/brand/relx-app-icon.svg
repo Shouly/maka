@@ -1,0 +1,60 @@
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>RELX — system brand orange</title>
+  <defs>
+    <linearGradient id="base" x1="0" y1="0" x2=".7" y2="1">
+      <stop stop-color="#d97757"/><stop offset=".5" stop-color="#c6613f"/><stop offset="1" stop-color="#ae5537"/>
+    </linearGradient>
+    <radialGradient id="bloom" cx=".86" cy="1" r=".95">
+      <stop stop-color="#FFFFFF" stop-opacity=".06"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2=".4" y2="1">
+      <stop stop-color="#FFFFFF" stop-opacity=".48"/><stop offset=".45" stop-color="#FFFFFF" stop-opacity=".1"/><stop offset="1" stop-color="#FFFFFF" stop-opacity=".18"/>
+    </linearGradient>
+    <linearGradient id="porcelain" x1="0" y1="0" x2=".32" y2="1">
+      <stop stop-color="#FFFEF8"/><stop offset=".5" stop-color="#FBF7F0"/><stop offset="1" stop-color="#EEE6DD"/>
+    </linearGradient>
+    <filter id="tile-shadow" x="-15%" y="-15%" width="130%" height="135%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#24130D" flood-opacity=".24"/>
+    </filter>
+    <filter id="mark-shadow" x="-20%" y="-20%" width="140%" height="145%">
+      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#402015" flood-opacity=".32"/>
+    </filter>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency=".72" numOctaves="3" seed="8" result="noise"/>
+      <feColorMatrix in="noise" type="saturate" values="0"/>
+      <feComponentTransfer><feFuncA type="linear" slope=".025"/></feComponentTransfer>
+      <feComposite in2="SourceGraphic" operator="in"/>
+      <feBlend in2="SourceGraphic" mode="normal"/>
+    </filter>
+    <path id="tile" d="M320 100H704C784 100 831 107 866 142C911 187 924 236 924 320V704C924 784 917 831 882 866C837 911 788 924 704 924H320C240 924 193 917 158 882C113 837 100 788 100 704V320C100 240 107 193 142 158C187 113 236 100 320 100Z"/>
+    <path id="mark" d="M211.5 154.6a30 30 0 0 0 57 0l15.5-46.7a46.4 46.4 0 1 0-88 0l15.5 46.7ZM268.5 325.4a30 30 0 0 0-57 0L196 372.1a46.4 46.4 0 1 0 88 0l-15.5-46.7ZM372.1 196l-46.7 15.5a30 30 0 0 0 0 57l46.7 15.5c29.8 10 60.9-12 61.1-43.3v-1.3a46.4 46.4 0 0 0-61-43.4ZM107.9 284l46.7-15.5a30 30 0 0 0 0-57L107.9 196a46.4 46.4 0 1 0 0 88.1ZM320.5 199.7l44-22a46.4 46.4 0 0 0 12.6-73.9l-.9-.9a46.4 46.4 0 0 0-74 12.5l-22 44a30 30 0 0 0 40.3 40.3ZM159.5 280.3l-44 22a46.4 46.4 0 0 0-12.5 74l.8.8a46.4 46.4 0 0 0 74-12.6l22-44a30 30 0 0 0-40.3-40.2ZM364.6 302.3l-44-22a30 30 0 0 0-40.3 40.2l22 44a46.4 46.4 0 0 0 73.9 12.6l.8-.9a46.4 46.4 0 0 0-12.4-74ZM115.4 177.7l44 22a30 30 0 0 0 40.3-40.2l-22-44a46.4 46.4 0 1 0-62.2 62.2Z"/>
+  </defs>
+  <use href="#tile" fill="url(#base)" filter="url(#tile-shadow)"/>
+  <g filter="url(#grain)">
+    <use href="#tile" fill="url(#base)"/>
+    <use href="#tile" fill="url(#bloom)"/>
+  </g>
+  <use href="#tile" fill="none" stroke="url(#rim)" stroke-width="2"/>
+  <g transform="translate(152 150) scale(1.5)">
+    <use href="#mark" fill="url(#porcelain)" filter="url(#mark-shadow)"/>
+    <use href="#mark" fill="none" stroke="#FFFFFF" stroke-opacity=".38" stroke-width=".7"/>
+  </g>
+</svg>

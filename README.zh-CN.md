@@ -18,7 +18,7 @@
 -->
 
 <h1 align="center">
-  <img src="apps/desktop/assets/app-icons/sky.png" alt="Maka" width="72" valign="middle" /> Apache Maka (Incubating)
+  <img src="apps/desktop/assets/app-icons/relx.png" alt="Maka" width="72" valign="middle" /> Apache Maka (Incubating)
 </h1>
 
 <h3 align="center">Apache Maka（孵化中）是一个高性能的 Agent 工作台，并完整记录它做过的每一件事。</h3>

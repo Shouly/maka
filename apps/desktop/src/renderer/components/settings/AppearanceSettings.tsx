@@ -31,13 +31,14 @@
 // call (`app.selectIcon`) and no optimistic state — the tile follows the
 // settings snapshot main pushes back.
 //
-// Palettes and the light/dark icon split are out of scope (plan §3).
+// The picker offers the current brand mark and imported artwork only.
 
 import { useState } from 'react';
 import {
   DEFAULT_TERMINAL_FONT_SIZE,
   DEFAULT_UI_FONT_SIZE,
-  isAppIcon,
+  DEFAULT_APP_ICON,
+  isCustomAppIcon,
   TERMINAL_FONT_SIZE_MAX,
   TERMINAL_FONT_SIZE_MIN,
   UI_FONT_SIZE_MAX,
@@ -127,59 +128,61 @@ export function AppearanceSettings() {
         ) : (
           <SettingsRow layout="stacked" title={sections.appIcon}>
             <div role="radiogroup" aria-label={sections.appIcon} className="flex flex-wrap gap-2">
-              {(icons.data ?? []).map((preview) => {
-                const selected = (appearance?.appIcon ?? 'relx') === preview.id;
-                const label = isAppIcon(preview.id)
-                  ? copy.appIconLabels[preview.id]
-                  : copy.appIconCustom;
-                return (
-                  <div key={preview.id} className="group/icon relative">
-                    <button
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      aria-label={label}
-                      title={label}
-                      disabled={iconBusy}
-                      onClick={() => chooseIcon(preview.id)}
-                      className={cn(
-                        'flex size-14 cursor-pointer items-center justify-center rounded-xl p-1 outline-none transition-shadow',
-                        'shadow-[inset_0_0_0_1px_var(--hairline)] hover:shadow-[inset_0_0_0_1px_var(--border-strong)]',
-                        'focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:cursor-not-allowed disabled:opacity-50',
-                        selected && 'shadow-[inset_0_0_0_2px_var(--fill-accent)]',
-                      )}
-                    >
-                      <img src={preview.dataUrl} alt="" className="size-full rounded-lg" />
-                    </button>
-                    {preview.removable === true && (
+              {(icons.data ?? [])
+                .filter((preview) => preview.id === DEFAULT_APP_ICON || isCustomAppIcon(preview.id))
+                .map((preview) => {
+                  const selected = (appearance?.appIcon ?? DEFAULT_APP_ICON) === preview.id;
+                  const label =
+                    preview.id === DEFAULT_APP_ICON ? copy.appIconDefault : copy.appIconCustom;
+                  return (
+                    <div key={preview.id} className="group/icon relative">
                       <button
                         type="button"
-                        aria-label={`${copy.appIconRemove} ${label}`}
+                        role="radio"
+                        aria-checked={selected}
+                        aria-label={label}
+                        title={label}
                         disabled={iconBusy}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setIconBusy(true);
-                          void removeAppIcon(preview.id)
-                            .then((result) => {
-                              if (!result.ok)
-                                toast({ title: copy.appIconRemoveFailed, variant: 'destructive' });
-                              icons.reload();
-                            })
-                            .catch((error: unknown) => report(copy.appIconRemoveFailed, error))
-                            .finally(() => setIconBusy(false));
-                        }}
-                        className="absolute -right-1.5 -top-1.5 flex size-[18px] cursor-pointer items-center justify-center rounded-full bg-surface-3 opacity-0 shadow-[0_0_0_1px_var(--alpha-2)] transition-opacity group-hover/icon:opacity-100 focus-visible:opacity-100 focus-visible:shadow-[var(--sidebar-focus-shadow)]"
+                        onClick={() => chooseIcon(preview.id)}
+                        className={cn(
+                          'flex size-14 cursor-pointer items-center justify-center rounded-xl p-1 outline-none transition-shadow',
+                          'shadow-[inset_0_0_0_1px_var(--hairline)] hover:shadow-[inset_0_0_0_1px_var(--border-strong)]',
+                          'focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:cursor-not-allowed disabled:opacity-50',
+                          selected && 'shadow-[inset_0_0_0_2px_var(--fill-accent)]',
+                        )}
                       >
-                        <Anthropicon name="x" size={12} className="text-text-secondary" />
+                        <img src={preview.dataUrl} alt="" className="size-full rounded-lg" />
                       </button>
-                    )}
-                  </div>
-                );
-              })}
+                      {preview.removable === true && (
+                        <button
+                          type="button"
+                          aria-label={`${copy.appIconRemove} ${label}`}
+                          disabled={iconBusy}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setIconBusy(true);
+                            void removeAppIcon(preview.id)
+                              .then((result) => {
+                                if (!result.ok)
+                                  toast({
+                                    title: copy.appIconRemoveFailed,
+                                    variant: 'destructive',
+                                  });
+                                icons.reload();
+                              })
+                              .catch((error: unknown) => report(copy.appIconRemoveFailed, error))
+                              .finally(() => setIconBusy(false));
+                          }}
+                          className="absolute -right-1.5 -top-1.5 flex size-[18px] cursor-pointer items-center justify-center rounded-full bg-surface-3 opacity-0 shadow-[0_0_0_1px_var(--alpha-2)] transition-opacity group-hover/icon:opacity-100 focus-visible:opacity-100 focus-visible:shadow-[var(--sidebar-focus-shadow)]"
+                        >
+                          <Anthropicon name="x" size={12} className="text-text-secondary" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               {icons.loading &&
-                [0, 1, 2, 3, 4, 5].map((index) => (
-                  <Skeleton key={index} className="size-14 rounded-xl" />
-                ))}
+                [0].map((index) => <Skeleton key={index} className="size-14 rounded-xl" />)}
             </div>
           </SettingsRow>
         )}
@@ -197,7 +200,10 @@ export function AppearanceSettings() {
                   .then((result) => {
                     if (result.ok) {
                       icons.reload();
-                      return selectAppIcon(result.icon, 'both').then(() => undefined);
+                      return selectAppIcon(result.icon, 'both').then((selection) => {
+                        if (!selection.ok)
+                          toast({ title: copy.appIconSelectFailed, variant: 'destructive' });
+                      });
                     }
                     // The user closing the picker is not a failure.
                     if (result.reason !== 'cancelled')

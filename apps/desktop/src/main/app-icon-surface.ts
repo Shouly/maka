@@ -21,6 +21,7 @@ import { app, BrowserWindow, nativeImage } from 'electron';
 import { join } from 'node:path';
 import {
   APP_ICONS,
+  DEFAULT_APP_ICON,
   CUSTOM_APP_ICON_PREFIX,
   customAppIconId,
   toAppIconChoice,
@@ -51,7 +52,7 @@ export function appIconPath(value: unknown): string {
   try {
     return resolveCustomAppIconPath(app.getPath('userData'), custom);
   } catch {
-    return resolveAppIconPath(currentAssetRoot(), 'default');
+    return resolveAppIconPath(currentAssetRoot(), DEFAULT_APP_ICON);
   }
 }
 

@@ -80,15 +80,15 @@ test('applies a chosen app icon once, and again only when the choice changes', a
   });
 
   await effects.refresh(false);
-  current = { ...current, appearance: { ...current.appearance, appIcon: 'mono' } };
+  current = { ...current, appearance: { ...current.appearance, appIcon: 'custom:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' } };
   assert.equal(await effects.apply(current, false), true);
   // The file watcher echoes the same write back; the OS call must not repeat.
   assert.equal(await effects.refresh(false), false);
 
-  current = { ...current, appearance: { ...current.appearance, appIcon: 'default' } };
+  current = { ...current, appearance: { ...current.appearance, appIcon: 'relx' } };
   assert.equal(await effects.apply(current, false), true);
 
-  assert.deepEqual(appIcons, ['mono', 'default']);
+  assert.deepEqual(appIcons, ['custom:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'relx']);
 });
 
 
@@ -103,7 +103,7 @@ test('an OS appearance flip re-applies the icon without any setting changing', a
   // The light slot keeps the shipped default: that is what startup already
   // painted, so the first refresh must apply nothing.
   current.appearance.appIcon = DEFAULT_APP_ICON;
-  current.appearance.appIconDark = 'midnight';
+  current.appearance.appIconDark = 'custom:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
   const applied: string[] = [];
   const effects = createClientSettingsEffects({
     settingsStore: { get: async () => current },
@@ -122,23 +122,23 @@ test('an OS appearance flip re-applies the icon without any setting changing', a
 
   systemDark = true;
   assert.equal(await effects.refresh(false), true);
-  assert.deepEqual(applied, ['midnight']);
+  assert.deepEqual(applied, ['custom:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb']);
 
   // Idempotent: a second notification for the same appearance must not cost
   // another 1024px decode.
   assert.equal(await effects.refresh(false), false);
-  assert.deepEqual(applied, ['midnight']);
+  assert.deepEqual(applied, ['custom:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb']);
 
   systemDark = false;
   await effects.refresh(false);
-  assert.deepEqual(applied, ['midnight', DEFAULT_APP_ICON]);
+  assert.deepEqual(applied, ['custom:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', DEFAULT_APP_ICON]);
 });
 
 test('with one icon for both appearances a theme flip changes nothing', async () => {
   let systemDark = false;
   const current = createDefaultSettings();
   current.appearance.theme = 'auto';
-  current.appearance.appIcon = 'forest';
+  current.appearance.appIcon = 'custom:cccccccccccccccccccccccccccccccc';
   delete current.appearance.appIconDark;
   const applied: string[] = [];
   const effects = createClientSettingsEffects({
@@ -154,17 +154,17 @@ test('with one icon for both appearances a theme flip changes nothing', async ()
   });
 
   await effects.refresh(false);
-  assert.deepEqual(applied, ['forest']);
+  assert.deepEqual(applied, ['custom:cccccccccccccccccccccccccccccccc']);
   systemDark = true;
   assert.equal(await effects.refresh(false), false);
-  assert.deepEqual(applied, ['forest'], 'no second tile was ever chosen');
+  assert.deepEqual(applied, ['custom:cccccccccccccccccccccccccccccccc'], 'no second tile was ever chosen');
 });
 
 test('an explicit dark preference ignores what the OS reports', async () => {
   const current = createDefaultSettings();
   current.appearance.theme = 'dark';
-  current.appearance.appIcon = 'sky';
-  current.appearance.appIconDark = 'ink';
+  current.appearance.appIcon = 'relx';
+  current.appearance.appIconDark = 'custom:dddddddddddddddddddddddddddddddd';
   const applied: string[] = [];
   const effects = createClientSettingsEffects({
     settingsStore: { get: async () => current },
@@ -178,5 +178,5 @@ test('an explicit dark preference ignores what the OS reports', async () => {
     emitExternalChanged: () => undefined,
   });
   await effects.refresh(false);
-  assert.deepEqual(applied, ['ink']);
+  assert.deepEqual(applied, ['custom:dddddddddddddddddddddddddddddddd']);
 });

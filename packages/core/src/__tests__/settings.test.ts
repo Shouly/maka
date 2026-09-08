@@ -182,7 +182,7 @@ test('an app icon the build does not ship falls back without disturbing the them
 
   assert.strictEqual(
     normalizeSettings({ appearance: { theme: 'auto', appIcon: 'mono' } }).appearance.appIcon,
-    'mono',
+    DEFAULT_APP_ICON,
   );
 });
 
@@ -261,9 +261,9 @@ test('an app icon that never passed normalization still coerces to the brand mar
     null,
     undefined,
   ]) {
-    assert.strictEqual(toAppIconChoice(escape), 'default');
+    assert.strictEqual(toAppIconChoice(escape), DEFAULT_APP_ICON);
   }
-  assert.strictEqual(toAppIconChoice('sky'), 'sky');
+  assert.strictEqual(toAppIconChoice('sky'), DEFAULT_APP_ICON);
   assert.strictEqual(toAppIconChoice(`custom:${'a'.repeat(32)}`), `custom:${'a'.repeat(32)}`);
 });
 
@@ -283,36 +283,42 @@ test('WorkHub stays opt-in and malformed persisted values fail closed', () => {
 
 describe('app icon per appearance', () => {
   test('one icon serves both appearances until a dark one is chosen', () => {
-    const appearance = { appIcon: 'forest' } as const;
-    assert.strictEqual(appIconForTheme(appearance, false), 'forest');
-    assert.strictEqual(appIconForTheme(appearance, true), 'forest');
+    const appearance = { appIcon: 'relx' } as const;
+    assert.strictEqual(appIconForTheme(appearance, false), 'relx');
+    assert.strictEqual(appIconForTheme(appearance, true), 'relx');
   });
 
   test('a dark choice applies only to dark', () => {
-    const appearance = { appIcon: 'sky', appIconDark: 'midnight' } as const;
-    assert.strictEqual(appIconForTheme(appearance, false), 'sky');
-    assert.strictEqual(appIconForTheme(appearance, true), 'midnight');
+    const appearance = {
+      appIcon: 'relx',
+      appIconDark: 'custom:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    } as const;
+    assert.strictEqual(appIconForTheme(appearance, false), 'relx');
+    assert.strictEqual(
+      appIconForTheme(appearance, true),
+      'custom:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    );
   });
 
   test('a settings file written before the dark slot existed keeps its icon in both', () => {
     // The upgrade case: absent must not silently become the shipped dark
     // default, or everyone who ever picked an icon gains a second one they
     // never chose the first time they launch in dark mode.
-    const normalized = normalizeSettings({ appearance: { appIcon: 'paper' } });
+    const normalized = normalizeSettings({ appearance: { appIcon: 'relx' } });
     assert.strictEqual(normalized.appearance.appIconDark, undefined);
-    assert.strictEqual(appIconForTheme(normalized.appearance, true), 'paper');
+    assert.strictEqual(appIconForTheme(normalized.appearance, true), 'relx');
   });
 
   test('clearing the dark slot survives normalization as absent, not as a default', () => {
     const cleared = mergeSettings(createDefaultSettings(), {
-      appearance: { appIcon: 'ink', appIconDark: undefined },
+      appearance: { appIcon: 'relx', appIconDark: undefined },
     });
     assert.strictEqual(normalizeSettings(cleared).appearance.appIconDark, undefined);
   });
 
   test('a present-but-invalid dark id falls back instead of reaching the main process', () => {
     const normalized = normalizeSettings({
-      appearance: { appIcon: 'sky', appIconDark: '../../etc/passwd' },
+      appearance: { appIcon: 'relx', appIconDark: '../../etc/passwd' },
     });
     assert.strictEqual(normalized.appearance.appIconDark, DEFAULT_APP_ICON_DARK);
   });
@@ -348,16 +354,15 @@ describe('app icon per appearance', () => {
   });
 
   test('a malformed choice cannot survive as a path fragment', () => {
-    assert.strictEqual(toAppIconChoice('../../evil'), 'default');
+    assert.strictEqual(toAppIconChoice('../../evil'), DEFAULT_APP_ICON);
   });
 });
 
 describe('app icon on upgrade', () => {
-  test('a settings file that recorded a choice keeps it', () => {
-    // Anyone who ever opened the icon picker has an id on disk, and changing
-    // the shipped default must not move it.
+  test('a settings file that recorded a retired icon falls back to the current mark', () => {
+    // Retired artwork no longer ships; never retain an id whose file is gone.
     const kept = normalizeSettings({ appearance: { theme: 'auto', appIcon: 'default' } });
-    assert.strictEqual(kept.appearance.appIcon, 'default');
+    assert.strictEqual(kept.appearance.appIcon, DEFAULT_APP_ICON);
   });
 
   test('a settings file that never recorded one takes the new default', () => {
@@ -404,4 +409,24 @@ test('proxy credentials never enter persisted settings', () => {
   assert.strictEqual('credential' in normalized.network.proxy, false);
   assert.strictEqual('password' in normalized.network.proxy, false);
   assert.strictEqual('passwordConfigured' in normalized.network.proxy, false);
+});
+
+test('retired built-in icons resolve to the current mark in both normalization and runtime ingress', () => {
+  for (const icon of [
+    'default',
+    'mono',
+    'sky',
+    'ink',
+    'midnight',
+    'pencil-kraft',
+    'forest',
+    'hazard',
+  ]) {
+    assert.equal(toAppIconChoice(icon), DEFAULT_APP_ICON);
+    const appearance = normalizeSettings({
+      appearance: { theme: 'dark', appIcon: icon, appIconDark: icon },
+    }).appearance;
+    assert.equal(appearance.appIcon, DEFAULT_APP_ICON);
+    assert.equal(appearance.appIconDark, DEFAULT_APP_ICON);
+  }
 });

@@ -40,7 +40,7 @@ test('the generic settings channel cannot carry an app-icon choice', () => {
 test('an appearance patch that is only an icon drops out entirely', () => {
   // Nothing left to forward: the section would otherwise arrive empty and
   // still count as a write on the generic channel.
-  assert.equal(clientOwnedSettingsPatch({ appearance: { appIcon: 'sky' } }).appearance, undefined);
+  assert.equal(clientOwnedSettingsPatch({ appearance: { appIcon: 'relx' } }).appearance, undefined);
 });
 
 test('the rest of appearance still travels', () => {
@@ -60,7 +60,7 @@ test('the dark slot cannot travel on the generic channel either', () => {
 
 test('an appearance patch of only icon slots drops out entirely', () => {
   assert.equal(
-    clientOwnedSettingsPatch({ appearance: { appIcon: 'sky', appIconDark: 'ink' } }).appearance,
+    clientOwnedSettingsPatch({ appearance: { appIcon: 'relx', appIconDark: `custom:${'d'.repeat(32)}` } }).appearance,
     undefined,
   );
 });

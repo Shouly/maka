@@ -39,7 +39,7 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
         label: '通用',
         description: '显示名称与界面语言、隐私与通知、任务默认与网络代理。',
       },
-      appearance: { label: '外观', description: '界面主题与调色板。' },
+      appearance: { label: '外观', description: '主题、应用图标与字号。' },
       projects: {
         label: '工作区',
         description: '管理 Runtime Host 连接，以及默认 Host 上的项目。',
@@ -83,7 +83,7 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
         label: '通用',
         description: '顯示名稱與介面語言、隱私與通知、任務預設與網路代理。',
       },
-      appearance: { label: '外觀', description: '介面主題與調色盤。' },
+      appearance: { label: '外觀', description: '主題、應用程式圖示與字級。' },
       projects: {
         label: '工作區',
         description: '管理 Runtime Host 連線，以及預設 Host 上的專案。',
@@ -128,7 +128,7 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
         description:
           'Display name and interface language, privacy and notifications, task defaults, and network proxy.',
       },
-      appearance: { label: 'Appearance', description: 'Interface theme and color palette.' },
+      appearance: { label: 'Appearance', description: 'Theme, app icon, and font sizes.' },
       projects: {
         label: 'Workspace',
         description: 'Manage Runtime Host connections and projects on the default Host.',

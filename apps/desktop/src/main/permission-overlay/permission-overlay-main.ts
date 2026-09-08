@@ -105,7 +105,8 @@ export function createPermissionOverlayMain(
       desktopAssetPath(
         { isPackaged: app.isPackaged, resourcesPath: process.resourcesPath },
         'assets',
-        'icon.png',
+        'app-icons',
+        'relx.png',
       ),
     );
     if (icon.isEmpty()) return null;

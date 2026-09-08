@@ -230,13 +230,7 @@ const baseDesktopBuilderConfig = {
   // architecture together and are the single authority for both.
   mac: {
     category: 'public.app-category.productivity',
-    // The bundle icon is what Finder, Launchpad and the installer show, and
-    // none of those run our code — so it cannot follow the user's choice and
-    // has to be the shipped default. `assets/icon.png` is the original mascot
-    // mark, which is still selectable as the `default` id but is no longer the
-    // default; pointing the bundle at it would leave every surface outside the
-    // running app on the old artwork. Kept in step with `DEFAULT_APP_ICON` by
-    // a test in scripts/verify-packaged-app-icons.test.mjs.
+    // Finder and the installer use the same bundled default as the running app.
     icon: 'assets/app-icons/relx.png',
     forceCodeSigning: true,
     hardenedRuntime: true,

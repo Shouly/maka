@@ -180,7 +180,7 @@ test('the upgrade baseline keeps the Git absence rule while relaxing newer resou
   // A pinned baseline may predate any of these; none of them may be demanded
   // of bytes that were correct when they shipped.
   for (const path of [
-    join('resources', 'assets', 'icon.png'),
+    join('resources', 'assets', 'app-icons', 'relx.png'),
     join('resources', 'licenses', 'maka', 'DISCLAIMER-WIP'),
     join('resources', 'runtime-host-peer', 'maka_runtime_host_peer.node'),
     join('resources', 'licenses', 'runtime-host-peer', 'THIRD_PARTY_NOTICES.txt'),
@@ -505,12 +505,12 @@ describe('assertPackagedDependencyClosure', () => {
 });
 
 // The resource list is contract, not implementation: the permission overlay
-// reads `assets/icon.png` at runtime, so a current build that drops it ships
+// reads `assets/app-icons/relx.png` at runtime, so a current build that drops it ships
 // a regression the app cannot report. The check is driven through the
 // injectable `requirePath`, so it needs no packaging and no platform.
 describe('assertPackagedResources', () => {
   const resources = join('fake', 'resources');
-  const iconPath = join(resources, 'assets', 'icon.png');
+  const iconPath = join(resources, 'assets', 'app-icons', 'relx.png');
   const requirePathMissing = (absent) => async (path) => {
     if (path === absent) throw new Error(`MISSING ${path}`);
   };
@@ -524,7 +524,7 @@ describe('assertPackagedResources', () => {
           forbidPath,
           requireWindowsSandbox: false,
         }),
-      /MISSING .*icon\.png/,
+      /MISSING .*relx\.png/,
     );
   });
 
@@ -535,6 +535,7 @@ describe('assertPackagedResources', () => {
       requireWindowsSandbox: false,
       requireDisclaimer: false,
       requireCanonicalIcon: false,
+      requireAppIconCatalog: false,
     });
   });
 });

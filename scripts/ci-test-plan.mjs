@@ -243,14 +243,19 @@ function isUiProductSourcePath(path) {
 const APP_ICON_FILES = new Set([
   'apps/desktop/electron-builder.config.mjs',
   'packages/core/src/settings.ts',
-  'scripts/generate-app-icons.py',
+  'scripts/generate-relx-icon.mjs',
   'scripts/generate-app-icons.test.mjs',
   'scripts/verify-packaged-app.mjs',
   'scripts/verify-packaged-app-icons.test.mjs',
 ]);
 
 function isAppIconPath(path) {
-  return APP_ICON_FILES.has(path) || path.startsWith('apps/desktop/assets/app-icons/');
+  return (
+    APP_ICON_FILES.has(path) ||
+    path.startsWith('apps/desktop/assets/app-icons/') ||
+    path.startsWith('apps/desktop/assets/brand/') ||
+    path === 'apps/desktop/src/renderer/styles/globals.css'
+  );
 }
 
 function isE2eProductPath(path) {

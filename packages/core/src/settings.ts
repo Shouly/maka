@@ -186,80 +186,8 @@ export function isThemePalette(value: unknown): value is ThemePalette {
   return typeof value === 'string' && (THEME_PALETTES as readonly string[]).includes(value);
 }
 
-/**
- * Which artwork the OS shows for Maka: the dock tile on macOS, the window
- * and taskbar icon on Windows/Linux. Every id maps to one PNG shipped with
- * the desktop app (see `resolveAppIconPath` in apps/desktop); `default` is
- * the brand mark in `apps/desktop/assets/icon.png`.
- *
- * A closed enum rather than a path: the renderer never names a file, so a
- * settings file edited by hand can only ever select artwork that ships with
- * the build.
- */
-export const APP_ICONS = [
-  // The brand mark and its grayscale companion.
-  'default',
-  'mono',
-  // ENTERPRISE-RESKIN-1: the RELX flower mark, shipped as the default tile.
-  // Hand-supplied artwork, not a generator colourway (see NOT_GENERATED in
-  // scripts/generate-app-icons.test.mjs).
-  'relx',
-  // The geometric M set: one drawing, recoloured. Ids name the colourway, not
-  // the artwork, so a repaint never invalidates a settings file already on
-  // disk. Ordered by family, following the order the icon discussion used —
-  // but not one-to-one with its numbering: three near-duplicate blues that
-  // were cut from the set before it shipped are still absent, so match a
-  // number from that thread to a tile by id, not by position.
-  // Blue
-  'sky',
-  'cyan',
-  'ice',
-  'pale-inverted',
-  // Monochrome
-  'ink',
-  'paper',
-  'graphite',
-  // Pencil
-  'pencil-kraft',
-  'pencil-sky',
-  'pencil-navy',
-  // Alpine
-  'alpine',
-  'dusk',
-  'night',
-  'forest',
-  // Dark — sized for a dark dock, where a mid-tone tile glows like a light leak
-  'midnight',
-  'carbon',
-  'slate',
-  'obsidian',
-  // Neon / terminal
-  'neon-cyan',
-  'matrix',
-  'magenta',
-  'amber-crt',
-  // Muted
-  'clay',
-  'sage',
-  'dust',
-  'fog',
-  // Warm
-  'sunset',
-  'amber',
-  'terracotta',
-  // Nature
-  'ocean',
-  'moss',
-  'desert',
-  'glacier',
-  // Metal
-  'gold',
-  'chrome',
-  // High contrast — one-colour printing and 7:1
-  'mono-black',
-  'mono-white',
-  'hazard',
-] as const;
+/** The shipped brand mark; imported artwork uses a separate custom id. */
+export const APP_ICONS = ['relx'] as const;
 
 export type AppIcon = (typeof APP_ICONS)[number];
 
@@ -308,7 +236,7 @@ export function isAppIconChoice(value: unknown): value is AppIconChoice {
  * rather than trusting the declared type.
  */
 export function toAppIconChoice(value: unknown): AppIconChoice {
-  return isAppIconChoice(value) ? value : 'default';
+  return isAppIconChoice(value) ? value : DEFAULT_APP_ICON;
 }
 
 /** The bare id of an imported icon, or undefined for the shipped set. */
@@ -341,7 +269,7 @@ export function isAppIconTarget(value: unknown): value is AppIconTarget {
  * back.
  */
 export const DEFAULT_APP_ICON: AppIcon = 'relx';
-export const DEFAULT_APP_ICON_DARK: AppIcon = 'ink';
+export const DEFAULT_APP_ICON_DARK: AppIcon = DEFAULT_APP_ICON;
 
 /** The icon half of a fresh install's appearance, for resolving startup state. */
 const DEFAULT_APP_ICON_APPEARANCE: Pick<AppearanceSettings, 'appIcon' | 'appIconDark'> = {

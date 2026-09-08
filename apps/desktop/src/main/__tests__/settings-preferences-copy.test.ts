@@ -48,7 +48,7 @@ test('language selector offers every preference with locale-appropriate labels',
 test('Traditional Chinese settings copy uses Taiwan terminology', () => {
   const copy = getSettingsPreferencesCopy('zh-TW');
   assert.equal(copy.sections.network, '網路');
-  assert.equal(copy.appearance.paletteLabels.default, '預設');
+  assert.equal(copy.appearance.appIconDefault, '預設圖示');
   assert.equal(copy.appearance.appIconImport, '匯入圖示…');
   assert.equal(copy.about.clipboardUnavailable, '剪貼簿不可用或被系統拒絕。');
 });

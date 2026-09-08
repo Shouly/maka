@@ -27,7 +27,7 @@ on:
     tags: ['v*']
     paths:
       - 'website/**'
-      - 'apps/desktop/assets/app-icons/sky.png'
+      - 'apps/desktop/assets/app-icons/relx.png'
       - 'package.json'
       - 'package-lock.json'
       - 'LICENSE'

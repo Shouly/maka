@@ -1034,7 +1034,7 @@ export async function assertPackagedResources(
   const required = [
     'app.asar',
     'bundled-tools.json',
-    ...(requireCanonicalIcon ? [join('assets', 'icon.png')] : []),
+    ...(requireCanonicalIcon ? [join('assets', 'app-icons', 'relx.png')] : []),
     join('workers', 'filesystem-worker.js'),
     ...(requireDirectPeerArtifact
       ? [
