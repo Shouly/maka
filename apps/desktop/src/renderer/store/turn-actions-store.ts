@@ -53,11 +53,12 @@ export function createTurnActionsStore(
     /**
      * Take the transcript back to the tail before a user message is admitted.
      *
-     * Fire-and-forget on purpose: the pin and the cancellation are
-     * synchronous, the catch-up page is not, and an unopened or offline
-     * transcript must never delay saving what the user typed.
+     * Awaited, but it resolves as soon as the tail command has been issued:
+     * the pin and the cancellation are synchronous, the catch-up page is not,
+     * and an unopened or offline transcript must never delay saving what the
+     * user typed. The wait exists for ordering — see `orderBeforeSend`.
      */
-    onFollowLatest?: (sessionId: string) => void;
+    onFollowLatest?: (sessionId: string) => Promise<unknown> | void;
   } = {},
 ) {
   const bridge = options.api ?? api;
@@ -89,11 +90,32 @@ export function createTurnActionsStore(
     locks.set(key, result);
     return result;
   }
+  /**
+   * The tail command must reach the main process before the send does.
+   *
+   * Main answers a `followTail` navigation by re-reading the tail and then
+   * settling every overlay message up to the sequence it captured when the
+   * command arrived; while that runs, it withholds every transcript batch
+   * from this consumer. Captured before the send, that sequence is the
+   * previous turn's and the settlement is instant. Captured after the send
+   * has started the turn, it covers the streaming reply, and the settlement
+   * — and the blackout — last until the reply finishes: the user message
+   * and the whole stream appear only when the turn is over.
+   *
+   * The command's IPC leaves after a few microtasks (the range controller
+   * awaits its open handle first); the send's would leave on the very next
+   * one. A macrotask yield lets the command's invoke go first, and both
+   * calls then arrive in that order.
+   */
+  async function orderBeforeSend(id: string): Promise<void> {
+    await options.onFollowLatest?.(id);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
   return {
     ...store,
     send(id: string, command: api.SessionSendCommand) {
-      options.onFollowLatest?.(id);
       return run(id, 'send', async () => {
+        await orderBeforeSend(id);
         const result = await bridge.sendMessage(id, command);
         store.setState((s) => ({ sendResults: { ...s.sendResults, [id]: result } }));
         return result;
@@ -103,10 +125,11 @@ export function createTurnActionsStore(
       id: string,
       placement: api.SessionSubmitPlacement,
       command: api.SessionSubmitCommand,
-    ) => {
-      options.onFollowLatest?.(id);
-      return run(id, 'send', () => bridge.submitMessage(id, placement, command));
-    },
+    ) =>
+      run(id, 'send', async () => {
+        await orderBeforeSend(id);
+        return bridge.submitMessage(id, placement, command);
+      }),
     stop: (id: string, input?: api.SessionStopInput) =>
       run(id, 'stop', () => bridge.stopSession(id, input)),
     regenerate: (id: string, turnId: string) =>

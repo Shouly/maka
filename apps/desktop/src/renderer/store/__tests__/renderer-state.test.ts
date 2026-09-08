@@ -538,6 +538,45 @@ test('send retains outcome_unknown and never retries the admission automatically
   assert.equal(calls, 1);
   assert.deepEqual(store.getState().sendResults.a, result);
 });
+test('send issues the follow-tail command and lets its IPC leave before the send admission', async () => {
+  // Main withholds every transcript batch while it answers a followTail
+  // navigation; captured after the send has started the turn, that answer
+  // waits for the streaming reply to settle and the whole turn goes dark.
+  const order: string[] = [];
+  const followed = deferred<void>();
+  const store = createTurnActionsStore({
+    api: {
+      ...sessions,
+      async sendMessage() {
+        order.push('send');
+        return {
+          ok: false,
+          reason: 'outcome_unknown',
+          messageId: 'intent',
+          skillInvocation: { loaded: [], failed: [], receipts: [] },
+        };
+      },
+      async submitMessage() {
+        order.push('submit');
+        return { ok: true } as unknown as Awaited<ReturnType<typeof sessions.submitMessage>>;
+      },
+    },
+    onFollowLatest: (id) => {
+      order.push(`follow:${id}`);
+      // Resolves once the command is issued, like `prepareSend`; the IPC it
+      // dispatches leaves on a later microtask, which the store must outwait.
+      return followed.promise.then(() => queueMicrotask(() => order.push('follow-ipc')));
+    },
+  });
+  const sending = store.send('a', { type: 'send', turnId: 'intent', text: 'hello' });
+  await tick();
+  assert.deepEqual(order, ['follow:a'], 'the send waits for the follow-tail command');
+  followed.resolve();
+  await sending;
+  assert.deepEqual(order, ['follow:a', 'follow-ipc', 'send']);
+  await store.submit('a', 'next_turn', { type: 'send', turnId: 'next', text: 'again' } as never);
+  assert.deepEqual(order.slice(3), ['follow:a', 'follow-ipc', 'submit']);
+});
 test('stop remains available while send is awaiting admission and commands retain their owner', async () => {
   const send = deferred<sessions.SessionSendResult>();
   const stopped: string[] = [];

@@ -55,11 +55,9 @@ export const activeSessionStore = createActiveSessionStore({
 export const turnActionsStore = createTurnActionsStore({
   refresh: sessionsStore.refresh,
   // A send is a viewport command as well as an admission: it abandons the
-  // reader's bookmark and pins the transcript back to the tail. Nothing here
-  // awaits it — see `prepareSend`.
-  onFollowLatest: (sessionId) => {
-    void activeSessionStore.prepareSend(sessionId);
-  },
+  // reader's bookmark and pins the transcript back to the tail. `prepareSend`
+  // resolves once the tail command is issued, not once the tail has loaded.
+  onFollowLatest: (sessionId) => activeSessionStore.prepareSend(sessionId),
   onCopy(sourceId, row) {
     sessionsStore.upsert(row);
     if (sessionsStore.getState().activeId === sourceId) sessionsStore.select(row.id);
