@@ -75,6 +75,7 @@ import { reconcileSettledSessionTransients } from '../lib/ported/settled-session
 import { readExecutionBoundaryWithRetry } from '../lib/ported/execution-boundary-read.js';
 import { mergeTransientMessageProjection } from '../lib/ported/transient-message-projection.js';
 import type { DesktopSessionSummary } from '../bridge/sessions.js';
+import { MESSAGE_QUEUE_MAX_ENTRIES } from '@maka/runtime-host/protocol';
 import {
   projectQueuedTransientMessages,
   reconcileTransientMessages,
@@ -186,6 +187,7 @@ export function createActiveSessionStore(
   let currentEvaluateHealth: (() => void) | undefined;
   let currentRefreshBoundary: (() => void) | undefined;
   let currentFailTranscript: ((error: unknown) => void) | undefined;
+  let currentRemoveTransient: ((messageId: string) => void) | undefined;
   // The user's own sends, shown the instant they leave the composer and
   // retired when the Host's durable copy carries the same id (upstream
   // `showTransientUserMessage`). Kept per Session and outside the selection
@@ -282,13 +284,54 @@ export function createActiveSessionStore(
     let rangeController: RecoveringDesktopTranscriptRangeController;
     const publishTransient = () => {
       const messages = store.getState().messages;
+      // A reader scrolled back into history is looking at a page that has
+      // newer rows after it; an in-flight send belongs to the tail, not to
+      // the bottom of that page. The rows are kept, only their presentation
+      // waits for the tail to come back.
+      let includeTransient = true;
+      try {
+        includeTransient = !transcript.range().hasNewer;
+      } catch {
+        // An unopened transcript has no historical range to hide the tail from.
+      }
       // The user's sends first: they precede anything the Host has queued.
       commit({
         transientMessages: [
-          ...reconcileTransientMessages(optimistic, messages),
-          ...reconcileTransientMessages(transient, messages),
+          ...reconcileTransientMessages(optimistic, messages, { includeTransient }),
+          ...reconcileTransientMessages(transient, messages, { includeTransient }),
         ],
       });
+    };
+    const removeAnyTransient = (messageId: string) => {
+      transient.delete(messageId);
+      optimistic.delete(messageId);
+      publishTransient();
+    };
+    // Which local rows the Host has cancelled since the stream was last
+    // heard: a stop mid-flight, an `outcome_unknown` that was in fact
+    // refused. Asked at every (re)seed, in the protocol's per-query chunks;
+    // a failed proof query retires nothing.
+    const retireCancelledTransients = async () => {
+      const messageIds = [...optimistic.keys(), ...transient.keys()];
+      if (messageIds.length === 0) return;
+      try {
+        const cancelled: string[] = [];
+        for (let from = 0; from < messageIds.length; from += MESSAGE_QUEUE_MAX_ENTRIES) {
+          const result = await api.queryCancelledMessages(
+            sessionId,
+            messageIds.slice(from, from + MESSAGE_QUEUE_MAX_ENTRIES),
+          );
+          cancelled.push(...result.cancelledMessageIds);
+        }
+        if (!current() || cancelled.length === 0) return;
+        for (const messageId of cancelled) {
+          transient.delete(messageId);
+          optimistic.delete(messageId);
+        }
+        publishTransient();
+      } catch {
+        // Presentation stays until canonical proof arrives.
+      }
     };
     const refresh = async (input?: RefreshMessagesOptions) => {
       if (!current()) return false;
@@ -448,6 +491,7 @@ export function createActiveSessionStore(
     currentPublishTransient = publishTransient;
     currentRefreshBoundary = () => void refreshBoundary();
     currentFailTranscript = failTranscript;
+    currentRemoveTransient = removeAnyTransient;
     publishTransient();
     commit({ health: createSessionEventStreamSubscription({ sessionId, now: Date.now() }) });
     // The event-stream health probe (upstream `useSessionEventHealthPolling`).
@@ -510,6 +554,7 @@ export function createActiveSessionStore(
       commit({ observationReady: true });
       void refreshInteractions();
       void refreshBoundary();
+      void retireCancelledTransients();
     };
     const subscribe = () => {
       if (!current()) return;
@@ -657,6 +702,7 @@ export function createActiveSessionStore(
         currentPublishTransient = undefined;
         currentRefreshBoundary = undefined;
         currentFailTranscript = undefined;
+        currentRemoveTransient = undefined;
       }
       if (generation === selectionGeneration)
         store.setState({ observationReady: false, loading: false });
@@ -774,9 +820,17 @@ export function createActiveSessionStore(
     probeHealth() {
       currentEvaluateHealth?.();
     },
+    /**
+     * Withdraw a local row: a refused send, a retracted queue entry, a
+     * message a stop interrupted. Covers the Host-queued rows of the
+     * observed Session as well as the user's own sends.
+     */
     removeTransientMessage(sessionId: string, messageId: string) {
       optimisticBySession.get(sessionId)?.delete(messageId);
-      if (store.getState().sessionId === sessionId) currentPublishTransient?.();
+      if (store.getState().sessionId === sessionId) {
+        if (currentRemoveTransient) currentRemoveTransient(messageId);
+        else currentPublishTransient?.();
+      }
     },
     async loadBefore(maxBytes?: number, anchorTurnId?: string) {
       await controller?.loadBefore(maxBytes, anchorTurnId);

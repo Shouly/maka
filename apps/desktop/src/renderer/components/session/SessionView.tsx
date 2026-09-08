@@ -69,6 +69,11 @@ import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
 import { getShellCopy } from '../../locales/shell-copy.js';
 import { getTranscriptCopy } from '../../locales/transcript-copy.js';
 import type { TurnFooterActionId } from '../../lib/ported/turn-footer-actions.js';
+import {
+  isSessionWorkspaceUnavailableError,
+  showSessionWorkspaceUnavailableToast,
+} from '../../lib/ported/session-workspace-errors.js';
+import { toastApi } from '../../store/toast-api.js';
 import { ChatSkeleton } from '../ui/chat-skeleton.js';
 import { cn } from '../../lib/cn.js';
 import { composerInputStore } from '../../store/composer-input-store.js';
@@ -134,8 +139,16 @@ function SessionTranscript(props: SessionViewProps) {
   );
 
   const reportError = useCallback(
-    (title: string, error: unknown) => props.onError?.(title, error),
-    [props],
+    (title: string, error: unknown) => {
+      // Every Host action on a Session whose directory is gone fails with
+      // one typed code; say that, not the raw string.
+      if (isSessionWorkspaceUnavailableError(error)) {
+        showSessionWorkspaceUnavailableToast(toastApi, locale, { sessionId });
+        return;
+      }
+      props.onError?.(title, error);
+    },
+    [locale, props, sessionId],
   );
 
   // The pin state drives one affordance and nothing else, so it subscribes

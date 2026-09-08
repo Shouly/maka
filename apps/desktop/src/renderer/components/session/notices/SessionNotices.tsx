@@ -32,7 +32,9 @@ import { useEffect, useState } from 'react';
 import { useStore } from 'zustand';
 import type { ContextCompactionOutcome } from '@maka/core/events';
 import type { TaskSubmissionReadinessSnapshot } from '@maka/core/task-submission-readiness';
-import { getConversationCopy, useUiLocale } from '@maka/ui';
+import { getConversationCopy, resumeParkToastCopy, useUiLocale } from '@maka/ui';
+import { toastApi } from '../../../store/toast-api.js';
+import { getShellCopy } from '../../../locales/shell-copy.js';
 import { getTaskReadinessSnapshot } from '../../../bridge/task-readiness.js';
 import {
   activeSessionStore,
@@ -263,7 +265,28 @@ export function SessionNotices(props: {
               label: copy.notices.resumeAction,
               disabled: resuming,
               onClick: () => {
-                void turnActionsStore.resume(props.sessionId).catch(() => undefined);
+                const sessionId = props.sessionId;
+                const shellCopy = getShellCopy(locale).app;
+                void turnActionsStore
+                  .resume(sessionId)
+                  .then((result) => {
+                    // A parked resume is an answer, not a no-op: the Host
+                    // says why it will not continue this turn.
+                    if (result.disposition === 'park') {
+                      const park = resumeParkToastCopy(result.rejectionReasons, locale);
+                      toastApi.error(park.title, park.description, undefined, { sessionId });
+                      return;
+                    }
+                    toastApi.info(shellCopy.resumeStartedTitle, shellCopy.resumeStartedDescription);
+                  })
+                  .catch((error: unknown) => {
+                    toastApi.error(
+                      shellCopy.resumeFailedTitle,
+                      error instanceof Error ? error.message : shellCopy.resumeFailedFallback,
+                      undefined,
+                      { sessionId },
+                    );
+                  });
               },
             },
           ]}

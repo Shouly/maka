@@ -77,16 +77,11 @@ retirement, event-stream health probe, transcript load error + retry,
 queue-by-default mid-turn routing, composer yielding to prompts and to an
 unreadable boundary) landed the same day. Still open, in the order to fix:
 
-- **Ghost user bubbles.** Stop does not retract the queued messages it
-  interrupted (`DesktopSessionStopResult.retractedMessageIds`); deleting the
-  last queue entry leaves its bubble (`projectQueuedTransientMessages`
-  returns early on an empty list); an optimistic message the Host cancelled is
-  never retired after a reseed (`queryCancelledMessages` is not in
-  `bridge/sessions.ts`; upstream `retireCancelledTransientMessages`).
-- Escape does not stop a running turn; skill-invocation feedback
-  (`skill-invocation-feedback.ts`) is not ported, so a blocked `/skill:x` reads
-  as a generic failure; `SESSION_WORKSPACE_UNAVAILABLE` has no dedicated
-  toast; Resume's `park` disposition is silent.
+- (Batch 2 landed the same day: stop retracts the queued messages it
+  interrupted, a retracted queue entry takes its row, Host-cancelled
+  optimistic rows are retired at each seed, Escape stops the turn, skill
+  invocation feedback, the workspace-unavailable toast, Resume's `park`
+  answer, and transients hidden while reading history.)
 - Edit-and-resend: `abandonSessionCopy` is never called on cancel/failure
   (orphan forks in the rail); the fork is sent into before its transcript
   settles (`readSettledMessages` unused); no `waitForHostAdmission`.
@@ -96,8 +91,7 @@ unreadable boundary) landed the same day. Still open, in the order to fix:
   `orchestrationMode`).
 - `sessions:changed` side effects beyond a refresh: `clearPendingTurnActions`
   on turn/message changes, the `rebound` model toast, `retireSession`.
-- Transients are not hidden while reading history (`includeTransient` from
-  `range.hasNewer`); `flushDisplayEvents` is not called on seed completion;
+- `flushDisplayEvents` is not called on seed completion;
   `settleAssistantStreaming` (primary handoff) has no caller; the persisted
   composer model default (`composer-defaults.ts`) is not ported; the
   slash-command catalog port has no caller (`/compact` is hard-coded).

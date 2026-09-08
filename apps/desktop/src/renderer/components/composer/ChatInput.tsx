@@ -85,6 +85,17 @@ import { getNewTaskReadiness, type DesktopNewTaskTarget } from '../../bridge/new
 import { removeSession } from '../../bridge/sessions.js';
 import { armGoal, getGoal } from '../../bridge/goal.js';
 import { getComposerCopy } from '../../locales/composer-copy.js';
+import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
+import { getShellCopy } from '../../locales/shell-copy.js';
+import {
+  showSkillInvocationFeedback,
+  skillInvocationDisplayText,
+} from '../../lib/ported/skill-invocation-feedback.js';
+import {
+  isSessionWorkspaceUnavailableError,
+  showSessionWorkspaceUnavailableToast,
+} from '../../lib/ported/session-workspace-errors.js';
+import { toastApi } from '../../store/toast-api.js';
 import { ComposerSelect } from './ComposerSelect.js';
 import { TipTapEditor } from './TipTapEditor.js';
 import { Button } from '../ui/button.js';
@@ -239,6 +250,16 @@ function OwnedChatInput(props: {
   const thinkingLevels = activeChoice?.thinkingLevels ?? [];
 
   const disabled = busy || pending.includes('send');
+  // The Stop button and Escape share one path; a stop that is already in
+  // flight is not asked for twice.
+  const stopTurn = () => {
+    if (!sessionId || pending.includes('stop')) return;
+    void turnActionsStore
+      .stop(sessionId, { source: 'stop_button' })
+      .catch((cause: unknown) =>
+        report(cause, getDesktopConversationCopy(locale).actions.stopFailedTitle),
+      );
+  };
   const hasContent = Boolean(wire.text) || draft.attachments.length > 0;
   const blocked =
     !sessionId && !props.target
@@ -346,13 +367,24 @@ function OwnedChatInput(props: {
       if (!result.ok) {
         // `outcome_unknown` may still have been admitted; only a refusal is
         // certain not to appear, so only that withdraws the optimistic copy.
-        if (result.reason === 'outcome_unknown') optimisticId = undefined;
-        throw new Error(
-          result.reason === 'outcome_unknown'
-            ? copy.send.outcomeUnknownDescription
-            : copy.send.skillFailedFallback,
-        );
+        if (result.reason === 'outcome_unknown') {
+          optimisticId = undefined;
+          throw new Error(copy.send.outcomeUnknownDescription);
+        }
+        // The Host blocked every `/skill:x` in the message: the toast names
+        // each one and why, the composer keeps the draft with a short reason.
+        activeSessionStore.removeTransientMessage(owner, messageId);
+        optimisticId = undefined;
+        showSkillInvocationFeedback(locale, toastApi, result.skillInvocation, owner);
+        composerInputStore.patch(sessionId ? scopeKey : owner, {
+          error: copy.send.skillFailedFallback,
+        });
+        if (!sessionId && mounted.current) sessionsStore.select(owner);
+        return;
       }
+      // A skill that loaded beside one that did not is a partial success the
+      // user should hear about, without the message being held back.
+      showSkillInvocationFeedback(locale, toastApi, result.skillInvocation, owner);
       optimisticId = undefined;
       // What the Host made of it: the Turn it landed in, the attachments it
       // resolved, the inline references it kept. `locally_saved` answered
@@ -361,7 +393,7 @@ function OwnedChatInput(props: {
         activeSessionStore.updateTransientMessage(owner, {
           id: messageId,
           ts: Date.now(),
-          text: serialized.text,
+          text: skillInvocationDisplayText(serialized.text, result.skillInvocation),
           attachments: result.attachments,
           directoryReferences: [...sent.directories],
           quotes: sentQuotes.map(({ id: _id, ...quote }) => quote),
@@ -381,6 +413,18 @@ function OwnedChatInput(props: {
       // A failed first send still leaves a real, selected Session with the
       // draft in it — never an invisible lost message.
       if (!sessionId && owner && mounted.current) sessionsStore.select(owner);
+      if (isSessionWorkspaceUnavailableError(cause)) {
+        // One typed code, one sentence: the directory is gone, not the send.
+        showSessionWorkspaceUnavailableToast(
+          toastApi,
+          locale,
+          owner ? { sessionId: owner } : undefined,
+        );
+        composerInputStore.patch(owner && !sessionId ? owner : scopeKey, {
+          error: getShellCopy(locale).errors.workspaceUnavailableTitle,
+        });
+        return;
+      }
       composerInputStore.patch(owner && !sessionId ? owner : scopeKey, {
         error: cause instanceof Error ? cause.message : copy.send.failedFallback,
       });
@@ -679,6 +723,7 @@ function OwnedChatInput(props: {
               editor.current = value;
             }}
             onSubmit={(mode) => void submit(mode)}
+            onStop={stopTurn}
             onCommand={(command) => {
               if (command === 'compact' && sessionId) {
                 void turnActionsStore.compact(sessionId).catch(report);
@@ -793,12 +838,7 @@ function OwnedChatInput(props: {
                         type="button"
                         aria-label={common.composer.stopLabel}
                         disabled={pending.includes('stop')}
-                        onClick={() => {
-                          if (!sessionId) return;
-                          void turnActionsStore
-                            .stop(sessionId, { source: 'stop_button' })
-                            .catch(report);
-                        }}
+                        onClick={stopTurn}
                         className="ui-control-squish ui-control-squish-flat flex size-8 cursor-pointer items-center justify-center rounded-lg text-text-primary outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-70"
                       >
                         <Anthropicon name="stopCircle" size={20} />

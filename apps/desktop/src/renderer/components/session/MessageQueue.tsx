@@ -253,7 +253,16 @@ export const MessageQueue = memo(function MessageQueue(props: {
                           aria-label={copy.delete}
                           disabled={pending}
                           onClick={() =>
-                            run(turnActionsStore.retract(props.sessionId, entry.entryId))
+                            run(
+                              turnActionsStore
+                                .retract(props.sessionId, entry.entryId)
+                                .then(() =>
+                                  activeSessionStore.removeTransientMessage(
+                                    props.sessionId,
+                                    entry.messageId,
+                                  ),
+                                ),
+                            )
                           }
                           className={messageActionButtonClass}
                         >

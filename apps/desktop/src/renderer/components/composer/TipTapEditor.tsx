@@ -116,6 +116,8 @@ export function TipTapEditor(props: {
   onChange: (doc: JSONContent) => void;
   /** `steer` is the one-shot Shift+Enter into the running turn. */
   onSubmit: (mode?: 'steer') => void;
+  /** Escape while a turn runs — the keyboard's Stop. */
+  onStop?: () => void;
   onCommand: (command: string) => void;
   onEditor: (editor: Editor | null) => void;
   onArrow: (event: KeyboardEvent) => boolean;
@@ -356,6 +358,11 @@ export function TipTapEditor(props: {
 
   keyHandler.current = (event) => {
     if (event.isComposing || editor?.view.composing || event.key === 'Process') return false;
+    if (event.key === 'Escape' && !query && props.running && props.onStop) {
+      event.preventDefault();
+      props.onStop();
+      return true;
+    }
     if (query) {
       if (event.key === 'Escape') {
         event.preventDefault();

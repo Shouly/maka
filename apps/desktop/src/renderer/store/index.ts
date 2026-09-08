@@ -68,6 +68,14 @@ export const turnActionsStore = createTurnActionsStore({
   // reader's bookmark and pins the transcript back to the tail. `prepareSend`
   // resolves once the tail command is issued, not once the tail has loaded.
   onFollowLatest: (sessionId) => activeSessionStore.prepareSend(sessionId),
+  // The messages a stop retracted from the queue will never be sent; their
+  // rows come down with the turn they were waiting on.
+  onStopped(sessionId, result) {
+    if (result?.kind !== 'interrupted') return;
+    for (const messageId of result.retractedMessageIds) {
+      activeSessionStore.removeTransientMessage(sessionId, messageId);
+    }
+  },
   onCopy(sourceId, row) {
     sessionsStore.upsert(row);
     if (sessionsStore.getState().activeId === sourceId) sessionsStore.select(row.id);

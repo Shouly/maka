@@ -59,6 +59,8 @@ export function createTurnActionsStore(
      * user typed. The wait exists for ordering — see `orderBeforeSend`.
      */
     onFollowLatest?: (sessionId: string) => Promise<unknown> | void;
+    /** A stop that interrupted a turn also retracted its queued messages. */
+    onStopped?: (sessionId: string, result: api.DesktopSessionStopResult) => void;
   } = {},
 ) {
   const bridge = options.api ?? api;
@@ -131,7 +133,11 @@ export function createTurnActionsStore(
         return bridge.submitMessage(id, placement, command);
       }),
     stop: (id: string, input?: api.SessionStopInput) =>
-      run(id, 'stop', () => bridge.stopSession(id, input)),
+      run(id, 'stop', async () => {
+        const result = await bridge.stopSession(id, input);
+        options.onStopped?.(id, result);
+        return result;
+      }),
     regenerate: (id: string, turnId: string) =>
       run(id, 'regenerate', () => bridge.regenerateTurn(id, turnId)),
     compact: (id: string) => run(id, 'compact', () => bridge.compactSession(id)),

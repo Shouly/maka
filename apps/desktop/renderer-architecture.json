@@ -268,11 +268,13 @@
     "src/renderer/lib/ported/session-terminal-hydration.ts",
     "src/renderer/lib/ported/session-terminal-query.ts",
     "src/renderer/lib/ported/session-trace-refresh.ts",
+    "src/renderer/lib/ported/session-workspace-errors.ts",
     "src/renderer/lib/ported/settled-message-merge.ts",
     "src/renderer/lib/ported/settled-session-transients.ts",
     "src/renderer/lib/ported/shell-chat-model-selection.ts",
     "src/renderer/lib/ported/shell-run-update-state.ts",
     "src/renderer/lib/ported/side-chat-command.ts",
+    "src/renderer/lib/ported/skill-invocation-feedback.ts",
     "src/renderer/lib/ported/stale-sessions.ts",
     "src/renderer/lib/ported/subagent-preset-presentation.ts",
     "src/renderer/lib/ported/task-readiness-notice.ts",
@@ -902,11 +904,16 @@
         "../../lib/composer-surface.js": 1,
         "../../lib/ported/attachment-preflight.js": 1,
         "../../lib/ported/composer-attachments.js": 1,
+        "../../lib/ported/session-workspace-errors.js": 1,
+        "../../lib/ported/skill-invocation-feedback.js": 1,
         "../../locales/composer-copy.js": 1,
+        "../../locales/conversation-copy.js": 1,
+        "../../locales/shell-copy.js": 1,
         "../../store/composer-draft-store.js": 1,
         "../../store/composer-input-store.js": 1,
         "../../store/index.js": 1,
         "../../store/new-task-store.js": 1,
+        "../../store/toast-api.js": 1,
         "../../store/turn-actions-store.js": 1,
         "../icons/Anthropicon.js": 1,
         "../session/notices/ContextUsageIndicator.js": 1,
@@ -1841,12 +1848,14 @@
         "../../hooks/use-workbar.js": 1,
         "../../hooks/use-workspace.js": 1,
         "../../lib/cn.js": 1,
+        "../../lib/ported/session-workspace-errors.js": 1,
         "../../locales/conversation-copy.js": 1,
         "../../locales/shell-copy.js": 1,
         "../../locales/transcript-copy.js": 1,
         "../../store/composer-input-store.js": 1,
         "../../store/index.js": 1,
         "../../store/revision-draft.js": 1,
+        "../../store/toast-api.js": 1,
         "../../store/turn-actions-store.js": 1,
         "../composer/ChatInput.js": 1,
         "../composer/InteractionPrompts.js": 1,
@@ -2054,8 +2063,10 @@
         "../../../lib/ported/session-health-notice.js": 1,
         "../../../lib/ported/task-readiness-notice.js": 1,
         "../../../lib/ported/workspace-readiness-recovery.js": 1,
+        "../../../locales/shell-copy.js": 1,
         "../../../locales/transcript-copy.js": 1,
         "../../../store/index.js": 1,
+        "../../../store/toast-api.js": 1,
         "../../../store/turn-actions-store.js": 1,
         "./NoticeCard.js": 1,
         "@maka/ui": 1,
@@ -5012,6 +5023,17 @@
       "actionFactories": [],
       "dependencyPaths": {}
     },
+    "src/renderer/lib/ported/session-workspace-errors.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/shell-copy.js": 1
+      }
+    },
     "src/renderer/lib/ported/settled-session-transients.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -5039,6 +5061,17 @@
       "actionFactories": [],
       "dependencyPaths": {
         "@maka/core/shell-run-result": 1
+      }
+    },
+    "src/renderer/lib/ported/skill-invocation-feedback.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/shell-copy.js": 1
       }
     },
     "src/renderer/lib/ported/stale-sessions.ts": {
@@ -5578,6 +5611,7 @@
         "./resource-store.js": 1,
         "./session-event-handlers.js": 1,
         "@maka/core/session-event-health": 1,
+        "@maka/runtime-host/protocol": 1,
         "@maka/ui": 1,
         "zustand/vanilla": 1
       }

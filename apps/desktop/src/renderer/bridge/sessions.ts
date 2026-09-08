@@ -161,6 +161,14 @@ export function retractQueueEntry(sessionId: string, entryId: string): Promise<v
   return sessions().retractQueueEntry(sessionId, entryId);
 }
 
+/** Which of these local messages the Host has cancelled — the proof that retires a transient row. */
+export function queryCancelledMessages(
+  sessionId: string,
+  messageIds: readonly string[],
+): ReturnType<Sessions['queryCancelledMessages']> {
+  return sessions().queryCancelledMessages(sessionId, messageIds);
+}
+
 export function promoteQueueEntry(sessionId: string, entryId: string): Promise<void> {
   return sessions().promoteQueueEntry(sessionId, entryId);
 }

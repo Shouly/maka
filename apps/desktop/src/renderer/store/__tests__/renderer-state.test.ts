@@ -123,6 +123,7 @@ function fakeRuntime(
   let onShell = (_update: ShellRunUpdate) => {};
   let onResync = (_event: { sessionId: string }) => {};
   let shellRead = async (_id: string): Promise<ShellRunUpdate[]> => [];
+  let cancelledIds: string[] = [];
   const paging: string[] = [];
   const store = createActiveSessionStore({
     scheduleFrame: (callback) => frames.push(callback),
@@ -138,6 +139,9 @@ function fakeRuntime(
       },
       async listActiveInteractions() {
         return interactionRead ? interactionRead() : interactions;
+      },
+      async queryCancelledMessages() {
+        return { cancelledMessageIds: cancelledIds };
       },
       async readExecutionBoundary() {
         if (failBoundaryReads?.()) throw new Error('boundary unavailable');
@@ -209,6 +213,9 @@ function fakeRuntime(
     resync: (id: string) => onResync({ sessionId: id }),
     setShellRead: (read: typeof shellRead) => {
       shellRead = read;
+    },
+    setCancelled: (ids: string[]) => {
+      cancelledIds = ids;
     },
   };
 }
@@ -691,6 +698,52 @@ test("the Host's answer to a send updates the optimistic row without losing its 
   f.store.updateTransientMessage(id, { id: 'm-1', ...base, hostTurnId: 't-9' });
   assert.deepEqual(f.store.getState().transientMessages, []);
   f.store.disconnect();
+});
+test('a message the Host cancelled is retired at the next seed; a scrolled-back reader does not see the tail rows', async () => {
+  const f = fakeRuntime();
+  const id = sid('a');
+  const base = {
+    ts: 1,
+    text: 'hello',
+    inlineReferences: [],
+    transientPlacement: 'current_turn' as const,
+  };
+  f.store.showTransientUserMessage(id, { id: 'kept', ...base });
+  f.store.showTransientUserMessage(id, { id: 'gone', ...base });
+  f.setCancelled(['gone']);
+  f.store.observe(id, 'en');
+  await tick();
+  await tick();
+  assert.deepEqual(
+    f.store.getState().transientMessages.map((message) => message.id),
+    ['kept'],
+    'the cancelled row is gone, the other stays',
+  );
+  // A historical page with newer rows after it hides the in-flight send.
+  f.readers[0]!.receive({ ...batch(id, [], false), hasNewer: true });
+  assert.deepEqual(f.store.getState().transientMessages, []);
+  f.readers[0]!.receive({ ...batch(id, [], false), hasNewer: false });
+  assert.deepEqual(
+    f.store.getState().transientMessages.map((message) => message.id),
+    ['kept'],
+  );
+  f.store.disconnect();
+});
+test('a stop that interrupted the turn hands back the messages it retracted', async () => {
+  const retracted: string[] = [];
+  const store = createTurnActionsStore({
+    api: {
+      ...sessions,
+      async stopSession() {
+        return { kind: 'interrupted' as const, retractedMessageIds: ['q-1', 'q-2'] };
+      },
+    },
+    onStopped: (_id, result) => {
+      if (result?.kind === 'interrupted') retracted.push(...result.retractedMessageIds);
+    },
+  });
+  await store.stop('a', { source: 'stop_button' });
+  assert.deepEqual(retracted, ['q-1', 'q-2']);
 });
 test('history controls use the existing bounded paging handle', async () => {
   const f = fakeRuntime();
