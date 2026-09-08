@@ -34,7 +34,8 @@
         "throttleit",
         "tiptap-markdown"
       ],
-      "ignoreUnresolved": ["../src/renderer/features/connection-settings"]
+      "ignoreUnresolved": ["../src/renderer/features/connection-settings"],
+      "ignore": ["src/shared/session-local-contract.d.ts"]
     },
     "packages/ui": {
       "entry": ["src/index.ts", "src/**/*.test.ts", "src/**/*.test.tsx"],

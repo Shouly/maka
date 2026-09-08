@@ -301,7 +301,6 @@ function transcriptFixture(): TurnViewModel {
   return {
     turnId: 'turn-fixture',
     status: 'running',
-    partialOutputRetained: false,
     user: { id: 'user-1', role: 'user', text: 'Fix the constant', ts: NOW },
     assistant: { id: 'assistant-1', role: 'assistant', text: 'Done.' },
     tools: [diff, terminal, subagent],

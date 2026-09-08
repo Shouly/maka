@@ -72,7 +72,6 @@ function turn(overrides: Partial<TurnViewModel> = {}): TurnViewModel {
   return {
     turnId: 'turn-1',
     status: 'completed' as TurnStatus,
-    partialOutputRetained: false,
     tools: [],
     timeline: [],
     notes: [],

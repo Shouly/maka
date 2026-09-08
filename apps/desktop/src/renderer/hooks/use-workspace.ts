@@ -17,10 +17,15 @@
  * under the License.
  */
 
-import { useEffect, useLayoutEffect } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
-import { useTranscriptProjection, useUiLocale } from '@maka/ui';
+import {
+  useTranscriptProjection,
+  useUiLocale,
+  type LiveTurnProjection,
+  type TurnViewModel,
+} from '@maka/ui';
 import { deriveLiveTurnSnapshot } from '../lib/ported/live-turn-snapshot.js';
 import {
   activeSessionStore,
@@ -132,11 +137,51 @@ export function useActiveTurns() {
       shellRunUpdates: s.shellUpdates,
     })),
   );
-  return useTranscriptProjection(
+  const turns = useTranscriptProjection(
     input.sessionId === selectedId
       ? { ...input, locale }
       : { sessionId: selectedId, locale, messages: NO_MESSAGES },
   );
+  return useLiveStatusOverlay(turns, input.sessionId === selectedId ? input.liveTurn : undefined);
+}
+
+/**
+ * Present the Turn the live projection is writing into as `running`.
+ *
+ * The Runtime records a `turn_state` row only when a Turn ENDS (upstream
+ * #4879 derives transcripts from RuntimeEvents; there is no running row), so
+ * `materializeTurns` infers `completed` for a Turn that is still streaming.
+ * The live projection is the only evidence a Turn is in flight, and it is
+ * what the upstream transcript keys on too. Everything downstream — footer
+ * actions, the edit affordance, markdown completeness, `data-turn-status` —
+ * reads `turn.status`, so the overlay is applied here, once, rather than
+ * re-derived per consumer.
+ *
+ * A recorded terminal status always wins: a frozen live projection (missed
+ * `complete`) must not keep a Turn the Host has ended looking alive. Object
+ * identity is preserved for every other Turn so the presentation caches
+ * keyed on it stay warm.
+ */
+function useLiveStatusOverlay(
+  turns: readonly TurnViewModel[],
+  liveTurn: LiveTurnProjection | undefined,
+): readonly TurnViewModel[] {
+  const cache = useRef<{ source: TurnViewModel; overlaid: TurnViewModel }>(undefined);
+  const inFlightId = liveTurn && !liveTurn.terminal ? liveTurn.turnId : undefined;
+  return useMemo(() => {
+    if (!inFlightId) return turns;
+    const index = turns.findIndex((turn) => turn.turnId === inFlightId);
+    if (index < 0) return turns;
+    const source = turns[index]!;
+    if (source.status === 'running') return turns;
+    if (source.statusSource === 'recorded') return turns;
+    const overlaid =
+      cache.current?.source === source
+        ? cache.current.overlaid
+        : { ...source, status: 'running' as const };
+    cache.current = { source, overlaid };
+    return turns.map((turn, i) => (i === index ? overlaid : turn));
+  }, [turns, inFlightId]);
 }
 export function useLiveTurnSnapshot() {
   return useStore(

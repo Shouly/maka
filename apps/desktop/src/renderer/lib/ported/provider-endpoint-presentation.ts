@@ -23,10 +23,7 @@ import {
   providerDefaultsOf,
   type LlmConnection,
 } from '@maka/core/llm-connections';
-import {
-  lookupModelProviderOverride,
-  modelMetadataIdsForProvider,
-} from '@maka/core/model-metadata';
+import { lookupModelRuntimeOverride, modelMetadataIdsForProvider } from '@maka/core/model-metadata';
 import { redactSecrets } from '@maka/core/display-redaction';
 
 export interface ProviderEndpointPresentation {
@@ -96,7 +93,7 @@ function providerRoutesModelsElsewhere(connection: {
   if (cached !== undefined) return cached;
   let routes = false;
   for (const modelId of modelMetadataIdsForProvider(connection.providerType)) {
-    const api = lookupModelProviderOverride(connection.providerType, modelId)?.api;
+    const api = lookupModelRuntimeOverride(connection.providerType, modelId)?.baseUrl;
     if (api && api !== defaultBaseUrl) {
       routes = true;
       break;

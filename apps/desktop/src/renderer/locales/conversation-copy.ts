@@ -353,6 +353,10 @@ export interface DesktopConversationCopy {
     testError: { label: string; tooltip: string };
   };
   turnError: {
+    streamTruncated: string;
+    requestRejected: string;
+    retryExhausted: string;
+    retryDeclined: Record<'side_effects' | 'observable_output' | 'policy' | 'budget', string>;
     unknown: string;
     contextOverflow: string;
     timeout: string;
@@ -367,7 +371,7 @@ export interface DesktopConversationCopy {
     permission: string;
     restarted: string;
     sandboxBoundaryClosed: string;
-    executionState: Record<'erroredTool' | 'toolRan' | 'partialOutput', string>;
+    executionState: Record<'erroredTool' | 'toolRan', string>;
   };
 }
 
@@ -804,15 +808,24 @@ const COPY = {
       },
     },
     turnError: {
-      unknown: '出错了，原因不明。重新发消息重试。',
+      streamTruncated: '响应中途断开。',
+      requestRejected: '模型服务拒绝了请求，请检查模型与请求配置。',
+      retryExhausted: '已达到自动重试次数上限。',
+      retryDeclined: {
+        side_effects: '本次已有工具活动，为避免重复操作，未自动重试。请先检查工具结果。',
+        observable_output: '本次已有部分输出，未自动重试。请先检查已保留的内容。',
+        policy: '按当前重试规则，本次未自动重试。',
+        budget: '本次执行预算已用尽，未自动重试。',
+      },
+      unknown: '出错了，暂时无法确定原因。',
       contextOverflow: '上下文超出模型窗口限制，减少附件或开启新任务。',
-      timeout: '模型请求超时，重新发消息重试。',
+      timeout: '模型请求超时。',
       auth: '模型鉴权失败，请到设置里重新连接或登录。',
       providerBilling: '模型服务计费受限，请检查账号余额或订阅状态。',
-      providerCapacity: '模型服务暂时满载，等几分钟重试，或换一个模型。',
-      rateLimit: '模型请求太频繁被限流了，等一会儿再发消息重试。',
-      network: '网络连接失败，检查网络后重新发消息。',
-      provider: '模型服务返回错误，稍后重试或换一个模型。',
+      providerCapacity: '模型服务暂时满载。',
+      rateLimit: '模型请求太频繁被限流了。',
+      network: '网络连接失败，请检查网络。',
+      provider: '模型服务返回错误。',
       stepCap: '达到工具调用步数上限，任务可能没做完。发消息让它继续。',
       tool: '工具调用失败，看一下上面的工具结果再决定要不要重试。',
       permission: '这一轮在等权限确认时结束了，重新发消息会再问一次。',
@@ -822,7 +835,6 @@ const COPY = {
       executionState: {
         erroredTool: '这一轮有工具执行出错，先看它的结果，再决定要不要重发。',
         toolRan: '这一轮已经执行过工具，可能已经产生实际改动，重发前先看工具结果。',
-        partialOutput: '这一轮已经产生了部分回答，重发前可以先看看。',
       },
     },
   },
@@ -1188,15 +1200,24 @@ const COPY = {
       },
     },
     turnError: {
-      unknown: '出錯了，原因不明。重新傳送訊息重試。',
+      streamTruncated: '回應中途斷開。',
+      requestRejected: '模型服務拒絕了請求，請檢查模型與請求設定。',
+      retryExhausted: '已達到自動重試次數上限。',
+      retryDeclined: {
+        side_effects: '本次已有工具活動，為避免重複操作，未自動重試。請先檢查工具結果。',
+        observable_output: '本次已有部分輸出，未自動重試。請先檢查已保留的內容。',
+        policy: '依目前重試規則，本次未自動重試。',
+        budget: '本次執行預算已用盡，未自動重試。',
+      },
+      unknown: '出錯了，暫時無法確定原因。',
       contextOverflow: '上下文超出模型視窗限制，減少附件或開啟新任務。',
-      timeout: '模型請求逾時，重新傳送訊息重試。',
+      timeout: '模型請求逾時。',
       auth: '模型鑑權失敗，請到設定裡重新連線或登入。',
       providerBilling: '模型服務計費受限，請檢查帳號餘額或訂閱狀態。',
-      providerCapacity: '模型服務暫時滿載，請等待幾分鐘或切換模型。',
-      rateLimit: '模型請求太頻繁而受到速率限制，請稍候再傳送訊息重試。',
-      network: '網路連線失敗，檢查網路後重新傳送訊息。',
-      provider: '模型服務回傳錯誤，稍後重試或切換模型。',
+      providerCapacity: '模型服務暫時滿載。',
+      rateLimit: '模型請求太頻繁而受到速率限制。',
+      network: '網路連線失敗，請檢查網路。',
+      provider: '模型服務回傳錯誤。',
       stepCap: '達到工具呼叫步數上限，任務可能尚未完成。傳送訊息讓它繼續。',
       tool: '工具呼叫失敗，先看上面的工具結果再決定是否重試。',
       permission: '這一輪在等待權限確認時結束，重新傳送訊息會再詢問一次。',
@@ -1206,7 +1227,6 @@ const COPY = {
       executionState: {
         erroredTool: '這一輪有工具執行出錯，先看它的結果，再決定是否重發。',
         toolRan: '這一輪已經執行過工具，可能已經產生實際變更，重發前先看工具結果。',
-        partialOutput: '這一輪已經產生部分回答，重發前可以先看看。',
       },
     },
   },
@@ -1427,10 +1447,10 @@ const COPY = {
       },
       durationUsage: {
         title: 'Time breakdown',
-        center: 'Recorded Time',
+        center: 'Recorded time',
         segment: {
-          model: (count) => `LLM Calls × ${count}`,
-          tool: (count) => `Tool Runs × ${count}`,
+          model: (count) => `LLM calls × ${count}`,
+          tool: (count) => `Tool runs × ${count}`,
         },
       },
       coveragePartial: (parts) =>
@@ -1598,16 +1618,28 @@ const COPY = {
       },
     },
     turnError: {
-      unknown: 'Something went wrong, cause unknown. Send a message to retry.',
+      streamTruncated: 'The response stream ended before completion.',
+      requestRejected:
+        'The model service rejected the request. Check the model and request configuration.',
+      retryExhausted: 'The automatic retry limit was reached.',
+      retryDeclined: {
+        side_effects:
+          'Tool activity already occurred in this attempt. Automatic retry was declined to avoid repeating operations. Check the tool results first.',
+        observable_output:
+          'This attempt already produced output, so it was not retried automatically. Check the retained content first.',
+        policy: 'This attempt was not retried under the current retry policy.',
+        budget:
+          'The execution budget was exhausted, so this attempt was not retried automatically.',
+      },
+      unknown: 'Something went wrong; the cause is unknown.',
       contextOverflow: 'Context exceeded the model window. Reduce attachments or start a new task.',
-      timeout: 'The model request timed out. Send a message to retry.',
+      timeout: 'The model request timed out.',
       auth: 'Model authentication failed. Reconnect or sign in again from Settings.',
       providerBilling: 'Model billing is restricted. Check the account balance or subscription.',
-      providerCapacity:
-        'The model service is temporarily at capacity. Wait a few minutes, or switch models.',
-      rateLimit: 'Requests were rate-limited. Wait a moment, then send a message to retry.',
-      network: 'The network connection failed. Check the network, then send a message again.',
-      provider: 'The model service returned an error. Retry later, or switch models.',
+      providerCapacity: 'The model service is temporarily at capacity.',
+      rateLimit: 'Requests were rate-limited.',
+      network: 'The network connection failed. Check the network.',
+      provider: 'The model service returned an error.',
       stepCap:
         'The tool-step limit was reached, so the task may be incomplete. Send a message to continue.',
       tool: 'A tool call failed. Check the tool result above before deciding whether to retry.',
@@ -1621,8 +1653,6 @@ const COPY = {
           'A tool errored during this turn. Read its result before deciding whether to send another message.',
         toolRan:
           'Tools already ran during this turn and may have made real changes. Read their results before sending another message.',
-        partialOutput:
-          'This turn produced part of an answer. Worth reading before you send another message.',
       },
     },
   },

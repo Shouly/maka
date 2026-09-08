@@ -318,13 +318,26 @@ function XtermSurface(props: {
       }).catch(() => undefined);
     };
 
+    // A snapshot is re-requested whenever the PTY stream shows a gap the
+    // handshake cannot close: the Host's isolated PTY stream (upstream #4956)
+    // numbers its frames from the moment interest is registered, so the first
+    // live frame after `attach` can sit past the snapshot's sequence. One
+    // hydration is in flight at a time; a gap seen meanwhile queues one more.
+    let hydrationPending = false;
+    let resyncRequested = false;
+
     const offPty = subscribeShellRunPtyData((event) => {
       if (disposed || event.sessionId !== sessionId || event.ref !== shellRunRef) return;
       const live = hydration.accept(event);
       if (live) terminal.write(live.data);
+      if (hydration.needsSnapshot) {
+        if (hydrationPending) resyncRequested = true;
+        else hydrate(hydration.begin());
+      }
     });
 
     const hydrate = (epoch: number) => {
+      hydrationPending = true;
       void attachShellRun({ sessionId, ref: shellRunRef })
         .then((snapshot) => {
           if (disposed || !hydration.isCurrent(epoch)) return;
@@ -333,7 +346,10 @@ function XtermSurface(props: {
             return;
           }
           const committed = hydration.commit(epoch, snapshot);
-          if (!committed) return;
+          if (!committed) {
+            resyncRequested = hydration.needsSnapshot;
+            return;
+          }
           terminal.reset();
           if (committed.snapshot.buffer) terminal.write(committed.snapshot.buffer);
           for (const event of committed.replay) terminal.write(event.data);
@@ -351,11 +367,21 @@ function XtermSurface(props: {
           onErrorRef.current(
             generalizedErrorMessageForLocale(unknownError, copy.loadFailed, locale),
           );
+        })
+        .finally(() => {
+          hydrationPending = false;
+          if (disposed || !resyncRequested) return;
+          resyncRequested = false;
+          hydrate(hydration.begin());
         });
     };
 
     const offResync = subscribeShellRunResync((event) => {
       if (disposed || event.sessionId !== sessionId) return;
+      if (hydrationPending) {
+        resyncRequested = true;
+        return;
+      }
       hydrate(hydration.begin());
     });
 

@@ -101,7 +101,26 @@ export const RUNTIME_HOST_REGISTRATION_SCHEMA_VERSION = 1 as const;
 export const RUNTIME_HOST_PROTOCOL_VERSION = 0 as const;
 // Increment when the same protocol version no longer guarantees safe Client-Host
 // interoperability. Mismatches are rejected before domain commands are admitted.
-export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 121 as const;
+export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 130 as const;
+// 130: Turn contributions carry the optional bounded `failureMessage` diagnostic.
+// Epoch-129 peers reject this added field on the strict contribution shape.
+// 129: Turn states and Turn records drop `partialOutputRetained`. The fact was
+// derived twice — once from the Turn's output rows, once off the state message
+// — and read by nothing; older peers require the field on both.
+// 128: Session transcript bootstraps drop `durableCoverage`. A durable sequence
+// is an event ordinal times its stride, so no projection has contiguous
+// sequences any more and the claim the field made is unavailable to make.
+// 127: Session Turn contributions carry only the Turn's recorded state. Older
+// peers require the derived shape booleans this projection no longer sends.
+// 126: Durable transcript cursors seek Session event ordinals instead of run indexes.
+// 125: Live Turn snapshots carry an optional `rootExecutionKind:'context_compact'`
+// so a running context-compaction Turn can render a transcript row. Epoch-124
+// peers reject the added optional field on the strict live snapshot shape.
+// 124: PTY delivery is independent of the ordered Session state stream. A
+// bounded PTY overflow requests terminal-only snapshot recovery.
+// 123: Failed turns carry canonical retry decisions through bounded projections.
+// 122: Authenticated physical handoff continuations retain logical Turn identity.
+// Older peers cannot decode the handoff source and sealed invocation facts.
 // 121: Host diagnostics report `upgradeBlockingActivity`, the Host's
 // authoritative activity answer for maintenance probes, computed by the same
 // authority that gates `host.upgrade.prepare`. Older Clients reject the
@@ -381,6 +400,8 @@ export interface ClientHello {
   compositionId: string;
   generation?: string;
   takeover?: { expectedHostEpoch: string };
+  /** Opt in before a Host adds maintenance evidence to the strict activity record. */
+  activitySnapshotVersion?: 2;
 }
 
 export interface HostAccepted {
@@ -393,6 +414,7 @@ export interface HostAccepted {
   compositionId: string;
   compositionRevision: string;
   state: Exclude<HostLifecycleState, 'draining'>;
+  cooperativeHandoff?: true;
 }
 
 export interface HostIncompatible {
@@ -489,6 +511,7 @@ export function decodeClientFrame(value: unknown): ClientFrame {
     }
     return {
       kind: 'hello',
+      ...(frame.activitySnapshotVersion === 2 ? { activitySnapshotVersion: 2 as const } : {}),
       clientInstanceId: requireClientInstanceId(frame.clientInstanceId),
       protocolMin,
       protocolMax,
@@ -507,8 +530,12 @@ export function decodeClientFrame(value: unknown): ClientFrame {
 export function decodeHostFrame(value: unknown): HostFrame {
   const frame = requireRecord(value, 'host frame');
   if (frame.kind === 'accepted') {
+    if (frame.cooperativeHandoff !== undefined && frame.cooperativeHandoff !== true) {
+      throw invalidProtocolFrame('Invalid Runtime Host cooperative handoff capability');
+    }
     return {
       kind: 'accepted',
+      ...(frame.cooperativeHandoff === true ? { cooperativeHandoff: true as const } : {}),
       rootId: requireHostRootId(frame.rootId),
       hostEpoch: requireId(frame.hostEpoch, 'hostEpoch'),
       connectionId: requireId(frame.connectionId, 'connectionId'),

@@ -68,6 +68,14 @@ export type ToastDiagnosticTarget =
  * Host names one.
  */
 export interface TransientUserMessageProjection {
+  /**
+   * Local delivery state while the Host has not yet acknowledged the Message
+   * (upstream #4956): a status line, an optional detail, and the actions the
+   * transcript offers (retry, discard). Renderer-only; never persisted.
+   */
+  deliveryStatus?: string;
+  deliveryDetail?: string;
+  deliveryActions?: readonly { label: string; onClick(): void }[];
   id: string;
   text: string;
   ts: number;
