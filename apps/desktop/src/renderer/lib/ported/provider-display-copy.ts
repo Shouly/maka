@@ -54,6 +54,28 @@ export const UNKNOWN_PROVIDER_DESCRIPTION = {
 } satisfies UiCatalog<string>;
 
 export const PROVIDER_DISPLAY_COPY = {
+  // First in the catalog because it is first in `CATALOG_PROVIDER_TYPES`: on
+  // this build the company gateway is the provider people are meant to use,
+  // and the description says what they have to supply (an endpoint an
+  // operator gives them, and a gateway key) rather than naming any model.
+  'relx-gateway': {
+    'zh-CN': {
+      name: 'RELX Gateway',
+      description: '公司模型网关 · OpenAI 兼容；需要网关地址与网关密钥。',
+      badge: 'Gateway',
+    },
+    'zh-TW': {
+      name: 'RELX Gateway',
+      description: '公司模型閘道 · OpenAI 相容；需要閘道位址與閘道金鑰。',
+      badge: 'Gateway',
+    },
+    en: {
+      name: 'RELX Gateway',
+      description:
+        'The company model gateway · OpenAI-compatible; needs its URL and a gateway key.',
+      badge: 'Gateway',
+    },
+  },
   'kimi-coding-plan': {
     'zh-CN': {
       name: 'Kimi Coding Plan',

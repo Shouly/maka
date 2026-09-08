@@ -59,6 +59,28 @@ export function listSkillSources(host?: DesktopRuntimeHostRef): Promise<ManagedS
   return skills().sources.list(host);
 }
 
+/**
+ * Add a Skill file on this machine to the source library.
+ *
+ * Main owns the file picker, so this takes no file: the renderer cannot hand
+ * a `File` across the bridge, and a drop zone here would only be able to read
+ * bytes it then had no way to write. `cancelled` is one of the closed reasons
+ * rather than a rejection — pressing Escape in a native dialog is an answer.
+ */
+export function importLocalSkillFile(
+  host?: DesktopRuntimeHostRef,
+): ReturnType<Skills['sources']['importLocalFile']> {
+  return skills().sources.importLocalFile(host);
+}
+
+/** Install a source-library entry into the current workspace. */
+export function installManagedSkill(
+  sourceId: string,
+  host?: DesktopRuntimeHostRef,
+): ReturnType<Skills['installManaged']> {
+  return skills().installManaged(sourceId, host);
+}
+
 export function setSkillEnabled(
   skillId: string,
   enabled: boolean,

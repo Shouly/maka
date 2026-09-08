@@ -39,15 +39,18 @@ import type { SettingsSection } from '@maka/core/settings';
 import { AboutSettings } from './AboutSettings.js';
 import { AppearanceSettings } from './AppearanceSettings.js';
 import { ArchivedTasksSettings } from './ArchivedTasksSettings.js';
-import { ComingSoon } from './ComingSoon.js';
 import { DataSettings } from './DataSettings.js';
 import { GeneralSettings } from './GeneralSettings.js';
 import { HealthSettings } from './HealthSettings.js';
+import { MemorySettings } from './MemorySettings.js';
+import { ModelsSettings } from './models/ModelsSettings.js';
 import { PermissionsSettings } from './PermissionsSettings.js';
 import { SettingsNav } from './SettingsNav.js';
+import { SubagentsSettings } from './SubagentsSettings.js';
 import { UsageSettings } from './UsageSettings.js';
+import { WebSearchSettings } from './WebSearchSettings.js';
 import { WorkspaceSettings } from './WorkspaceSettings.js';
-import { PHASE_5B_SETTINGS_SECTIONS, resolveSettingsSection } from './settings-sections.js';
+import { resolveSettingsSection } from './settings-sections.js';
 import { useScopedRuntimeHost } from '../../hooks/use-workspace.js';
 import { uiStore } from '../../store/index.js';
 import { getSettingsCopy } from '../../locales/settings-copy.js';
@@ -94,6 +97,14 @@ export function SettingsView(props: { onOpenKeyboardHelp: () => void }) {
               <AppearanceSettings />
             ) : section === 'projects' ? (
               <WorkspaceSettings host={host} />
+            ) : section === 'models' ? (
+              <ModelsSettings host={host} />
+            ) : section === 'subagents' ? (
+              <SubagentsSettings host={host} />
+            ) : section === 'memory' ? (
+              <MemorySettings host={host} />
+            ) : section === 'search' ? (
+              <WebSearchSettings host={host} />
             ) : section === 'usage' ? (
               <UsageSettings host={host} />
             ) : section === 'archived-tasks' ? (
@@ -106,11 +117,6 @@ export function SettingsView(props: { onOpenKeyboardHelp: () => void }) {
               <HealthSettings host={host} />
             ) : section === 'about' ? (
               <AboutSettings host={host} onOpenKeyboardHelp={props.onOpenKeyboardHelp} />
-            ) : PHASE_5B_SETTINGS_SECTIONS.includes(section) ? (
-              <ComingSoon
-                title={nav.sections[section].label}
-                description={nav.sections[section].description}
-              />
             ) : null}
           </div>
         </div>

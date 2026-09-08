@@ -39,7 +39,7 @@ import { requireNamespace, toUnsubscribe, tryNamespace } from './bridge.js';
 
 type Connections = MakaBridge['connections'];
 
-export type { DesktopConnectionSnapshot, DesktopConnectionIdentity };
+export type { DesktopConnectionSnapshot, DesktopConnectionIdentity, ConnectionTestResult };
 
 const connections = (): Connections => requireNamespace('connections');
 

@@ -1618,6 +1618,39 @@ const providerRegistry = {
     catalogGroup: 'aggregators',
     catalogOrder: 18.2,
   },
+  /**
+   * The company's own model gateway: one OpenAI-compatible endpoint in front
+   * of whatever the organisation licenses, reached with a gateway-issued key.
+   *
+   * Registered as its own entry rather than left to `openai-compatible`
+   * because the two differ in what the user has to know. A custom relay asks
+   * for an endpoint the user must supply from somewhere; the gateway's
+   * endpoint is one value an operator hands out, and naming it here is what
+   * lets the catalog put it first and describe it in the company's terms
+   * instead of as "a custom relay you happen to have a URL for".
+   *
+   * No `relayModelProfiles`: `isRelayProviderType` narrows to the two custom
+   * relay ids, and a third provider answering true through it would make that
+   * type predicate false. The gateway's models are described by discovery and
+   * by built-in metadata, like every other endpoint's.
+   */
+  'relx-gateway': {
+    label: 'RELX Gateway',
+    // Deployment-specific, so there is nothing to ship: the setup form
+    // requires it (`category: 'custom'` is what admits an empty default).
+    baseUrl: '',
+    authKind: 'api_key',
+    fallbackModels: [],
+    status: 'ready',
+    runtimeAdapter: { kind: 'openai-compatible', name: 'connection', requireBaseUrl: true },
+    // `GET <baseUrl>/models`, the OpenAI-compatible listing the gateway serves.
+    modelDiscovery: { kind: 'protocol' },
+    category: 'custom',
+    catalogGroup: 'recommended',
+    // Ahead of the shipped catalog: on this build it is the provider the
+    // organisation expects its people to use.
+    catalogOrder: -1,
+  },
   'github-copilot': {
     label: githubCopilot.name,
     baseUrl: githubCopilot.api,

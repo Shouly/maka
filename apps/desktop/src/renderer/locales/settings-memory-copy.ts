@@ -78,6 +78,9 @@ type MemoryTextKey =
   | 'copyPrevious'
   | 'resetting'
   | 'resetBackup'
+  | 'resetConfirmTitle'
+  | 'resetConfirmDescription'
+  | 'confirmReset'
   | 'restorePrevious'
   | 'archiveDraftNotice'
   | 'noMatchEntry'
@@ -243,6 +246,9 @@ const zhText = {
   copyPrevious: '复制上一版引用',
   resetting: '重置中…',
   resetBackup: '重置并备份',
+  resetConfirmTitle: '重置 MEMORY.md？',
+  resetConfirmDescription: '当前内容会先保存为备份，然后清空为初始模板。可以随后恢复上一版。',
+  confirmReset: '重置',
   restorePrevious: '恢复上一版',
   archiveDraftNotice: '当前归档/恢复操作只更新草稿，保存后才会写入 MEMORY.md。',
   noMatchEntry: '无匹配条目。',
@@ -376,6 +382,9 @@ const zhTwText = {
   copyPrevious: '複製上一版引用',
   resetting: '重置中…',
   resetBackup: '重置並備份',
+  resetConfirmTitle: '重置 MEMORY.md？',
+  resetConfirmDescription: '目前內容會先儲存為備份，然後清空為初始範本。可以隨後恢復上一版。',
+  confirmReset: '重置',
   restorePrevious: '恢復上一版',
   archiveDraftNotice: '目前歸檔/恢復操作只更新草稿，儲存後才會寫入 MEMORY.md。',
   noMatchEntry: '無符合條目。',
@@ -512,6 +521,10 @@ const enText = {
   copyPrevious: 'Copy previous-version reference',
   resetting: 'Resetting…',
   resetBackup: 'Reset and back up',
+  resetConfirmTitle: 'Reset MEMORY.md?',
+  resetConfirmDescription:
+    'The current contents are saved as a backup first, then the file returns to its starting template. You can restore the previous version afterwards.',
+  confirmReset: 'Reset',
   restorePrevious: 'Restore previous version',
   archiveDraftNotice: 'Archive and restore actions update only the draft until you save MEMORY.md.',
   noMatchEntry: 'No matching entries.',

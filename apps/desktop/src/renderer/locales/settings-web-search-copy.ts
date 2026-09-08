@@ -60,6 +60,8 @@ export type WebSearchSettingsCopy = {
   clearKey: string;
   testSearch: string;
   testSearchHelp: string;
+  /** Marks the probe box: it runs a real query and its shape may still change. */
+  beta: string;
   queryPlaceholder: string;
   searching: string;
   search: string;
@@ -121,6 +123,7 @@ const SETTINGS_WEB_SEARCH_COPY = {
     testSearch: '测试搜索',
     testSearchHelp:
       '发一条真实查询，确认所选联网搜索来源是否配置可用。结果只显示在这里，不写入任务。',
+    beta: 'Beta',
     queryPlaceholder: '例如：本周 AI 产品发布动态',
     searching: '搜索中…',
     search: '搜索',
@@ -207,6 +210,7 @@ const SETTINGS_WEB_SEARCH_COPY = {
     testSearch: '測試搜尋',
     testSearchHelp:
       '發一條真實查詢，確認所選聯網搜尋來源是否設定可用。結果只顯示在這裡，不寫入任務。',
+    beta: 'Beta',
     queryPlaceholder: '例如：本週 AI 產品釋出動態',
     searching: '搜尋中…',
     search: '搜尋',
@@ -296,6 +300,7 @@ const SETTINGS_WEB_SEARCH_COPY = {
     testSearch: 'Test search',
     testSearchHelp:
       'Send a real query to confirm the selected web search source is configured and working. Results appear here only and are not written to the task.',
+    beta: 'Beta',
     queryPlaceholder: 'For example: AI product launches this week',
     searching: 'Searching…',
     search: 'Search',

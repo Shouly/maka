@@ -50,6 +50,22 @@ export function addMcpServer(
   return mcp().add(serverId, config, host);
 }
 
+/**
+ * Add a directory entry with its shipped config.
+ *
+ * Separate from `add` because it is the CATALOG path: `add` reports a taken id
+ * as a value so a form can put it on the id field, while installing a template
+ * whose id is already there is not a case the directory can reach (an
+ * installed entry stops offering the action).
+ */
+export function installMcpServer(
+  serverId: string,
+  config: McpServerConfig,
+  host?: DesktopRuntimeHostRef,
+): Promise<McpConfigFile> {
+  return mcp().install(serverId, config, host);
+}
+
 export function upsertMcpServer(
   serverId: string,
   config: McpServerConfig,
@@ -70,6 +86,36 @@ export function testMcpServer(
   host?: DesktopRuntimeHostRef,
 ): Promise<McpTestResult> {
   return mcp().test(serverId, host);
+}
+
+/**
+ * Start the OAuth round for a server whose state is `needs-auth`.
+ *
+ * Main owns the browser hop and resolves with the status the round produced,
+ * so there is nothing here to poll: the resolved status IS the answer, and the
+ * change subscription refreshes the rest of the page behind it.
+ */
+export function loginMcpServer(
+  serverId: string,
+  host?: DesktopRuntimeHostRef,
+): Promise<McpServerStatus> {
+  return mcp().login(serverId, host);
+}
+
+/** End an in-flight login round. Resolves false when none is active. */
+export function cancelMcpServerLogin(
+  serverId: string,
+  host?: DesktopRuntimeHostRef,
+): Promise<boolean> {
+  return mcp().cancelLogin(serverId, host);
+}
+
+/** Drop the stored credential. Offered only where `authenticated` is true. */
+export function logoutMcpServer(
+  serverId: string,
+  host?: DesktopRuntimeHostRef,
+): Promise<McpServerStatus> {
+  return mcp().logout(serverId, host);
 }
 
 export function subscribeMcpChanges(handler: (statuses: McpServerStatus[]) => void): () => void {

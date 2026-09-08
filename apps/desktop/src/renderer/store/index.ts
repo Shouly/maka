@@ -28,6 +28,7 @@ import { createTurnActionsStore } from './turn-actions-store.js';
 import { sessionsStore } from './sessions-store.js';
 import { settingsStore } from './settings-store.js';
 import { connectionsStore } from './connections-store.js';
+import { mcpStore } from './mcp-store.js';
 import { projectsStore } from './projects-store.js';
 import { toastApi } from './toast-api.js';
 import { newTaskStore } from './new-task-store.js';
@@ -37,6 +38,9 @@ import { updateStore } from './update-store.js';
 import { errorMessage } from './resource-store.js';
 
 export { sessionsStore, settingsStore, connectionsStore, projectsStore };
+// Connected by the MCP module page for as long as it is mounted: nothing
+// outside it reads MCP, so it is not part of `startRendererStores`.
+export { mcpStore };
 export { newTaskStore, onboardingStore, scheduledTasksStore, updateStore };
 export { uiStore } from './ui-store.js';
 export { composerDraftStore } from './composer-draft-store.js';

@@ -42,14 +42,6 @@ export const DEFERRED_SETTINGS_SECTIONS: readonly SettingsSection[] = [
   'bot-chat',
 ];
 
-/** Pages Phase 5b fills. Their nav rows exist now and say so. */
-export const PHASE_5B_SETTINGS_SECTIONS: readonly SettingsSection[] = [
-  'models',
-  'subagents',
-  'memory',
-  'search',
-];
-
 export interface SettingsNavGroupModel {
   readonly group: SettingsNavGroup;
   readonly sections: readonly SettingsSection[];

@@ -423,11 +423,39 @@ function Ollama(): ReactElement {
 }
 
 /**
+ * The company gateway. Deliberately NOT a logo: the mark is drawn here in
+ * `currentColor` rather than vendored from anywhere, because the gateway is a
+ * deployment of this build and has no third-party trademark to reproduce. A
+ * doorway between two columns — what a gateway is — reads at 16px and stays
+ * legible in both themes for the same reason the generic mark does.
+ */
+function GatewayProviderMark(): ReactElement {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      role="img"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path d="M5 20V6.5a2 2 0 011.4-1.9l3-1A2 2 0 0112 5.5V20" />
+      <path d="M19 20V6.5a2 2 0 00-1.4-1.9l-3-1A2 2 0 0012 5.5" />
+      <path d="M3.5 20h17" />
+    </svg>
+  );
+}
+
+/**
  * Official brand mark for a provider type. Aliases (subscription / CLI /
  * OpenAI-compatible variants) reuse the parent brand's mark.
  */
 export function ProviderBrandMark({ type }: { type: ProviderType }): ReactElement {
   switch (type) {
+    case 'relx-gateway':
+      return <GatewayProviderMark />;
     case 'nvidia':
       return <img src={nvidiaMarkUrl} alt="" />;
     case 'cerebras':

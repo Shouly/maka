@@ -47,13 +47,15 @@ import { ModelSwitcher } from '../session/ModelSwitcher.js';
 import { CommandPalette } from '../palette/CommandPalette.js';
 import { KeyboardHelp } from '../palette/KeyboardHelp.js';
 import { SearchModal } from '../palette/SearchModal.js';
-import { ModulePlaceholder } from '../placeholder/ModulePlaceholder.js';
+import { SkillsModule } from '../modules/skills/SkillsModule.js';
+import { McpModule } from '../modules/mcp/McpModule.js';
+import { ScheduledTasksModule } from '../modules/scheduled/ScheduledTasksModule.js';
 import { SettingsIdentity } from '../settings/SettingsIdentity.js';
 import { SettingsView } from '../settings/SettingsView.js';
 import { RuntimeDebug } from '../dev/RuntimeDebug.js';
 import { WorkbarPane } from '../workbar/WorkbarPane.js';
 import { WorkbarToggle } from '../workbar/WorkbarToggle.js';
-import { useRendererStores } from '../../hooks/use-workspace.js';
+import { useRendererStores, useScopedRuntimeHost } from '../../hooks/use-workspace.js';
 import { useSessionList } from '../../hooks/use-session-list.js';
 import { useSidebarLayout } from '../../hooks/use-sidebar-layout.js';
 import { useShellHotkeys } from '../../hooks/use-hotkeys.js';
@@ -87,7 +89,6 @@ import {
 } from '../../bridge/projects.js';
 import { getShellCopy, localizedShellErrorMessage } from '../../locales/shell-copy.js';
 import { getSidebarCopy } from '../../locales/sidebar-copy.js';
-import { getSharedPlaceholderCopy } from '../../locales/placeholder-copy.js';
 import type { PendingE2eFixtureUiState } from '../../lib/fixture.js';
 
 type MainView = 'welcome' | 'session' | 'settings' | 'skills' | 'mcp' | 'automations' | 'debug';
@@ -97,8 +98,11 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
   const locale = useUiLocale();
   const shell = getShellCopy(locale);
   const sidebarCopy = getSidebarCopy(locale);
-  const placeholder = getSharedPlaceholderCopy(locale);
   const layout = useSidebarLayout();
+  // The module pages read the same Runtime Host Settings does (plan §2.12):
+  // a skills list from one machine beside a composer talking to another is the
+  // bug this hook exists to prevent.
+  const scopedHost = useScopedRuntimeHost();
   const [filter, setFilter] = useState('');
   const filterInputRef = useRef<HTMLInputElement>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -494,23 +498,11 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
         ) : view === 'settings' ? (
           <SettingsView onOpenKeyboardHelp={() => setHelpOpen(true)} />
         ) : view === 'skills' ? (
-          <ModulePlaceholder
-            title={placeholder.skills}
-            icon="shapes"
-            description={placeholder.skillsDescription}
-          />
+          <SkillsModule host={scopedHost} />
         ) : view === 'mcp' ? (
-          <ModulePlaceholder
-            title={placeholder.mcp}
-            icon="plugin"
-            description={placeholder.mcpDescription}
-          />
+          <McpModule host={scopedHost} />
         ) : view === 'automations' ? (
-          <ModulePlaceholder
-            title={placeholder.automations}
-            icon="clock"
-            description={placeholder.automationsDescription}
-          />
+          <ScheduledTasksModule />
         ) : view === 'session' && activeId ? (
           // The conversation and the right pane share the content column: the
           // pane narrows the transcript, never the sidebar, and both start

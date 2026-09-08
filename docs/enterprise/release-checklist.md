@@ -41,10 +41,32 @@ item when it lands; do not let this file become a second plan.
   three Anthropic families scraped from claude.ai with no licence (owner
   accepted the risk for internal builds). Replace before any external
   release; `styles/globals.css` `--font-sans/serif/mono` are the only seams.
-- **Company model gateway.** The plan's reason for the fork: add a provider
-  entry for the GCP LLM gateway in `packages/core/src/provider-registry.ts`
-  (and its display copy / brand mark under `lib/ported/provider-*`), so
-  Settings › Models can create a connection to it. Not started.
+- **Company model gateway — the endpoint is still nobody's to hand out.**
+  Landed in Phase 5b: `relx-gateway` is a registered provider
+  (`packages/core/src/provider-registry.ts`, OpenAI-compatible chat
+  completions, `category: 'custom'`, `catalogGroup: 'recommended'`,
+  `catalogOrder: -1` so it heads the add-connection catalog, API key required,
+  base URL required, `GET <baseUrl>/models` discovery), with display copy in
+  three locales and a drawn (non-trademark) mark under
+  `apps/desktop/src/renderer/lib/ported/provider-*`. What is NOT settled is
+  operational: the gateway host is deployment-specific, so every user has to be
+  told the URL out of band. Decide before the first internal release whether
+  the build ships a default `baseUrl` for the company deployment (one line in
+  the registry entry) or keeps asking each user for it.
+
+## Small defects inside the renderer
+
+- **Scheduled-task due notifications are unwired.** `scheduledTasks.subscribeDue`
+  has no subscriber anywhere in the renderer, so a task that fires while the app
+  is open raises no OS notification. It belongs in the shell's store lifetime
+  (`store/index.ts` `startRendererStores`), not in the module page, which may not
+  be mounted. (Found in Phase 5b.)
+- **The xAI mark does not paint in its OAuth card.** `ProviderAssetMask` is a CSS
+  mask that needs an explicit size the account card does not give it; the slot
+  renders empty beside OpenAI's and GitHub's glyphs
+  (`.maka-shots/enterprise/phase5b-provider-catalog-light.png`).
+- **MCP brand marks are monochrome.** Their colour rule died with
+  `styles/module-pages/mcp.css`; restoring it is a rule in `styles/globals.css`.
 
 ## Known defects outside the renderer allow-list
 
@@ -71,6 +93,15 @@ item when it lands; do not let this file become a second plan.
   images in markdown, branch banner / goal chip placement.
 - Phase 5a: per-request usage log grid; Runtime Host add form is TLS/plain
   only (SSH/WSL wizards deferred); no "open logs folder" on About.
+- Phase 5b: the relay-profile editor ships only its thinking levels (vision,
+  context-window override and the OpenAI fast tier are not editable, and only
+  the two custom relay providers have profiles at all); no request-body overlay
+  editor; advanced request settings are edited after a connection exists, never
+  at creation; Memory offers no manual entry add, no per-entry archive and only
+  the latest backup; scheduled tasks deliver locally because bot channels need
+  the deferred Bots page; the MCP directory has no "coming soon" rows because
+  the pre-rewrite page had none; no "write a skill from text" dialog, because no
+  preload method writes one.
 
 ## Manual verification still owed (FakeBackend cannot exercise these)
 
@@ -82,6 +113,12 @@ item when it lands; do not let this file become a second plan.
 - App-icon import/remove, adding a remote Runtime Host and browsing its
   directories, proxy test, config export/import round trip, macOS permission
   actions (Phase 5a).
+- A real RELX Gateway connection end to end (verify, choose models, send a
+  turn); each of the three OAuth sign-ins including sign-out and the local `gh`
+  credential import; a connection test and a model-catalog refetch against a
+  live provider; request headers against a real endpoint; a Tavily key saved and
+  probed; an MCP server added from the directory, tested and signed into; a
+  skill imported from a file; a scheduled task actually firing (Phase 5b).
 
 ## Tooling notes
 

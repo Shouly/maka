@@ -29,7 +29,6 @@ import test from 'node:test';
 import { SETTINGS_SECTIONS, type SettingsSection } from '@maka/core/settings';
 import {
   DEFERRED_SETTINGS_SECTIONS,
-  PHASE_5B_SETTINGS_SECTIONS,
   SETTINGS_NAV_GROUPS,
   VISIBLE_SETTINGS_SECTIONS,
   resolveSettingsSection,
@@ -103,8 +102,12 @@ test('a deep link or a restored value naming a deferred page falls back to gener
   assert.equal(resolveSettingsSection(undefined), 'general');
 });
 
-test('the Phase 5b pages are listed but are not among the pages that work', () => {
-  for (const section of PHASE_5B_SETTINGS_SECTIONS) {
+// Phase 5b filled the four pages that used to open a placeholder. The list is
+// spelled out rather than read from a constant: the constant that named them
+// was deleted with the placeholder, and a page silently dropping out of the
+// nav is exactly what this asserts against.
+test('the four capability pages are in the nav', () => {
+  for (const section of ['models', 'subagents', 'memory', 'search'] as const) {
     assert.equal(VISIBLE_SETTINGS_SECTIONS.includes(section), true);
   }
 });

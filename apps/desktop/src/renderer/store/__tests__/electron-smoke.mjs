@@ -827,10 +827,129 @@ try {
   }
   checks.push('Workspace, Usage, Data, Permissions and Health each render against the real Host');
 
-  // 5a.8 A Phase 5b page says it is not built rather than showing dead controls.
+  // ── Phase 5b: Models, Subagents, Memory, Web Search ───────────────────────
+
+  // 5b.1 Models lists the seeded connection and opens its detail.
   await openSettingsSection('Models', 'models');
-  await settings.getByRole('status').first().waitFor();
-  checks.push('a Phase 5b page states that it is not built yet');
+  const providers = page.locator('[data-maka-contract="providers-panel"]');
+  await providers.waitFor();
+  await providers.getByText('E2E', { exact: true }).first().waitFor();
+  await new Promise((settle) => setTimeout(settle, 400));
+  await page.screenshot({ path: SHOT('phase5b-models-light.png') });
+  await page.getByRole('button', { name: 'Open connection E2E', exact: true }).click();
+  const connectionDetail = page.locator('[data-maka-contract="connection-detail"]');
+  await connectionDetail.waitFor();
+  // The detail face replaces the CONTENT column and nothing else: the window
+  // titlebar still carries the way back to the tasks (plan §2.12).
+  await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).first().waitFor();
+  await new Promise((settle) => setTimeout(settle, 400));
+  await page.screenshot({ path: SHOT('phase5b-connection-detail-light.png') });
+  await page.getByRole('button', { name: 'Back to model connections', exact: true }).click();
+  await connectionDetail.waitFor({ state: 'detached' });
+  checks.push('Models lists the seeded connection and opens its detail');
+
+  // 5b.2 The catalog offers the company gateway, and its setup form refuses to
+  //      go out to an empty address rather than failing at the network.
+  await page.getByRole('button', { name: 'Add connection', exact: true }).click();
+  await page.locator('[data-maka-contract="add-connection"]').waitFor();
+  await page.locator('[data-maka-contract="provider-catalog"]').waitFor();
+  const gatewayCard = page
+    .getByRole('button', { name: /^Add model provider: RELX Gateway/u })
+    .first();
+  await gatewayCard.waitFor();
+  // The catalog opens on the account sign-ins; the capture is of the grid, so
+  // it has to be looking at the grid.
+  await gatewayCard.scrollIntoViewIfNeeded();
+  await new Promise((settle) => setTimeout(settle, 300));
+  await page.screenshot({ path: SHOT('phase5b-provider-catalog-light.png') });
+  await gatewayCard.click();
+  const setup = page.locator('[data-maka-contract="provider-setup"]');
+  await setup.waitFor();
+  // A key and no endpoint: the gateway registry entry ships neither a baseUrl
+  // nor a template, so the endpoint is the field the operator has to hand out.
+  await page.getByLabel('API key', { exact: true }).fill('smoke-gateway-key');
+  await page.getByRole('button', { name: 'Verify and choose models', exact: true }).click();
+  await setup
+    .getByRole('alert')
+    .getByText('This provider requires a service URL', { exact: true })
+    .waitFor();
+  await page.screenshot({ path: SHOT('phase5b-provider-setup-light.png') });
+  await page.getByRole('button', { name: 'Back to the provider list', exact: true }).click();
+  await setup.waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'Back to model connections', exact: true }).click();
+  await providers.waitFor();
+  checks.push('the add-connection catalog offers RELX Gateway and blocks on its missing endpoint');
+
+  // 5b.3 A subagent preset round-trips through the settings IPC and back out.
+  const PRESET = 'Smoke reader';
+  await openSettingsSection('Subagents', 'subagents');
+  await settings.getByRole('button', { name: 'Add subagent', exact: true }).first().click();
+  const subagentEditor = page.locator('[data-maka-contract="subagent-detail"]');
+  await subagentEditor.waitFor();
+  await page.getByLabel('Display name', { exact: true }).fill(PRESET);
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await subagentEditor.waitFor({ state: 'detached' });
+  // The list re-reads the Host's settings after the write, so a row here is
+  // proof the preset was stored rather than proof a form was filled in.
+  await settings.getByText(PRESET, { exact: true }).first().waitFor();
+  await new Promise((settle) => setTimeout(settle, 300));
+  await page.screenshot({ path: SHOT('phase5b-subagents-light.png') });
+  await page.getByRole('button', { name: `Configure “${PRESET}”`, exact: true }).click();
+  await subagentEditor.waitFor();
+  await subagentEditor.getByRole('button', { name: 'Remove', exact: true }).click();
+  const removeConfirm = page.locator('[data-app-dialog]');
+  await removeConfirm.waitFor();
+  await removeConfirm.getByRole('button', { name: 'Remove', exact: true }).click();
+  await subagentEditor.waitFor({ state: 'detached' });
+  await settings.getByText(PRESET, { exact: true }).waitFor({ state: 'detached' });
+  checks.push('Subagents creates a preset through the settings IPC and deletes it again');
+
+  // 5b.4 Memory's agent-read switch is written to the Host, and reads back.
+  const AGENT_READ = 'Allow model context to read local memory';
+  await openSettingsSection('Memory', 'memory');
+  const agentRead = page.getByRole('switch', { name: AGENT_READ, exact: true });
+  await agentRead.waitFor();
+  const agentReadBefore = await agentRead.getAttribute('aria-checked');
+  await agentRead.click();
+  await page.waitForFunction(
+    ([label, previous]) =>
+      document
+        .querySelector(`button[role="switch"][aria-label="${label}"]`)
+        ?.getAttribute('aria-checked') !== previous,
+    [AGENT_READ, agentReadBefore],
+  );
+  const agentReadAfter = await agentRead.getAttribute('aria-checked');
+  await new Promise((settle) => setTimeout(settle, 300));
+  await page.screenshot({ path: SHOT('phase5b-memory-light.png') });
+
+  // 5b.5 Web Search renders its credential test, and leaving Memory and coming
+  //      back re-reads the state from the Host rather than from a cache.
+  await openSettingsSection('Web Search', 'search');
+  await settings.getByRole('switch', { name: 'Enable web search', exact: true }).waitFor();
+  // The probe is on every source; it is the page's own test control, and it
+  // says Beta rather than pretending otherwise.
+  await settings.getByLabel('Test search', { exact: true }).waitFor();
+  await settings.getByRole('button', { name: 'Search', exact: true }).waitFor();
+  // The credential test only exists for a source that HAS a credential: the
+  // default source is the task's own model connection, which carries none.
+  await settings.getByRole('combobox', { name: 'Search source', exact: true }).click();
+  await page.getByRole('option', { name: 'Tavily', exact: true }).click();
+  await settings.getByRole('button', { name: 'Test credentials', exact: true }).waitFor();
+  await new Promise((settle) => setTimeout(settle, 300));
+  await page.screenshot({ path: SHOT('phase5b-web-search-light.png') });
+  await settings.getByRole('combobox', { name: 'Search source', exact: true }).click();
+  await page.getByRole('option', { name: 'Current model', exact: true }).click();
+  await openSettingsSection('Memory', 'memory');
+  await page.waitForFunction(
+    ([label, expected]) =>
+      document
+        .querySelector(`button[role="switch"][aria-label="${label}"]`)
+        ?.getAttribute('aria-checked') === expected,
+    [AGENT_READ, agentReadAfter],
+  );
+  checks.push(
+    'Memory toggles agent-read through the Host and reads it back; Web Search renders its test',
+  );
 
   // 5a.9 Archived tasks lists a task archived from the rail, and restores it.
   await page.keyboard.press('Escape');
@@ -876,6 +995,56 @@ try {
     .waitFor();
   checks.push('Escape closes Settings and the restored task is back in the rail');
 
+  // ── Phase 5b: the module pages ────────────────────────────────────────────
+  //
+  // The sidebar's three nav rows own the content column the same way Settings
+  // does: the window titlebar keeps its toggle, and the page underneath is a
+  // real page rather than a placeholder.
+  const moduleMain = page.locator('[data-maka-contract="module-main"]');
+  for (const [row, title, shot] of [
+    ['Skills', 'Skills', 'phase5b-skills-light.png'],
+    ['MCP', 'MCP', 'phase5b-mcp-light.png'],
+    ['Automations', 'Scheduled tasks', 'phase5b-scheduled-light.png'],
+  ]) {
+    await page.locator('#app-sidebar').getByRole('button', { name: row, exact: true }).click();
+    await moduleMain.waitFor();
+    await moduleMain.locator('[data-maka-contract="module-actions"]').waitFor();
+    await moduleMain.getByText(title, { exact: true }).first().waitFor();
+    await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).first().waitFor();
+    // Each page opens with a read in flight; a screenshot of the skeleton says
+    // nothing about the page.
+    await new Promise((settle) => setTimeout(settle, 700));
+    await page.screenshot({ path: SHOT(shot) });
+  }
+  checks.push('the sidebar Skills, MCP and Automations rows open real module pages');
+
+  // A scheduled task, created and deleted through the page's own dialog.
+  const REMINDER = 'Smoke reminder';
+  await moduleMain.getByRole('button', { name: 'New scheduled task', exact: true }).first().click();
+  const scheduleDialog = page.locator('[data-app-dialog]');
+  await scheduleDialog.waitFor();
+  await scheduleDialog.getByLabel('Title', { exact: true }).fill(REMINDER);
+  await scheduleDialog.getByRole('button', { name: 'Create', exact: true }).click();
+  await scheduleDialog.waitFor({ state: 'detached' });
+  await moduleMain.getByText(REMINDER, { exact: true }).first().waitFor();
+  await page.screenshot({ path: SHOT('phase5b-scheduled-task-light.png') });
+  await page.getByRole('button', { name: `More actions for ${REMINDER}`, exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
+  const deleteConfirm = page.locator('[data-app-dialog]');
+  await deleteConfirm.waitFor();
+  await deleteConfirm.getByRole('button', { name: 'Delete', exact: true }).click();
+  await moduleMain.getByText(REMINDER, { exact: true }).waitFor({ state: 'detached' });
+  checks.push('the Automations page creates a scheduled task and deletes it again');
+
+  // Dark, once, on a module page: the pages are new surfaces and the palette
+  // has to hold on all of them, not only on the ones Settings owns.
+  await runPaletteCommand(page, 'Theme · Dark');
+  await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
+  await new Promise((settle) => setTimeout(settle, 500));
+  await page.screenshot({ path: SHOT('phase5b-scheduled-dark.png') });
+  await runPaletteCommand(page, 'Theme · Light');
+  await page.waitForFunction(() => !document.documentElement.classList.contains('dark'));
+
   assert.deepEqual(errors, []);
   await writeFile(
     path.join(shots, 'phase3a-smoke-result.json'),
@@ -915,6 +1084,18 @@ try {
           'phase5a-permissions-light.png',
           'phase5a-health-light.png',
           'phase5a-archived-light.png',
+          'phase5b-models-light.png',
+          'phase5b-connection-detail-light.png',
+          'phase5b-provider-catalog-light.png',
+          'phase5b-provider-setup-light.png',
+          'phase5b-subagents-light.png',
+          'phase5b-memory-light.png',
+          'phase5b-web-search-light.png',
+          'phase5b-skills-light.png',
+          'phase5b-mcp-light.png',
+          'phase5b-scheduled-light.png',
+          'phase5b-scheduled-task-light.png',
+          'phase5b-scheduled-dark.png',
         ],
       },
       null,
