@@ -191,7 +191,13 @@ export function buildSessionListModel(input: SessionListInput): SessionListModel
     if (!sessionMatchesFilter(row, input.filter)) continue;
     rows.push(row);
   }
-  rows.sort((left, right) => right.activityAt - left.activityAt || left.id.localeCompare(right.id));
+  // Persisted flags represent pins; pinning changes order within each section.
+  rows.sort(
+    (left, right) =>
+      Number(right.flagged) - Number(left.flagged) ||
+      right.activityAt - left.activityAt ||
+      left.id.localeCompare(right.id),
+  );
 
   return {
     groups: input.mode === 'project' ? groupByProject(rows, input) : groupByTime(rows, input),

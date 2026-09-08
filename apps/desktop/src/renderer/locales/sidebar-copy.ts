@@ -44,6 +44,7 @@ export interface SidebarCopy {
   readonly noProject: string;
   readonly projectsSection: string;
   readonly recentsSection: string;
+  readonly pinnedSection: string;
   readonly menuLabel: string;
   readonly noProjects: string;
   readonly noTasksInProject: string;
@@ -62,14 +63,12 @@ export interface SidebarCopy {
   readonly sessionActions: (name: string) => string;
   readonly projectActions: (name: string) => string;
   readonly rowActions: {
-    readonly open: string;
     readonly rename: string;
     readonly flag: string;
     readonly unflag: string;
     readonly archive: string;
     readonly unarchive: string;
     readonly remove: string;
-    readonly retryOpen: string;
   };
   readonly projectRowActions: {
     readonly newTask: string;
@@ -115,7 +114,7 @@ const SIDEBAR_COPY = {
     retry: '重试',
     resize: '调整侧边栏宽度',
     groups: {
-      flagged: '已标记',
+      flagged: '已置顶',
       today: '今天',
       yesterday: '昨天',
       week: '本周内',
@@ -125,6 +124,7 @@ const SIDEBAR_COPY = {
     noProject: '未归入项目',
     projectsSection: '项目',
     recentsSection: '最近',
+    pinnedSection: '置顶',
     menuLabel: '导航',
     noProjects: '还没有项目。新建任务时选择一个文件夹即可。',
     noTasksInProject: '这个项目还没有任务',
@@ -135,7 +135,7 @@ const SIDEBAR_COPY = {
     running: '进行中',
     turnStatus: { running: '进行中', completed: '已完成', aborted: '已中止', failed: '失败' },
     stale: '需要处理',
-    flaggedBadge: '已标记',
+    flaggedBadge: '已置顶',
     branchBadge: '分支',
     revisionBadge: (count) => `${count} 个版本`,
     expandSection: (section) => `展开「${section}」`,
@@ -143,14 +143,12 @@ const SIDEBAR_COPY = {
     sessionActions: (name) => `「${name}」的操作`,
     projectActions: (name) => `项目「${name}」的操作`,
     rowActions: {
-      open: '打开',
       rename: '重命名',
-      flag: '标记',
-      unflag: '取消标记',
+      flag: '置顶',
+      unflag: '取消置顶',
       archive: '归档',
       unarchive: '取消归档',
       remove: '删除',
-      retryOpen: '重新打开',
     },
     projectRowActions: {
       newTask: '在此项目新建任务',
@@ -190,7 +188,7 @@ const SIDEBAR_COPY = {
     retry: '重試',
     resize: '調整側邊欄寬度',
     groups: {
-      flagged: '已標記',
+      flagged: '已置頂',
       today: '今天',
       yesterday: '昨天',
       week: '本週內',
@@ -200,6 +198,7 @@ const SIDEBAR_COPY = {
     noProject: '未歸入專案',
     projectsSection: '專案',
     recentsSection: '最近',
+    pinnedSection: '置頂',
     menuLabel: '導覽',
     noProjects: '還沒有專案。新增任務時選擇一個資料夾即可。',
     noTasksInProject: '這個專案還沒有任務',
@@ -210,7 +209,7 @@ const SIDEBAR_COPY = {
     running: '進行中',
     turnStatus: { running: '進行中', completed: '已完成', aborted: '已中止', failed: '失敗' },
     stale: '需要處理',
-    flaggedBadge: '已標記',
+    flaggedBadge: '已置頂',
     branchBadge: '分支',
     revisionBadge: (count) => `${count} 個版本`,
     expandSection: (section) => `展開「${section}」`,
@@ -218,14 +217,12 @@ const SIDEBAR_COPY = {
     sessionActions: (name) => `「${name}」的操作`,
     projectActions: (name) => `專案「${name}」的操作`,
     rowActions: {
-      open: '開啟',
       rename: '重新命名',
-      flag: '標記',
-      unflag: '取消標記',
+      flag: '置頂',
+      unflag: '取消置頂',
       archive: '封存',
       unarchive: '取消封存',
       remove: '刪除',
-      retryOpen: '重新開啟',
     },
     projectRowActions: {
       newTask: '在此專案新增任務',
@@ -265,7 +262,7 @@ const SIDEBAR_COPY = {
     retry: 'Retry',
     resize: 'Resize sidebar',
     groups: {
-      flagged: 'Flagged',
+      flagged: 'Pinned',
       today: 'Today',
       yesterday: 'Yesterday',
       week: 'Earlier this week',
@@ -275,6 +272,7 @@ const SIDEBAR_COPY = {
     noProject: 'No project',
     projectsSection: 'Projects',
     recentsSection: 'Recents',
+    pinnedSection: 'Pinned',
     menuLabel: 'Navigation',
     noProjects: 'No projects yet. Pick a folder when you start a task.',
     noTasksInProject: 'No tasks in this project yet',
@@ -290,7 +288,7 @@ const SIDEBAR_COPY = {
       failed: 'Failed',
     },
     stale: 'Needs attention',
-    flaggedBadge: 'Flagged',
+    flaggedBadge: 'Pinned',
     branchBadge: 'Branch',
     revisionBadge: (count) => `${count} versions`,
     expandSection: (section) => `Expand ${section}`,
@@ -298,14 +296,12 @@ const SIDEBAR_COPY = {
     sessionActions: (name) => `Actions for ${name}`,
     projectActions: (name) => `Actions for project ${name}`,
     rowActions: {
-      open: 'Open',
       rename: 'Rename',
-      flag: 'Flag',
-      unflag: 'Unflag',
+      flag: 'Pin',
+      unflag: 'Unpin',
       archive: 'Archive',
       unarchive: 'Unarchive',
       remove: 'Delete',
-      retryOpen: 'Open again',
     },
     projectRowActions: {
       newTask: 'New task in this project',

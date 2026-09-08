@@ -17,22 +17,8 @@
  * under the License.
  */
 
-// One task in the list.
-//
-// Geometry, hover model and the ⋮-on-hover action slot are the reference
-// design system's `ConversationItem`. What differs is what the row says: this
-// product's rows carry a project, a relative time, and up to four state
-// signals the reference has no equivalent for — running, stale (the Host has
-// already decided the next send cannot go anywhere), branched, and a revision
-// family with more than one member.
-//
-// The leading 28px slot holds exactly one signal at a time, in priority order:
-// stale outranks running, because "this cannot run" is more urgent than "this
-// is running", and both outrank the idle dot.
-
 import { useCallback, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { RelativeTime } from '@maka/ui';
 import { Anthropicon } from '../../icons/Anthropicon.js';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../ui/tooltip.js';
 import {
@@ -193,28 +179,6 @@ export function SessionRow(props: {
               </TooltipContent>
             )}
           </Tooltip>
-          <span className="ml-2 flex shrink-0 items-center gap-1 pr-1 text-[11px] leading-4 text-sidebar-text-muted">
-            {row.branchOf && (
-              <span
-                title={row.branchOf.name}
-                className="rounded bg-alpha-1 px-1 group-hover:opacity-0"
-              >
-                {copy.branchBadge}
-              </span>
-            )}
-            {row.revisionCount > 1 && (
-              <span className="rounded bg-alpha-1 px-1 tabular-nums group-hover:opacity-0">
-                {copy.revisionBadge(row.revisionCount)}
-              </span>
-            )}
-            {row.activityAt > 0 && (
-              <RelativeTime
-                ts={row.activityAt}
-                variant="sidebar"
-                className="tabular-nums group-hover:opacity-0"
-              />
-            )}
-          </span>
         </button>
       )}
 
@@ -235,9 +199,6 @@ export function SessionRow(props: {
               />
             </DropdownMenuTrigger>
             <DropdownMenuContent variant="sidebar" align="end" side="bottom">
-              <DropdownMenuItem onSelect={() => actions.onOpen(row)}>
-                {row.stale ? copy.rowActions.retryOpen : copy.rowActions.open}
-              </DropdownMenuItem>
               <DropdownMenuItem
                 onSelect={() => {
                   renameFromMenu.current = true;
@@ -245,20 +206,28 @@ export function SessionRow(props: {
                   setRenaming(true);
                 }}
               >
-                {copy.rowActions.rename}
+                <Anthropicon name="edit" size={20} />
+                <span className="flex-1">{copy.rowActions.rename}</span>
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => actions.onSetFlagged(row, !row.flagged)}>
-                {row.flagged ? copy.rowActions.unflag : copy.rowActions.flag}
+                <Anthropicon name={row.flagged ? 'pinSlash' : 'pin'} size={20} />
+                <span className="flex-1">
+                  {row.flagged ? copy.rowActions.unflag : copy.rowActions.flag}
+                </span>
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => actions.onArchive(row, !row.archived)}>
-                {row.archived ? copy.rowActions.unarchive : copy.rowActions.archive}
+                <Anthropicon name={row.archived ? 'arrowCounterClockwise' : 'archive'} size={20} />
+                <span className="flex-1">
+                  {row.archived ? copy.rowActions.unarchive : copy.rowActions.archive}
+                </span>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 className={menuDangerItemClass}
                 onSelect={() => actions.onRemove(row)}
               >
-                {copy.rowActions.remove}
+                <Anthropicon name="trash" size={20} />
+                <span className="flex-1">{copy.rowActions.remove}</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

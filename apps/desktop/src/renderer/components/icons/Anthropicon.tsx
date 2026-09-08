@@ -54,6 +54,9 @@ export const ANTHROPICON_SPECS = {
   /** 摊开的书。E01D(book) 是合起来的那本。 */
   bookOpen: { glyph: '\uE01F', size: 20, weight: 433.25 },
   bookmark: { glyph: '\uE117', size: 20, weight: 433.25 },
+  /** 图钉。E0BD 空心(菜单"置顶"),E0BF 带斜杠(取消置顶)。E0BE 是实心版,行首徽标仍用 starFilled。 */
+  pin: { glyph: '\uE0BD', size: 20, weight: 433.25 },
+  pinSlash: { glyph: '\uE0BF', size: 20, weight: 433.25 },
   bullhorn: { glyph: '\uE022', size: 20, weight: 433.25 },
   calendar: { glyph: '\uE024', size: 20, weight: 433.25 },
   camera: { glyph: '\uE025', size: 20, weight: 433.25 },

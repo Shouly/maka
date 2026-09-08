@@ -546,12 +546,8 @@ try {
 
   // 4. Rename through the row menu, and read it back after a reload — a rename
   // that only changed the DOM would not survive one.
-  // A task is listed twice by design — under its project and in Recents — so
-  // the row is addressed by its first occurrence.
   const rowFor = (key) =>
-    page
-      .locator(`[data-maka-contract="session-row"][data-session-key=${JSON.stringify(key)}]`)
-      .first();
+    page.locator(`[data-maka-contract="session-row"][data-session-key=${JSON.stringify(key)}]`);
   const RENAMED = 'Renamed by the smoke test';
   await rowFor(firstKey).hover();
   await rowFor(firstKey)
@@ -600,7 +596,7 @@ try {
   // The rail's three bands (owner decision 2026-09-08): the menu on top, then
   // Projects with each project disclosing its tasks, then a flat Recents band.
   // The seeded project is listed even before it has a task of its own; both
-  // tasks belong to it here, and both are in Recents.
+  // tasks belong to it here, so neither appears in Recents.
   await ensureSidebarExpanded(page);
   const rail = page.locator('#app-sidebar');
   await rail.getByRole('button', { name: 'New task', exact: true }).waitFor();
@@ -633,12 +629,11 @@ try {
     .first()
     .click();
   await nested.first().waitFor();
+  // Recents lists only the tasks without a project, and the band is not
+  // rendered while there are none — both seeded tasks belong to the project.
   const recents = rail.locator('section').filter({ hasText: 'Recents' });
-  await recents.waitFor();
-  assert.ok(
-    (await recents.locator('[data-maka-contract="session-row"]').count()) >= 2,
-    'Recents lists the tasks flat',
-  );
+  assert.equal(await recents.count(), 0, 'project tasks do not also appear in Recents');
+  assert.equal(await rail.getByText('No project', { exact: true }).count(), 0);
   await page.screenshot({ path: SHOT('phase2-session-list.png') });
   checks.push(
     'the rail shows menu, Projects with disclosed tasks, and Recents, with no filter box',

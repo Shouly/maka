@@ -22,7 +22,9 @@
 //   menu      New task, Extensions (Skills | MCP), Scheduled — fixed
 //   Projects  every project the Hosts know, each expandable to its tasks;
 //             a project's row starts a task in it
-//   Recents   the most recent tasks across projects, flat, newest first
+//   Pinned    every pinned task, across projects, newest first — a shortcut;
+//             the task stays listed under its project too
+//   Recents   tasks without a project (and not pinned), flat, newest first
 //
 // Geometry and motion are the reference design system's `Sidebar`: the fixed
 // header over one scrolling panel, the row fade, the three-layer resize handle
@@ -101,6 +103,7 @@ export function Sidebar(props: SidebarProps) {
   const pending = pendingScheduledTaskCount(schedules);
   const [projectsHidden, setProjectsHidden] = useState(false);
   const [recentsHidden, setRecentsHidden] = useState(false);
+  const [pinnedHidden, setPinnedHidden] = useState(false);
 
   // The rail publishes its own width so the titlebar strip and any surface
   // measuring the shell can read it without reaching into React.
@@ -113,12 +116,13 @@ export function Sidebar(props: SidebarProps) {
   }, [layout.collapsed, layout.width]);
 
   // Projects: the catalog's projects in its order (with or without tasks),
-  // then projects only the tasks know (another Host's, or archived since),
-  // then the tasks with no project. The list model already groups by project
-  // in that order; the catalog rows fill in the projects it has no task for.
+  // then projects only the tasks know (another Host's, or archived since).
+  // Tasks without a project belong only in Recents.
   const entries = useMemo<ProjectEntry[]>(() => {
     const byKey = new Map<string, SessionListGroup>(
-      model.groups.map((group) => [group.key, group]),
+      model.groups
+        .filter((group) => group.projectId !== undefined)
+        .map((group) => [group.key, group]),
     );
     const out: ProjectEntry[] = [];
     for (const project of projects) {
@@ -158,7 +162,14 @@ export function Sidebar(props: SidebarProps) {
     });
   }, []);
 
-  const recents = useMemo(() => model.rows.slice(0, SIDEBAR_RECENTS_LIMIT), [model.rows]);
+  const pinned = useMemo(() => model.rows.filter((row) => row.flagged), [model.rows]);
+  const recents = useMemo(
+    () =>
+      model.rows
+        .filter((row) => row.projectId === null && !row.flagged)
+        .slice(0, SIDEBAR_RECENTS_LIMIT),
+    [model.rows],
+  );
 
   const extensionsActive = navigation.selection.section === 'extensions';
   const openExtensions = () => props.onSelectModule(navigation.moduleMemory.extensions);
@@ -312,6 +323,28 @@ export function Sidebar(props: SidebarProps) {
               >
                 {[<Fragment key="projects">{projectsBody}</Fragment>]}
               </SidebarGroup>
+
+              {pinned.length > 0 && (
+                <SidebarGroup
+                  groupKey="pinned"
+                  title={copy.pinnedSection}
+                  copy={copy}
+                  activeChildKey={activeId ?? null}
+                  childKeys={pinned.map((row) => row.id)}
+                  isContentHidden={pinnedHidden}
+                  onContentHiddenChange={setPinnedHidden}
+                >
+                  {pinned.map((row) => (
+                    <SessionRow
+                      key={row.id}
+                      row={row}
+                      isActive={row.id === activeId}
+                      copy={copy}
+                      actions={props.sessionActions}
+                    />
+                  ))}
+                </SidebarGroup>
+              )}
 
               {recents.length > 0 && (
                 <SidebarGroup

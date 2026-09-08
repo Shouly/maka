@@ -124,6 +124,38 @@ test('groups by project, keeping catalog order and giving loose tasks a home', (
   );
 });
 
+test('pins lead their own project or Recents and unpinning restores activity order', () => {
+  const sessions = [
+    session('project-recent', { projectId: 'p1', lastMessageAt: NOON }),
+    session('project-pinned', { projectId: 'p1', isFlagged: true, lastMessageAt: NOON - DAY }),
+    session('loose-recent', { lastMessageAt: NOON }),
+    session('loose-pinned', { isFlagged: true, lastMessageAt: NOON - DAY }),
+    session('loose-pinned-newer', { isFlagged: true, lastMessageAt: NOON }),
+  ];
+  const options = { mode: 'project', projects: [{ id: 'p1', name: 'One' }] };
+  const pinned = listModel(sessions, options);
+  assert.deepEqual(
+    pinned.groups.find((group) => group.projectId === 'p1')?.rows.map((row) => row.id),
+    ['project-pinned', 'project-recent'],
+  );
+  assert.deepEqual(
+    pinned.rows.filter((row) => row.projectId === null).map((row) => row.id),
+    ['loose-pinned-newer', 'loose-pinned', 'loose-recent'],
+  );
+  const unpinned = listModel(
+    sessions.map((row) => ({ ...row, isFlagged: false })),
+    options,
+  );
+  assert.deepEqual(
+    unpinned.groups.find((group) => group.projectId === 'p1')?.rows.map((row) => row.id),
+    ['project-recent', 'project-pinned'],
+  );
+  assert.deepEqual(
+    unpinned.rows.filter((row) => row.projectId === null).map((row) => row.id),
+    ['loose-pinned-newer', 'loose-recent', 'loose-pinned'],
+  );
+});
+
 test('the filter reads the name, the project and the Host, and reports itself', () => {
   const rows = [session('alpha', { projectId: 'p1' }), session('beta', { projectId: 'p1' })];
   const projects = [{ id: 'p1', name: 'Reporting' }];
