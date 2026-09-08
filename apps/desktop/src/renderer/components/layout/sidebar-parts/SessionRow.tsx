@@ -84,14 +84,6 @@ export function SessionRow(props: {
       </TooltipTrigger>
       <TooltipContent side="top">{copy.running}</TooltipContent>
     </Tooltip>
-  ) : row.flagged ? (
-    <span
-      role="img"
-      aria-label={copy.flaggedBadge}
-      className="flex items-center text-sidebar-text-secondary"
-    >
-      <Anthropicon name="starFilled" />
-    </span>
   ) : (
     <span
       aria-hidden="true"
