@@ -82,19 +82,16 @@ unreadable boundary) landed the same day. Still open, in the order to fix:
   optimistic rows are retired at each seed, Escape stops the turn, skill
   invocation feedback, the workspace-unavailable toast, Resume's `park`
   answer, and transients hidden while reading history.)
-- Edit-and-resend: `abandonSessionCopy` is never called on cancel/failure
-  (orphan forks in the rail); the fork is sent into before its transcript
-  settles (`readSettledMessages` unused); no `waitForHostAdmission`.
-- New-task creation sends only the model and then issues up to three extra
-  IPCs, and writes `permissionMode: 'ask'` as an explicit override on every
-  first send (upstream sends it only when the user chose one, plus
-  `orchestrationMode`).
-- `sessions:changed` side effects beyond a refresh: `clearPendingTurnActions`
-  on turn/message changes, the `rebound` model toast, `retireSession`.
-- `flushDisplayEvents` is not called on seed completion;
-  `settleAssistantStreaming` (primary handoff) has no caller; the persisted
-  composer model default (`composer-defaults.ts`) is not ported; the
-  slash-command catalog port has no caller (`/compact` is hard-coded).
+- (Batch 3 landed the same day: edit-and-resend abandons the fork on a
+  failed send and waits for the fork's transcript to settle, with an
+  optimistic row and `waitForHostAdmission`; new-task creation carries the
+  draft's picks in one call and sends a permission mode only when the user
+  chose one; catalog change events clear outlived turn-action claims and
+  announce a model rebound; display events flush at seed completion; the
+  streaming-settle fallback runs; the last new-task model is persisted.)
+- Still open from the audit: the slash-command catalog port has no caller
+  (`/compact` is hard-coded; `/side` `/graph` `/swarm` are deferred anyway);
+  `orchestrationMode` is not part of the new-task draft.
 
 ## Known defects outside the renderer allow-list
 

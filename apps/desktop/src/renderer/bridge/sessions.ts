@@ -140,12 +140,15 @@ export function sendMessage(
   return sessions().send(sessionId, command);
 }
 
+export type SessionSubmitOptions = Parameters<Sessions['submitMessage']>[3];
+
 export function submitMessage(
   sessionId: string,
   placement: SessionSubmitPlacement,
   command: SessionSubmitCommand,
+  options?: SessionSubmitOptions,
 ): Promise<SessionSubmitResult> {
-  return sessions().submitMessage(sessionId, placement, command);
+  return sessions().submitMessage(sessionId, placement, command, options);
 }
 
 export function stopSession(

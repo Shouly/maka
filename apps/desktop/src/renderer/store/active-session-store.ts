@@ -76,6 +76,8 @@ import { readExecutionBoundaryWithRetry } from '../lib/ported/execution-boundary
 import { mergeTransientMessageProjection } from '../lib/ported/transient-message-projection.js';
 import type { DesktopSessionSummary } from '../bridge/sessions.js';
 import { MESSAGE_QUEUE_MAX_ENTRIES } from '@maka/runtime-host/protocol';
+
+const SETTLE_FALLBACK_GRACE_MS = 1_000;
 import {
   projectQueuedTransientMessages,
   reconcileTransientMessages,
@@ -464,6 +466,27 @@ export function createActiveSessionStore(
       });
       handlers.reconcilePersistedMessages(sessionId!, snapshot.messages);
       publishTransient();
+      scheduleSettleFallback(snapshot.messages);
+    }
+    // Streaming-settle handoff, fallback path (upstream's
+    // `SETTLE_FALLBACK_GRACE_MS`). The terminal event is the primary handoff;
+    // a stuck live slot would otherwise hide the committed answer forever,
+    // because `streamingMessageId` suppresses it while live.
+    let settleTimer: ReturnType<typeof setTimeout> | undefined;
+    let settleScheduledFor: string | undefined;
+    function scheduleSettleFallback(messages: readonly StoredMessage[]) {
+      const id = sessionId!;
+      const live = deriveLiveTurnSnapshot(store.getState().liveTurns[id]);
+      const messageId = live.streamingMessageId;
+      if (messageId === undefined || settleScheduledFor === messageId) return;
+      if (!messages.some((message) => message.type === 'assistant' && message.id === messageId))
+        return;
+      clearTimeout(settleTimer);
+      settleScheduledFor = messageId;
+      settleTimer = setTimeout(() => {
+        settleScheduledFor = undefined;
+        if (current()) void handlers.settleAssistantStreaming(id, messageId);
+      }, SETTLE_FALLBACK_GRACE_MS);
     }
     rangeController = createRecoveringDesktopTranscriptRangeController(
       transcript,
@@ -550,6 +573,9 @@ export function createActiveSessionStore(
       if (!current()) return;
       failures = 0;
       rangeController.observationChanged('ready');
+      // Deltas buffered across the seed boundary land before the display is
+      // declared ready, or they are dropped with the seed.
+      handlers.flushDisplayEvents(sessionId);
       handlers.markDisplayReady(sessionId);
       commit({ observationReady: true });
       void refreshInteractions();
@@ -688,6 +714,7 @@ export function createActiveSessionStore(
       clearTimeout(retry);
       clearTimeout(shellRetry);
       clearInterval(healthTimer);
+      clearTimeout(settleTimer);
       if (hasDocument) document.removeEventListener('visibilitychange', onVisible);
       if (currentEvaluateHealth === evaluateHealth) currentEvaluateHealth = undefined;
       handlers.dropDisplayEvents(sessionId);

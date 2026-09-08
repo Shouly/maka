@@ -67,12 +67,14 @@ import {
   onboardingStore,
   sessionsStore,
   settingsStore,
+  turnActionsStore,
   uiStore,
 } from '../../store/index.js';
 import { startWindowCommands } from '../../store/window-commands.js';
 import type { SessionListRow } from '../../store/session-list-model.js';
 import type { ProjectRowModel } from '../../hooks/use-session-list.js';
 import { toast } from '../../store/toast-store.js';
+import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
 import {
   copyDiagnosticReport,
   copyPreviousMainProcessInterruption,
@@ -110,6 +112,32 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
     null,
   );
   const activeId = useStore(sessionsStore, (state) => state.activeId);
+  // The catalog's change events carry more than an invalidation (upstream
+  // `handleSessionChange`): a named turn or message change answers whatever
+  // turn action was still claimed for that Session, and a Host that rebound
+  // the task to another model says so.
+  useEffect(
+    () =>
+      sessionsStore.onChange((event) => {
+        if (
+          event.sessionId &&
+          (event.reason === 'turn-status-change' ||
+            event.reason === 'message-appended' ||
+            event.reason === 'deleted')
+        ) {
+          turnActionsStore.clearPending(event.sessionId);
+        }
+        if (event.reason === 'rebound') {
+          const copy = getDesktopConversationCopy(locale).actions;
+          toast({
+            title: copy.modelReboundTitle,
+            description: copy.modelReboundDescription(event.modelId),
+            variant: 'info',
+          });
+        }
+      }),
+    [locale],
+  );
   const navigation = useStore(uiStore, (state) => state.navigation);
   const settingsOpen = useStore(uiStore, (state) => state.settingsOpen);
   const searchOpen = useStore(uiStore, (state) => state.searchOpen);

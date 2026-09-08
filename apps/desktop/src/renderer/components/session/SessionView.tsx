@@ -48,6 +48,8 @@ import {
   type TurnViewModel,
 } from '@maka/ui';
 import { openExternal } from '../../bridge/external-links.js';
+import { abandonSessionCopy } from '../../bridge/sessions.js';
+import { readSettledMessages } from '../../lib/ported/session-message-settlement.js';
 import { readAttachmentBytes } from '../../bridge/attachments.js';
 import {
   useActiveTurns,
@@ -276,24 +278,69 @@ function SessionTranscript(props: SessionViewProps) {
     const text = current.text.trim();
     if (!text) return;
     revisionDraftStore.markPreparing();
+    // The fork the Host minted, if it got that far: a failure after this
+    // point abandons it, or the rail keeps an orphan copy forever.
+    let forkedId: string | undefined;
     void turnActionsStore
       .revise(current.sourceSessionId, {
         sourceTurnId: current.sourceTurnId,
         copyId: current.copyId,
       })
       .then(async (row) => {
+        forkedId = row.id;
         revisionDraftStore.markForked(row.id);
         composerInputStore.setText(row.id, text);
-        const result = await turnActionsStore.send(row.id, {
-          type: 'send',
-          turnId: current.copyId,
+        // The edited text is sent into a transcript that has settled, not
+        // into a fork still being written (upstream `readSettledMessages`).
+        const { settled } = await readSettledMessages(row.id);
+        if (!settled) throw new Error(actions.operationFailedFallback);
+        // The user's message is on screen in the fork before the Host has it.
+        const messageId = crypto.randomUUID();
+        activeSessionStore.showTransientUserMessage(row.id, {
+          id: messageId,
+          ts: Date.now(),
           text,
+          inlineReferences: [],
+          transientPlacement: 'current_turn',
         });
-        if (!result.ok) throw new Error(result.reason);
+        const result = await turnActionsStore.submit(
+          row.id,
+          'current_turn',
+          { text, messageId },
+          // A revision is a transaction: the draft clears only once the Host
+          // has admitted the message into the fork.
+          { waitForHostAdmission: true },
+        );
+        if (!result.ok) {
+          if (result.reason !== 'outcome_unknown') {
+            activeSessionStore.removeTransientMessage(row.id, messageId);
+          }
+          throw new Error(result.reason);
+        }
+        if (result.disposition !== 'locally_saved') {
+          activeSessionStore.updateTransientMessage(row.id, {
+            id: messageId,
+            ts: Date.now(),
+            text,
+            attachments: result.attachments,
+            inlineReferences: result.inlineReferences,
+            transientPlacement: 'current_turn',
+            ...(result.turnId ? { hostTurnId: result.turnId } : {}),
+          });
+        }
         composerInputStore.setText(row.id, '');
         revisionDraftStore.complete();
       })
-      .catch((error) => {
+      .catch(async (error) => {
+        // Back to the source task with the draft, and the half-made copy
+        // withdrawn. Main acknowledges once the cleanup intent is durable.
+        if (forkedId) {
+          const orphan = forkedId;
+          composerInputStore.setText(orphan, '');
+          sessionsStore.select(current.sourceSessionId);
+          await abandonSessionCopy(current.sourceSessionId, current.copyId).catch(() => undefined);
+          void sessionsStore.refresh();
+        }
         revisionDraftStore.fail(
           error instanceof Error ? error.message : actions.operationFailedFallback,
         );

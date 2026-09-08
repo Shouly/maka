@@ -31,6 +31,7 @@ import { createStore } from 'zustand/vanilla';
 import type { TaskSubmissionReadinessSnapshot } from '@maka/core/task-submission-readiness';
 import type { ChatModelChoice } from '@maka/core/chat-model-choice';
 import * as api from '../bridge/new-tasks.js';
+import type { CreateSessionRequestInput } from '@maka/core/runtime-inputs';
 import type {
   DesktopNewTaskCatalog,
   DesktopNewTaskTarget,
@@ -44,6 +45,13 @@ import {
   type NewChatModel,
   type NewChatModelCandidate,
 } from '../lib/ported/shell-chat-model-selection.js';
+import { loadComposerDefaults, saveComposerDefaults } from '../lib/ported/composer-defaults.js';
+
+/** The model the last new task started on, as a candidate the catalog may still offer. */
+function rememberedModel(): NewChatModelCandidate | null {
+  const model = loadComposerDefaults()?.model;
+  return model ? { llmConnectionSlug: model.llmConnectionSlug, model: model.model } : null;
+}
 
 /** One selectable workspace row: a project on a Host, or a Host with none. */
 export interface WorkspaceOption {
@@ -188,7 +196,7 @@ export function createNewTaskStore(bridge = api) {
         // Keep the sticky choice when it is still offered; otherwise fall back
         // to this connection catalog's own default.
         model: pickNewChatModel({
-          pending: state.model ?? null,
+          pending: state.model ?? rememberedModel(),
           catalogDefault: defaultModelCandidate(snapshot),
           choices: snapshot?.chatModelChoices ?? [],
         }),
@@ -247,6 +255,8 @@ export function createNewTaskStore(bridge = api) {
     },
     selectModel(model: NewChatModel) {
       store.setState({ model });
+      // The next task starts on this model, restart or not.
+      saveComposerDefaults({ model });
     },
     async addProject(host: DesktopNewTaskHostRef) {
       const result = await bridge.addNewTaskProject(host);
@@ -273,8 +283,22 @@ export function createNewTaskStore(bridge = api) {
       if (!target) return Promise.resolve([] as api.NewTaskInvocableSkills);
       return bridge.listNewTaskInvocableSkills(target, context);
     },
-    /** Mint the Session. Callers own the first message; this only creates. */
-    async create() {
+    /**
+     * Mint the Session with everything the draft chose, in one call. Callers
+     * own the first message; this only creates.
+     *
+     * A permission mode is sent only when the user picked one: otherwise the
+     * Host's configured default applies, and writing the draft's placeholder
+     * would override it as an explicit per-Session choice on every new task.
+     */
+    async create(
+      input: Partial<
+        Pick<
+          CreateSessionRequestInput,
+          'permissionMode' | 'thinkingLevel' | 'collaborationMode' | 'orchestrationMode'
+        >
+      > = {},
+    ) {
       const state = store.getState();
       if (!state.target) throw new Error('No workspace is selected for the new task');
       store.setState({ creating: true, error: undefined });
@@ -287,6 +311,7 @@ export function createNewTaskStore(bridge = api) {
                 model: state.model.model,
               }
             : {}),
+          ...input,
         });
       } catch (error) {
         store.setState({ error: errorMessage(error) });

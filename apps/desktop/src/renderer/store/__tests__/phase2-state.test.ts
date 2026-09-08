@@ -300,6 +300,21 @@ test('the store loads readiness and a model for its target, and creates with bot
   stop();
 });
 
+test("creating carries the draft's picks in one call and sends no placeholder permission", async () => {
+  const { bridge, calls } = fakeNewTaskBridge();
+  const store = createNewTaskStore(bridge as never);
+  const stop = store.start();
+  await tick();
+  await tick();
+  await store.create({ thinkingLevel: 'high', collaborationMode: 'plan' });
+  assert.match(calls[0] ?? '', /"thinkingLevel":"high"/u);
+  assert.match(calls[0] ?? '', /"collaborationMode":"plan"/u);
+  assert.doesNotMatch(calls[0] ?? '', /permissionMode/u, 'the Host default stands');
+  await store.create({ permissionMode: 'bypass' });
+  assert.match(calls[1] ?? '', /"permissionMode":"bypass"/u);
+  stop();
+});
+
 test('creating without a workspace refuses rather than guessing one', async () => {
   const { bridge } = fakeNewTaskBridge({
     getNewTaskCatalog: async () => ({ defaultProfileId: 'local', hosts: [] }),

@@ -49,6 +49,11 @@ export interface InputDraft {
   error?: string;
   intent?: { revision: number; id: string };
   permission: PermissionMode;
+  /**
+   * Whether `permission` is the user's pick rather than the placeholder. Only
+   * a pick is sent with the new task; otherwise the Host's default applies.
+   */
+  permissionChosen?: boolean;
   thinking: ThinkingLevel | undefined;
   plan: boolean;
   revision: number;

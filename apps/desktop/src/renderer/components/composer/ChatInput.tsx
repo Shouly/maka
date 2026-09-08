@@ -311,7 +311,13 @@ function OwnedChatInput(props: {
       const messageId = composerInputStore.reserveIntent(scopeKey, sent.revision);
 
       if (!owner) {
-        const created = await newTaskStore.create();
+        // Everything the draft chose travels with the create: the Host's
+        // configured permission default stands unless the user picked one.
+        const created = await newTaskStore.create({
+          ...(sent.permissionChosen ? { permissionMode: sent.permission } : {}),
+          ...(sent.thinking ? { thinkingLevel: sent.thinking } : {}),
+          ...(sent.plan ? { collaborationMode: 'plan' as const } : {}),
+        });
         if (!mounted.current) {
           // The user left the welcome surface mid-creation; do not leave an
           // empty Session behind.
@@ -323,11 +329,6 @@ function OwnedChatInput(props: {
         // The draft and its quotes now belong to the Session.
         composerInputStore.transfer(scopeKey, owner);
         composerDraftStore.transferQuotes(scopeKey, owner);
-        if (sent.permission !== created.permissionMode) {
-          await turnActionsStore.setPermission(owner, sent.permission);
-        }
-        if (sent.thinking) await turnActionsStore.setThinking(owner, sent.thinking);
-        if (sent.plan) await turnActionsStore.setCollaboration(owner, 'plan');
         sessionsStore.select(owner);
       }
 
@@ -546,7 +547,7 @@ function OwnedChatInput(props: {
   const setMode = async (permission: PermissionMode) => {
     try {
       if (sessionId) await turnActionsStore.setPermission(sessionId, permission);
-      else patch({ permission });
+      else patch({ permission, permissionChosen: true });
     } catch (cause) {
       report(cause, copy.permission.changeFailedTitle);
       throw cause;

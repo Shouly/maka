@@ -127,11 +127,23 @@ export function createTurnActionsStore(
       id: string,
       placement: api.SessionSubmitPlacement,
       command: api.SessionSubmitCommand,
+      submitOptions?: api.SessionSubmitOptions,
     ) =>
       run(id, 'send', async () => {
         await orderBeforeSend(id);
-        return bridge.submitMessage(id, placement, command);
+        return bridge.submitMessage(id, placement, command, submitOptions);
       }),
+    /**
+     * The authority spoke about this Session's turn or messages: whatever
+     * command was still claimed here has been answered by events, and a
+     * claim that outlives its answer only keeps controls disabled.
+     */
+    clearPending(id: string) {
+      for (const key of [...locks.keys()]) {
+        if (key.startsWith(JSON.stringify([id]).slice(0, -1))) locks.delete(key);
+      }
+      store.setState((s) => (s.pending[id]?.length ? { pending: { ...s.pending, [id]: [] } } : s));
+    },
     stop: (id: string, input?: api.SessionStopInput) =>
       run(id, 'stop', async () => {
         const result = await bridge.stopSession(id, input);

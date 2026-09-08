@@ -745,6 +745,33 @@ test('a stop that interrupted the turn hands back the messages it retracted', as
   await store.stop('a', { source: 'stop_button' });
   assert.deepEqual(retracted, ['q-1', 'q-2']);
 });
+test('a catalog answer about the turn releases a claim that outlived its IPC', async () => {
+  const send = deferred<sessions.SessionSendResult>();
+  const store = createTurnActionsStore({
+    api: { ...sessions, sendMessage: () => send.promise },
+  });
+  const pending = store.send('a', { type: 'send', turnId: 'intent', text: 'hello' });
+  await tick();
+  assert.deepEqual(store.getState().pending.a, ['send']);
+  store.clearPending('ab');
+  assert.deepEqual(
+    store.getState().pending.a,
+    ['send'],
+    "another Session's answer is not this one's",
+  );
+  store.clearPending('a');
+  assert.deepEqual(store.getState().pending.a, []);
+  // The lock went with the claim: a new send is accepted again.
+  const again = store.send('a', { type: 'send', turnId: 'next', text: 'again' });
+  send.resolve({
+    ok: false,
+    reason: 'outcome_unknown',
+    messageId: 'intent',
+    skillInvocation: { loaded: [], failed: [], receipts: [] },
+  });
+  await pending;
+  await again;
+});
 test('history controls use the existing bounded paging handle', async () => {
   const f = fakeRuntime();
   const id = sid('a');
