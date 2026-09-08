@@ -101,13 +101,14 @@ export function createTurnActionsStore(
    * from this consumer. Captured before the send, that sequence is the
    * previous turn's and the settlement is instant. Captured after the send
    * has started the turn, it covers the streaming reply, and the settlement
-   * — and the blackout — last until the reply finishes: the user message
-   * and the whole stream appear only when the turn is over.
+   * — and the blackout — last until the reply finishes.
    *
    * The command's IPC leaves after a few microtasks (the range controller
    * awaits its open handle first); the send's would leave on the very next
    * one. A macrotask yield lets the command's invoke go first, and both
-   * calls then arrive in that order.
+   * calls then arrive in that order. (Re-opening the consumer instead does
+   * not work: the navigation intent lives on the Session's replica, which a
+   * new consumer inherits still pointed at history.)
    */
   async function orderBeforeSend(id: string): Promise<void> {
     await options.onFollowLatest?.(id);
@@ -162,9 +163,7 @@ export function createTurnActionsStore(
       }),
     revise: (id: string, input: api.DesktopReviseBeforeTurnInput) =>
       run(id, 'copy', async () => {
-        const row = await bridge.reviseBeforeTurn(id, input);
-        options.onCopy?.(id, row);
-        return row;
+        return bridge.reviseBeforeTurn(id, input);
       }),
     retract: (id: string, entryId: string) =>
       run(id, 'queue', () => bridge.retractQueueEntry(id, entryId)),

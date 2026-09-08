@@ -38,8 +38,8 @@
       "electron": "needs a second real Session (Host round trip) to switch to; the focus and draft-restore halves alone would not earn a window"
     },
     "session-local-recovery.spec.ts": {
-      "tests": 3,
-      "electron": "durable desktop admission survives Electron restart, an unsent draft persists, and an injected admission failure retries exactly once"
+      "tests": 10,
+      "electron": "First-send refusal cleanup, inherited Host defaults, durable admission, delivery UI controls and reload/restart recovery cross renderer, preload and Main"
     },
     "session-workbar.spec.ts": {
       "tests": 3,

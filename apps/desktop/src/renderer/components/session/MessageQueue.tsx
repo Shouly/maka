@@ -77,7 +77,9 @@ export const MessageQueue = memo(function MessageQueue(props: {
     turnActionsStore,
     (state) => state.pending[props.sessionId]?.includes('queue') ?? false,
   );
-  const [editing, setEditing] = useState<{ entryId: string; text: string } | undefined>(undefined);
+  const [editing, setEditing] = useState<
+    { entryId: string; text: string; revision: number } | undefined
+  >(undefined);
   const [dragging, setDragging] = useState<number | undefined>(undefined);
 
   const entries = queue?.entries ?? [];
@@ -145,9 +147,7 @@ export const MessageQueue = memo(function MessageQueue(props: {
                       aria-label={copy.edit}
                       rows={2}
                       autoFocus
-                      onChange={(event) =>
-                        setEditing({ entryId: entry.entryId, text: event.target.value })
-                      }
+                      onChange={(event) => setEditing({ ...editing, text: event.target.value })}
                       className="resize-none text-sm"
                     />
                     <div className="flex items-center gap-2">
@@ -161,10 +161,10 @@ export const MessageQueue = memo(function MessageQueue(props: {
                               .editQueued(
                                 props.sessionId,
                                 entry.entryId,
-                                revision,
+                                editing.revision,
                                 editing.text.trim(),
                               )
-                              .finally(() => setEditing(undefined)),
+                              .then(() => setEditing(undefined)),
                           );
                         }}
                       >
@@ -237,7 +237,8 @@ export const MessageQueue = memo(function MessageQueue(props: {
                           aria-label={copy.edit}
                           disabled={pending || revision === undefined}
                           onClick={() =>
-                            setEditing({ entryId: entry.entryId, text: entryText(entry) })
+                            revision !== undefined &&
+                            setEditing({ entryId: entry.entryId, text: entryText(entry), revision })
                           }
                           className={messageActionButtonClass}
                         >

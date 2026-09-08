@@ -432,3 +432,73 @@ test('a sandbox-denied row offers the way past it, and only then', () => {
   assert.equal(toolRowStatus(denied), 'sandbox_blocked');
   assert.equal(toolRowStatusLabel(denied, 'en'), getTranscriptCopy('en').sandbox.blockedLabel);
 });
+
+test('untrusted Markdown keeps HTML and redaction markers as text', () => {
+  const document = render(
+    '<style>body{display:none}</style>\n\n<details open><summary>click</summary>payload</details>\n\n<redacted>',
+  );
+  assert.equal(document.querySelector('style,details,summary'), null);
+  assert.ok(document.documentElement.textContent?.includes('<redacted>'));
+});
+test('Markdown preserves only supported internal and attachment URL schemes', async () => {
+  const { markdownUrl } = await import('../../components/ui/Markdown.js');
+  assert.equal(markdownUrl('maka://settings/models'), 'maka://settings/models');
+  assert.equal(markdownUrl('maka://compose?text=hello'), 'maka://compose?text=hello');
+  assert.equal(markdownUrl('javascript:alert(1)'), '');
+  assert.equal(markdownUrl('maka://unsupported/action'), '');
+});
+test('Mermaid retains strict security and the automatic diagram budget', async () => {
+  const { createMermaidConfig, applyMermaidRenderBudget } = await import(
+    '../../components/ui/MermaidDiagram.js'
+  );
+  assert.equal(createMermaidConfig('dark').securityLevel, 'strict');
+  assert.equal(createMermaidConfig('dark').htmlLabels, false);
+  const output = applyMermaidRenderBudget(
+    Array(4).fill('```mermaid\ngraph TD; A-->B\n```').join('\n\n'),
+  );
+  assert.equal((output.match(/```mermaid/g) ?? []).length, 3);
+  assert.equal((output.match(/```makamermaiddeferred/g) ?? []).length, 1);
+});
+
+test('steering rows retain attachments, directories, and inline references', () => {
+  const turn = transcriptFixture();
+  turn.timeline = [
+    {
+      kind: 'user',
+      messageId: 'steering',
+      message: {
+        id: 'steering',
+        role: 'user',
+        text: 'follow up',
+        attachments: [
+          {
+            kind: 'pdf',
+            name: 'evidence.pdf',
+            mimeType: 'application/pdf',
+            bytes: 4,
+            ref: { kind: 'session_file', sessionId: 'session-1', relativePath: 'evidence' },
+          },
+        ],
+        directoryReferences: [{ hostId: 'host', path: '/workspace/reference' }],
+        inlineReferences: [
+          { kind: 'workspace_file', label: 'source.ts', value: '@source.ts', start: 0 },
+        ],
+      },
+    },
+  ];
+  const document = renderTree(
+    createElement(TranscriptTurn, {
+      turn,
+      live: false,
+      footerActions: [],
+      toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
+      onFooterAction: () => {},
+      onOpenLineage: () => {},
+      onOpenExternal: () => {},
+    }),
+  );
+  const text = document.documentElement.textContent ?? '';
+  assert.ok(text.includes('evidence.pdf'));
+  assert.ok(text.includes('/workspace/reference'));
+  assert.ok(text.includes('source.ts'));
+});

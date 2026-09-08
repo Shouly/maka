@@ -217,6 +217,20 @@ export function createComposerInputStore(storage: ComposerDraftStorage = localSt
       persist();
       return count;
     },
+    /** A refused first send returns its draft without overwriting newer welcome input. */
+    restoreTransfer(from: string, to: string): boolean {
+      const target = read(to);
+      if (
+        !isEmptyDocument(target.document) ||
+        target.attachments.length ||
+        target.directories.length
+      )
+        return false;
+      const draft = read(from);
+      store.setState((s) => ({ drafts: { ...s.drafts, [to]: draft, [from]: EMPTY_INPUT } }));
+      persist();
+      return true;
+    },
     /** The welcome draft follows the Session its first send created. */
     transfer(from: string, to: string) {
       const draft = read(from);

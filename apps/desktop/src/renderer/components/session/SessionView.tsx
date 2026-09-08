@@ -34,7 +34,7 @@
 //   nothing here writes, ever). Every command releases the pin first, which is
 //   why a command can never race the policy.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { userFacingText, type StoredMessage } from '@maka/core/session';
@@ -42,14 +42,14 @@ import {
   SessionAttachmentProvider,
   TranscriptScrollAuthorityProvider,
   projectTranscriptRows,
+  finalAssistantReplyText,
   useChatScroll,
   useTranscriptScrollAuthority,
   useUiLocale,
   type TurnViewModel,
+  type TransientUserMessageProjection,
 } from '@maka/ui';
 import { openExternal } from '../../bridge/external-links.js';
-import { abandonSessionCopy } from '../../bridge/sessions.js';
-import { readSettledMessages } from '../../lib/ported/session-message-settlement.js';
 import { readAttachmentBytes } from '../../bridge/attachments.js';
 import {
   useActiveTurns,
@@ -61,6 +61,7 @@ import { useTurnPresentation, pendingTurnActionKey } from '../../hooks/use-turn-
 import {
   activeSessionStore,
   revisionDraftStore,
+  revisionActions,
   sessionsStore,
   turnActionsStore,
 } from '../../store/index.js';
@@ -76,13 +77,14 @@ import {
 } from '../../lib/ported/session-workspace-errors.js';
 import { toastApi } from '../../store/toast-api.js';
 import { ChatSkeleton } from '../ui/chat-skeleton.js';
+import { placeTransientMessages } from '../../lib/transient-message-placement.js';
 import { cn } from '../../lib/cn.js';
-import { composerInputStore } from '../../store/composer-input-store.js';
 import { ChatInput } from '../composer/ChatInput.js';
 import { InteractionPrompts } from '../composer/InteractionPrompts.js';
 import { JumpToLatest, TranscriptGapRow } from './HistoryControls.js';
 import { MessageQueue } from './MessageQueue.js';
 import { SelectionQuote } from './SelectionQuote.js';
+import { UserMessageRow } from './UserMessageRow.js';
 import { TranscriptTurn } from './TranscriptTurn.js';
 import { TurnRunningStatus } from './TurnRunningStatus.js';
 import { NoticeCard } from './notices/NoticeCard.js';
@@ -126,6 +128,7 @@ function SessionTranscript(props: SessionViewProps) {
     activeSessionStore,
     useShallow((state) => ({
       messages: state.messages,
+      transientMessages: state.transientMessages,
       observationReady: state.observationReady,
       hasOlder: state.range?.hasOlder === true,
       hasNewer: state.range?.hasNewer === true,
@@ -173,6 +176,10 @@ function SessionTranscript(props: SessionViewProps) {
     activeSessionStore.restoreReadingPosition();
   }, [sessionId, feed.observationReady, feed.messages]);
 
+  const transientPlacement = useMemo(
+    () => placeTransientMessages(turns, feed.transientMessages),
+    [turns, feed.transientMessages],
+  );
   const turnIds = useMemo(() => turns.map((turn) => turn.turnId), [turns]);
   const pendingTurnActions = usePendingTurnActions(sessionId, pending, turnIds);
   const presentation = useTurnPresentation(turns, {
@@ -237,9 +244,7 @@ function SessionTranscript(props: SessionViewProps) {
       const turn = turns.find((row) => row.turnId === turnId);
       if (!turn) return;
       if (id === 'copy') {
-        const text = turn.assistant?.text ?? '';
-        void navigator.clipboard.writeText(text).catch(() => undefined);
-        return;
+        return navigator.clipboard.writeText(finalAssistantReplyText(turn));
       }
       if (id === 'info') return;
       if (id === 'regenerate') {
@@ -273,79 +278,14 @@ function SessionTranscript(props: SessionViewProps) {
   );
 
   const submitEdit = useCallback(() => {
-    const current = revisionDraftStore.getState().draft;
-    if (!current || current.phase !== 'editing') return;
-    const text = current.text.trim();
-    if (!text) return;
-    revisionDraftStore.markPreparing();
-    // The fork the Host minted, if it got that far: a failure after this
-    // point abandons it, or the rail keeps an orphan copy forever.
-    let forkedId: string | undefined;
-    void turnActionsStore
-      .revise(current.sourceSessionId, {
-        sourceTurnId: current.sourceTurnId,
-        copyId: current.copyId,
-      })
-      .then(async (row) => {
-        forkedId = row.id;
-        revisionDraftStore.markForked(row.id);
-        composerInputStore.setText(row.id, text);
-        // The edited text is sent into a transcript that has settled, not
-        // into a fork still being written (upstream `readSettledMessages`).
-        const { settled } = await readSettledMessages(row.id);
-        if (!settled) throw new Error(actions.operationFailedFallback);
-        // The user's message is on screen in the fork before the Host has it.
-        const messageId = crypto.randomUUID();
-        activeSessionStore.showTransientUserMessage(row.id, {
-          id: messageId,
-          ts: Date.now(),
-          text,
-          inlineReferences: [],
-          transientPlacement: 'current_turn',
-        });
-        const result = await turnActionsStore.submit(
-          row.id,
-          'current_turn',
-          { text, messageId },
-          // A revision is a transaction: the draft clears only once the Host
-          // has admitted the message into the fork.
-          { waitForHostAdmission: true },
-        );
-        if (!result.ok) {
-          if (result.reason !== 'outcome_unknown') {
-            activeSessionStore.removeTransientMessage(row.id, messageId);
-          }
-          throw new Error(result.reason);
-        }
-        if (result.disposition !== 'locally_saved') {
-          activeSessionStore.updateTransientMessage(row.id, {
-            id: messageId,
-            ts: Date.now(),
-            text,
-            attachments: result.attachments,
-            inlineReferences: result.inlineReferences,
-            transientPlacement: 'current_turn',
-            ...(result.turnId ? { hostTurnId: result.turnId } : {}),
-          });
-        }
-        composerInputStore.setText(row.id, '');
-        revisionDraftStore.complete();
-      })
-      .catch(async (error) => {
-        // Back to the source task with the draft, and the half-made copy
-        // withdrawn. Main acknowledges once the cleanup intent is durable.
-        if (forkedId) {
-          const orphan = forkedId;
-          composerInputStore.setText(orphan, '');
-          sessionsStore.select(current.sourceSessionId);
-          await abandonSessionCopy(current.sourceSessionId, current.copyId).catch(() => undefined);
-          void sessionsStore.refresh();
-        }
-        revisionDraftStore.fail(
-          error instanceof Error ? error.message : actions.operationFailedFallback,
-        );
-        reportError(actions.revisionUnavailableTitle, error);
-      });
+    void revisionActions
+      .submit()
+      .catch((error) => reportError(actions.revisionUnavailableTitle, error));
+  }, [actions, reportError]);
+  const cancelEdit = useCallback(() => {
+    void revisionActions
+      .cancel()
+      .catch((error) => reportError(actions.revisionUnavailableTitle, error));
   }, [actions, reportError]);
 
   const switchToFullAccessAndRetry = useCallback(
@@ -392,7 +332,7 @@ function SessionTranscript(props: SessionViewProps) {
         >
           <div className="chat-feed mx-auto w-full max-w-[var(--chat-feed-max)] px-4 pb-8 pt-4">
             {!feed.observationReady && turns.length === 0 && <ChatSkeleton />}
-            {feed.observationReady && turns.length === 0 && (
+            {feed.observationReady && turns.length === 0 && feed.transientMessages.length === 0 && (
               <p className="py-16 text-center text-sm text-text-muted" role="status">
                 {copy.feed.empty}
               </p>
@@ -419,56 +359,68 @@ function SessionTranscript(props: SessionViewProps) {
               );
               const refusal = revisionRefusalFor(message);
               return (
-                <TranscriptTurn
-                  key={turn.turnId}
-                  turn={turn}
-                  live={live.turnId === turn.turnId}
-                  runningStatus={shellLive.showRunningStatus}
-                  footerActions={presentation.footerActionsByTurn[turn.turnId] ?? []}
-                  {...(presentation.lineageBadgesByTurn[turn.turnId]
-                    ? { lineageBadges: presentation.lineageBadgesByTurn[turn.turnId] }
-                    : {})}
-                  {...(presentation.failedReasonLabels[turn.turnId]
-                    ? { failedReasonLabel: presentation.failedReasonLabels[turn.turnId] }
-                    : {})}
-                  {...(presentation.failedSeverities[turn.turnId]
-                    ? { failedSeverity: presentation.failedSeverities[turn.turnId] }
-                    : {})}
-                  {...(presentation.failedExecutionStateLabels[turn.turnId]
-                    ? {
-                        failedExecutionStateLabel:
-                          presentation.failedExecutionStateLabels[turn.turnId],
-                      }
-                    : {})}
-                  highlighted={highlightedTurnId === turn.turnId}
-                  toolContext={toolContext}
-                  onFooterAction={onFooterAction}
-                  onOpenLineage={onOpenLineage}
-                  {...(message && !refusal && !draft ? { onEditUserMessage: beginEdit } : {})}
-                  {...(refusal
-                    ? {
-                        editDisabledReason:
-                          refusal === 'attachments'
-                            ? actions.revisionAttachmentsUnsupported
-                            : actions.revisionTransformedTextUnsupported,
-                      }
-                    : {})}
-                  {...(editingThisTurn
-                    ? {
-                        editing: true,
-                        editText: draft.text,
-                        onEditTextChange: (text: string) => revisionDraftStore.setText(text),
-                        onEditSubmit: submitEdit,
-                        onEditCancel: () => revisionDraftStore.cancel(),
-                        editPending: draft.phase !== 'editing',
-                      }
-                    : {})}
-                  onSwitchToFullAccessAndRetry={switchToFullAccessAndRetry(turn.turnId)}
-                  {...(switchingToolUseId ? { switchingToolUseId } : {})}
-                  onOpenExternal={toolContext.onOpenExternal}
-                />
+                <Fragment key={turn.turnId}>
+                  {transientPlacement.before.get(turn.turnId)?.map((message) => (
+                    <TransientMessageRow key={message.id} message={message} />
+                  ))}
+                  <TranscriptTurn
+                    turn={turn}
+                    live={live.turnId === turn.turnId}
+                    runningStatus={shellLive.showRunningStatus}
+                    footerActions={presentation.footerActionsByTurn[turn.turnId] ?? []}
+                    {...(presentation.lineageBadgesByTurn[turn.turnId]
+                      ? { lineageBadges: presentation.lineageBadgesByTurn[turn.turnId] }
+                      : {})}
+                    {...(presentation.failedReasonLabels[turn.turnId]
+                      ? { failedReasonLabel: presentation.failedReasonLabels[turn.turnId] }
+                      : {})}
+                    {...(presentation.failedSeverities[turn.turnId]
+                      ? { failedSeverity: presentation.failedSeverities[turn.turnId] }
+                      : {})}
+                    {...(presentation.failedExecutionStateLabels[turn.turnId]
+                      ? {
+                          failedExecutionStateLabel:
+                            presentation.failedExecutionStateLabels[turn.turnId],
+                        }
+                      : {})}
+                    highlighted={highlightedTurnId === turn.turnId}
+                    toolContext={toolContext}
+                    onFooterAction={onFooterAction}
+                    onOpenLineage={onOpenLineage}
+                    {...(message && !refusal && !draft ? { onEditUserMessage: beginEdit } : {})}
+                    {...(refusal
+                      ? {
+                          editDisabledReason:
+                            refusal === 'attachments'
+                              ? actions.revisionAttachmentsUnsupported
+                              : actions.revisionTransformedTextUnsupported,
+                        }
+                      : {})}
+                    {...(editingThisTurn
+                      ? {
+                          editing: true,
+                          editText: draft.text,
+                          onEditTextChange: (text: string) => revisionDraftStore.setText(text),
+                          onEditSubmit: submitEdit,
+                          onEditCancel: cancelEdit,
+                          editPending:
+                            draft.phase === 'preparing' ||
+                            draft.phase === 'sending' ||
+                            draft.cleanupRequested,
+                          editCancelDisabled:
+                            draft.phase === 'sending' || draft.phase === 'uncertain',
+                        }
+                      : {})}
+                    onSwitchToFullAccessAndRetry={switchToFullAccessAndRetry(turn.turnId)}
+                    {...(switchingToolUseId ? { switchingToolUseId } : {})}
+                    onOpenExternal={toolContext.onOpenExternal}
+                  />
+                </Fragment>
               );
             })}
+            {transientPlacement.tail.map((message) => (
+              <TransientMessageRow key={message.id} message={message} />
+            ))}
             {orphanRunningStatus && <TurnRunningStatus />}
           </div>
         </div>
@@ -495,6 +447,8 @@ function SessionTranscript(props: SessionViewProps) {
             onOpenSettings={(section) => props.onOpenSettings?.(section)}
           />
           <RevisionBanner
+            onCancel={cancelEdit}
+            onSubmit={submitEdit}
             sessionId={sessionId}
             onSelectSession={(id) => sessionsStore.select(id)}
           />
@@ -518,6 +472,10 @@ function SessionTranscript(props: SessionViewProps) {
             />
           )}
           {!feed.interactionPending &&
+            !(
+              draft &&
+              (draft.sourceSessionId === sessionId || draft.revisionSessionId === sessionId)
+            ) &&
             !feed.boundaryUnreadable &&
             (props.composerSlot ?? (
               <ChatInput sessionId={sessionId} running={running} onError={reportError} />
@@ -558,4 +516,40 @@ function usePendingTurnActions(
     }
     return keys;
   }, [branching, key, regenerating, sessionId]);
+}
+
+function TransientMessageRow({ message }: { message: TransientUserMessageProjection }) {
+  return (
+    <div key={message.id} data-transient-message-id={message.id} data-message-status="pending">
+      <UserMessageRow
+        messageId={message.id}
+        text={message.text}
+        ts={message.ts}
+        attachments={message.attachments}
+        quotes={message.quotes}
+        directoryReferences={message.directoryReferences}
+        inlineReferences={message.inlineReferences}
+      />
+      {message.deliveryStatus && (
+        <div
+          className="mt-1 flex flex-wrap items-center justify-end gap-2 text-xs text-text-muted"
+          role="status"
+          data-message-delivery-status=""
+        >
+          <span>{message.deliveryStatus}</span>
+          {message.deliveryDetail && <span>{message.deliveryDetail}</span>}
+          {message.deliveryActions?.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              className="cursor-pointer rounded px-2 py-1 text-accent hover:bg-alpha-1"
+              onClick={action.onClick}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }

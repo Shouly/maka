@@ -87,7 +87,7 @@ export interface TranscriptTurnProps {
   failedExecutionStateLabel?: string;
   highlighted?: boolean;
   toolContext: ToolContentContext;
-  onFooterAction: (turnId: string, id: TurnFooterActionId) => void;
+  onFooterAction: (turnId: string, id: TurnFooterActionId) => void | Promise<void>;
   onOpenLineage: (turnId: string) => void;
   onEditUserMessage?: (turnId: string) => void;
   editDisabledReason?: string;
@@ -97,6 +97,7 @@ export interface TranscriptTurnProps {
   onEditSubmit?: () => void;
   onEditCancel?: () => void;
   editPending?: boolean;
+  editCancelDisabled?: boolean;
   onSwitchToFullAccessAndRetry?: (toolUseId: string) => void;
   switchingToolUseId?: string;
   onOpenExternal: (url: string) => void;
@@ -155,6 +156,7 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
           {...(props.onEditTextChange ? { onEditTextChange: props.onEditTextChange } : {})}
           {...(props.onEditSubmit ? { onEditSubmit: props.onEditSubmit } : {})}
           {...(props.onEditCancel ? { onEditCancel: props.onEditCancel } : {})}
+          editCancelDisabled={props.editCancelDisabled}
           {...(props.editPending ? { editPending: true } : {})}
         />
       )}
@@ -202,6 +204,9 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
                 text={entry.message.text}
                 {...(entry.message.ts !== undefined ? { ts: entry.message.ts } : {})}
                 {...(entry.message.quotes ? { quotes: entry.message.quotes } : {})}
+                attachments={entry.message.attachments}
+                directoryReferences={entry.message.directoryReferences}
+                inlineReferences={entry.message.inlineReferences}
               />
             );
           }

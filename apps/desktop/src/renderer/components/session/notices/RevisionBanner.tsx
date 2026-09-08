@@ -35,12 +35,16 @@ import { Anthropicon } from '../../icons/Anthropicon.js';
 import { Button } from '../../ui/button.js';
 import { cn } from '../../../lib/cn.js';
 import { deriveSessionRevisionNavigation } from '../../../lib/ported/session-revisions.js';
+import { getTranscriptCopy } from '../../../locales/transcript-copy.js';
+import { getComposerCopy } from '../../../locales/composer-copy.js';
 import { getDesktopConversationCopy } from '../../../locales/conversation-copy.js';
 import { revisionDraftStore, sessionsStore } from '../../../store/index.js';
 import { versionStepButtonClass } from '../message-action-bar.js';
 
 export const RevisionBanner = memo(function RevisionBanner(props: {
   sessionId: string;
+  onCancel: () => void;
+  onSubmit: () => void;
   onSelectSession: (sessionId: string) => void;
 }) {
   const locale = useUiLocale();
@@ -49,7 +53,9 @@ export const RevisionBanner = memo(function RevisionBanner(props: {
   const draft = useStore(revisionDraftStore, (state) => state.draft);
   const sessions = useStore(sessionsStore, (state) => state.sessions);
   const navigation = deriveSessionRevisionNavigation(sessions, props.sessionId);
-  const showDraft = draft !== undefined && draft.sourceSessionId === props.sessionId;
+  const showDraft =
+    draft !== undefined &&
+    (draft.sourceSessionId === props.sessionId || draft.revisionSessionId === props.sessionId);
 
   if (!showDraft && !navigation) return null;
 
@@ -66,14 +72,22 @@ export const RevisionBanner = memo(function RevisionBanner(props: {
               {actions.revisionBannerTitle}
             </p>
             <p className="mt-0.5 text-sm leading-5 text-text-secondary">
-              {draft.error ?? actions.revisionBannerDetail}
+              {draft.phase === 'uncertain'
+                ? getComposerCopy(locale).send.outcomeUnknownDescription
+                : (draft.error ?? actions.revisionBannerDetail)}
             </p>
           </div>
+          {(draft.phase === 'uncertain' ||
+            (draft.revisionSessionId && draft.phase === 'editing' && !draft.cleanupRequested)) && (
+            <Button size="sm" onClick={props.onSubmit}>
+              {getTranscriptCopy(locale).turn.save}
+            </Button>
+          )}
           <Button
             size="sm"
             variant="secondary"
-            disabled={draft.phase !== 'editing'}
-            onClick={() => revisionDraftStore.cancel()}
+            disabled={draft.phase === 'sending' || draft.phase === 'uncertain'}
+            onClick={props.onCancel}
           >
             {actions.revisionCancelLabel}
           </Button>

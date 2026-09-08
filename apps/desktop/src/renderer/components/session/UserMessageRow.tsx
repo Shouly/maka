@@ -121,6 +121,7 @@ export interface UserMessageRowProps {
   onEditSubmit?: () => void;
   onEditCancel?: () => void;
   editPending?: boolean;
+  editCancelDisabled?: boolean;
 }
 
 export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRowProps) {
@@ -165,6 +166,7 @@ export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRow
         <div className="chat-user-bubble flex flex-col gap-2 rounded-xl bg-alpha-1 px-4 py-2.5">
           <Textarea
             ref={textareaRef}
+            readOnly={props.editPending || props.editCancelDisabled}
             value={props.editText ?? ''}
             aria-label={copy.turn.editTitle}
             onChange={(event) => props.onEditTextChange?.(event.target.value)}
@@ -174,7 +176,7 @@ export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRow
                 event.preventDefault();
                 props.onEditSubmit?.();
               }
-              if (event.key === 'Escape') props.onEditCancel?.();
+              if (event.key === 'Escape' && !props.editCancelDisabled) props.onEditCancel?.();
             }}
             autoFocus
             rows={2}
@@ -186,7 +188,11 @@ export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRow
               <span>{copy.turn.editHint}</span>
             </p>
             <div className="flex shrink-0 items-center gap-2">
-              <Button variant="outline" onClick={() => props.onEditCancel?.()}>
+              <Button
+                variant="outline"
+                disabled={props.editCancelDisabled}
+                onClick={() => props.onEditCancel?.()}
+              >
                 {copy.turn.cancel}
               </Button>
               <Button

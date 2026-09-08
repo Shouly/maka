@@ -30,11 +30,10 @@
 // change of what the main column shows. A row cannot own that, and thirty rows
 // each owning a copy of it would be thirty copies.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useStore } from 'zustand';
-import { useUiLocale } from '@maka/ui';
+import { useUiLocale, MakaUriContext } from '@maka/ui';
 import type { SettingsSection, ThemePreference } from '@maka/core/settings';
-import { Anthropicon } from '../icons/Anthropicon.js';
 import { ConfirmDialog } from '../ui/confirm-dialog.js';
 import { ToastAction } from '../ui/toast.js';
 import { AppLayout } from './AppLayout.js';
@@ -42,6 +41,8 @@ import { Sidebar } from './Sidebar.js';
 import { SessionIdentity } from './SessionIdentity.js';
 import { WindowTitlebar } from './WindowTitlebar.js';
 import { TaskWelcomeContent } from '../welcome/TaskWelcomeContent.js';
+import { composerInputStore } from '../../store/composer-input-store.js';
+import { newComposerKey } from '../composer/ChatInput.js';
 import { SessionView } from '../session/SessionView.js';
 import { ModelSwitcher } from '../session/ModelSwitcher.js';
 import { CommandPalette } from '../palette/CommandPalette.js';
@@ -112,6 +113,10 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
     null,
   );
   const activeId = useStore(sessionsStore, (state) => state.activeId);
+  const localPending = useStore(
+    sessionsStore,
+    (state) => state.sessions.find((row) => row.id === state.activeId)?.localState === 'pending',
+  );
   // The catalog's change events carry more than an invalidation (upstream
   // `handleSessionChange`): a named turn or message change answers whatever
   // turn action was still claimed for that Session, and a Host that rebound
@@ -459,8 +464,22 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
             ? 'session'
             : 'welcome';
 
+  const dispatchInternal = useCallback(
+    (destination: import('@maka/ui/maka-uri').MakaUriDest) => {
+      if (destination.kind === 'settings') openSettings(destination.section);
+      else {
+        const key = activeId ?? newComposerKey(newTaskStore.getState().target);
+        composerInputStore.setText(key, destination.text);
+        requestAnimationFrame(() =>
+          document.querySelector<HTMLElement>('[data-maka-contract="composer-input"]')?.focus(),
+        );
+      }
+    },
+    [activeId, openSettings],
+  );
+
   return (
-    <>
+    <MakaUriContext.Provider value={dispatchInternal}>
       {/* Row 1: the window titlebar — traffic lights, sidebar toggle, search,
           session identity, actions. Everything below starts under it. */}
       <WindowTitlebar
@@ -527,7 +546,7 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
               onOpenSettings={(section) => openSettings(section ?? 'models')}
               onError={reportError}
             />
-            {!workbar.collapsed && (
+            {!workbar.collapsed && !localPending && (
               <WorkbarPane
                 sessionId={activeId}
                 workbar={workbar}
@@ -593,7 +612,7 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
         }}
       />
       <OnboardingRefresh />
-    </>
+    </MakaUriContext.Provider>
   );
 }
 

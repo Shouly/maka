@@ -57,7 +57,7 @@ import { NoticeCard } from './NoticeCard.js';
  * subscription: readiness changes when the user acts on it, and the retry
  * action is what asks again.
  */
-function useSessionReadiness(sessionId: string): {
+function useSessionReadiness(sessionId: string | undefined): {
   snapshot: TaskSubmissionReadinessSnapshot | undefined;
   refresh: () => void;
 } {
@@ -66,6 +66,7 @@ function useSessionReadiness(sessionId: string): {
   useEffect(() => {
     let cancelled = false;
     setSnapshot(undefined);
+    if (!sessionId) return;
     void getTaskReadinessSnapshot(undefined, sessionId)
       .then((result) => {
         if (!cancelled) setSnapshot(result);
@@ -118,7 +119,9 @@ export function SessionNotices(props: {
   );
   const transcriptLoading = useStore(activeSessionStore, (state) => state.loading);
   const pending = useStore(turnActionsStore, (state) => pendingActionsOf(state, props.sessionId));
-  const readiness = useSessionReadiness(props.sessionId);
+  const readiness = useSessionReadiness(
+    session?.localState === 'pending' ? undefined : props.sessionId,
+  );
   const [dismissedCompaction, setDismissedCompaction] = useState<
     ContextCompactionOutcome | undefined
   >(undefined);

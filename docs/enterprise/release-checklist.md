@@ -89,6 +89,16 @@ unreadable boundary) landed the same day. Still open, in the order to fix:
   chose one; catalog change events clear outlived turn-action claims and
   announce a model rebound; display events flush at seed completion; the
   streaming-settle fallback runs; the last new-task model is persisted.)
+- Core regression fixes after Batch 3: cancelling revision preparation aborts
+  the operation and cleans its copy; an uncertain submission retains the copy
+  and message id for retry (it is never abandoned merely because its reply was
+  lost). Queue edits retain their starting revision. Optimistic and queued
+  messages merge by id and render outside durable turns. (Codex's "replace the
+  consumer on send" was reverted: the navigation intent lives on the Session's
+  replica in main, so a new consumer still followed history; the upstream
+  followTail navigation ordered ahead of the send stays.) Alt+Enter, final-answer copy, and steering attachment/reference presentation
+  follow upstream. Markdown escapes raw HTML and restores typed internal links,
+  mail links, session attachment images, and strict budgeted Mermaid rendering.
 - Still open from the audit: the slash-command catalog port has no caller
   (`/compact` is hard-coded; `/side` `/graph` `/swarm` are deferred anyway);
   `orchestrationMode` is not part of the new-task draft.
@@ -114,8 +124,9 @@ unreadable boundary) landed the same day. Still open, in the order to fix:
   through the desktop outbox, but the renderer does not show pending local messages
   or recover from the desktop transcript cache when the live endpoint is unavailable.
   Phase 6 verifies durable delivery/restart and separately records these UI gaps.
-- Carried from Phase 3: thinking-block duration, mermaid and `attachment://`
-  images in markdown, branch banner / goal chip placement.
+- Carried from Phase 3: thinking-block duration, branch banner / goal chip placement.
+  Markdown attachment resources use the current upstream `maka://runtime/attachments/<id>`
+  protocol; the earlier `attachment://` wording was stale.
 - Phase 5a: per-request usage log grid; Runtime Host add form is TLS/plain
   only (SSH/WSL wizards deferred); no "open logs folder" on About.
 - Phase 5b: the relay-profile editor ships only its thinking levels (vision,

@@ -59,9 +59,11 @@ import {
   sessionsStore,
   turnActionsStore,
   connectionsStore,
+  settingsStore,
 } from '../../store/index.js';
 import { newTaskStore } from '../../store/new-task-store.js';
 import { pendingActionsOf } from '../../store/turn-actions-store.js';
+import { parseDesktopSlashCommand } from '../../lib/ported/desktop-slash-command.js';
 import { serializeComposer } from '../../lib/composer-document.js';
 import {
   COMPOSER_META_CHIP,
@@ -82,6 +84,8 @@ import {
 } from '../../bridge/attachments.js';
 import { getTaskReadinessSnapshot } from '../../bridge/task-readiness.js';
 import { getNewTaskReadiness, type DesktopNewTaskTarget } from '../../bridge/new-tasks.js';
+import { listLocalMessages } from '../../bridge/session-local.js';
+import { getSessionLocalCopy } from '../../locales/session-local-copy.js';
 import { removeSession } from '../../bridge/sessions.js';
 import { armGoal, getGoal } from '../../bridge/goal.js';
 import { getComposerCopy } from '../../locales/composer-copy.js';
@@ -164,8 +168,20 @@ function OwnedChatInput(props: {
   const draft = useStore(composerInputStore, (s) => s.drafts[scopeKey] ?? EMPTY_INPUT);
   const quotes = useStore(composerDraftStore, (s) => s.quotes[scopeKey] ?? NO_QUOTES);
   const session = useStore(sessionsStore, (s) => s.sessions.find((row) => row.id === sessionId));
+  const localPending = session?.localState === 'pending';
+  const hostSessionId = localPending ? undefined : sessionId;
+  const localTarget =
+    localPending && session
+      ? {
+          profileId: session.profileId,
+          hostId: session.runtimeHostId,
+          projectId: session.projectId ?? null,
+        }
+      : undefined;
+  const scopedDefaults = useStore(settingsStore.host, (state) => state.data?.chatDefaults);
   const newTask = useStore(newTaskStore);
   const connections = useStore(connectionsStore, (s) => s.data);
+  const readinessRevision = useStore(connectionsStore, (state) => state.revision);
   const pending = useStore(turnActionsStore, (s) => pendingActionsOf(s, sessionId));
 
   const [busy, setBusy] = useState(false);
@@ -197,12 +213,12 @@ function OwnedChatInput(props: {
   useEffect(() => {
     let current = true;
     setReady(undefined);
-    const read = sessionId
-      ? getTaskReadinessSnapshot(undefined, sessionId)
-      : props.target
-        ? getNewTaskReadiness(props.target, {
-            connectionSlug: newTask.model?.llmConnectionSlug,
-            model: newTask.model?.model,
+    const read = hostSessionId
+      ? getTaskReadinessSnapshot(undefined, hostSessionId)
+      : (localTarget ?? props.target)
+        ? getNewTaskReadiness((localTarget ?? props.target)!, {
+            connectionSlug: session?.llmConnectionSlug ?? newTask.model?.llmConnectionSlug,
+            model: session?.model ?? newTask.model?.model,
           })
         : Promise.resolve(undefined);
     void read
@@ -215,7 +231,15 @@ function OwnedChatInput(props: {
     return () => {
       current = false;
     };
-  }, [sessionId, session?.revision, newTask.model?.llmConnectionSlug, newTask.model?.model]);
+  }, [
+    sessionId,
+    session?.revision,
+    localPending,
+    newTask.model?.llmConnectionSlug,
+    newTask.model?.model,
+    readinessRevision,
+    newTask.connections,
+  ]);
 
   const wire = serializeComposer(draft.document);
   const patch = (update: Partial<InputDraft>) => composerInputStore.patch(scopeKey, update);
@@ -237,7 +261,22 @@ function OwnedChatInput(props: {
 
   // Settings shown in the control row: the Session's own once it exists,
   // the draft's until then.
-  const mode = session?.permissionMode ?? draft.permission;
+  const selectedProfile = newTask.catalog?.hosts.find(
+    (host) => host.profile.id === props.target?.profileId,
+  )?.profile;
+  const directoryHostId = sessionId
+    ? session?.profileKind === 'local'
+      ? session.runtimeHostId
+      : undefined
+    : selectedProfile?.kind === 'local'
+      ? props.target?.hostId
+      : undefined;
+  const canStageContext = Boolean(sessionId || props.target);
+  const mode =
+    (localPending ? scopedDefaults?.permissionMode : session?.permissionMode) ??
+    (draft.permissionChosen
+      ? draft.permission
+      : (newTask.defaults?.permissionMode ?? draft.permission));
   const plan = session ? session.collaborationMode === 'plan' : draft.plan;
   const activeChoice = (session ? connections : newTask.connections)?.chatModelChoices.find(
     (choice) =>
@@ -261,12 +300,15 @@ function OwnedChatInput(props: {
   const blocked =
     !sessionId && !props.target
       ? copy.send.blockedNoWorkspace
-      : !sessionId && !newTask.model
+      : !sessionId && newTask.connections && !newTask.model
         ? copy.send.blockedNoModel
         : ready === false
           ? copy.send.blockedReadiness
           : undefined;
-  const canSend = !disabled && !blocked && hasContent;
+  // A target whose connection catalog has not answered yet is neither
+  // blocked nor sendable: the hint would be a lie, the send a guess.
+  const targetSettled = Boolean(sessionId || newTask.connections);
+  const canSend = !disabled && !blocked && hasContent && targetSettled;
 
   // -------------------------------------------------------------------------
   // Send
@@ -283,13 +325,20 @@ function OwnedChatInput(props: {
     const sent = composerInputStore.read(scopeKey);
     const serialized = serializeComposer(sent.document);
     const sentQuotes = [...quotes];
+    const capturedNewTask = { target: props.target, model: newTask.model };
     let owner = sessionId;
+    const consumeDraft = (id: string) => {
+      const draftOwner = sessionId ? scopeKey : id;
+      composerInputStore.acknowledge(draftOwner, sent);
+      for (const quote of sentQuotes) composerDraftStore.removeQuote(draftOwner, quote.id);
+      history.rememberSentEntry(serialized.text);
+    };
     // The optimistic copy to withdraw if the send never reaches the Host.
     let optimisticId: string | undefined;
     try {
       preflightAttachmentItems(sent.attachments, locale);
 
-      if (serialized.text === '/compact') {
+      if (parseDesktopSlashCommand(serialized.text)?.kind === 'compact') {
         if (!owner || props.running) throw new Error(copy.slash.notYet);
         await turnActionsStore.compact(owner);
         composerInputStore.acknowledge(scopeKey, sent);
@@ -299,12 +348,13 @@ function OwnedChatInput(props: {
         throw new Error(copy.slash.notYet);
       }
 
-      const readiness = owner
-        ? await getTaskReadinessSnapshot(undefined, owner)
-        : await getNewTaskReadiness(props.target!, {
-            connectionSlug: newTask.model?.llmConnectionSlug,
-            model: newTask.model?.model,
-          });
+      const readiness =
+        owner && !localPending
+          ? await getTaskReadinessSnapshot(undefined, owner)
+          : await getNewTaskReadiness((localTarget ?? props.target)!, {
+              connectionSlug: session?.llmConnectionSlug ?? newTask.model?.llmConnectionSlug,
+              model: session?.model ?? newTask.model?.model,
+            });
       if (!mounted.current) return;
       if (readiness.state !== 'ready') throw new Error(copy.send.blockedReadiness);
 
@@ -313,11 +363,17 @@ function OwnedChatInput(props: {
       if (!owner) {
         // Everything the draft chose travels with the create: the Host's
         // configured permission default stands unless the user picked one.
-        const created = await newTaskStore.create({
-          ...(sent.permissionChosen ? { permissionMode: sent.permission } : {}),
-          ...(sent.thinking ? { thinkingLevel: sent.thinking } : {}),
-          ...(sent.plan ? { collaborationMode: 'plan' as const } : {}),
-        });
+        const created = await newTaskStore.create(
+          {
+            ...(sent.permissionChosen ? { permissionMode: sent.permission } : {}),
+            ...(sent.thinking && thinkingLevels.includes(sent.thinking)
+              ? { thinkingLevel: sent.thinking }
+              : {}),
+            collaborationMode: sent.plan ? 'plan' : 'agent',
+            orchestrationMode: 'default',
+          },
+          capturedNewTask,
+        );
         if (!mounted.current) {
           // The user left the welcome surface mid-creation; do not leave an
           // empty Session behind.
@@ -329,7 +385,6 @@ function OwnedChatInput(props: {
         // The draft and its quotes now belong to the Session.
         composerInputStore.transfer(scopeKey, owner);
         composerDraftStore.transferQuotes(scopeKey, owner);
-        sessionsStore.select(owner);
       }
 
       // The message is on screen before the Host has it (upstream
@@ -349,6 +404,7 @@ function OwnedChatInput(props: {
         inlineReferences: [],
         transientPlacement,
       });
+      if (!sessionId) sessionsStore.select(owner);
       optimisticId = messageId;
       const result = await turnActionsStore.submit(owner, transientPlacement, {
         text: serialized.text,
@@ -361,13 +417,26 @@ function OwnedChatInput(props: {
         messageId,
       });
       // After a transfer the draft lives under the new Session's key.
-      const draftOwner = sessionId ? scopeKey : owner;
       if (!result.ok) {
         // `outcome_unknown` may still have been admitted; only a refusal is
         // certain not to appear, so only that withdraws the optimistic copy.
         if (result.reason === 'outcome_unknown') {
           optimisticId = undefined;
-          throw new Error(copy.send.outcomeUnknownDescription);
+          // Upstream treats this as an unresolved submission, not an editable
+          // unsent draft. Keep its row/id, but do not invite a new send on reload.
+          consumeDraft(owner);
+          activeSessionStore.updateTransientMessage(owner, {
+            id: messageId,
+            ts: Date.now(),
+            text: serialized.text,
+            inlineReferences: [],
+            attachments: retainedAttachmentRefs(sent.attachments),
+            directoryReferences: [...sent.directories],
+            quotes: sentQuotes.map(({ id: _id, ...quote }) => quote),
+            transientPlacement,
+            deliveryStatus: getSessionLocalCopy(locale).unknown,
+          });
+          return;
         }
         // The Host blocked every `/skill:x` in the message: the toast names
         // each one and why, the composer keeps the draft with a short reason.
@@ -376,8 +445,19 @@ function OwnedChatInput(props: {
         showSkillInvocationFeedback(locale, toastApi, result.skillInvocation, owner);
         composerInputStore.patch(sessionId ? scopeKey : owner, {
           error: copy.send.skillFailedFallback,
+          intent: undefined,
         });
-        if (!sessionId && mounted.current) sessionsStore.select(owner);
+        if (
+          !sessionId &&
+          sessionsStore.getState().activeId === owner &&
+          composerDraftStore.quotesFor(scopeKey).length === 0 &&
+          composerInputStore.restoreTransfer(owner, scopeKey)
+        ) {
+          composerDraftStore.transferQuotes(owner, scopeKey);
+          sessionsStore.select(undefined);
+          await removeSession(owner).catch(() => undefined);
+          void sessionsStore.refresh();
+        }
         return;
       }
       // A skill that loaded beside one that did not is a partial success the
@@ -400,14 +480,27 @@ function OwnedChatInput(props: {
           ...(result.turnId ? { hostTurnId: result.turnId } : {}),
         });
       }
-      composerInputStore.acknowledge(draftOwner, sent);
-      for (const quote of sentQuotes) composerDraftStore.removeQuote(draftOwner, quote.id);
-      history.rememberSentEntry(serialized.text);
+      consumeDraft(owner);
       if (mounted.current && result.disposition === 'steering') {
         setStatus(copy.send.steeredTitle);
       }
     } catch (cause) {
-      if (owner && optimisticId) activeSessionStore.removeTransientMessage(owner, optimisticId);
+      if (owner && optimisticId) {
+        const observed = activeSessionStore.getState();
+        const committed =
+          observed.sessionId === owner &&
+          observed.messages.some((message) => message.id === optimisticId);
+        const saved =
+          committed ||
+          (await listLocalMessages(owner)
+            .then((messages) => messages.some((message) => message.messageId === optimisticId))
+            .catch(() => false));
+        if (saved) {
+          consumeDraft(owner);
+          return;
+        }
+        activeSessionStore.removeTransientMessage(owner, optimisticId);
+      }
       // A failed first send still leaves a real, selected Session with the
       // draft in it — never an invisible lost message.
       if (!sessionId && owner && mounted.current) sessionsStore.select(owner);
@@ -451,6 +544,10 @@ function OwnedChatInput(props: {
 
   /** Files from a drop or a paste. */
   const stageFiles = (files: readonly File[]) => {
+    if (!canStageContext) {
+      report(new Error(copy.send.blockedNoWorkspace));
+      return;
+    }
     if (disabled || props.running) {
       report(new Error(copy.drop.rejectedWhileRunning), copy.attachments.pickFailedTitle);
       return;
@@ -482,6 +579,7 @@ function OwnedChatInput(props: {
 
   /** Files from the native picker: main hands back approval ids, not bytes. */
   async function pickFiles() {
+    if (!canStageContext) return;
     try {
       const result = await pickAttachmentFiles();
       if (!mounted.current || !result.ok) return;
@@ -524,9 +622,12 @@ function OwnedChatInput(props: {
   }
 
   async function pickDirectory() {
+    if (!directoryHostId) return;
     try {
       const result = await pickAttachmentDirectory();
       if (!mounted.current || !result.ok) return;
+      if (result.reference.hostId !== directoryHostId)
+        throw new Error(copy.directories.pickFailedTitle);
       const current = composerInputStore.read(scopeKey).directories;
       const duplicate = current.some(
         (d) => d.hostId === result.reference.hostId && d.path === result.reference.path,
@@ -709,8 +810,8 @@ function OwnedChatInput(props: {
 
           <TipTapEditor
             scopeKey={scopeKey}
-            sessionId={sessionId}
-            target={props.target}
+            sessionId={hostSessionId}
+            target={localTarget ?? props.target}
             document={draft.document}
             onChange={(document) => {
               patch({ document, error: undefined });
@@ -722,6 +823,12 @@ function OwnedChatInput(props: {
             }}
             onSubmit={(mode) => void submit(mode)}
             onStop={stopTurn}
+            skillContext={{
+              llmConnectionSlug: newTask.model?.llmConnectionSlug,
+              model: newTask.model?.model,
+              collaborationMode: plan ? 'plan' : 'agent',
+              permissionMode: mode === 'explore' ? undefined : mode,
+            }}
             onCommand={(command) => {
               if (command === 'compact' && sessionId) {
                 void turnActionsStore.compact(sessionId).catch(report);
@@ -740,13 +847,13 @@ function OwnedChatInput(props: {
             <IconControl
               icon="attach"
               label={common.composer.addFileOrDirectory}
-              disabled={disabled || props.running}
+              disabled={disabled || props.running || !canStageContext}
               onClick={() => void pickFiles()}
             />
             <IconControl
               icon="folder"
               label={common.composer.referenceFolder}
-              disabled={disabled || props.running}
+              disabled={disabled || props.running || !directoryHostId}
               onClick={() => void pickDirectory()}
             />
             <IconControl
@@ -766,7 +873,7 @@ function OwnedChatInput(props: {
             <ComposerSelect
               label={common.permissions.modeAriaLabel(common.permissions.mode[mode].label)}
               value={mode}
-              disabled={disabled || props.running || pending.includes('permission')}
+              disabled={disabled || props.running || localPending || pending.includes('permission')}
               onChange={(value) => {
                 const next = value as PermissionMode;
                 // Full access is confirmed first; the dialog applies it.
@@ -781,8 +888,16 @@ function OwnedChatInput(props: {
             {thinkingLevels.length > 0 && (
               <ComposerSelect
                 label={common.model.thinkingLevel}
-                value={session?.thinkingLevel ?? draft.thinking ?? ''}
-                disabled={disabled || props.running || pending.includes('thinking')}
+                value={
+                  session
+                    ? (session.thinkingLevel ?? '')
+                    : (draft.thinking ??
+                      (newTask.defaults?.thinkingLevel &&
+                      thinkingLevels.includes(newTask.defaults.thinkingLevel)
+                        ? newTask.defaults.thinkingLevel
+                        : ''))
+                }
+                disabled={disabled || props.running || localPending || pending.includes('thinking')}
                 onChange={(value) => setThinking((value || undefined) as ThinkingLevel | undefined)}
                 options={[
                   { value: '', label: common.model.defaultLevel },
@@ -796,7 +911,7 @@ function OwnedChatInput(props: {
             <button
               type="button"
               aria-pressed={plan}
-              disabled={disabled || props.running}
+              disabled={disabled || props.running || localPending}
               onClick={togglePlan}
               className={cn(
                 COMPOSER_META_CHIP,
@@ -807,7 +922,7 @@ function OwnedChatInput(props: {
             </button>
             <GoalControl
               sessionId={sessionId}
-              disabled={disabled || props.running || Boolean(blocked)}
+              disabled={disabled || props.running || localPending || Boolean(blocked)}
               busy={busy}
               onBusy={(value) => {
                 lock.current = value;
@@ -816,7 +931,7 @@ function OwnedChatInput(props: {
               onStatus={setStatus}
               onError={report}
             />
-            {sessionId && <ContextUsageIndicator sessionId={sessionId} />}
+            {hostSessionId && <ContextUsageIndicator sessionId={hostSessionId} />}
 
             <span className="ml-auto flex items-center gap-1">
               {props.running && (

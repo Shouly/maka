@@ -25,7 +25,6 @@ import {
   useTranscriptProjection,
   useUiLocale,
   type LiveTurnProjection,
-  type TransientUserMessageProjection,
   type TurnViewModel,
 } from '@maka/ui';
 import { deriveLiveTurnSnapshot } from '../lib/ported/live-turn-snapshot.js';
@@ -73,6 +72,11 @@ export function useRendererStores(): void {
       return row ? { hostId: row.runtimeHostId, profileId: row.profileId } : undefined;
     }),
   );
+  const localPending = useStore(
+    sessionsStore,
+    (s) => s.sessions.find((row) => row.id === s.activeId)?.localState === 'pending',
+  );
+  const hostSessionId = localPending ? undefined : activeId;
   const projectIdentity = useStore(
     sessionsStore,
     useShallow((s) => {
@@ -85,8 +89,8 @@ export function useRendererStores(): void {
   const host = activeId ? selectedHost : defaultHost;
   useEffect(startRendererStores, []);
   useLayoutEffect(
-    () => activeSessionStore.observe(activeId, locale),
-    [activeId, locale, selectedHost?.profileId, hostRevision],
+    () => activeSessionStore.observe(activeId, locale, localPending),
+    [activeId, locale, selectedHost?.profileId, hostRevision, localPending],
   );
   useEffect(() => {
     uiStore.dispatchWorkbar({ type: 'activate-session', sessionId: activeId });
@@ -104,22 +108,22 @@ export function useRendererStores(): void {
       settingsStore.host.disconnect();
       return;
     }
-    const offConnections = connectionsStore.observe(activeId, host);
+    const offConnections = connectionsStore.observe(hostSessionId, host);
     const offSettings = settingsStore.observeHost(host);
     return () => {
       offConnections();
       offSettings();
     };
-  }, [activeId, host?.profileId, host?.hostId, hostRevision]);
+  }, [hostSessionId, host?.profileId, host?.hostId, hostRevision]);
   useLayoutEffect(() => {
-    if (!activeId || !host) {
+    if (!hostSessionId || !host) {
       projectsStore.active.disconnect();
       projectsStore.activeInfo.disconnect();
       return;
     }
-    return projectsStore.connectActive(activeId, host);
+    return projectsStore.connectActive(hostSessionId, host);
   }, [
-    activeId,
+    hostSessionId,
     host?.profileId,
     host?.hostId,
     hostRevision,
@@ -137,56 +141,16 @@ export function useActiveTurns() {
     useShallow((s) => ({
       sessionId: s.sessionId,
       messages: s.messages,
-      transientMessages: s.transientMessages,
       liveTurn: s.sessionId ? s.liveTurns[s.sessionId] : undefined,
       shellRunUpdates: s.shellUpdates,
     })),
   );
-  const { transientMessages, ...projected } = input;
-  const messages = useMemo(
-    () => withTransientUserMessages(projected.messages, transientMessages),
-    [projected.messages, transientMessages],
-  );
   const turns = useTranscriptProjection(
     input.sessionId === selectedId
-      ? { ...projected, messages, locale }
+      ? { ...input, locale }
       : { sessionId: selectedId, locale, messages: NO_MESSAGES },
   );
   return useLiveStatusOverlay(turns, input.sessionId === selectedId ? input.liveTurn : undefined);
-}
-
-/**
- * The user's unacknowledged sends, appended to the durable transcript as the
- * user messages they are about to become.
- *
- * Until the Host names a Turn for one, it is its own Turn at the tail, which
- * is where the reader expects the message they just typed. The projection
- * only ever sees StoredMessages, so this is the one place a transient one is
- * dressed as durable; it is never written back anywhere.
- */
-function withTransientUserMessages(
-  durable: readonly StoredMessage[],
-  transient: readonly TransientUserMessageProjection[],
-): readonly StoredMessage[] {
-  if (transient.length === 0) return durable;
-  return [
-    ...durable,
-    ...transient.map(
-      (message): StoredMessage => ({
-        type: 'user',
-        id: message.id,
-        turnId: message.hostTurnId ?? `transient:${message.id}`,
-        ts: message.ts,
-        text: message.text,
-        ...(message.attachments?.length ? { attachments: [...message.attachments] } : {}),
-        ...(message.directoryReferences?.length
-          ? { directoryReferences: [...message.directoryReferences] }
-          : {}),
-        ...(message.quotes?.length ? { quotes: [...message.quotes] } : {}),
-        inlineReferences: [...(message.inlineReferences ?? [])],
-      }),
-    ),
-  ];
 }
 
 /**
@@ -263,7 +227,10 @@ export function useShellLiveTurn(sessionId: string | undefined): {
   );
   const submitting = useStore(
     activeSessionStore,
-    (s) => s.sessionId === sessionId && s.transientMessages.length > 0,
+    (s) =>
+      s.sessionId === sessionId &&
+      (s.transientMessages.some((message) => message.deliveryStatus === undefined) ||
+        s.localMessages.some((message) => message.state === 'sending')),
   );
   const activeStreamingLive = live.hasStreamingText && live.streamingMessageId === undefined;
   const turnActive = deriveTurnActive({

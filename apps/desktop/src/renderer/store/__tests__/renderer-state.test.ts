@@ -1118,3 +1118,67 @@ test('a selected task disappears from the active surface when archived', async (
   await store.refresh();
   assert.equal(store.getState().activeId, undefined);
 });
+
+test('Host queue and optimistic intent merge by message id and retire together', async () => {
+  const f = fakeRuntime();
+  const id = sid('merged');
+  f.store.observe(id, 'en');
+  await tick();
+  f.store.showTransientUserMessage(id, {
+    id: 'm-merge',
+    ts: 1,
+    text: 'local',
+    inlineReferences: [],
+    transientPlacement: 'current_turn',
+  });
+  f.observers[0]!.event({
+    type: 'queue_update',
+    id: 'q-merge',
+    turnId: 'host-turn',
+    ts: 2,
+    queueRevision: 1,
+    steering: ['m-merge'],
+    followup: [],
+    steeringEntries: [
+      {
+        entryId: 'entry',
+        messageId: 'm-merge',
+        placement: 'current_turn',
+        state: 'queued',
+        content: { text: 'host text' },
+      },
+    ],
+    followupEntries: [],
+  } as unknown as SessionEvent);
+  assert.equal(f.store.getState().transientMessages.length, 1);
+  assert.equal(f.store.getState().transientMessages[0]?.hostTurnId, 'host-turn');
+  assert.equal(f.store.getState().transientMessages[0]?.text, 'host text');
+  f.readers[0]!.receive(
+    batch(id, [{ type: 'user', id: 'm-merge', turnId: 'host-turn', ts: 2, text: 'host text' }]),
+  );
+  assert.deepEqual(f.store.getState().transientMessages, []);
+  f.store.disconnect();
+});
+
+test('a locally pending session displays its first message without querying a nonexistent Host session', async () => {
+  const f = fakeRuntime();
+  const id = sid('local-pending');
+  f.store.showTransientUserMessage(id, {
+    id: 'first',
+    ts: 1,
+    text: 'first request',
+    inlineReferences: [],
+    transientPlacement: 'current_turn',
+  });
+  f.store.observe(id, 'en', true);
+  await tick();
+  assert.equal(f.observers.length, 0);
+  assert.equal(f.readers.length, 0);
+  assert.equal(f.store.getState().transientMessages[0]?.text, 'first request');
+  assert.equal(f.store.getState().loading, false);
+  f.store.observe(id, 'en', false);
+  await tick();
+  assert.equal(f.observers.length, 1);
+  assert.equal(f.readers.length, 1);
+  f.store.disconnect();
+});

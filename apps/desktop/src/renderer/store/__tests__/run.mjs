@@ -34,6 +34,8 @@ try {
     'phase5b-state.test.ts',
     'composer-state.test.ts',
     'presentation.test.tsx',
+    'core-dialogue.test.ts',
+    'local-messages.test.ts',
   ].map((name) => fileURLToPath(new URL(name, import.meta.url)));
   const files = [
     'renderer-state.test.mjs',
@@ -44,6 +46,8 @@ try {
     'phase5b-state.test.mjs',
     'composer-state.test.mjs',
     'presentation.test.mjs',
+    'core-dialogue.test.mjs',
+    'local-messages.test.mjs',
   ].map((name) => join(output, name));
   await build({
     entryPoints: entries,

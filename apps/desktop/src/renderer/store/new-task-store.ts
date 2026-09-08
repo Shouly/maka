@@ -27,6 +27,7 @@
 // step with it, so the picker, the readiness banner and the model chip can
 // never disagree about which Host and project they are describing.
 
+import { getHostSettings, type RuntimeHostAppSettings } from '../bridge/settings.js';
 import { createStore } from 'zustand/vanilla';
 import type { TaskSubmissionReadinessSnapshot } from '@maka/core/task-submission-readiness';
 import type { ChatModelChoice } from '@maka/core/chat-model-choice';
@@ -74,6 +75,7 @@ export interface NewTaskState {
   model: NewChatModel | undefined;
   loading: boolean;
   creating: boolean;
+  defaults: RuntimeHostAppSettings['chatDefaults'] | undefined;
   error: string | undefined;
 }
 
@@ -85,6 +87,7 @@ const initial = (): NewTaskState => ({
   model: undefined,
   loading: false,
   creating: false,
+  defaults: undefined,
   error: undefined,
 });
 
@@ -174,7 +177,7 @@ function sameTarget(
   );
 }
 
-export function createNewTaskStore(bridge = api) {
+export function createNewTaskStore(bridge = api, readSettings = getHostSettings) {
   const store = createStore<NewTaskState>(initial);
   // Two generations: the catalog is Host-wide, the per-target reads are not.
   let catalogGeneration = 0;
@@ -183,15 +186,19 @@ export function createNewTaskStore(bridge = api) {
 
   async function loadTargetScopedReads(target: DesktopNewTaskTarget): Promise<void> {
     const request = ++targetGeneration;
-    const [connections, readiness] = await Promise.allSettled([
+    const [connections, readiness, settings] = await Promise.allSettled([
       bridge.getNewTaskConnections({ profileId: target.profileId, hostId: target.hostId }),
       bridge.getNewTaskReadiness(target),
+      Promise.resolve().then(() =>
+        readSettings({ profileId: target.profileId, hostId: target.hostId }),
+      ),
     ]);
     if (request !== targetGeneration) return;
     store.setState((state) => {
-      const snapshot = connections.status === 'fulfilled' ? connections.value : state.connections;
+      const snapshot = connections.status === 'fulfilled' ? connections.value : undefined;
       return {
         connections: snapshot,
+        defaults: settings.status === 'fulfilled' ? settings.value.chatDefaults : undefined,
         readiness: readiness.status === 'fulfilled' ? readiness.value : undefined,
         // Keep the sticky choice when it is still offered; otherwise fall back
         // to this connection catalog's own default.
@@ -250,7 +257,7 @@ export function createNewTaskStore(bridge = api) {
     refresh: refreshCatalog,
     selectTarget(target: DesktopNewTaskTarget) {
       if (sameTarget(store.getState().target, target)) return;
-      store.setState({ target, readiness: undefined });
+      store.setState({ target, readiness: undefined, connections: undefined, defaults: undefined });
       void loadTargetScopedReads(target);
     },
     selectModel(model: NewChatModel) {
@@ -298,8 +305,9 @@ export function createNewTaskStore(bridge = api) {
           'permissionMode' | 'thinkingLevel' | 'collaborationMode' | 'orchestrationMode'
         >
       > = {},
+      captured?: Pick<NewTaskState, 'target' | 'model'>,
     ) {
-      const state = store.getState();
+      const state = captured ?? store.getState();
       if (!state.target) throw new Error('No workspace is selected for the new task');
       store.setState({ creating: true, error: undefined });
       try {
@@ -314,7 +322,8 @@ export function createNewTaskStore(bridge = api) {
           ...input,
         });
       } catch (error) {
-        store.setState({ error: errorMessage(error) });
+        if (sameTarget(store.getState().target, state.target))
+          store.setState({ error: errorMessage(error) });
         throw error;
       } finally {
         store.setState({ creating: false });

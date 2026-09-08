@@ -42,11 +42,13 @@ import { Node, mergeAttributes, type JSONContent, type Editor } from '@tiptap/co
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import { getConversationCopy, useUiLocale, mentionQueryMatches, skillMentionQuery } from '@maka/ui';
+import { desktopSlashCommandAvailability } from '../../lib/ported/desktop-slash-command.js';
 import { searchWorkspaceFiles } from '../../bridge/workspace.js';
 import {
   searchNewTaskFiles,
   listNewTaskInvocableSkills,
   type DesktopNewTaskTarget,
+  type NewTaskSkillContext,
 } from '../../bridge/new-tasks.js';
 import { listInvocableSkills } from '../../bridge/skills.js';
 import { Anthropicon } from '../icons/Anthropicon.js';
@@ -112,6 +114,7 @@ export function TipTapEditor(props: {
   scopeKey: string;
   sessionId?: string;
   target?: DesktopNewTaskTarget;
+  skillContext?: NewTaskSkillContext;
   document: JSONContent;
   onChange: (doc: JSONContent) => void;
   /** `steer` is the one-shot Shift+Enter into the running turn. */
@@ -290,7 +293,7 @@ export function TipTapEditor(props: {
       const skills = props.sessionId
         ? await listInvocableSkills(props.sessionId)
         : props.target
-          ? await listNewTaskInvocableSkills(props.target)
+          ? await listNewTaskInvocableSkills(props.target, props.skillContext)
           : [];
       const matches: Suggestion[] = skills
         .filter((skill) =>
@@ -310,8 +313,10 @@ export function TipTapEditor(props: {
       // and only when a turn can accept it.
       if (
         query.atStart &&
-        props.sessionId &&
-        !props.running &&
+        desktopSlashCommandAvailability({
+          hasSession: Boolean(props.sessionId),
+          streaming: props.running === true,
+        })({ id: 'compact', session: 'required' }) &&
         'compact'.startsWith(query.text.toLowerCase())
       ) {
         matches.unshift({ kind: 'command', value: 'compact', ...local.slash.command.compact });
@@ -332,7 +337,17 @@ export function TipTapEditor(props: {
       current = false;
       clearTimeout(timer);
     };
-  }, [query?.kind, query?.text, props.scopeKey, locale, props.running]);
+  }, [
+    query?.kind,
+    query?.text,
+    props.scopeKey,
+    locale,
+    props.running,
+    props.skillContext?.llmConnectionSlug,
+    props.skillContext?.model,
+    props.skillContext?.collaborationMode,
+    props.skillContext?.permissionMode,
+  ]);
 
   const choose = (item: Suggestion) => {
     if (!query || !editor) return;
@@ -400,6 +415,11 @@ export function TipTapEditor(props: {
     // Plain Enter sends; while a turn runs it queues. Shift+Enter breaks the
     // line when idle and steers this one draft into the running turn
     // otherwise (upstream's routing: queue is the safe default mid-turn).
+    if (event.key === 'Enter' && event.altKey) {
+      event.preventDefault();
+      editor?.commands.setHardBreak();
+      return true;
+    }
     if (event.key === 'Enter' && (!event.shiftKey || props.running)) {
       event.preventDefault();
       props.onSubmit(props.running && event.shiftKey ? 'steer' : undefined);

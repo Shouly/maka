@@ -46,7 +46,7 @@ const ICON_BY_ACTION: Record<TurnFooterActionId, AnthropiconName> = {
 export const TurnFooter = memo(function TurnFooter(props: {
   actions: readonly TurnFooterAction[];
   lineageBadges?: readonly TurnLineageBadge[];
-  onAction: (id: TurnFooterActionId) => void;
+  onAction: (id: TurnFooterActionId) => void | Promise<void>;
   onOpenLineage: (turnId: string) => void;
 }) {
   const locale = useUiLocale();
@@ -64,11 +64,14 @@ export const TurnFooter = memo(function TurnFooter(props: {
                 aria-label={action.label}
                 disabled={!action.enabled}
                 onClick={() => {
-                  props.onAction(action.id);
-                  if (action.id === 'copy') {
-                    setCopied(true);
-                    window.setTimeout(() => setCopied(false), 2000);
-                  }
+                  void Promise.resolve(props.onAction(action.id))
+                    .then(() => {
+                      if (action.id === 'copy') {
+                        setCopied(true);
+                        window.setTimeout(() => setCopied(false), 2000);
+                      }
+                    })
+                    .catch(() => undefined);
                 }}
                 className={messageActionButtonClass}
               >

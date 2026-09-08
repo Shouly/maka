@@ -26,7 +26,6 @@
       "ignoreDependencies": [
         "@types/katex",
         "fast-deep-equal",
-        "mermaid",
         "partial-json",
         "tailwindcss",
         "throttleit",

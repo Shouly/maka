@@ -204,3 +204,16 @@ test('form submission preserves false, omits absent optionals, and rejects inval
     values: { enabled: false, count: 2 },
   });
 });
+
+test('a refused first send restores the welcome draft without overwriting newer work', () => {
+  const store = createComposerInputStore(memoryStorage());
+  store.setText('welcome', 'first request');
+  store.transfer('welcome', 'session');
+  assert.equal(store.restoreTransfer('session', 'welcome'), true);
+  assert.equal(serializeComposer(store.read('welcome').document).text, 'first request');
+  store.transfer('welcome', 'session');
+  store.setText('welcome', 'new request');
+  assert.equal(store.restoreTransfer('session', 'welcome'), false);
+  assert.equal(serializeComposer(store.read('welcome').document).text, 'new request');
+  assert.equal(serializeComposer(store.read('session').document).text, 'first request');
+});

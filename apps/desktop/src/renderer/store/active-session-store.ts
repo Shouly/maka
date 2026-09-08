@@ -17,6 +17,8 @@
  * under the License.
  */
 
+import { observeLocalMessages } from './local-messages.js';
+import type { DesktopLocalMessage } from '../bridge/session-local.js';
 import { createStore } from 'zustand/vanilla';
 import type { ContextCompactionOutcome, SessionEvent, ShellRunUpdate } from '@maka/core/events';
 import type { StoredMessage } from '@maka/core/session';
@@ -106,6 +108,7 @@ export interface ActiveSessionState {
   interactions: InteractionQueues;
   queues: Record<string, MessageQueueUiState>;
   transientMessages: readonly TransientUserMessageProjection[];
+  localMessages: readonly DesktopLocalMessage[];
   shellUpdates: readonly ShellRunUpdate[];
   executionBoundary: ExecutionBoundaryReadModel | undefined;
   /** Main was asked for the boundary and every attempt failed (#1629). */
@@ -136,6 +139,7 @@ const initialState = (): ActiveSessionState => ({
   interactions: {},
   queues: {},
   transientMessages: [],
+  localMessages: [],
   shellUpdates: [],
   executionBoundary: undefined,
   boundaryUnreadable: false,
@@ -241,7 +245,7 @@ export function createActiveSessionStore(
     store.setState({ unavailableAnchorTurnId: undefined });
   };
 
-  function observe(sessionId: string | undefined, locale: UiLocale): () => void {
+  function observe(sessionId: string | undefined, locale: UiLocale, localOnly = false): () => void {
     dispose();
     const generation = ++selectionGeneration;
     // Entering a Session is what captures a bookmark to restore. Clearing one
@@ -263,6 +267,46 @@ export function createActiveSessionStore(
     const commit = (patch: Partial<ActiveSessionState>) => {
       if (current()) store.setState(patch);
     };
+    if (localOnly) {
+      const optimistic = optimisticFor(sessionId);
+      const publish = () =>
+        commit({
+          transientMessages: [...optimistic.values()],
+          loading: false,
+          observationReady: true,
+        });
+      const retire = (id: string) => {
+        optimistic.delete(id);
+        publish();
+      };
+      currentPublishTransient = publish;
+      currentRemoveTransient = retire;
+      publish();
+      const offLocal = observeLocalMessages({
+        sessionId,
+        locale,
+        publish(message) {
+          const previous = optimistic.get(message.id);
+          optimistic.set(
+            message.id,
+            previous ? mergeTransientMessageProjection(previous, message) : message,
+          );
+        },
+        retire,
+        snapshot(localMessages) {
+          commit({ localMessages });
+          publish();
+        },
+        reportError: (message) => options.toast?.error(message),
+      });
+      dispose = () => {
+        closed = true;
+        offLocal();
+        if (currentPublishTransient === publish) currentPublishTransient = undefined;
+        if (currentRemoveTransient === retire) currentRemoveTransient = undefined;
+      };
+      return dispose;
+    }
     const fail = (error: unknown) => commit({ error: errorMessage(error), loading: false });
     // The transcript could not be opened or read. Kept apart from `fail` so
     // the retry the notice offers reloads exactly what failed.
@@ -297,18 +341,43 @@ export function createActiveSessionStore(
         // An unopened transcript has no historical range to hide the tail from.
       }
       // The user's sends first: they precede anything the Host has queued.
-      commit({
-        transientMessages: [
-          ...reconcileTransientMessages(optimistic, messages, { includeTransient }),
-          ...reconcileTransientMessages(transient, messages, { includeTransient }),
-        ],
-      });
+      const merged = new Map(
+        reconcileTransientMessages(optimistic, messages, { includeTransient }).map((message) => [
+          message.id,
+          message,
+        ]),
+      );
+      for (const message of reconcileTransientMessages(transient, messages, { includeTransient })) {
+        const previous = merged.get(message.id);
+        merged.set(
+          message.id,
+          previous ? mergeTransientMessageProjection(previous, message) : message,
+        );
+      }
+      commit({ transientMessages: [...merged.values()] });
     };
     const removeAnyTransient = (messageId: string) => {
       transient.delete(messageId);
       optimistic.delete(messageId);
       publishTransient();
     };
+    const offLocal = observeLocalMessages({
+      sessionId,
+      locale,
+      publish(message) {
+        const previous = optimistic.get(message.id);
+        optimistic.set(
+          message.id,
+          previous ? mergeTransientMessageProjection(previous, message) : message,
+        );
+      },
+      retire: removeAnyTransient,
+      snapshot(localMessages) {
+        commit({ localMessages });
+        publishTransient();
+      },
+      reportError: (message) => options.toast?.error(message),
+    });
     // Which local rows the Host has cancelled since the stream was last
     // heard: a stop mid-flight, an `outcome_unknown` that was in fact
     // refused. Asked at every (re)seed, in the protocol's per-query chunks;
@@ -720,6 +789,7 @@ export function createActiveSessionStore(
       handlers.dropDisplayEvents(sessionId);
       unsubscribe();
       offInteractions();
+      offLocal();
       offShell();
       offResync();
       void rangeController.close();

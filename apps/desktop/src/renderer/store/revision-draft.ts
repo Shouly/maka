@@ -36,7 +36,7 @@ import { createStore } from 'zustand/vanilla';
 import type { StoredMessage } from '@maka/core/session';
 
 /** How far the fork has got. `editing` is local; the rest have asked the Host. */
-export type RevisionDraftPhase = 'editing' | 'preparing' | 'sending';
+export type RevisionDraftPhase = 'editing' | 'preparing' | 'sending' | 'uncertain';
 
 export interface RevisionDraft {
   /** The task the edited message belongs to, before any fork. */
@@ -53,6 +53,9 @@ export interface RevisionDraft {
   /** The forked task, once the Host has named one. */
   readonly revisionSessionId?: string;
   readonly error?: string;
+  readonly messageId?: string;
+  readonly copyStarted?: boolean;
+  readonly cleanupRequested?: boolean;
 }
 
 export interface RevisionDraftState {
@@ -143,16 +146,27 @@ export function createRevisionDraftStore() {
       patch({ text, error: undefined });
     },
     markPreparing() {
-      patch({ phase: 'preparing', error: undefined });
+      patch({ phase: 'preparing', error: undefined, copyStarted: true });
     },
     /** The Host named the fork; the draft now belongs to it. */
     markForked(revisionSessionId: string) {
       patch({ phase: 'sending', revisionSessionId });
     },
+    markCleanup() {
+      patch({ cleanupRequested: true, phase: 'preparing' });
+    },
+    markSending(messageId: string) {
+      patch({ phase: 'sending', messageId });
+    },
+    uncertain(error: string) {
+      patch({ phase: 'uncertain', error });
+    },
     fail(error: string) {
-      patch({ phase: 'editing', error });
+      patch({ phase: 'editing', error, messageId: undefined });
     },
     cancel() {
+      const draft = store.getState().draft;
+      if (draft) releaseRevisionCopyId(draft.sourceSessionId, draft.sourceTurnId);
       store.setState({ draft: undefined });
     },
     /** The edited text landed; release the reservation so a re-edit forks again. */

@@ -47,8 +47,9 @@
     "smoke:browser": "npm run build:workspace-deps && npm run build:main && npm run smoke:browser:run",
     "smoke:browser:run": "electron scripts/browser-observe-act-smoke.mjs",
     "test:renderer-state": "node src/renderer/store/__tests__/run.mjs",
-    "test:renderer-smoke": "node src/renderer/store/__tests__/electron-smoke.mjs",
-    "test:composer-prompts": "node src/renderer/store/__tests__/composer-prompts-smoke.mjs"
+    "test:renderer-smoke": "node src/renderer/store/__tests__/electron-smoke.mjs && npm run test:core-dialogue",
+    "test:composer-prompts": "node src/renderer/store/__tests__/composer-prompts-smoke.mjs",
+    "test:core-dialogue": "node src/renderer/store/__tests__/core-dialogue-smoke.mjs"
   },
   "dependencies": {
     "@jackwener/opencli": "1.8.7",

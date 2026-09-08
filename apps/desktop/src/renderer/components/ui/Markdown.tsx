@@ -26,8 +26,11 @@ import {
 } from '../../lib/markdown/color-utils';
 import 'katex/dist/katex.min.css';
 import React, { createContext, useCallback, useContext, useId, useMemo, useState } from 'react';
-import ReactMarkdown, { type Components } from 'react-markdown';
-import { getSharedUiCopy, useUiLocale } from '@maka/ui';
+import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown';
+import { getSharedUiCopy, useUiLocale, MakaUriContext, useAttachmentImageSource } from '@maka/ui';
+import { parseAttachmentResourceRef } from '@maka/core/attachments';
+import { isSafeExternalScheme, parseMakaUri } from '@maka/ui/maka-uri';
+import { MermaidDiagram, applyMermaidRenderBudget } from './MermaidDiagram.js';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
@@ -114,11 +117,12 @@ export default function Markdown({
   variant = 'default',
   processInlineTokens = false,
   inlineTokenNames,
-  disableRawHtml = false,
+  disableRawHtml = true,
   streamPop = false,
   onOpenExternal,
 }: MarkdownProps) {
   const copy = getSharedUiCopy(useUiLocale()).markdown;
+  const dispatchInternal = useContext(MakaUriContext);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   const copyToClipboard = useCallback(async (text: string) => {
@@ -136,7 +140,10 @@ export default function Markdown({
   const textColorClass = variant === 'muted' ? 'text-text-secondary' : 'text-text-primary';
 
   // 数学分隔符规范化(详见 normalize-math.ts)。无分隔符时原样返回。
-  const source = useMemo(() => normalizeMathDelimiters(children), [children]);
+  const source = useMemo(
+    () => normalizeMathDelimiters(applyMermaidRenderBudget(children)),
+    [children],
+  );
 
   // 脚注 id 的每实例前缀:remark-rehype 默认给所有消息发同一套
   // `user-content-fn-1`,同一会话里两条带脚注的消息会撞 id,点第二条的角标
@@ -151,8 +158,7 @@ export default function Markdown({
       // 排在 rehypeRaw 之前:raw 节点对 strip 插件不透明,作者手写 HTML
       // (<pre> 内容、字面 <br>)的真实换行不会被误删,详见插件头注释。
       rehypeStripBreakNewlines,
-      rehypeEscapeRedactedRaw,
-      ...(disableRawHtml ? [] : [rehypeRaw]),
+      ...(disableRawHtml ? [] : [rehypeEscapeRedactedRaw, rehypeRaw]),
       // errorColor:残缺 TeX 以此色原样显示。默认是红 #cc0000,而流式期
       // display 公式几乎每次 flush 都处于花括号未配平状态,会一闪一闪地红。
       [rehypeKatex, { strict: false, errorColor: 'var(--text-muted)' }] as const,
@@ -185,6 +191,14 @@ export default function Markdown({
         const language = match ? match[1] : '';
         const codeString = String(children).replace(/\n$/, '');
 
+        if (block && (language === 'mermaid' || language === 'makamermaiddeferred'))
+          return (
+            <MermaidDiagram
+              code={codeString}
+              density="default"
+              autoRender={!streamPop && language === 'mermaid'}
+            />
+          );
         if (block && language) {
           return (
             <div className="relative group/code border border-hairline rounded-lg bg-surface-2/50">
@@ -261,38 +275,34 @@ export default function Markdown({
       // 下划线同色 40% alpha,hover 补到 100% —— 文字色始终不变。粗细 auto
       // 不写死 1px,offset 3px。
       a({ node: _node, href, className, children, ...props }) {
-        // 页内锚点(脚注角标/回跳)留给浏览器自己滚,不当外链处理。除它和外链
-        // 之外的一切 href 都渲染成不可点:主进程拦下所有导航,让它们看着能点
-        // 只会得到一次静默的无事发生。
-        const isAnchor = typeof href === 'string' && href.startsWith('#');
-        // 外链交给宿主打开(见 onOpenExternal 的注释)。`maka://` 的处理
-        // TODO(phase-3):接 `@maka/ui` 的 `maka-uri.ts`(parseMakaUri /
-        // 资源跳转),那时这里会多一个分支,不要在 Phase 0b 抢跑。
-        const isExternal = typeof href === 'string' && /^https?:\/\//i.test(href);
-        // className 必须合并:remark-gfm 给回跳链接挂了 data-footnote-backref
-        // 类,而 {...props} 摊在 className 之后会把链接样式整个替掉。
-        const isBackref = 'data-footnote-backref' in props;
+        const destination = href ? parseMakaUri(href) : null;
+        const external = href !== undefined && isSafeExternalScheme(href);
+        const anchor = href?.startsWith('#') === true;
+        if (!anchor && !(external && onOpenExternal) && !(destination && dispatchInternal)) {
+          return (
+            <span title={href?.startsWith('maka:') ? copy.invalidInternalLink : copy.unsafeLink}>
+              {children}
+            </span>
+          );
+        }
         return (
           <a
-            href={href}
-            {...(isExternal
-              ? {
-                  rel: 'noopener noreferrer',
-                  onClick: (event: React.MouseEvent<HTMLAnchorElement>) => {
-                    event.preventDefault();
-                    onOpenExternal?.(href as string);
-                  },
-                }
-              : {})}
             {...props}
-            className={`${isAnchor || (isExternal && onOpenExternal) ? '' : 'pointer-events-none '}text-accent underline underline-offset-[3px] decoration-accent/40 hover:decoration-accent transition-colors${className ? ` ${className}` : ''}`}
+            href={href}
+            className={`text-accent underline underline-offset-[3px] decoration-accent/40 hover:decoration-accent ${className ?? ''}`}
+            {...(external ? { rel: 'noopener noreferrer' } : {})}
+            onClick={(event) => {
+              if (anchor) return;
+              event.preventDefault();
+              if (destination) dispatchInternal?.(destination);
+              else if (href) onOpenExternal?.(href);
+            }}
           >
-            {/* 回跳的 ↩(U+21A9)有 emoji 变体,默认会 fallback 成彩色方块
-                图标(实测截图确认),color 也就压不住了。补 U+FE0E 强制文本呈现。 */}
-            {isBackref ? '\u21a9\ufe0e' : children}
+            {'data-footnote-backref' in props ? '\u21a9\ufe0e' : children}
           </a>
         );
       },
+      img: MarkdownImage,
 
       // 表格
       table({ node: _node, children, ...props }) {
@@ -449,7 +459,7 @@ export default function Markdown({
         );
       },
     }),
-    [copy, onOpenExternal, processInlineTokens, inlineTokenNames],
+    [copy, onOpenExternal, dispatchInternal, processInlineTokens, inlineTokenNames, streamPop],
   );
 
   return (
@@ -474,11 +484,30 @@ export default function Markdown({
               React.ComponentProps<typeof ReactMarkdown>['rehypePlugins']
             >
           }
+          urlTransform={markdownUrl}
           components={components}
         >
           {source}
         </ReactMarkdown>
       </CodeCopyContext.Provider>
     </div>
+  );
+}
+
+export function markdownUrl(url: string): string {
+  if (parseMakaUri(url) || parseAttachmentResourceRef(url)) return url;
+  return defaultUrlTransform(url);
+}
+
+function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
+  const attachment = src ? parseAttachmentResourceRef(src) : undefined;
+  const loaded = useAttachmentImageSource(
+    attachment ? { artifactId: attachment.artifactId } : undefined,
+  );
+  const safe = attachment ? loaded : src && /^https?:\/\//i.test(src) ? src : undefined;
+  return safe ? (
+    <img src={safe} alt={alt ?? ''} className="max-w-full rounded-lg" />
+  ) : (
+    <span>[{alt ?? ''}]</span>
   );
 }

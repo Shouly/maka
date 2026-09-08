@@ -640,3 +640,47 @@ test('session rows are built separately and mark the open one', () => {
   assert.ok(rows.find((row) => row.label === 'a')?.hint);
   assert.equal(rows.find((row) => row.label === 'b')?.hint, undefined);
 });
+
+test('new task creation uses the captured target and model after the selection changes', async () => {
+  const { bridge, calls } = fakeNewTaskBridge();
+  const store = createNewTaskStore(bridge as never);
+  await store.refresh();
+  const captured = { target: store.getState().target, model: store.getState().model };
+  store.selectTarget({ profileId: 'remote', hostId: 'other-host', projectId: 'other-project' });
+  store.selectModel({
+    llmConnectionId: 'other-id',
+    llmConnectionSlug: 'other',
+    model: 'other-model',
+  });
+  await store.create({ collaborationMode: 'agent', orchestrationMode: 'default' }, captured);
+  const [target, input] = JSON.parse(calls[0]!);
+  assert.deepEqual(target, captured.target);
+  assert.equal(input.model, captured.model?.model);
+});
+test('a failed target catalog cannot retain another Hosts model choices', async () => {
+  const { bridge } = fakeNewTaskBridge({
+    getNewTaskConnections: async () => {
+      throw Error('offline');
+    },
+  });
+  const store = createNewTaskStore(bridge as never);
+  store.setState({ connections: { chatModelChoices: [{ model: 'stale' }] } as never });
+  store.selectTarget({ profileId: 'remote', hostId: 'host', projectId: 'project' });
+  assert.equal(store.getState().connections, undefined);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(store.getState().connections, undefined);
+  assert.equal(store.getState().model, undefined);
+});
+test('welcome defaults come from the chosen Host without creating a per-session override', async () => {
+  const { bridge, calls } = fakeNewTaskBridge();
+  const owners: unknown[] = [];
+  const store = createNewTaskStore(bridge as never, async (host) => {
+    owners.push(host);
+    return { chatDefaults: { permissionMode: 'bypass', thinkingLevel: 'high' } } as never;
+  });
+  await store.refresh();
+  assert.equal(store.getState().defaults?.permissionMode, 'bypass');
+  assert.equal((owners[0] as { profileId: string }).profileId, store.getState().target?.profileId);
+  await store.create();
+  assert.equal('permissionMode' in JSON.parse(calls[0]!)[1], false);
+});

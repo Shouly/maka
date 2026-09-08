@@ -74,7 +74,8 @@ export const ModelSwitcher = memo(function ModelSwitcher(props: {
     (choice) =>
       choice.connectionSlug === session?.llmConnectionSlug && choice.model === session?.model,
   );
-  const busy = pending.includes('model') || pending.includes('thinking');
+  const busy =
+    session?.localState === 'pending' || pending.includes('model') || pending.includes('thinking');
 
   if (!session) return null;
 

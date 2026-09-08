@@ -45,7 +45,12 @@ export { newTaskStore, onboardingStore, scheduledTasksStore, updateStore };
 export { uiStore } from './ui-store.js';
 export { composerDraftStore } from './composer-draft-store.js';
 export { contextUsageStore } from './context-usage-store.js';
-export { revisionDraftStore } from './revision-draft.js';
+import { revisionDraftStore } from './revision-draft.js';
+import { createRevisionActions } from './revision-actions.js';
+import { abandonSessionCopy } from '../bridge/sessions.js';
+import { readSettledMessages } from '../lib/ported/session-message-settlement.js';
+import { composerInputStore } from './composer-input-store.js';
+export { revisionDraftStore };
 export const activeSessionStore = createActiveSessionStore({
   refreshSessions: sessionsStore.refresh,
   toast: toastApi,
@@ -81,6 +86,45 @@ export const turnActionsStore = createTurnActionsStore({
     if (sessionsStore.getState().activeId === sourceId) sessionsStore.select(row.id);
   },
 });
+export const revisionActions = createRevisionActions({
+  draft: revisionDraftStore,
+  selected: () => sessionsStore.getState().activeId,
+  subscribeSelection: (listener) => sessionsStore.subscribe(listener),
+  select: sessionsStore.select,
+  upsert: sessionsStore.upsert,
+  revise: turnActionsStore.revise,
+  settle: (id, signal) => readSettledMessages(id, { signal }),
+  submit: (id, text, messageId) =>
+    turnActionsStore.submit(
+      id,
+      'current_turn',
+      { text, messageId },
+      { waitForHostAdmission: true },
+    ),
+  abandon: abandonSessionCopy,
+  setText: composerInputStore.setText,
+  show: (id, text, messageId) =>
+    activeSessionStore.showTransientUserMessage(id, {
+      id: messageId,
+      text,
+      ts: Date.now(),
+      inlineReferences: [],
+      transientPlacement: 'current_turn',
+    }),
+  remove: activeSessionStore.removeTransientMessage,
+  refresh: sessionsStore.refresh,
+});
+const reconcileRevisionAdmission = () => {
+  if (revisionDraftStore.getState().draft?.phase !== 'uncertain') return;
+  const state = activeSessionStore.getState();
+  revisionActions.reconcile(
+    state.sessionId,
+    state.messages.map((message) => message.id),
+  );
+};
+activeSessionStore.subscribe(reconcileRevisionAdmission);
+revisionDraftStore.subscribe(reconcileRevisionAdmission);
+
 export const hostScopeStore = createStore<{
   host: DesktopRuntimeHostRef | undefined;
   revision: number;
