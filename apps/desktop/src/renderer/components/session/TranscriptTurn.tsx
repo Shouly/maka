@@ -80,6 +80,11 @@ export interface TranscriptTurnProps {
    * first token, which is what a "streaming" hint would be.
    */
   runningStatus?: boolean;
+  /**
+   * When the clock should start if the turn's own first row is not durable
+   * yet — the moment the user pressed send, taken from the pending row.
+   */
+  runningStartedAt?: number;
   footerActions: readonly TurnFooterAction[];
   lineageBadges?: readonly TurnLineageBadge[];
   failedReasonLabel?: string;
@@ -260,7 +265,7 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
 
       {props.live && props.runningStatus && (
         <TurnRunningStatus
-          startedAt={turn.startedAt}
+          startedAt={props.runningStartedAt ?? turn.startedAt}
           {...(runningToolLabel ? { activityLabel: runningToolLabel } : {})}
         />
       )}

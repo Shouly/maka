@@ -367,6 +367,9 @@ function SessionTranscript(props: SessionViewProps) {
                     turn={turn}
                     live={live.turnId === turn.turnId}
                     runningStatus={shellLive.showRunningStatus}
+                    {...(transientPlacement.before.get(turn.turnId)?.[0]?.ts !== undefined
+                      ? { runningStartedAt: transientPlacement.before.get(turn.turnId)![0]!.ts }
+                      : {})}
                     footerActions={presentation.footerActionsByTurn[turn.turnId] ?? []}
                     {...(presentation.lineageBadgesByTurn[turn.turnId]
                       ? { lineageBadges: presentation.lineageBadgesByTurn[turn.turnId] }

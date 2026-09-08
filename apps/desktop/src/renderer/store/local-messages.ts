@@ -66,7 +66,10 @@ export function observeLocalMessages(options: {
           quotes: message.quotes,
           inlineReferences: message.inlineReferences,
           hostTurnId: message.turnId,
-          deliveryStatus: copy[message.state],
+          // An accepted intent is the Host's now; its durable row retires this
+          // one when the transcript catches up, and until then the bubble
+          // reads as sent rather than announcing the handshake.
+          deliveryStatus: message.state === 'accepted' ? undefined : copy[message.state],
           deliveryDetail: message.error ? redactSecrets(message.error) : undefined,
           deliveryActions: message.canCancel
             ? [

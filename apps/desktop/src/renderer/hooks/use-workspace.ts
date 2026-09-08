@@ -229,8 +229,18 @@ export function useShellLiveTurn(sessionId: string | undefined): {
     activeSessionStore,
     (s) =>
       s.sessionId === sessionId &&
-      (s.transientMessages.some((message) => message.deliveryStatus === undefined) ||
-        s.localMessages.some((message) => message.state === 'sending')),
+      (s.transientMessages.some(
+        (message) =>
+          message.deliveryStatus === undefined &&
+          !s.localMessages.some(
+            (local) =>
+              local.messageId === message.id &&
+              (local.state === 'accepted' || local.state === 'failed'),
+          ),
+      ) ||
+        s.localMessages.some(
+          (message) => message.state === 'sending' || message.state === 'saved',
+        )),
   );
   const activeStreamingLive = live.hasStreamingText && live.streamingMessageId === undefined;
   const turnActive = deriveTurnActive({

@@ -70,7 +70,18 @@ export function TurnRunningStatus(props: { startedAt?: number; activityLabel?: s
 }
 
 function TurnElapsedTime(props: { startedAt?: number }) {
-  const { startedAt } = props;
+  // Latched to the earliest start this instance has seen. A live Turn whose
+  // durable rows have not landed yet is synthesised by the projection with
+  // `startedAt: Date.now()` on every delta; taking each value as it comes
+  // would reset the clock to 0s on every token.
+  const earliest = useRef<number | undefined>(undefined);
+  if (
+    props.startedAt !== undefined &&
+    (earliest.current === undefined || props.startedAt < earliest.current)
+  ) {
+    earliest.current = props.startedAt;
+  }
+  const startedAt = earliest.current;
   const rootRef = useRef<HTMLSpanElement>(null);
   // Undefined until an effect measures it, so the first paint carries the
   // phrase alone and a static render stays deterministic.
