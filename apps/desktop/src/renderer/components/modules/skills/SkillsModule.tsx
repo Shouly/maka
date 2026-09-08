@@ -58,6 +58,7 @@ import { menuDangerItemClass, menuTriggerButtonClass } from '../../ui/menu-varia
 import { Anthropicon } from '../../icons/Anthropicon.js';
 import { SettingsRow, SettingsSection } from '../../settings/settings-row.js';
 import { ModuleEmpty, ModuleLead, ModuleListSkeleton, ModulePage } from '../module-page.js';
+import { ExtensionsTabs } from '../ExtensionsTabs.js';
 import { cn } from '../../../lib/cn.js';
 import { useAsync } from '../../../hooks/use-async.js';
 import { useSettingsErrorReporter } from '../../../hooks/use-settings.js';
@@ -77,8 +78,13 @@ import {
 import type { DesktopRuntimeHostRef } from '../../../bridge/projects.js';
 import { getModulesCopy, type SkillFailureReason } from '../../../locales/modules-copy.js';
 
-export function SkillsModule(props: { host?: DesktopRuntimeHostRef }) {
+export function SkillsModule(props: {
+  host?: DesktopRuntimeHostRef;
+  /** Switches to the other Extensions face; the shell's own navigation call. */
+  onSelectModule?: (module: 'skills' | 'mcp') => void;
+}) {
   const locale = useUiLocale();
+  const extensions = getModulesCopy(locale).extensions;
   const skillsCopy = getSkillsCopy(locale);
   const copy = getModulesCopy(locale).skills;
   const report = useSettingsErrorReporter();
@@ -143,8 +149,9 @@ export function SkillsModule(props: { host?: DesktopRuntimeHostRef }) {
 
   return (
     <ModulePage
-      title={skillsCopy.page.title}
-      icon="shapes"
+      title={extensions.title}
+      icon="tool"
+      tabs={<ExtensionsTabs current="skills" onSelect={(face) => props.onSelectModule?.(face)} />}
       actions={
         <>
           <Button

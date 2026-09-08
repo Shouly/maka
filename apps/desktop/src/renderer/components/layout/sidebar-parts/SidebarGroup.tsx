@@ -29,16 +29,7 @@
 import { useEffect, useRef, useState, type Key, type ReactNode } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { Anthropicon } from '../../icons/Anthropicon.js';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from '../../ui/dropdown-menu.js';
 import { cn } from '../../../lib/cn.js';
-import type { SessionListGroupMode } from '../../../store/session-list-model.js';
 import type { SidebarCopy } from '../../../locales/sidebar-copy.js';
 
 export const labelActionRevealClass =
@@ -46,45 +37,6 @@ export const labelActionRevealClass =
 
 export const labelActionButtonClass =
   'inline-flex size-6 shrink-0 items-center justify-center rounded-md text-sidebar-text-muted transition-[color,background-color,box-shadow] hover:bg-sidebar-menu-hover hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none motion-reduce:transition-none';
-
-export function SidebarGroupModeMenu(props: {
-  copy: SidebarCopy;
-  mode: SessionListGroupMode;
-  onModeChange: (mode: SessionListGroupMode) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        {/* Always shown, unlike the row actions: it is the list's own mode
-            switch, and hiding it would hide that grouping can be changed. */}
-        <button
-          type="button"
-          aria-label={props.copy.groupBy}
-          className={cn(
-            labelActionButtonClass,
-            'cursor-pointer',
-            open && 'bg-sidebar-menu-hover text-sidebar-text-primary',
-          )}
-        >
-          <Anthropicon name="filter" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent variant="sidebar" align="end" sideOffset={4} className="min-w-36">
-        <DropdownMenuLabel>{props.copy.groupBy}</DropdownMenuLabel>
-        <DropdownMenuRadioGroup
-          value={props.mode}
-          onValueChange={(value) => props.onModeChange(value as SessionListGroupMode)}
-        >
-          <DropdownMenuRadioItem value="time">{props.copy.groupModes.time}</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="project">
-            {props.copy.groupModes.project}
-          </DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
 
 function SidebarGroupLabel(props: {
   labelId?: string;

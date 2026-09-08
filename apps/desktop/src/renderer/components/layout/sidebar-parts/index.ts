@@ -24,7 +24,6 @@ export { SidebarRowActionTrigger } from './SidebarRowActionTrigger.js';
 export { SidebarTabPanel } from './SidebarTabPanel.js';
 export {
   SidebarGroup,
-  SidebarGroupModeMenu,
   useHiddenGroupKeys,
   labelActionButtonClass,
   labelActionRevealClass,

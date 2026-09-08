@@ -17,28 +17,27 @@
  * under the License.
  */
 
-// The task rail.
+// The rail. Three bands, top to bottom (owner decision, 2026-09-08):
 //
-// Structure, geometry and motion are the reference design system's `Sidebar`:
-// the 44px brand row, the fixed header over one scrolling panel, the row fade
-// under `AnimatePresence mode="popLayout"`, the three-layer resize handle that
-// doubles as a collapse button, and the collapsed-state hover peek. What is
-// gone is everything that belonged to the reference's product rather than its
-// design — the five tab segments (personal/group/talk/Y), the websockets, the
-// user menu. This product has one panel.
+//   menu      New task, Extensions (Skills | MCP), Scheduled — fixed
+//   Projects  every project the Hosts know, each expandable to its tasks;
+//             a project's row starts a task in it
+//   Recents   the most recent tasks across projects, flat, newest first
 //
-// What is Maka's: the rows describe tasks on Runtime Hosts, so they carry a
-// project, a relative time and the running/stale signals; the nav rows below
-// the list go to the module pages; and the footer carries the update chip,
-// which is the only place the app ever asks for the user's attention about
-// itself.
+// Geometry and motion are the reference design system's `Sidebar`: the fixed
+// header over one scrolling panel, the row fade, the three-layer resize handle
+// that doubles as a collapse button, the collapsed-state hover peek. The
+// reference's filter box and group-by menu are gone: ⌘K / search is how a task
+// is found, and the list has one shape.
+//
+// The footer carries the update chip, which is the only place the app ever
+// asks for the user's attention about itself, and Settings.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import { useRovingRowFocus, useUiLocale } from '@maka/ui';
 import { Anthropicon } from '../icons/Anthropicon.js';
 import { SidebarTooltipProvider } from '../ui/sidebar-tooltip.js';
-import { Input } from '../ui/input.js';
 import { cn } from '../../lib/cn.js';
 import {
   SESSION_LIST_EXPANDED_MAX_WIDTH,
@@ -48,29 +47,30 @@ import { getSidebarCopy } from '../../locales/sidebar-copy.js';
 import { scheduledTasksStore, uiStore, updateStore } from '../../store/index.js';
 import { pendingScheduledTaskCount } from '../../store/scheduled-tasks-store.js';
 import { updateChipOf } from '../../store/update-store.js';
-import type { SessionListGroupMode } from '../../store/session-list-model.js';
-import { useProjectRows, useSessionList } from '../../hooks/use-session-list.js';
+import type { SessionListGroup, SessionListRow } from '../../store/session-list-model.js';
+import {
+  useProjectRows,
+  useSessionList,
+  type ProjectRowModel,
+} from '../../hooks/use-session-list.js';
 import type { SidebarLayout } from '../../hooks/use-sidebar-layout.js';
 import {
   ProjectRow,
   SessionRow,
   SidebarGroup,
-  SidebarGroupModeMenu,
   SidebarNavButton,
   SidebarNewButton,
   SidebarTabPanel,
   navIconClass,
-  useHiddenGroupKeys,
   type ProjectRowActions,
   type SessionRowActions,
 } from './sidebar-parts/index.js';
 
+/** How many tasks the Recents band shows. */
+export const SIDEBAR_RECENTS_LIMIT = 20;
+
 export interface SidebarProps {
   layout: SidebarLayout;
-  /** The filter box is view state, owned by the shell so ⌘K can clear it. */
-  filter: string;
-  onFilterChange: (filter: string) => void;
-  filterInputRef: React.RefObject<HTMLInputElement | null>;
   onNewTask: () => void;
   onOpenSettings: () => void;
   onSelectModule: (module: 'skills' | 'mcp' | 'scheduled-tasks') => void;
@@ -78,11 +78,19 @@ export interface SidebarProps {
   projectActions: ProjectRowActions;
 }
 
+/** One Projects entry: the project (when the catalog knows it) and its tasks. */
+interface ProjectEntry {
+  readonly key: string;
+  readonly project: ProjectRowModel | undefined;
+  readonly label: string;
+  readonly rows: readonly SessionListRow[];
+}
+
 export function Sidebar(props: SidebarProps) {
   const locale = useUiLocale();
   const copy = getSidebarCopy(locale);
   const layout = props.layout;
-  const { model, loading, error, activeId, mode } = useSessionList(props.filter);
+  const { model, loading, error, activeId } = useSessionList('');
   const projects = useProjectRows();
   const navigation = useStore(uiStore, (state) => state.navigation);
   const schedules = useStore(scheduledTasksStore, (state) => state.data);
@@ -90,13 +98,9 @@ export function Sidebar(props: SidebarProps) {
   const chip = updateChipOf(updateStatus);
   const listRef = useRef<HTMLDivElement>(null);
   const rovingProps = useRovingRowFocus(listRef, '[data-roving-row]');
-  const [hiddenGroups, setGroupHidden] = useHiddenGroupKeys(mode);
-  const [projectsHidden, setProjectsHidden] = useState(true);
   const pending = pendingScheduledTaskCount(schedules);
-
-  const setMode = useCallback((next: SessionListGroupMode) => {
-    uiStore.setViewMode(next === 'project' ? 'project' : 'conversation');
-  }, []);
+  const [projectsHidden, setProjectsHidden] = useState(false);
+  const [recentsHidden, setRecentsHidden] = useState(false);
 
   // The rail publishes its own width so the titlebar strip and any surface
   // measuring the shell can read it without reaching into React.
@@ -108,53 +112,113 @@ export function Sidebar(props: SidebarProps) {
     else root.removeAttribute('data-sidebar-state');
   }, [layout.collapsed, layout.width]);
 
-  const groupModeMenu = useMemo(
-    () => <SidebarGroupModeMenu copy={copy} mode={mode} onModeChange={setMode} />,
-    [copy, mode, setMode],
-  );
+  // Projects: the catalog's projects in its order (with or without tasks),
+  // then projects only the tasks know (another Host's, or archived since),
+  // then the tasks with no project. The list model already groups by project
+  // in that order; the catalog rows fill in the projects it has no task for.
+  const entries = useMemo<ProjectEntry[]>(() => {
+    const byKey = new Map<string, SessionListGroup>(
+      model.groups.map((group) => [group.key, group]),
+    );
+    const out: ProjectEntry[] = [];
+    for (const project of projects) {
+      const key = `project:${project.id}`;
+      out.push({ key, project, label: project.name, rows: byKey.get(key)?.rows ?? [] });
+      byKey.delete(key);
+    }
+    for (const group of byKey.values()) {
+      out.push({ key: group.key, project: undefined, label: group.label, rows: group.rows });
+    }
+    return out;
+  }, [model.groups, projects]);
 
-  const listBody = error ? (
+  // Which projects are open. The project holding the active task opens on its
+  // own when the active task changes; everything else remembers what the user
+  // did for the life of the window.
+  const [openProjects, setOpenProjects] = useState<ReadonlySet<string>>(() => new Set());
+  const activeEntryKey = useMemo(
+    () => entries.find((entry) => entry.rows.some((row) => row.id === activeId))?.key,
+    [entries, activeId],
+  );
+  useEffect(() => {
+    if (!activeEntryKey) return;
+    setOpenProjects((current) => {
+      if (current.has(activeEntryKey)) return current;
+      const next = new Set(current);
+      next.add(activeEntryKey);
+      return next;
+    });
+  }, [activeEntryKey]);
+  const toggleProject = useCallback((key: string) => {
+    setOpenProjects((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const recents = useMemo(() => model.rows.slice(0, SIDEBAR_RECENTS_LIMIT), [model.rows]);
+
+  const extensionsActive = navigation.selection.section === 'extensions';
+  const openExtensions = () => props.onSelectModule(navigation.moduleMemory.extensions);
+
+  const projectsBody = error ? (
     <div className="p-2 text-sm text-danger" role="alert">
       {copy.error}
     </div>
-  ) : loading && model.total === 0 ? (
-    <div className="space-y-[1.5px] px-2 pb-2" aria-hidden="true">
-      {[0, 1, 2, 3, 4, 5].map((index) => (
+  ) : loading && model.total === 0 && entries.length === 0 ? (
+    <div className="space-y-[1.5px] pb-2" aria-hidden="true">
+      {[0, 1, 2, 3].map((index) => (
         <div key={index} className="h-8 animate-pulse rounded-lg bg-sidebar-selected/60" />
       ))}
     </div>
-  ) : model.groups.length === 0 ? (
-    <div
-      className="p-4 text-center text-sm leading-[21px] text-sidebar-text-muted"
-      role="status"
-      aria-live="polite"
-    >
-      {model.filtered ? copy.emptyFiltered : copy.empty}
+  ) : entries.length === 0 ? (
+    <div className="px-2 pb-2 text-sm leading-[21px] text-sidebar-text-muted" role="status">
+      {copy.noProjects}
     </div>
   ) : (
-    model.groups.map((group, index) => (
-      <SidebarGroup
-        key={group.key}
-        groupKey={group.key}
-        title={group.label}
-        copy={copy}
-        activeChildKey={activeId ?? null}
-        childKeys={group.rows.map((row) => row.id)}
-        isContentHidden={hiddenGroups.has(group.key)}
-        onContentHiddenChange={(hidden) => setGroupHidden(group.key, hidden)}
-        actions={index === 0 ? groupModeMenu : undefined}
-      >
-        {group.rows.map((row) => (
-          <SessionRow
-            key={row.id}
-            row={row}
-            isActive={row.id === activeId}
+    entries.map((entry) => {
+      const open = openProjects.has(entry.key);
+      return (
+        <div key={entry.key} className="space-y-[1.5px]">
+          <ProjectRow
+            projectKey={entry.key}
+            project={entry.project}
+            label={entry.label}
+            taskCount={entry.rows.length}
+            expanded={open}
+            onToggle={() => toggleProject(entry.key)}
             copy={copy}
-            actions={props.sessionActions}
+            actions={props.projectActions}
           />
-        ))}
-      </SidebarGroup>
-    ))
+          {open && (
+            <div
+              id={`sidebar-project-${entry.key}-tasks`}
+              role="group"
+              aria-label={entry.label}
+              className="space-y-[1.5px] pl-4"
+            >
+              {entry.rows.length === 0 ? (
+                <div className="px-2 py-1 text-[13px] leading-5 text-sidebar-text-muted">
+                  {copy.noTasksInProject}
+                </div>
+              ) : (
+                entry.rows.map((row) => (
+                  <SessionRow
+                    key={row.id}
+                    row={row}
+                    isActive={row.id === activeId}
+                    copy={copy}
+                    actions={props.sessionActions}
+                  />
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      );
+    })
   );
 
   return (
@@ -193,46 +257,38 @@ export function Sidebar(props: SidebarProps) {
           <SidebarTabPanel
             scrollLabel={copy.listLabel}
             header={
-              <>
-                <div className="shrink-0 px-2 pt-2">
-                  <SidebarNewButton
-                    label={copy.newTask}
-                    shortcut={copy.newTaskShortcut}
-                    onSelect={props.onNewTask}
-                  />
-                </div>
-                <div className="shrink-0 px-2 pb-2 pt-2">
-                  <div className="relative">
-                    <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sidebar-text-muted">
-                      <Anthropicon name="filter" />
-                    </span>
-                    <Input
-                      ref={props.filterInputRef}
-                      value={props.filter}
-                      onChange={(event) => props.onFilterChange(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Escape' && props.filter) {
-                          event.stopPropagation();
-                          props.onFilterChange('');
-                        }
-                      }}
-                      aria-label={copy.filterLabel}
-                      placeholder={copy.filterPlaceholder}
-                      className="h-8 pl-8 pr-8"
-                    />
-                    {props.filter && (
-                      <button
-                        type="button"
-                        onClick={() => props.onFilterChange('')}
-                        aria-label={copy.filterClear}
-                        className="absolute right-1.5 top-1/2 flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-sidebar-text-muted hover:bg-sidebar-menu-hover hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none"
+              <nav
+                className="shrink-0 space-y-[0.5px] px-2 pb-[12.5px] pt-2"
+                aria-label={copy.menuLabel}
+              >
+                <SidebarNewButton
+                  label={copy.newTask}
+                  shortcut={copy.newTaskShortcut}
+                  onSelect={props.onNewTask}
+                />
+                <SidebarNavButton
+                  icon={<Anthropicon name="tool" className={navIconClass} />}
+                  label={copy.nav.extensions}
+                  isActive={extensionsActive}
+                  onSelect={openExtensions}
+                />
+                <SidebarNavButton
+                  icon={<Anthropicon name="clock" className={navIconClass} />}
+                  label={copy.nav.scheduled}
+                  isActive={navigation.selection.section === 'automations'}
+                  onSelect={() => props.onSelectModule('scheduled-tasks')}
+                  trailing={
+                    pending > 0 ? (
+                      <span
+                        aria-label={copy.nav.pending(pending)}
+                        className="ml-auto mr-2 rounded bg-alpha-1 px-1 text-[11px] leading-4 tabular-nums text-sidebar-text-muted"
                       >
-                        <Anthropicon name="x" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </>
+                        {pending}
+                      </span>
+                    ) : undefined
+                  }
+                />
+              </nav>
             }
           >
             <div
@@ -245,67 +301,40 @@ export function Sidebar(props: SidebarProps) {
               onKeyDown={rovingProps.onKeyDown}
               onFocus={rovingProps.onFocus}
             >
-              {listBody}
-            </div>
+              <SidebarGroup
+                groupKey="projects"
+                title={copy.projectsSection}
+                copy={copy}
+                activeChildKey={activeEntryKey ?? null}
+                childKeys={entries.map((entry) => entry.key)}
+                isContentHidden={projectsHidden}
+                onContentHiddenChange={setProjectsHidden}
+              >
+                {[<Fragment key="projects">{projectsBody}</Fragment>]}
+              </SidebarGroup>
 
-            {projects.length > 0 && (
-              <div className="px-2 pb-2">
+              {recents.length > 0 && (
                 <SidebarGroup
-                  groupKey="projects"
-                  title={copy.projectsSection}
+                  groupKey="recents"
+                  title={copy.recentsSection}
                   copy={copy}
-                  childKeys={projects.map((project) => project.id)}
-                  isContentHidden={projectsHidden}
-                  onContentHiddenChange={setProjectsHidden}
+                  activeChildKey={activeId ?? null}
+                  childKeys={recents.map((row) => row.id)}
+                  isContentHidden={recentsHidden}
+                  onContentHiddenChange={setRecentsHidden}
                 >
-                  {projects.map((project) => (
-                    <ProjectRow
-                      key={project.id}
-                      project={project}
+                  {recents.map((row) => (
+                    <SessionRow
+                      key={row.id}
+                      row={row}
+                      isActive={row.id === activeId}
                       copy={copy}
-                      actions={props.projectActions}
+                      actions={props.sessionActions}
                     />
                   ))}
                 </SidebarGroup>
-              </div>
-            )}
-
-            <nav className="space-y-[0.5px] px-2 pb-2" aria-label={copy.nav.extensions}>
-              <SidebarNavButton
-                icon={<Anthropicon name="shapes" className={navIconClass} />}
-                label={copy.nav.skills}
-                isActive={
-                  navigation.selection.section === 'extensions' &&
-                  navigation.selection.module === 'skills'
-                }
-                onSelect={() => props.onSelectModule('skills')}
-              />
-              <SidebarNavButton
-                icon={<Anthropicon name="plugin" className={navIconClass} />}
-                label={copy.nav.mcp}
-                isActive={
-                  navigation.selection.section === 'extensions' &&
-                  navigation.selection.module === 'mcp'
-                }
-                onSelect={() => props.onSelectModule('mcp')}
-              />
-              <SidebarNavButton
-                icon={<Anthropicon name="clock" className={navIconClass} />}
-                label={copy.nav.automations}
-                isActive={navigation.selection.section === 'automations'}
-                onSelect={() => props.onSelectModule('scheduled-tasks')}
-                trailing={
-                  pending > 0 ? (
-                    <span
-                      aria-label={copy.nav.pending(pending)}
-                      className="ml-auto mr-2 rounded bg-alpha-1 px-1 text-[11px] leading-4 tabular-nums text-sidebar-text-muted"
-                    >
-                      {pending}
-                    </span>
-                  ) : undefined
-                }
-              />
-            </nav>
+              )}
+            </div>
           </SidebarTabPanel>
         </div>
 

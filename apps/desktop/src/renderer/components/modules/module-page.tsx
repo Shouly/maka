@@ -38,13 +38,20 @@ export function ModulePage(props: {
   icon: AnthropiconName;
   /** Header-right controls. Wrapped in the `module-actions` contract node. */
   actions?: ReactNode;
+  /** A tab strip beside the title, for pages that are one face of a set. */
+  tabs?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-maka-contract="module-main">
       <MainHeader
         contextIcon={<Anthropicon name={props.icon} size={16} />}
-        title={<span className="px-2.5 font-medium">{props.title}</span>}
+        title={
+          <span className="flex min-w-0 items-center gap-3">
+            <span className="px-2.5 font-medium">{props.title}</span>
+            {props.tabs}
+          </span>
+        }
         actions={
           <div data-maka-contract="module-actions" className="flex items-center gap-1">
             {props.actions}

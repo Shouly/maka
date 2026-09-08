@@ -66,6 +66,7 @@
     "src/renderer/components/layout/sidebar-parts/SidebarTabPanel.tsx",
     "src/renderer/components/layout/sidebar-parts/index.ts",
     "src/renderer/components/layout/sidebar-parts/sidebar-row-motion.ts",
+    "src/renderer/components/modules/ExtensionsTabs.tsx",
     "src/renderer/components/modules/mcp/McpMarket.tsx",
     "src/renderer/components/modules/mcp/McpModule.tsx",
     "src/renderer/components/modules/mcp/McpServerDialog.tsx",

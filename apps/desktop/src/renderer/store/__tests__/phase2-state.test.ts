@@ -476,7 +476,7 @@ test('the hotkey map resolves the shell chords on both platforms', () => {
   );
   assert.equal(resolveHotkey(chord('?'), true), 'keyboardHelp');
   assert.equal(resolveHotkey(chord('/', { metaKey: true }), true), 'keyboardHelp');
-  assert.equal(resolveHotkey(chord('f'), true), 'focusFilter');
+  assert.equal(resolveHotkey(chord('f'), true), undefined);
   assert.equal(resolveHotkey(chord('Escape'), true), 'escape');
 });
 
@@ -495,7 +495,6 @@ test('every hotkey action has exactly one binding path', () => {
   assert.deepEqual([...actions].sort(), [
     'copyDiagnostics',
     'escape',
-    'focusFilter',
     'keyboardHelp',
     'newTask',
     'palette',

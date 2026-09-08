@@ -29,13 +29,7 @@ import { useMemo } from 'react';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { useUiLocale } from '@maka/ui';
-import {
-  newTaskStore,
-  onboardingStore,
-  sessionsStore,
-  projectsStore,
-  uiStore,
-} from '../store/index.js';
+import { newTaskStore, onboardingStore, sessionsStore, projectsStore } from '../store/index.js';
 import { sendOutcomesOf } from '../store/onboarding-store.js';
 import { projectPath, workspaceOptionsOf } from '../store/new-task-store.js';
 import {
@@ -109,13 +103,12 @@ export function useSessionList(filter: string): SessionListSelection {
       revision: state.revision,
     })),
   );
-  const viewMode = useStore(uiStore, (state) => state.viewMode);
   const sendOutcomes = useStore(onboardingStore, sendOutcomesOf);
   const projects = useProjectRows();
-  // `conversation` and `project` are the persisted view-mode values the layout
-  // key already carries; the list model names the same two choices by what
-  // they group by.
-  const mode: SessionListGroupMode = viewMode === 'project' ? 'project' : 'time';
+  // The rail has one shape (owner decision, 2026-09-08): tasks under their
+  // projects, plus a flat Recents band read from `model.rows`. The model's
+  // time grouping stays for the palette and tests; the rail never asks for it.
+  const mode: SessionListGroupMode = 'project';
   const model = useMemo(
     () =>
       buildSessionListModel({

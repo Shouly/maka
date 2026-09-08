@@ -49,6 +49,7 @@ import { menuDangerItemClass, menuTriggerButtonClass } from '../../ui/menu-varia
 import { Anthropicon } from '../../icons/Anthropicon.js';
 import { SettingsRow, SettingsSection } from '../../settings/settings-row.js';
 import { ModuleEmpty, ModuleLead, ModuleListSkeleton, ModulePage } from '../module-page.js';
+import { ExtensionsTabs } from '../ExtensionsTabs.js';
 import { McpMarket } from './McpMarket.js';
 import { McpServerDialog } from './McpServerDialog.js';
 import { cn } from '../../../lib/cn.js';
@@ -71,8 +72,13 @@ const STATE_TONE = {
   error: 'error',
 } as const;
 
-export function McpModule(props: { host?: DesktopRuntimeHostRef }) {
+export function McpModule(props: {
+  host?: DesktopRuntimeHostRef;
+  /** Switches to the other Extensions face; the shell's own navigation call. */
+  onSelectModule?: (module: 'skills' | 'mcp') => void;
+}) {
   const locale = useUiLocale();
+  const extensions = getModulesCopy(locale).extensions;
   const copy = getMcpCopy(locale);
   const modules = getModulesCopy(locale).mcp;
   const report = useSettingsErrorReporter();
@@ -142,8 +148,9 @@ export function McpModule(props: { host?: DesktopRuntimeHostRef }) {
 
   return (
     <ModulePage
-      title={modules.title}
-      icon="plugin"
+      title={extensions.title}
+      icon="tool"
+      tabs={<ExtensionsTabs current="mcp" onSelect={(face) => props.onSelectModule?.(face)} />}
       actions={
         <>
           <Button

@@ -103,8 +103,6 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
   // a skills list from one machine beside a composer talking to another is the
   // bug this hook exists to prevent.
   const scopedHost = useScopedRuntimeHost();
-  const [filter, setFilter] = useState('');
-  const filterInputRef = useRef<HTMLInputElement>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
@@ -118,7 +116,7 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
   const theme = useStore(settingsStore.client, (state) => state.data?.appearance.theme ?? 'auto');
   const connections = useStore(connectionsStore, (state) => state.data);
   const defaultHost = useStore(hostScopeStore, (state) => state.host);
-  const { model } = useSessionList(filter);
+  const { model } = useSessionList('');
   const workbar = useWorkbar(activeId);
   const activeRow = model.rows.find((row) => row.id === activeId);
   const parentRow = activeRow?.branchOf
@@ -201,21 +199,12 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
       else if (helpOpen) setHelpOpen(false);
       else if (searchOpen) uiStore.setSearchOpen(false);
       else if (settingsOpen) uiStore.closeSettings();
-      else if (filter) setFilter('');
     },
     toggleWorkbar: workbar.toggle,
     workbarFiles: () => workbar.toggleFace('files'),
     workbarReview: () => workbar.toggleFace('review'),
     workbarTerminal: () => workbar.toggleFace('terminal'),
     workbarBrowser: () => workbar.toggleFace('browser'),
-    focusFilter: () => {
-      // Only when the list already has focus: `f` is a letter, and stealing it
-      // from anywhere would make the rest of the shell feel unresponsive.
-      const active = document.activeElement;
-      if (!(active instanceof HTMLElement) || !active.closest('[data-maka-session-list]')) return;
-      filterInputRef.current?.focus();
-      filterInputRef.current?.select();
-    },
   });
 
   useEffect(
@@ -482,9 +471,6 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
         sidebar={
           <Sidebar
             layout={layout}
-            filter={filter}
-            onFilterChange={setFilter}
-            filterInputRef={filterInputRef}
             onNewTask={newTask}
             onOpenSettings={() => openSettings()}
             onSelectModule={selectModule}
@@ -498,9 +484,9 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
         ) : view === 'settings' ? (
           <SettingsView onOpenKeyboardHelp={() => setHelpOpen(true)} />
         ) : view === 'skills' ? (
-          <SkillsModule host={scopedHost} />
+          <SkillsModule host={scopedHost} onSelectModule={selectModule} />
         ) : view === 'mcp' ? (
-          <McpModule host={scopedHost} />
+          <McpModule host={scopedHost} onSelectModule={selectModule} />
         ) : view === 'automations' ? (
           <ScheduledTasksModule />
         ) : view === 'session' && activeId ? (

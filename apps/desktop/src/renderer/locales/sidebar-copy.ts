@@ -33,9 +33,6 @@ export interface SidebarCopy {
   readonly newTask: string;
   readonly newTaskShortcut: string;
   readonly search: string;
-  readonly filterLabel: string;
-  readonly filterPlaceholder: string;
-  readonly filterClear: string;
   readonly listLabel: string;
   readonly loading: string;
   readonly empty: string;
@@ -43,11 +40,16 @@ export interface SidebarCopy {
   readonly error: string;
   readonly retry: string;
   readonly resize: string;
-  readonly groupBy: string;
-  readonly groupModes: Record<'time' | 'project', string>;
   readonly groups: Record<SidebarGroupKey, string>;
   readonly noProject: string;
   readonly projectsSection: string;
+  readonly recentsSection: string;
+  readonly menuLabel: string;
+  readonly noProjects: string;
+  readonly noTasksInProject: string;
+  readonly taskCount: (count: number) => string;
+  readonly expandProject: (name: string) => string;
+  readonly collapseProject: (name: string) => string;
   readonly untitled: string;
   readonly running: string;
   readonly turnStatus: Record<'running' | 'completed' | 'aborted' | 'failed', string>;
@@ -86,7 +88,7 @@ export interface SidebarCopy {
     readonly extensions: string;
     readonly skills: string;
     readonly mcp: string;
-    readonly automations: string;
+    readonly scheduled: string;
     readonly pending: (count: number) => string;
     readonly settings: string;
   };
@@ -105,9 +107,6 @@ const SIDEBAR_COPY = {
     newTask: '新建任务',
     newTaskShortcut: '⌘N',
     search: '搜索任务',
-    filterLabel: '筛选任务',
-    filterPlaceholder: '筛选…',
-    filterClear: '清除筛选',
     listLabel: '任务',
     loading: '正在载入任务…',
     empty: '还没有任务。新建一个开始。',
@@ -115,8 +114,6 @@ const SIDEBAR_COPY = {
     error: '任务列表读取失败。',
     retry: '重试',
     resize: '调整侧边栏宽度',
-    groupBy: '分组方式',
-    groupModes: { time: '按时间', project: '按项目' },
     groups: {
       flagged: '已标记',
       today: '今天',
@@ -127,6 +124,13 @@ const SIDEBAR_COPY = {
     },
     noProject: '未归入项目',
     projectsSection: '项目',
+    recentsSection: '最近',
+    menuLabel: '导航',
+    noProjects: '还没有项目。新建任务时选择一个文件夹即可。',
+    noTasksInProject: '这个项目还没有任务',
+    taskCount: (count) => `${count} 个任务`,
+    expandProject: (name) => `展开项目「${name}」`,
+    collapseProject: (name) => `收起项目「${name}」`,
     untitled: '未命名任务',
     running: '进行中',
     turnStatus: { running: '进行中', completed: '已完成', aborted: '已中止', failed: '失败' },
@@ -161,7 +165,7 @@ const SIDEBAR_COPY = {
       extensions: '扩展',
       skills: '技能',
       mcp: 'MCP',
-      automations: '自动化',
+      scheduled: '定时任务',
       pending: (count) => `${count} 个待执行`,
       settings: '设置',
     },
@@ -178,9 +182,6 @@ const SIDEBAR_COPY = {
     newTask: '新增任務',
     newTaskShortcut: '⌘N',
     search: '搜尋任務',
-    filterLabel: '篩選任務',
-    filterPlaceholder: '篩選…',
-    filterClear: '清除篩選',
     listLabel: '任務',
     loading: '正在載入任務…',
     empty: '還沒有任務。新增一個開始。',
@@ -188,8 +189,6 @@ const SIDEBAR_COPY = {
     error: '任務列表讀取失敗。',
     retry: '重試',
     resize: '調整側邊欄寬度',
-    groupBy: '分組方式',
-    groupModes: { time: '依時間', project: '依專案' },
     groups: {
       flagged: '已標記',
       today: '今天',
@@ -200,6 +199,13 @@ const SIDEBAR_COPY = {
     },
     noProject: '未歸入專案',
     projectsSection: '專案',
+    recentsSection: '最近',
+    menuLabel: '導覽',
+    noProjects: '還沒有專案。新增任務時選擇一個資料夾即可。',
+    noTasksInProject: '這個專案還沒有任務',
+    taskCount: (count) => `${count} 個任務`,
+    expandProject: (name) => `展開專案「${name}」`,
+    collapseProject: (name) => `收起專案「${name}」`,
     untitled: '未命名任務',
     running: '進行中',
     turnStatus: { running: '進行中', completed: '已完成', aborted: '已中止', failed: '失敗' },
@@ -234,7 +240,7 @@ const SIDEBAR_COPY = {
       extensions: '擴充',
       skills: '技能',
       mcp: 'MCP',
-      automations: '自動化',
+      scheduled: '排程任務',
       pending: (count) => `${count} 個待執行`,
       settings: '設定',
     },
@@ -251,9 +257,6 @@ const SIDEBAR_COPY = {
     newTask: 'New task',
     newTaskShortcut: '⌘N',
     search: 'Search tasks',
-    filterLabel: 'Filter tasks',
-    filterPlaceholder: 'Filter…',
-    filterClear: 'Clear filter',
     listLabel: 'Tasks',
     loading: 'Loading tasks…',
     empty: 'No tasks yet. Start one.',
@@ -261,8 +264,6 @@ const SIDEBAR_COPY = {
     error: 'The task list could not be read.',
     retry: 'Retry',
     resize: 'Resize sidebar',
-    groupBy: 'Group by',
-    groupModes: { time: 'By time', project: 'By project' },
     groups: {
       flagged: 'Flagged',
       today: 'Today',
@@ -273,6 +274,13 @@ const SIDEBAR_COPY = {
     },
     noProject: 'No project',
     projectsSection: 'Projects',
+    recentsSection: 'Recents',
+    menuLabel: 'Navigation',
+    noProjects: 'No projects yet. Pick a folder when you start a task.',
+    noTasksInProject: 'No tasks in this project yet',
+    taskCount: (count) => `${count} task${count === 1 ? '' : 's'}`,
+    expandProject: (name) => `Expand project ${name}`,
+    collapseProject: (name) => `Collapse project ${name}`,
     untitled: 'Untitled task',
     running: 'Running',
     turnStatus: {
@@ -312,7 +320,7 @@ const SIDEBAR_COPY = {
       extensions: 'Extensions',
       skills: 'Skills',
       mcp: 'MCP',
-      automations: 'Automations',
+      scheduled: 'Scheduled',
       pending: (count) => `${count} pending`,
       settings: 'Settings',
     },

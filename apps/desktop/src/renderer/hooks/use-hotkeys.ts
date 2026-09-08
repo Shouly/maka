@@ -38,7 +38,6 @@ export type HotkeyAction =
   | 'copyDiagnostics'
   | 'keyboardHelp'
   | 'escape'
-  | 'focusFilter'
   | 'toggleSidebar'
   | 'toggleWorkbar'
   | 'workbarFiles'
@@ -93,7 +92,6 @@ export const SHELL_HOTKEYS: readonly HotkeyBinding[] = [
   // layouts and is unreachable on some, so the slash carries a modifier.
   { action: 'keyboardHelp', key: '/', mod: true, allowInTextEntry: true },
   { action: 'escape', key: 'Escape', allowInTextEntry: true },
-  { action: 'focusFilter', key: 'f' },
   // The workbar. Every one is a modifier chord, so all of them stay live
   // inside the composer — opening Files or the Terminal mid-sentence is the
   // normal way to reach them. The chords are the pre-rewrite ones

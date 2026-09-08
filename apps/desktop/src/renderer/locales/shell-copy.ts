@@ -722,7 +722,7 @@ const EN_STATIC_COMMANDS: Record<StaticCommandId, CommandCopy> = {
   'theme:dark': { label: 'Theme · Dark', group: 'Theme' },
   'theme:auto': { label: 'Theme · Follow system', group: 'Theme' },
   'nav:sessions': { label: 'Sidebar · Tasks', group: 'Navigation' },
-  'nav:automations': { label: 'Sidebar · Automations', group: 'Navigation' },
+  'nav:automations': { label: 'Sidebar · Scheduled', group: 'Navigation' },
   'nav:skills': { label: 'Open · Skills', group: 'Navigation' },
   'nav:mcp': { label: 'Open · MCP', group: 'Navigation' },
   'nav:daily-review': { label: 'Open · Daily Review', group: 'Navigation' },
@@ -1213,7 +1213,6 @@ const SHELL_COPY_BY_LOCALE = {
             { keys: ['Home', 'End'], description: '跳到列表顶部 / 底部' },
             { keys: ['Enter'], description: '打开聚焦的任务' },
             { keys: ['Delete'], description: '弹出删除确认（永远不静默删除）' },
-            { keys: ['F'], description: '聚焦任务列表搜索框（按 Esc 清空）' },
           ],
         },
         {
@@ -1724,7 +1723,6 @@ const SHELL_COPY_BY_LOCALE = {
             { keys: ['Home', 'End'], description: '跳到列表頂部 / 底部' },
             { keys: ['Enter'], description: '開啟聚焦的任務' },
             { keys: ['Delete'], description: '彈出刪除確認（永遠不靜默刪除）' },
-            { keys: ['F'], description: '聚焦任務列表搜尋框（按 Esc 清空）' },
           ],
         },
         {
@@ -2268,10 +2266,6 @@ const SHELL_COPY_BY_LOCALE = {
             {
               keys: ['Delete'],
               description: 'Open the delete confirmation (never delete silently)',
-            },
-            {
-              keys: ['F'],
-              description: 'Focus task search (press Esc to clear)',
             },
           ],
         },

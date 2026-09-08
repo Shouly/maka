@@ -52,6 +52,7 @@ Branch: `enterprise` (product branch; `main` mirrors `upstream/main`). Owner: th
     - When the sidebar is collapsed the two titlebar buttons stay where they are (they are the way back); the collapsed rail may show icon-only nav. ⌘B toggles the sidebar.
     - No second header bar under the titlebar. relx's `MainHeader`/`ChatHeader` chrome (model selector, actions) is folded into titlebar column 3 or into the composer footer, not stacked as a 48px bar.
     - The old renderer's `shell-layout.css` (`git show 49ae5e395:apps/desktop/src/renderer/styles/shell-layout.css`, `.maka-window-titlebar` block) and `maka-tokens.css` gutter tokens (`--maka-titlebar-area-*`, `--maka-titlebar-gutter-*`, `--maka-titlebar-gap`) are the reference geometry; restate them in `globals.css`'s Maka additions block.
+    - **The rail has three bands, not relx's tabs+groups (owner decision 2026-09-08).** Top, fixed: New task, **Extensions** (one entry; the page has Skills | MCP tabs — the word follows upstream Maka; "Plugins" already names the runtime's plugin concept), **Scheduled** (upstream's Automations, since Daily Review is deferred). Middle: **Projects** — every catalog project, each row a disclosure of its tasks; the row's name starts a task in it. Bottom: **Recents** — flat, newest first, 20 rows, across projects. No filter box, no `f` hotkey, no group-by menu: ⌘K search finds a task. Internal keys (`section: 'automations'`, module memory, deep links) are unchanged; only labels moved.
 
 ## 3. Scope
 

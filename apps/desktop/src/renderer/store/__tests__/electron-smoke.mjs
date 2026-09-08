@@ -546,8 +546,12 @@ try {
 
   // 4. Rename through the row menu, and read it back after a reload — a rename
   // that only changed the DOM would not survive one.
+  // A task is listed twice by design — under its project and in Recents — so
+  // the row is addressed by its first occurrence.
   const rowFor = (key) =>
-    page.locator(`[data-maka-contract="session-row"][data-session-key=${JSON.stringify(key)}]`);
+    page
+      .locator(`[data-maka-contract="session-row"][data-session-key=${JSON.stringify(key)}]`)
+      .first();
   const RENAMED = 'Renamed by the smoke test';
   await rowFor(firstKey).hover();
   await rowFor(firstKey)
@@ -593,19 +597,52 @@ try {
   );
   await page.screenshot({ path: SHOT('phase2-session-list.png') });
 
+  // The rail's three bands (owner decision 2026-09-08): the menu on top, then
+  // Projects with each project disclosing its tasks, then a flat Recents band.
+  // The seeded project is listed even before it has a task of its own; both
+  // tasks belong to it here, and both are in Recents.
   await ensureSidebarExpanded(page);
-  const before = await rows.count();
-  assert.ok(before >= 2);
-  await page.getByLabel('Filter tasks', { exact: true }).fill('Renamed by');
+  const rail = page.locator('#app-sidebar');
+  await rail.getByRole('button', { name: 'New task', exact: true }).waitFor();
+  await rail.getByRole('button', { name: 'Extensions', exact: true }).waitFor();
+  await rail.getByRole('button', { name: 'Scheduled', exact: true }).waitFor();
+  assert.equal(await rail.getByLabel('Filter tasks', { exact: true }).count(), 0);
+  const projectRow = rail.locator('[data-maka-contract="project-row"]').first();
+  await projectRow.waitFor();
+  const projectName = await projectRow.getAttribute('data-project-id');
+  assert.ok(projectName);
+  // The active task's project is open; its tasks sit under the project row.
   await page.waitForFunction(
-    () => document.querySelectorAll('[data-maka-contract="session-row"]').length === 1,
+    () =>
+      document.querySelector('[data-maka-contract="project-row"][data-project-expanded="true"]') !==
+      null,
   );
-  await page.getByLabel('Clear filter', { exact: true }).click();
+  const nested = rail.locator('[role="group"] [data-maka-contract="session-row"]');
+  assert.ok((await nested.count()) >= 2, 'the project discloses its tasks');
+  await rail
+    .getByRole('button', { name: /^Collapse project /, exact: false })
+    .first()
+    .click();
   await page.waitForFunction(
-    (count) => document.querySelectorAll('[data-maka-contract="session-row"]').length === count,
-    before,
+    () =>
+      document.querySelector('[data-maka-contract="project-row"][data-project-expanded="true"]') ===
+      null,
   );
-  checks.push('the sidebar filter narrows the list to one row and clears back');
+  await rail
+    .getByRole('button', { name: /^Expand project /, exact: false })
+    .first()
+    .click();
+  await nested.first().waitFor();
+  const recents = rail.locator('section').filter({ hasText: 'Recents' });
+  await recents.waitFor();
+  assert.ok(
+    (await recents.locator('[data-maka-contract="session-row"]').count()) >= 2,
+    'Recents lists the tasks flat',
+  );
+  await page.screenshot({ path: SHOT('phase2-session-list.png') });
+  checks.push(
+    'the rail shows menu, Projects with disclosed tasks, and Recents, with no filter box',
+  );
 
   // 5. ⌘K opens the palette and its rows are reachable.
   await page.keyboard.press('ControlOrMeta+k');
@@ -1001,22 +1038,32 @@ try {
   // does: the window titlebar keeps its toggle, and the page underneath is a
   // real page rather than a placeholder.
   const moduleMain = page.locator('[data-maka-contract="module-main"]');
-  for (const [row, title, shot] of [
-    ['Skills', 'Skills', 'phase5b-skills-light.png'],
-    ['MCP', 'MCP', 'phase5b-mcp-light.png'],
-    ['Automations', 'Scheduled tasks', 'phase5b-scheduled-light.png'],
-  ]) {
-    await page.locator('#app-sidebar').getByRole('button', { name: row, exact: true }).click();
-    await moduleMain.waitFor();
-    await moduleMain.locator('[data-maka-contract="module-actions"]').waitFor();
-    await moduleMain.getByText(title, { exact: true }).first().waitFor();
-    await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).first().waitFor();
-    // Each page opens with a read in flight; a screenshot of the skeleton says
-    // nothing about the page.
-    await new Promise((settle) => setTimeout(settle, 700));
-    await page.screenshot({ path: SHOT(shot) });
-  }
-  checks.push('the sidebar Skills, MCP and Automations rows open real module pages');
+  // Extensions is one row with two faces; Scheduled is its own row.
+  await page
+    .locator('#app-sidebar')
+    .getByRole('button', { name: 'Extensions', exact: true })
+    .click();
+  await moduleMain.waitFor();
+  await moduleMain.locator('[data-maka-contract="module-actions"]').waitFor();
+  await moduleMain.getByRole('radio', { name: 'Skills', exact: true }).waitFor();
+  await moduleMain.getByText('Installed', { exact: true }).first().waitFor();
+  await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).first().waitFor();
+  await new Promise((settle) => setTimeout(settle, 700));
+  await page.screenshot({ path: SHOT('phase5b-skills-light.png') });
+  await moduleMain.getByRole('radio', { name: 'MCP', exact: true }).click();
+  await moduleMain.getByText('Configured servers', { exact: true }).first().waitFor();
+  await new Promise((settle) => setTimeout(settle, 700));
+  await page.screenshot({ path: SHOT('phase5b-mcp-light.png') });
+  await page
+    .locator('#app-sidebar')
+    .getByRole('button', { name: 'Scheduled', exact: true })
+    .click();
+  await moduleMain.getByText('Scheduled tasks', { exact: true }).first().waitFor();
+  await new Promise((settle) => setTimeout(settle, 700));
+  await page.screenshot({ path: SHOT('phase5b-scheduled-light.png') });
+  checks.push(
+    'the sidebar Extensions row opens Skills and MCP as two faces; Scheduled opens its page',
+  );
 
   // A scheduled task, created and deleted through the page's own dialog.
   const REMINDER = 'Smoke reminder';
@@ -1034,7 +1081,7 @@ try {
   await deleteConfirm.waitFor();
   await deleteConfirm.getByRole('button', { name: 'Delete', exact: true }).click();
   await moduleMain.getByText(REMINDER, { exact: true }).waitFor({ state: 'detached' });
-  checks.push('the Automations page creates a scheduled task and deletes it again');
+  checks.push('the Scheduled page creates a scheduled task and deletes it again');
 
   // Dark, once, on a module page: the pages are new surfaces and the palette
   // has to hold on all of them, not only on the ones Settings owns.

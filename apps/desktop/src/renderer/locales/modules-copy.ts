@@ -60,6 +60,13 @@ export type SkillFailureReason =
   | 'invalid_skill';
 
 export type ModulesCopy = {
+  /** The Extensions page chrome: one title, two faces (Skills | MCP). */
+  readonly extensions: {
+    readonly title: string;
+    readonly tabsLabel: string;
+    readonly skills: string;
+    readonly mcp: string;
+  };
   skills: {
     description: string;
     installedTitle: string;
@@ -130,6 +137,7 @@ export type ModulesCopy = {
 
 const MODULES_COPY = {
   'zh-CN': {
+    extensions: { title: '扩展', tabsLabel: '扩展分类', skills: '技能', mcp: 'MCP' },
     skills: {
       description: 'Agent 可以调用的技能，以及它们的来源与启用状态。',
       installedTitle: '已安装',
@@ -216,6 +224,7 @@ const MODULES_COPY = {
     },
   },
   'zh-TW': {
+    extensions: { title: '擴充', tabsLabel: '擴充分類', skills: '技能', mcp: 'MCP' },
     skills: {
       description: 'Agent 可以呼叫的技能，以及它們的來源與啟用狀態。',
       installedTitle: '已安裝',
@@ -302,6 +311,7 @@ const MODULES_COPY = {
     },
   },
   en: {
+    extensions: { title: 'Extensions', tabsLabel: 'Extension kind', skills: 'Skills', mcp: 'MCP' },
     skills: {
       description: 'The skills the agent can invoke, where they come from, and which are on.',
       installedTitle: 'Installed',
