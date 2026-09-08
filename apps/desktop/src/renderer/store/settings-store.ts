@@ -19,6 +19,7 @@
 
 import * as api from '../bridge/settings.js';
 import type { DesktopRuntimeHostRef } from '../bridge/projects.js';
+import { hasRuntimeHostSettingsPatch } from '../../shared/settings-ownership.js';
 import { createResourceStore } from './resource-store.js';
 
 export function createSettingsStore(bridge = api) {
@@ -27,6 +28,28 @@ export function createSettingsStore(bridge = api) {
   // Serialize patches: a later user intent must be written after an earlier one.
   let clientWrites: Promise<unknown> = Promise.resolve();
   const hostWrites = new Map<string, Promise<void>>();
+  const updateClient = (patch: api.UpdateAppSettingsInput) => {
+    const mutate = client.captureMutation();
+    const result = clientWrites.then(() => mutate(() => bridge.updateClientSettings(patch)));
+    clientWrites = result.catch(() => undefined);
+    return result;
+  };
+  const updateHost = (patch: api.UpdateAppSettingsInput, owner: DesktopRuntimeHostRef) => {
+    const mutate = host.captureMutation();
+    const key = JSON.stringify([owner.profileId, owner.hostId]);
+    const result = (hostWrites.get(key) ?? Promise.resolve()).then(() =>
+      mutate(() => bridge.updateHostSettings(patch, owner)),
+    );
+    const settled = result.then(
+      () => {},
+      () => {},
+    );
+    hostWrites.set(key, settled);
+    void settled.then(() => {
+      if (hostWrites.get(key) === settled) hostWrites.delete(key);
+    });
+    return result;
+  };
   return {
     client,
     host,
@@ -42,27 +65,25 @@ export function createSettingsStore(bridge = api) {
         (refresh) => bridge.subscribeExternalSettingsChanged(refresh, owner),
       );
     },
-    updateClient(patch: api.UpdateAppSettingsInput) {
-      const mutate = client.captureMutation();
-      const result = clientWrites.then(() => mutate(() => bridge.updateClientSettings(patch)));
-      clientWrites = result.catch(() => undefined);
-      return result;
-    },
-    updateHost(patch: api.UpdateAppSettingsInput, owner: DesktopRuntimeHostRef) {
-      const mutate = host.captureMutation();
-      const key = JSON.stringify([owner.profileId, owner.hostId]);
-      const result = (hostWrites.get(key) ?? Promise.resolve()).then(() =>
-        mutate(() => bridge.updateHostSettings(patch, owner)),
-      );
-      const settled = result.then(
-        () => {},
-        () => {},
-      );
-      hostWrites.set(key, settled);
-      void settled.then(() => {
-        if (hostWrites.get(key) === settled) hostWrites.delete(key);
-      });
-      return result;
+    updateClient,
+    updateHost,
+    /**
+     * Route a patch to the channel that owns it.
+     *
+     * `settings-ownership.ts` is the authority on which fields belong to the
+     * Desktop client and which to the Runtime Host, and it is the same module
+     * the main process routes with — a second opinion here would silently drop
+     * half of a mixed patch. A patch with ANY Host-owned field goes to the
+     * Host channel, which applies the client-owned remainder locally itself
+     * (`runtime-host-settings-ipc-main.ts`).
+     */
+    async update(
+      patch: api.UpdateAppSettingsInput,
+      owner: DesktopRuntimeHostRef | undefined,
+    ): Promise<api.AppSettings | api.RuntimeHostAppSettings> {
+      if (!hasRuntimeHostSettingsPatch(patch)) return (await updateClient(patch)).settings;
+      if (!owner) throw new Error('No Runtime Host is selected');
+      return (await updateHost(patch, owner)).settings;
     },
   };
 }

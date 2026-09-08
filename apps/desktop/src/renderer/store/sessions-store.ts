@@ -20,7 +20,7 @@
 import { createStore } from 'zustand/vanilla';
 import * as bridge from '../bridge/sessions.js';
 import { errorMessage } from './resource-store.js';
-import type { DesktopSessionSummary } from '../bridge/sessions.js';
+import type { DesktopSessionSummary, SessionRevisionFamilyOptions } from '../bridge/sessions.js';
 
 export interface SessionsState {
   sessions: readonly DesktopSessionSummary[];
@@ -104,12 +104,18 @@ export function createSessionsStore(api = bridge) {
       await api.renameSession(id, name);
       await refresh();
     },
-    async archive(id: string) {
-      await api.archiveSession(id);
+    /**
+     * The family options exist on the wire but the Host decides for itself:
+     * `sessions:archive` and `sessions:unarchive` resolve the revision family
+     * regardless of what is passed. They are forwarded rather than dropped so
+     * a caller can still be explicit about what it means.
+     */
+    async archive(id: string, options?: SessionRevisionFamilyOptions) {
+      await api.archiveSession(id, options);
       await refresh();
     },
-    async unarchive(id: string) {
-      await api.unarchiveSession(id);
+    async unarchive(id: string, options?: SessionRevisionFamilyOptions) {
+      await api.unarchiveSession(id, options);
       await refresh();
     },
     async flag(id: string, flagged: boolean) {

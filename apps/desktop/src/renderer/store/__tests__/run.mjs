@@ -30,6 +30,7 @@ try {
     'phase2-state.test.ts',
     'phase3-state.test.ts',
     'phase4-state.test.ts',
+    'phase5-state.test.ts',
     'composer-state.test.ts',
     'presentation.test.tsx',
   ].map((name) => fileURLToPath(new URL(name, import.meta.url)));
@@ -38,6 +39,7 @@ try {
     'phase2-state.test.mjs',
     'phase3-state.test.mjs',
     'phase4-state.test.mjs',
+    'phase5-state.test.mjs',
     'composer-state.test.mjs',
     'presentation.test.mjs',
   ].map((name) => join(output, name));

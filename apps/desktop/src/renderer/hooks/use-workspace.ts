@@ -33,6 +33,27 @@ import {
   uiStore,
 } from '../store/index.js';
 
+/**
+ * The Runtime Host every un-pinned read in the renderer resolves against: the
+ * selected task's Host while one is open, the default Host otherwise.
+ *
+ * Exported because Settings (Phase 5) has to write to the SAME Host the rest
+ * of the renderer is reading from — two answers to "which Host" is how a
+ * settings page ends up showing one machine's values and saving to another's.
+ */
+export function useScopedRuntimeHost(): { profileId: string; hostId: string } | undefined {
+  const activeId = useStore(sessionsStore, (s) => s.activeId);
+  const selectedHost = useStore(
+    sessionsStore,
+    useShallow((s) => {
+      const row = s.sessions.find((session) => session.id === s.activeId);
+      return row ? { hostId: row.runtimeHostId, profileId: row.profileId } : undefined;
+    }),
+  );
+  const defaultHost = useStore(hostScopeStore, (s) => s.host);
+  return activeId ? selectedHost : defaultHost;
+}
+
 export function useRendererStores(): void {
   const locale = useUiLocale();
   const activeId = useStore(sessionsStore, (s) => s.activeId);

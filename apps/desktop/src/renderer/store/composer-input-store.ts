@@ -196,6 +196,22 @@ export function createComposerInputStore(storage: ComposerDraftStorage = localSt
       revoke(draft.attachments.filter((a) => a.stagingKey === id));
       patch(key, { attachments: draft.attachments.filter((a) => a.stagingKey !== id) });
     },
+    /**
+     * Drop every saved draft, in memory and on disk (Settings › Data).
+     *
+     * Attachment previews are blob URLs the renderer minted, so they are
+     * revoked here rather than left to the collector — a cleared draft that
+     * still pins its images has not cleared anything the user can measure.
+     * Returns how many drafts were actually discarded, so the page can say so.
+     */
+    clearAll(): number {
+      const drafts = store.getState().drafts;
+      const count = Object.keys(drafts).length;
+      for (const draft of Object.values(drafts)) revoke(draft.attachments);
+      store.setState({ drafts: {} });
+      persist();
+      return count;
+    },
     /** The welcome draft follows the Session its first send created. */
     transfer(from: string, to: string) {
       const draft = read(from);

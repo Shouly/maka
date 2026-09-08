@@ -656,6 +656,226 @@ try {
   );
   checks.push('sidebar collapse publishes data-sidebar-state and restores');
 
+  // ── Phase 5a: Settings ────────────────────────────────────────────────────
+  //
+  // Settings replaces the CONTENT column only (plan §2.12), so every check
+  // below also asserts that the window titlebar still carries the sidebar
+  // toggle — a Settings surface that swallowed the way back to the tasks
+  // would pass every functional assertion and still be broken.
+
+  // 5a.1 ⌘, opens Settings, and the titlebar keeps its shape.
+  await page.keyboard.press('ControlOrMeta+,');
+  const settings = page.locator('[data-maka-contract="settings-surface"]');
+  await settings.waitFor();
+  await page.locator('[data-maka-contract="settings-sidebar"]').waitFor();
+  await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).first().waitFor();
+  await page.locator('[data-maka-contract="shell-topbar-rail"]').waitFor();
+  await page.locator('[data-maka-contract="titlebar-identity"]').getByText('Settings').waitFor();
+  checks.push('⌘, opens Settings with the sidebar toggle still in the window titlebar');
+
+  // 5a.2 The nav hides the three deferred pages and shows the eleven that ship.
+  const navRows = page.locator('[data-maka-contract="settings-sidebar"] [data-settings-section]');
+  const navSections = await navRows.evaluateAll((nodes) =>
+    nodes.map((node) => node.getAttribute('data-settings-section')),
+  );
+  assert.deepEqual(navSections, [
+    'general',
+    'appearance',
+    'projects',
+    'models',
+    'subagents',
+    'memory',
+    'search',
+    'usage',
+    'archived-tasks',
+    'data',
+    'permissions',
+    'health',
+    'about',
+  ]);
+  for (const deferred of ['daily-review', 'import-tasks', 'bot-chat']) {
+    assert.equal(navSections.includes(deferred), false, deferred);
+  }
+  checks.push('the settings nav lists the shipped pages and hides the deferred ones');
+
+  const openSettingsSection = async (label, section) => {
+    await navRows.filter({ hasText: label }).first().click();
+    await page.waitForFunction(
+      (expected) =>
+        document
+          .querySelector('[data-maka-contract="settings-content"]')
+          ?.getAttribute('data-settings-section') === expected,
+      section,
+    );
+    // The nav row and the content column read the same state; a highlight that
+    // disagrees with the page is the kind of bug a screenshot rationalizes away.
+    assert.equal(
+      await page.evaluate(() =>
+        document
+          .querySelector('[data-maka-contract="settings-sidebar"] [aria-current="page"]')
+          ?.getAttribute('data-settings-section'),
+      ),
+      section,
+    );
+  };
+
+  // 5a.3 About reads the real app info, and the section it left off on is the
+  //      one ⌘, comes back to.
+  await openSettingsSection('About', 'about');
+  await settings
+    .getByText(/^v\d+\.\d+\.\d+/u)
+    .first()
+    .waitFor();
+  await page.screenshot({ path: SHOT('phase5a-about-light.png') });
+  await page.keyboard.press('Escape');
+  await settings.waitFor({ state: 'detached' });
+  assert.equal(
+    await page.evaluate(() => localStorage.getItem('maka-settings-section-v1')),
+    'about',
+  );
+  await page.keyboard.press('ControlOrMeta+,');
+  await settings.waitFor();
+  assert.equal(
+    await page
+      .locator('[data-maka-contract="settings-content"]')
+      .getAttribute('data-settings-section'),
+    'about',
+  );
+  checks.push('About shows the running build version and ⌘, reopens the section it left off on');
+
+  // 5a.4 Appearance flips the theme through the same settings IPC the palette uses.
+  await openSettingsSection('Appearance', 'appearance');
+  await page.getByRole('radio', { name: 'Dark', exact: true }).click();
+  await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
+  // The theme change animates; a frame captured mid-transition is a lie.
+  await new Promise((settle) => setTimeout(settle, 400));
+  await page.screenshot({ path: SHOT('phase5a-appearance-dark.png') });
+  await page.getByRole('radio', { name: 'Light', exact: true }).click();
+  await page.waitForFunction(() => !document.documentElement.classList.contains('dark'));
+  await new Promise((settle) => setTimeout(settle, 400));
+  await page.screenshot({ path: SHOT('phase5a-appearance-light.png') });
+  checks.push('the Appearance theme control flips .dark through the real settings IPC');
+
+  // 5a.5 General writes a client-owned setting that reads back through the IPC.
+  await openSettingsSection('General', 'general');
+  const notificationsLabel = 'Send a system notification when finished';
+  const notifications = page.getByRole('switch', { name: notificationsLabel, exact: true });
+  await notifications.waitFor();
+  const notificationsBefore = await notifications.getAttribute('aria-checked');
+  await notifications.click();
+  await page.waitForFunction(
+    ([label, previous]) =>
+      document
+        .querySelector(`button[role="switch"][aria-label="${label}"]`)
+        ?.getAttribute('aria-checked') !== previous,
+    [notificationsLabel, notificationsBefore],
+  );
+  const notificationsAfter = await notifications.getAttribute('aria-checked');
+  await page.screenshot({ path: SHOT('phase5a-general-light.png') });
+  // Prove it reached the Host, not just the DOM that wrote it: a reload throws
+  // away every store and reads the settings back over IPC.
+  await page.reload();
+  await page.locator('.appFrame').waitFor();
+  await page.keyboard.press('ControlOrMeta+,');
+  await settings.waitFor();
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[data-maka-contract="settings-content"]')
+        ?.getAttribute('data-settings-section') === 'general',
+  );
+  await page.waitForFunction(
+    ([label, expected]) =>
+      document
+        .querySelector(`button[role="switch"][aria-label="${label}"]`)
+        ?.getAttribute('aria-checked') === expected,
+    [notificationsLabel, notificationsAfter],
+  );
+  checks.push('a General switch round-trips through the settings IPC and survives a reload');
+
+  // 5a.6 The UI language re-renders the whole app, sidebar included.
+  await page.getByRole('combobox', { name: 'Interface language', exact: true }).click();
+  await page.getByRole('option', { name: 'Simplified Chinese', exact: true }).click();
+  await page.waitForFunction(
+    () => document.documentElement.getAttribute('data-maka-locale') === 'zh-CN',
+  );
+  await page.getByRole('button', { name: '新建任务', exact: true }).first().waitFor();
+  await page.locator('[data-maka-contract="settings-sidebar"]').getByText('通用').first().waitFor();
+  await page.screenshot({ path: SHOT('phase5a-general-zh.png') });
+  await page.getByRole('combobox', { name: '界面语言', exact: true }).click();
+  await page.getByRole('option', { name: 'English', exact: true }).click();
+  await page.waitForFunction(
+    () => document.documentElement.getAttribute('data-maka-locale') === 'en',
+  );
+  await page.getByRole('button', { name: 'New task', exact: true }).first().waitFor();
+  checks.push('switching the UI language re-renders the sidebar and the nav, and back again');
+
+  // 5a.7 Workspace, Usage, Data, Permissions and Health each render their own page.
+  for (const [name, section, shot] of [
+    ['Workspace', 'projects', 'phase5a-workspace-light.png'],
+    ['Usage', 'usage', 'phase5a-usage-light.png'],
+    ['Data', 'data', 'phase5a-data-light.png'],
+    ['Permissions & Capabilities', 'permissions', 'phase5a-permissions-light.png'],
+    ['Health', 'health', 'phase5a-health-light.png'],
+  ]) {
+    await openSettingsSection(name, section);
+    await page.locator('[data-maka-contract="settings-content"] section').first().waitFor();
+    // Each of these pages opens with a read in flight; a screenshot taken on
+    // the skeleton says nothing about the page.
+    await new Promise((settle) => setTimeout(settle, 600));
+    await page.screenshot({ path: SHOT(shot) });
+  }
+  checks.push('Workspace, Usage, Data, Permissions and Health each render against the real Host');
+
+  // 5a.8 A Phase 5b page says it is not built rather than showing dead controls.
+  await openSettingsSection('Models', 'models');
+  await settings.getByRole('status').first().waitFor();
+  checks.push('a Phase 5b page states that it is not built yet');
+
+  // 5a.9 Archived tasks lists a task archived from the rail, and restores it.
+  await page.keyboard.press('Escape');
+  await settings.waitFor({ state: 'detached' });
+  await ensureSidebarExpanded(page);
+  // The second task, not the renamed one: the renamed task is an
+  // edit-and-resend FAMILY, and archiving a family from the rail is currently
+  // a no-op in the Host (see the phase report). A single task is what this
+  // check is about.
+  const ARCHIVED_TASK = 'Second smoke task';
+  const toArchive = page
+    .locator('[data-maka-contract="session-row"]')
+    .filter({ hasText: ARCHIVED_TASK })
+    .first();
+  const archivedKey = await toArchive.getAttribute('data-session-key');
+  await toArchive.hover();
+  await toArchive.getByRole('button', { name: /Actions for/u }).click();
+  await page.getByRole('menuitem', { name: 'Archive', exact: true }).click();
+  await page.waitForFunction(
+    (key) =>
+      document.querySelector(
+        `[data-maka-contract="session-row"][data-session-key=${JSON.stringify(key)}]`,
+      ) === null,
+    archivedKey,
+  );
+  await page.keyboard.press('ControlOrMeta+,');
+  await settings.waitFor();
+  await openSettingsSection('Archived tasks', 'archived-tasks');
+  await settings.getByText(ARCHIVED_TASK, { exact: false }).waitFor();
+  await page.screenshot({ path: SHOT('phase5a-archived-light.png') });
+  await settings.getByRole('button', { name: `Restore ${ARCHIVED_TASK}`, exact: true }).click();
+  await settings.getByText(ARCHIVED_TASK, { exact: false }).waitFor({ state: 'detached' });
+  checks.push('Archived tasks lists a task archived from the rail and restores it');
+
+  // 5a.10 Escape closes Settings and gives the content column back.
+  await page.keyboard.press('Escape');
+  await settings.waitFor({ state: 'detached' });
+  await ensureSidebarExpanded(page);
+  await page
+    .locator('[data-maka-contract="session-row"]')
+    .filter({ hasText: ARCHIVED_TASK })
+    .first()
+    .waitFor();
+  checks.push('Escape closes Settings and the restored task is back in the rail');
+
   assert.deepEqual(errors, []);
   await writeFile(
     path.join(shots, 'phase3a-smoke-result.json'),
@@ -684,6 +904,17 @@ try {
           'phase4-inspector-light.png',
           'phase4-browser-light.png',
           'phase4-pane-dark.png',
+          'phase5a-about-light.png',
+          'phase5a-appearance-light.png',
+          'phase5a-appearance-dark.png',
+          'phase5a-general-light.png',
+          'phase5a-general-zh.png',
+          'phase5a-workspace-light.png',
+          'phase5a-usage-light.png',
+          'phase5a-data-light.png',
+          'phase5a-permissions-light.png',
+          'phase5a-health-light.png',
+          'phase5a-archived-light.png',
         ],
       },
       null,

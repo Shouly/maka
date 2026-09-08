@@ -29,6 +29,7 @@ import type {
   MakaBridge,
 } from '../../preload/bridge-contract.js';
 import { requireNamespace, toUnsubscribe, tryNamespace } from './bridge.js';
+import type { OpenPathResult } from './app.js';
 
 type Projects = MakaBridge['projects'];
 
@@ -111,11 +112,20 @@ export function relinkProject(
   return projects().relink(projectId, host);
 }
 
+/**
+ * Open a project's folder in the OS file manager.
+ *
+ * The contract declares this as `Promise<OpenPathResult>` but never declares
+ * `OpenPathResult`, so the namespace method resolves to `any`. `app.openPath`
+ * spells the same union out inline, which is what this borrows — a typed
+ * wrapper is the whole reason this layer exists, and a caller reading
+ * `result.reason` off `any` gets no exhaustiveness at all.
+ */
 export function revealProject(
   projectId: string,
   host?: DesktopRuntimeHostRef,
-): ReturnType<Projects['reveal']> {
-  return projects().reveal(projectId, host);
+): Promise<OpenPathResult> {
+  return projects().reveal(projectId, host) as Promise<OpenPathResult>;
 }
 
 export function renameProject(

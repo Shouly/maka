@@ -47,7 +47,9 @@ import { ModelSwitcher } from '../session/ModelSwitcher.js';
 import { CommandPalette } from '../palette/CommandPalette.js';
 import { KeyboardHelp } from '../palette/KeyboardHelp.js';
 import { SearchModal } from '../palette/SearchModal.js';
-import { ModulePlaceholder, SettingsPlaceholder } from '../placeholder/ModulePlaceholder.js';
+import { ModulePlaceholder } from '../placeholder/ModulePlaceholder.js';
+import { SettingsIdentity } from '../settings/SettingsIdentity.js';
+import { SettingsView } from '../settings/SettingsView.js';
 import { RuntimeDebug } from '../dev/RuntimeDebug.js';
 import { WorkbarPane } from '../workbar/WorkbarPane.js';
 import { WorkbarToggle } from '../workbar/WorkbarToggle.js';
@@ -444,7 +446,11 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
         layout={layout}
         onOpenSearch={() => uiStore.setSearchOpen(true)}
         identity={
-          view === 'session' && activeId ? (
+          // Settings owns the identity slot while it owns the content column;
+          // the actions slot stays empty there (plan §2.12).
+          view === 'settings' ? (
+            <SettingsIdentity />
+          ) : view === 'session' && activeId ? (
             <SessionIdentity
               row={activeRow}
               parentName={parentRow?.displayName}
@@ -486,7 +492,7 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
         {view === 'debug' ? (
           <RuntimeDebug />
         ) : view === 'settings' ? (
-          <SettingsPlaceholder />
+          <SettingsView onOpenKeyboardHelp={() => setHelpOpen(true)} />
         ) : view === 'skills' ? (
           <ModulePlaceholder
             title={placeholder.skills}

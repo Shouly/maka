@@ -71,3 +71,26 @@ export const statusChipLargeIconSlotClass =
 
 /** 槽里那颗图标的字号(视觉尺寸)。 */
 export const STATUS_CHIP_ICON_SIZE = 16;
+
+/** 警示(等待授权、未测试这类)。同一层淡底,只是换角色色。 */
+export const statusChipWarningClass = 'bg-warning-subtle text-warning';
+
+/**
+ * 状态词到芯片的唯一映射。
+ *
+ * `StatusSemantic`(`@maka/ui` 的 `status-vocabulary.ts`)已经把「这是什么状态」
+ * 判过一次,点(`dotForStatus`)也是从同一张表来的 —— 芯片再判一次,两处就会
+ * 在同一行里给出不同的颜色。`active` 走 accent 而不是第二种绿,和点的规则一致。
+ */
+export const statusChipToneClass = (
+  tone: 'success' | 'active' | 'attention' | 'error' | 'neutral',
+): string =>
+  tone === 'success'
+    ? statusChipSuccessClass
+    : tone === 'error'
+      ? statusChipDangerClass
+      : tone === 'attention'
+        ? statusChipWarningClass
+        : tone === 'active'
+          ? statusChipAccentClass
+          : statusChipNeutralClass;
