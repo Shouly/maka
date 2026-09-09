@@ -67,8 +67,10 @@ test('an admission failure keeps the draft and retry sends it once', async ({
   await page.locator(COMPOSER_INPUT).fill('retry keeps this draft');
   await awaitSendReady(page);
   await page.locator(COMPOSER_INPUT).press('Enter');
+  // Upstream #4457: an unexpected failure reaches the user as the operation's
+  // own words, with the raw string routed to the diagnostic report instead.
   await expect(
-    page.getByRole('alert').filter({ hasText: 'E2E admission unavailable' }).first(),
+    page.getByRole('alert').filter({ hasText: '未能发送这条消息。' }).first(),
   ).toBeVisible();
   await expect(page.locator(COMPOSER_INPUT)).toHaveText('retry keeps this draft');
   await awaitSendReady(page);

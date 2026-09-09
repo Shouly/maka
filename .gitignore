@@ -51,3 +51,4 @@ release/asf/
 
 # Launch screenshots taken during the enterprise renderer rewrite.
 .maka-shots/enterprise/
+perf-results/

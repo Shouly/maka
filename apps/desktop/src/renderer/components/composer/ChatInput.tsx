@@ -114,7 +114,7 @@ import { removeSession } from '../../bridge/sessions.js';
 import { armGoal, getGoal } from '../../bridge/goal.js';
 import { getComposerCopy } from '../../locales/composer-copy.js';
 import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
-import { getShellCopy } from '../../locales/shell-copy.js';
+import { getShellCopy, localizedShellErrorMessage } from '../../locales/shell-copy.js';
 import { getTranscriptCopy } from '../../locales/transcript-copy.js';
 import { chatModelChoiceLabel } from '../../lib/ported/shell-chat-model-selection.js';
 import {
@@ -282,9 +282,14 @@ function OwnedChatInput(props: {
     saveCurrentDraft: () => {},
   });
 
+  // Expected failures travel as stable tokens (upstream #4457: the attachment
+  // preflight throws `attachment_ingest:<code>`), so every message shown here
+  // goes through the shell's localizer rather than the raw `Error.message`.
+  const errorText = (cause: unknown, fallback = copy.send.failedFallback) =>
+    localizedShellErrorMessage(cause, fallback, locale);
   const report = (cause: unknown, title = copy.send.failedTitle) => {
     if (!mounted.current) return;
-    setError(cause instanceof Error ? cause.message : String(cause));
+    setError(errorText(cause));
     props.onError?.(title, cause);
   };
 
@@ -365,7 +370,7 @@ function OwnedChatInput(props: {
     // The optimistic copy to withdraw if the send never reaches the Host.
     let optimisticId: string | undefined;
     try {
-      preflightAttachmentItems(sent.attachments, locale);
+      preflightAttachmentItems(sent.attachments);
 
       if (parseDesktopSlashCommand(serialized.text)?.kind === 'compact') {
         if (!owner || props.running) throw new Error(copy.slash.notYet);
@@ -549,7 +554,7 @@ function OwnedChatInput(props: {
         return;
       }
       composerInputStore.patch(owner && !sessionId ? owner : scopeKey, {
-        error: cause instanceof Error ? cause.message : copy.send.failedFallback,
+        error: errorText(cause),
       });
       report(cause);
     } finally {
@@ -564,7 +569,7 @@ function OwnedChatInput(props: {
   const appendAttachments = (items: PendingAttachment[]) => {
     const all = [...composerInputStore.read(scopeKey).attachments, ...items];
     try {
-      preflightAttachmentItems(all, locale);
+      preflightAttachmentItems(all);
       patch({ attachments: all });
     } catch (cause) {
       for (const item of items) {
@@ -596,7 +601,7 @@ function OwnedChatInput(props: {
           source: { type: 'file' as const, file },
         };
       });
-      preflightAttachmentItems([...draft.attachments, ...items], locale);
+      preflightAttachmentItems([...draft.attachments, ...items]);
       appendAttachments(
         items.map((item) => ({
           ...item,

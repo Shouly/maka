@@ -61,7 +61,6 @@ export interface DesktopConversationCopy {
     messageReadFailedTitle: string;
     scrollMainToBottom: string;
   };
-  attachments: { tooMany: string; tooLarge: string; duplicate: string };
   model: {
     fakeBackendLabel: string;
     setupTitle: string;
@@ -487,11 +486,6 @@ const COPY = {
       messageReadFailedTitle: '读取任务失败',
       scrollMainToBottom: '滚动主对话到底部',
     },
-    attachments: {
-      tooMany: '附件数量超过 8 个',
-      tooLarge: '附件大小超过 50MB',
-      duplicate: '附件来源重复，请勿重复添加同一文件。',
-    },
     model: {
       fakeBackendLabel: '本地模拟连接',
       setupTitle: '等待配置真实模型',
@@ -879,11 +873,6 @@ const COPY = {
         `原任務使用的連線已不可用${modelId ? ` · ${modelId}` : ''}`,
       messageReadFailedTitle: '讀取任務失敗',
       scrollMainToBottom: '滾動主對話到底部',
-    },
-    attachments: {
-      tooMany: '附件數量超過 8 個',
-      tooLarge: '附件大小超過 50MB',
-      duplicate: '附件來源重複，請勿重複新增同一檔案。',
     },
     model: {
       fakeBackendLabel: '本地模擬連線',
@@ -1273,11 +1262,6 @@ const COPY = {
         `The previous connection is unavailable${modelId ? ` · ${modelId}` : ''}`,
       messageReadFailedTitle: 'Failed to load task',
       scrollMainToBottom: 'Scroll main conversation to bottom',
-    },
-    attachments: {
-      tooMany: 'You can attach at most 8 files',
-      tooLarge: 'Attachments must be 50 MB or smaller',
-      duplicate: 'This attachment was already added.',
     },
     model: {
       fakeBackendLabel: 'Local simulation',

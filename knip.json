@@ -31,7 +31,7 @@
         "throttleit",
         "tiptap-markdown"
       ],
-      "ignore": ["src/shared/session-local-contract.d.ts"]
+      "ignore": ["src/shared/session-local-contract.d.ts", "src/shared/work-board-ipc.ts"]
     },
     "packages/ui": {
       "entry": ["src/index.ts", "src/**/*.test.ts", "src/**/*.test.tsx"],

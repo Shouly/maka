@@ -157,25 +157,25 @@ test('persistence stays bounded: at most 32 drafts survive', () => {
 });
 
 test('attachment preflight rejects oversized files and aggregate count before session creation', () => {
-  assert.throws(() =>
-    preflightAttachmentItems(
-      [
+  assert.throws(
+    () =>
+      preflightAttachmentItems([
         {
           size: MAX_ATTACHMENT_BYTES + 1,
           source: { type: 'file', file: { size: MAX_ATTACHMENT_BYTES + 1 } },
         },
-      ],
-      'en',
-    ),
+      ]),
+    /attachment_ingest:item_too_large/,
   );
-  assert.throws(() =>
-    preflightAttachmentItems(
-      Array.from({ length: MAX_ATTACHMENT_COUNT + 1 }, () => ({
-        size: 1,
-        source: { type: 'retained' as const },
-      })),
-      'en',
-    ),
+  assert.throws(
+    () =>
+      preflightAttachmentItems(
+        Array.from({ length: MAX_ATTACHMENT_COUNT + 1 }, () => ({
+          size: 1,
+          source: { type: 'retained' as const },
+        })),
+      ),
+    /attachment_ingest:count_limit/,
   );
 });
 test('form submission preserves false, omits absent optionals, and rejects invalid integers', () => {

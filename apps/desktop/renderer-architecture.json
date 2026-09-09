@@ -313,7 +313,6 @@
     "src/renderer/locales/permission-center-copy.ts",
     "src/renderer/locales/plan-mode-copy.ts",
     "src/renderer/locales/runtime-debug-copy.ts",
-    "src/renderer/locales/session-collaboration-copy.ts",
     "src/renderer/locales/session-local-copy.ts",
     "src/renderer/locales/settings-bot-copy.ts",
     "src/renderer/locales/settings-copy.ts",
@@ -4611,7 +4610,6 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
-        "../../locales/conversation-copy.js": 1,
         "@maka/core/attachments": 1
       }
     },
@@ -5666,7 +5664,8 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
-        "@maka/core/redaction": 1
+        "@maka/core/redaction": 1,
+        "@maka/core/ui-locale": 1
       }
     },
     "src/renderer/locales/shell-remaining-copy.ts": {
