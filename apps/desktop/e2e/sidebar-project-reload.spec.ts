@@ -46,9 +46,13 @@ test('project tasks stay out of Recents before and after reload', async ({
   await expect(toggle).toHaveText(/new-task-project$/);
   await page.bringToFront();
   await toggle.getByText('new-task-project', { exact: true }).hover();
+  await expect(projectIcon).toHaveCSS('opacity', '1');
+  await expect(caret).toHaveCSS('opacity', '0');
+  await projectIcon.locator('..').hover();
   await expect(projectIcon).toHaveCSS('opacity', '0');
   await expect(caret).toHaveCSS('opacity', '1');
   await expect(caret).toHaveCSS('rotate', '90deg');
+  await expect(caret).toHaveCSS('font-size', '16px');
   await toggle.getByText('new-task-project', { exact: true }).click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(caret).toHaveCSS('rotate', 'none');

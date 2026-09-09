@@ -82,7 +82,7 @@ export function ProjectRow(props: {
       data-project-id={project?.id ?? props.projectKey}
       data-project-expanded={props.expanded ? 'true' : undefined}
       className={cn(
-        'group group/project relative rounded-lg transition-colors hover:bg-sidebar-hover focus-within:bg-sidebar-hover',
+        'group relative rounded-lg transition-colors hover:bg-sidebar-hover focus-within:bg-sidebar-hover',
         menuOpen && 'bg-sidebar-hover',
       )}
     >
@@ -117,15 +117,16 @@ export function ProjectRow(props: {
           aria-controls={tasksId}
           className="group/item flex h-8 w-full min-w-0 cursor-pointer items-center rounded-lg px-[2px] text-left text-sm leading-[21px] text-sidebar-text-secondary transition-[color,box-shadow] hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none"
         >
-          <span className="relative mr-2 flex size-7 shrink-0 items-center justify-center">
+          <span className="group/project-icon relative mr-2 flex size-7 shrink-0 items-center justify-center">
             <Anthropicon
               name="projects"
-              className="absolute transition-opacity duration-[var(--dur-fast)] group-hover/project:opacity-0"
+              className="absolute transition-opacity duration-[var(--dur-fast)] group-hover/project-icon:opacity-0"
             />
             <Anthropicon
               name="caretRight"
+              size={16}
               className={cn(
-                'absolute opacity-0 transition-[opacity,transform] duration-[var(--dur-fast)] group-hover/project:opacity-100',
+                'absolute opacity-0 transition-[opacity,transform] duration-[var(--dur-fast)] group-hover/project-icon:opacity-100',
                 props.expanded && 'rotate-90',
               )}
             />
