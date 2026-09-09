@@ -21,7 +21,7 @@
 //
 //   menu      New task, Extensions (Skills | MCP), Scheduled — fixed
 //   Projects  every project the Hosts know, each expandable to its tasks;
-//             a project's row starts a task in it
+//             clicking its row expands or collapses its tasks
 //   Pinned    every pinned task, across projects, newest first — a shortcut;
 //             the task stays listed under its project too
 //   Recents   tasks without a project (and not pinned), flat, newest first
@@ -197,7 +197,6 @@ export function Sidebar(props: SidebarProps) {
             projectKey={entry.key}
             project={entry.project}
             label={entry.label}
-            taskCount={entry.rows.length}
             expanded={open}
             onToggle={() => toggleProject(entry.key)}
             copy={copy}

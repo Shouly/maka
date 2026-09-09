@@ -17,20 +17,8 @@
  * under the License.
  */
 
-// One project in the Projects band. Geometry ported from the reference design
-// system's `ProjectItem`; two things are this product's:
-//
-//   - the row is a DISCLOSURE as well as a link: the leading slot holds the
-//     project mark at rest and a caret on hover, and the caret toggles the
-//     project's tasks under it. Clicking the name starts a task in the
-//     project, the same as the reference's row opening the project;
-//   - the action set, because a project here is a real directory on a
-//     Runtime Host rather than a server-side folder — it can be relinked
-//     when the directory moves, and revealed in the OS file manager.
-//
-// A row can also stand for a project only the tasks know (another Host's, or
-// one archived since). Such a row has no `project`; it still discloses its
-// tasks but offers no actions.
+// The full row toggles its tasks; project actions live in the separate menu.
+// Projects absent from the catalog still expand, but offer no directory actions.
 
 import { useCallback, useRef, useState } from 'react';
 import { motion } from 'motion/react';
@@ -66,7 +54,6 @@ export function ProjectRow(props: {
   /** Absent for a project only the tasks know. */
   project: ProjectRowModel | undefined;
   label: string;
-  taskCount: number;
   expanded: boolean;
   onToggle: () => void;
   archived?: boolean;
@@ -95,7 +82,7 @@ export function ProjectRow(props: {
       data-project-id={project?.id ?? props.projectKey}
       data-project-expanded={props.expanded ? 'true' : undefined}
       className={cn(
-        'group relative rounded-lg transition-colors hover:bg-sidebar-hover focus-within:bg-sidebar-hover',
+        'group group/project relative rounded-lg transition-colors hover:bg-sidebar-hover focus-within:bg-sidebar-hover',
         menuOpen && 'bg-sidebar-hover',
       )}
     >
@@ -121,68 +108,48 @@ export function ProjectRow(props: {
           />
         </div>
       ) : (
-        <div className="flex h-8 items-center px-[2px]">
-          {/* The disclosure. At rest the slot shows the project mark; on hover
-              and while open it shows the caret, the reference's own pattern
-              for a row that is both a link and a folder. */}
-          <button
-            type="button"
-            onClick={props.onToggle}
-            aria-label={props.expanded ? copy.collapseProject(label) : copy.expandProject(label)}
-            aria-expanded={props.expanded}
-            aria-controls={tasksId}
-            className="group/disclose relative mr-2 flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-text-secondary outline-none transition-colors hover:bg-sidebar-menu-hover hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)]"
-          >
+        <button
+          type="button"
+          data-roving-row=""
+          onClick={props.onToggle}
+          aria-label={props.expanded ? copy.collapseProject(label) : copy.expandProject(label)}
+          aria-expanded={props.expanded}
+          aria-controls={tasksId}
+          className="group/item flex h-8 w-full min-w-0 cursor-pointer items-center rounded-lg px-[2px] text-left text-sm leading-[21px] text-sidebar-text-secondary transition-[color,box-shadow] hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none"
+        >
+          <span className="relative mr-2 flex size-7 shrink-0 items-center justify-center">
             <Anthropicon
               name="projects"
-              className={cn(
-                'absolute transition-opacity duration-[var(--dur-fast)] group-hover/disclose:opacity-0 group-focus-visible/disclose:opacity-0',
-                props.expanded && 'opacity-0',
-              )}
+              className="absolute transition-opacity duration-[var(--dur-fast)] group-hover/project:opacity-0"
             />
             <Anthropicon
               name="caretRight"
               className={cn(
-                'absolute opacity-0 transition-[opacity,transform] duration-[var(--dur-fast)] group-hover/disclose:opacity-100 group-focus-visible/disclose:opacity-100',
-                props.expanded && 'rotate-90 opacity-100',
+                'absolute opacity-0 transition-[opacity,transform] duration-[var(--dur-fast)] group-hover/project:opacity-100',
+                props.expanded && 'rotate-90',
               )}
             />
-          </button>
-          <button
-            type="button"
-            onClick={() => (project ? actions.onNewTask(project) : props.onToggle())}
-            title={project ? copy.projectRowActions.newTask : undefined}
-            className="group/item flex h-8 min-w-0 flex-1 cursor-pointer items-center rounded-lg text-left text-sm leading-[21px] text-sidebar-text-secondary transition-[color,box-shadow] hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none"
-          >
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span
-                  ref={nameRef}
-                  onPointerEnter={checkClipped}
-                  className={cn(
-                    'min-w-0 flex-1 overflow-hidden whitespace-nowrap fade-clip-end text-sm leading-[21px]',
-                    menuOpen && 'fade-clip-wide',
-                  )}
-                >
-                  {label}
-                </span>
-              </TooltipTrigger>
-              {(clipped || path) && (
-                <TooltipContent side="right" className="break-words">
-                  {path?.title ?? label}
-                </TooltipContent>
-              )}
-            </Tooltip>
-            {props.taskCount > 0 && (
+          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
               <span
-                aria-label={copy.taskCount(props.taskCount)}
-                className="ml-2 mr-1 shrink-0 text-[11px] leading-4 tabular-nums text-sidebar-text-muted group-hover:opacity-0"
+                ref={nameRef}
+                onPointerEnter={checkClipped}
+                className={cn(
+                  'min-w-0 flex-1 overflow-hidden whitespace-nowrap fade-clip-end text-sm leading-[21px]',
+                  menuOpen && 'fade-clip-wide',
+                )}
               >
-                {props.taskCount}
+                {label}
               </span>
+            </TooltipTrigger>
+            {(clipped || path) && (
+              <TooltipContent side="right" className="break-words">
+                {path?.title ?? label}
+              </TooltipContent>
             )}
-          </button>
-        </div>
+          </Tooltip>
+        </button>
       )}
 
       {!renaming && project && (

@@ -17,26 +17,8 @@
  * under the License.
  */
 
-// The welcome surface: greeting, suggestions, and the entry composer.
-//
-// Layout ported from the reference design system's `TaskWelcomeContent` — one
-// centred column, the 48px chrome row the page header would occupy, the serif
-// greeting at `opsz 48`, and the composer directly under it at the same width.
-//
-// The composer here is deliberately a PLACEHOLDER: a plain textarea and a Send
-// button. Phase 3 replaces it with the TipTap editor that carries mentions,
-// slash commands, attachments and the mode controls. What is already real is
-// the path it drives — create the Session through `newTasks.create` with the
-// chosen workspace and model, then send the first message through the same
-// turn actions every later message uses, so nothing about this surface is a
-// special case downstream.
-
-import { useStore } from 'zustand';
-import { getConversationCopy, getPromptSuggestions, useUiLocale } from '@maka/ui';
-import { ChatInput, newComposerKey } from '../composer/ChatInput.js';
-import { composerInputStore } from '../../store/composer-input-store.js';
-import { cn } from '../../lib/cn.js';
-import { newTaskStore } from '../../store/index.js';
+import { getConversationCopy, useUiLocale } from '@maka/ui';
+import { ChatInput } from '../composer/ChatInput.js';
 import { getWelcomeCopy } from '../../locales/welcome-copy.js';
 import { OnboardingHero } from './OnboardingHero.js';
 import { ReadinessNotice } from './ReadinessNotice.js';
@@ -67,7 +49,6 @@ export function TaskWelcomeContent(props: {
   const locale = useUiLocale();
   const copy = getWelcomeCopy(locale);
   const conversation = getConversationCopy(locale).empty;
-  const target = useStore(newTaskStore, (state) => state.target);
   const period = detectDayPeriod();
   const greeting = conversation.headlineFallback(
     conversation.greeting[period],
@@ -92,7 +73,7 @@ export function TaskWelcomeContent(props: {
               </h1>
             </div>
 
-            <div className="flex w-full max-w-2xl flex-col gap-3">
+            <div className="flex w-full max-w-2xl flex-col gap-3 pb-10">
               <OnboardingHero
                 onOpenModels={props.onOpenModels}
                 onOpenConnection={props.onOpenConnection}
@@ -104,28 +85,6 @@ export function TaskWelcomeContent(props: {
                 onOpenSettings={props.onOpenModels}
                 onError={props.onError}
               />
-
-              <ul
-                aria-label={copy.suggestionsLabel}
-                className="flex flex-wrap justify-center gap-2 pb-10"
-              >
-                {getPromptSuggestions(locale).map((suggestion) => (
-                  <li key={suggestion.label}>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        composerInputStore.setText(newComposerKey(target), suggestion.prompt)
-                      }
-                      className={cn(
-                        'ui-control-squish ui-control-squish-ghost inline-flex h-8 cursor-pointer items-center rounded-full border border-hairline px-3 text-[13px] leading-5 text-text-secondary outline-none',
-                        'hover:text-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)]',
-                      )}
-                    >
-                      {suggestion.label}
-                    </button>
-                  </li>
-                ))}
-              </ul>
             </div>
           </div>
         </div>

@@ -20,11 +20,7 @@
 // Who the content column is showing, rendered into the window titlebar's
 // second column (plan §2.12) — not a header bar of its own.
 //
-// Four facts, in the order the user needs them: the parent task when this one
-// is a branch (a breadcrumb, because a branch is only meaningful relative to
-// what it came from), the task name (renameable in place), the project it runs
-// in (clicking it opens that folder), and the git branch, the one piece of
-// workspace state that silently changes what a task does.
+// Shows the parent task, editable task name, and project folder shortcut.
 //
 // `data-maka-contract="titlebar-identity"` is pinned: the main process probe
 // and the e2e suite both look for it.
@@ -38,7 +34,6 @@ import { InlineRename } from './sidebar-parts/InlineRename.js';
 import { getSidebarCopy } from '../../locales/sidebar-copy.js';
 import { getShellCopy } from '../../locales/shell-copy.js';
 import { sessionsStore } from '../../store/index.js';
-import { useProjectContext } from '../../hooks/use-workspace.js';
 import { openPath } from '../../bridge/app.js';
 import type { SessionListRow } from '../../store/session-list-model.js';
 
@@ -53,13 +48,8 @@ export function SessionIdentity(props: {
   const locale = useUiLocale();
   const copy = getSidebarCopy(locale);
   const shell = getShellCopy(locale);
-  const project = useProjectContext();
   const [renaming, setRenaming] = useState(false);
   const row = props.row;
-  // `info` is a union: the active session's project info carries `projectGit`,
-  // the default-Host context carries app build identity instead.
-  const info = project.info;
-  const branch = info && 'projectGit' in info ? info.projectGit.branch : undefined;
   return (
     <div
       data-maka-contract="titlebar-identity"
@@ -125,12 +115,6 @@ export function SessionIdentity(props: {
             <TooltipContent side="bottom">{shell.paths.project}</TooltipContent>
           </Tooltip>
         </>
-      )}
-      {branch && (
-        <span className="ml-1 inline-flex shrink-0 items-center gap-1 rounded-md bg-alpha-1 px-1.5 py-0.5 text-[11px] leading-4 text-sidebar-text-muted">
-          <Anthropicon name="pullRequest" size={12} />
-          <span className="max-w-32 truncate">{branch}</span>
-        </span>
       )}
     </div>
   );
