@@ -44,7 +44,8 @@ export interface WindowTitlebarProps {
   onOpenSearch: () => void;
   /** Who the content column is showing. */
   identity?: ReactNode;
-  /** Right-side actions: model switcher, later the workbar toggle. */
+  softEdge?: boolean;
+  /** Actions for the current page. */
   actions?: ReactNode;
 }
 
@@ -81,8 +82,16 @@ export function WindowTitlebar(props: WindowTitlebarProps) {
         >
           <SidebarControls layout={layout} onOpenSearch={props.onOpenSearch} />
         </div>
-        <div className="maka-titlebar-identity">{props.identity}</div>
-        <div className="maka-titlebar-actions maka-titlebar-gutter-right">{props.actions}</div>
+        <div className="relative isolate z-10 flex h-full min-w-0 flex-1 items-center">
+          <div className="maka-titlebar-identity">{props.identity}</div>
+          <div className="maka-titlebar-actions maka-titlebar-gutter-right">{props.actions}</div>
+          {props.softEdge && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 -bottom-6 z-[-1] bg-surface-1 [mask-image:linear-gradient(to_bottom,black_66.67%,transparent)]"
+            />
+          )}
+        </div>
       </div>
     </SidebarTooltipProvider>
   );

@@ -294,7 +294,7 @@ export function WorkspaceSettings(props: { host: DesktopRuntimeHostRef | undefin
                         {copy.openFolder}
                       </Button>
                     )}
-                    {!archived && (
+                    {!archived && !project.available && (
                       <Button
                         variant="ghost"
                         size="sm"

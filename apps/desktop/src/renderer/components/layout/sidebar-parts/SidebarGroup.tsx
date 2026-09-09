@@ -27,7 +27,7 @@
 // slot without looking like it belongs to that group in particular.
 
 import { useEffect, useRef, useState, type Key, type ReactNode } from 'react';
-import { AnimatePresence } from 'motion/react';
+import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'motion/react';
 import { Anthropicon } from '../../icons/Anthropicon.js';
 import { cn } from '../../../lib/cn.js';
 import type { SidebarCopy } from '../../../locales/sidebar-copy.js';
@@ -70,7 +70,7 @@ function SidebarGroupLabel(props: {
           <Anthropicon
             name="caretRight"
             className={cn(
-              'shrink-0 opacity-0 transition-[opacity,transform] duration-[var(--dur-fast)] group-hover/section:opacity-100 group-focus-within/labelrow:opacity-100 motion-reduce:transition-none',
+              'shrink-0 opacity-0 transition-[opacity,rotate] duration-[var(--dur-fast)] group-hover/section:opacity-100 group-focus-within/labelrow:opacity-100 motion-reduce:transition-none',
               !props.isContentHidden && 'rotate-90',
             )}
           />
@@ -128,13 +128,13 @@ export function SidebarGroup(props: {
         actions={props.actions}
         copy={props.copy}
       />
-      <div id={itemsId} hidden={props.isContentHidden}>
+      <AnimatePresence initial={false}>
         {!props.isContentHidden && (
-          <div className="space-y-[1.5px] pb-[0.5px]">
+          <AnimatedGroupContent key={itemsId} id={itemsId}>
             <AnimatePresence mode="popLayout">{props.children}</AnimatePresence>
-          </div>
+          </AnimatedGroupContent>
         )}
-      </div>
+      </AnimatePresence>
     </section>
   );
 }
@@ -156,4 +156,23 @@ export function useHiddenGroupKeys(resetKey: string) {
         return next;
       }),
   ] as const;
+}
+
+function AnimatedGroupContent(props: { id: string; children: ReactNode }) {
+  const present = useIsPresent();
+  const reduceMotion = useReducedMotion();
+  return (
+    <motion.div
+      id={props.id}
+      aria-hidden={!present || undefined}
+      inert={!present || undefined}
+      initial={{ height: 0, opacity: 0 }}
+      animate={{ height: 'auto', opacity: 1 }}
+      exit={{ height: 0, opacity: 0 }}
+      transition={{ duration: reduceMotion ? 0 : 0.18, ease: 'easeOut' }}
+      className="overflow-hidden"
+    >
+      <div className="space-y-[1.5px] pb-[0.5px]">{props.children}</div>
+    </motion.div>
+  );
 }

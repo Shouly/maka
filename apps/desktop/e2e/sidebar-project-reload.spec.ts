@@ -66,7 +66,13 @@ test('project tasks stay out of Recents before and after reload', async ({
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   await projectRow.getByRole('button', { name: '项目「new-task-project」的操作', exact: true }).click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByRole('menuitem')).toHaveCount(3);
+  for (const name of ['新建任务', '重命名', '归档项目']) {
+    await expect(page.getByRole('menuitem', { name, exact: true })).toBeVisible();
+  }
+  await expect(page.getByRole('menuitem').locator('[data-anthropicon]')).toHaveCount(3);
   await page.keyboard.press('Escape');
+  await expect(projectRow.getByRole('button', { name: '项目「new-task-project」的操作', exact: true })).toBeFocused();
   await toggle.focus();
   await page.keyboard.press('Enter');
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -87,25 +93,37 @@ test('project tasks stay out of Recents before and after reload', async ({
   await olderRow.hover();
   await olderRow.getByRole('button', { name: '「project reload contract」的操作', exact: true }).click();
   await page.getByRole('menuitem', { name: '置顶', exact: true }).click();
-  await expect(projectRows.first()).toContainText('project reload contract');
+  await expect(projectRows.first()).toContainText('newer project task');
+  await expect(olderRow).toHaveCount(0);
   const pinned = page.getByRole('region', { name: '置顶', exact: true });
+  const pinnedRow = pinned.locator('[data-maka-contract="session-row"]').filter({ hasText: 'project reload contract' });
+  await expect(page.locator('[data-maka-session-list] > section').first()).toHaveAccessibleName('置顶');
   await expect(pinned.getByRole('option', { name: 'project reload contract' })).toBeVisible();
   await expect(recents.getByRole('option', { name: 'project reload contract' })).toHaveCount(0);
   await page.reload();
   await expect(page.locator(COMPOSER_INPUT)).toBeVisible();
   await ensureSidebarExpanded(page);
-  await expect(projects.getByRole('option', { name: 'project reload contract' })).toBeVisible();
+  await expect(projects.getByRole('option', { name: 'project reload contract' })).toHaveCount(0);
   await expect(recents.getByRole('option', { name: 'project reload contract' })).toHaveCount(0);
   await expect(projects.getByText('未归入项目', { exact: true })).toHaveCount(0);
   await expect(recents.getByRole('option', { name: 'standalone sidebar task' })).toBeVisible();
   await expect(projects.getByRole('option', { name: 'standalone sidebar task' })).toHaveCount(0);
-  await expect(projectRows.first()).toContainText('project reload contract');
+  await expect(projectRows.first()).toContainText('newer project task');
+  await expect(olderRow).toHaveCount(0);
   // The pin survived the reload; assert it before the menu opens, since an
   // open menu hides the rest of the app from the accessibility tree.
   await expect(pinned.getByRole('option', { name: 'project reload contract' })).toBeVisible();
-  await olderRow.hover();
-  await olderRow.getByRole('button', { name: '「project reload contract」的操作', exact: true }).click();
+  for (const section of ['置顶', '项目', '最近']) {
+    const region = page.getByRole('region', { name: section, exact: true });
+    await region.getByRole('button', { name: `收起「${section}」`, exact: true }).click();
+    await expect(region.locator('[data-roving-row]')).toHaveCount(0);
+    await region.getByRole('button', { name: `展开「${section}」`, exact: true }).click();
+    await expect(region.locator('[data-roving-row]').first()).toBeVisible();
+  }
+  await pinnedRow.hover();
+  await pinnedRow.getByRole('button', { name: '「project reload contract」的操作', exact: true }).click();
   await page.getByRole('menuitem', { name: '取消置顶', exact: true }).click();
   await expect(projectRows.first()).toContainText('newer project task');
   await expect(pinned).toHaveCount(0);
+  await expect(olderRow).toBeVisible();
 });

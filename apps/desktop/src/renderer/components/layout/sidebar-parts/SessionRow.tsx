@@ -21,17 +21,11 @@ import { useCallback, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { Anthropicon } from '../../icons/Anthropicon.js';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../ui/tooltip.js';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '../../ui/dropdown-menu.js';
-import { menuDangerItemClass } from '../../ui/menu-variants.js';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '../../ui/dropdown-menu.js';
 import { cn } from '../../../lib/cn.js';
 import type { SessionListRow } from '../../../store/session-list-model.js';
 import type { SidebarCopy } from '../../../locales/sidebar-copy.js';
+import { SessionActionMenuItems } from './SessionActionMenuItems.js';
 import { InlineRename } from './InlineRename.js';
 import { SidebarRowActionTrigger } from './SidebarRowActionTrigger.js';
 import { sidebarRowFadeProps } from './sidebar-row-motion.js';
@@ -191,36 +185,16 @@ export function SessionRow(props: {
               />
             </DropdownMenuTrigger>
             <DropdownMenuContent variant="sidebar" align="end" side="bottom">
-              <DropdownMenuItem
-                onSelect={() => {
+              <SessionActionMenuItems
+                row={row}
+                copy={copy}
+                actions={actions}
+                onRename={() => {
                   renameFromMenu.current = true;
                   setMenuOpen(false);
                   setRenaming(true);
                 }}
-              >
-                <Anthropicon name="edit" size={20} />
-                <span className="flex-1">{copy.rowActions.rename}</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => actions.onSetFlagged(row, !row.flagged)}>
-                <Anthropicon name={row.flagged ? 'pinSlash' : 'pin'} size={20} />
-                <span className="flex-1">
-                  {row.flagged ? copy.rowActions.unflag : copy.rowActions.flag}
-                </span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => actions.onArchive(row, !row.archived)}>
-                <Anthropicon name={row.archived ? 'arrowCounterClockwise' : 'archive'} size={20} />
-                <span className="flex-1">
-                  {row.archived ? copy.rowActions.unarchive : copy.rowActions.archive}
-                </span>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className={menuDangerItemClass}
-                onSelect={() => actions.onRemove(row)}
-              >
-                <Anthropicon name="trash" size={20} />
-                <span className="flex-1">{copy.rowActions.remove}</span>
-              </DropdownMenuItem>
+              />
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

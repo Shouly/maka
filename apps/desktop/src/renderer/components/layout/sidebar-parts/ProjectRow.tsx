@@ -44,8 +44,6 @@ export interface ProjectRowActions {
   onRename(project: ProjectRowModel, name: string): void;
   onArchive(project: ProjectRowModel): void;
   onRestore(project: ProjectRowModel): void;
-  onRelink(project: ProjectRowModel): void;
-  onReveal(project: ProjectRowModel): void;
 }
 
 export function ProjectRow(props: {
@@ -126,7 +124,7 @@ export function ProjectRow(props: {
               name="caretRight"
               size={16}
               className={cn(
-                'absolute opacity-0 transition-[opacity,transform] duration-[var(--dur-fast)] group-hover/project-icon:opacity-100',
+                'absolute opacity-0 transition-[opacity,rotate] duration-[var(--dur-fast)] motion-reduce:transition-none group-hover/project-icon:opacity-100',
                 props.expanded && 'rotate-90',
               )}
             />
@@ -168,7 +166,8 @@ export function ProjectRow(props: {
             </DropdownMenuTrigger>
             <DropdownMenuContent variant="sidebar" align="end" side="bottom">
               <DropdownMenuItem onSelect={() => actions.onNewTask(project)}>
-                {copy.projectRowActions.newTask}
+                <Anthropicon name="chatAdd" size={20} />
+                <span className="flex-1">{copy.projectRowActions.newTask}</span>
               </DropdownMenuItem>
               <DropdownMenuItem
                 onSelect={() => {
@@ -177,22 +176,19 @@ export function ProjectRow(props: {
                   setRenaming(true);
                 }}
               >
-                {copy.projectRowActions.rename}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => actions.onReveal(project)}>
-                {copy.projectRowActions.reveal}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => actions.onRelink(project)}>
-                {copy.projectRowActions.relink}
+                <Anthropicon name="edit" size={20} />
+                <span className="flex-1">{copy.projectRowActions.rename}</span>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               {props.archived ? (
                 <DropdownMenuItem onSelect={() => actions.onRestore(project)}>
-                  {copy.projectRowActions.restore}
+                  <Anthropicon name="arrowCounterClockwise" size={20} />
+                  <span className="flex-1">{copy.projectRowActions.restore}</span>
                 </DropdownMenuItem>
               ) : (
                 <DropdownMenuItem onSelect={() => actions.onArchive(project)}>
-                  {copy.projectRowActions.archive}
+                  <Anthropicon name="archive" size={20} />
+                  <span className="flex-1">{copy.projectRowActions.archive}</span>
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>

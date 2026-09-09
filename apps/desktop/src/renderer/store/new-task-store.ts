@@ -352,3 +352,20 @@ function defaultModelCandidate(
 }
 
 export const newTaskStore = createNewTaskStore();
+
+/** Resolve the clicked project explicitly; never reuse a previous composer target. */
+export function projectTaskTarget(
+  project: { id: string; profileId: string; hostId: string | undefined },
+  catalog: DesktopNewTaskCatalog | undefined,
+  defaultHost: DesktopNewTaskHostRef | undefined,
+): DesktopNewTaskTarget | undefined {
+  const profileId = project.profileId || defaultHost?.profileId;
+  const hostId = project.hostId ?? defaultHost?.hostId;
+  if (!profileId || !hostId) return undefined;
+  const host = catalog?.hosts.find((entry) => entry.profile.id === profileId);
+  if (host?.readiness !== 'ready' || host.state !== 'available' || host.hostId !== hostId)
+    return undefined;
+  const record = host.projects.find((entry) => entry.id === project.id);
+  if (!record?.available || record.archivedAt !== undefined) return undefined;
+  return { profileId, hostId, projectId: record.id };
+}

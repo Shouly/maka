@@ -62,6 +62,7 @@
     "src/renderer/components/layout/WindowTitlebar.tsx",
     "src/renderer/components/layout/sidebar-parts/InlineRename.tsx",
     "src/renderer/components/layout/sidebar-parts/ProjectRow.tsx",
+    "src/renderer/components/layout/sidebar-parts/SessionActionMenuItems.tsx",
     "src/renderer/components/layout/sidebar-parts/SessionRow.tsx",
     "src/renderer/components/layout/sidebar-parts/SidebarGroup.tsx",
     "src/renderer/components/layout/sidebar-parts/SidebarNavButton.tsx",
@@ -1228,6 +1229,7 @@
         "../../locales/sidebar-copy.js": 1,
         "../../store/composer-input-store.js": 1,
         "../../store/index.js": 1,
+        "../../store/new-task-store.js": 1,
         "../../store/toast-store.js": 1,
         "../../store/window-commands.js": 1,
         "../composer/ChatInput.js": 1,
@@ -1269,9 +1271,12 @@
     },
     "src/renderer/components/layout/SessionIdentity.tsx": {
       "bridgePaths": {},
-      "environmentCapabilities": {},
+      "environmentCapabilities": {
+        "requestAnimationFrame": 1
+      },
       "hookCalls": {
-        "useState": 1,
+        "useRef": 3,
+        "useState": 2,
         "useUiLocale": 1
       },
       "lifecycleMethods": {},
@@ -1280,12 +1285,12 @@
       "dependencyPaths": {
         "../../bridge/app.js": 1,
         "../../lib/cn.js": 1,
-        "../../locales/shell-copy.js": 1,
         "../../locales/sidebar-copy.js": 1,
-        "../../store/index.js": 1,
         "../icons/Anthropicon.js": 1,
-        "../ui/tooltip.js": 1,
+        "../ui/dropdown-menu.js": 1,
+        "./MainHeader.js": 1,
         "./sidebar-parts/InlineRename.js": 1,
+        "./sidebar-parts/SessionActionMenuItems.js": 1,
         "@maka/ui": 1,
         "react": 1
       }
@@ -1297,7 +1302,9 @@
       },
       "hookCalls": {
         "useEffect": 2,
+        "useIsPresent": 1,
         "useProjectRows": 1,
+        "useReducedMotion": 1,
         "useRef": 1,
         "useRovingRowFocus": 1,
         "useSessionList": 1,
@@ -1320,6 +1327,7 @@
         "../ui/sidebar-tooltip.js": 1,
         "./sidebar-parts/index.js": 1,
         "@maka/ui": 1,
+        "motion/react": 1,
         "react": 1,
         "zustand": 1
       }
@@ -1399,6 +1407,19 @@
         "react": 1
       }
     },
+    "src/renderer/components/layout/sidebar-parts/SessionActionMenuItems.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/dropdown-menu.js": 1,
+        "../../ui/menu-variants.js": 1
+      }
+    },
     "src/renderer/components/layout/sidebar-parts/SessionRow.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {
@@ -1415,9 +1436,9 @@
         "../../../lib/cn.js": 1,
         "../../icons/Anthropicon.js": 1,
         "../../ui/dropdown-menu.js": 1,
-        "../../ui/menu-variants.js": 1,
         "../../ui/tooltip.js": 1,
         "./InlineRename.js": 1,
+        "./SessionActionMenuItems.js": 1,
         "./sidebar-row-motion.js": 1,
         "./SidebarRowActionTrigger.js": 1,
         "motion/react": 1,
@@ -1429,6 +1450,8 @@
       "environmentCapabilities": {},
       "hookCalls": {
         "useEffect": 2,
+        "useIsPresent": 1,
+        "useReducedMotion": 1,
         "useRef": 2,
         "useState": 1
       },
@@ -3441,15 +3464,6 @@
         "react": 1
       }
     },
-    "src/renderer/components/ui/count-badge.ts": {
-      "bridgePaths": {},
-      "environmentCapabilities": {},
-      "hookCalls": {},
-      "lifecycleMethods": {},
-      "unresolvedDependencies": 0,
-      "actionFactories": [],
-      "dependencyPaths": {}
-    },
     "src/renderer/components/ui/dialog.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -4130,11 +4144,9 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
-        "../../lib/cn.js": 1,
         "../../locales/shell-copy.js": 1,
         "../icons/Anthropicon.js": 1,
-        "../layout/SidebarControls.js": 1,
-        "../ui/count-badge.js": 1,
+        "../layout/MainHeader.js": 1,
         "../ui/sidebar-tooltip.js": 1,
         "@maka/ui": 1
       }

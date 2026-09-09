@@ -27,7 +27,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { SessionSummary } from '@maka/core/session';
 import { buildSessionListModel, timeBucketOf } from '../session-list-model.js';
-import { createNewTaskStore, defaultTargetOf, workspaceOptionsOf } from '../new-task-store.js';
+import {
+  createNewTaskStore,
+  defaultTargetOf,
+  workspaceOptionsOf,
+  projectTaskTarget,
+} from '../new-task-store.js';
 import { createUpdateStore, updateChipOf } from '../update-store.js';
 import { pendingScheduledTaskCount } from '../scheduled-tasks-store.js';
 import { createOnboardingStore, sendOutcomesOf } from '../onboarding-store.js';
@@ -715,4 +720,22 @@ test('welcome defaults come from the chosen Host without creating a per-session 
   assert.equal((owners[0] as { profileId: string }).profileId, store.getState().target?.profileId);
   await store.create();
   assert.equal('permissionMode' in JSON.parse(calls[0]!)[1], false);
+});
+
+test('project task creation resolves missing row metadata without reusing another target', () => {
+  const host = readyHost([{ id: 'p1', name: 'One' }]);
+  const catalog = { defaultProfileId: 'local', hosts: [host] } as never;
+  const fallback = { profileId: 'local', hostId: 'host-1' };
+  const row = { id: 'p1', profileId: '', hostId: undefined };
+  assert.deepEqual(projectTaskTarget(row, catalog, fallback), { ...fallback, projectId: 'p1' });
+  assert.equal(projectTaskTarget({ ...row, id: 'missing' }, catalog, fallback), undefined);
+  assert.equal(projectTaskTarget(row, undefined, fallback), undefined);
+  assert.equal(
+    projectTaskTarget({ ...row, profileId: 'remote', hostId: 'other-host' }, catalog, fallback),
+    undefined,
+  );
+  assert.equal(
+    projectTaskTarget(row, catalog, { ...fallback, hostId: 'replaced-host' }),
+    undefined,
+  );
 });

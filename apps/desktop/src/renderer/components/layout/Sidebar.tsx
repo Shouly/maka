@@ -20,10 +20,8 @@
 // The rail. Three bands, top to bottom (owner decision, 2026-09-08):
 //
 //   menu      New task, Extensions (Skills | MCP), Scheduled — fixed
-//   Projects  every project the Hosts know, each expandable to its tasks;
-//             clicking its row expands or collapses its tasks
-//   Pinned    every pinned task, across projects, newest first — a shortcut;
-//             the task stays listed under its project too
+//   Pinned    all pinned tasks, shown only in this section
+//   Projects  projects with their unpinned tasks; click a row to expand
 //   Recents   tasks without a project (and not pinned), flat, newest first
 //
 // Geometry and motion are the reference design system's `Sidebar`: the fixed
@@ -35,7 +33,8 @@
 // The footer carries the update chip, which is the only place the app ever
 // asks for the user's attention about itself, and Settings.
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'motion/react';
 import { useStore } from 'zustand';
 import { useRovingRowFocus, useUiLocale } from '@maka/ui';
 import { Anthropicon } from '../icons/Anthropicon.js';
@@ -122,7 +121,7 @@ export function Sidebar(props: SidebarProps) {
     const byKey = new Map<string, SessionListGroup>(
       model.groups
         .filter((group) => group.projectId !== undefined)
-        .map((group) => [group.key, group]),
+        .map((group) => [group.key, { ...group, rows: group.rows.filter((row) => !row.flagged) }]),
     );
     const out: ProjectEntry[] = [];
     for (const project of projects) {
@@ -202,30 +201,35 @@ export function Sidebar(props: SidebarProps) {
             copy={copy}
             actions={props.projectActions}
           />
-          {open && (
-            <div
-              id={`sidebar-project-${entry.key}-tasks`}
-              role="group"
-              aria-label={entry.label}
-              className="space-y-[1.5px] pl-4"
-            >
-              {entry.rows.length === 0 ? (
-                <div className="px-2 py-1 text-[13px] leading-5 text-sidebar-text-muted">
-                  {copy.noTasksInProject}
-                </div>
-              ) : (
-                entry.rows.map((row) => (
-                  <SessionRow
-                    key={row.id}
-                    row={row}
-                    isActive={row.id === activeId}
-                    copy={copy}
-                    actions={props.sessionActions}
-                  />
-                ))
-              )}
-            </div>
-          )}
+          <AnimatePresence initial={false}>
+            {open && (
+              <ProjectTaskGroup
+                key={entry.key}
+                id={`sidebar-project-${entry.key}-tasks`}
+                label={entry.label}
+              >
+                {entry.rows.length === 0 ? (
+                  model.groups.some(
+                    (group) => group.key === entry.key && group.rows.length > 0,
+                  ) ? null : (
+                    <div className="px-2 py-1 text-[13px] leading-5 text-sidebar-text-muted">
+                      {copy.noTasksInProject}
+                    </div>
+                  )
+                ) : (
+                  entry.rows.map((row) => (
+                    <SessionRow
+                      key={row.id}
+                      row={row}
+                      isActive={row.id === activeId}
+                      copy={copy}
+                      actions={props.sessionActions}
+                    />
+                  ))
+                )}
+              </ProjectTaskGroup>
+            )}
+          </AnimatePresence>
         </div>
       );
     })
@@ -311,18 +315,6 @@ export function Sidebar(props: SidebarProps) {
               onKeyDown={rovingProps.onKeyDown}
               onFocus={rovingProps.onFocus}
             >
-              <SidebarGroup
-                groupKey="projects"
-                title={copy.projectsSection}
-                copy={copy}
-                activeChildKey={activeEntryKey ?? null}
-                childKeys={entries.map((entry) => entry.key)}
-                isContentHidden={projectsHidden}
-                onContentHiddenChange={setProjectsHidden}
-              >
-                {[<Fragment key="projects">{projectsBody}</Fragment>]}
-              </SidebarGroup>
-
               {pinned.length > 0 && (
                 <SidebarGroup
                   groupKey="pinned"
@@ -344,6 +336,18 @@ export function Sidebar(props: SidebarProps) {
                   ))}
                 </SidebarGroup>
               )}
+
+              <SidebarGroup
+                groupKey="projects"
+                title={copy.projectsSection}
+                copy={copy}
+                activeChildKey={activeEntryKey ?? null}
+                childKeys={entries.map((entry) => entry.key)}
+                isContentHidden={projectsHidden}
+                onContentHiddenChange={setProjectsHidden}
+              >
+                {[<Fragment key="projects">{projectsBody}</Fragment>]}
+              </SidebarGroup>
 
               {recents.length > 0 && (
                 <SidebarGroup
@@ -443,5 +447,26 @@ export function Sidebar(props: SidebarProps) {
         )}
       </div>
     </SidebarTooltipProvider>
+  );
+}
+
+function ProjectTaskGroup(props: { id: string; label: string; children: ReactNode }) {
+  const present = useIsPresent();
+  const reduceMotion = useReducedMotion();
+  return (
+    <motion.div
+      id={props.id}
+      role="group"
+      aria-label={props.label}
+      aria-hidden={!present || undefined}
+      inert={!present || undefined}
+      initial={{ height: 0, opacity: 0 }}
+      animate={{ height: 'auto', opacity: 1 }}
+      exit={{ height: 0, opacity: 0 }}
+      transition={{ duration: reduceMotion ? 0 : 0.18, ease: 'easeOut' }}
+      className="overflow-hidden"
+    >
+      <div className="space-y-[1.5px] pl-4">{props.children}</div>
+    </motion.div>
   );
 }

@@ -38,6 +38,7 @@ import { ConfirmDialog } from '../ui/confirm-dialog.js';
 import { ToastAction } from '../ui/toast.js';
 import { AppLayout } from './AppLayout.js';
 import { Sidebar } from './Sidebar.js';
+import { projectTaskTarget } from '../../store/new-task-store.js';
 import { SessionIdentity } from './SessionIdentity.js';
 import { WindowTitlebar } from './WindowTitlebar.js';
 import { TaskWelcomeContent } from '../welcome/TaskWelcomeContent.js';
@@ -83,12 +84,7 @@ import {
 import { openPath } from '../../bridge/app.js';
 import { previewSessionRemoval } from '../../bridge/sessions.js';
 import { testNetworkProxy } from '../../bridge/settings.js';
-import {
-  revealProject,
-  archiveProject,
-  restoreProject,
-  renameProject,
-} from '../../bridge/projects.js';
+import { archiveProject, restoreProject, renameProject } from '../../bridge/projects.js';
 import { getShellCopy, localizedShellErrorMessage } from '../../locales/shell-copy.js';
 import { getSidebarCopy } from '../../locales/sidebar-copy.js';
 import type { PendingE2eFixtureUiState } from '../../lib/fixture.js';
@@ -331,12 +327,15 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
   const projectActions = useMemo(
     () => ({
       onNewTask: (project: ProjectRowModel) => {
-        if (project.hostId)
-          newTaskStore.selectTarget({
-            profileId: project.profileId,
-            hostId: project.hostId,
-            projectId: project.id,
-          });
+        const target = projectTaskTarget(project, newTaskStore.getState().catalog, defaultHost);
+        if (!target) {
+          reportError(
+            shell.projectActions.projectUpdateFailedTitle,
+            getSidebarCopy(locale).projectUnavailable,
+          );
+          return;
+        }
+        newTaskStore.selectTarget(target);
         newTask();
       },
       onRename: (project: ProjectRowModel, name: string) => {
@@ -354,19 +353,8 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
           .then(() => newTaskStore.refresh())
           .catch((error) => reportError(shell.projectActions.projectUpdateFailedTitle, error));
       },
-      onRelink: (project: ProjectRowModel) => {
-        if (!project.hostId) return;
-        void newTaskStore
-          .relinkProject({ profileId: project.profileId, hostId: project.hostId }, project.id)
-          .catch((error) => reportError(shell.projectActions.projectUpdateFailedTitle, error));
-      },
-      onReveal: (project: ProjectRowModel) => {
-        void revealProject(project.id, hostRef(project, defaultHost)).catch((error) =>
-          reportError(shell.projectActions.readPathFailedTitle, error),
-        );
-      },
     }),
-    [defaultHost, reportError, shell],
+    [defaultHost, reportError, shell, locale, newTask],
   );
 
   const commandInput = useMemo(
@@ -483,6 +471,7 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
           session identity, actions. Everything below starts under it. */}
       <WindowTitlebar
         layout={layout}
+        softEdge={view === 'session'}
         onOpenSearch={() => uiStore.setSearchOpen(true)}
         identity={
           // Settings owns the identity slot while it owns the content column;
@@ -491,7 +480,9 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
             <SettingsIdentity />
           ) : view === 'session' && activeId ? (
             <SessionIdentity
+              key={activeId}
               row={activeRow}
+              actions={sessionActions}
               parentName={parentRow?.displayName}
               onOpenParent={selectSession}
             />

@@ -374,8 +374,8 @@ try {
   await page.keyboard.press('ControlOrMeta+Alt+s');
   await pane.waitFor();
   await page.locator('[data-maka-contract="session-artifacts"]').waitFor();
-  await page.locator('[data-maka-contract="session-workbar-count"]').waitFor();
-  checks.push('⌘⌥S opens the right pane on the Files face and the titlebar counts it');
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+  checks.push('⌘⌥S opens the right pane on the Files face and activates its header toggle');
 
   // 4.2 The Files face lists the task's artifacts. The deterministic backend
   //     writes none that are user-visible, so what must be on screen is the
@@ -468,8 +468,8 @@ try {
 
   // 4.7 Five faces open, and the strip lists every one of them.
   assert.equal(await page.locator('[role="tab"][data-maka-workbar-tab]').count(), 5);
-  assert.equal(await page.locator('[data-maka-contract="session-workbar-count"]').innerText(), '5');
-  checks.push('all five faces stay open in the strip and the titlebar badge counts them');
+  assert.equal(await page.locator('[data-maka-contract="session-workbar-count"]').count(), 0);
+  checks.push('all five faces stay open in the strip without a header count badge');
 
   // 4.8 The pane in the dark theme.
   await runPaletteCommand(page, 'Theme · Dark');

@@ -91,11 +91,38 @@ test('rename inputs own native focus for menu and double-click entry', async ({
   });
   await projectActions.locator('xpath=ancestor::*[@data-maka-contract="project-row"][1]').hover();
   await projectActions.click();
-  await page.getByRole('menuitem', { name: '重命名项目', exact: true }).click();
-  await expect(page.getByRole('textbox', { name: '重命名项目' })).toBeFocused();
+  await page.getByRole('menuitem', { name: '重命名', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: '重命名' })).toBeFocused();
   await sendNativeText(app, 'PROJECT');
-  const projectInput = page.getByRole('textbox', { name: '重命名项目' });
+  const projectInput = page.getByRole('textbox', { name: '重命名' });
   await expect(projectInput).toHaveValue('PROJECT');
   await page.keyboard.press('Escape');
   await expect(projectActions).toBeFocused();
+
+  await rowButton.click();
+  const header = page.locator('[data-maka-contract="titlebar-identity"]');
+  const title = header.getByRole('button', { name: '重命名', exact: true });
+  await expect(title).toHaveCSS('font-size', '14px');
+  await expect(title).toHaveCSS('font-weight', '400');
+  const headerMenu = header.getByRole('button', { name: /操作/ });
+  await headerMenu.click();
+  await expect(page.getByRole('menuitem')).toHaveCount(4);
+  await page.getByRole('menuitem', { name: '重命名', exact: true }).click();
+  const headerInput = header.getByRole('textbox', { name: '任务名称' });
+  await expect(headerInput).toBeFocused();
+  await sendNativeText(app, 'HEADER');
+  await expect(headerInput).toHaveValue('HEADER');
+  await page.keyboard.press('Escape');
+  await expect(headerMenu).toBeFocused();
+  await title.click();
+  await expect(headerInput).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(title).toBeFocused();
+  await headerMenu.click();
+  await page.getByRole('menuitem', { name: '置顶', exact: true }).click();
+  await headerMenu.click();
+  await expect(page.getByRole('menuitem', { name: '取消置顶', exact: true })).toBeVisible();
+  await page.getByRole('menuitem', { name: '取消置顶', exact: true }).click();
+
+
 });

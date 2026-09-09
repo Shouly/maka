@@ -43,6 +43,7 @@ export interface SidebarCopy {
   readonly groups: Record<SidebarGroupKey, string>;
   readonly noProject: string;
   readonly projectsSection: string;
+  readonly projectUnavailable: string;
   readonly recentsSection: string;
   readonly pinnedSection: string;
   readonly menuLabel: string;
@@ -75,8 +76,6 @@ export interface SidebarCopy {
     readonly rename: string;
     readonly archive: string;
     readonly restore: string;
-    readonly relink: string;
-    readonly reveal: string;
   };
   readonly rename: {
     readonly label: string;
@@ -123,8 +122,9 @@ const SIDEBAR_COPY = {
     },
     noProject: '未归入项目',
     projectsSection: '项目',
-    recentsSection: '最近',
     pinnedSection: '置顶',
+    recentsSection: '最近',
+    projectUnavailable: '项目当前不可用，请检查项目目录和连接后重试。',
     menuLabel: '导航',
     noProjects: '还没有项目。新建任务时选择一个文件夹即可。',
     noTasksInProject: '这个项目还没有任务',
@@ -151,12 +151,10 @@ const SIDEBAR_COPY = {
       remove: '删除',
     },
     projectRowActions: {
-      newTask: '在此项目新建任务',
-      rename: '重命名项目',
+      newTask: '新建任务',
+      rename: '重命名',
       archive: '归档项目',
       restore: '恢复项目',
-      relink: '重新关联目录',
-      reveal: '在文件管理器中显示',
     },
     rename: { label: '任务名称', save: '保存', cancel: '取消' },
     nav: {
@@ -197,8 +195,9 @@ const SIDEBAR_COPY = {
     },
     noProject: '未歸入專案',
     projectsSection: '專案',
-    recentsSection: '最近',
     pinnedSection: '置頂',
+    recentsSection: '最近',
+    projectUnavailable: '專案目前無法使用，請檢查專案目錄與連線後重試。',
     menuLabel: '導覽',
     noProjects: '還沒有專案。新增任務時選擇一個資料夾即可。',
     noTasksInProject: '這個專案還沒有任務',
@@ -225,12 +224,10 @@ const SIDEBAR_COPY = {
       remove: '刪除',
     },
     projectRowActions: {
-      newTask: '在此專案新增任務',
-      rename: '重新命名專案',
+      newTask: '新增任務',
+      rename: '重新命名',
       archive: '封存專案',
       restore: '還原專案',
-      relink: '重新連結資料夾',
-      reveal: '在檔案管理員中顯示',
     },
     rename: { label: '任務名稱', save: '儲存', cancel: '取消' },
     nav: {
@@ -271,8 +268,10 @@ const SIDEBAR_COPY = {
     },
     noProject: 'No project',
     projectsSection: 'Projects',
-    recentsSection: 'Recents',
     pinnedSection: 'Pinned',
+    recentsSection: 'Recents',
+    projectUnavailable:
+      'This project is unavailable. Check its folder and connection, then try again.',
     menuLabel: 'Navigation',
     noProjects: 'No projects yet. Pick a folder when you start a task.',
     noTasksInProject: 'No tasks in this project yet',
@@ -304,12 +303,10 @@ const SIDEBAR_COPY = {
       remove: 'Delete',
     },
     projectRowActions: {
-      newTask: 'New task in this project',
-      rename: 'Rename project',
+      newTask: 'New task',
+      rename: 'Rename',
       archive: 'Archive project',
       restore: 'Restore project',
-      relink: 'Relink folder',
-      reveal: 'Reveal in file manager',
     },
     rename: { label: 'Task name', save: 'Save', cancel: 'Cancel' },
     nav: {
