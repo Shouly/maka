@@ -267,6 +267,20 @@ export function TipTapEditor(props: {
     itemRefs.current[selected]?.scrollIntoView({ block: 'nearest' });
   }, [selected, items]);
 
+  // Which catalog the `/` menu is showing. Once a Session exists, Runtime
+  // resolves its Skill projection from the session identity alone (upstream
+  // #5045), so late new-task inputs — a model catalog that resolves after the
+  // first render, a permission or Plan change — must not re-key the catalog
+  // and blank a menu that has already settled.
+  const skillCatalogKey = props.sessionId
+    ? `session\u0000${props.sessionId}`
+    : [
+        props.skillContext?.llmConnectionSlug ?? '',
+        props.skillContext?.model ?? '',
+        props.skillContext?.collaborationMode ?? 'agent',
+        props.skillContext?.permissionMode ?? '',
+      ].join('\u0000');
+
   // Search follows the query with a short debounce; a result that arrives
   // after the query moved on is dropped.
   useEffect(() => {
@@ -340,17 +354,7 @@ export function TipTapEditor(props: {
       current = false;
       clearTimeout(timer);
     };
-  }, [
-    query?.kind,
-    query?.text,
-    props.scopeKey,
-    locale,
-    props.running,
-    props.skillContext?.llmConnectionSlug,
-    props.skillContext?.model,
-    props.skillContext?.collaborationMode,
-    props.skillContext?.permissionMode,
-  ]);
+  }, [query?.kind, query?.text, props.scopeKey, locale, props.running, skillCatalogKey]);
 
   const choose = (item: Suggestion) => {
     if (!query || !editor) return;

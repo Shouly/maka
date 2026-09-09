@@ -36,6 +36,10 @@ export type McpCopy = {
     importVersion(version: string): string;
     importServersObject: string;
     importProtocolVersion: string;
+    /** Upstream #4505: an atomic write whose survival could not be confirmed. */
+    writeDurabilityUnknown: string;
+    /** The same, plus MCP runtime state that no longer matches the config. */
+    writeOutOfSync: string;
   };
   toast: {
     templateInstalled(name: string): string;
@@ -180,6 +184,10 @@ const MCP_COPY = {
       importServersObject: 'mcpServers 必须是 object',
       importProtocolVersion:
         'remote 的 protocol 需要 version 2 或 3；stdio 的 protocol 需要 version 3',
+      writeDurabilityUnknown:
+        '写入已发布，但无法确认断电后是否保留。请检查刷新后的配置再决定是否重试。',
+      writeOutOfSync:
+        '写入的持久性尚未确认，MCP 运行状态也未能与配置同步。请检查配置并重新同步后再重试。',
     },
     toast: {
       templateInstalled: (name) => `${name} 模板已安装`,
@@ -329,6 +337,10 @@ const MCP_COPY = {
       importServersObject: 'mcpServers 必須是 object',
       importProtocolVersion:
         'remote 的 protocol 需要 version 2 或 3；stdio 的 protocol 需要 version 3',
+      writeDurabilityUnknown:
+        '寫入已發布，但無法確認斷電後是否保留。請檢查重新整理後的設定再決定是否重試。',
+      writeOutOfSync:
+        '寫入的持久性尚未確認，MCP 執行狀態也未能與設定同步。請檢查設定並重新同步後再重試。',
     },
     toast: {
       templateInstalled: (name) => `${name} 模板已安裝`,
@@ -479,6 +491,10 @@ const MCP_COPY = {
       importServersObject: 'mcpServers must be an object',
       importProtocolVersion:
         'Remote protocol preferences require version 2 or 3; stdio protocol preferences require version 3',
+      writeDurabilityUnknown:
+        'The write was published, but survival after power loss could not be confirmed. Check the refreshed configuration before retrying.',
+      writeOutOfSync:
+        'The write durability is unconfirmed and MCP runtime state did not follow the configuration. Check the configuration and resynchronize before retrying.',
     },
     toast: {
       templateInstalled: (name) => `${name} template installed`,

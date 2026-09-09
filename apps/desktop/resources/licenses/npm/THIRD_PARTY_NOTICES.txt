@@ -13711,7 +13711,7 @@ SOFTWARE.
 
 ================================================================================
 
-Package: js-yaml@4.3.1
+Package: js-yaml@4.3.2
 Declared license: MIT
 Selected license: MIT
 Repository: nodeca/js-yaml

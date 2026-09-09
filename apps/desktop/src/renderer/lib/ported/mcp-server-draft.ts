@@ -111,7 +111,9 @@ export function mcpDraftProtocolPreference(draft: McpServerDraft): McpProtocolPr
   // Legacy SSE has no modern era to negotiate, so the preference is not the
   // user's to set there.
   if (draft.kind === 'remote' && draft.transport === 'sse') return 'legacy';
-  return draft.protocol ?? (draft.kind === 'remote' ? 'auto' : 'legacy');
+  // Upstream #5064: a new server of either kind negotiates by default. Only
+  // legacy SSE, handled above, has no modern era to negotiate.
+  return draft.protocol ?? 'auto';
 }
 
 /**

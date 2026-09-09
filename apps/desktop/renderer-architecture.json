@@ -242,6 +242,7 @@
     "src/renderer/lib/ported/mcp-catalog.ts",
     "src/renderer/lib/ported/mcp-server-command-line.ts",
     "src/renderer/lib/ported/mcp-server-draft.ts",
+    "src/renderer/lib/ported/mcp-write-failure.ts",
     "src/renderer/lib/ported/memory-settings-presentation.ts",
     "src/renderer/lib/ported/model-catalog-choices.ts",
     "src/renderer/lib/ported/model-connection-errors.ts",
@@ -1602,6 +1603,7 @@
         "../../../hooks/use-settings.js": 1,
         "../../../lib/cn.js": 1,
         "../../../lib/ported/mcp-server-draft.js": 1,
+        "../../../lib/ported/mcp-write-failure.js": 1,
         "../../../locales/mcp-copy.js": 1,
         "../../../locales/modules-copy.js": 1,
         "../../../store/index.js": 1,
@@ -4821,6 +4823,15 @@
         "./mcp-server-command-line.js": 1,
         "@maka/core/mcp": 1
       }
+    },
+    "src/renderer/lib/ported/mcp-write-failure.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
     },
     "src/renderer/lib/ported/memory-settings-presentation.ts": {
       "bridgePaths": {},

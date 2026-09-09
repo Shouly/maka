@@ -57,6 +57,7 @@ import { useSettingsErrorReporter } from '../../../hooks/use-settings.js';
 import { toast } from '../../../store/toast-store.js';
 import { mcpStore } from '../../../store/index.js';
 import { mcpDraftFromConfig, type McpServerDraft } from '../../../lib/ported/mcp-server-draft.js';
+import { mcpWriteFailureMessage } from '../../../lib/ported/mcp-write-failure.js';
 import type { McpCatalogEntry } from '../../../lib/ported/mcp-catalog.js';
 import type { DesktopRuntimeHostRef } from '../../../bridge/projects.js';
 import { getMcpCopy } from '../../../locales/mcp-copy.js';
@@ -81,7 +82,17 @@ export function McpModule(props: {
   const extensions = getModulesCopy(locale).extensions;
   const copy = getMcpCopy(locale);
   const modules = getModulesCopy(locale).mcp;
-  const report = useSettingsErrorReporter();
+  const reportShellError = useSettingsErrorReporter();
+  // A write that may not have survived is neither success nor plain failure
+  // (upstream #4505): it gets its own sentence instead of the generic retry.
+  const report = (title: string, cause: unknown) => {
+    const durability = mcpWriteFailureMessage(cause, copy);
+    if (durability) {
+      toast({ title, description: durability, variant: 'destructive' });
+      return;
+    }
+    reportShellError(title, cause);
+  };
   const host = props.host;
   const snapshot = useStore(mcpStore, (state) => state.data);
   const loading = useStore(mcpStore, (state) => state.loading);

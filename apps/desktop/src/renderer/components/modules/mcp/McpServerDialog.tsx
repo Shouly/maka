@@ -59,6 +59,7 @@ import {
   createEmptyMcpDraft,
   mcpConfigFromDraft,
   mcpDraftHasErrors,
+  mcpDraftProtocolPreference,
   validateMcpServerDraft,
   type McpDraftError,
   type McpDraftErrors,
@@ -288,7 +289,7 @@ export function McpServerDialog(props: {
                     // states the fact rather than offering a choice that the
                     // draft would override anyway.
                     disabled={draft.kind === 'remote' && draft.transport === 'sse'}
-                    value={draft.protocol ?? (draft.kind === 'remote' ? 'auto' : 'legacy')}
+                    value={mcpDraftProtocolPreference(draft)}
                     onValueChange={(protocol) =>
                       patch({ protocol: protocol as McpServerDraft['protocol'] })
                     }

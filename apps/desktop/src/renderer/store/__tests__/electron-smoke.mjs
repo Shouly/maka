@@ -634,10 +634,16 @@ try {
     .first()
     .click();
   await nested.first().waitFor();
-  // Recents lists only the tasks without a project, and the band is not
-  // rendered while there are none — both seeded tasks belong to the project.
+  // Recents lists only the tasks without a project. The band itself stays —
+  // its label row carries the search entry — so what must be empty is its
+  // row list: both seeded tasks belong to the project.
   const recents = rail.locator('section').filter({ hasText: 'Recents' });
-  assert.equal(await recents.count(), 0, 'project tasks do not also appear in Recents');
+  assert.equal(await recents.count(), 1, 'the Recents band stays with its search action');
+  assert.equal(
+    await recents.locator('[data-maka-contract="session-row"]').count(),
+    0,
+    'project tasks do not also appear in Recents',
+  );
   assert.equal(await rail.getByText('No project', { exact: true }).count(), 0);
   await page.screenshot({ path: SHOT('phase2-session-list.png') });
   checks.push(
