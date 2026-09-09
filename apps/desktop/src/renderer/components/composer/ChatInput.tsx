@@ -26,10 +26,26 @@
 //   session  `sessionId`; sends go straight to the Session, and while a turn
 //            runs they can steer the current answer or wait for the next.
 //
-// Layout, top to bottom inside the white surface: staged attachments, folder
-// references and quotes as chips; the TipTap editor; the control row with
-// attach / folder / skills on the left, mode chips in the middle, and stop or
-// send on the right. Status and errors sit under the surface.
+// Layout is relx's `ChatInput`, the controls are upstream's composer footer:
+//
+//   lead (bottom-left)   the ＋ menu — add files, add folder, the Skills
+//                        submenu, set a goal, and below a divider the Plan
+//                        mode switch.
+//   trail (bottom-right) welcome: the model chip (its menu carries the
+//                        thinking level as an effort submenu) and the brand
+//                        Send; session: the context ring and one Send/Stop
+//                        slot — Stop while a turn runs and the draft is
+//                        empty, Send (queued mid-turn) as soon as there is
+//                        something to send.
+//   meta row (under)     left: the project (a picker for a new task, a
+//                        readout for a Session), the permission mode chip
+//                        (Auto / full access), and the Plan chip while it is
+//                        on, which is also the way out. Right: a Session's
+//                        model chip with its effort.
+//
+// Above the editor, staged attachments, folder references and quotes as
+// chips. A short session draft shares its line with the controls; the
+// welcome surface always stacks them under two reserved lines.
 //
 // Everything the user typed is in `composerInputStore` (keyed per Session or
 // per new-task target), never in component state, so switching Sessions and
@@ -46,6 +62,7 @@ import { useStore } from 'zustand';
 import type { Editor } from '@tiptap/core';
 import type { PermissionMode } from '@maka/core/permission';
 import type { ThinkingLevel } from '@maka/core/model-thinking';
+import type { ChatModelChoice } from '@maka/core/chat-model-choice';
 import { attachmentKindFromMimeType, guessMimeFromName } from '@maka/core/attachments';
 import { getConversationCopy, useUiLocale, useComposerHistory } from '@maka/ui';
 import {
@@ -60,8 +77,10 @@ import {
   turnActionsStore,
   connectionsStore,
   settingsStore,
+  uiStore,
 } from '../../store/index.js';
-import { newTaskStore } from '../../store/new-task-store.js';
+import { newTaskStore, workspaceOptionsOf } from '../../store/new-task-store.js';
+import { useComposerInlineRow } from '../../hooks/use-composer-inline-row.js';
 import { pendingActionsOf } from '../../store/turn-actions-store.js';
 import { parseDesktopSlashCommand } from '../../lib/ported/desktop-slash-command.js';
 import { serializeComposer } from '../../lib/composer-document.js';
@@ -83,7 +102,12 @@ import {
   previewAttachmentApproval,
 } from '../../bridge/attachments.js';
 import { getTaskReadinessSnapshot } from '../../bridge/task-readiness.js';
-import { getNewTaskReadiness, type DesktopNewTaskTarget } from '../../bridge/new-tasks.js';
+import {
+  getNewTaskReadiness,
+  listNewTaskInvocableSkills,
+  type DesktopNewTaskTarget,
+} from '../../bridge/new-tasks.js';
+import { listInvocableSkills } from '../../bridge/skills.js';
 import { listLocalMessages } from '../../bridge/session-local.js';
 import { getSessionLocalCopy } from '../../locales/session-local-copy.js';
 import { removeSession } from '../../bridge/sessions.js';
@@ -91,6 +115,8 @@ import { armGoal, getGoal } from '../../bridge/goal.js';
 import { getComposerCopy } from '../../locales/composer-copy.js';
 import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
 import { getShellCopy } from '../../locales/shell-copy.js';
+import { getTranscriptCopy } from '../../locales/transcript-copy.js';
+import { chatModelChoiceLabel } from '../../lib/ported/shell-chat-model-selection.js';
 import {
   showSkillInvocationFeedback,
   skillInvocationDisplayText,
@@ -100,7 +126,7 @@ import {
   showSessionWorkspaceUnavailableToast,
 } from '../../lib/ported/session-workspace-errors.js';
 import { toastApi } from '../../store/toast-api.js';
-import { ComposerSelect } from './ComposerSelect.js';
+import { COMPOSER_ICON_CONTROL_CLASS, PermissionModeMenu } from './PermissionModeMenu.js';
 import { TipTapEditor } from './TipTapEditor.js';
 import { Button } from '../ui/button.js';
 import { Input } from '../ui/input.js';
@@ -108,15 +134,26 @@ import { Label } from '../ui/label.js';
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogDescription,
 } from '../ui/dialog.js';
 import { ConfirmDialog } from '../ui/confirm-dialog.js';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuItemIcon,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu.js';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip.js';
-import { Anthropicon, type AnthropiconName } from '../icons/Anthropicon.js';
+import { Anthropicon } from '../icons/Anthropicon.js';
 import { WorkspacePicker } from '../welcome/WorkspacePicker.js';
-import { ModelPicker } from '../welcome/ModelPicker.js';
+import { ModelMenu } from './ModelMenu.js';
+import { SkillSubMenu, type SkillMenuEntry } from './SkillSubMenu.js';
 import { ContextUsageIndicator } from '../session/notices/ContextUsageIndicator.js';
 import { cn } from '../../lib/cn.js';
 
@@ -126,10 +163,6 @@ const MAX_DIRECTORY_REFERENCES = 4;
 /** The welcome composer's draft key: one draft per new-task target. */
 export const newComposerKey = (target: DesktopNewTaskTarget | undefined) =>
   `new:${JSON.stringify(target ?? null)}`;
-
-/** relx: 32px ghost icon control, muted until hovered. */
-const ICON_CONTROL_CLASS =
-  'ui-control-squish ui-control-squish-ghost flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-text-muted outline-none hover:text-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-50';
 
 /** relx chip remove button: 24px, muted, hover fill. */
 const CHIP_REMOVE_CLASS =
@@ -190,10 +223,6 @@ function OwnedChatInput(props: {
   const [dragging, setDragging] = useState(false);
   const [bypassOpen, setBypassOpen] = useState(false);
   const [preview, setPreview] = useState<{ name: string; url: string }>();
-  // Mid-turn submits queue by default; steering the running turn is the
-  // explicit choice (the picker, or a one-shot Shift+Enter). The other way
-  // round, a habitual Enter interrupts the answer in progress.
-  const [placement, setPlacement] = useState<'current_turn' | 'next_turn'>('next_turn');
 
   const editor = useRef<Editor | null>(null);
   const mounted = useRef(true);
@@ -389,10 +418,13 @@ function OwnedChatInput(props: {
 
       // The message is on screen before the Host has it (upstream
       // `showTransientUserMessage`); the durable copy retires it by id.
+      // Mid-turn a plain send queues for the next turn; steering the running
+      // answer is the explicit Shift+Enter (upstream's convention), so a
+      // habitual Enter never interrupts the answer in progress.
       const transientPlacement = props.running
         ? mode === 'steer'
           ? 'current_turn'
-          : placement
+          : 'next_turn'
         : 'current_turn';
       activeSessionStore.showTransientUserMessage(owner, {
         id: messageId,
@@ -656,8 +688,14 @@ function OwnedChatInput(props: {
   };
 
   const setThinking = (level: ThinkingLevel | undefined) => {
-    if (sessionId) void turnActionsStore.setThinking(sessionId, level).catch(report);
-    else patch({ thinking: level });
+    if (sessionId) {
+      void turnActionsStore
+        .setThinking(sessionId, level ?? null)
+        .then((row) => sessionsStore.upsert(row))
+        .catch((cause: unknown) =>
+          report(cause, getTranscriptCopy(locale).model.changeFailedTitle),
+        );
+    } else patch({ thinking: level });
   };
 
   const togglePlan = () => {
@@ -668,12 +706,172 @@ function OwnedChatInput(props: {
     }
   };
 
+  async function openGoal() {
+    try {
+      if (sessionId) {
+        const goal = await getGoal(sessionId);
+        if (goal && ['active', 'waiting', 'paused'].includes(goal.status)) {
+          throw new Error(common.composer.goalAlreadySet);
+        }
+      }
+      if (mounted.current) setGoalOpen(true);
+    } catch (cause) {
+      report(cause, copy.goal.failedTitle);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Layout
+  //
+  // relx `ChatInput` geometry: the surface holds only the editor, the lead
+  // controls pinned bottom-left and the send-side controls pinned
+  // bottom-right; see the file header for what goes in each group.
+
+  const welcome = !sessionId;
   const hasChips =
     draft.attachments.length > 0 || draft.directories.length > 0 || quotes.length > 0;
+  const inlineRow = useComposerInlineRow({
+    enabled: !welcome,
+    empty: !wire.text,
+    forceStacked: hasChips,
+  });
+  const [goalOpen, setGoalOpen] = useState(false);
+  // The Skills submenu reads the catalog when the ＋ menu opens, so the list
+  // is the Host's answer for THIS target and mode, the same one `/` offers.
+  const [skills, setSkills] = useState<readonly SkillMenuEntry[] | undefined>();
+  const loadSkills = async () => {
+    setSkills(undefined);
+    try {
+      const list = hostSessionId
+        ? await listInvocableSkills(hostSessionId)
+        : (localTarget ?? props.target)
+          ? await listNewTaskInvocableSkills((localTarget ?? props.target)!, {
+              llmConnectionSlug: newTask.model?.llmConnectionSlug,
+              model: newTask.model?.model,
+              collaborationMode: plan ? 'plan' : 'agent',
+              permissionMode: mode === 'explore' ? undefined : mode,
+            })
+          : [];
+      if (mounted.current) {
+        setSkills(
+          list.map((skill) => ({
+            id: skill.id,
+            name: skill.name,
+            ...(skill.description ? { description: skill.description } : {}),
+          })),
+        );
+      }
+    } catch {
+      if (mounted.current) setSkills([]);
+    }
+  };
+  const insertSkill = (skill: SkillMenuEntry) =>
+    focusEditor((instance) =>
+      instance
+        .chain()
+        .focus('end')
+        .insertContent([
+          {
+            type: 'composerReference',
+            attrs: { kind: 'skill', value: skill.id, label: skill.name },
+          },
+          { type: 'text', text: ' ' },
+        ])
+        .run(),
+    );
+  // The model chip: the Session's own configuration once it exists, the
+  // new-task draft until then. Changing the model resets the level (the
+  // Host does the same), so the readout never shows a level the new model
+  // does not offer.
+  const modelChoices = (session ? connections : newTask.connections)?.chatModelChoices ?? [];
+  const pickModel = (choice: ChatModelChoice) => {
+    if (sessionId) {
+      void turnActionsStore
+        .setModel(sessionId, {
+          llmConnectionId: choice.connectionId,
+          llmConnectionSlug: choice.connectionSlug,
+          model: choice.model,
+          thinkingLevel: null,
+        })
+        .then((row) => sessionsStore.upsert(row))
+        .catch((cause: unknown) =>
+          report(cause, getTranscriptCopy(locale).model.changeFailedTitle),
+        );
+      return;
+    }
+    newTaskStore.selectModel({
+      llmConnectionId: choice.connectionId,
+      llmConnectionSlug: choice.connectionSlug,
+      model: choice.model,
+    });
+    patch({ thinking: undefined });
+  };
+  // A menu entry that hands focus to the editor must stop Radix from
+  // returning it to the trigger when the menu closes.
+  const keepEditorFocus = useRef(false);
+  const focusEditor = (act: (instance: Editor) => void) => {
+    keepEditorFocus.current = true;
+    const instance = editor.current;
+    if (instance) act(instance);
+  };
+  const menuSide = welcome ? 'bottom' : 'top';
 
+  // The session send key is the return glyph (`reply`), ghost like the other
+  // in-row controls: Enter already sends. Welcome keeps the brand arrow: that
+  // one starts a task.
+  const sendButtonClass = welcome
+    ? 'ui-control-squish ui-control-squish-brand flex size-8 cursor-pointer items-center justify-center rounded-lg text-on-accent outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-50'
+    : 'ui-control-squish ui-control-squish-ghost flex size-8 cursor-pointer items-center justify-center rounded-lg text-text-primary outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-50';
+  // One slot, two states (upstream's send/stop toggle): Stop while a turn
+  // runs and there is nothing to send; Send, which queues mid-turn, as soon
+  // as there is. Nothing to send and nothing running: no button at all (relx),
+  // rather than a dimmed one taking width from the text line.
+  const stopShown = props.running === true && !hasContent;
+  const modeLocked = disabled || props.running || localPending;
+  const sessionProjectName = session?.projectId
+    ? workspaceOptionsOf(newTask.catalog).find(
+        (option) =>
+          option.projectId === session.projectId && option.profileId === session.profileId,
+      )?.projectName
+    : undefined;
+
+  const currentThinking = session
+    ? (session.thinkingLevel ?? undefined)
+    : (draft.thinking ??
+      (newTask.defaults?.thinkingLevel && thinkingLevels.includes(newTask.defaults.thinkingLevel)
+        ? newTask.defaults.thinkingLevel
+        : undefined));
+
+  const modelMenu = (dense: boolean) => (
+    <ModelMenu
+      dense={dense}
+      choices={modelChoices}
+      current={
+        session
+          ? { connectionSlug: session.llmConnectionSlug, model: session.model }
+          : newTask.model
+            ? { connectionSlug: newTask.model.llmConnectionSlug, model: newTask.model.model }
+            : undefined
+      }
+      fallbackLabel={
+        session
+          ? chatModelChoiceLabel(
+              modelChoices,
+              session.llmConnectionId,
+              session.llmConnectionSlug,
+              session.model,
+            )
+          : undefined
+      }
+      thinking={{ current: currentThinking, onChange: setThinking }}
+      onPick={pickModel}
+      onOpenSettings={props.onOpenSettings ?? (() => {})}
+      disabled={localPending || pending.includes('model') || pending.includes('thinking')}
+    />
+  );
   return (
     <div
-      className="relative flex flex-col gap-2"
+      className={cn('relative flex w-full flex-col', welcome && 'mx-auto max-w-[40rem]')}
       aria-label={copy.surfaceLabel}
       onDragEnter={(event) => {
         if (!event.dataTransfer.types.includes('Files')) return;
@@ -706,7 +904,7 @@ function OwnedChatInput(props: {
       <TooltipProvider delayDuration={300}>
         <div
           className={cn(
-            'chat-composer-surface relative z-10 flex w-full flex-col gap-2 transition-shadow duration-200 ease-out',
+            'chat-composer-surface relative z-10 w-full transition-shadow duration-200 ease-out',
             dragging ? 'shadow-[var(--composer-shadow-drag)]' : COMPOSER_SHADOW_CLASS,
           )}
         >
@@ -720,7 +918,7 @@ function OwnedChatInput(props: {
           )}
 
           {hasChips && (
-            <div className="flex flex-wrap gap-2 px-1 pt-1">
+            <div className="flex flex-wrap gap-2 px-1 pb-3 pt-1">
               {draft.attachments.length > 0 && (
                 <ul aria-label={copy.attachments.regionLabel} className="contents">
                   {draft.attachments.map((item) => (
@@ -808,189 +1006,304 @@ function OwnedChatInput(props: {
             </div>
           )}
 
-          <TipTapEditor
-            scopeKey={scopeKey}
-            sessionId={hostSessionId}
-            target={localTarget ?? props.target}
-            document={draft.document}
-            onChange={(document) => {
-              patch({ document, error: undefined });
-              setError('');
-              history.resetNavigation();
-            }}
-            onEditor={(value) => {
-              editor.current = value;
-            }}
-            onSubmit={(mode) => void submit(mode)}
-            onStop={stopTurn}
-            skillContext={{
-              llmConnectionSlug: newTask.model?.llmConnectionSlug,
-              model: newTask.model?.model,
-              collaborationMode: plan ? 'plan' : 'agent',
-              permissionMode: mode === 'explore' ? undefined : mode,
-            }}
-            onCommand={(command) => {
-              if (command === 'compact' && sessionId) {
-                void turnActionsStore.compact(sessionId).catch(report);
-              }
-            }}
-            onArrow={(event) =>
-              history.handleArrowKey(event as unknown as ReactKeyboardEvent<Element>)
-            }
-            disabled={disabled}
-            running={props.running}
-            label={props.label ?? common.composer.textareaAriaLabel}
-            placeholder={common.composer.placeholder}
-          />
-
-          <div className="flex flex-wrap items-center gap-1">
-            <IconControl
-              icon="attach"
-              label={common.composer.addFileOrDirectory}
-              disabled={disabled || props.running || !canStageContext}
-              onClick={() => void pickFiles()}
-            />
-            <IconControl
-              icon="folder"
-              label={common.composer.referenceFolder}
-              disabled={disabled || props.running || !directoryHostId}
-              onClick={() => void pickDirectory()}
-            />
-            <IconControl
-              icon="shapes"
-              label={common.composer.chooseSkill}
-              disabled={disabled}
-              onClick={() => editor.current?.chain().focus().insertContent('/').run()}
-            />
-
-            {!sessionId && (
-              <>
-                <WorkspacePicker />
-                <ModelPicker onOpenSettings={props.onOpenSettings ?? (() => {})} />
-              </>
-            )}
-
-            <ComposerSelect
-              label={common.permissions.modeAriaLabel(common.permissions.mode[mode].label)}
-              value={mode}
-              disabled={disabled || props.running || localPending || pending.includes('permission')}
-              onChange={(value) => {
-                const next = value as PermissionMode;
-                // Full access is confirmed first; the dialog applies it.
-                if (next === 'bypass') setBypassOpen(true);
-                else void setMode(next).catch(() => {});
-              }}
-              options={(['explore', 'ask', 'bypass'] as const).map((value) => ({
-                value,
-                label: common.permissions.mode[value].label,
-              }))}
-            />
-            {thinkingLevels.length > 0 && (
-              <ComposerSelect
-                label={common.model.thinkingLevel}
-                value={
-                  session
-                    ? (session.thinkingLevel ?? '')
-                    : (draft.thinking ??
-                      (newTask.defaults?.thinkingLevel &&
-                      thinkingLevels.includes(newTask.defaults.thinkingLevel)
-                        ? newTask.defaults.thinkingLevel
-                        : ''))
-                }
-                disabled={disabled || props.running || localPending || pending.includes('thinking')}
-                onChange={(value) => setThinking((value || undefined) as ThinkingLevel | undefined)}
-                options={[
-                  { value: '', label: common.model.defaultLevel },
-                  ...thinkingLevels.map((level) => ({
-                    value: level,
-                    label: common.model.level[level],
-                  })),
-                ]}
-              />
-            )}
-            <button
-              type="button"
-              aria-pressed={plan}
-              disabled={disabled || props.running || localPending}
-              onClick={togglePlan}
+          {/* The text block: switching forms only moves its padding (see
+              useComposerInlineRow). The editor's own px-2 is part of the
+              lead gap, hence the -8px. The transition waits for `settled`:
+              the first commit can only be stacked and the jump to the real
+              form must not animate. */}
+          <div ref={inlineRow.hostRef} className="relative w-full min-w-0">
+            <div
+              style={inlineRow.vars}
               className={cn(
-                COMPOSER_META_CHIP,
-                plan ? COMPOSER_META_CHIP_ACTIVE : COMPOSER_META_CHIP_IDLE,
+                'w-full min-w-0',
+                inlineRow.settled &&
+                  'motion-safe:transition-[padding-left,padding-bottom] motion-safe:duration-200',
+                inlineRow.inline
+                  ? 'pb-0 pl-[calc(var(--cmp-lead-w)-8px)]'
+                  : 'pb-[calc(32px+0.5rem)] pl-0',
               )}
             >
-              {common.composer.planModeLabel}
-            </button>
-            <GoalControl
-              sessionId={sessionId}
-              disabled={disabled || props.running || localPending || Boolean(blocked)}
-              busy={busy}
-              onBusy={(value) => {
-                lock.current = value;
-                setBusy(value);
-              }}
-              onStatus={setStatus}
-              onError={report}
-            />
-            {hostSessionId && <ContextUsageIndicator sessionId={hostSessionId} />}
+              {/* ::before is the trail group's float: as wide as the group,
+                  as tall as the text, and shape-outside keeps only its
+                  bottom control-height, so only the LAST line yields. */}
+              <div
+                ref={inlineRow.editorRef}
+                className={cn(
+                  'relative w-full transition-opacity duration-200',
+                  welcome ? 'min-h-[54px]' : 'min-h-8',
+                  inlineRow.inline &&
+                    "[&_.tiptap.ProseMirror]:before:float-right [&_.tiptap.ProseMirror]:before:content-[''] [&_.tiptap.ProseMirror]:before:h-[var(--cmp-wrap-h)] [&_.tiptap.ProseMirror]:before:w-[calc(var(--cmp-trail-w)-8px)] [&_.tiptap.ProseMirror]:before:[shape-outside:inset(calc(100%-var(--cmp-row-h))_0_0_0)]",
+                  disabled && 'opacity-60',
+                )}
+              >
+                <TipTapEditor
+                  scopeKey={scopeKey}
+                  sessionId={hostSessionId}
+                  target={localTarget ?? props.target}
+                  document={draft.document}
+                  onChange={(document) => {
+                    patch({ document, error: undefined });
+                    setError('');
+                    history.resetNavigation();
+                  }}
+                  onEditor={(value) => {
+                    editor.current = value;
+                  }}
+                  onSubmit={(mode) => void submit(mode)}
+                  onStop={stopTurn}
+                  skillContext={{
+                    llmConnectionSlug: newTask.model?.llmConnectionSlug,
+                    model: newTask.model?.model,
+                    collaborationMode: plan ? 'plan' : 'agent',
+                    permissionMode: mode === 'explore' ? undefined : mode,
+                  }}
+                  onCommand={(command) => {
+                    if (command === 'compact' && sessionId) {
+                      void turnActionsStore.compact(sessionId).catch(report);
+                    }
+                  }}
+                  onArrow={(event) =>
+                    history.handleArrowKey(event as unknown as ReactKeyboardEvent<Element>)
+                  }
+                  disabled={disabled}
+                  running={props.running}
+                  label={props.label ?? common.composer.textareaAriaLabel}
+                  placeholder={common.composer.placeholder}
+                />
+              </div>
+            </div>
 
-            <span className="ml-auto flex items-center gap-1">
-              {props.running && (
-                <>
-                  <ComposerSelect
-                    label={common.composer.queuedMessagesAriaLabel(1)}
-                    value={placement}
-                    onChange={(value) => setPlacement(value as typeof placement)}
-                    options={[
-                      { value: 'current_turn', label: copy.send.currentTurn },
-                      { value: 'next_turn', label: copy.send.nextTurn },
-                    ]}
+            {/* Resting order (upstream): ＋ leftmost, then the permission
+                icon, then the mode readout. A mode turning on or off adds or
+                removes the last slot only, so nothing to its left moves. */}
+            <div
+              ref={inlineRow.leadRef}
+              className="absolute bottom-0 left-0 flex min-h-8 shrink-0 items-center gap-1 pr-2"
+            >
+              <DropdownMenu
+                onOpenChange={(open) => {
+                  if (open) void loadSkills();
+                }}
+              >
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={common.composer.addContext}
+                        disabled={disabled}
+                        className={COMPOSER_ICON_CONTROL_CLASS}
+                      >
+                        <Anthropicon name="add" size={20} weight={433.25} />
+                      </button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side={menuSide}>{common.composer.addContext}</TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent
+                  align="start"
+                  side={menuSide}
+                  sideOffset={4}
+                  alignOffset={-8}
+                  onCloseAutoFocus={(event) => {
+                    if (!keepEditorFocus.current) return;
+                    keepEditorFocus.current = false;
+                    event.preventDefault();
+                  }}
+                >
+                  <DropdownMenuItem
+                    disabled={props.running || !canStageContext}
+                    onSelect={() => void pickFiles()}
+                  >
+                    <div className="flex flex-1 items-center gap-2 truncate">
+                      <DropdownMenuItemIcon>
+                        <Anthropicon name="attach" size={20} />
+                      </DropdownMenuItemIcon>
+                      <span className="truncate">{copy.menu.addFiles}</span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={props.running || !directoryHostId}
+                    onSelect={() => void pickDirectory()}
+                  >
+                    <div className="flex flex-1 items-center gap-2 truncate">
+                      <DropdownMenuItemIcon>
+                        <Anthropicon name="folder" size={20} />
+                      </DropdownMenuItemIcon>
+                      <span className="truncate">{copy.menu.addFolder}</span>
+                    </div>
+                  </DropdownMenuItem>
+                  {/* Two groups, as the reference panel has them: above the
+                      divider what goes INTO the message, below it how this
+                      task runs, led by its submenu. Plan is a Session field
+                      of its own and an independent switch, so the menu stays
+                      open on the toggle and the row itself shows the change. */}
+                  <DropdownMenuSeparator />
+                  <SkillSubMenu
+                    skills={skills}
+                    disabled={!canStageContext}
+                    onPick={insertSkill}
+                    onManage={() => {
+                      uiStore.closeSettings();
+                      uiStore.navigate({ section: 'extensions', module: 'skills' });
+                    }}
                   />
+                  <DropdownMenuItem
+                    disabled={props.running || localPending || Boolean(blocked)}
+                    onSelect={() => void openGoal()}
+                  >
+                    <div className="flex flex-1 items-center gap-2 truncate">
+                      <DropdownMenuItemIcon>
+                        <Anthropicon name="flag" size={20} />
+                      </DropdownMenuItemIcon>
+                      <span className="truncate">{common.composer.setGoal}</span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuCheckboxItem
+                    checked={plan}
+                    disabled={modeLocked}
+                    aria-description={
+                      plan ? common.composer.disablePlanMode : common.composer.enablePlanMode
+                    }
+                    onSelect={(event) => event.preventDefault()}
+                    onCheckedChange={() => togglePlan()}
+                  >
+                    <DropdownMenuItemIcon>
+                      <Anthropicon name="tasks" size={20} />
+                    </DropdownMenuItemIcon>
+                    <span className="truncate">{common.composer.planModeLabel}</span>
+                  </DropdownMenuCheckboxItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+
+            <div
+              ref={inlineRow.trailRef}
+              className="absolute bottom-0 right-0 flex min-h-8 shrink-0 items-center gap-1 pl-2"
+            >
+              {/* The model chip lives IN the surface only on the welcome
+                  page; a Session's sits on the meta row under it. */}
+              {welcome && modelMenu(false)}
+              {/* The context ring sits beside Send: the moment to look at it
+                  is right before pressing it. */}
+              {hostSessionId && <ContextUsageIndicator sessionId={hostSessionId} />}
+              {stopShown ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label={
+                        pending.includes('stop')
+                          ? common.composer.stopping
+                          : common.composer.stopLabel
+                      }
+                      aria-busy={pending.includes('stop') ? 'true' : undefined}
+                      disabled={pending.includes('stop')}
+                      onClick={stopTurn}
+                      className="ui-control-squish ui-control-squish-flat flex size-8 cursor-pointer items-center justify-center rounded-lg text-text-primary outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-70"
+                    >
+                      <Anthropicon
+                        name={pending.includes('stop') ? 'spinner' : 'stopCircle'}
+                        size={20}
+                        className={pending.includes('stop') ? 'animate-spin' : undefined}
+                      />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {pending.includes('stop')
+                      ? common.composer.stopping
+                      : common.composer.stopLabel}
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                (canSend || busy) && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
                         type="button"
-                        aria-label={common.composer.stopLabel}
-                        disabled={pending.includes('stop')}
-                        onClick={stopTurn}
-                        className="ui-control-squish ui-control-squish-flat flex size-8 cursor-pointer items-center justify-center rounded-lg text-text-primary outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-70"
+                        aria-label={common.composer.sendLabel}
+                        aria-busy={busy ? 'true' : undefined}
+                        disabled={!canSend}
+                        onClick={() => void submit()}
+                        className={sendButtonClass}
                       >
-                        <Anthropicon name="stopCircle" size={20} />
+                        <Anthropicon
+                          name={busy ? 'spinner' : welcome ? 'arrowUp' : 'reply'}
+                          size={20}
+                          className={busy ? 'animate-spin' : undefined}
+                        />
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent>{common.composer.stopLabel}</TooltipContent>
+                    <TooltipContent>{common.composer.sendLabel}</TooltipContent>
                   </Tooltip>
-                </>
+                )
               )}
+            </div>
+          </div>
+        </div>
+
+        {/* The meta row: 6px under the surface, 24px tall, inset 12px. Left,
+            the task's context and mode: its project, the permission mode,
+            and Plan while it is on — that chip is the readout and the way
+            out; the ＋ menu stays the switch. Right, a Session's model with
+            its effort. */}
+        <div className="mt-[6px] flex h-6 w-full items-center justify-between gap-2 px-3">
+          <div className="flex min-w-0 items-center gap-1">
+            {/* The project: a picker while the task is still a draft; a
+                Session's is fixed, so there it is a readout, as plain text
+                rather than a chip that would promise a menu. */}
+            {welcome ? (
+              <WorkspacePicker dense side={menuSide} />
+            ) : (
+              sessionProjectName && (
+                <span className="inline-flex h-6 min-w-0 max-w-[416px] shrink-0 select-none items-center gap-1.5 px-2 text-[13px] leading-[1.4] text-text-secondary">
+                  <Anthropicon name="folder" size={16} className="shrink-0" />
+                  <span className="min-w-0 truncate">{sessionProjectName}</span>
+                </span>
+              )
+            )}
+            <PermissionModeMenu
+              activeMode={mode}
+              side={menuSide}
+              disabled={modeLocked || pending.includes('permission')}
+              onSelect={(next) => {
+                // Full access is confirmed first; the dialog applies it.
+                if (next === 'bypass') setBypassOpen(true);
+                else void setMode(next).catch(() => {});
+              }}
+            />
+            {plan && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    aria-label={common.composer.sendLabel}
-                    disabled={!canSend}
-                    onClick={() => void submit()}
-                    className="ui-control-squish ui-control-squish-accent-fill flex size-8 cursor-pointer items-center justify-center rounded-lg text-on-accent outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-50"
+                    data-mode="plan"
+                    aria-description={common.composer.disablePlanMode}
+                    disabled={modeLocked}
+                    onClick={() => {
+                      togglePlan();
+                      window.requestAnimationFrame(() => editor.current?.commands.focus('end'));
+                    }}
+                    className={cn(COMPOSER_META_CHIP, COMPOSER_META_CHIP_ACTIVE)}
                   >
-                    <Anthropicon
-                      name={disabled ? 'spinner' : 'arrowUp'}
-                      size={20}
-                      className={disabled ? 'animate-spin' : undefined}
-                    />
+                    {common.composer.planModeLabel}
                   </button>
                 </TooltipTrigger>
-                <TooltipContent>{common.composer.sendLabel}</TooltipContent>
+                <TooltipContent side={menuSide}>{common.composer.planModeOnTitle}</TooltipContent>
               </Tooltip>
-            </span>
+            )}
           </div>
+          <div className="flex shrink-0 items-center gap-1">{!welcome && modelMenu(true)}</div>
         </div>
       </TooltipProvider>
 
       {(blocked || status) && (
-        <p role="status" className="px-2 text-xs leading-4 text-text-muted">
+        <p role="status" className="mt-1 px-3 text-xs leading-4 text-text-muted">
           {blocked || status}
         </p>
       )}
       {(error || draft.error) && (
-        <p role="alert" className="px-2 text-sm text-danger">
+        <p role="alert" className="mt-1 px-3 text-sm text-danger">
           {error || draft.error}
         </p>
       )}
@@ -1005,6 +1318,19 @@ function OwnedChatInput(props: {
         closeLabel={copy.attachments.close}
         waitForConfirm
         onConfirm={() => setMode('bypass')}
+      />
+
+      <GoalDialog
+        sessionId={sessionId}
+        open={goalOpen}
+        onOpenChange={setGoalOpen}
+        busy={busy}
+        onBusy={(value) => {
+          lock.current = value;
+          setBusy(value);
+        }}
+        onStatus={setStatus}
+        onError={report}
       />
 
       <Dialog
@@ -1034,42 +1360,19 @@ function OwnedChatInput(props: {
   );
 }
 
-function IconControl(props: {
-  icon: AnthropiconName;
-  label: string;
-  disabled?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-label={props.label}
-          disabled={props.disabled}
-          onClick={props.onClick}
-          className={ICON_CONTROL_CLASS}
-        >
-          <Anthropicon name={props.icon} size={20} />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent>{props.label}</TooltipContent>
-    </Tooltip>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Goal
 //
-// The goal button opens a small dialog; arming a goal on the welcome surface
-// creates the Session first (a goal belongs to a Session). The dialog keeps
-// its own field state; validation mirrors the Host's bounds.
+// The "+" menu's goal entry opens this dialog; arming a goal on the welcome
+// surface creates the Session first (a goal belongs to a Session). The dialog
+// keeps its own field state; validation mirrors the Host's bounds.
 
 const GOAL_MAX_ITERATIONS = 100;
 
-function GoalControl(props: {
+function GoalDialog(props: {
   sessionId?: string;
-  disabled: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   busy: boolean;
   onBusy: (busy: boolean) => void;
   onStatus: (status: string) => void;
@@ -1077,8 +1380,6 @@ function GoalControl(props: {
 }) {
   const locale = useUiLocale();
   const copy = getComposerCopy(locale).goal;
-  const common = getConversationCopy(locale).composer;
-  const [open, setOpen] = useState(false);
   const [condition, setCondition] = useState('');
   const [iterations, setIterations] = useState('20');
   const [budget, setBudget] = useState('');
@@ -1087,20 +1388,9 @@ function GoalControl(props: {
   const iterationsId = `goal-iterations-${props.sessionId ?? 'new'}`;
   const budgetId = `goal-budget-${props.sessionId ?? 'new'}`;
 
-  async function openDialog() {
-    try {
-      if (props.sessionId) {
-        const goal = await getGoal(props.sessionId);
-        if (goal && ['active', 'waiting', 'paused'].includes(goal.status)) {
-          throw new Error(common.goalAlreadySet);
-        }
-      }
-      setFieldError('');
-      setOpen(true);
-    } catch (cause) {
-      props.onError(cause, copy.failedTitle);
-    }
-  }
+  useEffect(() => {
+    if (props.open) setFieldError('');
+  }, [props.open]);
 
   async function arm() {
     if (!condition.trim()) {
@@ -1143,7 +1433,7 @@ function GoalControl(props: {
       ) {
         throw new Error(getComposerCopy(locale).send.outcomeUnknownDescription);
       }
-      setOpen(false);
+      props.onOpenChange(false);
       props.onStatus(copy.armedTitle);
     } catch (cause) {
       setFieldError(cause instanceof Error ? cause.message : String(cause));
@@ -1154,77 +1444,85 @@ function GoalControl(props: {
   }
 
   return (
-    <>
-      <IconControl
-        icon="agent"
-        label={common.setGoal}
-        disabled={props.disabled}
-        onClick={() => void openDialog()}
-      />
-      <Dialog
-        open={open}
-        onOpenChange={(next) => {
-          if (!props.busy) setOpen(next);
-        }}
-      >
-        <DialogContent>
-          <DialogHeader closeLabel={copy.cancel}>
-            <DialogTitle>{copy.title}</DialogTitle>
-            <DialogDescription>{copy.description}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
+    <Dialog
+      open={props.open}
+      onOpenChange={(next) => {
+        if (!props.busy) props.onOpenChange(next);
+      }}
+    >
+      <DialogContent className="md:max-w-[480px]">
+        <DialogHeader closeLabel={copy.cancel}>
+          <DialogTitle>{copy.title}</DialogTitle>
+          <DialogDescription>{copy.description}</DialogDescription>
+        </DialogHeader>
+        <form
+          className="space-y-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void arm();
+          }}
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor={conditionId}>{copy.conditionLabel}</Label>
+            <Input
+              id={conditionId}
+              autoFocus
+              disabled={props.busy}
+              value={condition}
+              placeholder={copy.conditionPlaceholder}
+              onChange={(event) => setCondition(event.target.value)}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor={conditionId}>{copy.conditionLabel}</Label>
+              <Label htmlFor={iterationsId}>{copy.iterationsLabel}</Label>
               <Input
-                id={conditionId}
+                id={iterationsId}
+                type="number"
+                min={1}
+                max={GOAL_MAX_ITERATIONS}
                 disabled={props.busy}
-                value={condition}
-                placeholder={copy.conditionPlaceholder}
-                onChange={(event) => setCondition(event.target.value)}
+                value={iterations}
+                onChange={(event) => setIterations(event.target.value)}
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor={iterationsId}>{copy.iterationsLabel}</Label>
-                <Input
-                  id={iterationsId}
-                  type="number"
-                  min={1}
-                  max={GOAL_MAX_ITERATIONS}
-                  disabled={props.busy}
-                  value={iterations}
-                  onChange={(event) => setIterations(event.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor={budgetId}>{copy.budgetLabel}</Label>
-                <Input
-                  id={budgetId}
-                  type="number"
-                  min={1}
-                  disabled={props.busy}
-                  value={budget}
-                  onChange={(event) => setBudget(event.target.value)}
-                />
-                <p className="text-xs text-text-muted">{copy.budgetHint}</p>
-              </div>
-            </div>
-            {fieldError && (
-              <p role="alert" className="text-sm text-danger">
-                {fieldError}
-              </p>
-            )}
-            <div className="flex justify-end gap-2">
-              <Button variant="secondary" disabled={props.busy} onClick={() => setOpen(false)}>
-                {copy.cancel}
-              </Button>
-              <Button disabled={props.busy} onClick={() => void arm()}>
-                {copy.submit}
-              </Button>
+            <div className="space-y-1.5">
+              <Label htmlFor={budgetId}>{copy.budgetLabel}</Label>
+              <Input
+                id={budgetId}
+                type="number"
+                min={1}
+                disabled={props.busy}
+                value={budget}
+                placeholder={copy.budgetHint}
+                onChange={(event) => setBudget(event.target.value)}
+              />
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
-    </>
+          {fieldError && (
+            <p role="alert" className="text-sm text-danger">
+              {fieldError}
+            </p>
+          )}
+        </form>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={props.busy}
+            onClick={() => props.onOpenChange(false)}
+          >
+            {copy.cancel}
+          </Button>
+          <Button type="button" disabled={props.busy} onClick={() => void arm()}>
+            {props.busy ? (
+              <Anthropicon name="spinner" size={16} className="animate-spin" />
+            ) : (
+              copy.submit
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -44,7 +44,6 @@ import { TaskWelcomeContent } from '../welcome/TaskWelcomeContent.js';
 import { composerInputStore } from '../../store/composer-input-store.js';
 import { newComposerKey } from '../composer/ChatInput.js';
 import { SessionView } from '../session/SessionView.js';
-import { ModelSwitcher } from '../session/ModelSwitcher.js';
 import { CommandPalette } from '../palette/CommandPalette.js';
 import { KeyboardHelp } from '../palette/KeyboardHelp.js';
 import { SearchModal } from '../palette/SearchModal.js';
@@ -500,16 +499,10 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
         }
         actions={
           view === 'session' && activeId ? (
-            <>
-              <ModelSwitcher
-                sessionId={activeId}
-                onOpenSettings={() => openSettings('models')}
-                onError={reportError}
-              />
-              {/* Right-most control in the row (plan §2.12): the workbar's
-                  switch has to be reachable while the pane is not on screen. */}
-              <WorkbarToggle workbar={workbar} />
-            </>
+            // The model is chosen on the composer's meta row; the titlebar
+            // keeps only the workbar's switch, which has to be reachable while
+            // the pane is not on screen.
+            <WorkbarToggle workbar={workbar} />
           ) : undefined
         }
       />

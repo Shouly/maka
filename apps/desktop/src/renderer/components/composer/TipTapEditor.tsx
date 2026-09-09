@@ -187,9 +187,12 @@ export function TipTapEditor(props: {
         Reference,
         Placeholder.configure({
           placeholder: () => live.current.placeholder,
-          // Show the hint whether or not the editor is focused (relx).
+          // Show the hint whether or not the editor is focused (relx). The
+          // class is what paints it: the extension only sets the attribute.
           showOnlyCurrent: false,
           showOnlyWhenEditable: false,
+          emptyEditorClass:
+            'is-editor-empty before:pointer-events-none before:float-left before:h-0 before:text-text-muted before:content-[attr(data-placeholder)]',
         }),
       ],
       content: props.document,

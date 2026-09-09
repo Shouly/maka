@@ -43,7 +43,13 @@ import { getWelcomeCopy } from '../../locales/welcome-copy.js';
 
 const MENU_ICON = 20;
 
-export function WorkspacePicker(props: { className?: string }) {
+export function WorkspacePicker(props: {
+  className?: string;
+  /** Which way the popover opens; the welcome composer sits mid-screen and opens down. */
+  side?: 'top' | 'bottom';
+  /** The meta row under the composer: 24px chip rather than the 32px control. */
+  dense?: boolean;
+}) {
   const copy = getWelcomeCopy(useUiLocale()).workspace;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -98,7 +104,8 @@ export function WorkspacePicker(props: { className?: string }) {
           type="button"
           aria-label={`${copy.label}: ${label}`}
           className={cn(
-            'ui-control-squish ui-control-squish-ghost inline-flex h-8 min-w-0 max-w-[416px] shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[13px] leading-[1.4] text-text-secondary outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)]',
+            'ui-control-squish ui-control-squish-ghost inline-flex min-w-0 max-w-[416px] shrink-0 cursor-pointer items-center gap-1.5 px-2 text-[13px] leading-[1.4] text-text-secondary outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)]',
+            props.dense ? 'h-6 rounded-md' : 'h-8 rounded-lg',
             props.className,
           )}
         >
@@ -109,7 +116,7 @@ export function WorkspacePicker(props: { className?: string }) {
       <PopoverContent
         variant="panel"
         align="start"
-        side="top"
+        side={props.side ?? 'top'}
         sideOffset={6}
         className="flex max-h-[min(60vh,420px)] w-[400px] max-w-[calc(100vw-2rem)] flex-col rounded-xl p-1"
       >

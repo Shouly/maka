@@ -22,12 +22,16 @@ import { COMPOSER_INPUT, awaitSendReady, expect, test } from './fixtures';
 test('a folder reference is removable and survives send and reload without reading its files', async ({
   directoryReferenceWindow: { page, folder },
 }) => {
-  await page.getByRole('button', { name: '引用文件夹', exact: true }).click();
+  const addFolder = async () => {
+    await page.getByRole('button', { name: '添加上下文', exact: true }).click();
+    await page.getByRole('menuitem', { name: '添加文件夹', exact: true }).click();
+  };
+  await addFolder();
   const remove = page.getByRole('button', { name: /移除.*referenced-source/ });
   await expect(remove).toBeVisible();
   await remove.click();
   await expect(remove).toHaveCount(0);
-  await page.getByRole('button', { name: '引用文件夹', exact: true }).click();
+  await addFolder();
   await expect(remove).toBeVisible();
   await page.locator(COMPOSER_INPUT).fill('请检查引用目录');
   await awaitSendReady(page);

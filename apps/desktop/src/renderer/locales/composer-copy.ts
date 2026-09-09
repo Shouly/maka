@@ -64,6 +64,19 @@ export interface ComposerCopy {
     readonly orchestrationStandard: string;
     readonly orchestrationSwarm: string;
     readonly orchestrationGraph: string;
+    /** The ＋ menu's two import rows: staged file attachments, a referenced folder. */
+    readonly addFiles: string;
+    readonly addFolder: string;
+    /** The Skills submenu's own row in the ＋ menu. */
+    readonly skills: string;
+    /** The Skills submenu's pinned last row: opens the Skills page. */
+    readonly manageSkills: string;
+    /** The model menu's effort (thinking level) submenu and the chip's readout. */
+    readonly effort: string;
+    /** The effort readout when the level is the model's own default. */
+    readonly effortDefault: string;
+    /** The Skills submenu while the catalog is still being read. */
+    readonly loadingSkills: string;
   };
   readonly slash: {
     readonly command: Record<
@@ -154,7 +167,18 @@ const COMPOSER_COPY = {
       pickFailedTitle: '文件夹引用失败',
     },
     quotes: { regionLabel: '引用片段', remove: (excerpt) => `移除引用：${excerpt}` },
-    menu: { orchestrationStandard: '标准', orchestrationSwarm: '群体', orchestrationGraph: '图' },
+    menu: {
+      orchestrationStandard: '标准',
+      addFiles: '添加文件',
+      addFolder: '添加文件夹',
+      skills: '技能',
+      effort: 'Effort',
+      effortDefault: '默认',
+      orchestrationSwarm: '群体',
+      orchestrationGraph: '图',
+      manageSkills: '管理技能',
+      loadingSkills: '正在读取技能…',
+    },
     slash: {
       command: {
         compact: { label: '/compact', description: '压缩上下文，为后续对话腾出窗口。' },
@@ -244,7 +268,18 @@ const COMPOSER_COPY = {
       pickFailedTitle: '資料夾引用失敗',
     },
     quotes: { regionLabel: '引用片段', remove: (excerpt) => `移除引用：${excerpt}` },
-    menu: { orchestrationStandard: '標準', orchestrationSwarm: '群體', orchestrationGraph: '圖' },
+    menu: {
+      orchestrationStandard: '標準',
+      addFiles: '新增檔案',
+      addFolder: '新增資料夾',
+      skills: '技能',
+      effort: 'Effort',
+      effortDefault: '預設',
+      orchestrationSwarm: '群體',
+      orchestrationGraph: '圖',
+      manageSkills: '管理技能',
+      loadingSkills: '正在讀取技能…',
+    },
     slash: {
       command: {
         compact: { label: '/compact', description: '壓縮脈絡，為後續對話騰出視窗。' },
@@ -336,8 +371,15 @@ const COMPOSER_COPY = {
     quotes: { regionLabel: 'Quoted excerpts', remove: (excerpt) => `Remove quote: ${excerpt}` },
     menu: {
       orchestrationStandard: 'Standard',
+      addFiles: 'Add files',
+      addFolder: 'Add folder',
+      skills: 'Skills',
+      effort: 'Effort',
+      effortDefault: 'Default',
       orchestrationSwarm: 'Swarm',
       orchestrationGraph: 'Graph',
+      manageSkills: 'Manage skills',
+      loadingSkills: 'Reading skills…',
     },
     slash: {
       command: {

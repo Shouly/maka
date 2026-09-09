@@ -89,11 +89,16 @@ export const ANTHROPICON_SPECS = {
   download: { glyph: '\uE063', size: 20, weight: 433.25 },
   edit: { glyph: '\uE064', size: 20, weight: 433.25 },
   eye: { glyph: '\uE069', size: 20, weight: 433.25 },
+  /** Permission modes (upstream ShieldCheck / ShieldAlert): E102 and E10B. */
+  shieldCheck: { glyph: '\uE102', size: 20, weight: 433.25 },
+  shieldAlert: { glyph: '\uE10B', size: 20, weight: 433.25 },
   expand: { glyph: '\uE067', size: 20, weight: 433.25 },
   eyeSlash: { glyph: '\uE06A', size: 20, weight: 433.25 },
   /** 思考中 / 思考过程 —— 时间线里 thinking 那一步的图标。 */
   thinking: { glyph: '\uE068', size: 20, weight: 433.25 },
   /** 单个文档。E06F(files) 是一摞。 */
+  /** Goal: a finish line (upstream uses Target; the font has no crosshair). */
+  flag: { glyph: '\uE071', size: 20, weight: 433.25 },
   file: { glyph: '\uE06C', size: 20, weight: 433.25 },
   files: { glyph: '\uE06F', size: 20, weight: 433.25 },
   filter: { glyph: '\uE070', size: 16, weight: 533.25 },

@@ -218,8 +218,8 @@ try {
   checks.push('a streamed reply settles inside rendered markdown');
   await page.screenshot({ path: SHOT('phase3a-session-light.png') });
 
-  // 3a.2 The model switcher lives in the titlebar and lists the seeded model.
-  const switcher = page.locator('[data-maka-contract="model-switcher"]');
+  // 3a.2 The model chip on the composer's meta row lists the seeded model.
+  const switcher = page.locator('[data-maka-contract="composer-model"]');
   await switcher.waitFor();
   await switcher.click();
   await page
@@ -232,7 +232,7 @@ try {
     .getByRole('menuitem', { name: /Sonnet/u })
     .first()
     .waitFor({ state: 'detached' });
-  checks.push('the titlebar model switcher lists the seeded connection');
+  checks.push('the composer model chip lists the seeded connection');
 
   // 3a.3 Regenerate produces a second turn from the same ask.
   const firstTurnId = await turns.first().getAttribute('data-turn-id');
@@ -251,11 +251,14 @@ try {
   // A message sent while a turn is still running is STEERING — the Host folds
   // it into that turn instead of starting one, and no new tool call follows.
   // So this waits for the regenerated turn to settle first.
+  // The Send button only exists once there is something to send, so the
+  // composer being editable is the "ready for input" signal here.
   await page.waitForFunction(
     () =>
       document.querySelectorAll('[data-turn-status="running"]').length === 0 &&
-      document.querySelectorAll('[data-maka-contract="transcript"] button[aria-label="Send"]')
-        .length === 1,
+      document.querySelectorAll(
+        '[data-maka-contract="transcript"] [data-maka-contract="composer-input"][contenteditable="true"]',
+      ).length === 1,
   );
   await page.getByLabel('Message input', { exact: true }).fill('__e2e_ask_user_question__');
   await transcript.getByRole('button', { name: 'Send', exact: true }).click();
@@ -308,23 +311,25 @@ try {
     'file and skill mention atoms, dropped attachment, transmission and successful draft cleanup',
   );
 
-  await page.getByRole('combobox', { name: /Permission mode/ }).click();
-  await page.getByRole('option', { name: 'Full access', exact: true }).click();
+  // The permission mode is a quiet icon menu beside ＋ (upstream's footer).
+  await page.getByRole('button', { name: /Permission mode/ }).click();
+  await page.getByRole('menuitemradio', { name: 'Full access', exact: true }).click();
   const bypass = page.getByRole('dialog', { name: 'Switch to full access?', exact: true });
   await bypass.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await page.getByRole('combobox', { name: /Permission mode/ }).click();
-  await page.getByRole('option', { name: 'Full access', exact: true }).click();
+  await page.getByRole('button', { name: /Permission mode/ }).click();
+  await page.getByRole('menuitemradio', { name: 'Full access', exact: true }).click();
   await bypass.getByRole('button', { name: 'Switch to full access', exact: true }).click();
   await bypass.waitFor({ state: 'detached' });
-  await page.getByRole('button', { name: 'Plan', exact: true }).click();
-  await page.waitForFunction(
-    () =>
-      document.querySelector('button[aria-pressed="true"]')?.textContent?.includes('Plan') ||
-      [...document.querySelectorAll('button[aria-pressed="true"]')].some(
-        (e) => e.textContent === 'Plan',
-      ),
-  );
-  await page.getByRole('button', { name: 'Plan', exact: true }).click();
+  await page.getByRole('button', { name: /Permission mode: Full access/ }).waitFor();
+  // Plan is the mode row under the ＋ menu's divider; while on, its readout
+  // mark sits after the permission icon and is the way out.
+  await page.getByRole('button', { name: 'Add context', exact: true }).click();
+  await page.getByRole('menuitemcheckbox', { name: 'Plan', exact: true }).click();
+  await page.keyboard.press('Escape');
+  const planMark = page.locator('button[data-mode="plan"]');
+  await planMark.waitFor();
+  await planMark.click();
+  await planMark.waitFor({ state: 'detached' });
   checks.push('full-access confirmation can cancel or commit, and Plan mode round-trips');
   await page.screenshot({ path: SHOT('phase3b-composer.png') });
 

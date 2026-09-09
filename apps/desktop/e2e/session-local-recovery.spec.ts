@@ -144,7 +144,7 @@ test('a rejected first message restores the welcome draft and removes its empty 
 
 test('welcome shows the Host permission default and first send inherits it',async({sessionLocalWindow:{page}})=>{
   await page.evaluate(async()=>window.maka.settings.update({chatDefaults:{permissionMode:'bypass'}}));
-  await expect(page.getByRole('combobox',{name:'权限模式：完全权限'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'权限模式：完全权限'})).toBeVisible();
   await sendPrompt(page,'inherit host defaults');
   const row=await page.evaluate(async()=>(await window.maka.sessions.list())[0]!);
   expect(row.permissionMode).toBe('bypass');

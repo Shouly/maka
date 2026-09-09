@@ -439,7 +439,9 @@ function SessionTranscript(props: SessionViewProps) {
         <SelectionQuote sessionId={sessionId} scrollRef={scrollRef} enabled={!draft} />
       </div>
 
-      <div className={cn('shrink-0 px-4 pb-4')}>
+      {/* pb-2, not pb-4: the reference anchors the meta row 8px above the
+          viewport and the composer's white face 38px above it. */}
+      <div className={cn('shrink-0 px-4 pb-2')}>
         <div className="mx-auto flex w-full max-w-[var(--chat-feed-max)] flex-col gap-2">
           <SessionNotices
             sessionId={sessionId}
