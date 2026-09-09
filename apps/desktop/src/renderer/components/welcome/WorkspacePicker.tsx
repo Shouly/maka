@@ -38,7 +38,13 @@ import { menuActionItemClass, menuSeparatorClass } from '../ui/menu-variants.js'
 import { cn } from '../../lib/cn.js';
 import { projectPathDisplay } from '../../lib/ported/project-path-display.js';
 import { newTaskStore } from '../../store/index.js';
-import { workspaceOptionsOf, type WorkspaceOption } from '../../store/new-task-store.js';
+import {
+  addProjectHostOf,
+  workspaceOptionsOf,
+  type WorkspaceOption,
+} from '../../store/new-task-store.js';
+import { toast } from '../../store/toast-store.js';
+import { errorMessage } from '../../store/resource-store.js';
 import { getWelcomeCopy } from '../../locales/welcome-copy.js';
 
 const MENU_ICON = 20;
@@ -53,6 +59,7 @@ export function WorkspacePicker(props: {
   const copy = getWelcomeCopy(useUiLocale()).workspace;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [adding, setAdding] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const catalog = useStore(newTaskStore, (state) => state.catalog);
   const loading = useStore(newTaskStore, (state) => state.loading);
@@ -90,6 +97,7 @@ export function WorkspacePicker(props: {
     (option) => option.profileId === target?.profileId && option.projectId === target?.projectId,
   );
   const label = current?.projectName ?? copy.none;
+  const addHost = addProjectHostOf(catalog, target);
 
   return (
     <Popover
@@ -109,7 +117,6 @@ export function WorkspacePicker(props: {
             props.className,
           )}
         >
-          <Anthropicon name="folder" size={16} className="shrink-0" />
           <span className="min-w-0 truncate">{label}</span>
         </button>
       </PopoverTrigger>
@@ -152,6 +159,7 @@ export function WorkspacePicker(props: {
                 {group.options.map((option) => {
                   const selected =
                     option.profileId === target?.profileId &&
+                    option.hostId === target?.hostId &&
                     option.projectId === target?.projectId;
                   const path = option.path
                     ? projectPathDisplay(option.path, { maxLength: 40 })
@@ -162,14 +170,14 @@ export function WorkspacePicker(props: {
                       type="button"
                       role="option"
                       aria-selected={selected}
-                      disabled={!option.available}
+                      disabled={!option.available && !selected}
                       title={path?.title}
                       onClick={() => {
-                        if (!option.available || !option.hostId) return;
+                        if ((!option.available && !selected) || !option.hostId) return;
                         newTaskStore.selectTarget({
                           profileId: option.profileId,
                           hostId: option.hostId,
-                          projectId: option.projectId,
+                          projectId: selected ? null : option.projectId,
                         });
                         setOpen(false);
                       }}
@@ -182,9 +190,10 @@ export function WorkspacePicker(props: {
                         <span className="truncate">
                           {option.projectName ?? copy.hostUnavailable}
                         </span>
-                        {(path || option.unavailableReason) && (
+                        {(path || option.unavailableReason || !option.available) && (
                           <span className="truncate text-xs text-menu-text-muted">
-                            {option.unavailableReason ?? path?.text}
+                            {option.unavailableReason ??
+                              (!option.available ? copy.projectUnavailable : path?.text)}
                           </span>
                         )}
                       </span>
@@ -201,51 +210,37 @@ export function WorkspacePicker(props: {
           )}
         </div>
 
-        <div className="shrink-0">
-          <div className={menuSeparatorClass} />
-          <button
-            type="button"
-            className={menuActionItemClass}
-            onClick={() => {
-              const host = target ?? defaultHostRef(options);
-              if (!host?.hostId) return;
-              setOpen(false);
-              void newTaskStore.addProject({ profileId: host.profileId, hostId: host.hostId });
-            }}
-          >
-            <span className="flex size-5 shrink-0 items-center justify-center">
-              <Anthropicon name="folderAdd" size={MENU_ICON} />
-            </span>
-            <span>{copy.add}</span>
-          </button>
-          {current?.projectId && (
+        {addHost && (
+          <div className="shrink-0">
+            <div className={menuSeparatorClass} />
             <button
               type="button"
               className={menuActionItemClass}
+              disabled={adding}
               onClick={() => {
-                if (!current.hostId || !current.projectId) return;
-                setOpen(false);
-                void newTaskStore.relinkProject(
-                  { profileId: current.profileId, hostId: current.hostId },
-                  current.projectId,
-                );
+                if (adding) return;
+                setAdding(true);
+                void newTaskStore
+                  .addProject(addHost)
+                  .then(() => setOpen(false))
+                  .catch((error: unknown) =>
+                    toast({
+                      title: copy.addFailed,
+                      description: errorMessage(error),
+                      variant: 'destructive',
+                    }),
+                  )
+                  .finally(() => setAdding(false));
               }}
             >
               <span className="flex size-5 shrink-0 items-center justify-center">
-                <Anthropicon name="link" size={MENU_ICON} />
+                <Anthropicon name="folderAdd" size={MENU_ICON} />
               </span>
-              <span>{copy.relink}</span>
+              <span>{copy.add}</span>
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );
-}
-
-function defaultHostRef(
-  options: readonly WorkspaceOption[],
-): { profileId: string; hostId: string | undefined } | undefined {
-  const first = options.find((option) => option.available && option.hostId);
-  return first ? { profileId: first.profileId, hostId: first.hostId } : undefined;
 }

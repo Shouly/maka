@@ -47,7 +47,8 @@ export interface WelcomeCopy {
     readonly empty: string;
     readonly noMatch: string;
     readonly add: string;
-    readonly relink: string;
+    readonly addFailed: string;
+    readonly projectUnavailable: string;
     readonly loading: string;
     readonly hostUnavailable: string;
   };
@@ -77,14 +78,15 @@ const WELCOME_COPY = {
     },
     suggestionsLabel: '提示建议',
     workspace: {
-      label: '工作区',
-      none: '选择工作区',
+      label: '项目',
+      none: '项目',
       placeholder: '搜索项目…',
       searchLabel: '搜索项目',
       empty: '这台 Host 上还没有项目。',
       noMatch: '没有匹配的项目。',
       add: '添加项目…',
-      relink: '重新关联目录',
+      addFailed: '添加项目失败',
+      projectUnavailable: '项目目录不可用',
       loading: '正在载入项目…',
       hostUnavailable: 'Host 暂时不可用。',
     },
@@ -109,14 +111,15 @@ const WELCOME_COPY = {
     },
     suggestionsLabel: '提示建議',
     workspace: {
-      label: '工作區',
-      none: '選擇工作區',
+      label: '專案',
+      none: '專案',
       placeholder: '搜尋專案…',
       searchLabel: '搜尋專案',
       empty: '這台 Host 上還沒有專案。',
       noMatch: '沒有符合的專案。',
       add: '新增專案…',
-      relink: '重新連結資料夾',
+      addFailed: '新增專案失敗',
+      projectUnavailable: '專案資料夾無法使用',
       loading: '正在載入專案…',
       hostUnavailable: 'Host 暫時無法使用。',
     },
@@ -141,14 +144,15 @@ const WELCOME_COPY = {
     },
     suggestionsLabel: 'Prompt suggestions',
     workspace: {
-      label: 'Workspace',
-      none: 'Choose workspace',
+      label: 'Project',
+      none: 'Project',
       placeholder: 'Search projects…',
       searchLabel: 'Search projects',
       empty: 'No projects on this Host yet.',
       noMatch: 'No matching project.',
       add: 'Add project…',
-      relink: 'Relink folder',
+      addFailed: 'Could not add project',
+      projectUnavailable: 'Project directory unavailable',
       loading: 'Loading projects…',
       hostUnavailable: 'The Host is unavailable.',
     },

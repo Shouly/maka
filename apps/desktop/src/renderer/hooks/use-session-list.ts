@@ -59,7 +59,7 @@ export function useProjectRows(): ProjectRowModel[] {
   const defaults = useStore(projectsStore.defaults, (state) => state.data);
   return useMemo(() => {
     const rows = new Map<string, ProjectRowModel>();
-    for (const option of workspaceOptionsOf(catalog)) {
+    for (const option of workspaceOptionsOf(catalog, { includeArchived: true })) {
       if (!option.projectId || !option.projectName) continue;
       rows.set(option.projectId, {
         id: option.projectId,

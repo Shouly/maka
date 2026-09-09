@@ -79,7 +79,11 @@ import {
   settingsStore,
   uiStore,
 } from '../../store/index.js';
-import { newTaskStore, workspaceOptionsOf } from '../../store/new-task-store.js';
+import {
+  newTaskStore,
+  newTaskTargetAvailable,
+  workspaceOptionsOf,
+} from '../../store/new-task-store.js';
 import { useComposerInlineRow } from '../../hooks/use-composer-inline-row.js';
 import { pendingActionsOf } from '../../store/turn-actions-store.js';
 import { parseDesktopSlashCommand } from '../../lib/ported/desktop-slash-command.js';
@@ -332,7 +336,7 @@ function OwnedChatInput(props: {
   };
   const hasContent = Boolean(wire.text) || draft.attachments.length > 0;
   const blocked =
-    !sessionId && !props.target
+    !sessionId && !newTaskTargetAvailable(newTask.catalog, props.target)
       ? copy.send.blockedNoWorkspace
       : !sessionId && newTask.connections && !newTask.model
         ? copy.send.blockedNoModel
@@ -834,7 +838,7 @@ function OwnedChatInput(props: {
   const stopShown = props.running === true && !hasContent;
   const modeLocked = disabled || props.running || localPending;
   const sessionProjectName = session?.projectId
-    ? workspaceOptionsOf(newTask.catalog).find(
+    ? workspaceOptionsOf(newTask.catalog, { includeArchived: true }).find(
         (option) =>
           option.projectId === session.projectId && option.profileId === session.profileId,
       )?.projectName

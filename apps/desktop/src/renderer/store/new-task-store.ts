@@ -41,6 +41,7 @@ import type {
 import type { DesktopConnectionSnapshot } from '../bridge/connections.js';
 import type { ProjectRecord } from '@maka/core/project';
 import { errorMessage } from './resource-store.js';
+import { safeLocalStorageGet, safeLocalStorageSet } from '../lib/ported/browser-storage.js';
 import {
   pickNewChatModel,
   type NewChatModel,
@@ -52,6 +53,57 @@ import { loadComposerDefaults, saveComposerDefaults } from '../lib/ported/compos
 function rememberedModel(): NewChatModelCandidate | null {
   const model = loadComposerDefaults()?.model;
   return model ? { llmConnectionSlug: model.llmConnectionSlug, model: model.model } : null;
+}
+
+export const NEW_TASK_TARGET_KEY = 'maka-new-task-target-v1';
+
+export function parseNewTaskTarget(raw: string | null): DesktopNewTaskTarget | undefined {
+  try {
+    const value = JSON.parse(raw ?? 'null');
+    if (
+      value &&
+      typeof value.profileId === 'string' &&
+      value.profileId &&
+      typeof value.hostId === 'string' &&
+      value.hostId &&
+      (value.projectId === null || (typeof value.projectId === 'string' && value.projectId))
+    )
+      return { profileId: value.profileId, hostId: value.hostId, projectId: value.projectId };
+  } catch {}
+  return undefined;
+}
+
+export function newTaskTargetAvailable(
+  catalog: DesktopNewTaskCatalog | undefined,
+  target: DesktopNewTaskTarget | undefined,
+): boolean {
+  if (!target) return false;
+  const host = catalog?.hosts.find((entry) => entry.profile.id === target.profileId);
+  if (host?.readiness !== 'ready' || host.state !== 'available' || host.hostId !== target.hostId)
+    return false;
+  return target.projectId === null
+    ? host.capabilities.selectNoProject !== false
+    : host.projects.some(
+        (project) =>
+          project.id === target.projectId && project.available && project.archivedAt === undefined,
+      );
+}
+
+export function addProjectHostOf(
+  catalog: DesktopNewTaskCatalog | undefined,
+  target: DesktopNewTaskTarget | undefined,
+): DesktopNewTaskHostRef | undefined {
+  const host = target
+    ? catalog?.hosts.find((entry) => entry.profile.id === target.profileId)
+    : catalog?.hosts.find((entry) => entry.profile.id === catalog.defaultProfileId);
+  if (
+    host?.readiness !== 'ready' ||
+    host.state !== 'available' ||
+    (target && host.hostId !== target.hostId) ||
+    !host.capabilities.chooseClientDirectory
+  )
+    return undefined;
+  return { profileId: host.profile.id, hostId: host.hostId };
 }
 
 /** One selectable workspace row: a project on a Host, or a Host with none. */
@@ -97,7 +149,10 @@ export function projectPath(project: ProjectRecord): string | undefined {
 }
 
 /** Flatten the Host tree into the rows the picker lists, Host order preserved. */
-export function workspaceOptionsOf(catalog: DesktopNewTaskCatalog | undefined): WorkspaceOption[] {
+export function workspaceOptionsOf(
+  catalog: DesktopNewTaskCatalog | undefined,
+  { includeArchived = false }: { includeArchived?: boolean } = {},
+): WorkspaceOption[] {
   const options: WorkspaceOption[] = [];
   for (const host of catalog?.hosts ?? []) {
     if (host.readiness !== 'ready') {
@@ -127,6 +182,7 @@ export function workspaceOptionsOf(catalog: DesktopNewTaskCatalog | undefined): 
       continue;
     }
     for (const project of host.projects) {
+      if (!includeArchived && project.archivedAt !== undefined) continue;
       options.push({
         profileId: host.profile.id,
         hostId: host.hostId,
@@ -134,7 +190,7 @@ export function workspaceOptionsOf(catalog: DesktopNewTaskCatalog | undefined): 
         projectId: project.id,
         projectName: project.name,
         path: projectPath(project),
-        available: true,
+        available: project.available,
         unavailableReason: undefined,
       });
     }
@@ -146,24 +202,27 @@ export function workspaceOptionsOf(catalog: DesktopNewTaskCatalog | undefined): 
 export function defaultTargetOf(
   catalog: DesktopNewTaskCatalog | undefined,
 ): DesktopNewTaskTarget | undefined {
-  for (const host of catalog?.hosts ?? []) {
-    if (host.readiness !== 'ready' || host.state !== 'available') continue;
-    if (host.profile.id !== catalog?.defaultProfileId) continue;
-    return {
-      profileId: host.profile.id,
-      hostId: host.hostId,
-      projectId: host.selectedProjectId ?? host.defaultProjectId ?? null,
-    };
-  }
-  for (const host of catalog?.hosts ?? []) {
-    if (host.readiness !== 'ready' || host.state !== 'available') continue;
-    return {
-      profileId: host.profile.id,
-      hostId: host.hostId,
-      projectId: host.selectedProjectId ?? host.defaultProjectId ?? null,
-    };
-  }
-  return undefined;
+  const hosts = catalog?.hosts ?? [];
+  const host =
+    hosts.find(
+      (entry) =>
+        entry.profile.id === catalog?.defaultProfileId &&
+        entry.readiness === 'ready' &&
+        entry.state === 'available',
+    ) ?? hosts.find((entry) => entry.readiness === 'ready' && entry.state === 'available');
+  if (host?.readiness !== 'ready' || host.state !== 'available') return undefined;
+  const projectId =
+    host.selectedProjectId === null
+      ? null
+      : ([host.selectedProjectId, host.defaultProjectId].find(
+          (id) =>
+            typeof id === 'string' &&
+            host.projects.some(
+              (project) =>
+                project.id === id && project.available && project.archivedAt === undefined,
+            ),
+        ) ?? null);
+  return { profileId: host.profile.id, hostId: host.hostId, projectId };
 }
 
 function sameTarget(
@@ -177,8 +236,28 @@ function sameTarget(
   );
 }
 
-export function createNewTaskStore(bridge = api, readSettings = getHostSettings) {
-  const store = createStore<NewTaskState>(initial);
+export function createNewTaskStore(
+  bridge = api,
+  readSettings = getHostSettings,
+  selectionStorage = { read: safeLocalStorageGet, write: safeLocalStorageSet },
+) {
+  const store = createStore<NewTaskState>(() => ({
+    ...initial(),
+    target: parseNewTaskTarget(selectionStorage.read(NEW_TASK_TARGET_KEY)),
+  }));
+
+  function selectTarget(target: DesktopNewTaskTarget) {
+    selectionStorage.write(NEW_TASK_TARGET_KEY, JSON.stringify(target));
+    if (sameTarget(store.getState().target, target)) return;
+    store.setState({
+      target,
+      readiness: undefined,
+      connections: undefined,
+      defaults: undefined,
+      error: undefined,
+    });
+    void loadTargetScopedReads(target);
+  }
   // Two generations: the catalog is Host-wide, the per-target reads are not.
   let catalogGeneration = 0;
   let targetGeneration = 0;
@@ -218,19 +297,19 @@ export function createNewTaskStore(bridge = api, readSettings = getHostSettings)
       const catalog = await bridge.getNewTaskCatalog();
       if (request !== catalogGeneration) return;
       const state = store.getState();
-      // A target the user chose survives a catalog refresh as long as it still
-      // exists; otherwise the catalog's own default takes over.
-      const options = workspaceOptionsOf(catalog);
-      const keep =
-        state.target &&
-        options.some(
-          (option) =>
-            option.profileId === state.target?.profileId &&
-            option.projectId === state.target.projectId,
-        );
-      const target = keep ? state.target : defaultTargetOf(catalog);
-      store.setState({ catalog, target, loading: false });
-      if (target) await loadTargetScopedReads(target);
+      // Preserve explicit intent during outages; an unavailable target is blocked,
+      // never silently replaced by a different project or machine.
+      const target = state.target ?? defaultTargetOf(catalog);
+      targetGeneration++;
+      store.setState({
+        catalog,
+        target,
+        loading: false,
+        readiness: undefined,
+        connections: undefined,
+        defaults: undefined,
+      });
+      if (newTaskTargetAvailable(catalog, target)) await loadTargetScopedReads(target!);
     } catch (error) {
       if (request === catalogGeneration)
         store.setState({ error: errorMessage(error), loading: false });
@@ -255,28 +334,25 @@ export function createNewTaskStore(bridge = api, readSettings = getHostSettings)
       };
     },
     refresh: refreshCatalog,
-    selectTarget(target: DesktopNewTaskTarget) {
-      if (sameTarget(store.getState().target, target)) return;
-      store.setState({ target, readiness: undefined, connections: undefined, defaults: undefined });
-      void loadTargetScopedReads(target);
-    },
+    selectTarget,
     selectModel(model: NewChatModel) {
       store.setState({ model });
       // The next task starts on this model, restart or not.
       saveComposerDefaults({ model });
     },
     async addProject(host: DesktopNewTaskHostRef) {
+      if (!addProjectHostOf(store.getState().catalog, { ...host, projectId: null }))
+        throw new Error('This Runtime Host cannot add a project from a local folder');
+      const previousTarget = store.getState().target;
       const result = await bridge.addNewTaskProject(host);
       if (result.ok) {
         await refreshCatalog();
-        store.setState({
-          target: { profileId: host.profileId, hostId: host.hostId, projectId: result.project.id },
-        });
-        void loadTargetScopedReads({
-          profileId: host.profileId,
-          hostId: host.hostId,
-          projectId: result.project.id,
-        });
+        if (sameTarget(store.getState().target, previousTarget))
+          selectTarget({
+            profileId: host.profileId,
+            hostId: host.hostId,
+            projectId: result.project.id,
+          });
       }
       return result;
     },
@@ -309,6 +385,8 @@ export function createNewTaskStore(bridge = api, readSettings = getHostSettings)
     ) {
       const state = captured ?? store.getState();
       if (!state.target) throw new Error('No workspace is selected for the new task');
+      if (!newTaskTargetAvailable(store.getState().catalog, state.target))
+        throw new Error('The selected project or Runtime Host is unavailable');
       store.setState({ creating: true, error: undefined });
       try {
         return await bridge.createNewTask(state.target, {

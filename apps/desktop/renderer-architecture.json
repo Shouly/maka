@@ -3857,7 +3857,7 @@
       "hookCalls": {
         "useEffect": 1,
         "useRef": 1,
-        "useState": 2,
+        "useState": 3,
         "useStore": 3,
         "useUiLocale": 1
       },
@@ -3870,6 +3870,8 @@
         "../../locales/welcome-copy.js": 1,
         "../../store/index.js": 1,
         "../../store/new-task-store.js": 1,
+        "../../store/resource-store.js": 1,
+        "../../store/toast-store.js": 1,
         "../icons/Anthropicon.js": 1,
         "../ui/menu-variants.js": 1,
         "../ui/popover.js": 1,
@@ -5935,6 +5937,7 @@
       "dependencyPaths": {
         "../bridge/new-tasks.js": 1,
         "../bridge/settings.js": 1,
+        "../lib/ported/browser-storage.js": 1,
         "../lib/ported/composer-defaults.js": 1,
         "../lib/ported/shell-chat-model-selection.js": 1,
         "./resource-store.js": 1,

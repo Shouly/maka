@@ -30,6 +30,9 @@ import { createPageHistory, type PageLocation } from '../page-history.js';
 import { buildSessionListModel, timeBucketOf } from '../session-list-model.js';
 import {
   createNewTaskStore,
+  addProjectHostOf,
+  newTaskTargetAvailable,
+  parseNewTaskTarget,
   defaultTargetOf,
   workspaceOptionsOf,
   projectTaskTarget,
@@ -390,6 +393,21 @@ test('selecting a target reloads only the reads that are scoped to it', async ()
   await tick();
   assert.equal(readinessCalls, before + 1);
   stop();
+});
+
+test('an explicitly cleared project survives catalog refresh and creates without a project', async () => {
+  const { bridge, calls } = fakeNewTaskBridge();
+  const store = createNewTaskStore(bridge as never);
+  await store.refresh();
+  const target = { profileId: 'local', hostId: 'host-1', projectId: null };
+  store.selectTarget(target);
+  await store.refresh();
+  assert.deepEqual(store.getState().target, target);
+  await store.create();
+  assert.equal(JSON.parse(calls[0]!)[0].projectId, null);
+  store.selectTarget({ ...target, projectId: 'p2' });
+  await store.refresh();
+  assert.equal(store.getState().target?.projectId, 'p2');
 });
 
 test('the update chip shows only what the user can act on', () => {
@@ -826,4 +844,164 @@ test('sidebar manual expansion survives recreating the UI store', () => {
     if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
     else Reflect.deleteProperty(globalThis, 'localStorage');
   }
+});
+
+test('project options hide archived records and disable unavailable directories', () => {
+  const host = readyHost([
+    { id: 'archived', name: 'Archived' },
+    { id: 'gone', name: 'Gone' },
+    { id: 'ok', name: 'OK' },
+  ]);
+  Object.assign(host.projects[0]!, { archivedAt: 1 });
+  host.projects[1]!.available = false;
+  const catalog = { defaultProfileId: 'local', hosts: [host] } as never;
+  assert.deepEqual(
+    workspaceOptionsOf(catalog).map(({ projectId, available }) => [projectId, available]),
+    [
+      ['gone', false],
+      ['ok', true],
+    ],
+  );
+  assert.equal(workspaceOptionsOf(catalog, { includeArchived: true }).length, 3);
+  assert.equal(defaultTargetOf(catalog)?.projectId, null);
+  for (const projectId of ['archived', 'gone', 'missing'])
+    assert.equal(
+      newTaskTargetAvailable(catalog, { profileId: 'local', hostId: 'host-1', projectId }),
+      false,
+    );
+});
+
+test('adding a project respects the selected Host and works with an empty catalog', () => {
+  const host = readyHost([]);
+  Object.assign(host.capabilities, { chooseClientDirectory: true });
+  const catalog = { defaultProfileId: 'local', hosts: [host] } as never;
+  assert.deepEqual(addProjectHostOf(catalog, undefined), { profileId: 'local', hostId: 'host-1' });
+  assert.equal(
+    addProjectHostOf(catalog, { profileId: 'remote', hostId: 'other', projectId: null }),
+    undefined,
+  );
+  assert.equal(
+    addProjectHostOf(catalog, { profileId: 'local', hostId: 'replaced', projectId: null }),
+    undefined,
+  );
+  Object.assign(host.capabilities, {
+    chooseClientDirectory: false,
+    chooseHostDirectory: true,
+    selectNoProject: false,
+  });
+  assert.equal(addProjectHostOf(catalog, undefined), undefined);
+  assert.equal(
+    newTaskTargetAvailable(catalog, { profileId: 'local', hostId: 'host-1', projectId: null }),
+    false,
+  );
+});
+
+test('selection persistence restores project and explicit deselection with Host identity', async () => {
+  let raw: string | null = null;
+  const storage = {
+    read: () => raw,
+    write: (_key: string, value: string) => {
+      raw = value;
+    },
+  };
+  const { bridge } = fakeNewTaskBridge();
+  const first = createNewTaskStore(bridge as never, undefined, storage);
+  await first.refresh();
+  first.selectTarget({ profileId: 'local', hostId: 'host-1', projectId: 'p2' });
+  const second = createNewTaskStore(bridge as never, undefined, storage);
+  await second.refresh();
+  assert.equal(second.getState().target?.projectId, 'p2');
+  second.selectTarget({ profileId: 'local', hostId: 'host-1', projectId: null });
+  const third = createNewTaskStore(bridge as never, undefined, storage);
+  await third.refresh();
+  assert.equal(third.getState().target?.projectId, null);
+  for (const input of [
+    '{',
+    '[]',
+    'null',
+    '{"profileId":"local","projectId":null}',
+    '{"profileId":"local","hostId":"host-1","projectId":3}',
+  ])
+    assert.equal(parseNewTaskTarget(input), undefined);
+});
+
+test('an unavailable selection cannot send, switch Hosts or be revived by a late scoped read', async () => {
+  const host = readyHost([{ id: 'p1', name: 'One' }]);
+  let hosts: unknown[] = [host];
+  let release: ((value: unknown) => void) | undefined;
+  let delay = false;
+  const { bridge, calls } = fakeNewTaskBridge({
+    getNewTaskCatalog: async () => ({ defaultProfileId: 'local', hosts }),
+    getNewTaskConnections: () =>
+      delay
+        ? new Promise((resolve) => {
+            release = resolve;
+          })
+        : Promise.resolve({ chatModelChoices: [] }),
+  });
+  const store = createNewTaskStore(bridge as never);
+  await store.refresh();
+  const original = store.getState().target;
+  delay = true;
+  const pending = store.refresh();
+  await tick();
+  hosts = [
+    { profile: host.profile, readiness: 'unavailable' },
+    { ...host, profile: { id: 'other', name: 'Other Host' }, hostId: 'other-host' },
+  ];
+  await store.refresh();
+  release!({ chatModelChoices: [{ model: 'stale' }] });
+  await pending;
+  assert.deepEqual(store.getState().target, original);
+  assert.equal(store.getState().connections, undefined);
+  await assert.rejects(store.create(), /unavailable/);
+  assert.equal(calls.length, 0);
+  delay = false;
+  hosts = [host];
+  await store.refresh();
+  assert.equal(newTaskTargetAvailable(store.getState().catalog, store.getState().target), true);
+  Object.assign(host.projects[0]!, { archivedAt: 1 });
+  await store.refresh();
+  await assert.rejects(store.create(), /unavailable/);
+});
+
+test('adding on an unsupported Host never invokes a local directory dialog', async () => {
+  let invoked = false;
+  const { bridge } = fakeNewTaskBridge({
+    addNewTaskProject: async () => {
+      invoked = true;
+      throw Error('dialog');
+    },
+  });
+  const store = createNewTaskStore(bridge as never);
+  await store.refresh();
+  await assert.rejects(store.addProject({ profileId: 'local', hostId: 'host-1' }), /cannot add/);
+  assert.equal(invoked, false);
+});
+
+test('failed and cancelled project additions preserve the current selection', async () => {
+  const host = readyHost([{ id: 'p1', name: 'One' }]);
+  Object.assign(host.capabilities, { chooseClientDirectory: true });
+  let fail = true;
+  const { bridge } = fakeNewTaskBridge({
+    getNewTaskCatalog: async () => ({ defaultProfileId: 'local', hosts: [host] }),
+    addNewTaskProject: async () => {
+      if (fail) throw new Error('Directory cannot be registered');
+      return { ok: false, reason: 'cancelled' };
+    },
+  });
+  const store = createNewTaskStore(bridge as never);
+  await store.refresh();
+  const before = store.getState().target;
+  await assert.rejects(
+    store.addProject({ profileId: 'local', hostId: 'host-1' }),
+    /cannot be registered/,
+  );
+  assert.deepEqual(store.getState().target, before);
+  fail = false;
+  assert.deepEqual(await store.addProject({ profileId: 'local', hostId: 'host-1' }), {
+    ok: false,
+    reason: 'cancelled',
+  });
+  assert.deepEqual(store.getState().target, before);
 });

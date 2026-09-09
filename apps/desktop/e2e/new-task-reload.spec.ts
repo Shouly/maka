@@ -121,3 +121,51 @@ test('an explicit new task survives a renderer reload without reopening history'
   await expect(page.locator(COMPOSER_INPUT)).toHaveText('draft survives renderer replacement');
   await expect(page.locator('[data-maka-transcript-turn]')).toHaveCount(0);
 });
+
+
+test('project selection and deselection survive restart and create an ungrouped task', async ({
+  sidebarPersistenceWindow: fixture,
+}) => {
+  let page = fixture.page;
+  const selectedPicker = () => page.getByRole('button', { name: '项目: new-task-project', exact: true });
+  const emptyPicker = () => page.getByRole('button', { name: '项目: 项目', exact: true });
+  const option = () => page.getByRole('option', { name: /new-task-project/ });
+  await expect(selectedPicker()).toBeVisible();
+  await expect(selectedPicker().locator('[data-anthropicon]')).toHaveCount(0);
+  await selectedPicker().click();
+  await expect(page.getByRole('button', { name: '重新关联目录', exact: true })).toHaveCount(0);
+  await expect(option()).toHaveAttribute('aria-selected', 'true');
+  await option().click();
+  await expect(emptyPicker()).toBeVisible();
+  page = await fixture.restart();
+  await expect(emptyPicker()).toBeVisible();
+  await emptyPicker().click();
+  await expect(option()).toHaveAttribute('aria-selected', 'false');
+  await option().click();
+  await expect(selectedPicker()).toBeVisible();
+  page = await fixture.restart();
+  await expect(selectedPicker()).toBeVisible();
+  await selectedPicker().click();
+  await option().click();
+  await expect(emptyPicker()).toBeVisible();
+  await page.evaluate(async () => {
+    const catalog = await window.maka.newTasks.getCatalog();
+    const host = catalog.hosts.find((entry) => entry.readiness === 'ready' && entry.state === 'available');
+    if (host?.readiness !== 'ready' || host.state !== 'available') throw Error('Missing Host');
+    const project = host.projects.find((entry) => entry.name === 'new-task-project');
+    if (!project) throw Error('Missing project');
+    await window.maka.projects.archive(project.id, { profileId: host.profile.id, hostId: host.hostId });
+  });
+  await emptyPicker().click();
+  await expect(option()).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '添加项目…', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(emptyPicker()).toBeVisible();
+  await page.locator(COMPOSER_INPUT).fill('task without selected project');
+  await awaitSendReady(page);
+  await page.locator(COMPOSER_INPUT).press('Enter');
+  await expect(page.getByText(/Fake backend received: task without selected project/)).toBeVisible();
+  const sessions = await page.evaluate(() => window.maka.sessions.list());
+  expect(sessions).toHaveLength(1);
+  expect(sessions[0]?.projectId ?? null).toBeNull();
+});
