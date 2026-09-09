@@ -49,6 +49,18 @@
       "tests": 2,
       "electron": "Host settings writes survive renderer reload, while settings navigation restores the active session workbar"
     },
+    "page-history.spec.ts": {
+      "tests": 1,
+      "electron": "header navigation restores IPC-backed task views and drafts across settings navigation and preserves native sidebar hover behavior"
+    },
+    "sidebar-toggle-stability.spec.ts": {
+      "tests": 1,
+      "electron": "native pointer hover followed by a click must preserve titlebar icon geometry through the preview-to-expanded transition"
+    },
+    "sidebar-persistence.spec.ts": {
+      "tests": 1,
+      "electron": "manual section and project expansion must survive renderer reload, project rename through IPC and full Electron restart"
+    },
     "sidebar-project-reload.spec.ts": {
       "tests": 1,
       "electron": "Projects and Recents rebuild the real Host catalog after renderer reload"

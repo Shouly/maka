@@ -26,7 +26,7 @@
 // visually special, so the group-by menu can hang off the first label's action
 // slot without looking like it belongs to that group in particular.
 
-import { useEffect, useRef, useState, type Key, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'motion/react';
 import { Anthropicon } from '../../icons/Anthropicon.js';
 import { cn } from '../../../lib/cn.js';
@@ -88,34 +88,15 @@ function SidebarGroupLabel(props: {
 export function SidebarGroup(props: {
   groupKey: string;
   title: string;
-  activeChildKey?: Key | null;
   isContentHidden: boolean;
   onContentHiddenChange: (hidden: boolean) => void;
   actions?: ReactNode;
   copy: SidebarCopy;
   children: ReactNode[];
-  /** Row keys in this group, so a newly active row can reopen it. */
-  childKeys: readonly string[];
 }) {
   const labelId = `sidebar-group-${props.groupKey}-label`;
   const itemsId = `sidebar-group-${props.groupKey}-items`;
-  const hasActiveChild =
-    props.activeChildKey != null && props.childKeys.includes(String(props.activeChildKey));
-  const previousActiveKey = useRef<Key | null | undefined>(undefined);
-  const previouslyHadActive = useRef(false);
   const onContentHiddenChange = props.onContentHiddenChange;
-  useEffect(() => {
-    if (
-      hasActiveChild &&
-      (!previouslyHadActive.current || previousActiveKey.current !== props.activeChildKey)
-    ) {
-      // Only a NEWLY active child reopens the group. Rows reordering under a
-      // manual collapse must not undo it.
-      onContentHiddenChange(false);
-    }
-    previousActiveKey.current = props.activeChildKey;
-    previouslyHadActive.current = hasActiveChild;
-  }, [hasActiveChild, props.activeChildKey, onContentHiddenChange]);
 
   return (
     <section className="group/section flex flex-col gap-px" aria-labelledby={labelId}>

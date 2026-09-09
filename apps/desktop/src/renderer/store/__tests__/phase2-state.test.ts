@@ -26,6 +26,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { SessionSummary } from '@maka/core/session';
+import { createPageHistory, type PageLocation } from '../page-history.js';
 import { buildSessionListModel, timeBucketOf } from '../session-list-model.js';
 import {
   createNewTaskStore,
@@ -37,6 +38,11 @@ import { createUpdateStore, updateChipOf } from '../update-store.js';
 import { pendingScheduledTaskCount } from '../scheduled-tasks-store.js';
 import { createOnboardingStore, sendOutcomesOf } from '../onboarding-store.js';
 import { dispatchShellCommand } from '../window-commands.js';
+import {
+  SIDEBAR_EXPANSION_KEY,
+  parseSidebarExpansion,
+  revealSidebarSelection,
+} from '../sidebar-expansion.js';
 import { createUiStore } from '../ui-store.js';
 import { resolveHotkey, SHELL_HOTKEYS } from '../../hooks/use-hotkeys.js';
 import { getSidebarCopy } from '../../locales/sidebar-copy.js';
@@ -738,4 +744,86 @@ test('project task creation resolves missing row metadata without reusing anothe
     projectTaskTarget(row, catalog, { ...fallback, hostId: 'replaced-host' }),
     undefined,
   );
+});
+
+test('page history deduplicates visits, replays without appending, and truncates forward history', () => {
+  const history = createPageHistory();
+  const available = () => true;
+  history.visit({ view: 'welcome' });
+  history.visit({ view: 'session', sessionId: 'a' });
+  history.visit({ view: 'session', sessionId: 'a' });
+  history.visit({ view: 'settings', section: 'general', sessionId: 'a' });
+  assert.equal(history.getState().entries.length, 3);
+  const back = history.go(-1, available)!;
+  assert.deepEqual(back, { view: 'session', sessionId: 'a' });
+  history.visit(back);
+  assert.equal(history.canGo(1, available), true);
+  assert.equal(history.getState().entries.length, 3);
+  history.visit({ view: 'skills', sessionId: 'a' });
+  assert.equal(history.canGo(1, available), false);
+  assert.equal(history.getState().entries.length, 3);
+});
+
+test('page history skips retired sessions and keeps the latest welcome workspace', () => {
+  const history = createPageHistory(3);
+  const target = { profileId: 'local', hostId: 'host', projectId: 'project' };
+  history.visit({ view: 'welcome' });
+  history.visit({ view: 'welcome', target });
+  assert.equal(history.getState().entries.length, 1);
+  history.visit({ view: 'session', sessionId: 'deleted' });
+  history.visit({ view: 'skills' });
+  const available = (page: PageLocation) => page.sessionId !== 'deleted';
+  assert.deepEqual(history.go(-1, available), { view: 'welcome', target });
+  assert.equal(history.canGo(-1, available), false);
+  assert.deepEqual(history.go(1, available), { view: 'skills' });
+  history.visit({ view: 'mcp' });
+  assert.equal(history.getState().entries.length, 3);
+});
+
+test('sidebar expansion validates persisted data and respects saved collapse at startup', () => {
+  assert.deepEqual(parseSidebarExpansion('{broken'), {});
+  assert.deepEqual(parseSidebarExpansion('[]'), {});
+  const state = parseSidebarExpansion(
+    JSON.stringify({
+      'section:projects': false,
+      'project:p': false,
+      junk: true,
+      'project:bad': 'yes',
+    }),
+  );
+  assert.deepEqual(state, { 'section:projects': false, 'project:p': false });
+  const location = { section: 'projects' as const, projectKey: 'project:p' };
+  assert.equal(revealSidebarSelection(state, location, true), state);
+  assert.deepEqual(revealSidebarSelection(state, location, false), {
+    'section:projects': true,
+    'project:p': true,
+  });
+  assert.deepEqual(revealSidebarSelection({}, location, true), {
+    'section:projects': true,
+    'project:p': true,
+  });
+});
+
+test('sidebar manual expansion survives recreating the UI store', () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const values = new Map<string, string>();
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    },
+  });
+  try {
+    const first = createUiStore();
+    first.setSidebarExpanded('section:recents', false);
+    first.setSidebarExpanded('project:stable-id', true);
+    const second = createUiStore();
+    assert.equal(second.getState().sidebarExpansion['section:recents'], false);
+    assert.equal(second.getState().sidebarExpansion['project:stable-id'], true);
+    assert.ok(values.has(SIDEBAR_EXPANSION_KEY));
+  } finally {
+    if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
+    else Reflect.deleteProperty(globalThis, 'localStorage');
+  }
 });

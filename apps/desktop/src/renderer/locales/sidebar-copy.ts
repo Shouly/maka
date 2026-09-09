@@ -33,6 +33,8 @@ export interface SidebarCopy {
   readonly newTask: string;
   readonly newTaskShortcut: string;
   readonly search: string;
+  readonly goBack: string;
+  readonly goForward: string;
   readonly listLabel: string;
   readonly loading: string;
   readonly empty: string;
@@ -105,6 +107,8 @@ const SIDEBAR_COPY = {
     newTask: '新建任务',
     newTaskShortcut: '⌘N',
     search: '搜索任务',
+    goBack: '后退',
+    goForward: '前进',
     listLabel: '任务',
     loading: '正在载入任务…',
     empty: '还没有任务。新建一个开始。',
@@ -178,6 +182,8 @@ const SIDEBAR_COPY = {
     newTask: '新增任務',
     newTaskShortcut: '⌘N',
     search: '搜尋任務',
+    goBack: '返回',
+    goForward: '前進',
     listLabel: '任務',
     loading: '正在載入任務…',
     empty: '還沒有任務。新增一個開始。',
@@ -251,6 +257,8 @@ const SIDEBAR_COPY = {
     newTask: 'New task',
     newTaskShortcut: '⌘N',
     search: 'Search tasks',
+    goBack: 'Back',
+    goForward: 'Forward',
     listLabel: 'Tasks',
     loading: 'Loading tasks…',
     empty: 'No tasks yet. Start one.',

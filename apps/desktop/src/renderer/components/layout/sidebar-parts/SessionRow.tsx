@@ -139,7 +139,7 @@ export function SessionRow(props: {
             setRenaming(true);
           }}
           className={cn(
-            'group/item relative flex h-8 w-full items-center rounded-lg px-[2px] py-0 text-left text-sm leading-[21px] text-sidebar-text-secondary transition-[color,box-shadow] hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none',
+            'group/item relative flex h-8 w-full cursor-pointer items-center rounded-lg px-[2px] py-0 text-left text-sm leading-[21px] text-sidebar-text-secondary transition-[color,box-shadow] hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none',
             props.isActive && 'text-sidebar-text-primary',
           )}
         >

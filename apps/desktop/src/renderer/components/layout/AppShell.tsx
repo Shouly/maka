@@ -57,6 +57,8 @@ import { RuntimeDebug } from '../dev/RuntimeDebug.js';
 import { WorkbarPane } from '../workbar/WorkbarPane.js';
 import { WorkbarToggle } from '../workbar/WorkbarToggle.js';
 import { useRendererStores, useScopedRuntimeHost } from '../../hooks/use-workspace.js';
+import { usePageHistory } from '../../hooks/use-page-history.js';
+import type { PageLocation } from '../../store/page-history.js';
 import { useSessionList } from '../../hooks/use-session-list.js';
 import { useSidebarLayout } from '../../hooks/use-sidebar-layout.js';
 import { useShellHotkeys } from '../../hooks/use-hotkeys.js';
@@ -140,6 +142,13 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
   );
   const navigation = useStore(uiStore, (state) => state.navigation);
   const settingsOpen = useStore(uiStore, (state) => state.settingsOpen);
+  const settingsSection = useStore(uiStore, (state) => state.settingsSection);
+  const historyTarget = useStore(newTaskStore, (state) => state.target);
+  const historySessions = useStore(sessionsStore, (state) => state.sessions);
+  const historyReady = useStore(
+    sessionsStore,
+    (state) => state.revision > 0 || state.error !== undefined || state.activeId !== undefined,
+  );
   const searchOpen = useStore(uiStore, (state) => state.searchOpen);
   const theme = useStore(settingsStore.client, (state) => state.data?.appearance.theme ?? 'auto');
   const connections = useStore(connectionsStore, (state) => state.data);
@@ -451,6 +460,50 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
             ? 'session'
             : 'welcome';
 
+  const historyLocation = useMemo<PageLocation>(() => {
+    if (view === 'session' && activeId) return { view, sessionId: activeId };
+    if (view === 'settings')
+      return {
+        view,
+        section: settingsSection as SettingsSection,
+        sessionId: activeId,
+        selection: navigation.selection,
+      };
+    if (view === 'welcome' || view === 'session') return { view: 'welcome', target: historyTarget };
+    return { view, sessionId: activeId };
+  }, [view, activeId, settingsSection, historyTarget, navigation.selection]);
+  const historyAvailable = useCallback(
+    (page: PageLocation) =>
+      !page.sessionId ||
+      historySessions.some((session) => session.id === page.sessionId && !session.isArchived),
+    [historySessions],
+  );
+  const restoreHistory = useCallback(
+    (page: PageLocation) => {
+      uiStore.setSearchOpen(false);
+      setPaletteOpen(false);
+      setHelpOpen(false);
+      if (page.view !== 'welcome' && page.view !== 'session') sessionsStore.select(page.sessionId);
+      if (page.view === 'session') selectSession(page.sessionId);
+      else if (page.view === 'welcome') {
+        if (page.target) newTaskStore.selectTarget(page.target);
+        newTask();
+      } else if (page.view === 'settings') {
+        setDebugOpen(false);
+        if (page.selection) uiStore.navigate(page.selection);
+        uiStore.openSettings(page.section);
+      } else if (page.view === 'debug') setDebugOpen(true);
+      else selectModule(page.view === 'automations' ? 'scheduled-tasks' : page.view);
+    },
+    [newTask, selectSession, selectModule],
+  );
+  const pageHistory = usePageHistory(
+    historyLocation,
+    historyReady,
+    historyAvailable,
+    restoreHistory,
+  );
+
   const dispatchInternal = useCallback(
     (destination: import('@maka/ui/maka-uri').MakaUriDest) => {
       if (destination.kind === 'settings') openSettings(destination.section);
@@ -467,12 +520,12 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
 
   return (
     <MakaUriContext.Provider value={dispatchInternal}>
-      {/* Row 1: the window titlebar — traffic lights, sidebar toggle, search,
+      {/* Row 1: the window titlebar — traffic lights, sidebar toggle,
           session identity, actions. Everything below starts under it. */}
       <WindowTitlebar
         layout={layout}
+        history={pageHistory}
         softEdge={view === 'session'}
-        onOpenSearch={() => uiStore.setSearchOpen(true)}
         identity={
           // Settings owns the identity slot while it owns the content column;
           // the actions slot stays empty there (plan §2.12).

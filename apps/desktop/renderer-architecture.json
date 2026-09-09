@@ -200,6 +200,7 @@
     "src/renderer/hooks/use-hotkeys.ts",
     "src/renderer/hooks/use-memory-state.ts",
     "src/renderer/hooks/use-oauth-login-flow.ts",
+    "src/renderer/hooks/use-page-history.ts",
     "src/renderer/hooks/use-session-list.ts",
     "src/renderer/hooks/use-session-trace.ts",
     "src/renderer/hooks/use-settings-draft.ts",
@@ -364,6 +365,7 @@
     "src/renderer/store/mcp-store.ts",
     "src/renderer/store/new-task-store.ts",
     "src/renderer/store/onboarding-store.ts",
+    "src/renderer/store/page-history.ts",
     "src/renderer/store/projects-store.ts",
     "src/renderer/store/resource-store.ts",
     "src/renderer/store/revision-actions.ts",
@@ -374,6 +376,7 @@
     "src/renderer/store/session-state.ts",
     "src/renderer/store/sessions-store.ts",
     "src/renderer/store/settings-store.ts",
+    "src/renderer/store/sidebar-expansion.ts",
     "src/renderer/store/toast-api.ts",
     "src/renderer/store/toast-store.ts",
     "src/renderer/store/turn-actions-store.ts",
@@ -1200,13 +1203,14 @@
       },
       "hookCalls": {
         "useEffect": 5,
+        "usePageHistory": 1,
         "useRendererStores": 1,
         "useScopedRuntimeHost": 1,
         "useSessionList": 1,
         "useShellHotkeys": 1,
         "useSidebarLayout": 1,
         "useState": 4,
-        "useStore": 9,
+        "useStore": 13,
         "useUiLocale": 1,
         "useWorkbar": 1
       },
@@ -1220,6 +1224,7 @@
         "../../bridge/sessions.js": 1,
         "../../bridge/settings.js": 1,
         "../../hooks/use-hotkeys.js": 1,
+        "../../hooks/use-page-history.js": 1,
         "../../hooks/use-session-list.js": 1,
         "../../hooks/use-sidebar-layout.js": 1,
         "../../hooks/use-workbar.js": 1,
@@ -1301,15 +1306,15 @@
         "document.querySelector": 1
       },
       "hookCalls": {
-        "useEffect": 2,
+        "useEffect": 1,
         "useIsPresent": 1,
+        "useLayoutEffect": 1,
         "useProjectRows": 1,
         "useReducedMotion": 1,
-        "useRef": 1,
+        "useRef": 3,
         "useRovingRowFocus": 1,
         "useSessionList": 1,
-        "useState": 4,
-        "useStore": 3,
+        "useStore": 5,
         "useUiLocale": 1
       },
       "lifecycleMethods": {},
@@ -1324,8 +1329,9 @@
         "../../store/scheduled-tasks-store.js": 1,
         "../../store/update-store.js": 1,
         "../icons/Anthropicon.js": 1,
-        "../ui/sidebar-tooltip.js": 1,
+        "../ui/sidebar-tooltip.js": 2,
         "./sidebar-parts/index.js": 1,
+        "./sidebar-parts/SidebarGroup.js": 1,
         "@maka/ui": 1,
         "motion/react": 1,
         "react": 1,
@@ -1342,6 +1348,7 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../../lib/cn.js": 1,
         "../../locales/shell-copy.js": 1,
         "../../locales/sidebar-copy.js": 1,
         "../icons/Anthropicon.js": 1,
@@ -1449,10 +1456,9 @@
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
-        "useEffect": 2,
+        "useEffect": 1,
         "useIsPresent": 1,
         "useReducedMotion": 1,
-        "useRef": 2,
         "useState": 1
       },
       "lifecycleMethods": {},
@@ -4272,6 +4278,23 @@
         "react": 1
       }
     },
+    "src/renderer/hooks/use-page-history.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useLayoutEffect": 1,
+        "useState": 1,
+        "useStore": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../store/page-history.js": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
     "src/renderer/hooks/use-session-list.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -5923,6 +5946,17 @@
         "zustand/vanilla": 1
       }
     },
+    "src/renderer/store/page-history.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "zustand/vanilla": 1
+      }
+    },
     "src/renderer/store/projects-store.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -6048,6 +6082,15 @@
         "./resource-store.js": 1
       }
     },
+    "src/renderer/store/sidebar-expansion.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
     "src/renderer/store/toast-api.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -6103,6 +6146,7 @@
         "../lib/ported/session-list-layout.js": 1,
         "../lib/ported/workbar-layout.js": 1,
         "../lib/ported/workbar-tabs.js": 1,
+        "./sidebar-expansion.js": 1,
         "zustand/vanilla": 1
       }
     },

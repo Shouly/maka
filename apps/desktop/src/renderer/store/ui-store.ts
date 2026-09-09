@@ -17,6 +17,12 @@
  * under the License.
  */
 
+import {
+  SIDEBAR_EXPANSION_KEY,
+  parseSidebarExpansion,
+  revealSidebarSelection,
+  type SidebarSelectionLocation,
+} from './sidebar-expansion.js';
 import type { PendingE2eFixtureUiState } from '../lib/fixture.js';
 import { staticSessionWorkbarTabId } from '../lib/ported/workbar-tabs.js';
 import { createStore } from 'zustand/vanilla';
@@ -42,6 +48,7 @@ export function createUiStore() {
   const store = createStore(() => ({
     navigation: readNavigationState(),
     sidebarCollapsed: readSessionListCollapsed(),
+    sidebarExpansion: parseSidebarExpansion(safeLocalStorageGet(SIDEBAR_EXPANSION_KEY)),
     sidebarWidth: readSessionListWidth(),
     viewMode: readSessionListViewMode(),
     settingsOpen: false,
@@ -96,6 +103,20 @@ export function createUiStore() {
       const navigation = selectNavigation(store.getState().navigation, selection);
       store.setState({ navigation });
       safeLocalStorageSet('maka-nav-selection-v1', JSON.stringify(navigation));
+    },
+    setSidebarExpanded(key: string, expanded: boolean) {
+      const current = store.getState().sidebarExpansion;
+      if (current[key] === expanded) return;
+      const sidebarExpansion = { ...current, [key]: expanded };
+      store.setState({ sidebarExpansion });
+      safeLocalStorageSet(SIDEBAR_EXPANSION_KEY, JSON.stringify(sidebarExpansion));
+    },
+    revealSidebar(location: SidebarSelectionLocation, preserveSaved: boolean) {
+      const current = store.getState().sidebarExpansion;
+      const sidebarExpansion = revealSidebarSelection(current, location, preserveSaved);
+      if (sidebarExpansion === current) return;
+      store.setState({ sidebarExpansion });
+      safeLocalStorageSet(SIDEBAR_EXPANSION_KEY, JSON.stringify(sidebarExpansion));
     },
     setSidebarCollapsed(sidebarCollapsed: boolean) {
       store.setState({ sidebarCollapsed });

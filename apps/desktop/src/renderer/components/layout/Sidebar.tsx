@@ -33,11 +33,21 @@
 // The footer carries the update chip, which is the only place the app ever
 // asks for the user's attention about itself, and Settings.
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  type ReactNode,
+} from 'react';
 import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'motion/react';
 import { useStore } from 'zustand';
 import { useRovingRowFocus, useUiLocale } from '@maka/ui';
 import { Anthropicon } from '../icons/Anthropicon.js';
+import { SidebarTooltip } from '../ui/sidebar-tooltip.js';
+import { labelActionButtonClass } from './sidebar-parts/SidebarGroup.js';
 import { SidebarTooltipProvider } from '../ui/sidebar-tooltip.js';
 import { cn } from '../../lib/cn.js';
 import {
@@ -45,7 +55,7 @@ import {
   SESSION_LIST_EXPANDED_MIN_WIDTH,
 } from '../../lib/ported/session-list-layout.js';
 import { getSidebarCopy } from '../../locales/sidebar-copy.js';
-import { scheduledTasksStore, uiStore, updateStore } from '../../store/index.js';
+import { sessionsStore, scheduledTasksStore, uiStore, updateStore } from '../../store/index.js';
 import { pendingScheduledTaskCount } from '../../store/scheduled-tasks-store.js';
 import { updateChipOf } from '../../store/update-store.js';
 import type { SessionListGroup, SessionListRow } from '../../store/session-list-model.js';
@@ -100,16 +110,22 @@ export function Sidebar(props: SidebarProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const rovingProps = useRovingRowFocus(listRef, '[data-roving-row]');
   const pending = pendingScheduledTaskCount(schedules);
-  const [projectsHidden, setProjectsHidden] = useState(false);
-  const [recentsHidden, setRecentsHidden] = useState(false);
-  const [pinnedHidden, setPinnedHidden] = useState(false);
+  const expansion = useStore(uiStore, (state) => state.sidebarExpansion);
+  const selectionReady = useStore(sessionsStore, (state) => state.revision > 0);
+  const restoredSelection = useRef(false);
+  const previousLocation = useRef<string | undefined>(undefined);
+  const projectsHidden = expansion['section:projects'] === false;
+  const recentsHidden = expansion['section:recents'] === false;
+  const pinnedHidden = expansion['section:pinned'] === false;
 
   // The rail publishes its own width so the titlebar strip and any surface
   // measuring the shell can read it without reaching into React.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = document.querySelector<HTMLElement>('.appFrame');
     if (!root) return;
-    root.style.setProperty('--maka-sidenav-width', layout.collapsed ? '0px' : `${layout.width}px`);
+    // The titlebar needs the expanded width on its first expanded frame.
+    // Collapse hides the panel; it must not erase the width it will expand to.
+    root.style.setProperty('--maka-sidenav-width', `${layout.width}px`);
     if (layout.collapsed) root.setAttribute('data-sidebar-state', 'collapsed');
     else root.removeAttribute('data-sidebar-state');
   }, [layout.collapsed, layout.width]);
@@ -135,30 +151,12 @@ export function Sidebar(props: SidebarProps) {
     return out;
   }, [model.groups, projects]);
 
-  // Which projects are open. The project holding the active task opens on its
-  // own when the active task changes; everything else remembers what the user
-  // did for the life of the window.
-  const [openProjects, setOpenProjects] = useState<ReadonlySet<string>>(() => new Set());
   const activeEntryKey = useMemo(
     () => entries.find((entry) => entry.rows.some((row) => row.id === activeId))?.key,
     [entries, activeId],
   );
-  useEffect(() => {
-    if (!activeEntryKey) return;
-    setOpenProjects((current) => {
-      if (current.has(activeEntryKey)) return current;
-      const next = new Set(current);
-      next.add(activeEntryKey);
-      return next;
-    });
-  }, [activeEntryKey]);
   const toggleProject = useCallback((key: string) => {
-    setOpenProjects((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+    uiStore.setSidebarExpanded(key, uiStore.getState().sidebarExpansion[key] !== true);
   }, []);
 
   const pinned = useMemo(() => model.rows.filter((row) => row.flagged), [model.rows]);
@@ -169,6 +167,29 @@ export function Sidebar(props: SidebarProps) {
         .slice(0, SIDEBAR_RECENTS_LIMIT),
     [model.rows],
   );
+
+  const activeSection = activeEntryKey
+    ? 'projects'
+    : pinned.some((row) => row.id === activeId)
+      ? 'pinned'
+      : recents.some((row) => row.id === activeId)
+        ? 'recents'
+        : undefined;
+  const locationKey =
+    activeEntryKey ?? (activeSection ? `${activeSection}:${activeId}` : undefined);
+  useEffect(() => {
+    if (!selectionReady) return;
+    const initial = !restoredSelection.current;
+    restoredSelection.current = true;
+    const changed = previousLocation.current !== locationKey;
+    previousLocation.current = locationKey;
+    if (activeSection && (initial || changed)) {
+      uiStore.revealSidebar(
+        { section: activeSection, ...(activeEntryKey ? { projectKey: activeEntryKey } : {}) },
+        initial,
+      );
+    }
+  }, [selectionReady, locationKey, activeSection, activeEntryKey]);
 
   const extensionsActive = navigation.selection.section === 'extensions';
   const openExtensions = () => props.onSelectModule(navigation.moduleMemory.extensions);
@@ -189,7 +210,7 @@ export function Sidebar(props: SidebarProps) {
     </div>
   ) : (
     entries.map((entry) => {
-      const open = openProjects.has(entry.key);
+      const open = expansion[entry.key] === true;
       return (
         <div key={entry.key} className="space-y-[1.5px]">
           <ProjectRow
@@ -320,10 +341,10 @@ export function Sidebar(props: SidebarProps) {
                   groupKey="pinned"
                   title={copy.pinnedSection}
                   copy={copy}
-                  activeChildKey={activeId ?? null}
-                  childKeys={pinned.map((row) => row.id)}
                   isContentHidden={pinnedHidden}
-                  onContentHiddenChange={setPinnedHidden}
+                  onContentHiddenChange={(hidden) =>
+                    uiStore.setSidebarExpanded('section:pinned', !hidden)
+                  }
                 >
                   {pinned.map((row) => (
                     <SessionRow
@@ -341,35 +362,47 @@ export function Sidebar(props: SidebarProps) {
                 groupKey="projects"
                 title={copy.projectsSection}
                 copy={copy}
-                activeChildKey={activeEntryKey ?? null}
-                childKeys={entries.map((entry) => entry.key)}
                 isContentHidden={projectsHidden}
-                onContentHiddenChange={setProjectsHidden}
+                onContentHiddenChange={(hidden) =>
+                  uiStore.setSidebarExpanded('section:projects', !hidden)
+                }
               >
                 {[<Fragment key="projects">{projectsBody}</Fragment>]}
               </SidebarGroup>
 
-              {recents.length > 0 && (
-                <SidebarGroup
-                  groupKey="recents"
-                  title={copy.recentsSection}
-                  copy={copy}
-                  activeChildKey={activeId ?? null}
-                  childKeys={recents.map((row) => row.id)}
-                  isContentHidden={recentsHidden}
-                  onContentHiddenChange={setRecentsHidden}
-                >
-                  {recents.map((row) => (
-                    <SessionRow
-                      key={row.id}
-                      row={row}
-                      isActive={row.id === activeId}
-                      copy={copy}
-                      actions={props.sessionActions}
-                    />
-                  ))}
-                </SidebarGroup>
-              )}
+              <SidebarGroup
+                groupKey="recents"
+                title={copy.recentsSection}
+                actions={
+                  <SidebarTooltip content={copy.search} alwaysShow side="top">
+                    <button
+                      type="button"
+                      aria-label={copy.search}
+                      aria-haspopup="dialog"
+                      data-maka-search-trigger=""
+                      onClick={() => uiStore.setSearchOpen(true)}
+                      className={cn(labelActionButtonClass, 'cursor-pointer')}
+                    >
+                      <Anthropicon name="search" size={16} />
+                    </button>
+                  </SidebarTooltip>
+                }
+                copy={copy}
+                isContentHidden={recentsHidden}
+                onContentHiddenChange={(hidden) =>
+                  uiStore.setSidebarExpanded('section:recents', !hidden)
+                }
+              >
+                {recents.map((row) => (
+                  <SessionRow
+                    key={row.id}
+                    row={row}
+                    isActive={row.id === activeId}
+                    copy={copy}
+                    actions={props.sessionActions}
+                  />
+                ))}
+              </SidebarGroup>
             </div>
           </SidebarTabPanel>
         </div>

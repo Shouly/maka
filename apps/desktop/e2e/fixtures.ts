@@ -550,6 +550,7 @@ type E2eTestFixtures = {
   partialHistoryWindow: Page;
   requestHeaderRowWindow: Page;
   newTaskTargetWindow: Page;
+  sidebarPersistenceWindow: { page: Page; restart(): Promise<Page> };
   directoryReferenceWindow: { page: Page; folder: string };
   accessibilityNarrativeWindow: Page;
 };
@@ -612,6 +613,12 @@ export const test = base.extend<E2eTestFixtures>({
   },
   // Seeded connection so the composer is ready, plus one registered Project so
   // the workspace picker under it has a second target to move to.
+  sidebarPersistenceWindow: async ({}, use) => {
+    await withE2eWindow(
+      { seed: true, readinessSelector: COMPOSER_INPUT, locale: 'zh-CN', newTaskProject: true, showWindow: true },
+      async (page, { restart }) => use({ page, restart }),
+    );
+  },
   newTaskTargetWindow: async ({}, use) => {
     await withE2eWindow(
       {

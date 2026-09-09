@@ -23,6 +23,26 @@ test('project tasks stay out of Recents before and after reload', async ({
   newTaskTargetWindow: page,
 }) => {
   await sendPrompt(page, 'project reload contract');
+  await ensureSidebarExpanded(page);
+  const recentSearch = page.locator('#sidebar-group-recents-label').locator('..').locator('..').getByRole('button', { name: '搜索任务', exact: true });
+  const recentToggle = page.locator('button[aria-controls="sidebar-group-recents-items"]');
+  await expect(page.locator('[data-maka-contract="shell-topbar-rail"] [data-maka-search-trigger]')).toHaveCount(0);
+  await expect(page.getByRole('region', { name: '最近', exact: true }).locator('[data-maka-contract="session-row"]')).toHaveCount(0);
+  await page.locator(COMPOSER_INPUT).hover();
+  await expect(recentSearch).toBeVisible();
+  await expect(recentSearch).toHaveCSS('opacity', '1');
+  await recentToggle.click();
+  await expect(recentToggle).toHaveAttribute('aria-expanded', 'false');
+  await recentSearch.click();
+  const searchDialog = page.locator('[data-maka-contract="search-modal"]');
+  await expect(searchDialog).toBeVisible();
+  await expect(recentToggle).toHaveAttribute('aria-expanded', 'false');
+  await searchDialog.locator('input[type="search"]').fill('project reload contract');
+  await expect(searchDialog.getByRole('option').first()).toBeVisible();
+  await searchDialog.getByRole('option').first().click();
+  await expect(searchDialog).toHaveCount(0);
+  await recentToggle.click();
+
   await page.evaluate(async () => {
     const catalog = await window.maka.newTasks.getCatalog();
     const host = catalog.hosts.find((entry) => entry.readiness === 'ready' && entry.state === 'available');

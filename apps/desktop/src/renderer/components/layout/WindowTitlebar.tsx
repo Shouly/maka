@@ -20,12 +20,12 @@
 // The window titlebar (plan §2.12): ONE fixed row across the whole window,
 // exactly like a native desktop app.
 //
-//   [traffic lights] [sidebar toggle] [search] | [session identity] … [actions]
+//   [traffic lights] [sidebar toggle] | [session identity] … [actions]
 //
 // The row is a normal flow row at the top of `.appFrame`; the sidebar and
 // the content column start BELOW it. The hover-peek panel is the exception:
 // it slides in from the window's top edge OVER the left segment and redraws
-// the same two controls (`SidebarControls`) at the same coordinates, so panel
+// the same toggle (`SidebarControls`) at the same coordinates, so panel
 // and titlebar read as one surface and the toggle never appears to move. The
 // row is the app's only drag surface; its controls are `no-drag`. The left
 // segment is as wide as the sidebar and paints the sidebar's background and
@@ -37,11 +37,12 @@ import { SidebarTooltipProvider } from '../ui/sidebar-tooltip.js';
 import { SidebarControls } from './SidebarControls.js';
 import { cn } from '../../lib/cn.js';
 import { getShellCopy } from '../../locales/shell-copy.js';
+import type { PageHistoryControls } from '../../hooks/use-page-history.js';
 import type { SidebarLayout } from '../../hooks/use-sidebar-layout.js';
 
 export interface WindowTitlebarProps {
   layout: SidebarLayout;
-  onOpenSearch: () => void;
+  history: PageHistoryControls;
   /** Who the content column is showing. */
   identity?: ReactNode;
   softEdge?: boolean;
@@ -59,7 +60,7 @@ export function WindowTitlebar(props: WindowTitlebarProps) {
       <div className="maka-window-titlebar" role="presentation">
         {/* Left segment: the sidebar's share of the row. Its width follows the
             sidebar so the identity starts at the seam; when collapsed it only
-            wraps the two buttons. */}
+            wraps the navigation controls. */}
         <div
           className={cn(
             'maka-titlebar-rail maka-titlebar-gutter-left',
@@ -77,10 +78,8 @@ export function WindowTitlebar(props: WindowTitlebarProps) {
           data-maka-contract="shell-topbar-rail"
           role="group"
           aria-label={chrome.windowActions}
-          // Collapsed: hovering the toggle peeks the sidebar open below this row.
-          {...(collapsed ? layout.openerHoverProps : {})}
         >
-          <SidebarControls layout={layout} onOpenSearch={props.onOpenSearch} />
+          <SidebarControls layout={layout} history={props.history} />
         </div>
         <div className="relative isolate z-10 flex h-full min-w-0 flex-1 items-center">
           <div className="maka-titlebar-identity">{props.identity}</div>

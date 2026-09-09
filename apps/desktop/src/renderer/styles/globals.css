@@ -1689,10 +1689,8 @@ html.dark {
   --maka-sidenav-width: 0px;
 }
 html[data-maka-platform="darwin"] {
-  /* Traffic lights: x 17, three 14px discs on 20px centres -> the green one
-     ends at x 71. The first control starts ~20px after it, the spacing Claude
-     Desktop and Codex use; a fixed number, not the WCO safe area. */
-  --maka-titlebar-gutter-left: 92px;
+  /* The green traffic light ends at x 71; leave 13px before the first control. */
+  --maka-titlebar-gutter-left: 84px;
 }
 
 /* The window titlebar: one fixed flow row at the top of `.appFrame` and the
@@ -1712,11 +1710,11 @@ html[data-maka-platform="darwin"] {
   -webkit-app-region: drag;
 }
 /* Left segment: the sidebar's share of the row (its width follows the
-   sidebar; collapsed it only wraps the two buttons). */
+   sidebar; collapsed it only wraps the navigation controls). */
 .maka-titlebar-rail {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 0;
   height: 100%;
   flex-shrink: 0;
   box-sizing: border-box;
