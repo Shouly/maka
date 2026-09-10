@@ -35,6 +35,7 @@ import {
 } from '../../components/settings/settings-sections.js';
 import { createOptimisticSettingsDraft } from '../../lib/ported/optimistic-settings-draft.js';
 import { aboutUpdateRow, type AboutUpdateCopy } from '../../lib/ported/about-update-status.js';
+import { updateInstallOutcome } from '../../hooks/use-update-install.js';
 import { createSettingsStore } from '../settings-store.js';
 import { createComposerInputStore } from '../composer-input-store.js';
 import { createUiStore } from '../ui-store.js';
@@ -308,53 +309,97 @@ const UPDATE_COPY: AboutUpdateCopy = {
   checkingForUpdates: 'checking',
   updateIdle: 'idle',
   updateNotAvailable: 'current',
-  updateAvailable: (version) => `available ${version}`,
-  updateDownloading: (version, percent) => `downloading ${version} ${percent}`,
-  updateVerifying: (version) => `verifying ${version}`,
-  updateDownloaded: (version) => `downloaded ${version}`,
-  updateDownloadedHint: 'hint',
-  updateInstalling: (version) => `installing ${version}`,
+  updateAvailable: 'available',
+  updateDownloading: (percent) => `downloading ${percent}`,
+  updateVerifying: 'verifying',
+  updateDownloaded: 'downloaded',
+  updateInstalling: 'installing',
+  updateScheduleHint: 'checks periodically',
+  updateFetchingHint: (version) => `fetching ${version}`,
+  updateDownloadedHint: (version) => `restart for ${version}`,
+  updateInstallingHint: (version) => `installing ${version}`,
   updateFailed: { check: 'check failed', download: 'download failed', install: 'install failed' },
   channelSummaries: { dev: 'dev', nightly: 'nightly', release: 'release' },
 };
 
-test('every updater state offers exactly one action, and the right one', () => {
-  const cases: [AppUpdateStatus | undefined, string][] = [
-    [undefined, 'check'],
-    [{ state: 'idle', currentVersion: '1' }, 'check'],
-    [{ state: 'checking', currentVersion: '1' }, 'checking'],
-    [{ state: 'not-available', currentVersion: '1' }, 'check'],
-    [{ state: 'available', currentVersion: '1', latestVersion: '2' }, 'none'],
+test('every updater state keeps one button in the same slot, and the right one', () => {
+  // Three columns: which button, whether it is quiet because the updater is
+  // working on its own, and the version-bearing second line that is always
+  // there. The row used to drop the control in four of these states, which is
+  // what made the page jump while a download ran.
+  const cases: [AppUpdateStatus | undefined, string, boolean][] = [
+    [undefined, 'check', false],
+    [{ state: 'idle', currentVersion: '1' }, 'check', false],
+    [{ state: 'checking', currentVersion: '1' }, 'check', true],
+    [{ state: 'not-available', currentVersion: '1' }, 'check', false],
+    [{ state: 'available', currentVersion: '1', latestVersion: '2' }, 'check', true],
     [
       {
         state: 'downloading',
         currentVersion: '1',
         latestVersion: '2',
-        progress: { percent: 41.6 },
+        progress: { percent: 40 },
       },
-      'none',
+      'check',
+      true,
     ],
-    [{ state: 'verifying', currentVersion: '1', latestVersion: '2' }, 'none'],
-    [{ state: 'downloaded', currentVersion: '1', latestVersion: '2' }, 'install'],
-    [{ state: 'installing', currentVersion: '1', latestVersion: '2' }, 'none'],
+    [{ state: 'verifying', currentVersion: '1', latestVersion: '2' }, 'check', true],
+    [{ state: 'downloaded', currentVersion: '1', latestVersion: '2' }, 'install', false],
+    [{ state: 'installing', currentVersion: '1', latestVersion: '2' }, 'install', true],
     [
       { state: 'error', currentVersion: '1', message: 'x', operation: 'download' },
       'retry-download',
+      false,
     ],
-    [{ state: 'error', currentVersion: '1', message: 'x', operation: 'check' }, 'check'],
-    [{ state: 'error', currentVersion: '1', message: 'x', operation: 'install' }, 'none'],
+    [{ state: 'error', currentVersion: '1', message: 'x', operation: 'check' }, 'check', false],
+    // The build is on disk; pressing restart again is the whole recovery.
+    [{ state: 'error', currentVersion: '1', message: 'x', operation: 'install' }, 'install', false],
   ];
-  for (const [status, action] of cases) {
-    assert.equal(aboutUpdateRow(status, UPDATE_COPY).action, action, JSON.stringify(status));
+  for (const [status, action, working] of cases) {
+    const row = aboutUpdateRow(status, UPDATE_COPY);
+    const where = JSON.stringify(status);
+    assert.equal(row.action, action, where);
+    assert.equal(row.working, working, where);
+    assert.notEqual(row.description, '', where);
   }
 });
 
-test('download progress is rounded into the label, not left as a float', () => {
-  const row = aboutUpdateRow(
+test('the label is a phase word and the version rides the line below it', () => {
+  const downloading = aboutUpdateRow(
     { state: 'downloading', currentVersion: '1', latestVersion: '2', progress: { percent: 41.6 } },
     UPDATE_COPY,
   );
-  assert.equal(row.label, 'downloading 2 42');
+  // Rounded, and without the version: the label must not grow into the button.
+  assert.equal(downloading.label, 'downloading 42');
+  assert.equal(downloading.description, 'fetching 2');
+  const downloaded = aboutUpdateRow(
+    { state: 'downloaded', currentVersion: '1', latestVersion: '2' },
+    UPDATE_COPY,
+  );
+  assert.equal(downloaded.label, 'downloaded');
+  assert.equal(downloaded.description, 'restart for 2');
+});
+
+// The refusal is the whole point of this path: `updateStore.install` used to
+// drop it, so pressing the sidebar's restart while a task ran did nothing at
+// all — no restart, no message, nothing to press next.
+test('a refused install asks before interrupting, and only asks once', () => {
+  assert.deepEqual(updateInstallOutcome({ ok: true }, false), { kind: 'restarting' });
+  assert.deepEqual(updateInstallOutcome({ ok: false, reason: 'active_tasks' }, false), {
+    kind: 'ask-to-interrupt',
+  });
+  // Already asked and answered: a second refusal means the interrupt did not
+  // take, which is a sentence, not the same question again.
+  assert.deepEqual(updateInstallOutcome({ ok: false, reason: 'active_tasks' }, true), {
+    kind: 'refused',
+    reason: 'active_tasks',
+  });
+  for (const reason of ['not_downloaded', 'install_failed'] as const) {
+    assert.deepEqual(updateInstallOutcome({ ok: false, reason }, false), {
+      kind: 'refused',
+      reason,
+    });
+  }
 });
 
 // ── clearing drafts ────────────────────────────────────────────────────────

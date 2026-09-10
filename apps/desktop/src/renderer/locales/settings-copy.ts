@@ -75,7 +75,8 @@ export type SettingsCopy = {
     draftsClearedDetail: (count: number) => string;
   };
   about: {
-    version: string;
+    /** The group under the lead: what this build is, not which version. */
+    buildTitle: string;
     build: Record<'dev' | 'packaged', string>;
     channel: string;
     platform: string;
@@ -85,7 +86,6 @@ export type SettingsCopy = {
     install: string;
     installing: string;
     installFailed: string;
-    installReasons: Record<'active_tasks' | 'not_downloaded' | 'install_failed', string>;
     /** No bridge exposes the log directory; the report carries the logs. */
     logsNote: string;
   };
@@ -136,7 +136,7 @@ const SETTINGS_COPY = {
       draftsClearedDetail: (count: number) => `已丢弃 ${count} 份草稿。`,
     },
     about: {
-      version: '版本',
+      buildTitle: '构建信息',
       build: { dev: '开发构建', packaged: '正式构建' },
       channel: '更新通道',
       platform: '运行环境',
@@ -146,11 +146,6 @@ const SETTINGS_COPY = {
       install: '安装并重启',
       installing: '正在安装…',
       installFailed: '安装更新失败',
-      installReasons: {
-        active_tasks: '还有任务在运行。等它们结束后再安装。',
-        not_downloaded: '新版本还没有下载完成。',
-        install_failed: '安装程序没有启动成功，请稍后重试。',
-      },
       logsNote: '日志目录没有单独的入口；诊断报告里已经带上了最近的日志。',
     },
   },
@@ -198,7 +193,7 @@ const SETTINGS_COPY = {
       draftsClearedDetail: (count: number) => `已丟棄 ${count} 份草稿。`,
     },
     about: {
-      version: '版本',
+      buildTitle: '建置資訊',
       build: { dev: '開發建置', packaged: '正式建置' },
       channel: '更新通道',
       platform: '執行環境',
@@ -208,11 +203,6 @@ const SETTINGS_COPY = {
       install: '安裝並重新啟動',
       installing: '正在安裝…',
       installFailed: '安裝更新失敗',
-      installReasons: {
-        active_tasks: '還有任務在執行。等它們結束後再安裝。',
-        not_downloaded: '新版本還沒有下載完成。',
-        install_failed: '安裝程式沒有啟動成功，請稍後重試。',
-      },
       logsNote: '日誌目錄沒有獨立的入口；診斷報告裡已經帶上了最近的日誌。',
     },
   },
@@ -260,7 +250,7 @@ const SETTINGS_COPY = {
       draftsClearedDetail: (count: number) => `Discarded ${count} drafts.`,
     },
     about: {
-      version: 'Version',
+      buildTitle: 'Build',
       build: { dev: 'Development build', packaged: 'Packaged build' },
       channel: 'Update channel',
       platform: 'Runtime',
@@ -270,11 +260,6 @@ const SETTINGS_COPY = {
       install: 'Install and restart',
       installing: 'Installing…',
       installFailed: 'Could not install the update',
-      installReasons: {
-        active_tasks: 'Tasks are still running. Install once they finish.',
-        not_downloaded: 'The new version has not finished downloading.',
-        install_failed: 'The installer did not start. Try again in a moment.',
-      },
       logsNote:
         'There is no separate entry point for the log folder; the diagnostic report already carries the recent logs.',
     },

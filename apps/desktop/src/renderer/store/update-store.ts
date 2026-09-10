@@ -94,8 +94,11 @@ export function createUpdateStore(bridge = api) {
     },
     check: () => run(() => bridge.checkForUpdates()),
     retry: () => run(() => bridge.retryUpdateDownload()),
-    /** The user pressed the chip; interrupting a running task is their call, not ours. */
-    install: () => run(() => bridge.installUpdate({ allowInterruptActiveTasks: false })),
+    // Installing is deliberately NOT here. `run` keeps only answers carrying a
+    // `state`, and the install's interesting answer is a refusal —
+    // `{ ok: false, reason }` — which it would drop on the floor, leaving a
+    // pressed button with nothing to show for it. It lives in
+    // `hooks/use-update-install`, which asks the user about the refusal.
   };
 }
 

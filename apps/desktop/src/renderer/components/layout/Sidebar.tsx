@@ -66,6 +66,7 @@ import {
   type ProjectRowModel,
 } from '../../hooks/use-session-list.js';
 import type { SidebarLayout } from '../../hooks/use-sidebar-layout.js';
+import { useUpdateInstall } from '../../hooks/use-update-install.js';
 import {
   ProjectRow,
   SessionRow,
@@ -108,6 +109,7 @@ export function Sidebar(props: SidebarProps) {
   const schedules = useStore(scheduledTasksStore, (state) => state.data);
   const updateStatus = useStore(updateStore, (state) => state.status);
   const chip = updateChipOf(updateStatus);
+  const update = useUpdateInstall();
   const listRef = useRef<HTMLDivElement>(null);
   const rovingProps = useRovingRowFocus(listRef, '[data-roving-row]');
   const pending = pendingScheduledTaskCount(schedules);
@@ -413,9 +415,14 @@ export function Sidebar(props: SidebarProps) {
           {chip && (
             <button
               type="button"
-              onClick={() =>
-                chip.kind === 'downloaded' ? updateStore.install() : updateStore.retry()
-              }
+              onClick={() => {
+                // The chip used to call `updateStore.install()`, whose result
+                // handling keeps statuses and drops refusals — so a press
+                // while a task was running did nothing at all. It now shares
+                // the About page's path, which asks before interrupting.
+                if (chip.kind === 'downloaded') update.install();
+                else void updateStore.retry();
+              }}
               className={cn(
                 'mb-1 flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-sm leading-[21px] transition-colors hover:bg-sidebar-hover focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none',
                 chip.kind === 'downloaded' ? 'text-accent' : 'text-danger',
@@ -432,6 +439,7 @@ export function Sidebar(props: SidebarProps) {
               </span>
             </button>
           )}
+          {update.confirmation}
           <SidebarNavButton
             icon={<Anthropicon name="settings" className={navIconClass} />}
             label={copy.nav.settings}

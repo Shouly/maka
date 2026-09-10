@@ -219,13 +219,22 @@ export type SettingsPreferencesCopy = {
     checkingForUpdates: string;
     updateIdle: string;
     updateNotAvailable: string;
-    updateAvailable: (version: string) => string;
-    updateDownloading: (version: string, percent: number) => string;
-    updateVerifying: (version: string) => string;
-    updateDownloaded: (version: string) => string;
-    /** Where the restart lives: the sidebar footer owns that handshake. */
-    updateDownloadedHint: string;
-    updateInstalling: (version: string) => string;
+    /**
+     * Phase words, and deliberately without the version. The row's label is
+     * one short phrase in every state, so it does not truncate against the
+     * button at narrow widths; the version belongs to the line below, which is
+     * always there (upstream #5130).
+     */
+    updateAvailable: string;
+    updateDownloading: (percent: number) => string;
+    updateVerifying: string;
+    updateDownloaded: string;
+    updateInstalling: string;
+    /** The second line: which version, and what happens next. */
+    updateScheduleHint: string;
+    updateFetchingHint: (version: string) => string;
+    updateDownloadedHint: (version: string) => string;
+    updateInstallingHint: (version: string) => string;
     updateFailed: Record<'check' | 'download' | 'install', string>;
     /** Provenance in one line: project, foundation status, licence. */
     openSourceSummary: string;
@@ -450,12 +459,15 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
       checkingForUpdates: '正在检查更新…',
       updateIdle: '尚未检查更新',
       updateNotAvailable: '已是最新版本',
-      updateAvailable: (version) => `发现新版本 v${version}`,
-      updateDownloading: (version, percent) => `正在下载 v${version}（${percent}%）`,
-      updateVerifying: (version) => `正在验证 v${version} 的发布来源`,
-      updateDownloaded: (version) => `v${version} 已下载`,
-      updateDownloadedHint: '在侧栏底部重启即可安装。',
-      updateInstalling: (version) => `正在安装 v${version}`,
+      updateAvailable: '发现新版本',
+      updateDownloading: (percent) => `正在下载（${percent}%）`,
+      updateVerifying: '正在验证发布来源',
+      updateDownloaded: '新版本已下载',
+      updateInstalling: '正在安装',
+      updateScheduleHint: 'Maka 会定期在后台检查。',
+      updateFetchingHint: (version) => `v${version}，完成后可在这里重启安装。`,
+      updateDownloadedHint: (version) => `v${version}，重启 Maka 即可完成安装。`,
+      updateInstallingHint: (version) => `v${version}，请稍候。`,
       updateFailed: { check: '检查更新失败', download: '下载更新失败', install: '安装更新失败' },
       openSourceSummary: 'Apache Maka (incubating) · Apache License 2.0',
       sourceCode: '源码',
@@ -678,12 +690,15 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
       checkingForUpdates: '正在檢查更新…',
       updateIdle: '尚未檢查更新',
       updateNotAvailable: '已是最新版本',
-      updateAvailable: (version) => `發現新版本 v${version}`,
-      updateDownloading: (version, percent) => `正在下載 v${version}（${percent}%）`,
-      updateVerifying: (version) => `正在驗證 v${version} 的發佈來源`,
-      updateDownloaded: (version) => `v${version} 已下載`,
-      updateDownloadedHint: '在側欄底部重啟即可安裝。',
-      updateInstalling: (version) => `正在安裝 v${version}`,
+      updateAvailable: '發現新版本',
+      updateDownloading: (percent) => `正在下載（${percent}%）`,
+      updateVerifying: '正在驗證發佈來源',
+      updateDownloaded: '新版本已下載',
+      updateInstalling: '正在安裝',
+      updateScheduleHint: 'Maka 會定期在背景檢查。',
+      updateFetchingHint: (version) => `v${version}，完成後可在這裡重新啟動安裝。`,
+      updateDownloadedHint: (version) => `v${version}，重新啟動 Maka 即可完成安裝。`,
+      updateInstallingHint: (version) => `v${version}，請稍候。`,
       updateFailed: { check: '檢查更新失敗', download: '下載更新失敗', install: '安裝更新失敗' },
       openSourceSummary: 'Apache Maka (incubating) · Apache License 2.0',
       sourceCode: '原始碼',
@@ -920,12 +935,15 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
       checkingForUpdates: 'Checking for updates…',
       updateIdle: 'No update check has run yet',
       updateNotAvailable: 'You are on the latest version',
-      updateAvailable: (version) => `v${version} is available`,
-      updateDownloading: (version, percent) => `Downloading v${version} (${percent}%)`,
-      updateVerifying: (version) => `Verifying the release provenance for v${version}`,
-      updateDownloaded: (version) => `v${version} is ready to install`,
-      updateDownloadedHint: 'Restart from the bottom of the sidebar to install it.',
-      updateInstalling: (version) => `Installing v${version}`,
+      updateAvailable: 'Update available',
+      updateDownloading: (percent) => `Downloading (${percent}%)`,
+      updateVerifying: 'Verifying release provenance',
+      updateDownloaded: 'Update downloaded',
+      updateInstalling: 'Installing',
+      updateScheduleHint: 'Maka checks periodically in the background.',
+      updateFetchingHint: (version) => `v${version}; restart from here once it finishes.`,
+      updateDownloadedHint: (version) => `v${version}; restart Maka to finish installing.`,
+      updateInstallingHint: (version) => `v${version}; this takes a moment.`,
       updateFailed: {
         check: 'Could not check for updates',
         download: 'Could not download the update',

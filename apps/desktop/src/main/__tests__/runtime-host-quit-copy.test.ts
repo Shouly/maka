@@ -33,7 +33,11 @@ test('quit dialog copy promises durable recovery in every locale', () => {
   const chinese = buildRuntimeHostActiveQuitDialog('zh-CN').options.detail ?? '';
   const traditional = buildRuntimeHostActiveQuitDialog('zh-TW').options.detail ?? '';
 
-  assert.match(english, /durable state/);
-  assert.match(chinese, /持久状态/);
-  assert.match(traditional, /持久狀態/);
+  // The promise, not the phrasing: the detail used to say the Host resumes
+  // "from its durable state", and now says the work resumes by itself the next
+  // time Maka starts. Asserting the sentence rather than the promise is what
+  // made a copy edit look like a broken test.
+  assert.match(english, /resumes automatically/);
+  assert.match(chinese, /自动恢复/);
+  assert.match(traditional, /自動恢復/);
 });

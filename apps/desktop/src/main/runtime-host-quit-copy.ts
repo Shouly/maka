@@ -35,7 +35,11 @@ export function buildRuntimeHostActiveQuitDialog(
     options: {
       type: 'warning',
       title: copy.activeTitle,
-      message: copy.activeMessage,
+      // Same string on purpose. The native fallback shows `message` as its
+      // headline and ignores `title` on macOS, while the browser card leads
+      // with `title` — so both paths lead with the same sentence, and the card
+      // drops the repeat rather than printing it twice.
+      message: copy.activeTitle,
       detail: copy.activeDetail,
       buttons: [copy.stopAndQuit, copy.keepRunning],
       defaultId: 1,
@@ -48,26 +52,23 @@ export function buildRuntimeHostActiveQuitDialog(
 
 const COPY = {
   en: {
-    activeTitle: 'Maka is still working',
-    activeMessage: 'Background work is still running.',
+    activeTitle: 'Background work is still running',
     activeDetail:
-      'Quitting now stops the Runtime Host and may interrupt active executions or scheduled background work. It resumes from its durable state the next time a Runtime Host runs.',
+      'Quitting now interrupts everything running or queued. It resumes automatically the next time Maka starts.',
     stopAndQuit: 'Stop Work and Quit',
     keepRunning: 'Keep Maka Running',
   },
   'zh-CN': {
-    activeTitle: 'Maka 正在后台工作',
-    activeMessage: '仍有后台工作正在运行。',
+    activeTitle: '仍有后台任务在运行',
     activeDetail:
-      '现在退出会停止 Runtime Host，并可能中断正在执行或等待运行的后台任务。任务会在下次 Runtime Host 运行时从持久状态恢复。',
+      '现在退出会中断正在执行和排队的任务。它们会在下次启动 Maka 时自动恢复。',
     stopAndQuit: '停止任务并退出',
     keepRunning: '继续运行 Maka',
   },
   'zh-TW': {
-    activeTitle: 'Maka 正在背景工作',
-    activeMessage: '仍有背景工作正在執行。',
+    activeTitle: '仍有背景工作正在執行',
     activeDetail:
-      '現在結束會停止 Runtime Host，並可能中斷正在執行或等待執行的背景工作。工作會在下次 Runtime Host 執行時從持久狀態恢復。',
+      '現在結束會中斷正在執行和排隊的工作。它們會在下次啟動 Maka 時自動恢復。',
     stopAndQuit: '停止工作並結束',
     keepRunning: '繼續執行 Maka',
   },

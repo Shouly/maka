@@ -71,27 +71,22 @@ come before any feature work: several lose data silently.
    channel:'local' }` whenever the seed carries no locked effect, and bot tasks
    seed unlocked. Platform and chat id are dropped with no warning, and every
    row offers Edit.
-2. **"Restart to update" silently does nothing while a task runs.**
-   `store/update-store.ts:96` passes `allowInterruptActiveTasks: false`; main
-   answers `{ ok:false, reason:'active_tasks' }` with no status change, and
-   `run()` keeps only results carrying a `state` field, so the refusal is
-   discarded. Upstream turns that refusal into a confirm-and-interrupt dialog.
-3. **Archived project rows offer Archive, not Restore.** The rail lists
+2. **Archived project rows offer Archive, not Restore.** The rail lists
    archived projects (`hooks/use-session-list.ts:60`) but `Sidebar.tsx:217-225`
    never passes `archived`, so `ProjectRow` always renders Archive and the
    Restore item is dead code.
-4. **Archiving the default project leaves a dangling preference.**
+3. **Archiving the default project leaves a dangling preference.**
    `WorkspaceSettings.tsx:361-366` calls `archiveProject` alone; upstream also
    writes `defaultProjectId: undefined` in the same action.
-5. **An unknown `providerType` crashes the connection detail page.**
+4. **An unknown `providerType` crashes the connection detail page.**
    `components/settings/models/ConnectionDetail.tsx:91` dereferences
    `PROVIDER_REGISTRY[...].authKind` unguarded. Upstream returns a
    non-actionable fallback page first.
-6. **A hand-added model lands disabled and disappears on refresh.**
+5. **A hand-added model lands disabled and disappears on refresh.**
    `ConnectionDetail.tsx:335-343` appends to `models` and forces `modelSource:
    'fallback'`; upstream writes `enabledModelIds` plus
    `relayModelProfiles[id]`, so the model is on and its declaration survives.
-7. **An enabled model missing from the catalog is invisible and silently
+6. **An enabled model missing from the catalog is invisible and silently
    dropped.** `ConnectionModelsSection.tsx:71-91` builds rows from catalog
    entries only, so a stale or quarantined id cannot be unticked and the next
    unrelated toggle removes it.
@@ -316,6 +311,13 @@ selector.
 - App-icon import/remove, adding a remote Runtime Host and browsing its
   directories, proxy test, config export/import round trip, macOS permission
   actions (Phase 5a).
+- A refused update install. Both entries — the About button and the sidebar
+  footer chip — now ask before interrupting, and confirming re-issues the
+  request with `allowInterruptActiveTasks`. Neither the dialog nor the
+  interrupt can be exercised here: it needs a downloaded update AND running
+  work at the same time. The decision itself is unit-tested
+  (`updateInstallOutcome`); what is owed is seeing the Host actually retire and
+  the app come back on the new build.
 - Resuming a paused Goal. The Host answers `goal.resume` by taking a
   continuation Turn immediately, which is why the renderer smoke arms, pauses
   and clears but does not press Resume — pressing it there would leave a Turn

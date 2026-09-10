@@ -17,13 +17,20 @@
  * under the License.
  */
 
-// The updater's eight states, reduced to one row and one button.
+// The updater's eight states, reduced to one row that keeps ONE shape.
 //
 // Ported from the pre-rewrite `settings/about-update-status.ts`, with the two
 // actions the old page did not offer (plan §6 Phase 5a): a downloaded build is
 // installed from About, and a download that failed is retried from About. The
-// sidebar footer chip still owns the same two actions; both go through
-// `updateStore`, so whichever the user reaches for, one call is made.
+// sidebar footer chip owns the same two actions, and both go through the same
+// install path, so whichever the user reaches for, one call is made.
+//
+// The shape is upstream's (#5130) and the reason is width, not taste: the row
+// used to put the version in the label and drop the button entirely while the
+// updater worked, so the page jumped between states and the label truncated
+// against the button at narrow widths. Now the label is a phase word, the
+// second line always carries the version and what happens next, and one button
+// sits in the same slot — disabled while the updater is working on its own.
 //
 // Progress is a rounded percent inside the label rather than a bar: the value
 // only exists in one of eight states, and a bar that is absent seven-eighths
@@ -32,24 +39,35 @@
 import type { AppUpdateStatus } from '../../bridge/app.js';
 import type { DesktopAppInfo } from '../../bridge/app.js';
 
-export type AboutUpdateAction = 'check' | 'checking' | 'retry-download' | 'install' | 'none';
+export type AboutUpdateAction = 'check' | 'retry-download' | 'install';
 
 export interface AboutUpdateRow {
+  /** The phase, in one short phrase. Never carries the version. */
   readonly label: string;
-  readonly description: string | null;
+  /** Always present: which version, and what happens next. */
+  readonly description: string;
   readonly action: AboutUpdateAction;
+  /**
+   * The updater is doing this by itself — checking, downloading, verifying,
+   * installing. The button stays in its slot and goes quiet, rather than
+   * vanishing and taking the row's shape with it.
+   */
+  readonly working: boolean;
 }
 
 export interface AboutUpdateCopy {
   readonly checkingForUpdates: string;
   readonly updateIdle: string;
   readonly updateNotAvailable: string;
-  readonly updateAvailable: (version: string) => string;
-  readonly updateDownloading: (version: string, percent: number) => string;
-  readonly updateVerifying: (version: string) => string;
-  readonly updateDownloaded: (version: string) => string;
-  readonly updateDownloadedHint: string;
-  readonly updateInstalling: (version: string) => string;
+  readonly updateAvailable: string;
+  readonly updateDownloading: (percent: number) => string;
+  readonly updateVerifying: string;
+  readonly updateDownloaded: string;
+  readonly updateInstalling: string;
+  readonly updateScheduleHint: string;
+  readonly updateFetchingHint: (version: string) => string;
+  readonly updateDownloadedHint: (version: string) => string;
+  readonly updateInstallingHint: (version: string) => string;
   readonly updateFailed: Record<'check' | 'download' | 'install', string>;
   readonly channelSummaries: Record<'dev' | 'nightly' | 'release', string>;
 }
@@ -67,57 +85,73 @@ export function aboutUpdateRow(
   copy: AboutUpdateCopy,
   options: { readonly errorDetail?: (message: string) => string } = {},
 ): AboutUpdateRow {
-  if (!status) return { label: copy.updateIdle, description: null, action: 'check' };
+  const check = (label: string, working = false): AboutUpdateRow => ({
+    label,
+    description: copy.updateScheduleHint,
+    action: 'check',
+    working,
+  });
+  if (!status) return check(copy.updateIdle);
   switch (status.state) {
     case 'idle':
-      return { label: copy.updateIdle, description: null, action: 'check' };
+      return check(copy.updateIdle);
     case 'checking':
-      return { label: copy.checkingForUpdates, description: null, action: 'checking' };
+      return check(copy.checkingForUpdates, true);
     case 'not-available':
-      return { label: copy.updateNotAvailable, description: null, action: 'check' };
+      return check(copy.updateNotAvailable);
+    // The updater fetches on its own from here to `downloaded`. The button
+    // stays a Check, quiet, so the row does not change shape three times
+    // while nothing is being asked of the user.
     case 'available':
       return {
-        label: copy.updateAvailable(status.latestVersion),
-        description: null,
-        action: 'none',
+        label: copy.updateAvailable,
+        description: copy.updateFetchingHint(status.latestVersion),
+        action: 'check',
+        working: true,
       };
     case 'downloading':
       return {
-        label: copy.updateDownloading(status.latestVersion, Math.round(status.progress.percent)),
-        description: null,
-        action: 'none',
+        label: copy.updateDownloading(Math.round(status.progress.percent)),
+        description: copy.updateFetchingHint(status.latestVersion),
+        action: 'check',
+        working: true,
       };
     case 'verifying':
       return {
-        label: copy.updateVerifying(status.latestVersion),
-        description: null,
-        action: 'none',
+        label: copy.updateVerifying,
+        description: copy.updateFetchingHint(status.latestVersion),
+        action: 'check',
+        working: true,
       };
     case 'downloaded':
       return {
-        label: copy.updateDownloaded(status.latestVersion),
-        description: copy.updateDownloadedHint,
+        label: copy.updateDownloaded,
+        description: copy.updateDownloadedHint(status.latestVersion),
         action: 'install',
+        working: false,
       };
     case 'installing':
       return {
-        label: copy.updateInstalling(status.latestVersion),
-        description: null,
-        action: 'none',
+        label: copy.updateInstalling,
+        description: copy.updateInstallingHint(status.latestVersion),
+        action: 'install',
+        working: true,
       };
     case 'error':
       return {
         label: copy.updateFailed[status.operation],
         description: options.errorDetail?.(status.message) ?? status.message,
         // A failed download is retried; a failed check is checked again; a
-        // failed install has nothing left to press here — the downloaded
-        // build is still on disk and the next launch installs it.
+        // failed install leaves the downloaded build on disk, so the button
+        // that can still do something is the restart — pressing it again is
+        // the whole recovery, and the next launch installs it anyway.
         action:
           status.operation === 'download'
             ? 'retry-download'
             : status.operation === 'check'
               ? 'check'
-              : 'none',
+              : 'install',
+        working: false,
       };
   }
 }

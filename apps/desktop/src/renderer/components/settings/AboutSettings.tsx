@@ -27,15 +27,16 @@
 
 import { useState } from 'react';
 import { useStore } from 'zustand';
-import { useUiLocale } from '@maka/ui';
+import { MakaWordmark, useUiLocale } from '@maka/ui';
 import { Button } from '../ui/button.js';
 import { SettingsRow, SettingsSection } from './settings-row.js';
-import { getAppInfo, installUpdate } from '../../bridge/app.js';
+import { getAppInfo } from '../../bridge/app.js';
 import { copyDiagnosticReport } from '../../bridge/diagnostics.js';
 import { openExternal } from '../../bridge/external-links.js';
 import { useAsync } from '../../hooks/use-async.js';
 import { useSettingsErrorReporter } from '../../hooks/use-settings.js';
 import { aboutChannelSummary, aboutUpdateRow } from '../../lib/ported/about-update-status.js';
+import { useUpdateInstall } from '../../hooks/use-update-install.js';
 import { updateStore } from '../../store/index.js';
 import { toast } from '../../store/toast-store.js';
 import { getSettingsCopy } from '../../locales/settings-copy.js';
@@ -61,44 +62,61 @@ export function AboutSettings(props: {
   const status = useStore(updateStore, (state) => state.status);
   const busy = useStore(updateStore, (state) => state.busy);
   const [copying, setCopying] = useState(false);
-  const [installing, setInstalling] = useState(false);
   const row = aboutUpdateRow(status, copy);
+  // The same install the sidebar footer's chip runs, confirmation and all.
+  const update = useUpdateInstall();
 
-  // Called directly rather than through `updateStore.install`, because the
-  // install result is a REFUSAL with a reason ('tasks are running'), not a
-  // status — the store only carries statuses, so routing it there would drop
-  // the one thing the user needs to read.
-  const install = () => {
-    setInstalling(true);
-    void installUpdate({ allowInterruptActiveTasks: false })
-      .then((result) => {
-        if (!result.ok)
-          toast({
-            title: own.installFailed,
-            description: own.installReasons[result.reason],
-            variant: 'destructive',
-          });
-      })
-      .catch((error: unknown) => report(own.installFailed, error))
-      .finally(() => setInstalling(false));
-  };
+  const provenance = (
+    <p className="flex flex-wrap items-center gap-2 text-[13px] leading-[18px] text-text-muted">
+      <span>{copy.openSourceSummary}</span>
+      <button
+        type="button"
+        className="cursor-pointer text-accent underline-offset-2 hover:underline"
+        onClick={() => openExternal(REPOSITORY_URL)}
+      >
+        {copy.sourceCode}
+      </button>
+      <button
+        type="button"
+        className="cursor-pointer text-accent underline-offset-2 hover:underline"
+        onClick={() => openExternal(RELEASES_URL)}
+      >
+        {copy.releaseNotes}
+      </button>
+    </p>
+  );
 
   return (
     <>
-      <SettingsSection title={own.version}>
-        <SettingsRow
-          title="Maka"
-          description={info.data ? aboutChannelSummary(info.data, copy) : undefined}
-          control={
-            <span className="text-sm leading-5 text-text-secondary" data-mono="true">
-              {info.data
-                ? `v${info.data.appVersion}`
-                : info.loading
-                  ? copy.loading
-                  : copy.unavailable}
-            </span>
-          }
-        />
+      {/* The one page whose subject is the app itself leads with the mark
+          (upstream #5130). The version then stands alone — the mark already
+          says "Maka" — and as plain text rather than a heading, so it does not
+          rank beside the group titles below it. Provenance moves up here with
+          it: it describes this build, and trailing the page made it read as a
+          footnote to the support links. */}
+      <SettingsSection>
+        <div className="flex flex-col gap-4 pb-2">
+          <MakaWordmark width={112} title="Maka" className="text-fill-brand" />
+          {info.data ? (
+            <div className="flex min-w-0 flex-col gap-1">
+              <p
+                className="text-sm font-semibold leading-5 text-text-primary"
+                data-mono="true"
+              >{`v${info.data.appVersion}`}</p>
+              <p className="text-[13px] leading-[18px] text-text-secondary">
+                {aboutChannelSummary(info.data, copy)}
+              </p>
+            </div>
+          ) : (
+            <p className="text-[13px] leading-[18px] text-text-secondary" role="status">
+              {info.loading ? copy.loading : copy.unavailable}
+            </p>
+          )}
+          {provenance}
+        </div>
+      </SettingsSection>
+
+      <SettingsSection title={own.buildTitle}>
         {info.data && (
           <SettingsRow
             title={own.channel}
@@ -139,32 +157,33 @@ export function AboutSettings(props: {
             title={row.label}
             description={row.description ?? undefined}
             control={
-              row.action === 'none' ? null : (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={busy || installing || row.action === 'checking'}
-                  onClick={() => {
-                    if (row.action === 'install') install();
-                    else if (row.action === 'retry-download')
-                      void updateStore.retry().catch((error) => report(own.installFailed, error));
-                    else
-                      void updateStore.check().catch((error) => report(own.installFailed, error));
-                  }}
-                >
-                  {row.action === 'install'
-                    ? installing
-                      ? own.installing
-                      : own.install
-                    : row.action === 'retry-download'
-                      ? own.retryDownload
-                      : row.action === 'checking'
-                        ? copy.checkingForUpdates
-                        : copy.checkForUpdates}
-                </Button>
-              )
+              // One button, one slot, in every state: it goes quiet while the
+              // updater works on its own rather than leaving and taking the
+              // row's shape with it.
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={busy || update.installing || row.working}
+                onClick={() => {
+                  if (row.action === 'install') update.install();
+                  else if (row.action === 'retry-download')
+                    void updateStore.retry().catch((error) => report(own.installFailed, error));
+                  else void updateStore.check().catch((error) => report(own.installFailed, error));
+                }}
+              >
+                {row.action === 'install'
+                  ? update.installing
+                    ? own.installing
+                    : own.install
+                  : row.action === 'retry-download'
+                    ? own.retryDownload
+                    : row.working
+                      ? copy.checkingForUpdates
+                      : copy.checkForUpdates}
+              </Button>
             }
           />
+          {update.confirmation}
         </SettingsSection>
       )}
 
@@ -213,24 +232,6 @@ export function AboutSettings(props: {
           }
         />
       </SettingsSection>
-
-      <p className="flex flex-wrap items-center gap-2 text-[13px] leading-[18px] text-text-muted">
-        <span>{copy.openSourceSummary}</span>
-        <button
-          type="button"
-          className="cursor-pointer text-accent underline-offset-2 hover:underline"
-          onClick={() => openExternal(REPOSITORY_URL)}
-        >
-          {copy.sourceCode}
-        </button>
-        <button
-          type="button"
-          className="cursor-pointer text-accent underline-offset-2 hover:underline"
-          onClick={() => openExternal(RELEASES_URL)}
-        >
-          {copy.releaseNotes}
-        </button>
-      </p>
     </>
   );
 }

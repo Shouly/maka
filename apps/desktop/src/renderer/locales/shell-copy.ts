@@ -540,6 +540,17 @@ type ShellCopy = {
     resumeStartedDescription: string;
     resumeFailedTitle: string;
     resumeFailedFallback: string;
+    /**
+     * Installing a downloaded update, from either entry: the About page's
+     * button and the sidebar footer's chip run the same request, so the
+     * refusal, the confirmation and the failure read the same wherever the
+     * user pressed.
+     */
+    updateInstallFailedTitle: string;
+    updateInstallReasons: Record<'active_tasks' | 'not_downloaded' | 'install_failed', string>;
+    updateInterruptTitle: string;
+    updateInterruptDescription: string;
+    updateInterruptConfirm: string;
     goalClearFailedTitle: string;
     goalClearFailedFallback: string;
     goalPauseFailedTitle: string;
@@ -1294,6 +1305,15 @@ const SHELL_COPY_BY_LOCALE = {
       resumeStartedDescription: '正在从最后一个完整执行边界继续',
       resumeFailedTitle: '继续失败',
       resumeFailedFallback: '无法继续这一轮，请检查任务状态后重试。',
+      updateInstallFailedTitle: '安装更新失败',
+      updateInstallReasons: {
+        active_tasks: '还有任务在运行，这次没有中断它们。',
+        not_downloaded: '新版本还没有下载完成。',
+        install_failed: '安装程序没有启动成功，请稍后重试。',
+      },
+      updateInterruptTitle: '还有任务在运行，仍要重启安装？',
+      updateInterruptDescription: '重启会停止 Runtime Host，正在运行和排队的任务会被中断。',
+      updateInterruptConfirm: '中断并安装',
       goalClearFailedTitle: '停止目标失败',
       goalClearFailedFallback: '目标仍可能继续运行，请立即重试。',
       goalPauseFailedTitle: '暂停目标失败',
@@ -1812,6 +1832,15 @@ const SHELL_COPY_BY_LOCALE = {
       resumeStartedDescription: '正在從最後一個完整執行邊界繼續',
       resumeFailedTitle: '恢復失敗',
       resumeFailedFallback: '無法啟動安全恢復，請檢查任務狀態後重試。',
+      updateInstallFailedTitle: '安裝更新失敗',
+      updateInstallReasons: {
+        active_tasks: '還有任務在執行，這次沒有中斷它們。',
+        not_downloaded: '新版本還沒有下載完成。',
+        install_failed: '安裝程式沒有啟動成功，請稍後重試。',
+      },
+      updateInterruptTitle: '還有任務在執行，仍要重新啟動安裝？',
+      updateInterruptDescription: '重新啟動會停止 Runtime Host，正在執行和排隊的任務會被中斷。',
+      updateInterruptConfirm: '中斷並安裝',
       goalClearFailedTitle: '停止目標失敗',
       goalClearFailedFallback: '目標仍可能繼續執行，請立即重試。',
       goalPauseFailedTitle: '暫停目標失敗',
@@ -2383,6 +2412,16 @@ const SHELL_COPY_BY_LOCALE = {
       resumeStartedDescription: 'Continuing from the last complete execution boundary',
       resumeFailedTitle: 'Could not continue',
       resumeFailedFallback: 'This turn could not be continued. Check the task state and try again.',
+      updateInstallFailedTitle: 'Could not install the update',
+      updateInstallReasons: {
+        active_tasks: 'Tasks are still running, and this attempt did not interrupt them.',
+        not_downloaded: 'The new version has not finished downloading.',
+        install_failed: 'The installer did not start. Try again in a moment.',
+      },
+      updateInterruptTitle: 'Tasks are still running — restart to install anyway?',
+      updateInterruptDescription:
+        'Restarting stops the Runtime Host; work that is running or queued is interrupted.',
+      updateInterruptConfirm: 'Interrupt and install',
       goalClearFailedTitle: 'Could not stop the goal',
       goalClearFailedFallback: 'The goal may still be running. Try again now.',
       goalPauseFailedTitle: 'Could not pause the goal',

@@ -210,6 +210,7 @@
     "src/renderer/hooks/use-settings.ts",
     "src/renderer/hooks/use-sidebar-layout.ts",
     "src/renderer/hooks/use-turn-presentation.ts",
+    "src/renderer/hooks/use-update-install.tsx",
     "src/renderer/hooks/use-welcome-message.ts",
     "src/renderer/hooks/use-workbar.ts",
     "src/renderer/hooks/use-workspace.ts",
@@ -1363,13 +1364,15 @@
         "useRovingRowFocus": 1,
         "useSessionList": 1,
         "useStore": 5,
-        "useUiLocale": 1
+        "useUiLocale": 1,
+        "useUpdateInstall": 1
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
         "../../hooks/use-session-list.js": 1,
+        "../../hooks/use-update-install.js": 1,
         "../../lib/cn.js": 1,
         "../../lib/ported/session-list-layout.js": 1,
         "../../locales/sidebar-copy.js": 1,
@@ -2482,9 +2485,10 @@
       "hookCalls": {
         "useAsync": 1,
         "useSettingsErrorReporter": 1,
-        "useState": 2,
+        "useState": 1,
         "useStore": 2,
-        "useUiLocale": 1
+        "useUiLocale": 1,
+        "useUpdateInstall": 1
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
@@ -2495,6 +2499,7 @@
         "../../bridge/external-links.js": 1,
         "../../hooks/use-async.js": 1,
         "../../hooks/use-settings.js": 1,
+        "../../hooks/use-update-install.js": 1,
         "../../lib/ported/about-update-status.js": 1,
         "../../locales/settings-copy.js": 1,
         "../../locales/settings-preferences-copy.js": 1,
@@ -4543,6 +4548,25 @@
         "../lib/ported/interrupted-resume.js": 1,
         "../lib/ported/session-status-presentation.js": 1,
         "../lib/ported/turn-footer-actions.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/hooks/use-update-install.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useState": 2,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/app.js": 1,
+        "../components/ui/confirm-dialog.js": 1,
+        "../locales/shell-copy.js": 1,
+        "../store/toast-store.js": 1,
         "@maka/ui": 1,
         "react": 1
       }

@@ -226,7 +226,10 @@ test('renders escaped content with Maka dialog tokens and safe action ordering',
   );
 
   assert.match(html, /<html lang="en"/u);
-  assert.match(html, /aria-label="Close"/u);
+  // No close corner: Escape cancels (asserted by the interaction test below)
+  // and the cancel action is a labelled button in the footer. A bare glyph in
+  // an otherwise empty strip was a second way to do the same thing.
+  assert.doesNotMatch(html, /window-close/u);
   assert.match(html, /data-theme="dark"/u);
   assert.match(html, /data-maka-theme="nord"/u);
   // The card is served the renderer's own design authority (`styles/globals.css`
@@ -271,7 +274,12 @@ test('routes button and keyboard decisions through the rendered interaction brid
   assert.ok(script);
   const navigations: string[] = [];
   runInNewContext(script, {
-    window: { location: { assign: (url: string) => navigations.push(url) } },
+    window: {
+      location: { assign: (url: string) => navigations.push(url) },
+      // The bridge re-claims focus for the default action whenever the window
+      // gains it; the sandbox only has to tolerate the subscription.
+      addEventListener: () => {},
+    },
     document,
     Element: window.Element,
     HTMLButtonElement: window.HTMLButtonElement,

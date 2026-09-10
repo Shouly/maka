@@ -37,7 +37,12 @@ const RESPONSE_URL_PREFIX = 'maka-dialog://response/';
 // (`ConfirmDialog`'s md:max-w-[425px]), which this card had been 95px wider than.
 const DIALOG_WIDTH = 457;
 const INITIAL_HEIGHT = 600;
-const MIN_HEIGHT = 280;
+// A floor for a window that could not be measured, not a size to pad short
+// dialogs up to. It was 280 — taller than a compact card — so every dialog
+// below it was stretched to fill, which opened a gap above the buttons that no
+// stylesheet accounted for. A title, one line of prose and a button row is
+// ~170px; this leaves a little slack under that.
+const MIN_HEIGHT = 176;
 const WORK_AREA_MARGIN = 32;
 const DIALOG_PRESENTATION_TIMEOUT_MS = 30_000;
 const DIALOG_DESIGN_TOKENS_FILE = 'browser-dialog-design-tokens.css';
@@ -261,7 +266,13 @@ function normalizeBrowserMessageBoxPresentation(
   const defaultId = validButtonId(options.defaultId, buttons.length)
     ? options.defaultId
     : 0;
-  const title = options.title || 'Maka';
+  // A caller that sends no title is not asking for the app's name as a
+  // headline — it is sending a native box, where `message` IS the headline and
+  // `title` is the window title macOS never draws. Falling back to 'Maka' put
+  // the product name where the question belonged and pushed the question into
+  // the sub-line. `runtime-host-boot.ts` already resolves it this way for the
+  // path it owns.
+  const title = options.title || options.message || 'Maka';
   const message = options.message || title;
   return {
     type: messageBoxType(options.type),
@@ -361,10 +372,7 @@ export function buildBrowserMessageBoxHtml(
 
 function renderBrowserMessageBoxHtml(input: BrowserMessageBoxPresentation): string {
   const nonce = randomUUID().replaceAll('-', '');
-  const closeLabel = CLOSE_LABEL[input.locale];
-  const closeButton = `<button class="window-close" type="button" data-response="${input.cancelId}" aria-label="${closeLabel}">
-    <span class="glyph" aria-hidden="true">\uE10F</span>
-  </button>`;
+
   const buttons = input.buttons
     .map((label, index) => ({ label, index }))
     .sort((left, right) => {
@@ -373,24 +381,32 @@ function renderBrowserMessageBoxHtml(input: BrowserMessageBoxPresentation): stri
       return rank(left.index) - rank(right.index);
     })
     .map(({ label, index }) => {
-      const classes = [
-        'decision',
-        index === input.defaultId
-          ? 'primary'
-          : index === input.cancelId
-            ? 'ghost'
-            : 'secondary',
-      ]
-        .filter(Boolean)
-        .join(' ');
+      // Only the default action is set apart. Cancel used to render as a ghost
+      // — no fill, no border — which put a bare word next to two real buttons
+      // and read as a link. `ConfirmDialog` gives its cancel `variant="outline"`,
+      // the same field face as any other secondary action, so this follows it.
+      const classes = `decision ${index === input.defaultId ? 'primary' : 'secondary'}`;
       return `<button class="${classes}" type="button" data-response="${index}"${
         index === input.defaultId ? ' autofocus' : ''
       }>${escapeHtml(label)}</button>`;
     })
     .join('');
   const detailBlock = input.detail
-    ? `<div class="detail" data-testid="dialog-detail">${escapeHtml(input.detail)}</div>`
+    ? `<div class="detail" id="dialog-detail" data-testid="dialog-detail">${escapeHtml(input.detail)}</div>`
     : '';
+  // A message that only repeats the title is not a second sentence, it is the
+  // same one in a smaller size. `normalizeBrowserMessageBoxPresentation` also
+  // falls `message` back to `title` when a caller sends none, so this is the
+  // one place that can tell the two apart.
+  const repeatsTitle = input.message.trim() === input.title.trim();
+  const messageBlock = repeatsTitle
+    ? ''
+    : `<div class="message" id="dialog-message">${escapeHtml(input.message)}</div>`;
+  const describedBy = repeatsTitle
+    ? input.detail
+      ? ' aria-describedby="dialog-detail"'
+      : ''
+    : ' aria-describedby="dialog-message"';
   // The app's own glyphs, from the icon face the generated stylesheet inlines —
   // the same codepoints ANTHROPICON_SPECS names, so these marks are the ones the
   // rest of the product draws and they move when it does. NoticeCard uses
@@ -441,76 +457,54 @@ function renderBrowserMessageBoxHtml(input: BrowserMessageBoxPresentation): stri
       overflow: hidden;
       /* No border: the in-app dialog separates itself with elevation alone. */
       border-radius: 12px;
+      position: relative;
       background: var(--surface-3);
       box-shadow: var(--dialog-shadow);
+      /* The card is the window, so it is the drag handle. The prose and the
+         controls opt out below, which leaves the padding around them draggable
+         — enough to move a dialog this small, and no dead strip to hold a
+         lone control. */
+      -webkit-app-region: drag;
       animation: dialog-enter 200ms cubic-bezier(.32, .72, 0, 1) backwards;
     }
+    /* A CEILING, not a height. This rule exists so a dialog taller than the
+       work area scrolls inside its own card; asserting the height as well made
+       it stretch every card that was SHORTER than its window, and the slack
+       landed in .content, above the buttons. */
     body.maka-dialog-constrained .card {
-      height: calc(100vh - var(--gutter) - var(--gutter-bottom));
-      min-height: calc(100vh - var(--gutter) - var(--gutter-bottom));
+      max-height: calc(100vh - var(--gutter) - var(--gutter-bottom));
     }
     /* The card is its own window, so it keeps a drag strip the in-app dialog
        does not need. It carries nothing but the close control: a brand mark
        here would be the first thing read, above the sentence that says what is
        about to happen. */
-    .drag-region {
-      height: 36px;
-      flex: 0 0 36px;
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      padding: 4px 8px 0;
-      -webkit-app-region: drag;
-    }
     button { font: inherit; }
-    .window-close {
-      width: 32px;
-      height: 32px;
-      display: grid;
-      place-items: center;
-      padding: 0;
-      border: 0;
-      border-radius: 8px;
-      background: transparent;
-      color: var(--text-primary);
-      cursor: pointer;
-      transition: background-color 60ms ease-out;
-      -webkit-app-region: no-drag;
-    }
-    /* The icon-face contract, transcribed from 'Anthropicon': ligatures off so
-       a codepoint pair cannot combine, synthesis off so a missing weight is
-       never faked, and the variable axes pinned to the same values the
-       component sets for a 20px mark. */
-    .glyph {
-      font-family: 'Anthropicons-Variable';
-      font-size: 20px;
-      line-height: 1;
-      font-style: normal;
-      font-weight: 433.25;
-      font-synthesis: none;
-      font-variant-ligatures: none;
-      font-feature-settings: 'liga' 0, 'clig' 0, 'dlig' 0;
-      font-variation-settings: 'ANIM' 0, 'ANM2' 0, 'opsz' 20, 'wght' 433.25;
-      letter-spacing: normal;
-      user-select: none;
-    }
-    .window-close:hover { background: var(--sidebar-menu-hover); }
-    .window-close:focus-visible,
     .decision:focus-visible {
       outline: none;
       box-shadow: var(--sidebar-focus-shadow);
     }
-    .content {
+    /* Two layers, the shape ui/dialog.tsx uses: the ROOT is the card face and
+       writes no padding, and ONE inner container is both the scroll container
+       and the only place padding lives. That is what makes 24px-to-the-edge
+       structural instead of something each block must remember — before this it
+       was written in two rules that had to stay equal by hand. Then gap sets
+       the rhythm between blocks, as gap-4 does there, so no block carries a top
+       margin of its own either. */
+    .inner {
       flex: 1 1 auto;
       min-height: 0;
-      overflow: auto;
-      padding: 0 24px 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 24px;
+      border-radius: inherit;
       scrollbar-width: thin;
       scrollbar-color: var(--scrollbar) transparent;
     }
-    .content::-webkit-scrollbar { width: 10px; }
-    .content::-webkit-scrollbar-track { background: transparent; }
-    .content::-webkit-scrollbar-thumb {
+    .inner::-webkit-scrollbar { width: 10px; }
+    .inner::-webkit-scrollbar-track { background: transparent; }
+    .inner::-webkit-scrollbar-thumb {
       border: 2px solid transparent;
       border-radius: 999px;
       background: var(--scrollbar);
@@ -525,6 +519,24 @@ function renderBrowserMessageBoxHtml(input: BrowserMessageBoxPresentation): stri
        glyph and never puts it in a tile, and a tile here would be a second
        filled shape competing with the title beside it. 20px is the size the
        icon set is drawn at. */
+    /* The icon-face contract, transcribed from Anthropicon: ligatures off so a
+       codepoint pair cannot combine, synthesis off so a missing weight is never
+       faked, and the variable axes pinned to the values the component sets for
+       a 20px mark. Without this the card renders the private-use codepoint in
+       the body font, which is a blank box. */
+    .glyph {
+      font-family: 'Anthropicons-Variable';
+      font-size: 20px;
+      line-height: 1;
+      font-style: normal;
+      font-weight: 433.25;
+      font-synthesis: none;
+      font-variant-ligatures: none;
+      font-feature-settings: 'liga' 0, 'clig' 0, 'dlig' 0;
+      font-variation-settings: 'ANIM' 0, 'ANM2' 0, 'opsz' 20, 'wght' 433.25;
+      letter-spacing: normal;
+      user-select: none;
+    }
     .icon {
       flex: 0 0 20px;
       width: 20px;
@@ -545,6 +557,7 @@ function renderBrowserMessageBoxHtml(input: BrowserMessageBoxPresentation): stri
       line-height: 28px;
       font-weight: 580;
       color: var(--text-primary);
+      -webkit-app-region: no-drag;
     }
     .message {
       margin-top: 4px;
@@ -553,40 +566,44 @@ function renderBrowserMessageBoxHtml(input: BrowserMessageBoxPresentation): stri
       line-height: 20px;
       white-space: pre-wrap;
       user-select: text;
+      -webkit-app-region: no-drag;
     }
-    /* The consequence, on a surface of its own — 'NoticeCard''s shape and its
-       three tone faces (rounded-xl, 1px border, 12px padding). Following it
-       also settles what NOT to tint: the tone colours the surface and the mark,
-       never the prose, so the text stays 'text-secondary' on every face and an
-       amber block does not arrive with amber text inside it. */
+    /* The consequence, on a surface of its own so it reads as the thing being
+       weighed rather than more prose. It stays NEUTRAL: the tone is already
+       spoken by the mark beside the title, and saying it twice — a 20px ring
+       and a 377px slab of the same amber — made the block outweigh the
+       sentence it belongs to. Indented to the copy column so the card has one
+       text edge, not two. */
     .detail {
-      margin-top: 16px;
       padding: 12px;
+      margin-left: 32px;
       border-radius: 12px;
       border: 1px solid var(--hairline);
-      background: var(--surface-2);
+      /* The palette's own sunken face, and it is theme-aware for a reason the
+         token file spells out: in dark an alpha wash comes out BRIGHTER than
+         the panel under it, so that theme resolves to surface-0 instead.
+         Reaching for --alpha-1 directly, as this did, was right in light and
+         wrong in dark. */
+      background: var(--preview-backdrop);
       color: var(--text-secondary);
       font-size: 14px;
       line-height: 20px;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
       user-select: text;
+      -webkit-app-region: no-drag;
     }
-    .warning .detail {
-      border-color: var(--border-warning);
-      background: var(--bg-warning);
-    }
-    .error .detail {
-      border-color: var(--border-danger);
-      background: var(--bg-danger);
-    }
+    /* Row, not the primitive's flex-col-reverse -> md:flex-row: that breakpoint
+       is viewport-based and this window is 457px wide, so copying it literally
+       would stack the buttons on a desktop dialog. The 4px is ConfirmDialog's
+       md:mt-1, on top of the gap. */
     .actions {
       flex: 0 0 auto;
+      margin-top: 4px;
       display: flex;
       flex-wrap: wrap;
       justify-content: flex-end;
       gap: 12px;
-      padding: 0 24px 24px;
     }
     /* 'ui-control-squish', transcribed: the press scales a backing layer, never
        the label. */
@@ -645,12 +662,6 @@ function renderBrowserMessageBoxHtml(input: BrowserMessageBoxPresentation): stri
       --control-fill: var(--fill-secondary);
       --control-fill-hover: var(--fill-secondary-hover);
     }
-    .decision.ghost {
-      --control-fill: transparent;
-      --control-fill-hover: var(--sidebar-menu-hover);
-      --control-shadow: none;
-      --control-shadow-hover: none;
-    }
     @keyframes dialog-enter {
       from { opacity: 0; transform: translateY(10px) scale(.97); }
       to { opacity: 1; transform: translateY(0) scale(1); }
@@ -662,24 +673,29 @@ function renderBrowserMessageBoxHtml(input: BrowserMessageBoxPresentation): stri
   </style>
 </head>
 <body>
-  <main class="card ${input.type}" role="alertdialog" aria-labelledby="dialog-title" aria-describedby="dialog-message">
-    <div class="drag-region">
-      ${closeButton}
-    </div>
-    <section class="content">
+  <main class="card ${input.type}" role="alertdialog" aria-labelledby="dialog-title"${describedBy}>
+    <div class="inner">
       <div class="heading-row">
         <span class="icon glyph" aria-hidden="true">${statusGlyph}</span>
         <div class="heading-copy">
           <h1 id="dialog-title">${escapeHtml(input.title)}</h1>
-          <div class="message" id="dialog-message">${escapeHtml(input.message)}</div>
+          ${messageBlock}
         </div>
       </div>
       ${detailBlock}
-    </section>
-    <footer class="actions">${buttons}</footer>
+      <footer class="actions">${buttons}</footer>
+    </div>
   </main>
   <script nonce="${nonce}">
     const respond = (value) => window.location.assign('${RESPONSE_URL_PREFIX}' + value);
+    // The default action has to hold focus, because it is the SAFE one and the
+    // first control in the DOM is not. Two things fight for it: the autofocus
+    // attribute is applied at parse time, and then main calls win.focus() after
+    // show(), which hands focus back to the first control. So claim it on both
+    // — once now, and again every time the window becomes focused.
+    const focusDefault = () => document.querySelector('[autofocus]')?.focus?.();
+    focusDefault();
+    window.addEventListener('focus', focusDefault);
     document.addEventListener('click', (event) => {
       const button = event.target instanceof Element ? event.target.closest('[data-response]') : null;
       if (button) respond(button.getAttribute('data-response'));
@@ -716,5 +732,3 @@ function escapeHtml(value: string): string {
     return entities[character] ?? character;
   });
 }
-
-const CLOSE_LABEL = { 'zh-CN': '关闭', 'zh-TW': '關閉', en: 'Close' } satisfies UiCatalog<string>;
