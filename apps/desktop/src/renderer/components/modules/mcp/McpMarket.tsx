@@ -70,11 +70,12 @@ export function McpMarket(props: {
                   className={cn(
                     'flex size-9 shrink-0 items-center justify-center rounded-[9.72px]',
                     'border border-hairline bg-surface-2 text-xs font-medium text-text-secondary',
-                    // The brand marks ship as multi-path SVGs whose fill came
-                    // from a stylesheet the rewrite dropped; `fill-current`
-                    // renders them monochrome, which is legible in both themes
-                    // without reintroducing per-brand colour.
-                    '[&_svg]:size-5 [&_svg]:fill-current',
+                    // The marks carry their own paint (`McpBrandMark`); the
+                    // plate only sizes them. A `fill-current` here would beat
+                    // it — a descendant selector outranks the element's own
+                    // class — and put the directory back to one grey square
+                    // per vendor.
+                    '[&_svg]:size-5',
                   )}
                 >
                   {hasMcpBrandMark(entry.id) ? <McpBrandMark entry={entry} /> : entry.mark}

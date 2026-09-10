@@ -165,17 +165,19 @@ export function hasMcpBrandMark(id: string): boolean {
 export function McpBrandMark({ entry }: { entry: McpCatalogEntry }): ReactElement {
   const mark = MCP_BRAND_MARKS[entry.id];
   if (!mark) return <span>{entry.mark}</span>;
-  // Light theme paints the brand hex; the `.dark` plate flips low-contrast
-  // marks to currentColor (see mcp.css). Custom property carries the hex so
-  // the theme switch is pure CSS, no re-render.
-  const style = { '--mcp-brand-fill': mark.hex } as CSSProperties;
+  // The vendor's own hex, except where it would disappear: a mark too dark for
+  // the dark plate takes `--text-primary`, a token that already flips with the
+  // theme, so the rescue needs neither a `.dark` rule nor a re-render. The
+  // luminance gate is the same one, unit-tested next door.
+  const style = {
+    '--mcp-brand-fill': shouldUseCurrentColorOnDark(mark.hex) ? 'var(--text-primary)' : mark.hex,
+  } as CSSProperties;
   return (
     <svg
-      className="maka-mcp-brand-mark"
+      className="block size-full [fill:var(--mcp-brand-fill)]"
       viewBox={mark.viewBox}
       aria-hidden="true"
       style={style}
-      data-contrast={shouldUseCurrentColorOnDark(mark.hex) ? 'low' : undefined}
     >
       {mark.paths.map((d) => (
         <path key={d} d={d} />

@@ -258,11 +258,6 @@ changed. What that audit left open:
 
 ## Where ours goes further than upstream
 
-The MCP directory's marks are monochrome on purpose (`McpMarket.tsx` says so at
-the call site): one ink that reads in both themes, instead of eleven vendor
-palettes and a dark-theme rescue rule for the near-black ones. Listed here
-because it was once written down as a lost stylesheet rule, which it is not.
-
 Every interaction prompt carries Stop, not only the ask-user one: the prompt
 slot replaces the composer for all four kinds, so a boundary, capability or
 form request would otherwise trap a running turn just as completely.
