@@ -225,10 +225,6 @@ export const exclusionRules = [
     justification:
       'Mechanically derived from a generator in this repository. A hand-written header would be reverted by the next regeneration; the generators themselves carry the header.',
     matches: isOneOf(
-      // Kept by the enterprise renderer rewrite (Phase 0a) as the token source
-      // `scripts/build-cursor-overlay.mjs` slices for the main-process browser
-      // dialog; its generator went with the rest of the Astryx layer.
-      'apps/desktop/src/renderer/astryx-theme/maka.css',
       'docs/windows-test-inventory.md',
       'native/gitoxide-helper/Cargo.lock',
       'native/runtime-host-peer/Cargo.lock',

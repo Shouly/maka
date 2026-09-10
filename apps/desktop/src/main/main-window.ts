@@ -38,6 +38,7 @@ import {
 import { isDarkAppearance, isThemePreference, toNativeThemeSource } from './theme-source.js';
 import { createWindowRevealGate, type WindowRevealMode } from './window-reveal.js';
 import { createWindowsMaximizeRendererSync } from './windows-maximize-renderer-sync.js';
+import { windowChrome } from './window-chrome.js';
 import {
   parseDesktopSessionResourceKey,
 } from '../shared/runtime-host-identity.js';
@@ -169,17 +170,13 @@ const SHOW_FALLBACK_TIMEOUT_MS = 4000;
 // and on runtime mode/palette changes via `setTitleBarOverlayTheme` — Windows
 // only, which is why macOS passes the height alone.
 const TITLEBAR_OVERLAY_HEIGHT = 48;
+
 const titleBarOverlayOptions = (
   isDark: boolean,
-  color = isDark ? '#191a18' : '#ffffff',
+  color: string = windowChrome(isDark).surface,
 ): { color: string; symbolColor: string; height: number } => ({
-  // The light overlay color must match the renderer's `--background`
-  // (maka-tokens.css :root, oklch(1 0 0) == #ffffff) so the top-right
-  // action buttons sit on the same surface as the OS-drawn window control
-  // strip — otherwise a visible color seam splits the titlebar. The dark
-  // value mirrors the dark-mode `--background` anchor.
   color,
-  symbolColor: isDark ? '#e6e6e3' : '#191a18',
+  symbolColor: windowChrome(isDark).symbol,
   height: TITLEBAR_OVERLAY_HEIGHT,
 });
 
@@ -320,7 +317,7 @@ export function createMainWindowController(deps: MainWindowControllerDeps): Main
     if (signal.aborted) return;
     const themePref = e2eFixture?.theme ?? persistedTheme;
     const isDark = isDarkAppearance(themePref, nativeTheme.shouldUseDarkColors);
-    const initialBg = isDark ? '#191a18' : '#ffffff';
+    const initialBg = windowChrome(isDark).surface;
     // Astro-Han review (#493): sync nativeTheme here too, not only via the
     // renderer's later setThemeSource() IPC call -- otherwise the vibrancy
     // material behind the sidebar can still flash the *system* theme's tint

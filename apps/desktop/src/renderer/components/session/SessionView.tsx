@@ -479,7 +479,7 @@ function SessionTranscript(props: SessionViewProps) {
             onSelectSession={(id) => sessionsStore.select(id)}
           />
           <MessageQueue sessionId={sessionId} onError={reportError} />
-          <InteractionPrompts sessionId={sessionId} />
+          <InteractionPrompts sessionId={sessionId} onError={reportError} />
           {feed.boundaryUnreadable && !feed.interactionPending && (
             <NoticeCard
               tone="warning"

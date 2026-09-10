@@ -991,8 +991,8 @@
         "useEffect": 1,
         "useRef": 2,
         "useState": 7,
-        "useStore": 1,
-        "useUiLocale": 5
+        "useStore": 2,
+        "useUiLocale": 6
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
@@ -1000,7 +1000,9 @@
       "dependencyPaths": {
         "../../lib/cn.js": 1,
         "../../locales/composer-copy.js": 1,
+        "../../locales/conversation-copy.js": 1,
         "../../store/index.js": 1,
+        "../../store/turn-actions-store.js": 1,
         "../icons/Anthropicon.js": 1,
         "../ui/button.js": 1,
         "../ui/checkbox-box.js": 1,
@@ -1824,6 +1826,7 @@
         "../../../hooks/use-async.js": 1,
         "../../../hooks/use-settings.js": 1,
         "../../../lib/cn.js": 1,
+        "../../../lib/module-list-state.js": 1,
         "../../../locales/modules-copy.js": 1,
         "../../../store/toast-store.js": 1,
         "../../icons/Anthropicon.js": 1,

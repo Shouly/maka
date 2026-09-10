@@ -229,15 +229,15 @@ modifies Apache-2.0 source and is covered by the license reproduced above.
 Astryx
 
 Source: https://github.com/facebook/astryx
-ChatReasoning revision: c9fe4379e9959b9ba5eeff56def34c752223450e
 Theme revision: ea888ef33283ea44e37817d36bc8e84a0568bc30
 Copyright (c) 2026 Meta Platforms, Inc.
 License: MIT
 
-Maka includes an ejected adaptation of Astryx ChatReasoning v0.1.9 and generated
-theme artifacts based on Astryx theme-neutral v0.5.2. Maka also redistributes
-`patches/@astryxdesign+core+0.5.2.patch`, which modifies the MIT-licensed Astryx
-core package. The following MIT License applies to that material:
+Maka's website carries colour and radius values copied from a generated theme
+artifact based on Astryx theme-neutral v0.5.2 (`website/src/styles/site.css`).
+The generated artifact itself, the ejected ChatReasoning adaptation and the
+redistributed `@astryxdesign/core` patch are no longer in the tree. The
+following MIT License applies to that material:
 
 MIT License
 

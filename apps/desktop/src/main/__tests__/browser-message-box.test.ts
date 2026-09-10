@@ -229,10 +229,16 @@ test('renders escaped content with Maka dialog tokens and safe action ordering',
   assert.match(html, /aria-label="Close"/u);
   assert.match(html, /data-theme="dark"/u);
   assert.match(html, /data-maka-theme="nord"/u);
-  assert.match(html, /--surface-overlay:/u);
-  assert.match(html, /--accent-solid:/u);
-  assert.match(html, /--space-4:/u);
-  assert.match(html, /color: var\(--maka-brand\)/u);
+  // The card is served the renderer's own design authority (`styles/globals.css`
+  // through `build-cursor-overlay.mjs`), not a palette of its own: the surface
+  // ladder, the primary fill and the font stack all have to arrive with it.
+  assert.match(html, /--surface-3:/u);
+  assert.match(html, /--fill-primary:/u);
+  assert.match(html, /--font-sans:/u);
+  // Dark is carried by the class, so an explicit light card cannot be flipped
+  // by a dark OS through the prefers-dark block's `:root:not(.light)`.
+  assert.match(html, /class="dark"/u);
+  assert.match(html, /color: var\(--text-muted\)/u);
   assert.doesNotMatch(html, /--control-overlay-hover:/u);
   assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/u);
   assert.match(html, /Maka &amp; Runtime Host/u);

@@ -58,6 +58,7 @@ import type {
   UserQuestionRequestEvent,
 } from '@maka/core/events';
 import { activeSessionStore, turnActionsStore } from '../../store/index.js';
+import { pendingActionsOf } from '../../store/turn-actions-store.js';
 import { Anthropicon } from '../icons/Anthropicon.js';
 import { Button } from '../ui/button.js';
 import { Input } from '../ui/input.js';
@@ -65,6 +66,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { checkboxBoxClass, CHECKBOX_TICK_SIZE } from '../ui/checkbox-box.js';
 import { cn } from '../../lib/cn.js';
 import { getComposerCopy } from '../../locales/composer-copy.js';
+import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
 
 /** relx AskUserPanel card: surface-3, 16px radius, panel shadow + hairline ring. */
 const PANEL_CLASS =
@@ -73,7 +75,14 @@ const PANEL_CLASS =
 const ICON_BUTTON_CLASS =
   'inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-text-muted transition duration-300 hover:bg-alpha-1 hover:text-text-primary active:scale-95 disabled:pointer-events-none disabled:opacity-40';
 
-export function InteractionPrompts({ sessionId }: { sessionId: string }) {
+export function InteractionPrompts({
+  sessionId,
+  onError,
+}: {
+  sessionId: string;
+  /** The shell's reporter, as every other surface in this stack uses. */
+  onError: (title: string, error: unknown) => void;
+}) {
   const request = useStore(activeSessionStore, (s) => s.interactions[sessionId]?.[0]);
   if (!request) return null;
   return (
@@ -81,6 +90,7 @@ export function InteractionPrompts({ sessionId }: { sessionId: string }) {
       key={`${sessionId}:${request.requestId}`}
       sessionId={sessionId}
       request={request}
+      onError={onError}
     />
   );
 }
@@ -88,9 +98,11 @@ export function InteractionPrompts({ sessionId }: { sessionId: string }) {
 function InteractionPrompt({
   sessionId,
   request,
+  onError,
 }: {
   sessionId: string;
   request: ActiveInteractionRequestEvent;
+  onError: (title: string, error: unknown) => void;
 }) {
   const locale = useUiLocale();
   const copy = getConversationCopy(locale);
@@ -123,7 +135,15 @@ function InteractionPrompt({
 
   if (request.type === 'user_question_request') {
     return (
-      <QuestionWizard sessionId={sessionId} request={request} busy={busy} error={error} run={run} />
+      <QuestionWizard
+        sessionId={sessionId}
+        request={request}
+        busy={busy}
+        answered={answered}
+        error={error}
+        run={run}
+        onError={onError}
+      />
     );
   }
 
@@ -240,7 +260,81 @@ function InteractionPrompt({
         )}
       </fieldset>
       <PromptStatus pending={pending} error={error} />
+      {/* Pulled left by the button's own padding so its mark lines up with the
+          card's text, not with the text plus a control's inset. */}
+      <div className="-ml-2.5 mt-3 flex justify-start">
+        <StopTurnButton
+          sessionId={sessionId}
+          answered={answered}
+          label={copy.composer.stopLabel}
+          pendingLabel={copy.composer.stopping}
+          onError={onError}
+        />
+      </div>
     </section>
+  );
+}
+
+/**
+ * The way out, on the prompt itself.
+ *
+ * This slot REPLACES the composer while a request is open, and Stop lives in
+ * the composer — so for as long as a turn is waiting on an answer there is no
+ * other control that can end it. Answering is not ending it: allow, deny,
+ * skip and "close without answering" all hand the turn what it asked for and
+ * let it carry on, which is the opposite of what someone reaching for Stop
+ * wants.
+ *
+ * It sits apart from the row that decides the request, and never inside it: on
+ * a permission card a Stop beside Deny would read as a third answer.
+ */
+function StopTurnButton({
+  sessionId,
+  answered,
+  label,
+  pendingLabel,
+  onError,
+}: {
+  sessionId: string;
+  /**
+   * The request has been answered and this card is on its way out. Note what
+   * this is NOT gated on: a response still in flight. A Host that is slow to
+   * take the answer is exactly when someone reaches for Stop, and taking it
+   * away then would rebuild the trap this button exists to open.
+   */
+  answered: boolean;
+  label: string;
+  pendingLabel: string;
+  onError: (title: string, error: unknown) => void;
+}) {
+  const locale = useUiLocale();
+  const stopping = useStore(turnActionsStore, (state) =>
+    pendingActionsOf(state, sessionId).includes('stop'),
+  );
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      disabled={answered || stopping}
+      aria-busy={stopping || undefined}
+      data-maka-contract="interaction-prompt-stop"
+      onClick={() =>
+        void turnActionsStore
+          .stop(sessionId, { source: 'stop_button' })
+          .catch((cause: unknown) =>
+            onError(getDesktopConversationCopy(locale).actions.stopFailedTitle, cause),
+          )
+      }
+    >
+      <Anthropicon
+        name={stopping ? 'spinner' : 'stopCircle'}
+        size={16}
+        className={stopping ? 'animate-spin' : undefined}
+        aria-hidden="true"
+      />
+      {stopping ? pendingLabel : label}
+    </Button>
   );
 }
 
@@ -277,14 +371,18 @@ function QuestionWizard({
   sessionId,
   request,
   busy,
+  answered,
   error,
   run,
+  onError,
 }: {
   sessionId: string;
   request: UserQuestionRequestEvent;
   busy: boolean;
+  answered: boolean;
   error: string;
   run: (action: () => Promise<void>) => Promise<void>;
+  onError: (title: string, error: unknown) => void;
 }) {
   const locale = useUiLocale();
   const copy = getConversationCopy(locale).questions;
@@ -596,6 +694,15 @@ function QuestionWizard({
             <Anthropicon name="arrowUp" className={isLast ? undefined : 'rotate-90'} size={20} />
           </button>
         </div>
+      </div>
+      <div className="flex justify-start px-1.5 pb-2">
+        <StopTurnButton
+          sessionId={sessionId}
+          answered={answered}
+          label={copy.stop}
+          pendingLabel={copy.stopping}
+          onError={onError}
+        />
       </div>
       {(busy || error) && (
         <div className="px-4 pb-3">

@@ -89,7 +89,8 @@ export const DiffResult = memo(function DiffResult(props: {
   const toolCopy = getToolActivityCopy(locale);
   const handoff = getWorkbarCopy(locale).handoff;
   const model = useMemo(() => {
-    const { body, capped } = capLines(props.diff);
+    // A diff is read from the top, so the head is what it keeps.
+    const { body, capped } = capLines(props.diff, 'head');
     const lines = body.split('\n');
     const kinds = lines.map(classifyDiffLine);
     const stripped = lines.map((line, index) => stripMarker(line, kinds[index]!));

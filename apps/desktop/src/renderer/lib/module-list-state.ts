@@ -40,8 +40,8 @@ export interface ModuleListDisplay {
 export function moduleListState(input: {
   /** A read is in flight. */
   loading: boolean;
-  /** The last read's failure, if it failed. */
-  error: string | undefined;
+  /** The last read's failure. `undefined` — and only that — means it succeeded. */
+  error: unknown;
   /** Whether a snapshot has arrived for the scope now on screen. */
   loaded: boolean;
   /** Rows in that snapshot. */

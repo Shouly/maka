@@ -22,11 +22,27 @@ import { getToolActivityCopy } from './copy.js';
 
 export const TOOL_LINE_CAP = 500;
 
-export function capLines(text: string): { body: string; capped: number } {
+/**
+ * Cap a block of tool output at `TOOL_LINE_CAP` lines.
+ *
+ * Which END is kept is the caller's to say, because the two are not
+ * interchangeable. A diff or a file preview is read from the top, so it keeps
+ * its head. A command's output is watched at the BOTTOM — the line that just
+ * arrived, the error it ended on — so keeping the head freezes the panel on
+ * the opening banner of a long run and puts the part the user is waiting for
+ * permanently out of reach.
+ *
+ * Stated at every call site rather than defaulted: the default WAS the head,
+ * and the two views of a running command drifted apart under it — one capped
+ * each end — because neither had to say which it meant.
+ */
+export function capLines(text: string, keep: 'head' | 'tail'): { body: string; capped: number } {
   const lines = text.split('\n');
   if (lines.length <= TOOL_LINE_CAP) return { body: text, capped: 0 };
   return {
-    body: lines.slice(0, TOOL_LINE_CAP).join('\n'),
+    body: (keep === 'tail' ? lines.slice(-TOOL_LINE_CAP) : lines.slice(0, TOOL_LINE_CAP)).join(
+      '\n',
+    ),
     capped: lines.length - TOOL_LINE_CAP,
   };
 }

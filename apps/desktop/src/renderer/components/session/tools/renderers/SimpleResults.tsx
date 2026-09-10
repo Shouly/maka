@@ -53,7 +53,8 @@ export const TextResult = memo(function TextResult(props: {
 }) {
   const locale = useUiLocale();
   const raw = props.result.kind === 'text' ? props.result.text : props.result.summarized;
-  const { body, capped } = capLines(formatUserVisibleToolText(raw, locale));
+  // A settled result is read from the top.
+  const { body, capped } = capLines(formatUserVisibleToolText(raw, locale), 'head');
   const copy = getToolActivityCopy(locale).result;
   return (
     <ToolResultPanel>
@@ -72,7 +73,7 @@ export const JsonResult = memo(function JsonResult(props: {
 }) {
   const locale = useUiLocale();
   const preview = formatQuietJsonValue(props.result.value, locale);
-  const { body, capped } = capLines(preview.body);
+  const { body, capped } = capLines(preview.body, 'head');
   const copy = getToolActivityCopy(locale).result;
   return (
     <ToolResultPanel>
@@ -237,26 +238,33 @@ export const PendingResult = memo(function PendingResult(props: { item: ToolActi
             <p className={toolResultBlockLabelClass}>{copy.arguments}</p>
           </div>
           <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-xs leading-5 text-text-secondary">
-            {capLines(preview.body).body}
+            {capLines(preview.body, 'head').body}
           </pre>
         </div>
       </ToolResultPanel>
     );
   }
   const text = chunks.map((chunk) => chunk.text).join('');
-  const { body, capped } = capLines(text);
+  // The tail, the same end `TerminalResult` keeps. Both are live views, and
+  // which one a running tool lands in is decided by whether it has a typed
+  // result yet (`resolveToolRendererId`): a shell run has one while it runs
+  // and renders there, a tool that only streams text renders here. Keeping the
+  // head would pin a long run to its opening banner for the whole run, and
+  // release the lines the reader is waiting for only once this row is gone.
+  const { body, capped } = capLines(text, 'tail');
   return (
     <ToolResultPanel>
       <div className={toolResultBlockClass}>
         <div className={toolResultBlockLabelRowClass}>
           <p className={toolResultBlockLabelClass}>{copy.output}</p>
         </div>
-        <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-xs leading-5 text-text-secondary">
-          {body}
-        </pre>
+        {/* Above the body: what was dropped is what came BEFORE it. */}
         {capped > 0 && (
           <p className={toolResultBlockLabelClass}>{toolCopy.result.hiddenLines(capped)}</p>
         )}
+        <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-xs leading-5 text-text-secondary">
+          {body}
+        </pre>
         {chunks.some((chunk) => chunk.redacted) && (
           <p className={toolResultBlockLabelClass}>{toolCopy.output.redacted}</p>
         )}

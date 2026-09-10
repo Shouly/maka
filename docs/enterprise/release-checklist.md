@@ -71,43 +71,30 @@ come before any feature work: several lose data silently.
    channel:'local' }` whenever the seed carries no locked effect, and bot tasks
    seed unlocked. Platform and chat id are dropped with no warning, and every
    row offers Edit.
-2. **A failed skills catalog read renders as "empty".** `SkillsModule.tsx`
-   branches on `loading` and length only; `catalog.error` / `sources.error` are
-   never read, so a rejected call says there are no skills and no sources.
-3. **"Restart to update" silently does nothing while a task runs.**
+2. **"Restart to update" silently does nothing while a task runs.**
    `store/update-store.ts:96` passes `allowInterruptActiveTasks: false`; main
    answers `{ ok:false, reason:'active_tasks' }` with no status change, and
    `run()` keeps only results carrying a `state` field, so the refusal is
    discarded. Upstream turns that refusal into a confirm-and-interrupt dialog.
-4. **Archived project rows offer Archive, not Restore.** The rail lists
+3. **Archived project rows offer Archive, not Restore.** The rail lists
    archived projects (`hooks/use-session-list.ts:60`) but `Sidebar.tsx:217-225`
    never passes `archived`, so `ProjectRow` always renders Archive and the
    Restore item is dead code.
-5. **Archiving the default project leaves a dangling preference.**
+4. **Archiving the default project leaves a dangling preference.**
    `WorkspaceSettings.tsx:361-366` calls `archiveProject` alone; upstream also
    writes `defaultProjectId: undefined` in the same action.
-6. **An unknown `providerType` crashes the connection detail page.**
+5. **An unknown `providerType` crashes the connection detail page.**
    `components/settings/models/ConnectionDetail.tsx:91` dereferences
    `PROVIDER_REGISTRY[...].authKind` unguarded. Upstream returns a
    non-actionable fallback page first.
-7. **A hand-added model lands disabled and disappears on refresh.**
+6. **A hand-added model lands disabled and disappears on refresh.**
    `ConnectionDetail.tsx:335-343` appends to `models` and forces `modelSource:
    'fallback'`; upstream writes `enabledModelIds` plus
    `relayModelProfiles[id]`, so the model is on and its declaration survives.
-8. **An enabled model missing from the catalog is invisible and silently
+7. **An enabled model missing from the catalog is invisible and silently
    dropped.** `ConnectionModelsSection.tsx:71-91` builds rows from catalog
    entries only, so a stale or quarantined id cannot be unticked and the next
    unrelated toggle removes it.
-9. **A turn cannot be stopped while an interaction prompt is up.**
-   `SessionView.tsx:479` unmounts the composer (with its Stop button and
-   Escape-to-stop) during ask-user / boundary / form prompts, and
-   `InteractionPrompts.tsx` has no stop path. Upstream's prompt carries its own
-   Stop.
-10. **Live tool output keeps the FIRST 500 lines.** `capLines`
-    (`packages/ui/src/tool-activity/preview-utils.ts:25-32`) truncates the
-    head, so a long-running command's panel freezes on its opening output and
-    the live tail is unreachable. Upstream streams into a pinned-to-bottom
-    `<pre>` and marks stderr.
 
 Smaller, same kind:
 
@@ -308,6 +295,10 @@ changed. What that audit left open:
   lockfile and the third-party notices.
 
 ## Where ours goes further than upstream
+
+Every interaction prompt carries Stop, not only the ask-user one: the prompt
+slot replaces the composer for all four kinds, so a boundary, capability or
+form request would otherwise trap a running turn just as completely.
 
 About offers install-now and retry-download; Data clears composer drafts;
 Permissions refreshes capabilities on its own; Web search keeps the credential

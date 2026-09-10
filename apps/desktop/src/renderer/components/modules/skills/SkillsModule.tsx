@@ -58,6 +58,7 @@ import { menuDangerItemClass, menuTriggerButtonClass } from '../../ui/menu-varia
 import { Anthropicon } from '../../icons/Anthropicon.js';
 import { SettingsRow, SettingsSection } from '../../settings/settings-row.js';
 import { ModuleEmpty, ModuleLead, ModuleListSkeleton, ModulePage } from '../module-page.js';
+import { moduleListState } from '../../../lib/module-list-state.js';
 import { ExtensionsTabs } from '../ExtensionsTabs.js';
 import { cn } from '../../../lib/cn.js';
 import { useAsync } from '../../../hooks/use-async.js';
@@ -147,6 +148,31 @@ export function SkillsModule(props: {
   const catalogRows = catalog.data ?? [];
   const sourceRows = sources.data ?? [];
 
+  // One rule for all three lists: what is shown follows the SNAPSHOT, and a
+  // read that failed says so instead of reporting an empty workspace. The
+  // catalog and the source library used to branch on length alone, so a
+  // rejected read read as "this build ships no skills" / "your library is
+  // empty" — a statement about the user's workspace, made because we could not
+  // reach it.
+  const installedFace = moduleListState({
+    loading: installed.loading,
+    error: installed.error,
+    loaded: installed.data !== undefined,
+    count: rows.length,
+  });
+  const catalogFace = moduleListState({
+    loading: catalog.loading,
+    error: catalog.error,
+    loaded: catalog.data !== undefined,
+    count: catalogRows.length,
+  });
+  const sourcesFace = moduleListState({
+    loading: sources.loading,
+    error: sources.error,
+    loaded: sources.data !== undefined,
+    count: sourceRows.length,
+  });
+
   return (
     <ModulePage
       title={extensions.title}
@@ -179,11 +205,11 @@ export function SkillsModule(props: {
       <ModuleLead>{copy.description}</ModuleLead>
 
       <SettingsSection title={copy.installedTitle} description={copy.installedDescription}>
-        {installed.loading && rows.length === 0 ? (
+        {installedFace.face === 'loading' ? (
           <div className="py-3">
             <ModuleListSkeleton />
           </div>
-        ) : installed.error ? (
+        ) : installedFace.face === 'failed' ? (
           <div className="py-3">
             <ModuleEmpty
               title={copy.loadFailed}
@@ -194,7 +220,7 @@ export function SkillsModule(props: {
               }
             />
           </div>
-        ) : rows.length === 0 ? (
+        ) : installedFace.face === 'empty' ? (
           <div className="py-3">
             <ModuleEmpty
               title={skillsCopy.installed.emptyTitle}
@@ -231,11 +257,22 @@ export function SkillsModule(props: {
       </SettingsSection>
 
       <SettingsSection title={copy.catalogTitle} description={copy.catalogDescription}>
-        {catalog.loading && catalogRows.length === 0 ? (
+        {catalogFace.face === 'loading' ? (
           <div className="py-3">
             <ModuleListSkeleton rows={2} />
           </div>
-        ) : catalogRows.length === 0 ? (
+        ) : catalogFace.face === 'failed' ? (
+          <div className="py-3">
+            <ModuleEmpty
+              title={copy.loadFailed}
+              action={
+                <Button variant="outline" size="sm" onClick={catalog.reload}>
+                  {skillsCopy.page.refresh}
+                </Button>
+              }
+            />
+          </div>
+        ) : catalogFace.face === 'empty' ? (
           <div className="py-3">
             <ModuleEmpty title={copy.catalogEmpty} />
           </div>
@@ -258,11 +295,22 @@ export function SkillsModule(props: {
       </SettingsSection>
 
       <SettingsSection title={copy.sourcesTitle} description={copy.sourcesDescription}>
-        {sources.loading && sourceRows.length === 0 ? (
+        {sourcesFace.face === 'loading' ? (
           <div className="py-3">
             <ModuleListSkeleton rows={2} />
           </div>
-        ) : sourceRows.length === 0 ? (
+        ) : sourcesFace.face === 'failed' ? (
+          <div className="py-3">
+            <ModuleEmpty
+              title={copy.loadFailed}
+              action={
+                <Button variant="outline" size="sm" onClick={sources.reload}>
+                  {skillsCopy.page.refresh}
+                </Button>
+              }
+            />
+          </div>
+        ) : sourcesFace.face === 'empty' ? (
           <div className="py-3">
             <ModuleEmpty title={copy.sourcesEmpty} />
           </div>

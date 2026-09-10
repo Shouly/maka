@@ -267,6 +267,15 @@ try {
   await page.screenshot({ path: SHOT('phase3a-tool-row.png') });
   checks.push('a tool request renders a timeline row and the pending answer is announced');
   const promptPanel = page.locator('[data-maka-contract="interaction-prompt"]');
+  // The prompt REPLACES the composer, and Stop lives in the composer, so a
+  // turn waiting on an answer can only be stopped from here. Answering is not
+  // stopping — every other control on this card hands the turn what it asked
+  // for. Presence and reach are what this checks; the stop itself is not
+  // pressed, because ending the turn here would take the transcript the rest
+  // of this file reads with it.
+  const promptStop = promptPanel.locator('[data-maka-contract="interaction-prompt-stop"]');
+  await promptStop.waitFor();
+  assert.equal(await promptStop.isEnabled(), true);
   // The wizard advances on each pick; the last pick submits (relx AskUserPanel).
   await promptPanel.getByRole('option', { name: /邀请制/ }).click();
   await promptPanel.getByRole('option', { name: /下周/ }).click();

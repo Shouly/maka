@@ -57,6 +57,11 @@ Object.assign(window, {
 createRoot(document.getElementById('root')!).render(
   createElement(LocaleProvider, {
     locale: 'en',
-    children: createElement(InteractionPrompts, { sessionId: 'fixture' }),
+    children: createElement(InteractionPrompts, {
+      sessionId: 'fixture',
+      // The shell's toast is not mounted here; this harness drives the
+      // answer paths, and a stop failure has no surface to land on.
+      onError: () => {},
+    }),
   }),
 );

@@ -21,17 +21,21 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { compositeScrimOverBackground, parseCssRgbColor } from '../../renderer/lib/ported/titlebar-dim-color.js';
 
-// The two scrim values the app theme pins (astryx-theme/maka.css:
-// light-dark(#00000080, #000000CC)).
-const LIGHT_SCRIM = { r: 0, g: 0, b: 0, a: 0.5 };
-const DARK_SCRIM = { r: 0, g: 0, b: 0, a: 0.8 };
+// The pair the app actually composites: `theme.ts` reads the open modal's own
+// ::backdrop and falls back to these, and they are `--dialog-overlay` in
+// `styles/globals.css`. The surfaces are `--surface-1`, which is what the shell
+// paints under the titlebar. Both used to be a different pair copied out of the
+// generated Astryx theme, so these cases were exercising the arithmetic against
+// colours no screen ever showed.
+const LIGHT_SCRIM = { r: 0, g: 0, b: 0, a: 0.4 };
+const DARK_SCRIM = { r: 0, g: 0, b: 0, a: 0.5 };
 
-test('light-theme dim: black@50% scrim over a white titlebar', () => {
-  assert.equal(compositeScrimOverBackground(LIGHT_SCRIM, '#ffffff'), '#808080');
+test('light-theme dim: the dialog scrim over the painted light titlebar', () => {
+  assert.equal(compositeScrimOverBackground(LIGHT_SCRIM, '#fcfcfb'), '#979797');
 });
 
-test('dark-theme dim: black@80% scrim over the dark titlebar', () => {
-  assert.equal(compositeScrimOverBackground(DARK_SCRIM, '#171719'), '#050505');
+test('dark-theme dim: the dialog scrim over the painted dark titlebar', () => {
+  assert.equal(compositeScrimOverBackground(DARK_SCRIM, '#151515'), '#0b0b0b');
 });
 
 test('an opaque scrim wins outright', () => {

@@ -22,7 +22,7 @@ import test from 'node:test';
 import { createElement, Fragment } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { parseHTML } from 'linkedom';
-import { LocaleProvider, type ToolActivityItem, type TurnViewModel } from '@maka/ui';
+import { LocaleProvider, TOOL_LINE_CAP, type ToolActivityItem, type TurnViewModel } from '@maka/ui';
 import Markdown from '../../components/ui/Markdown.js';
 import { TooltipProvider } from '../../components/ui/tooltip.js';
 import { SessionRow } from '../../components/layout/sidebar-parts/SessionRow.js';
@@ -381,6 +381,50 @@ test('each result kind renders its own body, and a diff keeps its markers', () =
   assert.ok(
     (agent.documentElement.textContent ?? '').includes('Read only'),
     'an explore-mode child says so',
+  );
+});
+
+// A running command and a settled one must cap the same END. They are two
+// different renderers (`PendingResult` and `TerminalResult`), and the live one
+// is where it matters most: keeping the head there pins a long run to its
+// opening banner for the whole run, and only releases the lines the reader is
+// waiting for once the row has been replaced. They had drifted apart exactly
+// that way.
+test('a long tool output is watched at its tail while it runs, not only once it settles', () => {
+  const lines = Array.from({ length: TOOL_LINE_CAP + 40 }, (_, index) => `line ${index}`);
+  const first = lines[0]!;
+  const last = lines.at(-1)!;
+  const document = renderTree(
+    createElement(
+      Fragment,
+      null,
+      renderToolContent(
+        {
+          toolUseId: 'tool-running',
+          toolName: 'Bash',
+          activityKind: 'terminal',
+          status: 'running',
+          args: { command: 'npm run build' },
+          outputChunks: [{ text: lines.join('\n') }],
+        } as unknown as ToolActivityItem,
+        { onOpenSession: () => {}, onOpenExternal: () => {} },
+      ),
+    ),
+  );
+  const text = document.documentElement.textContent ?? '';
+  assert.ok(text.includes(last), 'the newest line is on screen');
+  assert.ok(!text.includes(`${first}\n`), 'the opening banner is what got dropped');
+  // The note names what is missing, and sits above the body it was cut from.
+  const body = document.querySelector('pre');
+  const note = [...document.querySelectorAll('p')].find((row) =>
+    (row.textContent ?? '').includes('40'),
+  );
+  assert.ok(note, 'the dropped-line count is reported');
+  assert.ok(body, 'the output body is on screen');
+  assert.equal(
+    note.compareDocumentPosition(body) & 4,
+    4,
+    'the note precedes the body, because what was dropped came before it',
   );
 });
 

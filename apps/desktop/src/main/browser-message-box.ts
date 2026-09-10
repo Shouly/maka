@@ -21,7 +21,6 @@ import type { UiCatalog } from '@maka/core/ui-locale';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { MAKA_WORDMARK_PATH, MAKA_WORDMARK_VIEW_BOX } from '@maka/core/maka-wordmark';
 import { isThemePalette, type ThemePalette } from '@maka/core/settings';
 import type { UiLocale } from '@maka/core/ui-locale';
 import type {
@@ -34,7 +33,9 @@ import type {
 import { resolveOverlayAssetDir } from './overlay-assets.js';
 
 const RESPONSE_URL_PREFIX = 'maka-dialog://response/';
-const DIALOG_WIDTH = 520;
+// 425 card + the 16px body padding each side: the in-app dialog's width
+// (`ConfirmDialog`'s md:max-w-[425px]), which this card had been 95px wider than.
+const DIALOG_WIDTH = 457;
 const INITIAL_HEIGHT = 600;
 const MIN_HEIGHT = 280;
 const WORK_AREA_MARGIN = 32;
@@ -149,8 +150,12 @@ async function presentBrowserMessageBox(
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
-    hasShadow: true,
-    roundedCorners: true,
+    // The card draws the whole dialog — its corners, its hairline ring and its
+    // shadow all come from `--dialog-shadow`. Letting the OS draw a second
+    // rounded rect and a second shadow at the WINDOW bounds put a faint line
+    // around the card, one body-gutter out from the card's own edge.
+    hasShadow: false,
+    roundedCorners: false,
     resizable: false,
     movable: true,
     minimizable: false,
@@ -309,7 +314,14 @@ function clamp(value: number, min: number, max: number): number {
 
 async function measureDialogHeight(win: BrowserWindow): Promise<number> {
   const measured: unknown = await win.webContents.executeJavaScript(
-    "Math.ceil((document.querySelector('.card')?.scrollHeight ?? 0) + 32)",
+    `(() => {
+      const card = document.querySelector('.card');
+      if (!card) return 0;
+      const gutter = getComputedStyle(document.body);
+      return Math.ceil(
+        card.scrollHeight + parseFloat(gutter.paddingTop) + parseFloat(gutter.paddingBottom),
+      );
+    })()`,
     true,
   );
   return typeof measured === 'number' && Number.isFinite(measured)
@@ -351,7 +363,7 @@ function renderBrowserMessageBoxHtml(input: BrowserMessageBoxPresentation): stri
   const nonce = randomUUID().replaceAll('-', '');
   const closeLabel = CLOSE_LABEL[input.locale];
   const closeButton = `<button class="window-close" type="button" data-response="${input.cancelId}" aria-label="${closeLabel}">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+    <span class="glyph" aria-hidden="true">\uE10F</span>
   </button>`;
   const buttons = input.buttons
     .map((label, index) => ({ label, index }))
@@ -379,28 +391,44 @@ function renderBrowserMessageBoxHtml(input: BrowserMessageBoxPresentation): stri
   const detailBlock = input.detail
     ? `<div class="detail" data-testid="dialog-detail">${escapeHtml(input.detail)}</div>`
     : '';
-  const statusIcon =
+  // The app's own glyphs, from the icon face the generated stylesheet inlines —
+  // the same codepoints ANTHROPICON_SPECS names, so these marks are the ones the
+  // rest of the product draws and they move when it does. NoticeCard uses
+  // warningCircle for both warning and destructive; this follows it.
+  const statusGlyph =
     input.type === 'question'
-      ? '<path d="M9.1 9a3 3 0 1 1 5.1 2.1c-1.2 1.1-2.2 1.6-2.2 3.4M12 18h.01" />'
+      ? '\uE088' // questionCircle
       : input.type === 'info' || input.type === 'none'
-        ? '<path d="M12 11v5M12 8h.01" />'
-        : '<path d="M12 8v5M12 17h.01" />';
+        ? '\uE08F' // info
+        : '\uE10A'; // warningCircle
 
   return `<!doctype html>
-<html lang="${input.locale}" data-theme="${input.dark ? 'dark' : 'light'}" data-maka-theme="${input.palette}" data-astryx-theme="maka" class="${input.dark ? 'dark' : ''}">
+<html lang="${input.locale}" data-theme="${input.dark ? 'dark' : 'light'}" data-maka-theme="${input.palette}" class="${input.dark ? 'dark' : 'light'}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; font-src data:; base-uri 'none'; form-action 'none'">
   <title>${escapeHtml(input.title)}</title>
   <style nonce="${nonce}">
     ${dialogDesignTokens()}
+    /* Measurements are the in-app dialog's, not this card's own invention:
+       'ui/dialog.tsx' (12px radius, --dialog-shadow, 24px inner padding, a
+       22/28 semibold title over a 14/20 secondary description, a 12px action
+       gap) and 'ui/button.tsx' (32px tall, 8px radius, the squish press). The
+       card is standalone, so those come through as literals — the COLOURS are
+       the shared tokens, which is what keeps it in step when the palette moves. */
     * { box-sizing: border-box; }
     html, body { margin: 0; background: transparent; }
     body {
-      padding: var(--space-4);
-      font-family: var(--font-family-body);
-      color: var(--foreground);
+      /* The transparent margin the card's shadow is drawn into. '--dialog-shadow'
+         reaches ~24px below the card (offset 12 + blur 28 halved, spread -2) and
+         ~12px to each side, and barely at all above it, so the bottom gets more
+         than the rest. Too little here and the OS window bounds clip the shadow. */
+      --gutter: 16px;
+      --gutter-bottom: 28px;
+      padding: var(--gutter) var(--gutter) var(--gutter-bottom);
+      font-family: var(--font-sans);
+      color: var(--text-primary);
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
       user-select: none;
@@ -411,187 +439,236 @@ function renderBrowserMessageBoxHtml(input: BrowserMessageBoxPresentation): stri
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      border: 1px solid var(--border-soft);
-      border-radius: var(--radius-container);
-      background: var(--surface-overlay);
-      box-shadow: var(--elevation-overlay);
-      animation: dialog-enter var(--duration-medium) var(--ease-out-strong) backwards;
+      /* No border: the in-app dialog separates itself with elevation alone. */
+      border-radius: 12px;
+      background: var(--surface-3);
+      box-shadow: var(--dialog-shadow);
+      animation: dialog-enter 200ms cubic-bezier(.32, .72, 0, 1) backwards;
     }
     body.maka-dialog-constrained .card {
-      height: calc(100vh - var(--space-8));
-      min-height: calc(100vh - var(--space-8));
+      height: calc(100vh - var(--gutter) - var(--gutter-bottom));
+      min-height: calc(100vh - var(--gutter) - var(--gutter-bottom));
     }
+    /* The card is its own window, so it keeps a drag strip the in-app dialog
+       does not need. It carries nothing but the close control: a brand mark
+       here would be the first thing read, above the sentence that says what is
+       about to happen. */
     .drag-region {
-      height: var(--space-12);
-      flex: 0 0 var(--space-12);
+      height: 36px;
+      flex: 0 0 36px;
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      padding: var(--space-2) var(--space-2) 0 var(--space-6);
+      justify-content: flex-end;
+      padding: 4px 8px 0;
       -webkit-app-region: drag;
-    }
-    .wordmark {
-      width: 96px;
-      height: auto;
-      color: var(--maka-brand);
     }
     button { font: inherit; }
     .window-close {
-      width: var(--space-8);
-      height: var(--space-8);
+      width: 32px;
+      height: 32px;
       display: grid;
       place-items: center;
       padding: 0;
       border: 0;
-      border-radius: var(--radius-element);
+      border-radius: 8px;
       background: transparent;
-      color: var(--muted-foreground);
+      color: var(--text-primary);
       cursor: pointer;
+      transition: background-color 60ms ease-out;
       -webkit-app-region: no-drag;
     }
-    .window-close svg {
-      width: var(--space-4);
-      height: var(--space-4);
-      fill: none;
-      stroke: currentColor;
-      stroke-width: 2;
-      stroke-linecap: round;
+    /* The icon-face contract, transcribed from 'Anthropicon': ligatures off so
+       a codepoint pair cannot combine, synthesis off so a missing weight is
+       never faked, and the variable axes pinned to the same values the
+       component sets for a 20px mark. */
+    .glyph {
+      font-family: 'Anthropicons-Variable';
+      font-size: 20px;
+      line-height: 1;
+      font-style: normal;
+      font-weight: 433.25;
+      font-synthesis: none;
+      font-variant-ligatures: none;
+      font-feature-settings: 'liga' 0, 'clig' 0, 'dlig' 0;
+      font-variation-settings: 'ANIM' 0, 'ANM2' 0, 'opsz' 20, 'wght' 433.25;
+      letter-spacing: normal;
+      user-select: none;
     }
-    .window-close:hover { background: var(--state-hover-bg); color: var(--foreground); }
+    .window-close:hover { background: var(--sidebar-menu-hover); }
     .window-close:focus-visible,
     .decision:focus-visible {
-      outline: 2px solid var(--accent);
-      outline-offset: 2px;
+      outline: none;
+      box-shadow: var(--sidebar-focus-shadow);
     }
     .content {
       flex: 1 1 auto;
       min-height: 0;
       overflow: auto;
-      padding: var(--space-4) var(--space-6) var(--space-5);
+      padding: 0 24px 20px;
       scrollbar-width: thin;
-      scrollbar-color: var(--border-strong) transparent;
+      scrollbar-color: var(--scrollbar) transparent;
     }
     .content::-webkit-scrollbar { width: 10px; }
     .content::-webkit-scrollbar-track { background: transparent; }
     .content::-webkit-scrollbar-thumb {
       border: 2px solid transparent;
       border-radius: 999px;
-      background: var(--border-strong);
+      background: var(--scrollbar);
       background-clip: content-box;
     }
     .heading-row {
       display: flex;
       align-items: flex-start;
-      gap: var(--space-3);
+      gap: 12px;
     }
+    /* The mark, coloured by tone and nothing else — 'NoticeCard' tints the
+       glyph and never puts it in a tile, and a tile here would be a second
+       filled shape competing with the title beside it. 20px is the size the
+       icon set is drawn at. */
     .icon {
-      width: var(--space-8);
-      height: var(--space-8);
-      flex: 0 0 var(--space-8);
-      display: grid;
-      place-items: center;
-      border-radius: 27%;
-      color: var(--info);
-      background: var(--info-wash);
-      box-shadow: inset 0 0 0 1px var(--info-wash-border);
+      flex: 0 0 20px;
+      width: 20px;
+      height: 20px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 4px;
+      color: var(--text-muted);
     }
-    .icon svg {
-      width: 18px;
-      height: 18px;
-      fill: none;
-      stroke: currentColor;
-      stroke-width: 2;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-    }
-    .warning .icon {
-      color: var(--warning);
-      background: var(--warning-wash);
-      box-shadow: inset 0 0 0 1px var(--warning-wash-border);
-    }
-    .error .icon {
-      color: var(--destructive);
-      background: oklch(from var(--destructive) l c h / 0.08);
-      box-shadow: inset 0 0 0 1px oklch(from var(--destructive) l c h / 0.24);
-    }
-    .question .icon {
-      color: var(--accent-solid);
-      background: oklch(from var(--accent) l c h / 0.08);
-      box-shadow: inset 0 0 0 1px oklch(from var(--accent) l c h / 0.24);
-    }
-    .heading-copy { min-width: 0; padding-top: 1px; }
+    .warning .icon { color: var(--text-warning); }
+    .error .icon { color: var(--text-danger); }
+    .question .icon { color: var(--text-accent); }
+    .heading-copy { min-width: 0; }
     h1 {
       margin: 0;
-      font-size: var(--text-heading-2-size);
-      line-height: var(--text-heading-2-leading);
-      font-weight: var(--text-heading-2-weight);
+      font-size: 22px;
+      line-height: 28px;
+      font-weight: 580;
+      color: var(--text-primary);
     }
     .message {
       margin-top: 4px;
-      color: var(--foreground-secondary);
-      font-size: var(--text-body-size);
-      line-height: var(--text-body-leading);
+      color: var(--text-secondary);
+      font-size: 14px;
+      line-height: 20px;
       white-space: pre-wrap;
       user-select: text;
     }
+    /* The consequence, on a surface of its own — 'NoticeCard''s shape and its
+       three tone faces (rounded-xl, 1px border, 12px padding). Following it
+       also settles what NOT to tint: the tone colours the surface and the mark,
+       never the prose, so the text stays 'text-secondary' on every face and an
+       amber block does not arrive with amber text inside it. */
     .detail {
-      margin-top: var(--space-5);
-      padding: var(--space-3);
-      border-radius: var(--radius-element);
-      background: var(--foreground-3);
-      color: var(--foreground-secondary);
-      font-size: var(--text-body-size);
-      line-height: var(--text-body-leading);
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid var(--hairline);
+      background: var(--surface-2);
+      color: var(--text-secondary);
+      font-size: 14px;
+      line-height: 20px;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
       user-select: text;
+    }
+    .warning .detail {
+      border-color: var(--border-warning);
+      background: var(--bg-warning);
+    }
+    .error .detail {
+      border-color: var(--border-danger);
+      background: var(--bg-danger);
     }
     .actions {
       flex: 0 0 auto;
       display: flex;
       flex-wrap: wrap;
       justify-content: flex-end;
-      gap: var(--space-2);
-      padding: var(--space-3) var(--space-4) var(--space-4);
+      gap: 12px;
+      padding: 0 24px 24px;
     }
+    /* 'ui-control-squish', transcribed: the press scales a backing layer, never
+       the label. */
     .decision {
-      height: var(--space-8);
-      padding: var(--space-1-5) var(--space-3);
+      position: relative;
+      isolation: isolate;
+      height: 32px;
+      padding: 0 12px;
       border: 0;
-      border-radius: var(--radius-element);
-      color: var(--foreground);
-      font-size: var(--text-label-size);
-      line-height: var(--text-label-leading);
-      font-weight: var(--text-label-weight);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-primary);
+      font-size: 14px;
+      line-height: 20px;
+      font-weight: 400;
       white-space: nowrap;
       cursor: pointer;
-      transition: opacity var(--duration-quick) var(--ease-out-strong), transform var(--duration-quick) var(--ease-out-strong);
       -webkit-app-region: no-drag;
     }
-    .decision:hover { background-image: linear-gradient(var(--color-overlay-hover), var(--color-overlay-hover)); }
-    .decision:active { transform: scale(.98); }
-    .decision.primary { background-color: var(--accent-solid); color: var(--color-on-accent); }
-    .decision.secondary { background-color: var(--color-neutral); }
-    .decision.ghost { background-color: transparent; }
+    .decision::before {
+      content: "";
+      position: absolute;
+      inset: var(--control-inset, 0px);
+      z-index: -1;
+      border-radius: inherit;
+      background: var(--control-fill, var(--fill-secondary));
+      box-shadow: var(--control-shadow, var(--field-shadow));
+      transform-origin: 50%;
+      transition:
+        transform 450ms var(--control-spring),
+        background-color 60ms ease-out,
+        box-shadow 60ms ease-out;
+    }
+    .decision:hover::before {
+      background: var(--control-fill-hover, var(--fill-secondary-hover));
+      box-shadow: var(--control-shadow-hover, var(--field-shadow-hover));
+    }
+    .decision:active::before {
+      transform: scale(.975);
+      transition: transform 60ms ease-out, background-color 60ms ease-out;
+    }
+    /* The default action is solid near-black, the system's primary — not the
+       brand colour, which names Maka rather than the action ('ui/button.tsx'). */
+    .decision.primary {
+      --control-fill: var(--fill-primary);
+      --control-fill-hover: var(--fill-primary-hover);
+      --control-inset: .5px;
+      --control-shadow: none;
+      --control-shadow-hover: none;
+      color: var(--on-primary);
+      font-weight: 500;
+    }
+    /* Spelled out rather than left to the fallbacks above: the classifier emits
+       this class, so a reader looking for it has to find it. */
+    .decision.secondary {
+      --control-fill: var(--fill-secondary);
+      --control-fill-hover: var(--fill-secondary-hover);
+    }
+    .decision.ghost {
+      --control-fill: transparent;
+      --control-fill-hover: var(--sidebar-menu-hover);
+      --control-shadow: none;
+      --control-shadow-hover: none;
+    }
     @keyframes dialog-enter {
       from { opacity: 0; transform: translateY(10px) scale(.97); }
       to { opacity: 1; transform: translateY(0) scale(1); }
     }
     @media (prefers-reduced-motion: reduce) {
       .card { animation: none; }
-      .decision { transition: none; }
+      .decision::before { transition: none; }
     }
   </style>
 </head>
 <body>
   <main class="card ${input.type}" role="alertdialog" aria-labelledby="dialog-title" aria-describedby="dialog-message">
     <div class="drag-region">
-      <svg class="wordmark" viewBox="${MAKA_WORDMARK_VIEW_BOX}" aria-hidden="true"><path d="${MAKA_WORDMARK_PATH}" fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" /></svg>
       ${closeButton}
     </div>
     <section class="content">
       <div class="heading-row">
-        <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24">${statusIcon}</svg></div>
+        <span class="icon glyph" aria-hidden="true">${statusGlyph}</span>
         <div class="heading-copy">
           <h1 id="dialog-title">${escapeHtml(input.title)}</h1>
           <div class="message" id="dialog-message">${escapeHtml(input.message)}</div>

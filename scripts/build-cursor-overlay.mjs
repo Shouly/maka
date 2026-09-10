@@ -72,30 +72,65 @@ export async function buildCursorOverlay({ logLevel = 'info' } = {}) {
 
 /**
  * Browser-backed recovery dialogs run outside the React renderer, but they
- * still consume the same generated Astryx scale and Maka palette authority.
- * Keep only maka-tokens.css's token/palette prefix: its later base/component
- * recipes target the main document and must not leak into a standalone card.
+ * answer to the same design authority it does: `styles/globals.css` (DESIGN.md).
+ * Its `:root`, `.dark` and prefers-dark blocks are plain custom properties and
+ * are taken verbatim, so the card cannot drift from the palette the app is
+ * showing behind it.
+ *
+ * The slice stops at `@theme inline`. Everything from there on is Tailwind
+ * source — it means nothing without the framework and must not reach a
+ * standalone card. `--font-sans` is re-emitted out of it anyway, for its TAIL:
+ * the card cannot load the app's own faces (the `@font-face` blocks sit above
+ * the slice, their URLs are relative and the card is a `data:` document, and
+ * its CSP grants no `font-src`), so it always lands on the next entry — but
+ * sharing the stack keeps the system, CJK and emoji fallbacks in the app's
+ * order, which is what a Chinese dialog actually renders in.
  */
 async function buildBrowserDialogDesignTokens() {
-  const renderer = join(desktop, 'src', 'renderer');
-  const [astryxTheme, makaTokens] = await Promise.all([
-    readFile(join(renderer, 'astryx-theme', 'maka.css'), 'utf8'),
-    readFile(join(renderer, 'maka-tokens.css'), 'utf8'),
-  ]);
-  const astryxComponentsMarker = '\n  .astryx-heading.level-1 {';
-  const astryxTokenEnd = astryxTheme.indexOf(astryxComponentsMarker);
-  const baseStylesMarker =
-    '/* =============================================================================\n   BASE STYLES';
-  const tokenEnd = makaTokens.indexOf(baseStylesMarker);
-  if (astryxTokenEnd < 0 || tokenEnd < 0) {
-    throw new Error('Unable to locate the dialog design-token boundaries');
+  const globals = await readFile(join(desktop, 'src', 'renderer', 'styles', 'globals.css'), 'utf8');
+  const tokensStart = globals.indexOf('\n:root {');
+  const themeStart = globals.indexOf('\n@theme inline {');
+  const fontSans = /^\s*--font-sans:.*$/m.exec(globals);
+  if (tokensStart < 0 || themeStart < 0 || themeStart <= tokensStart || !fontSans) {
+    throw new Error('Unable to locate the dialog design-token boundaries in globals.css');
   }
-  const astryxTokens = `${astryxTheme.slice(0, astryxTokenEnd)}\n}\n}\n`;
   await writeFile(
     join(outDir, 'browser-dialog-design-tokens.css'),
-    `${astryxTokens}\n${makaTokens.slice(0, tokenEnd)}`,
+    [
+      globals.slice(tokensStart + 1, themeStart),
+      `:root {\n  ${fontSans[0].trim()}\n}`,
+      await browserDialogIconFace(),
+    ].join('\n'),
     'utf8',
   );
+}
+
+/**
+ * The icon font, inlined.
+ *
+ * The card is a `data:` document with no `font-src` beyond `data:`, so it can
+ * reach nothing on disk — and these marks have to be the app's own. Redrawing
+ * them as SVG paths was the alternative, and it is the wrong one: a hand-traced
+ * glyph is a second icon set that nobody regenerates when the real one moves.
+ *
+ * The whole variable face rides along (~92 KB, ~125 KB once base64'd) because
+ * subsetting it would need a font toolchain this repo does not carry. It is
+ * read once per dialog process and these windows are rare.
+ */
+async function browserDialogIconFace() {
+  const woff2 = await readFile(
+    join(desktop, 'src', 'renderer', 'assets', 'fonts', 'anthropic', 'anthropicons-variable.woff2'),
+  );
+  return [
+    '@font-face {',
+    "  font-family: 'Anthropicons-Variable';",
+    `  src: url('data:font/woff2;base64,${woff2.toString('base64')}') format('woff2');`,
+    '  font-weight: 400 700;',
+    '  font-style: normal;',
+    '  font-display: block;',
+    '}',
+    '',
+  ].join('\n');
 }
 
 /**

@@ -172,9 +172,14 @@ export const TerminalResult = memo(function TerminalResult(props: {
           </p>
         ) : (
           streams.map((stream) => {
-            const { body, capped } = capLines(stream.text);
+            // The tail, not the head: a command is watched at the bottom, and
+            // what is dropped is what already scrolled past.
+            const { body, capped } = capLines(stream.text, 'tail');
             return (
               <div key={stream.label} className="flex min-w-0 flex-col gap-1">
+                {capped > 0 && (
+                  <p className={toolResultBlockLabelClass}>{toolCopy.hiddenLines(capped)}</p>
+                )}
                 <CodeRenderer
                   content={body}
                   language="bash"
@@ -182,9 +187,6 @@ export const TerminalResult = memo(function TerminalResult(props: {
                   fontSize="12px"
                   className={stream.tone === 'error' ? 'text-danger' : undefined}
                 />
-                {capped > 0 && (
-                  <p className={toolResultBlockLabelClass}>{toolCopy.hiddenLines(capped)}</p>
-                )}
               </div>
             );
           })

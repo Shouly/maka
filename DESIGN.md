@@ -25,8 +25,10 @@ spacing helpers and motion. Reuse the primitives in `apps/desktop/src/renderer/c
 The previous Astryx palette and typography contracts do not apply to this renderer.
 
 Use semantic colours (`text-text-primary`, `bg-surface-1`, `border-hairline`); colour literals
-belong in the token file, not in feature components. Main's native browser dialogs and cursor
-overlay retain their separate token assets until those integrations are migrated.
+belong in the token file, not in feature components. Main's browser message box is served the
+same authority: `scripts/build-cursor-overlay.mjs` slices `globals.css`'s custom-property blocks
+into `dist/overlay/browser-dialog-design-tokens.css`, so that card moves with the palette. The
+cursor and permission overlays still carry colours of their own.
 
 Desktop geometry and scope decisions are in the [rewrite plan](docs/enterprise/frontend-rewrite-plan.md).
 The window titlebar is 48px in the implemented shell; preserve the single drag strip, OS control
