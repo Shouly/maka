@@ -57,6 +57,7 @@
     "src/renderer/components/layout/AppShell.tsx",
     "src/renderer/components/layout/MainHeader.tsx",
     "src/renderer/components/layout/SessionIdentity.tsx",
+    "src/renderer/components/layout/SessionProjectPopover.tsx",
     "src/renderer/components/layout/Sidebar.tsx",
     "src/renderer/components/layout/SidebarControls.tsx",
     "src/renderer/components/layout/WindowTitlebar.tsx",
@@ -64,6 +65,7 @@
     "src/renderer/components/layout/sidebar-parts/ProjectRow.tsx",
     "src/renderer/components/layout/sidebar-parts/SessionActionMenuItems.tsx",
     "src/renderer/components/layout/sidebar-parts/SessionRow.tsx",
+    "src/renderer/components/layout/sidebar-parts/SidebarAddProject.tsx",
     "src/renderer/components/layout/sidebar-parts/SidebarGroup.tsx",
     "src/renderer/components/layout/sidebar-parts/SidebarNavButton.tsx",
     "src/renderer/components/layout/sidebar-parts/SidebarNewButton.tsx",
@@ -207,6 +209,7 @@
     "src/renderer/hooks/use-settings.ts",
     "src/renderer/hooks/use-sidebar-layout.ts",
     "src/renderer/hooks/use-turn-presentation.ts",
+    "src/renderer/hooks/use-welcome-message.ts",
     "src/renderer/hooks/use-workbar.ts",
     "src/renderer/hooks/use-workspace.ts",
     "src/renderer/lib/avatar-warm-palette.ts",
@@ -301,13 +304,16 @@
     "src/renderer/lib/ported/workspace-readiness-recovery.ts",
     "src/renderer/lib/theme.ts",
     "src/renderer/lib/transient-message-placement.ts",
+    "src/renderer/lib/welcome-greeting.ts",
     "src/renderer/locales/agent-graph-copy.ts",
     "src/renderer/locales/artifact-copy.ts",
     "src/renderer/locales/browser-copy.ts",
     "src/renderer/locales/capability-reason-copy.ts",
     "src/renderer/locales/composer-copy.ts",
     "src/renderer/locales/conversation-copy.ts",
+    "src/renderer/locales/create-project-copy.ts",
     "src/renderer/locales/external-session-import-copy.ts",
+    "src/renderer/locales/greeting-copy.ts",
     "src/renderer/locales/mcp-copy.ts",
     "src/renderer/locales/modules-copy.ts",
     "src/renderer/locales/onboarding-copy.ts",
@@ -315,6 +321,7 @@
     "src/renderer/locales/peer-mesh-copy.ts",
     "src/renderer/locales/permission-center-copy.ts",
     "src/renderer/locales/plan-mode-copy.ts",
+    "src/renderer/locales/project-details-copy.ts",
     "src/renderer/locales/runtime-debug-copy.ts",
     "src/renderer/locales/session-local-copy.ts",
     "src/renderer/locales/settings-bot-copy.ts",
@@ -1283,6 +1290,34 @@
       "hookCalls": {
         "useRef": 3,
         "useState": 2,
+        "useStore": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../../locales/sidebar-copy.js": 1,
+        "../../store/sessions-store.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/dropdown-menu.js": 1,
+        "./MainHeader.js": 1,
+        "./SessionProjectPopover.js": 1,
+        "./sidebar-parts/InlineRename.js": 1,
+        "./sidebar-parts/SessionActionMenuItems.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/layout/SessionProjectPopover.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useAsync": 1,
+        "useState": 2,
+        "useStore": 3,
         "useUiLocale": 1
       },
       "lifecycleMethods": {},
@@ -1290,15 +1325,21 @@
       "actionFactories": [],
       "dependencyPaths": {
         "../../bridge/app.js": 1,
+        "../../hooks/use-async.js": 1,
         "../../lib/cn.js": 1,
-        "../../locales/sidebar-copy.js": 1,
+        "../../lib/ported/project-path-display.js": 1,
+        "../../lib/ported/session-nav-filter.js": 1,
+        "../../locales/project-details-copy.js": 1,
+        "../../store/index.js": 1,
+        "../../store/toast-store.js": 1,
         "../icons/Anthropicon.js": 1,
-        "../ui/dropdown-menu.js": 1,
+        "../ui/menu-variants.js": 1,
+        "../ui/popover.js": 1,
         "./MainHeader.js": 1,
-        "./sidebar-parts/InlineRename.js": 1,
-        "./sidebar-parts/SessionActionMenuItems.js": 1,
+        "@maka/core/session-revisions": 1,
         "@maka/ui": 1,
-        "react": 1
+        "react": 1,
+        "zustand": 1
       }
     },
     "src/renderer/components/layout/Sidebar.tsx": {
@@ -1332,6 +1373,7 @@
         "../icons/Anthropicon.js": 1,
         "../ui/sidebar-tooltip.js": 2,
         "./sidebar-parts/index.js": 1,
+        "./sidebar-parts/SidebarAddProject.js": 1,
         "./sidebar-parts/SidebarGroup.js": 1,
         "@maka/ui": 1,
         "motion/react": 1,
@@ -1397,7 +1439,8 @@
       },
       "hookCalls": {
         "useRef": 3,
-        "useState": 3
+        "useState": 3,
+        "useUiLocale": 1
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
@@ -1405,12 +1448,14 @@
       "dependencyPaths": {
         "../../../lib/cn.js": 1,
         "../../../lib/ported/project-path-display.js": 1,
+        "../../../locales/create-project-copy.js": 1,
         "../../icons/Anthropicon.js": 1,
         "../../ui/dropdown-menu.js": 1,
         "../../ui/tooltip.js": 1,
         "./InlineRename.js": 1,
         "./sidebar-row-motion.js": 1,
         "./SidebarRowActionTrigger.js": 1,
+        "@maka/ui": 1,
         "motion/react": 1,
         "react": 1
       }
@@ -1451,6 +1496,34 @@
         "./SidebarRowActionTrigger.js": 1,
         "motion/react": 1,
         "react": 1
+      }
+    },
+    "src/renderer/components/layout/sidebar-parts/SidebarAddProject.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useState": 7,
+        "useStore": 1,
+        "useUiLocale": 2
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../bridge/projects.js": 1,
+        "../../../lib/cn.js": 1,
+        "../../../locales/create-project-copy.js": 1,
+        "../../../store/index.js": 1,
+        "../../../store/resource-store.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/dialog.js": 1,
+        "../../ui/input.js": 1,
+        "../../ui/sidebar-tooltip.js": 1,
+        "./SidebarGroup.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
       }
     },
     "src/renderer/components/layout/sidebar-parts/SidebarGroup.tsx": {
@@ -3835,17 +3908,22 @@
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
-        "useUiLocale": 1
+        "useStore": 1,
+        "useUiLocale": 1,
+        "useWelcomeMessage": 1
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../../hooks/use-welcome-message.js": 1,
         "../../locales/welcome-copy.js": 1,
+        "../../store/settings-store.js": 1,
         "../composer/ChatInput.js": 1,
         "./OnboardingHero.js": 1,
         "./ReadinessNotice.js": 1,
-        "@maka/ui": 1
+        "@maka/ui": 1,
+        "zustand": 1
       }
     },
     "src/renderer/components/welcome/WorkspacePicker.tsx": {
@@ -4427,6 +4505,28 @@
         "../lib/ported/session-status-presentation.js": 1,
         "../lib/ported/turn-footer-actions.js": 1,
         "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/hooks/use-welcome-message.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "clearTimeout": 1,
+        "document.addEventListener": 1,
+        "document.removeEventListener": 1,
+        "document.visibilityState": 1,
+        "setTimeout": 1
+      },
+      "hookCalls": {
+        "useEffect": 2,
+        "useState": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../lib/ported/browser-storage.js": 1,
+        "../lib/welcome-greeting.js": 1,
         "react": 1
       }
     },
@@ -5451,6 +5551,17 @@
       "actionFactories": [],
       "dependencyPaths": {}
     },
+    "src/renderer/lib/welcome-greeting.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../locales/greeting-copy.js": 1
+      }
+    },
     "src/renderer/locales/artifact-copy.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -5498,6 +5609,24 @@
       "actionFactories": [],
       "dependencyPaths": {}
     },
+    "src/renderer/locales/create-project-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/greeting-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
     "src/renderer/locales/mcp-copy.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -5535,6 +5664,15 @@
       "dependencyPaths": {}
     },
     "src/renderer/locales/permission-center-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/project-details-copy.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {},

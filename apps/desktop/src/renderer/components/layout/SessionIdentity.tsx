@@ -31,7 +31,9 @@ import {
   mainHeaderIconControlClass,
 } from './MainHeader.js';
 import { getSidebarCopy } from '../../locales/sidebar-copy.js';
-import { openPath } from '../../bridge/app.js';
+import { useStore } from 'zustand';
+import { sessionsStore } from '../../store/sessions-store.js';
+import { SessionProjectPopover } from './SessionProjectPopover.js';
 import type { SessionListRow } from '../../store/session-list-model.js';
 
 export function SessionIdentity(props: {
@@ -47,6 +49,9 @@ export function SessionIdentity(props: {
   const menuRef = useRef<HTMLButtonElement>(null);
   const renameFromMenu = useRef(false);
   const row = props.row;
+  const session = useStore(sessionsStore, (state) =>
+    state.sessions.find((entry) => entry.id === row?.id),
+  );
   const finishRename = (restoreFocus = false) => {
     setRenaming(false);
     if (restoreFocus) {
@@ -60,13 +65,13 @@ export function SessionIdentity(props: {
       data-maka-contract="titlebar-identity"
       className="flex min-w-0 items-center text-sm leading-5 text-sidebar-text-primary"
     >
-      {row?.projectName && (
-        <MainHeaderBreadcrumb
-          onClick={() => void openPath('project', row.id)}
-          linkClassName="maka-no-drag"
-        >
-          <span className="min-w-0 truncate">{row.projectName}</span>
-        </MainHeaderBreadcrumb>
+      {row?.projectName && session && (
+        <div className="-ml-1 inline-flex min-w-0 shrink-[4] items-center">
+          <SessionProjectPopover key={session.id} session={session} name={row.projectName} />
+          <span aria-hidden="true" className="px-0.5 text-sidebar-text-muted opacity-50">
+            /
+          </span>
+        </div>
       )}
       {row?.branchOf && (
         <MainHeaderBreadcrumb

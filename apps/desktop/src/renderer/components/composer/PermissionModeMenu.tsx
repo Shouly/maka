@@ -21,8 +21,8 @@
 // meta-row chip under the surface — the mode's label as text, opening a
 // radio menu of the two selectable modes. Read-only (`explore`) is a real
 // boundary a Session can be running under, so it is displayed with its own
-// words, but never offered — the picker lists Auto and full access. The
-// mode's hint travels on the trigger tooltip so the open panel stays short.
+// words, but never offered — the picker lists Auto and full access.
+// Each mode explains its boundary in a tooltip on its menu row.
 
 import type { PermissionMode } from '@maka/core/permission';
 import type { ChatDefaultPermissionMode } from '@maka/core/settings';
@@ -81,19 +81,31 @@ export function PermissionModeMenu(props: {
         </TooltipTrigger>
         <TooltipContent side={props.side}>{`${meta.label} — ${meta.hint}`}</TooltipContent>
       </Tooltip>
-      <DropdownMenuContent align="start" side={props.side} sideOffset={4} alignOffset={-8}>
+      <DropdownMenuContent align="start" side={props.side} sideOffset={6}>
         <DropdownMenuRadioGroup
           aria-label={label}
           value={selected}
           onValueChange={(value) => props.onSelect(value as ChatDefaultPermissionMode)}
         >
           {CHAT_DEFAULT_PERMISSION_MODES.map((mode) => (
-            <DropdownMenuRadioItem key={mode} value={mode} aria-description={copy.mode[mode].hint}>
-              <DropdownMenuItemIcon>
-                <Anthropicon name={MODE_ICON[mode]} size={20} />
-              </DropdownMenuItemIcon>
-              <span className="truncate">{copy.mode[mode].label}</span>
-            </DropdownMenuRadioItem>
+            <Tooltip key={mode}>
+              <TooltipTrigger asChild>
+                <DropdownMenuRadioItem
+                  value={mode}
+                  reserveIndicator
+                  className="w-full"
+                  aria-description={copy.mode[mode].hint}
+                >
+                  <DropdownMenuItemIcon>
+                    <Anthropicon name={MODE_ICON[mode]} size={20} />
+                  </DropdownMenuItemIcon>
+                  <span className="truncate">{copy.mode[mode].label}</span>
+                </DropdownMenuRadioItem>
+              </TooltipTrigger>
+              <TooltipContent side="right" align="center" variant="description">
+                {copy.mode[mode].hint}
+              </TooltipContent>
+            </Tooltip>
           ))}
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>

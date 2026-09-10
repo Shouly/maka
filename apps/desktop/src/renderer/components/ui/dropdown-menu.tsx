@@ -204,11 +204,18 @@ const DropdownMenuRadioItem = React.forwardRef<
   React.ComponentRef<typeof DropdownMenuPrimitive.RadioItem>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.RadioItem> & {
     indicator?: React.ReactNode;
+    reserveIndicator?: boolean;
   }
->(({ className, children, indicator, ...props }, ref) => (
+>(({ className, children, indicator, reserveIndicator = false, ...props }, ref) => (
   <DropdownMenuPrimitive.RadioItem ref={ref} className={cn(menuItemClass, className)} {...props}>
     <div className="flex gap-2 truncate items-center flex-1">{children}</div>
-    <DropdownMenuPrimitive.ItemIndicator className="ml-auto flex size-5 items-center justify-center text-menu-accent">
+    <DropdownMenuPrimitive.ItemIndicator
+      forceMount={reserveIndicator || undefined}
+      className={cn(
+        'ml-auto flex size-5 shrink-0 items-center justify-center text-menu-accent',
+        reserveIndicator && 'data-[state=unchecked]:invisible',
+      )}
+    >
       {indicator ?? <Anthropicon name="check" size={20} weight={566.5} />}
     </DropdownMenuPrimitive.ItemIndicator>
   </DropdownMenuPrimitive.RadioItem>

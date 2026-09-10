@@ -125,7 +125,7 @@ export function WorkspacePicker(props: {
         align="start"
         side={props.side ?? 'top'}
         sideOffset={6}
-        className="flex max-h-[min(60vh,420px)] w-[400px] max-w-[calc(100vw-2rem)] flex-col rounded-xl p-1"
+        className="flex max-h-[min(60vh,420px)] w-80 max-w-[calc(100vw-2rem)] flex-col rounded-xl p-1"
       >
         <div className="flex shrink-0 items-center gap-2 px-2 py-1.5 text-menu-text-muted">
           <Anthropicon name="search" />
@@ -181,17 +181,17 @@ export function WorkspacePicker(props: {
                         });
                         setOpen(false);
                       }}
-                      className={menuActionItemClass}
+                      className={cn(menuActionItemClass, 'h-auto min-h-11 py-1')}
                     >
                       <span className="flex size-5 shrink-0 items-center justify-center">
-                        <Anthropicon name="projects" size={MENU_ICON} />
+                        <Anthropicon name="folder" size={MENU_ICON} />
                       </span>
                       <span className="flex min-w-0 flex-1 flex-col text-left">
                         <span className="truncate">
                           {option.projectName ?? copy.hostUnavailable}
                         </span>
                         {(path || option.unavailableReason || !option.available) && (
-                          <span className="truncate text-xs text-menu-text-muted">
+                          <span className="truncate text-xs leading-4 text-menu-text-muted">
                             {option.unavailableReason ??
                               (!option.available ? copy.projectUnavailable : path?.text)}
                           </span>

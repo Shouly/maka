@@ -113,6 +113,28 @@ test('an explicit new task survives a renderer reload without reopening history'
   await ensureSidebarExpanded(page);
   await page.getByRole('button', { name: '新建任务', exact: true }).click();
   await expect(page.locator('[data-maka-transcript-turn]')).toHaveCount(0);
+  await page.getByRole('button', { name: '权限模式：自动', exact: true }).click();
+  const auto = page.getByRole('menuitemradio', { name: '自动', exact: true });
+  const full = page.getByRole('menuitemradio', { name: '完全权限', exact: true });
+  await expect(auto.locator('[data-anthropicon="check"]')).toBeVisible();
+  await expect(full.locator('[data-anthropicon="check"]')).toBeHidden();
+  const indicatorOffset = (item: typeof auto) => item.evaluate((element) => {
+    const check = element.querySelector('[data-anthropicon="check"]')!;
+    return element.getBoundingClientRect().right - check.getBoundingClientRect().right;
+  });
+  expect(Math.abs(await indicatorOffset(auto) - await indicatorOffset(full))).toBeLessThan(1);
+  await page.bringToFront();
+  await full.hover();
+  await expect(page.getByRole('tooltip', { name: '允许直接读写文件和访问网络，不再为这些操作逐项请求授权。', exact: true })).toBeVisible();
+  await auto.hover();
+  await expect(page.getByRole('tooltip', { name: '自动完成工作目录内的操作；需要额外的文件或网络访问权限时，会先询问你。', exact: true })).toBeVisible();
+  await expect(page.getByRole('tooltip', { name: '允许直接读写文件和访问网络，不再为这些操作逐项请求授权。', exact: true })).toHaveCount(0);
+  await full.click();
+  await page.getByRole('button', { name: '切换到完全权限', exact: true }).click();
+  await page.getByRole('button', { name: '权限模式：完全权限', exact: true }).click();
+  await expect(full.locator('[data-anthropicon="check"]')).toBeVisible();
+  await expect(auto.locator('[data-anthropicon="check"]')).toBeHidden();
+  await auto.click();
   await composer.fill('draft survives renderer replacement');
 
   await page.reload();
@@ -158,7 +180,7 @@ test('project selection and deselection survive restart and create an ungrouped 
   });
   await emptyPicker().click();
   await expect(option()).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '添加项目…', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '添加项目', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(emptyPicker()).toBeVisible();
   await page.locator(COMPOSER_INPUT).fill('task without selected project');

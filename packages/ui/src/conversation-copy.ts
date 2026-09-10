@@ -513,8 +513,8 @@ const CONVERSATION_COPY = {
     permissions: {
       mode: {
         explore: { label: '只读', hint: '只读搜索，不写文件、不上网；需要时先问你。' },
-        ask: { label: '自动', hint: '保护层内自动执行，越权先问你。' },
-        bypass: { label: '完全权限', hint: '直接访问文件和网络，仅限可信任务。' },
+        ask: { label: '自动', hint: '自动完成工作目录内的操作；需要额外的文件或网络访问权限时，会先询问你。' },
+        bypass: { label: '完全权限', hint: '允许直接读写文件和访问网络，不再为这些操作逐项请求授权。' },
       },
       modeAriaLabel: (label) => `权限模式：${label}`,
     },
@@ -672,8 +672,8 @@ const CONVERSATION_COPY = {
     permissions: {
       mode: {
         explore: { label: '只讀', hint: '只讀搜尋，不寫檔案、不上網；需要時先問你。' },
-        ask: { label: '自動', hint: '保護層內自動執行，越權先問你。' },
-        bypass: { label: '完全權限', hint: '直接存取檔案和網路，僅限可信任務。' },
+        ask: { label: '自動', hint: '自動完成工作目錄內的操作；需要額外的檔案或網路存取權限時，會先詢問你。' },
+        bypass: { label: '完全權限', hint: '允許直接讀寫檔案和存取網路，不再為這些操作逐項請求授權。' },
       },
       modeAriaLabel: (label) => `權限模式：${label}`,
     },
@@ -857,8 +857,8 @@ const CONVERSATION_COPY = {
     permissions: {
       mode: {
         explore: { label: 'Read only', hint: 'Read and search only; asks before write or network.' },
-        ask: { label: 'Auto', hint: "Runs inside Maka's protection; asks before going further." },
-        bypass: { label: 'Full access', hint: 'Direct file and network access. Trust-only tasks.' },
+        ask: { label: 'Auto', hint: "Works automatically in your working directory. Asks before using additional file or network permissions." },
+        bypass: { label: 'Full access', hint: 'Can read and edit files and access the network without asking for permission for each operation.' },
       },
       modeAriaLabel: (label) => `Permission mode: ${label}`,
     },

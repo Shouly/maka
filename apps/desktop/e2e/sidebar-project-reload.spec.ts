@@ -79,10 +79,10 @@ test('project tasks stay out of Recents before and after reload', async ({
   await page.locator(COMPOSER_INPUT).hover();
   await expect(projectIcon).toHaveCSS('opacity', '1');
   await expect(caret).toHaveCSS('opacity', '0');
-  // The full-width button includes its trailing blank space.
+  // The row remains clickable in the blank space before its two action buttons.
   const bounds = await toggle.boundingBox();
   if (!bounds) throw new Error('Missing project row');
-  await toggle.click({ position: { x: bounds.width - 40, y: bounds.height / 2 } });
+  await toggle.click({ position: { x: bounds.width - 64, y: bounds.height / 2 } });
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   await projectRow.getByRole('button', { name: '项目「new-task-project」的操作', exact: true }).click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -146,4 +146,30 @@ test('project tasks stay out of Recents before and after reload', async ({
   await expect(projectRows.first()).toContainText('newer project task');
   await expect(pinned).toHaveCount(0);
   await expect(olderRow).toBeVisible();
+  const projectTrigger = page.locator('[data-maka-contract="titlebar-identity"] [data-maka-contract="session-project-trigger"]');
+  await expect(page.locator('[data-maka-contract="session-project-trigger"]')).toHaveCount(1);
+  await expect(projectTrigger).toHaveText('new-task-project');
+  await expect(projectTrigger.locator('[data-anthropicon]')).toHaveCount(0);
+  await projectTrigger.click();
+  const projectCard = page.locator('[data-maka-contract="session-project-popover"]');
+  await expect(projectCard).toBeVisible();
+  await expect(projectCard).toHaveAttribute('data-side', 'bottom');
+  await expect(projectCard.getByText('2 个任务', { exact: true })).toBeVisible();
+  const directory = projectCard.getByRole('button', { name: '打开工作目录', exact: true });
+  await expect(directory).toBeEnabled();
+  const currentDirectory = await page.evaluate(async () => {
+    const rows = await window.maka.sessions.list();
+    const active = rows.find((row) => row.name === 'newer project task');
+    if (!active) throw Error('Missing active task');
+    return (await window.maka.app.sessionProjectInfo(active.id)).projectPath;
+  });
+  await expect(directory).toHaveAttribute('title', currentDirectory);
+  await page.keyboard.press('Escape');
+  await expect(projectCard).toHaveCount(0);
+  await expect(projectTrigger).toBeFocused();
+  await projectTrigger.click();
+  await projectCard.getByRole('button', { name: '编辑项目', exact: true }).click();
+  await expect(page.locator('[data-maka-contract="settings-surface"]')).toBeVisible();
+  await expect(page.locator('[data-maka-contract="settings-surface"]').getByText('new-task-project', { exact: true })).toBeVisible();
+
 });

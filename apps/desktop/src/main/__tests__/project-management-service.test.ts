@@ -276,6 +276,8 @@ test('does not expose Client directory actions for a remote Host', async () => {
   });
 
   await assert.rejects(() => service.add(), /registered on the Host/);
+  await assert.rejects(() => service.prepareDirectory(), /registered on the Host/);
+  await assert.rejects(() => service.createPrepared('token', 'name'), /registered on the Host/);
   await assert.rejects(() => service.relink('remote'), /registered on the Host/);
   await assert.rejects(() => service.select(null), /requires a Project/);
   assert.equal(await service.pathFor('remote'), null);
@@ -319,3 +321,40 @@ function managementCatalog(catalog: ProjectCatalog): ProjectManagementCatalog {
 async function unexpected(): Promise<never> {
   throw new Error('Unexpected call');
 }
+
+
+test('preparing a directory does not register a project or change the current selection', async () => {
+  const base = await mkdtemp(join(tmpdir(), 'maka-project-prepare-'));
+  const folder = join(base, 'source');
+  await mkdir(folder);
+  const catalog = createProjectCatalog(join(base, 'storage'));
+  let selectionWrites = 0;
+  const service = createProjectManagementService({
+    capabilities: LOCAL_CAPABILITIES,
+    catalog: managementCatalog(catalog),
+    chooseDirectory: async () => folder,
+    selection: {
+      currentSelection: async () => ({ projectId: null, path: base }),
+      setSelection: () => { selectionWrites++; },
+    },
+  });
+  try {
+    const pending = await service.prepareDirectory();
+    assert.equal(pending.ok, true);
+    if (!pending.ok) assert.fail('Expected directory selection');
+    assert.equal((await service.getSnapshot()).projects.length, 0);
+    await assert.rejects(service.createPrepared('forged', 'Project'), /Choose/);
+    await assert.rejects(service.createPrepared(pending.selectionId, '  '), /Invalid/);
+    assert.equal((await service.getSnapshot()).projects.length, 0);
+    const created = await service.createPrepared(pending.selectionId, '  Chosen name  ');
+    assert.equal(created.name, 'Chosen name');
+    assert.equal(created.preferredPath, await realpath(folder));
+    assert.equal(selectionWrites, 0);
+    const duplicate = await service.prepareDirectory();
+    if (!duplicate.ok) assert.fail('Expected directory selection');
+    const reused = await service.createPrepared(duplicate.selectionId, 'Do not rename existing');
+    assert.equal(reused.id, created.id);
+    assert.equal(reused.name, 'Chosen name');
+    assert.equal((await service.getSnapshot()).projects.length, 1);
+  } finally { await rm(base, { recursive: true, force: true }); }
+});

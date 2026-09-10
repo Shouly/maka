@@ -128,6 +128,9 @@ export function registerAppIpc(
   handleReconnectableRead(targetIpc, 'projects:getSnapshot', () =>
     deps.projectManagement.getSnapshot(),
   );
+  targetIpc.handle('projects:prepareDirectory', () => deps.projectManagement.prepareDirectory());
+  targetIpc.handle('projects:createPrepared', (_event, selectionId: unknown, name: unknown) =>
+    deps.projectManagement.createPrepared(selectionId, name));
   targetIpc.handle('projects:add', (_event, options?: { select?: unknown }) =>
     deps.projectManagement.add({ select: options?.select !== false }));
   handleReconnectableRead(targetIpc, 'projects:directoryRoots', () =>

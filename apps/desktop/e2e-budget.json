@@ -84,6 +84,14 @@
     "zh-tw-locale.spec.ts": {
       "tests": 1,
       "electron": "the locale is a persisted Host setting and only takes effect through a renderer reload"
+    },
+    "sidebar-create-project.spec.ts": {
+      "tests": 1,
+      "electron": "native directory selection must not register until confirmation; quick task creation must reach the selected project on the real Host"
+    },
+    "welcome-greeting.spec.ts": {
+      "tests": 1,
+      "electron": "welcome lifecycle reacts to renderer visibility and clock changes while the bundled brand asset renders in Electron"
     }
   }
 }

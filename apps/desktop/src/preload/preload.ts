@@ -2676,6 +2676,12 @@ const makaBridge = {
         if (runtimeHostMetadataFor(scope)?.profileKind === 'local') handler();
       });
     },
+    prepareDirectory(host: DesktopRuntimeHostRef) {
+      return invokeSelectedRuntimeHost(host, 'projects:prepareDirectory');
+    },
+    createPrepared(selectionId: string, name: string, host: DesktopRuntimeHostRef) {
+      return invokeSelectedRuntimeHost(host, 'projects:createPrepared', selectionId, name);
+    },
     add(host?: DesktopRuntimeHostRef): Promise<
       { ok: true; project: ProjectRecord; path: string } | { ok: false; reason: 'cancelled' }
     > {

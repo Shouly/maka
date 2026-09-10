@@ -21,6 +21,8 @@
 // Projects absent from the catalog still expand, but offer no directory actions.
 
 import { useCallback, useRef, useState } from 'react';
+import { useUiLocale } from '@maka/ui';
+import { getCreateProjectCopy } from '../../../locales/create-project-copy.js';
 import { motion } from 'motion/react';
 import { Anthropicon } from '../../icons/Anthropicon.js';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../ui/tooltip.js';
@@ -59,6 +61,7 @@ export function ProjectRow(props: {
   actions: ProjectRowActions;
 }) {
   const { project, label, copy, actions } = props;
+  const createCopy = getCreateProjectCopy(useUiLocale());
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const rowRoot = useRef<HTMLDivElement>(null);
@@ -136,7 +139,8 @@ export function ProjectRow(props: {
                 onPointerEnter={checkClipped}
                 className={cn(
                   'min-w-0 flex-1 overflow-hidden whitespace-nowrap fade-clip-end text-sm leading-[21px]',
-                  menuOpen && 'fade-clip-wide',
+                  'group-hover:pr-12 group-focus-within:pr-12',
+                  menuOpen && 'fade-clip-wide pr-12',
                 )}
               >
                 {label}
@@ -160,6 +164,22 @@ export function ProjectRow(props: {
               : 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100',
           )}
         >
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label={createCopy.quickTask(label)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  actions.onNewTask(project);
+                }}
+                className="inline-flex size-6 cursor-pointer items-center justify-center rounded-md text-sidebar-text-secondary transition-colors hover:bg-sidebar-menu-hover hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none"
+              >
+                <Anthropicon name="chatAdd" size={16} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{createCopy.quickTask(label)}</TooltipContent>
+          </Tooltip>
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
               <SidebarRowActionTrigger label={copy.projectActions(label)} isOpen={menuOpen} />

@@ -1282,6 +1282,8 @@ export interface MakaBridge {
     subscribeChanges(handler: () => void, sessionId?: string, host?: DesktopRuntimeHostRef): () => void;
     getLocalSnapshot(): Promise<DesktopProjectSnapshot>;
     subscribeLocalChanges(handler: () => void): () => void;
+    prepareDirectory(host: DesktopRuntimeHostRef): Promise<{ ok: true; selectionId: string; path: string } | { ok: false; reason: 'cancelled' }>;
+    createPrepared(selectionId: string, name: string, host: DesktopRuntimeHostRef): Promise<ProjectRecord>;
     add(host?: DesktopRuntimeHostRef): Promise<
       { ok: true; project: ProjectRecord; path: string } | { ok: false; reason: 'cancelled' }
     >;

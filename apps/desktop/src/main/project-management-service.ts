@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import { randomUUID } from 'node:crypto';
 import { findProjectByIdentity, type ProjectRecord } from '@maka/core/project';
 import type {
   DesktopProjectCapabilities,
@@ -37,6 +38,8 @@ export interface ProjectManagementService {
   current(): Promise<CurrentProjectSelection>;
   getSnapshot(): Promise<DesktopProjectSnapshot>;
   add(options?: { select?: boolean }): Promise<SelectedDirectoryActionResult>;
+  prepareDirectory(): Promise<{ ok: true; selectionId: string; path: string } | { ok: false; reason: 'cancelled' }>;
+  createPrepared(selectionId: unknown, name: unknown): Promise<ProjectRecord>;
   select(
     projectId: unknown,
   ): Promise<{ project: ProjectRecord | null; path: string }>;
@@ -85,6 +88,8 @@ export function createProjectManagementService(deps: {
   };
   capabilities: DesktopProjectCapabilities;
 }): ProjectManagementService {
+  const prepared = new Map<string, { path: string; expires: number; projectId?: string }>();
+
   async function current(): Promise<CurrentProjectSelection> {
     const selection = await deps.selection.currentSelection();
     if (selection.projectId === null) {
@@ -115,6 +120,31 @@ export function createProjectManagementService(deps: {
         projects: await deps.catalog.list(),
         capabilities: deps.capabilities,
       };
+    },
+
+    async prepareDirectory() {
+      requireLocalDirectoryActions(deps);
+      const path = await deps.chooseDirectory();
+      if (!path) return { ok: false as const, reason: 'cancelled' as const };
+      for (const [id, value] of prepared) if (value.expires <= Date.now()) prepared.delete(id);
+      if (prepared.size >= 32) prepared.delete(prepared.keys().next().value!);
+      const selectionId = randomUUID();
+      prepared.set(selectionId, { path, expires: Date.now() + 30 * 60_000 });
+      return { ok: true as const, selectionId, path };
+    },
+    async createPrepared(selectionId, name) {
+      requireLocalDirectoryActions(deps);
+      const selected = typeof selectionId === 'string' ? prepared.get(selectionId) : undefined;
+      if (!selected || selected.expires <= Date.now()) throw new Error('Choose a project directory again');
+      const trimmed = typeof name === 'string' ? name.trim() : '';
+      if (!trimmed) throw new TypeError('Invalid project name.');
+      if (!selected.projectId) {
+        const existing = await deps.catalog.list();
+        const project = requireSelectableProject(await deps.catalog.register(selected.path));
+        if (existing.some((entry) => entry.id === project.id)) return project;
+        selected.projectId = project.id;
+      }
+      return deps.catalog.rename(selected.projectId, trimmed);
     },
 
     async add(options) {

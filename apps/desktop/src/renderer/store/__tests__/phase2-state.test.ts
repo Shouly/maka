@@ -24,6 +24,14 @@
 // markup) lives in `presentation.test.tsx`.
 
 import assert from 'node:assert/strict';
+import {
+  greetingPeriod,
+  nextGreetingRefresh,
+  parseWelcomeVisit,
+  recordWelcomeVisit,
+  welcomeGreeting,
+} from '../../lib/welcome-greeting.js';
+import { projectTaskCount } from '../../components/layout/SessionProjectPopover.js';
 import test from 'node:test';
 import type { SessionSummary } from '@maka/core/session';
 import { createPageHistory, type PageLocation } from '../page-history.js';
@@ -1004,4 +1012,117 @@ test('failed and cancelled project additions preserve the current selection', as
     reason: 'cancelled',
   });
   assert.deepEqual(store.getState().target, before);
+});
+
+test('project details count tasks using sidebar revision and Host boundaries', () => {
+  const target = {
+    ...session('root'),
+    projectId: 'project',
+    profileId: 'local',
+    runtimeHostId: 'host-1',
+  };
+  const rows = [
+    target,
+    {
+      ...target,
+      id: 'revised',
+      revisionRootSessionId: 'root',
+      revisionParentSessionId: 'root',
+      revisionIndex: 2,
+      revisionState: 'committed',
+    },
+    { ...target, id: 'pinned', isFlagged: true },
+    { ...target, id: 'archived', isArchived: true },
+    { ...target, id: 'other-host', runtimeHostId: 'host-2' },
+    { ...target, id: 'other-profile', profileId: 'other' },
+    { ...target, id: 'no-project', projectId: null },
+  ];
+  assert.equal(projectTaskCount(rows as never, target as never), 2);
+});
+
+test('welcome periods match RELX boundaries in local time', () => {
+  for (const [hour, period] of [
+    [0, 'night'],
+    [5, 'night'],
+    [6, 'morning'],
+    [11, 'morning'],
+    [12, 'afternoon'],
+    [17, 'afternoon'],
+    [18, 'evening'],
+    [21, 'evening'],
+    [22, 'night'],
+    [23, 'night'],
+  ] as const)
+    assert.equal(greetingPeriod(new Date(2026, 8, 9, hour).getTime()), period);
+});
+
+test('welcome text is stable within a period and throughout a night across weekend and year boundaries', () => {
+  for (const [year, month, day] of [
+    [2026, 8, 11],
+    [2026, 8, 13],
+    [2026, 11, 31],
+  ]) {
+    const before = new Date(year!, month!, day!, 23).getTime();
+    const after = new Date(year!, month!, day! + 1, 5).getTime();
+    for (const locale of ['en', 'zh-CN', 'zh-TW'] as const) {
+      assert.equal(welcomeGreeting(locale, before, 'Alex'), welcomeGreeting(locale, after, 'Alex'));
+      assert.equal(welcomeGreeting(locale, before), welcomeGreeting(locale, after));
+    }
+  }
+  const first = new Date(2026, 8, 9, 6).getTime();
+  assert.equal(welcomeGreeting('en', first), welcomeGreeting('en', first + 5 * 3_600_000));
+  assert.equal(welcomeGreeting('en', first), "What's first today?");
+});
+
+test('welcome names are optional and every locale has a usable anonymous pool', () => {
+  for (const locale of ['en', 'zh-CN', 'zh-TW'] as const) {
+    for (const hour of [1, 8, 14, 20]) {
+      const now = new Date(2026, 8, 12, hour).getTime();
+      const anonymous = welcomeGreeting(locale, now);
+      assert.ok(anonymous.length > 0);
+      assert.equal(welcomeGreeting(locale, now, '  '), anonymous);
+      assert.equal(welcomeGreeting(locale, now, 'there'), anonymous);
+      assert.doesNotMatch(anonymous, /\{name\}|undefined/);
+      assert.doesNotMatch(
+        welcomeGreeting(locale, now, undefined, now + 1_000),
+        /\{name\}|undefined/,
+      );
+    }
+  }
+});
+
+test('returning greeting starts after thirty minutes on the same day and lasts forty minutes', () => {
+  const now = new Date(2026, 8, 9, 14).getTime();
+  assert.equal(recordWelcomeVisit(now).returningUntil, 0);
+  assert.equal(
+    recordWelcomeVisit(now, { lastVisitAt: now - 30 * 60_000, returningUntil: 0 }).returningUntil,
+    0,
+  );
+  const returning = recordWelcomeVisit(now, { lastVisitAt: now - 31 * 60_000, returningUntil: 0 });
+  assert.equal(returning.returningUntil, now + 40 * 60_000);
+  assert.equal(
+    recordWelcomeVisit(now + 5 * 60_000, returning).returningUntil,
+    returning.returningUntil,
+  );
+  assert.equal(
+    recordWelcomeVisit(now, { lastVisitAt: now - 86_400_000, returningUntil: 0 }).returningUntil,
+    0,
+  );
+  assert.equal(welcomeGreeting('en', now, undefined, returning.returningUntil), 'Where were we?');
+  assert.equal(
+    welcomeGreeting('en', returning.returningUntil, undefined, returning.returningUntil),
+    "Let's get something done",
+  );
+});
+
+test('welcome storage tolerates corrupt records and schedules precise refresh boundaries', () => {
+  for (const raw of [null, '{', '[]', '{"lastVisitAt":"bad","returningUntil":0}'])
+    assert.equal(parseWelcomeVisit(raw), undefined);
+  assert.deepEqual(parseWelcomeVisit('{"lastVisitAt":100,"returningUntil":200}'), {
+    lastVisitAt: 100,
+    returningUntil: 200,
+  });
+  const now = new Date(2026, 8, 9, 11, 59, 59, 900).getTime();
+  assert.equal(nextGreetingRefresh(now, 0), 100);
+  assert.equal(nextGreetingRefresh(now, now + 20), 20);
 });

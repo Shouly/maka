@@ -17,28 +17,16 @@
  * under the License.
  */
 
-import { getConversationCopy, useUiLocale } from '@maka/ui';
+import { useUiLocale } from '@maka/ui';
+import { useStore } from 'zustand';
+import { settingsStore } from '../../store/settings-store.js';
+import { useWelcomeMessage } from '../../hooks/use-welcome-message.js';
 import { ChatInput } from '../composer/ChatInput.js';
 import { getWelcomeCopy } from '../../locales/welcome-copy.js';
 import { OnboardingHero } from './OnboardingHero.js';
 import { ReadinessNotice } from './ReadinessNotice.js';
 
-export type DayPeriod = 'morning' | 'noon' | 'afternoon' | 'evening';
-
-/**
- * The greeting bucket, from an epoch rather than `new Date()`.
- *
- * The e2e fixture freezes `Date.now` but not the `Date` constructor, so a
- * greeting read from `new Date()` would drift between otherwise identical runs.
- */
-export function detectDayPeriod(nowMs: number = Date.now()): DayPeriod {
-  const hour = new Date(nowMs).getHours();
-  if (hour < 5) return 'evening';
-  if (hour < 11) return 'morning';
-  if (hour < 14) return 'noon';
-  if (hour < 18) return 'afternoon';
-  return 'evening';
-}
+const brandSymbol = new URL('../../../../assets/brand/relx-symbol.svg', import.meta.url).href;
 
 export function TaskWelcomeContent(props: {
   onOpenSettings: () => void;
@@ -48,12 +36,8 @@ export function TaskWelcomeContent(props: {
 }) {
   const locale = useUiLocale();
   const copy = getWelcomeCopy(locale);
-  const conversation = getConversationCopy(locale).empty;
-  const period = detectDayPeriod();
-  const greeting = conversation.headlineFallback(
-    conversation.greeting[period],
-    conversation.greetingTail[period],
-  );
+  const username = useStore(settingsStore.host, (state) => state.data?.personalization.displayName);
+  const greeting = useWelcomeMessage(locale, username);
 
   return (
     <div
@@ -66,9 +50,22 @@ export function TaskWelcomeContent(props: {
             the hero never competes with the window controls. */}
         <div className="h-12 shrink-0" aria-hidden="true" />
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable_both-edges]">
-          <div className="mx-auto flex h-full w-full max-w-7xl flex-col items-center gap-6 px-1 pt-0 md:px-14 md:pt-[18vh]">
+          <div className="mx-auto flex h-full w-full max-w-7xl flex-col items-center gap-6 px-1 pt-0 md:px-14 md:pt-[25vh]">
             <div className="mx-auto my-3 flex w-full max-w-2xl flex-col items-center gap-7 max-md:pt-4">
               <h1 className="text-balance text-center font-display text-[clamp(1.875rem,1.2rem+2vw,2.375rem)] font-[330] leading-[1.25] text-text-primary [font-variation-settings:'opsz'_48] max-sm:px-[0.96em]">
+                <span
+                  aria-hidden="true"
+                  data-maka-contract="welcome-brand"
+                  className="me-[0.3em] inline-block size-[0.72em] supports-[height:1cap]:size-[1cap]"
+                >
+                  <span
+                    className="block size-full scale-[1.333] bg-fill-brand [mask-size:contain] [mask-repeat:no-repeat] [mask-position:center]"
+                    style={{
+                      maskImage: `url(${JSON.stringify(brandSymbol)})`,
+                      WebkitMaskImage: `url(${JSON.stringify(brandSymbol)})`,
+                    }}
+                  />
+                </span>
                 <span className="select-none">{greeting}</span>
               </h1>
             </div>

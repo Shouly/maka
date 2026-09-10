@@ -46,6 +46,7 @@ import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'motion/
 import { useStore } from 'zustand';
 import { useRovingRowFocus, useUiLocale } from '@maka/ui';
 import { Anthropicon } from '../icons/Anthropicon.js';
+import { SidebarAddProject } from './sidebar-parts/SidebarAddProject.js';
 import { SidebarTooltip } from '../ui/sidebar-tooltip.js';
 import { labelActionButtonClass } from './sidebar-parts/SidebarGroup.js';
 import { SidebarTooltipProvider } from '../ui/sidebar-tooltip.js';
@@ -361,6 +362,7 @@ export function Sidebar(props: SidebarProps) {
               <SidebarGroup
                 groupKey="projects"
                 title={copy.projectsSection}
+                actions={<SidebarAddProject />}
                 copy={copy}
                 isContentHidden={projectsHidden}
                 onContentHiddenChange={(hidden) =>

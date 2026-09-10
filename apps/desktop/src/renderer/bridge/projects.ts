@@ -74,6 +74,18 @@ export function subscribeLocalProjectChanges(handler: () => void): () => void {
   return toUnsubscribe(tryNamespace('projects')?.subscribeLocalChanges(handler));
 }
 
+export function prepareProjectDirectory(host: DesktopRuntimeHostRef) {
+  return projects().prepareDirectory(host);
+}
+
+export function createPreparedProject(
+  selectionId: string,
+  name: string,
+  host: DesktopRuntimeHostRef,
+) {
+  return projects().createPrepared(selectionId, name, host);
+}
+
 export function addProject(host?: DesktopRuntimeHostRef): Promise<ProjectAddResult> {
   return projects().add(host);
 }

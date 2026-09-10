@@ -79,11 +79,7 @@ import {
   settingsStore,
   uiStore,
 } from '../../store/index.js';
-import {
-  newTaskStore,
-  newTaskTargetAvailable,
-  workspaceOptionsOf,
-} from '../../store/new-task-store.js';
+import { newTaskStore, newTaskTargetAvailable } from '../../store/new-task-store.js';
 import { useComposerInlineRow } from '../../hooks/use-composer-inline-row.js';
 import { pendingActionsOf } from '../../store/turn-actions-store.js';
 import { parseDesktopSlashCommand } from '../../lib/ported/desktop-slash-command.js';
@@ -837,13 +833,6 @@ function OwnedChatInput(props: {
   // rather than a dimmed one taking width from the text line.
   const stopShown = props.running === true && !hasContent;
   const modeLocked = disabled || props.running || localPending;
-  const sessionProjectName = session?.projectId
-    ? workspaceOptionsOf(newTask.catalog, { includeArchived: true }).find(
-        (option) =>
-          option.projectId === session.projectId && option.profileId === session.profileId,
-      )?.projectName
-    : undefined;
-
   const currentThinking = session
     ? (session.thinkingLevel ?? undefined)
     : (draft.thinking ??
@@ -1251,26 +1240,10 @@ function OwnedChatInput(props: {
           </div>
         </div>
 
-        {/* The meta row: 6px under the surface, 24px tall, inset 12px. Left,
-            the task's context and mode: its project, the permission mode,
-            and Plan while it is on — that chip is the readout and the way
-            out; the ＋ menu stays the switch. Right, a Session's model with
-            its effort. */}
+        {/* Workspace selection is welcome-only; session project details live in the header. */}
         <div className="mt-[6px] flex h-6 w-full items-center justify-between gap-2 px-3">
           <div className="flex min-w-0 items-center gap-1">
-            {/* The project: a picker while the task is still a draft; a
-                Session's is fixed, so there it is a readout, as plain text
-                rather than a chip that would promise a menu. */}
-            {welcome ? (
-              <WorkspacePicker dense side={menuSide} />
-            ) : (
-              sessionProjectName && (
-                <span className="inline-flex h-6 min-w-0 max-w-[416px] shrink-0 select-none items-center gap-1.5 px-2 text-[13px] leading-[1.4] text-text-secondary">
-                  <Anthropicon name="folder" size={16} className="shrink-0" />
-                  <span className="min-w-0 truncate">{sessionProjectName}</span>
-                </span>
-              )
-            )}
+            {welcome && <WorkspacePicker dense side={menuSide} />}
             <PermissionModeMenu
               activeMode={mode}
               side={menuSide}
