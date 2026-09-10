@@ -2211,7 +2211,7 @@
         "useEffect": 2,
         "useReducer": 1,
         "useState": 1,
-        "useStore": 1,
+        "useStore": 2,
         "useUiLocale": 1
       },
       "lifecycleMethods": {},

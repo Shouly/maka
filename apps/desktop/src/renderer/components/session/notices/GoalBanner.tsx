@@ -37,7 +37,7 @@ import { Button } from '../../ui/button.js';
 import { statusChipClass, statusChipNeutralClass } from '../../ui/status-chip.js';
 import { cn } from '../../../lib/cn.js';
 import { goalReadout } from '../../../lib/goal-readout.js';
-import { goalStore } from '../../../store/index.js';
+import { goalStore, sessionsStore } from '../../../store/index.js';
 import { getShellCopy } from '../../../locales/shell-copy.js';
 
 /**
@@ -56,10 +56,29 @@ export function GoalBanner(props: {
   const shell = getShellCopy(locale);
   const app = shell.app;
   const goal = useStore(goalStore, (state) => state.data);
+  // A first prompt from the welcome surface runs against a Session the Host
+  // has not admitted yet: the row is here, `localState: 'pending'`, and its id
+  // means nothing to the Host until the handoff lands. Asking for its Goal
+  // fails with `Session does not exist` — a real error in the main log for a
+  // Session that is simply not born yet. Same gate the composer uses for its
+  // own Host reads.
+  const hostAdmitted = useStore(sessionsStore, (state) => {
+    const row = state.sessions.find((session) => session.id === props.sessionId);
+    return row !== undefined && row.localState !== 'pending';
+  });
   const [busy, setBusy] = useState(false);
   const [, tick] = useReducer((value: number) => value + 1, 0);
 
-  useEffect(() => goalStore.observe(props.sessionId), [props.sessionId]);
+  useEffect(() => {
+    // Disconnect rather than just skip: the store would otherwise still hold
+    // the Goal of the Session this one replaced, and the strip would report
+    // another task's Goal over this one.
+    if (!hostAdmitted) {
+      goalStore.disconnect();
+      return;
+    }
+    return goalStore.observe(props.sessionId);
+  }, [props.sessionId, hostAdmitted]);
 
   const readout = goalReadout(goal, Date.now());
   const live = readout !== undefined && readout.status !== 'paused';
