@@ -36,13 +36,14 @@
 //   either kind would otherwise sit in the strip with no body behind it, so
 //   the strip lists only the five faces this phase implements.
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
 import { uiStore } from '../store/index.js';
 import { workbarStore } from '../store/workbar-store.js';
 import {
   SESSION_WORKBAR_MAX_WIDTH,
   SESSION_WORKBAR_MIN_WIDTH,
+  SESSION_WORKBAR_WIDTH_FRACTION,
   isSessionWorkbarCollapsed,
 } from '../lib/ported/workbar-layout.js';
 import {
@@ -113,9 +114,34 @@ export function openWorkbarTerminal(sessionId: string, ref: string): void {
   });
 }
 
+function subscribeToFrameWidth(onChange: () => void): () => void {
+  window.addEventListener('resize', onChange);
+  return () => window.removeEventListener('resize', onChange);
+}
+
+/**
+ * The window's own width, kept live.
+ *
+ * The pane's ceiling is a fraction of it, so a reader who narrows the window
+ * has to see the pane give way — a stored width taken on a wide display would
+ * otherwise open the pane over most of a small one.
+ */
+function useFrameWidth(): number {
+  return useSyncExternalStore(subscribeToFrameWidth, () => window.innerWidth);
+}
+
 export function useWorkbar(sessionId: string | undefined): WorkbarModel {
   const layout = useStore(uiStore, (state) => state.workbar);
   const expanded = useStore(workbarStore, (state) => state.paneExpanded);
+  const frameWidth = useFrameWidth();
+
+  // Half the window. It is also the width the pane opens at: the stored
+  // default is the static ceiling, so a pane nobody has dragged is decided
+  // here rather than by anything on disk.
+  const maxWidth = Math.max(
+    SESSION_WORKBAR_MIN_WIDTH,
+    Math.min(SESSION_WORKBAR_MAX_WIDTH, Math.round(frameWidth * SESSION_WORKBAR_WIDTH_FRACTION)),
+  );
 
   // The layout remembers collapse per task, so it has to be told which task is
   // in front before `isSessionWorkbarCollapsed` can answer.
@@ -193,9 +219,9 @@ export function useWorkbar(sessionId: string | undefined): WorkbarModel {
     activeFace,
     collapsed,
     expanded: expanded && !collapsed,
-    width: layout.rightWidth,
+    width: Math.min(layout.rightWidth, maxWidth),
     minWidth: SESSION_WORKBAR_MIN_WIDTH,
-    maxWidth: SESSION_WORKBAR_MAX_WIDTH,
+    maxWidth,
     open,
     activate,
     close,

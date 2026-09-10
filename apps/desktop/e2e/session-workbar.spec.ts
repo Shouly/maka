@@ -76,6 +76,36 @@ test('right workbar visibility belongs to each session and survives reload', asy
         .evaluate((element) => getComputedStyle(element).overflowX),
     )
     .toBe('visible');
+  // The pane opens at half the window, and half is also as far as the handle
+  // drags: wider than that it stops being a pane beside the transcript, and a
+  // reader who wants the whole frame has full screen for it. The column is
+  // what is measured — the 8px eave on the right is inside it.
+  const column = page.locator('[data-maka-contract="session-workbar-column"]');
+  await expect
+    .poll(async () => Math.round((await column.boundingBox())!.width))
+    .toBe(Math.round(frame.width / 2));
+  // And the handle has to move the pane's edge. It moved nothing for a while:
+  // the column held a width of its own, measured once as it opened, so a pane
+  // dragged wider just hung off the window while the edge under the pointer
+  // stayed where it was.
+  const before = (await panel.boundingBox())!;
+  await page.getByRole('separator', { name: '调整工作栏宽度' }).hover();
+  await page.mouse.down();
+  await page.mouse.move(before.x + 120, before.y + 200, { steps: 8 });
+  await page.mouse.up();
+  // The LEFT edge is the assertion, not the width: a pane whose column is
+  // pinned still reports the width it was given, it just wears it off the far
+  // side of the window — which shows up here as an eave that is no longer 8.
+  await expect
+    .poll(async () => {
+      const box = await panel.boundingBox();
+      if (!box) return null;
+      return {
+        x: Math.round(box.x),
+        right: Math.round(frame.width - (box.x + box.width)),
+      };
+    })
+    .toEqual({ x: Math.round(before.x) + 120, right: 8 });
   // Full screen is this column growing to the whole frame — measured, because
   // it is one `absolute inset-0` against `.appFrame` and any `overflow-hidden`
   // or `transform` introduced between the two would silently clip it back.

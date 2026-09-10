@@ -28,19 +28,36 @@ import {
 } from './workbar-tabs.js';
 
 /**
- * 480 rather than the original 400: the trace tab's overview is a two-column
- * data grid, and at 400 its figures had to be squeezed against their labels
- * before the qualifier column had room. The stored width still wins, so only
- * a reader who never dragged the handle sees the change.
+ * Half the window: the width the pane opens at, and the widest it drags. Past
+ * half the pane is no longer a pane beside the transcript, and the reader who
+ * wants the whole frame has full screen for it.
+ *
+ * The window is not something this module can see, so the fraction is applied
+ * in `use-workbar`, against a frame width it measures. What lives here is the
+ * static part: the floor, and a ceiling on the persisted number.
  */
-export const SESSION_WORKBAR_DEFAULT_WIDTH = 480;
+export const SESSION_WORKBAR_WIDTH_FRACTION = 0.5;
 /**
  * 340 is the floor `astryx docs layout` gives a detail/inspector panel, and it
  * is also where the strip stops fitting: five faces need 386px of tab and have
  * 260px, so below this the strip is always scrolling.
  */
 export const SESSION_WORKBAR_MIN_WIDTH = 340;
-export const SESSION_WORKBAR_MAX_WIDTH = 600;
+/**
+ * The ceiling on a *stored* number, not the one a reader feels: half the window
+ * is always the narrower of the two below a 3200px-wide frame. It is here so a
+ * width carried over from a much wider display cannot open the pane onto the
+ * whole of a small one before the live ceiling has anything to say.
+ */
+export const SESSION_WORKBAR_MAX_WIDTH = 1600;
+/**
+ * Not a width anyone sees: it is the static ceiling, and the live one — half
+ * the window — undercuts it on any frame this app is opened on. A pane nobody
+ * has dragged therefore opens at half, and goes on doing so once this number
+ * has been written out, which the first change to the workbar does: persisting
+ * writes every key at once.
+ */
+export const SESSION_WORKBAR_DEFAULT_WIDTH = SESSION_WORKBAR_MAX_WIDTH;
 export const SESSION_BOTTOM_PANEL_DEFAULT_HEIGHT = 300;
 export const SESSION_BOTTOM_PANEL_MIN_HEIGHT = 180;
 export const SESSION_BOTTOM_PANEL_MAX_HEIGHT = 520;
@@ -86,13 +103,19 @@ function clampSize(size: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(size)));
 }
 
+// v2 because v1 was a number on a scale that no longer exists: it was picked
+// under a fixed 340-600 range, and carrying it over would hold a pane at 600
+// on a frame whose half is 760 — the reader would never see the width the pane
+// is now supposed to open at.
+const SESSION_WIDTH_KEY = 'maka-session-workbar-width-v2';
+
 /**
  * Reads the persisted width without applying bounds. `loadWorkbarLayout`
  * applies the shared reducer policy so hydration and resize actions use one
  * clamping rule.
  */
 export function readSessionWorkbarWidth(): number {
-  const stored = Number(safeLocalStorageGet('maka-session-workbar-width-v1'));
+  const stored = Number(safeLocalStorageGet(SESSION_WIDTH_KEY));
   return Number.isFinite(stored) && stored > 0 ? Math.round(stored) : SESSION_WORKBAR_DEFAULT_WIDTH;
 }
 
@@ -177,7 +200,12 @@ export function persistWorkbarLayout(
     safeLocalStorageSet('maka-session-bottom-panel-open-v1', state.bottomOpen ? 'true' : 'false');
   }
   if (target === 'all' || target === 'right-size') {
-    safeLocalStorageSet('maka-session-workbar-width-v1', String(state.rightWidth));
+    safeLocalStorageSet(SESSION_WIDTH_KEY, String(state.rightWidth));
+    try {
+      localStorage.removeItem('maka-session-workbar-width-v1');
+    } catch {
+      // Storage may be unavailable in restricted renderer contexts.
+    }
   }
   if (target === 'all' || target === 'bottom-size') {
     safeLocalStorageSet('maka-session-bottom-panel-height-v1', String(state.bottomHeight));

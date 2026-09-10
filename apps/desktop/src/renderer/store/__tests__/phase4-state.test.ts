@@ -29,7 +29,11 @@ import type { SessionEvent } from '@maka/core/events';
 import { createUiStore } from '../ui-store.js';
 import { createWorkbarStore, matchArtifactForPath } from '../workbar-store.js';
 import { resolveHotkey } from '../../hooks/use-hotkeys.js';
-import { isSessionWorkbarCollapsed } from '../../lib/ported/workbar-layout.js';
+import {
+  SESSION_WORKBAR_MAX_WIDTH,
+  SESSION_WORKBAR_MIN_WIDTH,
+  isSessionWorkbarCollapsed,
+} from '../../lib/ported/workbar-layout.js';
 import { nextArtifactListAction } from '../../lib/ported/artifact-list-keyboard.js';
 import {
   ARTIFACT_TEXT_HIGHLIGHT_LINE_LIMIT,
@@ -184,11 +188,17 @@ test('closing the last face puts the pane away, and the width is clamped', () =>
     assert.equal(ui.getState().workbar.panels.right.tabs.length, 0);
     assert.equal(isSessionWorkbarCollapsed(ui.getState().workbar), true);
 
+    // The guard on a *stored* number, not the width a reader sees: that ceiling
+    // is half the window, and it lives in `use-workbar` because only the hook
+    // has a frame to measure.
     ui.dispatchWorkbar({ type: 'resize', placement: 'right', size: 10_000 });
-    assert.equal(ui.getState().workbar.rightWidth, 600);
-    assert.equal(localStorage.getItem('maka-session-workbar-width-v1'), '600');
+    assert.equal(ui.getState().workbar.rightWidth, SESSION_WORKBAR_MAX_WIDTH);
+    assert.equal(
+      localStorage.getItem('maka-session-workbar-width-v2'),
+      String(SESSION_WORKBAR_MAX_WIDTH),
+    );
     ui.dispatchWorkbar({ type: 'resize', placement: 'right', size: 10 });
-    assert.equal(ui.getState().workbar.rightWidth, 340);
+    assert.equal(ui.getState().workbar.rightWidth, SESSION_WORKBAR_MIN_WIDTH);
   } finally {
     restore();
   }

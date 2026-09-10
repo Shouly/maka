@@ -4600,10 +4600,15 @@
     },
     "src/renderer/hooks/use-workbar.ts": {
       "bridgePaths": {},
-      "environmentCapabilities": {},
+      "environmentCapabilities": {
+        "window.addEventListener": 1,
+        "window.innerWidth": 1,
+        "window.removeEventListener": 1
+      },
       "hookCalls": {
         "useEffect": 1,
-        "useStore": 2
+        "useStore": 2,
+        "useSyncExternalStore": 1
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
@@ -5569,7 +5574,7 @@
     "src/renderer/lib/ported/workbar-layout.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {
-        "localStorage.removeItem": 1
+        "localStorage.removeItem": 2
       },
       "hookCalls": {},
       "lifecycleMethods": {},
