@@ -1219,7 +1219,9 @@
       },
       "hookCalls": {
         "useEffect": 5,
+        "useIsPresent": 1,
         "usePageHistory": 1,
+        "useReducedMotion": 1,
         "useRendererStores": 1,
         "useScopedRuntimeHost": 1,
         "useSessionList": 1,
@@ -1274,6 +1276,7 @@
         "./Sidebar.js": 1,
         "./WindowTitlebar.js": 1,
         "@maka/ui": 1,
+        "motion/react": 1,
         "react": 1,
         "zustand": 1
       }
@@ -3703,7 +3706,7 @@
       },
       "hookCalls": {
         "useEffect": 1,
-        "useUiLocale": 2
+        "useUiLocale": 1
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,

@@ -30,7 +30,8 @@
 // change of what the main column shows. A row cannot own that, and thirty rows
 // each owning a copy of it would be thirty copies.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'motion/react';
 import { useStore } from 'zustand';
 import { useUiLocale, MakaUriContext } from '@maka/ui';
 import type { SettingsSection, ThemePreference } from '@maka/core/settings';
@@ -521,93 +522,105 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
 
   return (
     <MakaUriContext.Provider value={dispatchInternal}>
-      {/* Row 1: the window titlebar — traffic lights, sidebar toggle,
-          session identity, actions. Everything below starts under it. */}
-      <WindowTitlebar
-        layout={layout}
-        history={pageHistory}
-        softEdge={view === 'session'}
-        identity={
-          // Settings owns the identity slot while it owns the content column;
-          // the actions slot stays empty there (plan §2.12).
-          view === 'settings' ? (
-            <SettingsIdentity />
-          ) : view === 'session' && activeId ? (
-            <SessionIdentity
-              key={activeId}
-              row={activeRow}
-              actions={sessionActions}
-              parentName={parentRow?.displayName}
-              onOpenParent={selectSession}
-            />
-          ) : undefined
-        }
-        actions={
-          view === 'session' && activeId && !workbar.expanded ? (
-            // The model is chosen on the composer's meta row; the titlebar
-            // keeps only the workbar's switch, which has to be reachable while
-            // the pane is not on screen.
-            //
-            // Full screen is the exception: the pane owns the whole column and
-            // its own header carries both "leave full screen" and "close", so
-            // a second switch would land right above them and read as theirs.
-            // The reference design reaches the same place by other means —
-            // there the pane covers this row outright.
-            <WorkbarToggle workbar={workbar} />
-          ) : undefined
-        }
-      />
-      <AppLayout
-        collapsed={layout.collapsed}
-        sidebar={
-          <Sidebar
+      {/*
+        The window is two columns, not two rows: the right pane runs the FULL
+        height of the window, and the titlebar belongs to the column left of
+        it. That is the reference design's shape, and it is what makes the two
+        things below true without any code to keep them true:
+
+        - the pane's frame is the same 8px eave on all four sides, instead of
+          hanging 56px below the top edge because a window-wide titlebar was in
+          the way;
+        - the titlebar narrows when the pane opens, so the workbar toggle ends
+          up on the seam beside the pane rather than pinned above it.
+
+        Everything the pane needs from the shell it now gets from the layout.
+      */}
+      <div className="flex min-h-0 flex-1 flex-row">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <WindowTitlebar
             layout={layout}
-            onNewTask={newTask}
-            onOpenSettings={() => openSettings()}
-            onSelectModule={selectModule}
-            sessionActions={sessionActions}
-            projectActions={projectActions}
+            history={pageHistory}
+            softEdge={view === 'session'}
+            // Full screen is the pane owning the window; this row's controls would
+            // all point underneath it (see `concealed`).
+            concealed={workbar.expanded}
+            identity={
+              // Settings owns the identity slot while it owns the content column;
+              // the actions slot stays empty there (plan §2.12).
+              view === 'settings' ? (
+                <SettingsIdentity />
+              ) : view === 'session' && activeId ? (
+                <SessionIdentity
+                  key={activeId}
+                  row={activeRow}
+                  actions={sessionActions}
+                  parentName={parentRow?.displayName}
+                  onOpenParent={selectSession}
+                />
+              ) : undefined
+            }
+            actions={
+              view === 'session' && activeId ? (
+                // The model is chosen on the composer's meta row; the titlebar
+                // keeps only the workbar's switch, which has to be reachable while
+                // the pane is not on screen. In full screen the whole row is
+                // concealed, so this needs no case of its own.
+                <WorkbarToggle workbar={workbar} />
+              ) : undefined
+            }
           />
-        }
-      >
-        {view === 'debug' ? (
-          <RuntimeDebug />
-        ) : view === 'settings' ? (
-          <SettingsView onOpenKeyboardHelp={() => setHelpOpen(true)} />
-        ) : view === 'skills' ? (
-          <SkillsModule host={scopedHost} onSelectModule={selectModule} />
-        ) : view === 'mcp' ? (
-          <McpModule host={scopedHost} onSelectModule={selectModule} />
-        ) : view === 'automations' ? (
-          <ScheduledTasksModule />
-        ) : view === 'session' && activeId ? (
-          // The conversation and the right pane share the content column: the
-          // pane narrows the transcript, never the sidebar, and both start
-          // below the window titlebar (plan §2.12).
-          <div className="flex min-h-0 flex-1 flex-row">
-            <SessionView
-              sessionId={activeId}
-              onOpenSettings={(section) => openSettings(section ?? 'models')}
-              onError={reportError}
-            />
-            {!workbar.collapsed && !localPending && (
-              <WorkbarPane
+          <AppLayout
+            collapsed={layout.collapsed}
+            sidebar={
+              <Sidebar
+                layout={layout}
+                onNewTask={newTask}
+                onOpenSettings={() => openSettings()}
+                onSelectModule={selectModule}
+                sessionActions={sessionActions}
+                projectActions={projectActions}
+              />
+            }
+          >
+            {view === 'debug' ? (
+              <RuntimeDebug />
+            ) : view === 'settings' ? (
+              <SettingsView onOpenKeyboardHelp={() => setHelpOpen(true)} />
+            ) : view === 'skills' ? (
+              <SkillsModule host={scopedHost} onSelectModule={selectModule} />
+            ) : view === 'mcp' ? (
+              <McpModule host={scopedHost} onSelectModule={selectModule} />
+            ) : view === 'automations' ? (
+              <ScheduledTasksModule />
+            ) : view === 'session' && activeId ? (
+              <SessionView
                 sessionId={activeId}
-                workbar={workbar}
-                sidebarCollapsed={layout.collapsed}
-                onOpenSidebar={() => uiStore.setSidebarCollapsed(false)}
+                onOpenSettings={(section) => openSettings(section ?? 'models')}
+                onError={reportError}
+              />
+            ) : (
+              <TaskWelcomeContent
+                onOpenSettings={() => openSettings('projects')}
+                onOpenModels={() => openSettings('models')}
+                onOpenConnection={() => openSettings('models')}
+                onError={reportError}
               />
             )}
-          </div>
-        ) : (
-          <TaskWelcomeContent
-            onOpenSettings={() => openSettings('projects')}
-            onOpenModels={() => openSettings('models')}
-            onOpenConnection={() => openSettings('models')}
-            onError={reportError}
-          />
-        )}
-      </AppLayout>
+          </AppLayout>
+        </div>
+        {/* The pane is the second column of the window, so it needs nothing
+            from the first one: it starts at the top edge, it narrows the
+            titlebar and the transcript together, and full screen is simply
+            this column growing to the whole frame. */}
+        <AnimatePresence initial={false}>
+          {view === 'session' && activeId && !workbar.collapsed && !localPending && (
+            <WorkbarColumn>
+              <WorkbarPane sessionId={activeId} workbar={workbar} />
+            </WorkbarColumn>
+          )}
+        </AnimatePresence>
+      </div>
 
       <CommandPalette
         open={paletteOpen}
@@ -678,4 +691,42 @@ function hostRef(
 ): { profileId: string; hostId: string } | undefined {
   if (project.hostId) return { profileId: project.profileId, hostId: project.hostId };
   return fallback;
+}
+
+/**
+ * The pane's column, opening and closing.
+ *
+ * The column's WIDTH is what moves: the titlebar and the transcript are the
+ * rest of the row, so they give way and take it back over the same fifth of a
+ * second instead of jumping. `width: auto` at rest rather than a number — the
+ * pane owns its width and writes it straight to its own box during a resize
+ * drag, and a column that hugs its child follows that for free.
+ *
+ * What is NOT animated is anything inside the pane: the child keeps its full
+ * width the whole way and simply hangs off the narrow column, so a terminal is
+ * not reflowed sixty times on the way in and a browser view is not resized
+ * under the reader. What hangs off the end hangs off the WINDOW, and the frame
+ * clips it — this column never does, because the pane's own frame is a
+ * box-shadow drawn outside its box, hairline ring included, and a clip here
+ * would cut the left edge of that away.
+ */
+function WorkbarColumn(props: { children: ReactNode }) {
+  const reduceMotion = useReducedMotion();
+  const present = useIsPresent();
+  return (
+    <motion.div
+      // While it is leaving it is still in the tree, and a pane the reader has
+      // put away should not answer to the keyboard or be read out.
+      aria-hidden={!present || undefined}
+      inert={!present || undefined}
+      initial={{ width: 0 }}
+      animate={{ width: 'auto' }}
+      exit={{ width: 0 }}
+      transition={{ duration: reduceMotion ? 0 : 0.2, ease: 'easeOut' }}
+      data-maka-contract="session-workbar-column"
+      className="flex shrink-0"
+    >
+      {props.children}
+    </motion.div>
+  );
 }

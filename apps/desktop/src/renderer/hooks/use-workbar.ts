@@ -176,9 +176,11 @@ export function useWorkbar(sessionId: string | undefined): WorkbarModel {
     else setCollapsed(false);
   }, [collapsed, open, setCollapsed, tabs.length]);
 
+  // Full screen covers the window outright, so it no longer has to make room
+  // by putting the sidebar away — which it used to do, and which outlived the
+  // full-screen state: the reader came back out to a rail they never collapsed.
   const setExpanded = useCallback((next: boolean) => {
     workbarStore.setPaneExpanded(next);
-    if (next) uiStore.setSidebarCollapsed(true);
   }, []);
 
   const resize = useCallback((width: number) => {

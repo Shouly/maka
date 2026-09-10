@@ -40,15 +40,9 @@
  * (inset-x-0 h-6)，横向铺满聊天栏。外层不抬层级的话，渐隐条会盖住描边最上面那
  * 24px，左缘看着像从 header 底缘开始缺了一块。
  *
- * 展开态（全屏）实测，视口 1512：
- *
- *   进全屏后  侧栏被收起，面板 1512×777 @0，header 首位是"展开侧栏"键(8..40)、
- *             其后内容从 48 起
- *   点开侧栏  面板缩到 1224×777 @288，侧栏正常可见，按钮仍是 Collapse ——
- *             **不退出全屏**
- *
- * 所以全屏铺的是「侧栏右边的那块」而不是整个窗口：进来时顺手收起侧栏，但用户
- * 随时可以把它请回来，面板跟着让位。侧栏的联动写在 uiStore.setRightPaneExpanded。
+ * 展开态（全屏）：这一列长到整个窗口 —— `absolute inset-0` 打在 `.appFrame` 上。
+ * titlebar 由调用方在这期间不画：它那三颗（侧栏开关、前进、后退）此时都指向被面板
+ * 盖住的东西，显示出来只是一排按不动的键。窗口控件的檐和拖拽面交给面板 header。
  */
 
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
@@ -135,13 +129,11 @@ export function RightPaneShell({
   return (
     <RightPaneContext.Provider value={context}>
       {/*
-        外层在全屏时去掉 `relative`，把定位基准让给上面最近的定位祖先 ——
-        页面那层通栏 div，它和 `<main data-sidebar-main>` 同宽同高。就算哪天
-        那层不再是 relative，也会落到 `<main>` 上（AppLayout 已给它 relative），
-        两者是同一个框，所以这条链两端都对。
+        外层在全屏时去掉 `relative` —— 里层这时是 `fixed`，包含块是视口，外层
+        再当基准就只是白挂一个定位祖先。
 
         外层自己仍占着原来的宽度，左边聊天栏不会在全屏底下重排一次（虚拟消息
-        列表白白重算一轮）。
+        列表白白重算一轮），退出全屏也就不用再排回来。
       */}
       <div
         className={cn(
@@ -176,12 +168,16 @@ export function RightPaneShell({
           />
         )}
         {/*
-          全屏铺满「侧栏右边的那块」，不是铺满窗口 —— 侧栏进出时那块变宽变窄，
-          面板跟着走，和上游一致。
+          全屏铺满整个窗口。面板本来就是窗口的第二列、外面没有 `overflow-hidden`
+          的祖先，所以一句 `absolute inset-0` 就够 —— 定位基准是 `.appFrame`
+          （它是 relative）。之前面板挂在 `<main data-sidebar-main>` 里时这句
+          只铺得满内容列：那层既是 relative 又是 overflow-hidden，会把绝对定位的
+          后代当包含块并裁掉；当时只能用 fixed 绕，绕完还得反过来处理被盖住的
+          titlebar。列拆出来之后这些都不必了。
 
-          ! 不要改成 portal 到 `<main>`：`createPortal(panel, el)` 和直接渲染
-          `panel` 在 React 眼里是两种元素，切换会把整棵子树卸载重建 —— NocoBase
-          的 iframe 会重新加载、浏览器预览的 VNC 会重连、视图模式和滚动位置全丢。
+          ! 不要改成 portal：`createPortal(panel, el)` 和直接渲染 `panel` 在
+          React 眼里是两种元素，切换会把整棵子树卸载重建 —— NocoBase 的 iframe
+          会重新加载、浏览器预览的 VNC 会重连、视图模式和滚动位置全丢。
 
           z-40 压在对话框(50)/popover(60)/toast(100)/tooltip(130) 之下 ——
           发布、分享这些都是从面板里点出来的，必须浮在全屏面板之上。
@@ -234,57 +230,27 @@ export function RightPaneExpandButton() {
 export function RightPaneHeader({
   children,
   className,
-  sidebarOpener,
 }: {
   children: ReactNode;
   className?: string;
-  /**
-   * 全屏时寄居在 header 里的「展开侧栏」键。参照实现直接读 uiStore;这里是插槽,
-   * 由拥有侧栏状态的调用方(Phase 2/4)决定是否给、给什么。
-   */
-  sidebarOpener?: ReactNode;
 }) {
+  // 这一条现在是窗口最上面的一行(面板是通高的一列),所以它要给 OS 自己画在
+  // 那里的窗口控件让檐;全屏时 titlebar 整条不画,拖拽面也归它。见那两个类。
+  const { isExpanded } = useRightPane();
   return (
     // Provider 放在 header 上而不是让三个预览各自去套：header 里全是纯图标键，
     // 提示是这一条的固有配置，不该由使用方记得加。仓里没有全局 Provider。
     <TooltipProvider delayDuration={300}>
       <div
         className={cn(
-          'flex h-12 shrink-0 select-none items-center gap-2 border-b border-hairline px-2',
+          'maka-pane-header flex h-12 shrink-0 select-none items-center gap-2 border-b border-hairline px-2',
+          isExpanded && 'maka-pane-header-fullscreen',
           className,
         )}
       >
-        {sidebarOpener}
         {children}
       </div>
     </TooltipProvider>
-  );
-}
-
-/**
- * 全屏时寄居在面板 header 里的「展开侧栏」键(填 RightPaneHeader 的 sidebarOpener)。
- *
- * 全屏面板铺满主区,正好从侧栏右缘开始 —— 侧栏收起时它就顶到窗口左上角,和侧栏
- * 那颗浮动开关撞在一起。参照实现的解法不是让位、也不是把开关删掉,而是把它**搬进
- * header 当第一个元素**(实测 32×32 @8,8,其后内容从 48 起)。点它侧栏进出、面板
- * 跟着缩放,全屏态一直保持 —— 所以侧栏那边在全屏期间不渲染浮动开关,两者是同一颗
- * 键的两个居所,不会同时出现。是否渲染、以及键盘激活后的焦点交接由调用方决定。
- */
-export function RightPaneSidebarOpener({ onOpen }: { onOpen: () => void }) {
-  const label = getWorkbarCopy(useUiLocale()).pane.openSidebar;
-  return (
-    <RightPaneTip label={label}>
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={onOpen}
-        aria-label={label}
-        aria-controls="app-sidebar"
-        className="text-sidebar-text-primary"
-      >
-        <Anthropicon name="sidebar" />
-      </Button>
-    </RightPaneTip>
   );
 }
 

@@ -20,17 +20,16 @@
 // The right pane: the reference design's 8px inset frame, inside the content
 // column.
 //
-// WHERE it sits is a product decision (plan §2.12), not a layout convenience:
-// the pane lives beside the transcript, INSIDE `<main data-sidebar-main>`, so
-// it starts below the window titlebar and ends at the sidebar seam. It never
-// covers the titlebar, and it never covers the sidebar toggle — the two
-// controls a reader needs to get out of whatever the pane is showing.
+// DOCKED, it is the window's second COLUMN — a sibling of the column that
+// holds the titlebar and everything under it, not a child of the content area.
+// That is what gives it the same 8px eave on all four sides and what makes the
+// titlebar narrow when it opens, both without a line of code to arrange it.
 //
-// Full screen fills the content column rather than the window: the sidebar is
-// collapsed on the way in (the reference behaviour), and the pane's own header
-// carries the button that brings it back — so there is exactly one "open
-// sidebar" control on screen at a time, and clicking it narrows the pane
-// instead of leaving full screen.
+// FULL SCREEN is this column growing to the whole frame. AppShell stops
+// drawing the titlebar for the duration: its three controls all point at
+// things the pane is covering, and a row of buttons that do nothing is worse
+// than no row. This pane's header clears the OS window controls and takes
+// over as the drag surface. The way back out is its own control, or Escape.
 //
 // EVERY OPEN FACE STAYS MOUNTED, hidden with the `hidden` attribute rather
 // than unmounted. A terminal that unmounted would drop its PTY attachment and
@@ -58,12 +57,7 @@ const CLICK_SLOP_PX = 3;
 const KEYBOARD_STEP = 10;
 const KEYBOARD_LARGE_STEP = 50;
 
-export function WorkbarPane(props: {
-  sessionId: string;
-  workbar: WorkbarModel;
-  sidebarCollapsed: boolean;
-  onOpenSidebar: () => void;
-}) {
+export function WorkbarPane(props: { sessionId: string; workbar: WorkbarModel }) {
   const copy = getWorkbarCopy(useUiLocale()).pane;
   const workbar = props.workbar;
   const [isResizing, setIsResizing] = useState(false);
@@ -159,26 +153,7 @@ export function WorkbarPane(props: {
         onKeyDown,
       }}
     >
-      <RightPaneHeader
-        sidebarOpener={
-          workbar.expanded && props.sidebarCollapsed ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="iconSm"
-                  aria-label={copy.openSidebar}
-                  aria-controls="app-sidebar"
-                  onClick={props.onOpenSidebar}
-                >
-                  <Anthropicon name="sidebar" size={16} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">{copy.openSidebar}</TooltipContent>
-            </Tooltip>
-          ) : undefined
-        }
-      >
+      <RightPaneHeader>
         <WorkbarTabStrip workbar={workbar} />
         <Tooltip>
           <TooltipTrigger asChild>

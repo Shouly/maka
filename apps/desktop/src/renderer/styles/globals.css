@@ -1752,6 +1752,36 @@ html[data-maka-platform="darwin"] {
   padding-right: var(--maka-titlebar-gutter-right);
 }
 
+/* The titlebar is not drawn while the right pane is full screen: every control
+   in it would point at something the pane is covering. It keeps its 48px so
+   the column under it is not relaid out on the way in and back out, and
+   `visibility` takes it out of hit-testing and the accessibility tree too. */
+.maka-window-titlebar-concealed {
+  visibility: hidden;
+}
+
+/* The pane is a full-height column, so ITS header — not the titlebar — is what
+   sits under the window controls the OS draws over the web contents. On macOS
+   those are the traffic lights, top left, which only reach the pane once it is
+   full screen; on Windows they are the caption buttons, top right, which are
+   over this header the whole time. Each side is cleared where it is actually
+   in the way, using the same gutters the titlebar uses. */
+html[data-maka-platform="win32"] .maka-pane-header {
+  padding-right: var(--maka-titlebar-gutter-right);
+}
+
+/* Full screen also makes this header the window's only drag surface — the
+   titlebar that used to be it is not drawn. The children opt back out as a
+   group: every one of them is a control, and the gaps are what stays
+   draggable. */
+.maka-pane-header-fullscreen {
+  padding-left: var(--maka-titlebar-gutter-left);
+  -webkit-app-region: drag;
+}
+.maka-pane-header-fullscreen > * {
+  -webkit-app-region: no-drag;
+}
+
 .maka-no-drag {
   -webkit-app-region: no-drag;
 }
@@ -1766,6 +1796,14 @@ dialog:modal {
 
 .appFrame {
   position: relative;
+  /* The window's own clip. The right pane opens by growing its column while
+     the pane inside keeps its full width — so mid-move the pane hangs off the
+     end, and it is the WINDOW that cuts it off, not the column (a clip on the
+     column would eat the pane's own hairline ring, which is a box-shadow drawn
+     outside its box). Nothing else here paints past the frame: dialogs, menus
+     and toasts portal to <body>, and the sidebar's hover panel is `fixed`,
+     which `position: relative` alone does not capture. */
+  overflow: hidden;
 }
 
 /* Justified: e2e/accessibility override. The fixture sets this attribute

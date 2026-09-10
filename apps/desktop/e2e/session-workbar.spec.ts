@@ -29,6 +29,75 @@ test('right workbar visibility belongs to each session and survives reload', asy
   await page.getByRole('button', { name: '展开任务工作栏' }).click();
   const panel = page.locator('#maka-workbar-pane');
   await expect(panel).toBeVisible();
+  const frame = await page.evaluate(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }));
+  // The gutter is read rather than hardcoded: on Windows it widens to clear the
+  // caption buttons.
+  const gutter = await page.evaluate(() => {
+    const actions = document.querySelector('.maka-titlebar-actions');
+    return actions ? Number.parseFloat(getComputedStyle(actions).paddingRight) : Number.NaN;
+  });
+  const paneFrame = async () => {
+    const pane = await panel.boundingBox();
+    const toggle = await page
+      .locator('[data-maka-contract="session-workbar-toggle"]')
+      .boundingBox();
+    if (!pane || !toggle) return null;
+    return {
+      top: Math.round(pane.y),
+      right: Math.round(frame.width - (pane.x + pane.width)),
+      bottom: Math.round(frame.height - (pane.y + pane.height)),
+      seam: Math.round(pane.x - (toggle.x + toggle.width)),
+    };
+  };
+  // Polled, because the column animates open — and measured, because two
+  // separate claims about the layout ride on it. The pane is a full-height
+  // COLUMN of the window, so its frame is the same 8px eave on all four sides
+  // (it used to hang 56px below the top, under a window-wide titlebar, with
+  // 8px on the other three). And the titlebar belongs to the column left of
+  // it, so the workbar toggle ends one gutter short of the seam rather than
+  // pinned above the pane it controls.
+  await expect.poll(paneFrame).toEqual({
+    top: 8,
+    right: 8,
+    bottom: 8,
+    seam: Math.round(gutter),
+  });
+  // The column itself never clips — the window does. The pane's frame is a
+  // box-shadow drawn outside its box, hairline ring included, so a clip here
+  // would cut its left edge away, and it would do it for good on any pane that
+  // was already open when the window loaded and so never played its move.
+  await expect
+    .poll(() =>
+      page
+        .locator('[data-maka-contract="session-workbar-column"]')
+        .evaluate((element) => getComputedStyle(element).overflowX),
+    )
+    .toBe('visible');
+  // Full screen is this column growing to the whole frame — measured, because
+  // it is one `absolute inset-0` against `.appFrame` and any `overflow-hidden`
+  // or `transform` introduced between the two would silently clip it back.
+  await page.getByRole('button', { name: '全屏显示工作栏', exact: true }).click();
+  await expect
+    .poll(async () => {
+      const box = await panel.boundingBox();
+      return box
+        ? {
+            x: Math.round(box.x),
+            y: Math.round(box.y),
+            width: Math.round(box.width),
+            height: Math.round(box.height),
+          }
+        : null;
+    })
+    .toEqual({ x: 0, y: 0, width: frame.width, height: frame.height });
+  // The titlebar is not drawn while the pane owns the window: its controls all
+  // point at things underneath the pane.
+  await expect(page.locator('.maka-window-titlebar')).toBeHidden();
+  await page.getByRole('button', { name: '退出全屏', exact: true }).click();
+  await expect(page.locator('.maka-window-titlebar')).toBeVisible();
   await page.getByRole('button', { name: '新建任务', exact: true }).click();
   await sendPrompt(page, 'second workbar owner');
   await expect(panel).toHaveCount(0);

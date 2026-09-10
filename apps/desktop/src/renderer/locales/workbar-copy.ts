@@ -36,7 +36,6 @@ export type WorkbarCopy = {
     ariaLabel: string;
     expand: string;
     collapse: string;
-    openSidebar: string;
     close: string;
     resize: string;
     resizeValue(width: number): string;
@@ -68,7 +67,6 @@ const WORKBAR_COPY = {
       ariaLabel: '任务工作栏',
       expand: '全屏显示工作栏',
       collapse: '退出全屏',
-      openSidebar: '展开侧边栏',
       close: '收起工作栏',
       resize: '调整工作栏宽度',
       resizeValue: (width) => `${width} 像素`,
@@ -96,7 +94,6 @@ const WORKBAR_COPY = {
       ariaLabel: '任務工作欄',
       expand: '全螢幕顯示工作欄',
       collapse: '退出全螢幕',
-      openSidebar: '展開側邊欄',
       close: '收起工作欄',
       resize: '調整工作欄寬度',
       resizeValue: (width) => `${width} 像素`,
@@ -124,7 +121,6 @@ const WORKBAR_COPY = {
       ariaLabel: 'Task workbar',
       expand: 'Expand the workbar to full screen',
       collapse: 'Leave full screen',
-      openSidebar: 'Open sidebar',
       close: 'Collapse the workbar',
       resize: 'Resize the workbar',
       resizeValue: (width) => `${width} pixels`,

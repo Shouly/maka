@@ -48,6 +48,17 @@ export interface WindowTitlebarProps {
   softEdge?: boolean;
   /** Actions for the current page. */
   actions?: ReactNode;
+  /**
+   * Not drawn, but still holding its 48px. The full-screen right pane covers
+   * the window, and every control in this row then points at something the
+   * pane is on top of: the sidebar it would expand, the pages it would step
+   * back through. Drawing them would put a row of dead buttons over the pane.
+   *
+   * `visibility: hidden` rather than unmounting or `display: none`: the row
+   * keeps its height, so the column under it is not relaid out on the way in
+   * and back out, and hit-testing and the accessibility tree drop it too.
+   */
+  concealed?: boolean;
 }
 
 export function WindowTitlebar(props: WindowTitlebarProps) {
@@ -57,7 +68,10 @@ export function WindowTitlebar(props: WindowTitlebarProps) {
   const collapsed = layout.collapsed;
   return (
     <SidebarTooltipProvider>
-      <div className="maka-window-titlebar" role="presentation">
+      <div
+        className={cn('maka-window-titlebar', props.concealed && 'maka-window-titlebar-concealed')}
+        role="presentation"
+      >
         {/* Left segment: the sidebar's share of the row. Its width follows the
             sidebar so the identity starts at the seam; when collapsed it only
             wraps the navigation controls. */}
