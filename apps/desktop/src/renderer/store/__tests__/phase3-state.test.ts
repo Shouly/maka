@@ -37,7 +37,11 @@ import { diffSyntaxTokens } from '@maka/ui';
 import { createRevisionDraftStore, revisionCopyId, revisionRefusalFor } from '../revision-draft.js';
 import { createContextUsageStore, projectContextUsage } from '../context-usage-store.js';
 import { createComposerDraftStore } from '../composer-draft-store.js';
-import { reorderQueue } from '../../components/session/MessageQueue.js';
+import {
+  followupOrder,
+  queueOrderAfterMove,
+  reorderQueue,
+} from '../../components/session/MessageQueue.js';
 import {
   activeToolLabel,
   canExpandTool,
@@ -546,4 +550,35 @@ test('reordering the queue moves one entry and leaves the rest in order', () => 
   assert.equal(reorderQueue(ids, 1, 1), ids);
   assert.equal(reorderQueue(ids, 1, 9), ids);
   assert.equal(reorderQueue(ids, -1, 1), ids);
+});
+
+test('a queue drag names entries, orders only follow-ups, and survives a re-publish', () => {
+  const entry = (entryId: string, placement: 'current_turn' | 'next_turn') =>
+    ({
+      entryId,
+      messageId: `m-${entryId}`,
+      content: { text: entryId },
+      placement,
+      state: 'queued',
+    }) as unknown as Parameters<typeof queueOrderAfterMove>[0][number];
+  // One steering entry rides the running turn; the other three are the order.
+  const entries = [
+    entry('s', 'current_turn'),
+    entry('a', 'next_turn'),
+    entry('b', 'next_turn'),
+    entry('c', 'next_turn'),
+  ];
+  assert.deepEqual(followupOrder(entries), ['a', 'b', 'c']);
+  // The steering entry is never part of what the Host is asked to re-place.
+  assert.deepEqual(queueOrderAfterMove(entries, 'c', 'a'), ['c', 'a', 'b']);
+  assert.equal(queueOrderAfterMove(entries, 's', 'a'), undefined);
+  assert.equal(queueOrderAfterMove(entries, 'a', 's'), undefined);
+  // Dropping on itself asks for nothing.
+  assert.equal(queueOrderAfterMove(entries, 'b', 'b'), undefined);
+  // The queue re-published between drag and drop and retired the dragged
+  // entry: the drop must move nothing rather than address whoever took its row.
+  assert.equal(
+    queueOrderAfterMove([entry('a', 'next_turn'), entry('c', 'next_turn')], 'b', 'c'),
+    undefined,
+  );
 });

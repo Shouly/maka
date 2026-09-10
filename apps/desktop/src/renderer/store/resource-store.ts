@@ -75,7 +75,17 @@ export function createResourceStore<T>() {
         if (owner === scope) await refresh();
         return result;
       } catch (error) {
-        if (owner === scope) store.setState({ error: errorMessage(error), loading: false });
+        // A rejected write is not a failed read. `error` says the list on
+        // screen could not be READ, and every page branches on it before its
+        // rows, so reporting a write here turned the whole page into "could
+        // not load" over one refused toggle — while the caller was already
+        // toasting the real reason, which is where a write failure belongs.
+        //
+        // Re-read instead of recording anything: the mutation invalidated
+        // whatever refresh was in flight when it started, and after a write
+        // that may have half-happened the Host's answer is the only one worth
+        // showing. The caller still gets the rejection.
+        if (owner === scope) void refresh();
         throw error;
       }
     };

@@ -83,7 +83,7 @@ import { newTaskStore, newTaskTargetAvailable } from '../../store/new-task-store
 import { useComposerInlineRow } from '../../hooks/use-composer-inline-row.js';
 import { pendingActionsOf } from '../../store/turn-actions-store.js';
 import { parseDesktopSlashCommand } from '../../lib/ported/desktop-slash-command.js';
-import { serializeComposer } from '../../lib/composer-document.js';
+import { documentWithSkillTokens, serializeComposer } from '../../lib/composer-document.js';
 import {
   COMPOSER_META_CHIP,
   COMPOSER_META_CHIP_ACTIVE,
@@ -276,7 +276,7 @@ function OwnedChatInput(props: {
   const history = useComposerHistory({
     text: {
       getValue: () => serializeComposer(composerInputStore.read(scopeKey).document).text,
-      setValue: (value) => composerInputStore.setText(scopeKey, value),
+      setValue: (value) => applyRecalledText(value),
     },
     // The input store persists on its own; nothing extra to save here.
     saveCurrentDraft: () => {},
@@ -744,31 +744,84 @@ function OwnedChatInput(props: {
   // The Skills submenu reads the catalog when the ＋ menu opens, so the list
   // is the Host's answer for THIS target and mode, the same one `/` offers.
   const [skills, setSkills] = useState<readonly SkillMenuEntry[] | undefined>();
+  // The last catalog this composer read. History recall needs it synchronously
+  // to put Skill atoms back into a recalled prompt, and the ＋ menu is not
+  // necessarily what filled it.
+  const skillsRef = useRef<readonly SkillMenuEntry[]>([]);
+  // Read through a ref: `useComposerHistory` captures its text port on the
+  // first render, and the catalog a new task asks for depends on picks made
+  // after it.
+  const skillContext = useRef({
+    hostSessionId,
+    target: localTarget ?? props.target,
+    newTask,
+    plan,
+    mode,
+  });
+  skillContext.current = {
+    hostSessionId,
+    target: localTarget ?? props.target,
+    newTask,
+    plan,
+    mode,
+  };
+
+  const readSkills = async (): Promise<readonly SkillMenuEntry[]> => {
+    const live = skillContext.current;
+    const list = live.hostSessionId
+      ? await listInvocableSkills(live.hostSessionId)
+      : live.target
+        ? await listNewTaskInvocableSkills(live.target, {
+            llmConnectionSlug: live.newTask.model?.llmConnectionSlug,
+            model: live.newTask.model?.model,
+            collaborationMode: live.plan ? 'plan' : 'agent',
+            permissionMode: live.mode === 'explore' ? undefined : live.mode,
+          })
+        : [];
+    const entries = list.map((skill) => ({
+      id: skill.id,
+      name: skill.name,
+      ...(skill.description ? { description: skill.description } : {}),
+    }));
+    skillsRef.current = entries;
+    return entries;
+  };
+
   const loadSkills = async () => {
     setSkills(undefined);
     try {
-      const list = hostSessionId
-        ? await listInvocableSkills(hostSessionId)
-        : (localTarget ?? props.target)
-          ? await listNewTaskInvocableSkills((localTarget ?? props.target)!, {
-              llmConnectionSlug: newTask.model?.llmConnectionSlug,
-              model: newTask.model?.model,
-              collaborationMode: plan ? 'plan' : 'agent',
-              permissionMode: mode === 'explore' ? undefined : mode,
-            })
-          : [];
-      if (mounted.current) {
-        setSkills(
-          list.map((skill) => ({
-            id: skill.id,
-            name: skill.name,
-            ...(skill.description ? { description: skill.description } : {}),
-          })),
-        );
-      }
+      const entries = await readSkills();
+      if (mounted.current) setSkills(entries);
     } catch {
       if (mounted.current) setSkills([]);
     }
+  };
+
+  /**
+   * A recalled prompt arrives as a string, and the Skill ids live in atoms the
+   * string does not carry. Put them back, so sending a recalled prompt runs
+   * what the original ran instead of sending its wire text as prose.
+   *
+   * With a catalog already in hand this is one synchronous swap. Without one,
+   * the text lands immediately — never make the arrow key wait on an IPC — and
+   * the atoms follow, unless the draft has moved on by then.
+   */
+  const applyRecalledText = (value: string) => {
+    const known = skillsRef.current;
+    if (known.length > 0) {
+      composerInputStore.patch(scopeKey, { document: documentWithSkillTokens(value, known) });
+      return;
+    }
+    composerInputStore.setText(scopeKey, value);
+    if (!value.includes('/skill:')) return;
+    void readSkills()
+      .then((entries) => {
+        if (!mounted.current || entries.length === 0) return;
+        const current = serializeComposer(composerInputStore.read(scopeKey).document).text;
+        if (current !== value) return;
+        composerInputStore.patch(scopeKey, { document: documentWithSkillTokens(value, entries) });
+      })
+      .catch(() => {});
   };
   const insertSkill = (skill: SkillMenuEntry) =>
     focusEditor((instance) =>

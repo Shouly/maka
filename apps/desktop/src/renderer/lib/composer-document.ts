@@ -34,6 +34,79 @@ export function textDocument(text: string): JSONContent {
     })),
   };
 }
+/**
+ * The same text, with every `/skill:<name>` the catalog recognizes turned back
+ * into a Skill atom.
+ *
+ * A draft that comes back as a string — history recall, a restored draft, a
+ * revision rollback — has lost the atoms that carry Skill ids, and the wire
+ * form of an atom is just text. Sending that runs no Skill while looking
+ * exactly like the prompt that did. Upstream redraws the same tokens against
+ * its live catalog; this is that, as a pure function.
+ *
+ * A token the catalog does not know STAYS TEXT: no chip may claim a Skill that
+ * will not resolve. Longest name first, so `/skill:Review` cannot take the
+ * front of `/skill:Review Code`. File mentions are not redrawn — `@word` in a
+ * recalled prompt is not evidence the user ever picked that file.
+ *
+ * The text is never rewritten, only re-typed: serializing the result yields
+ * the string that came in, byte for byte.
+ */
+export function documentWithSkillTokens(
+  text: string,
+  skills: readonly { id: string; name: string }[],
+): JSONContent {
+  if (!text.includes('/skill:') || skills.length === 0) return textDocument(text);
+  const ordered = [...skills].sort((left, right) => right.name.length - left.name.length);
+  const lower = text.toLowerCase();
+  const lineContent = (line: string, offset: number): JSONContent[] => {
+    const content: JSONContent[] = [];
+    let plain = '';
+    let at = 0;
+    while (at < line.length) {
+      const start = line.indexOf('/skill:', at);
+      if (start === -1) break;
+      const nameAt = offset + start + '/skill:'.length;
+      // By NAME only, which is the form the serializer writes. Matching an id
+      // as well would let a redraw rewrite `/skill:review` as `/skill:Review`:
+      // a recall must send the same bytes it sent before, with the ids back.
+      const match = ordered.find((skill) => lower.startsWith(skill.name.toLowerCase(), nameAt));
+      if (!match) {
+        plain += line.slice(at, start + '/skill:'.length);
+        at = start + '/skill:'.length;
+        continue;
+      }
+      plain += line.slice(at, start);
+      if (plain) content.push({ type: 'text', text: plain });
+      plain = '';
+      // The label is the text as written, not the catalog's casing: the atom
+      // serializes back through its label, and a redraw that "corrects" the
+      // case has edited the prompt. The id, which is what runs, is the
+      // catalog's.
+      const written = line.slice(
+        start + '/skill:'.length,
+        start + '/skill:'.length + match.name.length,
+      );
+      content.push({
+        type: 'composerReference',
+        attrs: { kind: 'skill', value: match.id, label: written },
+      });
+      at = start + '/skill:'.length + match.name.length;
+    }
+    plain += line.slice(at);
+    if (plain) content.push({ type: 'text', text: plain });
+    return content;
+  };
+  let offset = 0;
+  const content: JSONContent[] = [];
+  for (const line of text.split('\n')) {
+    const nodes = lineContent(line, offset);
+    content.push({ type: 'paragraph', ...(nodes.length ? { content: nodes } : {}) });
+    offset += line.length + 1;
+  }
+  return { type: 'doc', content };
+}
+
 /** One traversal produces text and reference offsets so tokens cannot drift away from their wire positions. */
 export function serializeComposer(doc: JSONContent): ComposerDocument {
   let text = '';

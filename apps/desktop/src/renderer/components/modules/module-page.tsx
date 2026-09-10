@@ -32,6 +32,7 @@
 import type { ReactNode } from 'react';
 import { Anthropicon, type AnthropiconName } from '../icons/Anthropicon.js';
 import { MainHeader } from '../layout/MainHeader.js';
+import { SettingsRow } from '../settings/settings-row.js';
 
 export function ModulePage(props: {
   title: string;
@@ -84,6 +85,28 @@ export function ModuleListSkeleton(props: { rows?: number }) {
         <div key={index} className="h-14 w-full animate-pulse rounded-xl bg-skeleton" />
       ))}
     </div>
+  );
+}
+
+/**
+ * What a list says when its READ failed and it still has rows behind it.
+ *
+ * `ModuleEmpty` takes the whole slot and is for the case where there is
+ * nothing behind the failure. This one sits ABOVE rows that stay on screen: a
+ * list one refresh out of date is worth more than an apology with no list, and
+ * the store keeps the last good snapshot precisely so the page can show it.
+ */
+export function ModuleLoadNotice(props: { title: string; action: ReactNode }) {
+  return (
+    <SettingsRow
+      title={
+        <span className="flex min-w-0 items-center gap-2">
+          <Anthropicon name="warningCircle" size={16} className="shrink-0 text-danger" />
+          <span className="min-w-0 truncate">{props.title}</span>
+        </span>
+      }
+      control={props.action}
+    />
   );
 }
 

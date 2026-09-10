@@ -29,6 +29,14 @@
 // Reordering is expressed as the full id list rather than a move, because that
 // is what `reorderQueueEntries` takes: a move is ambiguous once the queue has
 // changed underneath, an explicit order is not.
+//
+// Two things follow from the Host owning the order, and both are easy to get
+// wrong. The list it takes is the FOLLOW-UP order: a steering entry belongs to
+// the turn already running and is not a position in it. And a drag has to name
+// the entry it started on, not the row index it started at — this plate is on
+// screen only while a turn runs, which is exactly when `queue_update`
+// re-publishes and re-indexes the queue, so an index resolved at drop time can
+// address a different message than the one under the pointer.
 
 import { memo, useState } from 'react';
 import { useStore } from 'zustand';
@@ -62,6 +70,30 @@ export function reorderQueue(ids: readonly string[], from: number, to: number): 
   return next;
 }
 
+/**
+ * The follow-up order to send after dragging one entry onto another, or
+ * `undefined` when the move asks for nothing.
+ *
+ * Everything the drop has to decide lives here, where it can be tested: which
+ * entries are positions at all (steering entries belong to the running turn),
+ * whether both ends are still in the queue — a `queue_update` between drag and
+ * drop can retire either — and whether the order actually changed.
+ */
+export function queueOrderAfterMove(
+  entries: readonly MessageQueueEntryProjection[],
+  fromId: string,
+  toId: string,
+): readonly string[] | undefined {
+  const followupIds = followupOrder(entries);
+  const next = reorderQueue(followupIds, followupIds.indexOf(fromId), followupIds.indexOf(toId));
+  return next === followupIds ? undefined : next;
+}
+
+/** The entries the Host will accept an order for, in their current order. */
+export function followupOrder(entries: readonly MessageQueueEntryProjection[]): readonly string[] {
+  return entries.filter((entry) => entry.placement === 'next_turn').map((entry) => entry.entryId);
+}
+
 function entryText(entry: MessageQueueEntryProjection): string {
   return entry.content.displayText ?? entry.content.text;
 }
@@ -80,22 +112,25 @@ export const MessageQueue = memo(function MessageQueue(props: {
   const [editing, setEditing] = useState<
     { entryId: string; text: string; revision: number } | undefined
   >(undefined);
-  const [dragging, setDragging] = useState<number | undefined>(undefined);
+  const [dragging, setDragging] = useState<string | undefined>(undefined);
 
   const entries = queue?.entries ?? [];
   if (entries.length === 0) return null;
   const revision = queue?.queueRevision;
+  // The order the Host accepts. Steering entries ride the running turn and are
+  // deliberately absent: sending them would ask it to re-place a message that
+  // is already part of the answer being written.
+  const followupIds = followupOrder(entries);
 
   const run = (operation: Promise<unknown>) => {
     void operation.catch((error) => props.onError(copy.failedTitle, error));
   };
 
-  const move = (from: number, to: number) => {
-    const current = entries.map((entry) => entry.entryId);
-    const ids = reorderQueue(current, from, to);
-    // `reorderQueue` hands the same array back when nothing moved, which is
-    // what makes a no-op drop cost no round trip.
-    if (ids === current) return;
+  /** Move one follow-up entry to another's position, both named by id. */
+  const move = (fromId: string, toId: string) => {
+    if (pending) return;
+    const ids = queueOrderAfterMove(entries, fromId, toId);
+    if (!ids) return;
     run(turnActionsStore.reorderQueued(props.sessionId, ids));
   };
 
@@ -109,6 +144,11 @@ export const MessageQueue = memo(function MessageQueue(props: {
       <AnimatePresence initial={false}>
         {entries.map((entry, index) => {
           const isEditing = editing?.entryId === entry.entryId;
+          // Only a follow-up has a position to move within; the arrows and the
+          // grip are therefore its own, and the row's position reads from that
+          // list rather than from the rendered index.
+          const followupIndex = followupIds.indexOf(entry.entryId);
+          const orderable = followupIndex !== -1;
           return (
             <motion.div
               key={entry.entryId}
@@ -119,24 +159,30 @@ export const MessageQueue = memo(function MessageQueue(props: {
               style={{ overflow: 'hidden' }}
             >
               <div
-                draggable={!isEditing}
-                onDragStart={() => setDragging(index)}
-                onDragOver={(event) => event.preventDefault()}
+                draggable={!isEditing && orderable}
+                onDragStart={() => setDragging(entry.entryId)}
+                onDragOver={(event) => {
+                  if (orderable) event.preventDefault();
+                }}
                 onDrop={(event) => {
                   event.preventDefault();
-                  if (dragging !== undefined) move(dragging, index);
+                  if (dragging !== undefined && orderable) move(dragging, entry.entryId);
                   setDragging(undefined);
                 }}
                 onDragEnd={() => setDragging(undefined)}
                 className={cn(
                   'flex items-start gap-2 rounded-lg px-2 py-1.5',
-                  dragging === index ? 'opacity-50' : 'hover:bg-alpha-1',
+                  dragging === entry.entryId ? 'opacity-50' : 'hover:bg-alpha-1',
                 )}
               >
                 <span
                   className="mt-1 shrink-0 text-text-muted"
                   aria-hidden="true"
-                  title={copy.position(index + 1, entries.length)}
+                  title={
+                    orderable
+                      ? copy.position(followupIndex + 1, followupIds.length)
+                      : copy.position(index + 1, entries.length)
+                  }
                 >
                   <Anthropicon name="dotsVertical" size={16} />
                 </span>
@@ -183,37 +229,49 @@ export const MessageQueue = memo(function MessageQueue(props: {
                 {!isEditing && (
                   <div
                     role="group"
-                    aria-label={copy.position(index + 1, entries.length)}
+                    aria-label={
+                      orderable
+                        ? copy.position(followupIndex + 1, followupIds.length)
+                        : copy.position(index + 1, entries.length)
+                    }
                     className="flex shrink-0 items-center"
                   >
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          aria-label={copy.moveUp}
-                          disabled={index === 0 || pending}
-                          onClick={() => move(index, index - 1)}
-                          className={messageActionButtonClass}
-                        >
-                          <Anthropicon name="arrowUp" size={16} />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">{copy.moveUp}</TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          aria-label={copy.moveDown}
-                          disabled={index === entries.length - 1 || pending}
-                          onClick={() => move(index, index + 1)}
-                          className={messageActionButtonClass}
-                        >
-                          <Anthropicon name="arrowDown" size={16} />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">{copy.moveDown}</TooltipContent>
-                    </Tooltip>
+                    {orderable && (
+                      <>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              aria-label={copy.moveUp}
+                              disabled={followupIndex === 0 || pending}
+                              onClick={() =>
+                                move(entry.entryId, followupIds[followupIndex - 1] ?? entry.entryId)
+                              }
+                              className={messageActionButtonClass}
+                            >
+                              <Anthropicon name="arrowUp" size={16} />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">{copy.moveUp}</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              aria-label={copy.moveDown}
+                              disabled={followupIndex === followupIds.length - 1 || pending}
+                              onClick={() =>
+                                move(entry.entryId, followupIds[followupIndex + 1] ?? entry.entryId)
+                              }
+                              className={messageActionButtonClass}
+                            >
+                              <Anthropicon name="arrowDown" size={16} />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">{copy.moveDown}</TooltipContent>
+                        </Tooltip>
+                      </>
+                    )}
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <button

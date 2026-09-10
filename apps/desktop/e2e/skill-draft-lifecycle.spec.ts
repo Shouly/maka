@@ -38,3 +38,38 @@ test('a selected skill survives draft navigation and reaches the Host', async ({
   await expect(page.getByRole('button', { name: '重新生成' })).toHaveCount(1);
   await expect(editor).toHaveText('');
 });
+
+test('recalling a sent prompt invokes its skill again, not its wire text', async ({
+  invocableSkillsWindow: page,
+}) => {
+  const editor = page.locator(COMPOSER_INPUT);
+  await editor.fill('/');
+  const option = page.getByRole('option').filter({ hasText: 'Project Only' });
+  await expect(option).toBeVisible();
+  await option.click();
+  await editor.press('End');
+  await editor.pressSequentially(' first ask');
+  await awaitSendReady(page);
+  await editor.press('Enter');
+  // The Host echoes the loaded skill, so this is the invocation, not the text.
+  await expect(page.getByRole('log')).toContainText('<invoked-skill');
+  await expect(editor).toHaveText('');
+
+  // ArrowUp hands the prompt back as a string. Its skill id lives in an atom
+  // the string does not carry, so without a redraw the resend would post the
+  // literal `/skill:` token and quietly run nothing.
+  await editor.click();
+  await editor.press('ArrowUp');
+  await expect(editor).toContainText('first ask');
+  await expect(editor.locator('[data-composer-reference="skill"]')).toHaveCount(1);
+  // A word of its own, so the second answer is identifiable without counting
+  // rows: the transcript unmounts turns scrolled past, which makes any count
+  // across them a race.
+  await editor.press('End');
+  await editor.pressSequentially(' second ask');
+  await awaitSendReady(page);
+  await editor.press('Enter');
+  await expect(
+    page.getByRole('log').getByText(/<invoked-skill[\s\S]*second ask/u),
+  ).toBeVisible();
+});

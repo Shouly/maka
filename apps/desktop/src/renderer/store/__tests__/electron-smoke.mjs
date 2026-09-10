@@ -331,6 +331,28 @@ try {
   await planMark.click();
   await planMark.waitFor({ state: 'detached' });
   checks.push('full-access confirmation can cancel or commit, and Plan mode round-trips');
+
+  // A Goal keeps taking turns after every reply, and `goal.clear` is the only
+  // way to stop it, so arming one has to leave a brake on screen. The strip
+  // above the composer IS that brake: arm, read it back, pause, clear.
+  await page.getByRole('button', { name: 'Add context', exact: true }).click();
+  await page.getByRole('menuitem', { name: /^Set a goal/ }).click();
+  const goalDialog = page.getByRole('dialog', { name: 'Set a goal', exact: true });
+  await goalDialog.getByLabel('Done when', { exact: true }).fill('the smoke says so');
+  await goalDialog.getByRole('button', { name: 'Start', exact: true }).click();
+  await goalDialog.waitFor({ state: 'detached' });
+  const goalBanner = page.locator('[data-maka-contract="goal-banner"]');
+  await goalBanner.getByText('the smoke says so', { exact: true }).waitFor();
+  await page.screenshot({ path: SHOT('phase3b-goal-banner.png') });
+  await goalBanner.getByRole('button', { name: /^Pause autonomous goal/ }).click();
+  // Paused swaps the brake for the way back. Resume is NOT pressed here: the
+  // Host answers it by taking a continuation Turn immediately — the Goal
+  // evaluation lands in this very transcript — which would leave a Turn
+  // running under the next check. That call is covered by the store test.
+  await goalBanner.getByRole('button', { name: /^Resume autonomous goal/ }).waitFor();
+  await goalBanner.getByRole('button', { name: /^Clear autonomous goal/ }).click();
+  await goalBanner.waitFor({ state: 'detached' });
+  checks.push('an armed Goal states itself above the composer, and pause and clear reach the Host');
   await page.screenshot({ path: SHOT('phase3b-composer.png') });
 
   // 3a.5 Edit-and-resend forks a revision and says so.

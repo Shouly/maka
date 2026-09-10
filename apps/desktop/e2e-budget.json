@@ -66,8 +66,8 @@
       "electron": "Projects and Recents rebuild the real Host catalog after renderer reload"
     },
     "skill-draft-lifecycle.spec.ts": {
-      "tests": 1,
-      "electron": "persisted skill document reload and submission through preload to the real Host"
+      "tests": 2,
+      "electron": "persisted skill document reload and submission through preload to the real Host; history recall re-materializes the skill atom so a resend invokes it again"
     },
     "slash-command-compact.spec.ts": {
       "tests": 1,

@@ -48,11 +48,18 @@ import { statusChipClass, statusChipToneClass } from '../../ui/status-chip.js';
 import { menuDangerItemClass, menuTriggerButtonClass } from '../../ui/menu-variants.js';
 import { Anthropicon } from '../../icons/Anthropicon.js';
 import { SettingsRow, SettingsSection } from '../../settings/settings-row.js';
-import { ModuleEmpty, ModuleLead, ModuleListSkeleton, ModulePage } from '../module-page.js';
+import {
+  ModuleEmpty,
+  ModuleLead,
+  ModuleListSkeleton,
+  ModuleLoadNotice,
+  ModulePage,
+} from '../module-page.js';
 import { ExtensionsTabs } from '../ExtensionsTabs.js';
 import { McpMarket } from './McpMarket.js';
 import { McpServerDialog } from './McpServerDialog.js';
 import { cn } from '../../../lib/cn.js';
+import { moduleListState } from '../../../lib/module-list-state.js';
 import { useSettingsErrorReporter } from '../../../hooks/use-settings.js';
 import { toast } from '../../../store/toast-store.js';
 import { mcpStore } from '../../../store/index.js';
@@ -79,9 +86,10 @@ export function McpModule(props: {
   onSelectModule?: (module: 'skills' | 'mcp') => void;
 }) {
   const locale = useUiLocale();
-  const extensions = getModulesCopy(locale).extensions;
+  const modulesShared = getModulesCopy(locale);
+  const extensions = modulesShared.extensions;
   const copy = getMcpCopy(locale);
-  const modules = getModulesCopy(locale).mcp;
+  const modules = modulesShared.mcp;
   const reportShellError = useSettingsErrorReporter();
   // A write that may not have survived is neither success nor plain failure
   // (upstream #4505): it gets its own sentence instead of the generic retry.
@@ -114,6 +122,17 @@ export function McpModule(props: {
     return byId;
   }, [snapshot?.statuses]);
   const ids = servers.map(([id]) => id);
+  const display = moduleListState({
+    loading,
+    error,
+    loaded: snapshot !== undefined,
+    count: servers.length,
+  });
+  const retry = (
+    <Button variant="outline" size="sm" onClick={() => void mcpStore.refresh()}>
+      {copy.page.refresh}
+    </Button>
+  );
 
   const run = async (key: string, failure: string, operation: () => Promise<unknown>) => {
     setBusy(key);
@@ -190,22 +209,18 @@ export function McpModule(props: {
       <ModuleLead>{modules.description}</ModuleLead>
 
       <SettingsSection title={modules.installedTitle}>
-        {loading && !snapshot ? (
+        {display.staleNotice && (
+          <ModuleLoadNotice title={modulesShared.refreshFailed} action={retry} />
+        )}
+        {display.face === 'loading' ? (
           <div className="py-3">
             <ModuleListSkeleton />
           </div>
-        ) : error ? (
+        ) : display.face === 'failed' ? (
           <div className="py-3">
-            <ModuleEmpty
-              title={copy.errors.load}
-              action={
-                <Button variant="outline" size="sm" onClick={() => void mcpStore.refresh()}>
-                  {copy.page.refresh}
-                </Button>
-              }
-            />
+            <ModuleEmpty title={copy.errors.load} action={retry} />
           </div>
-        ) : servers.length === 0 ? (
+        ) : display.face === 'empty' ? (
           <div className="py-3">
             <ModuleEmpty title={copy.page.noInstalled} body={copy.page.noInstalledDetail} />
           </div>

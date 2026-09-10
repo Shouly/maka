@@ -67,9 +67,16 @@ import { statusChipClass, statusChipToneClass } from '../../ui/status-chip.js';
 import { menuDangerItemClass, menuTriggerButtonClass } from '../../ui/menu-variants.js';
 import { Anthropicon } from '../../icons/Anthropicon.js';
 import { SettingsRow, SettingsSection } from '../../settings/settings-row.js';
-import { ModuleEmpty, ModuleLead, ModuleListSkeleton, ModulePage } from '../module-page.js';
+import {
+  ModuleEmpty,
+  ModuleLead,
+  ModuleListSkeleton,
+  ModuleLoadNotice,
+  ModulePage,
+} from '../module-page.js';
 import { ScheduleFormDialog } from './ScheduleFormDialog.js';
 import { cn } from '../../../lib/cn.js';
+import { moduleListState } from '../../../lib/module-list-state.js';
 import { useSettingsErrorReporter } from '../../../hooks/use-settings.js';
 import { toast } from '../../../store/toast-store.js';
 import { scheduledTasksStore } from '../../../store/index.js';
@@ -79,7 +86,8 @@ import { getModulesCopy } from '../../../locales/modules-copy.js';
 export function ScheduledTasksModule() {
   const locale = useUiLocale();
   const catalog = getScheduledTaskCopy(locale);
-  const copy = getModulesCopy(locale).scheduled;
+  const modulesShared = getModulesCopy(locale);
+  const copy = modulesShared.scheduled;
   const shared = getSettingsSharedCopy(locale);
   const report = useSettingsErrorReporter();
   const tasks = useStore(scheduledTasksStore, (state) => state.data);
@@ -92,6 +100,18 @@ export function ScheduledTasksModule() {
   const rows = useMemo(
     () => [...(tasks ?? [])].sort((a, b) => compareScheduledTaskForDisplay(a, b, locale)),
     [tasks, locale],
+  );
+
+  const display = moduleListState({
+    loading,
+    error,
+    loaded: tasks !== undefined,
+    count: rows.length,
+  });
+  const retry = (
+    <Button variant="outline" size="sm" onClick={() => void scheduledTasksStore.refresh()}>
+      {catalog.page.refresh}
+    </Button>
   );
 
   const run = async (key: string, failure: string, operation: () => Promise<unknown>) => {
@@ -136,26 +156,18 @@ export function ScheduledTasksModule() {
       <ModuleLead>{copy.description}</ModuleLead>
 
       <SettingsSection title={catalog.page.tasks}>
-        {loading && rows.length === 0 ? (
+        {display.staleNotice && (
+          <ModuleLoadNotice title={modulesShared.refreshFailed} action={retry} />
+        )}
+        {display.face === 'loading' ? (
           <div className="py-3">
             <ModuleListSkeleton />
           </div>
-        ) : error ? (
+        ) : display.face === 'failed' ? (
           <div className="py-3">
-            <ModuleEmpty
-              title={copy.loadFailed}
-              action={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void scheduledTasksStore.refresh()}
-                >
-                  {catalog.page.refresh}
-                </Button>
-              }
-            />
+            <ModuleEmpty title={copy.loadFailed} action={retry} />
           </div>
-        ) : rows.length === 0 ? (
+        ) : display.face === 'empty' ? (
           <div className="py-3">
             <ModuleEmpty
               title={catalog.page.emptyTitle}

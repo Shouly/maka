@@ -89,6 +89,7 @@ import { TranscriptTurn } from './TranscriptTurn.js';
 import { TurnRunningStatus } from './TurnRunningStatus.js';
 import { NoticeCard } from './notices/NoticeCard.js';
 import { RevisionBanner } from './notices/RevisionBanner.js';
+import { GoalBanner } from './notices/GoalBanner.js';
 import { SessionNotices } from './notices/SessionNotices.js';
 
 export interface SessionViewProps {
@@ -443,6 +444,7 @@ function SessionTranscript(props: SessionViewProps) {
           viewport and the composer's white face 38px above it. */}
       <div className={cn('shrink-0 px-4 pb-2')}>
         <div className="mx-auto flex w-full max-w-[var(--chat-feed-max)] flex-col gap-2">
+          <GoalBanner sessionId={sessionId} onError={reportError} />
           <SessionNotices
             sessionId={sessionId}
             {...(presentation.resumeCandidateTurnId

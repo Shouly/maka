@@ -24,6 +24,9 @@ import * as settingsBridge from '../../bridge/settings.js';
 import { createDefaultSettings } from '@maka/core/settings';
 import { reconcileRuntimeHostSessionCatalog } from '../../../preload/runtime-host-session-catalog.js';
 import { createResourceStore } from '../resource-store.js';
+import { moduleListState } from '../../lib/module-list-state.js';
+import { goalReadout } from '../../lib/goal-readout.js';
+import { createGoalStore } from '../goal-store.js';
 import { createSessionsStore } from '../sessions-store.js';
 import { createActiveSessionStore } from '../active-session-store.js';
 import { createTurnActionsStore } from '../turn-actions-store.js';
@@ -38,7 +41,8 @@ import type {
   SessionEvent,
   ShellRunUpdate,
 } from '@maka/core/events';
-import type { StoredMessage } from '@maka/core/session';
+import type { SessionChangedEvent, StoredMessage } from '@maka/core/session';
+import type { GoalState } from '@maka/core/goal';
 import type {
   DesktopTranscriptBatch,
   DesktopTranscriptHandle,
@@ -298,6 +302,183 @@ test('resource exposes errors without discarding the last good snapshot', async 
   assert.equal(store.getState().data, 1);
   assert.equal(store.getState().error, 'offline');
   store.disconnect();
+});
+// A refused write is the caller's to report — it must not be mistaken for the
+// list failing to load, which is what emptied the MCP and Scheduled pages over
+// one rejected toggle.
+test('a rejected write keeps the snapshot, reports nothing, and re-reads', async () => {
+  const store = createResourceStore<number>();
+  let reads = 0;
+  store.connect(
+    async () => ++reads,
+    () => () => {},
+  );
+  await tick();
+  assert.equal(store.getState().data, 1);
+  await assert.rejects(
+    store.mutate(async () => {
+      throw new Error('refused');
+    }),
+    /refused/,
+  );
+  await tick();
+  assert.equal(store.getState().error, undefined);
+  // Re-read rather than left as it was: the mutation invalidated whatever
+  // refresh was in flight, and a write that failed may still have moved
+  // something.
+  assert.equal(reads, 2);
+  assert.equal(store.getState().data, 2);
+  assert.equal(store.getState().loading, false);
+  store.disconnect();
+});
+test('a rejected write cannot strand the list under a spinner', async () => {
+  const store = createResourceStore<string>();
+  const inflight = deferred<string>();
+  let first = true;
+  store.connect(
+    () => (first ? ((first = false), inflight.promise) : Promise.resolve('fresh')),
+    () => () => {},
+  );
+  assert.equal(store.getState().loading, true);
+  await assert.rejects(
+    store.mutate(async () => {
+      throw new Error('refused');
+    }),
+    /refused/,
+  );
+  inflight.resolve('stale');
+  await tick();
+  assert.equal(store.getState().data, 'fresh');
+  assert.equal(store.getState().loading, false);
+  store.disconnect();
+});
+test('a module list shows what it has: rows through a failed refresh, a failure only with nothing behind it', () => {
+  const face = (input: Parameters<typeof moduleListState>[0]) => moduleListState(input);
+  assert.deepEqual(face({ loading: true, error: undefined, loaded: false, count: 0 }), {
+    face: 'loading',
+    staleNotice: false,
+  });
+  assert.deepEqual(face({ loading: false, error: 'offline', loaded: false, count: 0 }), {
+    face: 'failed',
+    staleNotice: false,
+  });
+  // Pressing that page's Retry: the skeleton is back, not the failure it is
+  // trying to clear.
+  assert.deepEqual(face({ loading: true, error: 'offline', loaded: false, count: 0 }), {
+    face: 'loading',
+    staleNotice: false,
+  });
+  assert.deepEqual(face({ loading: false, error: undefined, loaded: true, count: 0 }), {
+    face: 'empty',
+    staleNotice: false,
+  });
+  // The one that used to blank the page: a snapshot on screen and a read that
+  // failed after it.
+  assert.deepEqual(face({ loading: false, error: 'offline', loaded: true, count: 2 }), {
+    face: 'rows',
+    staleNotice: true,
+  });
+  // A refresh over a list that is already there keeps the list, not a skeleton.
+  assert.deepEqual(face({ loading: true, error: undefined, loaded: true, count: 2 }), {
+    face: 'rows',
+    staleNotice: false,
+  });
+});
+// A Goal takes turns on its own; the strip above the composer is the only
+// brake, so what it may show and what it must drop are worth pinning.
+const goalState = (patch: Partial<GoalState> = {}): GoalState => ({
+  id: 'goal-1',
+  revision: 1,
+  sessionId: 'S1',
+  condition: 'all tests pass',
+  status: 'active',
+  setAt: 1_000,
+  iterations: 2,
+  maxIterations: 10,
+  consecutiveNoProgress: 0,
+  blockCap: 3,
+  tokensAtStart: 0,
+  tokensNow: 0,
+  tokensBaselinePending: false,
+  ...patch,
+});
+test('the Goal strip shows a running Goal and drops every Goal that already stopped', () => {
+  assert.equal(goalReadout(null, 5_000), undefined);
+  const running = goalReadout(goalState(), 61_000);
+  assert.equal(running?.status, 'active');
+  assert.equal(running?.elapsedMs, 60_000);
+  // No budget, no token reading: there would be nothing to read it against.
+  assert.equal(running?.tokens, undefined);
+  for (const status of ['achieved', 'impossible', 'cleared', 'budget_limited'] as const) {
+    assert.equal(goalReadout(goalState({ status }), 5_000), undefined, status);
+  }
+  // Paused freezes the clock at the pause, and a paused Goal with no pause
+  // moment cannot say anything true about time.
+  assert.equal(
+    goalReadout(goalState({ status: 'paused', pausedAt: 31_000 }), 900_000)?.elapsedMs,
+    30_000,
+  );
+  assert.equal(goalReadout(goalState({ status: 'paused' }), 900_000), undefined);
+});
+test('the Goal strip reads the budget against what THIS Goal spent', () => {
+  // A Goal armed inside a long task starts at a non-zero session total. The
+  // Runtime stops it on the delta, so the strip has to read the delta too —
+  // `tokensNow` alone would open at "180k / 100k" and never move.
+  const goal = goalState({ tokensAtStart: 180_000, tokensNow: 205_000, tokenBudget: 100_000 });
+  assert.deepEqual(goalReadout(goal, 5_000)?.tokens, { spent: 25_000, budget: 100_000 });
+});
+test('the Goal follows the Session it is watching and ignores another Session transition', async () => {
+  const goals = new Map<string, GoalState>([
+    ['S1', goalState()],
+    ['S2', goalState({ sessionId: 'S2', condition: 'the build is green' })],
+  ]);
+  let listener: ((event: SessionChangedEvent) => void) | undefined;
+  let reads = 0;
+  const calls: string[] = [];
+  const store = createGoalStore({
+    subscribeChanges: (handler) => {
+      listener = handler;
+      return () => {
+        listener = undefined;
+      };
+    },
+    bridge: {
+      getGoal: async (sessionId) => {
+        reads += 1;
+        return goals.get(sessionId) ?? null;
+      },
+      pauseGoal: async (sessionId) => {
+        calls.push(`pause:${sessionId}`);
+      },
+      resumeGoal: async (sessionId) => {
+        calls.push(`resume:${sessionId}`);
+      },
+      clearGoal: async (sessionId) => {
+        calls.push(`clear:${sessionId}`);
+      },
+    },
+  });
+  const stop = store.observe('S1');
+  await tick();
+  assert.equal(store.getState().data?.condition, 'all tests pass');
+  const before = reads;
+  listener?.({ reason: 'goal-change', sessionId: 'S2', ts: 1 });
+  listener?.({ reason: 'message-appended', sessionId: 'S1', ts: 2 });
+  await tick();
+  assert.equal(reads, before);
+  // A transition that names no Session is a broadcast: it concerns this one too.
+  listener?.({ reason: 'goal-change', ts: 3 });
+  await tick();
+  assert.equal(reads, before + 1);
+  await store.pause('S1');
+  await store.resume('S1');
+  await store.clear('S1');
+  assert.deepEqual(calls, ['pause:S1', 'resume:S1', 'clear:S1']);
+  stop();
+  // Stopping releases the Session subscription rather than leaving a listener
+  // reading into a strip nothing renders.
+  assert.equal(listener, undefined);
+  assert.equal(store.getState().data, undefined);
 });
 test('catalog uses the preload snapshot including its retained offline hosts', async () => {
   let result = { sessions: [row('a', 'A'), row('b', 'B')], completeHostIds: ['A', 'B'] };

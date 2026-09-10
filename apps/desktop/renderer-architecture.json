@@ -96,6 +96,7 @@
     "src/renderer/components/session/UserMessageRow.tsx",
     "src/renderer/components/session/message-action-bar.ts",
     "src/renderer/components/session/notices/ContextUsageIndicator.tsx",
+    "src/renderer/components/session/notices/GoalBanner.tsx",
     "src/renderer/components/session/notices/NoticeCard.tsx",
     "src/renderer/components/session/notices/RevisionBanner.tsx",
     "src/renderer/components/session/notices/SessionNotices.tsx",
@@ -217,6 +218,7 @@
     "src/renderer/lib/composer-document.ts",
     "src/renderer/lib/composer-surface.ts",
     "src/renderer/lib/fixture.ts",
+    "src/renderer/lib/goal-readout.ts",
     "src/renderer/lib/markdown/color-utils.tsx",
     "src/renderer/lib/markdown/hast-node.ts",
     "src/renderer/lib/markdown/inline-tokens.tsx",
@@ -224,6 +226,7 @@
     "src/renderer/lib/markdown/rehype-stream-pop.ts",
     "src/renderer/lib/markdown/rehype-strip-break-newlines.ts",
     "src/renderer/lib/markdown/remark-inline-math.ts",
+    "src/renderer/lib/module-list-state.ts",
     "src/renderer/lib/platform.ts",
     "src/renderer/lib/ported/about-update-status.ts",
     "src/renderer/lib/ported/artifact-list-keyboard.ts",
@@ -368,6 +371,7 @@
     "src/renderer/store/composer-input-store.ts",
     "src/renderer/store/connections-store.ts",
     "src/renderer/store/context-usage-store.ts",
+    "src/renderer/store/goal-store.ts",
     "src/renderer/store/index.ts",
     "src/renderer/store/local-messages.ts",
     "src/renderer/store/mcp-store.ts",
@@ -923,7 +927,7 @@
         "useComposerHistory": 1,
         "useComposerInlineRow": 1,
         "useEffect": 3,
-        "useRef": 5,
+        "useRef": 7,
         "useState": 13,
         "useStore": 9,
         "useUiLocale": 2
@@ -1675,6 +1679,7 @@
       "dependencyPaths": {
         "../../../hooks/use-settings.js": 1,
         "../../../lib/cn.js": 1,
+        "../../../lib/module-list-state.js": 1,
         "../../../lib/ported/mcp-server-draft.js": 1,
         "../../../lib/ported/mcp-write-failure.js": 1,
         "../../../locales/mcp-copy.js": 1,
@@ -1738,7 +1743,8 @@
       "actionFactories": [],
       "dependencyPaths": {
         "../icons/Anthropicon.js": 1,
-        "../layout/MainHeader.js": 1
+        "../layout/MainHeader.js": 1,
+        "../settings/settings-row.js": 1
       }
     },
     "src/renderer/components/modules/scheduled/ScheduleFormDialog.tsx": {
@@ -1781,6 +1787,7 @@
       "dependencyPaths": {
         "../../../hooks/use-settings.js": 1,
         "../../../lib/cn.js": 1,
+        "../../../lib/module-list-state.js": 1,
         "../../../locales/modules-copy.js": 1,
         "../../../locales/settings-shared-copy.js": 1,
         "../../../store/index.js": 1,
@@ -2021,6 +2028,7 @@
         "../ui/chat-skeleton.js": 1,
         "./HistoryControls.js": 1,
         "./MessageQueue.js": 1,
+        "./notices/GoalBanner.js": 1,
         "./notices/NoticeCard.js": 1,
         "./notices/RevisionBanner.js": 1,
         "./notices/SessionNotices.js": 1,
@@ -2188,6 +2196,35 @@
         "../../icons/Anthropicon.js": 1,
         "../../ui/popover.js": 1,
         "../../ui/tooltip.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/session/notices/GoalBanner.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "window.clearInterval": 1,
+        "window.setInterval": 1
+      },
+      "hookCalls": {
+        "useEffect": 2,
+        "useReducer": 1,
+        "useState": 1,
+        "useStore": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../../lib/goal-readout.js": 1,
+        "../../../locales/shell-copy.js": 1,
+        "../../../store/index.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/status-chip.js": 1,
         "@maka/ui": 1,
         "react": 1,
         "zustand": 1
@@ -4635,6 +4672,15 @@
         "@maka/core/ui-locale": 1
       }
     },
+    "src/renderer/lib/goal-readout.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
     "src/renderer/lib/markdown/color-utils.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -4694,6 +4740,15 @@
       "dependencyPaths": {}
     },
     "src/renderer/lib/markdown/remark-inline-math.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/module-list-state.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {},
@@ -6007,6 +6062,18 @@
         "zustand/vanilla": 1
       }
     },
+    "src/renderer/store/goal-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/goal.js": 1,
+        "./resource-store.js": 1
+      }
+    },
     "src/renderer/store/index.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -6023,6 +6090,7 @@
         "./composer-input-store.js": 1,
         "./connections-store.js": 1,
         "./context-usage-store.js": 1,
+        "./goal-store.js": 1,
         "./mcp-store.js": 1,
         "./new-task-store.js": 1,
         "./onboarding-store.js": 1,

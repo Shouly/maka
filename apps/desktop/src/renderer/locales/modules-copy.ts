@@ -60,6 +60,12 @@ export type SkillFailureReason =
   | 'invalid_skill';
 
 export type ModulesCopy = {
+  /**
+   * What a page says above rows it is still showing after a refresh failed.
+   * Distinct from each page's `loadFailed`, which is the case where the read
+   * never landed and there is nothing behind the message.
+   */
+  readonly refreshFailed: string;
   /** The Extensions page chrome: one title, two faces (Skills | MCP). */
   readonly extensions: {
     readonly title: string;
@@ -137,6 +143,7 @@ export type ModulesCopy = {
 
 const MODULES_COPY = {
   'zh-CN': {
+    refreshFailed: '刷新失败，下面还是上一次的结果。',
     extensions: { title: '扩展', tabsLabel: '扩展分类', skills: '技能', mcp: 'MCP' },
     skills: {
       description: 'Agent 可以调用的技能，以及它们的来源与启用状态。',
@@ -224,6 +231,7 @@ const MODULES_COPY = {
     },
   },
   'zh-TW': {
+    refreshFailed: '重新整理失敗，下面仍是上一次的結果。',
     extensions: { title: '擴充', tabsLabel: '擴充分類', skills: '技能', mcp: 'MCP' },
     skills: {
       description: 'Agent 可以呼叫的技能，以及它們的來源與啟用狀態。',
@@ -311,6 +319,7 @@ const MODULES_COPY = {
     },
   },
   en: {
+    refreshFailed: 'Could not refresh. These are the last results.',
     extensions: { title: 'Extensions', tabsLabel: 'Extension kind', skills: 'Skills', mcp: 'MCP' },
     skills: {
       description: 'The skills the agent can invoke, where they come from, and which are on.',

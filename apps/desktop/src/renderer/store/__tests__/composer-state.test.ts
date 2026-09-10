@@ -19,7 +19,11 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { serializeComposer, textDocument } from '../../lib/composer-document.js';
+import {
+  documentWithSkillTokens,
+  serializeComposer,
+  textDocument,
+} from '../../lib/composer-document.js';
 import { createComposerInputStore } from '../composer-input-store.js';
 import { createComposerDraftStore } from '../composer-draft-store.js';
 import { preflightAttachmentItems } from '../../lib/ported/attachment-preflight.js';
@@ -216,4 +220,34 @@ test('a refused first send restores the welcome draft without overwriting newer 
   assert.equal(store.restoreTransfer('session', 'welcome'), false);
   assert.equal(serializeComposer(store.read('welcome').document).text, 'new request');
   assert.equal(serializeComposer(store.read('session').document).text, 'first request');
+});
+
+test('a recalled prompt gets its Skill atoms back, and only the ones that resolve', () => {
+  const skills = [
+    { id: 'composer-review', name: 'Composer Review' },
+    { id: 'review', name: 'Review' },
+  ];
+  const sent = serializeComposer(
+    documentWithSkillTokens('check /skill:Composer Review then stop', skills),
+  );
+  // The atom is what carries the id; the wire text is unchanged.
+  assert.deepEqual(sent.skillIds, ['composer-review']);
+  assert.equal(sent.text, 'check /skill:Composer Review then stop');
+  // Longest name first: the shorter Skill must not claim the front of the longer one.
+  assert.deepEqual(
+    serializeComposer(documentWithSkillTokens('/skill:Composer Review', skills)).skillIds,
+    ['composer-review'],
+  );
+  // A Skill the catalog does not know stays text rather than claiming an id.
+  const unknown = serializeComposer(documentWithSkillTokens('/skill:Gone away', skills));
+  assert.deepEqual(unknown.skillIds, []);
+  assert.equal(unknown.text, '/skill:Gone away');
+  // A line break does not break the offsets, and matching is case-insensitive
+  // over the name the serializer wrote.
+  const lines = serializeComposer(documentWithSkillTokens('one\n/skill:review two', skills));
+  assert.deepEqual(lines.skillIds, ['review']);
+  assert.equal(lines.text, 'one\n/skill:review two');
+  // Nothing to redraw is the plain document, untouched.
+  assert.deepEqual(documentWithSkillTokens('plain text', skills), textDocument('plain text'));
+  assert.deepEqual(documentWithSkillTokens('/skill:Review', []), textDocument('/skill:Review'));
 });
