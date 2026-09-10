@@ -73,8 +73,6 @@ export interface TranscriptTurnProps {
   /** True while this turn is the one the live projection is writing into. */
   live: boolean;
   footerActions: readonly TurnFooterAction[];
-  /** Model · duration · cost, printed beside the actions. */
-  turnMeta?: string;
   lineageBadges?: readonly TurnLineageBadge[];
   failedReasonLabel?: string;
   failedSeverity?: FailedTurnSeverity;
@@ -254,7 +252,6 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
       {!props.live && (
         <TurnFooter
           actions={props.footerActions}
-          {...(props.turnMeta ? { meta: props.turnMeta } : {})}
           {...(props.lineageBadges ? { lineageBadges: props.lineageBadges } : {})}
           onAction={(id) => props.onFooterAction(turn.turnId, id)}
           onOpenLineage={props.onOpenLineage}
