@@ -2086,7 +2086,6 @@
         "./ThinkingBlock.js": 1,
         "./tools/ToolGroup.js": 1,
         "./TurnFooter.js": 1,
-        "./TurnRunningStatus.js": 1,
         "./UserMessageRow.js": 1,
         "@maka/ui": 1,
         "react": 1
@@ -2121,8 +2120,8 @@
         "window.setInterval": 1
       },
       "hookCalls": {
-        "useEffect": 1,
-        "useRef": 2,
+        "useLayoutEffect": 1,
+        "useRef": 3,
         "useState": 1,
         "useUiLocale": 1
       },
@@ -4594,7 +4593,7 @@
         "useDelayedFlag": 1,
         "useEffect": 2,
         "useLayoutEffect": 4,
-        "useRef": 1,
+        "useRef": 2,
         "useShallow": 5,
         "useStore": 20,
         "useTranscriptProjection": 1,

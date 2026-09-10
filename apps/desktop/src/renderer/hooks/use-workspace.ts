@@ -28,7 +28,11 @@ import {
   type TurnViewModel,
 } from '@maka/ui';
 import { deriveLiveTurnSnapshot } from '../lib/ported/live-turn-snapshot.js';
-import { RUNNING_STATUS_DELAY_MS, deriveTurnActive } from '../lib/ported/model-wait-state.js';
+import {
+  RUNNING_STATUS_DELAY_MS,
+  deriveTurnActive,
+  retainRunningTurnIds,
+} from '../lib/ported/model-wait-state.js';
 import { useDelayedFlag } from './use-delayed-flag.js';
 import {
   activeSessionStore,
@@ -229,25 +233,44 @@ export function useShellLiveTurn(sessionId: string | undefined): {
     activeSessionStore,
     (s) =>
       s.sessionId === sessionId &&
-      (s.transientMessages.some(
-        (message) =>
-          message.deliveryStatus === undefined &&
-          !s.localMessages.some(
-            (local) =>
-              local.messageId === message.id &&
-              (local.state === 'accepted' || local.state === 'failed'),
-          ),
-      ) ||
+      ((s.localHandoffPending &&
+        s.localMessages.some(
+          (message) =>
+            message.state === 'saved' ||
+            message.state === 'sending' ||
+            message.state === 'accepted',
+        )) ||
+        s.transientMessages.some(
+          (message) =>
+            message.deliveryStatus === undefined &&
+            !s.localMessages.some(
+              (local) =>
+                local.messageId === message.id &&
+                (local.state === 'accepted' || local.state === 'failed'),
+            ),
+        ) ||
         s.localMessages.some(
           (message) => message.state === 'sending' || message.state === 'saved',
         )),
   );
   const activeStreamingLive = live.hasStreamingText && live.streamingMessageId === undefined;
+
+  // Held across the uninformative reads that interleave with the authoritative
+  // ones; reset per Session so one task's turn never speaks for another's.
+  const retained = useRef<{ sessionId: string | undefined; ids: readonly string[] | undefined }>({
+    sessionId,
+    ids: undefined,
+  });
+  if (retained.current.sessionId !== sessionId) retained.current = { sessionId, ids: undefined };
+  retained.current.ids = retainRunningTurnIds(retained.current.ids, runningTurnIds);
+
   const turnActive = deriveTurnActive({
     turnPhase: live.phase,
     armedTurnId: live.turnId,
     runningTurnIds,
+    retainedRunningTurnIds: retained.current.ids,
   });
+
   const showRunningStatus = useDelayedFlag(turnActive || submitting, RUNNING_STATUS_DELAY_MS);
   return {
     turnActive,

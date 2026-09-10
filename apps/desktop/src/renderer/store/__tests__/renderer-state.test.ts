@@ -99,9 +99,11 @@ function fakeRuntime(
   overrides: Partial<Parameters<typeof createActiveSessionStore>[0]> & {
     failBoundaryReads?: () => boolean;
     failTranscriptOpen?: () => boolean;
+    deferObservationReady?: boolean;
   } = {},
 ) {
-  const { failBoundaryReads, failTranscriptOpen, ...storeOverrides } = overrides;
+  const { failBoundaryReads, failTranscriptOpen, deferObservationReady, ...storeOverrides } =
+    overrides;
   type Observer = {
     id: string;
     event: (event: SessionEvent) => void;
@@ -136,7 +138,7 @@ function fakeRuntime(
       subscribeSessionEvents(id, event, ready, phase, fail) {
         const observer = { id, event, ready, phase, fail, closed: false };
         observers.push(observer);
-        ready?.();
+        if (!deferObservationReady) ready?.();
         return () => {
           observer.closed = true;
         };
@@ -1361,5 +1363,32 @@ test('a locally pending session displays its first message without querying a no
   await tick();
   assert.equal(f.observers.length, 1);
   assert.equal(f.readers.length, 1);
+  f.store.disconnect();
+});
+
+test('local-to-Host handoff keeps the saved intent and its waiting state until observation is ready', async () => {
+  const f = fakeRuntime({ deferObservationReady: true });
+  const id = sid('handoff');
+  f.store.observe(id, 'en', true);
+  await tick();
+  const localMessages = [{ messageId: 'saved-intent', state: 'saved' }] as never;
+  f.store.setState({ localMessages });
+  f.store.observe(id, 'en', false);
+  assert.equal(f.store.getState().localMessages, localMessages);
+  assert.equal(f.store.getState().localHandoffPending, true);
+  f.observers[0]!.ready?.();
+  assert.equal(f.store.getState().localHandoffPending, false);
+  f.store.disconnect();
+  assert.equal(f.store.getState().localHandoffPending, false);
+});
+
+test('opening another session does not inherit a local handoff', async () => {
+  const f = fakeRuntime({ deferObservationReady: true });
+  f.store.observe(sid('local-source'), 'en', true);
+  await tick();
+  f.store.setState({ localMessages: [{ messageId: 'source-intent', state: 'saved' }] as never });
+  f.store.observe(sid('different-target'), 'en', false);
+  assert.equal(f.store.getState().localHandoffPending, false);
+  assert.deepEqual(f.store.getState().localMessages, []);
   f.store.disconnect();
 });

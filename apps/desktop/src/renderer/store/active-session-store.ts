@@ -96,6 +96,7 @@ export interface ActiveSessionState {
   range: DesktopTranscriptRangeState | undefined;
   loading: boolean;
   observationReady: boolean;
+  localHandoffPending: boolean;
   error: string | undefined;
   /**
    * The transcript itself could not be opened or read (upstream
@@ -132,6 +133,7 @@ const initialState = (): ActiveSessionState => ({
   range: undefined,
   loading: false,
   observationReady: false,
+  localHandoffPending: false,
   error: undefined,
   transcriptError: undefined,
   health: undefined,
@@ -213,6 +215,7 @@ export function createActiveSessionStore(
   // activation rather than on every batch that changes the messages.
   let restoreLifecycle: TranscriptRestoreLifecycle = createTranscriptRestoreLifecycle();
   let selectionGeneration = 0;
+  let observingLocalOnly = false;
 
   const setAnchor = (sessionId: string, anchor: TranscriptReadingAnchor | undefined) => {
     store.setState((state) => ({
@@ -246,6 +249,9 @@ export function createActiveSessionStore(
   };
 
   function observe(sessionId: string | undefined, locale: UiLocale, localOnly = false): () => void {
+    const previous = store.getState();
+    const localHandoff = previous.sessionId === sessionId && observingLocalOnly && !localOnly;
+    observingLocalOnly = localOnly;
     dispose();
     const generation = ++selectionGeneration;
     // Entering a Session is what captures a bookmark to restore. Clearing one
@@ -254,8 +260,14 @@ export function createActiveSessionStore(
     restoreLifecycle = lifecycle;
     store.setState({
       ...initialState(),
+      // The same local task is becoming observable on the Host. Its saved
+      // intents remain in flight while the replacement observer hydrates.
+      ...(localHandoff
+        ? { localMessages: previous.localMessages, transientMessages: previous.transientMessages }
+        : {}),
       readingAnchors: store.getState().readingAnchors,
       sessionId,
+      localHandoffPending: localHandoff,
       loading: !!sessionId,
     });
     if (!sessionId) {
@@ -646,7 +658,7 @@ export function createActiveSessionStore(
       // declared ready, or they are dropped with the seed.
       handlers.flushDisplayEvents(sessionId);
       handlers.markDisplayReady(sessionId);
-      commit({ observationReady: true });
+      commit({ observationReady: true, localHandoffPending: false });
       void refreshInteractions();
       void refreshBoundary();
       void retireCancelledTransients();

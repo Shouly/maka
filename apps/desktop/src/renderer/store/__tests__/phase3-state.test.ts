@@ -42,6 +42,7 @@ import {
   queueOrderAfterMove,
   reorderQueue,
 } from '../../components/session/MessageQueue.js';
+import { deriveTurnActive, retainRunningTurnIds } from '../../lib/ported/model-wait-state.js';
 import {
   activeToolLabel,
   canExpandTool,
@@ -581,4 +582,50 @@ test('a queue drag names entries, orders only follow-ups, and survives a re-publ
     queueOrderAfterMove([entry('a', 'next_turn'), entry('c', 'next_turn')], 'b', 'c'),
     undefined,
   );
+});
+
+// A catalog row served from the desktop cache carries no `runningTurnIds` at
+// all, and those reads interleave with authoritative ones on every refresh.
+// Before the first token there is no live projection, so that field is the only
+// witness the wait has: reading its absence as "nothing is running" retracted
+// the status line, Stop and the composer lock for the ~340ms until the next
+// authoritative read and the rising-edge delay brought them back.
+test('an uninformative catalog read cannot retract a running turn', () => {
+  const active = (
+    runningTurnIds: readonly string[] | undefined,
+    retainedRunningTurnIds?: readonly string[] | undefined,
+  ) =>
+    deriveTurnActive({
+      turnPhase: undefined,
+      armedTurnId: undefined,
+      runningTurnIds,
+      retainedRunningTurnIds,
+    });
+  assert.equal(active(['turn-1']), true);
+  // The read that used to end the wait: no set at all, with the authority's
+  // last word still standing behind it.
+  assert.equal(active(undefined, ['turn-1']), true);
+  // An empty set is the authority SAYING the turn is over, so it still ends it.
+  assert.equal(active([], ['turn-1']), false);
+  // Nothing behind it either: an absent field is not evidence of a turn.
+  assert.equal(active(undefined, undefined), false);
+  // The live projection outranks both, as before.
+  assert.equal(
+    deriveTurnActive({
+      turnPhase: 'waiting',
+      armedTurnId: 'turn-1',
+      runningTurnIds: [],
+      retainedRunningTurnIds: [],
+    }),
+    true,
+  );
+});
+
+test('retaining a running-turn reading keeps the last informative one', () => {
+  assert.deepEqual(retainRunningTurnIds(undefined, ['turn-1']), ['turn-1']);
+  // The whole point: an absent field leaves the previous answer alone.
+  assert.deepEqual(retainRunningTurnIds(['turn-1'], undefined), ['turn-1']);
+  // Any set replaces it, the empty one included.
+  assert.deepEqual(retainRunningTurnIds(['turn-1'], []), []);
+  assert.equal(retainRunningTurnIds(undefined, undefined), undefined);
 });

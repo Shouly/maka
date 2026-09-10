@@ -59,7 +59,7 @@ export function TaskWelcomeContent(props: {
                   className="me-[0.3em] inline-block size-[0.72em] supports-[height:1cap]:size-[1cap]"
                 >
                   <span
-                    className="block size-full scale-[1.333] bg-fill-brand [mask-size:contain] [mask-repeat:no-repeat] [mask-position:center]"
+                    className="block size-full scale-[1.6] bg-fill-brand [mask-size:contain] [mask-repeat:no-repeat] [mask-position:center]"
                     style={{
                       maskImage: `url(${JSON.stringify(brandSymbol)})`,
                       WebkitMaskImage: `url(${JSON.stringify(brandSymbol)})`,

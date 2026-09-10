@@ -374,6 +374,20 @@ a detail wrong without saying so. Only using the app finds those.
   `packages/cli/src/tui-copy-catalog.ts` trips it. Run the other three hook
   steps by hand and commit with `--no-verify` when that is the only failure.
 - `@maka/runtime` tests need `rg` on `PATH` (see the first item).
+- **`npm run dev` poisons `dist/main` for every later `e2e` and `test:dist`
+  run.** `apps/desktop/scripts/dev.mjs:139` esbuilds `src/main/main.ts` into a
+  single bundled `dist/main/main.js`, where `build:main` (plain `tsc`) writes
+  one file per module. `tsc` is incremental, so unless `main.ts` itself changed
+  it never overwrites that bundle: the app then runs stale bundled main code
+  while the sibling `dist/main/*.js` files are freshly compiled and loaded by
+  nobody. Specs that reach into main through
+  `createRequire(...)('dist/main/<module>.js')` get a second copy of the class
+  and their stubs silently do nothing, so
+  `session-local-recovery.spec.ts` fails on delivery states it believed it had
+  paused. `npm run check:stale` does NOT catch it — it reports "dist is fresh".
+  Close by `rm -rf apps/desktop/dist/main apps/desktop/tsconfig.main.tsbuildinfo`
+  and rebuilding, or for good by teaching `check:stale` to reject a bundled
+  `main.js`. (Found 2026-09-10.)
 - Upstream #5001 (transcript navigation) shipped two tests the enterprise
   renderer cannot host: `transcript-send-viewport.test.ts` and the five
   paging-gate cases of `transcript-reading-position-controller.test.ts` drove

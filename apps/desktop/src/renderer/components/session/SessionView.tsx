@@ -34,7 +34,7 @@
 //   nothing here writes, ever). Every command releases the pin first, which is
 //   why a command can never race the policy.
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { userFacingText, type StoredMessage } from '@maka/core/session';
@@ -45,6 +45,7 @@ import {
   finalAssistantReplyText,
   useChatScroll,
   useTranscriptScrollAuthority,
+  computerRunningLabel,
   useUiLocale,
   type TurnViewModel,
   type TransientUserMessageProjection,
@@ -312,6 +313,20 @@ function SessionTranscript(props: SessionViewProps) {
   // `startedAt` to measure from).
   const orphanRunningStatus =
     shellLive.showRunningStatus && !turns.some((turn) => turn.turnId === live.turnId);
+  const activeTurn = turns.find((turn) => turn.turnId === live.turnId);
+  // One keyed sibling survives promotion from a local send into a durable turn.
+  const waitingStatus = (
+    <TurnRunningStatus
+      key={`running:${sessionId}`}
+      turnId={live.turnId}
+      startedAt={
+        (live.turnId ? transientPlacement.before.get(live.turnId)?.[0]?.ts : undefined) ??
+        activeTurn?.startedAt ??
+        feed.transientMessages[0]?.ts
+      }
+      activityLabel={activeTurn ? computerRunningLabel(activeTurn.tools, locale) : undefined}
+    />
+  );
   const shellCopy = getShellCopy(locale).app;
   const historyPending =
     feed.historyPending?.sessionId === sessionId ? feed.historyPending : undefined;
@@ -332,45 +347,46 @@ function SessionTranscript(props: SessionViewProps) {
           aria-busy={!feed.observationReady || undefined}
         >
           <div className="chat-feed mx-auto w-full max-w-[var(--chat-feed-max)] px-4 pb-8 pt-4">
-            {!feed.observationReady && turns.length === 0 && <ChatSkeleton />}
+            {!feed.observationReady &&
+              turns.length === 0 &&
+              feed.transientMessages.length === 0 && <ChatSkeleton />}
             {feed.observationReady && turns.length === 0 && feed.transientMessages.length === 0 && (
               <p className="py-16 text-center text-sm text-text-muted" role="status">
                 {copy.feed.empty}
               </p>
             )}
-            {rows.map((row) => {
-              if (row.kind === 'gap') {
-                return (
-                  <TranscriptGapRow
-                    key={`gap-${row.direction}`}
-                    direction={row.direction}
-                    pending={
-                      historyPending?.target === (row.direction === 'older' ? 'earlier' : 'later')
-                    }
-                    onLoad={() => void loadHistory(row.direction === 'older' ? 'earlier' : 'later')}
-                  />
+            {[
+              ...rows.flatMap((row): ReactNode[] => {
+                if (row.kind === 'gap') {
+                  return [
+                    <TranscriptGapRow
+                      key={`gap-${row.direction}`}
+                      direction={row.direction}
+                      pending={
+                        historyPending?.target === (row.direction === 'older' ? 'earlier' : 'later')
+                      }
+                      onLoad={() =>
+                        void loadHistory(row.direction === 'older' ? 'earlier' : 'later')
+                      }
+                    />,
+                  ];
+                }
+                const turn = row.turn;
+                const editingThisTurn =
+                  draft?.sourceSessionId === sessionId && draft.sourceTurnId === turn.turnId;
+                const message = feed.messages.find(
+                  (item): item is Extract<StoredMessage, { type: 'user' }> =>
+                    item.type === 'user' && item.turnId === turn.turnId,
                 );
-              }
-              const turn = row.turn;
-              const editingThisTurn =
-                draft?.sourceSessionId === sessionId && draft.sourceTurnId === turn.turnId;
-              const message = feed.messages.find(
-                (item): item is Extract<StoredMessage, { type: 'user' }> =>
-                  item.type === 'user' && item.turnId === turn.turnId,
-              );
-              const refusal = revisionRefusalFor(message);
-              return (
-                <Fragment key={turn.turnId}>
-                  {transientPlacement.before.get(turn.turnId)?.map((message) => (
-                    <TransientMessageRow key={message.id} message={message} />
-                  ))}
+                const refusal = revisionRefusalFor(message);
+                return [
+                  ...(transientPlacement.before.get(turn.turnId) ?? []).map((message) => (
+                    <TransientMessageRow key={`pending:${message.id}`} message={message} />
+                  )),
                   <TranscriptTurn
+                    key={`turn:${turn.turnId}`}
                     turn={turn}
                     live={live.turnId === turn.turnId}
-                    runningStatus={shellLive.showRunningStatus}
-                    {...(transientPlacement.before.get(turn.turnId)?.[0]?.ts !== undefined
-                      ? { runningStartedAt: transientPlacement.before.get(turn.turnId)![0]!.ts }
-                      : {})}
                     footerActions={presentation.footerActionsByTurn[turn.turnId] ?? []}
                     {...(presentation.lineageBadgesByTurn[turn.turnId]
                       ? { lineageBadges: presentation.lineageBadgesByTurn[turn.turnId] }
@@ -418,14 +434,17 @@ function SessionTranscript(props: SessionViewProps) {
                     onSwitchToFullAccessAndRetry={switchToFullAccessAndRetry(turn.turnId)}
                     {...(switchingToolUseId ? { switchingToolUseId } : {})}
                     onOpenExternal={toolContext.onOpenExternal}
-                  />
-                </Fragment>
-              );
-            })}
-            {transientPlacement.tail.map((message) => (
-              <TransientMessageRow key={message.id} message={message} />
-            ))}
-            {orphanRunningStatus && <TurnRunningStatus />}
+                  />,
+                  ...(shellLive.showRunningStatus && turn.turnId === live.turnId
+                    ? [waitingStatus]
+                    : []),
+                ];
+              }),
+              ...transientPlacement.tail.map((message) => (
+                <TransientMessageRow key={`pending:${message.id}`} message={message} />
+              )),
+              ...(orphanRunningStatus ? [waitingStatus] : []),
+            ]}
           </div>
         </div>
         {(awayFromTail || feed.hasNewer) && (

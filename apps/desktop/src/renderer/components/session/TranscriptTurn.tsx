@@ -36,7 +36,6 @@
 
 import { memo, useMemo } from 'react';
 import {
-  computerRunningLabel,
   finalAssistantReplyText,
   foldTimeline,
   useUiLocale,
@@ -53,7 +52,6 @@ import type { TurnLineageBadge } from '@maka/ui';
 import { getTranscriptCopy } from '../../locales/transcript-copy.js';
 import { ThinkingBlock } from './ThinkingBlock.js';
 import { TurnFooter } from './TurnFooter.js';
-import { TurnRunningStatus } from './TurnRunningStatus.js';
 import { UserMessageRow } from './UserMessageRow.js';
 import { ToolGroup } from './tools/ToolGroup.js';
 import type { ToolContentContext } from './tools/registry.js';
@@ -74,17 +72,6 @@ export interface TranscriptTurnProps {
   turn: TurnViewModel;
   /** True while this turn is the one the live projection is writing into. */
   live: boolean;
-  /**
-   * The running status line (#646): shown for the WHOLE turn once it has
-   * been active for a beat, with the elapsed clock — not only until the
-   * first token, which is what a "streaming" hint would be.
-   */
-  runningStatus?: boolean;
-  /**
-   * When the clock should start if the turn's own first row is not durable
-   * yet — the moment the user pressed send, taken from the pending row.
-   */
-  runningStartedAt?: number;
   footerActions: readonly TurnFooterAction[];
   lineageBadges?: readonly TurnLineageBadge[];
   failedReasonLabel?: string;
@@ -115,7 +102,6 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
   const folded = useMemo<FoldedTimelineEntry[]>(() => foldTimeline(turn.timeline), [turn.timeline]);
   const hasAnswer = finalAssistantReplyText(turn).trim().length > 0;
   // A concrete tool label outranks the generic phrase while a tool is in flight.
-  const runningToolLabel = props.live ? computerRunningLabel(turn.tools, locale) : undefined;
 
   const renderToolGroup = (items: readonly (typeof turn.tools)[number][], key: string) => (
     <ToolGroup
@@ -261,13 +247,6 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
             </span>
           )}
         </div>
-      )}
-
-      {props.live && props.runningStatus && (
-        <TurnRunningStatus
-          startedAt={props.runningStartedAt ?? turn.startedAt}
-          {...(runningToolLabel ? { activityLabel: runningToolLabel } : {})}
-        />
       )}
 
       {!props.live && (

@@ -32,7 +32,7 @@
 // fallback path where no committed turn exists yet; the phrase then stands
 // alone.
 
-import { useEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import {
   formatTurnDuration,
   getConversationCopy,
@@ -43,7 +43,11 @@ import { Anthropicon } from '../icons/Anthropicon.js';
 
 const ELAPSED_TICK_MS = 1_000;
 
-export function TurnRunningStatus(props: { startedAt?: number; activityLabel?: string }) {
+export function TurnRunningStatus(props: {
+  startedAt?: number;
+  activityLabel?: string;
+  turnId?: string;
+}) {
   const copy = getConversationCopy(useUiLocale()).messages;
   const label = props.activityLabel ?? copy.awaitingModelOutput;
   return (
@@ -63,18 +67,22 @@ export function TurnRunningStatus(props: { startedAt?: number; activityLabel?: s
       {/* Name the activity once; the clock must not announce each second. */}
       <span aria-hidden="true" className="inline-flex items-center gap-1.5">
         <span>{label}</span>
-        <TurnElapsedTime startedAt={props.startedAt} />
+        <TurnElapsedTime startedAt={props.startedAt} turnId={props.turnId} />
       </span>
     </div>
   );
 }
 
-function TurnElapsedTime(props: { startedAt?: number }) {
+function TurnElapsedTime(props: { startedAt?: number; turnId?: string }) {
   // Latched to the earliest start this instance has seen. A live Turn whose
   // durable rows have not landed yet is synthesised by the projection with
   // `startedAt: Date.now()` on every delta; taking each value as it comes
   // would reset the clock to 0s on every token.
   const earliest = useRef<number | undefined>(undefined);
+  const turnId = useRef(props.turnId);
+  if (props.turnId && turnId.current && props.turnId !== turnId.current)
+    earliest.current = undefined;
+  if (props.turnId) turnId.current = props.turnId;
   if (
     props.startedAt !== undefined &&
     (earliest.current === undefined || props.startedAt < earliest.current)
@@ -86,7 +94,7 @@ function TurnElapsedTime(props: { startedAt?: number }) {
   // Undefined until an effect measures it, so the first paint carries the
   // phrase alone and a static render stays deterministic.
   const [elapsedMs, setElapsedMs] = useState<number | undefined>(undefined);
-  useEffect(() => {
+  useLayoutEffect(() => {
     // Frozen (fixture / reduced motion) the clock is dropped rather than
     // pinned: any value it could show is a real wall-clock difference, so a
     // capture taken a second later would differ from this one.

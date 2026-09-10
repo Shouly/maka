@@ -220,7 +220,10 @@ test('cached conversation stays readable when the live transcript endpoint canno
 });
 
 
-test('welcome does not query a locally pending Host session and keeps the first prompt before its stream',async({sessionLocalWindow:{page,app}})=>{
+test('welcome does not query a locally pending Host session and keeps the first prompt before its stream',async({sessionLocalWindow:{page,app}}, testInfo)=>{
+  const nativeWindow = await app.browserWindow(page);
+  await nativeWindow.evaluate(window => window.show());
+  await page.bringToFront();
   await app.evaluate(({ipcMain},modulePath)=>{
     const require=process.getBuiltinModule('module').createRequire(`${process.cwd()}/`);
     const {DesktopSessionLocalService}=require(modulePath);
@@ -229,9 +232,9 @@ test('welcome does not query a locally pending Host session and keeps the first 
     DesktopSessionLocalService.prototype.wake=()=>{};
     state.__pendingProbes=[];
     const handlers=(ipcMain as typeof ipcMain & {_invokeHandlers:Map<string,(...args:any[])=>any>})._invokeHandlers;
-    for(const channel of ['sessions:observe','shell-runs:list','runtime-host:query']){
+    for(const channel of ['sessions:observe','sessions:transcript:open','shell-runs:list','runtime-host:query']){
       const original=handlers.get(channel)!;ipcMain.removeHandler(channel);
-      ipcMain.handle(channel,(...args)=>{state.__pendingProbes.push([channel,JSON.stringify(args.slice(1))]);return original(...args);});
+      ipcMain.handle(channel,async(...args)=>{state.__pendingProbes.push([channel,JSON.stringify(args.slice(1))]);if(channel === 'sessions:observe' || channel === 'sessions:transcript:open') await new Promise(resolve=>setTimeout(resolve,500));return original(...args);});
     }
   },resolve('dist/main/session-local-service.js'));
   const prompt='first prompt must precede its stream';
@@ -246,8 +249,24 @@ test('welcome does not query a locally pending Host session and keeps the first 
   const probes=await app.evaluate(()=> (globalThis as any).__pendingProbes as [string,string][]);
   const rawId=JSON.parse(session.id)[1];
   expect(probes.filter(([,payload])=>payload.includes(rawId))).toEqual([]);
+  await expect(page.locator('[data-maka-contract="turn-running-status"]')).toBeVisible();
   await page.evaluate((prompt)=>{
     const state=window as any;state.__messageOrderFailures=[];
+    state.__initialWaitingNode = document.querySelector('[data-maka-contract="turn-running-status"]');
+    state.__firstSendFrames=[];
+    state.__recordingFirstSend=true;
+    const record=()=>{
+      const log=document.querySelector('[role="log"]');
+      const user=[...(log?.querySelectorAll('[data-role="user"]') ?? [])].find(node=>node.textContent?.includes(prompt));
+      state.__firstSendFrames.push({ skeleton: Boolean(log?.querySelector('.chat-area[aria-hidden="true"]')), user: Boolean(user), y: user?.getBoundingClientRect().y,
+        running: Boolean(document.querySelector('button[aria-label="停止"]')),
+        waiting: Boolean(document.querySelector('[data-maka-contract="turn-running-status"]')),
+        sameWaiting: state.__initialWaitingNode === document.querySelector('[data-maka-contract="turn-running-status"]'),
+        title: document.querySelector('[data-maka-contract="titlebar-identity"]')?.textContent,
+      });
+      if(state.__recordingFirstSend) requestAnimationFrame(record);
+    };
+    requestAnimationFrame(record);
     const inspect=()=>{
       const log=document.querySelector('[role="log"]');if(!log)return;
       const answer=[...log.querySelectorAll('[data-maka-contract="markdown"]')].find(node=>node.textContent?.includes('Fake backend'));
@@ -264,4 +283,18 @@ test('welcome does not query a locally pending Host session and keeps the first 
   await page.evaluate(({id,messageId})=>window.maka.sessionLocal.reconcileMessage(id,messageId),{id:session.id,messageId:message.messageId});
   await expect(page.getByText(`Fake backend received: ${prompt}`)).toHaveCount(1);
   expect(await page.evaluate(()=>{const state=window as any;state.__orderObserver.disconnect();return state.__messageOrderFailures;})).toEqual([]);
+  const frames=await page.evaluate(()=>{const state=window as any;state.__recordingFirstSend=false;return state.__firstSendFrames as {skeleton:boolean;user:boolean;y:number|undefined;running:boolean;waiting:boolean;sameWaiting:boolean;title:string}[];});
+  await testInfo.attach('first-send-frames', {body:JSON.stringify(frames),contentType:'application/json'});
+  expect(frames.length).toBeGreaterThan(0);
+  expect(frames.filter(frame=>frame.skeleton && frame.user)).toEqual([]);
+  expect(frames.filter(frame=>frame.running && (!frame.waiting || !frame.sameWaiting))).toEqual([]);
+  const positions=frames.filter(frame=>frame.user && frame.y !== undefined).map(frame=>frame.y!);
+  expect(positions.length).toBeGreaterThan(0);
+  expect(Math.max(...positions)-Math.min(...positions)).toBeLessThan(1);
+  const transcript = await page.locator('[data-maka-contract="transcript"]').elementHandle();
+  const composer = await page.locator(COMPOSER_INPUT).elementHandle();
+  await page.evaluate(id=>window.maka.sessions.rename(id, 'Updated title without remount'), session.id);
+  await expect(page.locator('[data-maka-contract="titlebar-identity"]')).toContainText('Updated title without remount');
+  expect(await transcript!.evaluate(node=>node.isConnected)).toBe(true);
+  expect(await composer!.evaluate(node=>node.isConnected)).toBe(true);
 });

@@ -92,6 +92,10 @@
     "welcome-greeting.spec.ts": {
       "tests": 1,
       "electron": "welcome lifecycle reacts to renderer visibility and clock changes while the bundled brand asset renders in Electron"
+    },
+    "title-update-stability.spec.ts": {
+      "tests": 2,
+      "electron": "real Host title changes during a turn must not replace visible streaming text, nor retract the running status before its first token"
     }
   }
 }

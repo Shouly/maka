@@ -84,11 +84,45 @@ export function deriveTurnActive(input: {
   /** The active session's live projection, if this renderer has one. */
   turnPhase: TurnPhase | undefined;
   armedTurnId: string | undefined;
-  /** The turns the authority is running for this session. */
+  /** The turns the authority is running for this session, or `undefined` when
+   *  the snapshot cannot say. */
   runningTurnIds: readonly string[] | undefined;
+  /** The most recent reading that DID carry a set; see `retainRunningTurnIds`. */
+  retainedRunningTurnIds?: readonly string[] | undefined;
 }): boolean {
   if (input.turnPhase !== undefined) return true;
-  return input.runningTurnIds?.some((turnId) => turnId !== input.armedTurnId) === true;
+  const running = input.runningTurnIds ?? input.retainedRunningTurnIds;
+  return running?.some((turnId) => turnId !== input.armedTurnId) === true;
+}
+
+/**
+ * Carry the last informative running-turn reading across an uninformative one.
+ *
+ * `runningTurnIds: undefined` is NOT an empty set. `DesktopSessionLocalService`
+ * strips the field from every row it serves out of the desktop cache, because a
+ * read it could not make authoritative has no standing to say which turns are
+ * running — the same reason `settledSessionTransientIds` refuses to settle on
+ * one. Those cached reads interleave with authoritative ones on every catalog
+ * refresh, so reading `undefined` as "nothing is running" retracts the answer a
+ * few milliseconds after the authority gave it.
+ *
+ * That retraction is invisible for most of a turn, because the live projection
+ * answers first. It is NOT invisible before the first token: there is no
+ * projection yet, so `runningTurnIds` is the only witness the wait has, and
+ * losing it takes the running status line, the Stop affordance and the composer
+ * lock with it — each returning only after the rising-edge delay. A session's
+ * first turn is where this shows, because naming the Session from its first
+ * message fires an extra burst of catalog refreshes right into that window.
+ *
+ * An uninformative snapshot must therefore leave the previous answer standing.
+ * Any reading that carries a set — including an empty one, which is how a
+ * finished turn is reported — replaces it.
+ */
+export function retainRunningTurnIds(
+  previous: readonly string[] | undefined,
+  snapshot: readonly string[] | undefined,
+): readonly string[] | undefined {
+  return snapshot ?? previous;
 }
 
 export interface ModelWaitInputs {
