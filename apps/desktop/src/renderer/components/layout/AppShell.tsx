@@ -64,6 +64,7 @@ import { useSidebarLayout } from '../../hooks/use-sidebar-layout.js';
 import { useShellHotkeys } from '../../hooks/use-hotkeys.js';
 import { useWorkbar } from '../../hooks/use-workbar.js';
 import {
+  archiveProjectAndClearDefault,
   connectionsStore,
   hostScopeStore,
   newTaskStore,
@@ -86,7 +87,7 @@ import {
 import { openPath } from '../../bridge/app.js';
 import { previewSessionRemoval } from '../../bridge/sessions.js';
 import { testNetworkProxy } from '../../bridge/settings.js';
-import { archiveProject, restoreProject, renameProject } from '../../bridge/projects.js';
+import { restoreProject, renameProject } from '../../bridge/projects.js';
 import { getShellCopy, localizedShellErrorMessage } from '../../locales/shell-copy.js';
 import { getSidebarCopy } from '../../locales/sidebar-copy.js';
 import type { PendingE2eFixtureUiState } from '../../lib/fixture.js';
@@ -353,7 +354,7 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
           .catch((error) => reportError(shell.projectActions.projectUpdateFailedTitle, error));
       },
       onArchive: (project: ProjectRowModel) => {
-        void archiveProject(project.id, hostRef(project, defaultHost))
+        void archiveProjectAndClearDefault(project.id, hostRef(project, defaultHost))
           .then(() => newTaskStore.refresh())
           .catch((error) => reportError(shell.projectActions.projectUpdateFailedTitle, error));
       },
@@ -542,10 +543,16 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
           ) : undefined
         }
         actions={
-          view === 'session' && activeId ? (
+          view === 'session' && activeId && !workbar.expanded ? (
             // The model is chosen on the composer's meta row; the titlebar
             // keeps only the workbar's switch, which has to be reachable while
             // the pane is not on screen.
+            //
+            // Full screen is the exception: the pane owns the whole column and
+            // its own header carries both "leave full screen" and "close", so
+            // a second switch would land right above them and read as theirs.
+            // The reference design reaches the same place by other means —
+            // there the pane covers this row outright.
             <WorkbarToggle workbar={workbar} />
           ) : undefined
         }

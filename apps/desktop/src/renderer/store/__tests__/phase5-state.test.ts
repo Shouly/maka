@@ -36,6 +36,7 @@ import {
 import { createOptimisticSettingsDraft } from '../../lib/ported/optimistic-settings-draft.js';
 import { aboutUpdateRow, type AboutUpdateCopy } from '../../lib/ported/about-update-status.js';
 import { updateInstallOutcome } from '../../hooks/use-update-install.js';
+import { connectionModelRows, toggledModelIds } from '../../lib/connection-model-rows.js';
 import { createSettingsStore } from '../settings-store.js';
 import { createComposerInputStore } from '../composer-input-store.js';
 import { createUiStore } from '../ui-store.js';
@@ -301,6 +302,31 @@ test('a disposed draft drops the late response instead of resurrecting itself', 
   resolve?.({ host: 'server', port: 9 });
   assert.equal(await pending, false);
   assert.equal(seen.length, before);
+});
+
+// A catalog is the provider's list; a selection is the user's. The switch used
+// to rebuild the selection by walking the catalog, so an enabled id the catalog
+// no longer offered was invisible AND deleted by the next unrelated toggle.
+test('an enabled model the catalog dropped stays visible and survives another toggle', () => {
+  const entry = (id: string) => ({ id, canUseAsChatDefault: true, isDefault: false }) as never;
+  const entries = [entry('a'), entry('b')];
+  const rows = connectionModelRows(entries, ['a', 'gone']);
+  assert.deepEqual(
+    rows.map((row) => [row.id, row.enabled, row.missingFromCatalog]),
+    [
+      ['a', true, false],
+      ['b', false, false],
+      // Last, and marked: it is not on offer, only still selected.
+      ['gone', true, true],
+    ],
+  );
+  // Turning ANOTHER model on must not take the orphan with it.
+  assert.deepEqual(toggledModelIds(['a', 'gone'], 'b', true), ['a', 'gone', 'b']);
+  assert.deepEqual(toggledModelIds(['a', 'gone'], 'a', false), ['gone']);
+  // And the orphan itself can be turned off, which is the point of showing it.
+  assert.deepEqual(toggledModelIds(['a', 'gone'], 'gone', false), ['a']);
+  // Enabling twice does not duplicate it.
+  assert.deepEqual(toggledModelIds(['a'], 'a', true), ['a']);
 });
 
 // ── the updater row ────────────────────────────────────────────────────────

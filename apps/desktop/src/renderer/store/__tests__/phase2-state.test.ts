@@ -939,7 +939,19 @@ test('project options hide archived records and disable unavailable directories'
       ['ok', true],
     ],
   );
-  assert.equal(workspaceOptionsOf(catalog, { includeArchived: true }).length, 3);
+  // The rail lists archived projects, and their row menu offers Restore rather
+  // than Archive — so the option has to say which it is, not just be included.
+  assert.deepEqual(
+    workspaceOptionsOf(catalog, { includeArchived: true }).map(({ projectId, archived }) => [
+      projectId,
+      archived,
+    ]),
+    [
+      ['archived', true],
+      ['gone', false],
+      ['ok', false],
+    ],
+  );
   assert.equal(defaultTargetOf(catalog)?.projectId, null);
   for (const projectId of ['archived', 'gone', 'missing'])
     assert.equal(

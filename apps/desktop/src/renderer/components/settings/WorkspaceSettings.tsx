@@ -45,7 +45,6 @@ import { SettingsRow, SettingsSection, settingsFieldWidthClass } from './setting
 import { getAppInfo } from '../../bridge/app.js';
 import {
   addProject,
-  archiveProject,
   getProjectSnapshot,
   relinkProject,
   renameProject,
@@ -58,7 +57,7 @@ import {
 import { useAsync } from '../../hooks/use-async.js';
 import { useClientSettings, useSettingsErrorReporter } from '../../hooks/use-settings.js';
 import { projectPathDisplay } from '../../lib/ported/project-path-display.js';
-import { newTaskStore, settingsStore } from '../../store/index.js';
+import { archiveProjectAndClearDefault, newTaskStore, settingsStore } from '../../store/index.js';
 import { getSettingsCopy } from '../../locales/settings-copy.js';
 import { getSettingsProjectsCopy } from '../../locales/settings-projects-copy.js';
 import { getSettingsSharedCopy } from '../../locales/settings-shared-copy.js';
@@ -362,7 +361,7 @@ export function WorkspaceSettings(props: { host: DesktopRuntimeHostRef | undefin
           const target = pendingRemove;
           setPendingRemove(null);
           if (!target || !host) return;
-          run(archiveProject(target.id, host), copy.actionFailed);
+          run(archiveProjectAndClearDefault(target.id, host), copy.actionFailed);
         }}
       />
     </>

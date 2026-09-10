@@ -32,11 +32,12 @@
 
 import { useEffect, useState } from 'react';
 import {
+  connectionEnabledModelIds,
   providerAuthSupportsApiKey,
   type ProjectedLlmConnection,
 } from '@maka/core/llm-connections';
+import { providerDefaultsOf, type ProviderDefaults } from '@maka/core/provider-registry';
 import type { RelayModelProfiles } from '@maka/core/model-thinking';
-import { PROVIDER_REGISTRY } from '@maka/core/provider-registry';
 import { useUiLocale } from '@maka/ui';
 import { Anthropicon } from '../../icons/Anthropicon.js';
 import { Button } from '../../ui/button.js';
@@ -73,14 +74,88 @@ import {
 import { getSettingsModelsCopy } from '../../../locales/settings-models-copy.js';
 import type { DesktopRuntimeHostRef } from '../../../bridge/projects.js';
 
-export function ConnectionDetail(props: {
+/**
+ * The page below reads the provider's registry entry for `.authKind` and
+ * `.baseUrl`, so a connection whose `providerType` this build does not
+ * register gets a page that states that and offers the one action left.
+ */
+export function ConnectionDetail(props: ConnectionDetailProps) {
+  const defaults = providerDefaultsOf(props.connection.providerType);
+  return defaults === undefined ? (
+    <UnknownProviderDetail {...props} />
+  ) : (
+    <KnownConnectionDetail {...props} defaults={defaults} />
+  );
+}
+
+function UnknownProviderDetail(props: ConnectionDetailProps) {
+  const locale = useUiLocale();
+  const copy = getSettingsModelsCopy(locale);
+  const connection = props.connection;
+  const host = props.host;
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  return (
+    <div data-maka-contract="connection-detail">
+      <div className="mb-4 flex items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={props.onBack}>
+          <Anthropicon name="arrowLeft" size={16} />
+          <span className="ml-1.5">{copy.panel.backToList}</span>
+        </Button>
+      </div>
+      <div className="mb-6 flex items-center gap-2">
+        <h2 className="min-w-0 truncate text-[15px] font-semibold leading-5 text-text-primary">
+          {connection.name || connection.slug}
+        </h2>
+      </div>
+      <SettingsSection>
+        <SettingsRow
+          title={copy.detail.unknownProvider(connection.providerType)}
+          description={copy.detail.unknownProviderHelp}
+          control={
+            <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
+              {copy.detail.delete}
+            </Button>
+          }
+        />
+      </SettingsSection>
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title={copy.detail.deleteConnectionTitle(connection.name || connection.slug)}
+        description={copy.detail.deleteDescription(props.isDefault, false)}
+        confirmText={copy.detail.delete}
+        cancelText={copy.detail.cancel}
+        variant="destructive"
+        waitForConfirm
+        onConfirm={async () => {
+          if (!host) return;
+          try {
+            await connectionsStore.remove(
+              { connectionId: connection.connectionId, slug: connection.slug },
+              host,
+            );
+            props.onDeleted();
+          } catch (error) {
+            props.onError(copy.detail.deleteFailed, error);
+          } finally {
+            setDeleteOpen(false);
+          }
+        }}
+      />
+    </div>
+  );
+}
+
+interface ConnectionDetailProps {
   connection: ProjectedLlmConnection;
   host: DesktopRuntimeHostRef | undefined;
   isDefault: boolean;
   onBack: () => void;
   onDeleted: () => void;
   onError: (title: string, error: unknown) => void;
-}) {
+}
+
+function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: ProviderDefaults }) {
   const locale = useUiLocale();
   const copy = getSettingsModelsCopy(locale);
   const connection = props.connection;
@@ -88,7 +163,7 @@ export function ConnectionDetail(props: {
   const identity = { connectionId: connection.connectionId, slug: connection.slug };
   const display = providerDisplay(connection.providerType, locale);
   const endpoint = providerEndpointPresentation(connection);
-  const defaults = PROVIDER_REGISTRY[connection.providerType];
+  const defaults = props.defaults;
   const supportsApiKey = providerAuthSupportsApiKey(connection.providerType);
   const accountManaged = defaults.authKind === 'oauth_token';
   const reads = useConnectionDetailReads(identity, host);
@@ -333,10 +408,16 @@ export function ConnectionDetail(props: {
           write({ enabledModelIds }, copy.detail.saveModelsFailed)
         }
         onAddModel={({ id, contextWindow }) =>
+          // A typed-in model is one the user means to use, so it joins the
+          // selection; its context window is a declaration about an id, which
+          // is what `relayModelProfiles` is for.
           write(
             {
-              models: [...(connection.models ?? []), { id, contextWindow }],
-              modelSource: 'fallback',
+              enabledModelIds: [...connectionEnabledModelIds(connection), id],
+              relayModelProfiles: {
+                ...(connection.relayModelProfiles ?? {}),
+                [id]: { contextWindow },
+              },
             },
             copy.detail.saveModelsFailed,
           )

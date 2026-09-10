@@ -43,6 +43,7 @@ import {
   type ThinkingLevel,
 } from '@maka/core/model-thinking';
 import { getConversationCopy, useUiLocale } from '@maka/ui';
+import { connectionModelRows, toggledModelIds } from '../../../lib/connection-model-rows.js';
 import { Anthropicon } from '../../icons/Anthropicon.js';
 import { Button } from '../../ui/button.js';
 import { checkboxBoxClass, CHECKBOX_TICK_SIZE } from '../../ui/checkbox-box.js';
@@ -69,25 +70,21 @@ export function ConnectionModelsSection(props: {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const entries = props.connection.catalogEntries;
-  const enabled = useMemo(
-    () => new Set(connectionEnabledModelIds(props.connection)),
-    [props.connection],
-  );
+  const enabledIds = useMemo(() => connectionEnabledModelIds(props.connection), [props.connection]);
+  // The catalog's models AND anything else this connection still has enabled.
+  const rows = useMemo(() => connectionModelRows(entries, enabledIds), [entries, enabledIds]);
   const relay = isRelayProviderType(props.connection.providerType);
   const needle = filter.trim().toLowerCase();
   const shown = needle
-    ? entries.filter(
-        (entry) =>
-          entry.id.toLowerCase().includes(needle) ||
-          (entry.displayName ?? '').toLowerCase().includes(needle),
+    ? rows.filter(
+        (row) =>
+          row.id.toLowerCase().includes(needle) ||
+          (row.entry?.displayName ?? '').toLowerCase().includes(needle),
       )
-    : entries;
+    : rows;
 
   const toggle = (modelId: string, next: boolean) => {
-    const ids = entries
-      .map((entry) => entry.id)
-      .filter((id) => (id === modelId ? next : enabled.has(id)));
-    props.onSetEnabledModels(ids);
+    props.onSetEnabledModels(toggledModelIds(enabledIds, modelId, next));
   };
 
   const declaredLevels = (modelId: string): readonly ThinkingLevel[] =>
@@ -131,7 +128,7 @@ export function ConnectionModelsSection(props: {
       }
     >
       <SettingsRow
-        title={copy.detail.modelsSummary(enabled.size, entries.length)}
+        title={copy.detail.modelsSummary(rows.filter((row) => row.enabled).length, rows.length)}
         control={
           <Input
             aria-label={copy.detail.filterModels}
@@ -143,23 +140,25 @@ export function ConnectionModelsSection(props: {
         }
       />
 
-      {entries.length === 0 && <SettingsRow title={copy.detail.noModels} control={null} />}
+      {rows.length === 0 && <SettingsRow title={copy.detail.noModels} control={null} />}
 
-      {entries.length > 0 && shown.length === 0 && (
+      {rows.length > 0 && shown.length === 0 && (
         <SettingsRow title={copy.detail.noModelsMatch} control={null} />
       )}
 
-      {shown.map((entry) => {
-        const label = entry.displayName?.trim() || entry.id;
-        const open = expanded === entry.id;
+      {shown.map((row) => {
+        const entry = row.entry;
+        const label = entry?.displayName?.trim() || row.id;
+        // Nothing to declare capabilities against, so it never expands.
+        const open = expanded === row.id && entry !== undefined;
         return (
           <SettingsRow
-            key={entry.id}
+            key={row.id}
             layout={relay && open ? 'stacked' : 'inline'}
             title={
               <span className="flex min-w-0 items-center gap-2">
                 <span className="truncate">{label}</span>
-                {entry.isDefault && (
+                {entry?.isDefault && (
                   <span className="shrink-0 text-[13px] text-text-muted">
                     {copy.page.defaultModel}
                   </span>
@@ -168,13 +167,18 @@ export function ConnectionModelsSection(props: {
             }
             description={
               <span className="flex flex-wrap items-center gap-x-2">
-                <span className="font-mono text-[12px]">{entry.id}</span>
-                {entry.contextWindow !== undefined && (
+                <span className="font-mono text-[12px]">{row.id}</span>
+                {row.missingFromCatalog && (
+                  <span className="text-text-muted">{copy.detail.modelNotOffered}</span>
+                )}
+                {entry?.contextWindow !== undefined && (
                   <span>{copy.detail.contextToken(String(entry.contextWindow))}</span>
                 )}
-                {entry.supportsVision && <span>{copy.detail.visionToken}</span>}
-                {entry.thinkingLevels.length > 0 && <span>{copy.detail.thinkingToken}</span>}
-                {!entry.describedByMetadata && (
+                {entry?.supportsVision && <span>{copy.detail.visionToken}</span>}
+                {entry !== undefined && entry.thinkingLevels.length > 0 && (
+                  <span>{copy.detail.thinkingToken}</span>
+                )}
+                {entry !== undefined && !entry.describedByMetadata && (
                   <span className="text-text-muted">{copy.detail.modelUndescribed}</span>
                 )}
               </span>
@@ -182,12 +186,12 @@ export function ConnectionModelsSection(props: {
             control={
               relay && open ? undefined : (
                 <span className="flex items-center gap-3">
-                  {relay && (
+                  {relay && entry !== undefined && (
                     <Button
                       variant="ghost"
                       size="sm"
                       aria-label={copy.detail.declareCapabilitiesAria(label)}
-                      onClick={() => setExpanded(entry.id)}
+                      onClick={() => setExpanded(row.id)}
                     >
                       {copy.detail.declareCapabilities}
                     </Button>
@@ -195,8 +199,8 @@ export function ConnectionModelsSection(props: {
                   <Switch
                     aria-label={copy.detail.enableModelAria(label)}
                     disabled={props.busy}
-                    checked={enabled.has(entry.id)}
-                    onCheckedChange={(next) => toggle(entry.id, next)}
+                    checked={row.enabled}
+                    onCheckedChange={(next) => toggle(row.id, next)}
                   />
                 </span>
               )
@@ -206,7 +210,7 @@ export function ConnectionModelsSection(props: {
               <div className="flex flex-col gap-3">
                 <div className="flex flex-wrap items-center gap-3">
                   {DECLARABLE_RELAY_THINKING_LEVELS.map((level) => {
-                    const checked = declaredLevels(entry.id).includes(level);
+                    const checked = declaredLevels(row.id).includes(level);
                     return (
                       <button
                         key={level}
@@ -214,7 +218,7 @@ export function ConnectionModelsSection(props: {
                         role="checkbox"
                         aria-checked={checked}
                         disabled={props.busy}
-                        onClick={() => toggleLevel(entry.id, level, !checked)}
+                        onClick={() => toggleLevel(row.id, level, !checked)}
                         className="group/cb flex cursor-pointer items-center gap-2 text-sm leading-5 text-text-primary outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)]"
                       >
                         <span className={checkboxBoxClass(checked, 'xs')} aria-hidden>
@@ -229,8 +233,8 @@ export function ConnectionModelsSection(props: {
                   <Switch
                     aria-label={copy.detail.enableModelAria(label)}
                     disabled={props.busy}
-                    checked={enabled.has(entry.id)}
-                    onCheckedChange={(next) => toggle(entry.id, next)}
+                    checked={row.enabled}
+                    onCheckedChange={(next) => toggle(row.id, next)}
                   />
                   <Button variant="secondary" size="sm" onClick={() => setExpanded(null)}>
                     {copy.detail.save}

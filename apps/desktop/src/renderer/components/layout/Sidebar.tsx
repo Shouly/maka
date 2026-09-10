@@ -219,6 +219,7 @@ export function Sidebar(props: SidebarProps) {
           <ProjectRow
             projectKey={entry.key}
             project={entry.project}
+            archived={entry.project?.archived === true}
             label={entry.label}
             expanded={open}
             onToggle={() => toggleProject(entry.key)}

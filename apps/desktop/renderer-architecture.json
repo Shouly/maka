@@ -218,6 +218,7 @@
     "src/renderer/lib/cn.ts",
     "src/renderer/lib/composer-document.ts",
     "src/renderer/lib/composer-surface.ts",
+    "src/renderer/lib/connection-model-rows.ts",
     "src/renderer/lib/fixture.ts",
     "src/renderer/lib/goal-readout.ts",
     "src/renderer/lib/markdown/color-utils.tsx",
@@ -3100,8 +3101,8 @@
         "useConnectionAction": 1,
         "useConnectionDetailReads": 1,
         "useEffect": 3,
-        "useState": 7,
-        "useUiLocale": 1
+        "useState": 8,
+        "useUiLocale": 2
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
@@ -3144,6 +3145,7 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../../../lib/connection-model-rows.js": 1,
         "../../../locales/settings-models-copy.js": 1,
         "../../icons/Anthropicon.js": 1,
         "../../ui/button.js": 1,
@@ -4681,6 +4683,15 @@
       "actionFactories": [],
       "dependencyPaths": {}
     },
+    "src/renderer/lib/connection-model-rows.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
     "src/renderer/lib/fixture.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {
@@ -6108,6 +6119,7 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../bridge/projects.js": 1,
         "../bridge/runtime-host-profiles.js": 1,
         "../bridge/sessions.js": 1,
         "../lib/ported/session-message-settlement.js": 1,

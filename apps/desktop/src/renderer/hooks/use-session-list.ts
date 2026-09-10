@@ -45,6 +45,8 @@ export interface ProjectRowModel {
   readonly profileId: string;
   readonly hostId: string | undefined;
   readonly path: string | undefined;
+  /** The rail lists archived projects, and their row menu offers Restore. */
+  readonly archived: boolean;
 }
 
 /**
@@ -67,6 +69,7 @@ export function useProjectRows(): ProjectRowModel[] {
         profileId: option.profileId,
         hostId: option.hostId,
         path: option.path,
+        archived: option.archived,
       });
     }
     for (const project of defaults?.snapshot.projects ?? []) {
@@ -77,6 +80,7 @@ export function useProjectRows(): ProjectRowModel[] {
         profileId: '',
         hostId: undefined,
         path: projectPath(project),
+        archived: project.archivedAt !== undefined,
       });
     }
     return [...rows.values()];

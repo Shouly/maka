@@ -211,6 +211,10 @@ const zhCopy = {
     declareCapabilities: '配置参数',
     declareCapabilitiesAria: (name: string) => `配置模型参数：${name}`,
     modelUndescribed: '缺少该模型的参数信息，请手动配置。',
+    /** An enabled model this connection's catalog no longer offers. */
+    modelNotOffered: '此连接已不再提供这个模型',
+    unknownProvider: (providerType: string) => `这个版本不认识服务商「${providerType}」`,
+    unknownProviderHelp: '这个连接可能来自另一个版本，或者它的服务商已经下线。这里只能删除它。',
     visionToken: '视觉',
     thinkingToken: '思考',
     contextToken: (value: string) => `${value} 上下文`,
@@ -606,6 +610,9 @@ const zhTwCopy = {
     declareCapabilities: '設定參數',
     declareCapabilitiesAria: (name: string) => `設定模型參數：${name}`,
     modelUndescribed: '缺少該模型的參數資訊，請手動設定。',
+    modelNotOffered: '此連線已不再提供這個模型',
+    unknownProvider: (providerType: string) => `這個版本不認識服務商「${providerType}」`,
+    unknownProviderHelp: '這個連線可能來自另一個版本，或者它的服務商已經下線。這裡只能刪除它。',
     visionToken: '视觉',
     thinkingToken: '思考',
     contextToken: (value: string) => `${value} 上下文`,
@@ -1008,6 +1015,11 @@ const enCopy: SettingsModelsCopy = {
     declareCapabilities: 'Set parameters',
     declareCapabilitiesAria: (name: string) => `Set model parameters: ${name}`,
     modelUndescribed: 'No parameters known for this model. Set them by hand.',
+    modelNotOffered: 'This connection no longer offers this model',
+    unknownProvider: (providerType: string) =>
+      `This build does not know the provider “${providerType}”`,
+    unknownProviderHelp:
+      'It may come from another build, or its provider was retired. Deleting it is all that is left here.',
     visionToken: 'Vision',
     thinkingToken: 'Thinking',
     contextToken: (value: string) => `${value} context`,

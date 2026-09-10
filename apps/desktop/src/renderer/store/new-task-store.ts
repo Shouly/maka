@@ -116,6 +116,8 @@ export interface WorkspaceOption {
   readonly path: string | undefined;
   readonly available: boolean;
   readonly unavailableReason: string | undefined;
+  /** Archived projects are listed only where the caller asked for them. */
+  readonly archived: boolean;
 }
 
 export interface NewTaskState {
@@ -165,6 +167,7 @@ export function workspaceOptionsOf(
         path: undefined,
         available: false,
         unavailableReason: host.message,
+        archived: false,
       });
       continue;
     }
@@ -178,6 +181,7 @@ export function workspaceOptionsOf(
         path: undefined,
         available: false,
         unavailableReason: host.message,
+        archived: false,
       });
       continue;
     }
@@ -192,6 +196,7 @@ export function workspaceOptionsOf(
         path: projectPath(project),
         available: project.available,
         unavailableReason: undefined,
+        archived: project.archivedAt !== undefined,
       });
     }
   }

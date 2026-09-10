@@ -26,6 +26,7 @@ import {
 import { createActiveSessionStore } from './active-session-store.js';
 import { createTurnActionsStore } from './turn-actions-store.js';
 import { createGoalStore } from './goal-store.js';
+import { archiveProject } from '../bridge/projects.js';
 import { sessionsStore } from './sessions-store.js';
 import { settingsStore } from './settings-store.js';
 import { connectionsStore } from './connections-store.js';
@@ -71,6 +72,23 @@ sessionsStore.onCatalogRead({
 // The Goal reads its transitions out of the Session catalog's change stream;
 // wiring that here keeps the store itself free of another store's identity.
 export const goalStore = createGoalStore({ subscribeChanges: sessionsStore.onChange });
+/**
+ * Archive a project without leaving the default pointing at it.
+ *
+ * Two surfaces archive — the rail's row menu and Workspace settings — and the
+ * preference belongs to neither of them, so the rule lives here rather than in
+ * both.
+ */
+export async function archiveProjectAndClearDefault(
+  projectId: string,
+  host: Parameters<typeof archiveProject>[1],
+): Promise<void> {
+  await archiveProject(projectId, host);
+  const settings = settingsStore.client.getState().data;
+  if (settings?.projects?.defaultProjectId !== projectId) return;
+  await settingsStore.updateClient({ projects: { defaultProjectId: undefined } });
+}
+
 export const turnActionsStore = createTurnActionsStore({
   refresh: sessionsStore.refresh,
   // A send is a viewport command as well as an admission: it abandons the
