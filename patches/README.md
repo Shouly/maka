@@ -20,8 +20,11 @@
 # patches
 
 Applied on root `postinstall` via `scripts/apply-dependency-patches.mjs`
-(`patch-package --error-on-fail`). After bumping a patched dependency, re-run
-`npx patch-package <name>` so the filename tracks the installed version.
+(`patch-package --error-on-fail`). To update a patch, edit the installed package
+in `node_modules`, then run `node node_modules/patch-package/index.js <name>`.
+After a dependency upgrade, apply the still-needed edits to the new version
+before regenerating. The command records the installed files, not the old
+patch text.
 
 Keep this directory small. Prefer product code that uses the dependency's
 published API; only patch for bugs that block shipping and cannot be worked

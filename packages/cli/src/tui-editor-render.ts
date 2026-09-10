@@ -17,23 +17,20 @@
  * under the License.
  */
 
-export interface WorkHubControlSnapshot {
-  readonly revision: number;
-  readonly phase: 'idle' | 'acting' | 'paused' | 'error';
-  readonly canUndo: boolean;
-  readonly status?: string;
-  readonly error?: string;
-  readonly cursor?: {
-    readonly x: number;
-    readonly y: number;
-    readonly clicking: boolean;
-    readonly durationMs?: number;
-  };
-}
-
-export interface WorkHubControlBridge {
-  getSnapshot(): Promise<WorkHubControlSnapshot>;
-  stop(): Promise<void>;
-  undo(): Promise<void>;
-  subscribe(handler: (snapshot: WorkHubControlSnapshot) => void): () => void;
+export function stripUnfocusedCursorStyle(lines: string[], focused: boolean): string[] {
+  if (focused) return lines;
+  // pi-tui 0.84.4 paints its cursor even when the editor is unfocused.
+  // Remove the reverse-video wrapper, keeping the captured text ($1):
+  //
+  // Input:  \x1b[7mhello\x1b[0m
+  //         └─────┘└───┘└─────┘
+  //         reverse text reset
+  //          remove keep remove
+  //                  $1
+  // Output: hello
+  //
+  // ([^\x1b]*) captures text without ESC, so the match cannot cross another
+  // ANSI sequence. Other text using this same wrapper would also lose its
+  // reverse styling. Recheck when changing themes or upgrading pi-tui.
+  return lines.map((line) => line.replace(/\x1b\[7m([^\x1b]*)\x1b\[0m/gu, '$1'));
 }
