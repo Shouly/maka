@@ -83,6 +83,33 @@ export function pickNewChatModel(input: {
     : undefined;
 }
 
+/**
+ * Whether a Session model write landed on the model that was asked for.
+ *
+ * The Host answers a model change with the Session as it now stands, which is
+ * not always what was requested: a refused switch, a normalised target, a
+ * write overtaken by another. That answer is the only evidence the pick took,
+ * so remembering an unconfirmed one as the default for the next task would
+ * point every future task at a model this workspace may not run.
+ *
+ * The thinking level is deliberately not compared: what is remembered is which
+ * model to start on, and the level rides the model rather than choosing it.
+ */
+export function chatModelWriteCommitted(
+  requested: NewChatModel,
+  summary: {
+    llmConnectionId?: string | undefined;
+    llmConnectionSlug?: string | undefined;
+    model?: string | undefined;
+  },
+): boolean {
+  return (
+    summary.llmConnectionId === requested.llmConnectionId &&
+    summary.llmConnectionSlug === requested.llmConnectionSlug &&
+    summary.model === requested.model
+  );
+}
+
 export function chatModelChoiceLabel(
   choices: readonly ChatModelChoice[],
   connectionId: string | undefined,

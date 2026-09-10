@@ -55,6 +55,7 @@ import {
   revealSidebarSelection,
 } from '../sidebar-expansion.js';
 import { createUiStore } from '../ui-store.js';
+import { chatModelWriteCommitted } from '../../lib/ported/shell-chat-model-selection.js';
 import { resolveHotkey, SHELL_HOTKEYS } from '../../hooks/use-hotkeys.js';
 import { getSidebarCopy } from '../../locales/sidebar-copy.js';
 import {
@@ -725,6 +726,74 @@ test('new task creation uses the captured target and model after the selection c
   const [target, input] = JSON.parse(calls[0]!);
   assert.deepEqual(target, captured.target);
   assert.equal(input.model, captured.model?.model);
+});
+// The model chip has to mean one thing wherever it is pressed. Choosing inside
+// a task writes that task AND the default the next one starts on — but only
+// what the Host confirms.
+test('a model chosen inside a task is what the next task starts on, across a restart', async () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const values = new Map<string, string>();
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    },
+  });
+  try {
+    const chosen = { llmConnectionId: 'c1', llmConnectionSlug: 'e2e', model: 'm1' };
+    // What the composer does once the Host answers a model change: the Session
+    // summary comes back naming the model it committed.
+    assert.equal(chatModelWriteCommitted(chosen, { ...chosen }), true);
+    // A refused or overtaken write answers with a different model, and must
+    // not be remembered.
+    assert.equal(chatModelWriteCommitted(chosen, { ...chosen, model: 'other' }), false);
+    assert.equal(
+      chatModelWriteCommitted(chosen, { ...chosen, llmConnectionSlug: 'elsewhere' }),
+      false,
+    );
+    assert.equal(chatModelWriteCommitted(chosen, {}), false);
+
+    // Two models on offer, and the catalog's own default is the OTHER one, so
+    // landing on the remembered pick cannot be the default answering by luck.
+    const second = { llmConnectionId: 'c2', llmConnectionSlug: 'other', model: 'm2' };
+    const { bridge } = fakeNewTaskBridge({
+      getNewTaskConnections: async () => ({
+        connections: [],
+        defaultConnection: 'e2e',
+        chatModelChoices: [
+          {
+            ...chosen,
+            connectionId: chosen.llmConnectionId,
+            connectionSlug: chosen.llmConnectionSlug,
+            providerType: 'anthropic',
+            providerLabel: 'Anthropic',
+            label: 'Model One',
+            isDefault: true,
+            thinkingLevels: [],
+          },
+          {
+            connectionId: second.llmConnectionId,
+            connectionSlug: second.llmConnectionSlug,
+            providerType: 'anthropic',
+            providerLabel: 'Anthropic',
+            model: second.model,
+            label: 'Model Two',
+            isDefault: false,
+            thinkingLevels: [],
+          },
+        ],
+      }),
+    });
+    createNewTaskStore(bridge as never).selectModel(second);
+    // A fresh store is what the next launch builds.
+    const relaunched = createNewTaskStore(bridge as never);
+    await relaunched.refresh();
+    assert.deepEqual(relaunched.getState().model, second);
+  } finally {
+    if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
+    else Reflect.deleteProperty(globalThis, 'localStorage');
+  }
 });
 test('a failed target catalog cannot retain another Hosts model choices', async () => {
   const { bridge } = fakeNewTaskBridge({

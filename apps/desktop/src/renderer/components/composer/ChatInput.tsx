@@ -116,7 +116,10 @@ import { getComposerCopy } from '../../locales/composer-copy.js';
 import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
 import { getShellCopy, localizedShellErrorMessage } from '../../locales/shell-copy.js';
 import { getTranscriptCopy } from '../../locales/transcript-copy.js';
-import { chatModelChoiceLabel } from '../../lib/ported/shell-chat-model-selection.js';
+import {
+  chatModelChoiceLabel,
+  chatModelWriteCommitted,
+} from '../../lib/ported/shell-chat-model-selection.js';
 import {
   showSkillInvocationFeedback,
   skillInvocationDisplayText,
@@ -843,25 +846,32 @@ function OwnedChatInput(props: {
   // does not offer.
   const modelChoices = (session ? connections : newTask.connections)?.chatModelChoices ?? [];
   const pickModel = (choice: ChatModelChoice) => {
+    const target = {
+      llmConnectionId: choice.connectionId,
+      llmConnectionSlug: choice.connectionSlug,
+      model: choice.model,
+    };
     if (sessionId) {
       void turnActionsStore
-        .setModel(sessionId, {
-          llmConnectionId: choice.connectionId,
-          llmConnectionSlug: choice.connectionSlug,
-          model: choice.model,
-          thinkingLevel: null,
+        .setModel(sessionId, { ...target, thinkingLevel: null })
+        .then((row) => {
+          sessionsStore.upsert(row);
+          // The chip means one thing wherever it is pressed: the model you
+          // chose last is the model the NEXT task starts on. Choosing inside a
+          // task used to change that task alone, so the same control was
+          // remembered on the welcome surface and forgotten here, with nothing
+          // on screen to say which one this was.
+          //
+          // Only what the Host confirms, and only for THIS task's own model —
+          // every other open task keeps the model it was given.
+          if (chatModelWriteCommitted(target, row)) newTaskStore.selectModel(target);
         })
-        .then((row) => sessionsStore.upsert(row))
         .catch((cause: unknown) =>
           report(cause, getTranscriptCopy(locale).model.changeFailedTitle),
         );
       return;
     }
-    newTaskStore.selectModel({
-      llmConnectionId: choice.connectionId,
-      llmConnectionSlug: choice.connectionSlug,
-      model: choice.model,
-    });
+    newTaskStore.selectModel(target);
     patch({ thinking: undefined });
   };
   // A menu entry that hands focus to the editor must stop Radix from
