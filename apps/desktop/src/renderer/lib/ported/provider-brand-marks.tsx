@@ -231,11 +231,18 @@ function XiaomiMiMo(): ReactElement {
 // - license: MIT (repository LICENSE)
 // - SHA-256: 7cfa6e9d6726f7c9fa26c7d9aef0dfec52d20a137380454340f30f12ccbfd302
 
+/**
+ * An external monochrome asset, painted as a mask rather than drawn as an
+ * `<img>`: an image document does not inherit `currentColor`, so it would be
+ * stuck at whatever colour the file was authored in. The mask needs a surface
+ * to reveal — hence the background — and a size to reveal it in, which it
+ * takes from the slot the caller gives every mark.
+ */
 function ProviderAssetMask({ src }: { src: string }): ReactElement {
   const mask = `url("${src}")`;
   return (
     <span
-      className="providerAssetMask"
+      className="block size-full bg-current [mask-position:center] [mask-repeat:no-repeat] [mask-size:contain]"
       style={{ maskImage: mask, WebkitMaskImage: mask }}
       aria-hidden="true"
     />

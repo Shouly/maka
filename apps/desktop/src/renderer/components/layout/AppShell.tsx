@@ -65,6 +65,7 @@ import { useSidebarLayout } from '../../hooks/use-sidebar-layout.js';
 import { useShellHotkeys } from '../../hooks/use-hotkeys.js';
 import { useWorkbar } from '../../hooks/use-workbar.js';
 import {
+  scheduledTasksStore,
   archiveProjectAndClearDefault,
   connectionsStore,
   hostScopeStore,
@@ -89,6 +90,7 @@ import { openPath } from '../../bridge/app.js';
 import { previewSessionRemoval } from '../../bridge/sessions.js';
 import { testNetworkProxy } from '../../bridge/settings.js';
 import { restoreProject, renameProject } from '../../bridge/projects.js';
+import { subscribeScheduledTasksDue } from '../../bridge/scheduled-tasks.js';
 import { getShellCopy, localizedShellErrorMessage } from '../../locales/shell-copy.js';
 import { getSidebarCopy } from '../../locales/sidebar-copy.js';
 import type { PendingE2eFixtureUiState } from '../../lib/fixture.js';
@@ -283,6 +285,31 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
 
   // The fixture's UI state, applied once the stores that own it exist.
   const fixture = props.fixture;
+  // A task coming due while the app is open. The Scheduled page owns the list
+  // but is usually not mounted when one fires, so the shell carries the news —
+  // and refreshes the list, because the run that just happened is on it.
+  useEffect(
+    () =>
+      subscribeScheduledTasksDue((task) => {
+        void scheduledTasksStore.refresh();
+        toast({
+          title: shell.app.scheduledTaskDue,
+          description: task.title,
+          action: (
+            <ToastAction
+              altText={shell.app.viewScheduledTasks}
+              onClick={() =>
+                uiStore.navigate({ section: 'automations', module: 'scheduled-tasks' })
+              }
+            >
+              {shell.app.viewScheduledTasks}
+            </ToastAction>
+          ),
+        });
+      }),
+    [shell],
+  );
+
   useEffect(() => {
     if (!fixture) return;
     uiStore.applyFixture(fixture);

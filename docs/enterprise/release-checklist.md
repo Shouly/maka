@@ -71,39 +71,6 @@ come before any feature work: several lose data silently.
    channel:'local' }` whenever the seed carries no locked effect, and bot tasks
    seed unlocked. Platform and chat id are dropped with no warning, and every
    row offers Edit.
-2. **Archived project rows offer Archive, not Restore.** The rail lists
-   archived projects (`hooks/use-session-list.ts:60`) but `Sidebar.tsx:217-225`
-   never passes `archived`, so `ProjectRow` always renders Archive and the
-   Restore item is dead code.
-3. **Archiving the default project leaves a dangling preference.**
-   `WorkspaceSettings.tsx:361-366` calls `archiveProject` alone; upstream also
-   writes `defaultProjectId: undefined` in the same action.
-4. **An unknown `providerType` crashes the connection detail page.**
-   `components/settings/models/ConnectionDetail.tsx:91` dereferences
-   `PROVIDER_REGISTRY[...].authKind` unguarded. Upstream returns a
-   non-actionable fallback page first.
-5. **A hand-added model lands disabled and disappears on refresh.**
-   `ConnectionDetail.tsx:335-343` appends to `models` and forces `modelSource:
-   'fallback'`; upstream writes `enabledModelIds` plus
-   `relayModelProfiles[id]`, so the model is on and its declaration survives.
-6. **An enabled model missing from the catalog is invisible and silently
-   dropped.** `ConnectionModelsSection.tsx:71-91` builds rows from catalog
-   entries only, so a stale or quarantined id cannot be unticked and the next
-   unrelated toggle removes it.
-
-Smaller, same kind:
-
-- **Scheduled-task due notifications are unwired.** `scheduledTasks.subscribeDue`
-  has no subscriber anywhere in the renderer, so a task that fires while the app
-  is open raises no OS notification. It belongs in the shell's store lifetime
-  (`store/index.ts` `startRendererStores`), not in the module page, which may not
-  be mounted. (Found in Phase 5b.)
-- **The xAI mark does not paint in its OAuth card.** `ProviderAssetMask` is a CSS
-  mask that needs an explicit size the account card does not give it; the slot
-  renders empty beside OpenAI's and GitHub's glyphs
-  (`.maka-shots/enterprise/phase5b-provider-catalog-light.png`).
-- **MCP brand marks are monochrome.** Their colour rule died with
-  `styles/module-pages/mcp.css`; restoring it is a rule in `styles/globals.css`.
 
 ### Outside the renderer allow-list
 
@@ -161,9 +128,9 @@ added while a turn runs; the draft does not follow a newly picked workspace
 target (it vanishes); no orchestration (Swarm / Graph) control; the Goal entry
 is offered even when a goal is already running.
 
-**Queued messages** — actions are not gated by entry state, `next_turn` and
-`current_turn` rows are indistinguishable and carry the same controls, and the
-edit box has no Enter / Escape.
+**Queued messages** — actions are not gated by entry state, and the edit box
+has no Enter / Escape. (Steering and follow-up rows now say which they are and
+carry different controls.)
 
 **Sidebar** — no time ⇄ project grouping switch and no chronological list (a
 project's tasks need the project expanded; project-less tasks stop at 20); no
@@ -290,6 +257,11 @@ changed. What that audit left open:
   lockfile and the third-party notices.
 
 ## Where ours goes further than upstream
+
+The MCP directory's marks are monochrome on purpose (`McpMarket.tsx` says so at
+the call site): one ink that reads in both themes, instead of eleven vendor
+palettes and a dark-theme rescue rule for the near-black ones. Listed here
+because it was once written down as a lost stylesheet rule, which it is not.
 
 Every interaction prompt carries Stop, not only the ask-user one: the prompt
 slot replaces the composer for all four kinds, so a boundary, capability or

@@ -546,6 +546,13 @@ type ShellCopy = {
      * refusal, the confirmation and the failure read the same wherever the
      * user pressed.
      */
+    /**
+     * A scheduled task fired while the app was open. The Scheduled page owns
+     * the list, but it is usually not mounted when a task comes due, so the
+     * shell says it.
+     */
+    scheduledTaskDue: string;
+    viewScheduledTasks: string;
     updateInstallFailedTitle: string;
     updateInstallReasons: Record<'active_tasks' | 'not_downloaded' | 'install_failed', string>;
     updateInterruptTitle: string;
@@ -1305,6 +1312,8 @@ const SHELL_COPY_BY_LOCALE = {
       resumeStartedDescription: '正在从最后一个完整执行边界继续',
       resumeFailedTitle: '继续失败',
       resumeFailedFallback: '无法继续这一轮，请检查任务状态后重试。',
+      scheduledTaskDue: '定时任务',
+      viewScheduledTasks: '查看定时任务',
       updateInstallFailedTitle: '安装更新失败',
       updateInstallReasons: {
         active_tasks: '还有任务在运行，这次没有中断它们。',
@@ -1832,6 +1841,8 @@ const SHELL_COPY_BY_LOCALE = {
       resumeStartedDescription: '正在從最後一個完整執行邊界繼續',
       resumeFailedTitle: '恢復失敗',
       resumeFailedFallback: '無法啟動安全恢復，請檢查任務狀態後重試。',
+      scheduledTaskDue: '定時任務',
+      viewScheduledTasks: '檢視定時任務',
       updateInstallFailedTitle: '安裝更新失敗',
       updateInstallReasons: {
         active_tasks: '還有任務在執行，這次沒有中斷它們。',
@@ -2412,6 +2423,8 @@ const SHELL_COPY_BY_LOCALE = {
       resumeStartedDescription: 'Continuing from the last complete execution boundary',
       resumeFailedTitle: 'Could not continue',
       resumeFailedFallback: 'This turn could not be continued. Check the task state and try again.',
+      scheduledTaskDue: 'Scheduled task',
+      viewScheduledTasks: 'View scheduled tasks',
       updateInstallFailedTitle: 'Could not install the update',
       updateInstallReasons: {
         active_tasks: 'Tasks are still running, and this attempt did not interrupt them.',

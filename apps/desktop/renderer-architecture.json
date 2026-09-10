@@ -1218,7 +1218,7 @@
         "requestAnimationFrame": 1
       },
       "hookCalls": {
-        "useEffect": 5,
+        "useEffect": 6,
         "useIsPresent": 1,
         "usePageHistory": 1,
         "useReducedMotion": 1,
@@ -1239,6 +1239,7 @@
         "../../bridge/app.js": 1,
         "../../bridge/diagnostics.js": 1,
         "../../bridge/projects.js": 1,
+        "../../bridge/scheduled-tasks.js": 1,
         "../../bridge/sessions.js": 1,
         "../../bridge/settings.js": 1,
         "../../hooks/use-hotkeys.js": 1,
