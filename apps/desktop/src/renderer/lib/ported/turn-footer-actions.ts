@@ -49,7 +49,7 @@ import type { TurnStatus } from '@maka/core/session';
 import type { UiLocale } from '@maka/core/ui-locale';
 import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
 
-export type TurnFooterActionId = 'regenerate' | 'branch' | 'copy' | 'info';
+export type TurnFooterActionId = 'regenerate' | 'branch' | 'copy';
 
 export interface TurnFooterAction {
   id: TurnFooterActionId;
@@ -84,13 +84,6 @@ export interface TurnFooterContext {
    */
   alreadyRegenerated?: boolean;
   /**
-   * Optional one-line summary of the turn's meta (model · duration ·
-   * cost). When present, the footer renders an `info` action
-   * whose tooltip carries this text — the single home for turn meta
-   * now that the top summary row is gone (#546). Absent on turns with
-   * no meta (fake backend, not-yet-streamed).
-   */
-  metaSummary?: string;
   /**
    * Per @kenji review: prevent double-click duplicate sibling turns.
    * The renderer marks an action `pending` from click time until
@@ -112,7 +105,7 @@ export interface TurnFooterContext {
  * optimistic guesses.
  */
 export function deriveTurnFooterActions(input: TurnFooterContext): TurnFooterAction[] {
-  const { status, hasContent, alreadyRegenerated, pendingActions, metaSummary } = input;
+  const { status, hasContent, alreadyRegenerated, pendingActions } = input;
   const copyText = getDesktopConversationCopy(input.locale).footer;
   const actionLabel = copyText.labels;
   const isPending = (id: TurnFooterActionId) => pendingActions?.has(id) ?? false;
@@ -151,12 +144,8 @@ export function deriveTurnFooterActions(input: TurnFooterContext): TurnFooterAct
     tooltip: hasContent ? copyText.copy : copyText.copyEmpty,
   };
 
-  // info is informational, not an operation: no pending state, always
-  // enabled, and its tooltip carries the turn meta summary. Rendered
-  // only when there is meta to show (#546).
-  const info: TurnFooterAction | undefined = metaSummary
-    ? { id: 'info', label: actionLabel.info, enabled: true, tooltip: metaSummary }
-    : undefined;
-
-  return [regenerate, branch, copy, ...(info ? [info] : [])];
+  // The meta (model · duration · cost) is footer TEXT, not a fourth button:
+  // it was an action whose click did nothing, existing only to hold a tooltip
+  // (upstream #5134).
+  return [regenerate, branch, copy];
 }

@@ -69,7 +69,7 @@ export interface DesktopConversationCopy {
     configurationReason: Record<ChatConfigurationReason, string>;
   };
   footer: {
-    labels: Record<'regenerate' | 'branch' | 'copy' | 'info', string>;
+    labels: Record<'regenerate' | 'branch' | 'copy', string>;
     pending: string;
     regenerateRunning: string;
     regenerateAgain: string;
@@ -509,7 +509,7 @@ const COPY = {
       },
     },
     footer: {
-      labels: { regenerate: '重新生成', branch: '分支', copy: '复制', info: '详情' },
+      labels: { regenerate: '重新生成', branch: '分支', copy: '复制' },
       pending: '正在处理…',
       regenerateRunning: '当前回答仍在进行中，结束后再重新生成',
       regenerateAgain: '已重新生成过，再次点击将创建新的并行回答',
@@ -897,7 +897,7 @@ const COPY = {
       },
     },
     footer: {
-      labels: { regenerate: '重新生成', branch: '分支', copy: '複製', info: '詳情' },
+      labels: { regenerate: '重新生成', branch: '分支', copy: '複製' },
       pending: '正在處理…',
       regenerateRunning: '目前回答仍在進行中，結束後再重新生成',
       regenerateAgain: '已重新生成過，再次點選將建立新的並行回答',
@@ -1292,7 +1292,7 @@ const COPY = {
       },
     },
     footer: {
-      labels: { regenerate: 'Regenerate', branch: 'Branch', copy: 'Copy', info: 'Details' },
+      labels: { regenerate: 'Regenerate', branch: 'Branch', copy: 'Copy' },
       pending: 'Working…',
       regenerateRunning: 'Wait for the current response to finish before regenerating',
       regenerateAgain:

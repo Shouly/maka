@@ -42,7 +42,7 @@ import { memo, useState } from 'react';
 import { useStore } from 'zustand';
 import { AnimatePresence, motion } from 'motion/react';
 import type { MessageQueueEntryProjection } from '@maka/core/events';
-import { useUiLocale } from '@maka/ui';
+import { getConversationCopy, useUiLocale } from '@maka/ui';
 import { Anthropicon } from '../icons/Anthropicon.js';
 import { Button } from '../ui/button.js';
 import { Textarea } from '../ui/textarea.js';
@@ -104,6 +104,7 @@ export const MessageQueue = memo(function MessageQueue(props: {
 }) {
   const locale = useUiLocale();
   const copy = getTranscriptCopy(locale).queue;
+  const composerCopy = getConversationCopy(locale).composer;
   const queue = useStore(activeSessionStore, (state) => state.queues[props.sessionId]);
   const pending = useStore(
     turnActionsStore,
@@ -140,7 +141,19 @@ export const MessageQueue = memo(function MessageQueue(props: {
       data-maka-contract="message-queue"
       className="flex flex-col gap-1 rounded-xl border border-hairline bg-surface-2 p-2"
     >
-      <p className="px-1 text-[0.6875rem] leading-4 text-text-muted">{copy.title}</p>
+      <p className="flex items-center gap-2 px-1 text-[0.6875rem] leading-4 text-text-muted">
+        <span>{copy.title}</span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span tabIndex={0} aria-label={composerCopy.queueShortcutsLabel}>
+              <Anthropicon name="info" size={12} />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="whitespace-pre-line">
+            {composerCopy.queueShortcuts}
+          </TooltipContent>
+        </Tooltip>
+      </p>
       <AnimatePresence initial={false}>
         {entries.map((entry, index) => {
           const isEditing = editing?.entryId === entry.entryId;
@@ -222,9 +235,16 @@ export const MessageQueue = memo(function MessageQueue(props: {
                     </div>
                   </div>
                 ) : (
-                  <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm leading-5 text-text-secondary">
-                    {entryText(entry)}
-                  </p>
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    {/* Which kind of queued message this is: steering joins the
+                        answer being written, a follow-up starts the next turn. */}
+                    <span className="text-[0.6875rem] leading-4 text-text-muted">
+                      {orderable ? composerCopy.followupPending : composerCopy.steeringPending}
+                    </span>
+                    <p className="whitespace-pre-wrap break-words text-sm leading-5 text-text-secondary">
+                      {entryText(entry)}
+                    </p>
+                  </div>
                 )}
                 {!isEditing && (
                   <div

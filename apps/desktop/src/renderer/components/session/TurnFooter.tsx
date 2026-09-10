@@ -40,11 +40,12 @@ const ICON_BY_ACTION: Record<TurnFooterActionId, AnthropiconName> = {
   regenerate: 'arrowCounterClockwise',
   branch: 'pullRequest',
   copy: 'copy',
-  info: 'info',
 };
 
 export const TurnFooter = memo(function TurnFooter(props: {
   actions: readonly TurnFooterAction[];
+  /** Model · duration · cost, as text beside the actions. */
+  meta?: string;
   lineageBadges?: readonly TurnLineageBadge[];
   onAction: (id: TurnFooterActionId) => void | Promise<void>;
   onOpenLineage: (turnId: string) => void;
@@ -85,6 +86,11 @@ export const TurnFooter = memo(function TurnFooter(props: {
           </Tooltip>
         ))}
       </div>
+      {props.meta && (
+        <span className="text-[0.6875rem] leading-4 text-text-muted tabular-nums">
+          {props.meta}
+        </span>
+      )}
       {(props.lineageBadges ?? []).map((badge) => (
         <button
           key={badge.id}

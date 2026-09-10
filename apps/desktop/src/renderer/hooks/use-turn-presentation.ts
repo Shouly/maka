@@ -66,6 +66,8 @@ export interface TurnPresentationContext {
 
 export interface TurnPresentation {
   readonly footerActionsByTurn: Readonly<Record<string, readonly TurnFooterAction[]>>;
+  /** Model · duration · cost per turn, for the footer to print as text. */
+  readonly turnMetaByTurn: Readonly<Record<string, string>>;
   readonly failedReasonLabels: Readonly<Record<string, string>>;
   readonly failedSeverities: Readonly<Record<string, FailedTurnSeverity>>;
   readonly failedExecutionStateLabels: Readonly<Record<string, string>>;
@@ -81,6 +83,8 @@ export interface TurnPresentationDerivation {
 /** What one turn contributes to the presentation; cached against that turn. */
 interface TurnPresentationEntry {
   footerActions: readonly TurnFooterAction[];
+  /** Model · duration · cost, rendered as footer text. */
+  metaSummary?: string;
   lineageBadges?: TurnLineageBadge[];
   failedReasonLabel?: string;
   failedSeverity?: FailedTurnSeverity;
@@ -147,6 +151,7 @@ export function createTurnPresentationDerivation(): TurnPresentationDerivation {
     const turnIds = new Set(turns.map((turn) => turn.turnId));
     const existsTurn = (id: string) => turnIds.has(id);
     const footerActionsByTurn: Record<string, readonly TurnFooterAction[]> = {};
+    const turnMetaByTurn: Record<string, string> = {};
     const failedReasonLabels: Record<string, string> = {};
     const failedSeverities: Record<string, FailedTurnSeverity> = {};
     const failedExecutionStateLabels: Record<string, string> = {};
@@ -189,6 +194,7 @@ export function createTurnPresentationDerivation(): TurnPresentationDerivation {
       }
 
       footerActionsByTurn[turn.turnId] = entry.footerActions;
+      if (entry.metaSummary !== undefined) turnMetaByTurn[turn.turnId] = entry.metaSummary;
       if (entry.lineageBadges) lineageBadgesByTurn[turn.turnId] = entry.lineageBadges;
       if (entry.failedReasonLabel !== undefined) {
         failedReasonLabels[turn.turnId] = entry.failedReasonLabel;
@@ -206,6 +212,7 @@ export function createTurnPresentationDerivation(): TurnPresentationDerivation {
     lastUiLocale = context.uiLocale;
     lastResult = {
       footerActionsByTurn,
+      turnMetaByTurn,
       failedReasonLabels,
       failedSeverities,
       failedExecutionStateLabels,
@@ -248,10 +255,9 @@ function deriveTurnPresentationEntry(input: {
       ? { alreadyRegenerated: true }
       : {}),
     ...(pendingForTurn.size > 0 ? { pendingActions: pendingForTurn } : {}),
-    ...(metaSummary ? { metaSummary } : {}),
   });
 
-  const entry: TurnPresentationEntry = { footerActions };
+  const entry: TurnPresentationEntry = { footerActions, ...(metaSummary ? { metaSummary } : {}) };
 
   if (turn.status === 'failed' && (turn.failureMessage || !isSandboxOnlyToolFailure(turn))) {
     entry.failedReasonLabel = describeTurnErrorClass(turn.errorClass, uiLocale);

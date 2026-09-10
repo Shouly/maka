@@ -248,7 +248,6 @@ function SessionTranscript(props: SessionViewProps) {
       if (id === 'copy') {
         return navigator.clipboard.writeText(finalAssistantReplyText(turn));
       }
-      if (id === 'info') return;
       if (id === 'regenerate') {
         void turnActionsStore
           .regenerate(sessionId, turnId)
@@ -388,6 +387,9 @@ function SessionTranscript(props: SessionViewProps) {
                     turn={turn}
                     live={live.turnId === turn.turnId}
                     footerActions={presentation.footerActionsByTurn[turn.turnId] ?? []}
+                    {...(presentation.turnMetaByTurn[turn.turnId]
+                      ? { turnMeta: presentation.turnMetaByTurn[turn.turnId] }
+                      : {})}
                     {...(presentation.lineageBadgesByTurn[turn.turnId]
                       ? { lineageBadges: presentation.lineageBadgesByTurn[turn.turnId] }
                       : {})}
