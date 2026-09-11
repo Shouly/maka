@@ -75,7 +75,7 @@ export function InlineRename(props: {
         }
       }}
       className={cn(
-        'h-7 w-full min-w-0 rounded-md bg-surface-2 px-1.5 text-sm leading-[21px] text-text-primary shadow-[var(--field-shadow)] outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)]',
+        'h-7 w-full min-w-0 rounded-md bg-surface-2 px-1.5 text-sm leading-[1.3125rem] text-text-primary shadow-[var(--field-shadow)] outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)]',
         props.className,
       )}
     />

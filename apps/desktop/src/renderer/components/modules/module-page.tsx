@@ -115,7 +115,9 @@ export function ModuleEmpty(props: { title: string; body?: string; action?: Reac
   return (
     <div className="flex flex-col items-center gap-2 rounded-xl border border-hairline px-6 py-10 text-center">
       <p className="text-sm leading-5 text-text-primary">{props.title}</p>
-      {props.body && <p className="text-[13px] leading-[18px] text-text-secondary">{props.body}</p>}
+      {props.body && (
+        <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">{props.body}</p>
+      )}
       {props.action}
     </div>
   );

@@ -317,7 +317,7 @@ export function ProviderSetupForm(props: {
 
   const fieldError = (field: AddProviderField) =>
     error?.field === field ? (
-      <p role="alert" className="text-[13px] leading-[18px] text-danger">
+      <p role="alert" className="text-[0.8125rem] leading-[1.125rem] text-danger">
         {error.message}
       </p>
     ) : null;
@@ -335,7 +335,7 @@ export function ProviderSetupForm(props: {
         <span className="flex size-6 shrink-0 items-center justify-center text-text-secondary [&>img]:size-full [&>svg]:size-full">
           <ProviderBrandMark type={props.providerType} />
         </span>
-        <h2 className="truncate text-[15px] font-semibold leading-5 text-text-primary">
+        <h2 className="truncate text-[0.9375rem] font-semibold leading-5 text-text-primary">
           {copy.panel.connectTitle(display.name)}
         </h2>
       </div>
@@ -384,7 +384,7 @@ export function ProviderSetupForm(props: {
                 }}
               />
               {!requiresApiKey && (
-                <p className="text-[13px] leading-[18px] text-text-secondary">
+                <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
                   {copy.detail.credentialsHelp}
                 </p>
               )}
@@ -422,7 +422,7 @@ export function ProviderSetupForm(props: {
                   setError(null);
                 }}
               />
-              <p className="text-[13px] leading-[18px] text-text-secondary">
+              <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
                 {copy.page.endpointHelp}
               </p>
               {fieldError('baseUrl')}
@@ -439,7 +439,7 @@ export function ProviderSetupForm(props: {
                 disabled={busy}
                 onChange={(event) => setDefaultModel(event.target.value)}
               />
-              <p className="text-[13px] leading-[18px] text-text-secondary">
+              <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
                 {copy.add.defaultModelHelp}
               </p>
             </SettingsRow>

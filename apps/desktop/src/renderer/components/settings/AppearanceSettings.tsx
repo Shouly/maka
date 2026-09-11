@@ -284,7 +284,7 @@ function FontSizeInput(props: {
           props.onChange(Math.min(props.max, Math.max(props.min, next)));
         }}
       />
-      <span className="text-[13px] leading-[18px] text-text-muted">px</span>
+      <span className="text-[0.8125rem] leading-[1.125rem] text-text-muted">px</span>
     </span>
   );
 }

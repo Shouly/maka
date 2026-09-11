@@ -131,7 +131,7 @@ export const SubagentResult = memo(function SubagentResult(props: {
         onOpenSession={props.onOpenSession}
       />
       {props.result.summary.trim().length > 0 && (
-        <p className="px-2 pb-1 text-[13px] leading-[18px] text-text-secondary">
+        <p className="px-2 pb-1 text-[0.8125rem] leading-[1.125rem] text-text-secondary">
           {props.result.summary}
         </p>
       )}

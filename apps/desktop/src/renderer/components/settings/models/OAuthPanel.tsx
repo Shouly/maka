@@ -132,7 +132,7 @@ export function OAuthPanel(props: {
         {/* Codex is the only projection that carries an identity; the other two
             report a runtime state and nothing about who is behind it. */}
         {capabilities.reportsAccountIdentity && signedIn && flow.account && (
-          <p className="text-[13px] leading-[18px] text-text-secondary">
+          <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
             {[
               'email' in flow.account ? flow.account.email : undefined,
               'plan' in flow.account ? flow.account.plan : undefined,
@@ -143,20 +143,20 @@ export function OAuthPanel(props: {
         )}
 
         {flow.stateHint !== null && (
-          <p className="text-[13px] leading-[18px] text-text-secondary">
+          <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
             {section.deviceCode}
             <span className="font-mono text-text-primary">{flow.stateHint}</span>
           </p>
         )}
 
         {enrollmentBlocked && (
-          <p className="text-[13px] leading-[18px] text-text-secondary" role="status">
+          <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary" role="status">
             {copy.oauthFlow.enrollmentDisabled}
           </p>
         )}
 
         {flow.errorMessage && (
-          <p role="alert" className="text-[13px] leading-[18px] text-danger">
+          <p role="alert" className="text-[0.8125rem] leading-[1.125rem] text-danger">
             {flow.errorMessage}
           </p>
         )}

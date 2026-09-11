@@ -163,7 +163,7 @@ export function ToolResultRow({
   const body = (
     <>
       {icon !== undefined && <span className="flex shrink-0 items-center">{icon}</span>}
-      <span className="w-0 flex-grow truncate text-left text-[13px] leading-[18px] text-text-secondary">
+      <span className="w-0 flex-grow truncate text-left text-[0.8125rem] leading-[1.125rem] text-text-secondary">
         {children}
       </span>
       {meta !== undefined && (

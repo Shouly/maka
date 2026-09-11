@@ -83,7 +83,7 @@ export function AttachmentCard(props: {
         ) : (
           <div className="flex size-full select-none flex-col justify-between gap-2.5 px-2.5 py-2">
             <p
-              className="line-clamp-4 break-words text-[12px] leading-tight text-text-primary"
+              className="line-clamp-4 break-words text-[0.75rem] leading-tight text-text-primary"
               title={props.name}
             >
               {props.name}
@@ -92,7 +92,7 @@ export function AttachmentCard(props: {
                 padding, and a long name runs into it. */}
             {extension && (
               <span className="flex h-[18px] w-fit min-w-0 items-center rounded-[4px] border border-border-strong bg-surface-3/70 px-1 shadow-[var(--card-shadow)] backdrop-blur-sm">
-                <span className="truncate text-[11px] font-medium uppercase leading-[13px] text-text-secondary">
+                <span className="truncate text-[0.6875rem] font-medium uppercase leading-[0.8125rem] text-text-secondary">
                   {extension}
                 </span>
               </span>

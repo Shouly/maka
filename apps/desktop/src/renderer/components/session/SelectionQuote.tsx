@@ -58,7 +58,7 @@ export const SelectionQuote = memo(function SelectionQuote(props: {
           });
           clear();
         }}
-        className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-hairline bg-surface-3 px-3 text-[13px] leading-5 text-text-primary shadow-[var(--menu-shadow)] outline-none transition-colors hover:bg-alpha-1 focus-visible:shadow-[var(--sidebar-focus-shadow)]"
+        className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-hairline bg-surface-3 px-3 text-[0.8125rem] leading-5 text-text-primary shadow-[var(--menu-shadow)] outline-none transition-colors hover:bg-alpha-1 focus-visible:shadow-[var(--sidebar-focus-shadow)]"
       >
         <Anthropicon name="reply" size={16} />
         {copy.action}

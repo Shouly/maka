@@ -63,9 +63,9 @@ export function SidebarNewButton(props: {
           />
         </div>
       </div>
-      <span className="whitespace-nowrap text-sm leading-[21px]">{props.label}</span>
+      <span className="whitespace-nowrap text-sm leading-[1.3125rem]">{props.label}</span>
       {props.shortcut && (
-        <span className="ml-auto mr-2 translate-y-px text-[12px] leading-[17px] text-sidebar-text-muted opacity-0 transition-opacity group-hover/new:opacity-100">
+        <span className="ml-auto mr-2 translate-y-px text-[0.75rem] leading-[1.0625rem] text-sidebar-text-muted opacity-0 transition-opacity group-hover/new:opacity-100">
           {props.shortcut}
         </span>
       )}

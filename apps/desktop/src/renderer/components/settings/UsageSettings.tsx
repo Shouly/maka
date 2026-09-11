@@ -165,7 +165,7 @@ function UsageTotals(props: { stats: UsageStats; copy: ReturnType<typeof getUsag
         />
       </div>
       {incomplete && (
-        <p className="text-[13px] leading-[18px] text-warning" role="status">
+        <p className="text-[0.8125rem] leading-[1.125rem] text-warning" role="status">
           {`${copy.incompleteTitle} ${copy.incompleteBody}`}
         </p>
       )}
@@ -176,12 +176,12 @@ function UsageTotals(props: { stats: UsageStats; copy: ReturnType<typeof getUsag
 function Metric(props: { label: string; value: string; detail?: string }) {
   return (
     <div className={cn(settingsPanelClass, 'flex flex-col gap-1 p-3')}>
-      <span className="text-[13px] leading-[18px] text-text-muted">{props.label}</span>
+      <span className="text-[0.8125rem] leading-[1.125rem] text-text-muted">{props.label}</span>
       <span className="text-lg leading-6 text-text-primary" data-mono="true">
         {props.value}
       </span>
       {props.detail && (
-        <span className="text-[11px] leading-4 text-text-muted">{props.detail}</span>
+        <span className="text-[0.6875rem] leading-4 text-text-muted">{props.detail}</span>
       )}
     </div>
   );
@@ -205,7 +205,10 @@ function Breakdowns(props: {
             title={row.model}
             description={row.provider}
             control={
-              <span className="text-[13px] leading-[18px] text-text-secondary" data-mono="true">
+              <span
+                className="text-[0.8125rem] leading-[1.125rem] text-text-secondary"
+                data-mono="true"
+              >
                 {`$${row.inputPerMTokUsd} / $${row.outputPerMTokUsd}`}
               </span>
             }

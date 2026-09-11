@@ -159,7 +159,7 @@ export function ConnectionModelsSection(props: {
               <span className="flex min-w-0 items-center gap-2">
                 <span className="truncate">{label}</span>
                 {entry?.isDefault && (
-                  <span className="shrink-0 text-[13px] text-text-muted">
+                  <span className="shrink-0 text-[0.8125rem] text-text-muted">
                     {copy.page.defaultModel}
                   </span>
                 )}
@@ -167,7 +167,7 @@ export function ConnectionModelsSection(props: {
             }
             description={
               <span className="flex flex-wrap items-center gap-x-2">
-                <span className="font-mono text-[12px]">{row.id}</span>
+                <span className="font-mono text-[0.75rem]">{row.id}</span>
                 {row.missingFromCatalog && (
                   <span className="text-text-muted">{copy.detail.modelNotOffered}</span>
                 )}

@@ -100,7 +100,7 @@ export function ProviderCatalog(props: { onPick: (providerType: ProviderType) =>
 
       {groups.map(({ group, providers }) => (
         <section key={group} className="flex flex-col gap-3">
-          <h3 className="text-[13px] font-medium leading-[18px] text-text-secondary">
+          <h3 className="text-[0.8125rem] font-medium leading-[1.125rem] text-text-secondary">
             {copy.panel.groups[group]}
           </h3>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -138,7 +138,7 @@ export function ProviderCatalog(props: { onPick: (providerType: ProviderType) =>
                         </span>
                       )}
                     </span>
-                    <span className="text-[13px] leading-[18px] text-text-secondary">
+                    <span className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
                       {display.description}
                     </span>
                   </span>

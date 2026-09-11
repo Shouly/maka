@@ -106,12 +106,12 @@ export function AddModelDialog(props: {
                 setError(null);
               }}
             />
-            <p className="text-[13px] leading-[18px] text-text-secondary">
+            <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
               {copy.addModelContextWindowHelp}
             </p>
           </div>
           {error && (
-            <p role="alert" className="text-[13px] leading-[18px] text-danger">
+            <p role="alert" className="text-[0.8125rem] leading-[1.125rem] text-danger">
               {error}
             </p>
           )}

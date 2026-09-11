@@ -111,12 +111,12 @@ export function HealthSettings(props: { host: DesktopRuntimeHostRef | undefined 
           }
         />
         {blocksSend > 0 && (
-          <p className="py-3 text-[13px] leading-[18px] text-danger" role="status">
+          <p className="py-3 text-[0.8125rem] leading-[1.125rem] text-danger" role="status">
             {copy.blockers.send(blocksSend, signals.length)}
           </p>
         )}
         {blocksSend === 0 && blocksCapability > 0 && (
-          <p className="py-3 text-[13px] leading-[18px] text-warning" role="status">
+          <p className="py-3 text-[0.8125rem] leading-[1.125rem] text-warning" role="status">
             {copy.blockers.capability(blocksCapability, signals.length)}
           </p>
         )}
@@ -173,7 +173,7 @@ export function HealthSettings(props: { host: DesktopRuntimeHostRef | undefined 
           </SettingsSection>
         ),
       )}
-      <p className="text-[13px] leading-[18px] text-text-muted">{copy.footnote}</p>
+      <p className="text-[0.8125rem] leading-[1.125rem] text-text-muted">{copy.footnote}</p>
     </>
   );
 }

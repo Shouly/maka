@@ -44,12 +44,14 @@ export function MemoryEntryList(props: {
     <div className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="text-sm leading-5 text-text-primary">{props.title}</h3>
-        <span className="text-[13px] leading-[18px] text-text-secondary">
+        <span className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
           {copy.countEntries(props.entries.length)}
         </span>
       </div>
       {props.entries.length === 0 ? (
-        <p className="py-2 text-[13px] leading-[18px] text-text-secondary">{props.emptyLabel}</p>
+        <p className="py-2 text-[0.8125rem] leading-[1.125rem] text-text-secondary">
+          {props.emptyLabel}
+        </p>
       ) : (
         <ul className="flex flex-col gap-2" aria-label={copy.listAria(props.title)}>
           {props.entries.map((entry) => (
@@ -65,10 +67,10 @@ export function MemoryEntryList(props: {
                   {copy.entryStatuses[entry.status]}
                 </span>
               </div>
-              <p className="whitespace-pre-wrap break-words text-[13px] leading-[18px] text-text-secondary">
+              <p className="whitespace-pre-wrap break-words text-[0.8125rem] leading-[1.125rem] text-text-secondary">
                 {entry.content}
               </p>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] leading-4 text-text-muted">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.75rem] leading-4 text-text-muted">
                 <span>{copy.origins[entry.origin]}</span>
                 {entry.createdAt !== undefined && (
                   <span>{`${copy.text.created}${timestamps.format(entry.createdAt)}`}</span>

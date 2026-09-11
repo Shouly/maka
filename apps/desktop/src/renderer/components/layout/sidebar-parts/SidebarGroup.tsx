@@ -48,7 +48,7 @@ function SidebarGroupLabel(props: {
   copy: SidebarCopy;
 }) {
   return (
-    <div className="group/labelrow flex h-11 items-center gap-2 pb-1 pl-1.5 pr-1 pt-4 text-[13px] leading-4 text-sidebar-text-muted">
+    <div className="group/labelrow flex h-11 items-center gap-2 pb-1 pl-1.5 pr-1 pt-4 text-[0.8125rem] leading-4 text-sidebar-text-muted">
       {props.onToggle ? (
         <button
           type="button"

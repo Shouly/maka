@@ -181,7 +181,7 @@ export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRow
             }}
             autoFocus
             rows={2}
-            className="resize-none overflow-hidden whitespace-pre-wrap py-3 text-[15px] leading-5"
+            className="resize-none overflow-hidden whitespace-pre-wrap py-3 text-[0.9375rem] leading-5"
           />
           <div className="flex items-center justify-between gap-2">
             <p className="flex flex-1 items-center gap-2 text-xs leading-4 text-text-muted">
@@ -257,7 +257,7 @@ export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRow
             aria-expanded={expanded}
             aria-controls={bodyId}
             onClick={() => setExpanded((open) => !open)}
-            className="ui-control-squish ui-control-squish-ghost -ml-2 flex h-6 w-fit cursor-pointer items-center self-start rounded-md px-2 text-[13px] font-normal leading-[19px] text-text-primary outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)]"
+            className="ui-control-squish ui-control-squish-ghost -ml-2 flex h-6 w-fit cursor-pointer items-center self-start rounded-md px-2 text-[0.8125rem] font-normal leading-[1.1875rem] text-text-primary outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)]"
           >
             {expanded ? copy.turn.showLess : copy.turn.showMore}
           </button>

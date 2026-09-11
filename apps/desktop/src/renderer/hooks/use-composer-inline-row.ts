@@ -39,6 +39,10 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import type { CSSProperties, RefObject } from 'react';
 
 /** `--cds-h-control`: the control row's box height, also the single-line target. */
+// Every constant here is a DEFAULT-ROOT pixel value (root 16px). The
+// Appearance font-size setting scales the root, and the editor's line-height,
+// padding and the controls are all rem, so the measurement scales them by the
+// same factor (`rootScale`) or a one-line draft reads as wrapped at 18px.
 const CONTROL_H = 32;
 /** 16px × 1.4, the `.chat-composer-surface .tiptap.ProseMirror` line height. */
 const LEADING = 22;
@@ -69,39 +73,56 @@ interface Options {
   forceStacked?: boolean;
 }
 
+/** The root's font-size over the browser default: 1 at the default setting. */
+function rootScale(): number {
+  if (typeof document === 'undefined') return 1;
+  const px = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+  return Number.isFinite(px) && px > 0 ? px / 16 : 1;
+}
+
 export function useComposerInlineRow({ enabled, empty, forceStacked }: Options): ComposerInlineRow {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const leadRef = useRef<HTMLDivElement | null>(null);
   const trailRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
 
-  const [metrics, setMetrics] = useState({ leadW: 0, trailW: 0, hostW: 0, textH: LEADING });
+  const [metrics, setMetrics] = useState({
+    leadW: 0,
+    trailW: 0,
+    hostW: 0,
+    textH: LEADING,
+    scale: 1,
+  });
   const [wrapped, setWrapped] = useState(false);
   const measure = useCallback(() => {
     const host = hostRef.current;
     const editor = editorRef.current;
     if (!host || !editor) return;
+    const scale = rootScale();
+    const leading = LEADING * scale;
     const next = {
       leadW: leadRef.current?.offsetWidth ?? 0,
       trailW: trailRef.current?.offsetWidth ?? 0,
       hostW: host.clientWidth,
+      scale,
       // An empty draft is one line by definition. Measuring it would read the
       // previous text when the clear arrives from outside the editor (a send
       // acknowledged, a draft restored): the editor replaces its content in a
       // passive effect, after this layout measurement. A stale tall `textH`
       // then feeds the `::before` float, which keeps the box that tall, which
       // measures tall again — the empty composer never comes back down.
-      textH: empty ? LEADING : Math.max(LEADING, editor.scrollHeight - EDITOR_PY),
+      textH: empty ? leading : Math.max(leading, editor.scrollHeight - EDITOR_PY * scale),
     };
     setMetrics((prev) =>
       prev.leadW === next.leadW &&
       prev.trailW === next.trailW &&
       prev.hostW === next.hostW &&
-      prev.textH === next.textH
+      prev.textH === next.textH &&
+      prev.scale === next.scale
         ? prev
         : next,
     );
-    setWrapped(empty ? false : next.textH > LEADING + 1 || wrapped);
+    setWrapped(empty ? false : next.textH > leading + 1 || wrapped);
   }, [empty, wrapped]);
 
   // Layout effect, not effect: the first frame can only render stacked
@@ -131,19 +152,22 @@ export function useComposerInlineRow({ enabled, empty, forceStacked }: Options):
     if (!settled && metrics.leadW > 0) setSettled(true);
   }, [settled, metrics.leadW]);
 
-  const { leadW, trailW, hostW, textH } = metrics;
+  const { leadW, trailW, hostW, textH, scale } = metrics;
   // Unmeasured (first commit) renders single-line with one control plus its
   // gap reserved on the left: an empty draft's real form IS single-line, and
   // drawing stacked first would be a visible 40px jump on every mount.
   const measured = leadW > 0;
   const inline =
-    enabled && !forceStacked && !wrapped && (!measured || hostW - leadW - trailW >= MIN_TEXT_W);
+    enabled &&
+    !forceStacked &&
+    !wrapped &&
+    (!measured || hostW - leadW - trailW >= MIN_TEXT_W * scale);
 
   const vars = {
-    '--cmp-lead-w': `${measured ? leadW : CONTROL_H + 8}px`,
+    '--cmp-lead-w': `${measured ? leadW : (CONTROL_H + 8) * scale}px`,
     '--cmp-trail-w': `${trailW}px`,
     '--cmp-wrap-h': `${textH}px`,
-    '--cmp-row-h': `${CONTROL_H}px`,
+    '--cmp-row-h': `${CONTROL_H * scale}px`,
   } as CSSProperties;
 
   return { inline, settled, vars, hostRef, leadRef, trailRef, editorRef };

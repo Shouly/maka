@@ -1386,8 +1386,10 @@ pre[class*="language-"] {
 .chat-user-content,
 .chat-user-content p {
   color: var(--chat-text-primary);
-  font-size: 15px;
-  line-height: 20px;
+  /* rem, not px (the reference writes px): the Appearance font-size setting
+     scales the root, and the conversation must follow it. 15/20 at default. */
+  font-size: 0.9375rem;
+  line-height: 1.25rem;
 }
 
 /* AI 回复正文。**不限定 .chat-area** —— 单聊(TaskAssistantMessage)和群聊
@@ -1396,9 +1398,10 @@ pre[class*="language-"] {
 .chat-assistant-response {
   color: var(--chat-text-primary);
   font-family: var(--chat-response-font);
-  font-size: 16px;
+  /* 16/24 at the default root; rem so the font-size setting reaches it. */
+  font-size: 1rem;
   font-weight: 400;
-  line-height: 24px;
+  line-height: 1.5rem;
 }
 
 .chat-composer-surface {
@@ -1415,15 +1418,16 @@ pre[class*="language-"] {
 .chat-composer-surface .tiptap.ProseMirror {
   color: var(--text-primary);
   font-family: var(--font-sans);
-  font-size: 16px;
-  line-height: 22px;
+  /* 16/22 at the default root; rem so the font-size setting reaches it. */
+  font-size: 1rem;
+  line-height: 1.375rem;
 }
 
 /* 新页面输入框用界面字体 16/22(同 .chat-composer-surface);问候语走 serif。 */
 .task-welcome .tiptap.ProseMirror {
   font-family: var(--font-sans);
-  font-size: 16px;
-  line-height: 22px;
+  font-size: 1rem;
+  line-height: 1.375rem;
 }
 
 /* composer placeholder 轮播的换入淡入 */

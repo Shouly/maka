@@ -158,7 +158,7 @@ const DialogTitle = React.forwardRef<
       // 22/28 + semibold(580),三项都是 Cowork 实测值。
       // 本仓的字重刻度已按 CDS 定成 medium 500 / semibold 580 / bold 600,
       // 所以这里的 font-semibold 直接就是 580,不用再写死数值。
-      'text-[22px] font-semibold leading-7 text-text-primary',
+      'text-[1.375rem] font-semibold leading-7 text-text-primary',
       className,
     )}
     {...props}

@@ -127,7 +127,7 @@ export function GoalBanner(props: {
         <p className="truncate text-sm leading-5 text-text-primary" title={readout.condition}>
           {readout.condition}
         </p>
-        <p className="mt-0.5 flex min-w-0 items-center gap-2 text-[13px] leading-[18px] text-text-secondary">
+        <p className="mt-0.5 flex min-w-0 items-center gap-2 text-[0.8125rem] leading-[1.125rem] text-text-secondary">
           <span className={cn(statusChipClass, statusChipNeutralClass)}>
             {shell.goalDialog.statusLabels[readout.status]}
           </span>

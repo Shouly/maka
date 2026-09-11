@@ -229,7 +229,7 @@ export function PermissionsSettings(props: { host: DesktopRuntimeHostRef | undef
           ))
         )}
       </SettingsSection>
-      <p className="text-[13px] leading-[18px] text-text-muted">{copy.footnote}</p>
+      <p className="text-[0.8125rem] leading-[1.125rem] text-text-muted">{copy.footnote}</p>
     </>
   );
 }
@@ -258,7 +258,7 @@ function CapabilityRow(props: { capability: CapabilitySnapshot; copy: Permission
       description={readiness.detail}
     >
       <dl
-        className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-6 gap-y-1 text-[13px] leading-[18px]"
+        className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-6 gap-y-1 text-[0.8125rem] leading-[1.125rem]"
         aria-label={copy.layers.aria(capability.label)}
       >
         {layers.map(([label, value]) => (
@@ -269,7 +269,7 @@ function CapabilityRow(props: { capability: CapabilitySnapshot; copy: Permission
         ))}
       </dl>
       {capability.osPermissions.length > 0 && (
-        <p className="text-[13px] leading-[18px] text-text-muted">
+        <p className="text-[0.8125rem] leading-[1.125rem] text-text-muted">
           {`${copy.requiredPermissions} ${capability.osPermissions
             .map(
               (permission) =>

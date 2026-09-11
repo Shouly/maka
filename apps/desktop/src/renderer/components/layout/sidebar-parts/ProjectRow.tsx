@@ -120,7 +120,7 @@ export function ProjectRow(props: {
           aria-label={props.expanded ? copy.collapseProject(label) : copy.expandProject(label)}
           aria-expanded={props.expanded}
           aria-controls={tasksId}
-          className="group/item flex h-8 w-full min-w-0 cursor-pointer items-center rounded-lg px-[2px] text-left text-sm leading-[21px] text-sidebar-text-secondary transition-[color,box-shadow] hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none"
+          className="group/item flex h-8 w-full min-w-0 cursor-pointer items-center rounded-lg px-[2px] text-left text-sm leading-[1.3125rem] text-sidebar-text-secondary transition-[color,box-shadow] hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none"
         >
           <span className="group/project-icon relative mr-2 flex size-7 shrink-0 items-center justify-center">
             <Anthropicon
@@ -142,7 +142,7 @@ export function ProjectRow(props: {
                 ref={nameRef}
                 onPointerEnter={checkClipped}
                 className={cn(
-                  'min-w-0 flex-1 overflow-hidden whitespace-nowrap fade-clip-end text-sm leading-[21px]',
+                  'min-w-0 flex-1 overflow-hidden whitespace-nowrap fade-clip-end text-sm leading-[1.3125rem]',
                   'group-hover:pr-12 group-focus-within:pr-12',
                   menuOpen && 'fade-clip-wide pr-12',
                 )}

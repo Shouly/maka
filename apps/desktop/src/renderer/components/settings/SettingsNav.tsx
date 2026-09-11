@@ -48,7 +48,7 @@ export function SettingsNav(props: {
       <div className="min-w-0 overflow-x-auto overflow-y-hidden">
         {SETTINGS_NAV_GROUPS.map((group) => (
           <div key={group.group} className="mb-3 last:mb-0">
-            <p className="px-2 pb-1 text-[11px] font-medium uppercase leading-4 tracking-wider text-text-muted">
+            <p className="px-2 pb-1 text-[0.6875rem] font-medium uppercase leading-4 tracking-wider text-text-muted">
               {props.copy.groups[group.group]}
             </p>
             {/* 竖排行距 1px:导航项自带 32px 高和 hover 底,再撑 4px 整列会散。 */}

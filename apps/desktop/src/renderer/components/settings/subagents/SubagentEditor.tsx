@@ -192,10 +192,10 @@ export function SubagentEditor(props: {
           <Anthropicon name="arrowLeft" size={16} />
           {editor.backToList}
         </Button>
-        <h2 className="text-[15px] font-semibold leading-5 text-text-primary">
+        <h2 className="text-[0.9375rem] font-semibold leading-5 text-text-primary">
           {props.preset ? props.preset.name : copy.section.add}
         </h2>
-        <p className="text-[13px] leading-[18px] text-text-secondary">
+        <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
           {props.preset ? editor.editSubtitle : editor.createSubtitle}
         </p>
       </div>
@@ -210,7 +210,7 @@ export function SubagentEditor(props: {
             onChange={(event) => updateName(event.target.value)}
           />
           {submitted && !draft.name.trim() && (
-            <p className="text-[13px] leading-[18px] text-danger">{editor.requiredName}</p>
+            <p className="text-[0.8125rem] leading-[1.125rem] text-danger">{editor.requiredName}</p>
           )}
         </SettingsRow>
         <SettingsRow
@@ -244,7 +244,7 @@ export function SubagentEditor(props: {
             title={editor.id}
             description={editor.idDescription}
             control={
-              <span className="font-mono text-[13px] leading-[18px] text-text-secondary">
+              <span className="font-mono text-[0.8125rem] leading-[1.125rem] text-text-secondary">
                 {props.preset.id}
               </span>
             }
@@ -262,7 +262,9 @@ export function SubagentEditor(props: {
                 setDraft((current) => ({ ...current, id }));
               }}
             />
-            {idError && <p className="text-[13px] leading-[18px] text-danger">{idError}</p>}
+            {idError && (
+              <p className="text-[0.8125rem] leading-[1.125rem] text-danger">{idError}</p>
+            )}
           </SettingsRow>
         )}
       </SettingsSection>

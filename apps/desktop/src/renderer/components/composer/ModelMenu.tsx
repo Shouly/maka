@@ -84,7 +84,7 @@ export function ModelMenu(props: {
       choice.model === props.current?.model,
   );
   const chipClass = cn(
-    'ui-control-squish ui-control-squish-ghost inline-flex min-w-0 max-w-[220px] shrink-0 cursor-pointer items-center gap-1.5 px-2 text-[13px] leading-[1.4] text-text-secondary outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-50',
+    'ui-control-squish ui-control-squish-ghost inline-flex min-w-0 max-w-[220px] shrink-0 cursor-pointer items-center gap-1.5 px-2 text-[0.8125rem] leading-[1.4] text-text-secondary outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-50',
     props.dense ? 'h-6 rounded-md' : 'h-8 rounded-lg',
   );
 

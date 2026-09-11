@@ -205,7 +205,7 @@ export function Sidebar(props: SidebarProps) {
   ) : entries.length === 0 ? (
     <div
       key="empty"
-      className="px-2 pb-2 text-sm leading-[21px] text-sidebar-text-muted"
+      className="px-2 pb-2 text-sm leading-[1.3125rem] text-sidebar-text-muted"
       role="status"
     >
       {copy.noProjects}
@@ -236,7 +236,7 @@ export function Sidebar(props: SidebarProps) {
                   model.groups.some(
                     (group) => group.key === entry.key && group.rows.length > 0,
                   ) ? null : (
-                    <div className="px-2 py-1 text-[13px] leading-5 text-sidebar-text-muted">
+                    <div className="px-2 py-1 text-[0.8125rem] leading-5 text-sidebar-text-muted">
                       {copy.noTasksInProject}
                     </div>
                   )
@@ -319,7 +319,7 @@ export function Sidebar(props: SidebarProps) {
                     pending > 0 ? (
                       <span
                         aria-label={copy.nav.pending(pending)}
-                        className="ml-auto mr-2 rounded bg-alpha-1 px-1 text-[11px] leading-4 tabular-nums text-sidebar-text-muted"
+                        className="ml-auto mr-2 rounded bg-alpha-1 px-1 text-[0.6875rem] leading-4 tabular-nums text-sidebar-text-muted"
                       >
                         {pending}
                       </span>
@@ -424,7 +424,7 @@ export function Sidebar(props: SidebarProps) {
                 else void updateStore.retry();
               }}
               className={cn(
-                'mb-1 flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-sm leading-[21px] transition-colors hover:bg-sidebar-hover focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none',
+                'mb-1 flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-sm leading-[1.3125rem] transition-colors hover:bg-sidebar-hover focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none',
                 chip.kind === 'downloaded' ? 'text-accent' : 'text-danger',
               )}
             >
@@ -434,7 +434,7 @@ export function Sidebar(props: SidebarProps) {
                   ? copy.update.downloaded(chip.version ?? '')
                   : copy.update.failed}
               </span>
-              <span className="shrink-0 text-[11px] text-sidebar-text-muted">
+              <span className="shrink-0 text-[0.6875rem] text-sidebar-text-muted">
                 {chip.kind === 'downloaded' ? copy.update.install : copy.update.retry}
               </span>
             </button>

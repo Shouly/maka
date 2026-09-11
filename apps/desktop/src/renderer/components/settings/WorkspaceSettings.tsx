@@ -154,7 +154,9 @@ export function WorkspaceSettings(props: { host: DesktopRuntimeHostRef | undefin
         ) : projects.length === 0 ? (
           <div className="flex flex-col gap-1 py-6 text-center">
             <p className="text-sm leading-5 text-text-primary">{copy.emptyTitle}</p>
-            <p className="text-[13px] leading-[18px] text-text-secondary">{copy.emptyBody}</p>
+            <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
+              {copy.emptyBody}
+            </p>
           </div>
         ) : (
           projects.map((project) => {

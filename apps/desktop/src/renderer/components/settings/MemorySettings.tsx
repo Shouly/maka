@@ -220,14 +220,14 @@ export function MemorySettings(props: { host: DesktopRuntimeHostRef | undefined 
         >
           <Textarea
             aria-label={text.fileContent}
-            className="min-h-[220px] font-mono text-[13px] leading-[20px]"
+            className="min-h-[220px] font-mono text-[0.8125rem] leading-[1.25rem]"
             value={value}
             spellCheck={false}
             disabled={busy === 'save'}
             onChange={(event) => setDraft(event.target.value)}
           />
           {sensitive && (
-            <p className="text-[13px] leading-[18px] text-warning">
+            <p className="text-[0.8125rem] leading-[1.125rem] text-warning">
               {`${text.sensitiveDraft} · ${text.sensitiveDraftHelp}`}
             </p>
           )}
@@ -383,7 +383,7 @@ export function MemorySettings(props: { host: DesktopRuntimeHostRef | undefined 
           layout="stacked"
         >
           <div className={`${settingsPanelClass} p-3`}>
-            <p className="mb-2 text-[13px] leading-[18px] text-text-secondary">
+            <p className="mb-2 text-[0.8125rem] leading-[1.125rem] text-text-secondary">
               {blocked
                 ? `${text.willNotInject} · ${copy.promptBlocked[blocked]}`
                 : `${text.willInject} · ${
@@ -395,7 +395,7 @@ export function MemorySettings(props: { host: DesktopRuntimeHostRef | undefined 
                         )
                   }`}
             </p>
-            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-[12px] leading-[18px] text-text-primary">
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-[0.75rem] leading-[1.125rem] text-text-primary">
               {state.status === 'safe_mode'
                 ? text.safeModePreview
                 : preview.text || text.emptyPromptPreview}

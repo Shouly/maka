@@ -112,7 +112,7 @@ export function WorkspacePicker(props: {
           type="button"
           aria-label={`${copy.label}: ${label}`}
           className={cn(
-            'ui-control-squish ui-control-squish-ghost inline-flex min-w-0 max-w-[416px] shrink-0 cursor-pointer items-center gap-1.5 px-2 text-[13px] leading-[1.4] text-text-secondary outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)]',
+            'ui-control-squish ui-control-squish-ghost inline-flex min-w-0 max-w-[416px] shrink-0 cursor-pointer items-center gap-1.5 px-2 text-[0.8125rem] leading-[1.4] text-text-secondary outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)]',
             props.dense ? 'h-6 rounded-md' : 'h-8 rounded-lg',
             props.className,
           )}

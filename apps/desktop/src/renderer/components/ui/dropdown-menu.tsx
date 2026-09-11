@@ -263,7 +263,7 @@ const DropdownMenuShortcut = ({ className, ...props }: React.HTMLAttributes<HTML
   return (
     <span
       className={cn(
-        'ml-auto min-w-0 shrink overflow-hidden text-ellipsis whitespace-nowrap text-right text-[13px] leading-4 text-menu-text-muted',
+        'ml-auto min-w-0 shrink overflow-hidden text-ellipsis whitespace-nowrap text-right text-[0.8125rem] leading-4 text-menu-text-muted',
         className,
       )}
       {...props}

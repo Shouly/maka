@@ -60,7 +60,7 @@ import type { ToolContentContext } from './tools/registry.js';
 function SystemNote(props: { text: string }) {
   return (
     <div className="my-4 flex items-center justify-center" role="status">
-      <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-alpha-1 px-3.5 py-1.5 text-[13px] leading-[18px] text-text-muted">
+      <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-alpha-1 px-3.5 py-1.5 text-[0.8125rem] leading-[1.125rem] text-text-muted">
         <Anthropicon name="archive" size={16} className="shrink-0" />
         <span className="min-w-0 truncate">{props.text}</span>
       </span>

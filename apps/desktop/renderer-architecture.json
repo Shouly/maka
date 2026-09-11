@@ -929,14 +929,16 @@
     "src/renderer/components/composer/ChatInput.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {
-        "window.requestAnimationFrame": 1
+        "window.clearTimeout": 1,
+        "window.requestAnimationFrame": 1,
+        "window.setTimeout": 2
       },
       "hookCalls": {
         "useComposerHistory": 1,
         "useComposerInlineRow": 1,
-        "useEffect": 3,
-        "useRef": 7,
-        "useState": 13,
+        "useEffect": 4,
+        "useRef": 8,
+        "useState": 14,
         "useStore": 9,
         "useUiLocale": 2
       },
@@ -4364,6 +4366,8 @@
     "src/renderer/hooks/use-composer-inline-row.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {
+        "document": 1,
+        "document.documentElement": 1,
         "ResizeObserver": 1
       },
       "hookCalls": {

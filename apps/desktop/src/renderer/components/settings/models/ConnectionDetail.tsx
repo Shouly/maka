@@ -103,7 +103,7 @@ function UnknownProviderDetail(props: ConnectionDetailProps) {
         </Button>
       </div>
       <div className="mb-6 flex items-center gap-2">
-        <h2 className="min-w-0 truncate text-[15px] font-semibold leading-5 text-text-primary">
+        <h2 className="min-w-0 truncate text-[0.9375rem] font-semibold leading-5 text-text-primary">
           {connection.name || connection.slug}
         </h2>
       </div>
@@ -208,10 +208,12 @@ function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: Provid
         <span className="flex size-6 shrink-0 items-center justify-center text-text-secondary [&>img]:size-full [&>svg]:size-full">
           <ProviderBrandMark type={connection.providerType} />
         </span>
-        <h2 className="min-w-0 truncate text-[15px] font-semibold leading-5 text-text-primary">
+        <h2 className="min-w-0 truncate text-[0.9375rem] font-semibold leading-5 text-text-primary">
           {connection.name}
         </h2>
-        <span className="text-[13px] leading-[18px] text-text-secondary">{display.name}</span>
+        <span className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
+          {display.name}
+        </span>
         {props.isDefault && (
           <span className={cn(statusChipClass, statusChipToneClass('active'))}>
             {copy.panel.default}
@@ -270,7 +272,7 @@ function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: Provid
                 }}
               />
             ) : (
-              <span className="max-w-96 truncate text-[13px] leading-[18px] text-text-secondary">
+              <span className="max-w-96 truncate text-[0.8125rem] leading-[1.125rem] text-text-secondary">
                 {endpoint.value ??
                   (endpoint.emptyState === 'managed'
                     ? copy.detail.endpointManaged

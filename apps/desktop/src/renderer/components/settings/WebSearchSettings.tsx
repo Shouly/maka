@@ -218,13 +218,13 @@ export function WebSearchSettings(props: { host: DesktopRuntimeHostRef | undefin
                 <span className={`${statusChipClass} ${statusChipToneClass(status.tone)}`}>
                   {status.label}
                 </span>
-                <small className="text-[12px] leading-4 text-text-muted">
+                <small className="text-[0.75rem] leading-4 text-text-muted">
                   {usingModel
                     ? copy.sources.model
                     : credentialSourceLabel(tavily.credentialSource, hasStoredKey, copy)}
                 </small>
                 {!usingModel && Number.isFinite(checkedAtMs) && (
-                  <small className="text-[12px] leading-4 text-text-muted">
+                  <small className="text-[0.75rem] leading-4 text-text-muted">
                     {copy.lastTest}
                     <RelativeTime ts={checkedAtMs} />
                   </small>
@@ -343,7 +343,7 @@ export function WebSearchSettings(props: { host: DesktopRuntimeHostRef | undefin
             {testResult && (
               <p
                 role="status"
-                className={`text-[13px] leading-[18px] ${testResult.ok ? 'text-success' : 'text-danger'}`}
+                className={`text-[0.8125rem] leading-[1.125rem] ${testResult.ok ? 'text-success' : 'text-danger'}`}
               >
                 {testResult.ok
                   ? `${copy.credentialValid} · ${copy.resultCount(testResult.results.length)}`
@@ -388,16 +388,18 @@ export function WebSearchSettings(props: { host: DesktopRuntimeHostRef | undefin
               {pending === 'query' ? copy.searching : copy.search}
             </Button>
             {queryBlocked && (
-              <small className="text-[12px] leading-4 text-text-muted">{queryBlocked}</small>
+              <small className="text-[0.75rem] leading-4 text-text-muted">{queryBlocked}</small>
             )}
           </div>
           {queryError && (
-            <p role="alert" className="text-[13px] leading-[18px] text-danger">
+            <p role="alert" className="text-[0.8125rem] leading-[1.125rem] text-danger">
               {copy.queryFailed(queryError)}
             </p>
           )}
           {rows !== null && rows.length === 0 && !queryError && (
-            <p className="text-[13px] leading-[18px] text-text-secondary">{copy.noResults}</p>
+            <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
+              {copy.noResults}
+            </p>
           )}
           {rows !== null && rows.length > 0 && (
             <ul className="flex flex-col gap-3" aria-label={copy.resultsAria}>
@@ -410,8 +412,10 @@ export function WebSearchSettings(props: { host: DesktopRuntimeHostRef | undefin
                   >
                     {row.title}
                   </button>
-                  <small className="text-[12px] leading-4 text-text-muted">{row.source}</small>
-                  <p className="text-[13px] leading-[18px] text-text-secondary">{row.snippet}</p>
+                  <small className="text-[0.75rem] leading-4 text-text-muted">{row.source}</small>
+                  <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
+                    {row.snippet}
+                  </p>
                 </li>
               ))}
             </ul>

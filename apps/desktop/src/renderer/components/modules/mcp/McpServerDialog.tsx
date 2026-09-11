@@ -342,11 +342,11 @@ function Field(props: {
       )}
       {props.children}
       {props.error ? (
-        <p className="text-[13px] leading-[18px] text-danger" role="alert">
+        <p className="text-[0.8125rem] leading-[1.125rem] text-danger" role="alert">
           {props.error}
         </p>
       ) : props.help ? (
-        <p className="text-[13px] leading-[18px] text-text-secondary">{props.help}</p>
+        <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">{props.help}</p>
       ) : null}
     </div>
   );

@@ -207,9 +207,11 @@ export function TipTapEditor(props: {
           'aria-controls': menuId,
           'aria-expanded': 'false',
           'data-maka-contract': 'composer-input',
-          // py-[5px]: 22px line + 10px = one 32px control height (relx).
+          // py-[0.3125rem] (5px at the default root): a 1.375rem line + 0.625rem
+          // = one 2rem control height (relx's 22 + 10 = 32). All rem, so the
+          // Appearance font-size setting scales the three together.
           class:
-            'min-h-8 max-h-64 overflow-y-auto whitespace-pre-wrap break-words px-2 py-[5px] outline-none text-text-primary',
+            'min-h-8 max-h-64 overflow-y-auto whitespace-pre-wrap break-words px-2 py-[0.3125rem] outline-none text-text-primary',
         },
         handleKeyDown: (_view, event) => keyHandler.current(event),
       },
@@ -456,7 +458,7 @@ export function TipTapEditor(props: {
           )}
         >
           {items.length === 0 ? (
-            <div className="px-2.5 py-2 text-center text-[13px] leading-[18px] text-menu-text-muted">
+            <div className="px-2.5 py-2 text-center text-[0.8125rem] leading-[1.125rem] text-menu-text-muted">
               {emptyText}
             </div>
           ) : (

@@ -57,10 +57,14 @@ export function SettingsSection({
           <div className="flex min-w-0 flex-col gap-1">
             {/* `.` 作用域下 font-semibold 解析成 580 */}
             {title && (
-              <h2 className="text-[15px] font-semibold leading-5 text-text-primary">{title}</h2>
+              <h2 className="text-[0.9375rem] font-semibold leading-5 text-text-primary">
+                {title}
+              </h2>
             )}
             {description && (
-              <p className="text-[13px] leading-[18px] text-text-secondary">{description}</p>
+              <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
+                {description}
+              </p>
             )}
           </div>
           {action && <div className="flex shrink-0 items-center">{action}</div>}
@@ -110,7 +114,7 @@ export function SettingsRow({
         </TitleTag>
       </div>
       {description && (
-        <p className="text-[13px] leading-[18px] text-text-secondary">{description}</p>
+        <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">{description}</p>
       )}
     </div>
   );

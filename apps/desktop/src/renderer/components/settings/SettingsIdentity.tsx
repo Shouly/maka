@@ -43,11 +43,11 @@ export function SettingsIdentity() {
       className="flex min-w-0 items-center gap-1.5 px-1.5 text-sidebar-text-primary"
     >
       <Anthropicon name="settings" size={16} className="shrink-0 text-sidebar-text-muted" />
-      <span className="truncate text-[13px] font-medium leading-5">{copy.title}</span>
+      <span className="truncate text-[0.8125rem] font-medium leading-5">{copy.title}</span>
       <span aria-hidden="true" className="px-0.5 text-sidebar-text-muted opacity-50">
         ·
       </span>
-      <span className="truncate text-[13px] leading-5 text-sidebar-text-secondary">
+      <span className="truncate text-[0.8125rem] leading-5 text-sidebar-text-secondary">
         {nav.sections[section].label}
       </span>
     </div>

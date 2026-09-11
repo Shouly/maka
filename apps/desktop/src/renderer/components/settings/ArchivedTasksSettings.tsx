@@ -96,7 +96,7 @@ export function ArchivedTasksSettings() {
             <p className="text-sm leading-5 text-text-primary">
               {query.trim() ? copy.noMatchTitle : copy.emptyTitle}
             </p>
-            <p className="text-[13px] leading-[18px] text-text-secondary">
+            <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
               {query.trim() ? copy.noMatchBody : copy.emptyBody}
             </p>
           </div>

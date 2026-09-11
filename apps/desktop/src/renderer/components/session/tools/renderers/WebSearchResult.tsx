@@ -54,7 +54,7 @@ export const WebSearchResult = memo(function WebSearchResult(props: {
   if (props.result.rows.length === 0) {
     return (
       <ToolResultPanel variant="list">
-        <p className="px-2 py-1.5 text-[13px] leading-[18px] text-text-muted">
+        <p className="px-2 py-1.5 text-[0.8125rem] leading-[1.125rem] text-text-muted">
           {copy.webNoResults}
         </p>
       </ToolResultPanel>

@@ -67,7 +67,7 @@ export function AboutSettings(props: {
   const update = useUpdateInstall();
 
   const provenance = (
-    <p className="flex flex-wrap items-center gap-2 text-[13px] leading-[18px] text-text-muted">
+    <p className="flex flex-wrap items-center gap-2 text-[0.8125rem] leading-[1.125rem] text-text-muted">
       <span>{copy.openSourceSummary}</span>
       <button
         type="button"
@@ -103,12 +103,12 @@ export function AboutSettings(props: {
                 className="text-sm font-semibold leading-5 text-text-primary"
                 data-mono="true"
               >{`v${info.data.appVersion}`}</p>
-              <p className="text-[13px] leading-[18px] text-text-secondary">
+              <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
                 {aboutChannelSummary(info.data, copy)}
               </p>
             </div>
           ) : (
-            <p className="text-[13px] leading-[18px] text-text-secondary" role="status">
+            <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary" role="status">
               {info.loading ? copy.loading : copy.unavailable}
             </p>
           )}

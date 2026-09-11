@@ -153,7 +153,7 @@ export function SubagentsSettings(props: { host: DesktopRuntimeHostRef | undefin
           {presets.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-8 text-center">
               <p className="text-sm leading-5 text-text-primary">{copy.section.emptyTitle}</p>
-              <p className="max-w-md text-[13px] leading-[18px] text-text-secondary">
+              <p className="max-w-md text-[0.8125rem] leading-[1.125rem] text-text-secondary">
                 {copy.section.emptyDescription}
               </p>
               <Button size="sm" disabled={saving} onClick={() => setRoute({ kind: 'create' })}>

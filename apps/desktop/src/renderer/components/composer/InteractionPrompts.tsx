@@ -174,7 +174,7 @@ function InteractionPrompt({
                   <span>{copy.sandboxBoundary.access[entry.access]}</span>
                   <span className="text-text-muted">·</span>
                   <span>{copy.sandboxBoundary.scope[entry.scope]}</span>
-                  <code className="break-all font-mono text-[13px] text-text-primary">
+                  <code className="break-all font-mono text-[0.8125rem] text-text-primary">
                     {entry.path}
                   </code>
                 </li>

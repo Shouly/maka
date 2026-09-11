@@ -85,7 +85,9 @@ export function RequestHeadersEditor(props: {
   return (
     <div className="flex flex-col gap-2">
       {props.headers.length === 0 && (
-        <p className="text-[13px] leading-[18px] text-text-muted">{copy.noRequestHeaders}</p>
+        <p className="text-[0.8125rem] leading-[1.125rem] text-text-muted">
+          {copy.noRequestHeaders}
+        </p>
       )}
       {props.headers.map((header) => (
         <div key={header.id} className="flex items-center gap-2">

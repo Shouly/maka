@@ -160,7 +160,7 @@ export const ContextUsageIndicator = memo(function ContextUsageIndicator(props: 
               style={{ width: `${percent}%` }}
             />
           </div>
-          <p className="truncate text-xs leading-[17px] tabular-nums text-menu-text-muted">
+          <p className="truncate text-xs leading-[1.0625rem] tabular-nums text-menu-text-muted">
             {label}
           </p>
           {usage && <p className="truncate text-xs text-menu-text-muted">{usage.modelId}</p>}
@@ -170,7 +170,7 @@ export const ContextUsageIndicator = memo(function ContextUsageIndicator(props: 
             onClick={() => {
               void turnActionsStore.compact(props.sessionId).catch(() => undefined);
             }}
-            className="ui-control-squish inline-flex h-8 w-fit shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-3 text-[13px] leading-[18px] text-text-primary outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-50"
+            className="ui-control-squish inline-flex h-8 w-fit shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-3 text-[0.8125rem] leading-[1.125rem] text-text-primary outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-50"
           >
             <Anthropicon name="archive" size={18} className="shrink-0" />
             {pending ? copy.compacting : copy.compact}

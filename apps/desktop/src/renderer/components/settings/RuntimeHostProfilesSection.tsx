@@ -294,7 +294,7 @@ export function RuntimeHostProfilesSection() {
                     onCheckedChange={(acknowledged) => setDraft({ ...draft, acknowledged })}
                   />
                 </Field>
-                <p className="text-[13px] leading-[18px] text-warning" role="status">
+                <p className="text-[0.8125rem] leading-[1.125rem] text-warning" role="status">
                   {copy.plaintextWarning}
                 </p>
               </>
@@ -316,7 +316,9 @@ export function RuntimeHostProfilesSection() {
                 onChange={(event) => setDraft({ ...draft, credential: event.target.value })}
               />
             </Field>
-            <p className="text-[13px] leading-[18px] text-text-muted">{own.wizardsDeferred}</p>
+            <p className="text-[0.8125rem] leading-[1.125rem] text-text-muted">
+              {own.wizardsDeferred}
+            </p>
             <div className="flex items-center gap-2">
               <Button
                 disabled={busy || !draftComplete(draft)}
@@ -371,7 +373,7 @@ function Field(props: { label: string; help: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
       <span className="text-sm leading-5 text-text-primary">{props.label}</span>
-      <span className="text-[13px] leading-[18px] text-text-secondary">{props.help}</span>
+      <span className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">{props.help}</span>
       <span className="pt-1">{props.children}</span>
     </div>
   );
