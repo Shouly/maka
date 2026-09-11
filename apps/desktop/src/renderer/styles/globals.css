@@ -1497,6 +1497,29 @@ pre[class*="language-"] {
   }
 }
 
+/* The eight-petal mark while a turn runs (`RelxMark animated`): each petal
+   breathes between full and 30% opacity on a 1.2s cycle, staggered clockwise
+   by the component. Same curve and range as the reference mark's animation.
+   reduced-motion holds every petal solid. */
+@keyframes relx-mark-breathe {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.relx-mark-petal {
+  animation: relx-mark-breathe 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relx-mark-petal {
+    animation: none;
+  }
+}
+
 /* 行标题右缘渐隐裁剪(取代省略号)。
    标题 span 须占满剩余行宽(flex-1 min-w-0),短标题够不到
    渐隐区、不受影响。 */
@@ -1855,9 +1878,20 @@ dialog:modal {
   --control-shadow-hover: none;
 }
 
-/* Keep settled history outside the viewport cheap to paint; live output and
-   active editors need their actual geometry on every frame. */
-[data-maka-transcript-turn]:not([data-turn-status="running"]):not(:focus-within) {
+/* Keep settled history outside the viewport cheap to paint; live output needs
+   its actual geometry on every frame.
+
+   Do NOT add `:not(:focus-within)` here. `content-visibility: auto` already
+   treats a subtree that holds focus as relevant (unlocked), so an editor inside
+   a turn keeps its geometry. Excluding it instead makes the rule switch ON the
+   moment focus leaves the turn — and Blink applies that style change in the
+   middle of a mouse press (mousedown → focus moves → selection). A subtree
+   that just gained `content-visibility: auto` starts LOCKED until its first
+   intersection check, and the selection controller then hits
+   `CHECK(!LockedAncestorPreventingPaint)` in `HitTestResult::GetPosition`,
+   killing the renderer (Electron 43 / Chromium 150, 2026-09-10). Repro was:
+   click a button inside a settled turn, then click plain text in that turn. */
+[data-maka-transcript-turn]:not([data-turn-status="running"]) {
   content-visibility: auto;
   contain-intrinsic-size: auto 240px;
 }

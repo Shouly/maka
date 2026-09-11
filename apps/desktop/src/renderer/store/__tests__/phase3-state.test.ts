@@ -50,7 +50,6 @@ import {
   resolveToolRendererId,
   summarizeToolGroup,
   toolActivityIcon,
-  toolCopyText,
   toolRowStatus,
   toolRowTitle,
 } from '../../components/session/tools/tool-presentation.js';
@@ -203,32 +202,6 @@ test('a running group says what it is doing now, not what it has done', () => {
   ];
   assert.equal(activeToolLabel(items, 'en'), 'Searching the web');
   assert.equal(activeToolLabel([], 'en'), 'Working on it…');
-});
-
-test('a row copies what was asked and what came back, never the envelope', () => {
-  const text = toolCopyText(
-    tool({
-      result: {
-        kind: 'terminal',
-        cwd: '/w',
-        cmd: 'echo hi',
-        status: 'completed',
-        exitCode: 0,
-        output: {
-          mode: 'pipes',
-          stdout: 'hi\n',
-          stderr: '',
-          stdoutTruncated: false,
-          stderrTruncated: false,
-          redacted: false,
-        },
-      },
-    }),
-    'en',
-  );
-  assert.ok(text.includes('echo hi'));
-  assert.ok(text.includes('hi'));
-  assert.ok(!text.includes('"kind"'));
 });
 
 test('a proxied MCP tool name splits back into its server and its tool', () => {

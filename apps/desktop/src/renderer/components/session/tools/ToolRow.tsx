@@ -56,7 +56,6 @@ import {
   canExpandTool,
   toolActivityIcon,
   toolActivityKindOf,
-  toolCopyText,
   toolRowStatus,
   toolRowStatusLabel,
   toolRowTitle,
@@ -104,7 +103,6 @@ export const ToolRow = memo(function ToolRow(props: ToolRowProps) {
   const copy = getTranscriptCopy(locale);
   const toolCopy = getToolActivityCopy(locale);
   const [expanded, setExpanded] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   const item = props.item;
   const status = toolRowStatus(item);
@@ -115,18 +113,6 @@ export const ToolRow = memo(function ToolRow(props: ToolRowProps) {
   const mcp = parseMcpToolName(item.toolName);
   const requiresBypass = isRequiresBypassToolResult(item.result);
   const showSandbox = status === 'sandbox_blocked' || requiresBypass;
-
-  const copyOutput = () => {
-    const text = toolCopyText(item, locale);
-    if (!text) return;
-    void navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        setCopied(true);
-        window.setTimeout(() => setCopied(false), 2000);
-      })
-      .catch(() => undefined);
-  };
 
   const header = (
     <div className={stepRowClass}>
@@ -236,19 +222,6 @@ export const ToolRow = memo(function ToolRow(props: ToolRowProps) {
             </div>
           )}
           {renderToolContent(item, props.context)}
-          <div className="flex justify-end px-2.5 pb-2">
-            <button
-              type="button"
-              onClick={copyOutput}
-              aria-label={toolCopy.copy.actionAriaLabel(
-                copied ? toolCopy.copy.copied : toolCopy.copy.idle,
-                title,
-              )}
-              className="ui-control-squish ui-control-squish-ghost inline-flex size-6 cursor-pointer items-center justify-center rounded-md text-text-muted outline-none transition-colors hover:text-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)]"
-            >
-              <Anthropicon name={copied ? 'check' : 'copy'} size={16} />
-            </button>
-          </div>
         </motion.div>
       )}
     </AnimatePresence>

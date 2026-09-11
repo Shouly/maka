@@ -52,6 +52,7 @@
     "src/renderer/components/dev/RuntimeDebug.tsx",
     "src/renderer/components/icons/Anthropicon.tsx",
     "src/renderer/components/icons/RelxLogo.tsx",
+    "src/renderer/components/icons/RelxMark.tsx",
     "src/renderer/components/icons/index.ts",
     "src/renderer/components/layout/AppLayout.tsx",
     "src/renderer/components/layout/AppShell.tsx",
@@ -89,7 +90,7 @@
     "src/renderer/components/session/MessageQueue.tsx",
     "src/renderer/components/session/SelectionQuote.tsx",
     "src/renderer/components/session/SessionView.tsx",
-    "src/renderer/components/session/ThinkingBlock.tsx",
+    "src/renderer/components/session/ThinkingStep.tsx",
     "src/renderer/components/session/TranscriptTurn.tsx",
     "src/renderer/components/session/TurnFooter.tsx",
     "src/renderer/components/session/TurnRunningStatus.tsx",
@@ -216,6 +217,7 @@
     "src/renderer/hooks/use-workspace.ts",
     "src/renderer/lib/avatar-warm-palette.ts",
     "src/renderer/lib/cn.ts",
+    "src/renderer/lib/compose-refs.ts",
     "src/renderer/lib/composer-document.ts",
     "src/renderer/lib/composer-surface.ts",
     "src/renderer/lib/connection-model-rows.ts",
@@ -309,6 +311,8 @@
     "src/renderer/lib/ported/workspace-readiness-recovery.ts",
     "src/renderer/lib/theme.ts",
     "src/renderer/lib/transient-message-placement.ts",
+    "src/renderer/lib/turn-activity.ts",
+    "src/renderer/lib/turn-timeline-groups.ts",
     "src/renderer/lib/welcome-greeting.ts",
     "src/renderer/locales/agent-graph-copy.ts",
     "src/renderer/locales/artifact-copy.ts",
@@ -1188,6 +1192,17 @@
         "react": 1
       }
     },
+    "src/renderer/components/icons/RelxMark.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1
+      }
+    },
     "src/renderer/components/icons/index.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -1461,6 +1476,7 @@
       "actionFactories": [],
       "dependencyPaths": {
         "../../../lib/cn.js": 1,
+        "../../../lib/compose-refs.js": 1,
         "../../../lib/ported/project-path-display.js": 1,
         "../../../locales/create-project-copy.js": 1,
         "../../icons/Anthropicon.js": 1,
@@ -1501,6 +1517,7 @@
       "actionFactories": [],
       "dependencyPaths": {
         "../../../lib/cn.js": 1,
+        "../../../lib/compose-refs.js": 1,
         "../../icons/Anthropicon.js": 1,
         "../../ui/dropdown-menu.js": 1,
         "../../ui/tooltip.js": 1,
@@ -2054,7 +2071,7 @@
         "zustand/react/shallow": 1
       }
     },
-    "src/renderer/components/session/ThinkingBlock.tsx": {
+    "src/renderer/components/session/ThinkingStep.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {
         "window.cancelAnimationFrame": 1,
@@ -2064,7 +2081,7 @@
         "useEffect": 1,
         "useRef": 1,
         "useState": 2,
-        "useUiLocale": 1
+        "useUiLocale": 2
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
@@ -2075,6 +2092,7 @@
         "../icons/Anthropicon.js": 1,
         "../ui/Markdown.js": 1,
         "../ui/StreamPopMarkdown.js": 1,
+        "./tools/tool-result.js": 1,
         "@maka/ui": 1,
         "react": 1
       }
@@ -2090,11 +2108,11 @@
       "actionFactories": [],
       "dependencyPaths": {
         "../../lib/cn.js": 1,
+        "../../lib/turn-timeline-groups.js": 1,
         "../../locales/transcript-copy.js": 1,
         "../icons/Anthropicon.js": 1,
         "../ui/Markdown.js": 1,
         "../ui/StreamPopMarkdown.js": 1,
-        "./ThinkingBlock.js": 1,
         "./tools/ToolGroup.js": 1,
         "./TurnFooter.js": 1,
         "./UserMessageRow.js": 1,
@@ -2132,7 +2150,7 @@
       },
       "hookCalls": {
         "useLayoutEffect": 1,
-        "useRef": 3,
+        "useRef": 4,
         "useState": 1,
         "useUiLocale": 1
       },
@@ -2140,7 +2158,9 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
-        "../icons/Anthropicon.js": 1,
+        "../../lib/turn-activity.js": 1,
+        "../../locales/transcript-copy.js": 1,
+        "../icons/RelxMark.js": 1,
         "@maka/ui": 1,
         "react": 1
       }
@@ -2320,6 +2340,7 @@
         "../../../lib/cn.js": 1,
         "../../../locales/transcript-copy.js": 1,
         "../../icons/Anthropicon.js": 1,
+        "../ThinkingStep.js": 1,
         "./tool-presentation.js": 1,
         "./ToolRow.js": 1,
         "@maka/ui": 1,
@@ -2329,12 +2350,9 @@
     },
     "src/renderer/components/session/tools/ToolRow.tsx": {
       "bridgePaths": {},
-      "environmentCapabilities": {
-        "navigator.clipboard.writeText": 1,
-        "window.setTimeout": 1
-      },
+      "environmentCapabilities": {},
       "hookCalls": {
-        "useState": 2,
+        "useState": 1,
         "useUiLocale": 1
       },
       "lifecycleMethods": {},
@@ -4672,6 +4690,15 @@
         "tailwind-merge": 1
       }
     },
+    "src/renderer/lib/compose-refs.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
     "src/renderer/lib/composer-document.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -5644,6 +5671,28 @@
       }
     },
     "src/renderer/lib/transient-message-placement.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/turn-activity.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../components/session/tools/tool-presentation.js": 1,
+        "../locales/transcript-copy.js": 1,
+        "@maka/ui": 1
+      }
+    },
+    "src/renderer/lib/turn-timeline-groups.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {},

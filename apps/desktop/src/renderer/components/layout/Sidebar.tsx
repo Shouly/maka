@@ -33,15 +33,7 @@
 // The footer carries the update chip, which is the only place the app ever
 // asks for the user's attention about itself, and Settings.
 
-import {
-  Fragment,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  type ReactNode,
-} from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react';
 import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'motion/react';
 import { useStore } from 'zustand';
 import { useRovingRowFocus, useUiLocale } from '@maka/ui';
@@ -197,18 +189,25 @@ export function Sidebar(props: SidebarProps) {
   const extensionsActive = navigation.selection.section === 'extensions';
   const openExtensions = () => props.onSelectModule(navigation.moduleMemory.extensions);
 
+  // Each branch is a keyed host element: the group's presence wrapper clones
+  // its direct children with a ref (see `SidebarGroup`), so a state can be
+  // swapped for the list without a wrapper around either.
   const projectsBody = error ? (
-    <div className="p-2 text-sm text-danger" role="alert">
+    <div key="error" className="p-2 text-sm text-danger" role="alert">
       {copy.error}
     </div>
   ) : loading && model.total === 0 && entries.length === 0 ? (
-    <div className="space-y-[1.5px] pb-2" aria-hidden="true">
+    <div key="loading" className="space-y-[1.5px] pb-2" aria-hidden="true">
       {[0, 1, 2, 3].map((index) => (
         <div key={index} className="h-8 animate-pulse rounded-lg bg-sidebar-selected/60" />
       ))}
     </div>
   ) : entries.length === 0 ? (
-    <div className="px-2 pb-2 text-sm leading-[21px] text-sidebar-text-muted" role="status">
+    <div
+      key="empty"
+      className="px-2 pb-2 text-sm leading-[21px] text-sidebar-text-muted"
+      role="status"
+    >
       {copy.noProjects}
     </div>
   ) : (
@@ -372,7 +371,7 @@ export function Sidebar(props: SidebarProps) {
                   uiStore.setSidebarExpanded('section:projects', !hidden)
                 }
               >
-                {[<Fragment key="projects">{projectsBody}</Fragment>]}
+                {projectsBody}
               </SidebarGroup>
 
               <SidebarGroup

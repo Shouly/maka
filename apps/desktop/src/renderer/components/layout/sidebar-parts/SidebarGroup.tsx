@@ -92,7 +92,13 @@ export function SidebarGroup(props: {
   onContentHiddenChange: (hidden: boolean) => void;
   actions?: ReactNode;
   copy: SidebarCopy;
-  children: ReactNode[];
+  /**
+   * The rows. They sit directly inside an `AnimatePresence mode="popLayout"`,
+   * so each must be a keyed element whose `ref` reaches its root DOM node — a
+   * host element, or a component that forwards `ref` like `SessionRow`. Never
+   * a Fragment: it cannot take the ref, and React warns on every render.
+   */
+  children: ReactNode;
 }) {
   const labelId = `sidebar-group-${props.groupKey}-label`;
   const itemsId = `sidebar-group-${props.groupKey}-items`;

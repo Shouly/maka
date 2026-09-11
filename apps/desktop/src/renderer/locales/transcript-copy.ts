@@ -84,6 +84,8 @@ export interface TranscriptCopy {
     readonly working: string;
     readonly thinkingOnly: string;
     readonly thinkingActive: string;
+    /** The status line while the answer's prose is still streaming. */
+    readonly writing: string;
     readonly summary: Record<ToolActivityKind, ToolSummaryLabel>;
     readonly active: Record<ToolActivityKind, string>;
     readonly join: (phrases: readonly string[]) => string;
@@ -308,6 +310,7 @@ const TRANSCRIPT_COPY = {
       working: '正在处理…',
       thinkingOnly: '思考过程',
       thinkingActive: '正在思考…',
+      writing: '正在撰写…',
       summary: ZH_CN_ACTIVITY_SUMMARY,
       active: ZH_CN_ACTIVITY_ACTIVE,
       join: (phrases) => phrases.join('、'),
@@ -437,6 +440,7 @@ const TRANSCRIPT_COPY = {
       working: '正在處理…',
       thinkingOnly: '思考過程',
       thinkingActive: '正在思考…',
+      writing: '正在撰寫…',
       summary: ZH_TW_ACTIVITY_SUMMARY,
       active: ZH_TW_ACTIVITY_ACTIVE,
       join: (phrases) => phrases.join('、'),
@@ -566,6 +570,7 @@ const TRANSCRIPT_COPY = {
       working: 'Working on it…',
       thinkingOnly: 'Thought process',
       thinkingActive: 'Thinking…',
+      writing: 'Writing…',
       summary: EN_ACTIVITY_SUMMARY,
       active: EN_ACTIVITY_ACTIVE,
       join: joinEnglishPhrases,

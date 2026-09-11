@@ -20,9 +20,12 @@
 // Row enter/exit for the task list. Ported verbatim from the reference design
 // system's `sidebar-row-motion.ts`.
 //
-// Spread as props rather than wrapped in a component: `AnimatePresence
-// mode="popLayout"` requires the keyed motion element to be its direct child,
-// and a wrapper would break that.
+// Spread as props onto the row's root `motion.div`. What `AnimatePresence
+// mode="popLayout"` actually needs of its direct child is a key and a `ref`
+// that reaches the root DOM node (it measures the node to pop it out of the
+// flow on exit); the exit animation itself may live on any motion element
+// inside. So a row component is a fine direct child as long as it forwards
+// `ref` to this element — see `SessionRow` and `ProjectRow`.
 
 import type { MotionProps } from 'motion/react';
 

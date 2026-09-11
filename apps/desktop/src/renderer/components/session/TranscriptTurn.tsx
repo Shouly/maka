@@ -24,33 +24,32 @@
 // then more thinking, then an answer, and flattening that into "reasoning,
 // tools, answer" reorders work the reader watched happen.
 //
-// `foldTimeline` collapses a thinking+tools run between two answers into one
-// "Processing" block. It runs HERE, at render time, rather than in the
-// projection, so every pass that rewrites a timeline (the live overlay, tool
-// projection, shell-run folding) stays flat and never has to maintain a
+// `groupTurnTimeline` collapses each run of reasoning and tool calls between
+// two answers into one work group. It runs HERE, at render time, rather than
+// in the projection, so every pass that rewrites a timeline (the live overlay,
+// tool projection, shell-run folding) stays flat and never has to maintain a
 // nesting invariant.
+//
+// A run goes to ONE `ToolGroup`, children and all — the reasoning between
+// two calls is a step on that group's timeline, not a heading of its own
+// beside it, and a run that is only reasoning is a group too, so the turn does
+// not change shape when its first call lands (`groupTurnTimeline`).
 //
 // `data-turn-id` is load-bearing beyond styling: the scroll authority finds
 // turns by it, and `resolveQuoteTarget` walks up to it to decide which turn a
 // selection belongs to.
 
 import { memo, useMemo } from 'react';
-import {
-  finalAssistantReplyText,
-  foldTimeline,
-  useUiLocale,
-  type FoldedTimelineEntry,
-  type TurnViewModel,
-} from '@maka/ui';
+import { finalAssistantReplyText, useUiLocale, type TurnViewModel } from '@maka/ui';
 import Markdown from '../ui/Markdown.js';
 import StreamPopMarkdown from '../ui/StreamPopMarkdown.js';
 import { Anthropicon } from '../icons/Anthropicon.js';
 import { cn } from '../../lib/cn.js';
+import { groupTurnTimeline } from '../../lib/turn-timeline-groups.js';
 import type { FailedTurnSeverity } from '../../lib/ported/session-status-presentation.js';
 import type { TurnFooterAction, TurnFooterActionId } from '../../lib/ported/turn-footer-actions.js';
 import type { TurnLineageBadge } from '@maka/ui';
 import { getTranscriptCopy } from '../../locales/transcript-copy.js';
-import { ThinkingBlock } from './ThinkingBlock.js';
 import { TurnFooter } from './TurnFooter.js';
 import { UserMessageRow } from './UserMessageRow.js';
 import { ToolGroup } from './tools/ToolGroup.js';
@@ -99,25 +98,8 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
   const locale = useUiLocale();
   const copy = getTranscriptCopy(locale);
   const turn = props.turn;
-  const folded = useMemo<FoldedTimelineEntry[]>(() => foldTimeline(turn.timeline), [turn.timeline]);
+  const grouped = useMemo(() => groupTurnTimeline(turn.timeline), [turn.timeline]);
   const hasAnswer = finalAssistantReplyText(turn).trim().length > 0;
-  // A concrete tool label outranks the generic phrase while a tool is in flight.
-
-  const renderToolGroup = (items: readonly (typeof turn.tools)[number][], key: string) => (
-    <ToolGroup
-      key={key}
-      items={items}
-      complete={turn.status !== 'running'}
-      context={props.toolContext}
-      {...(props.onSwitchToFullAccessAndRetry
-        ? {
-            onSwitchToFullAccessAndRetry: (item: (typeof turn.tools)[number]) =>
-              props.onSwitchToFullAccessAndRetry?.(item.toolUseId),
-          }
-        : {})}
-      {...(props.switchingToolUseId ? { switchingToolUseId: props.switchingToolUseId } : {})}
-    />
-  );
 
   return (
     <article
@@ -153,39 +135,30 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
       )}
 
       <div className="flex flex-col">
-        {folded.map((entry, index) => {
-          if (entry.kind === 'processing') {
+        {grouped.map((entry, index) => {
+          if (entry.kind === 'work') {
             return (
-              <div key={`processing-${entry.id}`} className="flex flex-col">
-                {entry.children.map((child, childIndex) =>
-                  child.kind === 'thinking' ? (
-                    <ThinkingBlock
-                      key={`${entry.id}-thinking-${child.messageId}-${childIndex}`}
-                      text={child.text}
-                      {...(child.live ? { live: true } : {})}
-                      {...(child.truncated ? { truncated: true } : {})}
-                      onOpenExternal={props.onOpenExternal}
-                    />
-                  ) : (
-                    renderToolGroup(child.items, `${entry.id}-tools-${childIndex}`)
-                  ),
-                )}
-              </div>
-            );
-          }
-          if (entry.kind === 'thinking') {
-            return (
-              <ThinkingBlock
-                key={`thinking-${entry.messageId}-${index}`}
-                text={entry.text}
-                {...(entry.live ? { live: true } : {})}
-                {...(entry.truncated ? { truncated: true } : {})}
-                onOpenExternal={props.onOpenExternal}
+              <ToolGroup
+                key={`work-${entry.id}`}
+                entries={entry.children}
+                // A run is over once anything follows it — the answer's prose,
+                // a steering message, the next run — not only when the turn
+                // ends. An earlier run in a live turn folds to its summary the
+                // moment the next block starts; only the newest keeps its
+                // window of steps (reference behaviour).
+                complete={turn.status !== 'running' || index < grouped.length - 1}
+                context={props.toolContext}
+                {...(props.onSwitchToFullAccessAndRetry
+                  ? {
+                      onSwitchToFullAccessAndRetry: (item: (typeof turn.tools)[number]) =>
+                        props.onSwitchToFullAccessAndRetry?.(item.toolUseId),
+                    }
+                  : {})}
+                {...(props.switchingToolUseId
+                  ? { switchingToolUseId: props.switchingToolUseId }
+                  : {})}
               />
             );
-          }
-          if (entry.kind === 'tools') {
-            return renderToolGroup(entry.items, `tools-${index}`);
           }
           if (entry.kind === 'user') {
             return (

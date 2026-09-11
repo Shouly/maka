@@ -45,7 +45,6 @@ import {
   finalAssistantReplyText,
   useChatScroll,
   useTranscriptScrollAuthority,
-  computerRunningLabel,
   useUiLocale,
   type TurnViewModel,
   type TransientUserMessageProjection,
@@ -324,7 +323,7 @@ function SessionTranscript(props: SessionViewProps) {
         activeTurn?.startedAt ??
         feed.transientMessages[0]?.ts
       }
-      activityLabel={activeTurn ? computerRunningLabel(activeTurn.tools, locale) : undefined}
+      {...(activeTurn ? { turn: activeTurn } : {})}
     />
   );
   const shellCopy = getShellCopy(locale).app;

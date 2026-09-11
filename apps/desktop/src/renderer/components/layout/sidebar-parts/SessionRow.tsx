@@ -17,12 +17,13 @@
  * under the License.
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState, type Ref } from 'react';
 import { motion } from 'motion/react';
 import { Anthropicon } from '../../icons/Anthropicon.js';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../ui/tooltip.js';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '../../ui/dropdown-menu.js';
 import { cn } from '../../../lib/cn.js';
+import { composeRefs } from '../../../lib/compose-refs.js';
 import type { SessionListRow } from '../../../store/session-list-model.js';
 import type { SidebarCopy } from '../../../locales/sidebar-copy.js';
 import { SessionActionMenuItems } from './SessionActionMenuItems.js';
@@ -43,11 +44,18 @@ export function SessionRow(props: {
   isActive: boolean;
   copy: SidebarCopy;
   actions: SessionRowActions;
+  /**
+   * Reaches the row's root element. A row is a direct child of the list's
+   * `AnimatePresence mode="popLayout"`, which needs this to measure the row
+   * when it leaves.
+   */
+  ref?: Ref<HTMLDivElement>;
 }) {
   const { row, copy, actions } = props;
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const rowRoot = useRef<HTMLDivElement>(null);
+  const rootRef = useMemo(() => composeRefs(rowRoot, props.ref), [props.ref]);
   const renameFromMenu = useRef(false);
   const titleRef = useRef<HTMLSpanElement>(null);
   const [titleClipped, setTitleClipped] = useState(false);
@@ -90,7 +98,7 @@ export function SessionRow(props: {
 
   return (
     <motion.div
-      ref={rowRoot}
+      ref={rootRef}
       {...sidebarRowFadeProps}
       data-maka-contract="session-row"
       data-session-key={row.id}

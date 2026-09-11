@@ -553,6 +553,38 @@ try {
   await preview.locator('[data-maka-tool-group] button[aria-expanded]').first().click();
   const previewRows = preview.locator('[data-maka-tool-row] button[aria-expanded]');
   await previewRows.first().waitFor();
+  // Reasoning is a STEP INSIDE the group, not a heading standing beside it:
+  // the fixture turn is thinking then three calls, and that is one run of work
+  // under one summary line. Drawn flat (which it was), the same turn showed a
+  // reasoning block that could not be put away and a separate tool summary.
+  assert.equal(await preview.locator('[data-maka-tool-group]').count(), 1);
+  assert.equal(await preview.locator('[data-maka-thinking]').count(), 1);
+  assert.equal(await preview.locator('[data-maka-tool-group] [data-maka-thinking]').count(), 1);
+  // Two columns, and only two: the group's summary stands in the same column
+  // as the answer's prose (`.standard-markdown` pads its paragraphs 8px, and
+  // the group carries the same inset), and every STEP — reasoning and tool
+  // alike — stands 30px further in, behind the 20px glyph column and the 10px
+  // a step body carries. Measured from the ink, not the boxes: the 8px that
+  // was missing here is padding, so every box already lined up while the
+  // sentences did not.
+  const columns = await preview.evaluate((root) => {
+    const ink = (selector) => {
+      const element = root.querySelector(selector);
+      if (!element) return Number.NaN;
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      return Math.round(range.getBoundingClientRect().left);
+    };
+    return {
+      answer: ink('.chat-assistant-response p'),
+      summary: ink('[data-maka-tool-group] button span'),
+      reasoning: ink('[data-maka-thinking] p'),
+      tool: ink('[data-maka-tool-row] button span span'),
+    };
+  });
+  assert.equal(columns.summary, columns.answer);
+  assert.equal(columns.reasoning, columns.answer + 30);
+  assert.equal(columns.tool, columns.answer + 30);
   await previewRows.nth(0).click();
   await previewRows.nth(1).click();
   await preview.locator('.custom-code-highlight').first().waitFor();

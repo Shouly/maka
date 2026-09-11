@@ -20,7 +20,7 @@
 // The full row toggles its tasks; project actions live in the separate menu.
 // Projects absent from the catalog still expand, but offer no directory actions.
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState, type Ref } from 'react';
 import { useUiLocale } from '@maka/ui';
 import { getCreateProjectCopy } from '../../../locales/create-project-copy.js';
 import { motion } from 'motion/react';
@@ -34,6 +34,7 @@ import {
   DropdownMenuTrigger,
 } from '../../ui/dropdown-menu.js';
 import { cn } from '../../../lib/cn.js';
+import { composeRefs } from '../../../lib/compose-refs.js';
 import { projectPathDisplay } from '../../../lib/ported/project-path-display.js';
 import type { SidebarCopy } from '../../../locales/sidebar-copy.js';
 import type { ProjectRowModel } from '../../../hooks/use-session-list.js';
@@ -59,12 +60,15 @@ export function ProjectRow(props: {
   archived?: boolean;
   copy: SidebarCopy;
   actions: ProjectRowActions;
+  /** Reaches the row's root element; see `SessionRow`. */
+  ref?: Ref<HTMLDivElement>;
 }) {
   const { project, label, copy, actions } = props;
   const createCopy = getCreateProjectCopy(useUiLocale());
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const rowRoot = useRef<HTMLDivElement>(null);
+  const rootRef = useMemo(() => composeRefs(rowRoot, props.ref), [props.ref]);
   const renameFromMenu = useRef(false);
   const nameRef = useRef<HTMLSpanElement>(null);
   const [clipped, setClipped] = useState(false);
@@ -77,7 +81,7 @@ export function ProjectRow(props: {
 
   return (
     <motion.div
-      ref={rowRoot}
+      ref={rootRef}
       {...sidebarRowFadeProps}
       data-maka-contract="project-row"
       data-project-id={project?.id ?? props.projectKey}
