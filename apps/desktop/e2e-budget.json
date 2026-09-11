@@ -38,7 +38,7 @@
       "electron": "needs a second real Session (Host round trip) to switch to; the focus and draft-restore halves alone would not earn a window"
     },
     "session-local-recovery.spec.ts": {
-      "tests": 10,
+      "tests": 11,
       "electron": "First-send refusal cleanup, inherited Host defaults, durable admission, delivery UI controls and reload/restart recovery cross renderer, preload and Main"
     },
     "session-workbar.spec.ts": {

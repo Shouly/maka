@@ -298,3 +298,22 @@ test('welcome does not query a locally pending Host session and keeps the first 
   expect(await transcript!.evaluate(node=>node.isConnected)).toBe(true);
   expect(await composer!.evaluate(node=>node.isConnected)).toBe(true);
 });
+
+// The first send creates the Session and moves the draft to it, so the Session
+// composer mounts holding the long text and is then cleared from outside the
+// editor. Its inline-row measurement must not keep the draft's height.
+test('the session composer returns to one line after a long first prompt is sent', async ({
+  sessionLocalWindow: { page },
+}) => {
+  const composer = page.locator(COMPOSER_INPUT);
+  const prompt = Array.from({ length: 60 }, (_, index) => `word${index + 1}`).join(' ');
+  await composer.fill(prompt);
+  await awaitSendReady(page);
+  expect((await composer.boundingBox())?.height ?? 0).toBeGreaterThan(60);
+  await composer.press('Enter');
+  await expect(page.getByText(`Fake backend received: ${prompt}`, { exact: true })).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(composer).toHaveText('');
+  await expect.poll(async () => (await composer.boundingBox())?.height ?? 0).toBeLessThan(40);
+});

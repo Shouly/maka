@@ -85,7 +85,13 @@ export function useComposerInlineRow({ enabled, empty, forceStacked }: Options):
       leadW: leadRef.current?.offsetWidth ?? 0,
       trailW: trailRef.current?.offsetWidth ?? 0,
       hostW: host.clientWidth,
-      textH: Math.max(LEADING, editor.scrollHeight - EDITOR_PY),
+      // An empty draft is one line by definition. Measuring it would read the
+      // previous text when the clear arrives from outside the editor (a send
+      // acknowledged, a draft restored): the editor replaces its content in a
+      // passive effect, after this layout measurement. A stale tall `textH`
+      // then feeds the `::before` float, which keeps the box that tall, which
+      // measures tall again — the empty composer never comes back down.
+      textH: empty ? LEADING : Math.max(LEADING, editor.scrollHeight - EDITOR_PY),
     };
     setMetrics((prev) =>
       prev.leadW === next.leadW &&
