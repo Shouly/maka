@@ -746,6 +746,28 @@ function OwnedChatInput(props: {
     forceStacked: hasChips,
   });
   const [goalOpen, setGoalOpen] = useState(false);
+
+  // Once per welcome composer, after the reader has had a moment with the
+  // greeting: each hint for 6s, then a 0.6s frame that fades the placeholder
+  // back. Timings are the reference's measured ones. `null` hands the editor
+  // its own placeholder back; a draft typed meanwhile hides the overlay.
+  const [hintStep, setHintStep] = useState<number | null>(null);
+  const hintsShown = useRef(false);
+  useEffect(() => {
+    if (!welcome || disabled || hintsShown.current || copy.hints.length === 0) return;
+    hintsShown.current = true;
+    const timers: number[] = [];
+    let at = 4_700;
+    for (let step = 0; step <= copy.hints.length; step += 1) {
+      timers.push(window.setTimeout(() => setHintStep(step), at));
+      at += step < copy.hints.length ? 6_000 : 600;
+    }
+    timers.push(window.setTimeout(() => setHintStep(null), at));
+    return () => {
+      for (const timer of timers) window.clearTimeout(timer);
+      setHintStep(null);
+    };
+  }, [welcome, disabled, copy.hints]);
   // The Skills submenu reads the catalog when the ＋ menu opens, so the list
   // is the Host's answer for THIS target and mode, the same one `/` offers.
   const [skills, setSkills] = useState<readonly SkillMenuEntry[] | undefined>();
@@ -1078,6 +1100,7 @@ function OwnedChatInput(props: {
                 className={cn(
                   'relative w-full transition-opacity duration-200',
                   welcome ? 'min-h-[54px]' : 'min-h-8',
+                  hintStep !== null && '[&_.is-editor-empty]:before:!content-none',
                   inlineRow.inline &&
                     "[&_.tiptap.ProseMirror]:before:float-right [&_.tiptap.ProseMirror]:before:content-[''] [&_.tiptap.ProseMirror]:before:h-[var(--cmp-wrap-h)] [&_.tiptap.ProseMirror]:before:w-[calc(var(--cmp-trail-w)-8px)] [&_.tiptap.ProseMirror]:before:[shape-outside:inset(calc(100%-var(--cmp-row-h))_0_0_0)]",
                   disabled && 'opacity-60',
@@ -1115,8 +1138,25 @@ function OwnedChatInput(props: {
                   disabled={disabled}
                   running={props.running}
                   label={props.label ?? common.composer.textareaAriaLabel}
-                  placeholder={common.composer.placeholder}
+                  placeholder={welcome ? copy.placeholder.welcome : copy.placeholder.session}
                 />
+                {/* The hint carousel: the editor's own placeholder is
+                    suppressed while a hint shows, and this overlay draws the
+                    hint at the editor's exact origin, size and colour. The
+                    key remounts the span per step so the fade-in replays. */}
+                {hintStep !== null && !wire.text && (
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 px-2 pt-[0.3125rem] text-base leading-[1.375rem] text-text-muted"
+                  >
+                    <span
+                      key={hintStep}
+                      className="motion-safe:animate-[composer-hint-fade-in_0.5s_linear]"
+                    >
+                      {copy.hints[hintStep] ?? copy.placeholder.welcome}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 

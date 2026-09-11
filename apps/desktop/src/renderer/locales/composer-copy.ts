@@ -33,6 +33,16 @@ export type DesktopSlashCommandId = 'compact' | 'side' | 'graph' | 'swarm';
 
 export interface ComposerCopy {
   readonly surfaceLabel: string;
+  /** The empty editor's prompt: one line on the welcome surface, another in a task. */
+  readonly placeholder: {
+    readonly welcome: string;
+    readonly session: string;
+  };
+  /**
+   * Shown once, in turn, over the empty welcome editor after it mounts — the
+   * reference's carousel of what `/` and `@` do — then the placeholder returns.
+   */
+  readonly hints: readonly string[];
   readonly drop: {
     readonly overlay: string;
     readonly announceEnter: string;
@@ -142,6 +152,11 @@ export interface ComposerCopy {
 const COMPOSER_COPY = {
   'zh-CN': {
     surfaceLabel: '消息输入区',
+    placeholder: {
+      welcome: '今天想做点什么？',
+      session: '输入消息…',
+    },
+    hints: ['输入 / 选择技能', '输入 @ 引用文件'],
     drop: {
       overlay: '拖到这里作为附件',
       announceEnter: '松开即可添加附件',
@@ -242,6 +257,11 @@ const COMPOSER_COPY = {
   },
   'zh-TW': {
     surfaceLabel: '訊息輸入區',
+    placeholder: {
+      welcome: '今天想做點什麼？',
+      session: '輸入訊息…',
+    },
+    hints: ['輸入 / 選擇技能', '輸入 @ 引用檔案'],
     drop: {
       overlay: '拖到這裡作為附件',
       announceEnter: '放開即可加入附件',
@@ -342,6 +362,11 @@ const COMPOSER_COPY = {
   },
   en: {
     surfaceLabel: 'Message composer',
+    placeholder: {
+      welcome: 'How can I help you today?',
+      session: 'Write a message…',
+    },
+    hints: ['Type / for skills', 'Type @ for files'],
     drop: {
       overlay: 'Drop files here to attach them',
       announceEnter: 'Release to attach the files',
