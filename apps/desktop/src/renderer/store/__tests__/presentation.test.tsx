@@ -813,4 +813,15 @@ test('steering rows retain attachments, directories, and inline references', () 
   assert.ok(text.includes('evidence.pdf'));
   assert.ok(text.includes('/workspace/reference'));
   assert.ok(text.includes('source.ts'));
+
+  // A sent file is a 120px card — its name over an extension badge — inside
+  // the labelled attachments row, not a chip (reference `AttachmentPreview`).
+  const card = document.querySelector('[data-maka-attachment-card="evidence.pdf"]');
+  assert.ok(card, 'the attachment is a card');
+  assert.ok(card.closest('[role="group"][aria-label]'), 'inside the attachments row');
+  assert.equal(card.querySelector('span span')?.textContent, 'PDF', 'extension badge');
+  assert.equal(
+    card.querySelector('button')?.getAttribute('aria-label'),
+    'Open attachment evidence.pdf',
+  );
 });

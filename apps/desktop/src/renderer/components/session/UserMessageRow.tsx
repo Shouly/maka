@@ -37,13 +37,9 @@ import type {
   InlineReference,
   QuoteRef,
 } from '@maka/core/events';
-import {
-  getConversationCopy,
-  resolvePreviewKind,
-  useAttachmentImageSource,
-  useUiLocale,
-} from '@maka/ui';
+import { getConversationCopy, useAttachmentImageSource, useUiLocale } from '@maka/ui';
 import { Anthropicon } from '../icons/Anthropicon.js';
+import { AttachmentCard, AttachmentCardRow } from '../ui/attachment-card.js';
 import { Button } from '../ui/button.js';
 import { Textarea } from '../ui/textarea.js';
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog.js';
@@ -71,33 +67,37 @@ function Chip(props: {
   );
 }
 
-function AttachmentThumbnail(props: { attachment: AttachmentRef; onOpen: (src: string) => void }) {
-  const locale = useUiLocale();
-  const copy = getTranscriptCopy(locale).turn;
+/**
+ * One sent attachment as a card. An image whose bytes resolve opens the
+ * lightbox; everything else (and an image whose source is not a session file)
+ * opens the right pane's Files face on it, when the row was given a way to.
+ */
+function SentAttachmentCard(props: {
+  attachment: AttachmentRef;
+  onOpenImage: (src: string) => void;
+  onOpenFile?: (attachment: AttachmentRef) => void;
+}) {
+  const copy = getTranscriptCopy(useUiLocale()).turn;
   const attachment = props.attachment;
-  const preview = resolvePreviewKind({
-    name: attachment.name,
-    kind: 'image',
-    mimeType: attachment.mimeType,
-    sizeBytes: attachment.bytes,
-  });
   const src = useAttachmentImageSource(
-    preview.kind === 'image' && attachment.ref.kind === 'session_file'
+    attachment.kind === 'image' && attachment.ref.kind === 'session_file'
       ? { sessionId: attachment.ref.sessionId, artifactId: attachment.ref.relativePath }
       : undefined,
   );
-  if (!src) {
-    return <Chip icon="attach" label={attachment.name} />;
-  }
+  const onOpenFile = props.onOpenFile;
+  const onOpen = src
+    ? () => props.onOpenImage(src)
+    : onOpenFile
+      ? () => onOpenFile(attachment)
+      : undefined;
   return (
-    <button
-      type="button"
-      onClick={() => props.onOpen(src)}
-      aria-label={copy.openAttachment(attachment.name)}
-      className="ui-control-squish ui-control-squish-ghost size-14 shrink-0 cursor-pointer overflow-hidden rounded-lg border border-hairline outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)]"
-    >
-      <img src={src} alt={attachment.name} className="size-full object-cover" />
-    </button>
+    <AttachmentCard
+      name={attachment.name}
+      mimeType={attachment.mimeType}
+      {...(src ? { imageSrc: src } : {})}
+      {...(onOpen ? { onOpen } : {})}
+      openLabel={copy.openAttachment(attachment.name)}
+    />
   );
 }
 
@@ -111,6 +111,8 @@ export interface UserMessageRowProps {
   inlineReferences?: readonly InlineReference[];
   /** True when the Host authored this message (a schedule, a goal, a graph). */
   hostOrigin?: boolean;
+  /** Opens a non-image attachment (the right pane's Files face); absent, such cards are labels. */
+  onOpenAttachment?: (attachment: AttachmentRef) => void;
   /** Absent when this message cannot be edited (see `revisionRefusalFor`). */
   onEdit?: () => void;
   /** Why editing is unavailable, for the disabled button's tooltip. */
@@ -156,8 +158,7 @@ export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRow
 
   const skills = (props.inlineReferences ?? []).filter((row) => row.kind === 'skill');
   const files = (props.inlineReferences ?? []).filter((row) => row.kind === 'workspace_file');
-  const images = (props.attachments ?? []).filter((row) => row.kind === 'image');
-  const others = (props.attachments ?? []).filter((row) => row.kind !== 'image');
+  const attachments = props.attachments ?? [];
   const collapsed = clipped && !expanded;
 
   if (props.editing) {
@@ -218,26 +219,17 @@ export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRow
       data-role="user"
       data-has-attachments={(props.attachments?.length ?? 0) > 0}
     >
-      {(images.length > 0 || others.length > 0) && (
-        <div
-          className="flex max-w-[85%] flex-wrap items-center justify-end gap-2"
-          aria-label={copy.turn.attachmentsLabel}
-        >
-          {images.map((attachment) => (
-            <AttachmentThumbnail
+      {attachments.length > 0 && (
+        <AttachmentCardRow label={copy.turn.attachmentsLabel} className="max-w-[85%]">
+          {attachments.map((attachment) => (
+            <SentAttachmentCard
               key={`${attachment.name}-${attachment.bytes}`}
               attachment={attachment}
-              onOpen={setLightbox}
+              onOpenImage={setLightbox}
+              {...(props.onOpenAttachment ? { onOpenFile: props.onOpenAttachment } : {})}
             />
           ))}
-          {others.map((attachment) => (
-            <Chip
-              key={`${attachment.name}-${attachment.bytes}`}
-              icon="attach"
-              label={attachment.name}
-            />
-          ))}
-        </div>
+        </AttachmentCardRow>
       )}
 
       <div className="chat-user-bubble inline-flex max-w-[85%] flex-col rounded-xl bg-alpha-1 px-4 py-2.5">

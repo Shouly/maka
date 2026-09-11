@@ -154,6 +154,7 @@ import {
 } from '../ui/dropdown-menu.js';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip.js';
 import { Anthropicon } from '../icons/Anthropicon.js';
+import { AttachmentCard, AttachmentCardRow } from '../ui/attachment-card.js';
 import { WorkspacePicker } from '../welcome/WorkspacePicker.js';
 import { ModelMenu } from './ModelMenu.js';
 import { SkillSubMenu, type SkillMenuEntry } from './SkillSubMenu.js';
@@ -611,7 +612,8 @@ function OwnedChatInput(props: {
           ...(item.kind === 'image' ? { previewUrl: URL.createObjectURL(item.source.file) } : {}),
         })),
       );
-      setStatus(copy.drop.announceDrop(files.length));
+      // No "N files attached" line under the composer: the cards that just
+      // appeared are the feedback (owner decision 2026-09-11).
     } catch (cause) {
       report(cause, copy.attachments.pickFailedTitle);
     }
@@ -978,49 +980,33 @@ function OwnedChatInput(props: {
             </div>
           )}
 
-          {hasChips && (
+          {/* Staged files are the same 120px cards a sent message shows, with
+              the remove button on each (reference `AttachmentPreview`). The
+              row keeps the reference's inset so a card starts where the text
+              does. Directories and quotes stay chips below. */}
+          {draft.attachments.length > 0 && (
+            <AttachmentCardRow label={copy.attachments.regionLabel} className="px-3 pb-2 pt-3">
+              {draft.attachments.map((item) => (
+                <AttachmentCard
+                  key={item.stagingKey}
+                  name={item.displayName}
+                  {...(item.mimeType ? { mimeType: item.mimeType } : {})}
+                  {...(item.previewUrl ? { imageSrc: item.previewUrl } : {})}
+                  {...(item.kind === 'image' ? { onOpen: () => void openPreview(item) } : {})}
+                  openLabel={copy.attachments.open(item.displayName)}
+                  {...(disabled
+                    ? {}
+                    : {
+                        onRemove: () =>
+                          composerInputStore.removeAttachment(scopeKey, item.stagingKey),
+                        removeLabel: copy.attachments.remove(item.displayName),
+                      })}
+                />
+              ))}
+            </AttachmentCardRow>
+          )}
+          {(draft.directories.length > 0 || quotes.length > 0) && (
             <div className="flex flex-wrap gap-2 px-1 pb-3 pt-1">
-              {draft.attachments.length > 0 && (
-                <ul aria-label={copy.attachments.regionLabel} className="contents">
-                  {draft.attachments.map((item) => (
-                    <li key={item.stagingKey} className={CHIP_CLASS}>
-                      {item.previewUrl ? (
-                        <img
-                          src={item.previewUrl}
-                          alt=""
-                          className="size-6 shrink-0 rounded object-cover"
-                        />
-                      ) : (
-                        <Anthropicon
-                          name={item.kind === 'image' ? 'image' : 'file'}
-                          size={16}
-                          className="shrink-0 text-text-muted"
-                        />
-                      )}
-                      <button
-                        type="button"
-                        disabled={item.kind !== 'image'}
-                        aria-label={copy.attachments.open(item.displayName)}
-                        onClick={() => void openPreview(item)}
-                        className="min-w-0 truncate text-left outline-none enabled:cursor-pointer enabled:hover:text-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)]"
-                      >
-                        {item.displayName}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={disabled}
-                        aria-label={copy.attachments.remove(item.displayName)}
-                        onClick={() =>
-                          composerInputStore.removeAttachment(scopeKey, item.stagingKey)
-                        }
-                        className={CHIP_REMOVE_CLASS}
-                      >
-                        <Anthropicon name="x" size={16} />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
               {draft.directories.length > 0 && (
                 <ul aria-label={copy.directories.regionLabel} className="contents">
                   {draft.directories.map((directory) => (

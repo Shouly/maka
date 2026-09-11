@@ -41,6 +41,7 @@
 
 import { memo, useMemo } from 'react';
 import { finalAssistantReplyText, useUiLocale, type TurnViewModel } from '@maka/ui';
+import type { AttachmentRef } from '@maka/core/events';
 import Markdown from '../ui/Markdown.js';
 import StreamPopMarkdown from '../ui/StreamPopMarkdown.js';
 import { Anthropicon } from '../icons/Anthropicon.js';
@@ -99,6 +100,13 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
   const copy = getTranscriptCopy(locale);
   const turn = props.turn;
   const grouped = useMemo(() => groupTurnTimeline(turn.timeline), [turn.timeline]);
+  // A sent file opens in the right pane's Files face, the way a tool's output
+  // does; the pane resolves the session file against its catalog.
+  const onOpenFile = props.toolContext.onOpenFile;
+  const openAttachment = onOpenFile
+    ? (attachment: AttachmentRef) =>
+        onOpenFile(attachment.ref.kind === 'session_file' ? attachment.ref.relativePath : undefined)
+    : undefined;
   const hasAnswer = finalAssistantReplyText(turn).trim().length > 0;
 
   return (
@@ -120,6 +128,7 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
             : {})}
           {...(turn.user.inlineReferences ? { inlineReferences: turn.user.inlineReferences } : {})}
           {...(turn.user.hostOrigin ? { hostOrigin: true } : {})}
+          {...(openAttachment ? { onOpenAttachment: openAttachment } : {})}
           {...(props.onEditUserMessage
             ? { onEdit: () => props.onEditUserMessage?.(turn.turnId) }
             : {})}
@@ -171,6 +180,7 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
                 attachments={entry.message.attachments}
                 directoryReferences={entry.message.directoryReferences}
                 inlineReferences={entry.message.inlineReferences}
+                {...(openAttachment ? { onOpenAttachment: openAttachment } : {})}
               />
             );
           }

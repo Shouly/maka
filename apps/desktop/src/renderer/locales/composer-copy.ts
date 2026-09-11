@@ -36,7 +36,6 @@ export interface ComposerCopy {
   readonly drop: {
     readonly overlay: string;
     readonly announceEnter: string;
-    readonly announceDrop: (count: number) => string;
     readonly rejectedWhileRunning: string;
   };
   readonly attachments: {
@@ -146,7 +145,6 @@ const COMPOSER_COPY = {
     drop: {
       overlay: '拖到这里作为附件',
       announceEnter: '松开即可添加附件',
-      announceDrop: (count) => `已添加 ${count} 个附件`,
       rejectedWhileRunning: '当前回答进行中，暂时无法添加附件。',
     },
     attachments: {
@@ -247,7 +245,6 @@ const COMPOSER_COPY = {
     drop: {
       overlay: '拖到這裡作為附件',
       announceEnter: '放開即可加入附件',
-      announceDrop: (count) => `已加入 ${count} 個附件`,
       rejectedWhileRunning: '目前回答進行中，暫時無法加入附件。',
     },
     attachments: {
@@ -348,7 +345,6 @@ const COMPOSER_COPY = {
     drop: {
       overlay: 'Drop files here to attach them',
       announceEnter: 'Release to attach the files',
-      announceDrop: (count) => `${count} file${count === 1 ? '' : 's'} attached`,
       rejectedWhileRunning: 'Wait for the current answer to finish before attaching files.',
     },
     attachments: {

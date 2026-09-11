@@ -151,6 +151,7 @@
     "src/renderer/components/ui/Markdown.tsx",
     "src/renderer/components/ui/MermaidDiagram.tsx",
     "src/renderer/components/ui/StreamPopMarkdown.tsx",
+    "src/renderer/components/ui/attachment-card.tsx",
     "src/renderer/components/ui/avatar.tsx",
     "src/renderer/components/ui/button.tsx",
     "src/renderer/components/ui/card-surface.ts",
@@ -973,6 +974,7 @@
         "../../store/turn-actions-store.js": 1,
         "../icons/Anthropicon.js": 1,
         "../session/notices/ContextUsageIndicator.js": 1,
+        "../ui/attachment-card.js": 1,
         "../ui/button.js": 1,
         "../ui/confirm-dialog.js": 1,
         "../ui/dialog.js": 1,
@@ -2210,6 +2212,7 @@
         "../../lib/cn.js": 1,
         "../../locales/transcript-copy.js": 1,
         "../icons/Anthropicon.js": 1,
+        "../ui/attachment-card.js": 1,
         "../ui/button.js": 1,
         "../ui/dialog.js": 1,
         "../ui/textarea.js": 1,
@@ -3556,6 +3559,19 @@
         "react": 1
       }
     },
+    "src/renderer/components/ui/attachment-card.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "./tooltip.js": 1
+      }
+    },
     "src/renderer/components/ui/avatar.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -4323,6 +4339,7 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../../lib/cn.js": 1,
         "../../locales/shell-copy.js": 1,
         "../icons/Anthropicon.js": 1,
         "../layout/SidebarControls.js": 1,
