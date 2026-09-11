@@ -41,6 +41,7 @@ import { deriveTurnPresentation } from '../../hooks/use-turn-presentation.js';
 import { groupTurnTimeline } from '../../lib/turn-timeline-groups.js';
 import { deriveTurnActivity } from '../../lib/turn-activity.js';
 import { TurnRunningStatus } from '../../components/session/TurnRunningStatus.js';
+import { TurnIdleMark } from '../../components/session/TurnIdleMark.js';
 import { getTranscriptCopy } from '../../locales/transcript-copy.js';
 
 function render(text: string) {
@@ -611,6 +612,18 @@ test('in a live turn only the newest run keeps its steps; an earlier one folds w
   assert.ok(earlier.querySelector('[data-maka-tool-group-summary] button[aria-expanded="false"]'));
   assert.equal(earlier.querySelector('[data-maka-tool-row]'), null, 'folded to its summary');
   assert.ok(newest.querySelector('[data-maka-thinking]'), 'the live run still shows its step');
+});
+
+test('the idle mark is a named button holding the still mark, with a quip for the tooltip', () => {
+  const document = renderTree(createElement(TurnIdleMark));
+  const mark = document.querySelector('[data-maka-contract="turn-idle-mark"]');
+  assert.ok(mark);
+  const button = mark.querySelector('button');
+  assert.equal(button?.getAttribute('aria-label'), 'End of conversation');
+  assert.equal(
+    button?.querySelector('[data-maka-relx-mark]')?.getAttribute('data-maka-relx-mark'),
+    'still',
+  );
 });
 
 test('each result kind renders its own body, and a diff keeps its markers', () => {

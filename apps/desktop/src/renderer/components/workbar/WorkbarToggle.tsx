@@ -20,7 +20,8 @@
 import { useUiLocale } from '@maka/ui';
 import { Anthropicon } from '../icons/Anthropicon.js';
 import { SidebarTooltip } from '../ui/sidebar-tooltip.js';
-import { MainHeaderActionButton } from '../layout/MainHeader.js';
+import { sidebarControlButtonClass } from '../layout/SidebarControls.js';
+import { cn } from '../../lib/cn.js';
 import { getShellCopy } from '../../locales/shell-copy.js';
 import type { WorkbarModel } from '../../hooks/use-workbar.js';
 
@@ -29,8 +30,12 @@ export function WorkbarToggle(props: { workbar: WorkbarModel }) {
   const { collapsed } = props.workbar;
   const label = collapsed ? chrome.expandWorkbar : chrome.collapseWorkbar;
   return (
+    // The same button as the sidebar toggle at the other end of the titlebar
+    // — one class, one icon size, one colour — mirrored. While the pane is
+    // open it keeps the lifted background, the same token hover uses, so an
+    // open pane reads on the button that closes it.
     <SidebarTooltip content={label} alwaysShow side="bottom">
-      <MainHeaderActionButton
+      <button
         type="button"
         onClick={props.workbar.toggle}
         aria-label={label}
@@ -38,11 +43,13 @@ export function WorkbarToggle(props: { workbar: WorkbarModel }) {
         aria-controls="maka-workbar-pane"
         aria-keyshortcuts="Meta+Alt+S"
         data-maka-contract="session-workbar-toggle"
-        active={!collapsed}
-        className="maka-no-drag"
+        className={cn(
+          sidebarControlButtonClass,
+          !collapsed && 'bg-sidebar-hover text-sidebar-text-primary',
+        )}
       >
-        <Anthropicon name="sidebar" size={18} className="rotate-180" />
-      </MainHeaderActionButton>
+        <Anthropicon name="sidebar" className="rotate-180" />
+      </button>
     </SidebarTooltip>
   );
 }

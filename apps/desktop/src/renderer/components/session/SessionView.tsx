@@ -86,6 +86,7 @@ import { MessageQueue } from './MessageQueue.js';
 import { SelectionQuote } from './SelectionQuote.js';
 import { UserMessageRow } from './UserMessageRow.js';
 import { TranscriptTurn } from './TranscriptTurn.js';
+import { TurnIdleMark } from './TurnIdleMark.js';
 import { TurnRunningStatus } from './TurnRunningStatus.js';
 import { NoticeCard } from './notices/NoticeCard.js';
 import { RevisionBanner } from './notices/RevisionBanner.js';
@@ -443,6 +444,16 @@ function SessionTranscript(props: SessionViewProps) {
                 <TransientMessageRow key={`pending:${message.id}`} message={message} />
               )),
               ...(orphanRunningStatus ? [waitingStatus] : []),
+              // The foot of a settled conversation: the mark stands where the
+              // status line stood. Only at the true tail — never over a page
+              // of older history, never while anything is still on its way.
+              ...(turns.length > 0 &&
+              !running &&
+              !shellLive.showRunningStatus &&
+              !feed.hasNewer &&
+              transientPlacement.tail.length === 0
+                ? [<TurnIdleMark key={`idle:${sessionId}`} />]
+                : []),
             ]}
           </div>
         </div>

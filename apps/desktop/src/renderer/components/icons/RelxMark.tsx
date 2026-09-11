@@ -37,8 +37,11 @@ const BREATHE_CYCLE_MS = 1200;
 export function RelxMark(props: { size?: number; animated?: boolean; className?: string }) {
   const size = props.size ?? 32;
   return (
+    // The brand file's canvas is 480 with the mark on the middle ~386 (its
+    // axis petals reach 46.8 and 433.2). Framed on the mark, not the canvas:
+    // `size` is then the mark's own size, as it is for the reference's mark.
     <svg
-      viewBox="0 0 480 480"
+      viewBox="40 40 400 400"
       width={size}
       height={size}
       fill="currentColor"

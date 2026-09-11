@@ -28,8 +28,11 @@ import { cn } from '../../lib/cn.js';
 import { getShellCopy } from '../../locales/shell-copy.js';
 import type { SidebarLayout } from '../../hooks/use-sidebar-layout.js';
 
+// Primary, not the reference's secondary: these buttons stand in the window
+// titlebar beside the traffic lights, and at that spot the secondary grey read
+// as disabled (owner decision 2026-09-11). Hover keeps the background lift.
 export const sidebarControlButtonClass =
-  'sidebar-icon-btn maka-no-drag flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-text-secondary hover:bg-sidebar-hover hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none';
+  'sidebar-icon-btn maka-no-drag flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-text-primary hover:bg-sidebar-hover focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none';
 
 export function SidebarControls(props: { layout: SidebarLayout; history: PageHistoryControls }) {
   const locale = useUiLocale();

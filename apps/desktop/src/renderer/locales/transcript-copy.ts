@@ -72,6 +72,11 @@ export interface TranscriptCopy {
     readonly skills: string;
     readonly hostOrigin: string;
   };
+  /** The mark at the foot of a settled conversation, and what it says on hover. */
+  readonly idleMark: {
+    readonly label: string;
+    readonly quips: readonly string[];
+  };
   readonly thinking: {
     readonly label: string;
     readonly active: string;
@@ -298,6 +303,10 @@ const TRANSCRIPT_COPY = {
       skills: '技能',
       hostOrigin: '由运行服务发起',
     },
+    idleMark: {
+      label: '对话结束',
+      quips: ['我不只是坐在这儿好看的', '戳我一下试试', '说不定会发生点什么', '我可比看上去能干'],
+    },
     thinking: {
       label: '思考过程',
       active: '正在思考…',
@@ -428,6 +437,10 @@ const TRANSCRIPT_COPY = {
       skills: '技能',
       hostOrigin: '由執行服務發起',
     },
+    idleMark: {
+      label: '對話結束',
+      quips: ['我不只是坐在這兒好看的', '戳我一下試試', '說不定會發生點什麼', '我可比看上去能幹'],
+    },
     thinking: {
       label: '思考過程',
       active: '正在思考…',
@@ -557,6 +570,15 @@ const TRANSCRIPT_COPY = {
       quotes: 'Quoted text',
       skills: 'Skills',
       hostOrigin: 'Started by the runtime',
+    },
+    idleMark: {
+      label: 'End of conversation',
+      quips: [
+        'Psst… I do more than just sit here',
+        "I'm not just decorative, you know",
+        'Go ahead, give me a poke',
+        'Something interesting might happen',
+      ],
     },
     thinking: {
       label: 'Thought process',

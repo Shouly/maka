@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 import { cn } from '../../lib/cn';
 
@@ -35,36 +35,6 @@ export const mainHeaderIconControlClass =
   // hover 用 5%(ghost 档),与同一行的标题/动作按钮一致 —— 之前这里是 10%
   // (sidebar-control-hover),紧挨着标题时明显比标题的底色深一档。
   'relative inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-[7px] text-sidebar-text-muted transition-[background-color,color,box-shadow] hover:bg-sidebar-menu-hover hover:text-sidebar-text-primary focus-visible:outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)]';
-
-// 里面的图标显式传 size,别吃 Anthropicon 的默认:同一排里各图标在 spec 表登记
-// 的默认有 16 也有 20,不传就会大小不一。字号是内联 style,类名压不过去。
-//
-// 单聊和群聊统一 18。群聊那排曾经是 20(理由:夹着 24px 的成员头像堆,18 挨着
-// 显小),后来连头像堆一起收到 20 + ring-2(视觉外径 24),18 的图标就不再显小了
-// —— 两处一起改才成立,只改一边会把那排重新拉花。
-export const mainHeaderActionControlClass =
-  'relative inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-[7px] text-sidebar-text-primary transition-[background-color,box-shadow] hover:bg-sidebar-menu-hover focus-visible:outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)]';
-
-interface MainHeaderActionButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  active?: boolean;
-}
-
-export const MainHeaderActionButton = forwardRef<HTMLButtonElement, MainHeaderActionButtonProps>(
-  function MainHeaderActionButton({ active = false, className, type = 'button', ...props }, ref) {
-    return (
-      <button
-        ref={ref}
-        type={type}
-        className={cn(
-          mainHeaderActionControlClass,
-          active && 'bg-sidebar-menu-hover text-sidebar-text-primary',
-          className,
-        )}
-        {...props}
-      />
-    );
-  },
-);
 
 interface MainHeaderBreadcrumbProps {
   /**

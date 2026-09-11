@@ -93,6 +93,7 @@
     "src/renderer/components/session/ThinkingStep.tsx",
     "src/renderer/components/session/TranscriptTurn.tsx",
     "src/renderer/components/session/TurnFooter.tsx",
+    "src/renderer/components/session/TurnIdleMark.tsx",
     "src/renderer/components/session/TurnRunningStatus.tsx",
     "src/renderer/components/session/UserMessageRow.tsx",
     "src/renderer/components/session/message-action-bar.ts",
@@ -1305,8 +1306,7 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
-        "../../lib/cn": 1,
-        "react": 1
+        "../../lib/cn": 1
       }
     },
     "src/renderer/components/layout/SessionIdentity.tsx": {
@@ -2062,6 +2062,7 @@
         "./notices/SessionNotices.js": 1,
         "./SelectionQuote.js": 1,
         "./TranscriptTurn.js": 1,
+        "./TurnIdleMark.js": 1,
         "./TurnRunningStatus.js": 1,
         "./UserMessageRow.js": 1,
         "@maka/core/session": 1,
@@ -2138,6 +2139,28 @@
         "../icons/Anthropicon.js": 1,
         "../ui/tooltip.js": 1,
         "./message-action-bar.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/session/TurnIdleMark.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "window.clearTimeout": 1,
+        "window.setTimeout": 1
+      },
+      "hookCalls": {
+        "useRef": 1,
+        "useState": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/transcript-copy.js": 1,
+        "../icons/RelxMark.js": 1,
+        "../ui/tooltip.js": 1,
         "@maka/ui": 1,
         "react": 1
       }
@@ -4302,7 +4325,7 @@
       "dependencyPaths": {
         "../../locales/shell-copy.js": 1,
         "../icons/Anthropicon.js": 1,
-        "../layout/MainHeader.js": 1,
+        "../layout/SidebarControls.js": 1,
         "../ui/sidebar-tooltip.js": 1,
         "@maka/ui": 1
       }
