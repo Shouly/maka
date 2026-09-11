@@ -64,6 +64,10 @@ export function createScheduledTasksStore(bridge = api) {
       store.mutate(() => bridge.setScheduledTaskEnabled(id, enabled, host)),
     triggerNow: (id: string, host?: DesktopRuntimeHostRef) =>
       store.mutate(() => bridge.triggerScheduledTaskNow(id, host)),
+    snooze: (id: string, host?: DesktopRuntimeHostRef) =>
+      store.mutate(() => bridge.snoozeScheduledTask(id, host)),
+    clearRunHistory: (id: string, host?: DesktopRuntimeHostRef) =>
+      store.mutate(() => bridge.clearScheduledTaskRunHistory(id, host)),
     remove: (id: string, host?: DesktopRuntimeHostRef) =>
       store.mutate(() => bridge.deleteScheduledTask(id, host)),
   };

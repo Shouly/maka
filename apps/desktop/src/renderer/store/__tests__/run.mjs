@@ -36,6 +36,9 @@ try {
     'presentation.test.tsx',
     'core-dialogue.test.ts',
     'local-messages.test.ts',
+    'skills-module.test.tsx',
+    'connectors-module.test.tsx',
+    'scheduled-module.test.tsx',
   ].map((name) => fileURLToPath(new URL(name, import.meta.url)));
   const files = [
     'renderer-state.test.mjs',
@@ -48,6 +51,9 @@ try {
     'presentation.test.mjs',
     'core-dialogue.test.mjs',
     'local-messages.test.mjs',
+    'skills-module.test.mjs',
+    'connectors-module.test.mjs',
+    'scheduled-module.test.mjs',
   ].map((name) => join(output, name));
   await build({
     entryPoints: entries,

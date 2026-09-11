@@ -77,11 +77,19 @@
     "src/renderer/components/modules/ExtensionsTabs.tsx",
     "src/renderer/components/modules/mcp/McpMarket.tsx",
     "src/renderer/components/modules/mcp/McpModule.tsx",
+    "src/renderer/components/modules/mcp/McpServerDetails.tsx",
     "src/renderer/components/modules/mcp/McpServerDialog.tsx",
+    "src/renderer/components/modules/mcp/connectors-list.ts",
     "src/renderer/components/modules/module-page.tsx",
+    "src/renderer/components/modules/scheduled/RunHistoryDialog.tsx",
     "src/renderer/components/modules/scheduled/ScheduleFormDialog.tsx",
+    "src/renderer/components/modules/scheduled/ScheduleTemplates.tsx",
     "src/renderer/components/modules/scheduled/ScheduledTasksModule.tsx",
+    "src/renderer/components/modules/skills/SkillRows.tsx",
+    "src/renderer/components/modules/skills/SkillUpdateDialog.tsx",
     "src/renderer/components/modules/skills/SkillsModule.tsx",
+    "src/renderer/components/modules/skills/skill-filters.ts",
+    "src/renderer/components/modules/skills/use-skill-in-task.ts",
     "src/renderer/components/palette/CommandPalette.tsx",
     "src/renderer/components/palette/KeyboardHelp.tsx",
     "src/renderer/components/palette/SearchModal.tsx",
@@ -164,6 +172,7 @@
     "src/renderer/components/ui/field-surface.ts",
     "src/renderer/components/ui/input.tsx",
     "src/renderer/components/ui/label.tsx",
+    "src/renderer/components/ui/list-page.tsx",
     "src/renderer/components/ui/menu-variants.ts",
     "src/renderer/components/ui/pane-resizer.tsx",
     "src/renderer/components/ui/popover.tsx",
@@ -321,6 +330,7 @@
     "src/renderer/locales/browser-copy.ts",
     "src/renderer/locales/capability-reason-copy.ts",
     "src/renderer/locales/composer-copy.ts",
+    "src/renderer/locales/connectors-page-copy.ts",
     "src/renderer/locales/conversation-copy.ts",
     "src/renderer/locales/create-project-copy.ts",
     "src/renderer/locales/external-session-import-copy.ts",
@@ -334,6 +344,7 @@
     "src/renderer/locales/plan-mode-copy.ts",
     "src/renderer/locales/project-details-copy.ts",
     "src/renderer/locales/runtime-debug-copy.ts",
+    "src/renderer/locales/scheduled-page-copy.ts",
     "src/renderer/locales/session-local-copy.ts",
     "src/renderer/locales/settings-bot-copy.ts",
     "src/renderer/locales/settings-copy.ts",
@@ -354,6 +365,7 @@
     "src/renderer/locales/shell-copy.ts",
     "src/renderer/locales/shell-remaining-copy.ts",
     "src/renderer/locales/sidebar-copy.ts",
+    "src/renderer/locales/skills-page-copy.ts",
     "src/renderer/locales/task-readiness-copy.ts",
     "src/renderer/locales/transcript-copy.ts",
     "src/renderer/locales/ui-copy.ts",
@@ -362,6 +374,7 @@
     "src/renderer/main.tsx",
     "src/renderer/store/__tests__/composer-prompts-smoke.mjs",
     "src/renderer/store/__tests__/composer-state.test.ts",
+    "src/renderer/store/__tests__/connectors-module.test.tsx",
     "src/renderer/store/__tests__/core-dialogue-smoke.mjs",
     "src/renderer/store/__tests__/core-dialogue.test.ts",
     "src/renderer/store/__tests__/electron-smoke.mjs",
@@ -374,6 +387,8 @@
     "src/renderer/store/__tests__/presentation.test.tsx",
     "src/renderer/store/__tests__/renderer-state.test.ts",
     "src/renderer/store/__tests__/run.mjs",
+    "src/renderer/store/__tests__/scheduled-module.test.tsx",
+    "src/renderer/store/__tests__/skills-module.test.tsx",
     "src/renderer/store/active-session-store.ts",
     "src/renderer/store/composer-draft-store.ts",
     "src/renderer/store/composer-input-store.ts",
@@ -1664,14 +1679,14 @@
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
-        "useUiLocale": 1
+        "useUiLocale": 2
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
         "../../locales/modules-copy.js": 1,
-        "../ui/segmented-control.js": 1,
+        "../ui/list-page.js": 1,
         "@maka/ui": 1
       }
     },
@@ -1688,10 +1703,14 @@
         "../../../lib/cn.js": 1,
         "../../../lib/ported/mcp-brand-marks.js": 1,
         "../../../lib/ported/mcp-catalog.js": 1,
+        "../../../locales/connectors-page-copy.js": 1,
         "../../../locales/mcp-copy.js": 1,
+        "../../icons/Anthropicon.js": 1,
         "../../ui/button.js": 1,
         "../../ui/card-surface.js": 1,
+        "../../ui/list-page.js": 1,
         "../../ui/status-chip.js": 1,
+        "./connectors-list.js": 1,
         "@maka/ui": 1
       }
     },
@@ -1700,10 +1719,11 @@
       "environmentCapabilities": {},
       "hookCalls": {
         "useEffect": 1,
+        "useRef": 1,
         "useSettingsErrorReporter": 1,
-        "useState": 4,
+        "useState": 9,
         "useStore": 3,
-        "useUiLocale": 1
+        "useUiLocale": 2
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
@@ -1712,28 +1732,50 @@
         "../../../hooks/use-settings.js": 1,
         "../../../lib/cn.js": 1,
         "../../../lib/module-list-state.js": 1,
+        "../../../lib/ported/mcp-brand-marks.js": 1,
+        "../../../lib/ported/mcp-catalog.js": 1,
         "../../../lib/ported/mcp-server-draft.js": 1,
         "../../../lib/ported/mcp-write-failure.js": 1,
+        "../../../locales/connectors-page-copy.js": 1,
         "../../../locales/mcp-copy.js": 1,
         "../../../locales/modules-copy.js": 1,
         "../../../store/index.js": 1,
         "../../../store/toast-store.js": 1,
         "../../icons/Anthropicon.js": 1,
-        "../../settings/settings-row.js": 1,
         "../../ui/button.js": 1,
         "../../ui/confirm-dialog.js": 1,
         "../../ui/dropdown-menu.js": 1,
+        "../../ui/list-page.js": 1,
         "../../ui/menu-variants.js": 1,
         "../../ui/status-chip.js": 1,
         "../../ui/switch.js": 1,
         "../ExtensionsTabs.js": 1,
         "../module-page.js": 1,
+        "./connectors-list.js": 1,
         "./McpMarket.js": 1,
+        "./McpServerDetails.js": 1,
         "./McpServerDialog.js": 1,
-        "@maka/core/mcp": 1,
         "@maka/ui": 1,
         "react": 1,
         "zustand": 1
+      }
+    },
+    "src/renderer/components/modules/mcp/McpServerDetails.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../locales/connectors-page-copy.js": 1,
+        "../../../locales/mcp-copy.js": 1,
+        "../../../locales/modules-copy.js": 1,
+        "./connectors-list.js": 1,
+        "@maka/core/mcp": 1,
+        "@maka/ui": 1
       }
     },
     "src/renderer/components/modules/mcp/McpServerDialog.tsx": {
@@ -1741,7 +1783,7 @@
       "environmentCapabilities": {},
       "hookCalls": {
         "useEffect": 1,
-        "useState": 3,
+        "useState": 5,
         "useUiLocale": 1
       },
       "lifecycleMethods": {},
@@ -1750,6 +1792,7 @@
       "dependencyPaths": {
         "../../../lib/cn.js": 1,
         "../../../lib/ported/mcp-server-draft.js": 1,
+        "../../../locales/connectors-page-copy.js": 1,
         "../../../locales/mcp-copy.js": 1,
         "../../../locales/modules-copy.js": 1,
         "../../../locales/settings-shared-copy.js": 1,
@@ -1760,10 +1803,21 @@
         "../../ui/label.js": 1,
         "../../ui/segmented-control.js": 1,
         "../../ui/select.js": 1,
-        "../../ui/switch.js": 1,
         "../../ui/textarea.js": 1,
         "@maka/ui": 1,
         "react": 1
+      }
+    },
+    "src/renderer/components/modules/mcp/connectors-list.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/ported/mcp-server-command-line.js": 1,
+        "@maka/core/mcp": 1
       }
     },
     "src/renderer/components/modules/module-page.tsx": {
@@ -1774,9 +1828,27 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
-        "../icons/Anthropicon.js": 1,
-        "../layout/MainHeader.js": 1,
-        "../settings/settings-row.js": 1
+        "../ui/list-page.js": 1
+      }
+    },
+    "src/renderer/components/modules/scheduled/RunHistoryDialog.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 2
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../../locales/scheduled-page-copy.js": 1,
+        "../../../locales/settings-shared-copy.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/dialog.js": 1,
+        "../../ui/status-chip.js": 1,
+        "@maka/ui": 1
       }
     },
     "src/renderer/components/modules/scheduled/ScheduleFormDialog.tsx": {
@@ -1792,7 +1864,6 @@
       "actionFactories": [],
       "dependencyPaths": {
         "../../../lib/ported/scheduled-task-form-payload.js": 1,
-        "../../../locales/modules-copy.js": 1,
         "../../../locales/settings-shared-copy.js": 1,
         "../../ui/button.js": 1,
         "../../ui/dialog.js": 1,
@@ -1800,8 +1871,26 @@
         "../../ui/label.js": 1,
         "../../ui/select.js": 1,
         "../../ui/textarea.js": 1,
+        "@maka/core/bot-chat-settings": 1,
+        "@maka/core/bot-events": 1,
         "@maka/ui": 1,
         "react": 1
+      }
+    },
+    "src/renderer/components/modules/scheduled/ScheduleTemplates.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../locales/scheduled-page-copy.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/list-page.js": 1,
+        "@maka/ui": 1
       }
     },
     "src/renderer/components/modules/scheduled/ScheduledTasksModule.tsx": {
@@ -1809,8 +1898,8 @@
       "environmentCapabilities": {},
       "hookCalls": {
         "useSettingsErrorReporter": 1,
-        "useState": 3,
-        "useStore": 3,
+        "useState": 8,
+        "useStore": 4,
         "useUiLocale": 1
       },
       "lifecycleMethods": {},
@@ -1821,31 +1910,77 @@
         "../../../lib/cn.js": 1,
         "../../../lib/module-list-state.js": 1,
         "../../../locales/modules-copy.js": 1,
+        "../../../locales/scheduled-page-copy.js": 1,
         "../../../locales/settings-shared-copy.js": 1,
+        "../../../locales/shell-remaining-copy.js": 1,
         "../../../store/index.js": 1,
         "../../../store/toast-store.js": 1,
         "../../icons/Anthropicon.js": 1,
-        "../../settings/settings-row.js": 1,
         "../../ui/button.js": 1,
         "../../ui/confirm-dialog.js": 1,
         "../../ui/dropdown-menu.js": 1,
+        "../../ui/list-page.js": 1,
         "../../ui/menu-variants.js": 1,
         "../../ui/status-chip.js": 1,
         "../../ui/switch.js": 1,
         "../module-page.js": 1,
+        "./RunHistoryDialog.js": 1,
         "./ScheduleFormDialog.js": 1,
+        "./ScheduleTemplates.js": 1,
+        "@maka/core/ui-locale": 1,
         "@maka/ui": 1,
         "react": 1,
         "zustand": 1
       }
     },
-    "src/renderer/components/modules/skills/SkillsModule.tsx": {
+    "src/renderer/components/modules/skills/SkillRows.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/dropdown-menu.js": 1,
+        "../../ui/list-page.js": 1,
+        "../../ui/menu-variants.js": 1,
+        "../../ui/status-chip.js": 1,
+        "../../ui/switch.js": 1,
+        "../../ui/tooltip.js": 1,
+        "./skill-filters.js": 1,
+        "@maka/ui": 1
+      }
+    },
+    "src/renderer/components/modules/skills/SkillUpdateDialog.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../locales/skills-page-copy.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/dialog.js": 1,
+        "@maka/ui": 1
+      }
+    },
+    "src/renderer/components/modules/skills/SkillsModule.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "window.addEventListener": 1,
+        "window.removeEventListener": 1
+      },
+      "hookCalls": {
         "useAsync": 3,
+        "useEffect": 1,
         "useSettingsErrorReporter": 1,
-        "useState": 2,
+        "useState": 8,
         "useUiLocale": 1
       },
       "lifecycleMethods": {},
@@ -1858,19 +1993,46 @@
         "../../../lib/cn.js": 1,
         "../../../lib/module-list-state.js": 1,
         "../../../locales/modules-copy.js": 1,
+        "../../../locales/skills-page-copy.js": 1,
         "../../../store/toast-store.js": 1,
         "../../icons/Anthropicon.js": 1,
-        "../../settings/settings-row.js": 1,
         "../../ui/button.js": 1,
         "../../ui/confirm-dialog.js": 1,
         "../../ui/dropdown-menu.js": 1,
-        "../../ui/menu-variants.js": 1,
-        "../../ui/status-chip.js": 1,
-        "../../ui/switch.js": 1,
+        "../../ui/list-page.js": 1,
         "../ExtensionsTabs.js": 1,
         "../module-page.js": 1,
+        "./skill-filters.js": 1,
+        "./SkillRows.js": 1,
+        "./SkillUpdateDialog.js": 1,
+        "./use-skill-in-task.js": 1,
         "@maka/ui": 1,
         "react": 1
+      }
+    },
+    "src/renderer/components/modules/skills/skill-filters.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/ui": 1
+      }
+    },
+    "src/renderer/components/modules/skills/use-skill-in-task.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../store/composer-input-store.js": 1,
+        "../../../store/new-task-store.js": 1,
+        "../../../store/sessions-store.js": 1,
+        "../../../store/ui-store.js": 1
       }
     },
     "src/renderer/components/palette/CommandPalette.tsx": {
@@ -3719,6 +3881,27 @@
       "actionFactories": [],
       "dependencyPaths": {
         "../../lib/cn": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/ui/list-page.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "window.cancelAnimationFrame": 1,
+        "window.requestAnimationFrame": 2
+      },
+      "hookCalls": {
+        "useEffect": 1,
+        "useRef": 2,
+        "useState": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "./dropdown-menu.js": 1,
         "react": 1
       }
     },
@@ -5795,6 +5978,15 @@
       "actionFactories": [],
       "dependencyPaths": {}
     },
+    "src/renderer/locales/connectors-page-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
     "src/renderer/locales/conversation-copy.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -5877,6 +6069,15 @@
       "dependencyPaths": {}
     },
     "src/renderer/locales/runtime-debug-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/scheduled-page-copy.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {},
@@ -6059,6 +6260,15 @@
       "dependencyPaths": {}
     },
     "src/renderer/locales/sidebar-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/locales/skills-page-copy.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {},

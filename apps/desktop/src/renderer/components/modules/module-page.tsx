@@ -17,108 +17,65 @@
  * under the License.
  */
 
-// The frame the three module pages share.
-//
-// It replaces the CONTENT column and nothing else (plan §2.12): the window
-// titlebar above keeps its three columns and its sidebar toggle, and the page
-// starts below it. `MainHeader` is the same 48px row the conversation uses, so
-// a module page and a task read as the same application rather than as two.
+// The frame the three module pages share: Claude's list-page shape — a
+// display title in the content column, a toolbar of pill tabs with the
+// page's actions on the right, the list below — under the window titlebar,
+// which keeps its three columns and its sidebar toggle.
 //
 // One frame rather than three copies because the two contracts the shell and
-// the tests key on — `module-main` on the page and `module-actions` on the
-// header's right slot — have to be on every page and cannot be on any other
+// the tests key on — `module-main` on the page and `module-actions` around
+// the header's actions — have to be on every page and cannot be on any other
 // element. A page that forgot one would look finished and be unreachable.
 
 import type { ReactNode } from 'react';
-import { Anthropicon, type AnthropiconName } from '../icons/Anthropicon.js';
-import { MainHeader } from '../layout/MainHeader.js';
-import { SettingsRow } from '../settings/settings-row.js';
+import { ListPageHeader } from '../ui/list-page.js';
 
 export function ModulePage(props: {
   title: string;
-  icon: AnthropiconName;
+  subtitle?: string;
   /** Header-right controls. Wrapped in the `module-actions` contract node. */
   actions?: ReactNode;
-  /** A tab strip beside the title, for pages that are one face of a set. */
+  /** The toolbar's tabs (`ListTabs`), for pages that are one face of a set. */
   tabs?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-maka-contract="module-main">
-      <MainHeader
-        contextIcon={<Anthropicon name={props.icon} size={16} />}
-        title={
-          <span className="flex min-w-0 items-center gap-3">
-            <span className="px-2.5 font-medium">{props.title}</span>
-            {props.tabs}
-          </span>
-        }
-        actions={
-          <div data-maka-contract="module-actions" className="flex items-center gap-1">
-            {props.actions}
-          </div>
-        }
-      />
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-10">
-        <div className="mx-auto w-full max-w-3xl pt-6">{props.children}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto pb-16">
+        {/* Claude's list pages: a 56rem column with 2rem gutters (832px of
+            content) whose title row starts 48px below the top. The shell's
+            titlebar is those 48px — it is empty above a module page — so the
+            column adds nothing; padding here would push the title 48px lower
+            than Claude's. An open search takes the whole actions row; the
+            other controls hide until it closes (the `has()` rule on the
+            actions node). */}
+        <div className="mx-auto w-full max-w-4xl px-8">
+          <ListPageHeader
+            title={props.title}
+            {...(props.subtitle ? { subtitle: props.subtitle } : {})}
+            {...(props.tabs ? { toolbar: props.tabs } : {})}
+            actions={
+              <div
+                data-maka-contract="module-actions"
+                className="flex items-center gap-1 [&:has(>[role=search])>:not([role=search])]:hidden"
+              >
+                {props.actions}
+              </div>
+            }
+          />
+          <div className="pt-4">{props.children}</div>
+        </div>
       </div>
     </div>
   );
 }
 
-/**
- * The one-line lead under a page's header.
- *
- * Separate from `SettingsSection`'s description because it describes the PAGE,
- * not the first group on it — a section title immediately under the page title
- * would say the same word twice.
- */
-export function ModuleLead(props: { children: ReactNode }) {
-  return <p className="mb-6 text-sm leading-5 text-text-secondary">{props.children}</p>;
-}
-
-/** A row of skeletons standing in for a list that has not arrived. */
 export function ModuleListSkeleton(props: { rows?: number }) {
   return (
-    <div className="flex flex-col gap-2" aria-hidden="true">
+    <div className="flex flex-col gap-2 pt-4" aria-hidden="true">
       {Array.from({ length: props.rows ?? 3 }, (_, index) => (
-        <div key={index} className="h-14 w-full animate-pulse rounded-xl bg-skeleton" />
+        <div key={index} className="h-[3.75rem] w-full animate-pulse rounded-xl bg-skeleton" />
       ))}
-    </div>
-  );
-}
-
-/**
- * What a list says when its READ failed and it still has rows behind it.
- *
- * `ModuleEmpty` takes the whole slot and is for the case where there is
- * nothing behind the failure. This one sits ABOVE rows that stay on screen: a
- * list one refresh out of date is worth more than an apology with no list, and
- * the store keeps the last good snapshot precisely so the page can show it.
- */
-export function ModuleLoadNotice(props: { title: string; action: ReactNode }) {
-  return (
-    <SettingsRow
-      title={
-        <span className="flex min-w-0 items-center gap-2">
-          <Anthropicon name="warningCircle" size={16} className="shrink-0 text-danger" />
-          <span className="min-w-0 truncate">{props.title}</span>
-        </span>
-      }
-      control={props.action}
-    />
-  );
-}
-
-/** What a list says when it is empty, in the shape the reference design uses. */
-export function ModuleEmpty(props: { title: string; body?: string; action?: ReactNode }) {
-  return (
-    <div className="flex flex-col items-center gap-2 rounded-xl border border-hairline px-6 py-10 text-center">
-      <p className="text-sm leading-5 text-text-primary">{props.title}</p>
-      {props.body && (
-        <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">{props.body}</p>
-      )}
-      {props.action}
     </div>
   );
 }

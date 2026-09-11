@@ -21,6 +21,7 @@
 
 import type {
   McpConfigFile,
+  McpConfigImportResult,
   McpServerConfig,
   McpServerStatus,
   McpTestResult,
@@ -30,7 +31,13 @@ import { requireNamespace, toUnsubscribe, tryNamespace } from './bridge.js';
 
 type Mcp = MakaBridge['mcp'];
 
-export type { McpConfigFile, McpServerConfig, McpServerStatus, McpTestResult };
+export type {
+  McpConfigFile,
+  McpConfigImportResult,
+  McpServerConfig,
+  McpServerStatus,
+  McpTestResult,
+};
 
 const mcp = (): Mcp => requireNamespace('mcp');
 
@@ -64,6 +71,36 @@ export function installMcpServer(
   host?: DesktopRuntimeHostRef,
 ): Promise<McpConfigFile> {
   return mcp().install(serverId, config, host);
+}
+
+/**
+ * Import a pasted `mcp.json`.
+ *
+ * The SOURCE crosses, not a parsed object: main owns the version rules (1, 2
+ * and 3, each with its own protocol-preference constraints) and answers a
+ * refusal as a `reason` VALUE, so the dialog can name what is wrong instead of
+ * fishing prose out of a flattened IPC error. Servers this file does not
+ * mention are preserved.
+ */
+export function importMcpConfig(
+  source: string,
+  host?: DesktopRuntimeHostRef,
+): Promise<McpConfigImportResult> {
+  return mcp().importConfig(source, host);
+}
+
+/**
+ * Withdraw a directory install that is still running.
+ *
+ * Resolves with the config as it stands AFTER the rollback. Main removes only
+ * the entry that install itself wrote: an upsert that replaced the same id
+ * while the cancel waited survives, credentials and all.
+ */
+export function cancelMcpServerInstall(
+  serverId: string,
+  host?: DesktopRuntimeHostRef,
+): Promise<McpConfigFile> {
+  return mcp().cancelInstall(serverId, host);
 }
 
 export function upsertMcpServer(

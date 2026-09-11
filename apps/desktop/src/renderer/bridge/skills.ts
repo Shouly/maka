@@ -20,13 +20,24 @@
 // The `skills` namespace of the preload bridge, wrapped.
 
 import type { InvocableSkillEntry } from '@maka/runtime/skill-invocation';
-import type { BundledSkillCatalogEntry, ManagedSkillSourceEntry, SkillEntry } from '@maka/ui';
+import type {
+  BundledSkillCatalogEntry,
+  ManagedSkillSourceEntry,
+  ManagedSkillUpdatePreview,
+  SkillEntry,
+} from '@maka/ui';
 import type { DesktopRuntimeHostRef, MakaBridge } from '../../preload/bridge-contract.js';
 import { requireNamespace } from './bridge.js';
 
 type Skills = MakaBridge['skills'];
 
-export type { SkillEntry, BundledSkillCatalogEntry, ManagedSkillSourceEntry, InvocableSkillEntry };
+export type {
+  SkillEntry,
+  BundledSkillCatalogEntry,
+  ManagedSkillSourceEntry,
+  ManagedSkillUpdatePreview,
+  InvocableSkillEntry,
+};
 export type SkillInvocableContext = NonNullable<Parameters<Skills['listInvocable']>[1]>;
 
 const skills = (): Skills => requireNamespace('skills');
@@ -81,20 +92,43 @@ export function installManagedSkill(
   return skills().installManaged(sourceId, host);
 }
 
+/**
+ * What a managed skill's update would change, before anything is written.
+ *
+ * Read-only: the preview carries the two contents and the SHA-256 of each, and
+ * `updateManagedSkill` is given those digests back so a source that changed
+ * between the review and the apply fails instead of writing a version nobody
+ * read. The failures are VALUES here too — `read_failed` is the one reason
+ * that exists on this call and nowhere else in the namespace.
+ */
+export function previewManagedSkillUpdate(
+  skillId: string,
+  host?: DesktopRuntimeHostRef,
+): ReturnType<Skills['previewUpdate']> {
+  return skills().previewUpdate(skillId, host);
+}
+
+/**
+ * Apply the reviewed update.
+ *
+ * `force` is the user's answer to the one question the preview asks: the
+ * workspace copy has local changes, and continuing overwrites them. Without
+ * it a locally modified skill answers `local_modified` and writes nothing.
+ */
+export function updateManagedSkill(
+  skillId: string,
+  options?: { force?: boolean; expectedCurrentSha256?: string; expectedSourceSha256?: string },
+  host?: DesktopRuntimeHostRef,
+): ReturnType<Skills['updateManaged']> {
+  return skills().updateManaged(skillId, options, host);
+}
+
 export function setSkillEnabled(
   skillId: string,
   enabled: boolean,
   host?: DesktopRuntimeHostRef,
 ): ReturnType<Skills['setEnabled']> {
   return skills().setEnabled(skillId, enabled, host);
-}
-
-export function setSkillPinned(
-  skillRef: string,
-  pinned: boolean,
-  host?: DesktopRuntimeHostRef,
-): ReturnType<Skills['setPinned']> {
-  return skills().setPinned(skillRef, pinned, host);
 }
 
 export function deleteSkill(

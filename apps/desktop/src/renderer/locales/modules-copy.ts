@@ -35,7 +35,7 @@ import type { UiCatalog, UiLocale } from '@maka/core/ui-locale';
 
 /**
  * Every reason the `skills` namespace can answer with, across install,
- * enable, pin, delete, open and import. One table rather than six: the unions
+ * enable, delete, open and import. One table rather than six: the unions
  * overlap heavily, and six tables is how `blocked_path` ends up worded three
  * different ways in one page.
  */
@@ -72,6 +72,10 @@ export type ModulesCopy = {
     readonly tabsLabel: string;
     readonly skills: string;
     readonly mcp: string;
+    /** The second tab group: what is installed, and what could be. */
+    readonly viewLabel: string;
+    readonly yours: string;
+    readonly discover: string;
   };
   skills: {
     description: string;
@@ -91,14 +95,11 @@ export type ModulesCopy = {
     imported(name: string): string;
     openFile: string;
     openDirectory: string;
-    pin: string;
-    unpin: string;
     rowActions(name: string): string;
     enableSkill(name: string): string;
     declaredTools(count: number): string;
     loadFailed: string;
     enableFailed: string;
-    pinFailed: string;
     deleteFailed: string;
     installFailed: string;
     importFailed: string;
@@ -144,7 +145,15 @@ export type ModulesCopy = {
 const MODULES_COPY = {
   'zh-CN': {
     refreshFailed: '刷新失败，下面还是上一次的结果。',
-    extensions: { title: '扩展', tabsLabel: '扩展分类', skills: '技能', mcp: 'MCP' },
+    extensions: {
+      title: '自定义',
+      tabsLabel: '扩展分类',
+      skills: '技能',
+      mcp: '连接器',
+      viewLabel: '查看范围',
+      yours: '我的',
+      discover: '发现',
+    },
     skills: {
       description: 'Agent 可以调用的技能，以及它们的来源与启用状态。',
       installedTitle: '已安装',
@@ -163,14 +172,11 @@ const MODULES_COPY = {
       imported: (name) => `已导入 ${name}`,
       openFile: '打开 SKILL.md',
       openDirectory: '打开所在目录',
-      pin: '固定',
-      unpin: '取消固定',
       rowActions: (name) => `${name} 的更多操作`,
       enableSkill: (name) => `启用 ${name}`,
       declaredTools: (count) => `声明 ${count} 个工具`,
       loadFailed: '载入技能失败',
       enableFailed: '切换技能启用状态失败',
-      pinFailed: '切换技能固定状态失败',
       deleteFailed: '删除技能失败',
       installFailed: '安装技能失败',
       importFailed: '导入技能失败',
@@ -198,22 +204,22 @@ const MODULES_COPY = {
       },
     },
     mcp: {
-      title: 'MCP',
-      description: '连接 MCP 服务器，把外部工具接入 Agent。',
-      installedTitle: '已配置的 Server',
-      marketTitle: '服务目录',
-      marketDescription: '常用的 MCP Server，添加后按各自的说明补齐凭据。',
+      title: '连接器',
+      description: '通过 MCP 接入外部工具和服务。',
+      installedTitle: '已配置的连接器',
+      marketTitle: '目录',
+      marketDescription: '常用的连接器，添加后按各自的说明补齐凭据。',
       serverActions: (id) => `${id} 的更多操作`,
       enableServer: (id) => `启用 ${id}`,
-      duplicateId: '这个 Server ID 已经在用了。',
+      duplicateId: '这个 ID 已经在用了。',
       needsAuth: '需要登录',
       signIn: '登录',
       signingIn: '登录中…',
       cancelSignIn: '取消登录',
       signOut: '退出登录',
-      signInFailed: 'MCP 登录失败',
-      signOutFailed: 'MCP 退出登录失败',
-      enableFailed: '切换 MCP 启用状态失败',
+      signInFailed: '连接器登录失败',
+      signOutFailed: '连接器退出登录失败',
+      enableFailed: '切换连接器启用状态失败',
     },
     scheduled: {
       description: '按计划自动运行的任务，以及它们的执行记录。',
@@ -232,7 +238,15 @@ const MODULES_COPY = {
   },
   'zh-TW': {
     refreshFailed: '重新整理失敗，下面仍是上一次的結果。',
-    extensions: { title: '擴充', tabsLabel: '擴充分類', skills: '技能', mcp: 'MCP' },
+    extensions: {
+      title: '自訂',
+      tabsLabel: '擴充分類',
+      skills: '技能',
+      mcp: '連接器',
+      viewLabel: '檢視範圍',
+      yours: '我的',
+      discover: '探索',
+    },
     skills: {
       description: 'Agent 可以呼叫的技能，以及它們的來源與啟用狀態。',
       installedTitle: '已安裝',
@@ -251,14 +265,11 @@ const MODULES_COPY = {
       imported: (name) => `已匯入 ${name}`,
       openFile: '開啟 SKILL.md',
       openDirectory: '開啟所在目錄',
-      pin: '固定',
-      unpin: '取消固定',
       rowActions: (name) => `${name} 的更多操作`,
       enableSkill: (name) => `啟用 ${name}`,
       declaredTools: (count) => `宣告 ${count} 個工具`,
       loadFailed: '載入技能失敗',
       enableFailed: '切換技能啟用狀態失敗',
-      pinFailed: '切換技能固定狀態失敗',
       deleteFailed: '刪除技能失敗',
       installFailed: '安裝技能失敗',
       importFailed: '匯入技能失敗',
@@ -286,22 +297,22 @@ const MODULES_COPY = {
       },
     },
     mcp: {
-      title: 'MCP',
-      description: '連線 MCP 伺服器，把外部工具接入 Agent。',
-      installedTitle: '已設定的 Server',
-      marketTitle: '服務目錄',
-      marketDescription: '常用的 MCP Server，新增後按各自的說明補齊憑據。',
+      title: '連接器',
+      description: '透過 MCP 接入外部工具和服務。',
+      installedTitle: '已設定的連接器',
+      marketTitle: '目錄',
+      marketDescription: '常用的連接器，新增後按各自的說明補齊憑據。',
       serverActions: (id) => `${id} 的更多操作`,
       enableServer: (id) => `啟用 ${id}`,
-      duplicateId: '這個 Server ID 已經在用了。',
+      duplicateId: '這個 ID 已經在用了。',
       needsAuth: '需要登入',
       signIn: '登入',
       signingIn: '登入中…',
       cancelSignIn: '取消登入',
       signOut: '登出',
-      signInFailed: 'MCP 登入失敗',
-      signOutFailed: 'MCP 登出失敗',
-      enableFailed: '切換 MCP 啟用狀態失敗',
+      signInFailed: '連接器登入失敗',
+      signOutFailed: '連接器登出失敗',
+      enableFailed: '切換連接器啟用狀態失敗',
     },
     scheduled: {
       description: '按計畫自動執行的任務，以及它們的執行紀錄。',
@@ -320,7 +331,15 @@ const MODULES_COPY = {
   },
   en: {
     refreshFailed: 'Could not refresh. These are the last results.',
-    extensions: { title: 'Extensions', tabsLabel: 'Extension kind', skills: 'Skills', mcp: 'MCP' },
+    extensions: {
+      title: 'Customize',
+      tabsLabel: 'Extension kind',
+      skills: 'Skills',
+      mcp: 'Connectors',
+      viewLabel: 'View',
+      yours: 'Yours',
+      discover: 'Discover',
+    },
     skills: {
       description: 'The skills the agent can invoke, where they come from, and which are on.',
       installedTitle: 'Installed',
@@ -341,14 +360,11 @@ const MODULES_COPY = {
       imported: (name) => `Imported ${name}`,
       openFile: 'Open SKILL.md',
       openDirectory: 'Open containing folder',
-      pin: 'Pin',
-      unpin: 'Unpin',
       rowActions: (name) => `More actions for ${name}`,
       enableSkill: (name) => `Enable ${name}`,
       declaredTools: (count) => (count === 1 ? 'Declares 1 tool' : `Declares ${count} tools`),
       loadFailed: 'Could not load skills',
       enableFailed: 'Could not change whether the skill is enabled',
-      pinFailed: 'Could not change whether the skill is pinned',
       deleteFailed: 'Could not delete the skill',
       installFailed: 'Could not install the skill',
       importFailed: 'Could not import the skill',
@@ -376,22 +392,22 @@ const MODULES_COPY = {
       },
     },
     mcp: {
-      title: 'MCP',
-      description: 'Connect MCP servers to give the agent external tools.',
-      installedTitle: 'Configured servers',
-      marketTitle: 'Server directory',
-      marketDescription: 'Common MCP servers. Adding one still needs the credentials it names.',
+      title: 'Connectors',
+      description: 'External tools and services, connected over MCP.',
+      installedTitle: 'Configured connectors',
+      marketTitle: 'Directory',
+      marketDescription: 'Common connectors. Adding one still needs the credentials it names.',
       serverActions: (id) => `More actions for ${id}`,
       enableServer: (id) => `Enable ${id}`,
-      duplicateId: 'That server ID is already taken.',
+      duplicateId: 'That ID is already taken.',
       needsAuth: 'Sign-in needed',
       signIn: 'Sign in',
       signingIn: 'Signing in…',
       cancelSignIn: 'Cancel sign-in',
       signOut: 'Sign out',
-      signInFailed: 'MCP sign-in failed',
-      signOutFailed: 'MCP sign-out failed',
-      enableFailed: 'Could not change whether the server is enabled',
+      signInFailed: 'Connector sign-in failed',
+      signOutFailed: 'Connector sign-out failed',
+      enableFailed: 'Could not change whether the connector is enabled',
     },
     scheduled: {
       description: 'Tasks that run on a schedule, and what happened when they did.',

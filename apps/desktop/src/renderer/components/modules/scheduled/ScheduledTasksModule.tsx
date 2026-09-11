@@ -25,9 +25,15 @@
 // reader of it. Every write goes back through the store so the list and the
 // badge move together.
 //
-// Ordering is `compareScheduledTaskForDisplay`: active first by next run, then
-// paused, then spent. A list of automations sorted by creation date buries the
-// one about to fire, which is the only one anybody is looking for.
+// The default order is `compareScheduledTaskForDisplay`: active first by next
+// run, then paused, then spent. A list of automations sorted by creation date
+// buries the one about to fire, which is the only one anybody is looking for —
+// so that stays the default even now that the toolbar offers two other orders.
+//
+// Search, sort and the status pills all narrow the SAME list rather than
+// re-reading it. The store holds one snapshot for the whole app, and a page
+// that asked the Host for a filtered list would have made the badge and the
+// list disagree about how many tasks exist.
 //
 // No Runtime Host prop, unlike the other two module pages. The store's list is
 // read host-less (the default Host), and a page that WROTE to the selected
@@ -37,6 +43,7 @@
 import { useMemo, useState } from 'react';
 import { useStore } from 'zustand';
 import {
+  compareScheduledTaskBySort,
   compareScheduledTaskForDisplay,
   createScheduledTaskFormSeed,
   formatScheduledTaskDeliveryTargetLabel,
@@ -44,19 +51,24 @@ import {
   formatTaskCountdown,
   formatTaskTime,
   getScheduledTaskCopy,
+  normalizeScheduledTaskSearchQuery,
   runStatusLabel,
+  scheduledTaskDuplicateSeed,
   scheduledTaskEditSeed,
+  scheduledTaskMatchesSearch,
   scheduledTaskRunStatusSemantic,
   scheduledTaskStatusLabel,
   scheduledTaskStatusSemantic,
   useUiLocale,
   type ScheduledTaskFormSeed,
 } from '@maka/ui';
-import type { ScheduledTask } from '@maka/core/scheduled-task';
+import type { ScheduledTask, ScheduledTaskStatus } from '@maka/core/scheduled-task';
+import { uiLocaleToIntlLocale } from '@maka/core/ui-locale';
 import { Button } from '../../ui/button.js';
 import { ConfirmDialog } from '../../ui/confirm-dialog.js';
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -66,47 +78,117 @@ import { Switch } from '../../ui/switch.js';
 import { statusChipClass, statusChipToneClass } from '../../ui/status-chip.js';
 import { menuDangerItemClass, menuTriggerButtonClass } from '../../ui/menu-variants.js';
 import { Anthropicon } from '../../icons/Anthropicon.js';
-import { SettingsRow, SettingsSection } from '../../settings/settings-row.js';
 import {
-  ModuleEmpty,
-  ModuleLead,
-  ModuleListSkeleton,
-  ModuleLoadNotice,
-  ModulePage,
-} from '../module-page.js';
+  ListEmptyState,
+  ListFilterPills,
+  ListSearch,
+  ListSortMenu,
+  ListStaleNotice,
+  listCardActionsSlotClass,
+  listCardDescClass,
+  listCardFooterClass,
+  listCardGridClass,
+  listCardShellClass,
+  listCardSurfaceClass,
+  listCardTitleClass,
+  listToolbarIconButtonClass,
+  listToolbarPrimaryButtonClass,
+} from '../../ui/list-page.js';
+import { ModuleListSkeleton, ModulePage } from '../module-page.js';
+import { RunHistoryDialog } from './RunHistoryDialog.js';
 import { ScheduleFormDialog } from './ScheduleFormDialog.js';
+import { ScheduleTemplates } from './ScheduleTemplates.js';
 import { cn } from '../../../lib/cn.js';
 import { moduleListState } from '../../../lib/module-list-state.js';
 import { useSettingsErrorReporter } from '../../../hooks/use-settings.js';
 import { toast } from '../../../store/toast-store.js';
-import { scheduledTasksStore } from '../../../store/index.js';
+import {
+  scheduledTasksStore,
+  sessionsStore,
+  settingsStore,
+  uiStore,
+} from '../../../store/index.js';
 import { getSettingsSharedCopy } from '../../../locales/settings-shared-copy.js';
 import { getModulesCopy } from '../../../locales/modules-copy.js';
+import { getShellRemainingCopy } from '../../../locales/shell-remaining-copy.js';
+import {
+  getScheduledPageCopy,
+  type ScheduledPageSort,
+} from '../../../locales/scheduled-page-copy.js';
+
+type ScheduledFilter = 'all' | ScheduledTaskStatus;
+
+const FILTER_ORDER: readonly ScheduledFilter[] = [
+  'all',
+  'active',
+  'paused',
+  'completed',
+  'expired',
+];
 
 export function ScheduledTasksModule() {
   const locale = useUiLocale();
   const catalog = getScheduledTaskCopy(locale);
+  const page = getScheduledPageCopy(locale);
   const modulesShared = getModulesCopy(locale);
   const copy = modulesShared.scheduled;
+  const actions = getShellRemainingCopy(locale).scheduledTaskActions;
   const shared = getSettingsSharedCopy(locale);
   const report = useSettingsErrorReporter();
   const tasks = useStore(scheduledTasksStore, (state) => state.data);
   const loading = useStore(scheduledTasksStore, (state) => state.loading);
   const error = useStore(scheduledTasksStore, (state) => state.error);
+  // Client-owned, and read from the client snapshot rather than the Host's:
+  // the Host projection carries the field but goes stale the moment a
+  // client-owned write lands. `undefined` means the snapshot has not arrived —
+  // the capability row stays hidden rather than claiming a value it lacks.
+  const keepSystemAwake = useStore(
+    settingsStore.client,
+    (state) => state.data?.system.keepSystemAwake,
+  );
   const [busy, setBusy] = useState<string | null>(null);
   const [seed, setSeed] = useState<ScheduledTaskFormSeed | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ScheduledTask | null>(null);
+  const [pendingClear, setPendingClear] = useState<ScheduledTask | null>(null);
+  // The id, not the task: the dialog must re-read the task from the list every
+  // render, or clearing its history would leave the runs it just deleted on
+  // screen until the dialog was closed and reopened.
+  const [historyId, setHistoryId] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<ScheduledPageSort>('next-run');
+  const [filter, setFilter] = useState<ScheduledFilter>('all');
 
-  const rows = useMemo(
-    () => [...(tasks ?? [])].sort((a, b) => compareScheduledTaskForDisplay(a, b, locale)),
-    [tasks, locale],
-  );
+  const all = useMemo(() => tasks ?? [], [tasks]);
+  const matched = useMemo(() => {
+    const normalized = normalizeScheduledTaskSearchQuery(query);
+    if (!normalized) return all;
+    return all.filter((task) => scheduledTaskMatchesSearch(task, normalized, locale));
+  }, [all, query, locale]);
+  const counts = useMemo(() => {
+    const byStatus = (status: ScheduledTaskStatus) =>
+      matched.filter((task) => task.status === status).length;
+    return {
+      all: matched.length,
+      active: byStatus('active'),
+      paused: byStatus('paused'),
+      completed: byStatus('completed'),
+      expired: byStatus('expired'),
+    } satisfies Record<ScheduledFilter, number>;
+  }, [matched]);
+  const rows = useMemo(() => {
+    const visible = filter === 'all' ? matched : matched.filter((task) => task.status === filter);
+    return [...visible].sort((a, b) => compareForSort(a, b, sort, locale));
+  }, [matched, filter, sort, locale]);
+  const historyTask = historyId ? (all.find((task) => task.id === historyId) ?? null) : null;
 
   const display = moduleListState({
     loading,
     error,
     loaded: tasks !== undefined,
-    count: rows.length,
+    // The FACE is about the catalog, not the current query: a search that
+    // matches nothing must not offer "create your first task" to somebody who
+    // already has nine.
+    count: all.length,
   });
   const retry = (
     <Button variant="outline" size="sm" onClick={() => void scheduledTasksStore.refresh()}>
@@ -127,91 +209,179 @@ export function ScheduledTasksModule() {
     }
   };
 
+  const clockIcon = <Anthropicon name="clock" size={20} />;
+  const create = () => setSeed(createScheduledTaskFormSeed());
+
+  const openSession = (sessionId: string) => {
+    setHistoryId(null);
+    uiStore.closeSettings();
+    uiStore.navigate({ section: 'sessions' });
+    sessionsStore.select(sessionId);
+  };
+
+  const setKeepSystemAwake = (next: boolean) => {
+    void settingsStore
+      .updateClient({ system: { keepSystemAwake: next } })
+      .catch((cause: unknown) => report(catalog.page.keepAwakeErrorTitle, cause));
+  };
+
   return (
     <ModulePage
       title={catalog.page.title}
-      icon="clock"
+      subtitle={copy.description}
       actions={
         <>
-          <Button
-            variant="ghost"
-            size="sm"
+          {display.face === 'rows' && (
+            <>
+              <ListSearch
+                value={query}
+                onChange={setQuery}
+                label={catalog.page.searchLabel}
+                placeholder={catalog.page.searchPlaceholder}
+              />
+              <ListSortMenu<ScheduledPageSort>
+                label={page.sortBy}
+                value={sort}
+                onChange={setSort}
+                options={page.sortOptions.map(([value, label]) => ({ value, label }))}
+              />
+            </>
+          )}
+          {keepSystemAwake !== undefined && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={catalog.page.pageSettings}
+                  className={listToolbarIconButtonClass}
+                >
+                  <Anthropicon name="dotsVertical" size={20} />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {/* Scheduled work is driven by an in-process timer, which a
+                    sleeping machine freezes: the reminder then never fires and
+                    says nothing about why. This is the one switch that decides
+                    it, so it belongs on this page rather than in Settings. */}
+                <DropdownMenuCheckboxItem
+                  checked={keepSystemAwake}
+                  onCheckedChange={setKeepSystemAwake}
+                >
+                  {catalog.page.keepAwake}
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          <button
+            type="button"
             disabled={busy !== null}
-            onClick={() => setSeed(createScheduledTaskFormSeed())}
+            onClick={create}
+            className={listToolbarPrimaryButtonClass}
           >
             {catalog.page.create}
-          </Button>
-          <Button
-            variant="ghost"
-            size="iconSm"
-            aria-label={catalog.page.refresh}
-            disabled={busy !== null}
-            onClick={() => void scheduledTasksStore.refresh()}
-          >
-            <Anthropicon name="arrowClockwise" size={16} />
-          </Button>
+          </button>
         </>
       }
     >
-      <ModuleLead>{copy.description}</ModuleLead>
-
-      <SettingsSection title={catalog.page.tasks}>
-        {display.staleNotice && (
-          <ModuleLoadNotice title={modulesShared.refreshFailed} action={retry} />
-        )}
-        {display.face === 'loading' ? (
-          <div className="py-3">
-            <ModuleListSkeleton />
-          </div>
-        ) : display.face === 'failed' ? (
-          <div className="py-3">
-            <ModuleEmpty title={copy.loadFailed} action={retry} />
-          </div>
-        ) : display.face === 'empty' ? (
-          <div className="py-3">
-            <ModuleEmpty
-              title={catalog.page.emptyTitle}
-              body={catalog.page.emptyBody}
+      {display.staleNotice && (
+        <ListStaleNotice title={modulesShared.refreshFailed} action={retry} />
+      )}
+      {display.face === 'loading' ? (
+        <ModuleListSkeleton />
+      ) : display.face === 'failed' ? (
+        <ListEmptyState icon={clockIcon} title={copy.loadFailed} action={retry} />
+      ) : display.face === 'empty' ? (
+        <ListEmptyState
+          icon={clockIcon}
+          title={catalog.page.emptyTitle}
+          description={catalog.page.emptyBody}
+          action={
+            <Button variant="secondary" size="sm" onClick={create}>
+              {catalog.page.create}
+            </Button>
+          }
+        />
+      ) : (
+        <>
+          <ListFilterPills
+            label={catalog.page.filtersAriaLabel}
+            value={filter}
+            onChange={setFilter}
+            options={FILTER_ORDER.map((value) => ({
+              value,
+              label: value === 'all' ? catalog.page.all : catalog.status[value],
+              count: counts[value],
+            }))}
+          />
+          {rows.length === 0 ? (
+            <ListEmptyState
+              icon={clockIcon}
+              title={query ? catalog.page.noSearchTitle : catalog.page.noFilterTitle}
+              description={query ? catalog.page.noSearchBody : catalog.page.noFilterBody}
               action={
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="mt-2"
-                  onClick={() => setSeed(createScheduledTaskFormSeed())}
+                  onClick={() => {
+                    setQuery('');
+                    setFilter('all');
+                  }}
                 >
-                  {catalog.page.create}
+                  {query ? catalog.page.clearSearch : catalog.page.all}
                 </Button>
               }
             />
-          </div>
-        ) : (
-          rows.map((task) => (
-            <ScheduledTaskRow
-              key={task.id}
-              task={task}
-              busy={busy}
-              locale={locale}
-              catalog={catalog}
-              copy={copy}
-              onToggle={(enabled) =>
-                void run(`enable:${task.id}`, copy.enableFailed, () =>
-                  scheduledTasksStore.setEnabled(task.id, enabled),
-                )
-              }
-              onTrigger={() =>
-                void (async () => {
-                  const ok = await run(`trigger:${task.id}`, copy.triggerFailed, () =>
-                    scheduledTasksStore.triggerNow(task.id),
-                  );
-                  if (ok) toast({ title: copy.triggered(task.title), variant: 'success' });
-                })()
-              }
-              onEdit={() => setSeed(scheduledTaskEditSeed(task))}
-              onDelete={() => setPendingDelete(task)}
-            />
-          ))
-        )}
-      </SettingsSection>
+          ) : (
+            <div className={listCardGridClass}>
+              {rows.map((task) => (
+                <ScheduledTaskCard
+                  key={task.id}
+                  task={task}
+                  busy={busy}
+                  locale={locale}
+                  catalog={catalog}
+                  copy={copy}
+                  runHistoryLabel={page.viewRunHistory}
+                  onToggle={(enabled) =>
+                    void run(`enable:${task.id}`, copy.enableFailed, () =>
+                      scheduledTasksStore.setEnabled(task.id, enabled),
+                    )
+                  }
+                  onTrigger={() =>
+                    void (async () => {
+                      const ok = await run(`trigger:${task.id}`, copy.triggerFailed, () =>
+                        scheduledTasksStore.triggerNow(task.id),
+                      );
+                      if (ok) toast({ title: copy.triggered(task.title), variant: 'success' });
+                    })()
+                  }
+                  onSnooze={() =>
+                    void (async () => {
+                      const ok = await run(`snooze:${task.id}`, actions.snoozeFailed, () =>
+                        scheduledTasksStore.snooze(task.id),
+                      );
+                      if (ok)
+                        toast({
+                          title: actions.snoozed,
+                          description: task.title,
+                          variant: 'success',
+                        });
+                    })()
+                  }
+                  onHistory={() => setHistoryId(task.id)}
+                  onEdit={() => setSeed(scheduledTaskEditSeed(task))}
+                  onDuplicate={() => setSeed(scheduledTaskDuplicateSeed(task, locale))}
+                  onDelete={() => setPendingDelete(task)}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {(display.face === 'rows' || display.face === 'empty') && (
+        <ScheduleTemplates disabled={busy !== null} onUse={setSeed} />
+      )}
 
       <ScheduleFormDialog
         open={seed !== null}
@@ -233,6 +403,44 @@ export function ScheduledTasksModule() {
             );
             if (ok) setSeed(null);
           })();
+        }}
+      />
+
+      <RunHistoryDialog
+        task={historyTask}
+        clearing={historyTask !== null && busy === `clear:${historyTask.id}`}
+        onOpenChange={(open) => {
+          if (!open) setHistoryId(null);
+        }}
+        onClear={() => {
+          // One modal at a time: the confirm takes the screen the history had,
+          // and a confirm stacked on a dialog traps focus in the wrong one.
+          if (!historyTask) return;
+          setPendingClear(historyTask);
+          setHistoryId(null);
+        }}
+        onOpenSession={openSession}
+      />
+
+      <ConfirmDialog
+        open={pendingClear !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingClear(null);
+        }}
+        title={pendingClear ? actions.clearTitle(pendingClear.title) : ''}
+        description={actions.clearDescription}
+        confirmText={actions.clear}
+        cancelText={shared.cancel}
+        variant="destructive"
+        waitForConfirm
+        onConfirm={async () => {
+          const target = pendingClear;
+          if (!target) return;
+          const ok = await run(`clear:${target.id}`, actions.clearFailed, () =>
+            scheduledTasksStore.clearRunHistory(target.id),
+          );
+          setPendingClear(null);
+          if (ok) toast({ title: actions.cleared, description: target.title, variant: 'success' });
         }}
       />
 
@@ -262,16 +470,50 @@ export function ScheduledTasksModule() {
 
 type ScheduledCatalog = ReturnType<typeof getScheduledTaskCopy>;
 type ScheduledModulesCopy = ReturnType<typeof getModulesCopy>['scheduled'];
+type Locale = Parameters<typeof formatTaskTime>[1];
 
-function ScheduledTaskRow(props: {
+/**
+ * The list's order.
+ *
+ * `next-run` delegates to the page's own display comparator rather than
+ * re-deriving it, so the default order is the one the page has always had.
+ * `name` falls back to that comparator on a tie, which keeps the order total
+ * — two tasks with the same title would otherwise swap places between renders.
+ */
+export function compareForSort(
+  a: ScheduledTask,
+  b: ScheduledTask,
+  sort: ScheduledPageSort,
+  locale: Locale,
+): number {
+  if (sort === 'created') return compareScheduledTaskBySort(a, b, 'created-desc', locale);
+  if (sort === 'name') {
+    return (
+      a.title.localeCompare(b.title, uiLocaleToIntlLocale(locale)) ||
+      compareScheduledTaskForDisplay(a, b, locale)
+    );
+  }
+  return compareScheduledTaskForDisplay(a, b, locale);
+}
+
+/**
+ * One task as a list card (Claude's Scheduled page): title, the schedule and
+ * where it delivers, the next run, then the status chips in the footer. The
+ * switch and the ⋯ menu sit in the card's top-right corner.
+ */
+export function ScheduledTaskCard(props: {
   task: ScheduledTask;
   busy: string | null;
-  locale: Parameters<typeof formatTaskTime>[1];
+  locale: Locale;
   catalog: ScheduledCatalog;
   copy: ScheduledModulesCopy;
+  runHistoryLabel: string;
   onToggle: (enabled: boolean) => void;
   onTrigger: () => void;
+  onSnooze: () => void;
+  onHistory: () => void;
   onEdit: () => void;
+  onDuplicate: () => void;
   onDelete: () => void;
 }) {
   const { task, catalog, copy, locale } = props;
@@ -284,12 +526,26 @@ function ScheduledTaskRow(props: {
           task.nextFireAt,
           locale,
         )}`;
+  // Snooze moves the NEXT fire. A paused task has none, and a spent one will
+  // never have another, so for those the Host would refuse what the menu
+  // offered.
+  const snoozable = task.status === 'active' && task.nextFireAt !== null;
 
   return (
-    <SettingsRow
-      title={
-        <span className="flex items-center gap-2">
-          <span className="truncate">{task.title}</span>
+    <article className={listCardShellClass} aria-busy={busy || undefined}>
+      <div className={cn(listCardSurfaceClass, 'min-h-36')}>
+        <h3 className={cn(listCardTitleClass, 'pr-20')}>{task.title}</h3>
+        <p className={listCardDescClass}>
+          {formatScheduledTaskRecurrence(task, locale)} ·{' '}
+          {formatScheduledTaskDeliveryTargetLabel(task.effect, locale)}
+        </p>
+        <p className="text-xs leading-4 text-text-muted">{next}</p>
+        {lastRun && (
+          <p className="text-xs leading-4 text-text-muted">
+            {catalog.page.recentRun(formatTaskTime(lastRun.at, locale))}
+          </p>
+        )}
+        <div className={listCardFooterClass}>
           <span
             className={cn(
               statusChipClass,
@@ -308,58 +564,47 @@ function ScheduledTaskRow(props: {
               {runStatusLabel(lastRun.outcome, locale)}
             </span>
           )}
-        </span>
-      }
-      description={
-        <span className="flex flex-col gap-0.5">
-          <span>
-            {formatScheduledTaskRecurrence(task, locale)} ·{' '}
-            {formatScheduledTaskDeliveryTargetLabel(task.effect, locale)}
-          </span>
-          <span className="text-text-muted">{next}</span>
-          {lastRun && (
-            <span className="text-text-muted">
-              {catalog.page.recentRun(formatTaskTime(lastRun.at, locale))}
-            </span>
-          )}
-        </span>
-      }
-      control={
-        <span className="flex items-center gap-2">
-          <Switch
-            aria-label={copy.enableTask(task.title)}
-            // `expired` and `completed` are spent: there is nothing left to
-            // arm, and a switch that flips back on its own is worse than none.
-            checked={task.status === 'active'}
-            disabled={busy || task.status === 'completed' || task.status === 'expired'}
-            onCheckedChange={props.onToggle}
-          />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className={menuTriggerButtonClass}
-                aria-label={copy.rowActions(task.title)}
-                disabled={busy}
-              >
-                <Anthropicon name="dotsVertical" size={20} />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={props.onTrigger}>
-                {props.busy === `trigger:${task.id}`
-                  ? catalog.page.triggering
-                  : catalog.page.triggerNow}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={props.onEdit}>{catalog.page.edit}</DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className={menuDangerItemClass} onSelect={props.onDelete}>
-                {catalog.page.delete}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </span>
-      }
-    />
+        </div>
+      </div>
+      <div className={cn(listCardActionsSlotClass, 'opacity-100')}>
+        <Switch
+          aria-label={copy.enableTask(task.title)}
+          checked={task.status === 'active'}
+          disabled={busy || task.status === 'completed' || task.status === 'expired'}
+          onCheckedChange={props.onToggle}
+        />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className={menuTriggerButtonClass}
+              aria-label={copy.rowActions(task.title)}
+              disabled={busy}
+            >
+              <Anthropicon name="dotsVertical" size={20} />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={props.onTrigger}>
+              {props.busy === `trigger:${task.id}`
+                ? catalog.page.triggering
+                : catalog.page.triggerNow}
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!snoozable} onSelect={props.onSnooze}>
+              {props.busy === `snooze:${task.id}` ? catalog.page.snoozing : catalog.page.snooze}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={props.onHistory}>{props.runHistoryLabel}</DropdownMenuItem>
+            <DropdownMenuItem onSelect={props.onEdit}>{catalog.page.edit}</DropdownMenuItem>
+            <DropdownMenuItem onSelect={props.onDuplicate}>
+              {catalog.page.duplicate}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className={menuDangerItemClass} onSelect={props.onDelete}>
+              {catalog.page.delete}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </article>
   );
 }

@@ -19,11 +19,17 @@
 
 // Skills: what the agent can invoke, where each one came from, which are on.
 //
-// Three lists, one page, in the order a user meets them: what is installed,
-// what the app ships, what has been imported from this machine. The reference
-// design's capabilities page is a stack of `SettingsSection`s over rows, which
-// is what this is — a skill is a name, a sentence and a switch, and a card
-// grid would give three lines of chrome to each.
+// Two views, after Claude's Customize page. YOURS is what is installed in this
+// workspace: one row per skill — icon tile, name, status, a line of meta, the
+// switch and the ⋯ menu. DISCOVER is what could be: the skills the app ships,
+// then what has been imported from this machine, each row ending in Install.
+//
+// The toolbar is the second thing this page owes a workspace with more than a
+// handful of skills: a search that reads name, id, description and PATH; the
+// scope pills (Yours) and category pills (Discover) with their counts; and a
+// sort. All three are pure functions over the snapshot in `skill-filters.ts`,
+// so what a filter keeps can be asserted without a DOM — and the rules stay
+// out of the markup, which is already carrying the failure model.
 //
 // The failure model is the reason this file is longer than the markup:
 // `skills.*` answers with `{ ok: false, reason }` VALUES, not rejections. A
@@ -31,16 +37,12 @@
 // corrupt, are different problems with different fixes, so every call site
 // runs its answer through `report` with the reason spelled out.
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  formatSkillLibraryDescription,
-  formatSkillStatusLabel,
   getSkillsCopy,
-  skillExceptionalStateLabel,
-  skillStatusSemantic,
   useUiLocale,
-  type BundledSkillCatalogEntry,
-  type ManagedSkillSourceEntry,
+  type ManagedSkillCategory,
+  type ManagedSkillUpdatePreview,
   type SkillEntry,
 } from '@maka/ui';
 import { Button } from '../../ui/button.js';
@@ -49,17 +51,24 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
+  DropdownMenuItemIcon,
   DropdownMenuTrigger,
 } from '../../ui/dropdown-menu.js';
-import { Switch } from '../../ui/switch.js';
-import { statusChipClass, statusChipToneClass } from '../../ui/status-chip.js';
-import { menuDangerItemClass, menuTriggerButtonClass } from '../../ui/menu-variants.js';
+import {
+  ListEmptyState,
+  ListFilterMenu,
+  ListSearch,
+  ListSection,
+  ListSortMenu,
+  ListStaleNotice,
+  ListTabsDivider,
+  listToolbarIconButtonClass,
+  listToolbarPrimaryButtonClass,
+} from '../../ui/list-page.js';
 import { Anthropicon } from '../../icons/Anthropicon.js';
-import { SettingsRow, SettingsSection } from '../../settings/settings-row.js';
-import { ModuleEmpty, ModuleLead, ModuleListSkeleton, ModulePage } from '../module-page.js';
+import { ModuleListSkeleton, ModulePage } from '../module-page.js';
 import { moduleListState } from '../../../lib/module-list-state.js';
-import { ExtensionsTabs } from '../ExtensionsTabs.js';
+import { ExtensionsTabs, ExtensionsViewTabs, type ExtensionsView } from '../ExtensionsTabs.js';
 import { cn } from '../../../lib/cn.js';
 import { useAsync } from '../../../hooks/use-async.js';
 import { useSettingsErrorReporter } from '../../../hooks/use-settings.js';
@@ -73,25 +82,55 @@ import {
   listSkillSources,
   listSkills,
   openSkill,
+  previewManagedSkillUpdate,
   setSkillEnabled,
-  setSkillPinned,
+  updateManagedSkill,
 } from '../../../bridge/skills.js';
 import type { DesktopRuntimeHostRef } from '../../../bridge/projects.js';
 import { getModulesCopy, type SkillFailureReason } from '../../../locales/modules-copy.js';
+import { getSkillsPageCopy, type SkillsPageCopy } from '../../../locales/skills-page-copy.js';
+import { CatalogSkillRow, InstalledSkillRow, SourceSkillRow, skillIcon } from './SkillRows.js';
+import { SkillUpdateDialog } from './SkillUpdateDialog.js';
+import { startTaskWithSkill } from './use-skill-in-task.js';
+import {
+  SKILL_ORIGINS,
+  catalogEntryMatchesQuery,
+  managedUpdateOptions,
+  normalizeSkillQuery,
+  presentCategories,
+  skillMatchesQuery,
+  groupSkillsByOrigin,
+  skillMatchesOrigin,
+  skillOriginCounts,
+  sortCatalogRows,
+  sortSkills,
+  sourceEntryMatchesQuery,
+  type SkillCategoryFilter,
+  type SkillOriginFilter,
+  type SkillSort,
+} from './skill-filters.js';
 
 export function SkillsModule(props: {
   host?: DesktopRuntimeHostRef;
-  /** Switches to the other Extensions face; the shell's own navigation call. */
+  /** Switches to the other Customize face; the shell's own navigation call. */
   onSelectModule?: (module: 'skills' | 'mcp') => void;
 }) {
   const locale = useUiLocale();
-  const extensions = getModulesCopy(locale).extensions;
+  const modules = getModulesCopy(locale);
+  const extensions = modules.extensions;
   const skillsCopy = getSkillsCopy(locale);
   const copy = getModulesCopy(locale).skills;
+  const page = getSkillsPageCopy(locale);
   const report = useSettingsErrorReporter();
   const host = props.host;
+  const [view, setView] = useState<ExtensionsView>('yours');
   const [busy, setBusy] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<SkillEntry | null>(null);
+  const [query, setQuery] = useState('');
+  const [origin, setOrigin] = useState<SkillOriginFilter>('all');
+  const [category, setCategory] = useState<SkillCategoryFilter>('all');
+  const [sort, setSort] = useState<SkillSort>('source');
+  const [preview, setPreview] = useState<ManagedSkillUpdatePreview | null>(null);
 
   const installed = useAsync(() => listSkills(host), [host?.profileId, host?.hostId]);
   const catalog = useAsync(() => listSkillCatalog(host), [host?.profileId, host?.hostId]);
@@ -102,6 +141,14 @@ export function SkillsModule(props: {
     catalog.reload();
     sources.reload();
   }, [installed.reload, catalog.reload, sources.reload]);
+  // No change feed exists for skills (unlike servers and scheduled tasks), so
+  // a SKILL.md edited on disk would otherwise stay stale until the page is
+  // reopened. Coming back to the window is the moment the user expects the
+  // list to reflect what they just did elsewhere.
+  useEffect(() => {
+    window.addEventListener('focus', reloadAll);
+    return () => window.removeEventListener('focus', reloadAll);
+  }, [reloadAll]);
 
   /**
    * Run one `{ ok, reason }` call and say what happened.
@@ -130,7 +177,11 @@ export function SkillsModule(props: {
         if (result.reason === 'cancelled') return false;
         toast({
           title: failureTitle,
-          description: copy.reasons[result.reason as SkillFailureReason] ?? failureTitle,
+          description:
+            copy.reasons[result.reason as SkillFailureReason] ??
+            // `read_failed` exists on previewUpdate and nowhere else in the
+            // namespace, so it is not in the shared table.
+            (result.reason === 'read_failed' ? page.update.readFailed : failureTitle),
           variant: 'destructive',
         });
         return false;
@@ -141,197 +192,422 @@ export function SkillsModule(props: {
         setBusy(null);
       }
     },
-    [copy.reasons, reloadAll, report],
+    [copy.reasons, page.update.readFailed, reloadAll, report],
   );
 
-  const rows = installed.data ?? [];
-  const catalogRows = catalog.data ?? [];
-  const sourceRows = sources.data ?? [];
+  /**
+   * Review, then apply. Never the other way round: the workspace copy may
+   * hold edits that exist nowhere else, and `updateManaged` replaces it.
+   */
+  const reviewUpdate = useCallback(
+    async (skill: SkillEntry) => {
+      setBusy(`preview:${skill.id}`);
+      try {
+        const result = await previewManagedSkillUpdate(skill.id, host);
+        if (result.ok) {
+          setPreview(result.preview);
+          return;
+        }
+        toast({
+          title: page.update.reviewFailed,
+          description:
+            copy.reasons[result.reason as SkillFailureReason] ??
+            (result.reason === 'read_failed' ? page.update.readFailed : page.update.reviewFailed),
+          variant: 'destructive',
+        });
+      } catch (error) {
+        report(page.update.reviewFailed, error);
+      } finally {
+        setBusy(null);
+      }
+    },
+    [copy.reasons, host, page.update, report],
+  );
+
+  const applyUpdate = useCallback(
+    async (reviewed: ManagedSkillUpdatePreview) => {
+      const applied = await run(`update:${reviewed.skill.id}`, page.update.failed, () =>
+        updateManagedSkill(reviewed.skill.id, managedUpdateOptions(reviewed), host),
+      );
+      if (!applied) return;
+      setPreview(null);
+      toast({ title: page.update.updated(reviewed.skill.name), variant: 'success' });
+    },
+    [host, page.update, run],
+  );
+
+  const allRows = installed.data ?? [];
+  const allCatalogRows = catalog.data ?? [];
+  const allSourceRows = sources.data ?? [];
+  const normalized = normalizeSkillQuery(query);
+
+  // Search first, then the filter: the counts in the filter menu describe
+  // what the search left, so a scope whose only match was typed away reads 0
+  // instead of promising rows the option cannot show.
+  const searchedSkills = useMemo(
+    () => allRows.filter((skill) => skillMatchesQuery(skill, normalized)),
+    [allRows, normalized],
+  );
+  const originCounts = useMemo(() => skillOriginCounts(searchedSkills), [searchedSkills]);
+  const rows = useMemo(
+    () =>
+      sortSkills(
+        searchedSkills.filter((skill) => skillMatchesOrigin(skill, origin)),
+        sort,
+      ),
+    [searchedSkills, origin, sort],
+  );
+  // Sorted once, then cut into one section per origin: the order holds inside
+  // every section, and a narrowed filter simply leaves one section standing.
+  const groups = useMemo(() => groupSkillsByOrigin(rows), [rows]);
+
+  // Only the origins this workspace actually has, plus whichever one is
+  // selected (a search can empty the origin the user is standing in, and an
+  // option that vanished under them would strand the filter with no way back).
+  const originOptions = useMemo(
+    () => SKILL_ORIGINS.filter((value) => originCounts[value] > 0 || origin === value),
+    [originCounts, origin],
+  );
+
+  const categories = useMemo(
+    () => presentCategories(allCatalogRows, allSourceRows),
+    [allCatalogRows, allSourceRows],
+  );
+  const inCategory = useCallback(
+    (entry: { category: ManagedSkillCategory }) =>
+      category === 'all' || entry.category === category,
+    [category],
+  );
+  const catalogRows = useMemo(
+    () =>
+      sortCatalogRows(
+        allCatalogRows.filter(
+          (entry) => inCategory(entry) && catalogEntryMatchesQuery(entry, normalized),
+        ),
+        sort,
+      ),
+    [allCatalogRows, inCategory, normalized, sort],
+  );
+  const sourceRows = useMemo(
+    () =>
+      sortCatalogRows(
+        allSourceRows.filter(
+          (entry) => inCategory(entry) && sourceEntryMatchesQuery(entry, normalized),
+        ),
+        sort,
+      ),
+    [allSourceRows, inCategory, normalized, sort],
+  );
 
   // One rule for all three lists: what is shown follows the SNAPSHOT, and a
   // read that failed says so instead of reporting an empty workspace. The
-  // catalog and the source library used to branch on length alone, so a
-  // rejected read read as "this build ships no skills" / "your library is
-  // empty" — a statement about the user's workspace, made because we could not
-  // reach it.
+  // count is the UNFILTERED one — a search that matched nothing is not an
+  // empty workspace, and it gets its own empty state below.
   const installedFace = moduleListState({
     loading: installed.loading,
     error: installed.error,
     loaded: installed.data !== undefined,
-    count: rows.length,
+    count: allRows.length,
   });
   const catalogFace = moduleListState({
     loading: catalog.loading,
     error: catalog.error,
     loaded: catalog.data !== undefined,
-    count: catalogRows.length,
+    count: allCatalogRows.length,
   });
   const sourcesFace = moduleListState({
     loading: sources.loading,
     error: sources.error,
     loaded: sources.data !== undefined,
-    count: sourceRows.length,
+    count: allSourceRows.length,
   });
+
+  const retry = (reload: () => void) => (
+    <Button variant="outline" size="sm" onClick={reload}>
+      {skillsCopy.page.refresh}
+    </Button>
+  );
+  const clearSearch = (
+    <Button variant="secondary" size="sm" onClick={() => setQuery('')}>
+      {skillsCopy.market.clearSearch}
+    </Button>
+  );
+  const clearFilters = (
+    <Button
+      variant="secondary"
+      size="sm"
+      onClick={() => {
+        setQuery('');
+        setOrigin('all');
+        setCategory('all');
+      }}
+    >
+      {skillsCopy.market.clearFilters}
+    </Button>
+  );
+  const filtering = normalized.length > 0 || origin !== 'all' || category !== 'all';
 
   return (
     <ModulePage
       title={extensions.title}
-      icon="tool"
-      tabs={<ExtensionsTabs current="skills" onSelect={(face) => props.onSelectModule?.(face)} />}
+      tabs={
+        <>
+          <ExtensionsTabs current="skills" onSelect={(face) => props.onSelectModule?.(face)} />
+          <ListTabsDivider />
+          <ExtensionsViewTabs current={view} onSelect={setView} />
+        </>
+      }
       actions={
         <>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={busy !== null}
-            onClick={() => {
-              void run('import', copy.importFailed, () => importLocalSkillFile(host));
-            }}
-          >
-            {busy === 'import' ? copy.importing : copy.importSkill}
-          </Button>
-          <Button
-            variant="ghost"
-            size="iconSm"
-            aria-label={skillsCopy.page.refresh}
-            disabled={busy !== null}
-            onClick={reloadAll}
-          >
-            <Anthropicon name="arrowClockwise" size={16} />
-          </Button>
+          <ListSearch value={query} onChange={setQuery} label={skillsCopy.page.search} />
+          <ListFilterMenu
+            label={page.filters.trigger}
+            heading={page.filters.heading}
+            groups={
+              view === 'yours'
+                ? [
+                    {
+                      id: 'origin',
+                      label: page.filters.origin,
+                      value: origin,
+                      options: [
+                        { value: 'all', label: page.filters.all, count: originCounts.all },
+                        ...originOptions.map((value) => ({
+                          value,
+                          label: page.origins[value],
+                          count: originCounts[value],
+                        })),
+                      ],
+                      onChange: (value: SkillOriginFilter) => setOrigin(value),
+                    },
+                  ]
+                : [
+                    {
+                      id: 'category',
+                      label: page.filters.category,
+                      value: category,
+                      options: [
+                        { value: 'all', label: page.filters.all },
+                        ...categories.map((value) => ({
+                          value,
+                          label: skillsCopy.categories[value],
+                        })),
+                      ],
+                      onChange: (value: SkillCategoryFilter) => setCategory(value),
+                    },
+                  ]
+            }
+          />
+          <ListSortMenu<SkillSort>
+            label={page.sort.trigger}
+            value={sort}
+            onChange={setSort}
+            options={[
+              { value: 'source', label: page.sort.source },
+              { value: 'name', label: page.sort.name },
+              ...(view === 'yours'
+                ? [{ value: 'updates' as const, label: page.sort.updates }]
+                : []),
+            ]}
+          />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                disabled={busy !== null}
+                className={cn(listToolbarPrimaryButtonClass, 'pr-2.5')}
+              >
+                {busy === 'import' ? copy.importing : page.add.label}
+                <Anthropicon name="caretDown" size={16} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-52">
+              <DropdownMenuItem
+                onSelect={() => {
+                  void run('import', copy.importFailed, () => importLocalSkillFile(host));
+                }}
+              >
+                <DropdownMenuItemIcon>
+                  <Anthropicon name="upload" size={20} />
+                </DropdownMenuItemIcon>
+                <span>{page.add.importFile}</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setView('discover')}>
+                <DropdownMenuItemIcon>
+                  <Anthropicon name="library" size={20} />
+                </DropdownMenuItemIcon>
+                <span>{page.add.browse}</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </>
       }
     >
-      <ModuleLead>{copy.description}</ModuleLead>
-
-      <SettingsSection title={copy.installedTitle} description={copy.installedDescription}>
-        {installedFace.face === 'loading' ? (
-          <div className="py-3">
+      {view === 'yours' ? (
+        <>
+          {installedFace.staleNotice && (
+            <ListStaleNotice title={modules.refreshFailed} action={retry(installed.reload)} />
+          )}
+          {installedFace.face === 'loading' ? (
             <ModuleListSkeleton />
-          </div>
-        ) : installedFace.face === 'failed' ? (
-          <div className="py-3">
-            <ModuleEmpty
+          ) : installedFace.face === 'failed' ? (
+            <ListEmptyState
+              icon={skillIcon}
               title={copy.loadFailed}
-              action={
-                <Button variant="outline" size="sm" onClick={installed.reload}>
-                  {skillsCopy.page.refresh}
-                </Button>
-              }
+              action={retry(installed.reload)}
             />
-          </div>
-        ) : installedFace.face === 'empty' ? (
-          <div className="py-3">
-            <ModuleEmpty
+          ) : installedFace.face === 'empty' ? (
+            <ListEmptyState
+              icon={skillIcon}
               title={skillsCopy.installed.emptyTitle}
-              body={`${skillsCopy.installed.emptyBodyBeforeCode} SKILL.md ${skillsCopy.installed.emptyBodyAfterCode}`}
-            />
-          </div>
-        ) : (
-          rows.map((skill) => (
-            <InstalledSkillRow
-              key={skill.ref ?? skill.id}
-              skill={skill}
-              busy={busy !== null}
-              copy={copy}
-              skillsCopy={skillsCopy}
-              onToggle={(enabled) =>
-                void run(`enable:${skill.id}`, copy.enableFailed, () =>
-                  setSkillEnabled(skill.id, enabled, host),
-                )
-              }
-              onPin={(pinned) =>
-                void run(`pin:${skill.id}`, copy.pinFailed, () =>
-                  setSkillPinned(skill.ref ?? skill.id, pinned, host),
-                )
-              }
-              onOpen={(target) =>
-                void run(`open:${skill.id}`, copy.openFailed, () =>
-                  openSkill(skill.id, target, host),
-                )
-              }
-              onDelete={() => setPendingDelete(skill)}
-            />
-          ))
-        )}
-      </SettingsSection>
-
-      <SettingsSection title={copy.catalogTitle} description={copy.catalogDescription}>
-        {catalogFace.face === 'loading' ? (
-          <div className="py-3">
-            <ModuleListSkeleton rows={2} />
-          </div>
-        ) : catalogFace.face === 'failed' ? (
-          <div className="py-3">
-            <ModuleEmpty
-              title={copy.loadFailed}
+              description={`${skillsCopy.installed.emptyBodyBeforeCode} SKILL.md ${skillsCopy.installed.emptyBodyAfterCode}`}
               action={
-                <Button variant="outline" size="sm" onClick={catalog.reload}>
-                  {skillsCopy.page.refresh}
+                <Button variant="secondary" size="sm" onClick={() => setView('discover')}>
+                  {extensions.discover}
                 </Button>
               }
             />
-          </div>
-        ) : catalogFace.face === 'empty' ? (
-          <div className="py-3">
-            <ModuleEmpty title={copy.catalogEmpty} />
-          </div>
-        ) : (
-          catalogRows.map((entry) => (
-            <CatalogSkillRow
-              key={entry.id}
-              entry={entry}
-              busy={busy !== null}
-              pending={busy === `install:${entry.id}`}
-              copy={copy}
-              onInstall={() =>
-                void run(`install:${entry.id}`, copy.installFailed, () =>
-                  installCatalogSkill(entry.id, host),
-                )
+          ) : rows.length === 0 ? (
+            <ListEmptyState
+              icon={<Anthropicon name="search" size={20} />}
+              title={skillsCopy.installed.emptySearchTitle}
+              description={
+                normalized
+                  ? skillsCopy.installed.emptySearchBody
+                  : skillsCopy.market.emptyFilterBody
               }
+              action={normalized && origin === 'all' ? clearSearch : clearFilters}
             />
-          ))
-        )}
-      </SettingsSection>
-
-      <SettingsSection title={copy.sourcesTitle} description={copy.sourcesDescription}>
-        {sourcesFace.face === 'loading' ? (
-          <div className="py-3">
+          ) : (
+            groups.map((group) => (
+              <ListSection
+                key={group.origin}
+                id={`skills-origin-${group.origin}`}
+                label={page.origins[group.origin]}
+                count={group.skills.length}
+              >
+                {group.skills.map((skill) => (
+                  <InstalledSkillRow
+                    key={skill.ref ?? skill.id}
+                    skill={skill}
+                    busy={busy !== null}
+                    copy={copy}
+                    skillsCopy={skillsCopy}
+                    page={page}
+                    onToggle={(enabled) =>
+                      void run(`enable:${skill.id}`, copy.enableFailed, () =>
+                        setSkillEnabled(skill.id, enabled, host),
+                      )
+                    }
+                    onOpen={(target) =>
+                      void run(`open:${skill.id}`, copy.openFailed, () =>
+                        openSkill(skill.id, target, host),
+                      )
+                    }
+                    onUse={() => startTaskWithSkill(skill)}
+                    onReviewUpdate={() => void reviewUpdate(skill)}
+                    onDelete={() => setPendingDelete(skill)}
+                  />
+                ))}
+              </ListSection>
+            ))
+          )}
+        </>
+      ) : (
+        <>
+          {(catalogFace.staleNotice || sourcesFace.staleNotice) && (
+            <ListStaleNotice title={modules.refreshFailed} action={retry(reloadAll)} />
+          )}
+          {catalogFace.face === 'loading' ? (
             <ModuleListSkeleton rows={2} />
-          </div>
-        ) : sourcesFace.face === 'failed' ? (
-          <div className="py-3">
-            <ModuleEmpty
+          ) : catalogFace.face === 'failed' ? (
+            <ListEmptyState
+              icon={skillIcon}
               title={copy.loadFailed}
-              action={
-                <Button variant="outline" size="sm" onClick={sources.reload}>
-                  {skillsCopy.page.refresh}
-                </Button>
-              }
+              action={retry(catalog.reload)}
             />
-          </div>
-        ) : sourcesFace.face === 'empty' ? (
-          <div className="py-3">
-            <ModuleEmpty title={copy.sourcesEmpty} />
-          </div>
-        ) : (
-          sourceRows.map((entry) => (
-            <SourceSkillRow
-              key={entry.id}
-              entry={entry}
-              installed={rows.some((skill) => skill.id === entry.id)}
-              busy={busy !== null}
-              pending={busy === `source:${entry.id}`}
-              copy={copy}
-              onInstall={() =>
-                void run(`source:${entry.id}`, copy.installFailed, () =>
-                  installManagedSkill(entry.id, host),
-                )
-              }
+          ) : catalogFace.face === 'empty' ? (
+            <ListEmptyState icon={skillIcon} title={copy.catalogEmpty} />
+          ) : catalogRows.length === 0 ? (
+            <ListEmptyState
+              icon={<Anthropicon name="search" size={20} />}
+              title={skillsCopy.builtin.noMatchTitle}
+              description={skillsCopy.builtin.noMatchBody}
+              action={filtering ? clearFilters : undefined}
             />
-          ))
-        )}
-      </SettingsSection>
+          ) : (
+            <ListSection id="skills-catalog" label={copy.catalogTitle} count={catalogRows.length}>
+              {catalogRows.map((entry) => (
+                <CatalogSkillRow
+                  key={entry.id}
+                  entry={entry}
+                  busy={busy !== null}
+                  pending={busy === `install:${entry.id}`}
+                  copy={copy}
+                  skillsCopy={skillsCopy}
+                  page={page}
+                  onInstall={() =>
+                    void run(`install:${entry.id}`, copy.installFailed, () =>
+                      installCatalogSkill(entry.id, host),
+                    )
+                  }
+                />
+              ))}
+            </ListSection>
+          )}
+          {sourcesFace.face === 'loading' ? (
+            <ModuleListSkeleton rows={2} />
+          ) : sourcesFace.face === 'failed' ? (
+            <div className="pt-6">
+              <ListEmptyState
+                icon={skillIcon}
+                title={copy.loadFailed}
+                action={retry(sources.reload)}
+              />
+            </div>
+          ) : sourcesFace.face === 'empty' ? (
+            <ListSection id="skills-sources" label={copy.sourcesTitle} count={0}>
+              <p className="py-2 text-sm leading-5 text-text-muted">{copy.sourcesEmpty}</p>
+            </ListSection>
+          ) : sourceRows.length === 0 ? (
+            <ListSection id="skills-sources" label={copy.sourcesTitle} count={0}>
+              <p className="py-2 text-sm leading-5 text-text-muted">
+                {skillsCopy.market.emptyFilterBody}
+              </p>
+            </ListSection>
+          ) : (
+            <ListSection id="skills-sources" label={copy.sourcesTitle} count={sourceRows.length}>
+              {sourceRows.map((entry) => (
+                <SourceSkillRow
+                  key={entry.id}
+                  entry={entry}
+                  installed={allRows.some((skill) => skill.id === entry.id)}
+                  busy={busy !== null}
+                  pending={busy === `source:${entry.id}`}
+                  copy={copy}
+                  skillsCopy={skillsCopy}
+                  onInstall={() =>
+                    void run(`source:${entry.id}`, copy.installFailed, () =>
+                      installManagedSkill(entry.id, host),
+                    )
+                  }
+                />
+              ))}
+            </ListSection>
+          )}
+        </>
+      )}
+
+      <SkillUpdateDialog
+        preview={preview}
+        applying={busy?.startsWith('update:') ?? false}
+        onOpenChange={(open) => {
+          if (!open) setPreview(null);
+        }}
+        onApply={() => {
+          if (preview) void applyUpdate(preview);
+        }}
+      />
 
       <ConfirmDialog
         open={pendingDelete !== null}
@@ -357,191 +633,12 @@ export function SkillsModule(props: {
   );
 }
 
-type SkillsCopy = ReturnType<typeof getSkillsCopy>;
-type ModuleSkillsCopy = ReturnType<typeof getModulesCopy>['skills'];
-
-function InstalledSkillRow(props: {
-  skill: SkillEntry;
-  busy: boolean;
-  copy: ModuleSkillsCopy;
-  skillsCopy: SkillsCopy;
-  onToggle: (enabled: boolean) => void;
-  onPin: (pinned: boolean) => void;
-  onOpen: (target: 'file' | 'directory') => void;
-  onDelete: () => void;
-}) {
-  const { skill, copy, skillsCopy } = props;
-  // A discovery diagnostic is not a skill: it is the loader telling the user
-  // why a folder produced nothing. It gets the row and none of the controls,
-  // because there is nothing here to enable, pin or delete.
-  if (skill.kind === 'discovery_diagnostic') {
-    const reason = skill.discoveryDiagnosticReason;
-    return (
-      <SettingsRow
-        title={<span className="truncate">{skill.name}</span>}
-        description={reason ? skillsCopy.context.discoveryDiagnostic[reason] : skill.description}
-        control={
-          <span className={cn(statusChipClass, statusChipToneClass('attention'))}>
-            {skillsCopy.context.needsReview}
-          </span>
-        }
-      />
-    );
-  }
-
-  const exceptional = skillExceptionalStateLabel(skill, skillsCopy);
-  const description = formatSkillLibraryDescription(skill, skillsCopy);
-  const scope = skill.scope ? skillsCopy.context.scope[skill.scope] : undefined;
-
-  return (
-    <SettingsRow
-      title={
-        <span className="flex items-center gap-2">
-          <span className="truncate">{skill.name}</span>
-          <span className={cn(statusChipClass, statusChipToneClass(skillStatusSemantic(skill)))}>
-            {exceptional ?? formatSkillStatusLabel(skill, skillsCopy)}
-          </span>
-          {skill.pinned && (
-            <span className={cn(statusChipClass, statusChipToneClass('neutral'))}>
-              {skillsCopy.detail.pinned}
-            </span>
-          )}
-        </span>
-      }
-      description={
-        <span className="flex flex-col gap-0.5">
-          {description && <span>{description}</span>}
-          <span className="text-text-muted">
-            {[
-              scope,
-              skill.declaredTools?.length
-                ? copy.declaredTools(skill.declaredTools.length)
-                : undefined,
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          </span>
-        </span>
-      }
-      control={
-        <span className="flex items-center gap-2">
-          <Switch
-            aria-label={copy.enableSkill(skill.name)}
-            checked={skill.enabled}
-            disabled={props.busy}
-            onCheckedChange={props.onToggle}
-          />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className={menuTriggerButtonClass}
-                aria-label={copy.rowActions(skill.name)}
-                disabled={props.busy}
-              >
-                <Anthropicon name="dotsVertical" size={20} />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => props.onPin(!skill.pinned)}>
-                {skill.pinned ? copy.unpin : copy.pin}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => props.onOpen('file')}>
-                {copy.openFile}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => props.onOpen('directory')}>
-                {copy.openDirectory}
-              </DropdownMenuItem>
-              {/* `manageable === false` is the Host saying this entry is not the
-                  user's to remove (a bundled skill outside the workspace). */}
-              {skill.manageable !== false && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem className={menuDangerItemClass} onSelect={props.onDelete}>
-                    {skillsCopy.row.delete}
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </span>
-      }
-    />
-  );
-}
-
-function CatalogSkillRow(props: {
-  entry: BundledSkillCatalogEntry;
-  busy: boolean;
-  pending: boolean;
-  copy: ModuleSkillsCopy;
-  onInstall: () => void;
-}) {
-  const { entry, copy } = props;
-  return (
-    <SettingsRow
-      title={<span className="truncate">{entry.name}</span>}
-      description={
-        <span className="flex flex-col gap-0.5">
-          <span>{entry.description}</span>
-          {entry.declaredTools.length > 0 && (
-            <span className="text-text-muted">
-              {copy.declaredTools(entry.declaredTools.length)}
-            </span>
-          )}
-        </span>
-      }
-      control={
-        entry.installed ? (
-          <span className={cn(statusChipClass, statusChipToneClass('neutral'))}>
-            {copy.installed}
-          </span>
-        ) : (
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={props.busy}
-            aria-busy={props.pending || undefined}
-            onClick={props.onInstall}
-          >
-            {props.pending ? copy.installing : copy.install}
-          </Button>
-        )
-      }
-    />
-  );
-}
-
-function SourceSkillRow(props: {
-  entry: ManagedSkillSourceEntry;
-  installed: boolean;
-  busy: boolean;
-  pending: boolean;
-  copy: ModuleSkillsCopy;
-  onInstall: () => void;
-}) {
-  const { entry, copy } = props;
-  return (
-    <SettingsRow
-      title={<span className="truncate">{entry.name}</span>}
-      description={entry.description}
-      control={
-        props.installed ? (
-          <span className={cn(statusChipClass, statusChipToneClass('neutral'))}>
-            {copy.installed}
-          </span>
-        ) : (
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={props.busy}
-            aria-busy={props.pending || undefined}
-            onClick={props.onInstall}
-          >
-            {props.pending ? copy.installing : copy.install}
-          </Button>
-        )
-      }
-    />
-  );
-}
+/**
+ * The sort menu. Three orders, and the default is the Host's own: discovery
+ * order is the order the skills are offered to the model, so it is the one
+ * order that means something outside this page.
+ *
+ * "Needs attention first" is offered only on Yours, because it reads the
+ * status ladder and the catalogs have no status to read. Nothing here is
+ * "recently updated": no entry the Host sends carries a timestamp.
+ */

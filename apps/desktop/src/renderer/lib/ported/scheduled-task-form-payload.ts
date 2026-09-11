@@ -49,6 +49,14 @@ export interface ScheduledTaskFormFields {
   readonly runAtLocal: string;
   readonly recurrence: ScheduledTaskFormSeed['recurrence'];
   readonly cronExpression: string;
+  /**
+   * Where a notification goes. Optional so that a caller describing a plain
+   * local reminder — which is every caller that predates bot delivery — keeps
+   * describing one by saying nothing.
+   */
+  readonly deliveryMethod?: ScheduledTaskFormSeed['deliveryMethod'];
+  readonly deliveryPlatform?: ScheduledTaskFormSeed['deliveryPlatform'];
+  readonly deliveryChatId?: ScheduledTaskFormSeed['deliveryChatId'];
   readonly lockedSchedule?: ScheduledTaskFormSeed['lockedSchedule'];
   readonly lockedEffect?: ScheduledTaskFormSeed['lockedEffect'];
 }
@@ -71,13 +79,22 @@ export function scheduledTaskScheduleFromFields(
  * The effect the fields describe.
  *
  * A locked effect always wins: it is the one part of the task the form is not
- * allowed to author. Everything else is a local notification, because bot
- * delivery needs the Bots settings page this rewrite does not ship.
+ * allowed to author. Otherwise the delivery fields decide, and `local` is the
+ * answer whenever they say nothing — a bot channel with no chat id is not a
+ * delivery target, and the form's own validation refuses it before submit, so
+ * falling back here keeps a half-filled bot choice from being sent as one.
  */
 export function scheduledTaskEffectFromFields(
   fields: ScheduledTaskFormFields,
 ): ScheduledTaskEffect {
-  return fields.lockedEffect ?? { kind: 'notify', channel: 'local' };
+  if (fields.lockedEffect) return fields.lockedEffect;
+  if (fields.deliveryMethod !== 'bot') return { kind: 'notify', channel: 'local' };
+  return {
+    kind: 'notify',
+    channel: 'bot',
+    platform: fields.deliveryPlatform ?? 'telegram',
+    chatId: (fields.deliveryChatId ?? '').trim(),
+  };
 }
 
 export function createScheduledTaskInputFromFields(

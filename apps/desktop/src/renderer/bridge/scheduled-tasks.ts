@@ -67,6 +67,29 @@ export function triggerScheduledTaskNow(
   return scheduledTasks().triggerNow(id, host);
 }
 
+/**
+ * Push the next fire out by ten minutes.
+ *
+ * The delay is the Host's, not ours: `scheduledTasks.snooze` sends
+ * `{ kind: 'snooze', delayMs: 10 * 60 * 1000 }` itself, which is why this
+ * takes no duration and why the copy that announces it can say "10 minutes"
+ * without the renderer choosing the number.
+ */
+export function snoozeScheduledTask(
+  id: string,
+  host?: DesktopRuntimeHostRef,
+): Promise<ScheduledTask> {
+  return scheduledTasks().snooze(id, host);
+}
+
+/** Drop the task's recent runs and its last-error, keeping the task itself. */
+export function clearScheduledTaskRunHistory(
+  id: string,
+  host?: DesktopRuntimeHostRef,
+): Promise<ScheduledTask> {
+  return scheduledTasks().clearRunHistory(id, host);
+}
+
 export function deleteScheduledTask(id: string, host?: DesktopRuntimeHostRef): Promise<void> {
   return scheduledTasks().delete(id, host);
 }

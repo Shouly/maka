@@ -17,15 +17,16 @@
  * under the License.
  */
 
-// The Extensions page is one sidebar entry with two faces, Skills and MCP
-// (owner decision, 2026-09-08: the word follows upstream Maka, which files
-// both under Extensions; "Plugins" already means something in the runtime).
-// The faces are the existing module pages; this strip is what makes them one
-// page. Selection is the same navigation call the sidebar row makes, so the
-// row's active state, the module memory and the palette all agree.
+// The Customize page is one sidebar entry with two faces, Skills and
+// Connectors (Claude's word for MCP servers; the internal key stays `mcp`,
+// and "Plugins" already means something in the runtime). The faces are the existing module pages; this strip is what
+// makes them one page. Selection is the same navigation call the sidebar row
+// makes, so the row's active state, the module memory and the palette all
+// agree. Internal keys (`section: 'extensions'`) are unchanged; only the
+// label moved to "Customize" (owner decision 2026-09-11, after Claude's page).
 
 import { useUiLocale } from '@maka/ui';
-import { SegmentedControl } from '../ui/segmented-control.js';
+import { ListTabs } from '../ui/list-page.js';
 import { getModulesCopy } from '../../locales/modules-copy.js';
 
 export type ExtensionsFace = 'skills' | 'mcp';
@@ -36,14 +37,34 @@ export function ExtensionsTabs(props: {
 }) {
   const copy = getModulesCopy(useUiLocale()).extensions;
   return (
-    <SegmentedControl<ExtensionsFace>
+    <ListTabs<ExtensionsFace>
+      label={copy.tabsLabel}
       value={props.current}
       onChange={props.onSelect}
-      size="sm"
-      ariaLabel={copy.tabsLabel}
       options={[
         { value: 'skills', label: copy.skills },
         { value: 'mcp', label: copy.mcp },
+      ]}
+    />
+  );
+}
+
+export type ExtensionsView = 'yours' | 'discover';
+
+/** Yours | Discover — what is installed, and what could be. */
+export function ExtensionsViewTabs(props: {
+  current: ExtensionsView;
+  onSelect: (view: ExtensionsView) => void;
+}) {
+  const copy = getModulesCopy(useUiLocale()).extensions;
+  return (
+    <ListTabs<ExtensionsView>
+      label={copy.viewLabel}
+      value={props.current}
+      onChange={props.onSelect}
+      options={[
+        { value: 'yours', label: copy.yours },
+        { value: 'discover', label: copy.discover },
       ]}
     />
   );

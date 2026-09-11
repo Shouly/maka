@@ -61,6 +61,13 @@ export function createMcpStore(bridge = api) {
       // constant: handing the same object to the bridge twice is how a shared
       // `env` map ends up carrying the last install's edits.
       store.mutate(() => bridge.installMcpServer(serverId, structuredClone(config), host)),
+    // A pasted `mcp.json` can add several servers at once, so the answer is
+    // the whole import result (or its refusal reason) and the refresh behind
+    // it re-reads every row rather than patching one.
+    importConfig: (source: string, host?: DesktopRuntimeHostRef) =>
+      store.mutate(() => bridge.importMcpConfig(source, host)),
+    cancelInstall: (serverId: string, host?: DesktopRuntimeHostRef) =>
+      store.mutate(() => bridge.cancelMcpServerInstall(serverId, host)),
     upsert: (serverId: string, config: McpServerConfig, host?: DesktopRuntimeHostRef) =>
       store.mutate(() => bridge.upsertMcpServer(serverId, config, host)),
     remove: (serverId: string, host?: DesktopRuntimeHostRef) =>

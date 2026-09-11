@@ -162,7 +162,7 @@ const SIDEBAR_COPY = {
     },
     rename: { label: '任务名称', save: '保存', cancel: '取消' },
     nav: {
-      extensions: '扩展',
+      extensions: '自定义',
       skills: '技能',
       mcp: 'MCP',
       scheduled: '定时任务',
@@ -237,7 +237,7 @@ const SIDEBAR_COPY = {
     },
     rename: { label: '任務名稱', save: '儲存', cancel: '取消' },
     nav: {
-      extensions: '擴充',
+      extensions: '自訂',
       skills: '技能',
       mcp: 'MCP',
       scheduled: '排程任務',
@@ -318,7 +318,7 @@ const SIDEBAR_COPY = {
     },
     rename: { label: 'Task name', save: 'Save', cancel: 'Cancel' },
     nav: {
-      extensions: 'Extensions',
+      extensions: 'Customize',
       skills: 'Skills',
       mcp: 'MCP',
       scheduled: 'Scheduled',

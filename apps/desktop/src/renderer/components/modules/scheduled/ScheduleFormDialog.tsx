@@ -26,18 +26,21 @@
 // agree with each other, so the form cannot disagree with the Host about what
 // a valid task is.
 //
-// Two things the form deliberately does not author:
+// One thing the form deliberately does not author: an INTERVAL cadence. A task
+// an agent created with `everySeconds` keeps it verbatim; the recurrence
+// control says so and stays disabled, because the alternative is silently
+// turning a repeating job into a one-shot. An agent-authored `agent_run`
+// effect is preserved untouched for the same reason, and its delivery control
+// reads back the frozen choice rather than offering to replace it.
 //
-//   - an INTERVAL cadence. A task an agent created with `everySeconds` keeps
-//     it verbatim; the recurrence control says so and stays disabled, because
-//     the alternative is silently turning a repeating job into a one-shot.
-//   - the EFFECT. Local reminder is the only delivery this build can promise:
-//     bot delivery needs the Bots settings page, which the rewrite defers, so
-//     offering it here would create tasks that fire and deliver nowhere. An
-//     agent-authored `agent_run` effect is preserved untouched.
+// Delivery itself IS authored, both channels. The form used to hard-code a
+// local reminder, which quietly did more than defer a feature: a bot task
+// opened for editing came back as a local one, dropping its platform and chat
+// id with no warning, because the seed carried them and the payload did not.
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
+  formatScheduledTaskDeliveryProviderList,
   getScheduledTaskCopy,
   scheduledTaskFormValidation,
   scheduledTaskPresetRunAt,
@@ -45,6 +48,9 @@ import {
   useUiLocale,
   type ScheduledTaskFormSeed,
 } from '@maka/ui';
+import { BOT_DELIVERY_PROVIDERS } from '@maka/core/bot-chat-settings';
+import type { BotProvider } from '@maka/core/bot-chat-settings';
+import { botDisplayLabel } from '@maka/core/bot-events';
 import { Button } from '../../ui/button.js';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../ui/dialog.js';
 import { Input } from '../../ui/input.js';
@@ -58,7 +64,6 @@ import {
   type ScheduledTaskFormFields,
 } from '../../../lib/ported/scheduled-task-form-payload.js';
 import { getSettingsSharedCopy } from '../../../locales/settings-shared-copy.js';
-import { getModulesCopy } from '../../../locales/modules-copy.js';
 
 export function ScheduleFormDialog(props: {
   open: boolean;
@@ -74,7 +79,6 @@ export function ScheduleFormDialog(props: {
   const locale = useUiLocale();
   const catalog = getScheduledTaskCopy(locale);
   const copy = catalog.form;
-  const modules = getModulesCopy(locale).scheduled;
   const shared = getSettingsSharedCopy(locale);
   const [fields, setFields] = useState<ScheduledTaskFormFields>(() => toFields(props.seed));
   // The empty form is invalid by definition; the title error waits for a
@@ -120,7 +124,7 @@ export function ScheduleFormDialog(props: {
     if (create) props.onCreate(create);
   };
 
-  const errorFor = (field: 'title' | 'time' | 'cron') =>
+  const errorFor = (field: 'title' | 'time' | 'cron' | 'chatId') =>
     submitted && validation?.field === field ? validation.message : undefined;
 
   return (
@@ -214,11 +218,70 @@ export function ScheduleFormDialog(props: {
             </Field>
           )}
 
-          <Field label={copy.field.channel} help={modules.deliveryLocalOnly}>
-            <p className="text-sm leading-5 text-text-primary">
-              {fields.lockedEffect ? catalog.detail.agentDelivery : catalog.delivery.local}
-            </p>
-          </Field>
+          {fields.lockedEffect ? (
+            <Field label={copy.field.channel} help={catalog.detail.agentSourceHint}>
+              <p className="text-sm leading-5 text-text-primary">{catalog.detail.agentDelivery}</p>
+            </Field>
+          ) : (
+            <Field label={copy.field.channel} htmlFor="schedule-channel">
+              <Select
+                value={fields.deliveryMethod ?? 'local'}
+                onValueChange={(value) =>
+                  patch({ deliveryMethod: value as ScheduledTaskFormFields['deliveryMethod'] })
+                }
+              >
+                <SelectTrigger id="schedule-channel" aria-label={copy.field.channel}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {copy.deliveryOptions.map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
+
+          {fields.deliveryMethod === 'bot' && !fields.lockedEffect && (
+            <>
+              <Field
+                label={copy.field.platform}
+                htmlFor="schedule-platform"
+                help={copy.deliveryHelp(formatScheduledTaskDeliveryProviderList())}
+              >
+                <Select
+                  value={fields.deliveryPlatform ?? 'telegram'}
+                  onValueChange={(value) => patch({ deliveryPlatform: value as BotProvider })}
+                >
+                  <SelectTrigger id="schedule-platform" aria-label={copy.field.platform}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {BOT_DELIVERY_PROVIDERS.map((provider) => (
+                      <SelectItem key={provider} value={provider}>
+                        {botDisplayLabel(provider)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              <Field
+                label={copy.field.chatId}
+                htmlFor="schedule-chat-id"
+                error={errorFor('chatId')}
+              >
+                <Input
+                  id="schedule-chat-id"
+                  value={fields.deliveryChatId ?? ''}
+                  placeholder={copy.chatIdPlaceholder}
+                  onChange={(event) => patch({ deliveryChatId: event.target.value })}
+                />
+              </Field>
+            </>
+          )}
 
           <Field label={copy.field.note} htmlFor="schedule-note">
             <Textarea
@@ -257,6 +320,12 @@ function toFields(seed: ScheduledTaskFormSeed): ScheduledTaskFormFields {
     runAtLocal: seed.runAtLocal,
     recurrence: seed.recurrence,
     cronExpression: seed.cronExpression,
+    // A locked effect keeps `agent_run` out of the channel control's own
+    // vocabulary: the control is hidden in that case, and the payload reads
+    // `lockedEffect` rather than these three.
+    deliveryMethod: seed.deliveryMethod === 'agent_run' ? 'local' : seed.deliveryMethod,
+    deliveryPlatform: seed.deliveryPlatform,
+    deliveryChatId: seed.deliveryChatId,
     ...(seed.lockedSchedule ? { lockedSchedule: seed.lockedSchedule } : {}),
     ...(seed.lockedEffect ? { lockedEffect: seed.lockedEffect } : {}),
   };

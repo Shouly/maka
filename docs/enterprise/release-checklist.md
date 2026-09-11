@@ -65,12 +65,11 @@ come before any feature work: several lose data silently.
 
 ### In the renderer
 
-1. **Editing a bot-delivery scheduled task converts it to a local
-   notification.** `scheduledTaskEffectFromFields`
-   (`lib/ported/scheduled-task-form-payload.ts:80`) returns `{ kind:'notify',
-   channel:'local' }` whenever the seed carries no locked effect, and bot tasks
-   seed unlocked. Platform and chat id are dropped with no warning, and every
-   row offers Edit.
+1. ~~**Editing a bot-delivery scheduled task converts it to a local
+   notification.**~~ Closed 2026-09-11: the form carries delivery method,
+   platform and chat id, and `scheduledTaskEffectFromFields` rebuilds the bot
+   effect from them (`scheduled-module.test.tsx`, "a bot delivery survives the
+   round trip").
 
 ### Outside the renderer allow-list
 
@@ -159,12 +158,13 @@ headers at creation, no select-all in the model picker, no retired-provider
 handling, no signup link, no OAuth relogin from the connection page, no cancel
 on an in-progress field edit, no model refresh after saving a credential.
 
-**Modules** — MCP: no search or filter, no tool names, no stderr tail, no
-negotiated protocol or transport row, no counts, no manage-from-market. Skills:
-no search, category filter or sort, no "use this skill", no open-folder, no
-capability-audit warning, no path or tool names. Scheduled: no duplicate, no
-run history (only the last outcome, never the failure message), no search /
-sort / status filter, no keep-system-awake, no bot delivery, no templates.
+**Modules** — closed 2026-09-11 for the items listed before (search, sort and
+filters on all three pages; tool names, stderr tail, protocol and transport,
+counts and manage-from-market on Connectors; use-this-skill, open-folder,
+capability warning, path and tool names on Skills; duplicate, run history,
+keep-awake, bot delivery and templates on Scheduled). Still missing against
+Claude's Customize: a Plugins face, "Create a skill" / "Create with Claude"
+entries under Add, and a featured banner on Discover.
 
 Reached through a channel we already call, but only partly:
 
@@ -173,13 +173,7 @@ Reached through a channel we already call, but only partly:
   `abandonPlanExecution`, plus `queryMessageExecutions`. Plan mode here is a
   switch in the ＋ menu with no panel behind it: nothing shows the plan, and
   nothing can approve, revise or resume it.
-- **Skills** — `previewUpdate` and `updateManaged`: a managed skill cannot be
-  updated from the page that lists it.
 - **Memory** — `openBackup`, `openLatestBackup`, `restoreBackup`.
-- **MCP** — `importConfig` (paste an `mcp.json`) and `cancelInstall`
-  (withdraw a directory install that is still running). The copy for both is
-  already in `mcp-copy.ts`; only the surface is missing.
-- **Scheduled tasks** — `snooze` and `clearRunHistory`.
 - **Runtime Host profiles** — `importConnectionCode`, `discardPairing`,
   `resolvePairingRecovery`: no recovery path when a pairing breaks.
 

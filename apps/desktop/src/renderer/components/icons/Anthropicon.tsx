@@ -146,6 +146,8 @@ export const ANTHROPICON_SPECS = {
   shapes: { glyph: '\uE0D7', size: 20, weight: 433.25 },
   share: { glyph: '\uE0D8', size: 20, weight: 433.25 },
   sidebar: { glyph: '\uE0DD', size: 16, weight: 433.25 },
+  /** Two arrows, up and down: the sort control (Claude's list toolbars). */
+  sort: { glyph: '\uE0E3', size: 20, weight: 433.25 },
   /** 带声波的喇叭 —— 音频文件。字体里没有音符字形。 */
   sound: { glyph: '\uE0E4', size: 20, weight: 433.25 },
   spinner: { glyph: '\uE0E5', size: 20, weight: 433.25 },

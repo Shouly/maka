@@ -668,7 +668,7 @@ try {
   await ensureSidebarExpanded(page);
   const rail = page.locator('#app-sidebar');
   await rail.getByRole('button', { name: 'New task', exact: true }).waitFor();
-  await rail.getByRole('button', { name: 'Extensions', exact: true }).waitFor();
+  await rail.getByRole('button', { name: 'Customize', exact: true }).waitFor();
   await rail.getByRole('button', { name: 'Scheduled', exact: true }).waitFor();
   assert.equal(await rail.getByLabel('Filter tasks', { exact: true }).count(), 0);
   const projectRow = rail.locator('[data-maka-contract="project-row"]').first();
@@ -1107,22 +1107,38 @@ try {
   // does: the window titlebar keeps its toggle, and the page underneath is a
   // real page rather than a placeholder.
   const moduleMain = page.locator('[data-maka-contract="module-main"]');
-  // Extensions is one row with two faces; Scheduled is its own row.
+  // Customize is one row with two faces; Scheduled is its own row.
   await page
     .locator('#app-sidebar')
-    .getByRole('button', { name: 'Extensions', exact: true })
+    .getByRole('button', { name: 'Customize', exact: true })
     .click();
   await moduleMain.waitFor();
   await moduleMain.locator('[data-maka-contract="module-actions"]').waitFor();
-  await moduleMain.getByRole('radio', { name: 'Skills', exact: true }).waitFor();
-  await moduleMain.getByText('Installed', { exact: true }).first().waitFor();
+  await moduleMain.getByRole('tab', { name: 'Skills', exact: true }).waitFor();
+  // The fixture's own SKILL.md lands in the "Created by you" section; the
+  // Yours list is grouped by origin, the way Claude's Customize page is.
+  await moduleMain.getByText('Created by you', { exact: true }).first().waitFor();
   await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).first().waitFor();
   await new Promise((settle) => setTimeout(settle, 700));
   await page.screenshot({ path: SHOT('phase5b-skills-light.png') });
-  await moduleMain.getByRole('radio', { name: 'MCP', exact: true }).click();
-  await moduleMain.getByText('Configured servers', { exact: true }).first().waitFor();
+  await moduleMain.getByRole('tab', { name: 'Connectors', exact: true }).click();
+  // The fixture configures no server, so the list is its empty state; a
+  // machine with servers shows the section instead. Either is the page.
+  await moduleMain
+    .getByText('Configured connectors', { exact: true })
+    .or(moduleMain.getByText('No connectors yet', { exact: true }))
+    .first()
+    .waitFor();
   await new Promise((settle) => setTimeout(settle, 700));
   await page.screenshot({ path: SHOT('phase5b-mcp-light.png') });
+  // The Add dialog: a real form, titled, and dismissable with Escape.
+  await moduleMain.getByRole('button', { name: 'Add', exact: true }).click();
+  const addConnector = page.getByRole('dialog', { name: 'Add custom connector' });
+  await addConnector.waitFor();
+  await new Promise((settle) => setTimeout(settle, 500));
+  await page.screenshot({ path: SHOT('phase5b-connector-add-light.png') });
+  await page.keyboard.press('Escape');
+  await addConnector.waitFor({ state: 'detached' });
   await page
     .locator('#app-sidebar')
     .getByRole('button', { name: 'Scheduled', exact: true })
@@ -1131,7 +1147,7 @@ try {
   await new Promise((settle) => setTimeout(settle, 700));
   await page.screenshot({ path: SHOT('phase5b-scheduled-light.png') });
   checks.push(
-    'the sidebar Extensions row opens Skills and MCP as two faces; Scheduled opens its page',
+    'the sidebar Customize row opens Skills and Connectors as two faces; Scheduled opens its page',
   );
 
   // A scheduled task, created and deleted through the page's own dialog.

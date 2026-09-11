@@ -39,19 +39,11 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useUiLocale } from '@maka/ui';
 import type { McpServerConfig } from '@maka/core/mcp';
 import { Button } from '../../ui/button.js';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '../../ui/dialog.js';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../ui/dialog.js';
 import { Input } from '../../ui/input.js';
 import { Label } from '../../ui/label.js';
 import { SegmentedControl } from '../../ui/segmented-control.js';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select.js';
-import { Switch } from '../../ui/switch.js';
 import { Textarea } from '../../ui/textarea.js';
 import { Anthropicon } from '../../icons/Anthropicon.js';
 import { cn } from '../../../lib/cn.js';
@@ -67,7 +59,13 @@ import {
 } from '../../../lib/ported/mcp-server-draft.js';
 import { getSettingsSharedCopy } from '../../../locales/settings-shared-copy.js';
 import { getMcpCopy, type McpCopy } from '../../../locales/mcp-copy.js';
+import { getConnectorsPageCopy } from '../../../locales/connectors-page-copy.js';
 import { getModulesCopy } from '../../../locales/modules-copy.js';
+
+/** A new connector starts on the remote transport, the first segment and Claude's only one. */
+function newDraft(): McpServerDraft {
+  return { ...createEmptyMcpDraft(), kind: 'remote' };
+}
 
 export function McpServerDialog(props: {
   open: boolean;
@@ -76,15 +74,20 @@ export function McpServerDialog(props: {
   /** Ids already in mcp.json, minus the one being edited. */
   takenIds: readonly string[];
   saving: boolean;
+  /** True while a pasted `mcp.json` is being imported. */
+  importing: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (serverId: string, config: McpServerConfig) => void;
+  /** The dialog's second mode: paste an `mcp.json` and import every server in it. */
+  onImport: (source: string) => void;
 }) {
   const locale = useUiLocale();
   const copy = getMcpCopy(locale);
+  const connectors = getConnectorsPageCopy(locale);
   const modules = getModulesCopy(locale).mcp;
   const shared = getSettingsSharedCopy(locale);
   const editing = props.seed !== undefined;
-  const [draft, setDraft] = useState<McpServerDraft>(() => props.seed ?? createEmptyMcpDraft());
+  const [draft, setDraft] = useState<McpServerDraft>(() => props.seed ?? newDraft());
   const [showAdvanced, setShowAdvanced] = useState(false);
   // Errors are shown only after a submit attempt: an empty form is invalid by
   // definition, and marking every field red before the user has typed reads as
@@ -95,10 +98,17 @@ export function McpServerDialog(props: {
   // would have to key the element on a value it does not otherwise need.
   useEffect(() => {
     if (!props.open) return;
-    setDraft(props.seed ?? createEmptyMcpDraft());
+    setDraft(props.seed ?? newDraft());
     setShowAdvanced(false);
     setSubmitted(false);
+    setMode('manual');
+    setSource('');
   }, [props.open, props.seed]);
+  // Manual form, or a pasted `mcp.json` (upstream's two modes of the same
+  // dialog). Editing an existing server is always the form.
+  const [mode, setMode] = useState<'manual' | 'import'>('manual');
+  const [source, setSource] = useState('');
+  const importing = !editing && mode === 'import';
 
   const errors = useMemo(
     () => validateMcpServerDraft(draft, props.takenIds),
@@ -117,205 +127,242 @@ export function McpServerDialog(props: {
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent className="md:max-w-lg">
+      <DialogContent className="md:max-w-[33.5rem]">
         <DialogHeader closeLabel={shared.close}>
           <DialogTitle>
             {editing && props.seed ? copy.editor.editTitle(props.seed.id) : copy.editor.addTitle}
           </DialogTitle>
-          <DialogDescription>{copy.editor.manualSubtitle}</DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4">
-          <Field label={copy.editor.transportAria}>
-            <SegmentedControl
-              value={draft.kind}
-              ariaLabel={copy.editor.transportAria}
-              onChange={(kind) => patch({ kind })}
-              options={[
-                { value: 'stdio', label: copy.editor.localStdio },
-                { value: 'remote', label: copy.editor.remoteUrl },
-              ]}
-            />
-          </Field>
+        {/* One control for the three ways in — a process, a URL, or pasted
+            JSON — where there used to be two stacked rows. Editing keeps the
+            transport pair only: the JSON path adds servers, it does not edit
+            one. */}
+        <SegmentedControl<'stdio' | 'remote' | 'import'>
+          value={importing ? 'import' : draft.kind}
+          ariaLabel={copy.editor.modeAria}
+          onChange={(next) => {
+            if (next === 'import') {
+              setMode('import');
+              return;
+            }
+            setMode('manual');
+            patch({ kind: next });
+          }}
+          options={[
+            { value: 'remote', label: copy.editor.remoteUrl },
+            { value: 'stdio', label: copy.editor.localStdio },
+            ...(editing ? [] : [{ value: 'import' as const, label: copy.editor.importTitle }]),
+          ]}
+        />
 
-          <Field
-            label={copy.editor.serverId}
-            htmlFor="mcp-server-id"
-            error={fieldMessage(shown.id, copy, modules.duplicateId)}
-          >
-            <Input
-              id="mcp-server-id"
-              value={draft.id}
-              // The id keys mcp.json and binds stored credentials to the
-              // endpoint; renaming one is a delete plus an add, not an edit.
-              disabled={editing}
-              onChange={(event) => patch({ id: event.target.value })}
-            />
-          </Field>
-
-          {draft.kind === 'stdio' ? (
-            <Field
-              label={copy.editor.command}
-              htmlFor="mcp-command"
-              help={copy.editor.commandHelp}
-              error={fieldMessage(shown.commandLine, copy, modules.duplicateId)}
-            >
-              <Input
-                id="mcp-command"
-                value={draft.commandLine}
-                placeholder={copy.editor.commandPlaceholder}
-                onChange={(event) => patch({ commandLine: event.target.value })}
-              />
-            </Field>
-          ) : (
-            <Field
-              label={copy.editor.url}
-              htmlFor="mcp-url"
-              error={fieldMessage(shown.url, copy, modules.duplicateId)}
-            >
-              <Input
-                id="mcp-url"
-                value={draft.url}
-                onChange={(event) => patch({ url: event.target.value })}
-              />
-            </Field>
-          )}
-
-          <div className="flex items-center justify-between gap-4">
-            <Label htmlFor="mcp-enabled" className="text-sm leading-5 text-text-primary">
-              {copy.detail.enabled}
+        {importing ? (
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="mcp-import-json" className="sr-only">
+              {copy.editor.jsonConfig}
             </Label>
-            <Switch
-              id="mcp-enabled"
-              checked={draft.enabled}
-              aria-label={copy.detail.enabled}
-              onCheckedChange={(enabled) => patch({ enabled })}
+            <Textarea
+              id="mcp-import-json"
+              rows={10}
+              spellCheck={false}
+              value={source}
+              placeholder={connectors.import.placeholder}
+              onChange={(event) => setSource(event.target.value)}
+              className="font-mono text-xs"
             />
+            <p className="text-[0.8125rem] leading-[1.125rem] text-text-muted">
+              {copy.editor.jsonHelp}
+            </p>
           </div>
-
-          <div>
-            <button
-              type="button"
-              onClick={() => setShowAdvanced((open) => !open)}
-              className="flex cursor-pointer items-center gap-2 text-sm leading-5 text-text-secondary transition-colors hover:text-text-primary"
+        ) : (
+          <div className="flex flex-col gap-4">
+            {/* Claude's form: the field says what it is in its placeholder and
+                the line under it says what it is for; the label is for
+                assistive tech. */}
+            <Field
+              label={copy.editor.serverId}
+              hideLabel
+              htmlFor="mcp-server-id"
+              help={copy.editor.serverIdHelp}
+              error={fieldMessage(shown.id, copy, modules.duplicateId)}
             >
-              <Anthropicon
-                name="caretRight"
-                size={16}
-                className={cn('transition-transform', showAdvanced && 'rotate-90')}
+              <Input
+                id="mcp-server-id"
+                placeholder={copy.editor.serverId}
+                value={draft.id}
+                // The id keys mcp.json and binds stored credentials to the
+                // endpoint; renaming one is a delete plus an add, not an edit.
+                disabled={editing}
+                onChange={(event) => patch({ id: event.target.value })}
               />
-              {showAdvanced ? copy.editor.collapseAdvanced : copy.editor.expandAdvanced}
-            </button>
+            </Field>
 
-            {showAdvanced && (
-              <div className="flex flex-col gap-4 pt-4">
-                {draft.kind === 'stdio' ? (
-                  <>
-                    <Field label={copy.editor.workingDirectory} htmlFor="mcp-cwd">
-                      <Input
-                        id="mcp-cwd"
-                        value={draft.cwd}
-                        placeholder={copy.editor.workingDirectoryPlaceholder}
-                        onChange={(event) => patch({ cwd: event.target.value })}
-                      />
-                    </Field>
-                    <Field
-                      label={copy.editor.environment}
-                      htmlFor="mcp-env"
-                      help={copy.editor.environmentHelp}
-                      error={fieldMessage(shown.env, copy, modules.duplicateId)}
-                    >
-                      <Textarea
-                        id="mcp-env"
-                        rows={3}
-                        value={draft.env}
-                        onChange={(event) => patch({ env: event.target.value })}
-                      />
-                    </Field>
-                  </>
-                ) : (
-                  <>
-                    <Field label={copy.editor.transportLabel} htmlFor="mcp-transport-kind">
-                      <Select
-                        value={draft.transport}
-                        onValueChange={(transport) =>
-                          patch({ transport: transport as McpServerDraft['transport'] })
-                        }
+            {draft.kind === 'stdio' ? (
+              <Field
+                label={copy.editor.command}
+                hideLabel
+                htmlFor="mcp-command"
+                help={copy.editor.commandHelp}
+                error={fieldMessage(shown.commandLine, copy, modules.duplicateId)}
+              >
+                <Input
+                  id="mcp-command"
+                  value={draft.commandLine}
+                  placeholder={copy.editor.commandPlaceholder}
+                  onChange={(event) => patch({ commandLine: event.target.value })}
+                />
+              </Field>
+            ) : (
+              <Field
+                label={copy.editor.url}
+                hideLabel
+                htmlFor="mcp-url"
+                help={copy.editor.urlHelp}
+                error={fieldMessage(shown.url, copy, modules.duplicateId)}
+              >
+                <Input
+                  id="mcp-url"
+                  placeholder={copy.editor.url}
+                  value={draft.url}
+                  onChange={(event) => patch({ url: event.target.value })}
+                />
+              </Field>
+            )}
+
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowAdvanced((open) => !open)}
+                className="flex cursor-pointer items-center gap-2 text-sm leading-5 text-text-secondary transition-colors hover:text-text-primary"
+              >
+                <Anthropicon
+                  name="caretRight"
+                  size={16}
+                  className={cn('transition-transform', showAdvanced && 'rotate-90')}
+                />
+                {showAdvanced ? copy.editor.collapseAdvanced : copy.editor.expandAdvanced}
+              </button>
+
+              {showAdvanced && (
+                <div className="flex flex-col gap-4 pt-4">
+                  {draft.kind === 'stdio' ? (
+                    <>
+                      <Field label={copy.editor.workingDirectory} htmlFor="mcp-cwd">
+                        <Input
+                          id="mcp-cwd"
+                          value={draft.cwd}
+                          placeholder={copy.editor.workingDirectoryPlaceholder}
+                          onChange={(event) => patch({ cwd: event.target.value })}
+                        />
+                      </Field>
+                      <Field
+                        label={copy.editor.environment}
+                        htmlFor="mcp-env"
+                        help={copy.editor.environmentHelp}
+                        error={fieldMessage(shown.env, copy, modules.duplicateId)}
                       >
-                        <SelectTrigger
-                          id="mcp-transport-kind"
-                          aria-label={copy.editor.transportLabel}
+                        <Textarea
+                          id="mcp-env"
+                          rows={3}
+                          value={draft.env}
+                          onChange={(event) => patch({ env: event.target.value })}
+                        />
+                      </Field>
+                    </>
+                  ) : (
+                    <>
+                      <Field label={copy.editor.transportLabel} htmlFor="mcp-transport-kind">
+                        <Select
+                          value={draft.transport}
+                          onValueChange={(transport) =>
+                            patch({ transport: transport as McpServerDraft['transport'] })
+                          }
                         >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="auto">{copy.editor.transportAuto}</SelectItem>
-                          <SelectItem value="streamable-http">
-                            {copy.editor.transportStreamableHttp}
-                          </SelectItem>
-                          <SelectItem value="sse">{copy.editor.transportLegacySse}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field
-                      label={copy.editor.headers}
-                      htmlFor="mcp-headers"
-                      help={copy.editor.headersHelp}
-                      error={fieldMessage(shown.headers, copy, modules.duplicateId)}
-                    >
-                      <Textarea
-                        id="mcp-headers"
-                        rows={3}
-                        value={draft.headers}
-                        onChange={(event) => patch({ headers: event.target.value })}
-                      />
-                    </Field>
-                  </>
-                )}
+                          <SelectTrigger
+                            id="mcp-transport-kind"
+                            aria-label={copy.editor.transportLabel}
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="auto">{copy.editor.transportAuto}</SelectItem>
+                            <SelectItem value="streamable-http">
+                              {copy.editor.transportStreamableHttp}
+                            </SelectItem>
+                            <SelectItem value="sse">{copy.editor.transportLegacySse}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                      <Field
+                        label={copy.editor.headers}
+                        htmlFor="mcp-headers"
+                        help={copy.editor.headersHelp}
+                        error={fieldMessage(shown.headers, copy, modules.duplicateId)}
+                      >
+                        <Textarea
+                          id="mcp-headers"
+                          rows={3}
+                          value={draft.headers}
+                          onChange={(event) => patch({ headers: event.target.value })}
+                        />
+                      </Field>
+                    </>
+                  )}
 
-                <Field
-                  label={copy.editor.protocolLabel}
-                  htmlFor="mcp-protocol"
-                  help={
-                    draft.kind === 'stdio'
-                      ? copy.editor.stdioProtocolHelp
-                      : draft.transport === 'sse'
-                        ? copy.editor.sseProtocolHelp
-                        : copy.editor.protocolHelp
-                  }
-                >
-                  <Select
-                    // Legacy SSE has no modern era to negotiate; the field
-                    // states the fact rather than offering a choice that the
-                    // draft would override anyway.
-                    disabled={draft.kind === 'remote' && draft.transport === 'sse'}
-                    value={mcpDraftProtocolPreference(draft)}
-                    onValueChange={(protocol) =>
-                      patch({ protocol: protocol as McpServerDraft['protocol'] })
+                  <Field
+                    label={copy.editor.protocolLabel}
+                    htmlFor="mcp-protocol"
+                    help={
+                      draft.kind === 'stdio'
+                        ? copy.editor.stdioProtocolHelp
+                        : draft.transport === 'sse'
+                          ? copy.editor.sseProtocolHelp
+                          : copy.editor.protocolHelp
                     }
                   >
-                    <SelectTrigger id="mcp-protocol" aria-label={copy.editor.protocolLabel}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="legacy">{copy.editor.protocolLegacy}</SelectItem>
-                      <SelectItem value="auto">{copy.editor.protocolAuto}</SelectItem>
-                      <SelectItem value="2026-07-28">{copy.editor.protocolModern}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </div>
-            )}
+                    <Select
+                      // Legacy SSE has no modern era to negotiate; the field
+                      // states the fact rather than offering a choice that the
+                      // draft would override anyway.
+                      disabled={draft.kind === 'remote' && draft.transport === 'sse'}
+                      value={mcpDraftProtocolPreference(draft)}
+                      onValueChange={(protocol) =>
+                        patch({ protocol: protocol as McpServerDraft['protocol'] })
+                      }
+                    >
+                      <SelectTrigger id="mcp-protocol" aria-label={copy.editor.protocolLabel}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="legacy">{copy.editor.protocolLegacy}</SelectItem>
+                        <SelectItem value="auto">{copy.editor.protocolAuto}</SelectItem>
+                        <SelectItem value="2026-07-28">{copy.editor.protocolModern}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
+          <Button variant="secondary" onClick={() => props.onOpenChange(false)}>
             {copy.editor.cancel}
           </Button>
-          <Button onClick={submit} disabled={props.saving} aria-busy={props.saving || undefined}>
-            {copy.editor.saveConnect}
-          </Button>
+          {importing ? (
+            <Button
+              disabled={props.importing || source.trim().length === 0}
+              aria-busy={props.importing || undefined}
+              onClick={() => props.onImport(source)}
+            >
+              {props.importing ? connectors.import.importing : copy.editor.importConnect}
+            </Button>
+          ) : (
+            <Button onClick={submit} disabled={props.saving} aria-busy={props.saving || undefined}>
+              {copy.editor.saveConnect}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -327,14 +374,19 @@ function Field(props: {
   /** Omitted where the control is not a labelable element (a radiogroup, or
    *  a read-only value): a `<label for>` pointing at a `<p>` names nothing. */
   htmlFor?: string;
+  /** The control's placeholder carries the name; the label is for assistive tech. */
+  hideLabel?: boolean;
   help?: string;
   error?: string;
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2">
       {props.htmlFor ? (
-        <Label htmlFor={props.htmlFor} className="text-sm leading-5 text-text-primary">
+        <Label
+          htmlFor={props.htmlFor}
+          className={props.hideLabel ? 'sr-only' : 'text-sm leading-5 text-text-primary'}
+        >
           {props.label}
         </Label>
       ) : (
@@ -346,7 +398,7 @@ function Field(props: {
           {props.error}
         </p>
       ) : props.help ? (
-        <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">{props.help}</p>
+        <p className="text-[0.8125rem] leading-[1.125rem] text-text-muted">{props.help}</p>
       ) : null}
     </div>
   );

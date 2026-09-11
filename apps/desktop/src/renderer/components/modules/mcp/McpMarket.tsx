@@ -29,6 +29,17 @@
 // what the pre-rewrite page did. The row states the requirement up front
 // (`setupLabel`) so the disabled result is not a surprise.
 //
+// An install is a LIVE operation, not a click that returns: main commits the
+// config and then connects, and the connect can hang on a network the machine
+// does not have. So the card keeps its own phase — installing, then
+// cancelling — and offers `mcp.cancelInstall`, which withdraws exactly that
+// install's own write (a newer same-id config that landed meanwhile survives).
+//
+// An entry that is already installed offers Manage instead, which hands the
+// page back to Yours with that server's editor open: the directory is where
+// people look for a server they installed from it, and "Installed" as a dead
+// chip sent them hunting for the row themselves.
+//
 // A `platform: 'darwin'` entry is offered everywhere and labelled, rather than
 // hidden off macOS: hiding it makes the catalog silently differ per machine.
 
@@ -36,31 +47,66 @@ import { useUiLocale } from '@maka/ui';
 import { Button } from '../../ui/button.js';
 import { cardBodyClass, cardSurfaceClass, cardSurfaceHoverClass } from '../../ui/card-surface.js';
 import { statusChipClass, statusChipToneClass } from '../../ui/status-chip.js';
+import { ListEmptyState } from '../../ui/list-page.js';
+import { Anthropicon } from '../../icons/Anthropicon.js';
 import { cn } from '../../../lib/cn.js';
-import { getMcpCatalog, type McpCatalogEntry } from '../../../lib/ported/mcp-catalog.js';
+import {
+  catalogEntryMatches,
+  getMcpCatalog,
+  type McpCatalogEntry,
+} from '../../../lib/ported/mcp-catalog.js';
 import { McpBrandMark, hasMcpBrandMark } from '../../../lib/ported/mcp-brand-marks.js';
+import { normalizeConnectorQuery } from './connectors-list.js';
 import { getMcpCopy } from '../../../locales/mcp-copy.js';
+import { getConnectorsPageCopy } from '../../../locales/connectors-page-copy.js';
+
+/** Where a directory install has got to. Absent means "not installing". */
+export type McpInstallPhase = 'installing' | 'cancelling';
 
 export function McpMarket(props: {
-  /** Ids already in mcp.json, so an installed entry stops offering Install. */
+  /** Ids already in mcp.json, so an installed entry offers Manage instead. */
   installedIds: readonly string[];
-  busyId: string | null;
+  installPhases: Readonly<Record<string, McpInstallPhase>>;
+  /** The toolbar's search, applied to id, name, description, category, aliases. */
+  query: string;
   disabled: boolean;
   onInstall: (entry: McpCatalogEntry) => void;
+  onCancelInstall: (entry: McpCatalogEntry) => void;
+  onManage: (entry: McpCatalogEntry) => void;
+  onClearSearch: () => void;
 }) {
   const locale = useUiLocale();
   const copy = getMcpCopy(locale);
-  const entries = getMcpCatalog(locale);
+  const connectors = getConnectorsPageCopy(locale);
+  const normalized = normalizeConnectorQuery(props.query);
+  const entries = getMcpCatalog(locale).filter((entry) => catalogEntryMatches(entry, normalized));
+
+  if (entries.length === 0) {
+    return (
+      <ListEmptyState
+        icon={<Anthropicon name="search" size={20} />}
+        title={copy.page.noMarket}
+        description={copy.page.noMarketDetail(props.query.trim())}
+        action={
+          <Button variant="secondary" size="sm" onClick={props.onClearSearch}>
+            {copy.page.clearSearch}
+          </Button>
+        }
+      />
+    );
+  }
 
   return (
     <div className="grid grid-cols-1 auto-rows-min gap-4 md:grid-cols-2">
       {entries.map((entry) => {
         const installed = props.installedIds.includes(entry.id);
+        const phase = props.installPhases[entry.id];
         return (
           <div
             key={entry.id}
             data-maka-contract="mcp-market-row"
             data-mcp-market-id={entry.id}
+            data-mcp-install-phase={phase}
             className={cn(cardSurfaceClass, cardSurfaceHoverClass, 'relative h-full')}
           >
             <div className={cardBodyClass}>
@@ -88,6 +134,13 @@ export function McpMarket(props: {
                 {entry.description}
               </p>
               <div className="flex flex-wrap items-center gap-2">
+                {/* The live phase leads: while an install is running it is the
+                    only thing on the card that is about to change. */}
+                {phase && (
+                  <span className={cn(statusChipClass, statusChipToneClass('active'))}>
+                    {phase === 'cancelling' ? copy.card.cancelling : connectors.install.installing}
+                  </span>
+                )}
                 <span className={cn(statusChipClass, statusChipToneClass('neutral'))}>
                   {entry.category}
                 </span>
@@ -102,16 +155,36 @@ export function McpMarket(props: {
               </div>
             </div>
             <div className="absolute right-4 top-4 z-10">
-              {installed ? (
-                <span className={cn(statusChipClass, statusChipToneClass('active'))}>
-                  {copy.page.installed}
-                </span>
+              {phase ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={phase === 'cancelling'}
+                  aria-busy={phase === 'cancelling' || undefined}
+                  aria-label={
+                    phase === 'cancelling'
+                      ? copy.card.cancellingAria(entry.name)
+                      : copy.card.cancelAria(entry.name)
+                  }
+                  onClick={() => props.onCancelInstall(entry)}
+                >
+                  {phase === 'cancelling' ? copy.card.cancelling : copy.card.cancel}
+                </Button>
+              ) : installed ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={props.disabled}
+                  aria-label={connectors.install.manageAria(entry.name)}
+                  onClick={() => props.onManage(entry)}
+                >
+                  {copy.card.manage}
+                </Button>
               ) : (
                 <Button
                   variant="secondary"
                   size="sm"
                   disabled={props.disabled}
-                  aria-busy={props.busyId === entry.id || undefined}
                   aria-label={copy.card.installAria(entry.name)}
                   onClick={() => props.onInstall(entry)}
                 >
