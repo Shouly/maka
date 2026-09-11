@@ -1192,6 +1192,11 @@ function OwnedChatInput(props: {
                   side={menuSide}
                   sideOffset={4}
                   alignOffset={-8}
+                  // min-w-56: the reference's English rows ("Add files or
+                  // photos ⌘U") stretch this menu to ~220px on their own; our
+                  // four-character rows would leave it at the 128px floor.
+                  // The height cap is the reference's.
+                  className="min-w-56 max-h-[min(var(--radix-popper-available-height),24rem)]"
                   onCloseAutoFocus={(event) => {
                     if (!keepEditorFocus.current) return;
                     keepEditorFocus.current = false;

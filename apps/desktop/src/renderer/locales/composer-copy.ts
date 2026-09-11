@@ -84,6 +84,12 @@ export interface ComposerCopy {
     readonly effort: string;
     /** The effort readout when the level is the model's own default. */
     readonly effortDefault: string;
+    /** The model menu's last row: the other connections' models, in a submenu. */
+    readonly moreModels: string;
+    /** The effort submenu's one-line explanation, above the levels. */
+    readonly effortHelp: string;
+    /** Tooltip on the Auto level: what leaving the choice to the model means. */
+    readonly effortAutoHelp: string;
     /** The Skills submenu while the catalog is still being read. */
     readonly loadingSkills: string;
   };
@@ -186,7 +192,10 @@ const COMPOSER_COPY = {
       addFolder: '添加文件夹',
       skills: '技能',
       effort: 'Effort',
-      effortDefault: '默认',
+      effortDefault: '自动',
+      moreModels: '更多模型',
+      effortHelp: '档位越高，回答越周全，但更慢、也更快用掉额度。',
+      effortAutoHelp: '不指定档位，由模型按问题难度决定思考深度。',
       orchestrationSwarm: '群体',
       orchestrationGraph: '图',
       manageSkills: '管理技能',
@@ -291,7 +300,10 @@ const COMPOSER_COPY = {
       addFolder: '新增資料夾',
       skills: '技能',
       effort: 'Effort',
-      effortDefault: '預設',
+      effortDefault: '自動',
+      moreModels: '更多模型',
+      effortHelp: '檔位越高，回答越周全，但更慢、也更快用掉額度。',
+      effortAutoHelp: '不指定檔位，由模型按問題難度決定思考深度。',
       orchestrationSwarm: '群體',
       orchestrationGraph: '圖',
       manageSkills: '管理技能',
@@ -396,7 +408,12 @@ const COMPOSER_COPY = {
       addFolder: 'Add folder',
       skills: 'Skills',
       effort: 'Effort',
-      effortDefault: 'Default',
+      effortDefault: 'Auto',
+      moreModels: 'More models',
+      effortHelp:
+        'Higher effort means more thorough responses, but takes longer and uses your limits faster.',
+      effortAutoHelp:
+        'No level is set; the model decides how deeply to think from the task at hand.',
       orchestrationSwarm: 'Swarm',
       orchestrationGraph: 'Graph',
       manageSkills: 'Manage skills',

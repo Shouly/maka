@@ -1041,6 +1041,7 @@
         "../../locales/welcome-copy.js": 1,
         "../icons/Anthropicon.js": 1,
         "../ui/dropdown-menu.js": 1,
+        "../ui/tooltip.js": 1,
         "@maka/ui": 1
       }
     },
