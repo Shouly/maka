@@ -54,7 +54,9 @@ import { getTranscriptCopy } from '../../locales/transcript-copy.js';
 import { TurnFooter } from './TurnFooter.js';
 import { UserMessageRow } from './UserMessageRow.js';
 import { ToolGroup } from './tools/ToolGroup.js';
+import { useStore } from 'zustand';
 import { AskUserQuestionRecord } from './AskUserQuestionRecord.js';
+import { isAskUserQuestionTool, knownUserQuestionCalls } from '../../lib/ask-user-question.js';
 import type { ToolContentContext } from './tools/registry.js';
 
 /** A system note inside a turn — compaction, a resume, a step cap. */
@@ -100,7 +102,13 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
   const locale = useUiLocale();
   const copy = getTranscriptCopy(locale);
   const turn = props.turn;
-  const grouped = useMemo(() => groupTurnTimeline(turn.timeline), [turn.timeline]);
+  // The ask-user calls are told apart by id (their live copy has no name),
+  // so the grouping follows the known set as well as the timeline.
+  const knownAsks = useStore(knownUserQuestionCalls, (state) => state.byToolUseId);
+  const grouped = useMemo(
+    () => groupTurnTimeline(turn.timeline, (tool) => isAskUserQuestionTool(tool, knownAsks)),
+    [turn.timeline, knownAsks],
+  );
   // A sent file opens in the right pane's Files face, the way a tool's output
   // does; the pane resolves the session file against its catalog.
   const onOpenFile = props.toolContext.onOpenFile;

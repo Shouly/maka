@@ -68,6 +68,7 @@ import { checkboxBoxClass, CHECKBOX_TICK_SIZE } from '../ui/checkbox-box.js';
 import { cn } from '../../lib/cn.js';
 import { getComposerCopy } from '../../locales/composer-copy.js';
 import { userQuestionPanelStore } from '../../store/user-question-panel-store.js';
+import { answerUserQuestion, rememberUserQuestionRequest } from '../../lib/ask-user-question.js';
 
 /** relx AskUserPanel card: surface-3, 16px radius, panel shadow + hairline ring. */
 const PANEL_CLASS =
@@ -323,6 +324,9 @@ function QuestionWizard({
   const listboxRef = useRef<HTMLDivElement | null>(null);
   const customInputRef = useRef<HTMLInputElement | null>(null);
 
+  // The timeline tells this call apart from other tools by its id, and the
+  // record card reads the questions from here until the transcript has them.
+  useEffect(() => rememberUserQuestionRequest(request), [request]);
   // The composer under this panel answers the question on show with what
   // is typed there; it reads the cursor and the drafts from the panel store.
   useEffect(() => {
@@ -351,7 +355,9 @@ function QuestionWizard({
   const submit = useCallback(
     (rows: readonly QuestionAnswerDraft[]) =>
       run(() =>
-        turnActionsStore.respondQuestion(sessionId, buildUserQuestionResponse(request, rows)),
+        answerUserQuestion(request, buildUserQuestionResponse(request, rows), (response) =>
+          turnActionsStore.respondQuestion(sessionId, response),
+        ),
       ),
     [run, sessionId, request],
   );

@@ -54,7 +54,11 @@ import {
   toolRowTitle,
 } from '../../components/session/tools/tool-presentation.js';
 import { parseMcpToolName } from '../../components/session/tools/ToolRow.js';
-import { askUserQuestionRecord } from '../../lib/ask-user-question.js';
+import {
+  askUserQuestionRecord,
+  isAskUserQuestionTool,
+  rememberedUserQuestionRecord,
+} from '../../lib/ask-user-question.js';
 import {
   createTurnPresentationDerivation,
   pendingTurnActionKey,
@@ -218,15 +222,25 @@ test('a question to the user is read back as Q&A, answers aligned by position', 
     { question: 'Scope?', answer: 'Invite only' },
     { question: 'When?', answer: null },
   ]);
-  // A text result that is JSON reads the same; no result leaves the questions standing.
+  // A text result that is JSON reads the same; no result is "not yet", not "no answer".
   assert.equal(
     askUserQuestionRecord({
       ...ask,
       result: { kind: 'text', text: '{"answers":[{"answer":"Now"}]}' },
-    })[0]?.answer,
+    })?.[0]?.answer,
     'Now',
   );
-  assert.equal(askUserQuestionRecord({ ...ask, result: undefined })[1]?.answer, null);
+  assert.equal(askUserQuestionRecord({ ...ask, result: undefined }), undefined);
+  // The live copy of the call has no name ("Tool"); the id the request named
+  // is what tells it apart, for the whole turn.
+  assert.equal(isAskUserQuestionTool({ toolUseId: 'q', toolName: 'Tool' }, {}), false);
+  assert.equal(isAskUserQuestionTool({ toolUseId: 'q', toolName: 'Tool' }, { q: {} }), true);
+  // What was just sent is kept by the call it answers, for the card to show
+  // before the transcript carries the result; open, it shows nothing.
+  assert.equal(rememberedUserQuestionRecord({ questions: ['Scope?'] }), undefined);
+  assert.deepEqual(rememberedUserQuestionRecord({ questions: ['Scope?'], answers: ['Now'] }), [
+    { question: 'Scope?', answer: 'Now' },
+  ]);
 });
 
 test('a running group says what it is doing now, not what it has done', () => {

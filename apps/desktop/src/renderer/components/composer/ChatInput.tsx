@@ -120,6 +120,7 @@ import { removeSession } from '../../bridge/sessions.js';
 import { armGoal, getGoal } from '../../bridge/goal.js';
 import { getComposerCopy } from '../../locales/composer-copy.js';
 import { userQuestionPanelStore } from '../../store/user-question-panel-store.js';
+import { answerUserQuestion } from '../../lib/ask-user-question.js';
 import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
 import { getShellCopy, localizedShellErrorMessage } from '../../locales/shell-copy.js';
 import { getTranscriptCopy } from '../../locales/transcript-copy.js';
@@ -399,9 +400,10 @@ function OwnedChatInput(props: {
         ];
         const index = known ? panel.index : 0;
         drafts[index] = { kind: 'other', value: text };
-        await turnActionsStore.respondQuestion(
-          sessionId,
+        await answerUserQuestion(
+          pendingQuestion,
           buildUserQuestionResponse(pendingQuestion, drafts),
+          (response) => turnActionsStore.respondQuestion(sessionId, response),
         );
         consumeDraft(sessionId);
         return;

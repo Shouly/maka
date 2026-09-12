@@ -26,16 +26,27 @@
 // prompt above the composer and the status line carry it. The Host's own
 // result phrasing is written for the model and never shown.
 
+import { useStore } from 'zustand';
 import { useUiLocale, type ToolActivityItem } from '@maka/ui';
 import { cn } from '../../lib/cn.js';
-import { askUserQuestionRecord } from '../../lib/ask-user-question.js';
+import {
+  askUserQuestionRecord,
+  knownUserQuestionCalls,
+  rememberedUserQuestionRecord,
+} from '../../lib/ask-user-question.js';
 import { getTranscriptCopy } from '../../locales/transcript-copy.js';
 
 export function AskUserQuestionRecord(props: { item: ToolActivityItem }) {
   const locale = useUiLocale();
   const copy = getTranscriptCopy(locale).tools;
-  const record = askUserQuestionRecord(props.item);
-  if (record.length === 0) return null;
+  const known = useStore(
+    knownUserQuestionCalls,
+    (state) => state.byToolUseId[props.item.toolUseId],
+  );
+  // The persisted result is the authority; until the transcript carries it,
+  // what the user just sent is the only true copy of the answers.
+  const record = askUserQuestionRecord(props.item) ?? rememberedUserQuestionRecord(known);
+  if (!record || record.length === 0) return null;
 
   return (
     <dl

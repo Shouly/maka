@@ -972,6 +972,7 @@
         "../../bridge/skills.js": 1,
         "../../bridge/task-readiness.js": 1,
         "../../hooks/use-composer-inline-row.js": 1,
+        "../../lib/ask-user-question.js": 1,
         "../../lib/cn.js": 1,
         "../../lib/composer-document.js": 1,
         "../../lib/composer-surface.js": 1,
@@ -1018,7 +1019,7 @@
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
-        "useEffect": 3,
+        "useEffect": 4,
         "useRef": 2,
         "useState": 7,
         "useStore": 1,
@@ -1028,6 +1029,7 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../../lib/ask-user-question.js": 1,
         "../../lib/cn.js": 1,
         "../../locales/composer-copy.js": 1,
         "../../store/index.js": 1,
@@ -2125,6 +2127,7 @@
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
+        "useStore": 1,
         "useUiLocale": 1
       },
       "lifecycleMethods": {},
@@ -2134,7 +2137,8 @@
         "../../lib/ask-user-question.js": 1,
         "../../lib/cn.js": 1,
         "../../locales/transcript-copy.js": 1,
-        "@maka/ui": 1
+        "@maka/ui": 1,
+        "zustand": 1
       }
     },
     "src/renderer/components/session/HistoryControls.tsx": {
@@ -2288,12 +2292,14 @@
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
+        "useStore": 1,
         "useUiLocale": 1
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../../lib/ask-user-question.js": 1,
         "../../lib/cn.js": 1,
         "../../lib/turn-timeline-groups.js": 1,
         "../../locales/transcript-copy.js": 1,
@@ -2305,7 +2311,8 @@
         "./TurnFooter.js": 1,
         "./UserMessageRow.js": 1,
         "@maka/ui": 1,
-        "react": 1
+        "react": 1,
+        "zustand": 1
       }
     },
     "src/renderer/components/session/TurnFooter.tsx": {
@@ -4925,7 +4932,9 @@
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
-      "dependencyPaths": {}
+      "dependencyPaths": {
+        "zustand/vanilla": 1
+      }
     },
     "src/renderer/lib/avatar-warm-palette.ts": {
       "bridgePaths": {},

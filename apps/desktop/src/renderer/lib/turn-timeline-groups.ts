@@ -59,7 +59,10 @@ export type TurnTimelineGroup =
   | TurnWorkGroup
   | TurnAskRecord;
 
-export function groupTurnTimeline(items: readonly TurnTimelineItem[]): TurnTimelineGroup[] {
+export function groupTurnTimeline(
+  items: readonly TurnTimelineItem[],
+  isAsk: (tool: ToolActivityItem) => boolean = (tool) => isAskUserQuestionTool(tool),
+): TurnTimelineGroup[] {
   const out: TurnTimelineGroup[] = [];
   let anchor = 'start';
   let run: FoldedTimelineChild[] | null = null;
@@ -75,7 +78,7 @@ export function groupTurnTimeline(items: readonly TurnTimelineItem[]): TurnTimel
     if (item.kind === 'tools') {
       // The common case, untouched: an entry with no question in it (an
       // empty one included) joins the run as it is.
-      if (!item.items.some(isAskUserQuestionTool)) {
+      if (!item.items.some(isAsk)) {
         (run ??= []).push(item);
         continue;
       }
@@ -85,7 +88,7 @@ export function groupTurnTimeline(items: readonly TurnTimelineItem[]): TurnTimel
         rest = [];
       };
       for (const tool of item.items) {
-        if (!isAskUserQuestionTool(tool)) {
+        if (!isAsk(tool)) {
           rest.push(tool);
           continue;
         }
