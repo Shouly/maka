@@ -295,6 +295,38 @@ test('a bot delivery survives the round trip the form used to flatten', () => {
   );
 });
 
+test('an edit that leaves the schedule alone omits it, so a snoozed fire survives', () => {
+  const seeded = scheduledTaskEditSeed(task());
+  const original = {
+    schedule: task().schedule,
+    runAtLocal: seeded.runAtLocal,
+    recurrence: seeded.recurrence,
+    cronExpression: seeded.cronExpression,
+  };
+  const untouched = fields({
+    title: 'Renamed briefing',
+    runAtLocal: seeded.runAtLocal,
+    recurrence: seeded.recurrence,
+    cronExpression: seeded.cronExpression,
+    original,
+  });
+  // The Host keeps a pending (snoozed) fire only when the patch says nothing
+  // about the schedule; an identical schedule would still reset it (#5226).
+  const renamed = updateScheduledTaskInputFromFields(untouched);
+  assert.equal(renamed?.title, 'Renamed briefing');
+  assert.equal(renamed?.schedule, undefined);
+  const moved = updateScheduledTaskInputFromFields(
+    fields({ ...untouched, runAtLocal: '2026-09-13T09:00' }),
+  );
+  assert.deepEqual(moved?.schedule, {
+    kind: 'calendar',
+    recurrence: 'daily',
+    anchorAt: Date.parse('2026-09-13T09:00'),
+  });
+  // A create has nothing to leave alone.
+  assert.ok(createScheduledTaskInputFromFields(fields())?.schedule);
+});
+
 test('saying nothing about delivery still means a local reminder', () => {
   assert.deepEqual(scheduledTaskEffectFromFields(fields()), { kind: 'notify', channel: 'local' });
   assert.deepEqual(scheduledTaskEffectFromFields(fields({ deliveryMethod: 'local' })), {

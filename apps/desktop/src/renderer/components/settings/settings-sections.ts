@@ -40,6 +40,7 @@ export const DEFERRED_SETTINGS_SECTIONS: readonly SettingsSection[] = [
   'daily-review',
   'import-tasks',
   'bot-chat',
+  'external-agents',
 ];
 
 export interface SettingsNavGroupModel {
@@ -75,6 +76,7 @@ export const SETTINGS_SECTION_ICONS: Record<SettingsSection, AnthropiconName> = 
   'archived-tasks': 'archive',
   'import-tasks': 'download',
   'bot-chat': 'chats',
+  'external-agents': 'connectors',
   data: 'library',
   permissions: 'lock',
   health: 'waveform',

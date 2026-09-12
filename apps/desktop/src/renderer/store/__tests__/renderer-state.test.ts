@@ -80,8 +80,6 @@ function batch(id: string, messages: StoredMessage[] = [], reset = true): Deskto
     ready: true,
     hasOlder: false,
     hasNewer: false,
-    evictedDurableSequences: [],
-    completedOverlayMessageIds: [],
     fragments: messages.map((message, index) => {
       const data = new TextEncoder().encode(JSON.stringify(message));
       return {
@@ -135,7 +133,10 @@ function fakeRuntime(
     scheduleFrame: (callback) => frames.push(callback),
     sessions: {
       ...sessions,
-      subscribeSessionEvents(id, event, ready, phase, fail) {
+      subscribeSessionEvents(id, event, phase, fail) {
+        // Readiness follows seed consumption: the preload reports it as the
+        // `ready` observation phase rather than through a separate callback.
+        const ready = () => phase?.('ready');
         const observer = { id, event, ready, phase, fail, closed: false };
         observers.push(observer);
         if (!deferObservationReady) ready?.();
@@ -162,7 +163,24 @@ function fakeRuntime(
       ...transcripts,
       async openTranscript(id, receive, cancellation) {
         if (failTranscriptOpen?.()) throw new Error('transcript unavailable');
-        const reader = { id, receive, closed: false, cancelled: false };
+        // The Renderer owns the window (#5170): a tail batch joins it only when
+        // it names the watermark it read forward from, so the fake stamps
+        // `coversFrom` with what this reader last delivered unless a test
+        // states its own contiguity.
+        const reader = {
+          id,
+          through: null as number | null,
+          receive(next: DesktopTranscriptBatch) {
+            const stamped =
+              next.reset || next.coversFrom !== undefined
+                ? next
+                : { ...next, coversFrom: reader.through };
+            reader.through = next.durableThrough;
+            receive(stamped);
+          },
+          closed: false,
+          cancelled: false,
+        };
         readers.push(reader);
         cancellation?.(() => {
           reader.cancelled = true;
@@ -185,6 +203,10 @@ function fakeRuntime(
           async loadAround() {
             paging.push('around');
           },
+          async loadLatest() {
+            paging.push('latest');
+          },
+          async acknowledgeTail() {},
         } satisfies DesktopTranscriptHandle;
       },
     },
@@ -599,15 +621,27 @@ test('late terminal handoff cannot settle a newly observed session with the same
   });
   f.store.observe(id, 'en');
   await tick();
-  f.observers[1]!.event(delta('new'));
+  // A new Session under the same id speaks of its own Turn; the projection
+  // kept across the switch answers only for the Turn it knows.
+  f.observers[1]!.event({
+    type: 'text_delta',
+    id: 'new',
+    turnId: 'turn-2',
+    messageId: 'answer-2',
+    ts: 1,
+    text: 'new',
+  });
   f.frames.forEach((frame) => frame());
-  f.readers[0]!.receive(
-    batch(
-      id,
-      [{ type: 'assistant', id: 'answer', turnId: 'turn', ts: 2, text: 'old', modelId: 'm' }],
-      false,
-    ),
-  );
+  // The old answer lands late, through the reader the new observation opened.
+  f.readers
+    .at(-1)!
+    .receive(
+      batch(
+        id,
+        [{ type: 'assistant', id: 'answer', turnId: 'turn', ts: 2, text: 'old', modelId: 'm' }],
+        false,
+      ),
+    );
   await tick();
   assert.equal(f.store.getState().liveTurns[id]?.steps[0]?.text?.text, 'new');
   f.store.disconnect();
@@ -639,6 +673,55 @@ test('reseed replaces live content instead of appending the same deltas twice', 
   observer.event(delta('same'));
   observer.phase?.('ready');
   assert.equal(f.store.getState().liveTurns[id]?.steps[0]?.text?.text, 'same');
+  f.store.disconnect();
+});
+test('switching away and back keeps the steps the live turn had already produced', async () => {
+  const f = fakeRuntime();
+  const a = sid('a');
+  const b = sid('b');
+  f.store.observe(a, 'en');
+  await tick();
+  const observer = f.observers[0]!;
+  observer.event(delta('Step one'));
+  observer.event({
+    type: 'text_complete',
+    id: 'done-1',
+    turnId: 'turn',
+    messageId: 'answer',
+    ts: 2,
+    text: 'Step one',
+  });
+  observer.event({
+    type: 'tool_start',
+    id: 'tool-1',
+    turnId: 'turn',
+    stepId: 'step-2',
+    ts: 3,
+    toolUseId: 'use-1',
+    toolName: 'Read',
+    args: { path: 'README.md' },
+  });
+  f.frames.splice(0).forEach((frame) => frame());
+  assert.equal(f.store.getState().liveTurns[a]?.steps.length, 2);
+  f.store.observe(b, 'en');
+  await tick();
+  f.store.observe(a, 'en');
+  await tick();
+  // The Host re-seeds only what is still incomplete; the finished text step
+  // and the running tool come from the projection kept across the switch.
+  assert.equal(f.store.getState().liveTurns[a]?.steps.length, 2);
+  assert.equal(f.store.getState().liveTurns[a]?.steps[1]?.tools[0]?.toolName, 'Read');
+  // A Turn that ended while the reader was away is retired by the transcript
+  // it left behind, so the kept projection cannot claim it is still running.
+  f.readers.at(-1)!.receive(
+    batch(a, [
+      { type: 'assistant', id: 'answer', turnId: 'turn', ts: 2, text: 'Step one', modelId: 'm' },
+      { type: 'turn_state', id: 'state-1', turnId: 'turn', ts: 4, status: 'completed' },
+    ]),
+  );
+  await tick();
+  const after = f.store.getState().liveTurns[a];
+  assert.ok(after === undefined || after.terminal === true);
   f.store.disconnect();
 });
 test('interaction acknowledgements beat an older in-flight query', async () => {
@@ -902,10 +985,11 @@ test('a message the Host cancelled is retired at the next seed; a scrolled-back 
     ['kept'],
     'the cancelled row is gone, the other stays',
   );
-  // A historical page with newer rows after it hides the in-flight send.
-  f.readers[0]!.receive({ ...batch(id, [], false), hasNewer: true });
+  // A window with newer rows after it (a reset answering a jump into
+  // history) hides the in-flight send; one at the tail shows it again.
+  f.readers[0]!.receive({ ...batch(id), hasNewer: true });
   assert.deepEqual(f.store.getState().transientMessages, []);
-  f.readers[0]!.receive({ ...batch(id, [], false), hasNewer: false });
+  f.readers[0]!.receive({ ...batch(id), hasNewer: false });
   assert.deepEqual(
     f.store.getState().transientMessages.map((message) => message.id),
     ['kept'],
@@ -964,7 +1048,7 @@ test('history controls use the existing bounded paging handle', async () => {
   await f.store.loadBefore();
   await f.store.loadAfter();
   await f.store.loadLatest();
-  assert.deepEqual(f.paging, ['before', 'after', 'around']);
+  assert.deepEqual(f.paging, ['before', 'after', 'latest']);
   f.store.disconnect();
 });
 test('send retains outcome_unknown and never retries the admission automatically', async () => {

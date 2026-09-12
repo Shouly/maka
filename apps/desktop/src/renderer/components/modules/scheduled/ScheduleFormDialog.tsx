@@ -328,6 +328,17 @@ function toFields(seed: ScheduledTaskFormSeed): ScheduledTaskFormFields {
     deliveryChatId: seed.deliveryChatId,
     ...(seed.lockedSchedule ? { lockedSchedule: seed.lockedSchedule } : {}),
     ...(seed.lockedEffect ? { lockedEffect: seed.lockedEffect } : {}),
+    // Only an edit remembers what it started from; a duplicate is a create.
+    ...(seed.editingId && seed.originalSchedule
+      ? {
+          original: {
+            schedule: seed.originalSchedule,
+            runAtLocal: seed.runAtLocal,
+            recurrence: seed.recurrence,
+            cronExpression: seed.cronExpression,
+          },
+        }
+      : {}),
   };
 }
 

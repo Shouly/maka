@@ -201,11 +201,7 @@ function SessionTranscript(props: SessionViewProps) {
   );
 
   const loadHistory = useCallback(
-    (target: 'earlier' | 'later' | 'latest', anchorTurnId?: string) =>
-      activeSessionStore.loadHistory({
-        target,
-        ...(anchorTurnId ? { anchorTurnId } : {}),
-      }),
+    (target: 'earlier' | 'later' | 'latest') => activeSessionStore.loadHistory({ target }),
     [],
   );
 
@@ -220,9 +216,11 @@ function SessionTranscript(props: SessionViewProps) {
     viewportNavigation: activeSessionStore.viewportNavigation,
     behavior: 'smooth',
     hasOlderHistory: feed.hasOlder,
-    onLoadEarlierHistory: (anchorTurnId) => loadHistory('earlier', anchorTurnId),
     hasNewerHistory: feed.hasNewer,
-    onLoadLaterHistory: (anchorTurnId) => loadHistory('later', anchorTurnId),
+    // The window is the renderer's (upstream #5170): the scroller fills an
+    // edge as the reader nears it and trims what they can no longer reach.
+    onPrefetchHistory: (edge) => activeSessionStore.prefetchHistory(edge),
+    onRetainWindow: (window) => activeSessionStore.retainWindow(window),
     onReadingAnchorChange: (turnId) => activeSessionStore.setReadingAnchor(sessionId, turnId),
   });
 

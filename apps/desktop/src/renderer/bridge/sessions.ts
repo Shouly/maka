@@ -332,23 +332,19 @@ export function saveConversationToFile(input: {
 
 /**
  * The active-session event stream. `onSeedError` is what the resubscribe
- * backoff in `store/active-session-store.ts` rides on.
+ * backoff in `store/active-session-store.ts` rides on. Readiness follows
+ * consumption of the seed: `onObservationSeed('ready')` fires once the seeded
+ * events have been handed to `handler` (upstream #5217 folded the separate
+ * "seeded" callback into that phase).
  */
 export function subscribeSessionEvents(
   sessionId: string,
   handler: (event: SessionEvent) => void,
-  onSeeded?: () => void,
   onObservationSeed?: (phase: 'pending' | 'ready') => void,
   onSeedError?: (error: unknown) => void,
 ): () => void {
   return toUnsubscribe(
-    tryNamespace('sessions')?.subscribeEvents(
-      sessionId,
-      handler,
-      onSeeded,
-      onObservationSeed,
-      onSeedError,
-    ),
+    tryNamespace('sessions')?.subscribeEvents(sessionId, handler, onObservationSeed, onSeedError),
   );
 }
 

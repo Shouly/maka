@@ -95,8 +95,6 @@ const messages: any[] = [
         ready: true,
         hasOlder: false,
         hasNewer: false,
-        evictedDurableSequences: [],
-        completedOverlayMessageIds: [],
         fragments: [],
       });
       return { close: async () => {} };

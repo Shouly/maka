@@ -48,19 +48,14 @@ import {
   type RecoveringDesktopTranscriptRangeController,
   type DesktopTranscriptRangeState,
 } from '../lib/ported/desktop-transcript-range-store.js';
-import { DESKTOP_TRANSCRIPT_RANGE_MAX_BYTES } from '../../preload/transcript-contract.js';
 import {
   captureTranscriptReadingAnchor,
   createTranscriptRestoreLifecycle,
   currentTranscriptRange,
-  loadTranscriptHistory,
   prepareTranscriptForSend,
   restoreSessionTranscriptRange,
+  TranscriptReadSupersededError,
   transcriptRestoreTarget,
-  type TranscriptHistoryGate,
-  type TranscriptHistoryGates,
-  type TranscriptHistoryPending,
-  type TranscriptHistoryRequest,
   type TranscriptReadingAnchor,
   type TranscriptRestoreLifecycle,
 } from '../lib/ported/transcript-reading-position.js';
@@ -78,6 +73,45 @@ import { readExecutionBoundaryWithRetry } from '../lib/ported/execution-boundary
 import { mergeTransientMessageProjection } from '../lib/ported/transient-message-projection.js';
 import type { DesktopSessionSummary } from '../bridge/sessions.js';
 import { MESSAGE_QUEUE_MAX_ENTRIES } from '@maka/runtime-host/protocol';
+
+export interface TranscriptHistoryRequest {
+  readonly target: 'earlier' | 'later' | 'latest';
+}
+
+export interface TranscriptHistoryPending {
+  readonly sessionId: string;
+  readonly target: TranscriptHistoryRequest['target'];
+}
+
+/**
+ * A live projection minus what a reseed replays: the text and thinking still
+ * streaming. Steps that finished (a completed message, a tool call) stay; a
+ * step left with nothing goes.
+ */
+function dropIncompleteStreams(projection: LiveTurnProjection): LiveTurnProjection | undefined {
+  let changed = false;
+  const steps = projection.steps.flatMap((step) => {
+    const dropText = step.text !== undefined && !step.text.complete;
+    const dropThinking = step.thinking !== undefined && !step.thinking.complete;
+    if (!dropText && !dropThinking) return [step];
+    changed = true;
+    const { text, thinking, ...rest } = step;
+    const next = {
+      ...rest,
+      ...(dropText || text === undefined ? {} : { text }),
+      ...(dropThinking || thinking === undefined ? {} : { thinking }),
+    };
+    const empty =
+      next.text === undefined &&
+      next.thinking === undefined &&
+      next.tools.length === 0 &&
+      (next.leadingSteering?.length ?? 0) === 0;
+    return empty ? [] : [next];
+  });
+  if (!changed) return projection;
+  if (steps.length === 0 && (projection.pendingSteering?.length ?? 0) === 0) return undefined;
+  return { ...projection, steps };
+}
 
 const SETTLE_FALLBACK_GRACE_MS = 1_000;
 import {
@@ -175,7 +209,6 @@ export function createActiveSessionStore(
   const transcriptApi = options.transcripts ?? transcripts;
   const shellApi = options.shellRuns ?? shellRuns;
   const store = createStore<ActiveSessionState>(initialState);
-  const historyGates: TranscriptHistoryGates = new WeakMap();
   // Read-only observers of the ACTIVE session's event stream: the workbar's
   // Review and Inspector faces re-read their own Host projections when a turn
   // appends to a ledger. They fan out from the one subscription this store
@@ -225,16 +258,16 @@ export function createActiveSessionStore(
   const isCurrentController = (sessionId: string, candidate: object) =>
     candidate === controller && store.getState().sessionId === sessionId;
   /**
-   * Drop the paging gate and the pending indicator for a Session.
+   * Drop the pending indicator for a Session.
    *
-   * A navigation command has to enter the range controller immediately so it
-   * invalidates older pages; leaving it queued behind an in-flight one would
-   * let that page land last and take the viewport back.
+   * The Renderer owns the transcript window (upstream #5170): the range
+   * controller refuses a read against an edge it has already read and a
+   * navigation replaces the window outright, so there is no paging gate left
+   * to drop — only the indicator the gap rows show.
    */
   const cancelHistory = (sessionId: string) => {
     const active = controller;
     if (currentTranscriptRange(active, sessionId) === undefined) return;
-    if (active) historyGates.delete(active);
     store.setState((state) => ({
       historyPending:
         state.historyPending?.sessionId === sessionId ? undefined : state.historyPending,
@@ -260,6 +293,18 @@ export function createActiveSessionStore(
     restoreLifecycle = lifecycle;
     store.setState({
       ...initialState(),
+      // What a live Turn had produced by the time the reader left survives the
+      // switch, as the bookmarks do. The Host re-seeds only what is still
+      // incomplete (the streaming text, pending interactions), and its
+      // transcript overlay is bootstrapped once per replica, so the steps that
+      // finished while this Session was on screen exist nowhere else. A Turn
+      // that ended meanwhile is retired by the transcript it left behind
+      // (`reconcilePersistedMessages`), a new Turn's events replace the old
+      // projection, and the pending display gate holds the seed until ready.
+      // A Session never revisited keeps its projection until disconnect: the
+      // set is bounded by Sessions that had a live Turn on screen, and
+      // nothing reads it before the next visit reconciles it.
+      liveTurns: previous.liveTurns,
       // The same local task is becoming observable on the Host. Its saved
       // intents remain in flight while the replacement observer hydrates.
       ...(localHandoff
@@ -548,7 +593,51 @@ export function createActiveSessionStore(
       handlers.reconcilePersistedMessages(sessionId!, snapshot.messages);
       publishTransient();
       scheduleSettleFallback(snapshot.messages);
+      reanchorAfterGenerationChange(snapshot);
     }
+    const reportNavigationError = (error: unknown) => {
+      // A read the Host refused because its epoch moved is superseded, not
+      // failed: the reset that follows carries the new epoch.
+      if (error instanceof TranscriptReadSupersededError) return;
+      if (current()) store.setState({ error: errorMessage(error) });
+    };
+    // The bookmark outlives a replica generation change, the rows it named do
+    // not. Within one Host epoch the sequence still names the row, so the
+    // page around it is asked for again; across epochs sequences are renamed
+    // and the Turn has to be found again by id through the landmark index.
+    let lastLiveGeneration: { generation: string; hostEpoch: string } | undefined;
+    function reanchorAfterGenerationChange(snapshot: DesktopTranscriptRangeState) {
+      if (!snapshot.ready || snapshot.generation.startsWith('cached:')) return;
+      const previous = lastLiveGeneration;
+      lastLiveGeneration = { generation: snapshot.generation, hostEpoch: snapshot.hostEpoch };
+      if (!previous || previous.generation === snapshot.generation) return;
+      const id = sessionId!;
+      const anchor = store.getState().readingAnchors[id];
+      const active = rangeController;
+      if (!anchor || active.store.sequenceForTurn(anchor.turnId) !== null) return;
+      const navigate = (sequence: number) => {
+        void active.loadAround(sequence).catch(reportNavigationError);
+      };
+      if (previous.hostEpoch === snapshot.hostEpoch) {
+        if (anchor.sequence !== undefined) navigate(anchor.sequence);
+        return;
+      }
+      const { turnId } = anchor;
+      void api.listTurnLandmarks(id).then(
+        (landmarks) => {
+          if (!current() || !isCurrentController(id, active)) return;
+          // A reader who has gone somewhere else since owns the position now.
+          if (store.getState().readingAnchors[id]?.turnId !== turnId) return;
+          const landmark = landmarks.landmarks.find((turn) => turn.turnId === turnId);
+          // A Turn the new epoch does not name leaves the reader where the reset put them.
+          if (!landmark) return;
+          setAnchor(id, { turnId, sequence: landmark.sequence });
+          navigate(landmark.sequence);
+        },
+        () => undefined,
+      );
+    }
+    const unsubscribeTranscript = transcript.subscribe(applyTranscript);
     // Streaming-settle handoff, fallback path (upstream's
     // `SETTLE_FALLBACK_GRACE_MS`). The terminal event is the primary handoff;
     // a stuck live slot would otherwise hide the committed answer forever,
@@ -577,7 +666,7 @@ export function createActiveSessionStore(
           (batch) => {
             if (!current() || signal.aborted) return;
             try {
-              if (transcript.accept(batch)) applyTranscript();
+              transcript.accept(batch);
             } catch (error) {
               failTranscript(error);
             }
@@ -641,9 +730,20 @@ export function createActiveSessionStore(
       handlers.markDisplayPending(sessionId);
       interactionEvents++;
       transient.clear();
+      // The finished steps stay: they have no other source. The incomplete
+      // text and thinking go, because the seed replays them whole from offset
+      // zero while their live deltas carried no offsets — kept, the replay
+      // would land after the text it repeats.
+      const liveTurns = { ...store.getState().liveTurns };
+      const kept = liveTurns[sessionId];
+      if (kept) {
+        const trimmed = dropIncompleteStreams(kept);
+        if (trimmed) liveTurns[sessionId] = trimmed;
+        else delete liveTurns[sessionId];
+      }
       commit({
         observationReady: false,
-        liveTurns: {},
+        liveTurns,
         interactions: {},
         queues: {},
         // A reseed forgets what the Host had queued, not what the user sent.
@@ -709,9 +809,6 @@ export function createActiveSessionStore(
             // projection must see the state this event produced, not the one
             // before it.
             for (const listener of eventListeners) listener(sessionId, event);
-          },
-          () => {
-            if (owner === attempt) ready();
           },
           (phase) => {
             if (!current() || owner !== attempt) return;
@@ -804,6 +901,7 @@ export function createActiveSessionStore(
       offLocal();
       offShell();
       offResync();
+      unsubscribeTranscript();
       void rangeController.close();
       if (controller === rangeController) {
         controller = undefined;
@@ -941,11 +1039,11 @@ export function createActiveSessionStore(
         else currentPublishTransient?.();
       }
     },
-    async loadBefore(maxBytes?: number, anchorTurnId?: string) {
-      await controller?.loadBefore(maxBytes, anchorTurnId);
+    async loadBefore(maxBytes?: number) {
+      await controller?.loadBefore(maxBytes);
     },
-    async loadAfter(maxBytes?: number, anchorTurnId?: string) {
-      await controller?.loadAfter(maxBytes, anchorTurnId);
+    async loadAfter(maxBytes?: number) {
+      await controller?.loadAfter(maxBytes);
     },
     async loadLatest() {
       await controller?.loadLatest();
@@ -954,42 +1052,78 @@ export function createActiveSessionStore(
       await controller?.loadAround(sequence);
     },
     /**
-     * One paging request, gated per controller.
+     * One explicit paging command from the reader: a gap row's button or the
+     * return to the tail.
      *
-     * The scroller asks on every reader movement near an edge, so an ungated
-     * loader would issue a request per frame; `loadTranscriptHistory` keeps at
-     * most one in flight and remembers the last request made behind it, which
-     * is what stops a reader who keeps scrolling from being stranded when
-     * their request was dropped.
+     * The range controller keeps at most one read per edge in flight and
+     * refuses one against an edge it has already read, so nothing here has to
+     * queue. What is kept is the indicator: the gap row that asked shows it
+     * is loading until its page lands.
      *
-     * A `latest` command is the exception: it is the reader saying "take me
-     * back to the tail", so it abandons the bookmark and enters the range
-     * controller now rather than queuing behind the page it supersedes.
+     * A `latest` command is the reader saying "take me back to the tail", so
+     * it abandons the bookmark and replaces the window outright.
      */
-    loadHistory(request: TranscriptHistoryRequest): Promise<void> {
+    async loadHistory(request: TranscriptHistoryRequest): Promise<void> {
       const sessionId = store.getState().sessionId;
       const active = controller;
-      if (!sessionId || !active || !isCurrentController(sessionId, active))
-        return Promise.resolve();
+      if (!sessionId || !active || !isCurrentController(sessionId, active)) return;
       cancelRestore(sessionId, request.target === 'latest');
-      if (request.target === 'latest' || historyGates.get(active)?.active?.target === 'latest') {
-        cancelHistory(sessionId);
+      if (request.target === 'latest') cancelHistory(sessionId);
+      const pending: TranscriptHistoryPending = { sessionId, target: request.target };
+      store.setState({ historyPending: pending });
+      try {
+        if (request.target === 'latest') await active.loadLatest();
+        else if (request.target === 'earlier') await active.loadBefore();
+        else await active.loadAfter();
+      } catch (error) {
+        if (error instanceof TranscriptReadSupersededError) return;
+        if (isCurrentController(sessionId, active)) store.setState({ error: errorMessage(error) });
+      } finally {
+        store.setState((state) => ({
+          historyPending: state.historyPending === pending ? undefined : state.historyPending,
+        }));
       }
-      const gate: TranscriptHistoryGate = historyGates.get(active) ?? { pending: false };
-      historyGates.set(active, gate);
-      return loadTranscriptHistory({
-        gates: historyGates,
-        sessionId,
-        request,
-        controller: active,
-        maxBytes: DESKTOP_TRANSCRIPT_RANGE_MAX_BYTES,
-        isCurrent: () =>
-          isCurrentController(sessionId, active) && historyGates.get(active) === gate,
-        setPending: (update) => {
-          store.setState((state) => ({ historyPending: update(state.historyPending) }));
-        },
-        onError: (error) => store.setState({ error: errorMessage(error) }),
-      });
+    },
+    /**
+     * The scroller filling an edge as the reader nears it. Deliberately not
+     * `loadHistory`: that one cancels restoration because a reader who asks to
+     * go somewhere has decided where to be. Filling decides nothing, so it
+     * must leave an outstanding jump alone — the page it is waiting for can
+     * still be in flight.
+     *
+     * Safe to ask on every frame the geometry wants it: the range controller
+     * refuses a read against an edge it has already read, and answers whether
+     * it issued one.
+     */
+    async prefetchHistory(edge: 'older' | 'newer'): Promise<boolean> {
+      const sessionId = store.getState().sessionId;
+      const active = controller;
+      if (!sessionId || !active || !isCurrentController(sessionId, active)) return false;
+      try {
+        return edge === 'older' ? await active.loadBefore() : await active.loadAfter();
+      } catch (error) {
+        if (
+          !(error instanceof TranscriptReadSupersededError) &&
+          isCurrentController(sessionId, active)
+        )
+          store.setState({ error: errorMessage(error) });
+        return false;
+      }
+    },
+    /** The Turns the reader can still reach within the retained band; the rest may go. */
+    retainWindow(window: { firstTurnId: string; lastTurnId: string }): void {
+      const sessionId = store.getState().sessionId;
+      const active = controller;
+      if (!sessionId || !active || !isCurrentController(sessionId, active)) return;
+      if (currentTranscriptRange(active, sessionId) === undefined) return;
+      try {
+        active.store.retain(
+          active.store.sequenceForTurn(window.firstTurnId, 'first'),
+          active.store.sequenceForTurn(window.lastTurnId, 'last'),
+        );
+      } catch {
+        // A stale range has no window to trim.
+      }
     },
     /**
      * A send takes the viewport back to the tail and abandons the bookmark.
@@ -1030,33 +1164,16 @@ export function createActiveSessionStore(
     setReadingAnchor(sessionId: string, turnId: string | undefined) {
       const active = controller;
       if (store.getState().sessionId !== sessionId) return;
-      const previous = store.getState().readingAnchors[sessionId];
       store.setState({ unavailableAnchorTurnId: undefined });
+      // Only the bookmark moves. The window is the Renderer's own, so a reader
+      // parking on a Turn needs no page from the Host, and walking back to the
+      // tail reveals it from the window already held.
       captureTranscriptReadingAnchor({
         sessionId,
         currentSessionId: store.getState().sessionId,
         ...(turnId ? { turnId } : {}),
         ...(active ? { controller: active } : {}),
         setAnchor,
-      });
-      const range = currentTranscriptRange(active, sessionId);
-      if (range === undefined) return;
-      const sequence = turnId ? active?.store.sequenceForTurn(turnId) : undefined;
-      // The send command already cleared its bookmark before publishing the
-      // pin. Its empty-anchor acknowledgement is not another reader intent.
-      if (previous?.turnId === turnId && previous?.sequence === (sequence ?? undefined)) return;
-      cancelHistory(sessionId);
-      let navigation: Promise<void> | undefined;
-      if (turnId) navigation = active?.setReadingAnchor(sequence ?? null, turnId);
-      else if (previous && !range.hasNewer) {
-        // The reader walked back to the tail with nothing newer to fetch: the
-        // bookmark is spent, and following the tail is the standing intent.
-        cancelRestore(sessionId, true);
-        navigation = active?.loadLatest();
-      }
-      void navigation?.catch((error) => {
-        if (active && isCurrentController(sessionId, active))
-          store.setState({ error: errorMessage(error) });
       });
     },
     /** The turn `useChatScroll` should restore to, and whether it is gone. */
@@ -1089,7 +1206,6 @@ export function createActiveSessionStore(
         readingAnchor: sessionId ? store.getState().readingAnchors[sessionId] : undefined,
         controller,
         isCurrent: isCurrentController,
-        isLiveTurn: (id, turnId) => store.getState().liveTurns[id]?.turnId === turnId,
         setReadingAnchor: setAnchor,
         onRestoreUnavailable: (_id, turnId) => store.setState({ unavailableAnchorTurnId: turnId }),
         onError: (error) => store.setState({ error: errorMessage(error) }),

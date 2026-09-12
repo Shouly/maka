@@ -465,8 +465,7 @@ const COPY = {
       revisionReadyTitle: '可以修改并重发了',
       revisionReadyDescription: '已回到该消息之前；编辑后发送即可',
       revisionUnavailableTitle: '暂时无法编辑这条消息',
-      revisionAttachmentsUnsupported:
-        '包含附件的历史消息暂不支持编辑并重发，请复制文字后新建消息。',
+      revisionAttachmentsUnsupported: '这条消息自带的附件不参与编辑并重发，请复制文字后新建消息。',
       revisionTransformedTextUnsupported:
         '通过显式技能发送的历史消息暂不支持编辑并重发，请复制文字后重新选择技能。',
       revisionDraftAttachmentConflict:
@@ -853,8 +852,7 @@ const COPY = {
       revisionReadyTitle: '可以修改並重發了',
       revisionReadyDescription: '已回到該訊息之前；編輯後傳送即可',
       revisionUnavailableTitle: '暫時無法編輯這條訊息',
-      revisionAttachmentsUnsupported:
-        '包含附件的歷史訊息暫不支援編輯並重發，請複製文字後建立訊息。',
+      revisionAttachmentsUnsupported: '這條訊息自帶的附件不參與編輯並重發，請複製文字後建立訊息。',
       revisionTransformedTextUnsupported:
         '透過顯式技能傳送的歷史訊息暫不支援編輯並重發，請複製文字後重新選擇技能。',
       revisionDraftAttachmentConflict:
@@ -1241,7 +1239,7 @@ const COPY = {
       revisionReadyDescription: 'Rewound to before that message; edit and send when ready',
       revisionUnavailableTitle: 'This message cannot be edited yet',
       revisionAttachmentsUnsupported:
-        'Edit & resend does not yet support historical attachments. Copy the text into a new message instead.',
+        "A message's own attachments are not rewritten by edit & resend. Copy the text into a new message instead.",
       revisionTransformedTextUnsupported:
         'Edit & resend does not yet support messages sent with an explicit skill. Copy the text and select the skill again instead.',
       revisionDraftAttachmentConflict:

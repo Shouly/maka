@@ -49,6 +49,10 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
         label: '子 Agent',
         description: '配置主 Agent 可以自动选择的子 Agent、能力边界与模型。',
       },
+      'external-agents': {
+        label: '外部 Agent',
+        description: '配置并登录本机安装的 Antigravity ACP。',
+      },
       usage: { label: '使用统计', description: 'token、模型、工具使用走势与配额追踪。' },
       'archived-tasks': { label: '已归档任务', description: '恢复或彻底删除已归档的任务。' },
       'import-tasks': {
@@ -92,6 +96,10 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
       subagents: {
         label: '子 Agent',
         description: '設定主 Agent 可以自動選擇的子 Agent、能力邊界與模型。',
+      },
+      'external-agents': {
+        label: '外部 Agent',
+        description: '設定並登入本機安裝的 Antigravity ACP。',
       },
       usage: { label: '使用統計', description: 'token、模型、工具使用走勢與配額追蹤。' },
       'archived-tasks': { label: '已歸檔任務', description: '恢復或徹底刪除已歸檔的任務。' },
@@ -141,6 +149,10 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
         label: 'Subagents',
         description:
           'Configure the subagents, capability boundaries, and models the main agent may select.',
+      },
+      'external-agents': {
+        label: 'External Agents',
+        description: 'Configure and sign in to a locally installed Antigravity ACP agent.',
       },
       usage: {
         label: 'Usage',

@@ -41,6 +41,7 @@ import {
   sessionEventErrorMessage,
 } from '../lib/ported/model-connection-errors.js';
 import { getDesktopConversationCopy } from '../locales/conversation-copy.js';
+import { createConversationDisplayFrameScheduler } from '../lib/ported/display-frame-scheduler.js';
 
 type RefBox<T> = { current: T };
 type StateUpdater<T> = (updater: (current: T) => T) => void;
@@ -131,20 +132,7 @@ export function createAppShellSessionEventHandlers(options: {
     toastApi,
     notifyRunEnded,
   } = options;
-  const scheduleFrame =
-    options.scheduleFrame ??
-    (typeof requestAnimationFrame === 'function'
-      ? (callback: () => void) => {
-          let pending = true;
-          const run = () => {
-            if (!pending) return;
-            pending = false;
-            callback();
-          };
-          requestAnimationFrame(run);
-          window.setTimeout(run, 100);
-        }
-      : undefined);
+  const scheduleFrame = options.scheduleFrame ?? createConversationDisplayFrameScheduler();
   const displayBatch = options.displayBatch ?? createAppShellSessionDisplayBatch();
 
   function applyProjectionEvents(

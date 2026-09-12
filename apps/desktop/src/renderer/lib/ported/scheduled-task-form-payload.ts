@@ -59,6 +59,30 @@ export interface ScheduledTaskFormFields {
   readonly deliveryChatId?: ScheduledTaskFormSeed['deliveryChatId'];
   readonly lockedSchedule?: ScheduledTaskFormSeed['lockedSchedule'];
   readonly lockedEffect?: ScheduledTaskFormSeed['lockedEffect'];
+  /**
+   * The schedule the task had when editing began, with the field values it
+   * was rendered as. An edit that leaves those fields alone omits `schedule`
+   * from its patch, so the Host keeps a snoozed or otherwise pending fire
+   * (upstream #5226) rather than recomputing the next one from scratch.
+   */
+  readonly original?: {
+    readonly schedule: ScheduledTaskSchedule;
+    readonly runAtLocal: string;
+    readonly recurrence: ScheduledTaskFormSeed['recurrence'];
+    readonly cronExpression: string;
+  };
+}
+
+/** Whether the schedule fields still read exactly as the edit seeded them. */
+export function scheduledTaskScheduleUntouched(fields: ScheduledTaskFormFields): boolean {
+  const original = fields.original;
+  if (!original) return false;
+  return (
+    fields.runAtLocal === original.runAtLocal &&
+    fields.recurrence === original.recurrence &&
+    (fields.recurrence !== 'cron' ||
+      fields.cronExpression.trim() === original.cronExpression.trim())
+  );
 }
 
 /** The schedule the fields describe, or `null` when they describe none. */
@@ -117,6 +141,10 @@ export function createScheduledTaskInputFromFields(
  * rather than resubmitting it: the row carries no `llmConnectionId`, and
  * sending it back would re-save an identity the Host has since stopped
  * minting. Title, intent and schedule stay editable either way.
+ *
+ * A schedule the edit did not touch is omitted the same way: the Host keeps
+ * the pending fire only for a patch that says nothing about the schedule,
+ * so resending an identical one would still discard a snooze (#5226).
  */
 export function updateScheduledTaskInputFromFields(
   fields: ScheduledTaskFormFields,
@@ -126,7 +154,7 @@ export function updateScheduledTaskInputFromFields(
   const base = {
     title: fields.title.trim(),
     intentBody: fields.note.trim(),
-    schedule,
+    ...(scheduledTaskScheduleUntouched(fields) ? {} : { schedule }),
   };
   const locked = fields.lockedEffect;
   if (locked?.kind === 'agent_run' && !locked.execution.llmConnectionId) return base;

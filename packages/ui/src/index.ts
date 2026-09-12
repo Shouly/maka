@@ -104,7 +104,6 @@ export * from './use-composer-draft.js';
 export * from './use-composer-history.js';
 export * from './use-message-selection-quote.js';
 export * from './use-mounted-ref.js';
-export * from './use-pending-selection.js';
 export * from './use-roving-row-focus.js';
 export * from './use-transcript-projection.js';
 export * from './user-question-prompt-state.js';

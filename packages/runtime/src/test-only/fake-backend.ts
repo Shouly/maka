@@ -46,6 +46,8 @@ export const FAKE_WAIT_FOR_STEERING_LARGE_RESPONSE_PROMPT =
   '__e2e_wait_for_steering_large_response__';
 export const FAKE_HOLD_OPEN_PROMPT = '__e2e_hold_open__';
 export const FAKE_HOLD_OPEN_REWRITE_PROMPT = '__e2e_hold_open_rewrite__';
+/** Settles a text step and a tool step, then holds the Turn open until stopped. */
+export const FAKE_HOLD_OPEN_AFTER_STEPS_PROMPT = '__e2e_hold_open_after_steps__';
 export const FAKE_MERMAID_PROMPT = '__e2e_mermaid__';
 export const FAKE_MERMAID_HOSTILE_PROMPT = '__e2e_mermaid_hostile__';
 export const FAKE_ERROR_PROMPT_PREFIX = '__e2e_error__:';
@@ -199,8 +201,55 @@ export class FakeBackend implements AgentBackend {
     };
 
     try {
-      if (input.text === FAKE_HOLD_OPEN_PROMPT || input.text === FAKE_HOLD_OPEN_REWRITE_PROMPT) {
+      if (
+        input.text === FAKE_HOLD_OPEN_PROMPT ||
+        input.text === FAKE_HOLD_OPEN_REWRITE_PROMPT ||
+        input.text === FAKE_HOLD_OPEN_AFTER_STEPS_PROMPT
+      ) {
         const rewriteTarget = input.text === FAKE_HOLD_OPEN_REWRITE_PROMPT;
+        if (input.text === FAKE_HOLD_OPEN_AFTER_STEPS_PROMPT) {
+          // What a real model leaves behind mid-Turn: a settled text step and a
+          // finished tool call, both persisted before the Turn goes on waiting.
+          const settledMessageId = randomUUID();
+          const settledText = 'Step one settled before the wait.';
+          yield {
+            type: 'text_delta',
+            id: randomUUID(),
+            turnId,
+            ts: Date.now(),
+            messageId: settledMessageId,
+            text: settledText,
+          };
+          yield {
+            type: 'text_complete',
+            id: randomUUID(),
+            turnId,
+            ts: Date.now(),
+            messageId: settledMessageId,
+            text: settledText,
+          };
+          const toolUseId = randomUUID();
+          yield {
+            type: 'tool_start',
+            id: randomUUID(),
+            turnId,
+            stepId: randomUUID(),
+            ts: Date.now(),
+            toolUseId,
+            toolName: 'Read',
+            args: { path: 'README.md' },
+          };
+          yield {
+            type: 'tool_result',
+            id: randomUUID(),
+            turnId,
+            ts: Date.now(),
+            toolUseId,
+            isError: false,
+            content: { kind: 'json' as const, value: { lines: 3 } },
+          };
+          await sleep(50);
+        }
         const waitingPrefix = rewriteTarget
           ? 'prefix sk-123456789012345'
           : 'Fake backend waiting for the test to stop the Turn.';

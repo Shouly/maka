@@ -257,6 +257,7 @@
     "src/renderer/lib/ported/derive-turn-lineage-badges.ts",
     "src/renderer/lib/ported/desktop-slash-command.ts",
     "src/renderer/lib/ported/desktop-transcript-range-store.ts",
+    "src/renderer/lib/ported/display-frame-scheduler.ts",
     "src/renderer/lib/ported/execution-boundary-read.ts",
     "src/renderer/lib/ported/interrupted-resume.ts",
     "src/renderer/lib/ported/live-turn-snapshot.ts",
@@ -391,6 +392,7 @@
     "src/renderer/store/__tests__/run.mjs",
     "src/renderer/store/__tests__/scheduled-module.test.tsx",
     "src/renderer/store/__tests__/skills-module.test.tsx",
+    "src/renderer/store/__tests__/streaming-switch-smoke.mjs",
     "src/renderer/store/active-session-store.ts",
     "src/renderer/store/composer-draft-store.ts",
     "src/renderer/store/composer-input-store.ts",
@@ -2206,7 +2208,8 @@
       "bridgePaths": {},
       "environmentCapabilities": {
         "document.querySelector": 1,
-        "navigator.clipboard.writeText": 1
+        "navigator.clipboard.writeText": 1,
+        "window": 2
       },
       "hookCalls": {
         "useActiveTurns": 1,
@@ -5226,6 +5229,38 @@
     "src/renderer/lib/ported/desktop-transcript-range-store.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {
+        "window": 36,
+        "window.clearTimeout": 1,
+        "window.hasNewerAtThrough": 3,
+        "window.hasOlder": 5,
+        "window.order": 2,
+        "window.order.*": 2,
+        "window.order.at": 2,
+        "window.order.filter": 1,
+        "window.order.map": 2,
+        "window.rows": 1,
+        "window.rows.get": 4,
+        "window.setTimeout": 1,
+        "window.through": 8
+      },
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../preload/transcript-contract.js": 1,
+        "../../../shared/desktop-session-projection.js": 1,
+        "../../../shared/runtime-host-identity.js": 1,
+        "./transcript-reading-position.js": 1,
+        "@maka/core/persisted-value": 1,
+        "@maka/core/session": 1
+      }
+    },
+    "src/renderer/lib/ported/display-frame-scheduler.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "cancelAnimationFrame": 1,
+        "requestAnimationFrame": 1,
         "window.clearTimeout": 1,
         "window.setTimeout": 1
       },
@@ -5233,12 +5268,7 @@
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
-      "dependencyPaths": {
-        "../../../shared/desktop-session-projection.js": 1,
-        "../../../shared/runtime-host-identity.js": 1,
-        "@maka/core/persisted-value": 1,
-        "@maka/core/session": 1
-      }
+      "dependencyPaths": {}
     },
     "src/renderer/lib/ported/execution-boundary-read.ts": {
       "bridgePaths": {},
@@ -6373,14 +6403,16 @@
         "document.removeEventListener": 1,
         "document.visibilityState": 1,
         "setInterval": 1,
-        "setTimeout": 4
+        "setTimeout": 4,
+        "window": 1,
+        "window.firstTurnId": 1,
+        "window.lastTurnId": 1
       },
       "hookCalls": {},
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
-        "../../preload/transcript-contract.js": 1,
         "../bridge/notifications.js": 1,
         "../bridge/sessions.js": 1,
         "../bridge/shell-runs.js": 1,
@@ -6628,8 +6660,7 @@
     "src/renderer/store/session-event-handlers.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {
-        "requestAnimationFrame": 1,
-        "window.setTimeout": 2
+        "window.setTimeout": 1
       },
       "hookCalls": {},
       "lifecycleMethods": {},
@@ -6639,6 +6670,7 @@
         "createAppShellSessionEventHandlers"
       ],
       "dependencyPaths": {
+        "../lib/ported/display-frame-scheduler.js": 1,
         "../lib/ported/model-connection-errors.js": 1,
         "../locales/conversation-copy.js": 1,
         "@maka/ui": 1
