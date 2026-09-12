@@ -54,6 +54,7 @@ import { getTranscriptCopy } from '../../locales/transcript-copy.js';
 import { TurnFooter } from './TurnFooter.js';
 import { UserMessageRow } from './UserMessageRow.js';
 import { ToolGroup } from './tools/ToolGroup.js';
+import { AskUserQuestionRecord } from './AskUserQuestionRecord.js';
 import type { ToolContentContext } from './tools/registry.js';
 
 /** A system note inside a turn — compaction, a resume, a step cap. */
@@ -168,6 +169,9 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
                   : {})}
               />
             );
+          }
+          if (entry.kind === 'ask') {
+            return <AskUserQuestionRecord key={`ask-${entry.id}`} item={entry.item} />;
           }
           if (entry.kind === 'user') {
             return (

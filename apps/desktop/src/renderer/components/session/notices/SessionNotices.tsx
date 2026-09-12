@@ -32,7 +32,7 @@ import { useEffect, useState } from 'react';
 import { useStore } from 'zustand';
 import type { ContextCompactionOutcome } from '@maka/core/events';
 import type { TaskSubmissionReadinessSnapshot } from '@maka/core/task-submission-readiness';
-import { getConversationCopy, resumeParkToastCopy, useUiLocale } from '@maka/ui';
+import { resumeParkToastCopy, useUiLocale } from '@maka/ui';
 import { toastApi } from '../../../store/toast-api.js';
 import { getShellCopy } from '../../../locales/shell-copy.js';
 import { getTaskReadinessSnapshot } from '../../../bridge/task-readiness.js';
@@ -106,9 +106,10 @@ export function SessionNotices(props: {
   const connections = useStore(connectionsStore, (state) => state.data);
   const connectionsLoading = useStore(connectionsStore, (state) => state.loading);
   const health = useStore(activeSessionStore, (state) => state.health);
-  // Phase 3b answers these; until then the transcript at least says one is
-  // waiting, so a session that has stopped for an answer does not read as a
-  // session that has hung.
+  // A pending interaction is drawn by InteractionPrompts in the composer's
+  // place; here it only silences the stream-health notice. The Host is quiet
+  // on purpose while it waits for the user, and "unsteady" would be a false
+  // alarm the whole time the question is on screen.
   const awaitingAnswer = useStore(
     activeSessionStore,
     (state) => (state.interactions[props.sessionId]?.length ?? 0) > 0,
@@ -159,15 +160,14 @@ export function SessionNotices(props: {
       ? compactionText(compaction, copy.notices)
       : undefined;
 
+  const streamNotice = !awaitingAnswer && (streamStatus === 'stale' || streamStatus === 'closed');
   const anything =
     transcriptError !== undefined ||
-    awaitingAnswer ||
     healthNotice ||
     workspace ||
     readinessNotice ||
     props.resumeCandidateTurnId ||
-    streamStatus === 'stale' ||
-    streamStatus === 'closed' ||
+    streamNotice ||
     compactionNotice;
   if (!anything) return null;
 
@@ -191,16 +191,6 @@ export function SessionNotices(props: {
             },
           ]}
         />
-      )}
-
-      {awaitingAnswer && (
-        <div data-maka-contract="interaction-pending">
-          <NoticeCard
-            tone="warning"
-            role="status"
-            title={getConversationCopy(locale).composer.awaitingPermission}
-          />
-        </div>
       )}
 
       {healthNotice && (
@@ -296,7 +286,7 @@ export function SessionNotices(props: {
         />
       )}
 
-      {(streamStatus === 'stale' || streamStatus === 'closed') && (
+      {streamNotice && (
         <NoticeCard
           tone="warning"
           role="status"

@@ -47,6 +47,7 @@ import {
 } from '@maka/ui';
 import type { AnthropiconName } from '../../icons/Anthropicon.js';
 import { getTranscriptCopy } from '../../../locales/transcript-copy.js';
+import { isAskUserQuestionTool } from '../../../lib/ask-user-question.js';
 
 /**
  * Which body a tool row renders. `none` means the row has a header and nothing
@@ -230,5 +231,6 @@ export function activeToolLabel(items: readonly ToolActivityItem[], locale: UiLo
   const copy = getTranscriptCopy(locale).tools;
   const running = [...items].reverse().find((item) => item.status === 'running');
   if (!running) return copy.working;
+  if (isAskUserQuestionTool(running)) return copy.asking;
   return copy.active[toolActivityKindOf(running)];
 }

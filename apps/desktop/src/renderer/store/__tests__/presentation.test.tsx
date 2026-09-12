@@ -177,6 +177,25 @@ test('a running row exposes a live status, and an untitled task still has a name
   assert.ok(document.documentElement.textContent?.includes(sidebarCopy.untitled));
 });
 
+test('a task parked on the user shows the question mark, over the running dot', () => {
+  const document = renderTree(
+    createElement(SessionRow, {
+      row: sessionRow({ status: 'waiting_for_user', runningIds: new Set(['task-1']) }),
+      isActive: false,
+      copy: sidebarCopy,
+      actions: noopRowActions,
+    }),
+  );
+  const mark = document.querySelector(`[aria-label="${sidebarCopy.waitingForUser}"]`);
+  assert.ok(mark, 'the question mark');
+  assert.equal(
+    mark?.querySelector('[data-anthropicon]')?.getAttribute('data-anthropicon'),
+    'questionCircle',
+  );
+  // The running dot yields: the turn is running the whole time it waits.
+  assert.equal(document.querySelector('[role="status"]'), null);
+});
+
 test('the palette result list groups rows and marks exactly one selected', () => {
   const commands = buildPaletteCommands({
     locale: 'en',
@@ -470,6 +489,38 @@ test('a run of reasoning with no call is a group of its own, so the turn keeps i
   // The span, not the button: the caret beside it is an icon-font glyph.
   assert.equal(toggle?.querySelector('span')?.textContent, 'Thought process');
   assert.equal(done.querySelectorAll('[data-maka-thinking]').length, 0, 'put away until opened');
+});
+
+test('an answered question stands on its own between runs; an open one is not drawn at all', () => {
+  const ask = (status: ToolActivityItem['status']): ToolActivityItem => ({
+    toolUseId: 'ask-1',
+    toolName: 'AskUserQuestion',
+    status,
+    args: { questions: [{ question: 'Scope?', options: [] }] },
+  });
+  const read: ToolActivityItem = {
+    toolUseId: 'r-1',
+    toolName: 'Read',
+    status: 'completed',
+    args: {},
+  };
+  const shape = (items: Parameters<typeof groupTurnTimeline>[0]) =>
+    groupTurnTimeline(items).map((entry) =>
+      entry.kind === 'work'
+        ? `work:${entry.id}:${entry.children.length}`
+        : entry.kind === 'ask'
+          ? `ask:${entry.id}`
+          : entry.kind,
+    );
+  // Open: the run is the read alone, the question is nowhere in the timeline.
+  assert.deepEqual(shape([{ kind: 'tools', items: [read, ask('running')] }]), ['work:start:1']);
+  // Answered: the run before it keeps its key, the record follows, and a later
+  // run keys off the record.
+  assert.deepEqual(shape([{ kind: 'tools', items: [read, ask('completed'), read] }]), [
+    'work:start:1',
+    'ask:ask-1',
+    'work:ask:ask-1:1',
+  ]);
 });
 
 test('groupTurnTimeline keys a run by the boundary before it, so a run keeps its key as it grows', () => {

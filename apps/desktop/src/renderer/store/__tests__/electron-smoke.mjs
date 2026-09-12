@@ -262,27 +262,44 @@ try {
   );
   await page.getByLabel('Message input', { exact: true }).fill('__e2e_ask_user_question__');
   await transcript.getByRole('button', { name: 'Send', exact: true }).click();
-  await transcript.locator('[data-maka-tool-row]').first().waitFor();
-  await page.locator('[data-maka-contract="interaction-pending"]').waitFor();
-  await page.screenshot({ path: SHOT('phase3a-tool-row.png') });
-  checks.push('a tool request renders a timeline row and the pending answer is announced');
+  // The question is pinned above the composer, which stays: Stop is still
+  // its own button there, and the editor now offers a direct reply. Nothing
+  // stands in the timeline for the open question.
   const promptPanel = page.locator('[data-maka-contract="interaction-prompt"]');
-  // The prompt REPLACES the composer, and Stop lives in the composer, so a
-  // turn waiting on an answer can only be stopped from here. Answering is not
-  // stopping — every other control on this card hands the turn what it asked
-  // for. Presence and reach are what this checks; the stop itself is not
-  // pressed, because ending the turn here would take the transcript the rest
-  // of this file reads with it.
-  const promptStop = promptPanel.locator('[data-maka-contract="interaction-prompt-stop"]');
-  await promptStop.waitFor();
-  assert.equal(await promptStop.isEnabled(), true);
+  await promptPanel.waitFor();
+  assert.equal(await transcript.locator('[data-maka-ask-user-record]').count(), 0);
+  assert.equal(
+    await promptPanel.locator('[data-maka-contract="interaction-prompt-stop"]').count(),
+    0,
+  );
+  const composerStop = transcript.locator('[data-maka-contract="composer-stop"]');
+  await composerStop.waitFor();
+  assert.equal(await composerStop.isEnabled(), true);
+  // The editor under the panel now offers a direct reply.
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[data-maka-contract="composer-input"] .is-editor-empty')
+        ?.getAttribute('data-placeholder') === 'Or reply directly…',
+  );
+  await page.screenshot({ path: SHOT('phase3a-tool-row.png') });
+  checks.push(
+    'a question is pinned above the composer, which keeps Stop, and leaves no placeholder in the timeline',
+  );
   // The wizard advances on each pick; the last pick submits (relx AskUserPanel).
   await promptPanel.getByRole('option', { name: /邀请制/ }).click();
   await promptPanel.getByRole('option', { name: /下周/ }).click();
   await promptPanel.getByRole('option', { name: /^是/ }).click();
   await promptPanel.waitFor({ state: 'detached' });
-  await page.locator('[data-maka-contract="interaction-pending"]').waitFor({ state: 'detached' });
-  checks.push('multi-question prompt submits answers through the real Host');
+  // Answered, the call becomes a question-and-answer card in the flow — on
+  // its own, so a run folding to its summary cannot take it along.
+  const askRecord = transcript.locator('[data-maka-ask-user-record]').first();
+  await askRecord.waitFor();
+  assert.ok((await askRecord.textContent())?.includes('邀请制'));
+  await page.screenshot({ path: SHOT('phase3a-ask-user-record.png') });
+  checks.push(
+    'multi-question prompt submits answers through the real Host and leaves a Q&A record',
+  );
   await page.waitForFunction(
     () => document.querySelectorAll('[data-turn-status="running"]').length === 0,
   );

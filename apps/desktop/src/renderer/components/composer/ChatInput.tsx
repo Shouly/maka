@@ -64,7 +64,13 @@ import type { PermissionMode } from '@maka/core/permission';
 import type { ThinkingLevel } from '@maka/core/model-thinking';
 import type { ChatModelChoice } from '@maka/core/chat-model-choice';
 import { attachmentKindFromMimeType, guessMimeFromName } from '@maka/core/attachments';
-import { getConversationCopy, useUiLocale, useComposerHistory } from '@maka/ui';
+import {
+  getConversationCopy,
+  useUiLocale,
+  useComposerHistory,
+  createQuestionDrafts,
+  buildUserQuestionResponse,
+} from '@maka/ui';
 import {
   composerInputStore,
   EMPTY_INPUT,
@@ -113,6 +119,7 @@ import { getSessionLocalCopy } from '../../locales/session-local-copy.js';
 import { removeSession } from '../../bridge/sessions.js';
 import { armGoal, getGoal } from '../../bridge/goal.js';
 import { getComposerCopy } from '../../locales/composer-copy.js';
+import { userQuestionPanelStore } from '../../store/user-question-panel-store.js';
 import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
 import { getShellCopy, localizedShellErrorMessage } from '../../locales/shell-copy.js';
 import { getTranscriptCopy } from '../../locales/transcript-copy.js';
@@ -335,6 +342,14 @@ function OwnedChatInput(props: {
       );
   };
   const hasContent = Boolean(wire.text) || draft.attachments.length > 0;
+  // An open ask-user question turns a plain send into its free-text answer
+  // (relx): the text lands on the question the panel is showing, the other
+  // answers so far are kept, and the whole set goes to the Host.
+  const pendingQuestion = useStore(activeSessionStore, (s) =>
+    sessionId
+      ? s.interactions[sessionId]?.find((r) => r.type === 'user_question_request')
+      : undefined,
+  );
   const blocked =
     !sessionId && !newTaskTargetAvailable(newTask.catalog, props.target)
       ? copy.send.blockedNoWorkspace
@@ -374,6 +389,24 @@ function OwnedChatInput(props: {
     // The optimistic copy to withdraw if the send never reaches the Host.
     let optimisticId: string | undefined;
     try {
+      if (pendingQuestion && sessionId) {
+        const text = serialized.text.trim();
+        if (!text) return;
+        const panel = userQuestionPanelStore.getState();
+        const known = panel.requestId === pendingQuestion.requestId;
+        const drafts = [
+          ...(known ? panel.drafts : createQuestionDrafts(pendingQuestion.questions)),
+        ];
+        const index = known ? panel.index : 0;
+        drafts[index] = { kind: 'other', value: text };
+        await turnActionsStore.respondQuestion(
+          sessionId,
+          buildUserQuestionResponse(pendingQuestion, drafts),
+        );
+        consumeDraft(sessionId);
+        return;
+      }
+
       preflightAttachmentItems(sent.attachments);
 
       if (parseDesktopSlashCommand(serialized.text)?.kind === 'compact') {
@@ -1138,7 +1171,13 @@ function OwnedChatInput(props: {
                   disabled={disabled}
                   running={props.running}
                   label={props.label ?? common.composer.textareaAriaLabel}
-                  placeholder={welcome ? copy.placeholder.welcome : copy.placeholder.session}
+                  placeholder={
+                    pendingQuestion
+                      ? copy.placeholder.replyToQuestion
+                      : welcome
+                        ? copy.placeholder.welcome
+                        : copy.placeholder.session
+                  }
                 />
                 {/* The hint carousel: the editor's own placeholder is
                     suppressed while a hint shows, and this overlay draws the
@@ -1292,6 +1331,7 @@ function OwnedChatInput(props: {
                       aria-busy={pending.includes('stop') ? 'true' : undefined}
                       disabled={pending.includes('stop')}
                       onClick={stopTurn}
+                      data-maka-contract="composer-stop"
                       className="ui-control-squish ui-control-squish-flat flex size-8 cursor-pointer items-center justify-center rounded-lg text-text-primary outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-70"
                     >
                       <Anthropicon

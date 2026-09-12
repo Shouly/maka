@@ -507,11 +507,12 @@ function SessionTranscript(props: SessionViewProps) {
               ]}
             />
           )}
-          {!feed.interactionPending &&
-            !(
-              draft &&
-              (draft.sourceSessionId === sessionId || draft.revisionSessionId === sessionId)
-            ) &&
+          {/* The composer stays under an open interaction (relx): Stop lives
+              here, and while a question is open a plain send answers it. */}
+          {!(
+            draft &&
+            (draft.sourceSessionId === sessionId || draft.revisionSessionId === sessionId)
+          ) &&
             !feed.boundaryUnreadable &&
             (props.composerSlot ?? (
               <ChatInput sessionId={sessionId} running={running} onError={reportError} />

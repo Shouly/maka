@@ -94,6 +94,7 @@
     "src/renderer/components/palette/KeyboardHelp.tsx",
     "src/renderer/components/palette/SearchModal.tsx",
     "src/renderer/components/palette/commands.ts",
+    "src/renderer/components/session/AskUserQuestionRecord.tsx",
     "src/renderer/components/session/HistoryControls.tsx",
     "src/renderer/components/session/MessageQueue.tsx",
     "src/renderer/components/session/SelectionQuote.tsx",
@@ -226,6 +227,7 @@
     "src/renderer/hooks/use-welcome-message.ts",
     "src/renderer/hooks/use-workbar.ts",
     "src/renderer/hooks/use-workspace.ts",
+    "src/renderer/lib/ask-user-question.ts",
     "src/renderer/lib/avatar-warm-palette.ts",
     "src/renderer/lib/cn.ts",
     "src/renderer/lib/compose-refs.ts",
@@ -417,6 +419,7 @@
     "src/renderer/store/turn-actions-store.ts",
     "src/renderer/store/ui-store.ts",
     "src/renderer/store/update-store.ts",
+    "src/renderer/store/user-question-panel-store.ts",
     "src/renderer/store/window-commands.ts",
     "src/renderer/store/workbar-store.ts"
   ],
@@ -954,7 +957,7 @@
         "useEffect": 4,
         "useRef": 8,
         "useState": 14,
-        "useStore": 9,
+        "useStore": 10,
         "useUiLocale": 2
       },
       "lifecycleMethods": {},
@@ -989,6 +992,7 @@
         "../../store/new-task-store.js": 1,
         "../../store/toast-api.js": 1,
         "../../store/turn-actions-store.js": 1,
+        "../../store/user-question-panel-store.js": 1,
         "../icons/Anthropicon.js": 1,
         "../session/notices/ContextUsageIndicator.js": 1,
         "../ui/attachment-card.js": 1,
@@ -1014,11 +1018,11 @@
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
-        "useEffect": 1,
+        "useEffect": 3,
         "useRef": 2,
         "useState": 7,
-        "useStore": 2,
-        "useUiLocale": 6
+        "useStore": 1,
+        "useUiLocale": 5
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
@@ -1026,9 +1030,8 @@
       "dependencyPaths": {
         "../../lib/cn.js": 1,
         "../../locales/composer-copy.js": 1,
-        "../../locales/conversation-copy.js": 1,
         "../../store/index.js": 1,
-        "../../store/turn-actions-store.js": 1,
+        "../../store/user-question-panel-store.js": 1,
         "../icons/Anthropicon.js": 1,
         "../ui/button.js": 1,
         "../ui/checkbox-box.js": 1,
@@ -1104,7 +1107,7 @@
       },
       "hookCalls": {
         "useEditor": 1,
-        "useEffect": 6,
+        "useEffect": 7,
         "useRef": 3,
         "useState": 4,
         "useUiLocale": 1
@@ -2118,6 +2121,22 @@
         "@maka/core/settings": 1
       }
     },
+    "src/renderer/components/session/AskUserQuestionRecord.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/ask-user-question.js": 1,
+        "../../lib/cn.js": 1,
+        "../../locales/transcript-copy.js": 1,
+        "@maka/ui": 1
+      }
+    },
     "src/renderer/components/session/HistoryControls.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -2281,6 +2300,7 @@
         "../icons/Anthropicon.js": 1,
         "../ui/Markdown.js": 1,
         "../ui/StreamPopMarkdown.js": 1,
+        "./AskUserQuestionRecord.js": 1,
         "./tools/ToolGroup.js": 1,
         "./TurnFooter.js": 1,
         "./UserMessageRow.js": 1,
@@ -2678,6 +2698,7 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../../../lib/ask-user-question.js": 1,
         "../../../locales/transcript-copy.js": 1,
         "@maka/ui": 1
       }
@@ -4897,6 +4918,15 @@
         "zustand/react/shallow": 1
       }
     },
+    "src/renderer/lib/ask-user-question.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
     "src/renderer/lib/avatar-warm-palette.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -5927,7 +5957,9 @@
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
-      "dependencyPaths": {}
+      "dependencyPaths": {
+        "./ask-user-question.js": 1
+      }
     },
     "src/renderer/lib/welcome-greeting.ts": {
       "bridgePaths": {},
@@ -6731,6 +6763,17 @@
       "dependencyPaths": {
         "../bridge/app.js": 1,
         "./resource-store.js": 1,
+        "zustand/vanilla": 1
+      }
+    },
+    "src/renderer/store/user-question-panel-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
         "zustand/vanilla": 1
       }
     },

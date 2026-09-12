@@ -54,6 +54,7 @@ import {
   toolRowTitle,
 } from '../../components/session/tools/tool-presentation.js';
 import { parseMcpToolName } from '../../components/session/tools/ToolRow.js';
+import { askUserQuestionRecord } from '../../lib/ask-user-question.js';
 import {
   createTurnPresentationDerivation,
   pendingTurnActionKey,
@@ -193,6 +194,39 @@ test('a group summary counts by kind and leads with the busiest one', () => {
   const summary = summarizeToolGroup(items, 'en');
   assert.ok(summary.startsWith('Ran 3 commands'), summary);
   assert.ok(summary.includes('read a file'), summary);
+});
+
+test('a question to the user is read back as Q&A, answers aligned by position', () => {
+  const ask = tool({
+    toolUseId: 'q',
+    toolName: 'AskUserQuestion',
+    activityKind: undefined,
+    args: {
+      questions: [
+        { question: 'Scope?', options: [] },
+        { question: 'When?', options: [] },
+      ],
+    },
+    result: { kind: 'json', value: { answers: [{ question: 'Scope?', answer: 'Invite only' }] } },
+  });
+  assert.equal(
+    activeToolLabel([tool({ ...ask, status: 'running' })], 'en'),
+    'Asking you a question…',
+  );
+  // A missing answer is null, never dropped and never the Host's phrasing.
+  assert.deepEqual(askUserQuestionRecord(ask), [
+    { question: 'Scope?', answer: 'Invite only' },
+    { question: 'When?', answer: null },
+  ]);
+  // A text result that is JSON reads the same; no result leaves the questions standing.
+  assert.equal(
+    askUserQuestionRecord({
+      ...ask,
+      result: { kind: 'text', text: '{"answers":[{"answer":"Now"}]}' },
+    })[0]?.answer,
+    'Now',
+  );
+  assert.equal(askUserQuestionRecord({ ...ask, result: undefined })[1]?.answer, null);
 });
 
 test('a running group says what it is doing now, not what it has done', () => {

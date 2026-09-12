@@ -66,35 +66,54 @@ export function SessionRow(props: {
     if (element) setTitleClipped(element.scrollWidth > element.clientWidth);
   }, []);
 
-  const leading = row.stale ? (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span role="img" aria-label={copy.stale} className="flex items-center text-warning">
-          <Anthropicon name="warningCircle" size={20} />
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="top">{copy.stale}</TooltipContent>
-    </Tooltip>
-  ) : row.running ? (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          role="status"
-          aria-label={copy.running}
-          className="size-1.5 shrink-0 animate-status-dot-breathe rounded-full bg-sidebar-text-muted"
-        />
-      </TooltipTrigger>
-      <TooltipContent side="top">{copy.running}</TooltipContent>
-    </Tooltip>
-  ) : (
-    <span
-      aria-hidden="true"
-      className={cn(
-        'size-1.5 shrink-0 rounded-full',
-        row.unread ? 'bg-accent-fill' : 'border-[1px] border-sidebar-text-muted/50',
-      )}
-    />
-  );
+  // The Host parks a turn on a question or a permission as
+  // `waiting_for_user`, and the catalog carries that for every task — so the
+  // row knows it whether or not the task is on screen. It outranks the
+  // running dot (relx): the turn counts as running the whole time it waits,
+  // and "waiting on you" is the state that deserves the eye.
+  const leading =
+    row.status === 'waiting_for_user' ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            role="img"
+            aria-label={copy.waitingForUser}
+            className="flex items-center text-warning"
+          >
+            <Anthropicon name="questionCircle" size={20} />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top">{copy.waitingForUser}</TooltipContent>
+      </Tooltip>
+    ) : row.stale ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span role="img" aria-label={copy.stale} className="flex items-center text-warning">
+            <Anthropicon name="warningCircle" size={20} />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top">{copy.stale}</TooltipContent>
+      </Tooltip>
+    ) : row.running ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            role="status"
+            aria-label={copy.running}
+            className="size-1.5 shrink-0 animate-status-dot-breathe rounded-full bg-sidebar-text-muted"
+          />
+        </TooltipTrigger>
+        <TooltipContent side="top">{copy.running}</TooltipContent>
+      </Tooltip>
+    ) : (
+      <span
+        aria-hidden="true"
+        className={cn(
+          'size-1.5 shrink-0 rounded-full',
+          row.unread ? 'bg-accent-fill' : 'border-[1px] border-sidebar-text-muted/50',
+        )}
+      />
+    );
 
   return (
     <motion.div

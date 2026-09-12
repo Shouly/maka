@@ -58,6 +58,8 @@ export interface SidebarCopy {
   readonly running: string;
   readonly turnStatus: Record<'running' | 'completed' | 'aborted' | 'failed', string>;
   readonly stale: string;
+  /** The row's leading icon while the task is parked on the user (a question, a permission). */
+  readonly waitingForUser: string;
   readonly flaggedBadge: string;
   readonly branchBadge: string;
   readonly revisionBadge: (count: number) => string;
@@ -139,6 +141,7 @@ const SIDEBAR_COPY = {
     running: '进行中',
     turnStatus: { running: '进行中', completed: '已完成', aborted: '已中止', failed: '失败' },
     stale: '需要处理',
+    waitingForUser: '等你处理',
     flaggedBadge: '已置顶',
     branchBadge: '分支',
     revisionBadge: (count) => `${count} 个版本`,
@@ -214,6 +217,7 @@ const SIDEBAR_COPY = {
     running: '進行中',
     turnStatus: { running: '進行中', completed: '已完成', aborted: '已中止', failed: '失敗' },
     stale: '需要處理',
+    waitingForUser: '等你處理',
     flaggedBadge: '已置頂',
     branchBadge: '分支',
     revisionBadge: (count) => `${count} 個版本`,
@@ -295,6 +299,7 @@ const SIDEBAR_COPY = {
       failed: 'Failed',
     },
     stale: 'Needs attention',
+    waitingForUser: 'Waiting for you',
     flaggedBadge: 'Pinned',
     branchBadge: 'Branch',
     revisionBadge: (count) => `${count} versions`,

@@ -87,6 +87,10 @@ export interface TranscriptCopy {
     readonly groupLabel: string;
     readonly stepsLabel: string;
     readonly working: string;
+    /** The status line while an AskUserQuestion waits for the user. */
+    readonly asking: string;
+    /** Under a question the user skipped or never reached. */
+    readonly noAnswer: string;
     readonly thinkingOnly: string;
     readonly thinkingActive: string;
     /** The status line while the answer's prose is still streaming. */
@@ -317,6 +321,8 @@ const TRANSCRIPT_COPY = {
       groupLabel: '工具调用',
       stepsLabel: '步骤',
       working: '正在处理…',
+      asking: '正在向你提问…',
+      noAnswer: '未回答',
       thinkingOnly: '思考过程',
       thinkingActive: '正在思考…',
       writing: '正在撰写…',
@@ -451,6 +457,8 @@ const TRANSCRIPT_COPY = {
       groupLabel: '工具呼叫',
       stepsLabel: '步驟',
       working: '正在處理…',
+      asking: '正在向你提問…',
+      noAnswer: '未回答',
       thinkingOnly: '思考過程',
       thinkingActive: '正在思考…',
       writing: '正在撰寫…',
@@ -590,6 +598,8 @@ const TRANSCRIPT_COPY = {
       groupLabel: 'Tool activity',
       stepsLabel: 'Steps',
       working: 'Working on it…',
+      asking: 'Asking you a question…',
+      noAnswer: 'No answer',
       thinkingOnly: 'Thought process',
       thinkingActive: 'Thinking…',
       writing: 'Writing…',

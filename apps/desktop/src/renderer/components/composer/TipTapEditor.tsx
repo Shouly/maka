@@ -234,6 +234,18 @@ export function TipTapEditor(props: {
     editor?.setEditable(!props.disabled, false);
   }, [editor, props.disabled]);
 
+  // The placeholder function reads the live prop, but the extension keeps
+  // its decorations in plugin state and only rescans on a transaction that
+  // changed the document or SET the selection — an empty transaction is
+  // handed back unchanged. Re-setting the current selection is the
+  // cheapest transaction that counts, so a prop change alone (an open
+  // question turning the hint into "Or reply directly…") gets drawn.
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    const { tr, selection } = editor.state;
+    editor.view.dispatch(tr.setSelection(selection));
+  }, [editor, props.placeholder]);
+
   // External document changes (draft restore, history recall, send clearing)
   // replace the content; the caret goes to the end when the editor is the
   // active element, so a recalled prompt can be edited straight away.
