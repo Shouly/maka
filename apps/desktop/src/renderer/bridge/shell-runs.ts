@@ -57,14 +57,11 @@ export function writeShellRun(input: {
   ref: string;
   input?: string;
   size?: { cols: number; rows: number };
-}): Promise<ShellRunUpdate | null> {
+}): Promise<void> {
   return shellRuns().write(input);
 }
 
-export function stopShellRun(input: {
-  sessionId: string;
-  ref: string;
-}): Promise<ShellRunUpdate | null> {
+export function stopShellRun(input: { sessionId: string; ref: string }): Promise<void> {
   return shellRuns().stop(input);
 }
 

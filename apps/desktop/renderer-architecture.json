@@ -268,6 +268,7 @@
     "src/renderer/lib/ported/mcp-server-draft.ts",
     "src/renderer/lib/ported/mcp-write-failure.ts",
     "src/renderer/lib/ported/memory-settings-presentation.ts",
+    "src/renderer/lib/ported/message-queue-projection.ts",
     "src/renderer/lib/ported/model-catalog-choices.ts",
     "src/renderer/lib/ported/model-connection-errors.ts",
     "src/renderer/lib/ported/model-wait-state.ts",
@@ -5371,6 +5372,15 @@
         "@maka/core/local-memory": 1
       }
     },
+    "src/renderer/lib/ported/message-queue-projection.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
     "src/renderer/lib/ported/model-catalog-choices.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -5645,6 +5655,8 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../../../preload/transcript-contract.js": 1,
+        "../../bridge/sessions.js": 1,
         "../../bridge/transcripts.js": 1,
         "./desktop-transcript-range-store.js": 1
       }
@@ -6671,6 +6683,7 @@
       ],
       "dependencyPaths": {
         "../lib/ported/display-frame-scheduler.js": 1,
+        "../lib/ported/message-queue-projection.js": 1,
         "../lib/ported/model-connection-errors.js": 1,
         "../locales/conversation-copy.js": 1,
         "@maka/ui": 1

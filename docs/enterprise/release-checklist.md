@@ -21,11 +21,17 @@
 
 What the renderer rewrite has not settled. Nothing here is a decision never to
 do it: an item is open until it lands. Each names where the problem lives and
-what would close it; remove it when it lands.
+what would close it. When an item lands, delete it here; the phase reports
+under `phase-reports/` keep the record of what closed and when.
 
 Ordered by what it is, not by when it was found: release blockers, then
 defects, then unimplemented features, then the verification still owed. How the
 gap list was measured — and what that measure cannot see — is at the end.
+
+**Baseline.** Measured 2026-09-12 against upstream `c08626bf2`, the head of the
+eleventh sync. The twelve commits from there to `ca4136a02` (the twelfth
+sync) add or remove no renderer surface, so the table holds for both. Re-measure
+after the sync that follows.
 
 ## Must fix before shipping to users
 
@@ -61,52 +67,51 @@ gap list was measured — and what that measure cannot see — is at the end.
 ## Defects — wrong behaviour, lost data, crashes
 
 Ours does something upstream does not, and the difference costs the user. These
-come before any feature work: several lose data silently.
-
-### In the renderer
-
-1. ~~**Editing a bot-delivery scheduled task converts it to a local
-   notification.**~~ Closed 2026-09-11: the form carries delivery method,
-   platform and chat id, and `scheduledTaskEffectFromFields` rebuilds the bot
-   effect from them (`scheduled-module.test.tsx`, "a bot delivery survives the
-   round trip").
-
-### Outside the renderer allow-list
+come before any feature work.
 
 - **Archiving an edit-and-resend family is a silent no-op.** `sessions:archive`
   resolves but the Host ignores the lifecycle change for a family member
-  (`apps/desktop/src/main/runtime-host-session-catalog-ipc-main.ts:145`), so a
+  (`apps/desktop/src/main/runtime-host-session-catalog-ipc-main.ts:130`), so a
   task that was ever edited-and-resent cannot be archived from the rail or
-  from Settings › Archived tasks. Found in Phase 5a; needs a main/Host fix.
+  from Settings › Archived tasks. Found in Phase 5a; needs a main/Host fix —
+  it is outside the renderer allow-list.
 
 ## Not implemented
 
-Everything below is implemented in the main process and the backend packages —
-their IPC handlers are registered and this fork does not modify
-`apps/desktop/src/preload/bridge-contract.d.ts`. The gap is the renderer alone.
+Everything below is implemented in the main process and the backend packages:
+their IPC handlers are registered and the preload exposes them. This fork's
+only change to `apps/desktop/src/preload/bridge-contract.d.ts` is two added
+methods (`projects.prepareDirectory`, `projects.createPrepared`); nothing is
+removed. The gap is the renderer alone.
 
 ### Whole surfaces with no page here
 
+A namespace counts as unreached when no file under `src/renderer/bridge/`
+opens it. Method counts are from the contract.
+
 | Feature | Unreached methods | What it is |
 | --- | --- | --- |
-| Session collaboration | 19 | Share a task with another Maka: invitations, guest grants, mounts, turn requests and their decisions |
-| Runtime Host management | 14 | Install and update policy, project directories, resources, direct peer, credential rotation |
+| Session collaboration | 19 | `sessionCollaboration.*`: share a task with another Maka — invitations, guest grants, mounts, turn requests and their decisions |
+| Runtime Host management | 14 | `runtimeHostManagement.*`: install and update policy, project directories, resources, direct peer, credential rotation |
 | Bot chats | 9 | `settings.bots.*` and `testBotChannel`: bot onboarding, the WeChat QR login, per-bot status and restart. Scheduled tasks deliver locally because this is missing |
-| Pets | 7 | Pet packs: list, select, sprite sheet, import a local directory |
-| Work board | 7 | Create, update, archive, remove, subscribe |
-| Daily review | 7 | The review itself plus its config, run-now, archive list and Markdown export |
-| Host onboarding | 6 | First-run Host setup, including WSL distribution enumeration |
-| Agent Graph | 6 | Epochs, snapshot, operator inspection, stop |
-| Local remote access | 5 | Turn remote access on for this machine's Host, mint and revoke a connection code |
-| Host SSH terminal | 5 | A terminal against a remote Host |
-| WorkHub | 5 | The persistent WorkHub session and its floating window |
-| Peer Mesh | 4 | Connectivity policy and execution |
-| External session import | 3 | Import history from another tool |
-| Todo | 2 | The current Todo projection |
-| Deep research | 2 | Deep-research sessions |
+| Pets | 7 | `pets.*`: pet packs — list, select, sprite sheet, import a local directory |
+| Daily review | 7 | `dailyReview.*`: the review itself plus its config, run-now, archive list and Markdown export |
+| Host onboarding | 6 | `runtimeHostOnboarding.*`: first-run Host setup, including WSL distribution enumeration |
+| Agent Graph | 6 | `graphs.*`: epochs, snapshot, operator inspection, stop |
+| Local remote access | 5 | `localRuntimeHostRemoteAccess.*`: turn remote access on for this machine's Host, mint and revoke a connection code |
+| Host SSH terminal | 5 | `runtimeHostSshTerminal.*`: a terminal against a remote Host |
+| WorkHub | 5 | `workHub.*`: the persistent WorkHub session and its floating window |
+| External agents | 4 | `externalAgents.*`: install and configure an ACP agent (Antigravity) from Settings › External agents. Upstream #5164, arrived with the eleventh sync; the `external-agents` nav id is already registered in `components/settings/settings-sections.ts` but has no page |
+| Peer Mesh | 4 | `runtimeHostPeerMesh.*`: connectivity policy and execution |
+| External session import | 3 | `externalSessions.*`: import history from another tool |
+| Session bundles | 2 | `sessionBundles.export/import`: move a Session between installations from Settings › Import/export tasks. Upstream #5197, arrived with the eleventh sync |
+| Todo | 2 | `todo.*`: the current Todo projection |
+| Deep research | 2 | `deepResearch.*`: deep-research sessions |
 
-Also with no page: Daily Review, IM Hub, the Plan approval panel, and the
-Runtime Host management / onboarding / SSH-terminal dialogs.
+Also with no page: IM Hub (upstream's `im_hub` agents view), the Plan approval
+panel (`plan-mode-panel.tsx`), and the Runtime Host management / onboarding /
+SSH-terminal dialogs. Work board is deliberately parked, not missing; see
+"Narrowed during the rewrite".
 
 ### Inside surfaces we do have
 
@@ -152,19 +157,20 @@ copy-path. Usage: no per-request log, filters, detail toggle or jump to the
 session; the tab choice is not persisted. Workspace: no project-directory
 editor, no "default project unavailable" notice, no refresh on Host changes.
 Web search: no reveal toggle on the API key. Archived tasks: no purge-all or
-purge-matching, no orphaned-subtask marker. Models: no request-body overlay,
+purge-matching, no orphaned-subtask marker. Models: writes the whole
+`modelOverrides` table on every thinking-level or add-model change (core
+since #5225 documents that field as a full replacement for imports and offers
+a per-model `modelOverride` CAS input with `enable`; move the toggle and
+add-model there), no request-body overlay,
 no per-model vision / context window / fast tier, no bulk thinking level, no
 headers at creation, no select-all in the model picker, no retired-provider
 handling, no signup link, no OAuth relogin from the connection page, no cancel
 on an in-progress field edit, no model refresh after saving a credential.
 
-**Modules** — closed 2026-09-11 for the items listed before (search, sort and
-filters on all three pages; tool names, stderr tail, protocol and transport,
-counts and manage-from-market on Connectors; use-this-skill, open-folder,
-capability warning, path and tool names on Skills; duplicate, run history,
-keep-awake, bot delivery and templates on Scheduled). Still missing against
-Claude's Customize: a Plugins face, "Create a skill" / "Create with Claude"
-entries under Add, and a featured banner on Discover.
+**Modules** — against Claude's Customize, still missing: a Plugins face,
+"Create a skill" / "Create with Claude" entries under Add, and a featured
+banner on Discover. (Search, sort, filters and the per-page details closed
+2026-09-11.)
 
 Reached through a channel we already call, but only partly:
 
@@ -183,19 +189,22 @@ Reached through a channel we already call, but only partly:
   `bot` both start through `sessions.create` with a mode. Neither has an entry
   point here. Upstream's Quick Chat panel is gone (#1433) — what survived of
   it is exactly these two modes.
-- **`/side`, `/graph`, `/swarm`**: parsed by `desktop-slash-command.ts` and
-  deliberately refused by the composer.
-- **Palette commands not implemented**: `action:side-chat`,
-  `action:new-deep-research`, `nav:daily-review`,
-  `diag:open-skills`, `diag:export-conversation`,
-  `diag:save-conversation-file`, `diag:open-local-memory`, and the three
-  daily-review clipboard/save commands. `action:new-scheduled-task` is partial:
-  ours navigates to the page, upstream also opens the create form. Export and
-  save-conversation are a real gap — upstream has an e2e for it
-  (`context-window-save.spec.ts`).
+- **`/side`, `/graph`, `/swarm`**: parsed by `lib/ported/desktop-slash-command.ts`
+  and refused by the composer (`components/composer/ChatInput.tsx`, the
+  `^/(side|graph|swarm)` guard).
+- **Palette commands.** `STATIC_COMMAND_IDS` in `locales/shell-copy.ts` names
+  25 user-facing actions; `components/palette/commands.ts` implements 14 of
+  them (plus `diag:runtime-debug`, which is ours). The 11 without a handler:
+  `action:side-chat`, `action:new-deep-research`,
+  `action:new-scheduled-task` (upstream opens the create form; `nav:automations`
+  only reaches the page), `nav:daily-review`, `diag:open-skills`,
+  `diag:export-conversation`, `diag:save-conversation-file`,
+  `diag:open-local-memory`, and the three daily-review clipboard/save
+  commands. Export and save-conversation are a real gap — upstream has an e2e
+  for it (`context-window-save.spec.ts`).
 - **Settings surfaces with no page here**: bot chats (5 upstream files), daily
-  review, import tasks, the custom pet section, Host management / onboarding /
-  SSH terminal / project-directory editor dialogs.
+  review, import/export tasks, external agents, the custom pet section, Host
+  management / onboarding / SSH terminal / project-directory editor dialogs.
 
 What none of this measures: a surface that calls its channel but renders only
 part of the feature. That needs a page-by-page comparison.
@@ -211,9 +220,20 @@ renderer surface, which is the only thing that makes them different.
   `packages/core/src/settings.ts` and the setting is still persisted, but
   `lib/theme.ts:245` makes `applyThemePalette` a no-op and no picker exists.
 - **App icons** — upstream ships 40 grouped icons and a separate light/dark
-  slot with its own target selector. `packages/core/src/settings.ts:190`
+  slot with its own target selector. `packages/core/src/settings.ts:191`
   narrows `APP_ICONS` to one id here, and every write is `'both'`, so
   `appIconDark` can never be set.
+- **Work board** — a workbar face holding a user-owned list of deferred items:
+  Inbox or current project, todo / in progress / done, rename, move, archive,
+  delete. The model never sees it and nothing writes to it but the panel's own
+  input box. Upstream shipped only its Phase 1; the "capture from a side chat"
+  and "start as task" phases that would set it apart from a `TODO.md` have not
+  landed there (`linkedSessions` has no consumer). Main, preload
+  (`workBoard.*`, 7 methods) and the copy in all three locales are here;
+  `hooks/use-workbar.ts:35` keeps the face out of the strip so a persisted tab
+  never shows an empty body. Closing it is a port of upstream's
+  `use-work-board.ts` and `work-board-panel.tsx` (about 670 lines) plus a
+  `bridge/work-board.ts`. Decide when upstream's Phase 3 lands.
 - **WorkHub** — the persistent session and its floating window; listed above
   under the surfaces with no page.
 - **Bottom workbar dock** — `hooks/use-workbar.ts:27-32` preserves the state
@@ -225,8 +245,8 @@ renderer surface, which is the only thing that makes them different.
 
 The 2026-09-08 audit against upstream's `app-shell-chat-actions.ts` found 24
 gaps; three batches and a round of regression fixes landed the same day, and
-`docs/enterprise/phase-reports/core-dialogue-regressions.md` records what
-changed. What that audit left open:
+`phase-reports/core-dialogue-regressions.md` records what changed. What that
+audit left open:
 
 - The slash-command catalog port has no caller (`/compact` is hard-coded).
 - `orchestrationMode` is not part of the new-task draft; the composer sends
@@ -295,28 +315,30 @@ selector.
   probed; an MCP server added from the directory, tested and signed into; a
   skill imported from a file; a scheduled task actually firing (Phase 5b).
 
-## How the gap list was measured (2026-09-09)
-
-Everything below is implemented in the main process and the backend packages —
-their IPC handlers are registered and this fork does not modify
-`apps/desktop/src/preload/bridge-contract.d.ts`. The gap is the renderer alone.
+## How the gap list was measured (2026-09-12, against `c08626bf2`)
 
 Measured three ways, because no single one is complete:
 
-1. **Bridge-layer call audit.** The architecture check forces every preload
-   call through `src/renderer/bridge/*`, so parsing those files against the
-   contract gives an exact answer: of 359 callable paths, 122 are never
-   reached. This finds whole namespaces AND methods nested inside namespaces we
-   do use (`settings.bots.*` would be invisible to a namespace-level count).
-2. **Command palette ids.** `STATIC_COMMAND_IDS` in `shell-copy.ts` names 25
-   user-facing actions; this renderer implements 15.
-3. **Surface inventory.** Upstream's renderer pages and settings pages, mapped
-   against ours.
+1. **Bridge-layer reach.** The architecture check forces every preload call
+   through `src/renderer/bridge/*`, so grepping those files against the
+   contract gives an exact answer. The contract declares 47 namespaces; 16 are
+   never opened here (the table above), and `settings.bots.*` sits unreached
+   inside one we do use — which is why the count is per method, not per
+   namespace. The first pass on 2026-09-09 counted 359 callable paths with 122
+   unreached; the two namespaces the eleventh sync added are the only change
+   since.
+2. **Command palette ids.** `STATIC_COMMAND_IDS` against the handlers in
+   `components/palette/commands.ts`: 25 named, 14 implemented.
+3. **Surface inventory.** Upstream's renderer pages and settings pages
+   (`git ls-tree upstream/main apps/desktop/src/renderer`), mapped against
+   ours. Upstream's renderer is deleted here, so its files are read with
+   `git show upstream/main:<path>`.
 
-A second pass compared upstream's surfaces with ours page by page — six
-parallel audits reading both sides, every claim grepped against our tree and
-the defects re-verified by hand. Upstream's renderer is deleted here, so its
-files are read with `git show main:<path>`.
+A second pass on 2026-09-09 compared upstream's surfaces with ours page by
+page — six parallel audits reading both sides, every claim grepped against our
+tree and the defects re-verified by hand. The 2026-09-12 pass re-ran the reach
+and inventory checks after the eleventh sync and confirmed every row of the
+table still holds on both sides.
 
 What none of this measures: a surface that renders the whole feature but gets
 a detail wrong without saying so. Only using the app finds those.

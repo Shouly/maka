@@ -41,6 +41,7 @@ import {
   sessionEventErrorMessage,
 } from '../lib/ported/model-connection-errors.js';
 import { getDesktopConversationCopy } from '../locales/conversation-copy.js';
+import { deriveMessageQueueProjection } from '../lib/ported/message-queue-projection.js';
 import { createConversationDisplayFrameScheduler } from '../lib/ported/display-frame-scheduler.js';
 
 type RefBox<T> = { current: T };
@@ -313,28 +314,10 @@ export function createAppShellSessionEventHandlers(options: {
     setInteractionBySession((current) => reduceInteractionQueues(current, sessionId, event));
 
     switch (event.type) {
-      case 'queue_update':
-        projectQueuedTransientMessages?.(
-          sessionId,
-          (event.steeringEntries ?? [])
-            .concat(event.followupEntries ?? [])
-            .filter((entry) => entry.state === 'queued')
-            .map((entry) => ({
-              id: entry.messageId,
-              transientPlacement: entry.placement,
-              ...(entry.placement === 'current_turn' && { hostTurnId: event.turnId }),
-              ts: event.ts,
-              text: entry.content.displayText ?? entry.content.text,
-              ...(entry.content.attachments && { attachments: [...entry.content.attachments] }),
-              ...(entry.content.directoryReferences && {
-                directoryReferences: entry.content.directoryReferences,
-              }),
-              ...(entry.content.quotes && { quotes: [...entry.content.quotes] }),
-              ...(entry.content.inlineReferences && {
-                inlineReferences: [...entry.content.inlineReferences],
-              }),
-            })),
-        );
+      case 'queue_update': {
+        // One presentation contract for Host queue snapshots (upstream #4901).
+        const queue = deriveMessageQueueProjection(event);
+        projectQueuedTransientMessages?.(sessionId, queue.transientMessages);
         setMessageQueueBySession?.((current) => {
           if (!event.steering.length && !event.followup.length) {
             if (!current[sessionId]) return current;
@@ -346,14 +329,12 @@ export function createAppShellSessionEventHandlers(options: {
             ...current,
             [sessionId]: {
               queueRevision: event.queueRevision,
-              entries: [
-                ...(event.steeringEntries ?? []).filter((entry) => entry.state === 'queued'),
-                ...(event.followupEntries ?? []),
-              ].map((entry) => structuredClone(entry)),
+              entries: [...queue.entries],
             },
           };
         });
         break;
+      }
       case 'message_admission':
         if (event.outcome === 'retracted') removeTransientMessage?.(sessionId, event.messageId);
         break;

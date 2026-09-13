@@ -37,7 +37,7 @@ import {
   type ProjectedLlmConnection,
 } from '@maka/core/llm-connections';
 import { providerDefaultsOf, type ProviderDefaults } from '@maka/core/provider-registry';
-import type { RelayModelProfiles } from '@maka/core/model-thinking';
+import type { ModelOverrides } from '@maka/core/model-thinking';
 import { useUiLocale } from '@maka/ui';
 import { Anthropicon } from '../../icons/Anthropicon.js';
 import { Button } from '../../ui/button.js';
@@ -412,12 +412,12 @@ function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: Provid
         onAddModel={({ id, contextWindow }) =>
           // A typed-in model is one the user means to use, so it joins the
           // selection; its context window is a declaration about an id, which
-          // is what `relayModelProfiles` is for.
+          // is what `modelOverrides` is for.
           write(
             {
               enabledModelIds: [...connectionEnabledModelIds(connection), id],
-              relayModelProfiles: {
-                ...(connection.relayModelProfiles ?? {}),
+              modelOverrides: {
+                ...(connection.modelOverrides ?? {}),
                 [id]: { contextWindow },
               },
             },
@@ -440,8 +440,8 @@ function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: Provid
             )
             .finally(() => setFetching(false));
         }}
-        onSetRelayProfiles={(relayModelProfiles: RelayModelProfiles) =>
-          write({ relayModelProfiles }, copy.detail.saveFailed)
+        onSetModelOverrides={(modelOverrides: ModelOverrides) =>
+          write({ modelOverrides }, copy.detail.saveFailed)
         }
       />
 

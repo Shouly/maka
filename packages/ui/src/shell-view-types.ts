@@ -90,6 +90,13 @@ export interface TransientUserMessageProjection {
   transientPlacement: 'current_turn' | 'next_turn';
   /** The Host Turn this Message is already bound to, once the Host named one. */
   hostTurnId?: string;
+  /**
+   * A queued steering message the Host holds for the current Turn (from a
+   * `queue_update` snapshot), as opposed to a send the renderer is still
+   * admitting. Set by the message-queue projection; consumers may use it to
+   * label the row.
+   */
+  pendingSteering?: boolean;
 }
 
 /**

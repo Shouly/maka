@@ -25,7 +25,7 @@
 // build's) and two projections of one model's facts have drifted before.
 //
 // The thinking-level declaration is offered for relay providers only, and that
-// is a property of the provider registry (`relayModelProfiles`), not a list of
+// is a property of the provider registry (`modelOverrides`), not a list of
 // ids here. A relay's models are unknown to metadata, so the user is the only
 // authority on which reasoning levels the endpoint accepts; for every other
 // provider the metadata already knows, and an editable declaration would let a
@@ -39,7 +39,7 @@ import {
 } from '@maka/core/llm-connections';
 import {
   DECLARABLE_RELAY_THINKING_LEVELS,
-  type RelayModelProfiles,
+  type ModelOverrides,
   type ThinkingLevel,
 } from '@maka/core/model-thinking';
 import { getConversationCopy, useUiLocale } from '@maka/ui';
@@ -60,7 +60,7 @@ export function ConnectionModelsSection(props: {
   onSetEnabledModels: (enabledModelIds: string[]) => void;
   onAddModel: (input: { id: string; contextWindow: number }) => void;
   onFetchModels: () => void;
-  onSetRelayProfiles: (profiles: RelayModelProfiles) => void;
+  onSetModelOverrides: (profiles: ModelOverrides) => void;
 }) {
   const locale = useUiLocale();
   const copy = getSettingsModelsCopy(locale);
@@ -88,14 +88,14 @@ export function ConnectionModelsSection(props: {
   };
 
   const declaredLevels = (modelId: string): readonly ThinkingLevel[] =>
-    props.connection.relayModelProfiles?.[modelId]?.thinkingLevels ?? [];
+    props.connection.modelOverrides?.[modelId]?.thinkingLevels ?? [];
 
   const toggleLevel = (modelId: string, level: ThinkingLevel, next: boolean) => {
     const current = new Set(declaredLevels(modelId));
     if (next) current.add(level);
     else current.delete(level);
     const levels = DECLARABLE_RELAY_THINKING_LEVELS.filter((value) => current.has(value));
-    const existing = props.connection.relayModelProfiles ?? {};
+    const existing = props.connection.modelOverrides ?? {};
     const profile = {
       ...existing[modelId],
       ...(levels.length > 0 ? { thinkingLevels: levels } : {}),
@@ -104,7 +104,7 @@ export function ConnectionModelsSection(props: {
     const next_: Record<string, typeof profile> = { ...existing };
     if (Object.keys(profile).length === 0) delete next_[modelId];
     else next_[modelId] = profile;
-    props.onSetRelayProfiles(next_);
+    props.onSetModelOverrides(next_);
   };
 
   return (
@@ -177,9 +177,6 @@ export function ConnectionModelsSection(props: {
                 {entry?.supportsVision && <span>{copy.detail.visionToken}</span>}
                 {entry !== undefined && entry.thinkingLevels.length > 0 && (
                   <span>{copy.detail.thinkingToken}</span>
-                )}
-                {entry !== undefined && !entry.describedByMetadata && (
-                  <span className="text-text-muted">{copy.detail.modelUndescribed}</span>
                 )}
               </span>
             }
