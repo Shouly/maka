@@ -89,6 +89,7 @@ import { MessageQueue } from './MessageQueue.js';
 import { SelectionQuote } from './SelectionQuote.js';
 import { UserMessageRow } from './UserMessageRow.js';
 import { TranscriptTurn } from './TranscriptTurn.js';
+import { useQuestionPin } from './use-question-pin.js';
 import { TurnIdleMark } from './TurnIdleMark.js';
 import { TurnRunningStatus } from './TurnRunningStatus.js';
 import { NoticeCard } from './notices/NoticeCard.js';
@@ -122,8 +123,9 @@ function SessionTranscript(props: SessionViewProps) {
   const actions = getDesktopConversationCopy(locale).actions;
   const sessionId = props.sessionId;
   const scrollRef = useRef<HTMLDivElement>(null);
+  const feedRef = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
   const authority = useTranscriptScrollAuthority();
-  const [awayFromTail, setAwayFromTail] = useState(false);
   const [switchingToolUseId, setSwitchingToolUseId] = useState<string | undefined>(undefined);
 
   const turns = useActiveTurns();
@@ -194,14 +196,17 @@ function SessionTranscript(props: SessionViewProps) {
     [locale, props, sessionId],
   );
 
-  // The pin state drives one affordance and nothing else, so it subscribes
-  // rather than being lifted into a provider that would re-render the whole
-  // transcript on every threshold crossing.
-  useEffect(() => {
-    const read = () => setAwayFromTail(authority.getSnapshot().awayFromTail);
-    read();
-    return authority.subscribe(read);
-  }, [authority]);
+  // After a send the question goes to the top and the answer fills the space
+  // beneath it (relx's reading model); the disc offers the tail when there is
+  // content below the viewport. See `use-question-pin.ts`.
+  const { contentBelow, jumpToLatest } = useQuestionPin({
+    scrollRef,
+    feedRef,
+    endRef,
+    sessionId,
+    authority,
+    viewportNavigation: activeSessionStore.viewportNavigation,
+  });
 
   // Bring the remembered turn back into the range before the scroller looks
   // for it. A cancelled restore is a task the reader already left.
@@ -250,6 +255,13 @@ function SessionTranscript(props: SessionViewProps) {
     // A send publishes one pin here; the hook consumes it once rather than
     // replaying it on the next growth.
     viewportNavigation: activeSessionStore.viewportNavigation,
+    // A send releases the tail pin instead of writing to it: the question is
+    // pinned to the top by `useQuestionPin`, and the stream is not followed.
+    followLatest: 'release',
+    // Parked on the latest Turn is not a bookmark: returning to this task
+    // lands on the latest reply, as relx does, not on the question with the
+    // reply below the fold. A reader in older history keeps their place.
+    bookmarks: 'history',
     behavior: 'smooth',
     hasOlderHistory: feed.hasOlder,
     hasNewerHistory: feed.hasNewer,
@@ -380,7 +392,10 @@ function SessionTranscript(props: SessionViewProps) {
           aria-label={copy.feed.ariaLabel}
           aria-busy={!feed.observationReady || undefined}
         >
-          <div className="chat-feed mx-auto w-full max-w-[var(--chat-feed-max)] px-4 pb-8 pt-4">
+          <div
+            ref={feedRef}
+            className="chat-feed mx-auto w-full max-w-[var(--chat-feed-max)] px-4 pb-8 pt-4"
+          >
             {!feed.observationReady &&
               turns.length === 0 &&
               feed.transientMessages.length === 0 && <ChatSkeleton />}
@@ -507,13 +522,16 @@ function SessionTranscript(props: SessionViewProps) {
                 ? [<TurnIdleMark key={`idle:${sessionId}`} />]
                 : []),
             ]}
+            {/* The end of content, as opposed to the end of the scroll height
+                the pinned question's floor extends. */}
+            <div ref={endRef} data-maka-transcript-end="" />
           </div>
         </div>
-        {(awayFromTail || feed.hasNewer) && (
+        {(contentBelow || feed.hasNewer) && (
           <JumpToLatest
             streaming={running}
             onJump={() => {
-              authority.pinToTail();
+              jumpToLatest();
               void loadHistory('latest');
             }}
           />

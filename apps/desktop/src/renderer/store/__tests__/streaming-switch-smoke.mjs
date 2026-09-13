@@ -136,8 +136,78 @@ try {
   await page.getByRole('button', { name: 'New task', exact: true }).first().click();
   const filler = ' lorem ipsum dolor sit amet'.repeat(180);
   await startTask(`Session B streaming marker${filler}`);
+  // The question's distance from the top, sampled through the pin: it must
+  // settle near 24px and never leave again (a swap-induced second jump would
+  // show as a sample far from the top after one that had arrived).
+  const arrival = [];
+  for (let i = 0; i < 20; i += 1) {
+    await sleep(100);
+    arrival.push(
+      await page.evaluate(() => {
+        const root = document.querySelector('[data-maka-transcript-boundary]');
+        const rows = root.querySelectorAll('[data-role="user"]');
+        const question = rows[rows.length - 1];
+        return question
+          ? Math.round(question.getBoundingClientRect().top - root.getBoundingClientRect().top)
+          : null;
+      }),
+    );
+  }
+  findings.push({ arrival });
+  const arrived = arrival.findIndex((top) => top !== null && top <= 40);
+  assert.ok(arrived >= 0, `the question reaches the top: ${arrival.join(',')}`);
+  assert.ok(
+    arrival.slice(arrived).every((top) => top !== null && top <= 60),
+    `the question stays at the top once there: ${arrival.join(',')}`,
+  );
   await transcript().getByText('Fake backend received: Session B', { exact: false }).waitFor();
-  await sleep(1500);
+
+  // relx's reading model: the question sits at the top of the viewport, the
+  // viewport does not follow the stream, and the disc appears once the answer
+  // has grown past the bottom.
+  const measure = () =>
+    page.evaluate(() => {
+      const root = document.querySelector('[data-maka-transcript-boundary]');
+      const rows = root.querySelectorAll('[data-role="user"]');
+      const question = rows[rows.length - 1];
+      return {
+        questionTop: question.getBoundingClientRect().top - root.getBoundingClientRect().top,
+        scrollTop: root.scrollTop,
+        floor: root.querySelector('.chat-feed').style.minHeight,
+      };
+    });
+  const pinned = await measure();
+  await page.screenshot({ path: SHOT('streaming-switch-pinned-light.png') });
+  await page
+    .getByRole('button', { name: 'Jump to latest', exact: true })
+    .waitFor({ timeout: 30000 });
+  const grown = await measure();
+  findings.push({
+    pin: true,
+    questionTop: pinned.questionTop,
+    floor: pinned.floor,
+    scrollTopHeld: grown.scrollTop === pinned.scrollTop,
+    questionTopAfterGrowth: grown.questionTop,
+  });
+  assert.ok(
+    pinned.questionTop >= 16 && pinned.questionTop <= 40,
+    `question pinned near the top: ${pinned.questionTop}`,
+  );
+  assert.ok(pinned.floor !== '', 'the feed carries a floor so the question could reach the top');
+  assert.ok(grown.scrollTop === pinned.scrollTop, 'the viewport does not follow the stream');
+
+  // The jump-to-latest disc, while the answer is still generating: scroll the
+  // reader to the top so it shows, keep the shot for the style comparison.
+  await transcript()
+    .locator('[data-maka-transcript-boundary]')
+    .evaluate((node) => {
+      node.scrollTop = 0;
+    });
+  await page.getByRole('button', { name: 'Jump to latest', exact: true }).waitFor();
+  await sleep(400);
+  await page.screenshot({ path: SHOT('streaming-switch-jump-light.png') });
+  await page.getByRole('button', { name: 'Jump to latest', exact: true }).click();
+  await sleep(400);
 
   for (let round = 1; round <= 3; round += 1) {
     const before = await transcriptText();
@@ -145,12 +215,46 @@ try {
     assert.ok(streamedBefore >= 0, `round ${round}: the stream is visible before leaving`);
     const lengthBefore = before.length - streamedBefore;
 
+    if (round === 1) {
+      // A reader who nudged the wheel while parked on the question: still the
+      // latest Turn, so no bookmark — returning must land on the latest reply.
+      await transcript().hover();
+      await page.mouse.wheel(0, 40);
+      await sleep(300);
+    }
     await ensureSidebarExpanded();
     await rowNamed('Session A anchor').click();
     await transcript().getByText('renderer loop are connected.', { exact: false }).waitFor();
     await sleep(700);
     await rowNamed('Session B streaming marker').click();
     await transcript().getByText('Fake backend received: Session B', { exact: false }).waitFor();
+
+    if (round === 1) {
+      await sleep(1200);
+      const layout = await page.evaluate(() => {
+        const root = document.querySelector('[data-maka-transcript-boundary]');
+        const rootRect = root.getBoundingClientRect();
+        const rows = root.querySelectorAll('[data-role="user"]');
+        const question = rows[rows.length - 1];
+        const end = root.querySelector('[data-maka-transcript-end]');
+        return {
+          viewport: rootRect.height,
+          scrollTop: root.scrollTop,
+          scrollHeight: root.scrollHeight,
+          questionTop: question ? question.getBoundingClientRect().top - rootRect.top : null,
+          contentEndFromViewportTop: end.getBoundingClientRect().top - rootRect.top,
+          floor: root.querySelector('.chat-feed').style.minHeight,
+          disc: !!document.querySelector('button[aria-label="Jump to latest"]'),
+        };
+      });
+      findings.push({ returned: true, ...layout });
+      await page.screenshot({ path: SHOT('streaming-switch-returned-light.png') });
+      assert.ok(
+        layout.contentEndFromViewportTop <= layout.viewport + 1,
+        `returning lands on the latest reply: content end ${layout.contentEndFromViewportTop} vs viewport ${layout.viewport}`,
+      );
+      assert.equal(layout.floor, '', 'no floor survives a switch');
+    }
 
     // What the reader sees right after the switch, sampled for two seconds.
     const samples = [];
@@ -182,6 +286,86 @@ try {
     .waitFor({ timeout: 60000 });
   const final = await transcriptText();
   findings.push({ final: final.includes('Fake backend received: Session B') });
+
+  // Leaving from history while a second Turn streams: the bookmark on the
+  // earlier Turn is kept, so returning lands there with no following, and the
+  // disc offers the tail. Taking the disc lands at the tail, which follows.
+  const geometry = () =>
+    page.evaluate(() => {
+      const root = document.querySelector('[data-maka-transcript-boundary]');
+      const rootRect = root.getBoundingClientRect();
+      const turns = [...root.querySelectorAll('[data-turn-id]')];
+      const end = root.querySelector('[data-maka-transcript-end]');
+      return {
+        scrollTop: root.scrollTop,
+        firstTurnTop: turns[0] ? turns[0].getBoundingClientRect().top - rootRect.top : null,
+        contentEndFromViewportTop: end.getBoundingClientRect().top - rootRect.top,
+        viewport: rootRect.height,
+        disc: !!document.querySelector('button[aria-label="Jump to latest"]'),
+      };
+    });
+  await ensureSidebarExpanded();
+  await rowNamed('Session A anchor').click();
+  await transcript().getByText('renderer loop are connected.', { exact: false }).waitFor();
+  await page.getByLabel('Message input', { exact: true }).fill(`Session A second turn${filler}`);
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await transcript()
+    .getByText('Fake backend received: Session A second turn', { exact: false })
+    .waitFor();
+  // Past the question hold (450ms ease plus a 1200ms hold): reading history
+  // is a decision the reader makes once the send has landed.
+  await sleep(2500);
+  // Read history by wheel, as a reader would: only reader-driven scrolling
+  // records a reading position (a programmatic scrollTop does not). The wheel
+  // lands on the answer, not on the collapsed question bubble, which is a
+  // nested scroller the browser would feed first.
+  // Read history from the keyboard: a synthetic wheel in this Electron is
+  // applied before its event reaches the scroller, so the authority sees no
+  // movement in it; a key scrolls after its keydown, as it does for a reader.
+  await transcript()
+    .locator('[data-maka-transcript-boundary]')
+    .evaluate((node) => {
+      node.tabIndex = -1;
+      node.focus();
+    });
+  for (let i = 0; i < 14; i += 1) {
+    await page.keyboard.press('ArrowUp');
+    await sleep(70);
+  }
+  await sleep(600);
+  const inHistory = await geometry();
+  assert.equal(inHistory.scrollTop, 0, 'the wheel reached the top of history');
+  await rowNamed('Session B streaming marker').click();
+  await transcript().getByText('Fake backend received: Session B', { exact: false }).waitFor();
+  await sleep(600);
+  await rowNamed('Session A anchor').click();
+  await transcript()
+    .getByText('Fake backend received: Session A second turn', { exact: false })
+    .waitFor();
+  await sleep(1200);
+  const restored = await geometry();
+  await sleep(2000);
+  const restoredLater = await geometry();
+  findings.push({ history: true, inHistory, restored, restoredLater });
+  await page.screenshot({ path: SHOT('streaming-switch-history-light.png') });
+  await page
+    .getByRole('button', { name: 'Jump to latest', exact: true })
+    .waitFor({ timeout: 15000 });
+  await page.getByRole('button', { name: 'Jump to latest', exact: true }).click();
+  await sleep(600);
+  const atTail = await geometry();
+  await sleep(2000);
+  const atTailLater = await geometry();
+  findings.push({ tail: true, atTail, atTailLater });
+  assert.ok(
+    restored.firstTurnTop !== null && restored.firstTurnTop >= -8 && restored.firstTurnTop <= 40,
+    `returns to the bookmarked Turn: ${restored.firstTurnTop}`,
+  );
+  assert.ok(restoredLater.disc, 'the disc offers the tail from history once the answer has grown');
+  assert.equal(restoredLater.scrollTop, restored.scrollTop, 'history does not follow the stream');
+  assert.ok(atTail.contentEndFromViewportTop <= atTail.viewport + 1, 'the disc lands at the tail');
+  assert.ok(atTailLater.scrollTop > atTail.scrollTop, 'the tail follows the stream');
+  assert.ok(!atTailLater.disc, 'no disc while following');
 
   // Task C: a live turn whose first step is a finished tool call waiting on
   // the user. Nothing here is an incomplete text accumulator, so what the

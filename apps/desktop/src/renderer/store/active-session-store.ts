@@ -1167,7 +1167,8 @@ export function createActiveSessionStore(
       store.setState({ unavailableAnchorTurnId: undefined });
       // Only the bookmark moves. The window is the Renderer's own, so a reader
       // parking on a Turn needs no page from the Host, and walking back to the
-      // tail reveals it from the window already held.
+      // tail reveals it from the window already held. Which positions count as
+      // bookmarks is the scroller's call (`useChatScroll` `bookmarks`).
       captureTranscriptReadingAnchor({
         sessionId,
         currentSessionId: store.getState().sessionId,

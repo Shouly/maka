@@ -658,3 +658,60 @@ test('only the reader\'s own movement reaches a reader-scroll listener', () => {
     assert.equal(heard, 1);
   });
 });
+
+test('holdTurn carries a Turn to its offset, asks for room, and holds it against a swap', () => {
+  withObservers((_resize, frame) => {
+    const root = fakeRoot({ scrollHeight: 3_000, clientHeight: 600 });
+    const authority = createTranscriptScrollAuthority();
+    authority.attach(root as unknown as HTMLElement);
+    let questionTop = 1_000;
+    const question = {
+      isConnected: true,
+      getBoundingClientRect: () => ({ top: questionTop - root.scrollTop }) as DOMRect,
+    } as unknown as HTMLElement;
+    const room: number[] = [];
+    authority.holdTurn(question, {
+      offset: 24,
+      durationMs: 0,
+      holdMs: 1_000_000,
+      ensureRoom: (top) => room.push(top),
+    });
+    assert.equal(authority.getSnapshot().holding, true);
+    assert.equal(authority.getSnapshot().pinned, false);
+    assert.equal(root.scrollTop, 976);
+    assert.deepEqual(room, [976]);
+    // The row is replaced by a taller one above it: the hold re-aims.
+    questionTop = 1_040;
+    frame();
+    assert.equal(root.scrollTop, 1_016);
+    assert.equal(room.at(-1), 1_016);
+    // The reader takes over: the hold ends at once, without another write.
+    root.input(-100);
+    assert.equal(authority.getSnapshot().holding, false);
+    questionTop = 1_100;
+    frame();
+    assert.equal(root.scrollTop, 1_016);
+  });
+});
+
+test('pinning to the tail or releasing ends a hold', () => {
+  withObservers((_resize, frame) => {
+    const root = fakeRoot({ scrollHeight: 3_000, clientHeight: 600 });
+    const authority = createTranscriptScrollAuthority();
+    authority.attach(root as unknown as HTMLElement);
+    const question = {
+      isConnected: true,
+      getBoundingClientRect: () => ({ top: 500 - root.scrollTop }) as DOMRect,
+    } as unknown as HTMLElement;
+    authority.holdTurn(question, { durationMs: 0, holdMs: 1_000_000 });
+    assert.equal(authority.getSnapshot().holding, true);
+    authority.pinToTail();
+    assert.equal(authority.getSnapshot().holding, false);
+    assert.equal(root.scrollTop, 2_400);
+    frame();
+    assert.equal(root.scrollTop, 2_400);
+    authority.holdTurn(question, { durationMs: 0, holdMs: 1_000_000 });
+    authority.releasePin();
+    assert.equal(authority.getSnapshot().holding, false);
+  });
+});

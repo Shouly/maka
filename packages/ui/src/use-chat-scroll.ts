@@ -36,6 +36,13 @@ import type { StoredMessage } from '@maka/core/session';
 import { useTranscriptScrollAuthority } from './transcript-scroll-authority.js';
 import type { TranscriptViewportNavigation } from './transcript-viewport-navigation.js';
 
+/** The last mounted Turn, which is the latest one while the window is at the tail. */
+function latestTurnId(root: HTMLElement | null): string | undefined {
+  if (!root) return undefined;
+  const turns = root.querySelectorAll<HTMLElement>('[data-turn-id]');
+  return turns[turns.length - 1]?.dataset.turnId;
+}
+
 export function useChatScroll(input: {
   scrollRef: RefObject<HTMLElement | null>;
   sessionId?: string;
@@ -57,6 +64,20 @@ export function useChatScroll(input: {
   onPrefetchHistory?(edge: 'older' | 'newer'): Promise<boolean>;
   /** The turns the reader can still reach within the retained band; the rest may go. */
   onRetainWindow?(window: { firstTurnId: string; lastTurnId: string }): void;
+  /**
+   * What a send does to the viewport. `tail` (the default) pins it to the tail
+   * so the answer is followed as it streams; `release` only drops any pin and
+   * leaves the position to the surface, for a reading model that puts the
+   * question at the top and lets the answer fill the space beneath.
+   */
+  followLatest?: 'tail' | 'release';
+  /**
+   * Which reading positions are bookmarks. `any` (the default) records the
+   * Turn under the top edge whenever the reader is off the tail; `history`
+   * records it only when it is not the latest Turn, so a reader parked on the
+   * question they just sent leaves no bookmark and returns to the tail.
+   */
+  bookmarks?: 'any' | 'history';
 }) {
   const [highlightedTurnId, setHighlightedTurnId] = useState<string | null>(null);
   const authority = useTranscriptScrollAuthority();
@@ -65,6 +86,10 @@ export function useChatScroll(input: {
   const canPrefetch = input.onPrefetchHistory !== undefined;
   const retainRef = useRef(input.onRetainWindow);
   retainRef.current = input.onRetainWindow;
+  const followLatestRef = useRef(input.followLatest);
+  followLatestRef.current = input.followLatest;
+  const bookmarksRef = useRef(input.bookmarks);
+  bookmarksRef.current = input.bookmarks;
   const handledTarget = useRef<string | null>(null);
   const anchorChangeRef = useRef(input.onReadingAnchorChange);
   anchorChangeRef.current = input.onReadingAnchorChange;
@@ -128,7 +153,8 @@ export function useChatScroll(input: {
     handledTarget.current = commandTarget.current;
     activation.current = { sessionId };
     commandTarget.current = null;
-    authority.pinToTail();
+    if (followLatestRef.current === 'release') authority.releasePin();
+    else authority.pinToTail();
   }), [authority, input.viewportNavigation]);
 
   useEffect(() => {
@@ -138,11 +164,17 @@ export function useChatScroll(input: {
       // actually landed, neither an intermediate bounded range nor an empty
       // one says anything new about where the reader intended to be.
       if (commandTarget.current && handledTarget.current !== commandTarget.current) return;
-      const turnId = snapshot.pinned ? undefined : authority.measureReadingTurn();
+      const measured = snapshot.pinned ? undefined : authority.measureReadingTurn();
+      // Parked on the latest Turn is not history. Recorded as "no bookmark"
+      // rather than skipped, so that the same Turn is reported again once a
+      // newer one exists below it.
+      const onLatest = measured !== undefined && bookmarksRef.current === 'history'
+        && measured === latestTurnId(input.scrollRef.current);
+      const turnId = onLatest ? undefined : measured;
       // An empty bounded range has no new reading position. In particular,
       // releasing the pin before a remembered range loads must not erase the
       // Turn that caused that range to be requested.
-      if (!snapshot.pinned && !turnId) return;
+      if (!snapshot.pinned && !turnId && !onLatest) return;
       const previous = reportedAnchor.current;
       if (
         previous !== undefined &&
