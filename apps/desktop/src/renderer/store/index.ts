@@ -26,6 +26,7 @@ import {
 import { createActiveSessionStore } from './active-session-store.js';
 import { createTurnActionsStore } from './turn-actions-store.js';
 import { createGoalStore } from './goal-store.js';
+import { createPlanStore } from './plan-store.js';
 import { archiveProject } from '../bridge/projects.js';
 import { sessionsStore } from './sessions-store.js';
 import { settingsStore } from './settings-store.js';
@@ -72,6 +73,10 @@ sessionsStore.onCatalogRead({
 // The Goal reads its transitions out of the Session catalog's change stream;
 // wiring that here keeps the store itself free of another store's identity.
 export const goalStore = createGoalStore({ subscribeChanges: sessionsStore.onChange });
+// Same channel for the Plan: a proposal arrives with a turn and an execution
+// is interrupted by one, so the catalog's turn transitions are its re-read cue
+// beside the plan channel proper.
+export const planStore = createPlanStore({ subscribeChanges: sessionsStore.onChange });
 /**
  * Archive a project without leaving the default pointing at it.
  *

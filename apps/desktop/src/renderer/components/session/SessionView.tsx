@@ -38,6 +38,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { userFacingText, type StoredMessage } from '@maka/core/session';
+import type { PlanProposal } from '@maka/core/plan';
 import {
   SessionAttachmentProvider,
   TranscriptScrollAuthorityProvider,
@@ -60,11 +61,13 @@ import { openWorkbarFile, openWorkbarTerminal } from '../../hooks/use-workbar.js
 import { useTurnPresentation, pendingTurnActionKey } from '../../hooks/use-turn-presentation.js';
 import {
   activeSessionStore,
+  planStore,
   revisionDraftStore,
   revisionActions,
   sessionsStore,
   turnActionsStore,
 } from '../../store/index.js';
+import { reviewableProposal } from '../../store/plan-store.js';
 import { revisionRefusalFor } from '../../store/revision-draft.js';
 import { pendingActionsOf } from '../../store/turn-actions-store.js';
 import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
@@ -91,6 +94,8 @@ import { TurnRunningStatus } from './TurnRunningStatus.js';
 import { NoticeCard } from './notices/NoticeCard.js';
 import { RevisionBanner } from './notices/RevisionBanner.js';
 import { GoalBanner } from './notices/GoalBanner.js';
+import { PlanExecutionBanner } from './notices/PlanExecutionBanner.js';
+import { PlanProposalCard } from './PlanProposalCard.js';
 import { SessionNotices } from './notices/SessionNotices.js';
 
 export interface SessionViewProps {
@@ -144,6 +149,37 @@ function SessionTranscript(props: SessionViewProps) {
       boundaryReading: state.boundaryReading,
     })),
   );
+
+  // The Plan is read for a Session the Host has admitted — the gate GoalBanner
+  // uses: a first prompt from the welcome surface runs against a row the Host
+  // does not know yet, and asking for its plan is an error for nothing.
+  const hostAdmitted = useStore(sessionsStore, (state) => {
+    const row = state.sessions.find((session) => session.id === sessionId);
+    return row !== undefined && row.localState !== 'pending';
+  });
+  useEffect(() => {
+    if (!hostAdmitted) {
+      planStore.disconnect();
+      return;
+    }
+    return planStore.observe(sessionId);
+  }, [sessionId, hostAdmitted]);
+  const plan = useStore(planStore, (state) => state.data);
+  const reviewable = reviewableProposal(plan);
+  const proposalsByTurn = useMemo(() => {
+    const byTurn = new Map<string, PlanProposal[]>();
+    for (const proposal of plan?.proposals ?? []) {
+      const list = byTurn.get(proposal.turnId) ?? [];
+      list.push(proposal);
+      byTurn.set(proposal.turnId, list);
+    }
+    return byTurn;
+  }, [plan]);
+  // A proposal stands after its turn. When that turn is outside the loaded
+  // window the decision still has to be reachable, so the one still waiting
+  // stands at the tail instead.
+  const unanchoredReviewable =
+    reviewable && !turns.some((turn) => turn.turnId === reviewable.turnId) ? reviewable : undefined;
 
   const reportError = useCallback(
     (title: string, error: unknown) => {
@@ -433,6 +469,14 @@ function SessionTranscript(props: SessionViewProps) {
                     {...(switchingToolUseId ? { switchingToolUseId } : {})}
                     onOpenExternal={toolContext.onOpenExternal}
                   />,
+                  ...(proposalsByTurn.get(turn.turnId) ?? []).map((proposal) => (
+                    <PlanProposalCard
+                      key={`plan:${proposal.proposalId}`}
+                      sessionId={sessionId}
+                      proposal={proposal}
+                      reviewable={proposal.proposalId === reviewable?.proposalId}
+                    />
+                  )),
                   ...(shellLive.showRunningStatus && turn.turnId === live.turnId
                     ? [waitingStatus]
                     : []),
@@ -441,6 +485,16 @@ function SessionTranscript(props: SessionViewProps) {
               ...transientPlacement.tail.map((message) => (
                 <TransientMessageRow key={`pending:${message.id}`} message={message} />
               )),
+              ...(unanchoredReviewable
+                ? [
+                    <PlanProposalCard
+                      key={`plan:${unanchoredReviewable.proposalId}`}
+                      sessionId={sessionId}
+                      proposal={unanchoredReviewable}
+                      reviewable
+                    />,
+                  ]
+                : []),
               ...(orphanRunningStatus ? [waitingStatus] : []),
               // The foot of a settled conversation: the mark stands where the
               // status line stood. Only at the true tail — never over a page
@@ -472,6 +526,7 @@ function SessionTranscript(props: SessionViewProps) {
       <div className={cn('shrink-0 px-4 pb-2')}>
         <div className="mx-auto flex w-full max-w-[var(--chat-feed-max)] flex-col gap-2">
           <GoalBanner sessionId={sessionId} onError={reportError} />
+          <PlanExecutionBanner sessionId={sessionId} />
           <SessionNotices
             sessionId={sessionId}
             {...(presentation.resumeCandidateTurnId

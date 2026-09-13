@@ -50,6 +50,8 @@ export interface PlanModeCopy {
     readonly interrupted: string;
     readonly running: string;
     readonly approvedPlan: string;
+    readonly showSteps: string;
+    readonly hideSteps: string;
     stepCount(completed: number, total: number): string;
     readonly resume: string;
     readonly abandon: string;
@@ -94,6 +96,8 @@ const COPY = {
       interrupted: '计划已中断',
       running: '正在执行计划',
       approvedPlan: '已批准计划',
+      showSteps: '展开步骤',
+      hideSteps: '收起步骤',
       stepCount: (completed, total) => `${completed}/${total} 步`,
       resume: '恢复执行',
       abandon: '放弃计划',
@@ -141,6 +145,8 @@ const COPY = {
       interrupted: '計劃已中斷',
       running: '正在執行計劃',
       approvedPlan: '已批准計劃',
+      showSteps: '展開步驟',
+      hideSteps: '收起步驟',
       stepCount: (completed, total) => `${completed}/${total} 步`,
       resume: '恢復執行',
       abandon: '放棄計劃',
@@ -194,6 +200,8 @@ const COPY = {
       interrupted: 'Plan interrupted',
       running: 'Executing plan',
       approvedPlan: 'Approved plan',
+      showSteps: 'Show steps',
+      hideSteps: 'Hide steps',
       stepCount: (completed, total) => `${completed}/${total} ${total === 1 ? 'step' : 'steps'}`,
       resume: 'Resume',
       abandon: 'Abandon plan',

@@ -108,9 +108,8 @@ opens it. Method counts are from the contract.
 | Todo | 2 | `todo.*`: the current Todo projection |
 | Deep research | 2 | `deepResearch.*`: deep-research sessions |
 
-Also with no page: IM Hub (upstream's `im_hub` agents view), the Plan approval
-panel (`plan-mode-panel.tsx`), and the Runtime Host management / onboarding /
-SSH-terminal dialogs. Work board is deliberately parked, not missing; see
+Also with no page: IM Hub (upstream's `im_hub` agents view) and the Runtime Host
+management / onboarding / SSH-terminal dialogs. Work board is deliberately parked, not missing; see
 "Narrowed during the rewrite".
 
 ### Inside surfaces we do have
@@ -174,11 +173,6 @@ banner on Discover. (Search, sort, filters and the per-page details closed
 
 Reached through a channel we already call, but only partly:
 
-- **Plan** (`sessions`, 8 methods) — `getPlanState`, `subscribePlanChanges`,
-  `approvePlan`, `requestPlanRevision`, `resumePlan`, `abandonPlanProposal`,
-  `abandonPlanExecution`, plus `queryMessageExecutions`. Plan mode here is a
-  switch in the ＋ menu with no panel behind it: nothing shows the plan, and
-  nothing can approve, revise or resume it.
 - **Memory** — `openBackup`, `openLatestBackup`, `restoreBackup`.
 - **Runtime Host profiles** — `importConnectionCode`, `discardPairing`,
   `resolvePairingRecovery`: no recovery path when a pairing breaks.

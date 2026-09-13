@@ -26,6 +26,7 @@
     "src/renderer/bridge/oauth.ts",
     "src/renderer/bridge/onboarding.ts",
     "src/renderer/bridge/permissions.ts",
+    "src/renderer/bridge/plan.ts",
     "src/renderer/bridge/projects.ts",
     "src/renderer/bridge/runtime-host-profiles.ts",
     "src/renderer/bridge/runtime-host.ts",
@@ -97,6 +98,7 @@
     "src/renderer/components/session/AskUserQuestionRecord.tsx",
     "src/renderer/components/session/HistoryControls.tsx",
     "src/renderer/components/session/MessageQueue.tsx",
+    "src/renderer/components/session/PlanProposalCard.tsx",
     "src/renderer/components/session/SelectionQuote.tsx",
     "src/renderer/components/session/SessionView.tsx",
     "src/renderer/components/session/ThinkingStep.tsx",
@@ -109,6 +111,7 @@
     "src/renderer/components/session/notices/ContextUsageIndicator.tsx",
     "src/renderer/components/session/notices/GoalBanner.tsx",
     "src/renderer/components/session/notices/NoticeCard.tsx",
+    "src/renderer/components/session/notices/PlanExecutionBanner.tsx",
     "src/renderer/components/session/notices/RevisionBanner.tsx",
     "src/renderer/components/session/notices/SessionNotices.tsx",
     "src/renderer/components/session/tools/ToolGroup.tsx",
@@ -388,6 +391,7 @@
     "src/renderer/store/__tests__/phase4-state.test.ts",
     "src/renderer/store/__tests__/phase5-state.test.ts",
     "src/renderer/store/__tests__/phase5b-state.test.ts",
+    "src/renderer/store/__tests__/plan-state.test.ts",
     "src/renderer/store/__tests__/presentation.test.tsx",
     "src/renderer/store/__tests__/renderer-state.test.ts",
     "src/renderer/store/__tests__/run.mjs",
@@ -406,6 +410,7 @@
     "src/renderer/store/new-task-store.ts",
     "src/renderer/store/onboarding-store.ts",
     "src/renderer/store/page-history.ts",
+    "src/renderer/store/plan-store.ts",
     "src/renderer/store/projects-store.ts",
     "src/renderer/store/resource-store.ts",
     "src/renderer/store/revision-actions.ts",
@@ -772,6 +777,17 @@
       }
     },
     "src/renderer/bridge/permissions.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/plan.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {},
@@ -2187,6 +2203,27 @@
         "zustand": 1
       }
     },
+    "src/renderer/components/session/PlanProposalCard.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useStore": 2,
+        "useUiLocale": 2
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../../locales/plan-mode-copy.js": 1,
+        "../../store/index.js": 1,
+        "../ui/button.js": 1,
+        "../ui/status-chip.js": 1,
+        "./notices/NoticeCard.js": 1,
+        "@maka/ui": 1,
+        "zustand": 1
+      }
+    },
     "src/renderer/components/session/SelectionQuote.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -2215,13 +2252,13 @@
       "hookCalls": {
         "useActiveTurns": 1,
         "useChatScroll": 1,
-        "useEffect": 2,
+        "useEffect": 3,
         "useLiveTurnSnapshot": 1,
         "useRef": 1,
         "useShallow": 1,
         "useShellLiveTurn": 1,
         "useState": 2,
-        "useStore": 3,
+        "useStore": 5,
         "useTranscriptScrollAuthority": 1,
         "useTurnPresentation": 1,
         "useUiLocale": 1
@@ -2242,6 +2279,7 @@
         "../../locales/shell-copy.js": 1,
         "../../locales/transcript-copy.js": 1,
         "../../store/index.js": 1,
+        "../../store/plan-store.js": 1,
         "../../store/revision-draft.js": 1,
         "../../store/toast-api.js": 1,
         "../../store/turn-actions-store.js": 1,
@@ -2252,8 +2290,10 @@
         "./MessageQueue.js": 1,
         "./notices/GoalBanner.js": 1,
         "./notices/NoticeCard.js": 1,
+        "./notices/PlanExecutionBanner.js": 1,
         "./notices/RevisionBanner.js": 1,
         "./notices/SessionNotices.js": 1,
+        "./PlanProposalCard.js": 1,
         "./SelectionQuote.js": 1,
         "./TranscriptTurn.js": 1,
         "./TurnIdleMark.js": 1,
@@ -2493,6 +2533,33 @@
         "../../../lib/cn.js": 1,
         "../../icons/Anthropicon.js": 1,
         "../../ui/button.js": 1
+      }
+    },
+    "src/renderer/components/session/notices/PlanExecutionBanner.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 1,
+        "useState": 2,
+        "useStore": 4,
+        "useUiLocale": 2
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../../locales/plan-mode-copy.js": 1,
+        "../../../store/index.js": 1,
+        "../../../store/plan-store.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/confirm-dialog.js": 1,
+        "../../ui/status-chip.js": 1,
+        "./NoticeCard.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
       }
     },
     "src/renderer/components/session/notices/RevisionBanner.tsx": {
@@ -6142,6 +6209,17 @@
       "actionFactories": [],
       "dependencyPaths": {}
     },
+    "src/renderer/locales/plan-mode-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/core/ui-locale": 1
+      }
+    },
     "src/renderer/locales/project-details-copy.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -6530,6 +6608,7 @@
         "./mcp-store.js": 1,
         "./new-task-store.js": 1,
         "./onboarding-store.js": 1,
+        "./plan-store.js": 1,
         "./projects-store.js": 1,
         "./resource-store.js": 1,
         "./revision-actions.js": 1,
@@ -6610,6 +6689,19 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "zustand/vanilla": 1
+      }
+    },
+    "src/renderer/store/plan-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/plan.js": 1,
+        "./resource-store.js": 1,
         "zustand/vanilla": 1
       }
     },
