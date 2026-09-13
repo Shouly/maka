@@ -59,7 +59,7 @@ import { ArtifactPreview } from './ArtifactPreview.js';
 import { PreviewNotice } from './PreviewNotice.js';
 import { cn } from '../../lib/cn.js';
 import { deleteArtifact, listArtifacts, readArtifactText } from '../../bridge/artifacts.js';
-import { openArtifactPath, saveArtifactAs } from '../../bridge/app.js';
+import { openArtifactPath, saveArtifactAs, showArtifactInFolder } from '../../bridge/app.js';
 import { activeSessionStore } from '../../store/index.js';
 import { matchArtifactForPath, workbarStore } from '../../store/workbar-store.js';
 import { toast } from '../../store/toast-store.js';
@@ -162,11 +162,14 @@ export function FilesTab(props: { sessionId: string; active: boolean }) {
     }
   }, []);
 
-  const reveal = useCallback(
-    (record: ArtifactDescriptor) =>
+  // Two ways out of the pane (#5216): `showArtifactInFolder` reveals the
+  // materialized file in Finder whatever its kind; `openArtifactPath` hands an
+  // HTML deliverable to the default app and reveals every other kind.
+  const openWith = useCallback(
+    (record: ArtifactDescriptor, open: typeof openArtifactPath) =>
       run(async () => {
         try {
-          const result = await openArtifactPath(sessionId, record.id);
+          const result = await open(sessionId, record.id);
           if (!result.ok) toast({ title: copy.pane.openFailed, variant: 'destructive' });
         } catch (unknownError) {
           toast({
@@ -177,6 +180,14 @@ export function FilesTab(props: { sessionId: string; active: boolean }) {
         }
       }),
     [copy, locale, run, sessionId],
+  );
+  const reveal = useCallback(
+    (record: ArtifactDescriptor) => openWith(record, showArtifactInFolder),
+    [openWith],
+  );
+  const openExternally = useCallback(
+    (record: ArtifactDescriptor) => openWith(record, openArtifactPath),
+    [openWith],
   );
 
   const save = useCallback(
@@ -272,6 +283,7 @@ export function FilesTab(props: { sessionId: string; active: boolean }) {
               {selected.name}
             </span>
             <span className="truncate text-xs leading-4 text-text-muted">
+              {selected.kind === 'html' && `${copy.pane.viewInMaka} · `}
               {formatBytes(selected.sizeBytes)} ·{' '}
               {formatRelativeTimestamp(selected.createdAt, Date.now(), locale)}
             </span>
@@ -280,6 +292,7 @@ export function FilesTab(props: { sessionId: string; active: boolean }) {
             record={selected}
             copy={copy}
             disabled={busy}
+            onOpen={() => void openExternally(selected)}
             onReveal={() => void reveal(selected)}
             onSave={() => void save(selected)}
             onCopy={() => void copyText(selected)}
@@ -294,7 +307,9 @@ export function FilesTab(props: { sessionId: string; active: boolean }) {
           <ArtifactPreview
             key={selected.id}
             record={selected}
-            onOpenExternally={() => void reveal(selected)}
+            onOpenExternally={() =>
+              void (selected.kind === 'html' ? openExternally(selected) : reveal(selected))
+            }
           />
         </div>
         <DeleteConfirm
@@ -364,6 +379,11 @@ export function FilesTab(props: { sessionId: string; active: boolean }) {
                 <span className="min-w-0 flex-1 truncate text-sm leading-5 text-text-primary">
                   {record.name}
                 </span>
+                {record.kind === 'html' && (
+                  <span className="shrink-0 text-xs leading-4 text-text-muted">
+                    {copy.pane.viewInMaka}
+                  </span>
+                )}
                 <span className="shrink-0 text-xs leading-4 text-text-muted">
                   {formatBytes(record.sizeBytes)}
                 </span>
@@ -380,6 +400,7 @@ function ArtifactActions(props: {
   record: ArtifactDescriptor;
   copy: ArtifactCopy;
   disabled: boolean;
+  onOpen: () => void;
   onReveal: () => void;
   onSave: () => void;
   onCopy: () => void;
@@ -400,6 +421,14 @@ function ArtifactActions(props: {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
+        {record.kind === 'html' && (
+          <DropdownMenuItem onSelect={props.onOpen}>
+            <DropdownMenuItemIcon>
+              <Anthropicon name="folderOpen" size={20} />
+            </DropdownMenuItemIcon>
+            {copy.pane.openInDefaultApp}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem onSelect={props.onReveal}>
           <DropdownMenuItemIcon>
             <Anthropicon name="folderOpen" size={20} />

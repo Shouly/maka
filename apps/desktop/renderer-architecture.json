@@ -15,6 +15,7 @@
     "src/renderer/bridge/connections.ts",
     "src/renderer/bridge/diagnostics.ts",
     "src/renderer/bridge/e2e-fixture.ts",
+    "src/renderer/bridge/expected-operation-error.ts",
     "src/renderer/bridge/external-links.ts",
     "src/renderer/bridge/git-review.ts",
     "src/renderer/bridge/goal.ts",
@@ -684,6 +685,15 @@
         "./bridge.js": 1
       }
     },
+    "src/renderer/bridge/expected-operation-error.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
     "src/renderer/bridge/external-links.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {
@@ -883,7 +893,8 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
-        "./bridge.js": 1
+        "./bridge.js": 1,
+        "./expected-operation-error.js": 1
       }
     },
     "src/renderer/bridge/settings.ts": {
@@ -6619,6 +6630,7 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "@maka/core/attachments": 1,
         "@maka/core/redaction": 1,
         "@maka/core/ui-locale": 1
       }

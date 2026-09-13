@@ -72,6 +72,14 @@ export function openArtifactPath(sessionId: string, artifactId: string): Promise
   return app().openArtifactPath(sessionId, artifactId);
 }
 
+/** Reveal the materialized file in Finder, whatever its kind. */
+export function showArtifactInFolder(
+  sessionId: string,
+  artifactId: string,
+): Promise<OpenPathResult> {
+  return app().showArtifactInFolder(sessionId, artifactId);
+}
+
 export function saveArtifactAs(
   sessionId: string,
   artifactId: string,

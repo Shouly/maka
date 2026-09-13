@@ -30,8 +30,12 @@ gap list was measured — and what that measure cannot see — is at the end.
 
 **Baseline.** Measured 2026-09-12 against upstream `c08626bf2`, the head of the
 eleventh sync. The twelve commits from there to `ca4136a02` (the twelfth
-sync) add or remove no renderer surface, so the table holds for both. Re-measure
-after the sync that follows.
+sync) add or remove no renderer surface, so the table holds for both. The eight
+commits from there to `09f0a5d36` (the thirteenth sync, 2026-09-13) touch only
+surfaces already listed — WorkHub (#5198, #4878) and its Astryx choice panel —
+or ones re-implemented here in the same sync (the Generated Files menu of
+#5216, the skill-picker filter of #5249). Re-measure after the sync that
+follows.
 
 ## Must fix before shipping to users
 

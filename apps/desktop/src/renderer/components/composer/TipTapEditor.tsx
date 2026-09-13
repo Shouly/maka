@@ -326,7 +326,16 @@ export function TipTapEditor(props: {
         : props.target
           ? await listNewTaskInvocableSkills(props.target, props.skillContext)
           : [];
+      // A Skill already in the draft is not offered again (upstream #5249).
+      // The chips are atoms here, so the set comes from the document rather
+      // than from the `/skill:x` text upstream's `selectedSkillIds` scans.
+      const selectedSkills = new Set<string>();
+      editor?.state.doc.descendants((node) => {
+        if (node.type.name === 'composerReference' && node.attrs.kind === 'skill')
+          selectedSkills.add(String(node.attrs.value).toLowerCase());
+      });
       const matches: Suggestion[] = skills
+        .filter((skill) => !selectedSkills.has(skill.id.toLowerCase()))
         .filter((skill) =>
           mentionQueryMatches(
             skillMentionQuery(query.text),
@@ -368,7 +377,7 @@ export function TipTapEditor(props: {
       current = false;
       clearTimeout(timer);
     };
-  }, [query?.kind, query?.text, props.scopeKey, locale, props.running, skillCatalogKey]);
+  }, [editor, query?.kind, query?.text, props.scopeKey, locale, props.running, skillCatalogKey]);
 
   const choose = (item: Suggestion) => {
     if (!query || !editor) return;

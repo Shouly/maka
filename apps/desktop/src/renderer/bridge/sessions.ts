@@ -48,7 +48,9 @@ import type {
   DesktopSideConversationBranchResult,
   MakaBridge,
 } from '../../preload/bridge-contract.js';
+import type { DesktopSessionUpdateResult } from '../../shared/desktop-session-projection.js';
 import { requireNamespace, toUnsubscribe, tryNamespace } from './bridge.js';
+import { ExpectedOperationError } from './expected-operation-error.js';
 
 type Sessions = MakaBridge['sessions'];
 
@@ -284,39 +286,49 @@ export function respondToUserForm(
 
 // ── modes ──────────────────────────────────────────────────────────────────
 
-export function setPermissionMode(
+/**
+ * A Session update the Host refuses answers with a code rather than a thrown
+ * error (#4878). The setters below rethrow it as `ExpectedOperationError`, so
+ * every caller keeps awaiting a summary and the shell copy names the reason.
+ */
+function expectSessionUpdate<Session>(result: DesktopSessionUpdateResult<Session>): Session {
+  if (result.ok) return result.session;
+  throw new ExpectedOperationError(result.code);
+}
+
+export async function setPermissionMode(
   sessionId: string,
   mode: PermissionMode,
 ): Promise<DesktopSessionSummary> {
-  return sessions().setPermissionMode(sessionId, mode);
+  return expectSessionUpdate(await sessions().setPermissionMode(sessionId, mode));
 }
 
-export function setCollaborationMode(
+export async function setCollaborationMode(
   sessionId: string,
   mode: CollaborationMode,
 ): Promise<DesktopSessionSummary> {
-  return sessions().setCollaborationMode(sessionId, mode);
+  return expectSessionUpdate(await sessions().setCollaborationMode(sessionId, mode));
 }
 
-export function setOrchestrationMode(
+export async function setOrchestrationMode(
   sessionId: string,
   mode: OrchestrationMode,
 ): Promise<DesktopSessionSummary> {
-  return sessions().setOrchestrationMode(sessionId, mode);
+  return expectSessionUpdate(await sessions().setOrchestrationMode(sessionId, mode));
 }
 
-export function setModelConfiguration(
+export async function setModelConfiguration(
   sessionId: string,
   input: SessionModelConfiguration,
 ): Promise<DesktopSessionSummary> {
-  return sessions().setModelConfiguration(sessionId, input);
+  return expectSessionUpdate(await sessions().setModelConfiguration(sessionId, input));
 }
 
-export function setThinkingLevel(
+export async function setThinkingLevel(
   sessionId: string,
   level: ThinkingLevel | null | undefined,
 ): Promise<DesktopSessionSummary> {
-  return sessions().setThinkingLevel(sessionId, level);
+  return expectSessionUpdate(await sessions().setThinkingLevel(sessionId, level));
 }
 
 // ── export ─────────────────────────────────────────────────────────────────

@@ -27,7 +27,11 @@ import {
 import { createComposerInputStore } from '../composer-input-store.js';
 import { createComposerDraftStore } from '../composer-draft-store.js';
 import { preflightAttachmentItems } from '../../lib/ported/attachment-preflight.js';
-import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENT_COUNT } from '@maka/core/attachments';
+import {
+  AttachmentIngestBlockedError,
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENT_COUNT,
+} from '@maka/core/attachments';
 import { createInteractionFormDrafts, buildInteractionFormResponse } from '@maka/ui';
 import type { FormRequestEvent } from '@maka/core/events';
 
@@ -169,7 +173,8 @@ test('attachment preflight rejects oversized files and aggregate count before se
           source: { type: 'file', file: { size: MAX_ATTACHMENT_BYTES + 1 } },
         },
       ]),
-    /attachment_ingest:item_too_large/,
+    (error: unknown) =>
+      error instanceof AttachmentIngestBlockedError && error.code === 'item_too_large',
   );
   assert.throws(
     () =>
@@ -179,7 +184,8 @@ test('attachment preflight rejects oversized files and aggregate count before se
           source: { type: 'retained' as const },
         })),
       ),
-    /attachment_ingest:count_limit/,
+    (error: unknown) =>
+      error instanceof AttachmentIngestBlockedError && error.code === 'count_limit',
   );
 });
 test('form submission preserves false, omits absent optionals, and rejects invalid integers', () => {

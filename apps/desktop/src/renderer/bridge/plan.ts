@@ -57,7 +57,7 @@ export function requestPlanRevision(
 export function abandonPlanProposal(
   sessionId: string,
   proposalId: string,
-): Promise<PlanSessionState> {
+): Promise<PlanControlIpcResult<PlanSessionState>> {
   return sessions().abandonPlanProposal(sessionId, proposalId);
 }
 

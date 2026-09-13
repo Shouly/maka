@@ -130,6 +130,7 @@ import {
 } from '../../lib/ported/shell-chat-model-selection.js';
 import {
   showSkillInvocationFeedback,
+  showSubmissionFeedback,
   skillInvocationDisplayText,
 } from '../../lib/ported/skill-invocation-feedback.js';
 import {
@@ -294,9 +295,10 @@ function OwnedChatInput(props: {
     saveCurrentDraft: () => {},
   });
 
-  // Expected failures travel as stable tokens (upstream #4457: the attachment
-  // preflight throws `attachment_ingest:<code>`), so every message shown here
-  // goes through the shell's localizer rather than the raw `Error.message`.
+  // Expected failures travel as typed errors (the attachment preflight throws
+  // `AttachmentIngestBlockedError`, a refused Session update arrives as
+  // `ExpectedOperationError`), so every message shown here goes through the
+  // shell's localizer rather than the raw `Error.message`.
   const errorText = (cause: unknown, fallback = copy.send.failedFallback) =>
     localizedShellErrorMessage(cause, fallback, locale);
   const report = (cause: unknown, title = copy.send.failedTitle) => {
@@ -514,13 +516,18 @@ function OwnedChatInput(props: {
           });
           return;
         }
-        // The Host blocked every `/skill:x` in the message: the toast names
-        // each one and why, the composer keeps the draft with a short reason.
+        // A refusal that admitted nothing: the Host blocked every `/skill:x`
+        // in the message, or the preload's ingest guard turned the attachments
+        // back (#4878). The toast names the reason; the composer keeps the
+        // draft with a short one.
         activeSessionStore.removeTransientMessage(owner, messageId);
         optimisticId = undefined;
-        showSkillInvocationFeedback(locale, toastApi, result.skillInvocation, owner);
+        showSubmissionFeedback(locale, toastApi, result, owner);
         composerInputStore.patch(sessionId ? scopeKey : owner, {
-          error: copy.send.skillFailedFallback,
+          error:
+            result.reason === 'attachment_blocked'
+              ? getShellCopy(locale).sessionSettingsActions.attachmentIngestBlocked[result.code]
+              : copy.send.skillFailedFallback,
           intent: undefined,
         });
         if (
