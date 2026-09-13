@@ -97,7 +97,7 @@ test('the deferred pages keep their core id but never appear in the nav', () => 
 
 test('a deep link or a restored value naming a deferred page falls back to general', () => {
   assert.equal(resolveSettingsSection('appearance'), 'appearance');
-  assert.equal(resolveSettingsSection('bot-chat'), 'general');
+  assert.equal(resolveSettingsSection('external-agents'), 'general');
   assert.equal(resolveSettingsSection('daily-review'), 'general');
   assert.equal(resolveSettingsSection('import-tasks'), 'general');
   assert.equal(resolveSettingsSection('not-a-section'), 'general');
@@ -109,7 +109,7 @@ test('a deep link or a restored value naming a deferred page falls back to gener
 // was deleted with the placeholder, and a page silently dropping out of the
 // nav is exactly what this asserts against.
 test('the four capability pages are in the nav', () => {
-  for (const section of ['models', 'subagents', 'memory', 'search'] as const) {
+  for (const section of ['models', 'subagents', 'memory', 'search', 'bot-chat'] as const) {
     assert.equal(VISIBLE_SETTINGS_SECTIONS.includes(section), true);
   }
 });
@@ -137,7 +137,7 @@ test('the fixture can open a section, and a deferred one still resolves', () => 
     const ui = createUiStore();
     ui.applyFixture({
       activeSessionId: undefined,
-      openSettingsSection: 'bot-chat' as SettingsSection,
+      openSettingsSection: 'daily-review' as SettingsSection,
     } as Parameters<typeof ui.applyFixture>[0]);
     assert.equal(ui.getState().settingsOpen, true);
     assert.equal(resolveSettingsSection(ui.getState().settingsSection), 'general');

@@ -796,7 +796,7 @@ try {
   await page.locator('[data-maka-contract="titlebar-identity"]').getByText('Settings').waitFor();
   checks.push('⌘, opens Settings with the sidebar toggle still in the window titlebar');
 
-  // 5a.2 The nav hides the three deferred pages and shows the eleven that ship.
+  // 5a.2 The nav hides the deferred pages and shows the fourteen that ship.
   const navRows = page.locator('[data-maka-contract="settings-sidebar"] [data-settings-section]');
   const navSections = await navRows.evaluateAll((nodes) =>
     nodes.map((node) => node.getAttribute('data-settings-section')),
@@ -809,6 +809,7 @@ try {
     'subagents',
     'memory',
     'search',
+    'bot-chat',
     'usage',
     'archived-tasks',
     'data',
@@ -816,7 +817,7 @@ try {
     'health',
     'about',
   ]);
-  for (const deferred of ['daily-review', 'import-tasks', 'bot-chat']) {
+  for (const deferred of ['daily-review', 'import-tasks', 'external-agents']) {
     assert.equal(navSections.includes(deferred), false, deferred);
   }
   checks.push('the settings nav lists the shipped pages and hides the deferred ones');

@@ -23,7 +23,7 @@
 // ids exist — `maka://settings/<section>` is a public deep link and the
 // e2e fixture's `openSettingsSection` names one of them, so the enum must not
 // shrink. What the nav SHOWS is a different question, and it is answered here:
-// three sections are scope-deferred for this rewrite (plan §3 "Defer"), and a
+// the deferred sections are scope-deferred for this rewrite (plan §3 "Defer"), and a
 // nav row that opens a page nobody wrote is worse than no row.
 //
 // A deep link or a fixture that names a deferred section falls back to
@@ -39,7 +39,6 @@ import type { SettingsNavGroup } from '../../lib/ported/nav-group-summary.js';
 export const DEFERRED_SETTINGS_SECTIONS: readonly SettingsSection[] = [
   'daily-review',
   'import-tasks',
-  'bot-chat',
   'external-agents',
 ];
 
@@ -54,7 +53,7 @@ export interface SettingsNavGroupModel {
  */
 export const SETTINGS_NAV_GROUPS: readonly SettingsNavGroupModel[] = [
   { group: 'preferences', sections: ['general', 'appearance', 'projects'] },
-  { group: 'capabilities', sections: ['models', 'subagents', 'memory', 'search'] },
+  { group: 'capabilities', sections: ['models', 'subagents', 'memory', 'search', 'bot-chat'] },
   { group: 'activity', sections: ['usage', 'archived-tasks', 'data'] },
   { group: 'system', sections: ['permissions', 'health', 'about'] },
 ];

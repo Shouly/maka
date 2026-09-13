@@ -93,7 +93,6 @@ opens it. Method counts are from the contract.
 | --- | --- | --- |
 | Session collaboration | 19 | `sessionCollaboration.*`: share a task with another Maka — invitations, guest grants, mounts, turn requests and their decisions |
 | Runtime Host management | 14 | `runtimeHostManagement.*`: install and update policy, project directories, resources, direct peer, credential rotation |
-| Bot chats | 9 | `settings.bots.*` and `testBotChannel`: bot onboarding, the WeChat QR login, per-bot status and restart. Scheduled tasks deliver locally because this is missing |
 | Pets | 7 | `pets.*`: pet packs — list, select, sprite sheet, import a local directory |
 | Daily review | 7 | `dailyReview.*`: the review itself plus its config, run-now, archive list and Markdown export |
 | Host onboarding | 6 | `runtimeHostOnboarding.*`: first-run Host setup, including WSL distribution enumeration |
@@ -196,9 +195,9 @@ Reached through a channel we already call, but only partly:
   `diag:open-local-memory`, and the three daily-review clipboard/save
   commands. Export and save-conversation are a real gap — upstream has an e2e
   for it (`context-window-save.spec.ts`).
-- **Settings surfaces with no page here**: bot chats (5 upstream files), daily
-  review, import/export tasks, external agents, the custom pet section, Host
-  management / onboarding / SSH terminal / project-directory editor dialogs.
+- **Settings surfaces with no page here**: daily review, import/export tasks,
+  external agents, the custom pet section, Host management / onboarding / SSH
+  terminal / project-directory editor dialogs.
 
 What none of this measures: a surface that calls its channel but renders only
 part of the feature. That needs a page-by-page comparison.
@@ -316,11 +315,11 @@ Measured three ways, because no single one is complete:
 1. **Bridge-layer reach.** The architecture check forces every preload call
    through `src/renderer/bridge/*`, so grepping those files against the
    contract gives an exact answer. The contract declares 47 namespaces; 16 are
-   never opened here (the table above), and `settings.bots.*` sits unreached
-   inside one we do use — which is why the count is per method, not per
-   namespace. The first pass on 2026-09-09 counted 359 callable paths with 122
-   unreached; the two namespaces the eleventh sync added are the only change
-   since.
+   never opened here (the table above). Count per method, not per namespace:
+   a namespace we do use can still hide an unreached sub-namespace, as
+   `settings.bots.*` did until Phase 7b. The first pass on 2026-09-09 counted
+   359 callable paths with 122 unreached; since then the eleventh sync added
+   two namespaces and Phase 7b reached nine methods.
 2. **Command palette ids.** `STATIC_COMMAND_IDS` against the handlers in
    `components/palette/commands.ts`: 25 named, 14 implemented.
 3. **Surface inventory.** Upstream's renderer pages and settings pages

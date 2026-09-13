@@ -8,6 +8,7 @@
     "src/renderer/bridge/app.ts",
     "src/renderer/bridge/artifacts.ts",
     "src/renderer/bridge/attachments.ts",
+    "src/renderer/bridge/bots.ts",
     "src/renderer/bridge/bridge.ts",
     "src/renderer/bridge/browser.ts",
     "src/renderer/bridge/config.ts",
@@ -143,6 +144,12 @@
     "src/renderer/components/settings/UsageSettings.tsx",
     "src/renderer/components/settings/WebSearchSettings.tsx",
     "src/renderer/components/settings/WorkspaceSettings.tsx",
+    "src/renderer/components/settings/bots/BotChannelDetail.tsx",
+    "src/renderer/components/settings/bots/BotChatOverview.tsx",
+    "src/renderer/components/settings/bots/BotChatSettings.tsx",
+    "src/renderer/components/settings/bots/BotOnboardingDialog.tsx",
+    "src/renderer/components/settings/bots/WechatQrDialog.tsx",
+    "src/renderer/components/settings/bots/bot-shared.tsx",
     "src/renderer/components/settings/memory/MemoryEntryList.tsx",
     "src/renderer/components/settings/models/AddConnection.tsx",
     "src/renderer/components/settings/models/AddModelDialog.tsx",
@@ -233,6 +240,7 @@
     "src/renderer/hooks/use-workspace.ts",
     "src/renderer/lib/ask-user-question.ts",
     "src/renderer/lib/avatar-warm-palette.ts",
+    "src/renderer/lib/bot-channel-view.ts",
     "src/renderer/lib/cn.ts",
     "src/renderer/lib/compose-refs.ts",
     "src/renderer/lib/composer-document.ts",
@@ -380,6 +388,7 @@
     "src/renderer/locales/welcome-copy.ts",
     "src/renderer/locales/workbar-copy.ts",
     "src/renderer/main.tsx",
+    "src/renderer/store/__tests__/bots-settings.test.tsx",
     "src/renderer/store/__tests__/composer-prompts-smoke.mjs",
     "src/renderer/store/__tests__/composer-state.test.ts",
     "src/renderer/store/__tests__/connectors-module.test.tsx",
@@ -400,6 +409,7 @@
     "src/renderer/store/__tests__/skills-module.test.tsx",
     "src/renderer/store/__tests__/streaming-switch-smoke.mjs",
     "src/renderer/store/active-session-store.ts",
+    "src/renderer/store/bots-store.ts",
     "src/renderer/store/composer-draft-store.ts",
     "src/renderer/store/composer-input-store.ts",
     "src/renderer/store/connections-store.ts",
@@ -584,6 +594,17 @@
       }
     },
     "src/renderer/bridge/attachments.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
+    "src/renderer/bridge/bots.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {},
@@ -3217,6 +3238,7 @@
         "./AboutSettings.js": 1,
         "./AppearanceSettings.js": 1,
         "./ArchivedTasksSettings.js": 1,
+        "./bots/BotChatSettings.js": 1,
         "./DataSettings.js": 1,
         "./GeneralSettings.js": 1,
         "./HealthSettings.js": 1,
@@ -3368,6 +3390,162 @@
         "./settings-row.js": 1,
         "@maka/ui": 1,
         "react": 1
+      }
+    },
+    "src/renderer/components/settings/bots/BotChannelDetail.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 4,
+        "useState": 7,
+        "useUiLocale": 4
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../bridge/external-links.js": 1,
+        "../../../lib/bot-channel-view.js": 1,
+        "../../../lib/cn.js": 1,
+        "../../../locales/settings-bot-copy.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../session/notices/NoticeCard.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/input.js": 1,
+        "../../ui/segmented-control.js": 1,
+        "../../ui/select.js": 1,
+        "../../ui/switch.js": 1,
+        "../../ui/textarea.js": 1,
+        "../settings-row.js": 1,
+        "./bot-shared.js": 1,
+        "./BotOnboardingDialog.js": 1,
+        "./WechatQrDialog.js": 1,
+        "@maka/core/bot-onboarding": 1,
+        "@maka/core/settings": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/settings/bots/BotChatOverview.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 2
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/bot-channel-view.js": 1,
+        "../../../lib/cn.js": 1,
+        "../../../locales/settings-bot-copy.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../session/notices/NoticeCard.js": 1,
+        "../settings-row.js": 1,
+        "./bot-shared.js": 1,
+        "@maka/core/bot-chat-settings": 1,
+        "@maka/ui": 1
+      }
+    },
+    "src/renderer/components/settings/bots/BotChatSettings.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useClientSettings": 1,
+        "useEffect": 2,
+        "useSettingsErrorReporter": 1,
+        "useState": 4,
+        "useStore": 3,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../bridge/e2e-fixture.js": 1,
+        "../../../hooks/use-settings.js": 1,
+        "../../../lib/bot-channel-view.js": 1,
+        "../../../locales/settings-bot-copy.js": 1,
+        "../../../locales/settings-test-result-copy.js": 1,
+        "../../../store/index.js": 1,
+        "../../../store/toast-store.js": 1,
+        "../../ui/confirm-dialog.js": 1,
+        "../../ui/skeleton.js": 1,
+        "../settings-row.js": 1,
+        "./BotChannelDetail.js": 1,
+        "./BotChatOverview.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/settings/bots/BotOnboardingDialog.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "window.clearTimeout": 1,
+        "window.setTimeout": 1
+      },
+      "hookCalls": {
+        "useEffect": 3,
+        "useMountedRef": 1,
+        "useRef": 4,
+        "useState": 3,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../bridge/bots.js": 1,
+        "../../../lib/cn.js": 1,
+        "../../../locales/settings-bot-copy.js": 1,
+        "../../../store/resource-store.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/dialog.js": 1,
+        "./bot-shared.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/settings/bots/WechatQrDialog.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "window.clearInterval": 1,
+        "window.setInterval": 1
+      },
+      "hookCalls": {
+        "useEffect": 2,
+        "useRef": 2,
+        "useState": 3,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../bridge/bots.js": 1,
+        "../../../locales/settings-bot-copy.js": 1,
+        "../../../store/resource-store.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../session/notices/NoticeCard.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/dialog.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/settings/bots/bot-shared.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../ui/status-chip.js": 1,
+        "@maka/ui": 1
       }
     },
     "src/renderer/components/settings/memory/MemoryEntryList.tsx": {
@@ -5038,6 +5216,18 @@
       "actionFactories": [],
       "dependencyPaths": {}
     },
+    "src/renderer/lib/bot-channel-view.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../locales/settings-bot-copy.js": 1,
+        "@maka/core/bot-events": 1
+      }
+    },
     "src/renderer/lib/cn.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -6546,6 +6736,19 @@
         "zustand/vanilla": 1
       }
     },
+    "src/renderer/store/bots-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/bots.js": 1,
+        "./resource-store.js": 1,
+        "zustand/vanilla": 1
+      }
+    },
     "src/renderer/store/composer-draft-store.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -6622,6 +6825,7 @@
         "../bridge/sessions.js": 1,
         "../lib/ported/session-message-settlement.js": 1,
         "./active-session-store.js": 1,
+        "./bots-store.js": 1,
         "./composer-draft-store.js": 1,
         "./composer-input-store.js": 1,
         "./connections-store.js": 1,

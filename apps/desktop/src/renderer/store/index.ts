@@ -77,6 +77,7 @@ export const goalStore = createGoalStore({ subscribeChanges: sessionsStore.onCha
 // is interrupted by one, so the catalog's turn transitions are its re-read cue
 // beside the plan channel proper.
 export const planStore = createPlanStore({ subscribeChanges: sessionsStore.onChange });
+export { botsStore } from './bots-store.js';
 /**
  * Archive a project without leaving the default pointing at it.
  *

@@ -38,6 +38,7 @@ import { useUiLocale } from '@maka/ui';
 import type { SettingsSection } from '@maka/core/settings';
 import { AboutSettings } from './AboutSettings.js';
 import { AppearanceSettings } from './AppearanceSettings.js';
+import { BotChatSettings } from './bots/BotChatSettings.js';
 import { ArchivedTasksSettings } from './ArchivedTasksSettings.js';
 import { DataSettings } from './DataSettings.js';
 import { GeneralSettings } from './GeneralSettings.js';
@@ -105,6 +106,8 @@ export function SettingsView(props: { onOpenKeyboardHelp: () => void }) {
               <MemorySettings host={host} />
             ) : section === 'search' ? (
               <WebSearchSettings host={host} />
+            ) : section === 'bot-chat' ? (
+              <BotChatSettings host={host} />
             ) : section === 'usage' ? (
               <UsageSettings host={host} />
             ) : section === 'archived-tasks' ? (
