@@ -39,18 +39,6 @@ follows.
 
 ## Must fix before shipping to users
 
-- **ripgrep is a hard runtime dependency the app does not bundle.**
-  `packages/runtime/src/workspace-executor.ts` spawns a bare `rg` for the
-  `Grep` tool, and `packages/runtime/src/filesystem-worker/launch-spec.ts`
-  probes `PATH` plus `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`. A
-  packaged app launched from Finder gets a minimal `PATH`, so on a machine
-  without Homebrew ripgrep the Grep tool fails with `spawn rg ENOENT`
-  (upstream only documents `winget install` for Windows). Five
-  `@maka/runtime` tests fail the same way on a dev machine without `rg`.
-  Close by bundling a platform `rg` binary next to the other bundled tools
-  (`apps/desktop/bundled-tools.json`, electron-builder resources) and
-  resolving it first, or by giving `Grep` a JS fallback. Decide before the
-  first internal release. (Found 2026-09-07.)
 - **Font licensing.** `apps/desktop/src/renderer/assets/fonts/` carries the
   three Anthropic families scraped from claude.ai with no licence (owner
   accepted the risk for internal builds). Replace before any external
@@ -346,7 +334,8 @@ a detail wrong without saying so. Only using the app finds those.
   (Biome 2.5.11 prints it as `!`); upstream's
   `packages/cli/src/tui-copy-catalog.ts` trips it. Run the other three hook
   steps by hand and commit with `--no-verify` when that is the only failure.
-- `@maka/runtime` tests need `rg` on `PATH` (see the first item).
+- `@maka/runtime` tests need `rg` on `PATH` (the Desktop build ships its own
+  copy; the tests do not go through it).
 - **`npm run dev` poisons `dist/main` for every later `e2e` and `test:dist`
   run.** `apps/desktop/scripts/dev.mjs:139` esbuilds `src/main/main.ts` into a
   single bundled `dist/main/main.js`, where `build:main` (plain `tsc`) writes

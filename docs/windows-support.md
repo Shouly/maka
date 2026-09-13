@@ -50,9 +50,9 @@ Only use Windows assets attached to a Maka GitHub Release. The NSIS installer is
    with that release; it is not a substitute for publisher authentication.
 4. Run the installer. Because the preview has no Authenticode signature, SmartScreen reports an
    unknown publisher. Continue through **More info → Run anyway** only after completing step 3.
-5. Launch Maka, configure a model under **Settings → Models**, and install `ripgrep` with
-   `winget install BurntSushi.ripgrep.MSVC` if Runtime's `Grep` tool is needed. Restart Maka after
-   changing `PATH`.
+5. Launch Maka and configure a model under **Settings → Models**. The build ships its own
+   `ripgrep` for Runtime's `Grep` tool; a `winget install BurntSushi.ripgrep.MSVC` is only
+   needed for the CLI.
 
 The release gate installs the previously published build pinned in
 `scripts/windows-upgrade-baseline.json` — by tag, asset name, and SHA-256 — fully smokes it, upgrades
@@ -117,8 +117,8 @@ workspace data first; the preview does not yet claim business-data migration gua
 3. 两个 SHA-256 必须完全一致。校验和只能确认文件与该 release 发布的字节一致，不能替代发布者身份认证。
 4. 运行安装包。预览版尚无 Authenticode 签名，SmartScreen 会提示未知发布者；只有完成第 3 步后，
    才应选择 **更多信息 → 仍要运行**。
-5. 启动 Maka，在 **设置 → 模型**中配置模型。需要 Runtime `Grep` 工具时，执行
-   `winget install BurntSushi.ripgrep.MSVC`，并在 `PATH` 更新后重启 Maka。
+5. 启动 Maka，在 **设置 → 模型**中配置模型。构建已自带 Runtime `Grep` 工具所需的
+   `ripgrep`；只有使用 CLI 时才需要 `winget install BurntSushi.ripgrep.MSVC`。
 
 发布门禁会安装 `scripts/windows-upgrade-baseline.json` 中按 tag、资产名与 SHA-256 固定的既往已发布构建，
 执行完整 smoke、在同一目录升级候选版本、再次完整 smoke、等待安装目录内进程退出，并运行真实卸载器。基线按
@@ -157,7 +157,7 @@ The initial target is a native Windows 11 x64 development environment with:
 - npm 11 and the committed lockfile;
 - Git for Windows with long-path support available;
 - PowerShell 7 (`pwsh`) preferred, with Windows PowerShell 5.1 and `cmd.exe` supported fallbacks;
-- `ripgrep` on `PATH` for the Runtime `Grep` tool;
+- `ripgrep` on `PATH` for the CLI's `Grep` tool (the Desktop build ships its own);
 - WebView/runtime components installed by a current Windows 11 installation;
 - Windows Developer Mode or elevation only for tests that create file symlinks. Normal CLI and desktop startup must not require either.
 

@@ -67,7 +67,10 @@ The [website](https://maka.apache.org/en/) walks through one turn of the log and
 - Node.js 22.19 or newer (CI uses Node.js 24);
 - npm (the lockfile and scripts use npm; the current `packageManager` is npm 11);
 - Git;
-- `ripgrep`, used by Runtime's `Grep` tool.
+- `ripgrep`, used by Runtime's `Grep` tool. The Desktop build fetches its own
+  pinned copy (`apps/desktop/scripts/prepare-ripgrep.mjs`, run by
+  `build:resources`); a system `rg` is only needed for the CLI and for running
+  the Runtime tests.
 
 ### Start Desktop
 

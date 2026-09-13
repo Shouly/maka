@@ -1036,6 +1036,9 @@ export async function assertPackagedResources(
     'bundled-tools.json',
     ...(requireCanonicalIcon ? [join('assets', 'app-icons', 'relx.png')] : []),
     join('workers', 'filesystem-worker.js'),
+    // The Grep tool's ripgrep, pinned by `apps/desktop/scripts/prepare-ripgrep.mjs`.
+    join('bin', process.platform === 'win32' ? 'rg.exe' : 'rg'),
+    join('licenses', 'ripgrep', 'LICENSE-MIT.txt'),
     ...(requireDirectPeerArtifact
       ? [
           join('runtime-host-peer', 'maka_runtime_host_peer.node'),

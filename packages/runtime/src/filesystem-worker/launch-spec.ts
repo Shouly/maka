@@ -19,7 +19,7 @@
 
 import { constants } from 'node:fs';
 import { access, realpath } from 'node:fs/promises';
-import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
 
 import {
   resolveFilesystemWorkerBundle,
@@ -29,6 +29,7 @@ import {
   resolveMacosExecutableDependencies,
   type MacosExecutableDependencyResolution,
 } from './macos-executable-dependencies.js';
+import { ripgrepCandidates } from '../ripgrep-locator.js';
 
 export interface FilesystemWorkerLaunchSpec {
   program: string;
@@ -132,7 +133,7 @@ async function resolveLaunchSpec(
   }
   const dependencyRoots = await resolveRuntimeDependencyRoots(program);
   const grep = await resolveRipgrepExecutable(
-    input.rgCandidates ?? defaultRipgrepCandidates(input.hostEnv ?? process.env, platform),
+    input.rgCandidates ?? ripgrepCandidates(input.hostEnv ?? process.env, platform),
     platform,
     input.inspectMacosExecutableDependencies ?? resolveMacosExecutableDependencies,
   );
@@ -236,20 +237,6 @@ async function resolveReadableRoot(candidate: string): Promise<string | undefine
   } catch {
     return undefined;
   }
-}
-
-function defaultRipgrepCandidates(
-  env: NodeJS.ProcessEnv,
-  platform: NodeJS.Platform = process.platform,
-): readonly string[] {
-  const executableName = platform === 'win32' ? 'rg.exe' : 'rg';
-  return [
-    ...(env.PATH ?? '')
-      .split(delimiter)
-      .filter(Boolean)
-      .map((directory) => join(directory, executableName)),
-    ...(platform === 'win32' ? [] : ['/opt/homebrew/bin/rg', '/usr/local/bin/rg', '/usr/bin/rg']),
-  ];
 }
 
 async function resolveRuntimeDependencyRoots(program: string): Promise<readonly string[]> {

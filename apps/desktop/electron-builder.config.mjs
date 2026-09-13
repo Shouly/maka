@@ -24,7 +24,9 @@ import {
   resolveDesktopBuildVersion,
   resolveRuntimeHostSetupPackage,
 } from '../../scripts/desktop-nightly.mjs';
+import { Arch } from 'app-builder-lib';
 import { workspaceReleaseManifest } from '../../scripts/release-cli-file-policy.mjs';
+import { prepareRipgrep } from './scripts/prepare-ripgrep.mjs';
 import { resolveProductManifestIdentity } from '../../scripts/product-release-identity.mjs';
 
 function readManifest(relativePath) {
@@ -60,6 +62,21 @@ async function stageReleaseManifests({ packager }) {
   packager.config.files.push({ from: stage, to: 'node_modules/@maka' });
 }
 
+/**
+ * The ripgrep for the TARGET, not the host: `package:macos-x64` on an Apple
+ * Silicon machine must ship an x64 binary. `prepare-ripgrep.mjs` is a no-op
+ * when the pin already matches, and throws — failing the package — when the
+ * archive cannot be fetched or its digest is wrong.
+ */
+async function prepareBundledRipgrep({ electronPlatformName, arch }) {
+  await prepareRipgrep({ target: `${electronPlatformName}-${Arch[arch]}` });
+}
+
+async function beforePack(context) {
+  await stageReleaseManifests(context);
+  await prepareBundledRipgrep(context);
+}
+
 const rootManifest = readManifest('../../package.json');
 const { runtimeHostSetupPackage } = resolveProductManifestIdentity({
   rootManifest,
@@ -72,7 +89,7 @@ const baseDesktopBuilderConfig = {
   productName: 'Maka',
   artifactName: 'Maka-${version}-mac-${arch}.${ext}',
   asar: true,
-  beforePack: stageReleaseManifests,
+  beforePack,
   extraMetadata: { runtimeHostSetupPackage, makaUpdateChannel: 'release' },
   directories: {
     output: 'release',
@@ -132,6 +149,18 @@ const baseDesktopBuilderConfig = {
     {
       from: 'resources/workers/filesystem-worker.js',
       to: 'workers/filesystem-worker.js',
+    },
+    {
+      // The ripgrep the Grep tool runs. `scripts/prepare-ripgrep.mjs` puts
+      // the pinned release binary here (`build:resources`); the main process
+      // hands its path to the Runtime Host as MAKA_RIPGREP_PATH, ahead of
+      // whatever PATH the user's session happens to carry.
+      from: `resources/bin/${process.platform === 'win32' ? 'rg.exe' : 'rg'}`,
+      to: `bin/${process.platform === 'win32' ? 'rg.exe' : 'rg'}`,
+    },
+    {
+      from: 'resources/bin/ripgrep-LICENSE-MIT.txt',
+      to: 'licenses/ripgrep/LICENSE-MIT.txt',
     },
     {
       from: '../../native/runtime-host-peer/target/release/maka_runtime_host_peer.node',
@@ -237,6 +266,10 @@ const baseDesktopBuilderConfig = {
     notarize: true,
     entitlements: 'build/entitlements.mac.plist',
     entitlementsInherit: 'build/entitlements.mac.inherit.plist',
+    // Extra Mach-O binaries to sign with the app's identity. ripgrep ships
+    // unsigned; under the hardened runtime an unsigned helper fails
+    // notarization for the whole app. Resolved against the .app bundle.
+    binaries: ['Contents/Resources/bin/rg'],
     extendInfo: {
       NSAppleEventsUsageDescription:
       'Maka may automate other applications when you explicitly run an agent task.',

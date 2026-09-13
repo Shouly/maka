@@ -67,7 +67,9 @@ Agent harness 的本职就是把任务做完。衡量它的标准只有一条：
 - Node.js 22.19 或更高（CI 使用 Node.js 24）；
 - npm（仓库 lockfile 和 scripts 以 npm 为准，`packageManager` 当前为 npm 11）；
 - Git；
-- `ripgrep`，供 Runtime 的 `Grep` 工具使用。
+- `ripgrep`，供 Runtime 的 `Grep` 工具使用。Desktop 构建会自带一份固定版本
+  （`apps/desktop/scripts/prepare-ripgrep.mjs`，由 `build:resources` 执行）；系统里的
+  `rg` 只有 CLI 和运行 Runtime 测试时才需要。
 
 ### 启动 Desktop
 

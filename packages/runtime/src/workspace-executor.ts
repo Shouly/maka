@@ -36,6 +36,7 @@ import {
 import { promisify } from 'node:util';
 import type { ToolExecutionFacts } from '@maka/core/permission';
 import { runProcessWithBoundedTail, runShellWithBoundedTail } from './shell-exec.js';
+import { resolveRipgrepPath } from './ripgrep-locator.js';
 import type { ChildFdInput } from './child-fd-input.js';
 import type { ShellPlan } from './shell-detect.js';
 import { isSupportedImagePath, readWorkspaceImage } from './image-file.js';
@@ -442,12 +443,21 @@ export class LocalWorkspaceExecutor implements WorkspaceExecutor {
     return { files };
   }
 
+  // Resolved once per executor: the bundled copy first, then PATH and the
+  // package-manager prefixes (`ripgrep-locator.ts`). A bare `rg` is the last
+  // resort so an unusual install still gets whatever PATH resolution finds.
+  private ripgrep: Promise<string> | undefined;
+
+  private ripgrepExecutable(): Promise<string> {
+    return (this.ripgrep ??= resolveRipgrepPath().then((path) => path ?? 'rg'));
+  }
+
   async grepFiles(input: WorkspaceGrepInput): Promise<WorkspaceGrepResult> {
     const args = ['-n', '--no-heading', `--max-count=${input.maxCountPerFile}`];
     if (input.glob) args.push('--glob', input.glob);
     args.push('--', input.pattern, input.path);
     try {
-      const { stdout } = await execFileAsync('rg', args, {
+      const { stdout } = await execFileAsync(await this.ripgrepExecutable(), args, {
         cwd: input.cwd,
         maxBuffer: 5 * 1024 * 1024,
         timeout: input.timeoutMs,

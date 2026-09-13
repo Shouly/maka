@@ -34,7 +34,7 @@ import {
   type MessageBoxReturnValue,
 } from "electron";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { type ConnectionEvent } from '@maka/core/connections';
 import { type SessionChangedEvent, type SessionChangedReason } from '@maka/core/session';
@@ -284,6 +284,20 @@ await resolveShellEnv();
 const MANAGED_UPDATE_RECONNECT_TIMEOUT_MS = 10_000;
 const buildInfo = resolveBuildInfo(app.isPackaged, app.getAppPath());
 const userDataDir = app.getPath("userData");
+// The ripgrep this build ships, for the Runtime Host's Grep tool: packaged
+// under Resources/bin, in development under apps/desktop/resources/bin once
+// `prepare-ripgrep.mjs` has run. The Host process inherits this environment,
+// and `@maka/runtime`'s locator tries MAKA_RIPGREP_PATH before PATH — a Finder
+// launch has no Homebrew on its PATH, which is how `spawn rg ENOENT` reached
+// users. An explicit value from the outside is respected.
+const bundledRipgrep = join(
+  app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "resources"),
+  "bin",
+  process.platform === "win32" ? "rg.exe" : "rg",
+);
+if (!process.env.MAKA_RIPGREP_PATH && existsSync(bundledRipgrep)) {
+  process.env.MAKA_RIPGREP_PATH = bundledRipgrep;
+}
 const runtimeHostPeerConfiguration = await configureDesktopRuntimeHostPeerClient({
   isPackaged: app.isPackaged,
   enableDevelopmentPeer: process.argv.includes('--runtime-host-peer'),
