@@ -32,8 +32,23 @@ const ALLOWED_HTML_TAGS = new Set([
   'style',
   'title',
 ]);
+// Pinned to the byte. Loosening the renderer's CSP has to be two deliberate
+// edits — the document and this line — so no transform and no well-meant patch
+// can widen it on its own.
+//
+// `object-src blob:` is the artifact pane's PDF preview: `<embed
+// type="application/pdf">` is a plugin document, which `default-src 'self'`
+// refuses, and the bytes are a blob the renderer minted itself from what the
+// artifact bridge already read. It admits no new origin — only the plugin
+// surface for blobs this renderer made, and the one call that makes a PDF blob
+// names `application/pdf` itself rather than trusting the artifact's mime.
+//
+// `frame-src maka-artifact:` is the HTML artifact preview. Model-authored
+// markup is framed under a scheme Main serves and controls rather than under
+// this document's own origin, so it can never reach `window.maka`; naming the
+// scheme here is what stops a frame pointing anywhere else.
 const CONTENT_SECURITY_POLICY =
-  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'";
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; object-src blob:; frame-src maka-artifact:; connect-src 'self'";
 
 function normalizePath(path: string): string {
   return path.split(sep).join('/');

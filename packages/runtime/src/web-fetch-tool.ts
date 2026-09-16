@@ -69,7 +69,7 @@ export function buildWebFetchTool(executor: WebFetchExecutor): MakaTool {
       '- Fails on localhost and other hostnames without a dot; for a local server, use curl via Bash.',
       '- Only http:// and https:// are accepted. Redirects are followed by the fetcher; the answer names the page it read.',
       "- The answer is another model's reading of the page, not the page itself: when you need exact wording, ask for it verbatim in `prompt`.",
-      '- Do not work around a failed or blocked fetch with Bash or scripts; tell the user the content was not reachable.',
+      '- Do not work around a failed or blocked fetch with Bash, scripts, or a cache, archive or mirror of the same page; tell the user the content was not reachable.',
     ].join('\n'),
     parameters: z
       .object({

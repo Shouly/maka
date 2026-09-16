@@ -432,6 +432,13 @@ export function createMainWindowController(deps: MainWindowControllerDeps): Main
         sandbox: true,             // preload runs in the renderer sandbox
         webSecurity: true,         // enforce CSP / same-origin policy
         allowRunningInsecureContent: false,
+        // Chromium's own PDF viewer, for the artifact preview pane. PDFium runs
+        // out-of-process and the document is a blob the app already read
+        // through the artifact bridge, so this does not widen what the renderer
+        // can reach; without it an `<embed type="application/pdf">` paints a
+        // blank rectangle. Sandboxed frames (the HTML artifact preview) cannot
+        // instantiate plugins at all, so model-authored HTML is unaffected.
+        plugins: true,
       },
     });
     mainWindowShutdownSignal = signal;

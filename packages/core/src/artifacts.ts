@@ -21,8 +21,64 @@ export const ARTIFACT_KINDS = ['file', 'diff', 'html', 'image', 'pdf'] as const;
 
 export type ArtifactKind = (typeof ARTIFACT_KINDS)[number];
 
+/**
+ * The scheme the HTML artifact preview is served on.
+ *
+ * It exists for ONE reason: a document loaded from a local scheme — `srcdoc`,
+ * `blob:`, `data:` — inherits the embedder's Content-Security-Policy, and the
+ * app's is `script-src 'self'`, which blocks the inline script a single-file
+ * artifact is made of. A registered scheme is not a local scheme, so the
+ * response's own policy governs, and the preview can run the page without
+ * loosening one byte of the app's own policy.
+ *
+ * The frame is still sandboxed with `allow-scripts` and never
+ * `allow-same-origin`: the two together are worth no sandbox at all, since the
+ * framed document could reach up and remove the attribute.
+ */
+export const ARTIFACT_PREVIEW_SCHEME = 'maka-artifact';
+
+/** Both processes build and read this URL through here, never by hand. */
+export function artifactPreviewUrl(sessionId: string, artifactId: string): string {
+  return `${ARTIFACT_PREVIEW_SCHEME}://preview/${encodeURIComponent(sessionId)}/${encodeURIComponent(artifactId)}`;
+}
+
+export function parseArtifactPreviewUrl(
+  url: string,
+): { sessionId: string; artifactId: string } | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== `${ARTIFACT_PREVIEW_SCHEME}:`) return null;
+  if (parsed.host !== 'preview') return null;
+  const segments = parsed.pathname.split('/').filter((segment) => segment.length > 0);
+  if (segments.length !== 2) return null;
+  const [sessionId, artifactId] = segments.map((segment) => {
+    try {
+      return decodeURIComponent(segment);
+    } catch {
+      return '';
+    }
+  }) as [string, string];
+  if (!sessionId || !artifactId) return null;
+  if (!isCanonicalArtifactEntityId(artifactId)) return null;
+  return { sessionId, artifactId };
+}
+
 /** Maximum encoded image payload admitted to a renderer preview. */
 export const ARTIFACT_IMAGE_PREVIEW_MAX_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Maximum PDF admitted to the preview pane.
+ *
+ * Larger than the image cap because a report with charts passes 2 MB easily and
+ * the viewer streams the document rather than holding a decoded bitmap; past
+ * this the pane offers the system viewer instead of reading tens of megabytes
+ * through the bridge as base64.
+ */
+export const ARTIFACT_PDF_PREVIEW_MAX_BYTES = 24 * 1024 * 1024;
 
 const ARTIFACT_IMAGE_PREVIEW_MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
   '.png': 'image/png',
@@ -66,6 +122,30 @@ export function normalizeArtifactImagePreviewMime(
   return ARTIFACT_IMAGE_PREVIEW_MIME_BY_EXTENSION[name.slice(dot).toLowerCase()] ?? null;
 }
 
+/**
+ * SVG, for the PREVIEW only.
+ *
+ * It is kept out of `normalizeArtifactImagePreviewMime` on purpose: that one
+ * also gates `durable-tool-result-projection`, which decides what becomes a
+ * MODEL-facing image part, and no provider accepts `image/svg+xml` — an SVG
+ * admitted there would fail on the wire. The renderer draws every preview image
+ * in an `<img>`, where an SVG's scripts and external subresources are inert, so
+ * the preview can take what the wire cannot.
+ */
+const ARTIFACT_PREVIEW_SVG_MIME = 'image/svg+xml';
+
+/** Raster mimes plus SVG. Preview surfaces only — never a model-facing shape. */
+export function normalizeArtifactPreviewImageMime(mimeType?: string, name?: string): string | null {
+  const raster = normalizeArtifactImagePreviewMime(mimeType, name);
+  if (raster) return raster;
+  if (mimeType) {
+    return mimeType.trim().toLowerCase() === ARTIFACT_PREVIEW_SVG_MIME
+      ? ARTIFACT_PREVIEW_SVG_MIME
+      : null;
+  }
+  return name?.toLowerCase().endsWith('.svg') ? ARTIFACT_PREVIEW_SVG_MIME : null;
+}
+
 /** One metadata policy shared by preview admission and renderer presentation. */
 export function resolveArtifactImagePreview(
   input: ArtifactImagePreviewInput,
@@ -77,11 +157,11 @@ export function resolveArtifactImagePreview(
     return { kind: 'unsupported', reason: 'oversize' };
   }
   if (input.mimeType) {
-    return normalizeArtifactImagePreviewMime(input.mimeType)
+    return normalizeArtifactPreviewImageMime(input.mimeType)
       ? { kind: 'image', reason: 'mime_match' }
       : { kind: 'unsupported', reason: 'mime_disallowed' };
   }
-  return normalizeArtifactImagePreviewMime(undefined, input.name)
+  return normalizeArtifactPreviewImageMime(undefined, input.name)
     ? { kind: 'image', reason: 'ext_fallback' }
     : { kind: 'unsupported', reason: 'no_mime_no_ext' };
 }

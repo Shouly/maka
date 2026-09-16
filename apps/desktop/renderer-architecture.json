@@ -4731,8 +4731,8 @@
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
-        "useEffect": 2,
-        "useState": 3,
+        "useEffect": 3,
+        "useState": 4,
         "useUiLocale": 3
       },
       "lifecycleMethods": {},
@@ -4747,8 +4747,10 @@
         "../ui/DiffRenderer.js": 1,
         "../ui/LoadingSpinner.js": 1,
         "../ui/Markdown.js": 1,
+        "../ui/MermaidDiagram.js": 1,
         "../ui/segmented-control.js": 1,
         "./PreviewNotice.js": 1,
+        "@maka/core/artifacts": 1,
         "@maka/ui": 1,
         "@maka/ui/artifact-preview-registry": 1,
         "react": 1

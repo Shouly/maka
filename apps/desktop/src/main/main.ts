@@ -18,6 +18,7 @@
  */
 
 import { resolveSystemUiLocale, type UiCatalog } from '@maka/core/ui-locale';
+import { registerArtifactPreviewScheme } from './artifact-preview-protocol.js';
 import {
   DEV_LOSER_EXIT_CODE,
   developmentLaunchResultFile,
@@ -95,6 +96,11 @@ if (isIsolatedE2e && process.env.MAKA_E2E_USER_DATA_DIR) {
 // workspace/store setup below -- a losing second process never touches shared
 // state. See the 'second-instance' listener in runtime-host-boot.ts for what
 // the surviving process does about it.
+// Before `ready`, from module evaluation: a privileged scheme cannot be
+// registered later. It serves the HTML artifact preview under its own CSP so
+// an artifact's inline script can run without the app's policy being loosened.
+registerArtifactPreviewScheme();
+
 if (!app.requestSingleInstanceLock()) {
   if (!app.isPackaged) {
     // Dev: losing the lock must NOT pretend to have started (exit 0 would be

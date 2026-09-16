@@ -129,9 +129,9 @@ doing_the_work, search_first, knowledge_cutoff), `<ask_user_question_tool>`,
 `<task_list_tools>` with its verification_step, `<send_user_message_tool>`,
 `<citation_requirements>`, `<unattended_operation>`, `<scheduled_tasks>`,
 `<workspace_and_tools>` (file_creation_advice, unnecessary_tool_use_avoidance,
-using_tools, web_content_restrictions, skills, workspace_explanation,
-file_handling_rules, producing_outputs, sharing_files with its good example,
-package_management, examples, additional_skills_reminder) and the closing
+skills, workspace_explanation, file_handling_rules, producing_outputs,
+sharing_files with its good example, package_management, examples,
+additional_skills_reminder) and the closing
 parallel-tool-calls sentence. Each section is the reference's, rewritten for a
 local machine: one filesystem, the workbar instead of SendUserFile-to-cloud,
 the sandbox boundary instead of a device bridge. The environment block is the

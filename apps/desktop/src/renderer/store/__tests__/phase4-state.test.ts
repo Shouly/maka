@@ -41,6 +41,7 @@ import {
   capPreviewLines,
   countExternalLinks,
   isMarkdownArtifactName,
+  isMermaidArtifactName,
 } from '../../lib/ported/artifact-preview-text.js';
 import { SessionTerminalHydration } from '../../lib/ported/session-terminal-hydration.js';
 import {
@@ -321,6 +322,13 @@ test('diffs are line-capped, links are counted, markdown opens rendered', () => 
   assert.equal(isMarkdownArtifactName('notes.MD'), true);
   assert.equal(isMarkdownArtifactName('notes.markdown'), true);
   assert.equal(isMarkdownArtifactName('notes.txt'), false);
+
+  // A mermaid file opens as the diagram, the way the same source already does
+  // inside a markdown fence; only these two extensions do.
+  assert.equal(isMermaidArtifactName('flow.mermaid'), true);
+  assert.equal(isMermaidArtifactName('flow.MMD'), true);
+  assert.equal(isMermaidArtifactName('flow.md'), false);
+  assert.equal(isMermaidArtifactName('mermaid.txt'), false);
 });
 
 // ── the terminal's attach handshake ─────────────────────────────────────────

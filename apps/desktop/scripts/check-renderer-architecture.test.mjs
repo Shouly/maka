@@ -300,7 +300,7 @@ function canonicalRendererEntryHtml(extraBody = '', policy = "script-src 'self'"
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <meta
           http-equiv="Content-Security-Policy"
-          content="default-src 'self'; ${policy}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'"
+          content="default-src 'self'; ${policy}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; object-src blob:; frame-src maka-artifact:; connect-src 'self'"
         />
         <title>Maka</title>
         <style>body { margin: 0; }</style>

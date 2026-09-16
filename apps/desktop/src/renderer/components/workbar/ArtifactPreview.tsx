@@ -56,10 +56,12 @@ import {
   resolvePreviewKind,
   type PreviewResolution,
 } from '@maka/ui/artifact-preview-registry';
+import { ARTIFACT_PDF_PREVIEW_MAX_BYTES, artifactPreviewUrl } from '@maka/core/artifacts';
 import { formatBytes, syntaxLanguageForPath, useUiLocale } from '@maka/ui';
 import CodeRenderer from '../ui/CodeRenderer.js';
 import DiffRenderer from '../ui/DiffRenderer.js';
 import Markdown from '../ui/Markdown.js';
+import { MermaidDiagram } from '../ui/MermaidDiagram.js';
 import { LoadingSpinner } from '../ui/LoadingSpinner.js';
 import { SegmentedControl } from '../ui/segmented-control.js';
 import { PreviewNotice } from './PreviewNotice.js';
@@ -73,6 +75,7 @@ import {
   capPreviewLines,
   countExternalLinks,
   isMarkdownArtifactName,
+  isMermaidArtifactName,
   type BoundedPreviewText,
 } from '../../lib/ported/artifact-preview-text.js';
 import { getArtifactCopy, type ArtifactCopy } from '../../locales/artifact-copy.js';
@@ -102,6 +105,8 @@ export function ArtifactPreview(props: {
     case 'pdf':
       return (
         <PdfArtifact
+          record={props.record}
+          copy={copy}
           {...(props.onOpenExternally ? { onOpenExternally: props.onOpenExternally } : {})}
         />
       );
@@ -135,17 +140,22 @@ function TextArtifact(props: {
     return <PreviewNotice tone={failure.tone} title={failure.title} detail={failure.description} />;
   }
   if (mode === 'diff') return <DiffBody name={record.name} text={result.value.text} copy={copy} />;
-  if (mode === 'html') return <HtmlBody name={record.name} text={result.value.text} copy={copy} />;
+  if (mode === 'html') return <HtmlBody record={record} text={result.value.text} copy={copy} />;
   return <FileBody name={record.name} text={result.value.text} copy={copy} />;
 }
 
 function FileBody(props: { name: string; text: string; copy: ArtifactCopy }) {
   const markdown = isMarkdownArtifactName(props.name);
-  const [mode, setMode] = useState<'rendered' | 'source'>(markdown ? 'rendered' : 'source');
+  const mermaid = isMermaidArtifactName(props.name);
+  const renderable = markdown || mermaid;
+  const [mode, setMode] = useState<'rendered' | 'source'>(renderable ? 'rendered' : 'source');
   const bounded = boundPreviewText(props.text);
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2" data-maka-artifact-preview="file">
-      {markdown && (
+    <div
+      className="flex min-h-0 flex-1 flex-col gap-2"
+      data-maka-artifact-preview={mermaid ? 'mermaid' : 'file'}
+    >
+      {renderable && (
         <SegmentedControl
           size="sm"
           className="self-start"
@@ -158,7 +168,11 @@ function FileBody(props: { name: string; text: string; copy: ArtifactCopy }) {
           ]}
         />
       )}
-      {mode === 'rendered' ? (
+      {mode === 'rendered' && mermaid ? (
+        // The file IS the diagram source, so it goes to the renderer directly
+        // rather than through a fence Markdown would have to parse back out.
+        <MermaidDiagram code={bounded.displayText} />
+      ) : mode === 'rendered' ? (
         <Markdown noPadding disableRawHtml>
           {bounded.highlightedText}
         </Markdown>
@@ -190,14 +204,15 @@ function DiffBody(props: { name: string; text: string; copy: ArtifactCopy }) {
   );
 }
 
-function HtmlBody(props: { name: string; text: string; copy: ArtifactCopy }) {
+function HtmlBody(props: { record: ArtifactDescriptor; text: string; copy: ArtifactCopy }) {
+  const name = props.record.name;
   const bounded = boundPreviewText(props.text);
   if (bounded.isDisplayTruncated) {
     // Too large to frame: an iframe with a cut document renders half a page and
     // says nothing about why, so the source is shown instead.
     return (
       <div className="flex min-h-0 flex-1 flex-col gap-2" data-maka-artifact-preview="html-source">
-        <BoundedCode name={props.name} bounded={bounded} />
+        <BoundedCode name={name} bounded={bounded} />
         <PreviewLimits bounded={bounded} copy={props.copy} />
       </div>
     );
@@ -214,9 +229,15 @@ function HtmlBody(props: { name: string; text: string; copy: ArtifactCopy }) {
       </p>
       <iframe
         className="min-h-[320px] w-full flex-1 rounded-lg border-[0.5px] border-hairline bg-surface-2"
-        title={props.copy.preview.frameTitle(props.name)}
-        sandbox=""
-        srcDoc={bounded.displayText}
+        title={props.copy.preview.frameTitle(name)}
+        // `allow-scripts` alone: the page runs, and its origin stays opaque, so
+        // it reads no storage and nothing of the app's. Adding
+        // `allow-same-origin` beside it would be worth no sandbox at all.
+        sandbox="allow-scripts"
+        // Not `srcdoc`: a local-scheme document inherits the app's
+        // `script-src 'self'` and the artifact's own script would never run.
+        // The scheme serves it under its own policy instead.
+        src={artifactPreviewUrl(props.record.sessionId, props.record.id)}
       />
     </div>
   );
@@ -348,8 +369,31 @@ function UnsupportedImage(props: {
   );
 }
 
-function PdfArtifact(props: { onOpenExternally?: () => void }) {
+function PdfArtifact(props: {
+  record: ArtifactDescriptor;
+  copy: ArtifactCopy;
+  onOpenExternally?: () => void;
+}) {
+  // Two copy sources meet here: the artifact strings own the preview's own
+  // states, the workbar strings own the pane's fallback notice.
   const copy = getWorkbarCopy(useUiLocale());
+  const blob = usePdfBlob(props.record.sessionId, props.record.id);
+  if (blob.state === 'loading') return <PreviewLoading label={props.copy.preview.loadingPdf} />;
+  if (blob.state === 'pdf') {
+    return (
+      <div className="flex min-h-0 flex-1" data-maka-artifact-preview="pdf">
+        {/* Chromium's own viewer. `plugins: true` on the window is what makes
+            this paint rather than show a blank rectangle, and the CSP admits
+            `object-src blob:` for exactly this. */}
+        <embed
+          src={blob.url}
+          type="application/pdf"
+          title={props.record.name}
+          className="min-h-0 flex-1"
+        />
+      </div>
+    );
+  }
   return (
     <PreviewNotice
       icon="file"
@@ -461,6 +505,60 @@ function useImageBlob(sessionId: string, artifactId: string, enabled: boolean): 
     };
   }, [artifactId, enabled, sessionId]);
   return enabled ? state : { state: 'unsupported', reason: 'kind_disallowed' };
+}
+
+/** Encoded-length bound for a PDF, including base64 padding. */
+const PDF_PAYLOAD_MAX_BASE64_LENGTH = Math.ceil((ARTIFACT_PDF_PREVIEW_MAX_BYTES * 4) / 3) + 2;
+
+type PdfBlobState = { state: 'loading' } | { state: 'pdf'; url: string } | { state: 'unavailable' };
+
+/**
+ * The same shape as `useImageBlob`, with the PDF's own admission: the bridge
+ * hands back base64, the cap is checked on the ENCODED length so nothing
+ * oversize is decoded, and only `application/pdf` is framed — a mislabelled
+ * file falls through to the notice with the system viewer.
+ */
+function usePdfBlob(sessionId: string, artifactId: string): PdfBlobState {
+  const [state, setState] = useState<PdfBlobState>({ state: 'loading' });
+  useEffect(() => {
+    let cancelled = false;
+    let url: string | undefined;
+    setState({ state: 'loading' });
+    void (async () => {
+      let raw: ArtifactBinaryReadResult;
+      try {
+        raw = await readArtifactBinary(sessionId, artifactId);
+      } catch {
+        if (!cancelled) setState({ state: 'unavailable' });
+        return;
+      }
+      if (cancelled) return;
+      if (
+        !raw.ok ||
+        raw.mimeType.trim().toLowerCase() !== 'application/pdf' ||
+        raw.base64.length > PDF_PAYLOAD_MAX_BASE64_LENGTH
+      ) {
+        setState({ state: 'unavailable' });
+        return;
+      }
+      try {
+        url = URL.createObjectURL(base64ToBlob(raw.base64, 'application/pdf'));
+      } catch {
+        setState({ state: 'unavailable' });
+        return;
+      }
+      if (cancelled) {
+        URL.revokeObjectURL(url);
+        return;
+      }
+      setState({ state: 'pdf', url });
+    })();
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [artifactId, sessionId]);
+  return state;
 }
 
 function base64ToBlob(base64: string, mimeType: string): Blob {

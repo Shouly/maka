@@ -122,6 +122,7 @@ export function bashToolDescription(
     '- Interactive flags (`-i`, e.g. `git rebase -i`, `git add -i`) are not supported in this environment.',
     '- Use the `gh` CLI for GitHub operations (PRs, issues, API).',
     '- Commit or push only when the user asks. If on the default branch, branch first.',
+    '- Never rewrite published history, force-push, or discard uncommitted work without an explicit request. Stage the paths that changed, not everything.',
     '',
     '# Copilot',
     ...(guidance ? [`- ${guidance}`] : []),

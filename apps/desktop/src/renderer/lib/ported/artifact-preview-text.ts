@@ -99,3 +99,14 @@ export function countExternalLinks(html: string): number {
 export function isMarkdownArtifactName(name: string): boolean {
   return /\.(?:md|markdown)$/iu.test(name);
 }
+
+/**
+ * A `.mermaid` file is a diagram, not a listing.
+ *
+ * Mermaid already renders inside markdown (a fenced ```mermaid block goes to
+ * `MermaidDiagram`), so a file holding nothing but that source was the one
+ * place the same text came out as highlighted code.
+ */
+export function isMermaidArtifactName(name: string): boolean {
+  return /\.(?:mermaid|mmd)$/iu.test(name);
+}

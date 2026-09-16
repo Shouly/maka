@@ -29,6 +29,9 @@ import {
   isArtifactUserVisible,
   isArtifactTurnKey,
   isCanonicalArtifactEntityId,
+  normalizeArtifactImagePreviewMime,
+  normalizeArtifactPreviewImageMime,
+  resolveArtifactImagePreview,
 } from '../artifacts.js';
 
 describe('canonical Artifact entity identity', () => {
@@ -97,5 +100,54 @@ describe('Artifact source policy', () => {
     assert.equal(isArtifactUserVisible({ source: 'tool_result', kind: 'html' }), true);
     assert.equal(isArtifactUserVisible({ source: 'tool_result', kind: 'file' }), false);
     assert.equal(isArtifactUserVisible({ source: 'tool_result', kind: 'diff' }), false);
+  });
+});
+
+describe('SVG previews', () => {
+  test('the preview admits an SVG by mime and by extension', () => {
+    assert.deepEqual(
+      resolveArtifactImagePreview({
+        kind: 'image',
+        name: 'diagram.svg',
+        mimeType: 'image/svg+xml',
+      }),
+      {
+        kind: 'image',
+        reason: 'mime_match',
+      },
+    );
+    assert.deepEqual(resolveArtifactImagePreview({ kind: 'image', name: 'diagram.SVG' }), {
+      kind: 'image',
+      reason: 'ext_fallback',
+    });
+  });
+
+  test('the model-facing normalizer still refuses it', () => {
+    // The durable tool-result projection gates on this one, and an
+    // `image/svg+xml` part fails on every provider wire. The preview can take
+    // an SVG because it draws it in an `<img>`, where scripts and external
+    // subresources are inert; a provider image part has no such guarantee.
+    assert.equal(normalizeArtifactImagePreviewMime('image/svg+xml'), null);
+    assert.equal(normalizeArtifactImagePreviewMime(undefined, 'diagram.svg'), null);
+    assert.equal(normalizeArtifactPreviewImageMime('image/svg+xml'), 'image/svg+xml');
+  });
+
+  test('a non-image kind and an oversize payload are refused before the mime is read', () => {
+    assert.deepEqual(
+      resolveArtifactImagePreview({ kind: 'file', name: 'diagram.svg', mimeType: 'image/svg+xml' }),
+      {
+        kind: 'unsupported',
+        reason: 'kind_disallowed',
+      },
+    );
+    assert.deepEqual(
+      resolveArtifactImagePreview({
+        kind: 'image',
+        name: 'diagram.svg',
+        mimeType: 'image/svg+xml',
+        sizeBytes: 3 * 1024 * 1024,
+      }),
+      { kind: 'unsupported', reason: 'oversize' },
+    );
   });
 });
