@@ -18,7 +18,6 @@
  */
 
 import type { UiCatalog, UiLocale } from '@maka/core/ui-locale';
-import { installArtifactPreviewProtocol } from './artifact-preview-protocol.js';
 import { randomUUID } from "node:crypto";
 import { open, mkdir, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -84,11 +83,6 @@ export function registerRuntimeHostArtifactsIpc(
       deps.client.deleteArtifact(sessionId, artifactId),
   );
   registerRuntimeHostAttachmentPreviewIpc(deps);
-  // The same read the renderer's `artifacts:readText` uses, reached from the
-  // scheme handler instead of IPC so the framed document loads as a document.
-  installArtifactPreviewProtocol({
-    readText: (sessionId, artifactId) => deps.client.readArtifactText(sessionId, artifactId),
-  });
   const materializePresentationArtifact = async (
     sessionId: string,
     artifactId: string,

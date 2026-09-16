@@ -188,6 +188,7 @@ import { registerClientSettingsIpc } from "./client-settings-ipc-main.js";
 import { startClientSettingsWatcher } from "./client-settings-watcher.js";
 import { registerRuntimeHostGitHubCopilotIpc } from "./runtime-host-github-copilot-ipc-main.js";
 import { registerRuntimeHostArtifactsIpc } from "./runtime-host-artifacts-ipc-main.js";
+import { serveArtifactPreviewsFor } from "./artifact-preview-protocol.js";
 import type { DesktopRuntimeHostClient } from "./runtime-host-client.js";
 import type {
   DesktopRuntimeHostCandidateControls,
@@ -1630,6 +1631,14 @@ function registerHostClientIpc(
     showItemInFolder: (path) => shell.showItemInFolder(path),
     openPath: (path) => shell.openPath(path),
   });
+  // The same read `artifacts:readText` serves, reached from the preview scheme
+  // instead of IPC so the framed document loads as a DOCUMENT. The scheme is
+  // app-wide and this Host is one of its possible answerers, so the hook lives
+  // and dies with this client rather than with the scheme.
+  const releaseArtifactPreviews = serveArtifactPreviewsFor(
+    scope.hostId,
+    (sessionId, artifactId) => client.readArtifactText(sessionId, artifactId),
+  );
   registerExternalAgentSetupIpc({ ipcMain: scopedIpc, client, presentation: oauthPresentation,
     selectExecutable: async () => {
       const result = await mainWindowController.showOpenDialog({ properties: ['openFile'] });
@@ -1838,6 +1847,7 @@ function registerHostClientIpc(
   registerOnboardingIpc({ onboardingService, ipcMain: scopedIpc });
   registerTaskSubmissionReadinessIpc(taskSubmissionReadinessService, scopedIpc);
   return async () => {
+    releaseArtifactPreviews();
     unsubscribeConfigurationChanges();
     unsubscribeConnectionCatalogChanges();
     unsubscribeSessionCatalogChanges();

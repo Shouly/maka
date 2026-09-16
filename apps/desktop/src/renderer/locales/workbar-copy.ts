@@ -84,8 +84,8 @@ const WORKBAR_COPY = {
       unnamedRun: '终端',
     },
     preview: {
-      pdfUnavailable: '无法在应用内预览 PDF',
-      pdfUnavailableHint: '当前版本不内置 PDF 渲染器，请用系统程序打开或另存为。',
+      pdfUnavailable: '无法在面板里预览这个 PDF',
+      pdfUnavailableHint: '文件超过预览上限或读取失败。用系统程序打开，或另存一份。',
       openExternally: '用系统程序打开',
     },
   },
@@ -111,8 +111,8 @@ const WORKBAR_COPY = {
       unnamedRun: '終端機',
     },
     preview: {
-      pdfUnavailable: '無法在應用內預覽 PDF',
-      pdfUnavailableHint: '目前版本未內建 PDF 轉譯器，請用系統程式開啟或另存新檔。',
+      pdfUnavailable: '無法在面板裡預覽這個 PDF',
+      pdfUnavailableHint: '檔案超過預覽上限或讀取失敗。用系統程式開啟，或另存一份。',
       openExternally: '用系統程式開啟',
     },
   },
@@ -138,9 +138,9 @@ const WORKBAR_COPY = {
       unnamedRun: 'Terminal',
     },
     preview: {
-      pdfUnavailable: 'PDFs cannot be previewed in the app',
+      pdfUnavailable: 'This PDF cannot be previewed here',
       pdfUnavailableHint:
-        'This build ships no PDF renderer. Open the file in your system viewer, or save a copy.',
+        'It is past the preview limit or could not be read. Open it in your system viewer, or save a copy.',
       openExternally: 'Open in the system viewer',
     },
   },

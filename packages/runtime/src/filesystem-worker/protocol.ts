@@ -121,6 +121,23 @@ export const FilesystemWorkerTargetSchema = z
 export const FilesystemWorkerOperationSchema = z.union([
   z
     .object({
+      /**
+       * What is at this path — asked WITHOUT opening it.
+       *
+       * `read` answers the same question as a side effect, but it pays the
+       * whole file to do it: the bytes are read and decoded before `limit`
+       * narrows anything, and a path that is not a file at all either fails
+       * late (a directory) or never returns (a FIFO has no writer, so the
+       * open blocks). A caller that only needs to know whether a path is
+       * deliverable, openable, or a directory asks this instead.
+       */
+      kind: z.literal('metadata'),
+      cwd,
+      path,
+    })
+    .strict(),
+  z
+    .object({
       kind: z.literal('read'),
       cwd,
       path,
@@ -221,7 +238,11 @@ export const FilesystemWorkerRequestSchema = z
   })
   .strict();
 
+/** What `metadata` found, after following symlinks — never the link itself. */
+export const FILESYSTEM_TARGET_KINDS = ['file', 'directory', 'other'] as const;
+
 export const FilesystemWorkerResultSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('metadata'), targetType: z.enum(FILESYSTEM_TARGET_KINDS) }).strict(),
   z.object({ kind: z.literal('read'), content: z.string() }).strict(),
   z
     .object({

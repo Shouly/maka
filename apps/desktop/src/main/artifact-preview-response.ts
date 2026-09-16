@@ -19,11 +19,48 @@
 
 // What the artifact preview scheme answers with, without Electron in the way.
 //
-// The policy and the 404 rule are the whole security surface of the feature, so
-// they live where a test can reach them; `artifact-preview-protocol.ts` is the
-// thin binding that hands this to `protocol.handle`.
+// Who may be asked, what the policy is, and when the answer is 404 are the
+// whole security surface of the feature, so they live where a test can reach
+// them; `artifact-preview-protocol.ts` is the thin binding that hands this to
+// `protocol.handle`.
 
-import type { ArtifactTextReadResult } from '@maka/core/artifacts';
+import { parseArtifactPreviewUrl, type ArtifactTextReadResult } from '@maka/core/artifacts';
+import { parseDesktopSessionKey } from '../shared/runtime-host-identity.js';
+
+export interface ArtifactPreviewTarget {
+  /** Which Runtime Host can read it. */
+  readonly hostId: string;
+  /** The Host's own Session id, never the Desktop key. */
+  readonly sessionId: string;
+  readonly artifactId: string;
+}
+
+/**
+ * Who should answer this URL, and with which artifact.
+ *
+ * The URL's session segment is a DESKTOP SESSION KEY — `[hostId, sessionId]` —
+ * because that is the only session id the renderer has: `artifacts:list` comes
+ * back through `projectProtocolSessionIds`, which rewrites every `sessionId`
+ * field into one, and UI code treats it as opaque.
+ *
+ * Splitting it here is therefore not a convenience, it is the whole routing
+ * decision. The first version of this handler passed the key through to a Host
+ * as if it were a Session id; the Host had never heard of it, every read
+ * failed, and every HTML preview was a 404.
+ *
+ * An unparseable key is a refusal rather than a throw: the URL is attacker-
+ * shaped input in the same way any other request line is.
+ */
+export function artifactPreviewTarget(url: string): ArtifactPreviewTarget | null {
+  const parsed = parseArtifactPreviewUrl(url);
+  if (!parsed) return null;
+  try {
+    const ref = parseDesktopSessionKey(parsed.sessionId);
+    return { hostId: ref.hostId, sessionId: ref.sessionId, artifactId: parsed.artifactId };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * The previewed document's own policy.
@@ -58,7 +95,6 @@ export const ARTIFACT_PREVIEW_CSP = [
   'media-src data: blob:',
   "form-action 'none'",
   "base-uri 'none'",
-  "frame-ancestors 'self'",
 ].join('; ');
 
 export interface ArtifactPreviewResponse {

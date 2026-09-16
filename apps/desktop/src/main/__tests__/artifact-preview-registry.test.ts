@@ -29,11 +29,37 @@ import {
 } from '@maka/ui/artifact-preview-registry';
 
 describe('artifact preview registry', () => {
-  it('treats present MIME metadata as authoritative and rejects unsafe formats', () => {
+  it('treats present MIME metadata as authoritative, over the name', () => {
+    // The MIME wins: a `.png` that is really an SVG is read as an SVG, and a
+    // `.svg` that is really a TIFF is refused.
     assert.deepEqual(
       resolvePreviewKind({ name: 'tricky.png', kind: 'image', mimeType: 'image/svg+xml' }),
+      { kind: 'image', reason: 'mime_match' },
+    );
+    assert.deepEqual(
+      resolvePreviewKind({ name: 'tricky.svg', kind: 'image', mimeType: 'image/tiff' }),
       { kind: 'unsupported', reason: 'mime_disallowed' },
     );
+  });
+
+  // SVG draws in the PANE and never on the wire. The preview puts every image
+  // in an `<img>`, where an SVG's scripts and external subresources are inert;
+  // the model-facing projection gates on `normalizeArtifactImagePreviewMime`
+  // instead, which stays raster, because no provider accepts `image/svg+xml`.
+  it('admits SVG for the preview and still refuses what no surface draws', () => {
+    assert.deepEqual(resolvePreviewKind({ name: 'diagram.svg', kind: 'image' }), {
+      kind: 'image',
+      reason: 'ext_fallback',
+    });
+    assert.deepEqual(decideImageReadOutcome({ ok: true, base64: 'AAAA', mimeType: 'image/svg+xml' }), {
+      kind: 'image',
+      safeMime: 'image/svg+xml',
+      base64: 'AAAA',
+    });
+    assert.deepEqual(decideImageReadOutcome({ ok: true, base64: 'AAAA', mimeType: 'image/tiff' }), {
+      kind: 'unsupported',
+      reason: 'mime_disallowed',
+    });
   });
 
   it('enforces the inclusive metadata size boundary before loading', () => {
@@ -72,6 +98,8 @@ describe('artifact preview registry', () => {
       assert.deepEqual(decideImageReadOutcome(result), { kind: 'unsupported', reason: 'read_failed' });
     }
 
+    // The size cap is read BEFORE the MIME, so an oversize payload is refused
+    // for its size even when its type is one the preview draws.
     const rejected: Array<[ArtifactBinaryReadResult, 'oversize' | 'mime_disallowed']> = [
       [
         {
@@ -81,7 +109,7 @@ describe('artifact preview registry', () => {
         },
         'oversize',
       ],
-      [{ ok: true, base64: 'AAAA', mimeType: 'image/svg+xml' }, 'mime_disallowed'],
+      [{ ok: true, base64: 'AAAA', mimeType: 'application/pdf' }, 'mime_disallowed'],
     ];
     for (const [result, reason] of rejected) {
       const outcome = decideImageReadOutcome(result);

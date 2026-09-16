@@ -61,11 +61,13 @@ describe('SendUserFile', () => {
       recordingContext(recorded),
     );
 
+    // Admission ASKS what the path is; it never opens it. A `read` here would
+    // pull both files into memory in full and discard them.
     assert.deepEqual(
       reads.map((read) => read.operation),
       [
-        { kind: 'read', path: 'out/report.md', limit: 1 },
-        { kind: 'read', path: '/elsewhere/chart.png', limit: 1 },
+        { kind: 'metadata', path: 'out/report.md' },
+        { kind: 'metadata', path: '/elsewhere/chart.png' },
       ],
     );
     assert.deepEqual(
@@ -164,9 +166,11 @@ describe('SendUserFile', () => {
       filesystem: {
         execute: async (input) => {
           if (input.operation.path.endsWith('missing.md')) {
-            throw new Error('File not found: /workspace/maka/missing.md');
+            // The filesystem layer's own line, errno prefix and all — the
+            // prefix is what says "not there" rather than "could not".
+            throw new Error("ENOENT: no such file or directory, read '/workspace/maka/missing.md'");
           }
-          return { kind: 'read', content: '' } satisfies FilesystemResult;
+          return { kind: 'metadata', targetType: 'file' } satisfies FilesystemResult;
         },
       },
     });
@@ -178,11 +182,12 @@ describe('SendUserFile', () => {
           recordingContext(recorded),
         ),
       (error: unknown) => {
-        assert.match(
+        // The reference's words, and the cwd with them: a relative path's
+        // failure is unreadable without knowing what it was relative to.
+        assert.equal(
           String((error as Error).message),
-          /SendUserFile could not deliver missing\.md/,
+          `Attachment "missing.md" does not exist. Current working directory: ${CWD}.`,
         );
-        assert.match(String((error as Error).message), /File not found/);
         return true;
       },
     );
@@ -190,18 +195,43 @@ describe('SendUserFile', () => {
     assert.equal(recorded.length, 0);
   });
 
-  test('refuses a directory with the reason the filesystem gave', async () => {
+  for (const targetType of ['directory', 'other'] as const) {
+    test(`refuses a ${targetType} target as not a regular file`, async () => {
+      // 'other' is a FIFO, a socket, a device. The old admission opened the
+      // path to find out, and opening a FIFO to read waits for a writer that
+      // is never coming — the call did not fail, it stopped.
+      const tool = buildSendUserFileTool({ filesystem: fakeFilesystem([], targetType) });
+      const recorded: ToolArtifactCandidate[][] = [];
+
+      await assert.rejects(
+        async () =>
+          await tool.impl({ files: ['thing'], status: 'normal' }, recordingContext(recorded)),
+        (error: unknown) => {
+          assert.equal(
+            String((error as Error).message),
+            'Attachment "thing" is not a regular file.',
+          );
+          return true;
+        },
+      );
+      assert.equal(recorded.length, 0);
+    });
+  }
+
+  test('an unrecognised filesystem failure keeps its own words', async () => {
+    // Only the two the reference documents are rewritten. Anything else has to
+    // reach the model as itself — a swallowed reason is worse than a long one.
     const tool = buildSendUserFileTool({
       filesystem: {
         execute: async () => {
-          throw new Error('EISDIR: illegal operation on a directory');
+          throw new Error('EIO: i/o error');
         },
       },
     });
 
     await assert.rejects(
-      async () => await tool.impl({ files: ['docs'], status: 'normal' }, recordingContext([])),
-      /SendUserFile could not deliver docs: EISDIR/,
+      async () => await tool.impl({ files: ['odd.md'], status: 'normal' }, recordingContext([])),
+      /SendUserFile could not deliver odd\.md: EIO: i\/o error/,
     );
   });
 
@@ -281,7 +311,7 @@ describe('SendUserFile', () => {
           { artifactId: 'a2', name: 'c.png', path: '/w/c.png', kind: 'image', sizeBytes: 2 },
         ],
       }),
-      '2 files delivered to user.\n  /w/r.md → artifact id: a1\n  /w/c.png → artifact id: a2',
+      '2 files delivered to user.\n  /w/r.md → file_uuid: a1\n  /w/c.png → file_uuid: a2',
     );
     assert.equal(
       sendUserFileModelText({
@@ -290,7 +320,7 @@ describe('SendUserFile', () => {
         display: 'attach',
         files: [{ artifactId: 'a1', name: 'r.md', path: '/w/r.md', kind: 'file', sizeBytes: 1 }],
       }),
-      '1 file delivered to user.\n  /w/r.md → artifact id: a1',
+      '1 file delivered to user.\n  /w/r.md → file_uuid: a1',
     );
   });
 
@@ -306,9 +336,11 @@ describe('SendUserFile', () => {
     assert.match(tool.description, /a stream of cards for one file is noise/u);
     assert.match(tool.description, /Re-send a file only when it has meaningfully changed/u);
     assert.match(tool.description, /verify with ls first/u);
-    // Batch delivery is atomic, and the description is the only place that
-    // says so before the call is made.
-    assert.match(tool.description, /fails the WHOLE call and names the file/u);
+    assert.match(tool.description, /Leave it unset to let the client decide by file type/u);
+    // The reference does not announce that a batch is all-or-nothing, so
+    // neither does this. The behaviour is unchanged — only the warning is
+    // gone, and a model learns it from the refusal instead.
+    assert.doesNotMatch(tool.description, /WHOLE call/u);
     // It must NOT promise that the card carries the caption: the transcript
     // draws no caption, the same as the reference.
     assert.doesNotMatch(tool.description, /carrying the caption/u);
@@ -353,11 +385,14 @@ describe('SendUserMessage', () => {
   });
 });
 
-function fakeFilesystem(reads: FilesystemExecuteInput[]): Pick<FilesystemExecutor, 'execute'> {
+function fakeFilesystem(
+  probes: FilesystemExecuteInput[],
+  targetType: 'file' | 'directory' | 'other' = 'file',
+): Pick<FilesystemExecutor, 'execute'> {
   return {
     execute: async (input) => {
-      reads.push(input);
-      return { kind: 'read', content: 'delivered' } satisfies FilesystemResult;
+      probes.push(input);
+      return { kind: 'metadata', targetType } satisfies FilesystemResult;
     },
   };
 }

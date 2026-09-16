@@ -64,6 +64,7 @@ import type {
   WorkspacePathScope,
   WorkspaceReadModifyWriteExecutor,
   WorkspaceSearchExecutor,
+  WorkspacePathMetadataExecutor,
   WorkspaceWriteExecutor,
 } from './workspace-executor.js';
 
@@ -121,6 +122,7 @@ export interface FilesystemExecutor {
 
 /** The workspace primitives the host-local backend drives. */
 export type FilesystemWorkspaceExecutor = WorkspaceWriteExecutor &
+  WorkspacePathMetadataExecutor &
   WorkspaceEditExecutor &
   Partial<WorkspaceApplyPatchExecutor> &
   Partial<WorkspaceReadModifyWriteExecutor> &
@@ -384,6 +386,31 @@ function createWorkspaceFilesystemExecutor(
   return {
     async execute({ operation, cwd, abortSignal }, scope, expectedIdentity) {
       switch (operation.kind) {
+        case 'metadata': {
+          let resolved: { path: string };
+          try {
+            resolved = await workspace.resolveExistingPath({
+              cwd,
+              path: operation.path,
+              label: 'Read',
+              scope,
+            });
+          } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code === 'ENOENT' || code === 'ENOTDIR') {
+              throw new Error(`ENOENT: no such file or directory, read '${operation.path}'`);
+            }
+            throw error;
+          }
+          // The workspace answers this, never `node:fs` here: an isolated or
+          // remote workspace's path is not the host's to stat.
+          return {
+            kind: 'metadata',
+            targetType: (
+              await workspace.pathMetadata({ cwd, path: resolved.path, label: 'Read', scope })
+            ).targetType,
+          };
+        }
         case 'read': {
           // The two ordinary read failures answer with the operating system's
           // own wording and the path, on every backend; see the worker's

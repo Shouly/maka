@@ -18,7 +18,10 @@
  */
 
 import { resolveSystemUiLocale, type UiCatalog } from '@maka/core/ui-locale';
-import { registerArtifactPreviewScheme } from './artifact-preview-protocol.js';
+import {
+  installArtifactPreviewProtocol,
+  registerArtifactPreviewScheme,
+} from './artifact-preview-protocol.js';
 import {
   DEV_LOSER_EXIT_CODE,
   developmentLaunchResultFile,
@@ -211,6 +214,10 @@ if (!app.requestSingleInstanceLock()) {
     .whenReady()
     .then(() => {
       console.log('[startup] app ready');
+      // One handler for the whole app: `protocol.handle` throws on a second
+      // call for the same scheme, and a Host that can serve a preview arrives
+      // later and may be replaced (`serveArtifactPreviewsFor`).
+      installArtifactPreviewProtocol();
       showDesktopStartupProgress((phase) => {
         clipboard.writeText(formatDesktopDiagnosticReport(
           createDesktopStartupDiagnosticInput({

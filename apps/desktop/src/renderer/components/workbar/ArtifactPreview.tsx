@@ -27,12 +27,17 @@
 //   through `bridge/artifacts`, and main does the realpath check before it
 //   hands anything back; the renderer never learns where the file is.
 //
-//   HTML. `sandbox=""` with `srcdoc` — no `allow-scripts`, no
-//   `allow-same-origin`, no forms, no popups. The pre-rewrite preview allowed
-//   scripts; this one does not, because the pane now renders arbitrary model
-//   output beside a live session and there is nothing an artifact's script
-//   needs to do to be read. `<a href>` clicks are inert under that sandbox, so
-//   the count of them is stated up front rather than left to be discovered.
+//   HTML. The page RUNS: `sandbox="allow-scripts"` over a document served by
+//   `maka-artifact:`, never `srcdoc`. A local-scheme document inherits the
+//   embedder's CSP — the app's `script-src 'self'` — so under `srcdoc` a
+//   single-file artifact's inline script was dead and the preview was a
+//   picture of a page. The scheme serves it under its own policy instead
+//   (`main/artifact-preview-response.ts`), and `allow-same-origin` is never
+//   added beside `allow-scripts`: the pair is worth no sandbox at all, while
+//   `allow-scripts` alone leaves the origin opaque, so the page reads no
+//   storage, no cookie and nothing of the app's. Its links cannot navigate
+//   anywhere — the app's own `frame-src` admits this scheme and nothing else —
+//   so the count of them is stated up front rather than left to be discovered.
 //
 //   IMAGES. `readBinary` gives base64 and a sniffed MIME; both go through the
 //   shared registry decision (`decideImageReadOutcome`) BEFORE any of it
@@ -40,9 +45,11 @@
 //   survives becomes a blob URL, revoked on unmount — a multi-megabyte `data:`
 //   URL in an attribute is a string the DOM keeps for as long as the node lives.
 //
-//   PDF. This build ships no PDF renderer, and the fixed CSP (`default-src
-//   'self'`) blocks `data:` in an `<embed>`, so an inline viewer would be a
-//   blank rectangle. The face says so and offers the system viewer instead.
+//   PDF. Chromium's own viewer, in an `<embed>`: `plugins: true` on the window
+//   is what makes it paint, and the app's CSP admits `object-src blob:` for
+//   exactly this. Bounded on the ENCODED length so nothing oversize is ever
+//   decoded, and any failure falls back to the notice that offers the system
+//   viewer.
 
 import { useEffect, useState } from 'react';
 import type {

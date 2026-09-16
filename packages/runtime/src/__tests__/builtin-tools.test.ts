@@ -2760,6 +2760,7 @@ function fakeExecutor(overrides: Partial<WorkspaceExecutor>): WorkspaceExecutor 
       aborted: false,
     }),
     readFile: async () => ({ content: '' }),
+    pathMetadata: async () => ({ targetType: 'file' as const }),
     writeFile: async ({ path, content }) => ({
       ok: true,
       path,

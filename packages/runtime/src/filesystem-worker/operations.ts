@@ -137,6 +137,44 @@ export async function executeFilesystemOperation(
   expectedTarget?: FilesystemWorkerTarget,
 ): Promise<FilesystemWorkerResult> {
   switch (operation.kind) {
+    case 'metadata': {
+      // Existence is the resolver's answer and carries the resolver's wording;
+      // the type is one `stat`, which FOLLOWS symlinks — a link to a file is a
+      // file, the same rule the reference's admission check uses.
+      let path: string;
+      try {
+        path = await resolveExistingAllowed(
+          operation.cwd,
+          operation.path,
+          'Read',
+          'read',
+          operationBoundary,
+        );
+      } catch (error) {
+        const code = nodeErrorCode(error);
+        if (code === 'ENOENT' || code === 'ENOTDIR') {
+          throw operationError(
+            'not_found',
+            `ENOENT: no such file or directory, read '${operation.path}'`,
+          );
+        }
+        throw error;
+      }
+      const targetType = await targetTypeOf(path);
+      // `targetTypeOf` reports a path that vanished between the resolve and the
+      // stat as missing; to this caller that is the same answer as never
+      // having been there.
+      if (targetType === 'missing') {
+        throw operationError(
+          'not_found',
+          `ENOENT: no such file or directory, read '${operation.path}'`,
+        );
+      }
+      // `targetTypeOf` is a `stat`, so 'symlink' is not among its answers — it
+      // is what `lstatTargetTypeOf` reports, and the write path is the only
+      // caller that wants the link itself rather than what it points at.
+      return { kind: 'metadata', targetType: targetType === 'symlink' ? 'other' : targetType };
+    }
     case 'read': {
       // A read that cannot happen has exactly two ordinary causes, and the
       // generic "filesystem operation failed" that both used to collapse into

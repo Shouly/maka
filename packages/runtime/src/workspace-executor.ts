@@ -269,6 +269,22 @@ export interface WorkspaceExistingPathResolver {
   resolveExistingPath(input: WorkspaceResolvePathInput): Promise<WorkspaceResolvePathResult>;
 }
 
+/** What is at a path, after following symlinks. */
+export interface WorkspacePathMetadataResult {
+  readonly targetType: 'file' | 'directory' | 'other';
+}
+
+/**
+ * Ask what a path IS without opening it.
+ *
+ * Separate from `readFile` because reading is the expensive way to find out:
+ * a full read and decode to learn one bit, and for a FIFO not even that — the
+ * open blocks until something writes.
+ */
+export interface WorkspacePathMetadataExecutor {
+  pathMetadata(input: WorkspaceResolvePathInput): Promise<WorkspacePathMetadataResult>;
+}
+
 export interface WorkspaceWritablePathResolver {
   resolveWritablePath(input: WorkspaceResolvePathInput): Promise<WorkspaceResolvePathResult>;
 }
@@ -289,6 +305,7 @@ export type WorkspaceBashExecutor = WorkspaceExecutorFactsProvider & WorkspaceCo
 
 export type WorkspaceReadExecutor = WorkspaceExecutorFactsProvider &
   WorkspaceExistingPathResolver &
+  WorkspacePathMetadataExecutor &
   WorkspaceReadFileExecutor;
 
 export type WorkspaceWriteExecutor = WorkspaceExecutorFactsProvider &
@@ -439,6 +456,15 @@ export class LocalWorkspaceExecutor implements WorkspaceExecutor {
     const path = await resolveExistingPathInScope(input.cwd, input.path, input.label, input.scope);
     await updatePatchedFile(path, input.diff);
     return { ok: true, path };
+  }
+
+  async pathMetadata(input: WorkspaceResolvePathInput): Promise<WorkspacePathMetadataResult> {
+    const path = await resolveExistingPathInScope(input.cwd, input.path, input.label, input.scope);
+    // `stat`, not `lstat`: a symlink to a regular file IS a regular file here.
+    const metadata = await fs.stat(path);
+    if (metadata.isFile()) return { targetType: 'file' };
+    if (metadata.isDirectory()) return { targetType: 'directory' };
+    return { targetType: 'other' };
   }
 
   async resolveExistingPath(input: WorkspaceResolvePathInput): Promise<WorkspaceResolvePathResult> {

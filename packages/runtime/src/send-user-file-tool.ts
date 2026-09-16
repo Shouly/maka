@@ -29,6 +29,7 @@ import type { PermissionProfile } from '@maka/core/permission-profile';
 import {
   createBoundaryFilesystemExecutor,
   type FilesystemExecutor,
+  type FilesystemResult,
 } from './filesystem-executor.js';
 import type { FilesystemWorkerClient } from './filesystem-worker/client.js';
 import type { ToolResultOutput } from './model-protocol.js';
@@ -36,9 +37,6 @@ import { sandboxErrorMetadata, SandboxCommandError } from './sandbox/errors.js';
 import type { ToolArtifactCandidate } from './tool-artifacts.js';
 import type { MakaTool, MakaToolContext } from './tool-runtime.js';
 import { createLocalWorkspaceExecutor, type WorkspaceExecutor } from './workspace-executor.js';
-
-export const SEND_USER_FILE_MAX_FILES = 20;
-export const SEND_USER_FILE_MAX_CAPTION_CHARS = 500;
 
 /**
  * Refusal for a `SendUserFile` call on a surface that has no Artifact store.
@@ -51,18 +49,22 @@ export const SEND_USER_FILE_UNAVAILABLE =
   'SendUserFile is not available on this surface, so no file reached the user. ' +
   'Retrying will fail the same way — tell the user where the file is on disk instead.';
 
+// The reference's wording, verbatim, with two deviations Maka cannot avoid:
+// its `proactive` clause promises a phone push, which no Maka surface sends,
+// and its `display` clause closes with "same as before this parameter existed",
+// a fact about the reference client's own history and not about this one.
 export const SEND_USER_FILE_DESCRIPTION = [
-  'Send files to the user. Use this for any file the user would want to see — a generated diagram, a report, a screenshot, a built artifact — and you want it surfaced, not just mentioned. Send deliverables as they are produced, not batched at the end of the task: a complete draft or a meaningfully updated version of the thing the user asked for is worth sending mid-task, so they can follow progress and redirect early. Do NOT send routine working files — scratch files, debug output, partial fragments, or every incremental save of something you are still actively editing; each call renders a file card in the conversation, and a stream of cards for one file is noise. Re-send a file only when it has meaningfully changed since the last send. Paths can be absolute or relative to the session working directory.',
+  "Send files to the user. Use this for any file the user would want to see — a generated diagram, a report, a screenshot, a built artifact — and you want it surfaced, not just mentioned. Send deliverables as they are produced, not batched at the end of the task: a complete draft or a meaningfully updated version of the thing the user asked for is worth sending mid-task, so they can follow progress and redirect early. Do NOT send routine working files — scratch files, debug output, partial fragments, or every incremental save of something you're still actively editing; each call renders a file card in the conversation, and a stream of cards for one file is noise. Re-send a file only when it has meaningfully changed since the last send. Paths can be absolute or relative to the current working directory.",
   '',
   'Add a `caption` when a one-liner of context helps ("the failing case is row 42", "before vs after"). Skip it if the file speaks for itself.',
   '',
-  'Set `status` on every call. Use `proactive` when you are initiating — the user is away and this should reach them on its own (build artifact ready, report generated). Use `normal` when replying to something the user just said.',
+  "Set `status` on every call. Use `proactive` when you're initiating — the user is away and this should reach them on its own (build artifact ready, report generated). Use `normal` when replying to something the user just said.",
   '',
-  "Set `display` to choose how the file is presented. Use 'render' when the user should see the content in the Files face right now — a chart, a rendered HTML page, a diagram, an image. Use 'attach' when the file is something they will save and open elsewhere — source code, a spreadsheet, a document for another app — and a preview would just be noise. Leave it unset to let the client decide by file type.",
+  "Set `display` to choose how the file is presented. Use `'render'` when the user should see the content inline in the side panel right now — a chart, a rendered HTML page, a diagram, an image. Use `'attach'` when the file is something they'll save and open elsewhere — source code, a spreadsheet, a document for another app — and an inline preview would just be noise. Leave it unset to let the client decide by file type.",
   '',
-  'Files must already exist on this machine — the tool sends files, it does not fetch URLs or render content. When unsure of a path, verify with ls first; absolute paths avoid ambiguity about the working directory. A path that does not exist, names a directory, or falls outside what the session permissions allow fails the WHOLE call and names the file — nothing is delivered, so fix that path and call again.',
+  "Files must already exist on the local filesystem — the tool sends files, it doesn't fetch URLs or render content. When unsure of a path, verify with ls first; absolute paths avoid ambiguity about the working directory.",
   '',
-  'Example: SendUserFile({ files: ["report.md"], caption: "Here’s the report.", status: "normal" })',
+  'Example: SendUserFile({ files: ["report.md"], caption: "Here\'s the report.", status: "normal" })',
 ].join('\n');
 
 export type SendUserFileArgs = {
@@ -103,27 +105,26 @@ export function buildSendUserFileTool(
     description: SEND_USER_FILE_DESCRIPTION,
     parameters: z
       .object({
+        // No `maxItems` and no caption `maxLength`: the reference has neither,
+        // and its own report makes the point that the real limit on a batch is
+        // the reader's card noise, not a number the schema can pick.
         files: z
           .array(z.string().min(1))
           .min(1)
-          .max(SEND_USER_FILE_MAX_FILES)
-          .describe('The files to deliver; absolute paths, or paths relative to the session cwd.'),
+          .describe(
+            'File paths (absolute or relative to cwd) to send to the user. Always pass an array, even for a single file.',
+          ),
         status: z
           .enum(['normal', 'proactive'])
           .describe(
-            'normal when the user asked for this file; proactive when you judged they would want it.',
+            "Use 'proactive' when you're surfacing a file the user hasn't asked for and needs to see now — a generated artifact, a completed report. Use 'normal' when replying to something the user just said.",
           ),
-        caption: z
-          .string()
-          .max(SEND_USER_FILE_MAX_CAPTION_CHARS)
-          .optional()
-          .describe('One line the user reads with the card — what this file is.'),
-        display: z
-          .enum(['render', 'attach'])
-          .optional()
-          .describe(
-            'render previews the file inline when the kind supports it; attach shows a card only. Defaults to render.',
-          ),
+        caption: z.string().optional().describe('Optional short caption for the file(s).'),
+        display: z.enum(['render', 'attach']).optional().describe(
+          // NOT "defaults to render". Omitting it defers to the file type,
+          // which is what the reference says and what the impl below does.
+          "How the client should present the file. 'render' opens it inline in the side panel (for HTML, SVG, Mermaid, images, PDFs — anything the user wants to look at now). 'attach' shows a download card only, no inline preview (for deliverables the user will save and open elsewhere). Omit to let the client decide by file type — renderable types render and everything else attaches.",
+        ),
       })
       .strict(),
     impl: async (args, ctx): Promise<SendUserFileResult> => {
@@ -183,14 +184,18 @@ export function buildSendUserFileTool(
 }
 
 /**
- * What the model is told after a delivery: how many files landed, and the
- * artifact id each path became, so a later tool can name the same file.
+ * What the model is told after a delivery: how many files landed, and the id
+ * each path became, so a later tool can name the same file.
+ *
+ * `file_uuid` is the reference's own label, and it is literally true here — an
+ * Artifact id IS a uuid, minted per DELIVERY rather than per file, so sending
+ * the same path twice hands back two different ones.
  */
 export function sendUserFileModelText(output: unknown): string {
   const files = deliveredFiles(output);
   if (!files) return 'Files delivered to user.';
   const header = `${files.length} file${files.length === 1 ? '' : 's'} delivered to user.`;
-  return [header, ...files.map((file) => `  ${file.path} → artifact id: ${file.artifactId}`)].join(
+  return [header, ...files.map((file) => `  ${file.path} → file_uuid: ${file.artifactId}`)].join(
     '\n',
   );
 }
@@ -207,43 +212,75 @@ function resolveDeliveryPath(cwd: string, requested: string): string {
 }
 
 /**
- * Open the file the way `Read` would, under the same boundary, and throw away
- * what comes back. This is the admission check, not a read: it establishes that
- * the path exists, is a file rather than a directory, and is inside what the
- * session permissions allow — and it fails the same way Read does, so a boundary
- * refusal still carries `sandbox_boundary_required` and RequestSandboxBoundary
- * can follow it.
+ * Three questions, asked under the same authority `Read` answers to: is the
+ * path there, is it a file, and is it inside what the session permits. It ASKS
+ * rather than opens — an admission check has no use for the contents.
+ *
+ * It used to open the file the way `Read` does and throw the bytes away, which
+ * bought the boundary check at the price of the whole file: read and decoded
+ * before `limit` narrowed anything, on every delivery, on top of the read the
+ * Artifact store does next. A file past Node's 512MB string ceiling failed
+ * here with a message about strings, and a FIFO never came back at all,
+ * because opening one to read waits for a writer.
+ *
+ * The boundary still refuses through the same path, so the refusal still
+ * carries `sandbox_boundary_required` and its expansion, and
+ * RequestSandboxBoundary can still follow it.
  */
 async function admitDeliveryPath(
   filesystem: Pick<FilesystemExecutor, 'execute'>,
   requested: string,
   ctx: MakaToolContext,
 ): Promise<void> {
+  let metadata: FilesystemResult;
   try {
-    await filesystem.execute({
-      operation: { kind: 'read', path: requested, limit: 1 },
+    metadata = await filesystem.execute({
+      operation: { kind: 'metadata', path: requested },
       cwd: ctx.cwd,
       ...(ctx.executionBoundary ? { executionBoundary: ctx.executionBoundary } : {}),
       ...(ctx.permissionMode ? { permissionMode: ctx.permissionMode } : {}),
       ...(ctx.abortSignal ? { abortSignal: ctx.abortSignal } : {}),
     });
   } catch (error) {
-    throw deliveryPathError(requested, error);
+    throw deliveryPathError(requested, ctx.cwd, error);
+  }
+  // A directory, a FIFO, a socket, a device — one answer for all of them, and
+  // it is the answer the reference gives.
+  if (metadata.kind !== 'metadata' || metadata.targetType !== 'file') {
+    throw new Error(`Attachment "${requested}" is not a regular file.`);
   }
 }
 
 /**
- * Name the file on the failure without losing the machine-readable sandbox
- * metadata: the boundary reason and its required expansion are what
- * RequestSandboxBoundary reads, and they only survive on the thrown error
- * itself, never through a `cause`.
+ * The reference's first refusal, word for word. The second one — not a regular
+ * file — is decided from the metadata itself, in `admitDeliveryPath`, so only
+ * "it is not there" arrives here as a thrown error.
+ *
+ * The cwd rides along because it is the only thing that makes a RELATIVE
+ * path's failure readable. What arrives is the filesystem layer's own errno
+ * line; the code is not carried separately (every one of them is
+ * `filesystem_error`), so the errno prefix is what there is to read.
+ *
+ * A boundary refusal is not one of the reference's two. It keeps its own
+ * wording and, more importantly, its machine-readable metadata: the boundary
+ * reason and the expansion it needs are what RequestSandboxBoundary reads, and
+ * they survive only on the thrown error itself, never through a `cause`.
  */
-function deliveryPathError(requested: string, error: unknown): Error {
-  const reason = failureReason(error);
+function deliveryPathError(requested: string, cwd: string, error: unknown): Error {
   const metadata = sandboxErrorMetadata(error);
-  const message = `SendUserFile could not deliver ${requested}: ${reason}`;
-  if (metadata) return new SandboxCommandError({ ...metadata, message });
-  return new Error(message, { cause: error });
+  if (metadata) {
+    return new SandboxCommandError({
+      ...metadata,
+      message: `SendUserFile could not deliver ${requested}: ${failureReason(error)}`,
+    });
+  }
+  const reason = failureReason(error);
+  if (/^ENOENT\b/u.test(reason)) {
+    return new Error(
+      `Attachment "${requested}" does not exist. Current working directory: ${cwd}.`,
+    );
+  }
+  return new Error(`SendUserFile could not deliver ${requested}: ${reason}`, { cause: error });
 }
 
 function failureReason(error: unknown): string {

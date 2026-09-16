@@ -26,10 +26,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { artifactPreviewUrl, parseArtifactPreviewUrl } from '@maka/core/artifacts';
+import { desktopSessionKey } from '../../shared/runtime-host-identity.js';
 import {
   ARTIFACT_PREVIEW_CSP,
   ARTIFACT_PREVIEW_SCRIPT_HOST,
   artifactPreviewResponse,
+  artifactPreviewTarget,
 } from '../artifact-preview-response.js';
 
 test('the preview URL round-trips exactly the two ids it carries', () => {
@@ -54,6 +56,25 @@ test('a URL that is not exactly this scheme and shape is refused', () => {
   }
 });
 
+test('the URL names the Host that can answer it, not just the Session', () => {
+  // What the renderer holds is the Desktop key, so that is what the URL
+  // carries; the Host is told its OWN id back. Passing the key through was the
+  // 404 every HTML preview answered with.
+  const key = desktopSessionKey({ hostId: 'host-a', sessionId: 'session-1' });
+  assert.deepEqual(artifactPreviewTarget(artifactPreviewUrl(key, 'Artifact_01')), {
+    hostId: 'host-a',
+    sessionId: 'session-1',
+    artifactId: 'Artifact_01',
+  });
+});
+
+test('a session segment that is not a Desktop key is refused, not thrown at', () => {
+  for (const session of ['session-1', '[]', '["host"]', '["host","a","b"]', '["host",""]', '{}']) {
+    assert.equal(artifactPreviewTarget(artifactPreviewUrl(session, 'Artifact_01')), null, session);
+  }
+  assert.equal(artifactPreviewTarget('https://preview/x/y'), null);
+});
+
 test('the served policy runs the page and opens exactly one host', () => {
   // Scripts and styles inline, because a single-file artifact IS inline.
   assert.match(ARTIFACT_PREVIEW_CSP, /script-src 'unsafe-inline'/u);
@@ -64,6 +85,9 @@ test('the served policy runs the page and opens exactly one host', () => {
   // The two ways out that are not a fetch.
   assert.match(ARTIFACT_PREVIEW_CSP, /form-action 'none'/u);
   assert.match(ARTIFACT_PREVIEW_CSP, /base-uri 'none'/u);
+  // And NO `frame-ancestors`: its `'self'` is this response's own origin, so
+  // it refused the very frame the preview exists to fill.
+  assert.doesNotMatch(ARTIFACT_PREVIEW_CSP, /frame-ancestors/u);
 
   // cdnjs is the ONE outside host, and only for scripts. Every other https
   // source in the policy would be a second hole, so the count is the assertion.
