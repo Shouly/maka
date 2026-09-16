@@ -46,7 +46,13 @@ export function migrateSqliteWorkflowDatabase(db: DatabaseSync): void {
     DROP TABLE IF EXISTS workflow_plan_reminders;
     DROP TABLE IF EXISTS workflow_task_ledger_events;
 
-    CREATE TABLE IF NOT EXISTS workflow_session_todo_documents (
+    -- Schema 1 stored a whole-list Todo document in the _todo_ table below.
+    -- Nothing shipped on it, so the old table is dropped rather than migrated.
+    -- NOTE the two names differ by one word: this DROP must name the TODO
+    -- table, never the task one below it, or every migration empties the list.
+    DROP TABLE IF EXISTS workflow_session_todo_documents;
+
+    CREATE TABLE IF NOT EXISTS workflow_session_task_documents (
       session_id TEXT PRIMARY KEY,
       record_json TEXT NOT NULL
     );

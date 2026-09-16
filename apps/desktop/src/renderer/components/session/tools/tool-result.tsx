@@ -55,6 +55,20 @@ export const stepBodyClass =
 export const stepBodyInteractiveClass =
   'cursor-pointer outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)]';
 
+/**
+ * The mark a note carries in place of a tool's glyph.
+ *
+ * A note is not an activity, so it takes no activity icon — it marks its place
+ * on the same timeline with a plain dot, as the reference design does. Its
+ * colour is the border token rather than `currentColor`: the dot is a rule of
+ * the timeline, not text, and it must not brighten with the row's hover states
+ * the way a glyph does. `mt-0.5` is the optical nudge that sits it on the
+ * text's centre rather than the line box's.
+ */
+export function StepDot() {
+  return <span className="mt-0.5 size-2 shrink-0 rounded-full bg-border-strong" />;
+}
+
 /** The vertical line. `on=false` keeps the segment's space but paints nothing. */
 export function StepLine({ on = true, className }: { on?: boolean; className?: string }) {
   return (

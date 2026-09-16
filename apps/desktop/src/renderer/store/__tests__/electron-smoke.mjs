@@ -286,10 +286,17 @@ try {
   checks.push(
     'a question is pinned above the composer, which keeps Stop, and leaves no placeholder in the timeline',
   );
-  // The wizard advances on each pick; the last pick submits (relx AskUserPanel).
+  // The wizard advances on each single-select pick; the last question is
+  // multi-select (checkboxes), so its pick only toggles and the ↑ key sends.
+  // That key is an icon in both modes, so it answers to its label, not to a
+  // word on its face.
   await promptPanel.getByRole('option', { name: /邀请制/ }).click();
   await promptPanel.getByRole('option', { name: /下周/ }).click();
   await promptPanel.getByRole('option', { name: /^是/ }).click();
+  // The multi-select bar is the only place the confirm key is drawn beside a
+  // count, and the only place it is drawn at all before the final question.
+  await page.screenshot({ path: SHOT('phase3a-question-multi.png') });
+  await promptPanel.getByRole('button', { name: 'Submit answers', exact: true }).click();
   await promptPanel.waitFor({ state: 'detached' });
   // Answered, the call becomes a question-and-answer card in the flow — on
   // its own, so a run folding to its summary cannot take it along.
@@ -415,15 +422,48 @@ try {
   // that is not a git repository, an artifact catalog with nothing user-visible
   // in it, and a Runtime Host that can start a real PTY.
 
-  // 4.1 ⌘⌥S reveals the pane, and the titlebar toggle reports what is open.
+  // 4.1 The column is open from the start and the session panel holds it. The
+  //     switch reports the column, so it reads as open in both occupant states.
   const pane = page.locator('#maka-workbar-pane');
+  const panel = page.locator('[data-maka-contract="session-panel"]');
   const toggle = page.locator('[data-maka-contract="session-workbar-toggle"]');
   await toggle.waitFor();
-  await page.keyboard.press('ControlOrMeta+Alt+s');
-  await pane.waitFor();
-  await page.locator('[data-maka-contract="session-artifacts"]').waitFor();
+  await panel.waitFor();
   assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
-  checks.push('⌘⌥S opens the right pane on the Files face and activates its header toggle');
+  await page.screenshot({ path: SHOT('phase4-session-panel.png') });
+  // Collapsing narrows the column rather than unmounting it, so the session's
+  // own state is not torn down and rebuilt every time the reader glances away.
+  const column = page.locator('[data-maka-contract="session-workbar-column"]');
+  await page.keyboard.press('ControlOrMeta+Alt+s');
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[data-maka-contract="session-workbar-column"]')
+        ?.getAttribute('aria-hidden') === 'true',
+  );
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+  await page.keyboard.press('ControlOrMeta+Alt+s');
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[data-maka-contract="session-workbar-column"]')
+        ?.getAttribute('aria-hidden') === null,
+  );
+  assert.equal(await column.count(), 1);
+  checks.push('the right column opens on the session panel and its switch reports the column');
+
+  // 4.1b A face takes the column only when someone opens one, and closing it
+  //      hands the column straight back — it never empties.
+  await page.keyboard.press('ControlOrMeta+p');
+  await pane.waitFor();
+  await panel.waitFor({ state: 'detached' });
+  await page.locator('[data-maka-contract="session-artifacts"]').waitFor();
+  await page.keyboard.press('ControlOrMeta+p');
+  await panel.waitFor();
+  await pane.waitFor({ state: 'detached' });
+  await page.keyboard.press('ControlOrMeta+p');
+  await pane.waitFor();
+  checks.push('a face takes the column only when opened, and hands it back when closed');
 
   // 4.2 The Files face lists the task's artifacts. The deterministic backend
   //     writes none that are user-visible, so what must be on screen is the
@@ -528,10 +568,17 @@ try {
   await page.waitForFunction(() => !document.documentElement.classList.contains('dark'));
   checks.push('the right pane renders in both themes');
 
-  // 4.9 The toggle puts the pane away and records that, per task, under the v2
-  //     key. (v1 was global and has no owner; `workbar-layout.ts` removes it.)
+  // 4.9 The toggle puts the column away and records that, per task, under the
+  //     v2 key. (v1 was global and has no owner; `workbar-layout.ts` removes
+  //     it.) The column narrows rather than unmounting, so the claim is the
+  //     hidden state, not a missing node.
   await toggle.click();
-  await pane.waitFor({ state: 'detached' });
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[data-maka-contract="session-workbar-column"]')
+        ?.getAttribute('aria-hidden') === 'true',
+  );
   const collapsed = await page.evaluate(() =>
     JSON.parse(localStorage.getItem('maka-session-workbar-collapsed-v2') ?? '{}'),
   );
@@ -1173,12 +1220,81 @@ try {
   await moduleMain.getByRole('button', { name: 'New scheduled task', exact: true }).first().click();
   const scheduleDialog = page.locator('[data-app-dialog]');
   await scheduleDialog.waitFor();
-  await scheduleDialog.getByLabel('Title', { exact: true }).fill(REMINDER);
+  // The form opens on the placeholder, not on whatever folder the app's
+  // next-task target happens to point at: a task that runs unattended must not
+  // inherit a choice the person never made.
+  await scheduleDialog
+    .getByRole('button', { name: 'Project: Work in a project or folder' })
+    .waitFor();
+  await scheduleDialog.getByLabel('Name').first().fill(REMINDER);
+  // Instructions are what the task actually runs; the Host refuses a task
+  // without them, so the dialog is not valid until both are filled.
+  await scheduleDialog.getByLabel('Instructions').first().fill('Say hello and stop.');
+  // The form opens with NO workspace and will not save without one: a run
+  // happens in a real directory on this machine. Picking it through the chip
+  // is the only way in, so this also covers the chip and its popover.
+  await scheduleDialog.getByRole('button', { name: /^Project: / }).click();
+  const workspaceMenu = page.getByRole('listbox', { name: 'Project' });
+  await workspaceMenu.waitFor();
+  await workspaceMenu.getByRole('option').first().click();
+  await workspaceMenu.waitFor({ state: 'detached' });
+  // Clicking the chosen row again clears it, and Save then refuses: the
+  // deselect and the requirement are one behaviour and are checked together.
+  await scheduleDialog.getByRole('button', { name: /^Project: / }).click();
+  const reopened = page.getByRole('listbox', { name: 'Project' });
+  await reopened.waitFor();
+  await reopened.getByRole('option', { selected: true }).click();
+  await reopened.waitFor({ state: 'detached' });
+  await scheduleDialog.getByRole('button', { name: 'Create', exact: true }).click();
+  await scheduleDialog
+    .getByText('Choose the project or folder to run in', { exact: false })
+    .waitFor();
+  checks.push('the scheduled-task form deselects a chosen project and refuses to save without one');
+  await scheduleDialog.getByRole('button', { name: /^Project: / }).click();
+  const rechosen = page.getByRole('listbox', { name: 'Project' });
+  await rechosen.waitFor();
+  await rechosen.getByRole('option').first().click();
+  await rechosen.waitFor({ state: 'detached' });
+  // The dialog itself, open: the instructions box with the workspace and
+  // model chips fused to its bottom edge is the surface that keeps drifting
+  // from the reference, and it is only visible here.
+  await page.screenshot({ path: SHOT('phase5b-scheduled-form-light.png') });
   await scheduleDialog.getByRole('button', { name: 'Create', exact: true }).click();
   await scheduleDialog.waitFor({ state: 'detached' });
   await moduleMain.getByText(REMINDER, { exact: true }).first().waitFor();
   await page.screenshot({ path: SHOT('phase5b-scheduled-task-light.png') });
+
+  // The Scheduled band's own row menu. Its contents cannot be checked by the
+  // presentation tests — the menu is portalled and closed under static
+  // rendering — so this is the only place the three rows are seen at all.
+  const scheduledRow = page.locator(`[data-scheduled-task]`).filter({ hasText: REMINDER });
+  await scheduledRow.waitFor();
+  await scheduledRow.hover();
+  await scheduledRow
+    .getByRole('button', { name: `Actions for scheduled task ${REMINDER}`, exact: true })
+    .click();
+  for (const label of ['Run now', 'Edit', 'Delete']) {
+    await page.getByRole('menuitem', { name: label, exact: true }).waitFor();
+  }
+  // The band with its row menu open: the trailing slot and the ⋯ share one
+  // corner, and only a picture shows whether they collide.
+  await page.screenshot({ path: SHOT('phase5b-scheduled-band-menu.png') });
+  // Edit opens the task's PAGE, not the create dialog.
+  await page.getByRole('menuitem', { name: 'Edit', exact: true }).click();
+  await moduleMain.getByRole('heading', { name: REMINDER }).waitFor();
+  checks.push(
+    'the Scheduled band row menu offers Run now, Edit and Delete, and Edit opens the task',
+  );
+  // Back to the list: the titlebar breadcrumb is the way out of a task's page,
+  // and the card below is a different menu in a different content variant.
+  await page.getByRole('button', { name: 'Scheduled tasks', exact: true }).click();
+  await moduleMain.getByText(REMINDER, { exact: true }).first().waitFor();
+
   await page.getByRole('button', { name: `More actions for ${REMINDER}`, exact: true }).click();
+  // The list CARD's menu, for comparison with the band's: a different content
+  // variant, and the sidebar's item shape does not belong in it.
+  await page.getByRole('menuitem', { name: 'Run now', exact: true }).waitFor();
+  await page.screenshot({ path: SHOT('phase5b-scheduled-card-menu.png') });
   await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
   const deleteConfirm = page.locator('[data-app-dialog]');
   await deleteConfirm.waitFor();
@@ -1244,6 +1360,9 @@ try {
           'phase5b-skills-light.png',
           'phase5b-mcp-light.png',
           'phase5b-scheduled-light.png',
+          'phase5b-scheduled-form-light.png',
+          'phase5b-scheduled-band-menu.png',
+          'phase5b-scheduled-card-menu.png',
           'phase5b-scheduled-task-light.png',
           'phase5b-scheduled-dark.png',
         ],

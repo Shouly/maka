@@ -26,6 +26,7 @@ import type { AttachmentRef } from '@maka/core/events';
 import type { ArtifactKind, ArtifactRecord } from '@maka/core/artifacts';
 import { NO_REAL_CONNECTION_CODE } from '@maka/core/connection-error-copy';
 import type { RuntimeExecutionConnection } from '@maka/core/llm-connections';
+import { lookupModelMetadata } from '@maka/core/model-metadata';
 import { generalizedErrorMessage } from '@maka/core/redaction';
 import { emptyPlanSessionState } from '@maka/core/plan';
 import { readLogicalRuntimeExecutionForRun } from '@maka/core/runtime-logical-execution';
@@ -230,7 +231,7 @@ import {
   SkillCatalogInvocableContextError,
 } from './skill-catalog-coordinator.js';
 import { SkillCatalogRepository } from './skill-catalog-repository.js';
-import { HostSessionTodoCoordinator } from './session-todo-coordinator.js';
+import { HostSessionTaskCoordinator } from './session-task-coordinator.js';
 import { HostTurnControlCoordinator } from './turn-control-coordinator.js';
 import type { TurnOperationHandlerMap } from './operation-dispatcher.js';
 import { HostUsagePricingCoordinator } from './usage-pricing-coordinator.js';
@@ -250,7 +251,11 @@ import {
   resolveHostTavilyWebSearchReadiness,
   shouldResolveHostTavilyWebSearchReadiness,
 } from './web-search-tool.js';
-import { createHostWebFetchService, createHostWebFetchToolFromService } from './web-fetch-tool.js';
+import {
+  createHostWebFetchService,
+  createHostWebFetchToolFromService,
+  type HostWebFetchAnswerModel,
+} from './web-fetch-tool.js';
 import { createHostExecutionArtifactServices } from './execution-artifacts.js';
 import { openToolResultArchiveEvidenceReader } from '@maka/storage/tool-result-archive-evidence';
 import {
@@ -380,7 +385,7 @@ export async function createExecutionRuntimeHostComposition(
     const openedGoalStore = storage.goal;
     const memoryStore = storage.memoryBundle;
     const longTermMemoryStore = storage.longTermMemory;
-    const sessionTodoStore = storage.sessionTodo;
+    const sessionTaskStore = storage.sessionTask;
     const openedArtifactStore = storage.artifacts;
     const openedContextOffloadStore = storage.contextOffload;
     const openedContextOffloadReader = openedContextOffloadStore
@@ -471,11 +476,12 @@ export async function createExecutionRuntimeHostComposition(
     workspaceExecution = createRuntimeHostWorkspaceExecutionComposition({
       ...(workspaceFilesystemWorker ? { filesystemWorker: workspaceFilesystemWorker } : {}),
     });
-    const sessionTodo = new HostSessionTodoCoordinator(
-      sessionTodoStore,
+    const sessionTask = new HostSessionTaskCoordinator(
+      sessionTaskStore,
       sessionAdmission,
       stores.sessionStore,
-      (sessionId) => requireContinuity(continuity).enqueueSessionDomainChanged(sessionId, 'todo'),
+      (sessionId) =>
+        requireContinuity(continuity).enqueueSessionDomainChanged(sessionId, 'session_task'),
       context.requestDrain,
     );
     runtimeResources = new HostRuntimeResourceCoordinator({
@@ -558,23 +564,37 @@ export async function createExecutionRuntimeHostComposition(
       execute: (operation, invocation) => {
         switch (operation.kind) {
           case 'read':
-            return invokeBuiltin('Read', operation, invocation);
+            return invokeBuiltin(
+              'Read',
+              {
+                file_path: operation.path,
+                ...(operation.offset !== undefined ? { offset: operation.offset } : {}),
+                ...(operation.limit !== undefined ? { limit: operation.limit } : {}),
+              },
+              invocation,
+            );
           case 'write':
-            return invokeBuiltin('Write', operation, invocation);
+            return invokeBuiltin(
+              'Write',
+              { file_path: operation.path, content: operation.content },
+              invocation,
+            );
           case 'edit':
             return invokeBuiltin(
               'Edit',
               {
-                path: operation.path,
+                file_path: operation.path,
                 old_string: operation.oldString,
                 new_string: operation.newString,
               },
               invocation,
             );
           case 'glob':
+            // The search root is Glob's `path`; `cwd` was never a Glob argument
+            // and silently fell back to the session cwd.
             return invokeBuiltin(
               'Glob',
-              { pattern: operation.pattern, cwd: operation.path },
+              { pattern: operation.pattern, path: operation.path },
               invocation,
             );
           case 'grep':
@@ -594,7 +614,7 @@ export async function createExecutionRuntimeHostComposition(
           'Bash',
           {
             command: options.command,
-            timeout_ms: options.timeoutMs,
+            timeout: options.timeoutMs,
             run_in_background: options.background,
             pty: options.pty,
           },
@@ -650,8 +670,10 @@ export async function createExecutionRuntimeHostComposition(
     const webSearchService = createHostWebSearchService({
       policy: runtimePolicyStores.operations,
     });
+    let webFetchAnswerModel: HostWebFetchAnswerModel | undefined;
     const webFetchService = createHostWebFetchService({
       policy: runtimePolicyStores.operations,
+      answerModel: () => webFetchAnswerModel,
     });
     pluginWeb.bindRuntime({
       search: ({ query, limit, abortSignal }) =>
@@ -792,7 +814,7 @@ export async function createExecutionRuntimeHostComposition(
     let oauth: HostOAuthCoordinator | undefined;
     let externalAgentSetup: HostExternalAgentSetupCoordinator | undefined;
     let scheduledTasks: HostScheduledTaskCoordinator | undefined;
-    let scheduledTaskTool: MakaTool | undefined;
+    let scheduledTaskTools: readonly MakaTool[] | undefined;
     let goal: HostGoalCoordinator | undefined;
     let deepResearch: HostDeepResearchCoordinator | undefined;
     let dailyReview: HostDailyReviewCoordinator | undefined;
@@ -980,11 +1002,11 @@ export async function createExecutionRuntimeHostComposition(
         skills,
         pluginSkills,
         memory: requireMemory(memory),
-        sessionTodo,
+        sessionTask,
         clientCapabilities: requireClientCapabilities(clientCapabilities),
         resolveTavilyWebSearchReadiness: () =>
           resolveHostTavilyWebSearchReadiness(runtimePolicyStores.operations),
-        ...(scheduledTaskTool ? { scheduledTaskTool } : {}),
+        ...(scheduledTaskTools ? { scheduledTaskTools } : {}),
         planStore: openedPlanStore,
         deepResearchTools: requireDeepResearch(deepResearch).toolsForSession(
           backendContext.sessionId,
@@ -1085,8 +1107,17 @@ export async function createExecutionRuntimeHostComposition(
         connection && shouldResolveHostTavilyWebSearchReadiness(runtimePolicy.policy)
           ? await resolveHostTavilyWebSearchReadiness(runtimePolicyStores.operations)
           : false;
+      // The serving model's own cutoff, for <knowledge_cutoff>. A connection
+      // entry states it when the account advertises one; otherwise the models
+      // metadata snapshot does. Unknown stays undefined — the section then
+      // omits the date rather than inventing one.
+      const knowledgeCutoff = connection
+        ? (connection.models?.find((model) => model.id === input.modelId)?.knowledgeCutoff ??
+          lookupModelMetadata(connection.providerType, input.modelId).knowledgeCutoff)
+        : undefined;
       return {
         runtimePolicy,
+        ...(knowledgeCutoff ? { knowledgeCutoff } : {}),
         surface: routeInteractiveRunToolSurface({
           runtimePolicy,
           ...(connection ? { connection } : {}),
@@ -1132,7 +1163,7 @@ export async function createExecutionRuntimeHostComposition(
           requireGraphCoordinator(graphCoordinator).toolsForSession(sessionId),
           openedPlanStore.readState(sessionId),
         ]);
-        const { runtimePolicy, surface } = await resolveInteractiveToolSurface({
+        const { runtimePolicy, surface, knowledgeCutoff } = await resolveInteractiveToolSurface({
           connectionRef: sessionExecutionConnectionRef(header),
           modelId: header.model,
           hostTools: [...hostTools, ...graphTools],
@@ -1142,15 +1173,16 @@ export async function createExecutionRuntimeHostComposition(
         const runProfile = hostedExecutionRunProfile(header.toolProfile);
         return createInteractiveRunComposer({
           runtimePolicy,
+          ...(knowledgeCutoff ? { knowledgeCutoff } : {}),
           shell: resolveTurnShellPlan(runtimePolicy.policy.shell),
           skills,
           memory: requireMemory(memory),
-          sessionTodo,
+          sessionTask,
           ...(runProfile ? { toolProfile: header.toolProfile } : {}),
           ...(capabilitySnapshot ? { clientCapabilities: capabilitySnapshot } : {}),
           builtinTools,
           hostTools: surface.hostTools,
-          ...(scheduledTaskTool ? { scheduledTaskTool } : {}),
+          ...(scheduledTaskTools ? { scheduledTaskTools } : {}),
           goalTools: requireGoal(goal).tools,
           ...(surface.parentAgentTools ? { parentAgentTools: surface.parentAgentTools } : {}),
           plan: {
@@ -1210,11 +1242,11 @@ export async function createExecutionRuntimeHostComposition(
             shell: resolveTurnShellPlan(runtimePolicy.policy.shell),
             skills,
             memory: requireMemory(memory),
-            sessionTodo,
+            sessionTask,
             ...(capabilitySnapshot ? { clientCapabilities: capabilitySnapshot } : {}),
             builtinTools,
             hostTools: surface.hostTools,
-            ...(scheduledTaskTool ? { scheduledTaskTool } : {}),
+            ...(scheduledTaskTools ? { scheduledTaskTools } : {}),
             goalTools: requireGoal(goal).tools,
             ...(surface.parentAgentTools ? { parentAgentTools: surface.parentAgentTools } : {}),
             plan: {
@@ -1534,6 +1566,7 @@ export async function createExecutionRuntimeHostComposition(
       requestDrain: context.requestDrain,
       readSessionHeader: (sessionId) => stores.sessionStore.readHeaderSnapshot(sessionId),
     });
+    webFetchAnswerModel = pluginModel;
     pluginLlm.bindRuntime({
       generate: (input, invocation) =>
         pluginModel.generate({
@@ -2288,7 +2321,6 @@ export async function createExecutionRuntimeHostComposition(
       runtime: manager,
       root: coordinator,
       runtimePolicy: runtimePolicyStores,
-      nativeEffects: clientCapabilities,
       createSession: (input, toolMode) => sessionCatalog.createForHost(input, toolMode),
       changes: {
         publish: (
@@ -2300,7 +2332,7 @@ export async function createExecutionRuntimeHostComposition(
       acquireResidency: (kind) => context.acquireResidency('scheduled-task', kind),
       requestDrain: context.requestDrain,
     });
-    scheduledTaskTool = scheduledTasks.modelTool;
+    scheduledTaskTools = scheduledTasks.modelTools;
     // Export and import run inside this process because the authority they
     // need is already held here: the Storage Root owner lock is an election
     // that refuses a second exclusive hold, its own process included, so the
@@ -2322,7 +2354,7 @@ export async function createExecutionRuntimeHostComposition(
       discardImportedSession: async (sessionId) => {
         const outcomes = await Promise.allSettled([
           stores.purgeConversationOperationalState(sessionId),
-          sessionTodoStore.purgeSessionState(sessionId),
+          sessionTaskStore.purgeSessionState(sessionId),
           stores.sessionStore.remove(sessionId),
         ]);
         for (const outcome of outcomes) {
@@ -2348,7 +2380,7 @@ export async function createExecutionRuntimeHostComposition(
     const sessionRevisions = new HostSessionRevisionCoordinator({
       stores,
       artifacts: openedArtifactStore,
-      sessionTodo: sessionTodoStore,
+      sessionTask: sessionTaskStore,
       ...(contextOffloadAuthority ? { contextOffload: contextOffloadAuthority } : {}),
       manager,
       admission: sessionAdmission,
@@ -2373,7 +2405,7 @@ export async function createExecutionRuntimeHostComposition(
       capabilities: clientCapabilities,
       continuity: continuityCoordinator,
       artifacts: openedArtifactStore,
-      sessionTodo: sessionTodoStore,
+      sessionTask: sessionTaskStore,
       ...(contextOffloadAuthority ? { contextOffload: contextOffloadAuthority } : {}),
       purgeOperationalState: async (sessionId) => {
         await stores.purgeConversationOperationalState(sessionId);
@@ -2499,7 +2531,7 @@ export async function createExecutionRuntimeHostComposition(
         handlers: [
           runtimePolicy.handlers,
           connectionEffects.handlers,
-          sessionTodo.handlers,
+          sessionTask.handlers,
           artifacts.handlers,
           skills.handlers,
           usagePricing.handlers,

@@ -81,6 +81,17 @@ export interface SessionListModel {
   readonly rows: readonly SessionListRow[];
   readonly total: number;
   readonly filtered: boolean;
+  /**
+   * The Session on screen, even when the rail does not list it.
+   *
+   * A scheduled task's runs are kept OUT of `rows` on purpose — one a day would
+   * bury the rail — but the window titlebar still has to name the Session being
+   * read. It used to look the row up in `rows` and find nothing, so opening a
+   * run left the titlebar blank: no task, no title, nothing. A filter text also
+   * hides rows, and the Session you are looking at is not "filtered out" of the
+   * window you are looking at it in.
+   */
+  readonly activeRow: SessionListRow | undefined;
 }
 
 export interface SessionListInput {
@@ -136,8 +147,14 @@ function activityOf(session: SessionSummary & { activityAt?: number }): number {
 
 export function buildSessionListModel(input: SessionListInput): SessionListModel {
   const projectNames = new Map(input.projects.map((project) => [project.id, project.name]));
+  // Two questions, not one. `railed` is "does the rail list this", and the
+  // Session on screen is admitted past it regardless: a row has to exist for
+  // the titlebar to name what is being read, even when the rail deliberately
+  // hides it (a scheduled task's runs) — it just never reaches `rows`.
+  const railed = (session: SessionSummary): boolean =>
+    input.includeArchived === true || sessionMatchesRail(session);
   const listed = input.sessions.filter(
-    (session) => input.includeArchived === true || sessionMatchesRail(session),
+    (session) => railed(session) || session.id === input.activeId,
   );
   // Collapse first: a family's older revisions must not each claim a row, and
   // the representative is the one the catalog says is current.
@@ -147,6 +164,7 @@ export function buildSessionListModel(input: SessionListInput): SessionListModel
     sendOutcomes: input.sendOutcomes ?? {},
   });
   const rows: SessionListRow[] = [];
+  let activeRow: SessionListRow | undefined;
   for (const session of representatives) {
     if (input.flaggedOnly === true && !session.isFlagged) continue;
     const projectId = session.projectId ?? null;
@@ -188,6 +206,8 @@ export function buildSessionListModel(input: SessionListInput): SessionListModel
       ).size,
       familyIds,
     };
+    if (input.activeId !== undefined && row.id === input.activeId) activeRow = row;
+    if (!railed(session)) continue;
     if (!sessionMatchesFilter(row, input.filter)) continue;
     rows.push(row);
   }
@@ -204,6 +224,7 @@ export function buildSessionListModel(input: SessionListInput): SessionListModel
     rows,
     total: rows.length,
     filtered: input.filter.trim().length > 0,
+    activeRow,
   };
 }
 

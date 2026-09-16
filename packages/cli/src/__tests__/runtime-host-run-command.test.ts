@@ -268,7 +268,7 @@ describe('Runtime Host maka run adapter', () => {
         'step-1',
         'step-2',
         'Boundary was not widened',
-        'request_sandbox_boundary',
+        'RequestSandboxBoundary',
       ),
     });
     const exitCode = await runFixtureCommand(
@@ -295,7 +295,7 @@ describe('Runtime Host maka run adapter', () => {
         'step-1',
         'step-2',
         'Boundary was not widened',
-        'tool_search',
+        'ToolSearch',
       ),
     });
     const exitCode = await runFixtureCommand(
@@ -431,7 +431,7 @@ describe('Runtime Host maka run adapter', () => {
     const stdout: string[] = [];
     const fixture = runFixture({
       graph: true,
-      finalMessages: sandboxBoundaryMessages('step-1', 'step-2', 'request_sandbox_boundary'),
+      finalMessages: sandboxBoundaryMessages('step-1', 'step-2', 'RequestSandboxBoundary'),
     });
     const exitCode = await runFixtureCommand(
       fixture,
@@ -1342,6 +1342,7 @@ async function* questionEvents(turnId: string): AsyncIterable<SessionEvent> {
     questions: [
       {
         question: 'Choose one',
+        header: 'Choose',
         options: [{ label: 'One' }, { label: 'Two' }],
       },
     ],
@@ -1374,7 +1375,7 @@ function pendingQuestion(turnId: string): InteractionPendingSnapshot {
     request: {
       kind: 'question',
       toolUseId: 'tool-question',
-      questions: [{ question: 'Continue?', options: [{ label: 'Yes' }] }],
+      questions: [{ question: 'Continue?', header: 'Continue', options: [{ label: 'Yes' }] }],
     },
   };
 }
@@ -1624,7 +1625,7 @@ async function* sandboxBoundaryEvents(
 async function* deniedWideningEvents(turnId: string): AsyncIterable<SessionEvent> {
   yield toolStart(turnId, 'tool-1', 'step-1', 1);
   yield sandboxFailureToolResult(turnId, 2);
-  yield toolStart(turnId, 'tool-2', 'step-2', 3, 'request_sandbox_boundary');
+  yield toolStart(turnId, 'tool-2', 'step-2', 3, 'RequestSandboxBoundary');
   yield successfulToolResult(turnId, 4, 'tool-2');
   yield toolStart(turnId, 'tool-3', 'step-3', 5);
   yield successfulToolResult(turnId, 6, 'tool-3');

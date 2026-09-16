@@ -1386,7 +1386,7 @@ test('migrates or releases retired operation grants when opening an existing acc
             operationGrants: [
               'host.status',
               'oauth.account.usage.fetch',
-              // Task Ledger was replaced by the SessionTodo authority. Keep
+              // Task Ledger was replaced by the SessionTask authority. Keep
               // the existing principal's equivalent read authority without
               // requiring credential rotation during a Host update.
               'task.ledger.query',
@@ -1403,7 +1403,7 @@ test('migrates or releases retired operation grants when opening an existing acc
     const authority = await openRuntimeHostAccessAuthority(directory);
     assert.deepEqual(authority.authenticate(credential)?.operationGrants, [
       'host.status',
-      'session.todo.query',
+      'session.task.query',
     ]);
   } finally {
     await rm(directory, { recursive: true, force: true });

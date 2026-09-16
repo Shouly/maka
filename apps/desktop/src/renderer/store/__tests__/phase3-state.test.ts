@@ -188,6 +188,47 @@ test('a shell run reads its presentation status from the run, not the call', () 
   assert.equal(toolRowStatus(running), 'running');
 });
 
+test('the task summary names the verb, and never a call count', () => {
+  // Four tools share one activity kind because they share an icon. Two of them
+  // only read, and one call now carries one task — so counting calls would both
+  // report work that never happened and make a six-task plan read as churn.
+  const taskTool = (toolUseId: string, toolName: string) =>
+    tool({ toolUseId, toolName, activityKind: 'tasks', args: {} });
+
+  const created = summarizeToolGroup(
+    [
+      taskTool('a', 'TaskCreate'),
+      taskTool('b', 'TaskCreate'),
+      taskTool('c', 'TaskCreate'),
+      taskTool('d', 'TaskUpdate'),
+    ],
+    'en',
+  );
+  assert.equal(created, 'Updated tasks');
+
+  // Reads are their own phrase: a turn that only looked did not update anything.
+  assert.equal(summarizeToolGroup([taskTool('e', 'TaskList')], 'en'), 'Checked tasks');
+  assert.equal(
+    summarizeToolGroup([taskTool('f', 'TaskGet'), taskTool('g', 'TaskGet')], 'en'),
+    'Checked tasks',
+  );
+
+  // Both in one group: two phrases, still no numbers.
+  const mixed = summarizeToolGroup(
+    [taskTool('h', 'TaskCreate'), taskTool('i', 'TaskUpdate'), taskTool('j', 'TaskList')],
+    'en',
+  );
+  assert.ok(mixed.includes('Updated tasks'), mixed);
+  assert.ok(mixed.toLowerCase().includes('checked tasks'), mixed);
+  assert.doesNotMatch(mixed, /\d/, mixed);
+
+  // A running read says it is reading, not updating.
+  assert.equal(
+    activeToolLabel([{ ...taskTool('k', 'TaskList'), status: 'running' }], 'en'),
+    'Checking progress',
+  );
+});
+
 test('a group summary counts by kind and leads with the busiest one', () => {
   const items = [
     tool({ toolUseId: 'a', activityKind: 'read' }),
@@ -207,8 +248,8 @@ test('a question to the user is read back as Q&A, answers aligned by position', 
     activityKind: undefined,
     args: {
       questions: [
-        { question: 'Scope?', options: [] },
-        { question: 'When?', options: [] },
+        { question: 'Scope?', header: 'Scope', options: [] },
+        { question: 'When?', header: 'Timing', options: [] },
       ],
     },
     result: { kind: 'json', value: { answers: [{ question: 'Scope?', answer: 'Invite only' }] } },
@@ -217,18 +258,18 @@ test('a question to the user is read back as Q&A, answers aligned by position', 
     activeToolLabel([tool({ ...ask, status: 'running' })], 'en'),
     'Asking you a question…',
   );
-  // A missing answer is null, never dropped and never the Host's phrasing.
+  // A missing answer is no lines, never dropped and never the Host's phrasing.
   assert.deepEqual(askUserQuestionRecord(ask), [
-    { question: 'Scope?', answer: 'Invite only' },
-    { question: 'When?', answer: null },
+    { question: 'Scope?', header: 'Scope', answers: ['Invite only'] },
+    { question: 'When?', header: 'Timing', answers: [] },
   ]);
   // A text result that is JSON reads the same; no result is "not yet", not "no answer".
-  assert.equal(
+  assert.deepEqual(
     askUserQuestionRecord({
       ...ask,
       result: { kind: 'text', text: '{"answers":[{"answer":"Now"}]}' },
-    })?.[0]?.answer,
-    'Now',
+    })?.[0]?.answers,
+    ['Now'],
   );
   assert.equal(askUserQuestionRecord({ ...ask, result: undefined }), undefined);
   // The live copy of the call has no name ("Tool"); the id the request named
@@ -237,9 +278,10 @@ test('a question to the user is read back as Q&A, answers aligned by position', 
   assert.equal(isAskUserQuestionTool({ toolUseId: 'q', toolName: 'Tool' }, { q: {} }), true);
   // What was just sent is kept by the call it answers, for the card to show
   // before the transcript carries the result; open, it shows nothing.
-  assert.equal(rememberedUserQuestionRecord({ questions: ['Scope?'] }), undefined);
-  assert.deepEqual(rememberedUserQuestionRecord({ questions: ['Scope?'], answers: ['Now'] }), [
-    { question: 'Scope?', answer: 'Now' },
+  const scope = [{ question: 'Scope?', header: 'Scope', options: [] }];
+  assert.equal(rememberedUserQuestionRecord({ questions: scope }), undefined);
+  assert.deepEqual(rememberedUserQuestionRecord({ questions: scope, answers: ['Now'] }), [
+    { question: 'Scope?', header: 'Scope', answers: ['Now'] },
   ]);
 });
 
@@ -262,7 +304,7 @@ test('a proxied MCP tool name splits back into its server and its tool', () => {
 });
 
 test('a row title prefers the invocation line over the bare tool name', () => {
-  const title = toolRowTitle(tool({ toolName: 'Read', args: { path: 'src/a.ts' } }), 'en');
+  const title = toolRowTitle(tool({ toolName: 'Read', args: { file_path: 'src/a.ts' } }), 'en');
   assert.ok(title.length > 0);
   // Falls back to the display name when nothing formats.
   assert.equal(toolRowTitle(tool({ toolName: 'Mystery', args: undefined }), 'en'), 'Mystery');

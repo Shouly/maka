@@ -62,14 +62,34 @@ export const menuPanelClass =
  * `focus-visible:` 只在键盘操作时匹配,鼠标打开就不亮;键盘打开照亮不误。
  * Radix 自己的菜单另有 `data-[highlighted]`,不受影响。
  */
+/*
+ * `justify-start`, not `justify-between`.
+ *
+ * Between was the old default and it is wrong for the shape almost every menu
+ * row actually has — a glyph and a label — because it drives them to opposite
+ * ends and leaves the words against the menu's right edge. Nothing needs it:
+ * every trailing thing in this app's menus pushes itself with `ml-auto`
+ * (`DropdownMenuShortcut`, the Inspector's numbers, WorkspacePicker's check),
+ * and Select's tick is positioned absolutely into `pr-8`.
+ *
+ * Four places had already worked around it one at a time — `menuActionItemClass`
+ * below, a `flex-1` label in `SessionActionMenuItems`, a `flex flex-1` wrapper
+ * in `ChatInput` and `SkillSubMenu`, an inline `justify-start` in
+ * `TipTapEditor` — while every menu that did NOT know to work around it drew
+ * right-aligned. Fixing the default is what stops the next one.
+ *
+ * Their `justify-start` overrides are gone with it. The `flex-1` wrappers are
+ * NOT redundant and stay: they carry `truncate` for a long skill or file name,
+ * which needs a shrinkable box around the label, not an alignment.
+ */
 export const menuItemClass =
-  'group relative flex min-h-8 cursor-pointer select-none items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-sm leading-5 outline-none transition-colors hover:bg-menu-hover focus:outline-none focus-visible:bg-menu-hover disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 data-[disabled]:pointer-events-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-menu-hover';
+  'group relative flex min-h-8 cursor-pointer select-none items-center justify-start gap-2 rounded-lg px-2.5 py-1.5 text-sm leading-5 outline-none transition-colors hover:bg-menu-hover focus:outline-none focus-visible:bg-menu-hover disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 data-[disabled]:pointer-events-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-menu-hover';
 
 /**
- * 手写 `<button>` 菜单行。Popover 里的菜单不是 Radix 菜单项,没有 indicator
- * 要靠 `justify-between` 推到右边,所以改成左对齐并占满整行。
+ * 手写 `<button>` 菜单行。Popover 里的菜单不是 Radix 菜单项,没有 indicator,
+ * 所以要占满整行。(左对齐现在是 `menuItemClass` 自己的默认值,见上。)
  */
-export const menuActionItemClass = cn(menuItemClass, 'h-8 w-full justify-start text-left');
+export const menuActionItemClass = cn(menuItemClass, 'h-8 w-full text-left');
 
 /** 破坏性菜单项,叠加在 menuItemClass / menuActionItemClass 之上。 */
 export const menuDangerItemClass =

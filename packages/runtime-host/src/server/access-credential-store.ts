@@ -76,8 +76,8 @@ const PERSISTED_GRANT_MIGRATIONS: ReadonlyMap<string, PersistedGrantMigration> =
     'host.diagnostics.query',
     { kind: 'replace', successors: ['host.diagnostics.query', 'host.resources.query'] },
   ],
-  // TaskLedger became SessionTodo; the query carried its authority over.
-  ['task.ledger.query', { kind: 'replace', successors: ['session.todo.query'] }],
+  // TaskLedger became SessionTask; the query carried its authority over.
+  ['task.ledger.query', { kind: 'replace', successors: ['session.task.query'] }],
   // Retired with the Claude subscription provider, whose client identity the
   // usage report required.
   ['oauth.account.usage.fetch', { kind: 'release' }],

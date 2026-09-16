@@ -56,6 +56,7 @@ import { useUiLocale, type FoldedTimelineChild, type ToolActivityItem } from '@m
 import { Anthropicon } from '../../icons/Anthropicon.js';
 import { cn } from '../../../lib/cn.js';
 import { getTranscriptCopy } from '../../../locales/transcript-copy.js';
+import { isNoteItem } from '../../../lib/tool-delivery-results.js';
 import { ThinkingStep } from '../ThinkingStep.js';
 import { ToolRow } from './ToolRow.js';
 import type { ToolContentContext } from './registry.js';
@@ -72,6 +73,13 @@ export interface ToolGroupProps {
    * re-render its groups.
    */
   entries: readonly FoldedTimelineChild[];
+  /**
+   * Notes this run carries, counted apart from the tool calls: the header
+   * reads "Ran a command · 1 note". A note that was promoted to full width is
+   * included even though it is drawn outside the group — the count is the only
+   * mark on it once it renders as plain prose.
+   */
+  notes?: number;
   /** False while the group can still gain steps. */
   complete: boolean;
   context: ToolContentContext;
@@ -136,11 +144,20 @@ export const ToolGroup = memo(function ToolGroup(props: ToolGroupProps) {
     [steps],
   );
 
+  const notes = props.notes ?? 0;
+  // A run of nothing but notes has no work to summarize, and "Thought process"
+  // would be a lie — the note count carries it alone.
+  const worked = tools.some((tool) => !isNoteItem(tool));
   const thinkingOnly = tools.length === 0;
-  const summary = useMemo(
-    () => (thinkingOnly ? copy.thinkingOnly : summarizeToolGroup(tools, locale)),
-    [thinkingOnly, tools, locale, copy],
-  );
+  const summary = useMemo(() => {
+    const phrase = thinkingOnly
+      ? copy.thinkingOnly
+      : worked
+        ? summarizeToolGroup(tools, locale)
+        : undefined;
+    const counted = notes > 0 ? copy.noteCount(notes) : undefined;
+    return [phrase, counted].filter(Boolean).join(' · ');
+  }, [thinkingOnly, worked, tools, locale, copy, notes]);
   // A live run of pure reasoning shows its step and nothing above it.
   const showHeader = !(thinkingOnly && !props.complete);
 

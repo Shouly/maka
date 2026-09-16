@@ -27,6 +27,7 @@
  */
 
 import * as nodeCrypto from 'node:crypto';
+import type { ArtifactKind } from './artifacts.js';
 import type { ModelRetryDecision } from './model-failure.js';
 import { CONTEXT_OFFLOAD_ID_MAX_CODE_POINTS, type SessionContextRef } from './context-offload.js';
 import type {
@@ -72,6 +73,7 @@ export const TOOL_ACTIVITY_KINDS = [
   'command',
   'explore',
   'browser',
+  'tasks',
   'tool',
 ] as const;
 export type ToolActivityKind = (typeof TOOL_ACTIVITY_KINDS)[number];
@@ -737,7 +739,7 @@ function isValidToolStepProgress(progress: ToolStepProgress): boolean {
 }
 
 /**
- * Live-only open-facts for a tool that is still running (e.g. agent_spawn child ready).
+ * Live-only open-facts for a tool that is still running (e.g. Agent child ready).
  * Not a durable transcript commit and not model-visible function_response.
  * Terminal outcome remains a later tool_result.
  */
@@ -907,6 +909,33 @@ export type ToolResultContent =
         source: string;
       }>;
     }
+  /**
+   * A file the model handed to the user through `SendUserFile`. The bytes are
+   * already recorded as Artifacts by the time this result settles, so the
+   * durable event carries only the identity and metadata the Files face and the
+   * chat card need — never the content.
+   *
+   * `status` says why the file arrived (`normal`: the user asked for it;
+   * `proactive`: the model judged they would want it) and `display` says how
+   * much of it to show (`render`: preview inline where the kind supports it;
+   * `attach`: a card only).
+   */
+  | {
+      kind: 'user_file_delivery';
+      status: 'normal' | 'proactive';
+      caption?: string;
+      display: 'render' | 'attach';
+      files: Array<{
+        artifactId: string;
+        name: string;
+        path: string;
+        kind: ArtifactKind;
+        mimeType?: string;
+        sizeBytes: number;
+      }>;
+    }
+  /** Markdown the user reads verbatim, sent mid-turn through `SendUserMessage`. */
+  | { kind: 'user_message'; message: string }
   | {
       kind: 'web_search_error';
       ok: false;

@@ -673,7 +673,7 @@ Make every slide carry one idea.`,
       const tool = buildSkillAgentTool(workspaceRoot);
       assert.equal(tool.name, 'Skill');
       const result = await tool.impl(
-        { name: 'Deck Helper' },
+        { skill: 'Deck Helper' },
         {
           sessionId: 's1',
           turnId: 't1',
@@ -718,7 +718,7 @@ description: Second project helper.
 
       const tool = buildSkillAgentTool((ctx) => resolveSkillDiscoveryPaths(ctx.cwd, workspaceRoot));
       const result = await tool.impl(
-        { name: 'Project Helper' },
+        { skill: 'Project Helper' },
         {
           sessionId: 's2',
           turnId: 't2',
@@ -789,7 +789,7 @@ Use host tools.`,
       );
 
       const tool = buildSkillAgentTool(workspaceRoot, { toolNames: new Set(['Read']) });
-      const result = await tool.impl({ name: 'gated-helper' }, {} as unknown as MakaToolContext);
+      const result = await tool.impl({ skill: 'gated-helper' }, {} as unknown as MakaToolContext);
       assert.equal(result.ok, false);
       if (result.ok) return;
       assert.equal(result.reason, 'host_incompatible');
@@ -850,13 +850,13 @@ Use host tools.`,
         ({ sessionId }) => hosts.get(sessionId) ?? { toolNames: new Set<string>() },
       );
 
-      const hidden = await tool.impl({ name: 'gated-helper' }, {
+      const hidden = await tool.impl({ skill: 'gated-helper' }, {
         sessionId: 'text-session',
       } as unknown as MakaToolContext);
       assert.equal(hidden.ok, false);
       if (!hidden.ok) assert.equal(hidden.reason, 'host_incompatible');
 
-      const loaded = await tool.impl({ name: 'gated-helper' }, {
+      const loaded = await tool.impl({ skill: 'gated-helper' }, {
         sessionId: 'full-session',
       } as unknown as MakaToolContext);
       assert.equal(loaded.ok, true);
@@ -1229,14 +1229,14 @@ Body.`,
         cwd: projectRoot,
       } as MakaToolContext;
 
-      const loaded = await skillTool.impl({ name: 'writer' }, context);
+      const loaded = await skillTool.impl({ skill: 'writer' }, context);
       assert.equal(loaded.ok, true);
       if (!loaded.ok) return;
       assert.equal(loaded.skill.ref, 'project:maka:writer');
       assert.match(loaded.skill.instructions, /Project Writer/);
       assert.doesNotMatch(loaded.skill.instructions, /User Writer/);
 
-      const shadowed = await skillTool.impl({ name: 'user:agents:writer' }, context);
+      const shadowed = await skillTool.impl({ skill: 'user:agents:writer' }, context);
       assert.equal(shadowed.ok, false);
       if (shadowed.ok) return;
       assert.equal(shadowed.reason, 'not_found');
@@ -1368,9 +1368,9 @@ Body.`,
       } as unknown as MakaToolContext;
       const searched = await searchTool.impl({ query: 'weekly report', limit: 3 }, context);
       assert.equal(searched.matches.length, 3);
-      const loaded = await loadTool.impl({ name: searched.matches[1].ref }, context);
+      const loaded = await loadTool.impl({ skill: searched.matches[1].ref }, context);
       assert.equal(loaded.ok, true);
-      const missing = await loadTool.impl({ name: 'private-looking-missing-name' }, context);
+      const missing = await loadTool.impl({ skill: 'private-looking-missing-name' }, context);
       assert.equal(missing.ok, false);
       assert.deepEqual(
         events.map((event) => event.type),
@@ -1425,3 +1425,60 @@ async function writeSkillInDirectory(
     'utf8',
   );
 }
+
+describe('Skill — reference argument names', () => {
+  const context = {
+    sessionId: 's1',
+    turnId: 't1',
+    cwd: '/tmp',
+    toolCallId: 'tool-1',
+    abortSignal: new AbortController().signal,
+    emitOutput: () => {},
+  };
+
+  it('parses the skill argument with its optional args', () => {
+    const schema = buildSkillAgentTool('/tmp').parameters as {
+      parse(value: unknown): Record<string, unknown>;
+    };
+
+    assert.deepEqual(schema.parse({ skill: 'Deck Helper' }), { skill: 'Deck Helper' });
+    assert.deepEqual(schema.parse({ skill: 'Deck Helper', args: '--fast' }), {
+      skill: 'Deck Helper',
+      args: '--fast',
+    });
+  });
+
+  it('passes args through to the loaded instructions', async () => {
+    await withWorkspace(async (workspaceRoot) => {
+      await writeSkill(
+        workspaceRoot,
+        'deck-helper',
+        [
+          '---',
+          'name: Deck Helper',
+          'description: Build decks.',
+          '---',
+          'Make every slide carry one idea.',
+        ].join('\n'),
+      );
+      const tool = buildSkillAgentTool(workspaceRoot);
+
+      const withArgs = await tool.impl(
+        { skill: 'Deck Helper', args: 'audience=execs' },
+        { ...context, cwd: workspaceRoot },
+      );
+      assert.equal(withArgs.ok, true);
+      if (!withArgs.ok) return;
+      assert.match(withArgs.skill.instructions, /Make every slide carry one idea\./);
+      assert.match(withArgs.skill.instructions, /\n\nArguments: audience=execs$/);
+
+      const withoutArgs = await tool.impl(
+        { skill: 'Deck Helper' },
+        { ...context, cwd: workspaceRoot },
+      );
+      assert.equal(withoutArgs.ok, true);
+      if (!withoutArgs.ok) return;
+      assert.doesNotMatch(withoutArgs.skill.instructions, /Arguments:/);
+    });
+  });
+});

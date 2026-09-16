@@ -139,7 +139,7 @@ export function validateSkillLock(input: {
   if (lock.sourceType === 'bundled' && !isTrustedBundledLock(lock, skillId)) {
     return metadataError(
       'unsupported_schema',
-      'Skill lock source is not trusted in this Maka version.',
+      'Skill lock source is not trusted in this Copilot version.',
     );
   }
 

@@ -188,7 +188,7 @@ describe('macOS filesystem worker smoke', { skip: process.platform !== 'darwin' 
       mode: 'ask',
       expectedIdentity: 'unchecked',
     });
-    assert.deepEqual(emptyResult, { kind: 'grep', matches: [] });
+    assert.deepEqual(emptyResult, { kind: 'grep', matches: [], mode: 'content' });
   });
 });
 

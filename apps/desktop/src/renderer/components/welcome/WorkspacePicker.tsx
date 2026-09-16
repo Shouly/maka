@@ -55,7 +55,22 @@ export function WorkspacePicker(props: {
   side?: 'top' | 'bottom';
   /** The meta row under the composer: 24px chip rather than the 32px control. */
   dense?: boolean;
+  /**
+   * Controlled mode, for a form that owns its own workspace rather than the
+   * app's next-task target — the scheduled-task dialog picks where ONE task
+   * will run, and must not move where the next chat starts.
+   *
+   * `onChange(null)` is a DESELECT: clicking the row that is already chosen
+   * clears it, the same toggle the uncontrolled path performs by sending
+   * `projectId: null`. Without it the only way out of a wrong choice would be
+   * to pick some other project.
+   */
+  value?: { projectId: string | null; cwd: string };
+  onChange?: (option: WorkspaceOption | null) => void;
+  /** What the chip says in controlled mode when nothing has been chosen. */
+  placeholder?: string;
 }) {
+  const controlled = props.onChange !== undefined;
   const copy = getWelcomeCopy(useUiLocale()).workspace;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -93,10 +108,13 @@ export function WorkspacePicker(props: {
     return [...byHost.entries()];
   }, [filtered]);
 
-  const current = options.find(
-    (option) => option.profileId === target?.profileId && option.projectId === target?.projectId,
+  const current = options.find((option) =>
+    controlled
+      ? option.projectId === (props.value?.projectId ?? null) &&
+        (option.projectId !== null || option.path === props.value?.cwd)
+      : option.profileId === target?.profileId && option.projectId === target?.projectId,
   );
-  const label = current?.projectName ?? copy.none;
+  const label = current?.projectName ?? (controlled ? (props.placeholder ?? copy.none) : copy.none);
   const addHost = addProjectHostOf(catalog, target);
 
   return (
@@ -157,10 +175,11 @@ export function WorkspacePicker(props: {
                   {group.profileName}
                 </p>
                 {group.options.map((option) => {
-                  const selected =
-                    option.profileId === target?.profileId &&
-                    option.hostId === target?.hostId &&
-                    option.projectId === target?.projectId;
+                  const selected = controlled
+                    ? option === current
+                    : option.profileId === target?.profileId &&
+                      option.hostId === target?.hostId &&
+                      option.projectId === target?.projectId;
                   const path = option.path
                     ? projectPathDisplay(option.path, { maxLength: 40 })
                     : undefined;
@@ -174,11 +193,13 @@ export function WorkspacePicker(props: {
                       title={path?.title}
                       onClick={() => {
                         if ((!option.available && !selected) || !option.hostId) return;
-                        newTaskStore.selectTarget({
-                          profileId: option.profileId,
-                          hostId: option.hostId,
-                          projectId: selected ? null : option.projectId,
-                        });
+                        if (props.onChange) props.onChange(selected ? null : option);
+                        else
+                          newTaskStore.selectTarget({
+                            profileId: option.profileId,
+                            hostId: option.hostId,
+                            projectId: selected ? null : option.projectId,
+                          });
                         setOpen(false);
                       }}
                       className={cn(menuActionItemClass, 'h-auto min-h-11 py-1')}

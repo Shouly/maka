@@ -269,23 +269,12 @@ describe('ToolRuntime settlement', () => {
     });
 
     assert.equal((settlement.result as { cmd?: unknown }).cmd, 'printf durable-command');
+    // The durable result keeps every field the UI renders; the model is handed
+    // the captured output as text, and nothing that echoes its own call.
     assert.deepEqual(settledProjection(events), {
       version: 1,
-      kind: 'json',
-      value: {
-        kind: 'terminal',
-        cwd: '/workspace/repo',
-        status: 'completed',
-        exitCode: 0,
-        output: {
-          mode: 'pipes',
-          stdout: 'done',
-          stderr: '',
-          stdoutTruncated: true,
-          stderrTruncated: false,
-          redacted: false,
-        },
-      },
+      kind: 'text',
+      text: 'done\n[Output was truncated; only the tail is shown. Re-run narrowing the output to see more.]',
     });
   });
 
@@ -358,6 +347,13 @@ describe('ToolRuntime settlement', () => {
       },
     ];
 
+    const expectedProjections = [
+      'tail\n[Output was truncated; only the tail is shown. Re-run narrowing the output to see more.]',
+      'Exit code 2\nfailed\nSandbox denial: this command was likely blocked by the macos-seatbelt sandbox. Retrying as is will fail the same way; request the boundary expansion the command needs, or declare it up front with required_boundary.',
+      'Exit code 124 (timed out)\npartial',
+      'Exit code 130 (cancelled)\ncancelled',
+    ];
+
     for (const [index, terminal] of terminalResults.entries()) {
       const runtime = makeRuntime();
       const events: SessionEvent[] = [];
@@ -381,13 +377,11 @@ describe('ToolRuntime settlement', () => {
           },
         },
       });
-      const { cmd: _cmd, ...projected } = terminal;
-
       assert.deepEqual(settlement.result, terminal);
       assert.deepEqual(settledProjection(events), {
         version: 1,
-        kind: 'json',
-        value: projected,
+        kind: 'text',
+        text: expectedProjections[index],
       });
       assert.equal(terminalResults[index]?.cmd, terminal.cmd);
     }
@@ -648,7 +642,7 @@ describe('ToolRuntime settlement', () => {
 
     const settlement = await runtime.settleToolCall({
       tool: {
-        name: 'agent_spawn',
+        name: 'Agent',
         description: 'spawn',
         parameters: {},
         impl: async (_args, ctx) => {

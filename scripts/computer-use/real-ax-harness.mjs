@@ -400,7 +400,7 @@ const computerTool = {
     };
     actions.push(attempt);
     const rejectAttempt = (resultCode, message) => {
-      attempt.text = `maka_computer.${action} failed: ${resultCode}`;
+      attempt.text = `Computer.${action} failed: ${resultCode}`;
       throw new Error(message);
     };
     if (!allowed.has(action)) {
@@ -438,7 +438,7 @@ const computerTool = {
     } catch (error) {
       const resultCode = typeof error?.code === 'string' ? error.code : 'tool_error';
       attempt.durationMs = Date.now() - actionStartedAt;
-      attempt.text = `maka_computer.${action} failed: ${resultCode}`;
+      attempt.text = `Computer.${action} failed: ${resultCode}`;
       throw error;
     }
     const observation = parseObservation(result?.modelText) ?? parseObservation(result?.text);
@@ -469,8 +469,7 @@ const computerTool = {
         (expected) => expected.action === action && expected.error === resultCode,
       ),
       durationMs: Date.now() - actionStartedAt,
-      text:
-        result?.text ?? (resultCode ? `maka_computer.${action} failed: ${resultCode}` : undefined),
+      text: result?.text ?? (resultCode ? `Computer.${action} failed: ${resultCode}` : undefined),
     });
     return result;
   },

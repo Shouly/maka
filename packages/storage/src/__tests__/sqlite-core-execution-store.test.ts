@@ -584,9 +584,22 @@ describe('SQLite core execution stores', () => {
       try {
         await store.establishRequest(storedQuestion());
         await store.commitOutcome('request-1', questionOutcome());
+        const stored = await store.readInteraction('request-1');
+        assert.equal(stored?.outcome?.outcome.kind, 'question_answer');
         assert.equal(
-          (await store.readInteraction('request-1'))?.outcome?.outcome.kind,
-          'question_answer',
+          stored?.request.request.kind === 'question'
+            ? stored.request.request.questions[0]?.header
+            : undefined,
+          'Choice',
+        );
+        await store.establishRequest(storedMultiSelectQuestion());
+        await store.commitOutcome('request-2', multiSelectQuestionOutcome());
+        const multi = await store.readInteraction('request-2');
+        assert.deepEqual(
+          multi?.outcome?.outcome.kind === 'question_answer'
+            ? multi.outcome.outcome.answers
+            : undefined,
+          [['First', 'Second']],
         );
       } finally {
         closeSqliteInteractionStoreFacade(store);
@@ -718,6 +731,32 @@ function storedQuestion(): StoredInteractionRequest {
       questions: [
         {
           question: 'Choose',
+          header: 'Choice',
+          options: [
+            { label: 'First', description: 'First' },
+            { label: 'Second', description: 'Second' },
+          ],
+        },
+      ],
+    } satisfies InteractionRequest,
+  };
+}
+
+function storedMultiSelectQuestion(): StoredInteractionRequest {
+  return {
+    sessionId: 'session-1',
+    turnId: 'turn-1',
+    runId: 'run-1',
+    requestId: 'request-2',
+    createdAt: 1,
+    request: {
+      kind: 'question',
+      toolUseId: 'tool-2',
+      questions: [
+        {
+          question: 'Choose every one that fits',
+          header: 'Choose',
+          multiSelect: true,
           options: [
             { label: 'First', description: 'First' },
             { label: 'Second', description: 'Second' },
@@ -726,6 +765,14 @@ function storedQuestion(): StoredInteractionRequest {
       ],
     } as InteractionRequest,
   };
+}
+
+function multiSelectQuestionOutcome(): InteractionCanonicalOutcome {
+  return {
+    kind: 'question_answer',
+    answers: [['First', 'Second']],
+    committedAt: 2,
+  } as InteractionCanonicalOutcome;
 }
 
 function questionOutcome(): InteractionCanonicalOutcome {

@@ -310,7 +310,7 @@ AI SDK 的 step 是这个循环的自然节拍。Maka 会按 step 持久化 assi
 
 ## 权限不是弹窗，而是 Runtime 控制流
 
-当一次工具调用越过当前沙箱边界时，工具不会静默失败，Runtime 也不会由 UI 自行弹一个对话框把执行挂起。工具返回一个带 `sandbox_boundary_required` 与具体 `expansion` 的失败结果；模型据此调用 `request_sandbox_boundary` 发起一次**边界扩张请求**，运行停在一个有身份的位置上等待答复。
+当一次工具调用越过当前沙箱边界时，工具不会静默失败，Runtime 也不会由 UI 自行弹一个对话框把执行挂起。工具返回一个带 `sandbox_boundary_required` 与具体 `expansion` 的失败结果；模型据此调用 `RequestSandboxBoundary` 发起一次**边界扩张请求**，运行停在一个有身份的位置上等待答复。
 
 等待期间，Session 投影为 `waiting_for_user`，但 Run 仍然保留自己的执行身份 —— 它没有结束，只是停住了。用户的决定通过 `RuntimeKernel.respondToSandboxBoundary()` 路由回当前 Backend；同一条路径上还有 `respondToUserQuestion()`，用于模型主动向用户提问的场景。两类请求在未答复期间都由 `RuntimeKernel` 登记为 active interaction，因此一个错过了实时事件的界面可以重新拉取待答项，而不会把运行晾在那里。
 

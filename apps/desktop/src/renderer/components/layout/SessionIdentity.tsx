@@ -33,6 +33,10 @@ import {
 import { getSidebarCopy } from '../../locales/sidebar-copy.js';
 import { useStore } from 'zustand';
 import { sessionsStore } from '../../store/sessions-store.js';
+import { openScheduledTaskDetail, scheduledTasksStore } from '../../store/scheduled-tasks-store.js';
+import { uiStore } from '../../store/ui-store.js';
+import { parseDesktopSessionKey } from '../../bridge/session-keys.js';
+import { scheduledTaskIdForSession } from '../../lib/ported/session-nav-filter.js';
 import { SessionProjectPopover } from './SessionProjectPopover.js';
 import type { SessionListRow } from '../../store/session-list-model.js';
 
@@ -52,6 +56,14 @@ export function SessionIdentity(props: {
   const session = useStore(sessionsStore, (state) =>
     state.sessions.find((entry) => entry.id === row?.id),
   );
+  // A Session a scheduled task opened says so where the project would: the
+  // reference's run header reads "Scheduled / <name>", and its first crumb
+  // opens the TASK rather than the list — from inside a run, the task is the
+  // thing you came from and the thing you would go back to.
+  const tasks = useStore(scheduledTasksStore, (state) => state.data);
+  const scheduledTaskId = row
+    ? scheduledTaskIdForSession(tasks ?? [], row.id, parseDesktopSessionKey)
+    : undefined;
   const finishRename = (restoreFocus = false) => {
     setRenaming(false);
     if (restoreFocus) {
@@ -65,13 +77,27 @@ export function SessionIdentity(props: {
       data-maka-contract="titlebar-identity"
       className="flex min-w-0 items-center text-sm leading-5 text-sidebar-text-primary"
     >
-      {row?.projectName && session && (
-        <div className="-ml-1 inline-flex min-w-0 shrink-[4] items-center">
-          <SessionProjectPopover key={session.id} session={session} name={row.projectName} />
-          <span aria-hidden="true" className="px-0.5 text-sidebar-text-muted opacity-50">
-            /
-          </span>
-        </div>
+      {scheduledTaskId !== undefined ? (
+        <MainHeaderBreadcrumb
+          onClick={() => {
+            openScheduledTaskDetail(scheduledTaskId);
+            uiStore.navigate({ section: 'automations', module: 'scheduled-tasks' });
+          }}
+          linkClassName="maka-no-drag gap-1.5"
+        >
+          <Anthropicon name="clock" size={20} className="shrink-0" />
+          <span className="min-w-0 truncate">{copy.nav.scheduled}</span>
+        </MainHeaderBreadcrumb>
+      ) : (
+        row?.projectName &&
+        session && (
+          <div className="-ml-1 inline-flex min-w-0 shrink-[4] items-center">
+            <SessionProjectPopover key={session.id} session={session} name={row.projectName} />
+            <span aria-hidden="true" className="px-0.5 text-sidebar-text-muted opacity-50">
+              /
+            </span>
+          </div>
+        )
       )}
       {row?.branchOf && (
         <MainHeaderBreadcrumb

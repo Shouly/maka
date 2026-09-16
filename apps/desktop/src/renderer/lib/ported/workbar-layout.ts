@@ -65,7 +65,18 @@ export const SESSION_BOTTOM_PANEL_MAX_HEIGHT = 520;
 export interface WorkbarLayoutState {
   panels: SessionWorkbarPanelsState;
   activeSessionId: string | undefined;
+  /** Whether the right column is hidden, per session. Absent means shown. */
   collapsedBySession: Record<string, boolean>;
+  /**
+   * Whether the WORKBAR holds the right column, per session. Absent means the
+   * session panel holds it.
+   *
+   * This cannot be derived from the open tab list: `panels` is one global
+   * topology with a restored `activeTabId`, so a face opened once in any
+   * session would claim the column in every session, for good. A face has the
+   * column only where someone opened one.
+   */
+  workbarBySession: Record<string, boolean>;
   bottomOpen: boolean;
   rightWidth: number;
   bottomHeight: number;
@@ -120,10 +131,11 @@ export function readSessionWorkbarWidth(): number {
 }
 
 const SESSION_COLLAPSE_KEY = 'maka-session-workbar-collapsed-v2';
+const SESSION_OCCUPANT_KEY = 'maka-session-workbar-occupant-v1';
 
-function readSessionWorkbarCollapsed(): Record<string, boolean> {
+function readSessionBooleanMap(key: string): Record<string, boolean> {
   try {
-    const stored: unknown = JSON.parse(safeLocalStorageGet(SESSION_COLLAPSE_KEY) ?? '{}');
+    const stored: unknown = JSON.parse(safeLocalStorageGet(key) ?? '{}');
     if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {};
     return Object.fromEntries(
       Object.entries(stored).filter(([, value]) => typeof value === 'boolean'),
@@ -133,17 +145,40 @@ function readSessionWorkbarCollapsed(): Record<string, boolean> {
   }
 }
 
+/**
+ * Whether the right column is hidden. It is shown by default: with the session
+ * panel as its resting occupant the column always has something to say, so
+ * starting hidden would hide the session's own state until a reader went
+ * looking for a switch.
+ */
 export function isSessionWorkbarCollapsed(state: WorkbarLayoutState): boolean {
+  return sessionFlag(state.collapsedBySession, state.activeSessionId);
+}
+
+/**
+ * Whether the workbar holds the right column for the active session. False
+ * means the session panel does, which is where a session starts.
+ */
+export function workbarHoldsSessionColumn(state: WorkbarLayoutState): boolean {
+  return sessionFlag(state.workbarBySession, state.activeSessionId);
+}
+
+function sessionFlag(map: Record<string, boolean>, id: string | undefined): boolean {
+  return id !== undefined && Object.hasOwn(map, id) ? map[id]! : false;
+}
+
+function withSessionFlag(
+  state: WorkbarLayoutState,
+  key: 'collapsedBySession' | 'workbarBySession',
+  value: boolean,
+): WorkbarLayoutState {
   const id = state.activeSessionId;
-  return id !== undefined && Object.hasOwn(state.collapsedBySession, id)
-    ? state.collapsedBySession[id]!
-    : true;
+  if (id === undefined || sessionFlag(state[key], id) === value) return state;
+  return { ...state, [key]: { ...state[key], [id]: value } };
 }
 
 function withRightCollapsed(state: WorkbarLayoutState, collapsed: boolean): WorkbarLayoutState {
-  const id = state.activeSessionId;
-  if (id === undefined || isSessionWorkbarCollapsed(state) === collapsed) return state;
-  return { ...state, collapsedBySession: { ...state.collapsedBySession, [id]: collapsed } };
+  return withSessionFlag(state, 'collapsedBySession', collapsed);
 }
 
 export function readSessionBottomPanelHeight(): number {
@@ -161,7 +196,8 @@ export function loadWorkbarLayout(activeSessionId?: string): WorkbarLayoutState 
   return {
     panels: readSessionWorkbarPanels(),
     activeSessionId,
-    collapsedBySession: readSessionWorkbarCollapsed(),
+    collapsedBySession: readSessionBooleanMap(SESSION_COLLAPSE_KEY),
+    workbarBySession: readSessionBooleanMap(SESSION_OCCUPANT_KEY),
     bottomOpen: readSessionBottomPanelOpen(),
     rightWidth: clampSize(
       readSessionWorkbarWidth(),
@@ -188,6 +224,7 @@ export function persistWorkbarLayout(
   }
   if (target === 'all' || target === 'right-visibility') {
     safeLocalStorageSet(SESSION_COLLAPSE_KEY, JSON.stringify(state.collapsedBySession));
+    safeLocalStorageSet(SESSION_OCCUPANT_KEY, JSON.stringify(state.workbarBySession));
     // The old global preference has no Session owner and cannot be migrated
     // without giving an unrelated conversation its expanded state.
     try {
@@ -225,9 +262,17 @@ export function reduceWorkbarLayout(
     const entries = Object.entries(state.collapsedBySession).filter(
       ([id]) => id === state.activeSessionId || action.sessionIds.has(id),
     );
-    return entries.length === Object.keys(state.collapsedBySession).length
+    const occupants = Object.entries(state.workbarBySession).filter(([id]) =>
+      action.sessionIds.has(id),
+    );
+    return entries.length === Object.keys(state.collapsedBySession).length &&
+      occupants.length === Object.keys(state.workbarBySession).length
       ? state
-      : { ...state, collapsedBySession: Object.fromEntries(entries) };
+      : {
+          ...state,
+          collapsedBySession: Object.fromEntries(entries),
+          workbarBySession: Object.fromEntries(occupants),
+        };
   }
   if (action.type === 'collapse') {
     if (action.placement === 'right') {
@@ -261,13 +306,20 @@ export function reduceWorkbarLayout(
   );
   if (panels === state.panels) return state;
   let rightCollapsed = isSessionWorkbarCollapsed(state);
+  let workbarHasColumn = workbarHoldsSessionColumn(state);
   let bottomOpen = state.bottomOpen;
   if (action.type === 'open' || action.type === 'open-launcher') {
-    if (action.placement === 'right') rightCollapsed = false;
-    else bottomOpen = true;
+    // Opening a face is the act that hands the column to the workbar, and it
+    // reveals the column if it was hidden.
+    if (action.placement === 'right') {
+      rightCollapsed = false;
+      workbarHasColumn = true;
+    } else bottomOpen = true;
   } else if (action.type === 'move-to-panel') {
-    if (action.target === 'right') rightCollapsed = false;
-    else bottomOpen = true;
+    if (action.target === 'right') {
+      rightCollapsed = false;
+      workbarHasColumn = true;
+    } else bottomOpen = true;
   } else if (
     action.type === 'close' ||
     (action.type === 'remove-stale' && action.placement === 'bottom')
@@ -276,9 +328,16 @@ export function reduceWorkbarLayout(
       state.panels[action.placement].tabs.length > 0 &&
       panels[action.placement].tabs.length === 0
     ) {
-      if (action.placement === 'right') rightCollapsed = true;
+      // The last face closing hands the column back to the session panel; the
+      // column itself stays. The bottom panel has no resting occupant, so it
+      // still closes.
+      if (action.placement === 'right') workbarHasColumn = false;
       else bottomOpen = false;
     }
   }
-  return withRightCollapsed({ ...state, panels, bottomOpen }, rightCollapsed);
+  return withSessionFlag(
+    withRightCollapsed({ ...state, panels, bottomOpen }, rightCollapsed),
+    'workbarBySession',
+    workbarHasColumn,
+  );
 }

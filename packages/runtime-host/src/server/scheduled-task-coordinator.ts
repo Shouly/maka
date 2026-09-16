@@ -20,8 +20,6 @@
 import { JsonArrayPageBudget } from './json-array-page-budget.js';
 
 import { randomUUID } from 'node:crypto';
-import { botDisplayLabel } from '@maka/core/bot-events';
-import { isBotDeliveryProvider } from '@maka/core/bot-chat-settings';
 import { messageContentsEqual } from '@maka/core/events';
 import { authorizeConnectionModel } from '@maka/core/llm-connections';
 import type { ConnectionCatalogEntry } from '@maka/core/runtime-policy';
@@ -33,9 +31,8 @@ import {
 import type { SessionHeader } from '@maka/core/session';
 import {
   buildAgentScheduledTaskCreatePayload,
-  buildScheduledTaskTool,
-  SCHEDULED_TASK_NATIVE_EFFECT_SERVICE_ID,
-  SCHEDULED_TASK_NATIVE_EFFECT_SERVICE_VERSION,
+  type ScheduledTaskToolSchedule,
+  buildScheduledTaskTools,
   type ScheduledTaskToolAuthority,
 } from '@maka/runtime/scheduled-task-tools';
 import { type MakaTool } from '@maka/runtime/tool-runtime';
@@ -71,7 +68,6 @@ import type { SessionCreateInput } from '../protocol/session-catalog.js';
 import { DEFAULT_TOOL_MODE, type ToolMode } from '@maka/core/tool-mode';
 
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
-const NATIVE_PROVIDER_RETRY_MS = 5_000;
 const SCHEDULED_AGENT_RUN_IDENTITY_REQUIRED =
   'ScheduledTask Agent runs require an immutable model connection identity';
 
@@ -80,23 +76,12 @@ type ScheduledTaskRuntime = Pick<SessionManager, 'sendMessage'>;
 type ScheduledTaskRoot = Pick<HostedExecutionAuthority, 'admit'>;
 type HostScheduledTaskChangeServiceLike = HostScheduledTaskCoordinatorInput['changes'];
 
-interface ScheduledTaskNativeEffects {
-  hasWorkspaceService(serviceId: string, version: string): boolean;
-  callWorkspaceService(input: {
-    readonly serviceId: string;
-    readonly version: string;
-    readonly method: string;
-    readonly input: Record<string, unknown>;
-  }): Promise<Record<string, unknown>>;
-}
-
 export interface HostScheduledTaskCoordinatorInput {
   readonly store: InteractiveScheduledTaskStoreWriter;
   readonly sessions: ScheduledTaskSessions;
   readonly runtime: ScheduledTaskRuntime;
   readonly root: ScheduledTaskRoot;
   readonly runtimePolicy: RuntimePolicyStoresWriter;
-  readonly nativeEffects: ScheduledTaskNativeEffects;
   readonly createSession: (input: SessionCreateInput, toolMode: ToolMode) => Promise<void>;
   readonly changes: {
     publish(revision: number, reason: ScheduledTaskChangedReason, taskId: string): void;
@@ -117,12 +102,15 @@ export class HostScheduledTaskSessionBusyError extends Error {
 export function scheduledTaskExecutionFingerprint(
   execution: ScheduledTaskExecutionTemplate,
 ): `sha256:${string}` | undefined {
-  if (!execution.llmConnectionId) return undefined;
+  // A task that follows the owner's default model has no stable target to
+  // fingerprint — the model it runs on is decided at each fire, so a retry is
+  // allowed to land on a different one.
+  if (execution.model.kind !== 'pinned') return undefined;
   return stableHash([
     'scheduled-task-agent-run.v1',
-    execution.llmConnectionId,
-    execution.llmConnectionSlug,
-    execution.model,
+    execution.model.llmConnectionId,
+    execution.model.llmConnectionSlug,
+    execution.model.model,
   ]);
 }
 
@@ -138,13 +126,12 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
     'scheduled-task.mutate': (input) => this.#mutate(input),
   };
 
-  readonly modelTool: MakaTool;
+  readonly modelTools: readonly MakaTool[];
   readonly #store: InteractiveScheduledTaskStoreWriter;
   readonly #sessions: ScheduledTaskSessions;
   readonly #runtime: ScheduledTaskRuntime;
   readonly #root: ScheduledTaskRoot;
   readonly #runtimePolicy: RuntimePolicyStoresWriter;
-  readonly #nativeEffects: ScheduledTaskNativeEffects;
   readonly #createSession: HostScheduledTaskCoordinatorInput['createSession'];
   readonly #changes: HostScheduledTaskChangeServiceLike;
   readonly #acquireResidency: HostScheduledTaskCoordinatorInput['acquireResidency'];
@@ -171,7 +158,6 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
     this.#runtime = input.runtime;
     this.#root = input.root;
     this.#runtimePolicy = input.runtimePolicy;
-    this.#nativeEffects = input.nativeEffects;
     this.#createSession = input.createSession;
     this.#changes = input.changes;
     this.#acquireResidency = input.acquireResidency;
@@ -180,7 +166,7 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
     this.#newId = input.newId ?? randomUUID;
     this.#setTimeout = input.setTimeout ?? ((callback, delayMs) => setTimeout(callback, delayMs));
     this.#clearTimeout = input.clearTimeout ?? ((timer) => clearTimeout(timer as NodeJS.Timeout));
-    this.modelTool = buildScheduledTaskTool({ authority: this });
+    this.modelTools = buildScheduledTaskTools({ authority: this, now: () => this.#now() });
   }
 
   async prepareRecovery(): Promise<void> {
@@ -231,17 +217,6 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
     if (!this.#prepared) throw new Error('ScheduledTask recovery was not prepared');
     for (const claim of await this.#store.listPendingFires()) {
       if (this.#draining) return;
-      if (claim.task.effect.kind === 'notify') {
-        if (claim.nativeState === 'waiting_for_provider') {
-          await this.#fulfill(claim, true);
-        } else {
-          await this.#settleFailure(
-            claim,
-            'The previous native notification stopped after delivery admission.',
-          );
-        }
-        continue;
-      }
       if (!claim.execution) {
         await this.#settleFailure(
           claim,
@@ -249,7 +224,7 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
         );
         continue;
       }
-      await this.#fulfill(claim, true);
+      await this.#fulfill(claim);
     }
   }
 
@@ -308,23 +283,26 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
   async create(input: {
     title: string;
     intentBody: string;
-    schedule:
-      | { kind: 'once'; runAt: number }
-      | { kind: 'interval'; everySeconds: number; startAt?: number }
-      | { kind: 'cron'; expression: string; startAt?: number };
-    effect: 'session_resume' | 'agent_run' | 'notify_local';
+    schedule: ScheduledTaskToolSchedule;
+    effect: 'session_resume' | 'agent_run';
     sessionId: string;
     maxFires?: number;
+    permissionMode?: 'ask';
   }): Promise<ScheduledTask | { error: string }> {
     let execution: ScheduledTaskExecutionTemplate | undefined;
-    if (input.effect !== 'notify_local') {
-      try {
-        const header = await this.#readResumableSession(input.sessionId);
-        if (input.effect === 'agent_run') execution = executionTemplateFromHeader(header);
-      } catch (error) {
-        if (isSessionNotFoundError(error)) return { error: 'Session was not found' };
-        return { error: errorMessage(error) };
+    try {
+      const header = await this.#readResumableSession(input.sessionId);
+      if (input.effect === 'agent_run') {
+        execution = executionTemplateFromHeader(header);
+        // The one thing the tool may override on the frozen template: a task
+        // the caller was told to make careful stops for approval even though
+        // the conversation that built it does not.
+        if (input.permissionMode)
+          execution = { ...execution, permissionMode: input.permissionMode };
       }
+    } catch (error) {
+      if (isSessionNotFoundError(error)) return { error: 'Session was not found' };
+      return { error: errorMessage(error) };
     }
     const payload = buildAgentScheduledTaskCreatePayload({
       ...input,
@@ -337,6 +315,34 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
     } catch (error) {
       return { error: errorMessage(error) };
     }
+  }
+
+  /**
+   * Fire once, outside the schedule (the tool's ScheduledTaskRun, and the
+   * page's Run now).
+   *
+   * `text` rides along in memory only. It is deliberately not written onto the
+   * claim: it belongs to this one run, and a claim replayed after a crash
+   * should send the task's own instructions rather than context from a request
+   * nobody remembers making.
+   */
+  async run(id: string, text?: string): Promise<ScheduledTask | { error: string }> {
+    try {
+      return await this.#fireNow(id, text);
+    } catch (error) {
+      return { error: errorMessage(error) };
+    }
+  }
+
+  /** One firing, outside the schedule. The tool and the page both land here. */
+  async #fireNow(id: string, text?: string): Promise<ScheduledTask> {
+    return this.#exclusive(async () => {
+      const claim = await this.#store.claimNow(id, this.#now());
+      await this.#refreshResidency();
+      const task = await this.#fulfill(claim, text);
+      if (!task) throw new Error('ScheduledTask fire did not settle');
+      return task;
+    });
   }
 
   list(): Promise<readonly ScheduledTask[]> {
@@ -384,6 +390,38 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
 
   async resume(id: string): Promise<ScheduledTask | { error: string }> {
     return this.#toolMutation(() => this.#commitTask('updated', () => this.#store.resume(id)));
+  }
+
+  /**
+   * Change a task in place, keeping its identity and its run history.
+   *
+   * The alternative the tool surface used to force — delete and recreate — is
+   * destructive in three ways at once: the runs are gone, the id the person
+   * may be holding stops resolving, and the delete has no confirmation. A
+   * schedule change cancels a fire already waiting on the native scheduler,
+   * because the store is about to compute a new one.
+   */
+  async update(
+    id: string,
+    patch: {
+      title?: string;
+      intentBody?: string;
+      schedule?: ScheduledTaskToolSchedule;
+      maxFires?: number | null;
+    },
+  ): Promise<ScheduledTask | { error: string }> {
+    // A cron schedule the tool sends carries no `startAt`; the store needs one,
+    // and "from now" is what a caller who just changed the cadence means.
+    const schedule =
+      patch.schedule?.kind === 'cron'
+        ? { kind: 'cron' as const, expression: patch.schedule.expression, startAt: this.#now() }
+        : patch.schedule;
+    return this.#toolMutation(() =>
+      this.#commitTask('updated', async () => {
+        if (patch.schedule !== undefined) await this.#store.cancelWaitingNativeFire(id);
+        return this.#store.update(id, { ...patch, ...(schedule ? { schedule } : {}) });
+      }),
+    );
   }
 
   async remove(id: string): Promise<{ ok: true } | { error: string }> {
@@ -462,15 +500,7 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
         return { ok: true, result: { kind: 'deleted', taskId: input.taskId } };
       }
       if (input.kind === 'trigger_now') {
-        return taskSuccess(
-          await this.#exclusive(async () => {
-            const claim = await this.#store.claimNow(input.taskId, this.#now());
-            await this.#refreshResidency();
-            const task = await this.#fulfill(claim, false);
-            if (!task) throw new ScheduledTaskNativeUnavailableError();
-            return task;
-          }),
-        );
+        return taskSuccess(await this.#fireNow(input.taskId));
       }
       const task = await this.#commitTask('updated', () => {
         if (input.kind === 'update') {
@@ -505,9 +535,6 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
       }
       if (error instanceof ScheduledTaskMutationError) {
         return mutateFailure(error.code, error.message);
-      }
-      if (error instanceof ScheduledTaskNativeUnavailableError) {
-        return mutateFailure('operation_conflict', errorMessage(error));
       }
       this.#requestDrain();
       return mutateFailure('persistence_failed', 'ScheduledTask mutation failed');
@@ -572,19 +599,13 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
     try {
       await this.#exclusive(async () => {
         if (this.#handoffHeld || this.#draining) return;
-        for (const claim of await this.#store.listPendingFires()) {
-          if (this.#handoffHeld || this.#draining) break;
-          if (claim.nativeState === 'waiting_for_provider') {
-            await this.#fulfill(claim, true);
-          }
-        }
         while (!this.#draining && !this.#handoffHeld) {
           const scan = await this.#store.claimNextDue(this.#now());
           for (const expired of scan.expired) this.#publish('updated', expired.id);
           const claim = scan.claim;
           if (!claim) break;
           await this.#refreshResidency();
-          await this.#fulfill(claim, false);
+          await this.#fulfill(claim);
         }
         await this.#refreshSchedule();
       });
@@ -595,7 +616,7 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
 
   async #fulfill(
     claim: ScheduledTaskFireClaim,
-    recovering: boolean,
+    extraText?: string,
   ): Promise<ScheduledTask | undefined> {
     const incognito = (await this.#runtimePolicy.runtimePolicy.getSnapshot()).policy.privacy
       .incognitoActive;
@@ -603,73 +624,6 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
       return this.#settle(claim, 'blocked', '隐私模式已开启，定时任务没有触发。', 'blocked');
     }
     const task = claim.task;
-    if (task.effect.kind === 'notify') {
-      if (recovering && claim.nativeState !== 'waiting_for_provider') {
-        return this.#settleFailure(
-          claim,
-          'The previous native notification stopped before delivery was confirmed.',
-        );
-      }
-      if (task.effect.channel === 'bot' && !isBotDeliveryProvider(task.effect.platform)) {
-        return this.#settle(
-          claim,
-          'blocked',
-          `${botDisplayLabel(task.effect.platform)} 当前不是可投递目标。`,
-          'blocked',
-        );
-      }
-      if (
-        !this.#nativeEffects.hasWorkspaceService(
-          SCHEDULED_TASK_NATIVE_EFFECT_SERVICE_ID,
-          SCHEDULED_TASK_NATIVE_EFFECT_SERVICE_VERSION,
-        )
-      ) {
-        if (claim.nativeState !== 'waiting_for_provider') {
-          await this.#store.setFireNativeState(claim.id, 'waiting_for_provider');
-        }
-        return undefined;
-      }
-      claim = await this.#store.setFireNativeState(claim.id, 'invoking');
-      try {
-        await this.#nativeEffects.callWorkspaceService({
-          serviceId: SCHEDULED_TASK_NATIVE_EFFECT_SERVICE_ID,
-          version: SCHEDULED_TASK_NATIVE_EFFECT_SERVICE_VERSION,
-          method: task.effect.channel === 'local' ? 'notify_local' : 'notify_bot',
-          input:
-            task.effect.channel === 'local'
-              ? { taskId: task.id, title: task.title }
-              : {
-                  taskId: task.id,
-                  title: task.title,
-                  body: task.intent.body,
-                  platform: task.effect.platform,
-                  chatId: task.effect.chatId,
-                },
-        });
-      } catch (error) {
-        return this.#settle(
-          claim,
-          'failed',
-          `Native delivery outcome is unknown: ${errorMessage(error)}`,
-          'failed',
-        );
-      }
-      return this.#settle(
-        claim,
-        'ok',
-        task.effect.channel === 'local'
-          ? '本地提醒已触发。'
-          : `已投递到 ${botDisplayLabel(task.effect.platform)}。`,
-        'fired',
-      );
-    }
-
-    // Legacy persisted Agent-run templates may still identify their model
-    // connection by reusable slug only. Never resolve that slug to a
-    // potentially different Connection entity.
-    if (task.effect.kind === 'agent_run' && !task.effect.execution.llmConnectionId) {
-      return this.#settleFailure(claim, SCHEDULED_AGENT_RUN_IDENTITY_REQUIRED);
-    }
 
     let execution = claim.execution;
     if (!execution) {
@@ -683,7 +637,7 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
     }
     try {
       await this.#ensureAgentSession(task, execution);
-      await this.#admitAgentRun(task, execution);
+      await this.#admitAgentRun(task, execution, extraText);
       return this.#settle(
         claim,
         'ok',
@@ -702,7 +656,6 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
     task: ScheduledTask,
     identity: ScheduledTaskFireExecution,
   ): Promise<void> {
-    if (task.effect.kind === 'notify') throw new Error('Task effect is not an Agent execution');
     if (task.effect.kind === 'session_resume') {
       if (identity.sessionId !== task.effect.sessionId) {
         throw new Error('ScheduledTask Session identity changed');
@@ -711,13 +664,18 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
       return;
     }
     const execution = task.effect.execution;
-    const connection = await this.#resolveAgentRunConnection(execution);
+    const pinned = execution.model.kind === 'pinned' ? execution.model : null;
+    const connection = pinned ? await this.#resolveAgentRunConnection(execution) : null;
     try {
       const existing = await this.#sessions.readHeaderSnapshot(identity.sessionId);
+      // Only a PINNED task can find its Session drifted: a task that follows
+      // the owner's default asked for whatever the default was when the
+      // Session was made, so whatever it says now is what it asked for.
       if (
-        existing.llmConnectionId !== execution.llmConnectionId ||
-        existing.llmConnectionSlug !== execution.llmConnectionSlug ||
-        existing.model !== execution.model
+        pinned &&
+        (existing.llmConnectionId !== pinned.llmConnectionId ||
+          existing.llmConnectionSlug !== pinned.llmConnectionSlug ||
+          existing.model !== pinned.model)
       ) {
         throw new Error('ScheduledTask Session model identity changed');
       }
@@ -734,12 +692,18 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
             : { kind: 'host_path', path: execution.cwd },
         name: task.title,
         labels: ['scheduled-task'],
-        modelTarget: {
-          kind: 'explicit',
-          connectionId: connection.connectionId,
-          connectionSlug: execution.llmConnectionSlug,
-          model: execution.model,
-        },
+        modelTarget:
+          pinned && connection
+            ? {
+                kind: 'explicit',
+                connectionId: connection.connectionId,
+                connectionSlug: pinned.llmConnectionSlug,
+                model: pinned.model,
+              }
+            : // The Session catalog resolves the owner's current default, which
+              // is the whole point of this choice: change the default and every
+              // task that follows it moves with it.
+              { kind: 'default' },
         ...(execution.thinkingLevel === undefined
           ? {}
           : { thinkingLevel: execution.thinkingLevel }),
@@ -754,13 +718,21 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
   async #resolveAgentRunConnection(
     execution: ScheduledTaskExecutionTemplate,
   ): Promise<ConnectionCatalogEntry> {
-    if (!execution.llmConnectionId) {
+    if (execution.model.kind !== 'pinned') {
+      throw new Error(SCHEDULED_AGENT_RUN_IDENTITY_REQUIRED);
+    }
+    const pinned = execution.model;
+    // A persisted row is decoded, not re-validated, so a record whose id has
+    // gone missing arrives here as a pinned choice with nothing to pin to. Fail
+    // closed: the slug beside it is reusable, and resolving THAT would hand the
+    // task to whichever Connection holds the slug now.
+    if (!pinned.llmConnectionId) {
       throw new Error(SCHEDULED_AGENT_RUN_IDENTITY_REQUIRED);
     }
     const resolved = await this.#runtimePolicy.operations.resolveExecutionConnection({
       kind: 'bound',
-      connectionId: execution.llmConnectionId,
-      connectionSlug: execution.llmConnectionSlug,
+      connectionId: pinned.llmConnectionId,
+      connectionSlug: pinned.llmConnectionSlug,
     });
     if (resolved.kind !== 'ready') {
       throw new Error(
@@ -775,29 +747,47 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
                 : 'ScheduledTask model connection is unavailable',
       );
     }
-    if (!authorizeConnectionModel(resolved.connection, execution.model)) {
+    if (!authorizeConnectionModel(resolved.connection, pinned.model)) {
       throw new Error('ScheduledTask model is no longer enabled');
     }
     return resolved.connection;
   }
 
-  async #admitAgentRun(task: ScheduledTask, identity: ScheduledTaskFireExecution): Promise<void> {
-    if (task.effect.kind === 'agent_run') {
+  async #admitAgentRun(
+    task: ScheduledTask,
+    identity: ScheduledTaskFireExecution,
+    extraText?: string,
+  ): Promise<void> {
+    if (task.effect.kind === 'agent_run' && task.effect.execution.model.kind === 'pinned') {
       // Re-read the bound Connection immediately before admission. The
       // Session/Connection stores have independent write lanes, so this
       // second check closes the delete-and-recreate-same-slug window between
-      // Session creation and AgentRun admission.
+      // Session creation and AgentRun admission. A task that follows the
+      // default has no bound Connection to re-check.
       await this.#resolveAgentRunConnection(task.effect.execution);
     }
-    const content = { text: task.intent.body };
+    // The reference delivers run-specific context as a SECOND user turn after
+    // the task's own instructions; one admission carries one message here, so
+    // it is appended to the first instead. Same words in the same order, one
+    // turn rather than two.
+    const content = {
+      text: extraText ? `${task.intent.body}\n\n${extraText}` : task.intent.body,
+    };
+    // A task that follows the owner's default model has no fingerprint, and the
+    // key must then be ABSENT rather than present-and-undefined: the admission
+    // record is compared to what the Store reads back, and the Store's codec
+    // drops an undefined key. Spreading `{ executionFingerprint: undefined }`
+    // here made every default-model fire fail its own identity check.
+    const executionFingerprint =
+      task.effect.kind === 'agent_run'
+        ? scheduledTaskExecutionFingerprint(task.effect.execution)
+        : undefined;
     await this.#root.admit({
       ...identity,
       execution: {
         kind: 'scheduled_task',
         scheduledTaskId: task.id,
-        ...(task.effect.kind === 'agent_run'
-          ? { executionFingerprint: scheduledTaskExecutionFingerprint(task.effect.execution) }
-          : {}),
+        ...(executionFingerprint === undefined ? {} : { executionFingerprint }),
       },
       content,
       start: ({ runId, userMessageId, onRunStarted }) => {
@@ -871,16 +861,9 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
         const deadline = Math.min(task.nextFireAt!, task.expiresAt ?? task.nextFireAt!);
         return earliest === null || deadline < earliest ? deadline : earliest;
       }, null);
-    const waitingForProvider = claims.some((claim) => claim.nativeState === 'waiting_for_provider');
     if (this.#draining || this.#handoffHeld) return;
-    if (next === null && !waitingForProvider) return;
-    const nextTaskDelay =
-      next === null
-        ? MAX_TIMER_DELAY_MS
-        : Math.max(0, Math.min(MAX_TIMER_DELAY_MS, next - this.#now()));
-    const delay = waitingForProvider
-      ? Math.min(NATIVE_PROVIDER_RETRY_MS, nextTaskDelay)
-      : nextTaskDelay;
+    if (next === null) return;
+    const delay = Math.max(0, Math.min(MAX_TIMER_DELAY_MS, next - this.#now()));
     this.#timer = this.#setTimeout(() => {
       this.#timer = undefined;
       void this.#refresh().catch((error: unknown) => this.#fatal(error));
@@ -927,12 +910,6 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
   }
 }
 
-class ScheduledTaskNativeUnavailableError extends Error {
-  constructor() {
-    super('ScheduledTask native delivery is waiting for a Desktop provider');
-  }
-}
-
 class ScheduledTaskMutationError extends Error {
   constructor(
     readonly code: 'invalid_request' | 'operation_conflict',
@@ -943,6 +920,14 @@ class ScheduledTaskMutationError extends Error {
   }
 }
 
+/**
+ * The creating Session's own settings, frozen as the task's execution template.
+ *
+ * The model is PINNED to what the Session is running rather than left to follow
+ * the owner's default: the model asked for this task while working on that
+ * Session, so the Session's model is the one it meant. A user who wants the
+ * task to track their default says so in the form.
+ */
 function executionTemplateFromHeader(header: SessionHeader): ScheduledTaskExecutionTemplate {
   if (!header.llmConnectionId) {
     throw new Error(SCHEDULED_AGENT_RUN_IDENTITY_REQUIRED);
@@ -950,9 +935,12 @@ function executionTemplateFromHeader(header: SessionHeader): ScheduledTaskExecut
   return {
     cwd: header.cwd,
     ...(header.projectId === undefined ? {} : { projectId: header.projectId }),
-    llmConnectionId: header.llmConnectionId,
-    llmConnectionSlug: header.llmConnectionSlug,
-    model: header.model,
+    model: {
+      kind: 'pinned',
+      llmConnectionId: header.llmConnectionId,
+      llmConnectionSlug: header.llmConnectionSlug,
+      model: header.model,
+    },
     ...(header.thinkingLevel === undefined ? {} : { thinkingLevel: header.thinkingLevel }),
     permissionMode: header.permissionMode,
     collaborationMode: header.collaborationMode ?? 'agent',

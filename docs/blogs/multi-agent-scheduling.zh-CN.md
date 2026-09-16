@@ -78,10 +78,10 @@ Shared conversation prefix
 
 Maka 在上下文继承上采取了严格的边界策略：Subagent 默认不继承父级会话的完整历史。
 
-主 Agent 调度 `agent_spawn` 时，必须提供一份边界封闭、语义自洽的任务规范：
+主 Agent 调度 `Agent` 时，必须提供一份边界封闭、语义自洽的任务规范：
 
 ```text
-agent_spawn({
+Agent({
   subagent_id: "local-reader",
   task: "检查存储模块如何处理并发写入，并给出文件与符号证据"
 })
@@ -216,7 +216,7 @@ Running Pipelines
 
 在 Maka 中，仅 Root Session 的主 Agent 具备全局执行图的操作权限。主 Agent 负责登记算子定义、派发依赖任务、标记废弃旧节点，并选取收敛产物终结执行图；子会话被剥离了篡改全局拓扑的系统权限。
 
-主 Agent 借助 `update_agent_graph` 提交结构化的调度修订（Schedule Revision）。无前置依赖的任务自动并发，后续任务显式锚定上游已落盘的产物记录：
+主 Agent 借助 `UpdateAgentGraph` 提交结构化的调度修订（Schedule Revision）。无前置依赖的任务自动并发，后续任务显式锚定上游已落盘的产物记录：
 
 ```text
 Runtime review result ─┐

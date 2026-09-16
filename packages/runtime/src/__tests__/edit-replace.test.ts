@@ -28,6 +28,7 @@ describe('computeEditedSource — exact match', () => {
       matchedVia: 'exact',
       startLine: 1,
       endLine: 1,
+      replacements: 1,
     });
   });
 
@@ -47,14 +48,39 @@ describe('computeEditedSource — exact match', () => {
   test('throws with the where label when old_string is absent', () => {
     assert.throws(
       () => computeEditedSource('hello', 'absent', 'x', 'src/a.txt'),
-      /old_string not found in src\/a\.txt/,
+      /String not found in src\/a\.txt\. Read the file and copy the exact text/,
     );
   });
 
-  test('throws with the match count when old_string is not unique', () => {
+  test('a non-unique old_string names both exits and shows the string', () => {
     assert.throws(
       () => computeEditedSource('a a a', 'a', 'b', 'b.txt'),
-      /old_string is not unique in b\.txt \(3 matches\)/,
+      (error: unknown) => {
+        const message = (error as Error).message;
+        assert.match(
+          message,
+          /^Found 3 matches of the string to replace, but replace_all is false\./,
+        );
+        assert.match(message, /To replace all occurrences, set replace_all to true\./);
+        assert.match(
+          message,
+          /To replace only one occurrence, please provide more context to uniquely identify the instance\./,
+        );
+        assert.equal(message.split('\n').at(-1), 'String: a');
+        return true;
+      },
+    );
+  });
+
+  test('the reported old_string is truncated so a huge one cannot flood the turn', () => {
+    const long = 'x'.repeat(500);
+    assert.throws(
+      () => computeEditedSource(`${long} ${long}`, long, 'y', 'b.txt'),
+      (error: unknown) => {
+        const last = (error as Error).message.split('\n').at(-1) ?? '';
+        assert.equal(last, `String: ${'x'.repeat(200)}\u2026`);
+        return true;
+      },
     );
   });
 
@@ -114,6 +140,7 @@ describe('computeEditedSource — fuzzy cascade', () => {
       matchedVia: 'exact',
       startLine: 1,
       endLine: 1,
+      replacements: 1,
     });
   });
 });
@@ -181,6 +208,54 @@ describe('computeEditedSource — oversized / binary fuzzy guards', () => {
     assert.throws(
       () => computeEditedSource(content, '  unique anchor line  ', 'x', 'big.txt'),
       /too large to fuzzy-match/,
+    );
+  });
+});
+
+describe('computeEditedSource — replace_all', () => {
+  test('replaces every exact occurrence and reports the count', () => {
+    const result = computeEditedSource('a\nfoo\nb\nfoo\nc\n', 'foo', 'bar', 'r.ts', {
+      replaceAll: true,
+    });
+    assert.equal(result.content, 'a\nbar\nb\nbar\nc\n');
+    assert.equal(result.replacements, 2);
+    assert.equal(result.matchedVia, 'exact');
+    // The reported range spans the first match to the last, so the caller's
+    // diff window covers every edit.
+    assert.equal(result.startLine, 2);
+    assert.equal(result.endLine, 4);
+  });
+
+  test('a single occurrence is still fine under replace_all', () => {
+    const result = computeEditedSource('only one here', 'one', 'two', 'r.ts', {
+      replaceAll: true,
+    });
+    assert.equal(result.content, 'only two here');
+    assert.equal(result.replacements, 1);
+  });
+
+  test('new_string is inserted literally, without $-pattern interpretation', () => {
+    const result = computeEditedSource('old old', 'old', '$&x', 'r.ts', { replaceAll: true });
+    assert.equal(result.content, '$&x $&x');
+  });
+
+  test('the fuzzy cascade is never used: a drifted old_string fails as not found', () => {
+    // Without replace_all this whitespace drift would match; replace_all has
+    // no "exactly one candidate" guard to make a fuzzy match safe, so it is
+    // exact-only by construction.
+    assert.throws(
+      () =>
+        computeEditedSource('const  x   =   1;', 'const x = 1;', 'const x = 2;', 'w.ts', {
+          replaceAll: true,
+        }),
+      /String not found in w\.ts/,
+    );
+  });
+
+  test('identical old_string and new_string is still rejected', () => {
+    assert.throws(
+      () => computeEditedSource('abc abc', 'abc', 'abc', 'r.ts', { replaceAll: true }),
+      /identical/,
     );
   });
 });

@@ -17,58 +17,119 @@
  * under the License.
  */
 
-// Create or edit one scheduled task.
+// Create or edit one scheduled task, as the reference draws it.
 //
-// The dialog holds fields and nothing else. The seed comes from
-// `@maka/ui`'s `scheduledTaskEditSeed` / `createScheduledTaskFormSeed`, the
-// validation from `scheduledTaskFormValidation`, and the payload from
-// `lib/ported/scheduled-task-form-payload.ts` — three modules that already
-// agree with each other, so the form cannot disagree with the Host about what
-// a valid task is.
+// The shape is a composer, not a settings sheet: Name, then Instructions in a
+// box with the workspace and model fused to its bottom edge — the two choices
+// that describe the session the instructions will run in, sitting on the
+// instructions rather than in a list below them. Frequency and Permissions are
+// the only labelled rows, because they are the only two that are about the
+// SCHEDULE rather than about the work.
 //
-// One thing the form deliberately does not author: an INTERVAL cadence. A task
-// an agent created with `everySeconds` keeps it verbatim; the recurrence
-// control says so and stays disabled, because the alternative is silently
-// turning a repeating job into a one-shot. An agent-authored `agent_run`
-// effect is preserved untouched for the same reason, and its delivery control
-// reads back the frozen choice rather than offering to replace it.
+// What the reference has and this does not: "Require this computer". That row
+// chooses between running in the cloud and running on the user's machine, and
+// Maka only ever does the latter. Its other half — "only runs while your
+// computer is awake" — is already one switch, in the page's ⋯ menu.
 //
-// Delivery itself IS authored, both channels. The form used to hard-code a
-// local reminder, which quietly did more than defer a feature: a bot task
-// opened for editing came back as a local one, dropping its platform and chat
-// id with no warning, because the seed carried them and the payload did not.
+// The form holds fields and nothing else. The seed comes from `@maka/ui`'s
+// `scheduledTaskEditSeed` / `createScheduledTaskFormSeed`, the cadence mapping
+// and validation from the same module, and the payload from
+// `lib/ported/scheduled-task-form-payload.ts` — so the form cannot disagree
+// with the Host about what a valid task is.
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useStore } from 'zustand';
 import {
-  formatScheduledTaskDeliveryProviderList,
+  createScheduledTaskFormSeed,
+  describeScheduledTaskCadence,
+  formatTaskTime,
   getScheduledTaskCopy,
+  scheduledTaskAnchorAt,
   scheduledTaskFormValidation,
-  scheduledTaskPresetRunAt,
-  toScheduledTaskLocalDateTimeValue,
+  scheduledTaskFrequencyNeeds,
+  scheduledTaskScheduleFromSeed,
   useUiLocale,
   type ScheduledTaskFormSeed,
+  type ScheduledTaskFrequency,
 } from '@maka/ui';
-import { BOT_DELIVERY_PROVIDERS } from '@maka/core/bot-chat-settings';
-import type { BotProvider } from '@maka/core/bot-chat-settings';
-import { botDisplayLabel } from '@maka/core/bot-events';
 import { Button } from '../../ui/button.js';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../ui/dialog.js';
 import { Input } from '../../ui/input.js';
 import { Label } from '../../ui/label.js';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select.js';
 import { Textarea } from '../../ui/textarea.js';
+import { Switch } from '../../ui/switch.js';
+import { Anthropicon } from '../../icons/Anthropicon.js';
+import { ModelMenu } from '../../composer/ModelMenu.js';
+import { WorkspacePicker } from '../../welcome/WorkspacePicker.js';
+import { cn } from '../../../lib/cn.js';
+import { connectionsStore, uiStore } from '../../../store/index.js';
+import { getSettingsSharedCopy } from '../../../locales/settings-shared-copy.js';
 import {
   createScheduledTaskInputFromFields,
-  scheduledTaskEffectFromFields,
   updateScheduledTaskInputFromFields,
   type ScheduledTaskFormFields,
 } from '../../../lib/ported/scheduled-task-form-payload.js';
-import { getSettingsSharedCopy } from '../../../locales/settings-shared-copy.js';
+
+/**
+ * The labelled rows under the instructions box. 128px label column and a 12px
+ * gap, measured off the reference — the same rhythm the detail page's own
+ * label column uses, so the two read as one place.
+ */
+const rowClass = 'flex items-center gap-3';
+const rowLabelClass = 'w-32 shrink-0 text-sm font-medium leading-5 text-text-primary';
+
+/**
+ * The instructions box: ONE field, whose surface is the wrapper.
+ *
+ * Measured off the reference, which builds the same composite the same way —
+ * background, ring, hover and focus all live on the wrapper, and the textarea
+ * inside is bare. That is not a style preference: the strip covers the field's
+ * bottom edge, so a ring drawn on the textarea can only ever be three-sided,
+ * and a focus ring has nowhere to show at all. The tokens are Maka's own field
+ * tokens, the same ones `fieldSurfaceClass` hands an ordinary Input.
+ */
+const instructionsFieldClass = [
+  'flex w-full flex-col overflow-hidden rounded-lg text-sm',
+  'bg-fill-field text-text-primary',
+  'shadow-[var(--field-shadow)]',
+  '[&:hover:not(:has(textarea:focus))]:shadow-[var(--field-shadow-hover)]',
+  'has-[textarea:focus]:shadow-[var(--sidebar-focus-shadow)]',
+  'transition-shadow duration-[var(--dur-fast)] ease-out',
+].join(' ');
+
+/**
+ * The textarea inside it, stripped of everything the wrapper now owns. The
+ * variant prefixes are repeated verbatim from `fieldSurfaceClass` so that
+ * tailwind-merge resolves them last-wins instead of leaving both rules live.
+ */
+const instructionsInputClass = [
+  'block resize-none rounded-none bg-transparent px-3 py-2',
+  'shadow-none focus:shadow-none focus-visible:shadow-none',
+  '[&:hover:not(:focus):not(:disabled)]:shadow-none',
+].join(' ');
+
+/**
+ * The strip fused to its bottom edge: 6px of padding around 24px chips, an
+ * 8px gap, a hairline above and a 5% ink wash — the reference's own numbers.
+ *
+ * The chips are the composer's, used exactly as the composer uses them, so
+ * "where this runs" and "on what model" are the same two controls here as
+ * under the chat input. The reference draws a folder glyph and a chevron on
+ * them; Maka's composer language has neither, and matching the reference
+ * glyph-for-glyph here would have made this the one place in the app where
+ * those chips look different.
+ */
+const composerStripClass =
+  'flex items-center justify-between gap-2 rounded-b-lg border-t border-hairline bg-alpha-1 p-1.5';
 
 export function ScheduleFormDialog(props: {
   open: boolean;
   seed: ScheduledTaskFormSeed;
   saving: boolean;
+  /** `undefined` until the client snapshot arrives; the row waits rather than guessing. */
+  keepSystemAwake: boolean | undefined;
+  onKeepSystemAwakeChange: (next: boolean) => void;
   onOpenChange: (open: boolean) => void;
   onCreate: (input: NonNullable<ReturnType<typeof createScheduledTaskInputFromFields>>) => void;
   onUpdate: (
@@ -80,62 +141,98 @@ export function ScheduleFormDialog(props: {
   const catalog = getScheduledTaskCopy(locale);
   const copy = catalog.form;
   const shared = getSettingsSharedCopy(locale);
-  const [fields, setFields] = useState<ScheduledTaskFormFields>(() => toFields(props.seed));
-  // The empty form is invalid by definition; the title error waits for a
-  // submit attempt rather than greeting the user in red.
+  const choices = useStore(connectionsStore, (state) => state.data)?.chatModelChoices ?? [];
+  const editing = props.seed.editingId !== null;
+  const keepSystemAwake = props.keepSystemAwake;
+
+  const [fields, setFields] = useState<ScheduledTaskFormFields>(props.seed);
   const [submitted, setSubmitted] = useState(false);
 
+  // One seed per open: the dialog mounts with what the page handed it, and a
+  // second open of the same dialog for a different task must not keep the
+  // first task's words.
   useEffect(() => {
     if (!props.open) return;
-    setFields(toFields(props.seed));
+    setFields(props.seed);
     setSubmitted(false);
   }, [props.open, props.seed]);
 
-  const validation = useMemo(
+  const needs = scheduledTaskFrequencyNeeds(fields.frequency);
+  const locked = fields.lockedSchedule;
+  const patch = (next: Partial<ScheduledTaskFormFields>) =>
+    setFields((current) => ({ ...current, ...next }));
+
+  const problem = useMemo(
     () =>
       scheduledTaskFormValidation(
         {
           title: fields.title,
-          parsedRunAt: Date.parse(fields.runAtLocal),
-          recurrence: fields.recurrence,
-          cronExpression: fields.cronExpression,
-          delivery: scheduledTaskEffectFromFields(fields),
+          note: fields.note,
+          hasWorkspace: fields.workspace.cwd.trim().length > 0,
+          parsedRunAt: needs.time ? scheduledTaskAnchorAt(fields) : Date.now() + 1,
+          oneOff: fields.frequency === 'once',
           now: Date.now(),
         },
         locale,
       ),
-    [fields, locale],
+    [fields, needs.time, locale],
   );
 
-  const editingId = props.seed.editingId;
-  const lockedInterval = fields.recurrence === 'interval';
-  const patch = (next: Partial<ScheduledTaskFormFields>) =>
-    setFields((current) => ({ ...current, ...next }));
+  // What the cadence will actually mean, before anything is saved. The native
+  // time input renders 12-hour under some locales, where the AM/PM half is the
+  // one people forget to move; without this line a task set for 3am is only
+  // discovered on the detail page afterwards.
+  const preview = useMemo(() => {
+    if (fields.frequency === 'manual') return { tone: 'muted' as const, text: copy.nextRunManual };
+    const schedule = scheduledTaskScheduleFromSeed(fields);
+    if (!schedule) return null;
+    if (fields.frequency === 'once') {
+      const runAt = scheduledTaskAnchorAt(fields);
+      if (!Number.isFinite(runAt)) return null;
+      if (runAt <= Date.now()) return { tone: 'danger' as const, text: copy.nextRunPast };
+      return {
+        tone: 'muted' as const,
+        text: copy.nextRunPreview(formatTaskTime(runAt, locale)),
+      };
+    }
+    return {
+      tone: 'muted' as const,
+      text: copy.nextRunPreview(describeScheduledTaskCadence({ schedule } as never, locale)),
+    };
+  }, [fields, copy, locale]);
 
   const submit = () => {
     setSubmitted(true);
-    if (validation) return;
-    if (editingId) {
-      const update = updateScheduledTaskInputFromFields(fields);
-      if (update) props.onUpdate(editingId, update);
+    if (problem) return;
+    if (editing && props.seed.editingId) {
+      const update = updateScheduledTaskInputFromFields(fields, props.seed);
+      if (update) props.onUpdate(props.seed.editingId, update);
       return;
     }
     const create = createScheduledTaskInputFromFields(fields);
     if (create) props.onCreate(create);
   };
 
-  const errorFor = (field: 'title' | 'time' | 'cron' | 'chatId') =>
-    submitted && validation?.field === field ? validation.message : undefined;
+  const errorFor = (field: 'title' | 'note' | 'workspace' | 'time') =>
+    submitted && problem?.field === field ? problem.message : undefined;
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent className="md:max-w-lg">
-        <DialogHeader closeLabel={shared.close}>
-          <DialogTitle>{editingId ? copy.editTitle : copy.createTitle}</DialogTitle>
+      <DialogContent className="md:max-w-[720px]">
+        <DialogHeader>
+          <DialogTitle>{editing ? copy.editTitle : copy.createTitle}</DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4">
-          <Field label={copy.field.title} htmlFor="schedule-title" error={errorFor('title')}>
+        {/* 24px between fields, like the reference. The dialog primitive's own
+            gap is 16 and lands on a wrapper this cannot reach, so the spacing
+            is owned here rather than by changing the shared primitive. */}
+        <div className="flex flex-col gap-6">
+          <Field
+            label={copy.field.title}
+            htmlFor="schedule-title"
+            required
+            error={errorFor('title')}
+          >
             <Input
               id="schedule-title"
               value={fields.title}
@@ -144,167 +241,259 @@ export function ScheduleFormDialog(props: {
             />
           </Field>
 
-          <Field label={copy.field.time} htmlFor="schedule-time" error={errorFor('time')}>
-            <Input
-              id="schedule-time"
-              type="datetime-local"
-              value={fields.runAtLocal}
-              disabled={lockedInterval}
-              onChange={(event) => patch({ runAtLocal: event.target.value })}
-            />
-            <div
-              role="group"
-              aria-label={copy.presetsAriaLabel}
-              className="flex flex-wrap items-center gap-2 pt-1"
-            >
-              {copy.presets.map(([preset, label]) => (
-                <Button
-                  key={preset}
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={lockedInterval}
-                  onClick={() =>
+          <Field
+            label={copy.field.note}
+            htmlFor="schedule-note"
+            required
+            error={errorFor('note') ?? errorFor('workspace')}
+          >
+            {/* Five rows of instructions, like the reference — enough that a
+                real prompt is visible without scrolling. */}
+            <div className={instructionsFieldClass}>
+              <Textarea
+                id="schedule-note"
+                rows={5}
+                value={fields.note}
+                placeholder={copy.notePlaceholder}
+                onChange={(event) => patch({ note: event.target.value })}
+                className={instructionsInputClass}
+              />
+              <div className={composerStripClass}>
+                <WorkspacePicker
+                  dense
+                  side="bottom"
+                  placeholder={copy.workspacePlaceholder}
+                  value={fields.workspace}
+                  onChange={(option) =>
                     patch({
-                      runAtLocal: toScheduledTaskLocalDateTimeValue(
-                        scheduledTaskPresetRunAt(preset),
-                      ),
+                      workspace: option
+                        ? { projectId: option.projectId, cwd: option.path ?? '' }
+                        : { projectId: null, cwd: '' },
                     })
                   }
-                >
-                  {label}
-                </Button>
-              ))}
+                />
+                <ModelMenu
+                  dense
+                  choices={choices}
+                  current={
+                    fields.model.kind === 'pinned'
+                      ? {
+                          connectionSlug: fields.model.llmConnectionSlug,
+                          model: fields.model.model,
+                        }
+                      : undefined
+                  }
+                  fallbackLabel={copy.defaultModel}
+                  thinking={{ current: undefined, onChange: () => {} }}
+                  onPick={(choice) =>
+                    patch({
+                      model: {
+                        kind: 'pinned',
+                        llmConnectionId: choice.connectionId,
+                        llmConnectionSlug: choice.connectionSlug,
+                        model: choice.model,
+                      },
+                    })
+                  }
+                  onOpenSettings={() => uiStore.openSettings('models')}
+                />
+              </div>
             </div>
           </Field>
 
-          <Field
-            label={copy.field.recurrence}
-            {...(lockedInterval ? {} : { htmlFor: 'schedule-recurrence' })}
-          >
-            {lockedInterval ? (
-              <p className="text-sm leading-5 text-text-secondary">{copy.intervalOption}</p>
-            ) : (
-              <Select
-                value={fields.recurrence}
-                onValueChange={(value) =>
-                  patch({ recurrence: value as ScheduledTaskFormFields['recurrence'] })
-                }
-              >
-                <SelectTrigger id="schedule-recurrence" aria-label={copy.field.recurrence}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {copy.recurrenceOptions
-                    .filter(([value]) => value !== 'interval')
-                    .map(([value, label]) => (
+          {/* Frequency and Permissions are two rows of one block, 12px apart:
+              the reference's row pitch is 44px, a 32px control plus 12. They
+              are not two sections, so they do not take the 24px the fields
+              above them take. A help line hugs its own row at 8px. */}
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2">
+              <div className={rowClass}>
+                <Label className={rowLabelClass} htmlFor="schedule-frequency">
+                  {copy.field.frequency}
+                </Label>
+                {locked ? (
+                  <p className="text-sm leading-5 text-text-secondary">
+                    {copy.fixedCadence(
+                      describeScheduledTaskCadence({ schedule: locked } as never, locale),
+                    )}
+                  </p>
+                ) : (
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                    <Select
+                      value={fields.frequency}
+                      onValueChange={(value) =>
+                        patch({ frequency: value as ScheduledTaskFrequency })
+                      }
+                    >
+                      <SelectTrigger
+                        id="schedule-frequency"
+                        aria-label={copy.field.frequency}
+                        className="w-[130px]"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {copy.frequencyOptions.map(([value, label]) => (
+                          <SelectItem key={value} value={value}>
+                            {label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    {needs.date && (
+                      <Input
+                        type="date"
+                        aria-label={copy.field.date}
+                        value={fields.dateLocal}
+                        onChange={(event) => patch({ dateLocal: event.target.value })}
+                        className="w-[160px] cursor-pointer"
+                      />
+                    )}
+
+                    {needs.weekday && (
+                      <Select
+                        value={String(fields.weekday)}
+                        onValueChange={(value) => patch({ weekday: Number(value) })}
+                      >
+                        <SelectTrigger aria-label={copy.field.weekday} className="w-[140px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {copy.weekdayNames.map((name, index) => (
+                            <SelectItem key={name} value={String(index)}>
+                              {name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+
+                    {needs.dayOfMonth && (
+                      <Select
+                        value={String(fields.dayOfMonth)}
+                        onValueChange={(value) => patch({ dayOfMonth: Number(value) })}
+                      >
+                        <SelectTrigger aria-label={copy.field.dayOfMonth} className="w-[100px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-[240px]">
+                          {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => (
+                            <SelectItem key={day} value={String(day)}>
+                              {day}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+
+                    {needs.time && (
+                      <Input
+                        type="time"
+                        aria-label={copy.field.time}
+                        value={fields.timeLocal}
+                        onChange={(event) => patch({ timeLocal: event.target.value })}
+                        className="w-[140px] cursor-pointer"
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* 128px label column + 12px gap = 140px, so the preview lines up
+                under the controls rather than under the label. */}
+              {preview && !locked && (
+                <p
+                  className={cn(
+                    'pl-[140px] text-sm leading-5',
+                    preview.tone === 'danger' ? 'text-danger' : 'text-text-muted',
+                  )}
+                >
+                  {preview.text}
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <div className={rowClass}>
+                <Label className={rowLabelClass} htmlFor="schedule-permissions">
+                  {copy.field.permissions}
+                </Label>
+                {/* Two rows, not the three permission modes: the choice a
+                  scheduled task actually faces is "go ahead unattended" or
+                  "stop and wait", and `explore` — read-only — is a mode for
+                  somebody sitting there watching. `bypass` is what automatic
+                  approval means to the Host. */}
+                <Select
+                  value={fields.permissionMode === 'bypass' ? 'auto' : 'ask'}
+                  onValueChange={(value) =>
+                    patch({ permissionMode: value === 'auto' ? 'bypass' : 'ask' })
+                  }
+                >
+                  <SelectTrigger
+                    id="schedule-permissions"
+                    aria-label={copy.field.permissions}
+                    className="w-auto"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {copy.permissionOptions.map(([value, label]) => (
                       <SelectItem key={value} value={value}>
                         {label}
                       </SelectItem>
                     ))}
-                </SelectContent>
-              </Select>
-            )}
-          </Field>
-
-          {fields.recurrence === 'cron' && (
-            <Field label={copy.field.cron} htmlFor="schedule-cron" error={errorFor('cron')}>
-              <Input
-                id="schedule-cron"
-                value={fields.cronExpression}
-                placeholder={copy.cronPlaceholder}
-                onChange={(event) => patch({ cronExpression: event.target.value })}
-              />
-            </Field>
-          )}
-
-          {fields.lockedEffect ? (
-            <Field label={copy.field.channel} help={catalog.detail.agentSourceHint}>
-              <p className="text-sm leading-5 text-text-primary">{catalog.detail.agentDelivery}</p>
-            </Field>
-          ) : (
-            <Field label={copy.field.channel} htmlFor="schedule-channel">
-              <Select
-                value={fields.deliveryMethod ?? 'local'}
-                onValueChange={(value) =>
-                  patch({ deliveryMethod: value as ScheduledTaskFormFields['deliveryMethod'] })
-                }
-              >
-                <SelectTrigger id="schedule-channel" aria-label={copy.field.channel}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {copy.deliveryOptions.map(([value, label]) => (
-                    <SelectItem key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-          )}
-
-          {fields.deliveryMethod === 'bot' && !fields.lockedEffect && (
-            <>
-              <Field
-                label={copy.field.platform}
-                htmlFor="schedule-platform"
-                help={copy.deliveryHelp(formatScheduledTaskDeliveryProviderList())}
-              >
-                <Select
-                  value={fields.deliveryPlatform ?? 'telegram'}
-                  onValueChange={(value) => patch({ deliveryPlatform: value as BotProvider })}
-                >
-                  <SelectTrigger id="schedule-platform" aria-label={copy.field.platform}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {BOT_DELIVERY_PROVIDERS.map((provider) => (
-                      <SelectItem key={provider} value={provider}>
-                        {botDisplayLabel(provider)}
-                      </SelectItem>
-                    ))}
                   </SelectContent>
                 </Select>
-              </Field>
+              </div>
+              {fields.permissionMode === 'ask' && (
+                <p className="pl-[140px] text-sm leading-5 text-text-muted">
+                  {copy.permissionHelp}
+                </p>
+              )}
+            </div>
+          </div>
 
-              <Field
-                label={copy.field.chatId}
-                htmlFor="schedule-chat-id"
-                error={errorFor('chatId')}
-              >
-                <Input
-                  id="schedule-chat-id"
-                  value={fields.deliveryChatId ?? ''}
-                  placeholder={copy.chatIdPlaceholder}
-                  onChange={(event) => patch({ deliveryChatId: event.target.value })}
-                />
-              </Field>
-            </>
+          {/* The reference's last row is "Require this computer", whose first
+              line is "Only runs while your computer is awake". Maka only ever
+              runs here, so the binding half is moot — but the awake half is
+              exactly true, and it is the one switch that makes a scheduled task
+              silently not happen. It sits where the reference puts it, and the
+              text says plainly that it is not a per-task setting. */}
+          {keepSystemAwake !== undefined && (
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="flex items-center gap-1.5 text-sm font-medium leading-5 text-text-primary">
+                  <Anthropicon name="computer" size={16} className="shrink-0" />
+                  {copy.keepAwakeTitle}
+                </p>
+                <p className="mt-1 text-sm leading-5 text-text-muted">{copy.keepAwakeHelp}</p>
+              </div>
+              <Switch
+                aria-label={copy.keepAwakeTitle}
+                checked={keepSystemAwake}
+                onCheckedChange={props.onKeepSystemAwakeChange}
+                className="mt-0.5 shrink-0"
+              />
+            </div>
           )}
-
-          <Field label={copy.field.note} htmlFor="schedule-note">
-            <Textarea
-              id="schedule-note"
-              rows={3}
-              value={fields.note}
-              placeholder={copy.notePlaceholder}
-              onChange={(event) => patch({ note: event.target.value })}
-            />
-          </Field>
         </div>
 
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
+        <DialogFooter className="pt-2">
+          <Button
+            variant="outline"
+            onClick={() => props.onOpenChange(false)}
+            disabled={props.saving}
+          >
             {shared.cancel}
           </Button>
-          <Button onClick={submit} disabled={props.saving} aria-busy={props.saving || undefined}>
-            {editingId
-              ? props.saving
+          <Button onClick={submit} disabled={props.saving}>
+            {props.saving
+              ? editing
                 ? copy.saving
-                : copy.save
-              : props.saving
-                ? copy.creating
+                : copy.creating
+              : editing
+                ? copy.save
                 : copy.create}
           </Button>
         </DialogFooter>
@@ -313,61 +502,35 @@ export function ScheduleFormDialog(props: {
   );
 }
 
-function toFields(seed: ScheduledTaskFormSeed): ScheduledTaskFormFields {
-  return {
-    title: seed.title,
-    note: seed.note,
-    runAtLocal: seed.runAtLocal,
-    recurrence: seed.recurrence,
-    cronExpression: seed.cronExpression,
-    // A locked effect keeps `agent_run` out of the channel control's own
-    // vocabulary: the control is hidden in that case, and the payload reads
-    // `lockedEffect` rather than these three.
-    deliveryMethod: seed.deliveryMethod === 'agent_run' ? 'local' : seed.deliveryMethod,
-    deliveryPlatform: seed.deliveryPlatform,
-    deliveryChatId: seed.deliveryChatId,
-    ...(seed.lockedSchedule ? { lockedSchedule: seed.lockedSchedule } : {}),
-    ...(seed.lockedEffect ? { lockedEffect: seed.lockedEffect } : {}),
-    // Only an edit remembers what it started from; a duplicate is a create.
-    ...(seed.editingId && seed.originalSchedule
-      ? {
-          original: {
-            schedule: seed.originalSchedule,
-            runAtLocal: seed.runAtLocal,
-            recurrence: seed.recurrence,
-            cronExpression: seed.cronExpression,
-          },
-        }
-      : {}),
-  };
-}
-
 function Field(props: {
   label: string;
-  /** Omitted where the control is not a labelable element (a radiogroup, or
-   *  a read-only value): a `<label for>` pointing at a `<p>` names nothing. */
   htmlFor?: string;
-  help?: string;
-  error?: string;
+  required?: boolean;
+  error?: string | undefined;
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      {props.htmlFor ? (
-        <Label htmlFor={props.htmlFor} className="text-sm leading-5 text-text-primary">
-          {props.label}
-        </Label>
-      ) : (
-        <span className="text-sm leading-5 text-text-primary">{props.label}</span>
-      )}
+    <div className="flex flex-col gap-2">
+      <Label htmlFor={props.htmlFor} className="text-sm font-medium leading-none text-text-primary">
+        {props.label}
+        {props.required && <span className="ml-1 text-danger">*</span>}
+      </Label>
       {props.children}
-      {props.error ? (
-        <p className="text-[0.8125rem] leading-[1.125rem] text-danger" role="alert">
-          {props.error}
-        </p>
-      ) : props.help ? (
-        <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">{props.help}</p>
-      ) : null}
+      {props.error && <p className="text-sm leading-5 text-danger">{props.error}</p>}
     </div>
   );
+}
+
+/**
+ * The blank seed the page opens the dialog with: nothing chosen.
+ *
+ * It used to inherit whatever the app's next-task target happened to be, so
+ * every new task silently arrived pre-pointed at the last folder somebody
+ * chatted in — a choice the person never made, on a task that will run
+ * unattended. The reference opens on its placeholder too. A task still cannot
+ * run nowhere, so the requirement is stated by validation instead of guessed
+ * at here.
+ */
+export function blankScheduledTaskSeed(): ScheduledTaskFormSeed {
+  return createScheduledTaskFormSeed({});
 }

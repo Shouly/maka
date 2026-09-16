@@ -367,7 +367,7 @@ export class ShellRunProcessManager
     const live = this.liveResource(input.sessionId, target.shellRunId);
     if (!live) return this.writeStdinWithoutLive(input, target.shellRunId);
     assertShellRunCaller(live.record, input.caller);
-    if (live.mode !== 'pty') throw new Error('WriteStdin requires a PTY background task ref');
+    if (live.mode !== 'pty') throw new Error('TaskInput requires a PTY background task ref');
     if (live.driverExit) {
       const record = await this.markObserved(await live.finished.join());
       return shellRunContent(
@@ -383,7 +383,7 @@ export class ShellRunProcessManager
       throw new ShellRunPtyControlClosedError();
     }
     if (input.abortSignal?.aborted)
-      throw abortError('WriteStdin aborted before the control operation was committed');
+      throw abortError('TaskInput aborted before the control operation was committed');
 
     let inputQueued = false;
     let resizeApplied = false;
@@ -392,7 +392,7 @@ export class ShellRunProcessManager
     let exitBeforeControlCut = false;
     const controlCut = live.collector.mutateAndSnapshotAtCut(() => {
       if (input.abortSignal?.aborted) {
-        throw abortError('WriteStdin aborted before the control operation was committed');
+        throw abortError('TaskInput aborted before the control operation was committed');
       }
       if (live.driverExit) {
         exitBeforeControlCut = true;
@@ -543,8 +543,7 @@ export class ShellRunProcessManager
       const record = await this.markObserved(await live.finished.join());
       return shellRunContent(record, { kind: 'stop', applied: false });
     }
-    if (abortSignal.aborted)
-      throw abortError('StopBackgroundTask aborted before termination was committed');
+    if (abortSignal.aborted) throw abortError('TaskStop aborted before termination was committed');
 
     let applied = false;
     const pending = new PendingStop(abortSignal);
@@ -1397,7 +1396,7 @@ export class ShellRunProcessManager
 
   private async finishPendingStop(pending: PendingStop): Promise<false> {
     if ((await pending.wait()) === 'abort') {
-      throw abortError('StopBackgroundTask aborted before termination was committed');
+      throw abortError('TaskStop aborted before termination was committed');
     }
     return false;
   }
@@ -1411,7 +1410,7 @@ export class ShellRunProcessManager
     abortSignal: AbortSignal,
   ): Promise<void> {
     if ((await lifecycle.initialDecision.waitFor(abortSignal)) === 'abort') {
-      throw abortError('StopBackgroundTask aborted before termination was committed');
+      throw abortError('TaskStop aborted before termination was committed');
     }
   }
 
@@ -1674,12 +1673,12 @@ export class ShellRunProcessManager
     shellRunId: string,
   ): Promise<ShellRunToolResult> {
     if (input.abortSignal?.aborted) {
-      throw abortError('WriteStdin aborted before the terminal state was observed');
+      throw abortError('TaskInput aborted before the terminal state was observed');
     }
     let record = await this.readDurableRecord(input.sessionId, shellRunId);
     assertShellRunCaller(record, input.caller);
     if (record.output.mode !== 'pty')
-      throw new Error('WriteStdin requires a PTY background task ref');
+      throw new Error('TaskInput requires a PTY background task ref');
     if (isActiveShellRunStatus(record.status)) {
       record = await this.markOrphaned(
         record,
@@ -1687,7 +1686,7 @@ export class ShellRunProcessManager
       );
     }
     if (input.abortSignal?.aborted) {
-      throw abortError('WriteStdin aborted before the terminal state was observed');
+      throw abortError('TaskInput aborted before the terminal state was observed');
     }
     record = await this.markObserved(record);
     return shellRunContent(
@@ -1707,7 +1706,7 @@ export class ShellRunProcessManager
     caller: 'model' | 'client' = 'model',
   ): Promise<ShellRunToolResult> {
     if (abortSignal?.aborted) {
-      throw abortError('StopBackgroundTask aborted before the terminal state was observed');
+      throw abortError('TaskStop aborted before the terminal state was observed');
     }
     let record = await this.readDurableRecord(sessionId, shellRunId);
     assertShellRunCaller(record, caller);
@@ -1718,7 +1717,7 @@ export class ShellRunProcessManager
       );
     }
     if (abortSignal?.aborted) {
-      throw abortError('StopBackgroundTask aborted before the terminal state was observed');
+      throw abortError('TaskStop aborted before the terminal state was observed');
     }
     record = await this.markObserved(record);
     return shellRunContent(record, { kind: 'stop', applied: false });

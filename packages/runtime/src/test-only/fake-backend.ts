@@ -31,7 +31,7 @@ import type {
   SandboxBoundaryResponse,
   SandboxBoundarySettlement,
 } from '@maka/core/sandbox-boundary';
-import type { UserQuestionResponse } from '@maka/core/user-question';
+import type { UserQuestion, UserQuestionResponse } from '@maka/core/user-question';
 import {
   RuntimeInteractionInvariantError,
   type RuntimeUserQuestionClosureReason,
@@ -237,7 +237,7 @@ export class FakeBackend implements AgentBackend {
             ts: Date.now(),
             toolUseId,
             toolName: 'Read',
-            args: { path: 'README.md' },
+            args: { file_path: 'README.md' },
           };
           yield {
             type: 'tool_result',
@@ -448,9 +448,10 @@ export class FakeBackend implements AgentBackend {
     const toolUseId = randomUUID();
     const requestId = randomUUID();
     const stepId = randomUUID();
-    const questions = [
+    const questions: UserQuestion[] = [
       {
         question: '首批发布范围选哪个？',
+        header: '发布范围',
         options: [
           { label: '邀请制', description: '先验证核心流程，再逐步扩大范围。' },
           { label: '公开测试', description: '允许所有访客注册，但保留 Beta 标识。' },
@@ -458,10 +459,13 @@ export class FakeBackend implements AgentBackend {
       },
       {
         question: '上线时间怎么安排？',
+        header: '上线时间',
         options: [{ label: '本周' }, { label: '下周' }],
       },
       {
         question: '是否同步发布公告？',
+        header: '公告',
+        multiSelect: true,
         options: [{ label: '是' }, { label: '否' }],
       },
     ];
@@ -765,7 +769,7 @@ export class FakeBackend implements AgentBackend {
   private settleQuestionAnswer(
     turnId: string,
     requestId: string,
-    answers: readonly (string | null)[],
+    answers: UserQuestionResponse['answers'],
   ): void {
     this.takePendingQuestion(turnId, requestId).resolve({
       requestId,

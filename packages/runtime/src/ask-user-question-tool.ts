@@ -17,19 +17,40 @@
  * under the License.
  */
 
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import { z } from 'zod';
-import type { UserQuestion, UserQuestionResult } from '@maka/core/user-question';
+import {
+  USER_QUESTION_HEADER_MAX_CHARS,
+  USER_QUESTION_MAX_OPTIONS,
+  USER_QUESTION_MAX_QUESTIONS,
+  USER_QUESTION_MIN_OPTIONS,
+  USER_QUESTION_MIN_QUESTIONS,
+  formatUserQuestionResultText,
+  type UserQuestion,
+  type UserQuestionResult,
+} from '@maka/core/user-question';
 
 import type { MakaTool } from './tool-runtime.js';
 
 const optionSchema = z.object({
-  label: z.string().min(1),
-  description: z.string().min(1).optional(),
+  label: z.string().min(1).describe('1-5 words.'),
+  description: z.string().min(1),
 });
 
 const questionSchema = z.object({
   question: z.string().min(1),
-  options: z.array(optionSchema).min(2).max(3),
+  header: z
+    .string()
+    .min(1)
+    .transform((value) => value.trim())
+    .refine((value) => value.length > 0 && value.length <= USER_QUESTION_HEADER_MAX_CHARS, {
+      message: `header must be at most ${USER_QUESTION_HEADER_MAX_CHARS} characters`,
+    })
+    .describe(
+      `A short chip label like "Auth method", at most ${USER_QUESTION_HEADER_MAX_CHARS} characters.`,
+    ),
+  options: z.array(optionSchema).min(USER_QUESTION_MIN_OPTIONS).max(USER_QUESTION_MAX_OPTIONS),
+  multiSelect: z.boolean().describe('Allow more than one answer to this question.'),
 });
 
 export function buildAskUserQuestionTool(): MakaTool<
@@ -37,11 +58,20 @@ export function buildAskUserQuestionTool(): MakaTool<
   UserQuestionResult
 > {
   return {
-    name: 'AskUserQuestion',
-    description:
-      'Ask 1–3 bounded multiple-choice questions whose answers are required to continue the current turn. Use ordinary assistant text for open-ended follow-up.',
+    name: TOOL_NAMES.askUserQuestion,
+    description: [
+      "Use this tool only when you are blocked on a decision that is genuinely the user's to make: one you cannot resolve from the request, the code, or sensible defaults.",
+      '',
+      'Usage notes:',
+      '- Users will always be able to select "Other" to provide custom text input',
+      '- Use multiSelect: true to allow multiple answers',
+      '- If you recommend a specific option, make that the first option in the list and add "(Recommended)" at the end of the label',
+    ].join('\n'),
     parameters: z.object({
-      questions: z.array(questionSchema).min(1).max(3),
+      questions: z
+        .array(questionSchema)
+        .min(USER_QUESTION_MIN_QUESTIONS)
+        .max(USER_QUESTION_MAX_QUESTIONS),
     }),
     impl: ({ questions }, context) => {
       // Unreachable from any ToolRuntime-driven call: ToolRuntime injects
@@ -56,5 +86,11 @@ export function buildAskUserQuestionTool(): MakaTool<
         );
       return context.askUserQuestion(questions);
     },
+    // The durable result keeps the structured answers; the provider sees the
+    // one-line pair list.
+    toModelOutput: ({ output }) => ({
+      type: 'text',
+      value: formatUserQuestionResultText(output as UserQuestionResult),
+    }),
   };
 }

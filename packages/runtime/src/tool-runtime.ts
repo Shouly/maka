@@ -31,6 +31,7 @@ import {
   type SettleSandboxBoundaryRequest,
 } from '@maka/core/sandbox-boundary';
 import { serializedByteLength } from '@maka/core/serialized-byte-length';
+import type { ArtifactRecord } from '@maka/core/artifacts';
 import { encodeToolStepProgress, ToolOutcomeUnknownError } from '@maka/core/events';
 import type {
   FormAnswerAckEvent,
@@ -66,15 +67,18 @@ import {
 import type { PermissionMode, ToolCategory, ToolExecutionFacts } from '@maka/core/permission';
 import type { RuntimeExecutionConnection } from '@maka/core/llm-connections';
 import type { OrchestrationMode } from '@maka/core/orchestration';
-import type {
-  UserQuestion,
-  UserQuestionResponse,
-  UserQuestionResult,
+import {
+  isUserQuestionAnswerValue,
+  resolveUserQuestionAnswer,
+  type UserQuestion,
+  type UserQuestionResponse,
+  type UserQuestionResult,
 } from '@maka/core/user-question';
 import { computerUseModelCallArgs } from '@maka/core/computer-use';
 import type { SessionHeader } from '@maka/core/session';
 import type { ToolInvocationRecord } from '@maka/core/usage-stats/types';
 import { redactSecrets } from '@maka/core/redaction';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import {
   decodeRuntimeEvent,
   MANAGED_MUTATION_EXECUTION_PROFILE_V1_DIGEST,
@@ -85,7 +89,11 @@ import {
 } from '@maka/core/runtime-event';
 import { isDeepStrictEqual } from 'node:util';
 
-import { recordToolArtifactsSafely, type ToolArtifactRecorder } from './tool-artifacts.js';
+import {
+  recordToolArtifactsSafely,
+  type ToolArtifactCandidate,
+  type ToolArtifactRecorder,
+} from './tool-artifacts.js';
 import { computerActionFields, describeComputerUseArgsViolation } from './computer-use-codec.js';
 import { createToolOutputDeltaEmitter } from './tool-output-delta.js';
 import { truncateToolOutput } from './tool-output.js';
@@ -179,6 +187,13 @@ export interface PreparedMakaToolExecution<R = unknown> {
   cancel(): Promise<void> | void;
 }
 
+/** The file a Write/Edit call named. */
+function managedMutationArgPath(args: unknown): string | undefined {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return undefined;
+  const record = args as { file_path?: unknown };
+  return typeof record.file_path === 'string' ? record.file_path : undefined;
+}
+
 export interface MakaTool<P = any, R = unknown> {
   /** Canonical (Claude-SDK-style) name. Pi adapter translates to canonical. */
   name: string;
@@ -241,12 +256,18 @@ export interface MakaTool<P = any, R = unknown> {
     readonly sessionId: string;
     readonly operationId: string;
   }) => Promise<void> | void;
-  /** Optional synchronous provider-visible content mapping, used for screenshot image parts. */
+  /**
+   * Optional synchronous provider-visible content mapping, used for screenshot
+   * image parts. Returning `undefined` declines the mapping for this one result
+   * and falls back to the default encoding — a tool whose result shape varies
+   * (Read answers with file text, an image ref, or a runtime resource) can then
+   * project the shape it owns without having to re-implement the others.
+   */
   toModelOutput?: (options: {
     toolCallId: string;
     input: unknown;
     output: unknown;
-  }) => ToolResultOutput;
+  }) => ToolResultOutput | undefined;
 }
 
 export interface MakaToolContext {
@@ -309,6 +330,17 @@ export interface MakaToolContext {
     maxBytes?: number;
     view?: 'result' | 'events' | 'runtime_events' | 'all';
   }) => Promise<unknown>;
+  /**
+   * Record Artifacts for the files this tool is delivering, from inside `impl`,
+   * and read back the durable records.
+   *
+   * Artifacts are otherwise derived from a settled call, after the result is
+   * written — which cannot serve a tool whose own durable result has to carry
+   * the ids the recorder mints. ToolRuntime fills this from its artifact
+   * recorder so the tool can record first and answer with the ids; the
+   * post-settlement derivation is untouched and still owns Write/Edit/Bash.
+   */
+  recordArtifacts?: (candidates: readonly ToolArtifactCandidate[]) => Promise<ArtifactRecord[]>;
   askUserQuestion?: (questions: UserQuestion[]) => Promise<UserQuestionResult>;
   requestUserForm?: (
     form: InteractionFormInput,
@@ -796,8 +828,10 @@ export class ToolRuntime {
   ): boolean {
     if (
       response.answers.length !== pending.questions.length ||
+      response.answers.some((answer) => !isUserQuestionAnswerValue(answer)) ||
+      // Only a multi-select question answers with several labels at once.
       response.answers.some(
-        (answer) => answer !== null && (typeof answer !== 'string' || answer.length === 0),
+        (answer, index) => Array.isArray(answer) && !pending.questions[index]?.multiSelect,
       )
     ) {
       throw new Error('Invalid user question response');
@@ -913,6 +947,9 @@ export class ToolRuntime {
         return encodeDefaultDurableToolResultOutput(result, this.input.sessionId);
       }
       const output = tool.toModelOutput({ toolCallId, input, output: result });
+      if (output === undefined) {
+        return encodeDefaultDurableToolResultOutput(result, this.input.sessionId);
+      }
       // Projection is deliberately synchronous and total at the tool boundary.
       // Fail closed for untyped/plugin implementations that violate the
       // contract so a completed effect can never be stranded before T2.
@@ -1150,7 +1187,7 @@ export class ToolRuntime {
         // operation before it interprets the requested expansion. Preserve that
         // availability contract even when an older caller sends a legacy shape.
         const sandboxBoundaryUnavailable =
-          tool.name === 'request_sandbox_boundary' &&
+          tool.name === TOOL_NAMES.requestSandboxBoundary &&
           !this.interactionRun() &&
           (!this.input.createSandboxBoundaryRequest || !this.input.settleSandboxBoundaryRequest);
         if (!sandboxBoundaryUnavailable) {
@@ -1464,7 +1501,7 @@ export class ToolRuntime {
     }
 
     // Tool-availability execute-boundary guard. Uses the step-start snapshot,
-    // NOT the turn's live activation map: a tool_search result becomes callable
+    // NOT the turn's live activation map: a ToolSearch result becomes callable
     // only on the next provider step.
     if (deferredToolNotLoaded) {
       const reason = formatDeferredNotLoadedText(tool.name);
@@ -1552,7 +1589,7 @@ export class ToolRuntime {
     let managedMutationAdmission: RuntimeManagedMutationAdmission | undefined;
     if (tool.durableExecutionProfile === 'managed_mutation_v1') {
       if (
-        (tool.name !== 'Write' && tool.name !== 'Edit') ||
+        (tool.name !== TOOL_NAMES.write && tool.name !== TOOL_NAMES.edit) ||
         tool.recoveryMode !== 'reconcile' ||
         !tool.managedMutationTransform ||
         !dispatchOperationId ||
@@ -1643,7 +1680,7 @@ export class ToolRuntime {
       // so provider silence here is expected, not a stalled model stream. A
       // long-running tool (apt-get install, a build, an ML training step, a
       // subagent loop) must not trip the idle timeout and abort the whole
-      // invocation; the tool carries its own timeout (e.g. Bash timeout_ms)
+      // invocation; the tool carries its own timeout (e.g. Bash timeout)
       // and the trial/run layer is the outer backstop.
       const pauseTarget = this.input.getPermissionPauseTarget();
       pauseTarget?.pause();
@@ -1715,6 +1752,23 @@ export class ToolRuntime {
             queue,
             activityIdentity,
           }),
+          ...(this.input.recordToolArtifacts
+            ? {
+                recordArtifacts: async (candidates: readonly ToolArtifactCandidate[]) =>
+                  (await this.input.recordToolArtifacts!({
+                    sessionId: this.input.sessionId,
+                    turnId,
+                    toolUseId,
+                    toolName: tool.name,
+                    cwd: this.input.header.cwd,
+                    args: structuredClone(persistedArgs),
+                    // The call has not settled yet; that is the whole point of
+                    // this lane, and the recorder never reads the result.
+                    result: undefined,
+                    candidates: [...candidates],
+                  })) ?? [],
+              }
+            : {}),
           askUserQuestion: (questions) =>
             this.askUserQuestion(turnId, toolUseId, questions, ctx.abortSignal, queue),
           requestUserForm: (form, options) =>
@@ -2277,14 +2331,9 @@ export class ToolRuntime {
     try {
       if (input.managedMutation) {
         decodeRuntimeEvent(dispatchEvent);
-        const persistedPath =
-          input.persistedArgs &&
-          typeof input.persistedArgs === 'object' &&
-          !Array.isArray(input.persistedArgs)
-            ? (input.persistedArgs as { path?: unknown }).path
-            : undefined;
+        const persistedPath = managedMutationArgPath(input.persistedArgs);
         if (
-          (input.tool.name !== 'Write' && input.tool.name !== 'Edit') ||
+          (input.tool.name !== TOOL_NAMES.write && input.tool.name !== TOOL_NAMES.edit) ||
           typeof persistedPath !== 'string' ||
           input.managedMutation.expectedPath !== persistedPath ||
           input.managedMutation.pathPolicyVersion !== 3 ||
@@ -2574,7 +2623,7 @@ export class ToolRuntime {
                     ...(spawnInput.swarm ? { swarm: spawnInput.swarm } : {}),
                     abortSignal,
                     onReady: async (ready) => {
-                      // Live-only Open for linked agent_spawn while the tool
+                      // Live-only Open for linked Agent while the tool
                       // is still in flight. Terminal outcome remains tool_result.
                       input.queue.push({
                         type: 'tool_result_preview',
@@ -2812,10 +2861,9 @@ export class ToolRuntime {
       if (hostedRun) await this.publishHostedSettlementAck(queue, answerAck);
       else queue.push(answerAck);
       return {
-        answers: questions.map((question, index) => ({
-          question: question.question,
-          answer: response.answers[index] ?? null,
-        })),
+        answers: questions.map((question, index) =>
+          resolveUserQuestionAnswer(question, response.answers[index] ?? null),
+        ),
       };
     } finally {
       abortSignal.removeEventListener('abort', onAbort);
@@ -3348,7 +3396,7 @@ function racePromiseWithAbort<T>(promise: Promise<T>, signal: AbortSignal): Prom
 export function formatDeferredNotLoadedText(toolName: string): string {
   return (
     `Tool "${toolName}" is available but not loaded yet. ` +
-    `Call tool_search to activate it first, then call "${toolName}" on a later step.`
+    `Call ${TOOL_NAMES.toolSearch} to activate it first, then call "${toolName}" on a later step.`
   );
 }
 
@@ -3465,7 +3513,7 @@ export function toolParameterFields(
   // because a function-tool JSON schema has to have an object at the top. Its
   // shape therefore names every field of every action, and reading it here
   // broke the policy stated below in the one place it matters most: a model
-  // whose `click_element` had a camelCase key was told `maka_computer` takes
+  // whose `click_element` had a camelCase key was told `Computer` takes
   // `menu`, `duration` and `region`, added one, and was refused again. The
   // strict union knows which fields go with which action, and answers
   // undefined — say nothing — for an action it does not recognise.
@@ -3948,9 +3996,9 @@ function buildTerminalFailureMessage(
   if (stdoutView) parts.push(`--- stdout ---\n${stdoutView}`);
   if (sandboxDenied) {
     // Naming only the marker left the model knowing a boundary could be widened
-    // and not by what: the tool that widens it is `request_sandbox_boundary`.
+    // and not by what: the tool that widens it is `RequestSandboxBoundary`.
     parts.push(
-      '该失败很可能来自 Maka sandbox。请先尝试不扩大边界的替代方案；只有工具明确返回 sandbox_boundary_required 和具体 expansion 时，才能调用 request_sandbox_boundary 请求会话边界扩张，并在 expansion 里只写那一条路径。不要从命令文本猜测权限，也不要静默绕过 sandbox。',
+      `该失败很可能来自 Maka sandbox。请先尝试不扩大边界的替代方案；只有工具明确返回 sandbox_boundary_required 和具体 expansion 时，才能调用 ${TOOL_NAMES.requestSandboxBoundary} 请求会话边界扩张，并在 expansion 里只写那一条路径。不要从命令文本猜测权限，也不要静默绕过 sandbox。`,
     );
   }
   return parts.join('\n\n');
@@ -4112,11 +4160,11 @@ function isPromiseLike<T>(value: T | PromiseLike<T>): value is PromiseLike<T> {
 
 function summarizeArgs(toolName: string, args: unknown): string {
   const projected =
-    toolName === 'WebSearch'
+    toolName === TOOL_NAMES.webSearch
       ? projectWebSearchTelemetryArgs(args)
       : projectToolActivityArgs(toolName, args);
   const raw = typeof projected === 'string' ? projected : JSON.stringify(projected ?? null);
-  const text = toolName === 'WriteStdin' ? raw : redactSecrets(raw);
+  const text = toolName === TOOL_NAMES.taskInput ? raw : redactSecrets(raw);
   return text.length <= 512 ? text : `${text.slice(0, 511)}…`;
 }
 

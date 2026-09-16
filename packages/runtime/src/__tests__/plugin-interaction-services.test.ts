@@ -41,7 +41,9 @@ test('questions and approvals use the exact current Tool interaction authority',
     emitOutput: () => undefined,
     askUserQuestion: async (items) => {
       calls.push(`question:${items[0]?.question}`);
-      return { answers: [{ question: items[0]?.question ?? '', answer: 'yes' }] };
+      return {
+        answers: [{ question: items[0]?.question ?? '', answer: 'yes', selected: ['yes'] }],
+      };
     },
     requestUserForm: async (form) => {
       calls.push(`form:${form.message}`);
@@ -67,7 +69,9 @@ test('questions and approvals use the exact current Tool interaction authority',
   };
 
   await agents.withInvocation(context, async () => {
-    await questions.ask([{ question: 'Continue?', options: [{ label: 'yes' }, { label: 'no' }] }]);
+    await questions.ask([
+      { question: 'Continue?', header: 'Continue', options: [{ label: 'yes' }, { label: 'no' }] },
+    ]);
     await questions.requestForm({
       message: 'Choose',
       requester: { name: 'fixture' },

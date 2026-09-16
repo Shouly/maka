@@ -20,111 +20,102 @@
 // The scheduled-task form's fields turned into the Host's payload.
 //
 // `@maka/ui`'s `scheduled-task-helpers.ts` owns the other direction (task →
-// `ScheduledTaskFormSeed`) and the validation; what it does not own is the
-// submit, because the pre-rewrite dialog built the payload inline. Extracted
-// here so the dialog is a form and the mapping is testable on its own.
+// `ScheduledTaskFormSeed`), the cadence mapping and the validation; what it
+// does not own is the submit. Extracted here so the dialog is a form and the
+// mapping is testable on its own.
 //
-// Two rules the pre-rewrite dialog encoded and this keeps:
-//
-//   - an interval cadence is NOT editable in the UI. A task an agent created
-//     with `{ kind: 'interval' }` keeps that schedule verbatim rather than
-//     being coerced to a one-shot, which is what would happen if the form
-//     rebuilt the schedule from its own three recurrence options.
-//   - an `agent_run` / `session_resume` effect is frozen at creation. The form
-//     may edit title, note and schedule around it, but must never rewrite it
-//     as notification delivery.
+// The form now authors an EXECUTION TEMPLATE, not a delivery channel: every
+// task opens a session when it fires, so the payload has to say where it runs,
+// on what model, and how careful to be. The template's other fields —
+// collaboration, orchestration, thinking and tool mode — have no control in
+// this dialog and are CARRIED from the task rather than re-defaulted here:
+// this module rebuilds the whole template on every save, so anything it does
+// not carry is silently dropped on a rename.
 
 import type {
   CreateScheduledTaskInput,
   ScheduledTaskEffect,
+  ScheduledTaskExecutionTemplate,
   ScheduledTaskSchedule,
   UpdateScheduledTaskInput,
 } from '@maka/core/scheduled-task';
-import type { ScheduledTaskFormSeed } from '@maka/ui';
+import { scheduledTaskScheduleFromSeed, type ScheduledTaskFormSeed } from '@maka/ui';
 
-export interface ScheduledTaskFormFields {
-  readonly title: string;
-  readonly note: string;
-  /** `datetime-local` value; `Date.parse` of it is the run time. */
-  readonly runAtLocal: string;
-  readonly recurrence: ScheduledTaskFormSeed['recurrence'];
-  readonly cronExpression: string;
-  /**
-   * Where a notification goes. Optional so that a caller describing a plain
-   * local reminder — which is every caller that predates bot delivery — keeps
-   * describing one by saying nothing.
-   */
-  readonly deliveryMethod?: ScheduledTaskFormSeed['deliveryMethod'];
-  readonly deliveryPlatform?: ScheduledTaskFormSeed['deliveryPlatform'];
-  readonly deliveryChatId?: ScheduledTaskFormSeed['deliveryChatId'];
-  readonly lockedSchedule?: ScheduledTaskFormSeed['lockedSchedule'];
-  readonly lockedEffect?: ScheduledTaskFormSeed['lockedEffect'];
-  /**
-   * The schedule the task had when editing began, with the field values it
-   * was rendered as. An edit that leaves those fields alone omits `schedule`
-   * from its patch, so the Host keeps a snoozed or otherwise pending fire
-   * (upstream #5226) rather than recomputing the next one from scratch.
-   */
-  readonly original?: {
-    readonly schedule: ScheduledTaskSchedule;
-    readonly runAtLocal: string;
-    readonly recurrence: ScheduledTaskFormSeed['recurrence'];
-    readonly cronExpression: string;
-  };
-}
+/**
+ * What the dialog holds — the seed itself.
+ *
+ * The execution settings the dialog does not show (collaboration, orchestration,
+ * thinking, tool mode) live on the seed too, carried from the task rather than
+ * re-defaulted here: this module rebuilds the WHOLE template on every save, so
+ * anything it does not carry is silently dropped on a rename.
+ */
+export type ScheduledTaskFormFields = ScheduledTaskFormSeed;
 
-/** Whether the schedule fields still read exactly as the edit seeded them. */
-export function scheduledTaskScheduleUntouched(fields: ScheduledTaskFormFields): boolean {
-  const original = fields.original;
-  if (!original) return false;
+/**
+ * Whether the cadence still reads exactly as the edit seeded it.
+ *
+ * An edit that leaves the cadence alone omits `schedule` from its patch, so the
+ * Host keeps a snoozed or otherwise pending fire (#5226) rather than
+ * recomputing the next one. Resending an identical schedule would still reset
+ * it, so "unchanged" has to mean "not sent", not "sent the same".
+ */
+export function scheduledTaskScheduleUntouched(
+  fields: ScheduledTaskFormFields,
+  seed: ScheduledTaskFormSeed,
+): boolean {
+  if (!seed.originalSchedule) return false;
   return (
-    fields.runAtLocal === original.runAtLocal &&
-    fields.recurrence === original.recurrence &&
-    (fields.recurrence !== 'cron' ||
-      fields.cronExpression.trim() === original.cronExpression.trim())
+    fields.frequency === seed.frequency &&
+    fields.timeLocal === seed.timeLocal &&
+    fields.dateLocal === seed.dateLocal &&
+    fields.weekday === seed.weekday &&
+    fields.dayOfMonth === seed.dayOfMonth
   );
 }
 
 /** The schedule the fields describe, or `null` when they describe none. */
 export function scheduledTaskScheduleFromFields(
   fields: ScheduledTaskFormFields,
+  now: number = Date.now(),
 ): ScheduledTaskSchedule | null {
-  const runAt = Date.parse(fields.runAtLocal);
-  if (fields.recurrence === 'interval') return fields.lockedSchedule ?? null;
-  if (!Number.isFinite(runAt)) return null;
-  if (fields.recurrence === 'none') return { kind: 'once', runAt };
-  if (fields.recurrence === 'cron') {
-    return { kind: 'cron', expression: fields.cronExpression.trim(), startAt: runAt };
-  }
-  return { kind: 'calendar', recurrence: fields.recurrence, anchorAt: runAt };
+  return scheduledTaskScheduleFromSeed(fields, now);
+}
+
+/** The execution template the fields describe. */
+export function scheduledTaskExecutionFromFields(
+  fields: ScheduledTaskFormFields,
+): ScheduledTaskExecutionTemplate {
+  return {
+    cwd: fields.workspace.cwd,
+    projectId: fields.workspace.projectId,
+    model: fields.model,
+    permissionMode: fields.permissionMode,
+    collaborationMode: fields.collaborationMode,
+    orchestrationMode: fields.orchestrationMode,
+    ...(fields.thinkingLevel === undefined ? {} : { thinkingLevel: fields.thinkingLevel }),
+    ...(fields.toolMode === undefined ? {} : { toolMode: fields.toolMode }),
+  };
 }
 
 /**
  * The effect the fields describe.
  *
- * A locked effect always wins: it is the one part of the task the form is not
- * allowed to author. Otherwise the delivery fields decide, and `local` is the
- * answer whenever they say nothing — a bot channel with no chat id is not a
- * delivery target, and the form's own validation refuses it before submit, so
- * falling back here keeps a half-filled bot choice from being sent as one.
+ * A locked effect always wins: a SendLater reminder is bound to the session
+ * that asked for it, and the form may rename or move it but never re-point it.
+ * Everything else opens a session of its own.
  */
 export function scheduledTaskEffectFromFields(
   fields: ScheduledTaskFormFields,
 ): ScheduledTaskEffect {
   if (fields.lockedEffect) return fields.lockedEffect;
-  if (fields.deliveryMethod !== 'bot') return { kind: 'notify', channel: 'local' };
-  return {
-    kind: 'notify',
-    channel: 'bot',
-    platform: fields.deliveryPlatform ?? 'telegram',
-    chatId: (fields.deliveryChatId ?? '').trim(),
-  };
+  return { kind: 'agent_run', execution: scheduledTaskExecutionFromFields(fields) };
 }
 
 export function createScheduledTaskInputFromFields(
   fields: ScheduledTaskFormFields,
+  now: number = Date.now(),
 ): Omit<CreateScheduledTaskInput, 'createdBy'> | null {
-  const schedule = scheduledTaskScheduleFromFields(fields);
+  const schedule = scheduledTaskScheduleFromFields(fields, now);
   if (!schedule) return null;
   return {
     title: fields.title.trim(),
@@ -134,29 +125,17 @@ export function createScheduledTaskInputFromFields(
   };
 }
 
-/**
- * The patch for an existing task.
- *
- * A pre-#3927 slug-only `agent_run` target is preserved by OMITTING `effect`
- * rather than resubmitting it: the row carries no `llmConnectionId`, and
- * sending it back would re-save an identity the Host has since stopped
- * minting. Title, intent and schedule stay editable either way.
- *
- * A schedule the edit did not touch is omitted the same way: the Host keeps
- * the pending fire only for a patch that says nothing about the schedule,
- * so resending an identical one would still discard a snooze (#5226).
- */
 export function updateScheduledTaskInputFromFields(
   fields: ScheduledTaskFormFields,
+  seed: ScheduledTaskFormSeed,
+  now: number = Date.now(),
 ): UpdateScheduledTaskInput | null {
-  const schedule = scheduledTaskScheduleFromFields(fields);
+  const schedule = scheduledTaskScheduleFromFields(fields, now);
   if (!schedule) return null;
-  const base = {
+  return {
     title: fields.title.trim(),
     intentBody: fields.note.trim(),
-    ...(scheduledTaskScheduleUntouched(fields) ? {} : { schedule }),
+    ...(scheduledTaskScheduleUntouched(fields, seed) ? {} : { schedule }),
+    effect: scheduledTaskEffectFromFields(fields),
   };
-  const locked = fields.lockedEffect;
-  if (locked?.kind === 'agent_run' && !locked.execution.llmConnectionId) return base;
-  return { ...base, effect: scheduledTaskEffectFromFields(fields) };
 }

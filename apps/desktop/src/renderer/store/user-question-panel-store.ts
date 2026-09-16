@@ -26,12 +26,12 @@
 // state; this store is the one-way copy the composer reads at send time.
 
 import { createStore } from 'zustand/vanilla';
-import type { QuestionAnswerDraft } from '@maka/ui';
+import type { QuestionDraft } from '../lib/user-question-shape.js';
 
 export interface UserQuestionPanelState {
   readonly requestId: string | undefined;
   readonly index: number;
-  readonly drafts: readonly QuestionAnswerDraft[];
+  readonly drafts: readonly QuestionDraft[];
 }
 
 const initial: UserQuestionPanelState = { requestId: undefined, index: 0, drafts: [] };
@@ -41,7 +41,7 @@ const store = createStore<UserQuestionPanelState>(() => initial);
 export const userQuestionPanelStore = {
   ...store,
   /** The wizard's current question and every answer so far. */
-  publish(requestId: string, index: number, drafts: readonly QuestionAnswerDraft[]): void {
+  publish(requestId: string, index: number, drafts: readonly QuestionDraft[]): void {
     store.setState({ requestId, index, drafts });
   },
   /** On unmount; a stale cursor must not answer the next request. */

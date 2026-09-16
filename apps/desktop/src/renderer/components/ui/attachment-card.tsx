@@ -57,6 +57,12 @@ export function AttachmentCard(props: {
   mimeType?: string;
   /** A decoded image to show in place of the name; absent for any other file. */
   imageSrc?: string;
+  /**
+   * A short trailing note on the badge row — a size, a status. The reference
+   * design puts its index badge in the same slot; it is a sibling of the
+   * extension badge, not a second line, so a four-line name still fits.
+   */
+  meta?: string;
   /** Opens the attachment; absent, the card is a label and nothing more. */
   onOpen?: () => void;
   openLabel: string;
@@ -90,12 +96,23 @@ export function AttachmentCard(props: {
             </p>
             {/* In flow, not absolute: an absolute badge needs reserved
                 padding, and a long name runs into it. */}
-            {extension && (
-              <span className="flex h-[18px] w-fit min-w-0 items-center rounded-[4px] border border-border-strong bg-surface-3/70 px-1 shadow-[var(--card-shadow)] backdrop-blur-sm">
-                <span className="truncate text-[0.6875rem] font-medium uppercase leading-[0.8125rem] text-text-secondary">
-                  {extension}
-                </span>
-              </span>
+            {(extension || props.meta) && (
+              <div className="flex flex-row items-center justify-between gap-1">
+                {extension ? (
+                  <span className="flex h-[18px] min-w-0 shrink items-center rounded-[4px] border border-border-strong bg-surface-3/70 px-1 shadow-[var(--card-shadow)] backdrop-blur-sm">
+                    <span className="truncate text-[0.6875rem] font-medium uppercase leading-[0.8125rem] text-text-secondary">
+                      {extension}
+                    </span>
+                  </span>
+                ) : (
+                  <span />
+                )}
+                {props.meta && (
+                  <span className="shrink-0 text-[0.6875rem] leading-[0.8125rem] text-text-muted">
+                    {props.meta}
+                  </span>
+                )}
+              </div>
             )}
           </div>
         )}

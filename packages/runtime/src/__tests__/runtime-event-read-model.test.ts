@@ -546,7 +546,7 @@ describe('projectRuntimeEventsToStoredMessages', () => {
             userQuestionRequest: {
               requestId: 'question-1',
               toolUseId: 'question-tool-1',
-              questions: [{ question: 'Choose', options: [{ label: 'Extend' }] }],
+              questions: [{ question: 'Choose', header: 'Choose', options: [{ label: 'Extend' }] }],
             },
           },
           refs: { toolCallId: 'question-tool-1' },
@@ -1969,7 +1969,7 @@ const ACTION_COVERAGE_SAMPLES: ActionCoverageSamples = {
     action: {
       requestId: 'coverage-question',
       toolUseId: 'coverage-question-tool',
-      questions: [{ question: 'Choose', options: [{ label: 'Extend' }] }],
+      questions: [{ question: 'Choose', header: 'Choose', options: [{ label: 'Extend' }] }],
     },
     event: { refs: { toolCallId: 'coverage-question-tool' } },
   },

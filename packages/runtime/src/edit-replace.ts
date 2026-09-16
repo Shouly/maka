@@ -76,6 +76,26 @@ export interface EditMatch {
   startLine: number;
   /** 1-based last line (inclusive) of the matched span in the original source. */
   endLine: number;
+  /** How many occurrences were replaced. Always 1 unless `replaceAll` was asked for. */
+  replacements: number;
+}
+
+export interface EditReplaceOptions {
+  /**
+   * Replace EVERY exact occurrence instead of requiring a unique one.
+   *
+   * The fuzzy cascade is deliberately unreachable here: a fuzzy strategy is
+   * safe only because it accepts exactly one candidate occurring exactly once,
+   * and "replace everything that approximately matches" has no such guard. So
+   * replace_all is exact-only, and an old_string that does not appear verbatim
+   * fails the same way it would with replace_all off.
+   */
+  replaceAll?: boolean;
+}
+
+/** The model pays for this text, so a long old_string is shown as a head. */
+function truncateForMessage(value: string, max = 200): string {
+  return value.length <= max ? value : `${value.slice(0, max)}…`;
 }
 
 /**
@@ -83,8 +103,12 @@ export interface EditMatch {
  * `source`, tolerating whitespace/indentation/escape drift via a guarded fuzzy
  * cascade. `where` is the caller's relative path, embedded in error messages.
  *
- * @returns the new content plus which strategy matched and the matched line
- *   range (so the caller can show the model where the edit landed).
+ * With `options.replaceAll` every exact occurrence is replaced instead and the
+ * cascade is skipped entirely — see {@link EditReplaceOptions}.
+ *
+ * @returns the new content plus which strategy matched, how many occurrences
+ *   were replaced, and the matched line range (so the caller can show the model
+ *   where the edit landed).
  * @throws when old_string is absent, ambiguous, identical to new_string, too
  *   short to fuzzy-match safely, or matches a disproportionately large span.
  */
@@ -93,6 +117,7 @@ export function computeEditedSource(
   oldString: string,
   newString: string,
   where: string,
+  options: EditReplaceOptions = {},
 ): EditMatch {
   // Minimum trimmed old_string length for a non-exact match.
   const MIN_FUZZY_OLD_STRING_LENGTH = 5;
@@ -114,11 +139,22 @@ export function computeEditedSource(
   // Exact match first — counted via indexOf so a large file is not split into an
   // array of substrings just to count. Short-circuits before any fuzzy work.
   const exactCount = countOccurrences(source, oldString);
+  if (options.replaceAll) {
+    if (exactCount === 0) throw new Error(notFoundMessage());
+    return finishAll(source, oldString, newString, exactCount);
+  }
   if (exactCount === 1) {
     return finish(source, oldString, newString, 'exact');
   }
   if (exactCount > 1) {
-    throw new Error(`old_string is not unique in ${where} (${exactCount} matches)`);
+    // The model's next move is a decision, not another guess, so the message
+    // names both exits and shows which string it is talking about.
+    throw new Error(
+      `Found ${exactCount} matches of the string to replace, but replace_all is false. ` +
+        'To replace all occurrences, set replace_all to true. To replace only one occurrence, ' +
+        'please provide more context to uniquely identify the instance.\n' +
+        `String: ${truncateForMessage(oldString)}`,
+    );
   }
 
   // Exact failed — entering fuzzy territory. Apply fuzzy-only guards up front so
@@ -172,11 +208,16 @@ export function computeEditedSource(
     return finish(source, span, newString, name);
   }
 
-  throw new Error(
-    `old_string not found in ${where}; it must match the file's text including whitespace and indentation`,
-  );
+  throw new Error(notFoundMessage());
 
   // ---- helpers ----
+
+  function notFoundMessage(): string {
+    return (
+      `String not found in ${where}. Read the file and copy the exact text you want to ` +
+      'replace — whitespace and indentation count.'
+    );
+  }
 
   function finish(
     content: string,
@@ -193,7 +234,40 @@ export function computeEditedSource(
     const endLine = startLine + Math.max(spanLineCount, 1) - 1;
     // slice-join (not String.replace) so `$&`/`$1` in newString are literal.
     const next = before + replacement + content.slice(index + span.length);
-    return { content: next, matchedVia, startLine, endLine };
+    return { content: next, matchedVia, startLine, endLine, replacements: 1 };
+  }
+
+  /**
+   * Exact replace-all. The reported range spans the first match's start to the
+   * last match's end so the caller's diff window covers every edit; `split`
+   * and `countOccurrences` agree on non-overlapping, left-to-right matching,
+   * and the join is literal so `$&`/`$1` in newString stay literal too.
+   */
+  function finishAll(
+    content: string,
+    needle: string,
+    replacement: string,
+    count: number,
+  ): EditMatch {
+    const firstIndex = content.indexOf(needle);
+    let lastIndex = firstIndex;
+    for (
+      let index = content.indexOf(needle, firstIndex + needle.length);
+      index !== -1;
+      index = content.indexOf(needle, index + needle.length)
+    ) {
+      lastIndex = index;
+    }
+    const startLine = countOccurrences(content.slice(0, firstIndex), '\n') + 1;
+    const lastStartLine = countOccurrences(content.slice(0, lastIndex), '\n') + 1;
+    const spanLineCount = countOccurrences(needle, '\n') + 1 - (needle.endsWith('\n') ? 1 : 0);
+    return {
+      content: content.split(needle).join(replacement),
+      matchedVia: 'exact',
+      startLine,
+      endLine: lastStartLine + Math.max(spanLineCount, 1) - 1,
+      replacements: count,
+    };
   }
 
   function countOccurrences(haystack: string, needle: string): number {

@@ -267,6 +267,17 @@ verdict on the page and offers the live query for the model provider; the
 connection list has a per-connection enable switch and a global default-model
 selector.
 
+The model-facing surface is ours since Phase 8 (2026-09-13): PascalCase tool
+names from one registry with legacy aliases at every read boundary, contract
+descriptions, Grep/Glob/Edit/Write/Bash parameters and plain-text results in
+the Claude Code register, the system prompt as Markdown resources with an
+environment block and a per-turn reminder, and golden tests over both. Every
+upstream commit that touches a tool literal, a description or a prompt fragment
+now conflicts by design; resolve toward `TOOL_NAMES.*` and the resources under
+`packages/runtime/resources/prompts/`, then refresh the goldens
+(`MAKA_UPDATE_GOLDEN=1`) and the headless wire hash. See
+`phase-reports/phase-8-tools-and-prompt.md`.
+
 ## Manual verification still owed (FakeBackend cannot exercise these)
 
 - Real-provider turn: tool call, permission prompt, stop, regenerate, branch,

@@ -131,7 +131,7 @@ describe('ToolRuntime with real SQLite boundary', () => {
               {
                 descriptor: {
                   serverId: 'desktop_computer_use',
-                  name: 'maka_computer',
+                  name: 'Computer',
                   description: 'Client-owned Computer Use',
                   inputSchema: {
                     type: 'object',
@@ -356,7 +356,7 @@ describe('ToolRuntime with real SQLite boundary', () => {
         impl: async () => ({ ok: true }),
       };
       const sibling: MakaTool = {
-        name: 'agent_output',
+        name: 'AgentOutput',
         description: 'sibling',
         parameters: {},
         impl: async () => ({ ok: true }),
@@ -384,7 +384,7 @@ describe('ToolRuntime with real SQLite boundary', () => {
       // that held the step — the same wording swarm-orchestration asserts.
       assert.match(
         JSON.stringify(rejected.result),
-        /Tool agent_output did not run: exclusive_batch cannot share an assistant step/i,
+        /Tool AgentOutput did not run: exclusive_batch cannot share an assistant step/i,
       );
 
       const memory = createSessionEventMapMemory();

@@ -25,6 +25,14 @@
 // where there was none. While the question is open nothing stands here; the
 // prompt above the composer and the status line carry it. The Host's own
 // result phrasing is written for the model and never shown.
+//
+// A question carries a `header` — a few words naming what was being decided —
+// and a multi-select question carries several answers. The header is not
+// drawn: it is the model's own index term, and over a question that already
+// states itself it reads as a label on a label. It stays in the shape, and in
+// the persisted result, for the surfaces that navigate by it. The answers are
+// lines rather than one joined string, because the joiner would have to be a
+// locale's.
 
 import { useStore } from 'zustand';
 import { useUiLocale, type ToolActivityItem } from '@maka/ui';
@@ -58,11 +66,17 @@ export function AskUserQuestionRecord(props: { item: ToolActivityItem }) {
           <dt className="text-sm leading-5 text-text-muted">{pair.question}</dt>
           <dd
             className={cn(
-              'text-sm leading-5',
-              pair.answer === null ? 'text-text-muted' : 'text-text-primary',
+              'flex min-w-0 flex-col text-sm leading-5',
+              pair.answers.length === 0 ? 'text-text-muted' : 'text-text-primary',
             )}
           >
-            {pair.answer ?? copy.noAnswer}
+            {pair.answers.length === 0
+              ? copy.noAnswer
+              : pair.answers.map((answer, position) => (
+                  <span key={`${position}-${answer}`} className="min-w-0">
+                    {answer}
+                  </span>
+                ))}
           </dd>
         </div>
       ))}

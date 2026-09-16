@@ -42,6 +42,9 @@
 // - The disc's visibility is the END OF CONTENT crossing a line 100px below
 //   the viewport, observed by an IntersectionObserver rather than polled: the
 //   floor would otherwise count as unread, and a timer would run for nothing.
+// - A question that is already the transcript's first row is left alone: there
+//   is nothing above it to carry it past, so both mechanics would fire for
+//   nothing (see `standsAtTop`).
 //
 // One departure from relx, deliberate: a reader who scrolls back down to the
 // tail re-engages the authority's pin, and the tail then follows the stream
@@ -56,6 +59,24 @@ const QUESTION_TOP_OFFSET_PX = 24;
 const JUMP_THRESHOLD_PX = 100;
 /** Attachment cards animate in; measuring earlier reads a shorter question. */
 const PIN_DELAY_MS = 50;
+
+/**
+ * Whether the question is the transcript's first row, with nothing above it but
+ * the feed's own leading space.
+ *
+ * The pin carries a question UP to the top edge. The first question of a
+ * conversation is already there, so the aim measures the leading space as
+ * travel — 16px of `pt-4`, or the whole attachment row when there is one — and
+ * the floor then asks for a viewport plus that travel. On a conversation whose
+ * whole content fits, that is a scrollbar on a page with nothing to scroll and
+ * a viewport that creeps a few pixels at the moment the answer arrives. Nothing
+ * to carry, so nothing is written.
+ */
+function standsAtTop(feed: HTMLElement, question: HTMLElement): boolean {
+  let row: HTMLElement | null = question;
+  while (row && row.parentElement !== feed) row = row.parentElement;
+  return row !== null && row.previousElementSibling === null;
+}
 
 export function useQuestionPin(input: {
   scrollRef: RefObject<HTMLElement | null>;
@@ -115,6 +136,7 @@ export function useQuestionPin(input: {
     const feed = feedRef.current;
     const question = lastQuestion();
     if (!root || !feed || !question) return;
+    if (standsAtTop(feed, question)) return;
     authority.holdTurn(question, {
       offset: offsetFor(question),
       ensureRoom: (targetTop) => {

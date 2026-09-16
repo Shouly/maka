@@ -539,8 +539,8 @@ async function startModelProvider(): Promise<{
         }
         streamRequests += 1;
         if (streamRequests === 1) {
-          assert.ok(modelToolNames(input).includes('tool_search'));
-          respondModelToolCall(response, streamRequests, 'tool_search', {
+          assert.ok(modelToolNames(input).includes('ToolSearch'));
+          respondModelToolCall(response, streamRequests, 'ToolSearch', {
             query: proxyToolName,
           });
           return;

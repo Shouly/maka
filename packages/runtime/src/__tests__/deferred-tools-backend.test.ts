@@ -39,7 +39,7 @@ const ZERO_USAGE: LanguageModelV4Usage = {
 
 const availability: ToolAvailabilityConfig = {
   groups: [
-    { id: 'browser', toolNames: ['browser_click'] },
+    { id: 'browser', toolNames: ['BrowserClick'] },
     { id: 'docs', toolNames: ['docs_read'] },
   ],
 };
@@ -53,11 +53,11 @@ function boundTools(calls: string[]): MakaTool[] {
       impl: () => ({ ok: true }),
     },
     {
-      name: 'browser_click',
+      name: 'BrowserClick',
       description: 'Click an element in the browser',
       parameters: z.object({}),
       impl: () => {
-        calls.push('browser_click');
+        calls.push('BrowserClick');
         return { ok: true };
       },
     },
@@ -100,8 +100,8 @@ function backend(input: {
   });
 }
 
-describe('AiSdkBackend tool_search activation', () => {
-  test('step 0 advertises tool_search but withholds deferred schemas', async () => {
+describe('AiSdkBackend ToolSearch activation', () => {
+  test('step 0 advertises ToolSearch but withholds deferred schemas', async () => {
     const captured: string[][] = [];
     await drain(
       backend({ model: capturingModel(captured), calls: [] }).send({
@@ -112,7 +112,7 @@ describe('AiSdkBackend tool_search activation', () => {
     );
     assert.ok(captured[0]?.includes('Read'));
     assert.ok(captured[0]?.includes(TOOL_SEARCH_NAME));
-    assert.ok(!captured[0]?.includes('browser_click'));
+    assert.ok(!captured[0]?.includes('BrowserClick'));
     assert.ok(!captured[0]?.includes('docs_read'));
   });
 
@@ -131,12 +131,12 @@ describe('AiSdkBackend tool_search activation', () => {
       durable,
     );
 
-    assert.ok(!captured[0]?.includes('browser_click'));
-    assert.ok(captured[1]?.includes('browser_click'));
-    assert.deepEqual(calls, ['browser_click']);
+    assert.ok(!captured[0]?.includes('BrowserClick'));
+    assert.ok(captured[1]?.includes('BrowserClick'));
+    assert.deepEqual(calls, ['BrowserClick']);
     const searched = traces.find((event) => event.type === 'tool_searched');
     assert.equal(searched?.data?.query, 'browser click');
-    assert.deepEqual(searched?.data?.activated, ['browser_click']);
+    assert.deepEqual(searched?.data?.activated, ['BrowserClick']);
   });
 
   test('equivalent Tool wrappers rebuilt between steps retain search activation', async () => {
@@ -158,9 +158,9 @@ describe('AiSdkBackend tool_search activation', () => {
     );
 
     assert.ok(resolutions >= 2);
-    assert.ok(!captured[0]?.includes('browser_click'));
-    assert.ok(captured[1]?.includes('browser_click'));
-    assert.deepEqual(calls, ['browser_click']);
+    assert.ok(!captured[0]?.includes('BrowserClick'));
+    assert.ok(captured[1]?.includes('BrowserClick'));
+    assert.deepEqual(calls, ['BrowserClick']);
   });
 
   test('parallel search and hidden-tool use still rejects the same-step call', async () => {
@@ -173,7 +173,7 @@ describe('AiSdkBackend tool_search activation', () => {
       ),
       durable,
     );
-    assert.ok(!captured[0]?.includes('browser_click'));
+    assert.ok(!captured[0]?.includes('BrowserClick'));
     assert.deepEqual(calls, []);
   });
 
@@ -186,7 +186,7 @@ describe('AiSdkBackend tool_search activation', () => {
       ),
       durable,
     );
-    assert.ok(captured[1]?.includes('browser_click'));
+    assert.ok(captured[1]?.includes('BrowserClick'));
     assert.ok(captured[1]?.includes('docs_read'));
   });
 
@@ -218,7 +218,7 @@ describe('AiSdkBackend tool_search activation', () => {
         ],
       }),
     );
-    assert.ok(!captured[0]?.includes('browser_click'));
+    assert.ok(!captured[0]?.includes('BrowserClick'));
   });
 
   test('omitting search availability keeps the complete bound surface direct', async () => {
@@ -230,7 +230,7 @@ describe('AiSdkBackend tool_search activation', () => {
         context: [],
       }),
     );
-    assert.ok(captured[0]?.includes('browser_click'));
+    assert.ok(captured[0]?.includes('BrowserClick'));
     assert.ok(captured[0]?.includes('docs_read'));
     assert.ok(!captured[0]?.includes(TOOL_SEARCH_NAME));
   });
@@ -255,7 +255,7 @@ function searchThenUseModel(captured: string[][]): MockLanguageModelV4 {
       if (step === 2)
         return {
           stream: convertArrayToReadableStream(
-            toolCallChunks('click-1', 'browser_click', {}, 'tool-calls'),
+            toolCallChunks('click-1', 'BrowserClick', {}, 'tool-calls'),
           ),
         };
       return { stream: convertArrayToReadableStream(doneChunks()) };
@@ -280,7 +280,7 @@ function parallelSearchAndUseModel(captured: string[][]): MockLanguageModelV4 {
           {
             type: 'tool-call',
             toolCallId: 'click-1',
-            toolName: 'browser_click',
+            toolName: 'BrowserClick',
             input: JSON.stringify({}),
           },
           {

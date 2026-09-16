@@ -554,7 +554,9 @@ describe('committed stream graph projection', () => {
                 userQuestionRequest: {
                   requestId: 'question-1',
                   toolUseId: 'tool-2',
-                  questions: [{ question: 'Choose', options: [{ label: 'Continue' }] }],
+                  questions: [
+                    { question: 'Choose', header: 'Choose', options: [{ label: 'Continue' }] },
+                  ],
                 },
               },
             }),

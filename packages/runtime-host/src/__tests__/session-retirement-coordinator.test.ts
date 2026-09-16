@@ -89,7 +89,7 @@ describe('Host Session retirement coordinator', () => {
         },
       );
       syncBuiltinESMExports();
-      let recording: Promise<void> | undefined;
+      let recording: Promise<unknown> | undefined;
       try {
         harness.purgeArtifact = (sessionId) => artifacts.purgeSessionArtifacts(sessionId);
         const recorder = createHostExecutionArtifactServices({
@@ -173,7 +173,7 @@ describe('Host Session retirement coordinator', () => {
     await purgeSessionSidecars(
       {
         artifacts: { purgeSessionArtifacts: async () => {} },
-        sessionTodo: { purgeSessionState: async () => {} },
+        sessionTask: { purgeSessionState: async () => {} },
         contextOffload: {
           retireSession: async (sessionId) => {
             contextActions.push(`retire:${sessionId}`);
@@ -1405,7 +1405,7 @@ async function withHarness(
           actions.purgedArtifacts.push(sessionId);
         },
       },
-      sessionTodo: {
+      sessionTask: {
         purgeSessionState: async (sessionId) => {
           actions.purgedTasks.push(sessionId);
         },

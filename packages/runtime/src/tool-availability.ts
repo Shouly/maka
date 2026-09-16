@@ -18,6 +18,7 @@
  */
 
 import type { ToolCategory } from '@maka/core/permission';
+import { TOOL_NAMES, TOOL_SEARCH_PROVIDER_NAME } from '@maka/core/tool-names';
 import type { ToolAvailabilityDiagnostic } from '@maka/core/usage-stats/types';
 import MiniSearch from 'minisearch';
 import { z } from 'zod';
@@ -28,30 +29,36 @@ import { toolActivationKey } from './tool-activation-identity.js';
 import type { MakaTool, ToolGating } from './tool-runtime.js';
 
 /** Canonical name of Maka's provider-independent deferred-tool search connector. */
-export const TOOL_SEARCH_NAME = 'tool_search';
-/** Provider-safe alias used because OpenAI Responses reserves `tool_search`. */
-export const TOOL_SEARCH_PROVIDER_NAME = 'maka_tool_search';
-export const TOOL_SEARCH_DEFAULT_LIMIT = 8;
+export const TOOL_SEARCH_NAME = TOOL_NAMES.toolSearch;
+/** Provider-safe alias used because OpenAI Responses reserves the plain name. */
+export { TOOL_SEARCH_PROVIDER_NAME };
+export const TOOL_SEARCH_DEFAULT_LIMIT = 5;
 export const TOOL_SEARCH_MAX_LIMIT = 20;
 export const TOOL_SEARCH_MAX_SCHEMA_CHARS = 64 * 1024;
 
 /** Tools that remain visible whenever they are bound. */
 const DIRECT_TOOL_NAMES: ReadonlySet<string> = new Set([
-  'Bash',
-  'Read',
-  'ArchiveRead',
-  'Write',
-  'Edit',
-  'Glob',
-  'Grep',
-  'WebFetch',
-  'AskUserQuestion',
-  'StopBackgroundTask',
+  TOOL_NAMES.bash,
+  TOOL_NAMES.read,
+  TOOL_NAMES.archiveRead,
+  TOOL_NAMES.write,
+  TOOL_NAMES.edit,
+  TOOL_NAMES.glob,
+  TOOL_NAMES.grep,
+  TOOL_NAMES.webFetch,
+  TOOL_NAMES.askUserQuestion,
+  // Delivery is default-loaded, as in the reference harness: a ToolSearch
+  // round trip before the first file card would defeat "send it the moment it
+  // exists". Delegation and the task tools stay deferred (the child tool
+  // ceiling and the root-turn deferral tests pin that).
+  TOOL_NAMES.sendUserFile,
+  TOOL_NAMES.sendUserMessage,
+  TOOL_NAMES.taskStop,
   // Existing carve-out pending the separate skill-discovery decision.
-  'Skill',
-  'SkillSearch',
+  TOOL_NAMES.skill,
+  TOOL_NAMES.skillSearch,
   // Provider-routed equivalent of the direct Write/Edit surface.
-  'apply_patch',
+  TOOL_NAMES.applyPatch,
 ]);
 
 /**
@@ -85,6 +92,9 @@ const CATEGORY_FAMILY: Record<ToolCategory, { id: string; label: string } | null
   // null = intentionally ungrouped; falls back to the `other` bucket.
   custom_tool: null,
 };
+
+/** The `select:` query form, matched case-insensitively on the prefix only. */
+const TOOL_SEARCH_SELECT_PREFIX = 'select:';
 
 /** Optional search metadata for a subset of the bound deferred tools. */
 export interface ToolGroup {
@@ -355,24 +365,29 @@ export class ToolAvailabilityRuntime {
 
   private buildSearchConnector(
     activeTools: Map<string, string>,
-  ): MakaTool<{ query: string; limit?: number }, ToolSearchResult> {
+  ): MakaTool<{ query: string; max_results?: number }, ToolSearchResult> {
     return {
       name: TOOL_SEARCH_NAME,
       description: renderInventory(this.groups),
       parameters: z.object({
-        query: z.string().trim().min(1).describe('Search query describing the needed capability.'),
-        limit: z
+        query: z
+          .string()
+          .trim()
+          .min(1)
+          .describe(
+            'Query to find deferred tools. Use "select:<tool_name>" for direct selection, or keywords to search.',
+          ),
+        max_results: z
           .number()
           .int()
           .min(1)
           .max(TOOL_SEARCH_MAX_LIMIT)
           .optional()
-          .describe(`Maximum matches to activate; defaults to ${TOOL_SEARCH_DEFAULT_LIMIT}.`),
+          .describe(`Maximum number of results to return (default: ${TOOL_SEARCH_DEFAULT_LIMIT})`),
       }),
-      impl: ({ query, limit = TOOL_SEARCH_DEFAULT_LIMIT }, context) => {
+      impl: ({ query, max_results: limit = TOOL_SEARCH_DEFAULT_LIMIT }, context) => {
         const normalizedQuery = query.trim();
-        const ranked = this.searchIndex!.search(normalizedQuery)
-          .map((result) => String(result.id))
+        const ranked = this.rankToolSearchQuery(normalizedQuery)
           .filter((name) => !activeTools.has(name))
           .slice(0, TOOL_SEARCH_MAX_LIMIT)
           .filter((name) => this.searchableNames.has(name));
@@ -403,6 +418,7 @@ export class ToolAvailabilityRuntime {
         context.emitRunTrace?.('tool_searched', 'Deferred tools searched', {
           query: normalizedQuery,
           requestedLimit: limit,
+          maxResults: limit,
           ranked,
           activated,
           newlyActivated: activated,
@@ -422,6 +438,47 @@ export class ToolAvailabilityRuntime {
         };
       },
     };
+  }
+
+  /**
+   * Which deferred tools a query names, in the order they should be activated.
+   *
+   * Three query forms, because three different things a caller can know:
+   * `select:A,B` when it knows the exact names (a listing gave them, or an
+   * earlier search did) and ranking would only get in the way; `+word` when it
+   * knows part of the name but not the rest; and free text when it knows only
+   * what it needs to do. The first two are filters over the same inventory, so
+   * a name that is not bound is simply absent rather than an error.
+   */
+  private rankToolSearchQuery(query: string): string[] {
+    if (query.toLowerCase().startsWith(TOOL_SEARCH_SELECT_PREFIX)) {
+      const requested = query
+        .slice(TOOL_SEARCH_SELECT_PREFIX.length)
+        .split(',')
+        .map((name) => name.trim())
+        .filter((name) => name.length > 0);
+      // Exact and case-sensitive: a tool name is an identifier, and activating
+      // a near neighbour of the one that was asked for is worse than nothing.
+      return [...new Set(requested)].filter((name) => this.toolsByName.has(name));
+    }
+    const required: string[] = [];
+    const terms: string[] = [];
+    for (const token of query.split(/\s+/)) {
+      if (token.startsWith('+') && token.length > 1) required.push(token.slice(1).toLowerCase());
+      else if (token.length > 0) terms.push(token);
+    }
+    const remainder = terms.join(' ');
+    const ranked = (
+      remainder === ''
+        ? [...this.searchableNames]
+        : this.searchIndex!.search(remainder).map((result) => String(result.id))
+    ).filter((name) => required.every((term) => name.toLowerCase().includes(term)));
+    if (required.length === 0 || ranked.length > 0) return ranked;
+    // A `+term` that ranked nothing still names something: fall back to the
+    // name filter alone so the required word is never silently dropped.
+    return [...this.searchableNames].filter((name) =>
+      required.every((term) => name.toLowerCase().includes(term)),
+    );
   }
 
   private buildDiagnostic(
@@ -465,10 +522,19 @@ function renderInventory(groups: readonly SearchGroup[]): string {
     ...group.toolNames.map((name) => `- ${name}`),
   ]);
   return [
-    'Search the deferred tools bound to this run. A successful search activates the',
-    'bounded top matches; their complete callable definitions become visible on the',
-    'next provider step. Search again to expand the active set. A blocked result means',
-    'the highest remaining match did not fit this search schema budget.',
+    'Fetches full schema definitions for deferred tools so they can be called.',
+    '',
+    'Deferred tools appear by name in the inventory below. Until fetched, only the name',
+    'is known — there is no parameter schema, so the tool cannot be invoked, and a call',
+    'before that fails as unknown. A successful search activates the top matches, whose',
+    'full definitions appear on your next step; search again to activate more. Load every',
+    'tool you expect to need in one search. A blocked result means the best remaining',
+    'match did not fit the schema budget: narrow the query.',
+    '',
+    'Query forms:',
+    '- "select:Read,Edit,Grep" — fetch these exact tools by name',
+    '- "notebook jupyter" — keyword search, up to max_results best matches',
+    '- "+slack send" — require "slack" in the name, rank by remaining terms',
     '',
     'Searchable tool inventory (group and canonical name only):',
     ...lines,

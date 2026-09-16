@@ -39,6 +39,7 @@ import type { ToolResultContent } from '@maka/core/events';
 import type { RuntimeEventFunctionResponseContent } from '@maka/core/runtime-event';
 import { decodeCanonicalShellToolResultContent } from '@maka/core/shell-run-result';
 import { markPersisted } from '@maka/core/persisted-value';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import { decodePersistedToolResultContent } from '@maka/core/tool-result-record-schema';
 
 import type { ToolResultOutput } from './model-protocol.js';
@@ -292,7 +293,7 @@ export function decodeEffectiveToolResultProjection(
   }
   if (shellResult.state === 'valid') output = shellResult.content;
   output =
-    content.name === 'Bash'
+    content.name === TOOL_NAMES.bash
       ? projectBashToolResultForModel(output)
       : projectFileWriteToolResultForModel(content.name, output);
   const projection =

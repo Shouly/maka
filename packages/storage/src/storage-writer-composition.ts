@@ -31,7 +31,7 @@ import { openInteractiveProjectCatalogForWrite } from './project-catalog-authori
 import { assertStorageRootLease, type StorageRootLease } from './root-authority.js';
 import { openInteractiveRuntimePolicyStoresForWrite } from './runtime-policy-stores.js';
 import { openInteractiveScheduledTaskStoreForWrite } from './scheduled-task-store.js';
-import { openInteractiveSessionTodoStoreForWrite } from './session-todo-authority.js';
+import { openInteractiveSessionTaskStoreForWrite } from './session-task-authority.js';
 import { openInteractiveShellRunStoreForWrite } from './shell-run-authority.js';
 import { openInteractiveUsageStoresForWrite } from './usage-stores.js';
 
@@ -55,7 +55,7 @@ export interface StorageWriterComposition {
   readonly goal: Awaited<ReturnType<typeof openInteractiveGoalAuthorityForWrite>>;
   readonly memoryBundle: Awaited<ReturnType<typeof openInteractiveMemoryBundleStoreForWrite>>;
   readonly longTermMemory: Awaited<ReturnType<typeof openInteractiveLongTermMemoryStoreForWrite>>;
-  readonly sessionTodo: Awaited<ReturnType<typeof openInteractiveSessionTodoStoreForWrite>>;
+  readonly sessionTask: Awaited<ReturnType<typeof openInteractiveSessionTaskStoreForWrite>>;
   readonly artifacts: Awaited<ReturnType<typeof openInteractiveArtifactStoreForWrite>>;
   readonly contextOffload?: Awaited<ReturnType<typeof openInteractiveContextOffloadStoreForWrite>>;
   /** Present when the optional context-offload capability could not be opened. */
@@ -152,8 +152,8 @@ async function createComposition(
     () => openInteractiveLongTermMemoryStoreForWrite(lease),
     closeWriter,
   );
-  const sessionTodo = await openWriter(
-    () => openInteractiveSessionTodoStoreForWrite(lease),
+  const sessionTask = await openWriter(
+    () => openInteractiveSessionTaskStoreForWrite(lease),
     closeWriter,
   );
   const artifacts = await openWriter(
@@ -192,7 +192,7 @@ async function createComposition(
     goal,
     memoryBundle,
     longTermMemory,
-    sessionTodo,
+    sessionTask,
     artifacts,
     ...(contextOffload ? { contextOffload } : {}),
     ...(contextOffloadUnavailable ? { contextOffloadUnavailable } : {}),

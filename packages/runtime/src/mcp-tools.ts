@@ -45,7 +45,7 @@ const MAX_NATIVE_IMAGE_BASE64_CHARS = 20_000_000;
 const MAX_NATIVE_IMAGES = 4;
 const MAX_MODEL_TEXT_CHARS = 200_000;
 const MAX_SUMMARIZED_BLOCKS = 100;
-const TRUNCATION_MARKER = '\n…[truncated by Maka]';
+const TRUNCATION_MARKER = '\n…[truncated by Copilot]';
 
 export interface McpToolProvider {
   toolSnapshot(): McpToolSnapshot;

@@ -146,10 +146,10 @@ describe('TUI copy resources', () => {
     );
   });
 
-  test('localizes current Todo indicator and overlay copy', () => {
-    assert.equal(TUI_COPY_RESOURCES.todo.en.open, '/todo to view');
-    assert.equal(TUI_COPY_RESOURCES.todo['zh-CN'].open, '/todo 查看');
-    assert.equal(TUI_COPY_RESOURCES.todo['zh-TW'].unavailable, '待辦不可用');
+  test('localizes current task list indicator and overlay copy', () => {
+    assert.equal(TUI_COPY_RESOURCES.tasks.en.open, '/tasks to view');
+    assert.equal(TUI_COPY_RESOURCES.tasks['zh-CN'].open, '/tasks 查看');
+    assert.equal(TUI_COPY_RESOURCES.tasks['zh-TW'].unavailable, '任務不可用');
   });
 
   test('localizes stable onboarding failure codes at the TUI boundary', () => {

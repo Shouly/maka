@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import {
   SEARCH_DEFAULT_LIMIT,
   SEARCH_MAX_LIMIT,
@@ -39,8 +40,8 @@ import {
 import { z } from 'zod';
 import type { MakaTool } from './tool-runtime.js';
 
-export const SEARCH_HISTORY_TOOL_NAME = 'SearchHistory';
-export const READ_HISTORY_TOOL_NAME = 'ReadHistory';
+export const SEARCH_HISTORY_TOOL_NAME = TOOL_NAMES.searchHistory;
+export const READ_HISTORY_TOOL_NAME = TOOL_NAMES.readHistory;
 export const HISTORY_READ_MAX_TURNS = 5;
 export const HISTORY_READ_DEFAULT_BEFORE_TURNS = 1;
 export const HISTORY_READ_DEFAULT_AFTER_TURNS = 1;
@@ -86,8 +87,12 @@ export function buildSearchHistoryTool(deps: HistoryToolDeps): MakaTool {
     displayName: 'Search conversation history',
     activityKind: 'read',
     categoryHint: 'read',
-    description:
-      'Search all Maka conversation sessions, including the current session, by visible title, user text, assistant text, tool intent, or bounded tool result. Returns redacted message-level hits. Use ReadHistory only when a hit needs surrounding context.',
+    description: [
+      'Search every Copilot conversation on this machine, including this one, by what was visible in it: titles, user and assistant text, tool intent and bounded tool results. Use it when the user refers to earlier work ("the script we wrote last week").',
+      '',
+      '- Returns redacted message-level hits with session id, message id and a snippet; page with cursor. Hidden reasoning and raw tool payloads are never searched or returned.',
+      '- Follow a hit with ReadHistory only when its surrounding turns matter.',
+    ].join('\n'),
     parameters: z
       .object({
         query: z
@@ -198,8 +203,12 @@ export function buildReadHistoryTool(deps: HistoryToolDeps): MakaTool {
     displayName: 'Read conversation history',
     activityKind: 'read',
     categoryHint: 'read',
-    description:
-      'Optionally read bounded visible turns around a message-level SearchHistory hit, from any session including the current one. Use message_id as the preferred anchor. Hidden reasoning, permission records, and raw tool arguments/results are never returned.',
+    description: [
+      'Read the visible turns around a SearchHistory hit, from any session. Anchor on message_id when the hit has one; turn_id is the fallback for title matches. before and after bound how many turns come back.',
+      '',
+      '- Returns only what the user could see: hidden reasoning, permission records and raw tool arguments or results are never returned.',
+      '- Fails when the session or anchor is unknown; re-run SearchHistory rather than guessing ids.',
+    ].join('\n'),
     parameters: z
       .object({
         session_id: z.string().trim().min(1).max(256).describe('Session id from SearchHistory.'),

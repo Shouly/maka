@@ -46,7 +46,6 @@ import {
   projectTaskTarget,
 } from '../new-task-store.js';
 import { createUpdateStore, updateChipOf } from '../update-store.js';
-import { pendingScheduledTaskCount } from '../scheduled-tasks-store.js';
 import { createOnboardingStore, sendOutcomesOf } from '../onboarding-store.js';
 import { dispatchShellCommand } from '../window-commands.js';
 import {
@@ -465,19 +464,6 @@ test('the update store takes its status from the subscription and stops listenin
   // A status arriving after the scope closed must not revive it.
   handler?.({ state: 'checking', currentVersion: '1' });
   assert.equal(store.getState().status?.state, 'downloaded');
-});
-
-test('the automations badge counts armed tasks, not every task', () => {
-  assert.equal(pendingScheduledTaskCount(undefined), 0);
-  assert.equal(
-    pendingScheduledTaskCount([
-      { status: 'active', nextFireAt: 1 },
-      { status: 'active', nextFireAt: null },
-      { status: 'paused', nextFireAt: 1 },
-      { status: 'completed', nextFireAt: null },
-    ] as never),
-    1,
-  );
 });
 
 test('the onboarding snapshot arrives on its own budget and exposes send outcomes', async () => {

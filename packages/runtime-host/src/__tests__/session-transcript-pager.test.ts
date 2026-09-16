@@ -268,7 +268,7 @@ test('projects durable and active transcript records before sharing them', async
       id: 'tool-1',
       turnId: 'turn-0',
       ts: 6,
-      toolName: 'WriteStdin',
+      toolName: 'TaskInput',
       args: { ref: 'shell-1', input: 'secret=sk-example-value' },
     },
     'session-1',

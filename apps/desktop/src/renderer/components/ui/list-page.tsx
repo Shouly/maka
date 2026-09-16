@@ -372,17 +372,24 @@ export function ListPageHeader(props: {
   );
   return (
     <div className="shrink-0">
+      {/* The title row is the SAME 48px on every list page, whether or not the
+          page has a subtitle. The subtitle used to sit inside it, which made
+          the row 56px tall on the one page that has one — `items-center` then
+          had nothing to centre and the title started 8px higher than
+          Customize's. It hangs below the row instead, exactly as the reference
+          draws it. */}
       <header className="flex min-h-12 items-center justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="min-w-0 truncate font-display text-2xl font-medium leading-8 text-text-primary">
-            {props.title}
-          </h1>
-          {props.subtitle && (
-            <p className="mt-1 text-sm leading-5 text-text-muted">{props.subtitle}</p>
-          )}
-        </div>
+        <h1 className="min-w-0 truncate font-display text-2xl font-medium leading-8 text-text-primary">
+          {props.title}
+        </h1>
         {!props.toolbar && actions}
       </header>
+      {/* Measured off the reference: its title sits at 56–88, its subtitle at
+          96–116, and the first card starts at 160 — so 8px under the title row
+          and 44px under the subtitle. The row above is 48px and ends at 96, so
+          the subtitle needs no top margin; 28 here plus `ModulePage`'s `pt-4`
+          makes the 44. */}
+      {props.subtitle && <p className="mb-7 text-sm leading-5 text-text-muted">{props.subtitle}</p>}
       {props.toolbar && (
         <div className="mt-4 flex min-h-8 items-center gap-2">
           <div className="flex min-w-0 flex-1 items-center overflow-x-auto">{props.toolbar}</div>
@@ -481,27 +488,27 @@ export function ListRow(props: {
 }
 
 /* ------------------------------------------------------------------ *
- * Cards (reference `card-surface.ts`, list-card family).
+ * Cards.
+ *
+ * `card-surface.ts` is the port of the reference's own file and owns this
+ * family; these were a second, hand-copied set that had drifted from it (a
+ * 12px footer with its own `pt-2`, `pr-10` fused into the title, a 16px grid
+ * gap). Re-exported rather than moved so the pages that already reach for
+ * them here keep working, and so there is one definition to measure against
+ * the reference.
  * ------------------------------------------------------------------ */
 
-/** r12 · inset 1px ring · no shadow · page-coloured; hover lifts to surface-2. */
-export const listCardSurfaceClass =
-  'flex h-full w-full flex-col gap-2 rounded-xl bg-surface-1 p-4 text-sm leading-5 shadow-[inset_0_0_0_1px_var(--hairline)]';
-export const listCardClass = cn(
+export {
+  listCardActionsSlotClass,
+  listCardClass,
+  listCardDescClass,
+  listCardFooterClass,
+  listCardGridClass,
+  listCardShellClass,
   listCardSurfaceClass,
-  'outline-none hover:bg-surface-2 focus-visible:shadow-[var(--sidebar-focus-shadow)]',
-);
-/** The shell around a card: hover group, anchor for the ⋯ slot, press feedback. */
-export const listCardShellClass =
-  'group relative h-full transition-transform duration-200 ease-[cubic-bezier(.165,.84,.44,1)] has-[button:active]:scale-[0.98]';
-/** The ⋯ slot, top-right, revealed on hover, focus, or while its menu is open. */
-export const listCardActionsSlotClass =
-  'absolute right-3 top-3 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-has-[:focus-visible]:opacity-100 has-[[aria-expanded=true]]:opacity-100 has-[[data-state=checked]]:opacity-100';
-export const listCardTitleClass = 'truncate pr-10 text-sm font-medium leading-5 text-text-primary';
-export const listCardDescClass = 'line-clamp-3 text-sm leading-5 text-text-secondary';
-export const listCardFooterClass =
-  'mt-auto flex flex-wrap items-center gap-2 pt-2 text-xs leading-4 text-text-muted';
-export const listCardGridClass = 'grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4';
+  listCardTitleClass,
+  listCardTitleRowClass,
+} from './card-surface.js';
 
 /* ------------------------------------------------------------------ *
  * Empty state (reference `CustomizeEmptyState`).

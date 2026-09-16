@@ -39,7 +39,7 @@ import {
   tryAcquireInteractiveRootOwner,
   type StorageRootCapability,
 } from '@maka/storage/root-authority';
-import { openInteractiveSessionTodoStoreForWrite } from '@maka/storage/session-todo-authority';
+import { openInteractiveSessionTaskStoreForWrite } from '@maka/storage/session-task-authority';
 import {
   connectRuntimeHost,
   readRuntimeHostConnectionCatalog,
@@ -513,10 +513,10 @@ test('two Clients share stable Session creation, CAS configuration, and catalog 
       );
       assert.equal(archived.isArchived, true);
       assert.equal(archived.status, beforeArchive.status);
-      assert.deepEqual(
-        (await desktop.request('session.todo.query', { sessionId: created.id })).items,
-        [{ content: 'Retain archived task', status: 'in_progress' }],
-      );
+      const archivedTasks = (await desktop.request('session.task.query', { sessionId: created.id }))
+        .items;
+      assert.equal(archivedTasks.length, 1);
+      assert.equal(archivedTasks[0]?.subject, 'Retain archived task');
       assert.equal((await querySession(tui, created.id)).isArchived, true);
       const archivedContinuity = await nextProjection(retirementIterator);
       assert.equal(archivedContinuity.snapshot.session.isArchived, true);
@@ -531,9 +531,10 @@ test('two Clients share stable Session creation, CAS configuration, and catalog 
       );
       assert.equal(restored.isArchived, false);
       assert.equal(restored.status, beforeArchive.status);
-      assert.deepEqual((await tui.request('session.todo.query', { sessionId: created.id })).items, [
-        { content: 'Retain archived task', status: 'in_progress' },
-      ]);
+      const restoredTasks = (await tui.request('session.task.query', { sessionId: created.id }))
+        .items;
+      assert.equal(restoredTasks.length, 1);
+      assert.equal(restoredTasks[0]?.subject, 'Retain archived task');
       const restoredContinuity = await nextProjection(retirementIterator);
       assert.equal(restoredContinuity.snapshot.session.isArchived, false);
       assert.equal(restoredContinuity.snapshot.session.status, beforeArchive.status);
@@ -588,10 +589,10 @@ test('two Clients share stable Session creation, CAS configuration, and catalog 
         assert.fail('Retirement Artifact must be readable before Session removal');
       }
       assert.equal(artifactBeforeRemoval.artifact?.id, 'retirement-artifact');
-      const todoBeforeRemoval = await tui.request('session.todo.query', {
+      const tasksBeforeRemoval = await tui.request('session.task.query', {
         sessionId: retirementSessionId,
       });
-      assert.equal(todoBeforeRemoval.items.length, 1);
+      assert.equal(tasksBeforeRemoval.items.length, 1);
 
       assert.deepEqual(
         await desktop.request('session.remove', {
@@ -610,7 +611,7 @@ test('two Clients share stable Session creation, CAS configuration, and catalog 
           operationError('not_found'),
         );
         await assert.rejects(
-          connection.request('session.todo.query', { sessionId: retirementSessionId }),
+          connection.request('session.task.query', { sessionId: retirementSessionId }),
           operationError('not_found'),
         );
       }
@@ -623,7 +624,7 @@ test('two Clients share stable Session creation, CAS configuration, and catalog 
         operationError('not_found'),
       );
       await assert.rejects(
-        tui.request('session.todo.query', { sessionId: recoverySessionId }),
+        tui.request('session.task.query', { sessionId: recoverySessionId }),
         operationError('not_found'),
       );
     } finally {
@@ -907,7 +908,7 @@ async function seedAuthority(
       permissionMode: 'ask',
     });
     const artifacts = await openInteractiveArtifactStoreForWrite(owner.lease);
-    const todos = await openInteractiveSessionTodoStoreForWrite(owner.lease);
+    const tasks = await openInteractiveSessionTaskStoreForWrite(owner.lease);
     await Promise.all([
       artifacts.create({
         id: 'retirement-artifact',
@@ -931,13 +932,18 @@ async function seedAuthority(
         source: 'tool_result',
         now: 2,
       }),
-      todos.replaceAll(retirement.id, [{ content: 'Remove retirement task', status: 'pending' }]),
-      todos.replaceAll('stable-session', [
-        { content: 'Retain archived task', status: 'in_progress' },
-      ]),
-      todos.replaceAll(recovery.id, [
-        { content: 'Recover retirement task cleanup', status: 'pending' },
-      ]),
+      tasks.createTask(retirement.id, {
+        subject: 'Remove retirement task',
+        description: 'Retired sessions must not keep their task document',
+      }),
+      tasks.createTask('stable-session', {
+        subject: 'Retain archived task',
+        description: 'An archived session keeps its task document',
+      }),
+      tasks.createTask(recovery.id, {
+        subject: 'Recover retirement task cleanup',
+        description: 'Recovery must finish the retirement purge',
+      }),
     ]);
     const retirementSnapshot = await execution.sessionStore.readHeaderRecordSnapshot(retirement.id);
     await execution.sessionStore.remove(recovery.id);
@@ -1024,7 +1030,7 @@ async function assertRetirementCleanup(
         assert.equal(
           database
             .prepare(
-              'SELECT COUNT(*) AS count FROM workflow_session_todo_documents WHERE session_id = ?',
+              'SELECT COUNT(*) AS count FROM workflow_session_task_documents WHERE session_id = ?',
             )
             .get(sessionId)!.count,
           0,

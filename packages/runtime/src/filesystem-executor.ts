@@ -50,7 +50,11 @@ import type {
 } from './filesystem-worker/client.js';
 import { isSupportedImagePath, type ImageMimeType } from './image-file.js';
 import type { FilesystemWorkerResult } from './filesystem-worker/protocol.js';
-import { operationAccess } from './filesystem-worker/protocol.js';
+import {
+  operationAccess,
+  unreadEditMessage,
+  unreadOverwriteMessage,
+} from './filesystem-worker/protocol.js';
 import { resolveCanonicalDirectoryEntryTarget } from './path-containment.js';
 import { normalizeSandboxBoundaryPath } from './sandbox-boundary-path.js';
 import { SandboxCommandError } from './sandbox/errors.js';
@@ -238,7 +242,7 @@ export function createBoundaryFilesystemExecutor(
       // mutation carries its captured identity, or 'missing' when T0 saw no
       // target; a read never participates in CAS and says so. `operationAccess`
       // is the single authority on which kinds are writes (write | apply_patch
-      // | edit | format_json) — `mutates` is narrower and would silently drop
+      // | edit) — `mutates` is narrower and would silently drop
       // the apply_patch identity onto 'unchecked', disabling the queue-window
       // CAS on the main editing channel.
       expectedIdentity:
@@ -295,7 +299,7 @@ export function createBoundaryFilesystemExecutor(
       // for the lock, for BOTH backends — the worker CAS and the local pinned
       // read-modify-write compare against this inode. Content operations follow
       // the final symlink (stat); apply_patch create/delete use 'entry'
-      // semantics but execute() only handles write/edit/format_json here.
+      // semantics but execute() only handles write/edit here.
       const expectedIdentity = await captureIdentityAtLockAcquisition(canonicalPath, true);
       try {
         return await withFileWriteLock(key, () => run(call, expectedIdentity));
@@ -381,12 +385,25 @@ function createWorkspaceFilesystemExecutor(
     async execute({ operation, cwd, abortSignal }, scope, expectedIdentity) {
       switch (operation.kind) {
         case 'read': {
-          const { path } = await workspace.resolveExistingPath({
-            cwd,
-            path: operation.path,
-            label: 'Read',
-            scope,
-          });
+          // The two ordinary read failures answer with the operating system's
+          // own wording and the path, on every backend; see the worker's
+          // matching branch in `filesystem-worker/operations.ts`.
+          let resolved: { path: string };
+          try {
+            resolved = await workspace.resolveExistingPath({
+              cwd,
+              path: operation.path,
+              label: 'Read',
+              scope,
+            });
+          } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code === 'ENOENT' || code === 'ENOTDIR') {
+              throw new Error(`ENOENT: no such file or directory, read '${operation.path}'`);
+            }
+            throw error;
+          }
+          const { path } = resolved;
           const result = await workspace.readFile({
             cwd,
             path,
@@ -414,7 +431,12 @@ function createWorkspaceFilesystemExecutor(
               label: 'Write',
               scope,
               approvedIdentity: expectedIdentity,
-              transform: () => operation.content,
+              // Read-before-overwrite, raised from inside the transform so it
+              // lands before any byte is written and the file is left intact.
+              transform: ({ existed }) => {
+                assertOverwriteAllowed(existed, operation.allowOverwrite, path);
+                return operation.content;
+              },
             });
             const diff =
               result.previous === 'unknown'
@@ -442,6 +464,7 @@ function createWorkspaceFilesystemExecutor(
             const code = (error as NodeJS.ErrnoException).code;
             previous = code === 'ENOENT' || code === 'ENOTDIR' ? 'new' : 'unknown';
           }
+          assertOverwriteAllowed(previous !== 'new', operation.allowOverwrite, path);
           const written = await workspace.writeFile({ cwd, path, content: operation.content });
           const diff =
             previous === 'unknown'
@@ -499,6 +522,9 @@ function createWorkspaceFilesystemExecutor(
             scope,
           });
           if (isSupportedImagePath(path)) throw new Error('Edit does not support image files.');
+          // After resolution, so a path the boundary rejects is still reported
+          // as a boundary violation rather than as an unread file.
+          if (operation.allowEdit !== true) throw new Error(unreadEditMessage(path));
           if (workspace.readModifyWrite) {
             let edited!: ReturnType<typeof computeEditedSource>;
             let originalContent = '';
@@ -515,6 +541,7 @@ function createWorkspaceFilesystemExecutor(
                   operation.oldString,
                   operation.newString,
                   operation.path,
+                  { replaceAll: operation.replaceAll === true },
                 );
                 return edited.content;
               },
@@ -524,7 +551,7 @@ function createWorkspaceFilesystemExecutor(
               kind: 'edit',
               ok: true,
               path,
-              replacements: 1,
+              replacements: edited.replacements,
               matchedVia: edited.matchedVia,
               startLine: edited.startLine,
               endLine: edited.endLine,
@@ -538,6 +565,7 @@ function createWorkspaceFilesystemExecutor(
             operation.oldString,
             operation.newString,
             operation.path,
+            { replaceAll: operation.replaceAll === true },
           );
           await workspace.writeFile({ cwd, path, content: edited.content });
           const diff = createEditUnifiedDiff(path, read.content, edited.content, edited);
@@ -545,111 +573,10 @@ function createWorkspaceFilesystemExecutor(
             kind: 'edit',
             ok: true,
             path,
-            replacements: 1,
+            replacements: edited.replacements,
             matchedVia: edited.matchedVia,
             startLine: edited.startLine,
             endLine: edited.endLine,
-            ...(diff !== undefined ? { diff } : {}),
-          };
-        }
-        case 'format_json': {
-          const { path } = await workspace.resolveExistingPath({
-            cwd,
-            path: operation.path,
-            label: 'FormatJson',
-            scope,
-          });
-          if (isSupportedImagePath(path)) {
-            throw new Error('FormatJson does not support image files.');
-          }
-          if (workspace.readModifyWrite) {
-            let parseError: string | undefined;
-            let original = '';
-            const result = await workspace.readModifyWrite({
-              cwd,
-              path,
-              label: 'FormatJson',
-              scope,
-              approvedIdentity: expectedIdentity,
-              transform: (ctx) => {
-                original = ctx.content ?? '';
-                try {
-                  const value = operation.sortKeys
-                    ? sortKeysDeep(JSON.parse(original))
-                    : JSON.parse(original);
-                  return JSON.stringify(value, null, 2);
-                } catch (error) {
-                  parseError = error instanceof Error ? error.message : 'parse failed';
-                  return null;
-                }
-              },
-            });
-            const bytesBefore = Buffer.byteLength(original, 'utf8');
-            if (parseError !== undefined || result.finalContent === null) {
-              return {
-                kind: 'format_json',
-                ok: false,
-                valid: false,
-                error: `FormatJson: invalid JSON: ${parseError ?? 'parse failed'}`,
-                path,
-                bytesBefore,
-                byteDelta: 0,
-                changed: false,
-              };
-            }
-            const formatted = result.finalContent;
-            const bytesAfter = Buffer.byteLength(formatted, 'utf8');
-            const diff =
-              formatted === original ? undefined : createUnifiedDiff(path, original, formatted);
-            return {
-              kind: 'format_json',
-              ok: true,
-              valid: true,
-              path,
-              bytesBefore,
-              bytesAfter,
-              byteDelta: bytesAfter - bytesBefore,
-              changed: formatted !== original,
-              ...(diff !== undefined ? { diff } : {}),
-            };
-          }
-          const read = await workspace.readFile({ cwd, path });
-          if ('bytes' in read) throw new Error('FormatJson does not support image files.');
-          const original = read.content;
-          const bytesBefore = Buffer.byteLength(original, 'utf8');
-          let parsed: unknown;
-          try {
-            parsed = JSON.parse(original);
-          } catch (error) {
-            return {
-              kind: 'format_json',
-              ok: false,
-              valid: false,
-              error: `FormatJson: invalid JSON: ${(error as Error).message}`,
-              path,
-              bytesBefore,
-              byteDelta: 0,
-              changed: false,
-            };
-          }
-          const value = operation.sortKeys ? sortKeysDeep(parsed) : parsed;
-          const formatted = JSON.stringify(value, null, 2);
-          const { bytes: bytesAfter } = await workspace.writeFile({
-            cwd,
-            path,
-            content: formatted,
-          });
-          const diff =
-            formatted === original ? undefined : createUnifiedDiff(path, original, formatted);
-          return {
-            kind: 'format_json',
-            ok: true,
-            valid: true,
-            path,
-            bytesBefore,
-            bytesAfter,
-            byteDelta: bytesAfter - bytesBefore,
-            changed: formatted !== original,
             ...(diff !== undefined ? { diff } : {}),
           };
         }
@@ -658,15 +585,15 @@ function createWorkspaceFilesystemExecutor(
           const { path: base } = await workspace.resolveExistingPath({
             cwd,
             path: operation.path,
-            label: 'Glob cwd',
+            label: 'Glob',
             scope,
           });
-          const { files } = await workspace.globFiles({
+          const { files, truncated } = await workspace.globFiles({
             cwd: base,
             pattern: operation.pattern,
             ...(operation.limit !== undefined ? { limit: operation.limit } : {}),
           });
-          return { kind: 'glob', files };
+          return { kind: 'glob', files, ...(truncated ? { truncated: true } : {}) };
         }
         case 'grep': {
           const { path } = await workspace.resolveExistingPath({
@@ -675,21 +602,51 @@ function createWorkspaceFilesystemExecutor(
             label: 'Grep',
             scope,
           });
-          const { matches } = await workspace.grepFiles({
+          const grepped = await workspace.grepFiles({
             cwd,
             pattern: operation.pattern,
             path,
             ...(operation.glob ? { glob: operation.glob } : {}),
+            ...(operation.type ? { type: operation.type } : {}),
+            ...(operation.outputMode ? { outputMode: operation.outputMode } : {}),
+            ...(operation.ignoreCase !== undefined ? { ignoreCase: operation.ignoreCase } : {}),
+            ...(operation.after !== undefined ? { after: operation.after } : {}),
+            ...(operation.before !== undefined ? { before: operation.before } : {}),
+            ...(operation.lineNumbers !== undefined ? { lineNumbers: operation.lineNumbers } : {}),
+            ...(operation.multiline !== undefined ? { multiline: operation.multiline } : {}),
             maxCountPerFile: operation.maxCountPerFile,
             limit: operation.limit,
+            ...(operation.offset !== undefined ? { offset: operation.offset } : {}),
             timeoutMs: operation.timeoutMs,
             ...(abortSignal ? { abortSignal } : {}),
           });
-          return { kind: 'grep', matches };
+          return {
+            kind: 'grep',
+            matches: grepped.matches,
+            mode: grepped.mode ?? operation.outputMode ?? 'content',
+            ...(grepped.truncated ? { truncated: true, omitted: grepped.omitted ?? 0 } : {}),
+          };
         }
       }
     },
   };
+}
+
+/**
+ * Refuse a Write that would replace an existing file the session has not read.
+ *
+ * Creating a file is never gated — there is nothing to lose. The decision
+ * itself (has this session seen the file?) belongs to the tool layer, which
+ * knows what the session has read; this is only where it is enforced, at the
+ * one point that knows whether the target already existed.
+ */
+function assertOverwriteAllowed(
+  existed: boolean,
+  allowOverwrite: boolean | undefined,
+  path: string,
+): void {
+  if (!existed || allowOverwrite === true) return;
+  throw new Error(unreadOverwriteMessage(path));
 }
 
 /**

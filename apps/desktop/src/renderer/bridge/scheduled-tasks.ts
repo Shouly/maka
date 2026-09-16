@@ -105,8 +105,6 @@ export function subscribeScheduledTaskChanges(
   return toUnsubscribe(tryNamespace('scheduledTasks')?.subscribeChanges(handler));
 }
 
-export function subscribeScheduledTasksDue(
-  handler: (task: Pick<ScheduledTask, 'id' | 'title'>) => void,
-): () => void {
+export function subscribeScheduledTasksDue(handler: (task: ScheduledTask) => void): () => void {
   return toUnsubscribe(tryNamespace('scheduledTasks')?.subscribeDue(handler));
 }

@@ -62,7 +62,7 @@ const context: ConnectionContext = {
 
 test('model settings tool confirms and atomically updates canonical Runtime Policy', async () => {
   await withCoordinator(async ({ coordinator, stores }) => {
-    const tool = coordinator.modelTools.find(({ name }) => name === 'MakaSettingsUpdate');
+    const tool = coordinator.modelTools.find(({ name }) => name === 'CopilotSettingsUpdate');
     assert.ok(tool);
     if (!tool) return;
     const questions: string[] = [];
@@ -76,7 +76,11 @@ test('model settings tool confirms and atomically updates canonical Runtime Poli
       askUserQuestion: async (input) => {
         questions.push(...input.map(({ question }) => question));
         return {
-          answers: input.map(({ question }) => ({ question, answer: 'Apply changes' })),
+          answers: input.map(({ question }) => ({
+            question,
+            answer: 'Apply changes',
+            selected: ['Apply changes'],
+          })),
         };
       },
     };

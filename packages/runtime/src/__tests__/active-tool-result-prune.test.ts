@@ -410,8 +410,8 @@ describe('active current-turn tool-result pruning', () => {
       turnId: 'turn-1',
       charsPerToken: 1,
       completedToolCalls: [
-        completedCall('Read', 'read-old', { path: './src/a.ts', offset: 20, limit: 10 }, 0),
-        completedCall('Read', 'read-new', { path: 'src/a.ts', offset: 0, limit: 100 }, 1),
+        completedCall('Read', 'read-old', { file_path: './src/a.ts', offset: 20, limit: 10 }, 0),
+        completedCall('Read', 'read-new', { file_path: 'src/a.ts', offset: 0, limit: 100 }, 1),
       ],
       eligibleToolCallIds: new Set(['read-old']),
       archiveToolResult: () => ({ artifactId: 'artifact-read-old' }),
@@ -427,18 +427,18 @@ describe('active current-turn tool-result pruning', () => {
     const cases = [
       {
         toolName: 'Read',
-        first: { path: ' target.ts' },
-        second: { path: 'target.ts' },
+        first: { file_path: ' target.ts' },
+        second: { file_path: 'target.ts' },
       },
       {
         toolName: 'Read',
-        first: { path: 'dir\\target.ts' },
-        second: { path: 'dir/target.ts' },
+        first: { file_path: 'dir\\target.ts' },
+        second: { file_path: 'dir/target.ts' },
       },
       {
         toolName: 'Glob',
-        first: { pattern: '**/*.ts', cwd: '//server/share' },
-        second: { pattern: '**/*.ts', cwd: '/server/share' },
+        first: { pattern: '**/*.ts', path: '//server/share' },
+        second: { pattern: '**/*.ts', path: '/server/share' },
       },
       {
         toolName: 'Grep',
@@ -490,9 +490,9 @@ describe('active current-turn tool-result pruning', () => {
       turnId: 'turn-1',
       charsPerToken: 1,
       completedToolCalls: [
-        completedCall('Read', 'read-left', { path: 'a.ts', offset: 0, limit: 10 }, 0),
-        completedCall('Read', 'read-right', { path: 'a.ts', offset: 20, limit: 10 }, 1),
-        completedCall('Read', 'read-parallel', { path: 'a.ts', offset: 0, limit: 100 }, 0),
+        completedCall('Read', 'read-left', { file_path: 'a.ts', offset: 0, limit: 10 }, 0),
+        completedCall('Read', 'read-right', { file_path: 'a.ts', offset: 20, limit: 10 }, 1),
+        completedCall('Read', 'read-parallel', { file_path: 'a.ts', offset: 0, limit: 100 }, 0),
       ],
       eligibleToolCallIds: new Set(['read-left', 'read-parallel']),
       archiveToolResult: () => ({ artifactId: 'unused' }),

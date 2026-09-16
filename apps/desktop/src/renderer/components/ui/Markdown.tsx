@@ -29,7 +29,7 @@ import React, { createContext, useCallback, useContext, useId, useMemo, useState
 import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown';
 import { getSharedUiCopy, useUiLocale, MakaUriContext, useAttachmentImageSource } from '@maka/ui';
 import { parseAttachmentResourceRef } from '@maka/core/attachments';
-import { isSafeExternalScheme, parseMakaUri } from '@maka/ui/maka-uri';
+import { isSafeExternalScheme, parseMakaUri, parseComputerFileUri } from '@maka/ui/maka-uri';
 import { MermaidDiagram, applyMermaidRenderBudget } from './MermaidDiagram.js';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
@@ -108,6 +108,8 @@ interface MarkdownProps {
    * 不给回调时外链渲染成不可点的文字,不会假装能跳转。
    */
   onOpenExternal?: (url: string) => void;
+  /** Opens a workspace file named by a relative link. */
+  onOpenFile?: (path: string) => void;
 }
 
 export default function Markdown({
@@ -120,6 +122,7 @@ export default function Markdown({
   disableRawHtml = true,
   streamPop = false,
   onOpenExternal,
+  onOpenFile,
 }: MarkdownProps) {
   const copy = getSharedUiCopy(useUiLocale()).markdown;
   const dispatchInternal = useContext(MakaUriContext);
@@ -278,7 +281,16 @@ export default function Markdown({
         const destination = href ? parseMakaUri(href) : null;
         const external = href !== undefined && isSafeExternalScheme(href);
         const anchor = href?.startsWith('#') === true;
-        if (!anchor && !(external && onOpenExternal) && !(destination && dispatchInternal)) {
+        // `computer://` is the reference's own scheme for citing a file on the
+        // person's machine. Only reachable where a session is in scope to
+        // resolve the path against.
+        const filePath = href ? parseComputerFileUri(href) : null;
+        if (
+          !anchor &&
+          !(external && onOpenExternal) &&
+          !(destination && dispatchInternal) &&
+          !(filePath && onOpenFile)
+        ) {
           return (
             <span title={href?.startsWith('maka:') ? copy.invalidInternalLink : copy.unsafeLink}>
               {children}
@@ -291,10 +303,12 @@ export default function Markdown({
             href={href}
             className={`text-accent underline underline-offset-[3px] decoration-accent/40 hover:decoration-accent ${className ?? ''}`}
             {...(external ? { rel: 'noopener noreferrer' } : {})}
+            {...(filePath ? { 'data-maka-file-link': filePath } : {})}
             onClick={(event) => {
               if (anchor) return;
               event.preventDefault();
               if (destination) dispatchInternal?.(destination);
+              else if (filePath) onOpenFile?.(filePath);
               else if (href) onOpenExternal?.(href);
             }}
           >
@@ -459,7 +473,15 @@ export default function Markdown({
         );
       },
     }),
-    [copy, onOpenExternal, dispatchInternal, processInlineTokens, inlineTokenNames, streamPop],
+    [
+      copy,
+      onOpenExternal,
+      onOpenFile,
+      dispatchInternal,
+      processInlineTokens,
+      inlineTokenNames,
+      streamPop,
+    ],
   );
 
   return (

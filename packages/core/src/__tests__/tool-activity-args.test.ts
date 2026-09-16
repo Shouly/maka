@@ -48,7 +48,7 @@ it('formats exact terminal input as inert, unambiguous escaped text', () => {
   );
 });
 
-it('derives a bounded summary and a complete inert WriteStdin permission inspection', () => {
+it('derives a bounded summary and a complete inert TaskInput permission inspection', () => {
   const suffix = '\u001b[31mrm -rf /tmp/example\r';
   const args = {
     ref: `maka://runtime/background-tasks/${'r'.repeat(200)}`,
@@ -70,8 +70,8 @@ it('derives a bounded summary and a complete inert WriteStdin permission inspect
   assert.equal(inspection?.includes('\u001b'), false);
 });
 
-it('projects WriteStdin activity to a bounded human-readable input preview', () => {
-  const projected = projectToolActivityArgs('WriteStdin', {
+it('projects TaskInput activity to a bounded human-readable input preview', () => {
+  const projected = projectToolActivityArgs('TaskInput', {
     ref: 'maka://runtime/background-tasks/one',
     input: '中\r',
     size: { cols: 100, rows: 30 },
@@ -82,26 +82,28 @@ it('projects WriteStdin activity to a bounded human-readable input preview', () 
     size: { cols: 100, rows: 30 },
   });
   assert.doesNotMatch((projected as { inputPreview: { text: string } }).inputPreview.text, /\r/);
-  assert.deepEqual(projectToolActivityArgs('WriteStdin', projected), projected);
-  assert.deepEqual(projectToolActivityArgs('WriteStdin', 'malformed raw input'), {});
+  assert.deepEqual(projectToolActivityArgs('TaskInput', projected), projected);
+  assert.deepEqual(projectToolActivityArgs('TaskInput', 'malformed raw input'), {});
 
   const invalidSize = {
     ref: 'maka://runtime/background-tasks/one',
     size: { cols: 1.5, rows: Number.POSITIVE_INFINITY },
   };
-  assert.deepEqual(projectToolActivityArgs('WriteStdin', invalidSize), {
+  assert.deepEqual(projectToolActivityArgs('TaskInput', invalidSize), {
     ref: 'maka://runtime/background-tasks/one',
   });
   assert.equal(projectWriteStdinPermissionSummary(invalidSize).size, undefined);
 });
 
-it('never projects uncommitted todo_write arguments into activity history', () => {
+it('never projects uncommitted task writes into activity history', () => {
   assert.deepEqual(
-    projectToolActivityArgs('todo_write', {
-      todos: [{ content: 'uncommitted item', status: 'pending' }],
+    projectToolActivityArgs('TaskCreate', {
+      subject: 'uncommitted item',
+      description: 'not yet settled',
     }),
     {},
   );
+  assert.deepEqual(projectToolActivityArgs('TaskUpdate', { taskId: '1', status: 'completed' }), {});
 });
 
 it('projects ordered terminal actions without exposing encoded control bytes', () => {
@@ -125,7 +127,7 @@ it('projects ordered terminal actions without exposing encoded control bytes', (
     size: { cols: 0, rows: 0 },
   };
 
-  assert.deepEqual(projectToolActivityArgs('WriteStdin', args), {
+  assert.deepEqual(projectToolActivityArgs('TaskInput', args), {
     ref: args.ref,
     inputPreview: {
       text: 'Ctrl-B → "c" → Click Left @ (2, 3)',
@@ -171,7 +173,7 @@ it('rejects projected previews that bypass the display safety boundary', () => {
     'x'.repeat(WRITE_STDIN_INPUT_PREVIEW_MAX_CHARS + 1),
   ]) {
     assert.deepEqual(
-      projectToolActivityArgs('WriteStdin', {
+      projectToolActivityArgs('TaskInput', {
         ref,
         inputPreview: { text, bytes: 20, truncated: false },
       }),
@@ -180,8 +182,8 @@ it('rejects projected previews that bypass the display safety boundary', () => {
   }
 });
 
-it('bounds a malformed WriteStdin ref at the human projection boundary', () => {
-  const projected = projectToolActivityArgs('WriteStdin', {
+it('bounds a malformed TaskInput ref at the human projection boundary', () => {
+  const projected = projectToolActivityArgs('TaskInput', {
     ref: 'x'.repeat(WRITE_STDIN_REF_PREVIEW_MAX_CHARS + 20),
     input: '\r',
   }) as { ref: string };

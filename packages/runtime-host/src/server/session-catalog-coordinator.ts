@@ -1113,7 +1113,7 @@ export class HostSessionCatalogCoordinator {
     if (readiness.kind === 'provider_retired') {
       throw new SessionOperationFailure(
         'invalid_request',
-        'Session model connection uses a sign-in that was removed from Maka',
+        'Session model connection uses a sign-in that was removed from Copilot',
       );
     }
     if (

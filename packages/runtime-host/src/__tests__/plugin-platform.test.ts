@@ -437,7 +437,7 @@ test('a real package reaches every scoped ctx service through one Agent Tool inv
       askUserQuestion: async (questions) => {
         calls.push(`userQuestions.ask:${questions[0]?.question}`);
         return {
-          answers: [{ question: questions[0]?.question ?? '', answer: 'yes' }],
+          answers: [{ question: questions[0]?.question ?? '', answer: 'yes', selected: ['yes'] }],
         };
       },
       requestUserForm: async (form) => {

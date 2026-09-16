@@ -135,10 +135,10 @@ describe('tool-availability execute-boundary guard', () => {
     assert.equal(start.activityKind, 'command');
   });
 
-  test('keeps WriteStdin args exact across canonical ledgers and projects telemetry', async () => {
+  test('keeps TaskInput args exact across canonical ledgers and projects telemetry', async () => {
     const h = makeHarness();
     const implCalls: string[] = [];
-    const t = tool('WriteStdin', implCalls);
+    const t = tool('TaskInput', implCalls);
     const args = {
       ref: 'maka://runtime/background-tasks/pty-1',
       input: 'password=ordinary-audited-input\r',
@@ -171,24 +171,24 @@ describe('tool-availability execute-boundary guard', () => {
     );
     assert.deepEqual(
       JSON.parse(h.invocationArgsSummaries[0] ?? 'null'),
-      projectToolActivityArgs('WriteStdin', args),
+      projectToolActivityArgs('TaskInput', args),
     );
   });
 
   test('rejects a gated tool absent from the step snapshot before implementation', async () => {
     const h = makeHarness();
     const implCalls: string[] = [];
-    // The same-step trap: browser_click was just returned by tool_search
-    // but is not yet active this step, so browser_click must be rejected.
+    // The same-step trap: BrowserClick was just returned by ToolSearch
+    // but is not yet active this step, so BrowserClick must be rejected.
     h.runtime.setGating({
-      gatedNames: new Set(['browser_click']),
-      activeNames: () => new Set(['Read', 'tool_search']),
+      gatedNames: new Set(['BrowserClick']),
+      activeNames: () => new Set(['Read', 'ToolSearch']),
     });
 
-    const result = await run(h, tool('browser_click', implCalls));
+    const result = await run(h, tool('BrowserClick', implCalls));
 
     assert.deepEqual(implCalls, [], 'the real impl must not run');
-    assert.deepEqual(result, { error: formatDeferredNotLoadedText('browser_click') });
+    assert.deepEqual(result, { error: formatDeferredNotLoadedText('BrowserClick') });
 
     const callMsg = h.appended.find((m) => m.type === 'tool_call');
     const resultMsg = h.appended.find((m) => m.type === 'tool_result');
@@ -204,14 +204,14 @@ describe('tool-availability execute-boundary guard', () => {
     const h = makeHarness();
     const implCalls: string[] = [];
     h.runtime.setGating({
-      gatedNames: new Set(['browser_click']),
-      activeNames: () => new Set(['Read', 'tool_search', 'browser_click']),
+      gatedNames: new Set(['BrowserClick']),
+      activeNames: () => new Set(['Read', 'ToolSearch', 'BrowserClick']),
     });
 
-    const t = tool('browser_click', implCalls);
+    const t = tool('BrowserClick', implCalls);
     await run(h, t);
 
-    assert.deepEqual(implCalls, ['browser_click'], 'an active gated tool executes normally');
+    assert.deepEqual(implCalls, ['BrowserClick'], 'an active gated tool executes normally');
     assert.ok(
       !h.pushed.some((e) => e.type === 'tool_result' && e.isError),
       'no synthetic error result for an active tool',
@@ -222,10 +222,10 @@ describe('tool-availability execute-boundary guard', () => {
     const h = makeHarness();
     const implCalls: string[] = [];
     // No setGating call: any tool must execute as before.
-    const t = tool('browser_click', implCalls);
+    const t = tool('BrowserClick', implCalls);
     await run(h, t);
 
-    assert.deepEqual(implCalls, ['browser_click'], 'guard must not fire without installed gating');
+    assert.deepEqual(implCalls, ['BrowserClick'], 'guard must not fire without installed gating');
   });
 
   test('never gates a tool outside gatedNames, even when absent from the snapshot', async () => {
@@ -233,7 +233,7 @@ describe('tool-availability execute-boundary guard', () => {
     const implCalls: string[] = [];
     // Read is not a gated tool; the active snapshot is empty, yet Read must run.
     h.runtime.setGating({
-      gatedNames: new Set(['browser_click']),
+      gatedNames: new Set(['BrowserClick']),
       activeNames: () => new Set<string>(),
     });
     const direct: MakaTool = {

@@ -276,6 +276,7 @@ function questionRequest() {
     questions: [
       {
         question: 'Continue?',
+        header: 'Continue',
         options: [{ label: 'Yes' }, { label: 'No' }],
       },
     ],

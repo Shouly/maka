@@ -182,7 +182,7 @@ test('Runtime-owned deferred search names are rejected atomically', async () => 
   const root = new Context();
   const tools = new PluginToolService(root);
   const loader = new MakaCompositionLoader({ root });
-  await loader.install(toolPackage('reserved-package', tool('tool_search', 'plugin')));
+  await loader.install(toolPackage('reserved-package', tool('ToolSearch', 'plugin')));
 
   await assert.rejects(
     () => loader.create('profile', { id: 'reserved-entry', packageId: 'reserved-package' }),

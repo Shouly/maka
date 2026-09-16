@@ -2714,10 +2714,14 @@ export class SqliteRuntimeStore
     if (!mutation) return;
     const call = input.runtimeEvent.content;
     const callArgs = call?.kind === 'function_call' ? call.args : undefined;
-    const callPath =
+    // `file_path` is the current argument name and `path` the one every record
+    // written before the tool-system rename carries; both name the same file.
+    const callArgRecord =
       callArgs && typeof callArgs === 'object' && !Array.isArray(callArgs)
-        ? (callArgs as { path?: unknown }).path
+        ? (callArgs as { file_path?: unknown; path?: unknown })
         : undefined;
+    const callPath =
+      typeof callArgRecord?.file_path === 'string' ? callArgRecord.file_path : callArgRecord?.path;
     if (
       (input.toolName !== 'Write' && input.toolName !== 'Edit') ||
       input.recoveryMode !== 'reconcile' ||

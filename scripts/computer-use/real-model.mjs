@@ -72,7 +72,7 @@ const providerOverride = process.env.MAKA_CU_PROVIDER;
 const reportPath =
   process.env.MAKA_CU_REAL_MODEL_REPORT ??
   join(repoRoot, '.agents-workspace-data', 'cu-real-model', `report-${Date.now()}.json`);
-const runPrompt = 'Use the maka_computer tool to complete this task. ' + scenario.prompt;
+const runPrompt = 'Use the Computer tool to complete this task. ' + scenario.prompt;
 
 async function reportLineage() {
   const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], {
@@ -255,7 +255,7 @@ export function actionRecords(events) {
   const starts = new Map();
   const records = [];
   for (const event of events) {
-    if (event.type === 'tool_start' && event.toolName === 'maka_computer') {
+    if (event.type === 'tool_start' && event.toolName === 'Computer') {
       starts.set(event.toolUseId, event);
     }
     if (event.type === 'tool_result' && starts.has(event.toolUseId)) {
@@ -408,15 +408,11 @@ async function discoverLauncherFixtureIdentity(fixturePid, windowSpecs) {
 function safeEvent(event) {
   if (event.type === 'tool_start') {
     const safeToolName =
-      event.toolName === 'tool_search' || event.toolName === 'maka_computer'
-        ? event.toolName
-        : 'other';
+      event.toolName === 'ToolSearch' || event.toolName === 'Computer' ? event.toolName : 'other';
     return {
       type: event.type,
       toolName: safeToolName,
-      ...(event.toolName === 'maka_computer'
-        ? { actionType: event.args?.action ?? 'unknown' }
-        : {}),
+      ...(event.toolName === 'Computer' ? { actionType: event.args?.action ?? 'unknown' } : {}),
       ts: event.ts,
     };
   }

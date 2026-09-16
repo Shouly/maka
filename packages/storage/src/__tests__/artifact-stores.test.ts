@@ -128,6 +128,7 @@ describe('interactive artifact store authority', () => {
         'subagent_writeback',
         'deep_research',
         'user_upload',
+        'user_delivery',
         'session_effect',
       ];
       const image = Buffer.from(

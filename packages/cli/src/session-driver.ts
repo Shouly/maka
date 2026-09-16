@@ -23,7 +23,7 @@ import type { OrchestrationMode } from '@maka/core/orchestration';
 import type { PermissionMode } from '@maka/core/permission';
 import type { SandboxBoundaryResponse } from '@maka/core/sandbox-boundary';
 import type { SessionSummary, StoredMessage } from '@maka/core/session';
-import type { SessionTodoItem } from '@maka/core/session-todo';
+import type { SessionTaskDocument } from '@maka/core/session-task';
 import type { ThinkingLevel } from '@maka/core/model-thinking';
 import type { CreateSessionInput, TurnOrchestration } from '@maka/core/runtime-inputs';
 import type { UserQuestionResponse } from '@maka/core/user-question';
@@ -144,8 +144,8 @@ export interface MakaUserCommand {
 
 export interface MakaSessionDriver {
   listSessions(): Promise<SessionSummary[]>;
-  /** Reads the current committed Todo projection for the attached Session. */
-  queryTodo?(sessionId: string): Promise<{ sessionId: string; items: SessionTodoItem[] }>;
+  /** Reads the current committed task list for the attached Session. */
+  querySessionTask?(sessionId: string): Promise<{ sessionId: string } & SessionTaskDocument>;
   getSessionResumeAvailability?(session: SessionSummary): Promise<SessionResumeAvailability>;
   preparePrompt(
     prompt: string,
@@ -224,8 +224,8 @@ export interface MakaSessionDriver {
    * resumed, cleared, or when the attached session changes.
    */
   subscribeGoalChanges?(listener: (goal: GoalProjection | null) => void): () => void;
-  /** Fires when the attached Session's committed Todo projection is invalidated. */
-  subscribeTodoChanges?(listener: (sessionId: string) => void): () => void;
+  /** Fires when the attached Session's committed task list is invalidated. */
+  subscribeSessionTaskChanges?(listener: (sessionId: string) => void): () => void;
   /**
    * Applies a goal control action (pause/resume/clear) with optimistic
    * revision retry, mirroring the desktop client. Resolves with the resulting

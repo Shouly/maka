@@ -887,13 +887,14 @@ function projectFunctionCall(
       },
     );
   }
-  state.toolNameByUseId.set(toolUseId, event.content.name);
+  const toolName = event.content.name;
+  state.toolNameByUseId.set(toolUseId, toolName);
   messages.push({
     type: 'tool_call',
     id: toolUseId,
     turnId: event.turnId,
     ts: event.ts,
-    toolName: event.content.name,
+    toolName,
     ...(toolActivityKindStateDelta(event) !== undefined
       ? { activityKind: toolActivityKindStateDelta(event) }
       : {}),

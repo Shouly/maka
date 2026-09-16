@@ -132,7 +132,7 @@ describe('projectToolArgsPreview', () => {
   });
 
   it('names deep research starts from their bounded objective preview', () => {
-    const preview = projectToolArgsPreview('deep_research_start', {
+    const preview = projectToolArgsPreview('DeepResearchStart', {
       objective: 'Inspect the runtime host boundary',
       scope_level: 'standard',
       artifact_content: 'must not reach the live wire',
@@ -142,7 +142,7 @@ describe('projectToolArgsPreview', () => {
       scope_level: 'standard',
     });
     assert.equal(
-      formatToolInvocationLine({ toolName: 'deep_research_start', args: preview }, 'en'),
+      formatToolInvocationLine({ toolName: 'DeepResearchStart', args: preview }, 'en'),
       'Inspect the runtime host boundary (standard)',
     );
   });
@@ -155,11 +155,13 @@ describe('projectToolArgsPreview', () => {
     assert.ok(JSON.stringify(preview).length <= 2048);
   });
 
-  it('never previews an uncommitted Todo replacement as current state', () => {
+  it('never previews an uncommitted task write as current state', () => {
     assert.equal(
-      projectToolArgsPreview('todo_write', {
-        todos: [{ content: 'one', status: 'pending' }],
-      }),
+      projectToolArgsPreview('TaskCreate', { subject: 'one', description: 'the first task' }),
+      undefined,
+    );
+    assert.equal(
+      projectToolArgsPreview('TaskUpdate', { taskId: '1', status: 'completed' }),
       undefined,
     );
   });
@@ -173,14 +175,14 @@ describe('projectToolArgsPreview', () => {
     );
   });
 
-  it('preserves the WriteStdin projected inputPreview shape', () => {
-    const projected = projectToolActivityArgs('WriteStdin', {
+  it('preserves the TaskInput projected inputPreview shape', () => {
+    const projected = projectToolActivityArgs('TaskInput', {
       ref: 'maka://runtime/background-tasks/1',
       input: 'ls -la\n',
       size: { cols: 80, rows: 24 },
     });
-    const preview = projectToolArgsPreview('WriteStdin', projected);
-    const line = formatToolInvocationLine({ toolName: 'WriteStdin', args: preview }, 'zh-CN');
+    const preview = projectToolArgsPreview('TaskInput', projected);
+    const line = formatToolInvocationLine({ toolName: 'TaskInput', args: preview }, 'zh-CN');
     assert.ok(line !== undefined);
     assert.match(line, /后台终端交互/);
     assert.match(line, /80x24/);

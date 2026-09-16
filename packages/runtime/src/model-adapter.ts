@@ -25,6 +25,7 @@ import {
   type RuntimeExecutionConnection,
 } from '@maka/core/llm-connections';
 import { lookupModelMetadata } from '@maka/core/model-metadata';
+import { TOOL_SEARCH_PROVIDER_NAME } from '@maka/core/tool-names';
 import type { CacheMissInputSource } from '@maka/core/usage-stats/types';
 import { rawFinishReasonString } from './model-protocol.js';
 import type {
@@ -80,7 +81,13 @@ import {
   type OpenAiResponsesTransportState,
 } from './openai-responses-websocket.js';
 import { openAiApplyPatchProviderTool } from './openai-apply-patch.js';
-import { TOOL_SEARCH_NAME, TOOL_SEARCH_PROVIDER_NAME } from './tool-availability.js';
+import { TOOL_SEARCH_NAME } from './tool-availability.js';
+
+/**
+ * Whole-word only: the provider alias contains the canonical name, so a text
+ * remap must not rewrite an already-remapped `CopilotToolSearch` mention.
+ */
+const TOOL_SEARCH_NAME_IN_TEXT = new RegExp(`\\b${TOOL_SEARCH_NAME}\\b`, 'gu');
 
 /**
  * Build an ai-sdk LanguageModel from a single input object.
@@ -1156,7 +1163,8 @@ function translateChunk(
 }
 
 /**
- * OpenAI Responses reserves the provider name `tool_search`. Keep Maka's
+ * OpenAI Responses owns a hosted tool of the same family, so Maka's search
+ * connector travels under `TOOL_SEARCH_PROVIDER_NAME` there. Keep Maka's
  * persisted/history name intact and translate only the provider-bound copy.
  */
 function remapModelMessageToolNames(
@@ -1204,7 +1212,7 @@ function remapProviderToolNamesInText(
   text: string,
   providerToolName: (name: string) => string,
 ): string {
-  return text.replace(/\btool_search\b/gu, providerToolName(TOOL_SEARCH_NAME));
+  return text.replace(TOOL_SEARCH_NAME_IN_TEXT, providerToolName(TOOL_SEARCH_NAME));
 }
 
 function parseProviderExecutedToolInput(input: unknown): unknown {

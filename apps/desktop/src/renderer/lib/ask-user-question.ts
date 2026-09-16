@@ -26,6 +26,12 @@
 import { createStore } from 'zustand/vanilla';
 import type { UserQuestionRequest, UserQuestionResponse } from '@maka/core/user-question';
 import type { ToolActivityItem } from '@maka/ui';
+import {
+  answerLines,
+  readUserQuestions,
+  type UserQuestionAnswer,
+  type UserQuestionShape,
+} from './user-question-shape.js';
 
 /**
  * Known by name, or by the call the Host asked the question for. The Host's
@@ -43,23 +49,20 @@ export function isAskUserQuestionTool(
 
 export interface AskUserQuestionPair {
   readonly question: string;
-  /** `null` when the user skipped it, stopped, or the turn ended first. */
-  readonly answer: string | null;
+  /** What is being decided, in a few words; drawn as a chip over the question. */
+  readonly header: string;
+  /**
+   * The labels the user chose — one for a single-select question, several for
+   * a multi-select one, none when they skipped it, stopped, or the turn ended
+   * first.
+   */
+  readonly answers: readonly string[];
 }
 
 function recordOf(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
-}
-
-function questionTexts(args: unknown): string[] {
-  const questions = recordOf(args)?.questions;
-  if (!Array.isArray(questions)) return [];
-  return questions.flatMap((entry) => {
-    const text = recordOf(entry)?.question;
-    return typeof text === 'string' && text.trim() ? [text] : [];
-  });
 }
 
 /**
@@ -78,7 +81,7 @@ function questionTexts(args: unknown): string[] {
 export function askUserQuestionRecord(item: ToolActivityItem): AskUserQuestionPair[] | undefined {
   const result = item.result;
   if (result === undefined) return undefined;
-  const questions = questionTexts(item.args);
+  const questions = readUserQuestions(item.args);
   let payload: unknown;
   if (result.kind === 'json') payload = result.value;
   else if (result.kind === 'text') {
@@ -89,13 +92,26 @@ export function askUserQuestionRecord(item: ToolActivityItem): AskUserQuestionPa
     }
   }
   const answers = recordOf(payload)?.answers;
-  const answered = Array.isArray(answers)
+  // An answer is now a label, several labels, or null — the multi-select
+  // shape. Positional, so a result that cannot be read leaves every question
+  // unanswered rather than shifting answers onto the wrong questions.
+  const answered: UserQuestionAnswer[] = Array.isArray(answers)
     ? answers.map((entry) => {
-        const answer = recordOf(entry)?.answer;
-        return typeof answer === 'string' && answer.trim() ? answer : null;
+        const answer = recordOf(entry)?.answer ?? entry;
+        if (typeof answer === 'string') return answer;
+        if (Array.isArray(answer)) return answer.filter((label) => typeof label === 'string');
+        return null;
       })
     : [];
-  return questions.map((question, index) => ({ question, answer: answered[index] ?? null }));
+  return questions.map((question, index) => pairOf(question, answered[index] ?? null));
+}
+
+function pairOf(question: UserQuestionShape, answer: UserQuestionAnswer): AskUserQuestionPair {
+  return {
+    question: question.question,
+    header: question.header,
+    answers: answerLines(answer),
+  };
 }
 
 // ── The calls the Host asked questions for, and what the user answered ──────
@@ -107,9 +123,10 @@ export function askUserQuestionRecord(item: ToolActivityItem): AskUserQuestionPa
 // neither arguments nor results, only a status.
 
 export interface KnownUserQuestionCall {
-  readonly questions: readonly string[];
+  /** The questions as asked, headers and options included. */
+  readonly questions: readonly UserQuestionShape[];
   /** Undefined while the question is still open. */
-  readonly answers?: readonly (string | null)[];
+  readonly answers?: readonly UserQuestionAnswer[];
 }
 
 export const knownUserQuestionCalls = createStore<{
@@ -122,7 +139,7 @@ export function rememberUserQuestionRequest(request: UserQuestionRequest): void 
     return {
       byToolUseId: {
         ...state.byToolUseId,
-        [request.toolUseId]: { questions: request.questions.map((q) => q.question) },
+        [request.toolUseId]: { questions: readUserQuestions(request) },
       },
     };
   });
@@ -134,7 +151,7 @@ export function rememberedUserQuestionRecord(
 ): AskUserQuestionPair[] | undefined {
   if (!call?.answers) return undefined;
   const answers = call.answers;
-  return call.questions.map((question, index) => ({ question, answer: answers[index] ?? null }));
+  return call.questions.map((question, index) => pairOf(question, answers[index] ?? null));
 }
 
 /** Sends the response and remembers what it said, keyed by the call it answers. */
@@ -148,8 +165,8 @@ export async function answerUserQuestion(
     byToolUseId: {
       ...state.byToolUseId,
       [request.toolUseId]: {
-        questions: request.questions.map((q) => q.question),
-        answers: response.answers,
+        questions: readUserQuestions(request),
+        answers: response.answers as readonly UserQuestionAnswer[],
       },
     },
   }));

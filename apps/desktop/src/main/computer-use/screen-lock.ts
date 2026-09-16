@@ -227,7 +227,7 @@ export function createComputerUseScreenLockGuard(
  * the machine, "including the attempt that was refused, since `onActionBegin`
  * runs before the backend sees the action". That is not what happens, and a
  * probe against the built runtime says so plainly: with `screenLocked` forced
- * true, three calls came back `maka_computer failed: screen_locked`, the probe
+ * true, three calls came back `Computer failed: screen_locked`, the probe
  * saw the session three times, and `onActionBegin` saw nothing at all.
  * `onActionBegin` has one call site, inside `runWithPresentation`, and the
  * refusal returns several hundred lines above it.

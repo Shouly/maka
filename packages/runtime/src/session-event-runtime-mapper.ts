@@ -250,7 +250,8 @@ function mapBackendSessionEvent(
 
     // ── Tool calls / results ──────────────────────────────────────────────
     case 'tool_start': {
-      memory.toolNameByUseId.set(event.toolUseId, event.toolName);
+      const toolName = event.toolName;
+      memory.toolNameByUseId.set(event.toolUseId, toolName);
       const ev: RuntimeEvent = {
         ...base,
         role: 'model',
@@ -260,7 +261,7 @@ function mapBackendSessionEvent(
         content: {
           kind: 'function_call',
           id: event.toolUseId,
-          name: event.toolName,
+          name: toolName,
           args: structuredClone(event.args),
           ...(event.providerOptions !== undefined
             ? { providerOptions: structuredClone(event.providerOptions) }

@@ -72,7 +72,7 @@ export function isCancelledToolResultContent(content: ToolResultContent | undefi
  * Derive settled ToolActivityItem.status from tool_result flags + content.
  *
  * `isError` is the call-level contract: a successful observation of a
- * cancelled background task (`StopBackgroundTask` → shell_run cancelled,
+ * cancelled background task (`TaskStop` → shell_run cancelled,
  * isError:false) is `completed`, not interrupted. Failed cancels map to
  * `interrupted`.
  */

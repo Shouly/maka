@@ -53,8 +53,11 @@ import { SkillsModule } from '../modules/skills/SkillsModule.js';
 import { McpModule } from '../modules/mcp/McpModule.js';
 import { ScheduledTasksModule } from '../modules/scheduled/ScheduledTasksModule.js';
 import { SettingsIdentity } from '../settings/SettingsIdentity.js';
+import { ScheduledTaskIdentity } from '../modules/scheduled/ScheduledTaskIdentity.js';
 import { SettingsView } from '../settings/SettingsView.js';
 import { RuntimeDebug } from '../dev/RuntimeDebug.js';
+import { cn } from '../../lib/cn.js';
+import { SessionPanel } from '../session/SessionPanel.js';
 import { WorkbarPane } from '../workbar/WorkbarPane.js';
 import { WorkbarToggle } from '../workbar/WorkbarToggle.js';
 import { useRendererStores, useScopedRuntimeHost } from '../../hooks/use-workspace.js';
@@ -91,6 +94,7 @@ import { previewSessionRemoval } from '../../bridge/sessions.js';
 import { testNetworkProxy } from '../../bridge/settings.js';
 import { restoreProject, renameProject } from '../../bridge/projects.js';
 import { subscribeScheduledTasksDue } from '../../bridge/scheduled-tasks.js';
+import { desktopSessionKeyForRun } from '../../store/scheduled-tasks-store.js';
 import { getShellCopy, localizedShellErrorMessage } from '../../locales/shell-copy.js';
 import { getSidebarCopy } from '../../locales/sidebar-copy.js';
 import type { PendingE2eFixtureUiState } from '../../lib/fixture.js';
@@ -159,7 +163,10 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
   const defaultHost = useStore(hostScopeStore, (state) => state.host);
   const { model } = useSessionList('');
   const workbar = useWorkbar(activeId);
-  const activeRow = model.rows.find((row) => row.id === activeId);
+  // `model.activeRow`, not a lookup in `rows`: a scheduled task's runs are kept
+  // out of the rail, and looking them up there left the titlebar with nothing
+  // to name while one was open.
+  const activeRow = model.activeRow;
   const parentRow = activeRow?.branchOf
     ? model.rows.find((row) => row.id === activeRow.branchOf?.id)
     : undefined;
@@ -292,15 +299,27 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
     () =>
       subscribeScheduledTasksDue((task) => {
         void scheduledTasksStore.refresh();
+        // A firing opens a Session, and that Session IS the run — so the toast
+        // offers the run itself when it produced one, falling back to the list
+        // when it did not. `runs[0]` is the newest: the history unshifts.
+        const ran = task.runs?.[0]?.sessionId;
         toast({
           title: shell.app.scheduledTaskDue,
           description: task.title,
           action: (
             <ToastAction
               altText={shell.app.viewScheduledTasks}
-              onClick={() =>
-                uiStore.navigate({ section: 'automations', module: 'scheduled-tasks' })
-              }
+              onClick={() => {
+                const key = ran
+                  ? desktopSessionKeyForRun(sessionsStore.getState().sessions, ran)
+                  : undefined;
+                if (key) {
+                  uiStore.navigate({ section: 'sessions' });
+                  sessionsStore.select(key);
+                  return;
+                }
+                uiStore.navigate({ section: 'automations', module: 'scheduled-tasks' });
+              }}
             >
               {shell.app.viewScheduledTasks}
             </ToastAction>
@@ -577,6 +596,12 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
               // the actions slot stays empty there (plan §2.12).
               view === 'settings' ? (
                 <SettingsIdentity />
+              ) : // One scheduled task's page puts its breadcrumb here, where the
+              // reference draws it: the window's top row, beside the window
+              // controls rather than above the page's own title. It renders
+              // nothing while the list is showing.
+              view === 'automations' ? (
+                <ScheduledTaskIdentity />
               ) : view === 'session' && activeId ? (
                 <SessionIdentity
                   key={activeId}
@@ -640,13 +665,20 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
             from the first one: it starts at the top edge, it narrows the
             titlebar and the transcript together, and full screen is simply
             this column growing to the whole frame. */}
-        <AnimatePresence initial={false}>
-          {view === 'session' && activeId && !workbar.collapsed && !localPending && (
-            <WorkbarColumn>
+        {/* One column, two occupants. The session panel is what the column
+            holds by default; opening a face takes it, and putting the face
+            away gives it back. `collapsed` is the switch between them, so the
+            titlebar keeps one button rather than two competing for a column
+            only one of them can have. */}
+        {view === 'session' && activeId && !localPending && (
+          <WorkbarColumn collapsed={workbar.collapsed}>
+            {workbar.workbarHasColumn ? (
               <WorkbarPane sessionId={activeId} workbar={workbar} />
-            </WorkbarColumn>
-          )}
-        </AnimatePresence>
+            ) : (
+              <SessionPanel sessionId={activeId} />
+            )}
+          </WorkbarColumn>
+        )}
       </div>
 
       <CommandPalette
@@ -737,21 +769,30 @@ function hostRef(
  * box-shadow drawn outside its box, hairline ring included, and a clip here
  * would cut the left edge of that away.
  */
-function WorkbarColumn(props: { children: ReactNode }) {
+function WorkbarColumn(props: { collapsed: boolean; children: ReactNode }) {
   const reduceMotion = useReducedMotion();
-  const present = useIsPresent();
   return (
     <motion.div
-      // While it is leaving it is still in the tree, and a pane the reader has
-      // put away should not answer to the keyboard or be read out.
-      aria-hidden={!present || undefined}
-      inert={!present || undefined}
-      initial={{ width: 0 }}
-      animate={{ width: 'auto' }}
-      exit={{ width: 0 }}
+      // `initial={false}` is the point: the column is part of a session's
+      // layout, not something that arrives. Opening a session must show it
+      // already there — an entrance animation on every navigation is the
+      // column announcing itself for no reason. Collapsing and expanding still
+      // animate, because those are the reader's own act.
+      //
+      // Hidden it is still in the tree, and a column the reader put away must
+      // not answer to the keyboard or be read out.
+      aria-hidden={props.collapsed || undefined}
+      inert={props.collapsed || undefined}
+      initial={false}
+      animate={{ width: props.collapsed ? 0 : 'auto' }}
       transition={{ duration: reduceMotion ? 0 : 0.2, ease: 'easeOut' }}
       data-maka-contract="session-workbar-column"
-      className="flex shrink-0"
+      // Clipped ONLY while away. Open, this column must not clip: the pane's
+      // frame is a box-shadow drawn outside its box, hairline ring included,
+      // and a clip here cuts the left edge of that off. Collapsed it has to
+      // clip, because the column stays mounted at zero width and its child
+      // would otherwise hang over the transcript.
+      className={cn('flex shrink-0', props.collapsed && 'overflow-hidden')}
     >
       {props.children}
     </motion.div>

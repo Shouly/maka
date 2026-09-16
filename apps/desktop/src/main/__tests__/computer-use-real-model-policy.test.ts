@@ -28,7 +28,7 @@ import {
 
 function tool(calls: string[]): MakaTool {
   return {
-    name: 'maka_computer',
+    name: 'Computer',
     description: 'test',
     parameters: {},
     impl: async (args) => {

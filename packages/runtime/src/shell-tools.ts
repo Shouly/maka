@@ -31,6 +31,7 @@ import {
   type TerminalInputAction,
 } from '@maka/core/terminal-input';
 import { isActiveShellRunStatus } from '@maka/core/shell-run';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import { redactSecrets } from '@maka/core/redaction';
 import type { ToolResultContent } from '@maka/core/events';
 import type { ToolExecutionFacts } from '@maka/core/permission';
@@ -40,10 +41,8 @@ import type { SandboxType } from './sandbox/types.js';
 import { isLikelySandboxDenial } from './sandbox/detect.js';
 import { runShellWithBoundedTail, type BoundedShellResult } from './shell-exec.js';
 import {
-  bashToolShellGuidance,
   bashToolTurnShellGuidance,
   defaultShellPlan,
-  type ShellPlan,
   throwIfShellSetupFailed,
   type TurnShellPlan,
 } from './shell-detect.js';
@@ -76,6 +75,59 @@ import {
   sandboxBoundaryExpansionSchema,
   selectedBashBoundaryExpansion,
 } from './sandbox-boundary-declaration.js';
+
+/**
+ * What the user reads instead of the command.
+ *
+ * The raw command is what runs, and it is kept; this is the line a person sees
+ * in the transcript, so it has to be a sentence and not a shell fragment. The
+ * runtime records it with the rest of the arguments and does nothing else with
+ * it — it never changes what executes.
+ */
+export const MAX_BASH_DESCRIPTION_CHARS = 200;
+
+export const bashDescriptionField = z
+  .string()
+  .max(MAX_BASH_DESCRIPTION_CHARS)
+  .optional()
+  .describe(
+    'Clear, concise description of what this command does in active voice. ' +
+      "Say what the command does in plain words: do not echo the command's text, its flags, or file paths — " +
+      'the user reads this description, often without seeing the command.',
+  );
+
+/**
+ * The Bash description, shared by every builder so the contract cannot drift
+ * between the executor-backed and the shell-run-backed tool.
+ *
+ * The opening section is the general shell contract; `# Git` is there because
+ * git is the one program whose interactive modes hang a non-interactive shell
+ * forever, and `# Maka` carries what only this host can say — which shell the
+ * turn actually resolved, background and PTY runs, and the sandbox boundary.
+ */
+export function bashToolDescription(
+  shell: TurnShellPlan,
+  makaBullets: readonly string[],
+  maxTimeoutMs: number = MAX_FOREGROUND_BASH_TIMEOUT_MS,
+): string {
+  const guidance = bashToolTurnShellGuidance(shell);
+  return [
+    'Executes a bash command and returns its output.',
+    '',
+    "- Working directory persists between calls, but prefer absolute paths — `cd` in a compound command can trigger a permission prompt. Shell state (env vars, functions) does not persist; the shell is initialized from the user's profile.",
+    '- Command output is displayed to you, not reliably to the user.',
+    `- \`timeout\` is in milliseconds: default ${DEFAULT_BASH_TIMEOUT_MS}, max ${maxTimeoutMs}.`,
+    '',
+    '# Git',
+    '- Interactive flags (`-i`, e.g. `git rebase -i`, `git add -i`) are not supported in this environment.',
+    '- Use the `gh` CLI for GitHub operations (PRs, issues, API).',
+    '- Commit or push only when the user asks. If on the default branch, branch first.',
+    '',
+    '# Copilot',
+    ...(guidance ? [`- ${guidance}`] : []),
+    ...makaBullets,
+  ].join('\n');
+}
 
 export interface ForegroundBashExecuteInput {
   command: string;
@@ -121,17 +173,24 @@ export interface ShellRunLauncher {
 export function buildForegroundBashTool(options: BuildForegroundBashToolOptions): MakaTool {
   const maxTimeoutMs = options.maxTimeoutMs ?? 600_000;
   return {
-    name: 'Bash',
+    name: TOOL_NAMES.bash,
     activityKind: 'command',
     description: options.description,
     parameters: z.object({
-      command: z.string().describe('The shell command to execute'),
-      timeout_ms: z.number().int().positive().max(maxTimeoutMs).optional(),
+      command: z.string().describe('The command to execute'),
+      timeout: z
+        .number()
+        .int()
+        .positive()
+        .max(maxTimeoutMs)
+        .optional()
+        .describe(`Optional timeout in milliseconds (max ${maxTimeoutMs})`),
+      description: bashDescriptionField,
     }),
     toModelOutput: ({ output }) => bashToolResultToModelOutput(output),
     ...(options.executionFacts ? { executionFacts: options.executionFacts } : {}),
-    impl: async ({ command, timeout_ms }, ctx) => {
-      const timeoutMs = timeout_ms ?? options.defaultTimeoutMs?.(command);
+    impl: async ({ command, timeout }, ctx) => {
+      const timeoutMs = timeout ?? options.defaultTimeoutMs?.(command);
       const result = await options.execute({ command, cwd: ctx.cwd, timeoutMs, ctx });
       if (options.emitReturnedOutput) {
         if (result.stdout) ctx.emitOutput('stdout', result.stdout);
@@ -156,9 +215,12 @@ export function buildLocalForegroundBashTool(
 ): MakaTool {
   const shell = options.shell ?? { plan: defaultShellPlan() };
   return buildForegroundBashTool({
-    description:
-      withTurnShellGuidance('Run a shell command in the session cwd.', shell) +
-      ' Subject to permission policy.',
+    description: bashToolDescription(shell, [
+      '- The command runs to completion and the result is what it printed. A failure leads with an `Exit code N` line; a command that printed nothing returns "(no output)".',
+      '- `description` is what the user reads in place of the raw command.',
+      '- Read, Glob, Grep and Edit do the same work as cat/ls/find/sed with bounded output and the session boundary applied — reach for them first.',
+      '- Subject to the permission policy of the session.',
+    ]),
     ...(options.executionFacts ? { executionFacts: options.executionFacts } : {}),
     defaultTimeoutMs: () => 120_000,
     execute: async ({ command, cwd, timeoutMs, ctx }) => {
@@ -228,26 +290,37 @@ export function buildManagedBashTool(
   const shell = options.shell ?? { plan: defaultShellPlan() };
   const declareSandboxBoundary = options.declareSandboxBoundary !== false;
   const managedBashFields = {
-    command: z.string().describe('The shell command to execute'),
-    timeout_ms: z.number().int().positive().max(MAX_SHELL_RUN_TIMEOUT_MS).optional(),
-    run_in_background: z.boolean().optional(),
-    pty: z.boolean().optional(),
+    command: z.string().describe('The command to execute'),
+    timeout: z
+      .number()
+      .int()
+      .positive()
+      .max(MAX_SHELL_RUN_TIMEOUT_MS)
+      .optional()
+      .describe(
+        `Optional timeout in milliseconds (foreground default ${DEFAULT_BASH_TIMEOUT_MS}, foreground max ${MAX_FOREGROUND_BASH_TIMEOUT_MS}; background max ${MAX_SHELL_RUN_TIMEOUT_MS})`,
+      ),
+    run_in_background: z
+      .boolean()
+      .optional()
+      .describe('Run the command detached as a tracked task and return a ref instead of output'),
+    pty: z
+      .boolean()
+      .optional()
+      .describe('Allocate a terminal for the run; requires run_in_background'),
+    description: bashDescriptionField,
   };
   const refineManagedBash = (
-    { timeout_ms, run_in_background, pty }: z.infer<z.ZodObject<typeof managedBashFields>>,
+    { timeout, run_in_background, pty }: z.infer<z.ZodObject<typeof managedBashFields>>,
     ctx: z.core.$RefinementCtx,
   ) => {
-    if (
-      !run_in_background &&
-      timeout_ms !== undefined &&
-      timeout_ms > MAX_FOREGROUND_BASH_TIMEOUT_MS
-    ) {
+    if (!run_in_background && timeout !== undefined && timeout > MAX_FOREGROUND_BASH_TIMEOUT_MS) {
       ctx.addIssue({
         code: 'too_big',
         maximum: MAX_FOREGROUND_BASH_TIMEOUT_MS,
         origin: 'number',
         inclusive: true,
-        path: ['timeout_ms'],
+        path: ['timeout'],
         message: `Foreground Bash timeout may not exceed ${MAX_FOREGROUND_BASH_TIMEOUT_MS}ms`,
       });
     }
@@ -260,14 +333,17 @@ export function buildManagedBashTool(
     }
   };
   return {
-    name: 'Bash',
+    name: TOOL_NAMES.bash,
     activityKind: 'command',
-    description:
-      withTurnShellGuidance(options.lead ?? 'Run a shell command in the session cwd.', shell) +
-      ` Foreground is the default (timeout ${DEFAULT_BASH_TIMEOUT_MS}ms, maximum ${MAX_FOREGROUND_BASH_TIMEOUT_MS}ms).` +
-      ` Set run_in_background=true only when the command should continue as a tracked runtime background task; background commands have no default timeout (maximum explicit timeout ${MAX_SHELL_RUN_TIMEOUT_MS}ms).` +
-      ' Set pty=true together with run_in_background=true only for terminal semantics or later input; use the returned ref with Read or WriteStdin.' +
-      (declareSandboxBoundary ? ' Enforced by the current session sandbox boundary.' : ''),
+    description: bashToolDescription(shell, [
+      ...(options.lead ? [`- ${options.lead}`] : []),
+      `- Foreground is the default: the command runs to completion and the result is what it printed. A failure leads with an \`Exit code N\` line; a command that printed nothing returns "(no output)".`,
+      `- Set \`run_in_background: true\` for a command that should keep running as a tracked task — a dev server, a watcher, a long build. It returns a ref instead of output: read what it prints with Read on that ref, and end it with TaskStop. Background runs have no default timeout (maximum explicit timeout ${MAX_SHELL_RUN_TIMEOUT_MS}ms).`,
+      '- Set `pty: true` together with `run_in_background: true` only when the command needs terminal semantics or later keystrokes; send those with TaskInput on the returned ref.',
+      '- `description` is what the user reads in place of the raw command.',
+      '- Read, Glob, Grep and Edit do the same work as cat/ls/find/sed with bounded output and the session boundary applied — reach for them first.',
+      ...(declareSandboxBoundary ? ['- Enforced by the current session sandbox boundary.'] : []),
+    ]),
     parameters: declareSandboxBoundary
       ? preprocessBashBoundaryDeclaration(
           z
@@ -287,7 +363,7 @@ export function buildManagedBashTool(
     ...(options.executionFacts ? { executionFacts: options.executionFacts } : {}),
     impl: async (input, ctx) => {
       throwIfShellSetupFailed(shell);
-      const { command, timeout_ms, run_in_background, pty } = input;
+      const { command, timeout, run_in_background, pty } = input;
       const normalizedRequiredBoundary = await preflightDeclaredSandboxBoundary(
         selectedBashBoundaryExpansion(input),
         ctx,
@@ -300,7 +376,7 @@ export function buildManagedBashTool(
       });
       const onCompletion = onceCompletion(transformed?.onCompletion);
       const timeoutMs =
-        timeout_ms ??
+        timeout ??
         (run_in_background
           ? undefined
           : clampHostForegroundTimeout(options.defaultTimeoutMs?.(command)));
@@ -364,23 +440,18 @@ function onceCompletion(
   };
 }
 
-export function withShellGuidance(lead: string, shell: ShellPlan): string {
-  const guidance = bashToolShellGuidance(shell);
-  return guidance ? `${lead} ${guidance}` : lead;
-}
-
-/** {@link withShellGuidance} for a turn-scoped plan, including the broken-preference outage notice. */
-export function withTurnShellGuidance(lead: string, shell: TurnShellPlan): string {
-  const guidance = bashToolTurnShellGuidance(shell);
-  return guidance ? `${lead} ${guidance}` : lead;
-}
-
 export function buildStopBackgroundTaskTool(backgroundTasks: BackgroundTaskStopper): MakaTool {
   return {
-    name: 'StopBackgroundTask',
+    name: TOOL_NAMES.taskStop,
     activityKind: 'command',
-    description:
-      'Stop a background task by runtime ref. Currently supports background shell run refs returned by Bash.',
+    description: [
+      'Stops a running background task.',
+      '',
+      '- `ref` is the runtime ref a background Bash returned, for example maka://runtime/background-tasks/<id>. Background shell runs are the only kind of task this accepts today.',
+      '- Only tasks of the current session can be stopped; a ref from elsewhere is rejected.',
+      '- Returns the task state after the stop. A task that had already finished is reported as such rather than failing.',
+      '- Stop a task as soon as its work is done: one left running holds its process for the rest of the session.',
+    ].join('\n'),
     parameters: z.object({
       ref: z
         .string()
@@ -392,13 +463,13 @@ export function buildStopBackgroundTaskTool(backgroundTasks: BackgroundTaskStopp
   };
 }
 
-/** A syntactically valid PTY ref used only in the documented WriteStdin examples. */
+/** A syntactically valid PTY ref used only in the documented TaskInput examples. */
 export const WRITE_STDIN_EXAMPLE_REF = 'maka://runtime/background-tasks/sr_example';
 
 /**
- * One minimal legal payload per WriteStdin action type (plus a resize-only
+ * One minimal legal payload per TaskInput action type (plus a resize-only
  * call). Each entry is valid under the loose provider schema AND passes strict
- * validation after normalization — the WriteStdin contract conformance test
+ * validation after normalization — the TaskInput contract conformance test
  * asserts both, so the documented shape can never drift from what the runtime
  * actually accepts. The `key (chord)` entry shows the ctrl-modified printable
  * form the description points at.
@@ -461,7 +532,7 @@ export const WRITE_STDIN_MINIMAL_EXAMPLES: readonly {
 ];
 
 /**
- * The concrete minimal example embedded in the WriteStdin tool description,
+ * The concrete minimal example embedded in the TaskInput tool description,
  * derived from the pinned {@link WRITE_STDIN_MINIMAL_EXAMPLES} `key (named)`
  * entry so the documented shape can never drift from what conformance tests
  * exercise. The example ref id is templated to `<id>` for human readers.
@@ -474,7 +545,7 @@ export const WRITE_STDIN_DESCRIPTION_EXAMPLE_JSON = JSON.stringify(
 ).replace('sr_example', '<id>');
 
 /**
- * Build the two-layer WriteStdin schema pair as a single unit so the
+ * Build the two-layer TaskInput schema pair as a single unit so the
  * provider-visible (loose) schema and the strict runtime validator can be
  * exercised together by conformance tests. The loose provider schema exists so
  * providers that inject `null`/`0`/`''` placeholders are tolerated; the strict
@@ -482,7 +553,7 @@ export const WRITE_STDIN_DESCRIPTION_EXAMPLE_JSON = JSON.stringify(
  * and enforces the real contract. {@link WRITE_STDIN_MINIMAL_EXAMPLES} pins a
  * minimal legal payload per action type that must pass BOTH layers.
  */
-/** The validated shape the strict WriteStdin schema yields after normalization. */
+/** The validated shape the strict TaskInput schema yields after normalization. */
 export interface WriteStdinInput {
   ref: string;
   input?: string;
@@ -639,15 +710,18 @@ export function buildWriteStdinTool(ptyControls: PtyControlWriter): MakaTool {
   });
   const parseInput = (value: unknown) => strictParameters.parse(value);
   return {
-    name: 'WriteStdin',
+    name: TOOL_NAMES.taskInput,
     activityKind: 'command',
-    description:
-      'Send an ordered sequence of text, key, and mouse actions to a background PTY and/or resize it, then return the terminal state at the next parser cut. ' +
-      `Named keys are ${TERMINAL_INPUT_NAMED_KEYS.join(', ')}. Use a printable ASCII key with ctrl or alt for chords such as Ctrl-B; use text for ordinary typing. ` +
-      'Mouse coordinates are zero-based terminal cells and work only while the application has enabled SGR cell mouse reporting. ' +
-      'Actions are written atomically in their listed order. Text is ordinary audited tool-call data, not a secure secret channel. ' +
-      `Minimal example: ${WRITE_STDIN_DESCRIPTION_EXAMPLE_JSON}. ` +
-      'The returned output is the terminal state at that cut, not output attributed to this input; use Read on the ref to observe later output.',
+    description: [
+      'Sends text, keys and mouse actions to a background PTY task, and/or resizes it.',
+      '',
+      '- `ref` is the runtime ref a `pty: true` background Bash returned.',
+      `- Named keys are ${TERMINAL_INPUT_NAMED_KEYS.join(', ')}. Use a printable ASCII key with ctrl or alt for a chord such as Ctrl-B; use a text action for ordinary typing.`,
+      '- Mouse coordinates are zero-based terminal cells and only reach an application that has enabled SGR cell mouse reporting.',
+      '- Actions are written atomically, in the order listed. They are ordinary audited tool-call data, not a secure channel — never send a secret through them.',
+      `- Minimal example: ${WRITE_STDIN_DESCRIPTION_EXAMPLE_JSON}`,
+      '- Returns the terminal state at the next parser cut. That is the screen as it stands, NOT output attributed to this input; use Read on the ref to watch what follows.',
+    ].join('\n'),
     parameters,
     permissionArgs: (input) => parseInput(input),
     impl: (input, ctx) => {

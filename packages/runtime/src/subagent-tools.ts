@@ -20,6 +20,7 @@
 import { z } from 'zod';
 import { decodeCanonicalToolResultContent } from '@maka/core/tool-result-record-schema';
 import { isSafeSubagentPresetId } from '@maka/core/subagent-settings';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import { type ToolResultContent } from '@maka/core/events';
 import type { MakaTool, MakaToolContext } from './tool-runtime.js';
 import {
@@ -35,9 +36,9 @@ import {
 } from './agent-catalog.js';
 import { ChildAgentProgressProjector } from './child-agent-progress.js';
 
-export const AGENT_SPAWN_TOOL_NAME = 'agent_spawn';
-export const AGENT_LIST_TOOL_NAME = 'agent_list';
-export const AGENT_OUTPUT_TOOL_NAME = 'agent_output';
+export const AGENT_SPAWN_TOOL_NAME = TOOL_NAMES.agent;
+export const AGENT_LIST_TOOL_NAME = TOOL_NAMES.listAgents;
+export const AGENT_OUTPUT_TOOL_NAME = TOOL_NAMES.agentOutput;
 export const AGENT_TOOL_GROUP_ID = 'agent';
 export const AGENT_TOOL_NAMES = [
   AGENT_SPAWN_TOOL_NAME,
@@ -59,9 +60,13 @@ const AGENT_LIST_PAGE_SIZE = 8;
 const AGENT_LIST_MAX_RESPONSE_CHARS = 7_000;
 const AGENT_LIST_DESCRIPTION_MAX_CHARS = 240;
 const AGENT_LIST_MODEL_MAX_CHARS = 160;
+/** The 3-5 word label a person reads while the child runs. */
+const AGENT_DESCRIPTION_MAX_CHARS = 120;
+/** Longest model name an override may name before it is obviously not one. */
+const AGENT_MODEL_MAX_CHARS = 128;
 
 /**
- * Which schema fields each `agent_output` locator needs. A rejection that only
+ * Which schema fields each `AgentOutput` locator needs. A rejection that only
  * says "its matching identity fields" leaves the model guessing which of the
  * four optional id fields to add, so name them.
  */
@@ -91,9 +96,10 @@ export function buildSubagentSpawnTool(
   deps: { definitions?: readonly AgentDefinition[] } = {},
 ): MakaTool<
   {
-    profile?: string;
-    subagent_id?: string;
-    task: string;
+    subagent_type: string;
+    description: string;
+    prompt: string;
+    model?: string;
     write_back?: string;
     isolation?: string;
   },
@@ -101,78 +107,123 @@ export function buildSubagentSpawnTool(
 > {
   const definitions = deps.definitions ?? BUILTIN_AGENT_DEFINITIONS;
   const profiles = agentProfilesForDefinitions(definitions);
+  const isLegacyProfile = (value: string): boolean => profiles.some((profile) => profile === value);
+  // A built-in profile this composition does not carry is a wrong selector, not
+  // an unknown preset id: say so at the schema, where the model can still fix
+  // it, rather than letting it travel to the catalog as a preset lookup.
+  const allBuiltinProfiles = agentProfilesForDefinitions(BUILTIN_AGENT_DEFINITIONS);
+  const isUnavailableBuiltinProfile = (value: string): boolean =>
+    !isLegacyProfile(value) && allBuiltinProfiles.some((profile) => profile === value);
+  const missingSelectorMessage =
+    'No child selector was provided. Call ListAgents and pass a returned subagent_id as ' +
+    `subagent_type, or pass one built-in profile: ${profiles.join(', ')}.`;
   return {
     name: AGENT_SPAWN_TOOL_NAME,
     displayName: 'Agent',
-    description:
-      'Run one bounded foreground child task. Prefer agent_list, then select the user-approved subagent_id whose description fits the task; profile is retained for legacy callers. If both selectors are present, subagent_id wins and profile is ignored.',
-    parameters: z.preprocess(
-      cleanSubagentSpawnInput,
-      z
-        .object({
-          profile: z.enum(profiles).optional().describe('Legacy child capability profile.'),
-          subagent_id: z
-            .string()
-            .min(1)
-            .max(128)
-            .refine(isSafeSubagentPresetId)
-            .optional()
-            .describe('User-approved subagent preset id from agent_list.'),
-          task: z
-            .string()
-            .min(1)
-            .max(60_000)
-            .describe('Bounded task for the selected child agent.'),
-          write_back: z
-            .enum(AGENT_SPAWN_WRITE_BACK_MODES)
-            .optional()
-            .describe(
-              'Requested child write-back mode. Each built-in profile declares its supported modes.',
-            ),
-          isolation: z
-            .enum(AGENT_SPAWN_ISOLATION_MODES)
-            .optional()
-            .describe(
-              'Requested child workspace isolation. Worktree profiles fail closed until a worktree child executor is available.',
-            ),
-        })
-        .strip()
-        .superRefine((input, ctx) => {
-          if (!input.profile && !input.subagent_id) {
+    description: [
+      'Launch a new agent to handle complex, multi-step tasks.',
+      '',
+      'Reach for this when the work is self-contained and what you want back is the conclusion, not everything the child had to read to reach it — a search across many files, a round of research, an implementation slice. Delegate it and you keep the conclusion, not the file dumps. For a single-fact lookup where you already know the file or symbol, look it up yourself. Once you have delegated a search, do not also run it yourself.',
+      '',
+      '- Call ListAgents first and pass the `subagent_type` whose description fits the task; a built-in profile name is also a valid `subagent_type`.',
+      '- The child sees nothing of this conversation, cannot ask you or the user anything, and runs once, so write `prompt` as the whole brief.',
+      "- `description` is the 3-5 word label a person reads while the child runs; it is not part of the child's brief.",
+      '- The turn waits here until the child finishes.',
+      "- The agent's final report is not shown to the user — relay what matters in your own words.",
+      '- `write_back` and `isolation` must match the contract the selected agent declares and ListAgents shows; a mismatch is rejected before any child starts, and a worktree agent fails closed while no worktree executor exists.',
+      '- Each agent carries its own model, so `model` is accepted and ignored; the result says so when you pass one.',
+      '- Returns the child status and summary plus the ids AgentOutput needs for its final text.',
+      '- Fails when `subagent_type` is unknown or unavailable, which ListAgents resolves, and when this session has no child-agent capability at all; that one repeats on retry, so do the task with the tools you already have.',
+    ].join('\n'),
+    parameters: z
+      .object({
+        subagent_type: z
+          .string({ error: () => missingSelectorMessage })
+          .min(1)
+          .max(128)
+          // Preset ids are per user and cannot be enumerated in a frozen
+          // schema, but the built-in profiles this composition can actually
+          // run can — and naming them is what keeps a wrong selector out of
+          // the catalog lookup in the first place.
+          .describe(
+            'The type of specialized agent to use for this task, from ListAgents. ' +
+              `Built-in profiles available here: ${profiles.join(', ')}.`,
+          ),
+        description: z
+          .string()
+          .min(1)
+          .max(AGENT_DESCRIPTION_MAX_CHARS)
+          .describe('A short (3-5 word) description of the task'),
+        prompt: z.string().min(1).max(60_000).describe('The task for the agent to perform'),
+        model: z
+          .string()
+          .min(1)
+          .max(AGENT_MODEL_MAX_CHARS)
+          .optional()
+          .describe(
+            'Optional model override. Every agent here carries its own model, so this is accepted and ignored.',
+          ),
+        write_back: z
+          .enum(AGENT_SPAWN_WRITE_BACK_MODES)
+          .optional()
+          .describe(
+            'Requested child write-back mode. Each built-in profile declares its supported modes.',
+          ),
+        isolation: z
+          .enum(AGENT_SPAWN_ISOLATION_MODES)
+          .optional()
+          .describe(
+            'Requested child workspace isolation. Worktree profiles fail closed until a worktree child executor is available.',
+          ),
+      })
+      .strip()
+      .superRefine((input, ctx) => {
+        if (!isLegacyProfile(input.subagent_type)) {
+          if (isUnavailableBuiltinProfile(input.subagent_type)) {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
+              path: ['subagent_type'],
               message:
-                'No child selector was provided. Call agent_list and pass a returned subagent_id to agent_spawn, ' +
-                `or pass one legacy profile: ${profiles.join(', ')}.`,
+                `Agent profile "${input.subagent_type}" is not runnable in this composition. ` +
+                `Available built-in profiles: ${profiles.join(', ')}.`,
             });
             return;
           }
-          if (input.subagent_id) return;
-          if (!input.profile) return;
-          const definition = requireAgentDefinitionByProfile(definitions, input.profile);
-          const requestedWriteBack = input.write_back ?? definition.contract.defaultWriteBack;
-          if (!definition.contract.supportedWriteBack.some((mode) => mode === requestedWriteBack)) {
+          if (!isSafeSubagentPresetId(input.subagent_type)) {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
-              path: ['write_back'],
-              message: `Agent profile "${definition.profile}" does not support write_back "${requestedWriteBack}".`,
+              path: ['subagent_type'],
+              message:
+                'subagent_type is not a well-formed preset id. Call ListAgents and pass a returned ' +
+                `subagent_id, or one built-in profile: ${profiles.join(', ')}.`,
             });
           }
-          const requestedIsolation = input.isolation ?? definition.contract.workspace;
-          if (requestedIsolation !== definition.contract.workspace) {
-            ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              path: ['isolation'],
-              message: `Agent profile "${definition.profile}" requires isolation "${definition.contract.workspace}", not "${requestedIsolation}".`,
-            });
-          }
-        }),
-    ),
+          return;
+        }
+        const definition = requireAgentDefinitionByProfile(definitions, input.subagent_type);
+        const requestedWriteBack = input.write_back ?? definition.contract.defaultWriteBack;
+        if (!definition.contract.supportedWriteBack.some((mode) => mode === requestedWriteBack)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['write_back'],
+            message: `Agent profile "${definition.profile}" does not support write_back "${requestedWriteBack}".`,
+          });
+        }
+        const requestedIsolation = input.isolation ?? definition.contract.workspace;
+        if (requestedIsolation !== definition.contract.workspace) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['isolation'],
+            message: `Agent profile "${definition.profile}" requires isolation "${definition.contract.workspace}", not "${requestedIsolation}".`,
+          });
+        }
+      }),
     categoryHint: 'subagent',
     impl: async (input, ctx) => {
-      const definition = input.subagent_id
-        ? await resolvePresetDefinition(input.subagent_id, ctx, definitions)
-        : requireAgentDefinitionByProfile(definitions, input.profile!);
+      const preset = isLegacyProfile(input.subagent_type) ? undefined : input.subagent_type;
+      const definition = preset
+        ? await resolvePresetDefinition(preset, ctx, definitions)
+        : requireAgentDefinitionByProfile(definitions, input.subagent_type);
       const requestedWriteBack = input.write_back ?? definition.contract.defaultWriteBack;
       if (!definition.contract.supportedWriteBack.some((mode) => mode === requestedWriteBack)) {
         throw new Error(
@@ -187,8 +238,8 @@ export function buildSubagentSpawnTool(
       }
       if (!ctx.spawnChildSession) {
         throw new Error(
-          'agent_spawn is not available in this session, so no child agent was started. ' +
-            'Retrying agent_spawn will fail the same way — do the task yourself with the tools you already have.',
+          'Agent is not available in this session, so no child agent was started. ' +
+            'Retrying Agent will fail the same way — do the task yourself with the tools you already have.',
           {
             cause: new Error('spawnChildSession capability is unavailable in this runtime context'),
           },
@@ -201,8 +252,8 @@ export function buildSubagentSpawnTool(
         result = projectSubagentToolResult(
           await ctx.spawnChildSession({
             agentProfile: definition.profile,
-            ...(input.subagent_id ? { subagentId: input.subagent_id } : {}),
-            prompt: input.task,
+            ...(preset ? { subagentId: preset } : {}),
+            prompt: input.prompt,
             onEvent: (event) => progress.observe(event),
           }),
         );
@@ -219,14 +270,21 @@ export function buildSubagentSpawnTool(
         ...result,
       } satisfies SubagentToolResult;
     },
+    // A silently ignored argument is a lie the caller repeats. The durable
+    // result stays the canonical subagent shape; the note rides on the model's
+    // view of it, and only when a model override was actually asked for.
+    toModelOutput: ({ input, output }) => {
+      const model = (input as { model?: unknown } | null)?.model;
+      if (typeof model !== 'string' || model.trim() === '') return undefined;
+      return {
+        type: 'json',
+        value: {
+          ...(output as Record<string, unknown>),
+          model_override: `ignored: "${model}" was not applied because the selected agent carries its own model`,
+        },
+      };
+    },
   };
-}
-
-function cleanSubagentSpawnInput(input: unknown): unknown {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return input;
-  const cleaned = { ...(input as Record<string, unknown>) };
-  if (cleaned.subagent_id !== undefined) delete cleaned.profile;
-  return cleaned;
 }
 
 async function resolvePresetDefinition(
@@ -239,7 +297,7 @@ async function resolvePresetDefinition(
   }
   const catalog = await ctx.listChildAgents();
   if (!catalog || typeof catalog !== 'object' || Array.isArray(catalog)) {
-    throw new Error('agent_list returned an invalid catalog');
+    throw new Error('ListAgents returned an invalid catalog');
   }
   const presets = (catalog as { presets?: unknown }).presets;
   if (!Array.isArray(presets)) throw new Error('Configured subagent catalog is unavailable');
@@ -251,7 +309,7 @@ async function resolvePresetDefinition(
       (candidate as { id?: unknown }).id === subagentId &&
       typeof (candidate as { profile?: unknown }).profile === 'string',
   );
-  if (!preset) throw new Error(`Unknown subagent_id "${subagentId}". Call agent_list first.`);
+  if (!preset) throw new Error(`Unknown subagent_id "${subagentId}". Call ListAgents first.`);
   if (preset.availability?.status !== 'available') {
     throw new Error(`Subagent preset "${subagentId}" is unavailable.`);
   }
@@ -299,8 +357,16 @@ export function buildSubagentListTool(): MakaTool<
   return {
     name: AGENT_LIST_TOOL_NAME,
     displayName: 'Agent List',
-    description:
-      'List a compact page of subagents to select. The default selection view returns runnable user-approved subagent_id values first, followed by legacy choices with separate agent_id (Graph) and profile (agent_spawn) selectors. Use view=catalog only to diagnose unavailable routes. Child execution history is intentionally excluded; use refs returned by agent_spawn or asynchronous graph work with agent_output.',
+    description: [
+      'List the child agents this session can actually run, with the selector each caller needs. Call it before the first delegation and again whenever a selector comes back unknown or unavailable: the catalog is per user and changes between sessions.',
+      '',
+      '- Match the task to an entry description, not to its name. Each entry carries the id, that description, the model behind it, and the workspace and write-back contract Agent will hold you to.',
+      '- The ids are not interchangeable: subagent_id is what Agent takes as subagent_type and UpdateAgentGraph as target_kind=new_preset, agent_id goes to UpdateAgentGraph as target_kind=new_agent, and a built-in profile is also a valid Agent subagent_type.',
+      '- The default selection view lists only what is runnable. view=catalog adds the unavailable entries and the reason each is unavailable — read it to diagnose a rejected selector, not to pick from.',
+      '- One page per call; a response carrying next_cursor has more entries behind it.',
+      '- It reports no execution history at all. What a child did is read with AgentOutput, using the ids Agent or the graph returned.',
+      '- Fails when the session exposes no agent catalog; that repeats on retry, so pick a legacy profile from the Agent schema instead.',
+    ].join('\n'),
     parameters: z
       .object({
         view: z
@@ -313,7 +379,7 @@ export function buildSubagentListTool(): MakaTool<
           .string()
           .regex(/^\d+$/)
           .optional()
-          .describe('next_cursor returned by the previous agent_list page.'),
+          .describe('next_cursor returned by the previous ListAgents page.'),
       })
       .strip(),
     categoryHint: 'read',
@@ -322,8 +388,8 @@ export function buildSubagentListTool(): MakaTool<
       // failure explicit at the embedding boundary.
       if (!ctx.listChildAgents) {
         throw new Error(
-          'agent_list is not available in this session, so no agent catalog could be read. ' +
-            'Retrying agent_list will fail the same way — pick a child agent profile from the agent_spawn schema instead.',
+          'ListAgents is not available in this session, so no agent catalog could be read. ' +
+            'Retrying ListAgents will fail the same way — pick a child agent profile from the Agent schema instead.',
           { cause: new Error('listChildAgents capability is unavailable in this runtime context') },
         );
       }
@@ -339,7 +405,7 @@ function projectAgentList(
   // The host capability remains a rich control-plane projection because spawn
   // and swarm resolve presets through it. Only the model-facing list is narrowed.
   if (!catalog || typeof catalog !== 'object' || Array.isArray(catalog)) {
-    throw new Error('agent_list returned an invalid catalog');
+    throw new Error('ListAgents returned an invalid catalog');
   }
   const raw = catalog as Record<string, unknown>;
   const definitions = Array.isArray(raw.definitions) ? raw.definitions : [];
@@ -499,8 +565,15 @@ export function buildSubagentOutputTool(): MakaTool<
   return {
     name: AGENT_OUTPUT_TOOL_NAME,
     displayName: 'Agent Output',
-    description:
-      'Inspect bounded child output. Use view=result for the final committed model text plus its Graph result record id; runtime_events is the default compatibility view. Always set locator: child_session_run for a graph childSessionId/currentRunId, child_session_latest for its latest run, or a legacy locator. Use view=all only for targeted diagnostics.',
+    description: [
+      'Read what one child agent produced, bounded. Use it after Agent returns, or once SwarmStatus or ViewAgentGraph shows a graph item completed, to get the answer itself rather than the trace that produced it.',
+      '',
+      '- Always set `locator`: the runtime reads only the id fields that locator names. child_session_run takes child_session_id and run_id, child_session_latest takes child_session_id and reads that session latest run, legacy_run takes run_id, legacy_turn takes turn_id. A locator missing its ids is rejected naming the field.',
+      '- view=result is what you normally want: the final committed child text with its graph result record id. runtime_events is the default only for compatibility with older callers, and view=all is for diagnosing a child that failed.',
+      '- Do not read the logs, tool calls or reasoning of a child that is still running to follow its progress. Partial output is not a result, and progress is what SwarmStatus and ViewAgentGraph report.',
+      '- Every view is truncated to fit; max_events and max_bytes bound one call. Narrow the view rather than raising the budget.',
+      '- Fails when the ids name no child run, and when this session cannot read child output at all; the second repeats on retry, so use the summary Agent returned when that child completed.',
+    ].join('\n'),
     parameters: z.preprocess(
       cleanSubagentOutputInput,
       z
@@ -516,16 +589,32 @@ export function buildSubagentOutputTool(): MakaTool<
             .min(1)
             .optional()
             .describe('Linked child Session id. Without run_id, inspects its latest AgentRun.'),
-          run_id: z.string().min(1).optional(),
-          turn_id: z.string().min(1).optional(),
-          max_events: z.number().int().min(1).max(100).optional(),
+          run_id: z
+            .string()
+            .min(1)
+            .optional()
+            .describe('AgentRun id: the run inside a child Session, or a legacy child run.'),
+          turn_id: z.string().min(1).optional().describe('Legacy child turn id.'),
+          max_events: z
+            .number()
+            .int()
+            .min(1)
+            .max(100)
+            .optional()
+            .describe('Cap on events returned by the event views.'),
           max_bytes: z
             .number()
             .int()
             .min(1024)
             .max(128 * 1024)
-            .optional(),
-          view: z.enum(['result', 'events', 'runtime_events', 'all']).optional(),
+            .optional()
+            .describe('Cap on returned bytes; output beyond it is truncated.'),
+          view: z
+            .enum(['result', 'events', 'runtime_events', 'all'])
+            .optional()
+            .describe(
+              'result returns the final committed child text; events and runtime_events return bounded activity; all is for diagnostics.',
+            ),
         })
         .strip()
         .superRefine((input, ctx) => {
@@ -566,10 +655,10 @@ export function buildSubagentOutputTool(): MakaTool<
     categoryHint: 'read',
     impl: async (input, ctx) => {
       if (!ctx.readChildAgentOutput) {
-        // Same reachability as `agent_list` above.
+        // Same reachability as `ListAgents` above.
         throw new Error(
-          'agent_output is not available in this session, so no child output could be read. ' +
-            'Retrying agent_output will fail the same way — use the summary returned when that child completed.',
+          'AgentOutput is not available in this session, so no child output could be read. ' +
+            'Retrying AgentOutput will fail the same way — use the summary returned when that child completed.',
           {
             cause: new Error(
               'readChildAgentOutput capability is unavailable in this runtime context',

@@ -17,9 +17,8 @@
  * under the License.
  */
 
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import type { ComputerUseToolSet } from '@maka/runtime/computer-use-tools';
-
-import type { MakaTool } from '@maka/runtime/tool-runtime';
 
 const ACTIONS_WITHOUT_OBSERVATION_OWNERSHIP = new Set([
   'list_apps',
@@ -99,7 +98,7 @@ export function applyComputerUseRealModelPolicy(
   const allowed = new Set(policy.allowedActions);
   const allowedApps = new Set(policy.allowedApps);
   const wrapped = tools.map((tool) => {
-    if (tool.name !== 'maka_computer') return tool;
+    if (tool.name !== TOOL_NAMES.computer) return tool;
     return {
       ...tool,
       impl: async (args, context) => {
@@ -109,13 +108,13 @@ export function applyComputerUseRealModelPolicy(
         totalActions += 1;
         if (totalActions > policy.maxTotalActions) {
           return {
-            text: 'maka_computer failed: total_action_budget_exceeded',
+            text: `${TOOL_NAMES.computer} failed: total_action_budget_exceeded`,
             error: 'total_action_budget_exceeded',
           };
         }
         if (!allowed.has(action)) {
           return {
-            text: `maka_computer.${action} failed: unsupported_action_policy`,
+            text: `${TOOL_NAMES.computer}.${action} failed: unsupported_action_policy`,
             error: 'unsupported_action_policy',
           };
         }
@@ -125,7 +124,7 @@ export function applyComputerUseRealModelPolicy(
           && (typeof app !== 'string' || !allowedApps.has(app))
         ) {
           return {
-            text: `maka_computer.${action} failed: target_policy_mismatch`,
+            text: `${TOOL_NAMES.computer}.${action} failed: target_policy_mismatch`,
             error: 'target_policy_mismatch',
           };
         }
@@ -142,7 +141,7 @@ export function applyComputerUseRealModelPolicy(
           )
         ) {
           return {
-            text: `maka_computer.${action} failed: target_policy_mismatch`,
+            text: `${TOOL_NAMES.computer}.${action} failed: target_policy_mismatch`,
             error: 'target_policy_mismatch',
           };
         }
@@ -150,7 +149,7 @@ export function applyComputerUseRealModelPolicy(
         actionCounts.set(action, actionCount);
         if (actionCount > (policy.maxActionCounts[action] ?? 0)) {
           return {
-            text: `maka_computer.${action} failed: action_budget_exceeded`,
+            text: `${TOOL_NAMES.computer}.${action} failed: action_budget_exceeded`,
             error: 'action_budget_exceeded',
           };
         }

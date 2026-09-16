@@ -45,6 +45,7 @@ import {
   SESSION_WORKBAR_MIN_WIDTH,
   SESSION_WORKBAR_WIDTH_FRACTION,
   isSessionWorkbarCollapsed,
+  workbarHoldsSessionColumn,
 } from '../lib/ported/workbar-layout.js';
 import {
   staticSessionWorkbarTabId,
@@ -73,6 +74,8 @@ export interface WorkbarModel {
   activeTabId: string | null;
   activeFace: WorkbarFace | undefined;
   collapsed: boolean;
+  /** True when the workbar holds the column; false when the session panel does. */
+  workbarHasColumn: boolean;
   expanded: boolean;
   width: number;
   minWidth: number;
@@ -98,6 +101,23 @@ export interface WorkbarModel {
  */
 export function openWorkbarFile(sessionId: string, path: string | undefined): void {
   workbarStore.requestArtifactPath(sessionId, path);
+  uiStore.dispatchWorkbar({
+    type: 'open',
+    placement: 'right',
+    tab: { id: staticSessionWorkbarTabId('files'), kind: 'files' },
+  });
+}
+
+/**
+ * The same handoff by ARTIFACT ID, for a row that already knows one.
+ *
+ * `openWorkbarFile` leaves a path for the Files face to resolve, because a
+ * `file_write` row has only a path. A delivered file carries the id the Host
+ * minted for it, and going back through the path would let the face pick a
+ * different artifact that happens to share the path.
+ */
+export function openWorkbarArtifact(sessionId: string, artifactId: string): void {
+  workbarStore.selectArtifact(sessionId, artifactId);
   uiStore.dispatchWorkbar({
     type: 'open',
     placement: 'right',
@@ -157,7 +177,11 @@ export function useWorkbar(sessionId: string | undefined): WorkbarModel {
     ? layout.panels.right.activeTabId
     : (tabs[0]?.id ?? null);
   const activeFace = tabs.find((tab) => tab.id === activeTabId)?.kind as WorkbarFace | undefined;
-  const collapsed = isSessionWorkbarCollapsed(layout) || tabs.length === 0;
+  // The column is hidden only when the reader hid it. What it holds when shown
+  // is a separate, per-session fact — never inferred from the global tab list,
+  // which outlives the session that opened it.
+  const collapsed = isSessionWorkbarCollapsed(layout);
+  const workbarHasColumn = workbarHoldsSessionColumn(layout);
 
   const open = useCallback((face: WorkbarFace) => {
     uiStore.dispatchWorkbar({
@@ -180,27 +204,25 @@ export function useWorkbar(sessionId: string | undefined): WorkbarModel {
     if (next) workbarStore.setPaneExpanded(false);
   }, []);
 
+  const tabIdOf = staticSessionWorkbarTabId;
+
   const toggleFace = useCallback(
     (face: WorkbarFace) => {
       // A shortcut is a switch, not an accumulator: pressing ⌘P while Files is
-      // already the face on screen puts the pane away rather than re-opening
-      // the same face onto itself.
-      if (!collapsed && activeFace === face) setCollapsed(true);
-      else open(face);
+      // already the face on screen hands the column back to the session panel
+      // rather than re-opening the same face onto itself.
+      if (!collapsed && workbarHasColumn && activeFace === face) {
+        uiStore.dispatchWorkbar({ type: 'close', placement: 'right', tabIds: [tabIdOf(face)] });
+      } else open(face);
     },
-    [activeFace, collapsed, open, setCollapsed],
+    [activeFace, collapsed, open, workbarHasColumn],
   );
 
+  // Hide the column, or bring it back. Which occupant it comes back to is not
+  // this switch's business.
   const toggle = useCallback(() => {
-    if (!collapsed) {
-      setCollapsed(true);
-      return;
-    }
-    // Nothing is open yet on a first use: the pane needs a face to show, and
-    // Files is the one that has something to say about most tasks.
-    if (tabs.length === 0) open('files');
-    else setCollapsed(false);
-  }, [collapsed, open, setCollapsed, tabs.length]);
+    setCollapsed(!collapsed);
+  }, [collapsed, setCollapsed]);
 
   // Full screen covers the window outright, so it no longer has to make room
   // by putting the sidebar away — which it used to do, and which outlived the
@@ -218,6 +240,7 @@ export function useWorkbar(sessionId: string | undefined): WorkbarModel {
     activeTabId,
     activeFace,
     collapsed,
+    workbarHasColumn,
     expanded: expanded && !collapsed,
     width: Math.min(layout.rightWidth, maxWidth),
     minWidth: SESSION_WORKBAR_MIN_WIDTH,

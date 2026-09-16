@@ -33,7 +33,7 @@ owners:
 
 ## Product Boundary
 
-The primary model path is the provider-neutral `maka_computer` function tool
+The primary model path is the provider-neutral `Computer` function tool
 through `AiSdkBackend`. The model observes an Accessibility tree, then uses
 `click_element`, `set_value`, or another semantic action with IDs from that
 observation.
@@ -59,11 +59,11 @@ implicitly turning every model coordinate into an AX element.
 
 Maka keeps the same separation:
 
-- `maka_computer` is the primary model-facing path;
+- `Computer` is the primary model-facing path;
 - semantic element actions and verified AX/CDP value updates are retained;
 - coordinate click, scroll, drag, key input, and pixel fallback are described
   as disabled and fail closed;
-- provider adapters use the same `maka_computer` contract rather than a
+- provider adapters use the same `Computer` contract rather than a
   separate native Computer Use loop.
 
 No provider adapter may infer a missing observation ID or silently bind an
@@ -90,7 +90,7 @@ getAIModel
   -> OpenAI Responses model
   -> AiSdkBackend / streamText
   -> ToolRuntime
-  -> maka_computer
+  -> Computer
   -> synthetic AX semantic backend
 ```
 
@@ -117,7 +117,7 @@ semantic loop through their exact Anthropic-compatible URL/auth contracts:
 
 ```text
 getAIModel -> streaming tool_use -> AiSdkBackend -> ToolRuntime
-  -> maka_computer -> list_apps -> observe -> set_value -> final response
+  -> Computer -> list_apps -> observe -> set_value -> final response
 ```
 
 ## Provider Schema Findings
@@ -135,7 +135,7 @@ The OpenAI adapter therefore:
 4. records discarded non-null keys;
 5. passes the projected value to the existing strict action parser.
 
-The core `maka_computer` parser remains strict and provider neutral.
+The core `Computer` parser remains strict and provider neutral.
 
 ## Non-Claims
 

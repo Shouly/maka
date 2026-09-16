@@ -78,7 +78,7 @@ describe('ToolRuntime turn-close outcome identity', () => {
       impl: (_args, context) => {
         if (!context.askUserQuestion) throw new Error('askUserQuestion missing from context');
         return context.askUserQuestion([
-          { question: 'q?', options: [{ label: 'a' }, { label: 'b' }] },
+          { question: 'q?', header: 'q', options: [{ label: 'a' }, { label: 'b' }] },
         ]);
       },
     };

@@ -1282,7 +1282,7 @@ function emptyComputerUseTools(): ComputerUseToolSet {
 
 function nativeTool(): MakaTool {
   return {
-    name: 'browser_snapshot',
+    name: 'BrowserSnapshot',
     description: 'Capture the current page.',
     parameters: z.object({}),
     impl: async () => 'snapshot',
@@ -1592,6 +1592,7 @@ function pendingQuestion() {
       questions: [
         {
           question: 'Proceed?',
+          header: 'Proceed',
           options: [{ label: 'Yes', description: 'Continue.' }],
         },
       ],
@@ -1682,7 +1683,7 @@ function capabilityFrame(sessionId: string): ClientCapabilityCallFrame {
     invocationId: `invocation-${sessionId}`,
     offerId: 'desktop_browser',
     serverId: 'desktop_browser',
-    toolName: 'browser_snapshot',
+    toolName: 'BrowserSnapshot',
     sessionId,
     turnId: `turn-${sessionId}`,
     cwd: '/workspace',

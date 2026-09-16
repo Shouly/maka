@@ -113,7 +113,10 @@ const QUESTION_REQUEST_SHAPE = defineObjectShape<UserQuestionRequest>()(
   ['requestId', 'toolUseId', 'questions'],
   [],
 );
-const QUESTION_SHAPE = defineObjectShape<UserQuestion>()(['question', 'options'], []);
+const QUESTION_SHAPE = defineObjectShape<UserQuestion>()(
+  ['question', 'header', 'options'],
+  ['multiSelect'],
+);
 const QUESTION_OPTION_SHAPE = defineObjectShape<UserQuestionOption>()(['label'], ['description']);
 
 const TOOL_PERMISSION_REASONS = new Set([
@@ -211,6 +214,8 @@ function isUserQuestion(value: unknown): value is UserQuestion {
     isRecord(value) &&
     hasExactShape(value, QUESTION_SHAPE) &&
     typeof value.question === 'string' &&
+    typeof value.header === 'string' &&
+    (value.multiSelect === undefined || typeof value.multiSelect === 'boolean') &&
     Array.isArray(value.options) &&
     value.options.every(isUserQuestionOption)
   );

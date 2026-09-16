@@ -1228,7 +1228,7 @@ const unsupportedRequests = {
   question: {
     kind: 'question',
     toolUseId: 'tool-1',
-    questions: [{ question: 'Continue?', options: [{ label: 'Yes' }] }],
+    questions: [{ question: 'Continue?', header: 'Continue', options: [{ label: 'Yes' }] }],
   },
   form: {
     kind: 'form',

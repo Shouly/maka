@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import { jsonSchema, zodSchema } from 'ai';
 import { z } from 'zod';
 import type { MakaTool } from './tool-runtime.js';
@@ -26,7 +27,7 @@ import {
   type ToolResultArchiveResourceReader,
 } from './tool-result-archive-resource.js';
 
-export const ARCHIVE_READ_TOOL_NAME = 'ArchiveRead';
+export const ARCHIVE_READ_TOOL_NAME = TOOL_NAMES.archiveRead;
 
 export function buildArchiveReadTool(reader: ToolResultArchiveResourceReader): MakaTool {
   const parameters = z.preprocess(
@@ -101,8 +102,14 @@ export function buildArchiveReadTool(reader: ToolResultArchiveResourceReader): M
     name: ARCHIVE_READ_TOOL_NAME,
     displayName: 'Read archived result',
     activityKind: 'read',
-    description:
-      'Inspect, search, or page through a tool-result archive using its exact resourceRef. Both ledger and legacy archive references are supported. Start with inspect for a preview and the char/line coordinate space. Use operation "search" with a pattern to locate text, operation "read" with unit "line" for line-oriented terminal output, or operation "query" with an itemId for one agent_swarm item. Results are strictly bounded so reading an archive cannot immediately trigger another archive.',
+    description: [
+      'Read a tool result that was too large to stay in context and was archived. The archived result carries a resourceRef; pass it exactly.',
+      '',
+      '- Start with operation "inspect": it returns a preview and the size in characters and lines, so the next call can page precisely.',
+      '- operation "search" with a pattern finds text; "read" with unit "line" pages terminal-style output by line, unit "char" by offset; "query" with an itemId returns one swarm item.',
+      '- Every answer is bounded, so reading an archive never produces another archive; ask for the next window rather than a bigger one.',
+      '- Fails when the ref is unknown or has expired; the original tool call is the way to regenerate it.',
+    ].join('\n'),
     parameters: jsonSchema(async () => await providerSchema.jsonSchema, {
       validate: async (value) => {
         const result = await parameters.safeParseAsync(value);

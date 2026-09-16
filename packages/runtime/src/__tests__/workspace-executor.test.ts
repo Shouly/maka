@@ -19,7 +19,7 @@
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, truncate, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, truncate, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalWorkspaceExecutor } from '../workspace-executor.js';
@@ -222,17 +222,32 @@ describe('LocalWorkspaceExecutor file operations', () => {
     assert.partialDeepStrictEqual(readResult, { content: 'line2\nline3' });
   });
 
-  test('globs files from the provided cwd with a result cap', async () => {
+  test('keeps the newest matches, lists them oldest-first, and reports the cap it hit', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'maka-workspace-glob-'));
     await mkdir(join(cwd, 'src'), { recursive: true });
     await writeFile(join(cwd, 'src', 'a.ts'), 'a', 'utf8');
     await writeFile(join(cwd, 'src', 'b.ts'), 'b', 'utf8');
     await writeFile(join(cwd, 'src', 'c.js'), 'c', 'utf8');
+    // Pin the mtimes so the order under test is the one asserted, not whatever
+    // the filesystem's timestamp granularity happened to produce.
+    await utimes(join(cwd, 'src', 'a.ts'), new Date(3000), new Date(3000));
+    await utimes(join(cwd, 'src', 'b.ts'), new Date(1000), new Date(1000));
+    await utimes(join(cwd, 'src', 'c.js'), new Date(2000), new Date(2000));
     const executor = new LocalWorkspaceExecutor();
 
-    const result = await executor.globFiles({ cwd, pattern: 'src/*.*', limit: 2 });
+    // The cap keeps the newest matches; the printed order puts the newest last,
+    // and every path is absolute.
+    const capped = await executor.globFiles({ cwd, pattern: 'src/*.*', limit: 2 });
+    assert.deepStrictEqual(capped.files, [join(cwd, 'src', 'c.js'), join(cwd, 'src', 'a.ts')]);
+    assert.equal(capped.truncated, true);
 
-    assert.deepStrictEqual(result.files, ['src/a.ts', 'src/b.ts']);
+    const whole = await executor.globFiles({ cwd, pattern: 'src/*.*', limit: 10 });
+    assert.deepStrictEqual(whole.files, [
+      join(cwd, 'src', 'b.ts'),
+      join(cwd, 'src', 'c.js'),
+      join(cwd, 'src', 'a.ts'),
+    ]);
+    assert.equal(whole.truncated, undefined);
   });
 
   test('greps file contents with rg-compatible no-match behavior', async () => {

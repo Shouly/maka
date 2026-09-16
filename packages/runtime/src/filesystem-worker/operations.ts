@@ -43,6 +43,12 @@ import {
 } from '../file-stable-write.js';
 import { isSupportedImagePath, readWorkspaceImage } from '../image-file.js';
 import {
+  applyGrepHeadLimit,
+  buildRipgrepArgs,
+  GLOB_SCAN_CAP,
+  orderGlobMatchesByRecency,
+} from '../search-plan.js';
+import {
   FILESYSTEM_WORKER_PROTOCOL_VERSION,
   operationAccess,
   operationUsesDirectoryEntry,
@@ -52,6 +58,8 @@ import {
   type FilesystemWorkerResponse,
   type FilesystemWorkerResult,
   type FilesystemWorkerTarget,
+  unreadEditMessage,
+  unreadOverwriteMessage,
 } from './protocol.js';
 import { isLikelySandboxDenial } from '../sandbox/detect.js';
 
@@ -130,13 +138,36 @@ export async function executeFilesystemOperation(
 ): Promise<FilesystemWorkerResult> {
   switch (operation.kind) {
     case 'read': {
-      const path = await resolveExistingAllowed(
-        operation.cwd,
-        operation.path,
-        'Read',
-        'read',
-        operationBoundary,
-      );
+      // A read that cannot happen has exactly two ordinary causes, and the
+      // generic "filesystem operation failed" that both used to collapse into
+      // told the caller neither. Name them the way the operating system does,
+      // with the path, so the next move (fix the path / list the directory) is
+      // legible from the message alone.
+      let path: string;
+      try {
+        path = await resolveExistingAllowed(
+          operation.cwd,
+          operation.path,
+          'Read',
+          'read',
+          operationBoundary,
+        );
+      } catch (error) {
+        const code = nodeErrorCode(error);
+        if (code === 'ENOENT' || code === 'ENOTDIR') {
+          throw operationError(
+            'not_found',
+            `ENOENT: no such file or directory, read '${operation.path}'`,
+          );
+        }
+        throw error;
+      }
+      if ((await fs.stat(path).catch(() => undefined))?.isDirectory()) {
+        throw operationError(
+          'filesystem_error',
+          `EISDIR: illegal operation on a directory, read '${path}'`,
+        );
+      }
       if (isSupportedImagePath(path)) {
         try {
           const image = await readWorkspaceImage(path);
@@ -186,6 +217,12 @@ export async function executeFilesystemOperation(
         if (expectedTarget?.targetType === 'missing') {
           previous = 'new';
         } else {
+          // Read-before-overwrite: the target already existed, so replacing it
+          // destroys content this session may never have seen. The host
+          // decides whether it has been seen; the guard lives here, where the
+          // "new vs existing" fact is established and BEFORE any byte is
+          // written, so a refusal leaves the file exactly as it was.
+          if (operation.allowOverwrite !== true) throw unreadOverwriteError(path);
           try {
             previous = await handle.readFile('utf8');
           } catch {
@@ -267,6 +304,9 @@ export async function executeFilesystemOperation(
         'write',
         operationBoundary,
       );
+      // After resolution, so a path the boundary rejects is still reported as a
+      // boundary violation rather than as an unread file.
+      if (operation.allowEdit !== true) throw unreadEditError(path);
       const handle = await openStableTarget({
         path,
         approvedIdentity:
@@ -282,6 +322,7 @@ export async function executeFilesystemOperation(
             operation.oldString,
             operation.newString,
             operation.path,
+            { replaceAll: operation.replaceAll === true },
           );
         } catch (error) {
           throw operationError(
@@ -297,71 +338,10 @@ export async function executeFilesystemOperation(
           kind: 'edit',
           ok: true,
           path,
-          replacements: 1,
+          replacements: source.replacements,
           matchedVia: source.matchedVia,
           startLine: source.startLine,
           endLine: source.endLine,
-          ...(diff !== undefined ? { diff } : {}),
-        };
-      } finally {
-        await handle.close();
-      }
-    }
-    case 'format_json': {
-      const path = await resolveExistingAllowed(
-        operation.cwd,
-        operation.path,
-        'FormatJson',
-        'write',
-        operationBoundary,
-      );
-      const handle = await openStableTarget({
-        path,
-        approvedIdentity:
-          typeof expectedTarget?.identity === 'object' ? expectedTarget.identity : undefined,
-        targetType: expectedTarget?.targetType,
-      });
-      try {
-        const original = await handle.readFile('utf8');
-        const bytesBefore = Buffer.byteLength(original, 'utf8');
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(original);
-        } catch (error) {
-          // Invalid JSON: return the structured failure without writing.
-          return {
-            kind: 'format_json',
-            ok: false,
-            valid: false,
-            path,
-            error: `FormatJson: invalid JSON: ${error instanceof Error ? error.message : 'parse failed'}`,
-            bytesBefore,
-            byteDelta: 0,
-            changed: false,
-          };
-        }
-        const formatted = JSON.stringify(
-          operation.sortKeys ? sortKeysDeep(parsed) : parsed,
-          null,
-          2,
-        );
-        if (formatted !== original) {
-          await writeThroughHandle(handle, formatted);
-        }
-        const visibility = await hostVisibilityAfterWrite(path, handle);
-        if (visibility) throw visibility;
-        const bytesAfter = Buffer.byteLength(formatted, 'utf8');
-        const diff =
-          formatted === original ? undefined : createUnifiedDiff(path, original, formatted);
-        return {
-          kind: 'format_json',
-          ok: true,
-          valid: true,
-          path,
-          bytesBefore,
-          bytesAfter,
-          byteDelta: bytesAfter - bytesBefore,
-          changed: formatted !== original,
           ...(diff !== undefined ? { diff } : {}),
         };
       } finally {
@@ -377,13 +357,21 @@ export async function executeFilesystemOperation(
         'read',
         operationBoundary,
       );
-      const files: string[] = [];
       const limit = operation.limit ?? DEFAULT_GLOB_LIMIT;
+      const scanned: string[] = [];
+      const scanCap = Math.max(limit, GLOB_SCAN_CAP);
       for await (const file of nodeGlob(operation.pattern, { cwd: path })) {
-        files.push(typeof file === 'string' ? file : (file as { name: string }).name);
-        if (files.length >= limit) break;
+        scanned.push(typeof file === 'string' ? file : (file as { name: string }).name);
+        if (scanned.length >= scanCap) break;
       }
-      return { kind: 'glob', files };
+      // Newest-first is a property of the whole match set, so the walk
+      // over-collects and the order is decided here, not by directory order.
+      const ordered = await orderGlobMatchesByRecency(path, scanned, limit);
+      return {
+        kind: 'glob',
+        files: ordered.files,
+        ...(ordered.truncated ? { truncated: true } : {}),
+      };
     }
     case 'grep': {
       const path = await resolveExistingAllowed(
@@ -410,9 +398,20 @@ export async function executeFilesystemOperation(
       }
       if (!dependencies.grepExecutable)
         throw operationError('grep_unavailable', 'Grep is unavailable in this runtime.');
-      const args = ['-n', '--no-heading', `--max-count=${operation.maxCountPerFile}`];
-      if (operation.glob) args.push('--glob', operation.glob);
-      args.push('--', operation.pattern, path);
+      const mode = operation.outputMode ?? 'content';
+      const args = buildRipgrepArgs({
+        pattern: operation.pattern,
+        path,
+        mode,
+        glob: operation.glob,
+        type: operation.type,
+        ignoreCase: operation.ignoreCase,
+        after: operation.after,
+        before: operation.before,
+        lineNumbers: operation.lineNumbers,
+        multiline: operation.multiline,
+        maxCountPerFile: operation.maxCountPerFile,
+      });
       const result = await (dependencies.runGrep ?? runRipgrep)({
         executable: dependencies.grepExecutable,
         args,
@@ -421,7 +420,7 @@ export async function executeFilesystemOperation(
         cwd: parse(path).root,
         timeoutMs: operation.timeoutMs,
       });
-      if (result.exitCode === 1) return { kind: 'grep', matches: [] };
+      if (result.exitCode === 1) return { kind: 'grep', matches: [], mode };
       if (result.exitCode !== 0) {
         const detail = result.stderrTail.trim();
         throw operationError(
@@ -433,9 +432,12 @@ export async function executeFilesystemOperation(
             : 'Grep failed while searching files.',
         );
       }
+      const limited = applyGrepHeadLimit(result.stdout, operation.limit, operation.offset);
       return {
         kind: 'grep',
-        matches: result.stdout.split('\n').filter(Boolean).slice(0, operation.limit),
+        matches: limited.matches,
+        mode,
+        ...(limited.truncated ? { truncated: true, omitted: limited.omitted } : {}),
       };
     }
   }
@@ -456,6 +458,14 @@ function operationError(
   message: string,
 ): FilesystemOperationError {
   return new FilesystemOperationError(code, message);
+}
+
+function unreadOverwriteError(path: string): FilesystemOperationError {
+  return operationError('write_unread_target', unreadOverwriteMessage(path));
+}
+
+function unreadEditError(path: string): FilesystemOperationError {
+  return operationError('edit_unread_target', unreadEditMessage(path));
 }
 
 function sortKeysDeep(value: unknown): unknown {

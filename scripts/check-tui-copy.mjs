@@ -43,7 +43,7 @@ export const COVERED_FILES = [
   'packages/cli/src/tui-copy-command.ts',
   'packages/cli/src/tui-shortcut-copy.ts',
   'packages/cli/src/pi-tui-layout.ts',
-  'packages/cli/src/pi-tui-todo.ts',
+  'packages/cli/src/pi-tui-task.ts',
 ];
 
 export const EXCLUDED_TUI_FILES = [
@@ -94,6 +94,7 @@ export const ALLOWED_VISIBLE_LITERALS = {
     'Side conversations are unavailable on this runtime.',
     'Side conversation opened.',
     'Side conversation closed; cleanup will be retried on the next launch.',
+    '↑↓ move · Space toggle · Enter submit · type to answer · Esc unanswered · Ctrl+C stop',
     '↑↓ move · type to answer · Enter select · Esc unanswered · Ctrl+C stop',
     'Other: type your answer…',
     'Recap is not available in this environment.',

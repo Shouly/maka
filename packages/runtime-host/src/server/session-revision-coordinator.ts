@@ -60,9 +60,9 @@ import {
   type ExecutionStoresWriter,
 } from '@maka/storage/execution-stores';
 import {
-  authenticateInteractiveSessionTodoWriter,
-  type InteractiveSessionTodoWriter,
-} from '@maka/storage/session-todo-authority';
+  authenticateInteractiveSessionTaskWriter,
+  type InteractiveSessionTaskWriter,
+} from '@maka/storage/session-task-authority';
 import type { InteractiveContextOffloadWriter } from '@maka/storage/context-offload-store';
 import type {
   OperationOutcome,
@@ -108,7 +108,7 @@ type ConversationCopyCreateInput = CreateSessionInput & {
 export interface HostSessionRevisionCoordinatorOptions {
   readonly stores: ExecutionStoresWriter<'interactive'>;
   readonly artifacts: InteractiveArtifactStoreWriter;
-  readonly sessionTodo: InteractiveSessionTodoWriter;
+  readonly sessionTask: InteractiveSessionTaskWriter;
   readonly contextOffload?: Pick<
     InteractiveContextOffloadWriter,
     'copyReferences' | 'retireSession'
@@ -134,12 +134,12 @@ export class HostSessionRevisionCoordinator {
 
   readonly #stores: ExecutionStoresWriter<'interactive'>;
   readonly #artifacts: InteractiveArtifactStoreWriter;
-  readonly #sessionTodo: InteractiveSessionTodoWriter;
+  readonly #sessionTask: InteractiveSessionTaskWriter;
 
   constructor(private readonly options: HostSessionRevisionCoordinatorOptions) {
     this.#stores = authenticateExecutionStoresWriter(options.stores, 'interactive');
     this.#artifacts = authenticateInteractiveArtifactStoreWriter(options.artifacts);
-    this.#sessionTodo = authenticateInteractiveSessionTodoWriter(options.sessionTodo);
+    this.#sessionTask = authenticateInteractiveSessionTaskWriter(options.sessionTask);
   }
 
   async recover(): Promise<void> {
@@ -601,10 +601,10 @@ export class HostSessionRevisionCoordinator {
         newId: randomUUID,
       });
       const copiedMessages = runtimeCopy.copiedMessages;
-      await this.#sessionTodo.initializeCopy({
+      await this.#sessionTask.initializeCopy({
         sourceSessionId: input.sourceSessionId,
         targetSessionId: input.targetSessionId,
-        // An empty copy carries no source state, including no in-progress Todo.
+        // An empty copy carries no source state, including no in-progress tasks.
         copyCurrent:
           kind === 'branch' && slice.beforeTs === undefined && input.sourceTurnId !== undefined,
       });
@@ -873,7 +873,7 @@ export class HostSessionRevisionCoordinator {
     await purgeSessionSidecars(
       {
         artifacts: this.#artifacts,
-        sessionTodo: this.#sessionTodo,
+        sessionTask: this.#sessionTask,
         ...(this.options.contextOffload ? { contextOffload: this.options.contextOffload } : {}),
         purgeOperationalState: (sessionId) =>
           this.#stores.purgeConversationOperationalState(sessionId),

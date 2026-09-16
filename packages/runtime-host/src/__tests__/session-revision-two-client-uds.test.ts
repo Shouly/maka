@@ -49,7 +49,7 @@ import {
   tryAcquireInteractiveRootOwner,
   type StorageRootCapability,
 } from '@maka/storage/root-authority';
-import { openInteractiveSessionTodoStoreForWrite } from '@maka/storage/session-todo-authority';
+import { openInteractiveSessionTaskStoreForWrite } from '@maka/storage/session-task-authority';
 import { removePosixEndpointDirectories } from './fixtures/endpoint-hygiene.js';
 import { requireStartedTurn } from './fixtures/execution-host-suite.js';
 import { readLedgerMessages } from './fixtures/ledger-transcript.js';
@@ -292,11 +292,11 @@ async function verifyConcurrentRevisionAuthority(
     assert.equal(emptySideConversationSession.parentSessionId, linkedChildSourceSessionId);
     assert.equal(emptySideConversationSession.branchOfTurnId, undefined);
     // An empty copy carries none of the source's current state — including no
-    // in-progress Todo (copyCurrent is false when sourceTurnId is absent), even
+    // in-progress tasks (copyCurrent is false when sourceTurnId is absent), even
     // though the source below has one.
     assert.deepEqual(
       (
-        await tui.request('session.todo.query', {
+        await tui.request('session.task.query', {
           sessionId: 'graph-side-conversation-empty-target',
         })
       ).items,
@@ -375,7 +375,7 @@ async function verifyConcurrentRevisionAuthority(
     assert.equal(archivedSideConversation.kind, 'committed');
     assert.deepEqual(
       (
-        await tui.request('session.todo.query', {
+        await tui.request('session.task.query', {
           sessionId: ARCHIVED_SIDE_CONVERSATION_TARGET_ID,
         })
       ).items,
@@ -417,8 +417,8 @@ async function verifyConcurrentRevisionAuthority(
     if (artifactPage.kind !== 'page') assert.fail('Branch Artifact query must return a page');
     assert.equal(artifactPage.artifacts.length, 3);
     assert.notEqual(artifactPage.artifacts[0]?.id, 'source-artifact');
-    const todo = await tui.request('session.todo.query', { sessionId: branch.id });
-    assert.deepEqual(todo.items, []);
+    const taskDocument = await tui.request('session.task.query', { sessionId: branch.id });
+    assert.deepEqual(taskDocument.items, []);
 
     const latestBranch = await desktop.request('session.branch.create', {
       ...branchInput,
@@ -428,11 +428,11 @@ async function verifyConcurrentRevisionAuthority(
     assert.equal(latestBranch.kind, 'committed');
     assert.deepEqual(
       (
-        await tui.request('session.todo.query', {
+        await tui.request('session.task.query', {
           sessionId: 'latest-branch-target',
         })
       ).items
-        .map((item) => item.content)
+        .map((item) => item.subject)
         .sort(),
       ['Legacy child task', 'Retained task'],
     );
@@ -810,7 +810,7 @@ async function seedSource(
   try {
     const execution = await openInteractiveExecutionStoresForWrite(owner.lease);
     const artifacts = await openInteractiveArtifactStoreForWrite(owner.lease);
-    const todos = await openInteractiveSessionTodoStoreForWrite(owner.lease);
+    const tasks = await openInteractiveSessionTaskStoreForWrite(owner.lease);
     const source = await execution.sessionStore.create({
       cwd: root,
       name: 'Source Session',
@@ -1538,15 +1538,25 @@ async function seedSource(
     for (const event of archivedOwnedRuntimeEvents) {
       await execution.runtimeEventStore.appendRuntimeEvent(event.sessionId, event.runId, event);
     }
-    await todos.replaceAll(source.id, [
-      { content: 'Retained task', status: 'in_progress' },
-      { content: 'Legacy child task', status: 'pending' },
-    ]);
+    const retained = await tasks.createTask(source.id, {
+      subject: 'Retained task',
+      description: 'Survives the branch copy',
+    });
+    await tasks.updateTask(source.id, { taskId: retained.task.id, status: 'in_progress' });
+    await tasks.createTask(source.id, {
+      subject: 'Legacy child task',
+      description: 'Also survives the branch copy',
+    });
     // The empty side conversation forks from here before any settled turn; this
-    // in-progress Todo proves the empty copy inherits none of it.
-    await todos.replaceAll(linkedChildSource.id, [
-      { content: 'Linked child in-progress task', status: 'in_progress' },
-    ]);
+    // in-progress tasks proves the empty copy inherits none of it.
+    const linkedChildTask = await tasks.createTask(linkedChildSource.id, {
+      subject: 'Linked child in-progress task',
+      description: 'An in-progress task the empty copy must not inherit',
+    });
+    await tasks.updateTask(linkedChildSource.id, {
+      taskId: linkedChildTask.task.id,
+      status: 'in_progress',
+    });
     return {
       sourceSessionId: source.id,
       busySessionId: busy.id,
@@ -1626,7 +1636,7 @@ async function verifyDurableBranch(
   try {
     const execution = await openInteractiveExecutionStoresForWrite(owner.lease);
     const artifacts = await openInteractiveArtifactStoreForWrite(owner.lease);
-    const todos = await openInteractiveSessionTodoStoreForWrite(owner.lease);
+    const tasks = await openInteractiveSessionTaskStoreForWrite(owner.lease);
     // Every copy kind that retains the upload turn must carry a rewritten,
     // readable copy of the user-uploaded attachment (regression guard for the
     // turn-scoped-only artifact selection that dropped user uploads).
@@ -1668,10 +1678,10 @@ async function verifyDurableBranch(
       ok: true,
       text: 'retained bytes',
     });
-    assert.deepEqual(await todos.readOrBootstrap(branchSessionId), { items: [] });
+    assert.deepEqual(await tasks.readOrBootstrap(branchSessionId), { nextId: 1, items: [] });
     assert.deepEqual(
-      (await todos.readOrBootstrap('latest-branch-target')).items
-        .map((item) => item.content)
+      (await tasks.readOrBootstrap('latest-branch-target')).items
+        .map((item) => item.subject)
         .sort(),
       ['Legacy child task', 'Retained task'],
     );
@@ -1739,7 +1749,7 @@ async function verifyDurableBranch(
       undefined,
     );
     assert.equal((await artifacts.listPage('revision-target', { offset: 0, limit: 10 })).total, 0);
-    assert.deepEqual(await todos.readOrBootstrap('revision-target'), { items: [] });
+    assert.deepEqual(await tasks.readOrBootstrap('revision-target'), { nextId: 1, items: [] });
     assert.deepEqual(
       await execution.runtimeEventStore.listSessionInvocations('revision-target'),
       [],

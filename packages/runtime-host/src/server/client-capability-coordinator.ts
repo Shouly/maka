@@ -31,6 +31,7 @@ import {
   clientCapabilityScopeIdentity,
   type ClientCapabilityGrantTarget,
 } from '@maka/core/client-capability-grant';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import { type ToolGroup } from '@maka/runtime/tool-availability';
 import type { InteractiveInteractionStoreWriterFacade } from '@maka/storage/interaction-store';
 import {
@@ -66,13 +67,13 @@ const DEFAULT_CALL_TIMEOUT_MS = 150_000;
 const DESKTOP_BROWSER_SERVER_ID = 'desktop_browser';
 const DESKTOP_SETTINGS_SERVER_ID = 'desktop_settings';
 const DESKTOP_MCP_OFFER_PREFIX = 'desktop_mcp';
-const DESKTOP_BROWSER_TOOLS = new Set([
-  'browser_navigate',
-  'browser_snapshot',
-  'browser_click',
-  'browser_type',
-  'browser_wait',
-  'browser_extract',
+const DESKTOP_BROWSER_TOOLS: ReadonlySet<string> = new Set([
+  TOOL_NAMES.browserNavigate,
+  TOOL_NAMES.browserSnapshot,
+  TOOL_NAMES.browserClick,
+  TOOL_NAMES.browserType,
+  TOOL_NAMES.browserWait,
+  TOOL_NAMES.browserExtract,
 ]);
 const DESKTOP_SETTINGS_TOOLS = new Set(['MakaClientSettingsGet', 'MakaClientSettingsUpdate']);
 

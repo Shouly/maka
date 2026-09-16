@@ -561,7 +561,7 @@ function scheduledTimeHasPassed(nowMs: number, executeTime: string): boolean {
 
 function buildModelPrompt(summary: DailyReviewSummary, range: DailyReviewRange): string {
   return [
-    'You are Maka Daily Review. Use only the supplied local activity facts.',
+    'You are Copilot Daily Review. Use only the supplied local activity facts.',
     'Return JSON without a Markdown fence. The only allowed top-level keys are summary, gaps, usage, and code. Each value must be a string. Omit unsupported sections.',
     JSON.stringify({
       rangeDays: range,

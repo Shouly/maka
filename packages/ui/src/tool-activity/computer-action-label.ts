@@ -18,7 +18,7 @@
  */
 
 /**
- * A readable row label for one `maka_computer` call, derived from the call's
+ * A readable row label for one `Computer` call, derived from the call's
  * own arguments.
  *
  * Every other tool's row reads as an action because its display name happens to
@@ -34,7 +34,7 @@
  *
  * ## What these arguments actually are
  *
- * Not the raw wire call, but the same dialect as it. `maka_computer` declares
+ * Not the raw wire call, but the same dialect as it. `Computer` declares
  * `categoryHint: 'computer_use'`, and `ToolRuntime` replaces a Computer Use
  * call's arguments with `computerUseModelCallArgs(...)` before anything is
  * persisted or emitted — so `item.args` here is a `ComputerUseModelCallArgs`,
@@ -72,6 +72,7 @@
  */
 
 import { type ComputerUseModelCallArgs } from '@maka/core/computer-use';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 
 import { type UiLocale } from '@maka/core/ui-locale';
 import type { ToolActivityItem } from '../materialize.js';
@@ -80,8 +81,10 @@ import { getToolActivityCopy, type ToolActivityCopy } from './copy.js';
 /** True for a row produced by the Computer Use tool. */
 export function isComputerTool(item: ToolActivityItem): boolean {
   return (
-    item.toolName === 'maka_computer' ||
-    item.toolName.endsWith('__maka_computer') ||
+    item.toolName === TOOL_NAMES.computer ||
+    // A proxied name (`mcp__<server>__<tool>`) carries the tool's own spelling
+    // in its suffix.
+    item.toolName.endsWith(`__${TOOL_NAMES.computer}`) ||
     item.activityKind === 'computer'
   );
 }

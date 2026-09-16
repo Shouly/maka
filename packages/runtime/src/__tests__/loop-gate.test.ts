@@ -225,7 +225,7 @@ function makeShellRunTool(name: string, impl: string[], status: ObservedShellRun
 
 function makeComputerFailureTool(impl: string[], failureClass?: 'ambiguous_target'): MakaTool {
   return {
-    name: 'maka_computer',
+    name: 'Computer',
     description: 'computer',
     parameters: z.object({}).passthrough(),
     categoryHint: 'computer_use',
@@ -250,7 +250,7 @@ function makeComputerFailureTool(impl: string[], failureClass?: 'ambiguous_targe
         return { text: 'observed' };
       }
       return {
-        text: 'maka_computer failed: stale_frame',
+        text: 'Computer failed: stale_frame',
         error: 'stale_frame',
         ...(failureClass ? { failureClass } : {}),
       };
@@ -420,11 +420,11 @@ describe('loop-gate for repeated identical FAILING tool calls', () => {
 
   test('a repeatedly not-loaded tool trips the gate — guard rejections count as failures', async () => {
     const h = makeHarness();
-    const gated = makeTool('browser_click', h.impl);
-    // browser_click is gated and never active this turn, so the availability guard
+    const gated = makeTool('BrowserClick', h.impl);
+    // BrowserClick is gated and never active this turn, so the availability guard
     // rejects every call before it runs. The first N-1 rejections give the
     // actionable load hint; the Nth identical rejection is loop-gated.
-    h.runtime.setGating({ gatedNames: new Set(['browser_click']), activeNames: () => new Set() });
+    h.runtime.setGating({ gatedNames: new Set(['BrowserClick']), activeNames: () => new Set() });
     const args = { sel: '#x' };
 
     const r1 = await call(h, gated, args);
@@ -433,15 +433,15 @@ describe('loop-gate for repeated identical FAILING tool calls', () => {
 
     assert.deepEqual(
       r1,
-      { error: formatDeferredNotLoadedText('browser_click') },
+      { error: formatDeferredNotLoadedText('BrowserClick') },
       'first: load hint',
     );
     assert.deepEqual(
       r2,
-      { error: formatDeferredNotLoadedText('browser_click') },
+      { error: formatDeferredNotLoadedText('BrowserClick') },
       'second: load hint',
     );
-    assert.deepEqual(r3, { error: formatLoopGateText('browser_click') }, 'third: loop-gated');
+    assert.deepEqual(r3, { error: formatLoopGateText('BrowserClick') }, 'third: loop-gated');
     assert.equal(h.impl.length, 0, 'the gated tool never actually ran');
   });
 
@@ -524,7 +524,7 @@ describe('loop-gate for repeated identical FAILING tool calls', () => {
   test('returned shell_run terminal states are observations, not tool failures', async () => {
     for (const status of observedShellRunStatuses) {
       const h = makeHarness();
-      const t = makeShellRunTool('StopBackgroundTask', h.impl, status);
+      const t = makeShellRunTool('TaskStop', h.impl, status);
       const args = { ref: 'maka://runtime/background-tasks/shell-run-1' };
 
       const result = await call(h, t, args);
@@ -544,7 +544,7 @@ describe('loop-gate for repeated identical FAILING tool calls', () => {
       element_id: 'duplicate',
     });
     assert.deepEqual(result, {
-      text: 'maka_computer failed: stale_frame',
+      text: 'Computer failed: stale_frame',
       error: 'stale_frame',
     });
     const event = h.pushed.find((candidate) => candidate.type === 'tool_result');
@@ -581,7 +581,7 @@ describe('loop-gate for repeated identical FAILING tool calls', () => {
 
   test('repeated shell_run observations are not loop-gated by process status', async () => {
     const h = makeHarness();
-    const t = makeShellRunTool('StopBackgroundTask', h.impl, 'timed_out');
+    const t = makeShellRunTool('TaskStop', h.impl, 'timed_out');
     const args = { ref: 'maka://runtime/background-tasks/shell-run-1' };
 
     const runs = LOOP_GATE_IDENTICAL_THRESHOLD + 2;

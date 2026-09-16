@@ -177,7 +177,7 @@ A linked child Session naturally reuses:
 - context construction and compaction;
 - usage, tool-activity, and artifact accounting;
 - Desktop and TUI conversation inspection;
-- `agent_output` over an exact child Session and current Run;
+- `AgentOutput` over an exact child Session and current Run;
 - future multi-client observation through the same Runtime host.
 
 The child stores durable lineage back to the root:
@@ -208,7 +208,7 @@ This separation matters:
 - a read model cannot silently become a competing event store.
 
 When the main Agent needs the actual answer behind a candidate record, it uses
-`agent_output` with the operator's `childSessionId`, `currentRunId`, and
+`AgentOutput` with the operator's `childSessionId`, `currentRunId`, and
 `view=result`. That projection returns only the final committed model text,
 its Graph result/terminal record IDs, and bounded artifact references. Raw
 Runtime events remain an explicit diagnostic view rather than the normal
@@ -284,9 +284,9 @@ The current Desktop host profile does not install autonomous `map` or `all_settl
 
 Graph Mode gives only the root Agent a compact control surface:
 
-- `view_agent_graph` reads durable schedule state, runtime state, readiness, waits, and bounded recent activity;
-- `update_agent_graph` appends one idempotent schedule decision containing `add_work`, `stop`, `finish`, or an allowed combination;
-- `agent_output` reads authoritative output from a selected child Session Run.
+- `ViewAgentGraph` reads durable schedule state, runtime state, readiness, waits, and bounded recent activity;
+- `UpdateAgentGraph` appends one idempotent schedule decision containing `add_work`, `stop`, `finish`, or an allowed combination;
+- `AgentOutput` reads authoritative output from a selected child Session Run.
 
 Child Sessions never receive the Graph supervisor tools.
 
@@ -482,7 +482,7 @@ Desktop composes the current host-managed Graph profile:
 
 - Graph can be a Session orchestration mode or a one-turn override;
 - `/graph on`, `/graph off`, and `/graph <task>` expose those choices;
-- only a root Session receives `view_agent_graph`, `update_agent_graph`, and `agent_output`;
+- only a root Session receives `ViewAgentGraph`, `UpdateAgentGraph`, and `AgentOutput`;
 - Electron main owns the coordinator, wake coordinator, SQLite store, Runtime adapter, and startup recovery;
 - renderer IPC exposes bounded snapshot, operator inspection, stop, and invalidation hints;
 - the Agent Graph panel shows aggregate state, visible operators, waits, selected results, and links to open child Sessions;
@@ -506,7 +506,7 @@ sequenceDiagram
     participant D as Desktop read model
 
     U->>M: Graph-mode task
-    M->>SQL: update_agent_graph(add_work)
+    M->>SQL: UpdateAgentGraph(add_work)
     SQL-->>G: durable schedule revision
     G->>SQL: provision operator + child Session relation
     G->>SQL: claim intent with Turn/Run IDs
@@ -516,8 +516,8 @@ sequenceDiagram
     G->>D: materialize records and operator state
     G->>SQL: claim supervisor wake at checkpoint
     SQL-->>M: host starts root supervisor Turn
-    M->>G: view_agent_graph
-    M->>R: agent_output(child Session, Run)
+    M->>G: ViewAgentGraph
+    M->>R: AgentOutput(child Session, Run)
     M->>SQL: add dependent work or finish(result record IDs)
     SQL-->>D: closed schedule and selected results
     M-->>U: synthesized answer
@@ -563,14 +563,14 @@ These are deliberate boundaries. They keep Graph useful without moving workflow 
 
 Tracking for the replay timeline and reconcile-history gaps above: [Agent Graph operational topology #2596](https://github.com/apache/maka/issues/2596), [Session Inspector #1625](https://github.com/apache/maka/issues/1625)
 
-## Graph, Swarm, agent_spawn, and Rive
+## Graph, Swarm, Agent, and Rive
 
 The four mechanisms solve different coordination problems.
 
 | Need | Mechanism | Ownership model |
 |---|---|---|
 | Finite independent fan-out followed by one synthesis | Swarm mode | The main Agent schedules independent items into one Graph and supervises them asynchronously |
-| One linked specialist execution or follow-up | `agent_spawn` / child Session | Parent Agent owns explicit delegation |
+| One linked specialist execution or follow-up | `Agent` / child Session | Parent Agent owns explicit delegation |
 | Dynamic dependent Agent work supervised from a root conversation | Agent Graph | SQLite schedule/control plane over child Sessions and Runtime records |
 | Explicit workflow steps, arbitrary resume policy, or distributed workflow authority | Rive | Workflow runtime owns workflow state |
 

@@ -20,6 +20,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createDefaultRuntimePolicy } from '@maka/core/runtime-policy';
+import { WEB_SEARCH_DEFAULT_LIMIT } from '@maka/core/web-search';
 import type { MakaToolContext } from '@maka/runtime/tool-runtime';
 import type { ProxiedFetchProxy } from '@maka/runtime/network/scoped-fetch-transport';
 import type {
@@ -166,7 +167,14 @@ test('Host WebSearch consumes one canonical credential/proxy snapshot and closes
     },
   });
 
-  const result = await tool.impl({ query: ' latest Maka ', limit: 1 }, context());
+  const result = await tool.impl(
+    {
+      query: ' latest Maka ',
+      allowed_domains: ['maka.example'],
+      blocked_domains: ['spam.example'],
+    },
+    context(),
+  );
   assert.deepEqual(proxy, {
     enabled: true,
     type: 'https',
@@ -179,8 +187,10 @@ test('Host WebSearch consumes one canonical credential/proxy snapshot and closes
   assert.deepEqual(providerBody, {
     api_key: 'tavily-secret',
     query: 'latest Maka',
-    max_results: 1,
+    max_results: WEB_SEARCH_DEFAULT_LIMIT,
     search_depth: 'basic',
+    include_domains: ['maka.example'],
+    exclude_domains: ['spam.example'],
   });
   assert.equal(closed, 1);
   assert.deepEqual(result, {
@@ -243,7 +253,7 @@ test('Host client WebSearch refuses provider-native execution outside the primar
     }),
   });
 
-  const result = await tool.impl({ query: 'DeepSeek current news', limit: 1 }, context());
+  const result = await tool.impl({ query: 'DeepSeek current news' }, context());
   assert.equal((result as { reason?: string }).reason, 'unsupported_provider');
   assert.equal(transportCreated, false);
 });

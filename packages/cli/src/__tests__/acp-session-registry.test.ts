@@ -1249,7 +1249,9 @@ describe('ACP Session registry', () => {
                   request: {
                     kind: 'question',
                     toolUseId: 'external-tool',
-                    questions: [{ question: 'Continue?', options: [{ label: 'Yes' }] }],
+                    questions: [
+                      { question: 'Continue?', header: 'Continue', options: [{ label: 'Yes' }] },
+                    ],
                   },
                 },
               ],

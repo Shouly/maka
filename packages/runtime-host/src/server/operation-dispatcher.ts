@@ -63,7 +63,7 @@ import { SESSION_CONTINUITY_OPERATION_SPECS } from '../protocol/session-continui
 import { SESSION_EFFECT_OPERATION_SPECS } from '../protocol/session-effects.js';
 import { SESSION_RETIREMENT_OPERATION_SPECS } from '../protocol/session-retirement.js';
 import { SESSION_REVISION_OPERATION_SPECS } from '../protocol/session-revision.js';
-import { SESSION_TODO_OPERATION_SPECS } from '../protocol/session-todo.js';
+import { SESSION_TASK_OPERATION_SPECS } from '../protocol/session-task.js';
 import { SESSION_TRANSCRIPT_OPERATION_SPECS } from '../protocol/session-transcript.js';
 import { SESSION_TURNS_OPERATION_SPECS } from '../protocol/session-turns.js';
 import { SKILL_CATALOG_OPERATION_SPECS } from '../protocol/skill-catalog.js';
@@ -139,7 +139,7 @@ export type SessionContinuityOperationKey =
 export type SessionRevisionOperationKey = keyof typeof SESSION_REVISION_OPERATION_SPECS;
 export type SessionRetirementOperationKey = keyof typeof SESSION_RETIREMENT_OPERATION_SPECS;
 export type SessionEffectOperationKey = keyof typeof SESSION_EFFECT_OPERATION_SPECS;
-export type SessionTodoOperationKey = keyof typeof SESSION_TODO_OPERATION_SPECS;
+export type SessionTaskOperationKey = keyof typeof SESSION_TASK_OPERATION_SPECS;
 export type SessionCatalogOperationKey =
   | keyof typeof SESSION_CATALOG_OPERATION_SPECS
   | keyof typeof SESSION_TURNS_OPERATION_SPECS;
@@ -202,7 +202,7 @@ export type SessionRetirementOperationHandlerMap = Pick<
   SessionRetirementOperationKey
 >;
 export type SessionEffectOperationHandlerMap = Pick<OperationHandlerMap, SessionEffectOperationKey>;
-export type SessionTodoOperationHandlerMap = Pick<OperationHandlerMap, SessionTodoOperationKey>;
+export type SessionTaskOperationHandlerMap = Pick<OperationHandlerMap, SessionTaskOperationKey>;
 export type ArtifactOperationHandlerMap = Pick<OperationHandlerMap, ArtifactOperationKey>;
 export type SkillCatalogOperationHandlerMap = Pick<OperationHandlerMap, SkillCatalogOperationKey>;
 export type UsagePricingOperationHandlerMap = Pick<OperationHandlerMap, UsagePricingOperationKey>;

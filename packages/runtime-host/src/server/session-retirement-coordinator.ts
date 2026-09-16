@@ -32,7 +32,7 @@ import {
 } from '@maka/storage/execution-stores';
 import { type SessionManager } from '@maka/runtime/session-manager';
 import type { AgentGraphRetirementDisposition } from '@maka/runtime/stream-graph-coordinator';
-import type { InteractiveSessionTodoWriter } from '@maka/storage/session-todo-authority';
+import type { InteractiveSessionTaskWriter } from '@maka/storage/session-task-authority';
 import type { InteractiveContextOffloadWriter } from '@maka/storage/context-offload-store';
 import {
   type OperationOutcome,
@@ -123,7 +123,7 @@ export interface HostSessionRetirementCoordinatorOptions {
   readonly capabilities: RetirementCapabilities;
   readonly continuity: RetirementContinuity;
   readonly artifacts: Pick<InteractiveArtifactStoreWriter, 'purgeSessionArtifacts'>;
-  readonly sessionTodo: Pick<InteractiveSessionTodoWriter, 'purgeSessionState'>;
+  readonly sessionTask: Pick<InteractiveSessionTaskWriter, 'purgeSessionState'>;
   readonly contextOffload?: Pick<InteractiveContextOffloadWriter, 'retireSession'>;
   readonly purgeOperationalState: (sessionId: string) => Promise<void>;
   readonly purgeAgentGraphState: (sessionId: string) => Promise<void>;
@@ -195,7 +195,7 @@ export class HostSessionRetirementCoordinator {
   readonly #capabilities: RetirementCapabilities;
   readonly #continuity: RetirementContinuity;
   readonly #artifacts: HostSessionRetirementCoordinatorOptions['artifacts'];
-  readonly #sessionTodo: HostSessionRetirementCoordinatorOptions['sessionTodo'];
+  readonly #sessionTask: HostSessionRetirementCoordinatorOptions['sessionTask'];
   readonly #contextOffload: HostSessionRetirementCoordinatorOptions['contextOffload'];
   readonly #purgeOperationalState: HostSessionRetirementCoordinatorOptions['purgeOperationalState'];
   readonly #purgeAgentGraphState: HostSessionRetirementCoordinatorOptions['purgeAgentGraphState'];
@@ -223,7 +223,7 @@ export class HostSessionRetirementCoordinator {
     this.#capabilities = options.capabilities;
     this.#continuity = options.continuity;
     this.#artifacts = options.artifacts;
-    this.#sessionTodo = options.sessionTodo;
+    this.#sessionTask = options.sessionTask;
     this.#contextOffload = options.contextOffload;
     this.#purgeOperationalState = options.purgeOperationalState;
     this.#purgeAgentGraphState = options.purgeAgentGraphState;
@@ -730,7 +730,7 @@ export class HostSessionRetirementCoordinator {
       purgeSessionSidecars(
         {
           artifacts: this.#artifacts,
-          sessionTodo: this.#sessionTodo,
+          sessionTask: this.#sessionTask,
           ...(this.#contextOffload ? { contextOffload: this.#contextOffload } : {}),
           purgeOperationalState: this.#purgeOperationalState,
         },

@@ -20,7 +20,6 @@
 import { RuntimeHostProtocolError } from '../protocol/errors.js';
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { SCHEDULED_TASK_NATIVE_EFFECT_SERVICE_ID } from '@maka/runtime/scheduled-task-tools';
 import {
   CLIENT_CAPABILITY_MAX_MANIFEST_BYTES,
   CLIENT_CAPABILITY_MAX_OFFERS,
@@ -234,7 +233,7 @@ describe('Client Capability protocol', () => {
         input: {
           registrationId: 'registration',
           offers: [],
-          services: [{ serviceId: SCHEDULED_TASK_NATIVE_EFFECT_SERVICE_ID, version: 'vendor-v4' }],
+          services: [{ serviceId: 'maka_workspace_service', version: 'vendor-v4' }],
         },
       }),
       {
@@ -243,7 +242,7 @@ describe('Client Capability protocol', () => {
         input: {
           registrationId: 'registration',
           offers: [],
-          services: [{ serviceId: SCHEDULED_TASK_NATIVE_EFFECT_SERVICE_ID, version: 'vendor-v4' }],
+          services: [{ serviceId: 'maka_workspace_service', version: 'vendor-v4' }],
         },
       },
     );

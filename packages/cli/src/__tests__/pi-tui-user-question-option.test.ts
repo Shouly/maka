@@ -296,3 +296,77 @@ test('render() without a budget renders every wrapped line', () => {
   assert.ok(optionRows.length > 3, 'no clamping without a budget');
   assert.ok(!optionRows.some((line) => line.includes('…')), 'nothing elided without a budget');
 });
+
+test('the header prints as a chip ahead of the question', () => {
+  const tui = new TuiMainScreen(new FakeTerminal(60));
+  const question = new UserQuestionOverlay(tui, {
+    title: 'Which auth method?',
+    header: 'Auth method',
+    rightLabel: '1 / 2',
+    hint: '↑↓ move',
+    placeholder: 'Other: type answer',
+    options: [{ label: 'OAuth' }, { label: 'API key' }],
+    onSelectOption: () => undefined,
+    onSubmitText: () => undefined,
+    onSkip: () => undefined,
+  });
+  assert.equal(
+    stripAnsi(question.render(60)[0] ?? '').trimEnd(),
+    '[Auth method] Which auth method? 1 / 2',
+  );
+});
+
+test('multiSelect toggles with Space and submits every checked label with Enter', () => {
+  const SPACE = ' ';
+  const ENTER = '\r';
+  const ARROW_DOWN = '\x1b[B';
+  const submitted: number[][] = [];
+  const tui = new TuiMainScreen(new FakeTerminal(40));
+  const question = new UserQuestionOverlay(tui, {
+    title: 'Which surfaces?',
+    header: 'Surfaces',
+    rightLabel: '1 / 1',
+    hint: '↑↓ move · Space toggle',
+    placeholder: 'Other: type answer',
+    options: [{ label: 'Desktop' }, { label: 'CLI' }, { label: 'Web' }],
+    multiSelect: true,
+    onSelectOption: () => assert.fail('multiSelect must not take the single-select path'),
+    onSubmitSelection: (indexes) => submitted.push(indexes),
+    onSubmitText: () => undefined,
+    onSkip: () => undefined,
+  });
+
+  question.handleInput(SPACE);
+  question.handleInput(ARROW_DOWN);
+  question.handleInput(ARROW_DOWN);
+  question.handleInput(SPACE);
+  const rows = question.render(40).map((row) => stripAnsi(row));
+  assert.ok(
+    rows.some((row) => row.includes('[x] Desktop')),
+    `checked option must render a filled box: ${JSON.stringify(rows)}`,
+  );
+  assert.ok(rows.some((row) => row.includes('[ ] CLI')));
+  assert.ok(rows.some((row) => row.includes('[x] Web')));
+  question.handleInput(ENTER);
+  assert.deepEqual(submitted, [[0, 2]]);
+});
+
+test('Enter with nothing checked answers with the highlighted option', () => {
+  const submitted: number[][] = [];
+  const tui = new TuiMainScreen(new FakeTerminal(40));
+  const question = new UserQuestionOverlay(tui, {
+    title: 'Which surfaces?',
+    rightLabel: '1 / 1',
+    hint: '↑↓ move',
+    placeholder: 'Other: type answer',
+    options: [{ label: 'Desktop' }, { label: 'CLI' }],
+    multiSelect: true,
+    onSelectOption: () => undefined,
+    onSubmitSelection: (indexes) => submitted.push(indexes),
+    onSubmitText: () => undefined,
+    onSkip: () => undefined,
+  });
+  question.handleInput('\x1b[B');
+  question.handleInput('\r');
+  assert.deepEqual(submitted, [[1]]);
+});

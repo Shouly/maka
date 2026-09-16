@@ -489,7 +489,7 @@ describe('Maka Pi TUI transcript', () => {
         type: 'tool_start',
         toolUseId: 'tool-1',
         toolName: 'Read',
-        args: { path: 'package.json' },
+        args: { file_path: 'package.json' },
       }),
     );
     applyMakaSessionEventToTranscript(
@@ -810,7 +810,7 @@ describe('Maka Pi TUI transcript', () => {
           turnId: 'turn-1',
           ts: 3,
           toolName: 'Read',
-          args: { path: 'README.md' },
+          args: { file_path: 'README.md' },
         },
         {
           type: 'tool_result',
@@ -829,7 +829,7 @@ describe('Maka Pi TUI transcript', () => {
       (entry): entry is Extract<(typeof state.entries)[number], { kind: 'tool' }> =>
         entry.kind === 'tool',
     );
-    assert.deepEqual(tool?.input, { path: 'README.md' });
+    assert.deepEqual(tool?.input, { file_path: 'README.md' });
     assert.deepEqual(tool?.result, { kind: 'text', text: 'README contents' });
     assert.deepEqual(state.steering, ['Keep going']);
     assert.equal(state.entries.at(-1)?.kind, 'notice');
@@ -961,7 +961,7 @@ describe('Maka Pi TUI transcript', () => {
         turnId: 'turn-1',
         ts: 1,
         toolName: 'Read',
-        args: { path: 'README.md' },
+        args: { file_path: 'README.md' },
       },
       {
         type: 'turn_state',
@@ -1001,7 +1001,7 @@ describe('Maka Pi TUI transcript', () => {
         turnId: 'turn-1',
         ts: 1,
         toolName: 'Read',
-        args: { path: 'README.md' },
+        args: { file_path: 'README.md' },
       },
       {
         type: 'tool_result',
@@ -1961,7 +1961,7 @@ describe('Maka Pi TUI transcript', () => {
     assert.deepEqual(after.slice(0, viewportTop), before.slice(0, viewportTop));
   });
 
-  test('replays WriteStdin as a human-readable operation row while merging its PTY revision into Bash', () => {
+  test('replays TaskInput as a human-readable operation row while merging its PTY revision into Bash', () => {
     const state = createMakaPiTranscriptState();
     const ref = 'maka://runtime/background-tasks/pty-1';
     const rawInput = 'echo hello\r';
@@ -1994,7 +1994,7 @@ describe('Maka Pi TUI transcript', () => {
         id: 'write-pty',
         turnId: 'turn-2',
         ts: 3,
-        toolName: 'WriteStdin',
+        toolName: 'TaskInput',
         args: { ref, input: rawInput, size: { cols: 100, rows: 30 } },
       },
       {
@@ -2296,7 +2296,7 @@ describe('Maka Pi TUI transcript', () => {
         type: 'tool_start',
         toolUseId: 'tool-1',
         toolName: 'Read',
-        args: { path: 'a.ts' },
+        args: { file_path: 'a.ts' },
       }),
     );
     applyMakaSessionEventToTranscript(
@@ -2443,7 +2443,7 @@ describe('Maka Pi TUI transcript', () => {
         event({
           type: 'tool_start',
           toolUseId,
-          toolName: 'agent_spawn',
+          toolName: 'Agent',
           args: { profile, task: `Run ${profile}` },
         }),
       );
@@ -2538,7 +2538,7 @@ describe('Maka Pi TUI transcript', () => {
         id: 'agent-a',
         turnId: 'turn-1',
         ts: 1,
-        toolName: 'agent_spawn',
+        toolName: 'Agent',
         args: { profile: 'local_read', task: 'Inspect.' },
       },
       {
@@ -2925,7 +2925,7 @@ describe('Maka Pi TUI transcript', () => {
       },
       {
         id: 'subagent-failed',
-        toolName: 'agent_spawn',
+        toolName: 'Agent',
         args: { profile: 'local_read', task: 'read' },
         isError: true,
         content: subagentResult({ status: 'failed', summary: 'child failed' }),
@@ -2933,7 +2933,7 @@ describe('Maka Pi TUI transcript', () => {
       },
       {
         id: 'subagent-aborted',
-        toolName: 'agent_spawn',
+        toolName: 'Agent',
         args: { profile: 'local_read', task: 'read' },
         isError: true,
         content: subagentResult({ status: 'cancelled', summary: 'child stopped' }),
@@ -3141,7 +3141,7 @@ describe('Maka Pi TUI transcript', () => {
     assert.deepEqual(after, before);
   });
 
-  test('never renders a StopBackgroundTask card while the stop is in flight', () => {
+  test('never renders a TaskStop card while the stop is in flight', () => {
     const state = createMakaPiTranscriptState();
     const ref = 'maka://runtime/background-tasks/bg-1';
     applyMakaSessionEventToTranscript(
@@ -3167,14 +3167,14 @@ describe('Maka Pi TUI transcript', () => {
       event({
         type: 'tool_start',
         toolUseId: 'stop-bg',
-        toolName: 'StopBackgroundTask',
+        toolName: 'TaskStop',
         args: { ref },
       }),
     );
 
     // No transient stop row while the stop call is in flight.
     const inFlight = renderMakaPiTranscript(state, meta(), 100).map(stripAnsi).join('\n');
-    assert.doesNotMatch(inFlight, /● StopBackgroundTask/);
+    assert.doesNotMatch(inFlight, /● TaskStop/);
 
     applyMakaSessionEventToTranscript(
       state,
@@ -3193,10 +3193,10 @@ describe('Maka Pi TUI transcript', () => {
     );
     assert.equal(toolStatus(tools[0]), 'aborted');
     const rendered = renderMakaPiTranscript(state, meta(), 100).map(stripAnsi).join('\n');
-    assert.doesNotMatch(rendered, /● StopBackgroundTask/);
+    assert.doesNotMatch(rendered, /● TaskStop/);
   });
 
-  test('never folds a WriteStdin aimed at a background-task ref', () => {
+  test('never folds a TaskInput aimed at a background-task ref', () => {
     const state = createMakaPiTranscriptState();
     const ref = 'maka://runtime/background-tasks/bg-1';
     applyMakaSessionEventToTranscript(
@@ -3222,12 +3222,12 @@ describe('Maka Pi TUI transcript', () => {
       event({
         type: 'tool_start',
         toolUseId: 'stdin-bg',
-        toolName: 'WriteStdin',
+        toolName: 'TaskInput',
         args: { ref, input: 'q' },
       }),
     );
 
-    // WriteStdin is a real interaction with the process, not polling: its card
+    // TaskInput is a real interaction with the process, not polling: its card
     // renders from tool_start on.
     const tools = state.entries.filter((entry) => entry.kind === 'tool');
     assert.deepEqual(
@@ -4118,7 +4118,7 @@ describe('Maka Pi TUI transcript', () => {
     );
   });
 
-  test('folds StopBackgroundTask into its parent Bash card as aborted', () => {
+  test('folds TaskStop into its parent Bash card as aborted', () => {
     const state = createMakaPiTranscriptState();
     const ref = 'maka://runtime/background-tasks/bg-1';
     applyMakaSessionEventToTranscript(
@@ -4144,7 +4144,7 @@ describe('Maka Pi TUI transcript', () => {
       event({
         type: 'tool_start',
         toolUseId: 'stop-bg',
-        toolName: 'StopBackgroundTask',
+        toolName: 'TaskStop',
         args: { ref },
       }),
     );
@@ -4164,7 +4164,7 @@ describe('Maka Pi TUI transcript', () => {
     const lines = renderMakaPiTranscript(state, meta(), 100);
     const rendered = lines.map(stripAnsi).join('\n');
     assert.match(rendered, /● Bash  \$ sleep 30 \(7s · cancelled · exit 130\)/);
-    assert.doesNotMatch(rendered, /● StopBackgroundTask/);
+    assert.doesNotMatch(rendered, /● TaskStop/);
   });
 
   test('applies a runtime-published terminal update directly to its parent Bash card', () => {
@@ -4255,7 +4255,7 @@ describe('Maka Pi TUI transcript', () => {
       event({
         type: 'tool_start',
         toolUseId: 'shell-1',
-        toolName: 'StopBackgroundTask',
+        toolName: 'TaskStop',
         args: { ref: 'bg-42' },
       }),
     );
@@ -4389,39 +4389,39 @@ describe('Maka Pi TUI transcript', () => {
     assert.doesNotMatch(rendered, /\(no output\)/);
   });
 
-  test('keeps todo_write arguments quiet and shows only its settled snapshot', () => {
+  test('keeps task write arguments quiet and shows only its settled result', () => {
     const state = createMakaPiTranscriptState();
     applyMakaSessionEventToTranscript(
       state,
       event({
         type: 'tool_start',
-        toolUseId: 'todo-write',
-        toolName: 'todo_write',
-        displayName: 'Todo Write',
+        toolUseId: 'task-write',
+        toolName: 'TaskCreate',
+        displayName: 'Task Create',
         args: undefined,
         argsPreview: undefined,
       }),
     );
 
     const running = renderMakaPiTranscript(state, meta(), 80).map(stripAnsi).join('\n');
-    assert.match(running, /Todo Write/);
+    assert.match(running, /Task Create/);
     assert.doesNotMatch(running, /uncommitted item/);
 
     applyMakaSessionEventToTranscript(
       state,
       event({
         type: 'tool_result',
-        toolUseId: 'todo-write',
+        toolUseId: 'task-write',
         isError: false,
         content: {
           kind: 'text',
-          text: 'Todo list updated.\n1. [in_progress] committed item',
+          text: 'Task #1 created successfully: committed item\nSecond line for the fold',
         },
       }),
     );
 
     const settled = renderMakaPiTranscript(state, meta(), 80).map(stripAnsi).join('\n');
-    assert.match(settled, /Todo Write/);
+    assert.match(settled, /Task Create/);
     assert.match(settled, /2 lines/);
     assert.equal(toggleAllToolExpansion(state), true);
     assert.match(
@@ -4430,27 +4430,27 @@ describe('Maka Pi TUI transcript', () => {
     );
   });
 
-  test('never restores todo_write arguments from durable transcript reconciliation', () => {
+  test('never restores task write arguments from durable transcript reconciliation', () => {
     const messages = [
       {
         type: 'tool_call',
-        id: 'todo-write',
+        id: 'task-write',
         turnId: 'turn-1',
         ts: 1,
-        toolName: 'todo_write',
-        displayName: 'Todo Write',
-        args: { todos: [{ content: 'uncommitted item', status: 'pending' }] },
+        toolName: 'TaskCreate',
+        displayName: 'Task Create',
+        args: { subject: 'uncommitted item', description: 'not yet settled' },
       },
       {
         type: 'tool_result',
-        id: 'todo-result',
+        id: 'task-result',
         turnId: 'turn-1',
         ts: 2,
-        toolUseId: 'todo-write',
+        toolUseId: 'task-write',
         isError: false,
         content: {
           kind: 'text',
-          text: 'Todo list updated (1 items):\n1. [in_progress] "committed item"',
+          text: 'Updated task #1 status\ncommitted item',
         },
       },
     ] satisfies StoredMessage[];
@@ -4463,9 +4463,9 @@ describe('Maka Pi TUI transcript', () => {
           state,
           event({
             type: 'tool_start',
-            toolUseId: 'todo-write',
-            toolName: 'todo_write',
-            displayName: 'Todo Write',
+            toolUseId: 'task-write',
+            toolName: 'TaskCreate',
+            displayName: 'Task Create',
             args: undefined,
           }),
         );
@@ -4475,7 +4475,7 @@ describe('Maka Pi TUI transcript', () => {
       const state = createMakaPiTranscriptState();
       reconcile(state);
       const tool = state.entries.find(
-        (entry) => entry.kind === 'tool' && entry.toolUseId === 'todo-write',
+        (entry) => entry.kind === 'tool' && entry.toolUseId === 'task-write',
       );
       assert.deepEqual(tool?.kind === 'tool' ? tool.input : undefined, {});
       assert.equal(toggleAllToolExpansion(state), true);

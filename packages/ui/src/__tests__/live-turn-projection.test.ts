@@ -427,7 +427,7 @@ describe('applyLiveTurnEvent', () => {
       turnId: 'turn-1',
       stepId: 'step-1',
       toolUseId: 'tool-1',
-      toolName: 'mcp__desktop_computer_use__maka_computer',
+      toolName: 'mcp__desktop_computer_use__Computer',
       activityKind: 'computer',
       args: {
         action: 'element_sequence',
@@ -1050,7 +1050,7 @@ function previewedSubagentTurn(): LiveTurnProjection {
     turnId: 'turn-1',
     stepId: 'step-1',
     toolUseId: 'tool-1',
-    toolName: 'agent_spawn',
+    toolName: 'Agent',
     args: { profile: 'local_read', task: 'Inspect' },
     ts: 100,
   });

@@ -582,6 +582,8 @@ export function projectRuntimeHostInteractionRequest(
         ...base,
         questions: interaction.request.questions.map((question) => ({
           question: question.question,
+          header: question.header,
+          ...(question.multiSelect ? { multiSelect: true } : {}),
           options: question.options.map((option) => ({ ...option })),
         })),
       },

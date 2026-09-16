@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import { isDeepStrictEqual } from 'node:util';
 import {
   buildSideConversationSystemPromptFragment,
@@ -34,6 +35,13 @@ import type { RuntimeExecutionConnection } from '@maka/core/llm-connections';
 import type { RuntimePolicySnapshot } from '@maka/core/runtime-policy';
 import type { SessionToolProfile } from '@maka/core/session';
 import { assembleMainSessionSystemPrompt } from '@maka/runtime/system-prompt/main-session-prompt';
+import { renderKnowledgeCutoffSection } from '@maka/runtime/system-prompt/knowledge-cutoff-prompt';
+import {
+  hostTimeZone,
+  renderEnvironmentPromptFragment,
+} from '@maka/runtime/system-prompt/environment-prompt';
+import { resolveProjectGitInfo } from '@maka/runtime/system-prompt/project-context';
+import { tmpdir } from 'node:os';
 import { buildAskUserQuestionTool } from '@maka/runtime/ask-user-question-tool';
 import { buildBuiltinTools, type BuildBuiltinToolsOptions } from '@maka/runtime/builtin-tools';
 import {
@@ -44,6 +52,8 @@ import {
 import { buildParentAgentTools } from '@maka/runtime/subagent-tools';
 import { buildPersonalizationPromptFragment } from '@maka/runtime/system-prompt/personalization-prompt';
 import { buildRequestSandboxBoundaryTool } from '@maka/runtime/sandbox-boundary-tool';
+import { buildSendUserFileTool } from '@maka/runtime/send-user-file-tool';
+import { buildSendUserMessageTool } from '@maka/runtime/send-user-message-tool';
 import {
   buildHostCapabilitiesFromBinding,
   buildSkillAgentToolFromInventory,
@@ -53,7 +63,7 @@ import {
   type SkillCatalogBudgetOptions,
   type SkillInventoryResolver,
 } from '@maka/runtime/skills';
-import { buildSessionTodoTools, type SessionTodoToolStore } from '@maka/runtime/session-todo-tools';
+import { buildSessionTaskTools, type SessionTaskToolStore } from '@maka/runtime/session-task-tools';
 import { buildWorkspaceInstructionsPromptFragment } from '@maka/runtime/system-prompt/workspace-instructions';
 import { isDeepResearchToolAllowed } from '@maka/runtime/deep-research-tools';
 import { listRunnableBuiltinAgentDefinitions } from '@maka/runtime/agent-catalog';
@@ -95,10 +105,16 @@ const CHILD_INSTRUCTION_BOUNDARY = [
 
 export interface InteractiveRunComposerInput {
   readonly runtimePolicy: RuntimePolicySnapshot;
+  /**
+   * The serving model's reliable knowledge cutoff, for <knowledge_cutoff>.
+   * Absent when the model's cutoff is unknown; the section then states the
+   * behaviour without a date rather than naming a wrong one.
+   */
+  readonly knowledgeCutoff?: string;
   readonly skills: HostSkillCatalogCoordinator;
   readonly pluginSkills?: PluginSkillService;
   readonly memory: HostMemoryCoordinator;
-  readonly sessionTodo: SessionTodoToolStore;
+  readonly sessionTask: SessionTaskToolStore;
   readonly childInstruction?: string;
   readonly sideConversation?: boolean;
   readonly boundTools?: readonly MakaTool[];
@@ -120,7 +136,7 @@ export interface InteractiveRunComposerInput {
     context: HostModelPromptContext,
     baseText: string | undefined,
   ) => Promise<ResolvedRunPrompt>;
-  readonly scheduledTaskTool?: MakaTool;
+  readonly scheduledTaskTools?: readonly MakaTool[];
   readonly goalTools?: readonly MakaTool[];
   readonly parentAgentTools?: readonly MakaTool[];
   readonly plan?: {
@@ -157,11 +173,11 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
   const defaultTools = input.boundTools
     ? input.boundTools
     : buildDefaultHostTools(
-        input.sessionTodo,
+        input.sessionTask,
         inventoryFor,
         builtinTools,
         input.hostTools ?? [],
-        input.scheduledTaskTool,
+        input.scheduledTaskTools,
         input.goalTools,
         input.parentAgentTools,
         input.plan,
@@ -247,24 +263,42 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
         const workspaceInstructions = promptState.policy.workspaceInstructions.enabled
           ? await buildWorkspaceInstructionsPromptFragment(context.cwd)
           : undefined;
+        // Session-level facts the model would otherwise probe for. The block
+        // is constant for the session, so it sits in the cached prompt rather
+        // than travelling with each turn.
+        const knowledgeCutoffSection = renderKnowledgeCutoffSection(input.knowledgeCutoff);
+        const gitInfo = await resolveProjectGitInfo(context.cwd);
+        const environment = renderEnvironmentPromptFragment({
+          cwd: context.cwd,
+          platform: process.platform,
+          gitRepository: gitInfo.isGitRepo,
+          ...(gitInfo.branch ? { branch: gitInfo.branch } : {}),
+          tmpDir: tmpdir(),
+          ...(hostTimeZone() ? { timeZone: hostTimeZone() } : {}),
+        });
         const text = childInstruction
           ? joinFragments([
+              environment,
               skills.text,
               workspaceInstructions,
               CHILD_INSTRUCTION_BOUNDARY,
               childInstruction,
             ])
-          : assembleMainSessionSystemPrompt([
-              buildPersonalizationPromptFragment(promptState.policy.personalization).text,
-              skills.text,
-              workspaceInstructions,
-              promptState.memory,
-              input.plan?.mode === 'plan'
-                ? renderPlanModePrompt({ fullAccess: input.plan.permissionMode === 'bypass' })
-                : undefined,
-              input.deepResearch ? buildDeepResearchSystemPromptFragment() : undefined,
-              input.sideConversation ? buildSideConversationSystemPromptFragment() : undefined,
-            ]);
+          : assembleMainSessionSystemPrompt(
+              [
+                environment,
+                buildPersonalizationPromptFragment(promptState.policy.personalization).text,
+                skills.text,
+                workspaceInstructions,
+                promptState.memory,
+                input.plan?.mode === 'plan'
+                  ? renderPlanModePrompt({ fullAccess: input.plan.permissionMode === 'bypass' })
+                  : undefined,
+                input.deepResearch ? buildDeepResearchSystemPromptFragment() : undefined,
+                input.sideConversation ? buildSideConversationSystemPromptFragment() : undefined,
+              ],
+              { knowledge_cutoff_section: knowledgeCutoffSection },
+            );
         // Keep each turn's source revisions independent while sharing identical
         // immutable text already retained by the turn cache.
         const sharedText =
@@ -454,7 +488,7 @@ export function createInteractiveRunComposerFactory(
         skills: input.skills,
         ...(input.pluginSkills ? { pluginSkills: input.pluginSkills } : {}),
         memory: input.memory,
-        sessionTodo: input.sessionTodo,
+        sessionTask: input.sessionTask,
         ...(backendContext.systemPrompt ? { childInstruction: backendContext.systemPrompt } : {}),
         ...(isSideConversationSession(backendContext.header.labels)
           ? { sideConversation: true }
@@ -486,7 +520,7 @@ export function createInteractiveRunComposerFactory(
                 input.resolvePluginSystemPrompt!(backendContext.sessionId, context, baseText),
             }
           : {}),
-        ...(input.scheduledTaskTool ? { scheduledTaskTool: input.scheduledTaskTool } : {}),
+        ...(input.scheduledTaskTools ? { scheduledTaskTools: input.scheduledTaskTools } : {}),
         ...(input.goalTools ? { goalTools: input.goalTools } : {}),
         ...(parentAgentTools ? { parentAgentTools } : {}),
         ...(planState && input.planStore
@@ -538,11 +572,11 @@ function assertUniqueToolNames(tools: readonly MakaTool[]): void {
 }
 
 function buildDefaultHostTools(
-  sessionTodo: SessionTodoToolStore,
+  sessionTask: SessionTaskToolStore,
   inventoryFor: SkillInventoryResolver,
   builtinOptions?: BuildBuiltinToolsOptions,
   hostTools: readonly MakaTool[] = [],
-  scheduledTaskTool?: MakaTool,
+  scheduledTaskTools?: readonly MakaTool[],
   goalTools: readonly MakaTool[] = [],
   parentAgentTools: readonly MakaTool[] = [],
   plan?: InteractiveRunComposerInput['plan'],
@@ -550,8 +584,13 @@ function buildDefaultHostTools(
 ): MakaTool[] {
   const builtins = builtinOptions ? buildBuiltinTools(builtinOptions) : [];
   const question = buildAskUserQuestionTool();
+  // The delivery tools resolve their paths through the same filesystem
+  // authority the built-in file tools run on, so they take the same options.
+  // Their Artifact recorder arrives on the ToolRuntime context, not from here.
+  const sendUserFile = buildSendUserFileTool(builtinOptions ?? {});
+  const sendUserMessage = buildSendUserMessageTool();
   const sandboxBoundary = buildRequestSandboxBoundaryTool();
-  const todoTools = buildSessionTodoTools(sessionTodo);
+  const taskTools = buildSessionTaskTools(sessionTask);
   const activeExecution = plan ? activePlanExecution(plan.state) : undefined;
   const interruptedExecution = plan
     ? [...plan.state.executions].reverse().find((execution) => execution.status === 'interrupted')
@@ -570,11 +609,13 @@ function buildDefaultHostTools(
     ...builtins.map((tool) => tool.name),
     ...hostTools.map((tool) => tool.name),
     question.name,
+    sendUserFile.name,
+    sendUserMessage.name,
     sandboxBoundary.name,
-    'Skill',
-    'SkillSearch',
-    ...todoTools.map((tool) => tool.name),
-    ...(scheduledTaskTool ? [scheduledTaskTool.name] : []),
+    TOOL_NAMES.skill,
+    TOOL_NAMES.skillSearch,
+    ...taskTools.map((tool) => tool.name),
+    ...(scheduledTaskTools ?? []).map((tool) => tool.name),
     ...goalTools.map((tool) => tool.name),
     ...parentAgentTools.map((tool) => tool.name),
     ...planTools.map((tool) => tool.name),
@@ -586,11 +627,13 @@ function buildDefaultHostTools(
     ...builtins,
     ...hostTools,
     question,
+    sendUserFile,
+    sendUserMessage,
     sandboxBoundary,
     buildSkillAgentToolFromInventory(inventoryFor, skillHost, { shadowTracker }),
     buildSkillSearchAgentToolFromInventory(inventoryFor, skillHost, { shadowTracker }),
-    ...todoTools,
-    ...(scheduledTaskTool ? [scheduledTaskTool] : []),
+    ...taskTools,
+    ...(scheduledTaskTools ?? []),
     ...goalTools,
     ...parentAgentTools,
     ...planTools,

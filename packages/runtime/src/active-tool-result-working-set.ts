@@ -17,6 +17,8 @@
  * under the License.
  */
 
+import { TOOL_NAMES } from '@maka/core/tool-names';
+
 export type ActiveToolResultSupersessionReason =
   | 'exact_duplicate'
   | 'newer_read_covers_range'
@@ -151,24 +153,24 @@ function exactObservationKey(observation: ActiveToolResultObservation): string {
   return `${observation.toolName}\u0000${stableStringify(observation.input)}\u0000${observation.isError ? 'error' : 'success'}\u0000${observation.bodySha256}`;
 }
 
-function describeObservation(toolName: string, input: unknown): ObservationDescriptor | undefined {
-  if (toolName === 'Read') return describeRead(input);
-  if (toolName === 'Glob') return describeGlob(input);
-  if (toolName === 'Grep') return describeGrep(input);
-  if (toolName === 'Bash') return describeBash(input);
+function describeObservation(name: string, input: unknown): ObservationDescriptor | undefined {
+  if (name === TOOL_NAMES.read) return describeRead(input);
+  if (name === TOOL_NAMES.glob) return describeGlob(input);
+  if (name === TOOL_NAMES.grep) return describeGrep(input);
+  if (name === TOOL_NAMES.bash) return describeBash(input);
   return undefined;
 }
 
 function describeRead(input: unknown): ReadDescriptor | undefined {
   const record = asRecord(input);
-  if (!record || typeof record.path !== 'string' || record.path.length === 0) {
+  if (!record || typeof record.file_path !== 'string' || record.file_path.length === 0) {
     return undefined;
   }
   const start = nonNegativeInteger(record.offset) ?? 0;
   const limit = positiveInteger(record.limit);
   return {
     kind: 'read',
-    path: normalizeSubjectPath(record.path),
+    path: normalizeSubjectPath(record.file_path),
     start,
     end: limit === undefined ? Number.POSITIVE_INFINITY : start + limit,
   };
@@ -177,12 +179,12 @@ function describeRead(input: unknown): ReadDescriptor | undefined {
 function describeGlob(input: unknown): SnapshotDescriptor | undefined {
   const record = asRecord(input);
   if (!record || typeof record.pattern !== 'string') return undefined;
-  if (record.cwd !== undefined && typeof record.cwd !== 'string') return undefined;
+  if (record.path !== undefined && typeof record.path !== 'string') return undefined;
   return {
     kind: 'snapshot',
     key: `Glob\u0000${stableStringify({
       pattern: record.pattern,
-      cwd: normalizeSubjectPath(record.cwd ?? '.'),
+      cwd: normalizeSubjectPath(record.path ?? '.'),
     })}`,
   };
 }
@@ -194,10 +196,23 @@ function describeGrep(input: unknown): SnapshotDescriptor | undefined {
   if (record.glob !== undefined && typeof record.glob !== 'string') return undefined;
   return {
     kind: 'snapshot',
+    // Two Greps differing only in output mode, case folding, context or limit
+    // are different searches over the same subject, so the shaping arguments
+    // are part of the key: a later `content` search must not be treated as a
+    // fresher snapshot of an earlier `files_with_matches` one.
     key: `Grep\u0000${stableStringify({
       pattern: record.pattern,
       path: normalizeSubjectPath(record.path ?? '.'),
       glob: record.glob ?? null,
+      type: record.type ?? null,
+      output_mode: record.output_mode ?? null,
+      ignore_case: record['-i'] ?? null,
+      context: record['-C'] ?? null,
+      after: record['-A'] ?? null,
+      before: record['-B'] ?? null,
+      head_limit: record.head_limit ?? null,
+      offset: record.offset ?? null,
+      multiline: record.multiline ?? null,
     })}`,
   };
 }

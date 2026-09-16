@@ -191,7 +191,7 @@ const swarmTool: MakaTool = {
 
 function clientCapabilityTool(): MakaTool {
   return {
-    name: 'browser_click',
+    name: 'BrowserClick',
     description: 'test',
     categoryHint: 'client_capability',
     hostAdmission: 'client_capability',
@@ -270,7 +270,7 @@ const REFUSAL_PATHS: Array<{
     drive: async (h) => {
       const runtime = runtimeFor(h);
       const tool: MakaTool = {
-        name: 'maka_computer',
+        name: 'Computer',
         description: 'test',
         categoryHint: 'computer_use',
         parameters: z.object({
@@ -288,7 +288,7 @@ const REFUSAL_PATHS: Array<{
   },
   {
     name: 'deferred tool used before its load',
-    expect: /tool_search/,
+    expect: /ToolSearch/,
     drive: async (h) => {
       const runtime = runtimeFor(h);
       runtime.setGating({ gatedNames: new Set(['Deferred']), activeNames: () => new Set() });

@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import { ARTIFACT_KINDS, type ArtifactKind } from './artifacts.js';
 import {
   decodeCanonicalShellToolResultContent,
   isSandboxDenialSignal,
@@ -81,6 +82,16 @@ const WEB_SEARCH_ROW_SHAPE = defineObjectShape<WebSearchRow>()(
   ['title', 'url', 'snippet', 'source'],
   [],
 );
+const USER_FILE_DELIVERY_SHAPE = defineObjectShape<Result<'user_file_delivery'>>()(
+  ['kind', 'status', 'display', 'files'],
+  ['caption'],
+);
+type UserFileDeliveryFile = Result<'user_file_delivery'>['files'][number];
+const USER_FILE_DELIVERY_FILE_SHAPE = defineObjectShape<UserFileDeliveryFile>()(
+  ['artifactId', 'name', 'path', 'kind', 'sizeBytes'],
+  ['mimeType'],
+);
+const USER_MESSAGE_SHAPE = defineObjectShape<Result<'user_message'>>()(['kind', 'message'], []);
 const WEB_SEARCH_ERROR_SHAPE = defineObjectShape<Result<'web_search_error'>>()(
   ['kind', 'ok', 'provider', 'reason', 'message'],
   ['query', 'credentialSource'],
@@ -271,6 +282,18 @@ function isNonShellToolResultContent(value: unknown): value is ToolResultContent
         Array.isArray(value.rows) &&
         value.rows.every(isWebSearchRow)
       );
+    case 'user_file_delivery':
+      return (
+        hasExactShape(value, USER_FILE_DELIVERY_SHAPE) &&
+        (value.status === 'normal' || value.status === 'proactive') &&
+        (value.display === 'render' || value.display === 'attach') &&
+        isOptionalString(value.caption) &&
+        Array.isArray(value.files) &&
+        value.files.length > 0 &&
+        value.files.every(isUserFileDeliveryFile)
+      );
+    case 'user_message':
+      return hasExactShape(value, USER_MESSAGE_SHAPE) && typeof value.message === 'string';
     case 'web_search_error':
       return (
         hasExactShape(value, WEB_SEARCH_ERROR_SHAPE) &&
@@ -350,6 +373,19 @@ function isAgentSwarmItem(value: unknown): value is AgentSwarmItem {
     isOptionalFiniteNumber(value.completedAt) &&
     isOptionalFiniteNumber(value.durationMs) &&
     isOptionalString(value.failureClass)
+  );
+}
+
+function isUserFileDeliveryFile(value: unknown): value is UserFileDeliveryFile {
+  return (
+    isRecord(value) &&
+    hasExactShape(value, USER_FILE_DELIVERY_FILE_SHAPE) &&
+    typeof value.artifactId === 'string' &&
+    typeof value.name === 'string' &&
+    typeof value.path === 'string' &&
+    ARTIFACT_KINDS.includes(value.kind as ArtifactKind) &&
+    isOptionalString(value.mimeType) &&
+    isFiniteNumber(value.sizeBytes)
   );
 }
 

@@ -92,7 +92,7 @@ export * from './scheduled-task-change.js';
 export * from './session-retirement.js';
 export * from './session-transcript.js';
 export * from './session-turns.js';
-export * from './session-todo.js';
+export * from './session-task.js';
 export * from './workspace.js';
 export * from './workhub-coordination.js';
 export * from './websocket-path.js';
@@ -101,7 +101,13 @@ export const RUNTIME_HOST_REGISTRATION_SCHEMA_VERSION = 1 as const;
 export const RUNTIME_HOST_PROTOCOL_VERSION = 0 as const;
 // Increment when the same protocol version no longer guarantees safe Client-Host
 // interoperability. Mismatches are rejected before domain commands are admitted.
-export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 151 as const;
+export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 152 as const;
+// 152: Session TODO becomes Session Task on the wire (`session.todo.*` ->
+// `session.task.*`, and the interaction answer kind `todo` -> `session_task`),
+// and a ScheduledTask gains a `manual` schedule, loses the `notify` effect, and
+// carries `toolMode` on its execution template. A 151 peer rejects each of
+// those frames at admission, so the pair must refuse each other at the
+// handshake rather than fail a command later.
 // 151: WorkHub selects and delegates through a durable Host Form interaction.
 // 150: Message admission accepts an empty-text Message that carries a quote or
 // an attachment (#4804). Peers older than this epoch reject that frame at
@@ -277,7 +283,7 @@ export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 151 as const;
 // 82: Session removal reports how many linked subtasks it archived, and adds a
 // `session.remove.preview` query for that count before the delete. Older peers
 // reject the extra removed-result field and the unknown operation.
-// 81: SessionTodo replaces the Task Ledger protocol and continuity domain with
+// 81: SessionTask replaces the Task Ledger protocol and continuity domain with
 // one bounded current-state snapshot. Older peers cannot decode the operation
 // or preserve the new invalidation vocabulary.
 // 80: Runtime Policy catalog models gained validated user-overridden fact

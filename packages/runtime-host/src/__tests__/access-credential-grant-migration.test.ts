@@ -70,13 +70,13 @@ test('renamed and split operations carry their stored authority to successors', 
     'host.status',
     'host.diagnostics.query',
     'host.resources.query',
-    'session.todo.query',
+    'session.task.query',
   ]);
   assert.deepEqual(effectiveOperationGrants(credential), [
     'host.status',
     'host.diagnostics.query',
     'host.resources.query',
-    'session.todo.query',
+    'session.task.query',
   ]);
   assert.deepEqual(unresolvedPersistedGrants(file), []);
 });

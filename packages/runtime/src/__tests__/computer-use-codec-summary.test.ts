@@ -81,7 +81,7 @@ test('a dispatch that changed nothing does not start with the word ok', () => {
     },
   );
   assert.match(text, /delivered but nothing changed/);
-  assert.doesNotMatch(text, /computer\.press_key ok/);
+  assert.doesNotMatch(text, /Computer\.press_key ok/);
 });
 
 test('a dispatch that did change something still reads as ok', () => {
@@ -96,7 +96,7 @@ test('a dispatch that did change something still reads as ok', () => {
       },
     },
   );
-  assert.match(text, /computer\.set_value ok/);
+  assert.match(text, /Computer\.set_value ok/);
 });
 
 test('the model face carries no dispatch route, tier, or internal reason', () => {

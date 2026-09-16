@@ -46,11 +46,11 @@ import {
   type StoredMessage,
 } from '@maka/core/session';
 import { markPersisted } from '@maka/core/persisted-value';
-import type { SessionTodoItem } from '@maka/core/session-todo';
+import type { SessionTask } from '@maka/core/session-task';
 import type { ScheduledTask } from '@maka/core/scheduled-task';
 import { isTerminalRuntimeEvent } from '@maka/core/runtime-event';
 import type { RuntimeEvent } from '@maka/core/runtime-event';
-import { buildSessionTodoTools } from '@maka/runtime/session-todo-tools';
+import { buildSessionTaskTools } from '@maka/runtime/session-task-tools';
 import {
   buildRecoveredTerminalRuntimeEvent,
   classifyTerminalRuntimeLedger,
@@ -75,7 +75,7 @@ import {
   tryAcquireInteractiveRootReader,
   type StorageRootCapability,
 } from '@maka/storage/root-authority';
-import { openInteractiveSessionTodoStoreForWrite } from '@maka/storage/session-todo-authority';
+import { openInteractiveSessionTaskStoreForWrite } from '@maka/storage/session-task-authority';
 import {
   connectRuntimeHost,
   RuntimeHostOperationError,
@@ -93,7 +93,7 @@ import {
   type TurnSnapshot,
 } from '../protocol/index.js';
 import { SessionAdmissionGate } from '../server/session-admission-gate.js';
-import { HostSessionTodoCoordinator } from '../server/session-todo-coordinator.js';
+import { HostSessionTaskCoordinator } from '../server/session-task-coordinator.js';
 import { FramedTransport } from '../transport/framed-transport.js';
 
 import {
@@ -159,7 +159,7 @@ test('production Host resumes a Session through the ScheduledTask authority', {
   });
 });
 
-test('production Host fails slug-only ScheduledTask Agent runs before binding execution identity', {
+test('production Host fails a corrupted pinned model before binding execution identity', {
   timeout: 30_000,
 }, async () => {
   await withExecutionRoot(async (fixture) => {
@@ -180,9 +180,12 @@ test('production Host fails slug-only ScheduledTask Agent runs before binding ex
             kind: 'agent_run',
             execution: {
               cwd: fixture.root,
-              llmConnectionId: seededConnection.connectionId,
-              llmConnectionSlug: seededConnection.slug,
-              model: seededConnection.enabledModelIds[0]!,
+              model: {
+                kind: 'pinned',
+                llmConnectionId: seededConnection.connectionId,
+                llmConnectionSlug: seededConnection.slug,
+                model: seededConnection.enabledModelIds[0]!,
+              },
               permissionMode: 'ask',
               collaborationMode: 'agent',
               orchestrationMode: 'default',
@@ -193,14 +196,15 @@ test('production Host fails slug-only ScheduledTask Agent runs before binding ex
       assert.equal(created.kind, 'task');
       if (created.kind !== 'task') return;
 
-      // Simulate a record written by a pre-#3927 build. Legacy rows remain
-      // readable, but must fail closed before a Session or AgentRun is bound.
+      // A pinned model whose Connection id has gone missing: the row still
+      // reads, but the Host must fail closed rather than resolve the reusable
+      // SLUG to whatever Connection happens to hold it now.
       const database = new DatabaseSync(join(fixture.root, OPERATIONAL_STATE_DATABASE_NAME));
       try {
         database
           .prepare(
             `UPDATE workflow_scheduled_tasks
-             SET record_json = json_remove(record_json, '$.effect.execution.llmConnectionId')
+             SET record_json = json_remove(record_json, '$.effect.execution.model.llmConnectionId')
              WHERE task_id = ?`,
           )
           .run(created.task.id);
@@ -208,20 +212,20 @@ test('production Host fails slug-only ScheduledTask Agent runs before binding ex
         database.close();
       }
 
-      const fired = await desktop.request('scheduled-task.mutate', {
-        kind: 'trigger_now',
-        taskId: created.task.id,
-      });
-      assert.equal(fired.kind, 'task');
-      if (fired.kind !== 'task') return;
-      assert.equal(
-        fired.task.lastError,
-        'ScheduledTask Agent runs require an immutable model connection identity',
+      // The record cannot even be served: the protocol codec refuses a pinned
+      // model with no Connection id, so the task is refused at the boundary
+      // rather than fired and settled as a failure. That is the stronger
+      // outcome — the run never starts, so there is no half-bound Session to
+      // clean up — and it is why this asserts a rejection rather than a failed
+      // run. The fire-time guard in `#resolveAgentRunConnection` stays as the
+      // second line for a record that reaches it another way.
+      await assert.rejects(
+        desktop.request('scheduled-task.mutate', {
+          kind: 'trigger_now',
+          taskId: created.task.id,
+        }),
+        /Runtime Host operation failed/u,
       );
-      assert.equal(fired.task.runs.length, 1);
-      assert.equal(fired.task.runs[0]?.outcome, 'failed');
-      assert.equal(fired.task.runs[0]?.sessionId, undefined);
-      assert.equal(fired.task.runs[0]?.runId, undefined);
     } finally {
       await desktop.close();
       await fixture.stopHost(host);
@@ -249,9 +253,12 @@ test('two UDS Clients never rebind an Agent ScheduledTask after Connection slug 
             kind: 'agent_run',
             execution: {
               cwd: fixture.root,
-              llmConnectionId: original.connectionId,
-              llmConnectionSlug: original.slug,
-              model,
+              model: {
+                kind: 'pinned',
+                llmConnectionId: original.connectionId,
+                llmConnectionSlug: original.slug,
+                model,
+              },
               permissionMode: 'ask',
               collaborationMode: 'agent',
               orchestrationMode: 'default',
@@ -357,15 +364,25 @@ test('production Host settles dispatched Client Capabilities before publishing R
   });
 });
 
-test('dual UDS Clients query the same persisted SessionTodo snapshot across Host restart', async () => {
+test('dual UDS Clients query the same persisted SessionTask snapshot across Host restart', async () => {
   await withExecutionRoot(async (fixture) => {
-    const initial: SessionTodoItem[] = Array.from({ length: 129 }, (_, index) => ({
-      content: `Authority acceptance todo ${index + 1}`,
-      status: index === 0 ? 'in_progress' : 'pending',
-    }));
-    await withOwnedSessionTodoToolPort(fixture, async (_coordinator, tools) => {
-      const write = requireSessionTodoWriteTool(tools);
-      await write.impl(write.parameters.parse({ todos: initial }), sessionTodoToolContext(fixture));
+    const subjects = Array.from(
+      { length: 129 },
+      (_, index) => `Authority acceptance task ${index + 1}`,
+    );
+    await withOwnedSessionTaskToolPort(fixture, async (_coordinator, tools) => {
+      const create = requireSessionTaskTool(tools, 'TaskCreate');
+      const update = requireSessionTaskTool(tools, 'TaskUpdate');
+      for (const subject of subjects) {
+        await create.impl(
+          create.parameters.parse({ subject, description: `Seeded: ${subject}` }),
+          sessionTaskToolContext(fixture),
+        );
+      }
+      await update.impl(
+        update.parameters.parse({ taskId: '1', status: 'in_progress' }),
+        sessionTaskToolContext(fixture),
+      );
     });
 
     const host = await fixture.startHost();
@@ -373,34 +390,43 @@ test('dual UDS Clients query the same persisted SessionTodo snapshot across Host
     const tui = await connectClient(fixture.root);
     try {
       const [desktopProjection, tuiProjection] = await Promise.all([
-        desktop.request('session.todo.query', { sessionId: fixture.sessionId }),
-        tui.request('session.todo.query', { sessionId: fixture.sessionId }),
+        desktop.request('session.task.query', { sessionId: fixture.sessionId }),
+        tui.request('session.task.query', { sessionId: fixture.sessionId }),
       ]);
-      assert.deepEqual(desktopProjection, { sessionId: fixture.sessionId, items: initial });
+      assert.equal(desktopProjection.sessionId, fixture.sessionId);
+      assert.equal(desktopProjection.nextId, subjects.length + 1);
+      assert.deepEqual(
+        desktopProjection.items.map((item) => item.subject),
+        subjects,
+      );
+      assert.equal(desktopProjection.items[0]?.status, 'in_progress');
       assert.deepEqual(tuiProjection, desktopProjection);
     } finally {
       await Promise.allSettled([desktop.close(), tui.close()]);
       await fixture.stopHost(host);
     }
 
-    const changed = [
-      { content: 'Changed after authority reacquisition', status: 'completed' },
-    ] as const;
-    await withOwnedSessionTodoToolPort(fixture, async (_coordinator, tools) => {
-      const write = requireSessionTodoWriteTool(tools);
-      await write.impl(write.parameters.parse({ todos: changed }), sessionTodoToolContext(fixture));
+    await withOwnedSessionTaskToolPort(fixture, async (_coordinator, tools) => {
+      const update = requireSessionTaskTool(tools, 'TaskUpdate');
+      await update.impl(
+        update.parameters.parse({
+          taskId: '1',
+          subject: 'Changed after authority reacquisition',
+          status: 'completed',
+        }),
+        sessionTaskToolContext(fixture),
+      );
     });
 
     const successorHost = await fixture.startHost();
     const successor = await connectClient(fixture.root);
     try {
-      assert.deepEqual(
-        await successor.request('session.todo.query', { sessionId: fixture.sessionId }),
-        {
-          sessionId: fixture.sessionId,
-          items: changed,
-        },
-      );
+      const restored = await successor.request('session.task.query', {
+        sessionId: fixture.sessionId,
+      });
+      assert.equal(restored.items.length, subjects.length);
+      assert.equal(restored.items[0]?.subject, 'Changed after authority reacquisition');
+      assert.equal(restored.items[0]?.status, 'completed');
     } finally {
       await successor.close();
       await fixture.stopHost(successorHost);
@@ -1243,41 +1269,42 @@ test('two UDS Clients settle one hosted sandbox boundary and resume its exact Ru
   });
 });
 
-type SessionTodoWriteTool = MakaTool<{ todos: SessionTodoItem[] }, string> & {
-  parameters: { parse(value: unknown): { todos: SessionTodoItem[] } };
-};
-
-async function withOwnedSessionTodoToolPort<T>(
+async function withOwnedSessionTaskToolPort<T>(
   fixture: ExecutionFixture,
-  run: (coordinator: HostSessionTodoCoordinator, tools: MakaTool[]) => Promise<T>,
+  run: (coordinator: HostSessionTaskCoordinator, tools: MakaTool[]) => Promise<T>,
 ): Promise<T> {
   const owner = await tryAcquireInteractiveRootOwner(fixture.capability);
   assert.ok(owner);
-  if (!owner) throw new Error('Unable to acquire the interactive SessionTodo tool port');
-  let writer: Awaited<ReturnType<typeof openInteractiveSessionTodoStoreForWrite>> | undefined;
+  if (!owner) throw new Error('Unable to acquire the interactive SessionTask tool port');
+  let writer: Awaited<ReturnType<typeof openInteractiveSessionTaskStoreForWrite>> | undefined;
   try {
-    writer = await openInteractiveSessionTodoStoreForWrite(owner.lease);
-    const coordinator = new HostSessionTodoCoordinator(
+    writer = await openInteractiveSessionTaskStoreForWrite(owner.lease);
+    const coordinator = new HostSessionTaskCoordinator(
       writer,
       new SessionAdmissionGate(),
       { probeSessionRemoval: async () => ({ kind: 'present' }) },
       () => {},
       () => {},
     );
-    return await run(coordinator, buildSessionTodoTools(coordinator));
+    return await run(coordinator, buildSessionTaskTools(coordinator));
   } finally {
     writer?.close();
     await owner.close();
   }
 }
 
-function requireSessionTodoWriteTool(tools: readonly MakaTool[]): SessionTodoWriteTool {
-  const tool = tools.find((candidate) => candidate.name === 'todo_write');
-  assert.ok(tool, 'Expected todo_write Runtime tool');
-  return tool as SessionTodoWriteTool;
+type ParsedTaskTool = {
+  parameters: { parse(value: unknown): never };
+  impl: MakaTool['impl'];
+};
+
+function requireSessionTaskTool(tools: readonly MakaTool[], name: string): ParsedTaskTool {
+  const tool = tools.find((candidate) => candidate.name === name);
+  assert.ok(tool, `Expected ${name} Runtime tool`);
+  return tool as unknown as ParsedTaskTool;
 }
 
-function sessionTodoToolContext(fixture: ExecutionFixture): MakaToolContext {
+function sessionTaskToolContext(fixture: ExecutionFixture): MakaToolContext {
   return {
     sessionId: fixture.sessionId,
     cwd: fixture.root,

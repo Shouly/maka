@@ -177,7 +177,7 @@ Linked child Session 可以自然复用：
 - context 构造与 compaction；
 - usage、tool activity 与 artifact accounting；
 - Desktop 与 TUI 的会话检查组件；
-- 基于精确 child Session 和 current Run 的 `agent_output`；
+- 基于精确 child Session 和 current Run 的 `AgentOutput`；
 - 未来通过同一 Runtime host 实现的多 client 观察。
 
 Child 会持久保存回到 root 的 lineage：
@@ -208,7 +208,7 @@ Parent 不需要维护可变 child ID 数组。反向查询与 Graph topology �
 - read model 不会悄悄变成竞争性的 event store。
 
 主 Agent 需要读取某个 candidate record 背后的真实答案时，使用 operator 的
-`childSessionId`、`currentRunId` 和 `view=result` 调用 `agent_output`。这个投影只返回
+`childSessionId`、`currentRunId` 和 `view=result` 调用 `AgentOutput`。这个投影只返回
 最终已提交的模型文本、对应的 Graph result/terminal record ID，以及有界的 artifact
 引用。原始 Runtime events 仍可用于显式诊断，但不再属于 supervisor 的正常数据路径。
 
@@ -282,9 +282,9 @@ Trace topology 包含 operator 与 directed edge。校验会拒绝缺失 operato
 
 Graph Mode 只给 root Agent 一组紧凑 control surface：
 
-- `view_agent_graph` 读取持久 schedule state、runtime state、readiness、wait 与有界 recent activity；
-- `update_agent_graph` 追加一条 idempotent schedule decision，包含 `add_work`、`stop`、`finish` 或允许的组合；
-- `agent_output` 读取选定 child Session Run 的权威输出。
+- `ViewAgentGraph` 读取持久 schedule state、runtime state、readiness、wait 与有界 recent activity；
+- `UpdateAgentGraph` 追加一条 idempotent schedule decision，包含 `add_work`、`stop`、`finish` 或允许的组合；
+- `AgentOutput` 读取选定 child Session Run 的权威输出。
 
 Child Session 永远不会获得 Graph supervisor tools。
 
@@ -479,7 +479,7 @@ Desktop 组合了当前 host-managed Graph profile：
 
 - Graph 可以是 Session orchestration mode，也可以是 one-turn override；
 - `/graph on`、`/graph off` 与 `/graph <task>` 暴露这些选择；
-- 只有 root Session 获得 `view_agent_graph`、`update_agent_graph` 与 `agent_output`；
+- 只有 root Session 获得 `ViewAgentGraph`、`UpdateAgentGraph` 与 `AgentOutput`；
 - Electron main 拥有 coordinator、wake coordinator、SQLite store、Runtime adapter 与 startup recovery；
 - renderer IPC 只暴露 bounded snapshot、operator inspection、stop 与 invalidation hint；
 - Agent Graph panel 展示 aggregate state、visible operator、wait、selected result，并可打开 child Session；
@@ -503,7 +503,7 @@ sequenceDiagram
     participant D as Desktop read model
 
     U->>M: Graph-mode task
-    M->>SQL: update_agent_graph(add_work)
+    M->>SQL: UpdateAgentGraph(add_work)
     SQL-->>G: durable schedule revision
     G->>SQL: provision operator + child Session relation
     G->>SQL: claim intent with Turn/Run IDs
@@ -513,8 +513,8 @@ sequenceDiagram
     G->>D: materialize records and operator state
     G->>SQL: claim supervisor wake at checkpoint
     SQL-->>M: host starts root supervisor Turn
-    M->>G: view_agent_graph
-    M->>R: agent_output(child Session, Run)
+    M->>G: ViewAgentGraph
+    M->>R: AgentOutput(child Session, Run)
     M->>SQL: add dependent work or finish(result record IDs)
     SQL-->>D: closed schedule and selected results
     M-->>U: synthesized answer
@@ -560,14 +560,14 @@ sequenceDiagram
 
 上述 replay timeline 与 reconcile history 缺口的跟踪：[Agent Graph operational topology #2596](https://github.com/apache/maka/issues/2596)、[Session Inspector #1625](https://github.com/apache/maka/issues/1625)
 
-## Graph、Swarm、agent_spawn 与 Rive
+## Graph、Swarm、Agent 与 Rive
 
 四种机制解决不同的协调问题。
 
 | 需求 | 机制 | Ownership model |
 |---|---|---|
 | 有限独立 fan-out，随后一次 synthesis | Swarm 模式 | 主 Agent 把独立 item 排进同一张 Graph，并异步监督 |
-| 一次 linked specialist execution 或 follow-up | `agent_spawn` / child Session | Parent Agent 显式拥有 delegation |
+| 一次 linked specialist execution 或 follow-up | `Agent` / child Session | Parent Agent 显式拥有 delegation |
 | 从 root conversation 监督动态依赖 Agent work | Agent Graph | Child Session 与 Runtime record 之上的 SQLite schedule/control plane |
 | 显式 workflow step、任意 resume policy 或分布式 workflow authority | Rive | Workflow runtime 拥有 workflow state |
 

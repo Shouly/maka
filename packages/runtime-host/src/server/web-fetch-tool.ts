@@ -31,11 +31,38 @@ import { toRuntimePolicyProxy } from './runtime-policy-proxy.js';
 interface HostWebFetchServiceInput {
   readonly policy: Pick<RuntimePolicyOperationCoordinator, 'resolveHostOutboundExecution'>;
   readonly createFetchTransport?: (proxy: ProxiedFetchProxy | null) => ProxiedFetchTransport;
+  /**
+   * The auxiliary model that answers a WebFetch `prompt` against the page.
+   * Read late: the plugin model is composed after the web services, so the
+   * getter binds whatever is available when a fetch runs.
+   */
+  readonly answerModel?: () => HostWebFetchAnswerModel | undefined;
 }
+
+export interface HostWebFetchAnswerModel {
+  generate(input: {
+    readonly sessionId: string;
+    readonly prompt: string;
+    readonly system?: string;
+    readonly maxOutputTokens?: number;
+    readonly abortSignal: AbortSignal;
+  }): Promise<{ readonly text: string }>;
+}
+
+const WEB_FETCH_ANSWER_SYSTEM =
+  'You answer a question about one fetched web page. Use only the page content; when the page does not contain the answer, say so. Quote exact wording when the question asks for it. Be concise.';
+const WEB_FETCH_ANSWER_TIMEOUT_MS = 60_000;
 
 export interface HostWebFetchService {
   fetch(input: {
     readonly url: string;
+    readonly sessionId: string;
+    readonly abortSignal?: AbortSignal;
+  }): Promise<string>;
+  answer?(input: {
+    readonly url: string;
+    readonly prompt: string;
+    readonly content: string;
     readonly sessionId: string;
     readonly abortSignal?: AbortSignal;
   }): Promise<string>;
@@ -65,6 +92,27 @@ export function createHostWebFetchService(input: HostWebFetchServiceInput): Host
         await transport.close();
       }
     },
+    ...(input.answerModel
+      ? {
+          answer: async ({ url, prompt, content, sessionId, abortSignal }) => {
+            const model = input.answerModel?.();
+            if (!model) {
+              return `No summarising model is available in this session, so the page content follows instead of an answer to the prompt.\n\n${content}`;
+            }
+            const signal = abortSignal
+              ? AbortSignal.any([abortSignal, AbortSignal.timeout(WEB_FETCH_ANSWER_TIMEOUT_MS)])
+              : AbortSignal.timeout(WEB_FETCH_ANSWER_TIMEOUT_MS);
+            const result = await model.generate({
+              sessionId,
+              system: WEB_FETCH_ANSWER_SYSTEM,
+              prompt: `Page: ${url}\n\nQuestion: ${prompt}\n\nPage content (markdown):\n${content}`,
+              maxOutputTokens: 4_096,
+              abortSignal: signal,
+            });
+            return result.text.trim() || 'The model returned no answer for this page.';
+          },
+        }
+      : {}),
   };
 }
 
@@ -76,5 +124,10 @@ export function createHostWebFetchToolFromService(service: HostWebFetchService):
   return buildWebFetchTool({
     fetch: ({ url, sessionId, abortSignal }) =>
       service.fetch({ url, sessionId, ...(abortSignal ? { abortSignal } : {}) }),
+    ...(service.answer
+      ? {
+          answer: (input) => service.answer!(input),
+        }
+      : {}),
   });
 }

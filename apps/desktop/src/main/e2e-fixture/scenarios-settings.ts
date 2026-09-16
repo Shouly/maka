@@ -216,7 +216,7 @@ export async function writeScheduledTasks(workspaceRoot: string, now: number): P
         title,
         intentBody,
         schedule,
-        effect: { kind: 'notify', channel: 'local' },
+        effect: { kind: 'session_resume', sessionId: 'session-1' },
         createdBy: { kind: 'user' },
       },
       at,

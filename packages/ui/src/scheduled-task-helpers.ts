@@ -35,85 +35,110 @@
  * between "what to render" and "how to compute display state".
  */
 
-import type { BotProvider } from '@maka/core/bot-chat-settings';
-
+import type { CollaborationMode } from '@maka/core/collaboration';
+import type { ThinkingLevel } from '@maka/core/model-thinking';
+import type { OrchestrationMode } from '@maka/core/orchestration';
+import type { PermissionMode } from '@maka/core/permission';
+import type { ToolMode } from '@maka/core/tool-mode';
 import type {
   ScheduledTask,
   ScheduledTaskEffect,
+  ScheduledTaskModelChoice,
   ScheduledTaskSchedule,
   ScheduledTaskStatus,
 } from '@maka/core/scheduled-task';
 
 import type { UiLocale } from '@maka/core/ui-locale';
-import { BOT_DELIVERY_PROVIDERS } from '@maka/core/bot-chat-settings';
-import { botDisplayLabel } from '@maka/core/bot-events';
 import { compileCronExpression } from '@maka/core/cron-expression';
 import { uiLocaleToIntlLocale } from '@maka/core/ui-locale';
-import {
-  getScheduledTaskCopy,
-  type ScheduledTaskExampleTemplate,
-} from './scheduled-task-copy.js';
-import type {
-  ScheduledTaskDelivery,
-  ScheduledTaskDeliveryMethod,
-  ScheduledTaskRecurrence,
-} from './module-panel-types.js';
+import { getScheduledTaskCopy } from './scheduled-task-copy.js';
 
-export function toScheduledTaskLocalDateTimeValue(ts: number): string {
-  const date = new Date(ts);
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+/**
+ * How often a task runs, as the FORM offers it.
+ *
+ * Six rows rather than the schedule union's four kinds, because the two do not
+ * line up: `weekdays` is a cron the form authors on the user's behalf, and
+ * `interval` is a cadence only an agent can create and the form only ever
+ * shows back. Read `ScheduledTaskSchedule` for what is stored.
+ */
+export type ScheduledTaskFrequency =
+  | 'manual'
+  | 'once'
+  | 'daily'
+  | 'weekdays'
+  | 'weekly'
+  | 'monthly';
+
+/**
+ * The cadences the FORM offers, which is not all of them.
+ *
+ * `once` is missing on purpose: a task that fires once and is spent is what
+ * SendLater builds and what a model asks for with `runOnceAt`, not something a
+ * person sets up on this page — they came here to make something recurring, and
+ * "Manual" already covers "only when I say so". A stored one-shot still opens
+ * here; it is shown read-only, like any other cadence the form cannot author.
+ */
+export const SCHEDULED_TASK_FORM_FREQUENCIES: readonly ScheduledTaskFrequency[] = [
+  'manual',
+  'daily',
+  'weekdays',
+  'weekly',
+  'monthly',
+];
+
+/** The frequencies that need a day as well as a time. */
+export function scheduledTaskFrequencyNeeds(frequency: ScheduledTaskFrequency): {
+  time: boolean;
+  date: boolean;
+  weekday: boolean;
+  dayOfMonth: boolean;
+} {
+  return {
+    time: frequency !== 'manual',
+    date: frequency === 'once',
+    weekday: frequency === 'weekly',
+    dayOfMonth: frequency === 'monthly',
+  };
 }
 
-export function scheduledTaskTemplateNextRunAt(template: ScheduledTaskExampleTemplate, now: number = Date.now()): number {
-  const nextRun = new Date(now);
-  nextRun.setSeconds(0, 0);
-  nextRun.setHours(template.nextRun.hour, template.nextRun.minute, 0, 0);
-  if (typeof template.nextRun.weekday === 'number') {
-    const daysUntilTarget = (template.nextRun.weekday - nextRun.getDay() + 7) % 7;
-    nextRun.setDate(nextRun.getDate() + daysUntilTarget);
-  }
-  if (nextRun.getTime() <= now) {
-    nextRun.setDate(nextRun.getDate() + (typeof template.nextRun.weekday === 'number' ? 7 : 1));
-  }
-  return nextRun.getTime();
-}
 
-export type ScheduledTaskValidationField = 'title' | 'time' | 'cron' | 'chatId';
+export type ScheduledTaskValidationField = 'title' | 'note' | 'workspace' | 'time';
 
 export function scheduledTaskFormValidation(input: {
   title: string;
+  note: string;
+  /** Whether a project or folder has been chosen to run in. */
+  hasWorkspace: boolean;
   parsedRunAt: number;
-  recurrence: ScheduledTaskRecurrence;
-  cronExpression: string;
-  delivery: ScheduledTaskEffect;
+  /** A one-off must be in the future; a repeating cadence need not be. */
+  oneOff: boolean;
   now: number;
 }, locale: UiLocale): { field: ScheduledTaskValidationField; message: string } | null {
   const copy = getScheduledTaskCopy(locale).validation;
   if (input.title.trim().length === 0) {
     return { field: 'title', message: copy.title };
   }
+  // Every task now RUNS something, so the instructions are as required as the
+  // name: a task with nothing to do would open a session and sit there.
+  if (input.note.trim().length === 0) {
+    return { field: 'note', message: copy.note };
+  }
+  // The form opens with nothing chosen, like the reference — but the reference
+  // can fall back to its own cloud sandbox and Maka cannot: a run happens in a
+  // real directory on this machine, and the Host rejects a template with a
+  // blank cwd. So the choice is asked for here rather than guessed at.
+  if (!input.hasWorkspace) {
+    return { field: 'workspace', message: copy.workspace };
+  }
   if (!Number.isFinite(input.parsedRunAt)) {
     return { field: 'time', message: copy.timeInvalid };
   }
-  if (input.parsedRunAt <= input.now) {
+  // Only a ONE-OFF can be scheduled into the past. A repeating cadence whose
+  // next slot today has already gone simply runs tomorrow.
+  if (input.oneOff && input.parsedRunAt <= input.now) {
     return { field: 'time', message: copy.timePast };
   }
-  if (input.recurrence === 'cron' && !compileCronExpression(input.cronExpression).ok) {
-    return { field: 'cron', message: copy.cron };
-  }
-  if (
-    input.delivery.kind === 'notify' &&
-    input.delivery.channel === 'bot' &&
-    input.delivery.chatId.length === 0
-  ) {
-    return { field: 'chatId', message: copy.chatId };
-  }
   return null;
-}
-
-export function formatScheduledTaskDeliveryProviderList(): string {
-  return BOT_DELIVERY_PROVIDERS.map((provider) => botDisplayLabel(provider)).join(' / ');
 }
 
 export function compareScheduledTaskForDisplay(a: ScheduledTask, b: ScheduledTask, locale: UiLocale): number {
@@ -181,32 +206,27 @@ export function scheduledTaskStatusLabel(status: ScheduledTaskStatus, locale: Ui
   return scheduledTaskStatusGroupLabel(status, locale);
 }
 
-export function scheduledTaskRunRangeStart(range: 'day' | 'week' | 'month' | 'all', now: number): number | null {
-  if (range === 'all') return null;
-  const date = new Date(now);
-  if (range === 'day') {
-    date.setHours(0, 0, 0, 0);
-    return date.getTime();
-  }
-  return now - (range === 'week' ? 7 : 30) * 24 * 60 * 60 * 1000;
-}
 
+/**
+ * The moment the form should show when an existing task is opened for editing.
+ *
+ * The next fire if there is one, else whatever the schedule was anchored at,
+ * else an hour from now — a manual task has neither, and the form still has to
+ * put something in the time field for the moment the user picks a cadence.
+ */
 export function scheduledTaskEditableRunAt(task: ScheduledTask, now: number = Date.now()): number {
   if (task.nextFireAt !== null && task.nextFireAt > now) return task.nextFireAt;
-  const scheduledAt = task.schedule.kind === 'once'
-    ? task.schedule.runAt
-    : task.schedule.kind === 'calendar'
-      ? task.schedule.anchorAt
-      : task.schedule.startAt;
-  return scheduledAt > now ? scheduledAt : now + 60 * 60 * 1000;
-}
-
-export function scheduledTaskRecurrenceValue(task: ScheduledTask): ScheduledTaskRecurrence {
-  if (task.schedule.kind === 'once') return 'none';
-  if (task.schedule.kind === 'interval') return 'interval';
-  if (task.schedule.kind === 'cron') return 'cron';
-  if (task.schedule.kind === 'calendar') return task.schedule.recurrence;
-  return 'none';
+  const schedule = task.schedule;
+  const scheduledAt =
+    schedule.kind === 'once'
+      ? schedule.runAt
+      : schedule.kind === 'calendar'
+        ? schedule.anchorAt
+        : schedule.kind === 'manual'
+          ? null
+          : schedule.startAt;
+  if (scheduledAt !== null && scheduledAt > now) return scheduledAt;
+  return now + 60 * 60 * 1000;
 }
 
 export function duplicateScheduledTaskTitle(title: string, locale: UiLocale): string {
@@ -215,13 +235,47 @@ export function duplicateScheduledTaskTitle(title: string, locale: UiLocale): st
   return `${title}${suffix}`.slice(0, 120);
 }
 
-export function formatTaskTime(ts: number, locale: UiLocale): string {
-  return new Intl.DateTimeFormat(uiLocaleToIntlLocale(locale), {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
+/**
+ * A moment this task ran or will run, written the way the reference writes it:
+ * "yesterday at 9:10 AM", "Sep 13 at 9:09 AM".
+ *
+ * Only TODAY and YESTERDAY get names. The reference names no other day, and
+ * the two places this appears already carry the rest: the next-run line has a
+ * countdown beside it ("in 2 days"), and history only ever looks backwards.
+ *
+ * The year is added only when it is not this one — a bare "Sep 13" a year old
+ * reads as last week.
+ */
+export function formatTaskTime(ts: number, locale: UiLocale, now: number = Date.now()): string {
+  const copy = getScheduledTaskCopy(locale).dayTime;
+  const intlLocale = uiLocaleToIntlLocale(locale);
+  const at = new Date(ts);
+  const time = new Intl.DateTimeFormat(intlLocale, {
+    hour: 'numeric',
     minute: '2-digit',
-  }).format(new Date(ts));
+  }).format(at);
+  const elapsedDays = calendarDaysBetween(now, ts);
+  if (elapsedDays === 0) return copy.today(time);
+  if (elapsedDays === 1) return copy.yesterday(time);
+  const day = new Intl.DateTimeFormat(intlLocale, {
+    ...(at.getFullYear() === new Date(now).getFullYear() ? {} : { year: 'numeric' }),
+    month: 'short',
+    day: 'numeric',
+  }).format(at);
+  return copy.on(day, time);
+}
+
+/**
+ * Whole LOCAL calendar days from `to` back to `from` — not elapsed hours, so a
+ * run at 23:50 is "yesterday" at 00:10 rather than "today". Rounding absorbs
+ * the 23- and 25-hour days a DST change makes.
+ */
+function calendarDaysBetween(from: number, to: number): number {
+  const a = new Date(from);
+  a.setHours(0, 0, 0, 0);
+  const b = new Date(to);
+  b.setHours(0, 0, 0, 0);
+  return Math.round((a.getTime() - b.getTime()) / 86_400_000);
 }
 
 /**
@@ -250,21 +304,115 @@ export function formatTaskCountdown(ts: number, locale: UiLocale, now: number = 
 
 export function formatScheduledTaskRecurrence(task: ScheduledTask, locale: UiLocale): string {
   const copy = getScheduledTaskCopy(locale).recurrence;
-  if (task.schedule.kind === 'once') return copy.once;
-  if (task.schedule.kind === 'cron') return copy.cron(task.schedule.expression);
-  if (task.schedule.kind === 'calendar') return copy.recurring[task.schedule.recurrence];
-  return copy.interval(task.schedule.everySeconds);
+  const schedule = task.schedule;
+  if (schedule.kind === 'once') return copy.once;
+  if (schedule.kind === 'manual') return copy.manual;
+  if (schedule.kind === 'cron') return copy.cron(schedule.expression);
+  if (schedule.kind === 'calendar') return copy.recurring[schedule.recurrence];
+  return copy.interval(schedule.everySeconds);
+}
+
+/**
+ * Just the clock face, for a cadence that already says which days it means.
+ *
+ * `hour: 'numeric'`, so English reads "9:00 AM" like the reference's Repeats
+ * line rather than "09:00 AM" — and so a cadence and a run time on the same
+ * page are written the same way.
+ */
+export function formatTaskTimeOfDay(ts: number, locale: UiLocale): string {
+  return new Intl.DateTimeFormat(uiLocaleToIntlLocale(locale), {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(ts));
+}
+
+/**
+ * The same clock face from a bare hour and minute.
+ *
+ * A cron expression carries wall-clock numbers and no date, so there is
+ * nothing to hand `Intl` directly; this borrows an arbitrary local day to get
+ * the reader's own 12- or 24-hour convention applied to them.
+ */
+export function formatClockTime(hour: number, minute: number, locale: UiLocale): string {
+  const borrowed = new Date();
+  borrowed.setHours(hour, minute, 0, 0);
+  return formatTaskTimeOfDay(borrowed.getTime(), locale);
+}
+
+/**
+ * The whole schedule in one chip's worth of words — the reference design's
+ * `describeSchedule`: "Every day at 09:00", "Every Monday at 09:00",
+ * "Once on 09/15, 09:00".
+ *
+ * A calendar schedule carries its `anchorAt`, so the time of day is read off
+ * the schedule itself rather than off `nextFireAt`: a task that has been
+ * snoozed, or that has no next fire because it is paused, still says the hour
+ * it normally runs.
+ *
+ * Interval and cron keep `formatScheduledTaskRecurrence`'s wording. A cron
+ * expression is the one cadence with no sentence to render it into — the user
+ * wrote the expression, and inventing "every weekday at 9" out of `0 9 * * 1-5`
+ * would be a guess about a grammar this app does not otherwise parse.
+ */
+/** "Monday" in the reader's language, from a 0–6 weekday. */
+function weekdayName(weekday: number, locale: UiLocale): string {
+  // 2026-01-04 is a Sunday, so adding the index lands on the right day.
+  const date = new Date(Date.UTC(2026, 0, 4 + weekday));
+  return new Intl.DateTimeFormat(uiLocaleToIntlLocale(locale), {
+    weekday: 'long',
+    timeZone: 'UTC',
+  }).format(date);
+}
+
+export function describeScheduledTaskCadence(task: ScheduledTask, locale: UiLocale): string {
+  const copy = getScheduledTaskCopy(locale).cadence;
+  const schedule = task.schedule;
+  if (schedule.kind === 'once') return copy.once(formatTaskTime(schedule.runAt, locale));
+  // A cron the FORM wrote has a sentence, because the form wrote it from one of
+  // the six rows and `scheduledTaskFrequencyOf` reads it back. Only a cron with
+  // no row of its own falls through to its raw expression — that one really is
+  // the user's own grammar, not ours. Without this the sidebar said "Weekdays"
+  // and the card beside it said `Cron: 0 9 * * 1-5` about the same task.
+  if (schedule.kind === 'cron') {
+    const read = scheduledTaskFrequencyOf(schedule);
+    if (read?.hour === undefined) return formatScheduledTaskRecurrence(task, locale);
+    const cronTime = formatClockTime(read.hour, read.minute ?? 0, locale);
+    if (read.frequency === 'daily') return copy.daily(cronTime);
+    if (read.frequency === 'weekdays') return copy.weekdays(cronTime);
+    if (read.frequency === 'weekly' && read.weekday !== undefined) {
+      return copy.weekly(weekdayName(read.weekday, locale), cronTime);
+    }
+    if (read.frequency === 'monthly' && read.dayOfMonth !== undefined) {
+      return copy.monthly(read.dayOfMonth, cronTime);
+    }
+    return formatScheduledTaskRecurrence(task, locale);
+  }
+  if (schedule.kind !== 'calendar') return formatScheduledTaskRecurrence(task, locale);
+  const anchor = new Date(schedule.anchorAt);
+  const time = formatTaskTimeOfDay(schedule.anchorAt, locale);
+  if (schedule.recurrence === 'daily') return copy.daily(time);
+  if (schedule.recurrence === 'weekly') {
+    return copy.weekly(weekdayName(anchor.getDay(), locale), time);
+  }
+  return copy.monthly(anchor.getDate(), time);
 }
 
 export function runStatusLabel(status: ScheduledTask['runs'][number]['outcome'], locale: UiLocale): string {
   return getScheduledTaskCopy(locale).runStatus[status];
 }
 
-export function formatScheduledTaskDeliveryTargetLabel(effect: ScheduledTaskEffect, locale: UiLocale): string {
-  const copy = getScheduledTaskCopy(locale).delivery;
-  if (effect.kind !== 'notify') return getScheduledTaskCopy(locale).detail.agentDelivery;
-  if (effect.channel === 'local') return copy.local;
-  return copy.bot(botDisplayLabel(effect.platform), effect.chatId);
+/**
+ * Where a firing lands, in one phrase.
+ *
+ * Two answers now, not four: a task opens its own session, or — SendLater's
+ * alone — it comes back into the one that made it.
+ */
+export function formatScheduledTaskDeliveryTargetLabel(
+  effect: ScheduledTaskEffect,
+  locale: UiLocale,
+): string {
+  const copy = getScheduledTaskCopy(locale).detail;
+  return effect.kind === 'session_resume' ? copy.resumeDelivery : copy.agentDelivery;
 }
 
 /**
@@ -274,129 +422,322 @@ export function formatScheduledTaskDeliveryTargetLabel(effect: ScheduledTaskEffe
  * the seeds are pure mappings — they live here with the other form helpers,
  * not in the component file.
  */
+/**
+ * What the create/edit dialog holds.
+ *
+ * The dialog authors an EXECUTION TEMPLATE now, not a delivery channel: a task
+ * is a session that will be opened, so the form has to say where it runs
+ * (`workspace`), on what (`model`) and how careful to be (`permissionMode`).
+ *
+ * The cadence is kept as separate day/time fields rather than one timestamp
+ * because that is how it is chosen — "every Monday at 09:00" is a weekday and
+ * a clock face, and rebuilding it from a single `datetime-local` loses which
+ * half the user meant.
+ */
 export interface ScheduledTaskFormSeed {
   editingId: string | null;
+  /** The form calls this Name; the domain calls it title. */
   title: string;
+  /** The form calls this Instructions; the domain calls it the intent body. */
   note: string;
-  runAtLocal: string;
-  recurrence: ScheduledTaskRecurrence;
-  cronExpression: string;
-  deliveryMethod: ScheduledTaskDeliveryMethod;
-  deliveryPlatform: BotProvider;
-  deliveryChatId: string;
-  /** Preserve the persisted schedule when an edit changes only non-schedule fields. */
+  frequency: ScheduledTaskFrequency;
+  /** `YYYY-MM-DD`, for a one-off. */
+  dateLocal: string;
+  /** `HH:MM`, for every cadence that has a time of day. */
+  timeLocal: string;
+  /** 0 = Sunday, for a weekly cadence. */
+  weekday: number;
+  /** 1–31, for a monthly cadence. A short month clamps to its last day. */
+  dayOfMonth: number;
+  workspace: { projectId: string | null; cwd: string };
+  model: ScheduledTaskModelChoice;
+  permissionMode: PermissionMode;
+  /**
+   * The execution settings the dialog does NOT show.
+   *
+   * They are carried on the seed rather than defaulted at submit time because
+   * the form rebuilds the whole execution template on every save: a task an
+   * agent froze in a session with thinking on, or in a non-default
+   * collaboration mode, would come back changed after the user did nothing but
+   * rename it. Carried verbatim, a rename is a rename.
+   */
+  collaborationMode: CollaborationMode;
+  orchestrationMode: OrchestrationMode;
+  thinkingLevel?: ThinkingLevel;
+  toolMode?: ToolMode;
+  /**
+   * A cadence this form cannot author: an agent's `interval`, or a cron whose
+   * shape does not map onto one of the six rows. Shown read-only and preserved
+   * verbatim, because the alternative — rebuilding it from the six rows —
+   * silently turns a repeating job into something else.
+   */
+  lockedSchedule?: ScheduledTaskSchedule;
+  /** The schedule the task had when editing began. */
   originalSchedule?: ScheduledTaskSchedule;
-  /** UI does not expose interval cadence editing; preserve it instead of coercing to once. */
-  lockedSchedule?: Extract<ScheduledTaskSchedule, { kind: 'interval' }>;
-  /** Agent execution is frozen at creation and must never be rewritten as notification delivery. */
-  lockedEffect?: Exclude<ScheduledTaskEffect, { kind: 'notify' }>;
+  /**
+   * A SendLater reminder is bound to the session that asked for it. The form
+   * may rename it or move it, never re-point it.
+   */
+  lockedEffect?: Extract<ScheduledTaskEffect, { kind: 'session_resume' }>;
 }
 
-export function scheduledTaskScheduleFromForm(seed: ScheduledTaskFormSeed, input: {
-  runAtLocal: string;
-  parsedRunAt: number;
-  recurrence: ScheduledTaskRecurrence;
-  cronExpression: string;
-}): ScheduledTaskSchedule | null | undefined {
-  if (
-    seed.editingId !== null &&
-    seed.originalSchedule !== undefined &&
-    input.runAtLocal === seed.runAtLocal &&
-    input.recurrence === seed.recurrence &&
-    (input.recurrence !== 'cron' || input.cronExpression.trim() === seed.cronExpression.trim())
-  ) return undefined;
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
+}
 
-  if (input.recurrence === 'interval') return seed.lockedSchedule ?? null;
-  if (input.recurrence === 'none') return { kind: 'once', runAt: input.parsedRunAt };
-  if (input.recurrence === 'cron') {
-    return { kind: 'cron', expression: input.cronExpression.trim(), startAt: input.parsedRunAt };
-  }
-  return { kind: 'calendar', recurrence: input.recurrence, anchorAt: input.parsedRunAt };
+/** `HH:MM` for a timestamp, in the machine's own time. */
+export function toScheduledTaskTimeValue(ts: number): string {
+  const date = new Date(ts);
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+/** `YYYY-MM-DD` for a timestamp, in the machine's own time. */
+export function toScheduledTaskDateValue(ts: number): string {
+  const date = new Date(ts);
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+function parseTimeOfDay(value: string): { hour: number; minute: number } | null {
+  const match = /^(\d{2}):(\d{2})$/u.exec(value.trim());
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isInteger(hour) || hour > 23 || !Number.isInteger(minute) || minute > 59) return null;
+  return { hour, minute };
 }
 
 /**
- * Absolute time for a one-tap task preset.
+ * The instant a repeating cadence should be anchored to: the NEXT time it
+ * comes round.
  *
- * "Next Monday" means the NEXT one: `((8 - day) % 7) || 7` never returns 0, so
- * asking on a Monday schedules seven days out rather than nine hours ago. The
- * two morning presets pin 09:00 local and clear the smaller fields, so the
- * time a user gets is the one the label promised regardless of when they
- * asked.
+ * `computeNextFireAt` walks forward from the anchor, so an anchor in the past
+ * would still work — but the anchor is also what the detail page reads back as
+ * "every Monday at 09:00", and one pointing at a Monday five weeks ago reads as
+ * a stale task. Walking forward here keeps the stored anchor and the sentence
+ * about it the same fact.
  */
-export function scheduledTaskPresetRunAt(
-  preset: 'ten-minutes' | 'one-hour' | 'tomorrow-morning' | 'next-monday',
+export function scheduledTaskAnchorAt(
+  seed: Pick<ScheduledTaskFormSeed, 'frequency' | 'timeLocal' | 'weekday' | 'dayOfMonth' | 'dateLocal'>,
   now: number = Date.now(),
 ): number {
-  if (preset === 'ten-minutes') return now + 10 * 60 * 1000;
-  if (preset === 'one-hour') return now + 60 * 60 * 1000;
-  const date = new Date(now);
-  if (preset === 'tomorrow-morning') {
-    date.setDate(date.getDate() + 1);
-    date.setHours(9, 0, 0, 0);
-    return date.getTime();
+  const time = parseTimeOfDay(seed.timeLocal);
+  if (!time) return Number.NaN;
+  if (seed.frequency === 'once') {
+    const day = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(seed.dateLocal.trim());
+    if (!day) return Number.NaN;
+    return new Date(
+      Number(day[1]),
+      Number(day[2]) - 1,
+      Number(day[3]),
+      time.hour,
+      time.minute,
+      0,
+      0,
+    ).getTime();
   }
-  const day = date.getDay();
-  const daysUntilNextMonday = ((8 - day) % 7) || 7;
-  date.setDate(date.getDate() + daysUntilNextMonday);
-  date.setHours(9, 0, 0, 0);
-  return date.getTime();
+  const at = (offsetDays: number) => {
+    const date = new Date(now);
+    date.setDate(date.getDate() + offsetDays);
+    date.setHours(time.hour, time.minute, 0, 0);
+    return date;
+  };
+  // 400 days covers a monthly cadence on the 29th through a non-leap year.
+  for (let offset = 0; offset < 400; offset += 1) {
+    const candidate = at(offset);
+    if (candidate.getTime() <= now) continue;
+    if (seed.frequency === 'daily') return candidate.getTime();
+    if (seed.frequency === 'weekdays') {
+      const day = candidate.getDay();
+      if (day >= 1 && day <= 5) return candidate.getTime();
+      continue;
+    }
+    if (seed.frequency === 'weekly') {
+      if (candidate.getDay() === seed.weekday) return candidate.getTime();
+      continue;
+    }
+    if (candidate.getDate() === seed.dayOfMonth) return candidate.getTime();
+  }
+  return Number.NaN;
 }
 
-/** Blank create-mode seed (one hour from now, no recurrence, local delivery). */
-export function createScheduledTaskFormSeed(now: number = Date.now()): ScheduledTaskFormSeed {
+/**
+ * The schedule the form's fields describe.
+ *
+ * `weekdays` is the one row with no schedule kind of its own, so it is written
+ * as the cron the reference writes: Monday to Friday at one time. Keeping it
+ * as a first-class row matters because an agent creating `0 9 * * 1-5` would
+ * otherwise come back into the form as a single weekday.
+ */
+export function scheduledTaskScheduleFromSeed(
+  seed: ScheduledTaskFormSeed,
+  now: number = Date.now(),
+): ScheduledTaskSchedule | null {
+  // A locked cadence wins over every row, `manual` included: the row is only
+  // the fallback the seed picked because the stored schedule had none, and
+  // letting it through would turn an agent's hourly job into a task that never
+  // runs on its own again.
+  if (seed.lockedSchedule) return seed.lockedSchedule;
+  if (seed.frequency === 'manual') return { kind: 'manual' };
+  const anchorAt = scheduledTaskAnchorAt(seed, now);
+  if (!Number.isFinite(anchorAt)) return null;
+  // Reachable only from a seed built by hand (a test, or a caller that set the
+  // row directly); the form's own dropdown no longer offers it.
+  if (seed.frequency === 'once') return { kind: 'once', runAt: anchorAt };
+  if (seed.frequency === 'weekdays') {
+    const time = parseTimeOfDay(seed.timeLocal);
+    if (!time) return null;
+    return { kind: 'cron', expression: `${time.minute} ${time.hour} * * 1-5`, startAt: now };
+  }
+  return { kind: 'calendar', recurrence: seed.frequency, anchorAt };
+}
+
+/**
+ * The cadence a stored schedule reads back as.
+ *
+ * A cron is matched against the four shapes the form can write, so a task an
+ * agent created with `0 9 * * 1-5` opens on the Weekdays row rather than as
+ * raw cron. Anything else — `*\/15 * * * *`, a multi-field list — has no row
+ * and comes back `null`, which is the form's signal to show it read-only.
+ */
+export function scheduledTaskFrequencyOf(
+  schedule: ScheduledTaskSchedule,
+): { frequency: ScheduledTaskFrequency; hour?: number; minute?: number; weekday?: number; dayOfMonth?: number } | null {
+  if (schedule.kind === 'manual') return { frequency: 'manual' };
+  if (schedule.kind === 'once') {
+    const at = new Date(schedule.runAt);
+    return { frequency: 'once', hour: at.getHours(), minute: at.getMinutes() };
+  }
+  if (schedule.kind === 'calendar') {
+    const at = new Date(schedule.anchorAt);
+    return {
+      frequency: schedule.recurrence,
+      hour: at.getHours(),
+      minute: at.getMinutes(),
+      weekday: at.getDay(),
+      dayOfMonth: at.getDate(),
+    };
+  }
+  if (schedule.kind !== 'cron') return null;
+  const fields = schedule.expression.trim().split(/\s+/u);
+  if (fields.length !== 5) return null;
+  const [rawMinute, rawHour, rawDayOfMonth, rawMonth, rawWeekday] = fields as [
+    string,
+    string,
+    string,
+    string,
+    string,
+  ];
+  const minute = Number(rawMinute);
+  const hour = Number(rawHour);
+  if (!Number.isInteger(minute) || minute > 59 || !Number.isInteger(hour) || hour > 23) return null;
+  if (rawMonth !== '*') return null;
+  if (rawDayOfMonth === '*' && rawWeekday === '*') return { frequency: 'daily', hour, minute };
+  if (rawDayOfMonth === '*' && rawWeekday === '1-5') {
+    return { frequency: 'weekdays', hour, minute };
+  }
+  if (rawDayOfMonth === '*' && /^[0-6]$/u.test(rawWeekday)) {
+    return { frequency: 'weekly', hour, minute, weekday: Number(rawWeekday) };
+  }
+  if (rawWeekday === '*' && /^([1-9]|[12]\d|3[01])$/u.test(rawDayOfMonth)) {
+    return { frequency: 'monthly', hour, minute, dayOfMonth: Number(rawDayOfMonth) };
+  }
+  return null;
+}
+
+/**
+ * Blank create-mode seed: manual, on the default model, in NO workspace.
+ *
+ * A caller that knows where the task belongs — an agent authoring one from the
+ * session it is running in — passes a `workspace`; the page's own New button
+ * does not, so the person chooses it themselves.
+ */
+export function createScheduledTaskFormSeed(
+  context: {
+    workspace?: { projectId: string | null; cwd: string };
+    model?: ScheduledTaskModelChoice;
+    permissionMode?: PermissionMode;
+  } = {},
+  now: number = Date.now(),
+): ScheduledTaskFormSeed {
+  const soon = now + 60 * 60 * 1000;
   return {
     editingId: null,
     title: '',
     note: '',
-    runAtLocal: toScheduledTaskLocalDateTimeValue(now + 60 * 60 * 1000),
-    recurrence: 'none',
-    cronExpression: '0 9 * * 1-5',
-    deliveryMethod: 'local',
-    deliveryPlatform: 'telegram',
-    deliveryChatId: '',
+    // Manual, like the reference's own blank form: a task with no cadence is
+    // complete and runnable, and choosing one is a decision the user makes
+    // after they know what the task does.
+    frequency: 'manual',
+    dateLocal: toScheduledTaskDateValue(soon),
+    timeLocal: '09:00',
+    weekday: new Date(now).getDay(),
+    dayOfMonth: new Date(now).getDate(),
+    workspace: context.workspace ?? { projectId: null, cwd: '' },
+    model: context.model ?? { kind: 'default' },
+    // A scheduled run has nobody there to approve anything, so the form starts
+    // on the setting that lets one finish. The user can still ask for the
+    // careful one; the help line under the control says what that costs.
+    permissionMode: context.permissionMode ?? 'bypass',
+    collaborationMode: 'agent',
+    orchestrationMode: 'default',
   };
 }
 
-/** Create-mode seed prefilled from an example template. */
-export function scheduledTaskTemplateSeed(template: ScheduledTaskExampleTemplate, now: number = Date.now()): ScheduledTaskFormSeed {
-  return {
-    ...createScheduledTaskFormSeed(now),
-    title: template.title,
-    note: template.note,
-    recurrence: template.recurrence,
-    cronExpression: template.cronExpression,
-    runAtLocal: toScheduledTaskLocalDateTimeValue(scheduledTaskTemplateNextRunAt(template, now)),
-  };
-}
-
-function scheduledTaskFormSeedFromTask(task: ScheduledTask): ScheduledTaskFormSeed {
+function scheduledTaskFormSeedFromTask(task: ScheduledTask, now: number): ScheduledTaskFormSeed {
+  const read = scheduledTaskFrequencyOf(task.schedule);
+  const fallback = scheduledTaskEditableRunAt(task, now);
+  const execution = task.effect.kind === 'agent_run' ? task.effect.execution : undefined;
   return {
     editingId: task.id,
     title: task.title,
     note: task.intent.body,
-    runAtLocal: toScheduledTaskLocalDateTimeValue(scheduledTaskEditableRunAt(task)),
-    recurrence: scheduledTaskRecurrenceValue(task),
-    cronExpression: task.schedule.kind === 'cron' ? task.schedule.expression : '0 9 * * 1-5',
-    deliveryMethod: task.effect.kind === 'notify' ? task.effect.channel : 'agent_run',
+    frequency: read?.frequency ?? 'manual',
+    dateLocal: toScheduledTaskDateValue(
+      task.schedule.kind === 'once' ? task.schedule.runAt : fallback,
+    ),
+    timeLocal:
+      read?.hour === undefined
+        ? toScheduledTaskTimeValue(fallback)
+        : `${pad2(read.hour)}:${pad2(read.minute ?? 0)}`,
+    weekday: read?.weekday ?? new Date(fallback).getDay(),
+    dayOfMonth: read?.dayOfMonth ?? new Date(fallback).getDate(),
+    workspace: {
+      projectId: execution?.projectId ?? null,
+      cwd: execution?.cwd ?? '',
+    },
+    model: execution?.model ?? { kind: 'default' },
+    permissionMode: execution?.permissionMode ?? 'bypass',
+    // Verbatim, so a rename does not rewrite how the task runs.
+    collaborationMode: execution?.collaborationMode ?? 'agent',
+    orchestrationMode: execution?.orchestrationMode ?? 'default',
+    ...(execution?.thinkingLevel === undefined ? {} : { thinkingLevel: execution.thinkingLevel }),
+    ...(execution?.toolMode === undefined ? {} : { toolMode: execution.toolMode }),
     originalSchedule: task.schedule,
-    ...(task.effect.kind === 'notify' && task.effect.channel === 'bot'
-      ? { deliveryPlatform: task.effect.platform, deliveryChatId: task.effect.chatId }
-      : { deliveryPlatform: 'telegram' as BotProvider, deliveryChatId: '' }),
-    ...(task.schedule.kind === 'interval' ? { lockedSchedule: task.schedule } : {}),
-    ...(task.effect.kind !== 'notify' ? { lockedEffect: task.effect } : {}),
+    // A cadence with no row of its own is carried, not rebuilt.
+    ...(read === null || !SCHEDULED_TASK_FORM_FREQUENCIES.includes(read.frequency)
+      ? { lockedSchedule: task.schedule }
+      : {}),
+    ...(task.effect.kind === 'session_resume' ? { lockedEffect: task.effect } : {}),
   };
 }
 
 /** Edit-mode seed prefilled from an existing task. */
-export function scheduledTaskEditSeed(task: ScheduledTask): ScheduledTaskFormSeed {
-  return scheduledTaskFormSeedFromTask(task);
+export function scheduledTaskEditSeed(
+  task: ScheduledTask,
+  now: number = Date.now(),
+): ScheduledTaskFormSeed {
+  return scheduledTaskFormSeedFromTask(task, now);
 }
 
-/** Create-mode seed copying an existing task under a 副本 title. */
-export function scheduledTaskDuplicateSeed(task: ScheduledTask, locale: UiLocale): ScheduledTaskFormSeed {
-  return {
-    ...scheduledTaskFormSeedFromTask(task),
-    editingId: null,
-    title: duplicateScheduledTaskTitle(task.title, locale),
-  };
+/** Create-mode seed copying an existing task under a "copy" title. */
+export function scheduledTaskDuplicateSeed(
+  task: ScheduledTask,
+  locale: UiLocale,
+  now: number = Date.now(),
+): ScheduledTaskFormSeed {
+  const seed = scheduledTaskFormSeedFromTask(task, now);
+  // A copy is a NEW task, so it may not inherit the original's binding to the
+  // session that asked for it — that session is not asking for this one.
+  const { lockedEffect: _bound, originalSchedule: _was, ...rest } = seed;
+  return { ...rest, editingId: null, title: duplicateScheduledTaskTitle(task.title, locale) };
 }

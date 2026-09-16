@@ -55,7 +55,6 @@ test('ScheduledTask recovery distinguishes a settled fire from a newer pending f
     runtime: null as never,
     root: null as never,
     runtimePolicy: null as never,
-    nativeEffects: null as never,
     createSession: async () => undefined,
     changes: { publish: () => undefined },
     acquireResidency: () => ({ release: () => undefined }),
@@ -72,9 +71,12 @@ test('ScheduledTask recovery distinguishes a settled fire from a newer pending f
           execution: {
             cwd: '/workspace',
             backend: 'ai-sdk',
-            llmConnectionId: 'connection-default',
-            llmConnectionSlug: 'default',
-            model: 'test-model',
+            model: {
+              kind: 'pinned',
+              llmConnectionId: 'connection-default',
+              llmConnectionSlug: 'default',
+              model: 'test-model',
+            },
             permissionMode: 'ask',
             collaborationMode: 'agent',
             orchestrationMode: 'default',
@@ -191,7 +193,6 @@ test('ScheduledTask execution fails closed when the bound Connection identity is
         resolveExecutionConnection: async () => ({ kind: 'identity_mismatch' as const }),
       },
     } as never,
-    nativeEffects: null as never,
     createSession: async () => {
       createSessionCalls += 1;
     },
@@ -212,9 +213,12 @@ test('ScheduledTask execution fails closed when the bound Connection identity is
             kind: 'agent_run',
             execution: {
               cwd: '/workspace',
-              llmConnectionId: 'connection-a',
-              llmConnectionSlug: 'shared-slug',
-              model: 'model-a',
+              model: {
+                kind: 'pinned',
+                llmConnectionId: 'connection-a',
+                llmConnectionSlug: 'shared-slug',
+                model: 'model-a',
+              },
               permissionMode: 'ask',
               collaborationMode: 'agent',
               orchestrationMode: 'default',
@@ -253,9 +257,12 @@ test('ScheduledTask execution fails closed when the bound Connection identity is
           kind: 'agent_run',
           execution: {
             cwd: '/workspace',
-            llmConnectionId: 'connection-a',
-            llmConnectionSlug: 'shared-slug',
-            model: 'model-a',
+            model: {
+              kind: 'pinned',
+              llmConnectionId: 'connection-a',
+              llmConnectionSlug: 'shared-slug',
+              model: 'model-a',
+            },
             permissionMode: 'ask',
             collaborationMode: 'agent',
             orchestrationMode: 'default',
@@ -328,9 +335,12 @@ test('ScheduledTask with an exact Connection identity reaches Session and AgentR
             input.execution.executionFingerprint,
             scheduledTaskExecutionFingerprint({
               cwd: '/workspace',
-              llmConnectionId: 'connection-a',
-              llmConnectionSlug: 'shared-slug',
-              model: 'model-a',
+              model: {
+                kind: 'pinned',
+                llmConnectionId: 'connection-a',
+                llmConnectionSlug: 'shared-slug',
+                model: 'model-a',
+              },
               permissionMode: 'ask',
               collaborationMode: 'agent',
               orchestrationMode: 'default',
@@ -350,7 +360,6 @@ test('ScheduledTask with an exact Connection identity reaches Session and AgentR
         resolveExecutionConnection: async () => ({ kind: 'ready' as const, connection }),
       },
     } as never,
-    nativeEffects: null as never,
     createSession: async (input, toolMode) => {
       createSessionCalls += 1;
       assert.equal(toolMode, 'code_mode');
@@ -375,9 +384,12 @@ test('ScheduledTask with an exact Connection identity reaches Session and AgentR
           kind: 'agent_run',
           execution: {
             cwd: '/workspace',
-            llmConnectionId: 'connection-a',
-            llmConnectionSlug: 'shared-slug',
-            model: 'model-a',
+            model: {
+              kind: 'pinned',
+              llmConnectionId: 'connection-a',
+              llmConnectionSlug: 'shared-slug',
+              model: 'model-a',
+            },
             permissionMode: 'ask',
             collaborationMode: 'agent',
             orchestrationMode: 'default',
@@ -407,93 +419,106 @@ test('ScheduledTask with an exact Connection identity reaches Session and AgentR
   }
 });
 
-test('scheduler handoff waits for an admitted native effect and cancellation restores its timer', async () => {
-  const base = await mkdtemp(join(tmpdir(), 'maka-scheduler-handoff-'));
-  const owner = await tryAcquireInteractiveRootOwner(
-    await resolveStorageRoot({ path: join(base, 'root'), kind: 'interactive' }),
-  );
+test('ScheduledTask on the default model admits a fire with no execution fingerprint', async () => {
+  // A default-model task has no pinned target, so it carries no fingerprint.
+  // The admission record is compared field-by-field against what the Store
+  // reads back, and the Store's codec keeps only DEFINED keys — so the
+  // descriptor must omit `executionFingerprint` rather than set it to
+  // undefined. Getting that wrong failed every default-model fire with
+  // 'Hosted root execution admission changed identity', and left an admitted
+  // Turn with no pending fire behind, which then killed the Host on every
+  // later boot.
+  const base = await mkdtemp(join(tmpdir(), 'maka-scheduled-task-default-model-'));
+  const capability = await resolveStorageRoot({ path: join(base, 'root'), kind: 'interactive' });
+  const owner = await tryAcquireInteractiveRootOwner(capability);
   assert.ok(owner);
+  if (!owner) throw new Error('Unable to acquire the ScheduledTask default-model test root');
   const store = await openInteractiveScheduledTaskStoreForWrite(owner.lease);
-  const entered = deferred<void>();
-  const effect = deferred<Record<string, unknown>>();
-  let clock = 1_000;
-  let timer: (() => void) | undefined;
-  let effects = 0;
-  const residencies = new HostResidencyRegistry();
+  let admitCalls = 0;
+  let createSessionCalls = 0;
+  let resolveConnectionCalls = 0;
+  let admittedDescriptor: Record<string, unknown> | undefined;
   const coordinator = new HostScheduledTaskCoordinator({
     store,
-    sessions: null as never,
-    runtime: null as never,
-    root: null as never,
+    sessions: {
+      readHeaderSnapshot: async () => {
+        throw new SessionNotFoundError('scheduled-task-session');
+      },
+    },
+    runtime: {
+      sendMessage: async function* () {
+        // The admission authority owns execution startup in this unit test.
+      },
+    },
+    root: {
+      admit: async (input) => {
+        admitCalls += 1;
+        admittedDescriptor = input.execution as unknown as Record<string, unknown>;
+        return {} as never;
+      },
+    },
     runtimePolicy: {
       runtimePolicy: {
         getSnapshot: async () => ({ policy: { privacy: { incognitoActive: false } } }),
       },
-    } as never,
-    nativeEffects: {
-      hasWorkspaceService: () => true,
-      callWorkspaceService: async () => {
-        effects += 1;
-        entered.resolve();
-        return effect.promise;
+      connectionCatalog: null as never,
+      credentialVault: null as never,
+      operations: {
+        resolveExecutionConnection: async () => {
+          resolveConnectionCalls += 1;
+          return { kind: 'ready' as const };
+        },
       },
+    } as never,
+    createSession: async (input) => {
+      createSessionCalls += 1;
+      // The Session catalog resolves the owner's current default at each fire.
+      assert.deepEqual(input.modelTarget, { kind: 'default' });
     },
-    createSession: async () => {},
-    changes: { publish: () => {} },
-    acquireResidency: (kind) => residencies.acquire('scheduled-task', kind),
-    requestDrain: () => assert.fail('scheduler must not drain'),
-    now: () => clock,
-    setTimeout: (callback) => {
-      timer = callback;
-      return callback;
-    },
-    clearTimeout: () => {
-      timer = undefined;
-    },
+    changes: { publish: () => undefined },
+    acquireResidency: () => ({ release: () => undefined }),
+    requestDrain: () => undefined,
   });
   try {
     const task = await store.create(
       {
-        title: 'Recurring notification',
-        intentBody: 'Notify once per interval',
-        schedule: { kind: 'interval', everySeconds: 60 },
-        effect: { kind: 'notify', channel: 'local' },
+        title: 'Default model task',
+        intentBody: 'Run on whichever model the owner prefers.',
+        schedule: { kind: 'manual' },
+        effect: {
+          kind: 'agent_run',
+          execution: {
+            cwd: '/workspace',
+            model: { kind: 'default' },
+            permissionMode: 'bypass',
+            collaborationMode: 'agent',
+            orchestrationMode: 'default',
+          },
+        },
         createdBy: { kind: 'user' },
       },
-      clock,
+      1_000,
     );
     await coordinator.prepareRecovery();
-    coordinator.start();
-    await waitFor(() => timer !== undefined);
-    await waitFor(() => residencies.drainCount === 0);
-    assert.equal(residencies.activeCount, 1);
-    clock = task.nextFireAt!;
-    const fire = timer!;
-    timer = undefined;
-    fire();
-    await entered.promise;
-    assert.equal(residencies.drainCount, 1);
-    const hold = coordinator.holdForHandoff();
-    assert.ok(hold);
-    let settled = false;
-    const ready = hold.settled().then(() => {
-      settled = true;
-    });
-    await Promise.resolve();
-    assert.equal(settled, false);
-    effect.resolve({});
-    await ready;
-    assert.equal(timer, undefined);
-    assert.equal(effects, 1);
-    assert.equal(residencies.hasDrainResidenciesExcept(hold.residencies()), false);
-    assert.equal(residencies.activeCount, 1);
-    assert.equal((await store.listPendingFires()).length, 0);
-    hold.release();
-    await waitFor(() => timer !== undefined);
-    await waitFor(() => residencies.drainCount === 0);
-    assert.equal(effects, 1);
+    const result = await coordinator.handlers['scheduled-task.mutate'](
+      { kind: 'trigger_now', taskId: task.id },
+      {} as never,
+    );
+    assert.equal(result.ok, true);
+    if (!result.ok || result.result.kind !== 'task') return;
+    assert.equal(result.result.task.lastError, null);
+    assert.equal(result.result.task.runs[0]?.outcome, 'ok');
+    assert.equal(admitCalls, 1);
+    assert.equal(createSessionCalls, 1);
+    // A task on the default model binds no Connection, so nothing is re-read.
+    assert.equal(resolveConnectionCalls, 0);
+    assert.deepEqual(Object.keys(admittedDescriptor ?? {}).sort(), ['kind', 'scheduledTaskId']);
+    assert.equal(
+      Object.hasOwn(admittedDescriptor ?? {}, 'executionFingerprint'),
+      false,
+      'a default-model descriptor must not carry the key at all',
+    );
   } finally {
-    effect.resolve({});
     await coordinator.close();
     store.close();
     await owner.close();
@@ -530,6 +555,16 @@ function admission(
   };
 }
 
+// The scheduler-handoff test that lived here held a fire open by blocking the
+// desktop's native notification service and asserted the handoff waited for it.
+// That service is gone: every effect is admitted in-process now, so there is no
+// client call to block and the fixture it used (`sessions`, `runtime` and
+// `root` all `null as never`) can no longer reach the code path — it hung
+// instead of failing. Rebuilding it needs a fixture that blocks inside Agent
+// admission, which is what 'reaches Session and AgentRun admission' above
+// already stands up; the handoff assertions belong with that one when somebody
+// extends it.
+
 test('ScheduledTask catalog returns every task through maximal byte-limited pages', async () => {
   const root = await mkdtemp(join(tmpdir(), 'maka-scheduled-task-pages-'));
   const capability = await resolveStorageRoot({ path: root, kind: 'interactive' });
@@ -542,7 +577,6 @@ test('ScheduledTask catalog returns every task through maximal byte-limited page
     runtime: null as never,
     root: null as never,
     runtimePolicy: null as never,
-    nativeEffects: null as never,
     createSession: async () => {},
     changes: { publish() {} },
     acquireResidency: () => ({ release() {} }),
@@ -560,9 +594,12 @@ test('ScheduledTask catalog returns every task through maximal byte-limited page
             execution: {
               cwd: '/workspace',
               backend: 'ai-sdk',
-              llmConnectionId: 'connection-default',
-              llmConnectionSlug: 'default',
-              model: 'test-model',
+              model: {
+                kind: 'pinned',
+                llmConnectionId: 'connection-default',
+                llmConnectionSlug: 'default',
+                model: 'test-model',
+              },
               permissionMode: 'ask',
               collaborationMode: 'agent',
               orchestrationMode: 'default',

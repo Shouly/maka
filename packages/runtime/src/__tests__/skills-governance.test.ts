@@ -41,7 +41,7 @@ describe('shared bundled skill catalog', () => {
   it('trusts the Computer Use lock shipped immediately before the current bundled body', () => {
     const source = getBundledSkillSource('computer-use');
     assert.ok(source);
-    const previousHash = 'sha256:64aa2ef2d608e15792cc04eff7204731671b6b18818964ba95c65f53c694db62';
+    const previousHash = 'sha256:ef548414fbd3d88fc40e6be1a84ddb345a38b6651b20aaa502bcb9afdf457051';
 
     assert.equal(source.legacyContentSha256.includes(previousHash), true);
     assert.deepEqual(

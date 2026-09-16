@@ -32,13 +32,73 @@ import {
 } from '../scheduled-task.js';
 
 describe('scheduled-task catalog', () => {
+  // `manual` is the kind the form creates by default and the one nothing here
+  // covered. Its invariant is unusual and easy to break by accident: a run does
+  // NOT spend it, so a null `nextFireAt` must never be read as an exhausted
+  // schedule — only a fire budget or an expiry may end it.
+  const manualTask = (overrides: Partial<ScheduledTask> = {}): ScheduledTask => ({
+    id: 'manual-1',
+    title: 'Manual',
+    intent: { kind: 'text', body: 'run me when asked' },
+    schedule: { kind: 'manual' },
+    effect: { kind: 'session_resume', sessionId: 'session-1' },
+    status: 'active',
+    nextFireAt: null,
+    lastFireAt: null,
+    fireCount: 0,
+    maxFires: null,
+    expiresAt: null,
+    createdBy: { kind: 'user' },
+    createdAt: 0,
+    updatedAt: 0,
+    runs: [],
+    lastError: null,
+    ...overrides,
+  });
+  const fire = (at: number) => ({ id: `r${at}`, at, outcome: 'ok' as const, message: 'ran' });
+
+  it('never makes a manual task due, and running one does not spend it', () => {
+    assert.equal(computeNextFireAt({ kind: 'manual' }, 1_000), null);
+    assert.equal(isScheduledTaskDue(manualTask(), 10_000_000), false);
+
+    const after = nextScheduledTaskStateAfterFire(manualTask(), fire(5_000));
+    assert.equal(after.status, 'active', 'still waiting to be asked again');
+    assert.equal(after.nextFireAt, null);
+    assert.equal(after.fireCount, 1);
+    // And again, any number of times.
+    const twice = nextScheduledTaskStateAfterFire(after, fire(6_000));
+    assert.equal(twice.status, 'active');
+    assert.equal(twice.fireCount, 2);
+  });
+
+  it('ends a manual task only on its fire budget or its expiry', () => {
+    const budgeted = nextScheduledTaskStateAfterFire(manualTask({ maxFires: 1 }), fire(5_000));
+    assert.equal(budgeted.status, 'completed');
+    assert.equal(budgeted.nextFireAt, null);
+
+    const expired = nextScheduledTaskStateAfterFire(manualTask({ expiresAt: 4_000 }), fire(5_000));
+    assert.equal(expired.status, 'expired');
+  });
+
+  it('pausing and resuming a manual task leaves it with no next fire', () => {
+    const paused = pauseScheduledTask(manualTask(), 1_000);
+    assert.equal(paused.status, 'paused');
+    const resumed = resumeScheduledTask(paused, 2_000);
+    assert.ok(!('error' in resumed), 'a paused manual task can be resumed');
+    if ('error' in resumed) return;
+    assert.equal(resumed.status, 'active');
+    // Resume recomputes the next fire for every other kind; for this one there
+    // is nothing to compute, and a number here would make it fire by itself.
+    assert.equal(resumed.nextFireAt, null);
+  });
+
   it('advances once schedules to completed after fire', () => {
     const task: ScheduledTask = {
       id: 't1',
       title: 'Once',
       intent: { kind: 'text', body: 'hi' },
       schedule: { kind: 'once', runAt: 1000 },
-      effect: { kind: 'notify', channel: 'local' },
+      effect: { kind: 'session_resume', sessionId: 'session-1' },
       status: 'active',
       nextFireAt: 1000,
       lastFireAt: null,
@@ -71,7 +131,7 @@ describe('scheduled-task catalog', () => {
       title: 'Hourly',
       intent: { kind: 'text', body: 'tick' },
       schedule: { kind: 'interval', everySeconds: 3600, startAt: now },
-      effect: { kind: 'notify', channel: 'local' },
+      effect: { kind: 'session_resume', sessionId: 'session-1' },
       status: 'active',
       nextFireAt: next,
       lastFireAt: null,
@@ -104,7 +164,7 @@ describe('scheduled-task catalog', () => {
       title: 'Daily',
       intent: { kind: 'text', body: 'tick' },
       schedule: { kind: 'calendar', recurrence: 'daily', anchorAt: now },
-      effect: { kind: 'notify', channel: 'local' },
+      effect: { kind: 'session_resume', sessionId: 'session-1' },
       status: 'paused',
       nextFireAt: pending,
       lastFireAt: null,
@@ -130,7 +190,7 @@ describe('scheduled-task catalog', () => {
       title: 'Spent',
       intent: { kind: 'text', body: '' },
       schedule: { kind: 'interval', everySeconds: 60, startAt: 0 },
-      effect: { kind: 'notify', channel: 'local' },
+      effect: { kind: 'session_resume', sessionId: 'session-1' },
       status: 'paused',
       nextFireAt: null,
       lastFireAt: 60_000,
@@ -148,6 +208,38 @@ describe('scheduled-task catalog', () => {
     });
   });
 
+  it('treats resume as a target state: an already-active task comes back untouched', () => {
+    const task: ScheduledTask = {
+      id: 'live',
+      title: 'Live',
+      intent: { kind: 'text', body: 'go' },
+      schedule: { kind: 'interval', everySeconds: 60, startAt: 0 },
+      effect: { kind: 'session_resume', sessionId: 'session-1' },
+      status: 'active',
+      nextFireAt: 120_000,
+      lastFireAt: null,
+      fireCount: 0,
+      maxFires: null,
+      expiresAt: null,
+      createdBy: { kind: 'user' },
+      createdAt: 0,
+      updatedAt: 0,
+      runs: [],
+      lastError: null,
+    };
+    // The SAME object, which is what tells the store to write nothing at all.
+    // It used to be `{ error: 'Only paused tasks can be resumed' }` — a failure
+    // for a request that was already satisfied.
+    assert.equal(resumeScheduledTask(task, 60_000), task);
+    // The other half of the pair, which always behaved this way.
+    const paused = pauseScheduledTask(task, 1);
+    assert.equal(pauseScheduledTask(paused, 2), paused);
+    // A terminal task is still refused: "already running" is not true of it.
+    assert.deepEqual(resumeScheduledTask({ ...task, status: 'completed' }, 60_000), {
+      error: 'Only paused tasks can be resumed',
+    });
+  });
+
   it('rejects numeric-string coercion and non-canonical cron spacing', () => {
     const now = Date.UTC(2026, 0, 5, 8, 0, 0);
     for (const schedule of [
@@ -162,9 +254,9 @@ describe('scheduled-task catalog', () => {
         normalizeCreateScheduledTaskInput(
           {
             title: 'Strict boundary',
-            intentBody: '',
+            intentBody: 'run it',
             schedule,
-            effect: { kind: 'notify', channel: 'local' },
+            effect: { kind: 'session_resume', sessionId: 'session-1' },
             createdBy: { kind: 'user' },
           },
           now,
@@ -186,9 +278,9 @@ describe('scheduled-task catalog', () => {
     const result = normalizeCreateScheduledTaskInput(
       {
         title: 'Already expired before fire',
-        intentBody: '',
+        intentBody: 'run it',
         schedule: { kind: 'once', runAt: now + 60_000 },
-        effect: { kind: 'notify', channel: 'local' },
+        effect: { kind: 'session_resume', sessionId: 'session-1' },
         createdBy: { kind: 'user' },
         expiresAt: now + 30_000,
       },
@@ -204,9 +296,12 @@ describe('scheduled-task catalog', () => {
     const now = Date.UTC(2026, 0, 5, 8, 0, 0);
     const execution = {
       cwd: '/tmp/project',
-      llmConnectionId: 'connection-anthropic',
-      llmConnectionSlug: 'anthropic',
-      model: 'claude-sonnet-4-5-20250929',
+      model: {
+        kind: 'pinned',
+        llmConnectionId: 'connection-anthropic',
+        llmConnectionSlug: 'anthropic',
+        model: 'claude-sonnet-4-5-20250929',
+      },
       permissionMode: 'ask',
       collaborationMode: 'agent',
       orchestrationMode: 'default',
@@ -236,32 +331,36 @@ describe('scheduled-task catalog', () => {
     }
   });
 
-  it('requires an immutable Connection identity for new Agent tasks', () => {
+  it('requires an immutable Connection identity from a task that pins its model', () => {
     const now = Date.UTC(2026, 0, 5, 8, 0, 0);
-    const result = normalizeCreateScheduledTaskInput(
-      {
-        title: 'Missing identity',
-        intentBody: 'run',
-        schedule: { kind: 'once', runAt: now + 60_000 },
-        effect: {
-          kind: 'agent_run',
-          execution: {
-            cwd: '/tmp/project',
-            llmConnectionSlug: 'anthropic',
-            model: 'claude',
-            permissionMode: 'ask',
-            collaborationMode: 'agent',
-            orchestrationMode: 'default',
+    const create = (model: unknown) =>
+      normalizeCreateScheduledTaskInput(
+        {
+          title: 'Pinned model',
+          intentBody: 'run',
+          schedule: { kind: 'once', runAt: now + 60_000 },
+          effect: {
+            kind: 'agent_run',
+            execution: {
+              cwd: '/tmp/project',
+              model,
+              permissionMode: 'ask',
+              collaborationMode: 'agent',
+              orchestrationMode: 'default',
+            },
           },
+          createdBy: { kind: 'user' },
         },
-        createdBy: { kind: 'user' },
-      },
-      now,
-    );
-    assert.deepEqual(result, {
+        now,
+      );
+    // A slug is reusable: a deleted-and-recreated Connection with the same slug
+    // would take over somebody else's scheduled work, so the id is required.
+    assert.deepEqual(create({ kind: 'pinned', llmConnectionSlug: 'anthropic', model: 'claude' }), {
       ok: false,
-      message: 'execution.llmConnectionId is required',
+      message: 'a pinned model requires llmConnectionId',
     });
+    // Following the owner's default names no Connection at all, and is fine.
+    assert.equal(create({ kind: 'default' }).ok, true);
   });
 
   it('rejects future recurrence anchors outside the scheduling horizon', () => {
@@ -273,9 +372,9 @@ describe('scheduled-task catalog', () => {
       const result = normalizeCreateScheduledTaskInput(
         {
           title: 'Too far away',
-          intentBody: '',
+          intentBody: 'run it',
           schedule,
-          effect: { kind: 'notify', channel: 'local' },
+          effect: { kind: 'session_resume', sessionId: 'session-1' },
           createdBy: { kind: 'user' },
         },
         now,
@@ -298,9 +397,12 @@ describe('decodePersistedScheduledTask', () => {
       kind: 'agent_run',
       execution: {
         cwd: '/repo',
-        llmConnectionId: 'connection-anthropic',
-        llmConnectionSlug: 'anthropic',
-        model: 'claude',
+        model: {
+          kind: 'pinned',
+          llmConnectionId: 'connection-anthropic',
+          llmConnectionSlug: 'anthropic',
+          model: 'claude',
+        },
         permissionMode: 'ask',
         collaborationMode: 'agent',
         orchestrationMode: 'default',
@@ -319,6 +421,8 @@ describe('decodePersistedScheduledTask', () => {
     lastError: null,
   };
 
+  const execution = base.effect.kind === 'agent_run' ? base.effect.execution : undefined!;
+
   it('folds a retired permission mode to its live equivalent', () => {
     const stored = JSON.parse(
       JSON.stringify(base).replace('"permissionMode":"ask"', '"permissionMode":"execute"'),
@@ -334,22 +438,26 @@ describe('decodePersistedScheduledTask', () => {
     assert.equal(decodePersistedScheduledTask(markPersisted<ScheduledTask>(base)), base);
   });
 
-  it('keeps legacy slug-only Agent tasks readable', () => {
-    const { llmConnectionId: _legacyId, ...legacyExecution } =
-      base.effect.kind === 'agent_run' ? base.effect.execution : {};
-    const legacy = {
+  it('keeps a task that follows the default model readable', () => {
+    const following = {
       ...base,
-      effect: { kind: 'agent_run' as const, execution: legacyExecution },
+      effect: {
+        kind: 'agent_run' as const,
+        execution: { ...execution, model: { kind: 'default' } },
+      },
     } as ScheduledTask;
-    const decoded = decodePersistedScheduledTask(markPersisted<ScheduledTask>(legacy));
+    const decoded = decodePersistedScheduledTask(markPersisted<ScheduledTask>(following));
     assert.equal(decoded.effect.kind, 'agent_run');
     if (decoded.effect.kind !== 'agent_run') return;
-    assert.equal(decoded.effect.execution.llmConnectionId, undefined);
+    assert.equal(decoded.effect.execution.model.kind, 'default');
   });
 
   it('leaves effects without an execution template alone', () => {
-    const notify: ScheduledTask = { ...base, effect: { kind: 'notify', channel: 'local' } };
-    assert.equal(decodePersistedScheduledTask(markPersisted<ScheduledTask>(notify)), notify);
+    const resume: ScheduledTask = {
+      ...base,
+      effect: { kind: 'session_resume', sessionId: 'session-1' },
+    };
+    assert.equal(decodePersistedScheduledTask(markPersisted<ScheduledTask>(resume)), resume);
   });
 
   it('rejects unknown permission modes in persisted execution templates', () => {

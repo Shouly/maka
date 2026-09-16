@@ -54,7 +54,7 @@ function openAiNamespace(options: Record<string, unknown>): Record<string, unkno
 }
 
 describe('responses wire contract', () => {
-  test('does not route Maka tool_search history through OpenAI native tool_search validation', async () => {
+  test('does not route Maka ToolSearch history through OpenAI native ToolSearch validation', async () => {
     const connection = conn('openai-codex', 'codex-subscription');
     connection.defaultModel = 'gpt-5.6-sol';
     const requestBodies: Record<string, unknown>[] = [];
@@ -91,7 +91,7 @@ describe('responses wire contract', () => {
             {
               type: 'tool-call',
               toolCallId: 'search-call',
-              toolName: 'tool_search',
+              toolName: 'ToolSearch',
               input: { query: 'browser' },
             },
           ],
@@ -102,20 +102,20 @@ describe('responses wire contract', () => {
             {
               type: 'tool-result',
               toolCallId: 'search-call',
-              toolName: 'tool_search',
-              output: { type: 'json', value: { activated: ['browser_click'] } },
+              toolName: 'ToolSearch',
+              output: { type: 'json', value: { activated: ['BrowserClick'] } },
             },
           ],
         },
       ],
       tools: {
-        tool_search: {
+        ToolSearch: {
           description: 'Search Maka deferred tools',
           inputSchema: z.object({ query: z.string() }),
         },
       },
-      activeTools: ['tool_search'],
-      system: 'Call tool_search; keep existing maka_tool_search text unchanged.',
+      activeTools: ['ToolSearch'],
+      system: 'Call ToolSearch; keep existing CopilotToolSearch text unchanged.',
       onStreamActivity: () => {},
       abortSignal: new AbortController().signal,
       repairToolCall: async () => null,
@@ -133,7 +133,7 @@ describe('responses wire contract', () => {
     );
     assert.equal(
       input?.find((item) => item.role === 'developer')?.content,
-      'Call maka_tool_search; keep existing maka_tool_search text unchanged.',
+      'Call CopilotToolSearch; keep existing CopilotToolSearch text unchanged.',
     );
   });
 

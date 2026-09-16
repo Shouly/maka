@@ -56,7 +56,7 @@ const TAKEOVER_RELOAD_TIMEOUT_MS = 10_000;
 export class BrowserToolTimeoutError extends Error {
   constructor(label: string, ms: number) {
     super(
-      `Browser ${label} timed out after ${Math.round(ms / 1000)}s. The page may still be loading; try browser_wait or a simpler action.`,
+      `Browser ${label} timed out after ${Math.round(ms / 1000)}s. The page may still be loading; try BrowserWait or a simpler action.`,
     );
     this.name = 'BrowserToolTimeoutError';
   }

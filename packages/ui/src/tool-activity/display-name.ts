@@ -19,24 +19,20 @@
 
 /**
  * The name a tool row shows. A tool carries its own `displayName` when the
- * backend named it; the search/legacy activation connector gets a localized label
+ * backend named it; the tool-discovery connector gets a localized label
  * (its raw name reads as an implementation detail); everything else falls back
  * to the canonical tool name.
  */
 
 import { redactSecrets } from '@maka/core/redaction';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import type { UiLocale } from '@maka/core/ui-locale';
 import type { ToolActivityItem } from '../materialize.js';
 import { describeLoadToolResult, loadToolDisplayName } from '../tool-format.js';
 
-const CONNECTOR_TOOL_NAMES: ReadonlySet<string> = new Set([
-  'tool_search',
-  'load_tools',
-  'load_tool',
-]);
-
+/** True for the tool-discovery connector, whose row reads as its action. */
 export function isConnectorTool(name: string): boolean {
-  return CONNECTOR_TOOL_NAMES.has(name);
+  return name === TOOL_NAMES.toolSearch;
 }
 
 export function workHubControlStatus(item: ToolActivityItem): string | undefined {

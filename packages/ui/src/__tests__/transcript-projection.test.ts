@@ -346,7 +346,7 @@ describe('incremental transcript projection', () => {
   });
 
   test('affects the ShellRun owner turn, not the turn the event names', () => {
-    // A WriteStdin in turn-2 carries a shell_run whose `ref` belongs to the
+    // A TaskInput in turn-2 carries a shell_run whose `ref` belongs to the
     // Bash in turn-1, and `foldShellRunToolActivities` folds it back into that
     // owner. The turn an event names is therefore NOT the set of turns it
     // affects — which is why the affected set is derived from the projection's
@@ -358,7 +358,7 @@ describe('incremental transcript projection', () => {
       sessionId: SESSION,
       messages: [
         ...history(),
-        toolCall('write-1', 'turn-3', 'WriteStdin', { ref: REF, input: 'go\n' }, 7),
+        toolCall('write-1', 'turn-3', 'TaskInput', { ref: REF, input: 'go\n' }, 7),
         toolResult('write-1', 'turn-3', shellRun(4), 8),
       ],
     });
@@ -377,7 +377,7 @@ describe('incremental transcript projection', () => {
     // its revision into the parent.
     const child: ToolActivityItem = {
       toolUseId: 'stop-1',
-      toolName: 'StopBackgroundTask',
+      toolName: 'TaskStop',
       status: 'completed',
       args: {},
       result: shellRun(5),

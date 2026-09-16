@@ -868,7 +868,7 @@ describe('ShellRunProcessManager', () => {
     manager.resumeSession('session-1');
   });
 
-  test('gives exactly one concurrent StopBackgroundTask call termination ownership', async () => {
+  test('gives exactly one concurrent TaskStop call termination ownership', async () => {
     const manager = await createTestManager();
     const initial = await manager.runBackgroundBash(
       shellInput({
@@ -2061,7 +2061,7 @@ describe('ShellRunProcessManager', () => {
     }
   });
 
-  test('rejects WriteStdin aborted before commit without stopping the PTY', async () => {
+  test('rejects TaskInput aborted before commit without stopping the PTY', async () => {
     const manager = await createTestManager();
     const initial = await manager.runBackgroundBash(
       shellInput({
@@ -2706,7 +2706,7 @@ describe('ShellRunProcessManager', () => {
           ),
         // Names no tool at all. The counters are manager-wide, and the caller
         // that most often hits this cap is a child agent, whose tool list is a
-        // strict allowlist that carries Bash but not StopBackgroundTask. The
+        // strict allowlist that carries Bash but not TaskStop. The
         // sentence describes the move instead; `non-cu-tool-refusal-text.test`
         // asserts that against the real child tool set.
         /No free interactive \(PTY\) background task slot: the runtime is at its limit of 1 .*Run this command as a non-interactive background task/s,

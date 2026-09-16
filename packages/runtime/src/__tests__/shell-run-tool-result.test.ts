@@ -95,7 +95,7 @@ describe('PTY model output projection', () => {
       content: {
         kind: 'function_response',
         id: 'tool-1',
-        name: 'StopBackgroundTask',
+        name: 'TaskStop',
         result,
       },
       refs: { operationId: 'operation-1', toolCallId: 'tool-1' },

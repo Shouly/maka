@@ -29,6 +29,7 @@ import type {
   SettleMemoryExtractionFailureResult,
 } from '@maka/core/long-term-memory';
 import { redactSecrets } from '@maka/core/redaction';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import type { SessionHeader } from '@maka/core/session';
 import { z } from 'zod';
 import {
@@ -65,8 +66,8 @@ import {
 import type { ModelMessage, ModelToolSet } from './model-protocol.js';
 import type { MakaTool, MakaToolContext } from './tool-runtime.js';
 
-export const MEMORY_REMEMBER_TOOL_NAME = 'memory_remember';
-export const MEMORY_EXTRACT_TOOL_NAME = 'memory_extract';
+export const MEMORY_REMEMBER_TOOL_NAME = TOOL_NAMES.memoryRemember;
+export const MEMORY_EXTRACT_TOOL_NAME = TOOL_NAMES.memoryExtract;
 export type MemoryExtractionTrigger = 'remember' | 'extract' | 'compaction';
 export type MemoryExtractionGate =
   | { readonly allowed: true }
@@ -98,9 +99,9 @@ export interface MemoryExtractionSourceSnapshot {
   readonly runId: string;
   readonly turnId: string;
   readonly workspaceKey: string;
-  /** Present only for memory_remember; identifies the call excluded from evidence. */
+  /** Present only for MemoryRemember; identifies the call excluded from evidence. */
   readonly toolCallId?: string;
-  /** Present only for post-terminal memory_extract. */
+  /** Present only for post-terminal MemoryExtract. */
   readonly terminalEventId?: string;
   /** Present only for automatic Compaction extraction. */
   readonly compactionCheckpointId?: string;
@@ -294,7 +295,7 @@ export function buildMemoryExtractionTriggerTools(input: {
     {
       name: MEMORY_REMEMBER_TOOL_NAME,
       description:
-        'Use only when the user explicitly asks you to remember long-term information. It stores the requested memory and returns exactly what was saved.',
+        'Save long-term memory because the user explicitly asked you to remember something. Takes no arguments: what to save is taken from the conversation. Returns exactly what was stored, or unavailable when memory is off for this session; never announce a save the result did not confirm.',
       parameters: noArguments,
       executionSemantics: 'exclusive_step',
       recoveryMode: 'idempotent',
@@ -316,7 +317,7 @@ export function buildMemoryExtractionTriggerTools(input: {
     {
       name: MEMORY_EXTRACT_TOOL_NAME,
       description:
-        'Use when the conversation contains durable long-term information worth preserving and the user did not explicitly ask to remember it. The extraction runs after this turn.',
+        'Flag that this conversation holds durable information about the user or their work worth keeping, when they did not ask you to remember it. The extraction itself runs after the turn, outside your context; the result only acknowledges the request. Do not call it for facts that expire on their own.',
       parameters: noArguments,
       recoveryMode: 'idempotent',
       impl: async (_args: Record<string, never>, context: MakaToolContext) => {

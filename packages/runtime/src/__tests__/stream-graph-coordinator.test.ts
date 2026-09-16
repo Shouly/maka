@@ -437,7 +437,7 @@ describe('host-managed agent graph coordinator', () => {
       assert.equal(graphWake.origin.graphId, agentGraphIdForRootSession(rootSession.id));
       assert.match(graphWake.origin.wakeId, /sha256:[a-f0-9]{64}$/);
       assert.match(graphWake.origin.attemptId, /^[0-9a-f-]{36}$/);
-      assert.match(graphWake.text, /view_agent_graph/);
+      assert.match(graphWake.text, /ViewAgentGraph/);
       assert.ok(
         (await manager.getMessages(rootSession.id)).some(
           (message) => message.type === 'assistant' && message.turnId === graphWake.turnId,

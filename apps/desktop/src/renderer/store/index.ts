@@ -36,7 +36,11 @@ import { projectsStore } from './projects-store.js';
 import { toastApi } from './toast-api.js';
 import { newTaskStore } from './new-task-store.js';
 import { onboardingStore } from './onboarding-store.js';
-import { scheduledTasksStore } from './scheduled-tasks-store.js';
+import {
+  openScheduledTaskDetail,
+  scheduledTaskDetailStore,
+  scheduledTasksStore,
+} from './scheduled-tasks-store.js';
 import { updateStore } from './update-store.js';
 import { errorMessage } from './resource-store.js';
 
@@ -44,7 +48,14 @@ export { sessionsStore, settingsStore, connectionsStore, projectsStore };
 // Connected by the MCP module page for as long as it is mounted: nothing
 // outside it reads MCP, so it is not part of `startRendererStores`.
 export { mcpStore };
-export { newTaskStore, onboardingStore, scheduledTasksStore, updateStore };
+export {
+  newTaskStore,
+  onboardingStore,
+  openScheduledTaskDetail,
+  scheduledTaskDetailStore,
+  scheduledTasksStore,
+  updateStore,
+};
 export { uiStore } from './ui-store.js';
 export { composerDraftStore } from './composer-draft-store.js';
 export { contextUsageStore } from './context-usage-store.js';

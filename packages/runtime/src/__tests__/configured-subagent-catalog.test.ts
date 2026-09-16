@@ -83,7 +83,7 @@ describe('configured subagent catalog', () => {
       connectionId: '11111111-1111-4111-8111-111111111111',
     });
     await assert.rejects(catalog.resolve('missing-model'), /model_disabled/);
-    await assert.rejects(catalog.resolve('invented'), /Call agent_list/);
+    await assert.rejects(catalog.resolve('invented'), /Call ListAgents/);
   });
 
   test('a retained retired connection cannot admit a subagent', async () => {

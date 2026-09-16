@@ -76,6 +76,9 @@
       "!apps/desktop/src/shared/**",
       "!apps/desktop/src/renderer/**/*.{css,html,json,md,svg,txt}",
       "!packages/ui/**",
+      // Golden fixtures are compared byte-for-byte by their tests; the test
+      // writes them (MAKA_UPDATE_GOLDEN=1), so the formatter must not.
+      "!**/src/__tests__/golden/**",
       // Byte-sensitive provenance / generated artifacts — NOT hand-authored
       // source. These are read whole and SHA-256'd + size-checked by the
       // executor preparation scripts, so reformatting breaks provenance

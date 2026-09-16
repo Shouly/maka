@@ -73,7 +73,7 @@ function scheduledTask(status: ScheduledTaskStatus): ScheduledTask {
     title: status,
     intent: { kind: 'text', body: '' },
     schedule: { kind: 'once', runAt: 2_000 },
-    effect: { kind: 'notify', channel: 'local' },
+    effect: { kind: 'session_resume', sessionId: 'session-1' },
     status,
     nextFireAt: status === 'active' ? 2_000 : null,
     lastFireAt: null,

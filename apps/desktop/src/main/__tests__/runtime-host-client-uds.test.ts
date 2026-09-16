@@ -468,12 +468,22 @@ test('drives bounded Session domain projections through real UDS framing', async
       idleGraceMs: 10_000,
       composition: defineInteractiveRuntimeHostComposition(async () => ({
         handlers: handlers({
-          'session.todo.query': async (input) => ({
+          'session.task.query': async (input) => ({
             ok: true,
             result: {
               sessionId: input.sessionId,
+              nextId: 2,
               items: [
-                { content: 'Verify the Desktop adapter', status: 'in_progress' },
+                {
+                  id: '1',
+                  subject: 'Verify the Desktop adapter',
+                  description: 'Verify the Desktop adapter',
+                  status: 'in_progress',
+                  blocks: [],
+                  blockedBy: [],
+                  createdAt: 0,
+                  updatedAt: 0,
+                },
               ],
             },
           }),
@@ -531,7 +541,7 @@ test('drives bounded Session domain projections through real UDS framing', async
     );
 
     assert.equal(
-      ((await ipc.invoke('todo:read', 'session-1')) as Array<{ content: string }>)[0]?.content,
+      ((await ipc.invoke('session-task:read', 'session-1')) as Array<{ subject: string }>)[0]?.subject,
       'Verify the Desktop adapter',
     );
     assert.deepEqual(await ipc.invoke('plan-mode:getState', 'session-1'), {
@@ -645,7 +655,7 @@ function session(
 
 function nativeTool(): MakaTool {
   return {
-    name: 'browser_snapshot',
+    name: 'BrowserSnapshot',
     description: 'Capture the current page.',
     parameters: z.object({}),
     impl: async () => 'snapshot',

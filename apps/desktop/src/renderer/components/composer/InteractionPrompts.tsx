@@ -36,6 +36,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -48,11 +49,7 @@ import {
   createInteractionFormDrafts,
   buildInteractionFormResponse,
   interactionFormFieldDraftIsValid,
-  createQuestionDrafts,
-  canLeaveQuestion,
-  buildUserQuestionResponse,
   type InteractionFormFieldDraft,
-  type QuestionAnswerDraft,
 } from '@maka/ui';
 import type {
   ActiveInteractionRequestEvent,
@@ -61,6 +58,7 @@ import type {
 } from '@maka/core/events';
 import { activeSessionStore, turnActionsStore } from '../../store/index.js';
 import { Anthropicon } from '../icons/Anthropicon.js';
+import Markdown from '../ui/Markdown.js';
 import { Button } from '../ui/button.js';
 import { Input } from '../ui/input.js';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.js';
@@ -69,6 +67,15 @@ import { cn } from '../../lib/cn.js';
 import { getComposerCopy } from '../../locales/composer-copy.js';
 import { userQuestionPanelStore } from '../../store/user-question-panel-store.js';
 import { answerUserQuestion, rememberUserQuestionRequest } from '../../lib/ask-user-question.js';
+import {
+  buildUserQuestionResponse,
+  canLeaveQuestion,
+  createQuestionDrafts,
+  draftHasOption,
+  readUserQuestions,
+  toggleDraftOption,
+  type QuestionDraft,
+} from '../../lib/user-question-shape.js';
 
 /** relx AskUserPanel card: surface-3, 16px radius, panel shadow + hairline ring. */
 const PANEL_CLASS =
@@ -287,13 +294,102 @@ function PromptStatus({ pending, error }: { pending: boolean; error: string }) {
 // ---------------------------------------------------------------------------
 // Ask-user wizard
 //
-// The relx panel, over Maka's answer model (`user-question-prompt-state.ts`):
-// one question at a time, numbered option rows, a "something else" input as
-// the last row, ← → paging in the header, ✕ = submit whatever is answered
-// (unanswered questions go as `null`, which the tool reads as "the user did
-// not say"). Picking an option on a non-final question advances; on the final
-// question it submits. Skip leaves the current question unanswered and moves
-// on.
+// The relx panel, over Maka's answer model (`lib/user-question-shape.ts`): one
+// question at a time, option rows, a "something else" input as the last row,
+// ← → paging in the header, ✕ = submit whatever is answered (unanswered
+// questions go as `null`, which the tool reads as "the user did not say").
+// Picking an option on a non-final question advances; on the final question it
+// submits. Skip leaves the current question unanswered and moves on.
+//
+// No control here is a word where an arrow will do: next and submit are both
+// `ConfirmButton`, → and ↑. Skip is the one named button, because "move on
+// without answering" is not a direction.
+//
+// A question carries a `header` — a few words naming the decision — which the
+// panel does not draw. The question below it is already a sentence saying the
+// same thing, so the chip read as a label on a label. It stays in the shape
+// and in the persisted answer for whoever indexes by it.
+//
+// `multiSelect` does change the panel: ticks and a Submit, instead of
+// click-to-answer. Click-to-answer cannot express "these two", and a
+// multi-select question that advanced on the first click would silently drop
+// the second.
+
+// `group/cb` is not decoration: `checkboxBoxClass` writes its hover state as
+// `group-hover/cb:`, so a tick box in a row without it never lights up.
+const OPTION_ROW_CLASS =
+  'group/cb flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-left outline-none transition-transform duration-100 active:scale-[0.99]';
+
+/**
+ * The badge column, 28px wide in both modes so the labels stay on one line
+ * whichever mode a question is in: a tick box for multi-select, the option's
+ * ordinal for single-select. The ordinal is decoration — the option's name is
+ * its label — which is why it is `aria-hidden` and the tick is not.
+ */
+function OptionBadge(props: {
+  multiSelect: boolean;
+  selected: boolean;
+  active: boolean;
+  ordinal: number;
+}) {
+  if (props.multiSelect) {
+    return (
+      <span className="flex size-7 shrink-0 items-center justify-center" aria-hidden>
+        <span className={checkboxBoxClass(props.selected, 'default')}>
+          {props.selected && <Anthropicon name="check" size={CHECKBOX_TICK_SIZE.default} />}
+        </span>
+      </span>
+    );
+  }
+  return (
+    <span aria-hidden className="flex size-7 shrink-0 items-center justify-center">
+      <span
+        className={cn(
+          'flex size-7 items-center justify-center rounded-lg text-sm',
+          props.selected
+            ? 'bg-accent-fill text-on-accent'
+            : props.active
+              ? 'bg-alpha-2 text-text-primary'
+              : 'bg-alpha-1 text-text-secondary',
+        )}
+      >
+        {props.ordinal}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * The confirm key, in both modes: an arrow, never a word. ↑ submits the batch
+ * and wears the composer's send colour, brand — the same symbol in the same
+ * colour, because the answers leave from here. → is only "turn the page", so
+ * it stays on the neutral key and does not spend the send colour.
+ */
+function ConfirmButton(props: {
+  isLast: boolean;
+  /** Its whole name: the face is an arrow, so the label is all a reader gets. */
+  label: string;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={props.label}
+      title={props.label}
+      disabled={props.disabled}
+      onClick={props.onClick}
+      className={cn(
+        'ui-control-squish flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-lg outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-50',
+        props.isLast
+          ? 'ui-control-squish-brand text-on-accent'
+          : 'ui-control-squish-primary text-on-primary',
+      )}
+    >
+      <Anthropicon name="arrowUp" className={props.isLast ? undefined : 'rotate-90'} size={20} />
+    </button>
+  );
+}
 
 function QuestionWizard({
   sessionId,
@@ -316,9 +412,8 @@ function QuestionWizard({
   const copy = getConversationCopy(locale).questions;
   const local = getComposerCopy(locale).questions;
   const [index, setIndex] = useState(0);
-  const [drafts, setDrafts] = useState<QuestionAnswerDraft[]>(() =>
-    createQuestionDrafts(request.questions),
-  );
+  const questions = useMemo(() => readUserQuestions(request), [request]);
+  const [drafts, setDrafts] = useState<QuestionDraft[]>(() => createQuestionDrafts(questions));
   // The cursor row: options first, then the free-text row at `options.length`.
   const [activeRow, setActiveRow] = useState(0);
   const listboxRef = useRef<HTMLDivElement | null>(null);
@@ -334,41 +429,62 @@ function QuestionWizard({
   }, [request.requestId, index, drafts]);
   useEffect(() => () => userQuestionPanelStore.clear(request.requestId), [request.requestId]);
 
-  const total = request.questions.length;
-  const question = request.questions[index];
+  const total = questions.length;
+  const question = questions[index];
   const options = question?.options ?? [];
+  const multiSelect = question?.multiSelect === true;
   const draft = drafts[index] ?? null;
   const isLast = index >= total - 1;
   const custom = draft?.kind === 'other' ? draft.value : '';
-  const pickedIndex = draft?.kind === 'option' ? draft.optionIndex : -1;
-  const canConfirm = canLeaveQuestion(draft) && draft !== null;
-
+  const canConfirm = draft !== null && canLeaveQuestion(draft);
+  // Only a multi-select draft holds several; the bar that reads this is only
+  // drawn for one.
+  const pickedCount = draft?.kind === 'options' ? draft.optionIndexes.length : 0;
   // Focus follows the question: the listbox owns ↑ ↓ ⏎ for the options.
   useEffect(() => {
     setActiveRow(0);
     listboxRef.current?.focus();
   }, [index]);
 
-  const setDraft = (value: QuestionAnswerDraft) =>
+  const focusRow = (next: number) => setActiveRow(next);
+
+  const setDraft = (value: QuestionDraft) =>
     setDrafts((rows) => rows.map((row, i) => (i === index ? value : row)));
 
   const submit = useCallback(
-    (rows: readonly QuestionAnswerDraft[]) =>
+    (rows: readonly QuestionDraft[]) =>
       run(() =>
-        answerUserQuestion(request, buildUserQuestionResponse(request, rows), (response) =>
-          turnActionsStore.respondQuestion(sessionId, response),
+        answerUserQuestion(
+          request,
+          buildUserQuestionResponse(request, questions, rows),
+          (response) => turnActionsStore.respondQuestion(sessionId, response),
         ),
       ),
-    [run, sessionId, request],
+    [run, sessionId, request, questions],
   );
 
-  const advance = (rows: readonly QuestionAnswerDraft[]) => {
+  const advance = (rows: readonly QuestionDraft[]) => {
     if (isLast) void submit(rows);
     else setIndex(index + 1);
   };
 
+  /**
+   * Picking an option. Single-select answers and moves on in one gesture;
+   * multi-select only ticks, and the reader says when they are done — a
+   * question that advanced on the first tick could never collect the second.
+   */
   const pick = (optionIndex: number) => {
     if (busy) return;
+    if (multiSelect) {
+      // Off the row currently rendered, not off the snapshot this render
+      // closed over: two ticks in the same frame would otherwise keep only
+      // the second.
+      setDrafts((rows) =>
+        rows.map((row, i) => (i === index ? toggleDraftOption(row, optionIndex) : row)),
+      );
+      focusRow(optionIndex);
+      return;
+    }
     const next = drafts.map((row, i) =>
       i === index ? ({ kind: 'option', optionIndex } as const) : row,
     );
@@ -385,7 +501,7 @@ function QuestionWizard({
 
   const moveCursor = (next: number) => {
     const clamped = Math.max(0, Math.min(next, options.length));
-    setActiveRow(clamped);
+    focusRow(clamped);
     if (clamped === options.length) customInputRef.current?.focus();
     else listboxRef.current?.focus();
   };
@@ -402,6 +518,11 @@ function QuestionWizard({
       event.preventDefault();
       if (activeRow < options.length) pick(activeRow);
       else if (canConfirm) advance(drafts);
+    } else if (event.key === ' ' && multiSelect && activeRow < options.length) {
+      // Space is the tick key on a checkbox list, and the rows are not real
+      // checkboxes (they are options in a listbox), so it has to be said here.
+      event.preventDefault();
+      pick(activeRow);
     } else if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
       // Typing while the list has focus means "something else": hand the
       // keystroke to the input without preventing it, so IME composition
@@ -412,15 +533,101 @@ function QuestionWizard({
 
   if (!question) return null;
 
+  const optionList = (
+    <AnimatePresence mode="wait" initial={false}>
+      <motion.div
+        key={index}
+        initial={{ opacity: 0, x: 12 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: -12 }}
+        transition={{ duration: 0.15, ease: 'easeOut' }}
+      >
+        <div
+          ref={listboxRef}
+          role="listbox"
+          tabIndex={0}
+          aria-label={question.question}
+          aria-multiselectable={multiSelect}
+          aria-activedescendant={
+            activeRow < options.length
+              ? `ask-user-option-${request.requestId}-${index}-${activeRow}`
+              : undefined
+          }
+          onKeyDown={onListKeyDown}
+          className="flex flex-col outline-none"
+        >
+          {options.map((option, i) => {
+            const selected = draftHasOption(draft, i);
+            const active = activeRow === i;
+            const dividerHidden = active || activeRow === i + 1;
+            return (
+              <div key={option.label} role="presentation">
+                <button
+                  type="button"
+                  id={`ask-user-option-${request.requestId}-${index}-${i}`}
+                  role="option"
+                  aria-selected={selected}
+                  tabIndex={-1}
+                  disabled={busy}
+                  onClick={() => pick(i)}
+                  onMouseEnter={() => focusRow(i)}
+                  className={cn(OPTION_ROW_CLASS, active && 'bg-alpha-1')}
+                >
+                  <OptionBadge
+                    multiSelect={multiSelect}
+                    selected={selected}
+                    active={active}
+                    ordinal={i + 1}
+                  />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span
+                      className={cn(
+                        'truncate text-sm',
+                        active ? 'text-text-primary' : 'text-text-secondary',
+                      )}
+                      title={option.label}
+                    >
+                      {option.label}
+                    </span>
+                    {option.description && (
+                      <span className="truncate text-xs text-text-muted">{option.description}</span>
+                    )}
+                  </span>
+                  {active && !multiSelect && (
+                    <span aria-hidden className="mr-2 shrink-0 text-sm text-text-muted">
+                      ⏎
+                    </span>
+                  )}
+                </button>
+                {i < options.length - 1 && (
+                  <div
+                    aria-hidden
+                    className={cn(
+                      'mx-3 h-[0.5px] bg-alpha-2 transition-opacity duration-150',
+                      dividerHidden && 'opacity-0',
+                    )}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </motion.div>
+    </AnimatePresence>
+  );
+
   return (
     <section
       className={cn(PANEL_CLASS, 'mb-2 pt-3')}
       aria-label={question.question}
       data-maka-contract="interaction-prompt"
       data-interaction-kind={request.type}
+      data-maka-question-mode={multiSelect ? 'multi' : 'single'}
     >
       <div className="flex items-center gap-2 pb-1.5 pl-4 pr-3">
-        <span className="flex-1 text-sm leading-[1.4] text-text-primary">{question.question}</span>
+        <span className="min-w-0 flex-1 text-sm leading-[1.4] text-text-primary">
+          {question.question}
+        </span>
         {total > 1 && (
           <div className="flex shrink-0 items-center gap-0.5">
             <button
@@ -459,102 +666,7 @@ function QuestionWizard({
       </div>
 
       <div className="p-1.5">
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={index}
-            initial={{ opacity: 0, x: 12 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -12 }}
-            transition={{ duration: 0.15, ease: 'easeOut' }}
-          >
-            <div
-              ref={listboxRef}
-              role="listbox"
-              tabIndex={0}
-              aria-label={question.question}
-              aria-activedescendant={
-                activeRow < options.length
-                  ? `ask-user-option-${request.requestId}-${index}-${activeRow}`
-                  : undefined
-              }
-              onKeyDown={onListKeyDown}
-              className="flex flex-col outline-none"
-            >
-              {options.map((option, i) => {
-                const selected = pickedIndex === i;
-                const active = activeRow === i;
-                const dividerHidden = active || activeRow === i + 1;
-                return (
-                  <div key={option.label} role="presentation">
-                    <button
-                      type="button"
-                      id={`ask-user-option-${request.requestId}-${index}-${i}`}
-                      role="option"
-                      aria-selected={selected}
-                      tabIndex={-1}
-                      disabled={busy}
-                      onClick={() => pick(i)}
-                      onMouseEnter={() => setActiveRow(i)}
-                      className={cn(
-                        'flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-left outline-none transition-transform duration-100 active:scale-[0.99]',
-                        active && 'bg-alpha-1',
-                      )}
-                    >
-                      {/* The ordinal is decoration: the option's name is its label. */}
-                      <span
-                        aria-hidden
-                        className="flex size-7 shrink-0 items-center justify-center"
-                      >
-                        <span
-                          className={cn(
-                            'flex size-7 items-center justify-center rounded-lg text-sm',
-                            selected
-                              ? 'bg-accent-fill text-on-accent'
-                              : active
-                                ? 'bg-alpha-2 text-text-primary'
-                                : 'bg-alpha-1 text-text-secondary',
-                          )}
-                        >
-                          {i + 1}
-                        </span>
-                      </span>
-                      <span className="flex min-w-0 flex-1 flex-col">
-                        <span
-                          className={cn(
-                            'truncate text-sm',
-                            active ? 'text-text-primary' : 'text-text-secondary',
-                          )}
-                          title={option.label}
-                        >
-                          {option.label}
-                        </span>
-                        {option.description && (
-                          <span className="truncate text-xs text-text-muted">
-                            {option.description}
-                          </span>
-                        )}
-                      </span>
-                      {active && (
-                        <span aria-hidden className="mr-2 shrink-0 text-sm text-text-muted">
-                          ⏎
-                        </span>
-                      )}
-                    </button>
-                    {i < options.length - 1 && (
-                      <div
-                        aria-hidden
-                        className={cn(
-                          'mx-3 h-[0.5px] bg-alpha-2 transition-opacity duration-150',
-                          dividerHidden && 'opacity-0',
-                        )}
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </motion.div>
-        </AnimatePresence>
+        {optionList}
 
         {options.length > 0 && (
           <div
@@ -610,31 +722,59 @@ function QuestionWizard({
             }}
             className="min-w-0 flex-1 border-0 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted focus:outline-none"
           />
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-sm"
-            disabled={busy}
-            onClick={skip}
-          >
-            {local.skip}
-          </Button>
-          <button
-            type="button"
-            aria-label={isLast ? local.confirmSubmit : local.confirmNext}
-            disabled={busy || !canConfirm}
-            onClick={() => advance(drafts)}
-            className={cn(
-              'ui-control-squish flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-lg outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-50',
-              isLast
-                ? 'ui-control-squish-accent-fill text-on-accent'
-                : 'ui-control-squish-primary text-on-primary',
-            )}
-          >
-            <Anthropicon name="arrowUp" className={isLast ? undefined : 'rotate-90'} size={20} />
-          </button>
+          {/* Single-select has no bottom bar, so Skip hangs off this row. It
+              abandons THIS question only — it lives inside the question, so
+              that is its scope; ✕ in the header abandons the batch. The final
+              question also gets a ↑: clicking an option advances on its own
+              until then, but the last question has no next to advance to. */}
+          {!multiSelect && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-sm"
+                disabled={busy}
+                onClick={skip}
+              >
+                {local.skip}
+              </Button>
+              {isLast && (
+                <ConfirmButton
+                  isLast
+                  label={local.confirmSubmit}
+                  disabled={busy || !canConfirm}
+                  onClick={() => advance(drafts)}
+                />
+              )}
+            </>
+          )}
         </div>
       </div>
+      {/* Multi-select needs a confirm — ticks alone do not send — so it gets a
+          bar of its own, with the count of what is ticked. Skip and confirm
+          both move on; only confirm insists on an answer first. */}
+      {multiSelect && (
+        <div className="flex min-h-12 items-center justify-between gap-1 border-t border-alpha-2 py-1.5 pl-5 pr-4">
+          <span className="text-xs text-text-muted">{local.selectedCount(pickedCount)}</span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-sm"
+              disabled={busy}
+              onClick={skip}
+            >
+              {local.skip}
+            </Button>
+            <ConfirmButton
+              isLast={isLast}
+              label={isLast ? local.confirmSubmit : local.confirmNext}
+              disabled={busy || !canConfirm}
+              onClick={() => advance(drafts)}
+            />
+          </div>
+        </div>
+      )}
       {(busy || error) && (
         <div className="px-4 pb-3">
           <PromptStatus pending={busy} error={error} />

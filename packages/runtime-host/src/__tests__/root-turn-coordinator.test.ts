@@ -72,6 +72,7 @@ import type {
   BackendSendInput,
 } from '@maka/core/backend-types';
 import { messageContentDigest, type SessionEvent } from '@maka/core/events';
+import type { UserQuestionResponse } from '@maka/core/user-question';
 import {
   WORKHUB_COORDINATION_SESSION_ID,
   WORKHUB_COORDINATION_SESSION_ROLE,
@@ -7077,6 +7078,7 @@ class QueuedAdmissionBackend implements AgentBackend {
       questions: [
         {
           question: 'Continue?',
+          header: 'Continue',
           options: [{ label: 'Yes' }, { label: 'No' }],
         },
       ],
@@ -7154,6 +7156,7 @@ class StopReleasedAdmissionBackend implements AgentBackend {
         questions: [
           {
             question: 'Continue?',
+            header: 'Continue',
             options: [{ label: 'Yes' }, { label: 'No' }],
           },
         ],
@@ -7204,6 +7207,7 @@ class RunningAdmissionBackend implements AgentBackend {
       questions: [
         {
           question: 'Continue?',
+          header: 'Continue',
           options: [{ label: 'Yes' }, { label: 'No' }],
         },
       ],
@@ -7279,6 +7283,7 @@ class AdmissionThenFailureBackend implements AgentBackend {
       questions: [
         {
           question: 'Continue?',
+          header: 'Continue',
           options: [{ label: 'Yes' }, { label: 'No' }],
         },
       ],
@@ -7362,6 +7367,7 @@ class PendingQuestionBackend implements AgentBackend {
       questions: [
         {
           question: 'Continue?',
+          header: 'Continue',
           options: [{ label: 'Yes' }, { label: 'No' }],
         },
       ],
@@ -7462,7 +7468,7 @@ class TakeoverClosureBackend implements AgentBackend {
 class QuestionWaitingBackend implements AgentBackend {
   readonly kind = 'ai-sdk' as const;
   private stopped = false;
-  private resolveAnswer: ((answers: readonly (string | null)[] | null) => void) | undefined;
+  private resolveAnswer: ((answers: UserQuestionResponse['answers'] | null) => void) | undefined;
   private releaseAfterAnswer: (() => void) | undefined;
 
   constructor(readonly sessionId: string) {}
@@ -7481,11 +7487,12 @@ class QuestionWaitingBackend implements AgentBackend {
       questions: [
         {
           question: 'Continue?',
+          header: 'Continue',
           options: [{ label: 'Yes' }, { label: 'No' }],
         },
       ],
     } satisfies Extract<SessionEvent, { type: 'user_question_request' }>;
-    const answerPromise = new Promise<readonly (string | null)[] | null>((resolve) => {
+    const answerPromise = new Promise<UserQuestionResponse['answers'] | null>((resolve) => {
       this.resolveAnswer = resolve;
       if (this.stopped) resolve(null);
     });

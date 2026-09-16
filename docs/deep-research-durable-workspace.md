@@ -183,20 +183,20 @@ tool call.
 
 The root Deep Research agent follows this sequence:
 
-1. `deep_research_start`
-2. `deep_research_save_artifact` with `role=source` for each important raw
+1. `DeepResearchStart`
+2. `DeepResearchSaveArtifact` with `role=source` for each important raw
    source and its inspectable locator
 3. derived evidence artifacts with direct `source_artifact_ids`
-4. `deep_research_record_step` after each bounded local or web substep,
+4. `DeepResearchRecordStep` after each bounded local or web substep,
    recording roots/queries, ignored paths, stopping condition, inspected refs,
    worker ids, evidence, and blockers
-5. `deep_research_update_checklist` as each required area progresses
-6. `deep_research_checkpoint` after meaningful rounds and before compaction
-7. `deep_research_status` after interruption or restart, followed by
-   `deep_research_read_artifact` for only the evidence bodies needed to resume
+5. `DeepResearchUpdateChecklist` as each required area progresses
+6. `DeepResearchCheckpoint` after meaningful rounds and before compaction
+7. `DeepResearchStatus` after interruption or restart, followed by
+   `DeepResearchReadArtifact` for only the evidence bodies needed to resume
 8. five source-backed report sections, each explicitly drafted or completed
 9. final `role=report` and `role=handoff` artifacts
-10. `deep_research_complete` with implementation tasks, recommended issues
+10. `DeepResearchComplete` with implementation tasks, recommended issues
     and/or pull requests, and verification commands
 
 Mutation retries are idempotent by tool-call id. Exact replays return the
@@ -214,7 +214,7 @@ back.
 
 | Situation | Behavior |
 | --- | --- |
-| Process or model-context restart | Reproject the JSONL ledger, call `deep_research_status`, then read only required artifacts |
+| Process or model-context restart | Reproject the JSONL ledger, call `DeepResearchStatus`, then read only required artifacts |
 | Exact mutation retry | Return the existing projection without appending a duplicate event |
 | Same tool-call id with different input | Reject the request as a semantic conflict |
 | Invalid event or invariant regression | Validate before append and leave the ledger unchanged |

@@ -20,7 +20,6 @@
 import { resolveDesktopWslHostHandoff } from './runtime-host-wsl-handoff.js';
 import {
   app,
-  type BrowserWindow,
   clipboard,
   ipcMain,
   Menu,
@@ -40,14 +39,13 @@ import { type ConnectionEvent } from '@maka/core/connections';
 import { type SessionChangedEvent, type SessionChangedReason } from '@maka/core/session';
 import { isBotDeliveryProvider } from '@maka/core/bot-chat-settings';
 import { resolveSystemUiLocale } from '@maka/core/ui-locale';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import {
   PROVIDER_REGISTRY,
   providerAuthRequiresSecret,
 } from "@maka/core/llm-connections";
 import { BotRegistry, type BotIncomingMessage } from '@maka/runtime/bots';
 import {
-  SCHEDULED_TASK_NATIVE_EFFECT_SERVICE_ID,
-  SCHEDULED_TASK_NATIVE_EFFECT_SERVICE_VERSION,
 } from '@maka/runtime/scheduled-task-tools';
 import { buildMcpToolsWithIdentities } from '@maka/runtime/mcp-tools';
 import {
@@ -1155,7 +1153,7 @@ const startLocalRuntimeHostManager = () => startRuntimeHostDesktopManager(
     nativeCapabilities: {
       browserTools: native.browserTools,
       resolveBrowserUrl: ({ sessionId, toolName, arguments: args }) => {
-        if (toolName === "browser_navigate") {
+        if (toolName === TOOL_NAMES.browserNavigate) {
           if (typeof args.url !== "string") {
             throw new Error("Browser navigation URL is unavailable");
           }
@@ -1207,38 +1205,6 @@ const startLocalRuntimeHostManager = () => startRuntimeHostDesktopManager(
           })),
         ];
       },
-      additionalServices: (scope) => [
-        {
-          serviceId: SCHEDULED_TASK_NATIVE_EFFECT_SERVICE_ID,
-          version: SCHEDULED_TASK_NATIVE_EFFECT_SERVICE_VERSION,
-          async call(method, input) {
-            if (method === "notify_local") {
-              const taskId = requireScheduledTaskEffectString(input.taskId, "taskId");
-              const title = requireScheduledTaskEffectString(input.title, "title");
-              mainWindowController.send("scheduled-tasks:fired", scope, {
-                id: taskId,
-                title,
-              });
-              return { ok: true };
-            }
-            if (method === "notify_bot") {
-              const platform = input.platform;
-              if (!isBotDeliveryProvider(platform)) {
-                throw new Error("ScheduledTask bot platform is invalid");
-              }
-              const chatId = requireScheduledTaskEffectString(input.chatId, "chatId");
-              const title = requireScheduledTaskEffectString(input.title, "title");
-              const body = typeof input.body === "string" ? input.body.trim() : "";
-              // Bot-channel notices follow the bot audience language; localization tracked under #2672
-              const text = [`【定时任务】${title}`, ...(body ? ["", body] : [])].join("\n");
-              const sent = await botRegistry.sendMessage(platform, chatId, text);
-              if (!sent) throw new Error("ScheduledTask bot channel is unavailable");
-              return { ok: true };
-            }
-            throw new Error(`Unknown ScheduledTask native effect: ${method}`);
-          },
-        },
-      ],
       oauthPresentation,
       releaseDesktopInteractionSession,
     },
@@ -1621,14 +1587,13 @@ function registerHostClientIpc(
       ts: Date.now(),
     });
     if (frame.reason !== "fired") return;
+    // Every firing now opens or wakes a Session, so the renderer's own toast is
+    // the only thing still interested in the event.
     void client
       .request('scheduled-task.query', { kind: 'get', taskId: frame.taskId })
       .then((result) => {
         const task = result.kind === 'task' ? result.task : null;
-        if (!task) return;
-        if (task.effect.kind !== "notify" || task.effect.channel === "bot") {
-          sendToRenderer("scheduled-tasks:fired", task);
-        }
+        if (task) sendToRenderer("scheduled-tasks:fired", task);
       })
       .catch(() => undefined);
   });

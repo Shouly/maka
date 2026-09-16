@@ -144,8 +144,9 @@ test('opening a face reveals the pane for that task and persists the topology', 
   try {
     const ui = createUiStore();
     ui.dispatchWorkbar({ type: 'activate-session', sessionId: 'task-a' });
-    // A task with no faces open starts collapsed.
-    assert.equal(isSessionWorkbarCollapsed(ui.getState().workbar), true);
+    // A task with no faces open still has an open column: the session panel is
+    // what it holds until a face takes it.
+    assert.equal(isSessionWorkbarCollapsed(ui.getState().workbar), false);
 
     ui.dispatchWorkbar({
       type: 'open',
@@ -166,15 +167,16 @@ test('opening a face reveals the pane for that task and persists the topology', 
     });
     assert.equal(localStorage.getItem('maka-session-workbar-collapsed-v1'), null);
 
-    // Another task does not inherit it.
+    // Another task does not inherit it: with no override of its own it gets
+    // the default, which is an open column showing the session panel.
     ui.dispatchWorkbar({ type: 'activate-session', sessionId: 'task-b' });
-    assert.equal(isSessionWorkbarCollapsed(ui.getState().workbar), true);
+    assert.equal(isSessionWorkbarCollapsed(ui.getState().workbar), false);
   } finally {
     restore();
   }
 });
 
-test('closing the last face puts the pane away, and the width is clamped', () => {
+test('closing the last face hands the column back, and the width is clamped', () => {
   const restore = installMemoryLocalStorage();
   try {
     const ui = createUiStore();
@@ -186,7 +188,9 @@ test('closing the last face puts the pane away, and the width is clamped', () =>
     });
     ui.dispatchWorkbar({ type: 'close', placement: 'right', tabIds: ['workbar:review'] });
     assert.equal(ui.getState().workbar.panels.right.tabs.length, 0);
-    assert.equal(isSessionWorkbarCollapsed(ui.getState().workbar), true);
+    // Closing the last face does not put the column away; it hands it back to
+    // the session panel, which is what an empty column holds.
+    assert.equal(isSessionWorkbarCollapsed(ui.getState().workbar), false);
 
     // The guard on a *stored* number, not the width a reader sees: that ceiling
     // is half the window, and it lives in `use-workbar` because only the hook

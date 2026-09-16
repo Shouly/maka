@@ -651,7 +651,7 @@ function mergeExecutionSteps(
   now: number,
 ): PlanExecutionStep[] {
   if (updates.length !== execution.steps.length) {
-    throw new PlanConflictError('update_plan must include every execution step');
+    throw new PlanConflictError('UpdatePlan must include every execution step');
   }
   const byId = new Map(updates.map((step) => [step.id, step]));
   if (byId.size !== updates.length) throw new PlanConflictError('Plan step ids must be unique');

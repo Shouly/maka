@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import { basename, extname, isAbsolute, resolve } from 'node:path';
 import type { ArtifactKind, ArtifactRecord, ArtifactSource } from '@maka/core/artifacts';
 import { generalizedErrorMessage } from '@maka/core/redaction';
@@ -55,11 +56,11 @@ export function deriveToolArtifactCandidates(
   const args = objectRecord(input.args);
   const result = objectRecord(input.result);
   switch (input.toolName) {
-    case 'Write':
+    case TOOL_NAMES.write:
       return deriveWriteArtifacts(args, result, input.cwd);
-    case 'Edit':
+    case TOOL_NAMES.edit:
       return deriveEditArtifacts(args);
-    case 'Bash':
+    case TOOL_NAMES.bash:
       return deriveBashArtifacts(args, input.cwd);
     default:
       return [];
@@ -87,7 +88,7 @@ function deriveWriteArtifacts(
   cwd: string,
 ): ToolArtifactCandidate[] {
   const resultPath = typeof result?.path === 'string' ? result.path : undefined;
-  const argPath = typeof args?.path === 'string' ? args.path : undefined;
+  const argPath = filePathArgument(args);
   const path = resultPath ?? (argPath ? resolve(cwd, argPath) : undefined);
   if (!path) return [];
   return [
@@ -103,7 +104,7 @@ function deriveWriteArtifacts(
 }
 
 function deriveEditArtifacts(args: Record<string, unknown> | null): ToolArtifactCandidate[] {
-  const path = typeof args?.path === 'string' ? args.path : null;
+  const path = filePathArgument(args) ?? null;
   const oldString = typeof args?.old_string === 'string' ? args.old_string : null;
   const newString = typeof args?.new_string === 'string' ? args.new_string : null;
   if (!path || oldString === null || newString === null) return [];
@@ -199,6 +200,12 @@ function previousNonWhitespace(command: string, start: number): string | null {
     if (!/\s/.test(char)) return char;
   }
   return null;
+}
+
+/** The file a Write/Edit call named. */
+function filePathArgument(args: Record<string, unknown> | null): string | undefined {
+  const value = args?.file_path;
+  return typeof value === 'string' && value !== '' ? value : undefined;
 }
 
 function objectRecord(value: unknown): Record<string, unknown> | null {

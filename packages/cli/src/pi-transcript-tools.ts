@@ -28,6 +28,7 @@ import {
 import { countDiffLineStats } from '@maka/core/unified-diff';
 import { ptyTuiTerminalRows, ptyTuiTerminalView } from '@maka/core/pty-output-view';
 import { readWriteStdinInputPreview } from '@maka/core/tool-activity-args';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
 import { ansi, disc } from './tui-ansi.js';
 import { colorDiff } from './tui-diff.js';
@@ -216,7 +217,7 @@ function renderExpandedToolBlock(entry: MakaPiToolEntry, width: number): string[
     lines.push(...renderToolResult(entry, width));
   }
   if (
-    entry.toolName === 'Bash' &&
+    entry.toolName === TOOL_NAMES.bash &&
     makaPiToolPresentationStatus(entry) === 'running' &&
     entry.result?.kind === 'shell_run'
   ) {
@@ -238,7 +239,7 @@ interface CompactToolSummary {
   /**
    * Fixed-shape outcome (a count, size, diff tally, exit status, or free-text
    * line/byte count) eligible for whole-annotation reservation when the row
-   * overflows. A WriteStdin operation echo remains unprotected because it is
+   * overflows. A TaskInput operation echo remains unprotected because it is
    * an action preview rather than an outcome.
    */
   protect?: boolean;
@@ -278,7 +279,7 @@ function pipeOutputLineCount(output: { stdout?: string; stderr?: string }): numb
 function compactToolSummary(entry: MakaPiToolEntry): CompactToolSummary | undefined {
   const result = entry.result;
   if (result?.kind === 'shell_run') {
-    if (entry.toolName === 'WriteStdin') {
+    if (entry.toolName === TOOL_NAMES.taskInput) {
       return { text: formatPtyControlOperation(result.operation, entry.input) };
     }
     // A settled background run reports its outcome, not its output: the status
@@ -306,13 +307,13 @@ function compactToolSummary(entry: MakaPiToolEntry): CompactToolSummary | undefi
     return { text: `${result.bytes} bytes`, protect: true };
   }
 
-  if (entry.toolName === 'Grep') {
+  if (entry.toolName === TOOL_NAMES.grep) {
     const count = jsonArrayCount(entry, 'matches');
     if (count !== undefined)
       return { text: `${count} match${count === 1 ? '' : 'es'}`, protect: true };
   }
 
-  if (entry.toolName === 'Glob') {
+  if (entry.toolName === TOOL_NAMES.glob) {
     const count = jsonArrayCount(entry, 'files');
     if (count !== undefined)
       return { text: `${count} file${count === 1 ? '' : 's'}`, protect: true };
@@ -329,7 +330,7 @@ function compactToolSummary(entry: MakaPiToolEntry): CompactToolSummary | undefi
   // resource or errored Read uses the generic fixed-shape summary instead of a
   // fabricated file count.
   if (
-    entry.toolName === 'Read' &&
+    entry.toolName === TOOL_NAMES.read &&
     makaPiToolPresentationStatus(entry) !== 'error' &&
     isFilesystemReadPath(entry) &&
     isReadBodyResult(result)
@@ -450,11 +451,15 @@ function renderReadSummary(entry: MakaPiToolEntry, width: number): string[] {
   return renderIndented(ansi.dim(summary), width, 2);
 }
 
+/** The file a call named. */
+function filePathArgument(input: unknown): string | undefined {
+  if (input === null || typeof input !== 'object') return undefined;
+  const filePath = (input as { file_path?: unknown }).file_path;
+  return typeof filePath === 'string' && filePath.length > 0 ? filePath : undefined;
+}
+
 function readInputPath(entry: MakaPiToolEntry): string | undefined {
-  const input = entry.input;
-  const path =
-    input !== null && typeof input === 'object' ? (input as { path?: unknown }).path : undefined;
-  return typeof path === 'string' && path.length > 0 ? path : undefined;
+  return filePathArgument(entry.input);
 }
 
 function readInputRef(entry: MakaPiToolEntry): string | undefined {
@@ -538,7 +543,7 @@ function renderToolResult(entry: MakaPiToolEntry, width: number): string[] {
   // metadata + stdout/stderr) that only lives in the transcript. Its body opens
   // with several metadata/separator lines, so a head/tail cap would hide the very
   // output the user expanded to see — render it in full.
-  if (entry.toolName === 'Read' && isRuntimeResourceRead(entry)) {
+  if (entry.toolName === TOOL_NAMES.read && isRuntimeResourceRead(entry)) {
     return renderToolText(plainResultText(entry), width);
   }
   // A successful filesystem Read that returned real file content pulled it into
@@ -548,7 +553,7 @@ function renderToolResult(entry: MakaPiToolEntry, width: number): string[] {
   // `archived_tool_result` placeholder, so its not_loaded/missing status stays
   // visible instead of being mistaken for a one-line file.
   if (
-    entry.toolName === 'Read' &&
+    entry.toolName === TOOL_NAMES.read &&
     makaPiToolPresentationStatus(entry) !== 'error' &&
     isFilesystemReadPath(entry) &&
     isReadBodyResult(result)
@@ -561,7 +566,7 @@ function renderToolResult(entry: MakaPiToolEntry, width: number): string[] {
   // command looks the same as a successful one. Render the status in full and
   // cap only the stdout/stderr stream bodies.
   if (result?.kind === 'shell_run') {
-    if (entry.toolName === 'WriteStdin') {
+    if (entry.toolName === TOOL_NAMES.taskInput) {
       return renderIndented(formatPtyControlOperation(result.operation, entry.input), width, 2);
     }
     return renderShellRunResult(entry, result, width);
@@ -687,7 +692,7 @@ function renderShellRunResult(
   // The command/cwd live on the result. The Bash input summary shows only the
   // command's first line (`command.split('\n')[0]`), so skip the result-side
   // `$ cmd` only when the input already shows the whole command — a single-line
-  // command. A multiline command, or a ref-only StopBackgroundTask input,
+  // command. A multiline command, or a ref-only TaskStop input,
   // renders the full command here so none of it is lost. The cwd is in neither
   // input summary, so show it once here.
   const input = entry.input;
@@ -770,7 +775,7 @@ function toolInputSummary(entry: MakaPiToolEntry): string {
   const obj =
     input !== null && typeof input === 'object' ? (input as Record<string, unknown>) : undefined;
   switch (entry.toolName) {
-    case 'Bash': {
+    case TOOL_NAMES.bash: {
       const command = obj?.command;
       if (typeof command === 'string' && command.trim()) {
         // Agents often lead with `#` comment lines; the row names what the
@@ -783,9 +788,9 @@ function toolInputSummary(entry: MakaPiToolEntry): string {
       }
       break;
     }
-    case 'Read': {
-      const path = obj?.path;
-      if (typeof path === 'string' && path.trim()) {
+    case TOOL_NAMES.read: {
+      const path = filePathArgument(obj);
+      if (path && path.trim()) {
         const parts = [path];
         if (typeof obj?.offset === 'number') parts.push(`offset ${obj.offset}`);
         if (typeof obj?.limit === 'number') parts.push(`limit ${obj.limit}`);
@@ -793,7 +798,7 @@ function toolInputSummary(entry: MakaPiToolEntry): string {
       }
       break;
     }
-    case 'WriteStdin': {
+    case TOOL_NAMES.taskInput: {
       const parts: string[] = [];
       const input = readWriteStdinInputPreview(obj);
       if (input) parts.push(input.truncated ? `${input.text}… · ${input.bytes} bytes` : input.text);
@@ -807,13 +812,13 @@ function toolInputSummary(entry: MakaPiToolEntry): string {
       if (typeof obj?.ref === 'string') return obj.ref;
       break;
     }
-    case 'Write':
-    case 'Edit': {
-      const path = obj?.path;
-      if (typeof path === 'string' && path.trim()) return path;
+    case TOOL_NAMES.write:
+    case TOOL_NAMES.edit: {
+      const path = filePathArgument(obj);
+      if (path && path.trim()) return path;
       break;
     }
-    case 'Grep': {
+    case TOOL_NAMES.grep: {
       const pattern = obj?.pattern;
       if (typeof pattern === 'string' && pattern.trim()) {
         const parts = [pattern];
@@ -823,15 +828,15 @@ function toolInputSummary(entry: MakaPiToolEntry): string {
       }
       break;
     }
-    case 'Glob': {
+    case TOOL_NAMES.glob: {
       const pattern = obj?.pattern;
       if (typeof pattern === 'string' && pattern.trim()) {
-        const cwd = obj?.cwd;
-        return typeof cwd === 'string' && cwd.trim() ? `${pattern} in ${cwd}` : pattern;
+        const root = obj?.path;
+        return typeof root === 'string' && root.trim() ? `${pattern} in ${root}` : pattern;
       }
       break;
     }
-    case 'maka_computer': {
+    case TOOL_NAMES.computer: {
       const line = computerCallSummary(obj);
       if (line) return line;
       break;

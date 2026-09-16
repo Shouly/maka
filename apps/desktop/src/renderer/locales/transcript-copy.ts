@@ -27,10 +27,18 @@
 // spelling of any of those here is how two surfaces start disagreeing about
 // the same fact, so this catalog deliberately stops where those begin.
 
-import type { ToolActivityKind } from '@maka/core/events';
+import type { ToolSummaryKey } from '../components/session/tools/tool-presentation.js';
 import type { UiCatalog, UiLocale } from '@maka/core/ui-locale';
 
-/** One tool group's summary phrase, by how many calls of that kind it holds. */
+/**
+ * One tool group's summary phrase.
+ *
+ * `other` takes the count for the kinds that name an object — "Read 16 files",
+ * "Ran 22 commands". A kind that counts CALLS rather than objects says the same
+ * thing at any count and ignores the argument: "Updated tasks" is what the turn
+ * did, and "Updated tasks 6 times" only tells the reader how many calls it took
+ * to say it, which reads as churn now that one call carries one task.
+ */
 export interface ToolSummaryLabel {
   readonly one: string;
   readonly other: (count: number) => string;
@@ -70,7 +78,6 @@ export interface TranscriptCopy {
     readonly inlineReferences: string;
     readonly quotes: string;
     readonly skills: string;
-    readonly hostOrigin: string;
   };
   /** The mark at the foot of a settled conversation, and what it says on hover. */
   readonly idleMark: {
@@ -91,15 +98,39 @@ export interface TranscriptCopy {
     readonly asking: string;
     /** Under a question the user skipped or never reached. */
     readonly noAnswer: string;
+    /** The header's note tally: "1 note", "2 notes". */
+    readonly noteCount: (count: number) => string;
     readonly thinkingOnly: string;
     readonly thinkingActive: string;
     /** The status line while the answer's prose is still streaming. */
     readonly writing: string;
-    readonly summary: Record<ToolActivityKind, ToolSummaryLabel>;
-    readonly active: Record<ToolActivityKind, string>;
+    /** The card that confirms a scheduled task the turn created or changed. */
+    readonly scheduledTask: {
+      readonly creating: string;
+      readonly created: string;
+      readonly updating: string;
+      readonly updated: string;
+    };
+    readonly summary: Record<ToolSummaryKey, ToolSummaryLabel>;
+    readonly active: Record<ToolSummaryKey, string>;
     readonly join: (phrases: readonly string[]) => string;
     readonly expand: (name: string) => string;
     readonly collapse: (name: string) => string;
+    /**
+     * A task row says what it is doing, then what it did. The tool's own name
+     * ("Task Create") is not the useful half: four tools share one icon, so
+     * the verb is what tells them apart at a glance.
+     */
+    readonly task: {
+      readonly creating: string;
+      readonly created: string;
+      readonly updating: string;
+      readonly updated: string;
+      readonly fetching: (taskId: string | undefined) => string;
+      readonly fetched: (taskId: string | undefined) => string;
+      readonly listing: string;
+      readonly listed: string;
+    };
   };
   readonly result: {
     readonly command: string;
@@ -117,6 +148,27 @@ export interface TranscriptCopy {
     readonly swarmItems: (count: number) => string;
     readonly failureClass: (value: string) => string;
     readonly pending: string;
+  };
+  /** SendUserFile's card strip and SendUserMessage's block. */
+  readonly delivery: {
+    readonly filesLabel: string;
+    readonly openFile: (name: string) => string;
+    /** The tag on a delivery the model offered rather than was asked for. */
+    readonly proactive: string;
+    readonly messageLabel: string;
+    readonly empty: string;
+  };
+  /** The Grep and Glob list panels. */
+  readonly search: {
+    readonly matchesLabel: string;
+    readonly filesLabel: string;
+    readonly openPath: (path: string) => string;
+    readonly occurrences: (count: number) => string;
+    readonly noMatches: string;
+    readonly noFiles: string;
+    /** The last row of a capped list. */
+    readonly omitted: (count: number) => string;
+    readonly omittedUnknown: string;
   };
   readonly sandbox: {
     readonly blockedLabel: string;
@@ -177,7 +229,7 @@ export interface TranscriptCopy {
   };
 }
 
-const ZH_CN_ACTIVITY_SUMMARY: Record<ToolActivityKind, ToolSummaryLabel> = {
+const ZH_CN_ACTIVITY_SUMMARY: Record<ToolSummaryKey, ToolSummaryLabel> = {
   computer: { one: '操作了电脑', other: (n) => `操作电脑 ${n} 次` },
   read: { one: '读取了文件', other: (n) => `读取 ${n} 个文件` },
   search: { one: '搜索了代码', other: (n) => `搜索 ${n} 次` },
@@ -187,10 +239,12 @@ const ZH_CN_ACTIVITY_SUMMARY: Record<ToolActivityKind, ToolSummaryLabel> = {
   command: { one: '执行了命令', other: (n) => `执行 ${n} 条命令` },
   explore: { one: '浏览了目录', other: (n) => `浏览 ${n} 个目录` },
   browser: { one: '操作了浏览器', other: (n) => `操作浏览器 ${n} 次` },
+  tasks: { one: '更新了任务进度', other: () => '更新了任务进度' },
+  taskRead: { one: '查看了任务进度', other: () => '查看了任务进度' },
   tool: { one: '调用了工具', other: (n) => `调用 ${n} 次工具` },
 };
 
-const ZH_CN_ACTIVITY_ACTIVE: Record<ToolActivityKind, string> = {
+const ZH_CN_ACTIVITY_ACTIVE: Record<ToolSummaryKey, string> = {
   computer: '正在操作电脑',
   read: '正在读取文件',
   search: '正在搜索',
@@ -200,10 +254,12 @@ const ZH_CN_ACTIVITY_ACTIVE: Record<ToolActivityKind, string> = {
   command: '正在执行命令',
   explore: '正在浏览目录',
   browser: '正在操作浏览器',
+  tasks: '正在更新任务进度',
+  taskRead: '正在查看任务进度',
   tool: '正在调用工具',
 };
 
-const ZH_TW_ACTIVITY_SUMMARY: Record<ToolActivityKind, ToolSummaryLabel> = {
+const ZH_TW_ACTIVITY_SUMMARY: Record<ToolSummaryKey, ToolSummaryLabel> = {
   computer: { one: '操作了電腦', other: (n) => `操作電腦 ${n} 次` },
   read: { one: '讀取了檔案', other: (n) => `讀取 ${n} 個檔案` },
   search: { one: '搜尋了程式碼', other: (n) => `搜尋 ${n} 次` },
@@ -213,10 +269,12 @@ const ZH_TW_ACTIVITY_SUMMARY: Record<ToolActivityKind, ToolSummaryLabel> = {
   command: { one: '執行了指令', other: (n) => `執行 ${n} 條指令` },
   explore: { one: '瀏覽了目錄', other: (n) => `瀏覽 ${n} 個目錄` },
   browser: { one: '操作了瀏覽器', other: (n) => `操作瀏覽器 ${n} 次` },
+  tasks: { one: '更新了任務進度', other: () => '更新了任務進度' },
+  taskRead: { one: '查看了任務進度', other: () => '查看了任務進度' },
   tool: { one: '呼叫了工具', other: (n) => `呼叫 ${n} 次工具` },
 };
 
-const ZH_TW_ACTIVITY_ACTIVE: Record<ToolActivityKind, string> = {
+const ZH_TW_ACTIVITY_ACTIVE: Record<ToolSummaryKey, string> = {
   computer: '正在操作電腦',
   read: '正在讀取檔案',
   search: '正在搜尋',
@@ -226,10 +284,12 @@ const ZH_TW_ACTIVITY_ACTIVE: Record<ToolActivityKind, string> = {
   command: '正在執行指令',
   explore: '正在瀏覽目錄',
   browser: '正在操作瀏覽器',
+  tasks: '正在更新任務進度',
+  taskRead: '正在查看任務進度',
   tool: '正在呼叫工具',
 };
 
-const EN_ACTIVITY_SUMMARY: Record<ToolActivityKind, ToolSummaryLabel> = {
+const EN_ACTIVITY_SUMMARY: Record<ToolSummaryKey, ToolSummaryLabel> = {
   computer: { one: 'Used the computer', other: (n) => `Used the computer ${n} times` },
   read: { one: 'Read a file', other: (n) => `Read ${n} files` },
   search: { one: 'Searched the code', other: (n) => `Ran ${n} searches` },
@@ -239,10 +299,12 @@ const EN_ACTIVITY_SUMMARY: Record<ToolActivityKind, ToolSummaryLabel> = {
   command: { one: 'Ran a command', other: (n) => `Ran ${n} commands` },
   explore: { one: 'Explored a directory', other: (n) => `Explored ${n} directories` },
   browser: { one: 'Used the browser', other: (n) => `Used the browser ${n} times` },
+  tasks: { one: 'Updated tasks', other: () => 'Updated tasks' },
+  taskRead: { one: 'Checked tasks', other: () => 'Checked tasks' },
   tool: { one: 'Called a tool', other: (n) => `Called ${n} tools` },
 };
 
-const EN_ACTIVITY_ACTIVE: Record<ToolActivityKind, string> = {
+const EN_ACTIVITY_ACTIVE: Record<ToolSummaryKey, string> = {
   computer: 'Using the computer',
   read: 'Reading a file',
   search: 'Searching the code',
@@ -252,6 +314,8 @@ const EN_ACTIVITY_ACTIVE: Record<ToolActivityKind, string> = {
   command: 'Running a command',
   explore: 'Exploring a directory',
   browser: 'Using the browser',
+  tasks: 'Updating progress',
+  taskRead: 'Checking progress',
   tool: 'Calling a tool',
 };
 
@@ -305,7 +369,6 @@ const TRANSCRIPT_COPY = {
       inlineReferences: '引用文件',
       quotes: '引用内容',
       skills: '技能',
-      hostOrigin: '由运行服务发起',
     },
     idleMark: {
       label: '对话结束',
@@ -323,14 +386,31 @@ const TRANSCRIPT_COPY = {
       working: '正在处理…',
       asking: '正在向你提问…',
       noAnswer: '未回答',
+      noteCount: (n) => `${n} 条留言`,
       thinkingOnly: '思考过程',
       thinkingActive: '正在思考…',
       writing: '正在撰写…',
+      scheduledTask: {
+        creating: '正在创建定时任务',
+        created: '已创建定时任务',
+        updating: '正在更新定时任务',
+        updated: '已更新定时任务',
+      },
       summary: ZH_CN_ACTIVITY_SUMMARY,
       active: ZH_CN_ACTIVITY_ACTIVE,
       join: (phrases) => phrases.join('、'),
       expand: (name) => `展开 ${name}`,
       collapse: (name) => `收起 ${name}`,
+      task: {
+        creating: '正在创建任务',
+        created: '已创建任务',
+        updating: '正在更新任务',
+        updated: '已更新任务',
+        fetching: (taskId) => (taskId ? `正在读取任务 #${taskId}` : '正在读取任务详情'),
+        fetched: (taskId) => (taskId ? `已读取任务 #${taskId}` : '已读取任务详情'),
+        listing: '正在列出任务',
+        listed: '已列出任务',
+      },
     },
     result: {
       command: '命令',
@@ -348,6 +428,23 @@ const TRANSCRIPT_COPY = {
       swarmItems: (count) => `${count} 个子任务`,
       failureClass: (value) => `失败原因：${value}`,
       pending: '等待结果…',
+    },
+    delivery: {
+      filesLabel: '发来的文件',
+      openFile: (name) => `在文件面板中打开 ${name}`,
+      proactive: '主动发来',
+      messageLabel: '留言',
+      empty: '这次没有发来文件。',
+    },
+    search: {
+      matchesLabel: '匹配结果',
+      filesLabel: '匹配到的文件',
+      openPath: (path) => `在文件面板中打开 ${path}`,
+      occurrences: (count) => `${count} 处`,
+      noMatches: '没有匹配的内容。',
+      noFiles: '没有匹配的文件。',
+      omitted: (count) => `还有 ${count} 条未显示`,
+      omittedUnknown: '结果已截断，还有内容未显示',
     },
     sandbox: {
       blockedLabel: '被沙箱拦截',
@@ -441,7 +538,6 @@ const TRANSCRIPT_COPY = {
       inlineReferences: '引用檔案',
       quotes: '引用內容',
       skills: '技能',
-      hostOrigin: '由執行服務發起',
     },
     idleMark: {
       label: '對話結束',
@@ -459,14 +555,31 @@ const TRANSCRIPT_COPY = {
       working: '正在處理…',
       asking: '正在向你提問…',
       noAnswer: '未回答',
+      noteCount: (n) => `${n} 則留言`,
       thinkingOnly: '思考過程',
       thinkingActive: '正在思考…',
       writing: '正在撰寫…',
+      scheduledTask: {
+        creating: '正在建立排程任務',
+        created: '已建立排程任務',
+        updating: '正在更新排程任務',
+        updated: '已更新排程任務',
+      },
       summary: ZH_TW_ACTIVITY_SUMMARY,
       active: ZH_TW_ACTIVITY_ACTIVE,
       join: (phrases) => phrases.join('、'),
       expand: (name) => `展開 ${name}`,
       collapse: (name) => `收合 ${name}`,
+      task: {
+        creating: '正在建立任務',
+        created: '已建立任務',
+        updating: '正在更新任務',
+        updated: '已更新任務',
+        fetching: (taskId) => (taskId ? `正在讀取任務 #${taskId}` : '正在讀取任務詳情'),
+        fetched: (taskId) => (taskId ? `已讀取任務 #${taskId}` : '已讀取任務詳情'),
+        listing: '正在列出任務',
+        listed: '已列出任務',
+      },
     },
     result: {
       command: '指令',
@@ -484,6 +597,23 @@ const TRANSCRIPT_COPY = {
       swarmItems: (count) => `${count} 個子任務`,
       failureClass: (value) => `失敗原因：${value}`,
       pending: '等待結果…',
+    },
+    delivery: {
+      filesLabel: '傳來的檔案',
+      openFile: (name) => `在檔案面板中開啟 ${name}`,
+      proactive: '主動傳來',
+      messageLabel: '留言',
+      empty: '這次沒有傳來檔案。',
+    },
+    search: {
+      matchesLabel: '符合的結果',
+      filesLabel: '符合的檔案',
+      openPath: (path) => `在檔案面板中開啟 ${path}`,
+      occurrences: (count) => `${count} 處`,
+      noMatches: '沒有符合的內容。',
+      noFiles: '沒有符合的檔案。',
+      omitted: (count) => `還有 ${count} 條未顯示`,
+      omittedUnknown: '結果已截斷，還有內容未顯示',
     },
     sandbox: {
       blockedLabel: '被沙箱攔截',
@@ -577,7 +707,6 @@ const TRANSCRIPT_COPY = {
       inlineReferences: 'Referenced files',
       quotes: 'Quoted text',
       skills: 'Skills',
-      hostOrigin: 'Started by the runtime',
     },
     idleMark: {
       label: 'End of conversation',
@@ -600,14 +729,31 @@ const TRANSCRIPT_COPY = {
       working: 'Working on it…',
       asking: 'Asking you a question…',
       noAnswer: 'No answer',
+      noteCount: (n) => (n === 1 ? '1 note' : `${n} notes`),
       thinkingOnly: 'Thought process',
       thinkingActive: 'Thinking…',
       writing: 'Writing…',
+      scheduledTask: {
+        creating: 'Creating scheduled task',
+        created: 'Created scheduled task',
+        updating: 'Updating scheduled task',
+        updated: 'Updated scheduled task',
+      },
       summary: EN_ACTIVITY_SUMMARY,
       active: EN_ACTIVITY_ACTIVE,
       join: joinEnglishPhrases,
       expand: (name) => `Expand ${name}`,
       collapse: (name) => `Collapse ${name}`,
+      task: {
+        creating: 'Creating task',
+        created: 'Task created',
+        updating: 'Updating task',
+        updated: 'Task updated',
+        fetching: (taskId) => (taskId ? `Fetching task #${taskId}` : 'Fetching task details'),
+        fetched: (taskId) => (taskId ? `Fetched task #${taskId}` : 'Fetched task details'),
+        listing: 'Listing tasks',
+        listed: 'Listed tasks',
+      },
     },
     result: {
       command: 'Command',
@@ -625,6 +771,23 @@ const TRANSCRIPT_COPY = {
       swarmItems: (count) => `${count} subtasks`,
       failureClass: (value) => `Failure: ${value}`,
       pending: 'Waiting for the result…',
+    },
+    delivery: {
+      filesLabel: 'Files sent to you',
+      openFile: (name) => `Open ${name} in Files`,
+      proactive: 'Sent unprompted',
+      messageLabel: 'Message',
+      empty: 'No files came with this.',
+    },
+    search: {
+      matchesLabel: 'Matches',
+      filesLabel: 'Matching files',
+      openPath: (path) => `Open ${path} in Files`,
+      occurrences: (count) => (count === 1 ? '1 match' : `${count} matches`),
+      noMatches: 'Nothing matched.',
+      noFiles: 'No files matched.',
+      omitted: (count) => (count === 1 ? '1 more omitted' : `${count} more omitted`),
+      omittedUnknown: 'Capped — more results omitted',
     },
     sandbox: {
       blockedLabel: 'Blocked by sandbox',

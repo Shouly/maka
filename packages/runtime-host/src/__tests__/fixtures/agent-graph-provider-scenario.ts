@@ -51,10 +51,10 @@ export class AgentGraphProviderScenario {
       return;
     }
     for (const required of [
-      'agent_output',
-      'update_agent_graph',
-      'view_agent_graph',
-      'yield_agent_graph',
+      'AgentOutput',
+      'UpdateAgentGraph',
+      'ViewAgentGraph',
+      'YieldAgentGraph',
     ]) {
       assert.ok(names.includes(required), `Graph provider request omitted ${required}`);
     }
@@ -64,7 +64,7 @@ export class AgentGraphProviderScenario {
       case 'initial_root':
         assert.equal(toolResult, undefined);
         this.#phase = 'await_add_work_result';
-        reply.toolCall('update_agent_graph', {
+        reply.toolCall('UpdateAgentGraph', {
           operation: 'add_work',
           add_work: [
             {
@@ -82,7 +82,7 @@ export class AgentGraphProviderScenario {
         assert.equal(updated.kind, 'agent_graph_updated');
         assert.equal(requireRecord(updated.schedule, 'add-work schedule').closed, false);
         this.#phase = 'await_checkpoint';
-        reply.toolCall('yield_agent_graph', {
+        reply.toolCall('YieldAgentGraph', {
           reason: 'Wait for the hosted operator checkpoint.',
         });
         return;
@@ -91,7 +91,7 @@ export class AgentGraphProviderScenario {
         assert.equal(toolResult, undefined);
         assert.match(latestUserText(body), /reached a durable supervisor checkpoint\./);
         this.#phase = 'await_view_result';
-        reply.toolCall('view_agent_graph', { mode: 'latest' });
+        reply.toolCall('ViewAgentGraph', { mode: 'latest' });
         return;
       case 'await_view_result': {
         const view = requireRecord(toolResult, 'graph view result');
@@ -103,7 +103,7 @@ export class AgentGraphProviderScenario {
         assert.ok(operators.length <= 1);
         if (operators.length === 0) {
           this.#phase = 'await_checkpoint';
-          reply.toolCall('yield_agent_graph', {
+          reply.toolCall('YieldAgentGraph', {
             reason: 'The hosted operator has not started yet.',
           });
           return;
@@ -116,7 +116,7 @@ export class AgentGraphProviderScenario {
             ),
           );
           this.#phase = 'await_checkpoint';
-          reply.toolCall('yield_agent_graph', {
+          reply.toolCall('YieldAgentGraph', {
             reason: 'The hosted operator is still running.',
           });
           return;
@@ -125,7 +125,7 @@ export class AgentGraphProviderScenario {
         const runId = requireString(operator.currentRunId, 'child Run id');
         assert.equal(this.#childCompleted, true);
         this.#phase = 'await_agent_output';
-        reply.toolCall('agent_output', {
+        reply.toolCall('AgentOutput', {
           locator: 'child_session_run',
           child_session_id: childSessionId,
           run_id: runId,
@@ -150,7 +150,7 @@ export class AgentGraphProviderScenario {
         assert.equal(result.text, this.childResultText);
         this.#resultRecordId = requireString(result.resultRecordId, 'Graph result record id');
         this.#phase = 'await_finish_result';
-        reply.toolCall('update_agent_graph', {
+        reply.toolCall('UpdateAgentGraph', {
           operation: 'finish',
           finish: {
             result_ids: [this.#resultRecordId],
@@ -191,12 +191,26 @@ function toolNames(body: Record<string, unknown>): string[] {
     .sort();
 }
 
+/**
+ * The turn reminder rides with every request as a trailing user-role message
+ * (`system-prompt/turn-reminder.ts`); it is system-delivered context, not the
+ * user's words, so the scenario looks past it for the latest UserMessage.
+ */
+function isTurnReminder(record: { role?: unknown; content?: unknown }): boolean {
+  return (
+    record.role === 'user' &&
+    typeof record.content === 'string' &&
+    record.content.startsWith('<system-reminder>')
+  );
+}
+
 function latestUserText(body: Record<string, unknown>): string {
   const messages = Array.isArray(body.messages) ? body.messages : [];
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (!message || typeof message !== 'object') continue;
     const record = message as { role?: unknown; content?: unknown };
+    if (isTurnReminder(record)) continue;
     if (record.role === 'user') return requireString(record.content, 'latest UserMessage');
   }
   assert.fail('Graph provider request has no UserMessage');
@@ -207,7 +221,10 @@ function latestToolResultAfterCurrentUser(body: Record<string, unknown>): unknow
   let currentUserIndex = -1;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
-    if (message && typeof message === 'object' && (message as { role?: unknown }).role === 'user') {
+    if (!message || typeof message !== 'object') continue;
+    const record = message as { role?: unknown; content?: unknown };
+    if (isTurnReminder(record)) continue;
+    if (record.role === 'user') {
       currentUserIndex = index;
       break;
     }

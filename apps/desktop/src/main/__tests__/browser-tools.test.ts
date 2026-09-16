@@ -18,7 +18,7 @@
  */
 
 /**
- * Browser tools: ref normalization, takeover note, browser_wait
+ * Browser tools: ref normalization, takeover note, BrowserWait
  * argument validation, and each tool's output formatting driven end-to-end
  * through a fake view Host + fake CDP page (no Electron, no live browser).
  */
@@ -277,7 +277,7 @@ describe('browser tool execution', () => {
         registrationId: 'registration-1',
         offerId: 'desktop_browser',
         serverId: 'desktop_browser',
-        toolName: 'browser_snapshot',
+        toolName: 'BrowserSnapshot',
         arguments: {},
         sessionId: 's1',
         turnId: 't1',

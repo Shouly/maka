@@ -42,6 +42,8 @@ export interface HostWebSearchService {
   search(input: {
     readonly query: string;
     readonly limit: number;
+    readonly allowedDomains?: readonly string[];
+    readonly blockedDomains?: readonly string[];
     readonly abortSignal?: AbortSignal;
     readonly policy?: ResolveWebSearchExecutionInput;
   }): Promise<WebSearchResponse>;
@@ -66,7 +68,7 @@ export async function resolveHostTavilyWebSearchReadiness(
 export function createHostWebSearchService(input: HostWebSearchServiceInput): HostWebSearchService {
   const createFetchTransport = input.createFetchTransport ?? createProxiedFetchTransport;
   return {
-    search: async ({ query, limit, abortSignal, policy }) => {
+    search: async ({ query, limit, allowedDomains, blockedDomains, abortSignal, policy }) => {
       const resolved = await input.policy.resolveWebSearchExecution(policy);
       switch (resolved.kind) {
         case 'privacy_mode':
@@ -116,6 +118,8 @@ export function createHostWebSearchService(input: HostWebSearchServiceInput): Ho
               apiKey,
               query,
               limit,
+              ...(allowedDomains ? { allowedDomains } : {}),
+              ...(blockedDomains ? { blockedDomains } : {}),
               fetch: transport.fetch,
               ...(abortSignal ? { abortSignal } : {}),
             });
@@ -134,10 +138,12 @@ export function createHostWebSearchTool(input: HostWebSearchServiceInput): MakaT
 
 export function createHostWebSearchToolFromService(service: HostWebSearchService): MakaTool {
   return buildWebSearchTool({
-    search: ({ query, limit, abortSignal }) =>
+    search: ({ query, limit, allowedDomains, blockedDomains, abortSignal }) =>
       service.search({
         query,
         limit,
+        ...(allowedDomains ? { allowedDomains } : {}),
+        ...(blockedDomains ? { blockedDomains } : {}),
         ...(abortSignal ? { abortSignal } : {}),
       }),
   });

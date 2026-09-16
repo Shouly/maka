@@ -47,7 +47,17 @@ import {
   TextResult,
   WorkflowResult,
 } from './renderers/SimpleResults.js';
+import { GlobResult, GrepResult } from './renderers/SearchResults.js';
+import { UserFileDeliveryResult, UserMessageResult } from './renderers/DeliveryResults.js';
+import { ScheduledTaskResult } from './renderers/ScheduledTaskResult.js';
 import { resolveToolRendererId, type ToolRendererId } from './tool-presentation.js';
+import {
+  durableResultOf,
+  readGlobResult,
+  readGrepResult,
+  readUserFileDelivery,
+  readNoteMessage,
+} from '../../../lib/tool-delivery-results.js';
 
 export interface ToolContentContext {
   /** Opens a child task in the shell. */
@@ -64,6 +74,18 @@ export interface ToolContentContext {
   readonly onOpenFile?: (path: string | undefined) => void;
   /** Attaches the right pane's Terminal face to a live shell run. */
   readonly onOpenTerminal?: (ref: string) => void;
+  /**
+   * Opens the Files face on an artifact BY ID.
+   *
+   * `onOpenFile` names a workspace path and leaves the pane to match it
+   * against its catalog, which is all a `file_write` row knows. A delivered
+   * file knows the id itself, and matching a path back to the artifact it
+   * already named would be able to pick the wrong one — two sessions can hold
+   * the same relative path.
+   */
+  readonly onOpenArtifact?: (artifactId: string) => void;
+  /** Opens the Scheduled tasks page on one task, from the card that made it. */
+  readonly onOpenScheduledTask?: (taskId: string) => void;
 }
 
 /**
@@ -73,7 +95,7 @@ export interface ToolContentContext {
  */
 export function renderToolContent(item: ToolActivityItem, context: ToolContentContext): ReactNode {
   const id: ToolRendererId = resolveToolRendererId(item);
-  const result = item.result;
+  const result = durableResultOf(item);
   switch (id) {
     case 'pending':
       return <PendingResult item={item} />;
@@ -134,5 +156,62 @@ export function renderToolContent(item: ToolActivityItem, context: ToolContentCo
       return result?.kind === 'text' || result?.kind === 'summary' ? (
         <TextResult result={result} />
       ) : null;
+    case 'grep': {
+      const grep = result?.kind === 'json' ? readGrepResult(result.value) : undefined;
+      return grep ? (
+        <GrepResult
+          result={grep}
+          {...(context.onOpenFile ? { onOpenFile: context.onOpenFile } : {})}
+        />
+      ) : null;
+    }
+    case 'glob': {
+      const glob = result?.kind === 'json' ? readGlobResult(result.value) : undefined;
+      return glob ? (
+        <GlobResult
+          result={glob}
+          {...(context.onOpenFile ? { onOpenFile: context.onOpenFile } : {})}
+        />
+      ) : null;
+    }
+    // The two deliveries. They are drawn as blocks of the turn rather than
+    // inside a row (`groupTurnTimeline`), so in practice this switch is
+    // reached for them from `TranscriptTurn`'s delivery block and never from
+    // an opened `ToolRow` — `canExpandTool` says they do not open. Routing
+    // them here anyway keeps one place that decides what a result kind looks
+    // like, which is the whole reason this file exists.
+    case 'user_file_delivery': {
+      const delivery = readUserFileDelivery(result);
+      return delivery ? (
+        <UserFileDeliveryResult
+          result={delivery}
+          {...(context.onOpenArtifact ? { onOpenArtifact: context.onOpenArtifact } : {})}
+          {...(context.onOpenFile ? { onOpenFile: context.onOpenFile } : {})}
+        />
+      ) : null;
+    }
+    case 'scheduled_task':
+      return (
+        <ScheduledTaskResult
+          item={item}
+          {...(context.onOpenScheduledTask
+            ? { onOpenScheduledTask: context.onOpenScheduledTask }
+            : {})}
+        />
+      );
+    case 'user_message': {
+      // Live or settled, from one accessor: a promoted note renders its text
+      // as it arrives rather than appearing only once the call returns.
+      const message = readNoteMessage(item);
+      return message ? (
+        <UserMessageResult
+          message={message}
+          onOpenExternal={context.onOpenExternal}
+          {...(context.onOpenFile
+            ? { onOpenFile: (path: string) => context.onOpenFile?.(path) }
+            : {})}
+        />
+      ) : null;
+    }
   }
 }

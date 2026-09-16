@@ -22,6 +22,7 @@
 // execution facts, while the active session ExecutionBoundary constrains local
 // filesystem, shell, and network effects.
 
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import { z } from 'zod';
 import { jsonSchema, zodSchema } from 'ai';
 import {
@@ -35,23 +36,31 @@ import {
   unlinkSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute } from 'node:path';
+import { basename, dirname, isAbsolute, resolve as resolvePath } from 'node:path';
 import { compilePermissionProfile } from '@maka/core/permission-profile-compiler';
 import { parseAttachmentResourceRef } from '@maka/core/attachments';
 import { type SandboxBoundaryExpansion } from '@maka/core/sandbox-boundary';
 import { isStorageRef, type StorageRef, type ToolResultContent } from '@maka/core/events';
 import { type PermissionProfile } from '@maka/core/permission-profile';
 import { bashToolResultToModelOutput } from './bash-model-output.js';
-import { fileWriteToolResultToModelOutput } from './file-tool-model-output.js';
+import {
+  fileWriteToolResultToModelOutput,
+  globToolResultToModelOutput,
+  grepToolResultToModelOutput,
+  readToolResultToModelOutput,
+} from './file-tool-model-output.js';
+import { GREP_HARD_LINE_CAP } from './search-plan.js';
+import { GREP_OUTPUT_MODES, type GrepOutputMode } from './filesystem-worker/protocol.js';
 import { openAiApplyPatchInputSchema } from './openai-apply-patch.js';
 import { parseCodexV4aPatch } from './codex-v4a-patch.js';
 import { executeApplyPatchOperations } from './apply-patch-batch.js';
 import {
+  bashDescriptionField,
+  bashToolDescription,
   buildManagedBashTool,
   buildStopBackgroundTaskTool,
   buildWriteStdinTool,
   shapeTerminalResult,
-  withTurnShellGuidance,
 } from './shell-tools.js';
 import type { ShellRunLauncher } from './shell-tools.js';
 import { defaultShellPlan, throwIfShellSetupFailed, type TurnShellPlan } from './shell-detect.js';
@@ -99,6 +108,103 @@ import {
 // watchdog is paused during tool execution.
 const GREP_TIMEOUT_MS = 120_000;
 
+/** Text file lines one Read returns when the caller does not ask for a limit. */
+const DEFAULT_READ_LINE_LIMIT = 2_000;
+/** Grep result lines returned when the caller does not ask for a limit. */
+const DEFAULT_GREP_HEAD_LIMIT = 250;
+/** Matching lines ripgrep may report per file in `content` mode. */
+const GREP_MAX_COUNT_PER_FILE = 50;
+/** Paths one Glob call returns, after the recency ordering. */
+const GLOB_RESULT_LIMIT = 200;
+
+/**
+ * The validated Grep arguments.
+ *
+ * The flag-shaped keys (`-i`, `-n`, `-A`, `-B`, `-C`) are the names ripgrep
+ * itself uses, which is what a model already knows; they are legal object keys
+ * and legal JSON Schema property names, so the tool surface can speak ripgrep
+ * rather than invent a second vocabulary for the same switches.
+ */
+interface GrepToolInput {
+  readonly pattern: string;
+  readonly path?: string;
+  readonly glob?: string;
+  readonly type?: string;
+  readonly output_mode?: GrepOutputMode;
+  readonly '-i'?: boolean;
+  readonly '-n'?: boolean;
+  readonly '-A'?: number;
+  readonly '-B'?: number;
+  readonly context?: number;
+  readonly '-C'?: number;
+  readonly head_limit?: number;
+  readonly offset?: number;
+  readonly multiline?: boolean;
+}
+
+/**
+ * Which files a session has looked at, so Write can refuse to destroy content
+ * the model has never seen.
+ *
+ * The tools are built once per composer and shared by every session that runs
+ * through it, so the ledger is keyed by session and can never be a field on the
+ * tool object. It is a cache, not an authority: forgetting an entry costs one
+ * extra Read, so both dimensions are bounded and evict least-recently-used —
+ * a long-lived host must not accumulate a set per session forever.
+ */
+const MAX_LEDGER_SESSIONS = 256;
+const MAX_LEDGER_PATHS_PER_SESSION = 2048;
+
+class SessionFileSightLedger {
+  private readonly sessions = new Map<string, Set<string>>();
+
+  /** Record that `path` (canonical) came back through a file tool in this session. */
+  note(sessionId: string | undefined, path: string | undefined): void {
+    if (!sessionId || !path) return;
+    const seen = this.touch(sessionId);
+    // Re-inserting moves the path to the end, which is what makes the eviction
+    // below least-recently-used rather than first-seen.
+    seen.delete(path);
+    seen.add(path);
+    evictOldest(seen, MAX_LEDGER_PATHS_PER_SESSION);
+  }
+
+  has(sessionId: string | undefined, path: string | undefined): boolean {
+    if (!sessionId || !path) return false;
+    return this.sessions.get(sessionId)?.has(path) === true;
+  }
+
+  private touch(sessionId: string): Set<string> {
+    const existing = this.sessions.get(sessionId);
+    if (existing) {
+      this.sessions.delete(sessionId);
+      this.sessions.set(sessionId, existing);
+      return existing;
+    }
+    const created = new Set<string>();
+    this.sessions.set(sessionId, created);
+    evictOldest(this.sessions, MAX_LEDGER_SESSIONS);
+    return created;
+  }
+}
+
+function evictOldest(entries: Map<string, unknown> | Set<string>, limit: number): void {
+  while (entries.size > limit) {
+    const oldest = entries.keys().next();
+    if (oldest.done) return;
+    entries.delete(oldest.value);
+  }
+}
+
+/**
+ * The canonical spelling a file tool's ledger entry is keyed by. The backends
+ * answer with realpath'd targets, so the pre-call lookup has to canonicalise
+ * the same way or every spelling of one file would look like a different file.
+ */
+function canonicalFilePath(cwd: string, path: string): string {
+  return canonicalExistingPath(isAbsolute(path) ? path : resolvePath(cwd, path));
+}
+
 /**
  * The filesystem worker answered with a well-formed result of a different
  * operation than the one that was requested.
@@ -114,12 +220,12 @@ const GREP_TIMEOUT_MS = 120_000;
  * file this code did not look at.
  *
  * And it cannot phrase a failed read as an empty one. "Grep could not be
- * completed inside Maka, so no matches were produced" reads as a search that
+ * completed inside Copilot, so no matches were produced" reads as a search that
  * ran and found nothing, and a model that takes it that way concludes the
  * pattern is absent from the repository — the opposite of what happened.
  *
  * So a read says no result came back, and says what that does not mean. A write
- * says Maka cannot tell what happened to the file, and sends the model to look
+ * says Copilot cannot tell what happened to the file, and sends the model to look
  * rather than to retry a call that may have already taken effect.
  *
  * Neither may name Bash. Read, Glob and Grep are the entire tool set of a
@@ -139,17 +245,17 @@ function mismatchedWorkerResult(tool: string): Error {
 
 function internalFilesystemReadFailure(tool: string, missing: string, notMeaning: string): Error {
   return new Error(
-    `${tool} could not be completed inside Maka, so ${missing}. ` +
+    `${tool} could not be completed inside Copilot, so ${missing}. ` +
       `This is an internal failure, not a problem with your arguments, and it does not mean ${notMeaning}. ` +
       `Retry the same ${tool} call once. If it fails again, stop calling ${tool}: do the same ` +
-      `work with a shell tool if you have one, and otherwise report that ${tool} is failing inside Maka.`,
+      `work with a shell tool if you have one, and otherwise report that ${tool} is failing inside Copilot.`,
     { cause: mismatchedWorkerResult(tool) },
   );
 }
 
 function internalFilesystemWriteFailure(tool: string, subject: string, extra?: string): Error {
   return new Error(
-    `${tool} could not be completed inside Maka. Maka cannot tell whether ${subject}, ` +
+    `${tool} could not be completed inside Copilot. Copilot cannot tell whether ${subject}, ` +
       `so treat the file as being in an unknown state. ` +
       `This is an internal failure, not a problem with your arguments${extra ? ` — ${extra}` : ''}. ` +
       `Read the file to find out what it now contains before writing to it again.`,
@@ -202,28 +308,54 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
   });
   const executionFacts = executor.facts;
   const acceptsResourceRefs = Boolean(options.runtimeResources || options.attachmentResources);
-  const readDescription = `Read a text file${options.snapshotImage ? ' or supported image' : ''} from disk${acceptsResourceRefs ? ', or read a whole runtime resource using ref' : ''}.`;
-  const pathField = z
+  const fileSight = new SessionFileSightLedger();
+  const readDescription = [
+    'Reads a file from the local filesystem.',
+    '',
+    '- `file_path` must be an absolute path, or a path relative to the session cwd; how far outside the cwd it may reach is decided by the session permissions.',
+    `- Reads up to ${DEFAULT_READ_LINE_LIMIT} lines by default.`,
+    '- When you already know which part of the file you need, only read that part with `offset` and `limit`. This can be important for larger files.',
+    '- Results are returned using cat -n format, with line numbers starting at 1',
+    ...(options.snapshotImage
+      ? [
+          '- Reads images (PNG, JPEG, GIF, WebP) and presents them visually rather than as text; line offsets do not apply to them.',
+        ]
+      : []),
+    ...(acceptsResourceRefs
+      ? [
+          '- Pass `ref` instead of `file_path` to read a whole runtime resource — a background task named by Bash, an attachment named in the conversation. Provide exactly one of `file_path` and `ref`.',
+        ]
+      : []),
+    '- Reading a directory, a missing file, or a path the session permissions do not cover returns an error rather than content; an empty file returns a note. Use Bash `ls` for a listing.',
+    '- Do NOT re-read a file you just edited to verify — Edit/Write would have errored if the change failed, and their result already states the new state.',
+  ].join('\n');
+  const filePathField = z
     .string()
-    .describe('A file path; relative paths are resolved from the session cwd');
+    .describe(
+      'The absolute path to the file to read; a path relative to the session cwd is also accepted',
+    );
   const offsetField = z
     .number()
     .int()
     .nonnegative()
-    .describe('Zero-based text file line offset')
+    .describe(
+      'The line number to start reading from, counted from 0. Only provide if the file is too large to read at once',
+    )
     .optional();
   const limitField = z
     .number()
     .int()
     .positive()
-    .describe('Maximum text file lines to read')
+    .describe(
+      `The number of lines to read (default ${DEFAULT_READ_LINE_LIMIT}). Only provide if the file is too large to read at once`,
+    )
     .optional();
   const refField = z
     .string()
     .describe('A runtime resource ref provided in the conversation or returned by another tool');
   const fileReadParameters = z
     .object({
-      path: pathField,
+      file_path: filePathField,
       offset: offsetField,
       limit: limitField,
     })
@@ -240,12 +372,12 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
     if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
     const input = value as Record<string, unknown>;
     const ref = input.ref;
-    const path = input.path;
+    const path = input.file_path;
     if (typeof ref === 'string' && ref.trim() !== '') {
       if (typeof path !== 'string' || path.trim() !== '') return value;
       return Object.fromEntries(
         Object.entries(input).filter(
-          ([key]) => key !== 'path' && key !== 'offset' && key !== 'limit',
+          ([key]) => key !== 'file_path' && key !== 'offset' && key !== 'limit',
         ),
       );
     }
@@ -256,7 +388,9 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
     normalizeProviderReadInput,
     z
       .union([fileReadParameters, runtimeResourceReadParameters])
-      .describe('Read a file with path, or a whole runtime resource with ref; provide exactly one'),
+      .describe(
+        'Read a file with file_path, or a whole runtime resource with ref; provide exactly one',
+      ),
   );
   // Provider-facing schema: a single top-level object with every field optional.
   // Anthropic rejects a tool definition whose input schema carries a top-level
@@ -265,21 +399,21 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
   // (see #1228 — a union-generated `anyOf` had been leaking onto the wire).
   const providerReadParameters = z
     .object({
-      path: pathField
+      file_path: filePathField
         .describe(
-          'A file path; relative paths are resolved from the session cwd. Provide either path (optionally with offset/limit) or ref, never both.',
+          'The absolute path to the file to read; a path relative to the session cwd is also accepted. Provide either file_path (optionally with offset/limit) or ref, never both.',
         )
         .optional(),
       offset: offsetField,
       limit: limitField,
       ref: refField
         .describe(
-          'A runtime resource ref provided in the conversation or returned by another tool. Provide ref on its own, without path/offset/limit; omit it (or leave it empty) when reading a file.',
+          'A runtime resource ref provided in the conversation or returned by another tool. Provide ref on its own, without file_path/offset/limit; omit it (or leave it empty) when reading a file.',
         )
         .optional(),
     })
     .describe(
-      'Read a file with path (optionally offset/limit), or a whole runtime resource with ref; provide exactly one of path or ref.',
+      'Read a file with file_path (optionally offset/limit), or a whole runtime resource with ref; provide exactly one of file_path or ref.',
     );
   const providerReadSchema = zodSchema(providerReadParameters);
   const readParameters = acceptsResourceRefs
@@ -345,22 +479,35 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
     ...(options.ptyControls ? [buildWriteStdinTool(options.ptyControls)] : []),
   ];
   const applyPatchTool = {
-    name: 'apply_patch',
+    name: TOOL_NAMES.applyPatch,
     activityKind: 'edit',
     categoryHint: 'file_write',
-    description: 'Apply one or more file changes using the selected provider patch protocol.',
+    description: [
+      "Applies one or more file changes as a patch, in the active provider's patch format.",
+      '',
+      '- Each operation creates, updates or deletes one file; they are applied in the order given.',
+      '- An operation whose context does not match the file on disk is rejected and the batch stops there — the result names how far it got, so a partial application is reported rather than hidden.',
+      '- Paths follow the same session-permission rules as Write and Edit.',
+      '- Returns what was applied; the files are then current in your context, so do not Read them back.',
+    ].join('\n'),
     parameters: openAiApplyPatchInputSchema,
     providerTool: { kind: 'openai-apply-patch' },
     executionFacts,
     impl: async (input, ctx) => {
       if (typeof input !== 'string') {
-        return await filesystem.applyPatch({ operation: input.operation, ...filesystemCall(ctx) });
+        const applied = await filesystem.applyPatch({
+          operation: input.operation,
+          ...filesystemCall(ctx),
+        });
+        fileSight.note(ctx.sessionId, canonicalFilePath(ctx.cwd, input.operation.path));
+        return applied;
       }
       const operations = parseCodexV4aPatch(input);
       return await executeApplyPatchOperations(
         operations,
         async (operation) => {
           await filesystem.applyPatch({ operation, ...filesystemCall(ctx) });
+          fileSight.note(ctx.sessionId, canonicalFilePath(ctx.cwd, operation.path));
         },
         ctx.abortSignal,
       );
@@ -370,7 +517,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
     ...bashTools,
     ...backgroundTools,
     {
-      name: 'Read',
+      name: TOOL_NAMES.read,
       activityKind: 'read',
       description: readDescription,
       parameters: readParameters,
@@ -427,19 +574,28 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
           return await options.runtimeResources.readRuntimeResource(sessionId, ref, abortSignal);
         }
 
-        const { path, offset, limit } = input;
+        const { file_path: path } = input as { file_path?: string };
+        if (typeof path !== 'string' || path === '') {
+          throw new Error(
+            'Read requires file_path (the file to read) or ref (a runtime resource).',
+          );
+        }
+        const { offset, limit } = input as { offset?: number; limit?: number };
         const runtimeRef = classifyRuntimeResourceRef(path);
         if (runtimeRef === 'unsupported')
           throw new Error(`Unsupported runtime resource ref: ${path}`);
         if (runtimeRef === 'runtime') {
-          throw new Error('Runtime resources must be read with the ref parameter, not path');
+          throw new Error('Runtime resources must be read with the ref parameter, not file_path');
         }
         const result = await filesystem.execute({
           operation: {
             kind: 'read',
             path,
             ...(offset !== undefined ? { offset } : {}),
-            ...(limit !== undefined ? { limit } : {}),
+            // An unbounded Read of an unknown file can spend a whole context
+            // window on content the caller never asked for, so the default is a
+            // window and `offset` is how the rest is reached.
+            limit: limit ?? DEFAULT_READ_LINE_LIMIT,
           },
           ...filesystemCall(ctx),
         });
@@ -455,6 +611,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
             bytes: result.bytes,
             mimeType: result.mimeType,
           });
+          fileSight.note(sessionId, canonicalFilePath(cwd, path));
           return { kind: 'image' as const, mimeType: result.mimeType, ref };
         }
         if (result.kind !== 'read')
@@ -463,28 +620,52 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
             'no file content came back',
             'the file is empty or missing',
           );
+        // The session has now seen this file, so a later Write may replace it.
+        // The read result carries no path, so the request is canonicalised the
+        // same way the backends canonicalise their targets.
+        fileSight.note(sessionId, canonicalFilePath(cwd, path));
         return { content: result.content };
       },
+      toModelOutput: ({ input, output }) => readToolResultToModelOutput(input, output),
     },
     ...(executor.applyPatch ? [applyPatchTool] : []),
     {
-      name: 'Write',
+      name: TOOL_NAMES.write,
       activityKind: 'edit',
-      description:
-        'Write content to a file. Relative paths resolve from the session cwd; ' +
-        'how far outside it a path may reach is decided by the session permissions.',
+      description: [
+        'Writes a file to the local filesystem, overwriting if one exists.',
+        '',
+        "When to use: creating a new file, or fully replacing one you've already Read. Overwriting an existing file you haven't Read will fail. For partial changes, use Edit instead.",
+      ].join('\n'),
       parameters: z.object({
-        path: z.string().describe('A file path; relative paths are resolved from the session cwd'),
-        content: z.string(),
+        file_path: z
+          .string()
+          .describe(
+            'The absolute path to the file to write; a path relative to the session cwd is also accepted. Parent directories must already exist.',
+          ),
+        content: z.string().describe('The content to write to the file'),
       }),
       executionFacts,
-      impl: async ({ path, content }, ctx) => {
+      impl: async (input, ctx) => {
+        const { file_path: path } = input as { file_path?: string };
+        if (typeof path !== 'string' || path === '')
+          throw new Error('Write requires file_path (the file to write).');
+        const { content } = input as { content: string };
         const result = await filesystem.execute({
-          operation: { kind: 'write', path, content },
+          operation: {
+            kind: 'write',
+            path,
+            content,
+            // Whether this call may replace an existing file is a fact about
+            // the session, which only this layer knows; the backends enforce
+            // it at the point where "new vs existing" is established.
+            allowOverwrite: fileSight.has(ctx.sessionId, canonicalFilePath(ctx.cwd, path)),
+          },
           ...filesystemCall(ctx),
         });
         if (result.kind !== 'write')
           throw internalFilesystemWriteFailure('Write', 'the file was written');
+        fileSight.note(ctx.sessionId, result.path);
         if (result.diff !== undefined)
           return { kind: 'file_diff' as const, paths: [result.path], diff: result.diff };
         return { kind: 'file_write' as const, path: result.path, bytes: result.bytes };
@@ -492,27 +673,55 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
       toModelOutput: ({ output }) => fileWriteToolResultToModelOutput('Write', output),
     },
     {
-      name: 'Edit',
+      name: TOOL_NAMES.edit,
       activityKind: 'edit',
-      description:
-        'Replace old_string with new_string in a file. Prefers an exact, unique match; ' +
-        'if exact fails it tolerates limited whitespace/indentation/escape drift in old_string, ' +
-        'but only when the match is unambiguous (otherwise it errors — re-read and retry with exact text). ' +
-        'new_string is written verbatim, so provide the exact final text/indentation you want. ' +
-        'Errors if old_string is not found or not unique.',
+      description: [
+        'Performs exact string replacement in a file.',
+        '',
+        '- You must Read the file in this conversation before editing, or the call will fail.',
+        '- `old_string` must match the file exactly, including indentation, and be unique — the edit fails otherwise. Strip the Read line prefix (line number + tab) before matching.',
+        '- If the exact text is not found, a limited whitespace/indentation-tolerant match is tried; when that is ambiguous the edit fails — Read again and copy the exact text.',
+        '- `replace_all: true` replaces every occurrence instead.',
+      ].join('\n'),
       parameters: z.object({
-        path: z.string(),
-        old_string: z.string(),
-        new_string: z.string(),
+        file_path: z
+          .string()
+          .describe(
+            'The absolute path to the file to modify; a path relative to the session cwd is also accepted.',
+          ),
+        old_string: z.string().describe('The text to replace'),
+        new_string: z
+          .string()
+          .describe('The text to replace it with (must be different from old_string)'),
+        replace_all: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe('Replace all occurrences of old_string (default false)'),
       }),
       executionFacts,
-      impl: async ({ path, old_string, new_string }, ctx) => {
+      impl: async (input, ctx) => {
+        const { file_path: path } = input as { file_path?: string };
+        if (typeof path !== 'string' || path === '')
+          throw new Error('Edit requires file_path (the file to modify).');
+        const { old_string, new_string, replace_all } = input as {
+          old_string: string;
+          new_string: string;
+          replace_all?: boolean;
+        };
         const result = await filesystem.execute({
           operation: {
             kind: 'edit',
             path,
             oldString: old_string,
             newString: new_string,
+            ...(replace_all ? { replaceAll: true } : {}),
+            // Same ledger, and the same reason, as Write's read-before-overwrite
+            // guard: an edit written from a remembered shape rather than the
+            // file's current text lands on text that is no longer there. Only
+            // this layer knows what the session has seen; the backends enforce
+            // it once the path has been resolved.
+            allowEdit: fileSight.has(ctx.sessionId, canonicalFilePath(ctx.cwd, path)),
           },
           ...filesystemCall(ctx),
         });
@@ -522,6 +731,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
             'the edit was applied',
             'a different old_string will not help',
           );
+        fileSight.note(ctx.sessionId, result.path);
         if (result.diff !== undefined)
           return { kind: 'file_diff' as const, paths: [result.path], diff: result.diff };
         return {
@@ -536,70 +746,35 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
       toModelOutput: ({ output }) => fileWriteToolResultToModelOutput('Edit', output),
     },
     {
-      name: 'FormatJson',
-      activityKind: 'edit',
-      description:
-        'Validate and normalize a JSON file in place. Reads the file at `path`, ' +
-        'parses it (throwing a parse-error hint on invalid JSON), optionally sorts ' +
-        'object keys lexicographically, and rewrites it with canonical 2-space ' +
-        'indentation. Returns only a diagnostic (valid + byte delta) — the content ' +
-        'is never round-tripped back through the prompt. Useful for config hygiene ' +
-        'after a Write.',
+      name: TOOL_NAMES.glob,
+      activityKind: 'search',
+      description: [
+        'Fast file pattern matching. Supports glob patterns like "**/*.js" or "src/**/*.ts". Returns matching file paths sorted by modification time.',
+        '',
+        `- Matches \`pattern\` case-insensitively against the paths under \`path\` (default: the session cwd).`,
+        `- Returns one absolute path per line, MOST RECENTLY MODIFIED LAST and capped at ${GLOB_RESULT_LIMIT} — the cap keeps the newest matches. A capped result says so, so narrow the pattern or the path when you need the rest.`,
+        '- Returns "No files found" when nothing matches; a missing search root, or one the session permissions do not cover, fails with the reason.',
+        '- Whether the pattern or `path` may leave the session cwd is decided by the session permissions; a pattern that climbs out of it is rejected.',
+        '- Use it when you know the shape of a filename. Use Grep when you know what is inside the file.',
+      ].join('\n'),
       parameters: z.object({
+        pattern: z.string().describe('The glob pattern to match files against, e.g. "**/*.txt".'),
         path: z
           .string()
-          .describe(
-            'Path to the JSON file to validate and normalize; relative paths are resolved from the session cwd.',
-          ),
-        sort_keys: z
-          .boolean()
           .optional()
-          .describe('Sort object keys lexicographically; default false.'),
+          .describe(
+            'The directory to search in. Omit it for the session working directory; do not pass "undefined" or "null". How far outside the cwd it may reach is decided by the session permissions.',
+          ),
       }),
       executionFacts,
-      impl: async ({ path, sort_keys }, ctx) => {
+      impl: async ({ pattern, path: searchRoot }, ctx) => {
         const result = await filesystem.execute({
           operation: {
-            kind: 'format_json',
-            path,
-            sortKeys: sort_keys ?? false,
+            kind: 'glob',
+            path: searchRoot ?? '.',
+            pattern,
+            limit: GLOB_RESULT_LIMIT,
           },
-          ...filesystemCall(ctx),
-        });
-        if (result.kind !== 'format_json') {
-          throw internalFilesystemWriteFailure('FormatJson', 'the file was rewritten');
-        }
-        if (result.diff !== undefined)
-          return { kind: 'file_diff' as const, paths: [result.path], diff: result.diff };
-        // The discriminator is how the backends name their results to each
-        // other; the model is owed the payload, as with every other file tool.
-        const { kind: _kind, ...diagnostic } = result;
-        return diagnostic;
-      },
-      toModelOutput: ({ output }) => fileWriteToolResultToModelOutput('FormatJson', output),
-    },
-    {
-      name: 'Glob',
-      activityKind: 'search',
-      description:
-        'Find files matching a glob pattern (case-insensitive, capped at 200, sorted by walk order).',
-      parameters: z.object({
-        pattern: z
-          .string()
-          .describe(
-            'Glob pattern, for example "**/*.txt". Whether it may leave the search root is decided by the session permissions.',
-          ),
-        cwd: z
-          .string()
-          .optional()
-          .describe(
-            'Optional search directory. Absolute or relative directory paths are accepted; how far outside the session cwd it may reach is decided by the session permissions.',
-          ),
-      }),
-      executionFacts,
-      impl: async ({ pattern, cwd: relCwd }, ctx) => {
-        const result = await filesystem.execute({
-          operation: { kind: 'glob', path: relCwd ?? '.', pattern, limit: 200 },
           ...filesystemCall(ctx),
         });
         if (result.kind !== 'glob')
@@ -608,20 +783,115 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
             'no file list came back',
             'no files match the pattern',
           );
-        return { files: result.files };
+        return { files: result.files, ...(result.truncated ? { truncated: true } : {}) };
       },
+      toModelOutput: ({ output }) => globToolResultToModelOutput(output),
     },
     {
-      name: 'Grep',
+      name: TOOL_NAMES.grep,
       activityKind: 'search',
-      description: 'Search file contents with a regex via ripgrep.',
+      description: [
+        'Content search built on ripgrep. Prefer this over `grep`/`rg` via Bash — results integrate with the permission UI and file links.',
+        '',
+        '- Full regex syntax (e.g. "log.*Error", "function\\s+\\w+"). Ripgrep, not grep — escape literal braces (`interface\\{\\}`).',
+        '- Filter with `glob` (e.g. "**/*.tsx") or `type` (e.g. "js", "py", "rust").',
+        '- `output_mode`: "content" (matching lines), "files_with_matches" (paths only, default), or "count".',
+        '- `multiline: true` for patterns that span lines.',
+        `- Results are capped: \`head_limit\` lines (default ${DEFAULT_GREP_HEAD_LIMIT}), and an internal ceiling of ${GREP_HARD_LINE_CAP} lines that \`head_limit: 0\` does not lift. A capped result says how many lines were dropped; \`offset\` pages past them.`,
+        '- Returns plain text, or "No matches found". A missing path, or one the session permissions do not cover, fails with the reason.',
+      ].join('\n'),
       parameters: z.object({
-        pattern: z.string(),
-        path: z.string().optional(),
-        glob: z.string().optional(),
+        pattern: z
+          .string()
+          .describe('The regular expression pattern to search for in file contents'),
+        path: z
+          .string()
+          .optional()
+          .describe(
+            'File or directory to search in; absolute or relative. Defaults to the session cwd.',
+          ),
+        glob: z
+          .string()
+          .optional()
+          .describe('Glob pattern to filter files (e.g. "*.js", "*.{ts,tsx}"); maps to rg --glob'),
+        type: z
+          .string()
+          .optional()
+          .describe(
+            'File type to search (e.g. "js", "py", "rust", "go"); maps to rg --type. More efficient than glob for standard file types.',
+          ),
+        output_mode: z
+          .enum(GREP_OUTPUT_MODES)
+          .optional()
+          .describe(
+            'Output mode: "content" shows matching lines as path:line:text, "files_with_matches" shows only file paths (default), "count" shows per-file occurrence counts.',
+          ),
+        '-i': z.boolean().optional().describe('Case insensitive search (rg -i)'),
+        '-n': z
+          .boolean()
+          .optional()
+          .describe(
+            'Show line numbers in output (rg -n). Requires output_mode: "content"; on by default there.',
+          ),
+        '-A': z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe(
+            'Number of lines to show after each match (rg -A). Requires output_mode: "content".',
+          ),
+        '-B': z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe(
+            'Number of lines to show before each match (rg -B). Requires output_mode: "content".',
+          ),
+        context: z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe('Number of lines to show before and after each match (rg -C)'),
+        '-C': z.number().int().nonnegative().optional().describe('Alias for context.'),
+        head_limit: z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe(
+            `Limit output to the first N result lines (default ${DEFAULT_GREP_HEAD_LIMIT}). 0 removes your limit but the internal ceiling of ${GREP_HARD_LINE_CAP} lines still applies.`,
+          ),
+        offset: z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe('Skip the first N result lines, to page past a capped result.'),
+        multiline: z
+          .boolean()
+          .optional()
+          .describe(
+            'Enable multiline mode where . matches newlines and patterns can span lines (default: false)',
+          ),
       }),
       executionFacts,
-      impl: async ({ pattern, path, glob }, ctx) => {
+      impl: async (input, ctx) => {
+        const { pattern, path, glob, type, output_mode, context, head_limit, offset, multiline } =
+          input as GrepToolInput;
+        const ignoreCase = input['-i'];
+        const lineNumbers = input['-n'];
+        const bothWays = input['-C'] ?? context;
+        const after = input['-A'] ?? bothWays;
+        const before = input['-B'] ?? bothWays;
+        const mode = output_mode ?? 'files_with_matches';
+        // `head_limit: 0` is "no limit of mine", not "no limit at all": one
+        // search must not be able to spend a whole context window.
+        const requested = head_limit ?? DEFAULT_GREP_HEAD_LIMIT;
+        const limit =
+          requested === 0 ? GREP_HARD_LINE_CAP : Math.min(requested, GREP_HARD_LINE_CAP);
         // Self-bound: ripgrep finishes in well under a second normally, but a
         // pathological tree (network mount, /proc, a FIFO) could hang it. The
         // stream watchdog no longer caps tool execution, so each spawning tool
@@ -632,8 +902,22 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
             path: path ?? '.',
             pattern,
             ...(glob ? { glob } : {}),
-            maxCountPerFile: 50,
-            limit: 200,
+            ...(type ? { type } : {}),
+            outputMode: mode,
+            ...(ignoreCase !== undefined ? { ignoreCase } : {}),
+            // Context and line numbers are `content` concepts; ripgrep rejects
+            // them beside -l/-c, so they are dropped rather than forwarded.
+            ...(mode === 'content'
+              ? {
+                  ...(after !== undefined ? { after } : {}),
+                  ...(before !== undefined ? { before } : {}),
+                  ...(lineNumbers !== undefined ? { lineNumbers } : {}),
+                }
+              : {}),
+            ...(multiline !== undefined ? { multiline } : {}),
+            maxCountPerFile: GREP_MAX_COUNT_PER_FILE,
+            limit,
+            ...(offset !== undefined ? { offset } : {}),
             timeoutMs: GREP_TIMEOUT_MS,
           },
           ...filesystemCall(ctx),
@@ -644,8 +928,13 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
             'no search result came back',
             'the pattern is absent',
           );
-        return { matches: result.matches };
+        return {
+          matches: result.matches,
+          mode: result.mode ?? mode,
+          ...(result.truncated ? { truncated: true, omitted: result.omitted ?? 0 } : {}),
+        };
       },
+      toModelOutput: ({ output }) => grepToolResultToModelOutput(output),
     },
   ];
   return tools;
@@ -675,16 +964,27 @@ function buildExecutorBashTool(
   sandboxOptions: ExecutorBashSandboxOptions,
 ): MakaTool {
   return {
-    name: 'Bash',
+    name: TOOL_NAMES.bash,
     activityKind: 'command',
-    description:
-      withTurnShellGuidance('Run a shell command in the session cwd.', shell) +
-      ' Enforced by the current session sandbox boundary.',
+    description: bashToolDescription(shell, [
+      '- The command runs to completion and the result is what it printed. A failure leads with an `Exit code N` line; a command that printed nothing returns "(no output)".',
+      '- A timeout, a cancellation or a non-zero exit fails the call and carries the captured output with it.',
+      '- `description` is what the user reads in place of the raw command.',
+      '- Read, Glob, Grep and Edit do the same work as cat/ls/find/sed with bounded output and the session boundary applied — reach for them first.',
+      '- Enforced by the current session sandbox boundary.',
+    ]),
     parameters: preprocessBashBoundaryDeclaration(
       z
         .object({
-          command: z.string().describe('The shell command to execute'),
-          timeout_ms: z.number().int().positive().max(600_000).optional(),
+          command: z.string().describe('The command to execute'),
+          timeout: z
+            .number()
+            .int()
+            .positive()
+            .max(600_000)
+            .optional()
+            .describe('Optional timeout in milliseconds (max 600000)'),
+          description: bashDescriptionField,
           boundary_intent: bashBoundaryIntentSchema,
           required_boundary: sandboxBoundaryExpansionSchema
             .optional()
@@ -696,14 +996,14 @@ function buildExecutorBashTool(
     toModelOutput: ({ output }) => bashToolResultToModelOutput(output),
     executionFacts: executor.facts,
     impl: async (input, ctx) => {
-      const { command, timeout_ms } = input;
+      const { command, timeout: requestedTimeout } = input;
       throwIfShellSetupFailed(shell);
       const normalizedRequiredBoundary = await preflightDeclaredSandboxBoundary(
         selectedBashBoundaryExpansion(input),
         ctx,
       );
       const { cwd, abortSignal, emitOutput } = ctx;
-      const timeout = timeout_ms ?? 120_000;
+      const timeout = requestedTimeout ?? 120_000;
       if (
         !sandboxOptions.sandboxManager &&
         ctx.executionBoundary?.kind === 'managed' &&

@@ -106,10 +106,10 @@ describe('Plan Mode tool surface', () => {
         tool('Read', 'read'),
         tool('WebSearch', 'web_read'),
         tool('Write', 'file_write'),
-        tool('agent_spawn', 'subagent'),
+        tool('Agent', 'subagent'),
         tool('AskUserQuestion'),
         tool('SubmitPlan'),
-        tool('update_plan'),
+        tool('UpdatePlan'),
       ],
     });
     assert.deepEqual(
@@ -129,12 +129,15 @@ describe('Plan Mode tool surface', () => {
         tool('Bash', 'shell_unsafe'),
         tool('Browser', 'browser'),
         tool('CustomTool'),
-        tool('ScheduledTask'),
+        // The two families plan mode holds back even at full access: a plan is
+        // a proposal, and scheduling work or setting a goal acts on it.
+        tool('ScheduledTaskCreate'),
+        tool('SendLater'),
         tool('GoalSet'),
-        tool('agent_spawn', 'subagent'),
+        tool('Agent', 'subagent'),
         tool('AskUserQuestion'),
         tool('SubmitPlan'),
-        tool('update_plan'),
+        tool('UpdatePlan'),
       ],
     });
     assert.deepEqual(
@@ -154,15 +157,15 @@ describe('Plan Mode tool surface', () => {
       hasActiveExecution: true,
       tools: [
         tool('Write', 'file_write'),
-        tool('agent_spawn', 'subagent'),
+        tool('Agent', 'subagent'),
         tool('SubmitPlan'),
-        tool('update_plan'),
-        tool('cancel_plan'),
+        tool('UpdatePlan'),
+        tool('CancelPlan'),
       ],
     });
     assert.deepEqual(
       selected.map((tool) => tool.name),
-      ['Write', 'update_plan', 'cancel_plan'],
+      ['Write', 'UpdatePlan', 'CancelPlan'],
     );
   });
 });

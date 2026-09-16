@@ -137,8 +137,6 @@ export type ModulesCopy = {
     loadFailed: string;
     deleteTitle(title: string): string;
     deleteDescription: string;
-    /** Bot delivery needs the deferred Bots settings page; say so once. */
-    deliveryLocalOnly: string;
   };
 };
 
@@ -225,15 +223,14 @@ const MODULES_COPY = {
       description: '按计划自动运行的任务，以及它们的执行记录。',
       enableTask: (title) => `启用「${title}」`,
       rowActions: (title) => `「${title}」的更多操作`,
-      triggered: (title) => `已触发「${title}」`,
+      triggered: (title) => `已开始运行「${title}」`,
       saveFailed: '保存定时任务失败',
       enableFailed: '切换定时任务状态失败',
-      triggerFailed: '触发定时任务失败',
+      triggerFailed: '运行定时任务失败',
       deleteFailed: '删除定时任务失败',
       loadFailed: '载入定时任务失败',
       deleteTitle: (title) => `删除「${title}」？`,
       deleteDescription: '这个定时任务会被移除，已有的执行记录也会一并删除。',
-      deliveryLocalOnly: '目前只支持本地提醒；机器人投递需要「机器人」设置页，该页尚未提供。',
     },
   },
   'zh-TW': {
@@ -318,15 +315,14 @@ const MODULES_COPY = {
       description: '按計畫自動執行的任務，以及它們的執行紀錄。',
       enableTask: (title) => `啟用「${title}」`,
       rowActions: (title) => `「${title}」的更多操作`,
-      triggered: (title) => `已觸發「${title}」`,
+      triggered: (title) => `已開始執行「${title}」`,
       saveFailed: '儲存定時任務失敗',
       enableFailed: '切換定時任務狀態失敗',
-      triggerFailed: '觸發定時任務失敗',
+      triggerFailed: '執行定時任務失敗',
       deleteFailed: '刪除定時任務失敗',
       loadFailed: '載入定時任務失敗',
       deleteTitle: (title) => `刪除「${title}」？`,
       deleteDescription: '這個定時任務會被移除，已有的執行紀錄也會一併刪除。',
-      deliveryLocalOnly: '目前只支援本地提醒；機器人投遞需要「機器人」設定頁，該頁尚未提供。',
     },
   },
   en: {
@@ -413,16 +409,14 @@ const MODULES_COPY = {
       description: 'Tasks that run on a schedule, and what happened when they did.',
       enableTask: (title) => `Enable ${title}`,
       rowActions: (title) => `More actions for ${title}`,
-      triggered: (title) => `Triggered ${title}`,
+      triggered: (title) => `Started ${title}`,
       saveFailed: 'Could not save the scheduled task',
       enableFailed: 'Could not change whether the task is active',
-      triggerFailed: 'Could not trigger the task',
+      triggerFailed: 'Could not run the task',
       deleteFailed: 'Could not delete the task',
       loadFailed: 'Could not load scheduled tasks',
       deleteTitle: (title) => `Delete ${title}?`,
       deleteDescription: 'The task is removed, and its run history goes with it.',
-      deliveryLocalOnly:
-        'Local reminders only for now: bot delivery needs the Bots settings page, which this build does not ship.',
     },
   },
 } satisfies UiCatalog<ModulesCopy>;

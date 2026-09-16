@@ -306,7 +306,7 @@ async function seedE2eInvocableSkills(userDataDir: string): Promise<void> {
     ),
     writeFile(
       path.join(projectSkillRoot, 'deep-research-only', 'SKILL.md'),
-      `---\nname: Deep Research Only\ndescription: Requires a tool available only in Deep Research mode.\nrequired-tools: [deep_research_status]\n---\n# Deep Research Only`,
+      `---\nname: Deep Research Only\ndescription: Requires a tool available only in Deep Research mode.\nrequired-tools: [DeepResearchStatus]\n---\n# Deep Research Only`,
       'utf8',
     ),
     writeFile(

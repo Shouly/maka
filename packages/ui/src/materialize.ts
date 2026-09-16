@@ -26,6 +26,7 @@ import {
 import { isActiveShellRunStatus } from '@maka/core/shell-run';
 import { mergeShellRunStateWithDiagnostics } from '@maka/core/shell-run-result';
 import { projectToolActivityArgs } from '@maka/core/tool-activity-args';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import type {
   AttachmentRef,
   InlineReference,
@@ -327,7 +328,7 @@ function mergeLiveOverPersisted(
     merged.args = persisted.args;
   }
   if (
-    merged.toolName === "Bash" &&
+    merged.toolName === TOOL_NAMES.bash &&
     persisted.result?.kind === "shell_run" &&
     live.result?.kind === "shell_run"
   ) {
@@ -704,7 +705,7 @@ export function applyShellRunOverlayEntry(
   tool: ToolActivityItem,
   entry: ShellRunOverlayEntry,
 ): ToolActivityItem {
-  if (tool.toolName !== "Bash") return tool;
+  if (tool.toolName !== TOOL_NAMES.bash) return tool;
   const current = tool.result?.kind === "shell_run" ? tool.result : undefined;
   if (tool.result && !current) return tool;
   const merged = mergeShellRunStateWithDiagnostics(
@@ -723,7 +724,7 @@ export function applyShellRunOverlayEntry(
 /** Presentation is derived from invocation and resource facts, never persisted as another state. */
 export function toolActivityPresentationStatus(item: ToolActivityItem): ToolActivityStatus {
   if (item.status === "errored") return "errored";
-  if (item.toolName === "Bash" && item.result?.kind === "shell_run") {
+  if (item.toolName === TOOL_NAMES.bash && item.result?.kind === "shell_run") {
     return SHELL_RUN_PRESENTATION_STATUS[item.result.status];
   }
   return item.status;
@@ -924,7 +925,7 @@ export function finalAssistantReplyText(turn: TurnViewModel): string {
 }
 
 /**
- * Fold a background command's child tools (its `Read`s and `StopBackgroundTask`)
+ * Fold a background command's child tools (its `Read`s and `TaskStop`)
  * into the `Bash` that owns the run.
  *
  * Parent lookup is deliberately position-independent. A turn's tools are a
@@ -939,7 +940,7 @@ export function foldShellRunToolActivities(
 ): ToolActivityItem[] {
   const ownedRefs = new Set<string>();
   for (const item of items) {
-    if (item.toolName === "Bash" && item.result?.kind === "shell_run")
+    if (item.toolName === TOOL_NAMES.bash && item.result?.kind === "shell_run")
       ownedRefs.add(item.result.ref);
   }
 
@@ -949,7 +950,7 @@ export function foldShellRunToolActivities(
 
   for (const item of items) {
     const result = item.result?.kind === "shell_run" ? item.result : undefined;
-    if (!result || item.toolName === "Bash") {
+    if (!result || item.toolName === TOOL_NAMES.bash) {
       if (result) parentIndexByRef.set(result.ref, folded.length);
       folded.push(item);
       continue;
@@ -958,7 +959,7 @@ export function foldShellRunToolActivities(
       const pending = childResultsByRef.get(result.ref);
       if (pending) pending.push(result);
       else childResultsByRef.set(result.ref, [result]);
-      if (item.toolName === "Read" || item.toolName === "StopBackgroundTask")
+      if (item.toolName === TOOL_NAMES.read || item.toolName === TOOL_NAMES.taskStop)
         continue;
     }
     folded.push(item);

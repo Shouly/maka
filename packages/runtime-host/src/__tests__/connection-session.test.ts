@@ -1635,7 +1635,7 @@ function createHandlers(queryTurn: TurnQueryHandler): RuntimeHostComposition['ha
       message: 'not available in this test composition',
     },
   } as const;
-  const sessionTodoUnavailable: Awaited<ReturnType<OperationHandlerMap['session.todo.query']>> = {
+  const sessionTaskUnavailable: Awaited<ReturnType<OperationHandlerMap['session.task.query']>> = {
     ok: false,
     error: {
       code: 'operation_unavailable',
@@ -1671,7 +1671,7 @@ function createHandlers(queryTurn: TurnQueryHandler): RuntimeHostComposition['ha
     'interaction.answer': async () => interactionUnavailable,
     'subscription.open': async () => subscriptionUnavailable,
     'subscription.close': async () => subscriptionUnavailable,
-    'session.todo.query': async () => sessionTodoUnavailable,
+    'session.task.query': async () => sessionTaskUnavailable,
   };
 }
 

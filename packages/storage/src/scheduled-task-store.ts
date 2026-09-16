@@ -289,9 +289,12 @@ class SqliteScheduledTaskStore implements ScheduledTaskStore {
         normalized.value.schedule === undefined &&
         task.nextFireAt !== null &&
         task.nextFireAt > now;
+      // A manual task has no next fire by design, so it must not be asked for
+      // one — demanding it here made editing a manual task, or switching any
+      // task to manual, fail with "Schedule has no fire within one year".
       const nextFireAt = keepsPendingFire
         ? task.nextFireAt
-        : task.status === 'active'
+        : task.status === 'active' && schedule.kind !== 'manual'
           ? computeRequiredNext(schedule, now)
           : null;
       const effect = normalized.value.effect ?? task.effect;
@@ -302,7 +305,7 @@ class SqliteScheduledTaskStore implements ScheduledTaskStore {
       const maxFires = Object.prototype.hasOwnProperty.call(normalized.value, 'maxFires')
         ? (normalized.value.maxFires ?? null)
         : task.maxFires;
-      if (effect.kind !== 'notify' && !intentBody.trim()) {
+      if (!intentBody.trim()) {
         throw storeError('invalid_input', 'Agent intent body is required');
       }
       if (maxFires !== null && maxFires <= task.fireCount) {
@@ -448,12 +451,6 @@ class SqliteScheduledTaskStore implements ScheduledTaskStore {
     execution: ScheduledTaskFireExecution,
   ): Promise<ScheduledTaskFireClaim> {
     return this.updateClaim(claimId, (claim) => {
-      if (claim.task.effect.kind === 'notify') {
-        throw storeError(
-          'operation_conflict',
-          `Scheduled task fire ${claimId} is not an Agent execution`,
-        );
-      }
       if (claim.execution) {
         if (!sameExecution(claim.execution, execution)) {
           throw storeError(
@@ -467,17 +464,20 @@ class SqliteScheduledTaskStore implements ScheduledTaskStore {
     });
   }
 
+  /**
+   * Move a fire through the delivery state a client-side provider drives.
+   *
+   * No effect reaches a client provider today — every firing is admitted
+   * in-process — so nothing in the app calls this. It stays because it is the
+   * store's model of a claim that is handed out and must come back, not the
+   * coordinator's opinion about which effects exist, and because ripping the
+   * `native_state` column out is a schema change this refactor does not need.
+   */
   async setFireNativeState(
     claimId: string,
     nativeState: ScheduledTaskNativeFireState,
   ): Promise<ScheduledTaskFireClaim> {
     return this.updateClaim(claimId, (claim) => {
-      if (claim.task.effect.kind !== 'notify') {
-        throw storeError(
-          'operation_conflict',
-          `Scheduled task fire ${claimId} is not a native effect`,
-        );
-      }
       if (claim.nativeState === 'invoking' && nativeState !== 'invoking') {
         throw storeError(
           'operation_conflict',

@@ -78,10 +78,10 @@ Multi-agent architectures must therefore define the exact boundary and granulari
 
 Maka enforces a strict isolation boundary: subagents never automatically inherit the full conversation history of the parent agent.
 
-When the main agent invokes `agent_spawn`, it must supply a self-contained task specification:
+When the main agent invokes `Agent`, it must supply a self-contained task specification:
 
 ```text
-agent_spawn({
+Agent({
   subagent_id: "local-reader",
   task: "Inspect how the storage package handles concurrent writes, citing files and symbols"
 })
@@ -216,7 +216,7 @@ The architecture enforces a strict separation of operational concerns:
 
 Only the main agent within the root session holds graph mutation capabilities. It registers operator definitions, schedules dependent work, deprecates historical branches, and selects final artifacts to close the graph; child sessions cannot mutate global topology.
 
-The main agent records plan modifications via `update_agent_graph`. Independent nodes run concurrently, while dependent nodes explicitly reference committed upstream artifacts:
+The main agent records plan modifications via `UpdateAgentGraph`. Independent nodes run concurrently, while dependent nodes explicitly reference committed upstream artifacts:
 
 ```text
 Runtime review result ─┐

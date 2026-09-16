@@ -126,7 +126,7 @@ test('cancels managed approval owners and joiners with the canonical provider id
               tools: [
                 {
                   serverId: 'desktop_browser',
-                  name: 'browser_snapshot',
+                  name: 'BrowserSnapshot',
                   inputSchema: { type: 'object', additionalProperties: false },
                 },
               ],

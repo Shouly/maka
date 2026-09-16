@@ -37,15 +37,15 @@ const invalid = tool('invalid');
 describe('canonicalizeToolSet active allow-list', () => {
   test('withholds inactive tools without removing them from the dispatch registry', () => {
     const { providerTools, activeTools } = canonicalizeToolSet(
-      [tool('Read'), tool('Rive'), tool('tool_search')],
+      [tool('Read'), tool('Rive'), tool('ToolSearch')],
       invalid,
-      new Set(['Read', 'tool_search']),
+      new Set(['Read', 'ToolSearch']),
     );
 
-    assert.deepEqual(activeTools, ['Read', 'tool_search']);
+    assert.deepEqual(activeTools, ['Read', 'ToolSearch']);
     assert.deepEqual(
       providerTools.map((candidate) => candidate.name),
-      ['Read', 'Rive', 'tool_search', 'invalid'],
+      ['Read', 'Rive', 'ToolSearch', 'invalid'],
     );
   });
 

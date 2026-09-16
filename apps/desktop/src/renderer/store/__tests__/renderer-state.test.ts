@@ -30,6 +30,7 @@ import { createGoalStore } from '../goal-store.js';
 import { createSessionsStore } from '../sessions-store.js';
 import { createActiveSessionStore } from '../active-session-store.js';
 import { createTurnActionsStore } from '../turn-actions-store.js';
+import { isSessionWorkbarCollapsed } from '../../lib/ported/workbar-layout.js';
 import { createUiStore } from '../ui-store.js';
 import * as sessions from '../../bridge/sessions.js';
 import * as transcripts from '../../bridge/transcripts.js';
@@ -699,7 +700,7 @@ test('switching away and back keeps the steps the live turn had already produced
     ts: 3,
     toolUseId: 'use-1',
     toolName: 'Read',
-    args: { path: 'README.md' },
+    args: { file_path: 'README.md' },
   });
   f.frames.splice(0).forEach((frame) => frame());
   assert.equal(f.store.getState().liveTurns[a]?.steps.length, 2);
@@ -1256,7 +1257,9 @@ test('fixture carries sidebar, settings, search, and workbar state into their st
   assert.equal(state.settingsOpen, true);
   assert.equal(state.searchOpen, true);
   assert.equal(state.workbar.panels.right.activeTabId, 'workbar:inspector');
-  assert.equal(state.workbar.collapsedBySession[sid('fixture')], false);
+  // `collapsedBySession` holds overrides, and open is now the default, so a
+  // fixture asking for open writes nothing. The effective value is the claim.
+  assert.equal(isSessionWorkbarCollapsed(state.workbar), false);
 });
 
 test('removed profiles and revoked Guest access are not resurrected by the renderer', async () => {

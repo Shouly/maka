@@ -388,7 +388,27 @@ export function resolveModelLimits(
 ): ModelLimits {
   const metadata = lookupModelMetadata(providerType, model.id);
   const contextWindow = override?.contextWindow ?? model.contextWindow ?? metadata.contextWindow;
-  const inputLimit = override?.inputLimit ?? model.inputLimit ?? metadata.inputLimit;
+  const declaredInputLimit = override?.inputLimit ?? model.inputLimit ?? metadata.inputLimit;
+  // When BOTH numbers are Maka's own, an input limit larger than the window is
+  // not a contradiction to report but two sources disagreeing: a connection's
+  // catalog reports the window its access path allows (an OAuth plan is
+  // narrower than the public API) while the limit falls back to models.dev's
+  // public figure. The narrower window is the true one, so the inherited limit
+  // is clamped to it — otherwise every turn on such a model fails its budget
+  // check with "Model input limit exceeds the context window" before the
+  // request is ever built.
+  //
+  // A user override on EITHER number disables the clamp. The two are declared
+  // independently on purpose, so narrowing the window is not consent to narrow
+  // the limit: `modelLimitsConflict` is how the user is told the pair they now
+  // have does not fit, and the connection catalog refuses the save. Clamping
+  // here would swallow exactly the mistake that message exists to report.
+  const userDeclaredEitherLimit =
+    override?.inputLimit !== undefined || override?.contextWindow !== undefined;
+  const inputLimit =
+    !userDeclaredEitherLimit && declaredInputLimit !== undefined && contextWindow !== undefined
+      ? Math.min(declaredInputLimit, contextWindow)
+      : declaredInputLimit;
   return {
     ...(contextWindow === undefined ? {} : { contextWindow }),
     ...(inputLimit === undefined ? {} : { inputLimit }),

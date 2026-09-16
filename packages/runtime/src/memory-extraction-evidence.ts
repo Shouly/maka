@@ -18,6 +18,7 @@
  */
 
 import type { RuntimeEvent } from '@maka/core/runtime-event';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import type { ModelMessage } from './model-protocol.js';
 
 export interface MemoryExtractionEventEntry {
@@ -330,7 +331,7 @@ export function renderMemoryLocalizationContext(
 }
 
 export function isMemoryToolName(name: string): boolean {
-  return name === 'memory_remember' || name === 'memory_extract';
+  return name === TOOL_NAMES.memoryRemember || name === TOOL_NAMES.memoryExtract;
 }
 
 function boundedEvidenceText(value: string, terms: readonly string[] | undefined): string {

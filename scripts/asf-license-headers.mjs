@@ -232,6 +232,7 @@ export const exclusionRules = [
       'native/runtime-host-peer/Cargo.lock',
       'native/runtime-host-windows-task-launcher/Cargo.lock',
       'packages/runtime/src/bundled-skill-catalog.generated.ts',
+      'packages/runtime/src/system-prompt/prompt-catalog.generated.ts',
     ),
   },
   {
@@ -239,6 +240,13 @@ export const exclusionRules = [
     justification:
       'Bundled skill payloads are embedded in the generated catalog verbatim, pinned there by content digest, and delivered to the model as instructions. A header would be republished as agent prompt text and would invalidate the recorded digests. Each payload is listed, so a new bundled skill is reviewed rather than inheriting this reason from its directory.',
     matches: isOneOf('packages/runtime/resources/bundled-skills/computer-use/SKILL.md'),
+  },
+  {
+    id: 'verbatim-prompt-sections',
+    justification:
+      'System-prompt sections are embedded in the generated prompt catalog verbatim, pinned there by content digest, and delivered to the model as instructions. A header would be republished as agent prompt text and would invalidate the recorded digests. The directory holds nothing else.',
+    matches: (path) =>
+      path.startsWith('packages/runtime/resources/prompts/') && path.endsWith('.md'),
   },
   {
     id: 'verbatim-github-templates',
@@ -256,6 +264,12 @@ export const exclusionRules = [
         'packages/storage/test-fixtures/v0.1.6-operational-state/runtime.sqlite',
         'packages/storage/test-fixtures/workflow-schema-v8.sql',
       )(path) || isUnder('docs/eval', '.csv')(path),
+  },
+  {
+    id: 'golden-fixtures',
+    justification:
+      'Golden files pin the exact bytes a test compares against — the static system-prompt layer, the tool surface as the provider receives it. A header would become part of the pinned bytes and would be read back as prompt text by the comparison.',
+    matches: (path) => /\/src\/__tests__\/golden\/[^/]+$/u.test(path),
   },
   {
     id: 'no-comment-syntax',

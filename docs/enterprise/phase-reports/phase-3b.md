@@ -31,8 +31,14 @@ First pass by Codex; reviewed and reworked by the coordinator (see "Review fixes
   folder / skills icon controls, workspace + model pickers (welcome only),
   permission-mode and thinking-level meta-chip selects (`ComposerSelect.tsx`),
   Plan chip, goal dialog (`GoalControl`), context ring, and stop / send keys.
-  Send is solid accent (`.ui-control-squish-accent-fill`, a Maka addition —
-  the product's primary colour is blue, not relx's brand orange).
+  Send is solid brand (`.ui-control-squish-brand`), as in relx.
+
+  This line used to read the other way, and to name a `.ui-control-squish-
+  accent-fill` class that no longer exists: it claimed the product's primary
+  action colour was the blue accent rather than relx's brand orange. That was
+  a misreading of the inventory, corrected in Phase 8e. Every filled send or
+  confirm key in relx is brand; the accent appears as a tint behind blue text
+  (the composer meta chip), never as a solid action fill.
 - `TipTapEditor.tsx`: StarterKit reduced to paragraphs + hard breaks, one
   `composerReference` atom (`@file` / `/skill`), `@` and `/` suggestion list
   in the shared menu chrome with file / skill / command icons, keyboard model

@@ -109,8 +109,6 @@ export interface UserMessageRowProps {
   quotes?: readonly QuoteRef[];
   directoryReferences?: readonly DirectoryReference[];
   inlineReferences?: readonly InlineReference[];
-  /** True when the Host authored this message (a schedule, a goal, a graph). */
-  hostOrigin?: boolean;
   /** Opens a non-image attachment (the right pane's Files face); absent, such cards are labels. */
   onOpenAttachment?: (attachment: AttachmentRef) => void;
   /** Absent when this message cannot be edited (see `revisionRefusalFor`). */
@@ -264,13 +262,21 @@ export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRow
         )}
       </div>
 
-      {(props.quotes?.length ||
-        props.directoryReferences?.length ||
-        skills.length ||
-        files.length ||
-        props.hostOrigin) && (
+      {/* No "Started by the runtime" chip here any more. It marked every turn
+          the person did not type — a scheduled run, a Goal wake, a graph wake —
+          with one word for all three, naming none of them and going nowhere.
+          The projection still carries `hostOrigin`, so a row that actually says
+          WHICH task ran and opens it can be built on it.
+
+          `> 0` is not decoration: every operand here is a COUNT, and `0 && …`
+          renders a literal 0 in React. The boolean `hostOrigin` used to sit
+          last in this chain and hid that. */}
+      {(props.quotes?.length ?? 0) +
+        (props.directoryReferences?.length ?? 0) +
+        skills.length +
+        files.length >
+        0 && (
         <div className="flex max-w-[85%] flex-wrap items-center justify-end gap-1.5">
-          {props.hostOrigin && <Chip icon="agent" label={copy.turn.hostOrigin} />}
           {skills.map((row) => (
             <Chip key={`skill-${row.start}`} icon="shapes" label={row.label} />
           ))}

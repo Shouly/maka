@@ -34,13 +34,11 @@ import {
   isPermissionMode,
   type PermissionMode,
 } from './permission.js';
-import { isBotDeliveryProvider, type BotProvider } from './bot-chat-settings.js';
 import type { PersistedValue } from './persisted-value.js';
 
 export const SCHEDULED_TASK_TITLE_MAX_CHARS = 120;
 export const SCHEDULED_TASK_INTENT_MAX_CHARS = 8_000;
 export const SCHEDULED_TASK_CRON_MAX_CHARS = 80;
-export const SCHEDULED_TASK_CHAT_ID_MAX_CHARS = 160;
 export const SCHEDULED_TASK_SESSION_ID_MAX_CHARS = 160;
 export const SCHEDULED_TASK_RUN_HISTORY_LIMIT = 20;
 export const SCHEDULED_TASK_RUN_MESSAGE_MAX_CHARS = 1_024;
@@ -64,13 +62,46 @@ export type ScheduledTaskSchedule =
       recurrence: 'daily' | 'weekly' | 'monthly';
       anchorAt: number;
     }
-  | { kind: 'cron'; expression: string; startAt: number };
+  | { kind: 'cron'; expression: string; startAt: number }
+  /**
+   * No schedule at all: the task exists, stays active, and only ever runs when
+   * something asks it to (the page's Run now, or the model's ScheduledTaskRun).
+   * `nextFireAt` is null for its whole life, and a run does not spend it — the
+   * same task can be run again tomorrow.
+   */
+  | { kind: 'manual' };
 
+/**
+ * What a firing does.
+ *
+ * `agent_run` is what everything the user or the model CREATES becomes: a
+ * firing opens a fresh Session and sends the task's instructions into it, so
+ * each run is viewed on its own and carries no memory of the conversation that
+ * set it up.
+ *
+ * `session_resume` is the one exception, and only SendLater builds it: a
+ * one-shot message delivered back into an EXISTING Session as an ordinary user
+ * turn. It is not an alternative way to schedule work — it is a reminder that
+ * lands where the conversation already is.
+ */
 export type ScheduledTaskEffect =
-  | { kind: 'notify'; channel: 'local' }
-  | { kind: 'notify'; channel: 'bot'; platform: BotProvider; chatId: string }
   | { kind: 'session_resume'; sessionId: string }
   | { kind: 'agent_run'; execution: ScheduledTaskExecutionTemplate };
+
+/**
+ * Which model a task's runs use.
+ *
+ * `default` re-resolves the owner's current default at EVERY run, so changing
+ * the default model moves every task that follows it; `pinned` freezes one
+ * Connection entity and model for the task's life.
+ *
+ * A pinned choice carries the immutable `llmConnectionId` and never just the
+ * slug: a slug is reusable, so a deleted-and-recreated Connection with the same
+ * slug would silently take over somebody else's scheduled work.
+ */
+export type ScheduledTaskModelChoice =
+  | { kind: 'default' }
+  | { kind: 'pinned'; llmConnectionId: string; llmConnectionSlug: string; model: string };
 
 /** Frozen at create time so later settings changes do not rewrite past jobs. */
 export interface ScheduledTaskExecutionTemplate {
@@ -78,10 +109,7 @@ export interface ScheduledTaskExecutionTemplate {
   readonly toolMode?: ToolMode;
   readonly cwd: string;
   readonly projectId?: string | null;
-  /** Immutable Connection entity identity. Omitted only on legacy slug-only rows. */
-  readonly llmConnectionId?: string;
-  readonly llmConnectionSlug: string;
-  readonly model: string;
+  readonly model: ScheduledTaskModelChoice;
   readonly thinkingLevel?: ThinkingLevel;
   readonly permissionMode: PermissionMode;
   readonly collaborationMode: CollaborationMode;
@@ -154,7 +182,7 @@ export function isScheduledTaskStatus(value: unknown): value is ScheduledTaskSta
 export function normalizeCreateScheduledTaskInput(
   input: unknown,
   now: number,
-): ScheduledTaskNormalizeResult<CreateScheduledTaskInput & { nextFireAt: number }> {
+): ScheduledTaskNormalizeResult<CreateScheduledTaskInput & { nextFireAt: number | null }> {
   if (!isObject(input)) return fail('Scheduled task input must be an object');
   const title = normalizeTitle(input.title);
   if (!title.ok) return title;
@@ -162,9 +190,8 @@ export function normalizeCreateScheduledTaskInput(
   if (!schedule.ok) return schedule;
   const effect = normalizeEffect(input.effect);
   if (!effect.ok) return effect;
-  const intentBody = normalizeIntent(input.intentBody ?? input.intent?.body, {
-    required: effect.value.kind !== 'notify',
-  });
+  // Every task now runs something, so every task needs to say what.
+  const intentBody = normalizeIntent(input.intentBody ?? input.intent?.body, { required: true });
   if (!intentBody.ok) return intentBody;
   const createdBy = normalizeCreatedBy(input.createdBy);
   if (!createdBy.ok) return createdBy;
@@ -172,11 +199,12 @@ export function normalizeCreateScheduledTaskInput(
   if (!maxFires.ok) return maxFires;
   const expiresAt = normalizeExpiresAt(input.expiresAt, now);
   if (!expiresAt.ok) return expiresAt;
-  const nextFireAt = computeNextFireAt(schedule.value, now);
-  if (nextFireAt === null) {
+  const manual = schedule.value.kind === 'manual';
+  const nextFireAt = manual ? null : computeNextFireAt(schedule.value, now);
+  if (!manual && nextFireAt === null) {
     return fail('Schedule has no fire within one year from now');
   }
-  if (expiresAt.value !== null && nextFireAt >= expiresAt.value) {
+  if (nextFireAt !== null && expiresAt.value !== null && nextFireAt >= expiresAt.value) {
     return fail('Schedule must fire before expiresAt');
   }
   return {
@@ -234,6 +262,10 @@ export function normalizeUpdateScheduledTaskInput(
 }
 
 export function computeNextFireAt(schedule: ScheduledTaskSchedule, after: number): number | null {
+  // A manual task is never due. It is not "finished" and not "broken" — it is
+  // waiting to be asked, which is why `nextScheduledTaskStateAfterFire` leaves
+  // it active rather than reading this null as a spent schedule.
+  if (schedule.kind === 'manual') return null;
   if (schedule.kind === 'once') {
     return schedule.runAt > after ? schedule.runAt : null;
   }
@@ -303,6 +335,17 @@ export function nextScheduledTaskStateAfterFire(
   if (task.schedule.kind === 'once') {
     return { ...base, status: 'completed', nextFireAt: null };
   }
+  // A manual task is not spent by being run: it has no schedule to exhaust, so
+  // it goes back to waiting. Only its fire budget or its expiry can end it.
+  if (task.schedule.kind === 'manual') {
+    if (task.maxFires !== null && fireCount >= task.maxFires) {
+      return { ...base, status: 'completed', nextFireAt: null };
+    }
+    if (task.expiresAt !== null && run.at >= task.expiresAt) {
+      return { ...base, status: 'expired', nextFireAt: null };
+    }
+    return { ...base, status: 'active', nextFireAt: null };
+  }
   if (task.maxFires !== null && fireCount >= task.maxFires) {
     return { ...base, status: 'completed', nextFireAt: null };
   }
@@ -332,6 +375,17 @@ export function resumeScheduledTask(
   task: ScheduledTask,
   now: number,
 ): ScheduledTask | { error: string } {
+  // Resume is a TARGET STATE, not an action. A task that is already active is
+  // a request that is already satisfied, so it reports the task unchanged
+  // rather than failing — `updateTask` writes nothing when the same object
+  // comes back. It used to fail here, which made the pair asymmetric (pausing
+  // a paused task was a silent success) and handed the caller an error with no
+  // next move: the shape a model answers by calling again, unchanged.
+  //
+  // A terminal task still refuses. "Already running" is not true of it, and
+  // silently reporting success for a completed task would be a lie the caller
+  // would act on.
+  if (task.status === 'active') return task;
   if (task.status !== 'paused') return { error: 'Only paused tasks can be resumed' };
   if (task.maxFires !== null && task.fireCount >= task.maxFires) {
     return { error: 'Scheduled task fire budget is exhausted' };
@@ -346,6 +400,9 @@ export function resumeScheduledTask(
       nextFireAt: null,
       updatedAt: now,
     };
+  }
+  if (task.schedule.kind === 'manual') {
+    return { ...task, status: 'active', nextFireAt: null, updatedAt: now };
   }
   const nextFireAt =
     task.nextFireAt !== null && task.nextFireAt > now
@@ -456,6 +513,9 @@ function normalizeSchedule(
       value: { kind: 'calendar', recurrence: value.recurrence, anchorAt },
     };
   }
+  if (value.kind === 'manual') {
+    return { ok: true, value: { kind: 'manual' } };
+  }
   if (value.kind === 'cron') {
     if (typeof value.expression !== 'string') return fail('cron schedule requires expression');
     const expression = value.expression;
@@ -474,26 +534,6 @@ function normalizeSchedule(
 
 function normalizeEffect(value: unknown): ScheduledTaskNormalizeResult<ScheduledTaskEffect> {
   if (!isObject(value) || typeof value.kind !== 'string') return fail('Effect is required');
-  if (value.kind === 'notify') {
-    if (value.channel === 'local') return { ok: true, value: { kind: 'notify', channel: 'local' } };
-    if (value.channel === 'bot') {
-      if (typeof value.platform !== 'string' || !isBotDeliveryProvider(value.platform)) {
-        return fail('bot notify requires a deliverable platform');
-      }
-      if (typeof value.chatId !== 'string' || !value.chatId.trim()) {
-        return fail('bot notify requires chatId');
-      }
-      const chatId = value.chatId.trim();
-      if ([...chatId].length > SCHEDULED_TASK_CHAT_ID_MAX_CHARS) {
-        return fail(`chatId must be ${SCHEDULED_TASK_CHAT_ID_MAX_CHARS} characters or fewer`);
-      }
-      return {
-        ok: true,
-        value: { kind: 'notify', channel: 'bot', platform: value.platform, chatId },
-      };
-    }
-    return fail('notify channel must be local or bot');
-  }
   if (value.kind === 'agent_run') {
     const execution = normalizeExecution(value.execution);
     if (!execution.ok) return execution;
@@ -517,15 +557,8 @@ function normalizeExecution(
 ): ScheduledTaskNormalizeResult<ScheduledTaskExecutionTemplate> {
   if (!isObject(value)) return fail('agent_run requires execution template');
   if (typeof value.cwd !== 'string' || !value.cwd.trim()) return fail('execution.cwd is required');
-  if (typeof value.llmConnectionId !== 'string' || !value.llmConnectionId.trim()) {
-    return fail('execution.llmConnectionId is required');
-  }
-  if (typeof value.llmConnectionSlug !== 'string' || !value.llmConnectionSlug.trim()) {
-    return fail('execution.llmConnectionSlug is required');
-  }
-  if (typeof value.model !== 'string' || !value.model.trim()) {
-    return fail('execution.model is required');
-  }
+  const model = normalizeModelChoice(value.model);
+  if (!model.ok) return model;
   if (!isPermissionMode(value.permissionMode)) {
     return fail('execution.permissionMode is required');
   }
@@ -554,14 +587,41 @@ function normalizeExecution(
     value: {
       cwd: value.cwd.trim(),
       ...(projectId === undefined ? {} : { projectId }),
-      llmConnectionId: value.llmConnectionId.trim(),
-      llmConnectionSlug: value.llmConnectionSlug.trim(),
-      model: value.model.trim(),
+      model: model.value,
       ...(value.thinkingLevel === undefined ? {} : { thinkingLevel: value.thinkingLevel }),
       permissionMode: value.permissionMode,
       collaborationMode: value.collaborationMode,
       orchestrationMode: value.orchestrationMode,
       ...(value.toolMode === undefined ? {} : { toolMode: value.toolMode }),
+    },
+  };
+}
+
+function normalizeModelChoice(
+  value: unknown,
+): ScheduledTaskNormalizeResult<ScheduledTaskModelChoice> {
+  if (!isObject(value) || typeof value.kind !== 'string') {
+    return fail('execution.model is required');
+  }
+  if (value.kind === 'default') return { ok: true, value: { kind: 'default' } };
+  if (value.kind !== 'pinned') return fail('execution.model kind must be default or pinned');
+  // The id, not just the slug: see `ScheduledTaskModelChoice`.
+  if (typeof value.llmConnectionId !== 'string' || !value.llmConnectionId.trim()) {
+    return fail('a pinned model requires llmConnectionId');
+  }
+  if (typeof value.llmConnectionSlug !== 'string' || !value.llmConnectionSlug.trim()) {
+    return fail('a pinned model requires llmConnectionSlug');
+  }
+  if (typeof value.model !== 'string' || !value.model.trim()) {
+    return fail('a pinned model requires model');
+  }
+  return {
+    ok: true,
+    value: {
+      kind: 'pinned',
+      llmConnectionId: value.llmConnectionId.trim(),
+      llmConnectionSlug: value.llmConnectionSlug.trim(),
+      model: value.model.trim(),
     },
   };
 }
@@ -694,7 +754,7 @@ export function decodePersistedScheduledTask(
   }
   const task = value as ScheduledTask;
   const { effect } = task;
-  if (effect.kind === 'notify' || effect.kind === 'session_resume') {
+  if (effect.kind === 'session_resume') {
     return task;
   }
   if (effect.kind !== 'agent_run') {

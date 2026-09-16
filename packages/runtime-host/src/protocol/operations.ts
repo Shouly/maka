@@ -57,7 +57,7 @@ import { SESSION_CATALOG_OPERATION_SPECS } from './session-catalog.js';
 import { SESSION_CONTINUITY_OPERATION_SPECS } from './session-continuity.js';
 import { SESSION_TRANSCRIPT_OPERATION_SPECS } from './session-transcript.js';
 import { SESSION_TURNS_OPERATION_SPECS } from './session-turns.js';
-import { SESSION_TODO_OPERATION_SPECS } from './session-todo.js';
+import { SESSION_TASK_OPERATION_SPECS } from './session-task.js';
 import { SESSION_COLLABORATION_OPERATION_SPECS } from './session-collaboration.js';
 import { SESSION_REVISION_OPERATION_SPECS } from './session-revision.js';
 import { SESSION_BUNDLE_OPERATION_SPECS } from './session-bundle.js';
@@ -181,7 +181,7 @@ export * from './session-revision.js';
 export * from './session-retirement.js';
 export * from './session-transcript.js';
 export * from './session-turns.js';
-export * from './session-todo.js';
+export * from './session-task.js';
 export * from './session-effects.js';
 export * from './skill-catalog.js';
 export * from './usage-pricing.js';
@@ -210,7 +210,7 @@ export const HOST_OPERATION_SPECS = composeOperationSpecMaps(
   PLAN_OPERATION_SPECS,
   PROJECT_CATALOG_OPERATION_SPECS,
   MESSAGE_OPERATION_SPECS,
-  SESSION_TODO_OPERATION_SPECS,
+  SESSION_TASK_OPERATION_SPECS,
   INTERACTION_OPERATION_SPECS,
   SESSION_CONTINUITY_OPERATION_SPECS,
   SESSION_TRANSCRIPT_OPERATION_SPECS,
@@ -345,7 +345,7 @@ export const REMOTE_OWNER_OPERATION_GRANTS = Object.freeze([
   'subscription.close',
   'subscription.open',
   'subscription.pty_interest.set',
-  'session.todo.query',
+  'session.task.query',
   'turn.interrupt',
   'turn.message.execution.query',
   'turn.message.query',

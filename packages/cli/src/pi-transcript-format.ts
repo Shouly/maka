@@ -88,6 +88,14 @@ export function formatToolResultContent(content: ToolResultContent): string {
       ].join('\n\n');
     case 'web_search_error':
       return content.message;
+    case 'user_file_delivery':
+      return [
+        `${content.files.length} file${content.files.length === 1 ? '' : 's'} delivered to user.`,
+        ...(content.caption ? [content.caption] : []),
+        ...content.files.map((file) => `  ${file.path} (${file.sizeBytes} bytes)`),
+      ].join('\n');
+    case 'user_message':
+      return content.message;
     case 'subagent':
       return content.summary;
     case 'agent_swarm': {

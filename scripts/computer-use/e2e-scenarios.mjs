@@ -84,7 +84,7 @@ export const CU_E2E_SCENARIOS = Object.freeze([
     id: 'l0-observe-only',
     level: 'L0',
     prompt:
-      'Call maka_computer with action "observe", app "Maka CUA L0 Observe Fixture", and include_screenshot true. Do not call list_apps and do not interact with the fixture.',
+      'Call Computer with action "observe", app "Maka CUA L0 Observe Fixture", and include_screenshot true. Do not call list_apps and do not interact with the fixture.',
     fixtureSetup: {
       layout: 'single',
       windows: [

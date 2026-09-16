@@ -21,6 +21,7 @@
 
 import type { DeepResearchRun } from './deep-research-run.js';
 import { SESSION_START_MODE_SPECS } from './session-start-mode.js';
+import { TOOL_NAMES } from './tool-names.js';
 
 export const DEEP_RESEARCH_SESSION_NAME = SESSION_START_MODE_SPECS.deep_research.name;
 export const DEEP_RESEARCH_SESSION_LABEL = SESSION_START_MODE_SPECS.deep_research.labels[0];
@@ -120,17 +121,17 @@ export const DEEP_RESEARCH_STARTER_PROMPTS = [
   {
     label: '研究一个参考项目',
     prompt:
-      '请只读研究这个项目：先梳理目录结构、核心模块、启动链路、数据流和测试入口，然后列出我们可以借鉴的功能设计、需要规避的风险，以及可落地到 Maka 的改进顺序。',
+      '请只读研究这个项目：先梳理目录结构、核心模块、启动链路、数据流和测试入口，然后列出我们可以借鉴的功能设计、需要规避的风险，以及可落地到 Copilot 的改进顺序。',
   },
   {
     label: '完整读一遍参考项目',
     prompt:
-      '请按深挖范围只读研究这个参考项目：先建立目录和模块地图，再逐层读核心功能、运行时、存储、权限、UI、测试和文档；每个可借鉴点都按 borrow / diverge / risk / gate 输出，并给出 Maka 的落地改进顺序。',
+      '请按深挖范围只读研究这个参考项目：先建立目录和模块地图，再逐层读核心功能、运行时、存储、权限、UI、测试和文档；每个可借鉴点都按 borrow / diverge / risk / gate 输出，并给出 Copilot 的落地改进顺序。',
   },
   {
     label: '对比一个功能实现',
     prompt:
-      '请只读对比这个功能在参考项目和 Maka 里的实现差异：指出关键文件、运行时边界、UI 入口、持久化方式、测试覆盖，以及最小可合入的改进方案。',
+      '请只读对比这个功能在参考项目和 Copilot 里的实现差异：指出关键文件、运行时边界、UI 入口、持久化方式、测试覆盖，以及最小可合入的改进方案。',
   },
   {
     label: '做一次安全边界审计',
@@ -192,20 +193,20 @@ export function buildDeepResearchSystemPromptFragment(): string {
     'Mode contract:',
     '- Inspect first. Prefer Read, Glob, Grep, and WebSearch.',
     '- Do not write, edit, delete, move, or rename user project files; do not install, run migrations, start services, or send network requests unless the user explicitly leaves research mode.',
-    '- The deep_research_* tools are the one write exception: they only update Maka-owned research artifacts and an append-only workspace ledger, never the user project.',
+    '- The DeepResearch* tools are the one write exception: they only update Copilot-owned research artifacts and an append-only workspace ledger, never the user project.',
     '- If implementation is needed, produce a concrete plan with files, risks, and verification commands instead of modifying files.',
     '- Keep findings source-grounded: name files, functions, configs, tests, and observed behavior.',
-    '- Summarize borrow / diverge / risk / gate when comparing a reference project to Maka.',
+    '- Summarize borrow / diverge / risk / gate when comparing a reference project to Copilot.',
     '',
     'Durable workspace protocol:',
-    '- Call deep_research_start once with the concrete objective and scope level. After interruption or context compaction, call deep_research_status, then deep_research_read_artifact for the exact saved evidence needed to continue.',
-    '- Knowledge-base stage: archive each important raw source first with deep_research_save_artifact role=source, then save evidence notes that cite those source artifact ids.',
-    '- After each bounded local exploration or web-research substep, call deep_research_record_step with roots or query terms, ignored paths, a stopping condition, expected evidence, inspected files/symbols/URLs, worker run ids, persisted evidence ids, and any blocker.',
-    '- Keep the four durable checklist items current with deep_research_update_checklist. Completed items require evidence artifacts; blocked items require an explicit reason.',
-    '- Checkpoint every meaningful research round with deep_research_checkpoint, including open questions, next steps, related task ids, and the artifacts needed to resume.',
+    `- Call ${TOOL_NAMES.deepResearchStart} once with the concrete objective and scope level. After interruption or context compaction, call ${TOOL_NAMES.deepResearchStatus}, then ${TOOL_NAMES.deepResearchReadArtifact} for the exact saved evidence needed to continue.`,
+    `- Knowledge-base stage: archive each important raw source first with ${TOOL_NAMES.deepResearchSaveArtifact} role=source, then save evidence notes that cite those source artifact ids.`,
+    `- After each bounded local exploration or web-research substep, call ${TOOL_NAMES.deepResearchRecordStep} with roots or query terms, ignored paths, a stopping condition, expected evidence, inspected files/symbols/URLs, worker run ids, persisted evidence ids, and any blocker.`,
+    `- Keep the four durable checklist items current with ${TOOL_NAMES.deepResearchUpdateChecklist}. Completed items require evidence artifacts; blocked items require an explicit reason.`,
+    `- Checkpoint every meaningful research round with ${TOOL_NAMES.deepResearchCheckpoint}, including open questions, next steps, related task ids, and the artifacts needed to resume.`,
     '- Report-writing stage: save an outline, then source-backed report_section artifacts for conclusion, source_evidence, borrow_diverge_risk_gate, implementation_recommendations, and verification. Mark each section completed only when it is ready.',
     '- Save one final role=report artifact and one role=handoff artifact. The handoff must turn findings into implementation tasks, recommended issues and/or PRs, and verification commands without performing project writes.',
-    '- Call deep_research_complete only after every checklist item is completed or explicitly skipped, all five report sections are completed, and both report and handoff artifacts are persisted.',
+    `- Call ${TOOL_NAMES.deepResearchComplete} only after every checklist item is completed or explicitly skipped, all five report sections are completed, and both report and handoff artifacts are persisted.`,
     '',
     'Research workflow:',
     ...DEEP_RESEARCH_WORKFLOW_STEPS.map((step) => `- ${step.title}: ${step.body}`),

@@ -18,6 +18,7 @@
  */
 
 import { z } from 'zod';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import type { MakaTool } from './tool-runtime.js';
 import type {
   AgentGraphClientOperator,
@@ -26,7 +27,7 @@ import type {
 } from './stream-graph-read-model.js';
 import type { AgentGraphScheduleReconciliationResult } from './stream-graph-schedule-reconcile.js';
 
-export const AGENT_SWARM_STATUS_TOOL_NAME = 'agent_swarm_status';
+export const AGENT_SWARM_STATUS_TOOL_NAME = TOOL_NAMES.swarmStatus;
 
 export type AgentSwarmItemStatus =
   | 'queued'
@@ -50,7 +51,7 @@ export interface AgentSwarmStatusItem {
 }
 
 export interface AgentSwarmStatusResult {
-  kind: 'agent_swarm_status';
+  kind: 'swarm_status';
   swarmId: string;
   status: 'running' | 'needs_attention' | 'settled';
   counts: Record<AgentSwarmItemStatus, number>;
@@ -94,7 +95,7 @@ export function projectAgentSwarmStatus(
       ? 'settled'
       : 'running';
   return {
-    kind: 'agent_swarm_status',
+    kind: 'swarm_status',
     swarmId: snapshot.graphId,
     status,
     counts,
@@ -139,9 +140,9 @@ export function renderAgentSwarmSupervisorWake(
       ...(attentionWorkIds.length > 0
         ? [`Attention work ids: ${attentionWorkIds.join(', ')}.`]
         : []),
-      'Call agent_swarm_status for compact item statuses only. Do not inspect child logs, tool activity, reasoning, or partial output.',
-      'For completed items, read only committed final results with agent_output view=result.',
-      'Replace failed work with update_agent_graph using replaces=<failed work id> and replacement_mode=replace. If work remains active after that decision, call yield_agent_graph without polling.',
+      'Call SwarmStatus for compact item statuses only. Do not inspect child logs, tool activity, reasoning, or partial output.',
+      'For completed items, read only committed final results with AgentOutput view=result.',
+      'Replace failed work with UpdateAgentGraph using replaces=<failed work id> and replacement_mode=replace. If work remains active after that decision, call YieldAgentGraph without polling.',
       'When all useful work is settled, finish the graph and report the synthesized result.',
       '</agent-swarm-checkpoint>',
     ].join('\n'),
@@ -158,8 +159,14 @@ export function buildAgentSwarmStatusTool(input: {
   return {
     name: AGENT_SWARM_STATUS_TOOL_NAME,
     displayName: 'Agent swarm status',
-    description:
-      'Read compact status-only progress for the asynchronous swarm. This omits child logs, tool activity, reasoning, and partial output.',
+    description: [
+      'Read where the asynchronous swarm stands: one status per scheduled work item, the counts by status, and whether the swarm as a whole is running, needs_attention, or settled. Takes no arguments and changes nothing.',
+      '',
+      '- Status only. Child logs, tool activity, reasoning and partial output are deliberately absent. A completed item is read with AgentOutput view=result, using the child session and run ids returned here.',
+      '- An item that failed carries the phase it failed in and the reason. Reschedule it with UpdateAgentGraph using replaces set to that work id and replacement_mode=replace.',
+      '- needs_attention means at least one item is blocked, failed, aborted or cancelled; settled means every item reached a terminal status; running means work is still in flight.',
+      '- Do not call it in a loop to watch for progress. The host starts a new supervisor turn at the next durable checkpoint, so when work is still running and nothing needs deciding, end the turn with YieldAgentGraph.',
+    ].join('\n'),
     parameters: z.object({}).strip(),
     categoryHint: 'read',
     recoveryMode: 'replay_safe',

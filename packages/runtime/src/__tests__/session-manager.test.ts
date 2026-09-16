@@ -1021,8 +1021,8 @@ describe('SessionManager graph operator provisioning', () => {
       'Grep',
       'apply_patch',
       'Bash',
-      'WriteStdin',
-      'StopBackgroundTask',
+      'TaskInput',
+      'TaskStop',
     ]);
     assert.deepStrictEqual(
       headerToSummary(result.header).subagentWorkspace,
@@ -12794,6 +12794,7 @@ class UnadmittedQuestionBackend implements AgentBackend {
       questions: [
         {
           question: 'Continue?',
+          header: 'Continue',
           options: [{ label: 'Yes' }, { label: 'No' }],
         },
       ],

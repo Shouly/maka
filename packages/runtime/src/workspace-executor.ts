@@ -42,6 +42,13 @@ import type { ShellPlan } from './shell-detect.js';
 import { isSupportedImagePath, readWorkspaceImage } from './image-file.js';
 import type { ImageMimeType } from './image-file.js';
 import { readTextLineWindow } from './text-line-window.js';
+import {
+  applyGrepHeadLimit,
+  buildRipgrepArgs,
+  GLOB_SCAN_CAP,
+  orderGlobMatchesByRecency,
+} from './search-plan.js';
+import type { GrepOutputMode } from './filesystem-worker/protocol.js';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -141,8 +148,8 @@ export interface WorkspaceReadModifyWriteInput {
   /** Captured at lock acquisition; undefined for an approved-missing target. */
   approvedIdentity?: { dev: string; ino: string };
   /**
-   * Compute the new content from the pinned read. Return null to not write
-   * (e.g. invalid JSON in FormatJson) — nothing is modified.
+   * Compute the new content from the pinned read. Return null to not write —
+   * nothing is modified.
    */
   transform: (existing: { content: string | null; existed: boolean }) => string | null;
 }
@@ -200,6 +207,8 @@ export interface WorkspaceGlobInput {
 
 export interface WorkspaceGlobResult {
   files: string[];
+  /** More files matched the pattern than `limit` returned. */
+  truncated?: boolean;
 }
 
 export interface WorkspaceGrepInput {
@@ -207,14 +216,33 @@ export interface WorkspaceGrepInput {
   pattern: string;
   path: string;
   glob?: string;
+  /** Ripgrep file-type filter (`--type`). */
+  type?: string;
+  /** Ripgrep output shape; absent means `content`. */
+  outputMode?: GrepOutputMode;
+  ignoreCase?: boolean;
+  /** Lines of context after each match; content mode only. */
+  after?: number;
+  /** Lines of context before each match; content mode only. */
+  before?: number;
+  /** Print line numbers; content mode only, on unless explicitly false. */
+  lineNumbers?: boolean;
+  multiline?: boolean;
   maxCountPerFile: number;
   limit: number;
+  /** Result lines to skip before `limit` applies, for paging. */
+  offset?: number;
   timeoutMs: number;
   abortSignal?: AbortSignal;
 }
 
 export interface WorkspaceGrepResult {
   matches: string[];
+  mode?: GrepOutputMode;
+  /** More lines matched than `limit` returned. */
+  truncated?: boolean;
+  /** How many matching lines `limit` dropped. */
+  omitted?: number;
 }
 
 export interface WorkspaceExecutorFactsProvider {
@@ -322,6 +350,11 @@ export class LocalWorkspaceExecutor implements WorkspaceExecutor {
   }
 
   async readFile(input: WorkspaceReadFileInput): Promise<WorkspaceReadFileResult> {
+    // Node's own EISDIR message for readFile names no path, and a Read that
+    // landed on a directory is the one failure where the path IS the diagnosis.
+    if ((await fs.stat(input.path).catch(() => undefined))?.isDirectory()) {
+      throw new Error(`EISDIR: illegal operation on a directory, read '${input.path}'`);
+    }
     if (isSupportedImagePath(input.path)) {
       return await readWorkspaceImage(input.path);
     }
@@ -434,13 +467,15 @@ export class LocalWorkspaceExecutor implements WorkspaceExecutor {
   }
 
   async globFiles(input: WorkspaceGlobInput): Promise<WorkspaceGlobResult> {
-    const files: string[] = [];
+    const scanned: string[] = [];
     const limit = input.limit ?? 200;
+    const scanCap = Math.max(limit, GLOB_SCAN_CAP);
     for await (const file of nodeGlob(input.pattern, { cwd: input.cwd })) {
-      files.push(typeof file === 'string' ? file : (file as { name: string }).name);
-      if (files.length >= limit) break;
+      scanned.push(typeof file === 'string' ? file : (file as { name: string }).name);
+      if (scanned.length >= scanCap) break;
     }
-    return { files };
+    const ordered = await orderGlobMatchesByRecency(input.cwd, scanned, limit);
+    return { files: ordered.files, ...(ordered.truncated ? { truncated: true } : {}) };
   }
 
   // Resolved once per executor: the bundled copy first, then PATH and the
@@ -453,9 +488,20 @@ export class LocalWorkspaceExecutor implements WorkspaceExecutor {
   }
 
   async grepFiles(input: WorkspaceGrepInput): Promise<WorkspaceGrepResult> {
-    const args = ['-n', '--no-heading', `--max-count=${input.maxCountPerFile}`];
-    if (input.glob) args.push('--glob', input.glob);
-    args.push('--', input.pattern, input.path);
+    const mode = input.outputMode ?? 'content';
+    const args = buildRipgrepArgs({
+      pattern: input.pattern,
+      path: input.path,
+      mode,
+      glob: input.glob,
+      type: input.type,
+      ignoreCase: input.ignoreCase,
+      after: input.after,
+      before: input.before,
+      lineNumbers: input.lineNumbers,
+      multiline: input.multiline,
+      maxCountPerFile: input.maxCountPerFile,
+    });
     try {
       const { stdout } = await execFileAsync(await this.ripgrepExecutable(), args, {
         cwd: input.cwd,
@@ -463,9 +509,14 @@ export class LocalWorkspaceExecutor implements WorkspaceExecutor {
         timeout: input.timeoutMs,
         ...(input.abortSignal ? { signal: input.abortSignal } : {}),
       });
-      return { matches: stdout.split('\n').filter(Boolean).slice(0, input.limit) };
+      const limited = applyGrepHeadLimit(stdout, input.limit, input.offset);
+      return {
+        matches: limited.matches,
+        mode,
+        ...(limited.truncated ? { truncated: true, omitted: limited.omitted } : {}),
+      };
     } catch (error: any) {
-      if (error?.code === 1) return { matches: [] };
+      if (error?.code === 1) return { matches: [], mode };
       throw error;
     }
   }

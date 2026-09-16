@@ -75,9 +75,17 @@ export const listCardSurfaceClass =
 /** 可点的卡。骨架屏用上面那个静态版,免得骨架也跟着 hover 变色。 */
 export const listCardClass = `${listCardSurfaceClass} outline-none hover:bg-surface-2 focus-visible:shadow-[var(--sidebar-focus-shadow)]`;
 
-/** 卡外壳:hover 组的锚点、⋯ 的定位基准、按下时整卡回弹。 */
+/**
+ * 卡外壳:hover 组的锚点、⋯ 的定位基准、按下时整卡回弹。
+ *
+ * Deviation from the reference, which keys the press on `a:active`: these
+ * cards open a dialog rather than a route, so the body is a button. Keying on
+ * `button:active` instead would scale the whole card when the ⋯ trigger or a
+ * control inside it is pressed, so the body carries `data-card-body` and the
+ * shell watches only for that.
+ */
 export const listCardShellClass =
-  'group relative h-full transition-transform duration-200 ease-[cubic-bezier(.165,.84,.44,1)] has-[a:active]:scale-[0.98] has-[a:active]:duration-[var(--dur-fast)]';
+  'group relative h-full transition-transform duration-200 ease-[cubic-bezier(.165,.84,.44,1)] has-[[data-card-body]:active]:scale-[0.98] has-[[data-card-body]:active]:duration-[var(--dur-fast)]';
 
 /**
  * ⋯ 槽位。纯 CSS 浮现,别再拿 isHovered/isMenuActive 两个 state 驱动 —— 那会让
@@ -93,6 +101,12 @@ export const listCardTitleClass = 'truncate text-sm font-medium leading-5 text-t
 
 /** 描述为空时**不要渲染这个元素**:Cowork 的无描述卡直接塌到 77px,不留空行。 */
 export const listCardDescClass = 'mb-4 line-clamp-3 text-sm leading-5 text-text-secondary';
+
+/**
+ * 卡的网格。auto-rows-fr 把一行里的卡拉到等高 —— 只有标题 + 一排芯片的
+ * 卡本来就一样高,拉平不会像带描述行的卡那样被一条长描述带偏。
+ */
+export const listCardGridClass = 'grid auto-rows-fr grid-cols-1 gap-3 md:grid-cols-2 md:gap-6';
 
 /** 13px/17 这档 Tailwind 没有,对应 CDS 的 text-footnote。 */
 export const listCardFooterClass =

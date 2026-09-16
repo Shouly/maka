@@ -60,9 +60,12 @@ and they are NOT equally load-bearing.
 
 ### 2.1 Definitions
 
-- **Agent process.** The Electron main process and any code it
-  loads (`@maka/core`, `@maka/runtime`, `@maka/storage`,
-  `@maka/ui`, builtin tools, user skills).
+- **Agent process.** The Runtime Host: a separate process the
+  Electron main process spawns (`packages/runtime-host/src/client/launcher.ts`)
+  and the code it loads (`@maka/core`, `@maka/runtime`, `@maka/storage`,
+  builtin tools, user skills). The Electron main process itself hosts only
+  the Client Capabilities (browser, computer use) that the Runtime Host
+  invokes back over its client channel.
 - **Renderer process.** Electron's sandboxed renderer. Receives
   data only through the preload IPC bridge in
   `apps/desktop/src/preload/preload.ts`.

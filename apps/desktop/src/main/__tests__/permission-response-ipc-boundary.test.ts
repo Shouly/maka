@@ -46,10 +46,10 @@ describe('permission response IPC boundary', () => {
     assert.deepEqual(
       normalizeUserQuestionResponse({
         requestId: 'question-1',
-        answers: ['Option A', null],
+        answers: ['Option A', ['Option B', 'Option C'], null],
         extra: true,
       }),
-      { requestId: 'question-1', answers: ['Option A', null] },
+      { requestId: 'question-1', answers: ['Option A', ['Option B', 'Option C'], null] },
     );
     assert.deepEqual(
       normalizeClientCapabilityResponse({
@@ -79,8 +79,10 @@ describe('permission response IPC boundary', () => {
     const invalidQuestionResponses = [
       { requestId: '', answers: ['A'] },
       { requestId: 'q', answers: [] },
-      { requestId: 'q', answers: ['A', 'B', 'C', 'D'] },
+      { requestId: 'q', answers: ['A', 'B', 'C', 'D', 'E'] },
       { requestId: 'q', answers: [1] },
+      { requestId: 'q', answers: [['A', 2]] },
+      { requestId: 'q', answers: [['']] },
     ];
     for (const response of invalidQuestionResponses) {
       assert.throws(() => normalizeUserQuestionResponse(response), /user question response/);

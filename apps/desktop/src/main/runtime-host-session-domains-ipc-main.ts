@@ -67,7 +67,7 @@ type RuntimeHostSessionDomainClient = RuntimeHostShellRunsClient &
   | 'listRuntimeResources'
   | 'listAgentGraphEpochs'
   | 'listCurrentAgentGraphEpochs'
-  | 'querySessionTodo'
+  | 'querySessionTask'
   | 'queryAgentGraph'
   | 'queryAgentGraphOperator'
   | 'queryDeepResearch'
@@ -120,8 +120,8 @@ export function registerRuntimeHostSessionDomainsIpc(
     ipcMain,
   );
 
-  handleReconnectableRead(ipcMain, 'todo:read', (_event, sessionId: unknown) =>
-    deps.client.querySessionTodo(requiredId(sessionId, 'Session')),
+  handleReconnectableRead(ipcMain, 'session-task:read', (_event, sessionId: unknown) =>
+    deps.client.querySessionTask(requiredId(sessionId, 'Session')),
   );
   handleReconnectableRead(ipcMain, 'deepResearch:get', async (_event, sessionId: unknown) =>
     projectHostedDeepResearch(
@@ -368,8 +368,8 @@ export function registerRuntimeHostSessionDomainsIpc(
 
   const sessionDomainChanged = (change: SessionDomainChange): void => {
     switch (change.domain) {
-      case 'todo':
-        deps.sendToRenderer?.('todo:changed', {
+      case 'session_task':
+        deps.sendToRenderer?.('session-task:changed', {
           sessionId: change.sessionId,
           at: now(),
         });
@@ -401,7 +401,7 @@ export function registerRuntimeHostSessionDomainsIpc(
       deps.sendToRenderer?.('graphs:changed', event);
     },
     sessionSubscriptionRecovered(sessionId) {
-      sessionDomainChanged({ sessionId, domain: 'todo' });
+      sessionDomainChanged({ sessionId, domain: 'session_task' });
       sessionDomainChanged({ sessionId, domain: 'deep_research' });
       sessionDomainChanged({ sessionId, domain: 'plan' });
       sessionDomainChanged({ sessionId, domain: 'usage' });

@@ -41,7 +41,7 @@ describe('builtin file tools use the sandboxed worker', () => {
     const tools = buildBuiltinTools();
 
     await assert.rejects(
-      runTool(tools, 'Write', { path: 'blocked.txt', content: 'must not be written' }, cwd),
+      runTool(tools, 'Write', { file_path: 'blocked.txt', content: 'must not be written' }, cwd),
       (error: unknown) =>
         error instanceof Error &&
         Object.assign(error, {}) &&
@@ -66,7 +66,7 @@ describe('builtin file tools use the sandboxed worker', () => {
       if (!tool) throw new Error('Write tool missing');
 
       await tool.impl(
-        { path: 'written.txt', content: kind },
+        { file_path: 'written.txt', content: kind },
         {
           sessionId: 'session-1',
           turnId: 'turn-1',
@@ -109,17 +109,6 @@ describe('builtin file tools use the sandboxed worker', () => {
                 startLine: 1,
                 endLine: 1,
               };
-            case 'format_json':
-              return {
-                kind: 'format_json',
-                ok: true,
-                valid: true,
-                path: input.operation.path,
-                bytesBefore: 2,
-                bytesAfter: 3,
-                byteDelta: 1,
-                changed: true,
-              };
             case 'glob':
               return { kind: 'glob', files: ['worker.ts'] };
             case 'grep':
@@ -131,7 +120,7 @@ describe('builtin file tools use the sandboxed worker', () => {
       sandboxPlatform: 'darwin',
     });
 
-    await runTool(tools, 'Read', { path: 'read.txt' }, cwd);
+    await runTool(tools, 'Read', { file_path: 'read.txt' }, cwd);
     await writeFile(join(cwd, 'patch.txt'), 'old\n', 'utf8');
     await runTool(
       tools,
@@ -142,15 +131,14 @@ describe('builtin file tools use the sandboxed worker', () => {
       },
       cwd,
     );
-    await runTool(tools, 'Write', { path: 'write.txt', content: 'content' }, cwd);
-    await runTool(tools, 'Edit', { path: 'edit.txt', old_string: 'a', new_string: 'b' }, cwd);
-    await runTool(tools, 'FormatJson', { path: 'data.json' }, cwd);
+    await runTool(tools, 'Write', { file_path: 'write.txt', content: 'content' }, cwd);
+    await runTool(tools, 'Edit', { file_path: 'edit.txt', old_string: 'a', new_string: 'b' }, cwd);
     await runTool(tools, 'Glob', { pattern: '**/*.ts' }, cwd);
     await runTool(tools, 'Grep', { pattern: 'value' }, cwd);
 
     assert.deepEqual(
       calls.map((call) => call.operation.kind),
-      ['read', 'apply_patch', 'write', 'edit', 'format_json', 'glob', 'grep'],
+      ['read', 'apply_patch', 'write', 'edit', 'glob', 'grep'],
     );
     assert.equal(
       calls.every((call) => call.executionBoundary?.kind === 'managed'),
@@ -188,7 +176,7 @@ describe('builtin file tools use the sandboxed worker', () => {
       sandboxPlatform: 'darwin',
     });
 
-    await runTool(tools, 'Read', { path: 'image.png', offset: 1, limit: 1 }, cwd);
+    await runTool(tools, 'Read', { file_path: 'image.png', offset: 1, limit: 1 }, cwd);
 
     assert.equal(calls.length, 1);
     assert.deepEqual(calls[0]?.operation, { kind: 'read', path: 'image.png', offset: 1, limit: 1 });
@@ -240,7 +228,7 @@ describe('builtin file tools use the sandboxed worker', () => {
     await assert.rejects(
       Promise.resolve(
         read.impl(
-          { path: 'image.png' },
+          { file_path: 'image.png' },
           {
             sessionId: 'session-1',
             turnId: 'turn-1',
@@ -296,13 +284,13 @@ describe('builtin file tools use the sandboxed worker', () => {
       runTool(
         tools,
         'Edit',
-        { path: 'shared.txt', old_string: 'before', new_string: 'real' },
+        { file_path: 'shared.txt', old_string: 'before', new_string: 'real' },
         workspace,
       ),
       runTool(
         tools,
         'Edit',
-        { path: 'shared.txt', old_string: 'before', new_string: 'alias' },
+        { file_path: 'shared.txt', old_string: 'before', new_string: 'alias' },
         alias,
       ),
     ]);
@@ -316,6 +304,13 @@ describe('builtin file tools use the sandboxed worker', () => {
 });
 
 describe('file tools surface a file_diff result', () => {
+  /**
+   * The note every file-write summary carries: the model has just been shown the
+   * file's new state, so a confirming Read is a call that can only repeat it.
+   */
+  const STATE_IS_CURRENT_NOTE =
+    ' (file state is current in your context — no need to Read it back)';
+
   const DIFF = ['--- a/a.ts', '+++ b/a.ts', '@@ -1,2 +1,2 @@', ' keep', '-old', '+new'].join('\n');
 
   function toolsWithWorkerResult(result: Record<string, unknown>) {
@@ -341,7 +336,7 @@ describe('file tools surface a file_diff result', () => {
     const result = await runTool(
       tools,
       'Edit',
-      { path: 'a.ts', old_string: 'old', new_string: 'new' },
+      { file_path: 'a.ts', old_string: 'old', new_string: 'new' },
       cwd,
     );
 
@@ -363,7 +358,7 @@ describe('file tools surface a file_diff result', () => {
     const result = await runTool(
       tools,
       'Edit',
-      { path: 'a.ts', old_string: 'old', new_string: 'new' },
+      { file_path: 'a.ts', old_string: 'old', new_string: 'new' },
       cwd,
     );
 
@@ -387,7 +382,12 @@ describe('file tools surface a file_diff result', () => {
       diff: ['--- /dev/null', '+++ b/new.md', '@@ -0,0 +1,2 @@', '+alpha', '+beta'].join('\n'),
     });
 
-    const result = await runTool(tools, 'Write', { path: 'new.md', content: 'alpha\nbeta\n' }, cwd);
+    const result = await runTool(
+      tools,
+      'Write',
+      { file_path: 'new.md', content: 'alpha\nbeta\n' },
+      cwd,
+    );
 
     assert.deepEqual(result, {
       kind: 'file_diff',
@@ -405,28 +405,9 @@ describe('file tools surface a file_diff result', () => {
       bytes: 70000,
     });
 
-    const result = await runTool(tools, 'Write', { path: 'huge.bin', content: 'x' }, cwd);
+    const result = await runTool(tools, 'Write', { file_path: 'huge.bin', content: 'x' }, cwd);
 
     assert.deepEqual(result, { kind: 'file_write', path: 'huge.bin', bytes: 70000 });
-  });
-
-  test('FormatJson returns a file_diff content and never leaks the diff as json', async () => {
-    const cwd = await temporaryDirectory('maka-format-diff-');
-    const tools = toolsWithWorkerResult({
-      kind: 'format_json',
-      ok: true,
-      valid: true,
-      path: 'data.json',
-      bytesBefore: 12,
-      bytesAfter: 20,
-      byteDelta: 8,
-      changed: true,
-      diff: DIFF,
-    });
-
-    const result = await runTool(tools, 'FormatJson', { path: 'data.json' }, cwd);
-
-    assert.deepEqual(result, { kind: 'file_diff', paths: ['data.json'], diff: DIFF });
   });
 
   test('the model output for an edit is a bounded summary, not the diff', async () => {
@@ -437,11 +418,14 @@ describe('file tools surface a file_diff result', () => {
 
     const output = await tool.toModelOutput({
       toolCallId: 'tool-1',
-      input: { path: 'a.ts', old_string: 'old', new_string: 'new' },
+      input: { file_path: 'a.ts', old_string: 'old', new_string: 'new' },
       output: { kind: 'file_diff', paths: ['a.ts'], diff: DIFF },
     });
 
-    assert.deepEqual(output, { type: 'text', value: 'Edited a.ts (+1 -1)' });
+    assert.deepEqual(output, {
+      type: 'text',
+      value: `The file a.ts has been updated successfully.${STATE_IS_CURRENT_NOTE}`,
+    });
   });
 
   test('the model output counts additions whose content starts with ++', async () => {
@@ -451,7 +435,7 @@ describe('file tools surface a file_diff result', () => {
 
     const output = await tool.toModelOutput({
       toolCallId: 'tool-1',
-      input: { path: 'a.ts', old_string: 'let i = 0;', new_string: 'let i = 0;\n++i;' },
+      input: { file_path: 'a.ts', old_string: 'let i = 0;', new_string: 'let i = 0;\n++i;' },
       output: {
         kind: 'file_diff',
         paths: ['a.ts'],
@@ -459,7 +443,10 @@ describe('file tools surface a file_diff result', () => {
       },
     });
 
-    assert.deepEqual(output, { type: 'text', value: 'Edited a.ts (+1 -0)' });
+    assert.deepEqual(output, {
+      type: 'text',
+      value: `The file a.ts has been updated successfully.${STATE_IS_CURRENT_NOTE}`,
+    });
   });
 
   test('the model output for a new-file write names it created with its line count', async () => {
@@ -469,7 +456,7 @@ describe('file tools surface a file_diff result', () => {
 
     const output = await tool.toModelOutput({
       toolCallId: 'tool-1',
-      input: { path: 'new.md', content: 'alpha\nbeta\n' },
+      input: { file_path: 'new.md', content: 'alpha\nbeta\n' },
       output: {
         kind: 'file_diff',
         paths: ['new.md'],
@@ -477,7 +464,10 @@ describe('file tools surface a file_diff result', () => {
       },
     });
 
-    assert.deepEqual(output, { type: 'text', value: 'Created new.md (+2)' });
+    assert.deepEqual(output, {
+      type: 'text',
+      value: `File created successfully at: new.md${STATE_IS_CURRENT_NOTE}`,
+    });
   });
 });
 

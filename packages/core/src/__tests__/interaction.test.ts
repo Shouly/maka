@@ -273,7 +273,7 @@ describe('Interaction projection', () => {
       review: unknown;
     }> = [
       {
-        toolName: 'browser_navigate',
+        toolName: 'BrowserNavigate',
         args: { url: 'https://example.test/path' },
         review: {
           kind: 'browser',
@@ -282,17 +282,17 @@ describe('Interaction projection', () => {
         },
       },
       {
-        toolName: 'browser_snapshot',
+        toolName: 'BrowserSnapshot',
         args: {},
         review: { kind: 'browser', action: 'snapshot' },
       },
       {
-        toolName: 'browser_click',
+        toolName: 'BrowserClick',
         args: { ref: '[12]' },
         review: { kind: 'browser', action: 'click', ref: '[12]' },
       },
       {
-        toolName: 'browser_type',
+        toolName: 'BrowserType',
         args: { ref: '#search', text: browserInput, submit: true },
         review: {
           kind: 'browser',
@@ -309,7 +309,7 @@ describe('Interaction projection', () => {
         },
       },
       {
-        toolName: 'browser_wait',
+        toolName: 'BrowserWait',
         args: { text: 'Ready', timeout: 200 },
         review: {
           kind: 'browser',
@@ -320,7 +320,7 @@ describe('Interaction projection', () => {
         },
       },
       {
-        toolName: 'browser_extract',
+        toolName: 'BrowserExtract',
         args: { selector: '.main', start: -2.5 },
         review: {
           kind: 'browser',
@@ -341,7 +341,7 @@ describe('Interaction projection', () => {
     assert.doesNotMatch(
       JSON.stringify(
         projectInteractionPermissionRequest(
-          browserPermission('browser_type', {
+          browserPermission('BrowserType', {
             ref: '#search',
             text: browserInput,
             submit: true,
@@ -422,7 +422,7 @@ describe('Interaction projection', () => {
 
     const agent = projectInteractionPermissionRequest({
       ...toolPermission,
-      toolName: 'agent_spawn',
+      toolName: 'Agent',
       category: 'subagent',
       reason: 'custom',
       args: {
@@ -555,26 +555,26 @@ describe('Interaction projection', () => {
       },
       {
         ...toolPermission,
-        toolName: 'WriteStdin',
+        toolName: 'TaskInput',
         args: { size: { cols: 0, rows: 24 } },
         rememberForTurnAllowed: false,
       },
-      browserPermission('browser_type', {
+      browserPermission('BrowserType', {
         ref: '#search',
         text: 'hello',
         submit: 'yes',
       }),
-      browserPermission('browser_wait', { text: 'Ready', time: 1 }),
-      browserPermission('browser_extract', { selector: 42 }),
+      browserPermission('BrowserWait', { text: 'Ready', time: 1 }),
+      browserPermission('BrowserExtract', { selector: 42 }),
       {
         ...toolPermission,
-        toolName: 'WriteStdin',
+        toolName: 'TaskInput',
         args: { input: 42, size: { cols: 80, rows: 24 } },
         rememberForTurnAllowed: false,
       },
       {
         ...toolPermission,
-        toolName: 'WriteStdin',
+        toolName: 'TaskInput',
         args: { ref: null, size: { cols: 80, rows: 24 } },
         rememberForTurnAllowed: false,
       },
@@ -592,7 +592,7 @@ describe('Interaction projection', () => {
       () =>
         projectInteractionPermissionRequest({
           ...toolPermission,
-          toolName: 'agent_spawn',
+          toolName: 'Agent',
           category: 'subagent',
           reason: 'custom',
           args: cyclic,
@@ -608,6 +608,7 @@ describe('Interaction projection', () => {
         questions: [
           {
             question: 'Proceed?',
+            header: 'Proceed',
             options: [{ label: 'Yes' }, { label: 'No', description: 'Stop here' }],
           },
         ],
@@ -618,6 +619,7 @@ describe('Interaction projection', () => {
         questions: [
           {
             question: 'Proceed?',
+            header: 'Proceed',
             options: [{ label: 'Yes' }, { label: 'No', description: 'Stop here' }],
           },
         ],
@@ -629,6 +631,7 @@ describe('Interaction projection', () => {
         toolUseId: 'q',
         questions: Array.from({ length: INTERACTION_MAX_QUESTIONS + 1 }, () => ({
           question: 'Q',
+          header: 'Q',
           options: [{ label: 'A' }, { label: 'B' }],
         })),
       }),
@@ -636,7 +639,7 @@ describe('Interaction projection', () => {
     assert.throws(() =>
       projectInteractionQuestionRequest({
         toolUseId: 'q',
-        questions: [{ question: 'Q', options: [{ label: 'only' }] }],
+        questions: [{ question: 'Q', header: 'Q', options: [{ label: 'only' }] }],
       }),
     );
   });
@@ -647,6 +650,7 @@ describe('Interaction projection', () => {
       questions: [
         {
           question: '\u0007 password=question-secret',
+          header: 'Secrets',
           options: [
             { label: '\u202e token=label-secret', description: '\napi_key=description-secret' },
             { label: 'Keep' },
@@ -660,6 +664,7 @@ describe('Interaction projection', () => {
     assert.deepEqual(projected.questions, [
       {
         question: '\\u{7} password=[redacted]',
+        header: 'Secrets',
         options: [
           {
             label: '\\u{202E} token=[redacted]',
@@ -685,6 +690,7 @@ describe('Interaction projection', () => {
       questions: [
         {
           question: 'Choose',
+          header: 'Bidi',
           options: [{ label: '\u061cArabic' }, { label: '\u200eLTR' }, { label: '\u200fRTL' }],
         },
       ],
@@ -704,6 +710,7 @@ describe('Interaction projection', () => {
         questions: [
           {
             question: 'Choose',
+            header: 'Bidi',
             options: [{ label: '\u200eLTR' }, { label: '\\u{200E}LTR' }],
           },
         ],
@@ -718,6 +725,7 @@ describe('Interaction projection', () => {
         questions: [
           {
             question: 'Choose',
+            header: 'Choose',
             options: [{ label: 'password=first-secret' }, { label: 'password=second-secret' }],
           },
         ],
@@ -793,7 +801,7 @@ describe('Interaction decoding and validity', () => {
         providerId: 'provider-1',
         contractId: 'contract-1',
         serverId: 'desktop_browser',
-        toolName: 'browser_snapshot',
+        toolName: 'BrowserSnapshot',
         capability: 'browser',
         scope: { kind: 'browser_origin', origin: 'https://example.com' },
       },
@@ -833,9 +841,88 @@ describe('Interaction decoding and validity', () => {
   const question = projectInteractionQuestionRequest({
     toolUseId: 'q1',
     questions: [
-      { question: 'Choose', options: [{ label: 'A' }, { label: 'B' }] },
-      { question: 'Confirm', options: [{ label: 'Y' }, { label: 'N' }] },
+      { question: 'Choose', header: 'Choose', options: [{ label: 'A' }, { label: 'B' }] },
+      { question: 'Confirm', header: 'Confirm', options: [{ label: 'Y' }, { label: 'N' }] },
     ],
+  });
+
+  test('single-select is the absent multiSelect key, and projection agrees', () => {
+    const decoded = decodeInteractionRequest({
+      kind: 'question',
+      toolUseId: 'q-single',
+      questions: [
+        { question: 'Choose', header: 'Choose', options: [{ label: 'A' }, { label: 'B' }] },
+      ],
+    });
+    assert.equal(decoded.kind, 'question');
+    assert.deepEqual(decoded.kind === 'question' ? decoded.questions[0] : undefined, {
+      question: 'Choose',
+      header: 'Choose',
+      options: [{ label: 'A' }, { label: 'B' }],
+    });
+    assert.deepEqual(
+      projectInteractionQuestionRequest({
+        toolUseId: 'q-single',
+        questions: [
+          { question: 'Choose', header: 'Choose', options: [{ label: 'A' }, { label: 'B' }] },
+        ],
+      }),
+      decoded,
+    );
+  });
+
+  test('carries header and multiSelect through projection', () => {
+    const projected = projectInteractionQuestionRequest({
+      toolUseId: 'q-shape',
+      questions: [
+        {
+          question: 'Which layout?',
+          header: 'Layout',
+          options: [
+            { label: 'Grid', description: 'Three columns.' },
+            { label: 'List', description: 'One column.' },
+          ],
+        },
+        {
+          question: 'Which surfaces?',
+          header: 'Surfaces',
+          multiSelect: true,
+          options: [{ label: 'Desktop' }, { label: 'CLI' }, { label: 'Web' }, { label: 'Bot' }],
+        },
+      ],
+    });
+    assert.equal(projected.questions[0]?.header, 'Layout');
+    assert.equal(projected.questions[0]?.options[0]?.description, 'Three columns.');
+    assert.equal(projected.questions[1]?.multiSelect, true);
+    assert.equal(projected.questions[1]?.options.length, 4);
+    assert.deepEqual(decodeInteractionRequest(projected), projected);
+  });
+
+  test('accepts a multi-select answer only where the question asked for one', () => {
+    const request = projectInteractionQuestionRequest({
+      toolUseId: 'q-multi',
+      questions: [
+        {
+          question: 'Which surfaces?',
+          header: 'Surfaces',
+          multiSelect: true,
+          options: [{ label: 'Desktop' }, { label: 'CLI' }],
+        },
+        { question: 'Confirm', header: 'Confirm', options: [{ label: 'Y' }, { label: 'N' }] },
+      ],
+    });
+    const multi = decodeInteractionAnswer({
+      kind: 'question',
+      answers: [['Desktop', 'CLI'], 'Y'],
+    });
+    assert.equal(isInteractionAnswerValidForRequest(request, multi), true);
+    assert.equal(
+      isInteractionAnswerValidForRequest(
+        request,
+        decodeInteractionAnswer({ kind: 'question', answers: ['Desktop', ['Y']] }),
+      ),
+      false,
+    );
   });
 
   test('strictly rejects widened shapes, sparse arrays, unsafe text, and serialized overflow', () => {
@@ -852,7 +939,7 @@ describe('Interaction decoding and validity', () => {
       () => decodeInteractionRequest({ ...question, extra: true }),
       () => {
         const click = projectInteractionPermissionRequest(
-          browserPermission('browser_click', { ref: '[1]' }),
+          browserPermission('BrowserClick', { ref: '[1]' }),
         );
         return decodeInteractionRequest({
           ...click,
@@ -882,6 +969,7 @@ describe('Interaction decoding and validity', () => {
           questions: [
             {
               question: '界'.repeat(342),
+              header: 'Long',
               options: [{ label: 'A' }, { label: 'B' }],
             },
           ],

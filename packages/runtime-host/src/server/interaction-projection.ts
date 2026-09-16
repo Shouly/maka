@@ -23,6 +23,7 @@ import {
   projectInteractionSandboxBoundaryRequest,
   type InteractionAnswer,
   type InteractionCanonicalOutcome,
+  type InteractionQuestionAnswerValue,
 } from '@maka/core/interaction';
 import type { SandboxBoundaryRequest } from '@maka/core/sandbox-boundary';
 import {
@@ -167,7 +168,13 @@ export function questionCanonicalOutcome(
   answer: Extract<InteractionAnswer, { kind: 'question' }>,
   committedAt: number,
 ): Extract<InteractionCanonicalOutcome, { kind: 'question_answer' }> {
-  return { kind: 'question_answer', answers: [...answer.answers], committedAt };
+  // A multi-select entry is itself an array, so copy one level deeper.
+  return { kind: 'question_answer', answers: answer.answers.map(copyAnswer), committedAt };
+}
+
+function copyAnswer(answer: InteractionQuestionAnswerValue): string | string[] | null {
+  if (answer === null) return null;
+  return typeof answer === 'string' ? answer : [...answer];
 }
 
 export function clientCapabilityCanonicalOutcome(
@@ -203,7 +210,7 @@ export function runtimeQuestionOutcome(
   if (outcome.kind !== 'question_answer') {
     throw new RuntimeInteractionInvariantError('Question Interaction resolved with another answer');
   }
-  return { kind: 'question_answer', answer: { answers: [...outcome.answers] } };
+  return { kind: 'question_answer', answer: { answers: outcome.answers.map(copyAnswer) } };
 }
 
 export function runtimeFormOutcome(outcome: InteractionCanonicalOutcome): RuntimeFormOutcome {

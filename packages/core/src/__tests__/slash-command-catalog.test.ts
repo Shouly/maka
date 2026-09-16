@@ -22,16 +22,16 @@ import { describe, test } from 'node:test';
 import { slashCommandsForSurface } from '../slash-command-catalog.js';
 
 describe('slash command catalog', () => {
-  test('/todo is a TUI-only read of the current session Todo projection', () => {
-    const todo = slashCommandsForSurface('tui').find((command) => command.id === 'todo');
+  test('/tasks is a TUI-only read of the current session task list', () => {
+    const tasks = slashCommandsForSurface('tui').find((command) => command.id === 'tasks');
 
-    assert.deepEqual(todo, {
-      id: 'todo',
+    assert.deepEqual(tasks, {
+      id: 'tasks',
       session: 'required',
       surfaces: ['tui'],
     });
     assert.equal(
-      slashCommandsForSurface('desktop').some((command) => (command.id as string) === 'todo'),
+      slashCommandsForSurface('desktop').some((command) => (command.id as string) === 'tasks'),
       false,
     );
   });

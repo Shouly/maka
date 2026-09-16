@@ -37,6 +37,7 @@ import {
   type AgentGraphStoppedTarget,
   type AgentGraphWorkTarget,
 } from '@maka/core/agent-graph-schedule';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import { stableHash } from './request-shape.js';
 import type { AgentGraphSupervisorObservation } from './stream-graph-dispatch.js';
 import type {
@@ -47,9 +48,9 @@ import type {
 import type { AgentGraphReadinessWait } from './stream-graph-readiness.js';
 import type { MakaTool, MakaToolContext } from './tool-runtime.js';
 
-export const VIEW_AGENT_GRAPH_TOOL_NAME = 'view_agent_graph';
-export const UPDATE_AGENT_GRAPH_TOOL_NAME = 'update_agent_graph';
-export const YIELD_AGENT_GRAPH_TOOL_NAME = 'yield_agent_graph';
+export const VIEW_AGENT_GRAPH_TOOL_NAME = TOOL_NAMES.viewAgentGraph;
+export const UPDATE_AGENT_GRAPH_TOOL_NAME = TOOL_NAMES.updateAgentGraph;
+export const YIELD_AGENT_GRAPH_TOOL_NAME = TOOL_NAMES.yieldAgentGraph;
 const TOOL_VIEW_MAX_TERMINAL_WORK = 64;
 const TOOL_VIEW_MAX_STOPPED_TARGETS = 64;
 const TOOL_VIEW_MAX_INSTRUCTION_CHARS = 2_000;
@@ -80,22 +81,29 @@ const addWorkSchema = z.preprocess(
         .enum(['new_agent', 'new_preset', 'existing_operator'])
         .optional()
         .describe(
-          'Explicit target discriminator. Use new_preset with subagent_id from agent_list, new_agent with a legacy agent_id, or existing_operator with operator_id. Unrelated optional identity fields are ignored.',
+          'Explicit target discriminator. Use new_preset with subagent_id from ListAgents, new_agent with a legacy agent_id, or existing_operator with operator_id. Unrelated optional identity fields are ignored.',
         ),
       agent_id: identitySchema
         .optional()
         .describe(
-          'Legacy built-in agent id for new graph work. Use the exact agent_id from agent_list, not its profile. Prefer subagent_id when available.',
+          'Legacy built-in agent id for new graph work. Use the exact agent_id from ListAgents, not its profile. Prefer subagent_id when available.',
         ),
       subagent_id: identitySchema
         .optional()
-        .describe('User-approved subagent preset id from agent_list for new graph work.'),
+        .describe('User-approved subagent preset id from ListAgents for new graph work.'),
       operator_id: identitySchema
         .optional()
         .describe(
-          'Runtime id of an EXISTING graph operator returned by view_agent_graph. Use only for follow-up work; set operator_id OR agent_id, never both.',
+          'Runtime id of an EXISTING graph operator returned by ViewAgentGraph. Use only for follow-up work; set operator_id OR agent_id, never both.',
         ),
-      instruction: z.string().trim().min(1).max(AGENT_GRAPH_SCHEDULE_MAX_INSTRUCTION_CHARS),
+      instruction: z
+        .string()
+        .trim()
+        .min(1)
+        .max(AGENT_GRAPH_SCHEDULE_MAX_INSTRUCTION_CHARS)
+        .describe(
+          'The whole brief for this work item. The child sees nothing of this conversation beyond its declared inputs.',
+        ),
       input_ids: z
         .array(identitySchema)
         .max(AGENT_GRAPH_SCHEDULE_MAX_INPUT_IDS)
@@ -179,8 +187,15 @@ const addWorkSchema = z.preprocess(
 
 const stopSchema = z
   .object({
-    target_id: identitySchema,
-    reason: z.string().trim().min(1).max(AGENT_GRAPH_SCHEDULE_MAX_REASON_CHARS),
+    target_id: identitySchema.describe(
+      'Work id or operator id to stop, as ViewAgentGraph reports it.',
+    ),
+    reason: z
+      .string()
+      .trim()
+      .min(1)
+      .max(AGENT_GRAPH_SCHEDULE_MAX_REASON_CHARS)
+      .describe('Why this target is being stopped. Recorded durably on the graph.'),
   })
   .strip();
 
@@ -191,7 +206,12 @@ const finishSchema = z
       .min(1)
       .max(AGENT_GRAPH_SCHEDULE_MAX_RESULT_IDS)
       .describe('Committed graph record ids selected as the final result.'),
-    reason: z.string().trim().min(1).max(AGENT_GRAPH_SCHEDULE_MAX_REASON_CHARS),
+    reason: z
+      .string()
+      .trim()
+      .min(1)
+      .max(AGENT_GRAPH_SCHEDULE_MAX_REASON_CHARS)
+      .describe('Why the graph is finished on these results. Recorded durably on the graph.'),
   })
   .strip()
   .superRefine((value, ctx) => addDuplicateIssue(ctx, value.result_ids, ['result_ids']));
@@ -211,9 +231,15 @@ const updateSchema = z.preprocess(
         .max(AGENT_GRAPH_SCHEDULE_MAX_ADD_WORK)
         .optional()
         .describe(
-          'Schedule work. For a new operator, prefer subagent_id from agent_list; legacy agent_id remains supported. Omit finish whenever add_work is present.',
+          'Schedule work. For a new operator, prefer subagent_id from ListAgents; legacy agent_id remains supported. Omit finish whenever add_work is present.',
         ),
-      stop: z.array(stopSchema).max(AGENT_GRAPH_SCHEDULE_MAX_STOP).optional(),
+      stop: z
+        .array(stopSchema)
+        .max(AGENT_GRAPH_SCHEDULE_MAX_STOP)
+        .optional()
+        .describe(
+          'Stop scheduled work or a running operator. Stopping is not replacement: to redo the work, add_work with replaces and replacement_mode=replace.',
+        ),
       finish: finishSchema
         .optional()
         .describe(
@@ -285,7 +311,7 @@ const viewSchema = z.preprocess(
       cursor: cursorSchema
         .optional()
         .describe(
-          'Opaque cursor returned by an earlier view_agent_graph call. Ignored when mode=latest.',
+          'Opaque cursor returned by an earlier ViewAgentGraph call. Ignored when mode=latest.',
         ),
       historical_before_epoch: z
         .number()
@@ -549,8 +575,15 @@ export function buildAgentGraphSupervisorTools(
   const viewTool: MakaTool<ViewAgentGraphToolInput, ViewAgentGraphToolResult> = {
     name: VIEW_AGENT_GRAPH_TOOL_NAME,
     displayName: 'View agent graph',
-    description:
-      'Inspect the durable graph. Use mode=latest without a cursor for the current view; use mode=page only with a nextCursor returned by an earlier view.',
+    description: [
+      'Read the durable agent graph: the work scheduled so far and its status, the live operators and what each is waiting on, recent activity, and the results earlier graph epochs selected. Read-only — it schedules and stops nothing.',
+      '',
+      '- Read it before UpdateAgentGraph. It is where the operator_id of an existing operator, the record ids that form a new work item input frontier, and the committed result ids a finish may select all come from.',
+      '- mode=latest, or no mode at all, returns the current view. mode=page continues an earlier one and requires the cursor that view returned; a cursor from anywhere else is rejected.',
+      '- The view is bounded: terminal work, settled operators and older activity are omitted and counted in the omitted* fields. Fewer items than you scheduled is the view being trimmed, not work being lost.',
+      '- historical_before_epoch continues the search for results selected by completed earlier epochs, using nextHistoricalBeforeEpoch from the previous view.',
+      '- Only the root supervisor of this graph can call it, and polling it while work runs buys nothing: end the turn with YieldAgentGraph and the host resumes you at the next checkpoint.',
+    ].join('\n'),
     parameters: viewSchema,
     categoryHint: 'read',
     recoveryMode: 'replay_safe',
@@ -572,8 +605,15 @@ export function buildAgentGraphSupervisorTools(
   const updateTool: MakaTool<UpdateAgentGraphToolInput, UpdateAgentGraphToolResult> = {
     name: UPDATE_AGENT_GRAPH_TOOL_NAME,
     displayName: 'Update agent graph',
-    description:
-      'Adjust the graph durably. Always set operation. Prefer target_kind=new_preset with a user-approved subagent_id from agent_list; legacy agent_id remains supported. Unrelated provider-filled optional fields are ignored.',
+    description: [
+      'Change the agent graph durably: schedule work, stop work that is no longer wanted, or finish the graph by selecting its results. Every call is appended to the graph record and returns the updated view, in the shape ViewAgentGraph returns.',
+      '',
+      '- Always set `operation`. Only the payload matching it is applied, so an optional field filled in out of habit is ignored rather than acted on.',
+      '- operation=add_work schedules one or more items. Point each at a user-approved subagent_id from ListAgents (target_kind=new_preset), at a legacy agent_id (new_agent), or at an operator_id from ViewAgentGraph (existing_operator) for follow-up work on a child already in the graph.',
+      '- Rescheduling after a failure is add_work carrying replaces set to the failed work id and replacement_mode=replace. Without replacement_mode=replace the old item stays live beside the new one.',
+      '- operation=finish is terminal and closes the graph. Its result_ids must already be committed records — anything else is rejected — and finish can never be combined with add_work.',
+      '- This records intent only; a host reconciler starts and stops the children. The call returns before any child has moved, so do not read results in the same breath and do not poll — end the turn with YieldAgentGraph.',
+    ].join('\n'),
     parameters: updateSchema,
     categoryHint: 'subagent',
     recoveryMode: 'idempotent',
@@ -606,8 +646,14 @@ export function buildAgentGraphSupervisorTools(
   const yieldTool: MakaTool<YieldAgentGraphToolInput, YieldAgentGraphToolResult> = {
     name: YIELD_AGENT_GRAPH_TOOL_NAME,
     displayName: 'Yield agent graph',
-    description:
-      'End this supervisor turn successfully while scheduled graph work continues. Call this after the current scheduling wave has no immediate decision; do not poll, sleep, or emit a waiting message. The host will start a new supervisor turn at the next durable graph checkpoint. This does not finish or close the graph.',
+    description: [
+      'End this supervisor turn successfully while the scheduled graph work keeps running. Call it as soon as the current scheduling wave leaves nothing to decide: it is how a supervisor waits, and the only way that works.',
+      '',
+      '- Use it instead of polling ViewAgentGraph, sleeping, or writing a message that says you are waiting. The turn ends with this call, so say whatever needs saying before it.',
+      '- The host opens a fresh supervisor turn at the next durable graph checkpoint, reading the graph as it is then. Treat that turn as a new reading, not a resumed one.',
+      '- It neither finishes nor closes the graph. Selecting results and closing is UpdateAgentGraph with operation=finish.',
+      '- Fails when the graph is already finished, when no scheduled work is pending, and when nothing in flight could produce another checkpoint. All three mean there is nothing left to wait for: read the results and finish or extend the graph instead.',
+    ].join('\n'),
     parameters: yieldSchema,
     categoryHint: 'subagent',
     recoveryMode: 'replay_safe',

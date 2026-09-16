@@ -17,26 +17,69 @@
  * under the License.
  */
 
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import { z } from 'zod';
 import {
   WEB_SEARCH_DEFAULT_LIMIT,
-  WEB_SEARCH_MAX_LIMIT,
   normalizeWebSearchLimit,
   normalizeWebSearchQuery,
   type WebSearchErrorReason,
   type WebSearchResponse,
 } from '@maka/core/web-search';
+import type { ToolResultOutput } from './model-protocol.js';
+import { toolResultOutput } from './tool-result-output.js';
 import type { MakaTool } from './tool-runtime.js';
 
-const WEB_SEARCH_TOOL_NAME = 'WebSearch';
+const WEB_SEARCH_TOOL_NAME = TOOL_NAMES.webSearch;
 
 interface WebSearchExecutor {
   search(input: {
     readonly query: string;
     readonly limit: number;
+    readonly allowedDomains?: readonly string[];
+    readonly blockedDomains?: readonly string[];
     readonly sessionId: string;
     readonly abortSignal?: AbortSignal;
   }): Promise<WebSearchResponse>;
+}
+
+const domainListSchema = z.array(z.string().trim().min(1).max(253)).max(20).optional();
+
+/**
+ * What the model reads back. The shape follows the reference harness: a
+ * header naming the query, a JSON array of links, and a reminder to cite —
+ * plus each link's snippet, which the reference omits and which saves a
+ * WebFetch when the snippet already answers the question.
+ */
+export function webSearchToolResultToModelOutput(output: unknown): ToolResultOutput {
+  const record = output as { kind?: unknown } | null;
+  if (record && record.kind === 'web_search') {
+    const result = output as {
+      query: string;
+      rows: ReadonlyArray<{ title: string; url: string; snippet: string }>;
+    };
+    const links = result.rows.map((row) => ({
+      title: row.title,
+      url: row.url,
+      ...(row.snippet ? { snippet: row.snippet } : {}),
+    }));
+    return toolResultOutput(
+      [
+        `Web search results for query: "${result.query}"`,
+        '',
+        `Links: ${JSON.stringify(links)}`,
+        '',
+        '',
+        'REMINDER: You MUST include the sources above in your response to the user using markdown hyperlinks.',
+      ].join('\n'),
+      false,
+    );
+  }
+  if (record && record.kind === 'web_search_error') {
+    const failure = output as { reason: string; message: string };
+    return toolResultOutput(`Web search failed (${failure.reason}): ${failure.message}`, true);
+  }
+  return toolResultOutput(output, false);
 }
 
 /** Builds the canonical model tool while leaving policy and transport ownership to its executor. */
@@ -45,28 +88,36 @@ export function buildWebSearchTool(executor: WebSearchExecutor): MakaTool {
     name: WEB_SEARCH_TOOL_NAME,
     categoryHint: 'web_read',
     displayName: 'Web search',
-    description:
-      'Query the live web through the configured search provider. Returns bounded source rows. Use it only when the task requires current external information.',
+    description: [
+      'Search the web. Returns result blocks with titles, URLs and snippets.',
+      '',
+      "- Use it for anything about the present-day world — prices, versions, who holds a role, what is newest — rather than answering from memory; today's date arrives with the turn.",
+      '- `allowed_domains` / `blocked_domains` filter results.',
+      '- After answering from results, end with a "Sources:" list of the URLs you used as markdown links.',
+      '- Read a result page with WebFetch when the snippet is not enough. No results is a normal answer, not an error.',
+    ].join('\n'),
     parameters: z
       .object({
-        query: z.string().min(1).max(200).describe('Search query, max 200 characters.'),
-        limit: z
-          .number()
-          .int()
-          .min(1)
-          .max(WEB_SEARCH_MAX_LIMIT)
-          .optional()
-          .describe(`Maximum result count; defaults to ${WEB_SEARCH_DEFAULT_LIMIT}.`),
+        query: z.string().min(2).max(200).describe('The search query to use'),
+        allowed_domains: domainListSchema.describe(
+          'Only include search results from these domains',
+        ),
+        blocked_domains: domainListSchema.describe(
+          'Never include search results from these domains',
+        ),
       })
       .strict(),
-    impl: async ({ query, limit }, context) => {
+    toModelOutput: ({ output }) => webSearchToolResultToModelOutput(output),
+    impl: async ({ query, allowed_domains, blocked_domains }, context) => {
       const normalizedQuery = normalizeWebSearchQuery(query);
       if (!normalizedQuery) {
         return webSearchError('invalid_query', 'Web search requires a valid query.');
       }
       const response = await executor.search({
         query: normalizedQuery,
-        limit: normalizeWebSearchLimit(limit),
+        limit: normalizeWebSearchLimit(WEB_SEARCH_DEFAULT_LIMIT),
+        ...(allowed_domains?.length ? { allowedDomains: allowed_domains } : {}),
+        ...(blocked_domains?.length ? { blockedDomains: blocked_domains } : {}),
         sessionId: context.sessionId,
         ...(context.abortSignal ? { abortSignal: context.abortSignal } : {}),
       });

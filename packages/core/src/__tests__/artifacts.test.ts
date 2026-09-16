@@ -63,10 +63,21 @@ describe('Artifact source policy', () => {
     for (const source of ARTIFACT_SOURCES) {
       assert.equal(
         canUserDeleteArtifact({ source }),
-        source === 'tool_result' || source === 'user_upload',
+        source === 'tool_result' || source === 'user_upload' || source === 'user_delivery',
         source,
       );
     }
+  });
+
+  test('treats a delivered file as a user-owned, shareable deliverable', () => {
+    const delivery = { source: 'user_delivery' as const };
+
+    assert.equal(isArtifactUserVisible(delivery), true);
+    assert.equal(isArtifactUserVisible({ ...delivery, kind: 'file' }), true);
+    assert.equal(canUserDeleteArtifact(delivery), true);
+    assert.equal(isArtifactSharedSessionReadable(delivery), true);
+    // A delivery is addressed at the user, not at a parent agent's result.
+    assert.equal(isArtifactChildResultOutput(delivery), false);
   });
   test('includes produced outputs in child results without leaking internal artifacts', () => {
     assert.equal(isArtifactChildResultOutput({ source: 'tool_result' }), true);

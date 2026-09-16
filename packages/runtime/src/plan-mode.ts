@@ -19,19 +19,28 @@
 
 import { classifyToolUse } from '@maka/core/permission';
 import type { CollaborationMode } from '@maka/core/collaboration';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 
 import type { MakaTool } from './tool-runtime.js';
 
-const PLAN_CONTROL_TOOLS = new Set(['SubmitPlan', 'update_plan', 'cancel_plan']);
-const PLAN_AUTONOMOUS_WORKFLOW_TOOLS = new Set([
-  'ScheduledTask',
-  'GoalSet',
-  'GoalClear',
-  'GoalStatus',
-  'GoalPause',
-  'GoalResume',
-  'update_agent_graph',
-  'yield_agent_graph',
+const PLAN_CONTROL_TOOLS: ReadonlySet<string> = new Set([
+  TOOL_NAMES.submitPlan,
+  TOOL_NAMES.updatePlan,
+  TOOL_NAMES.cancelPlan,
+]);
+const PLAN_AUTONOMOUS_WORKFLOW_TOOLS: ReadonlySet<string> = new Set([
+  TOOL_NAMES.scheduledTaskCreate,
+  TOOL_NAMES.scheduledTaskUpdate,
+  TOOL_NAMES.scheduledTaskDelete,
+  TOOL_NAMES.scheduledTaskRun,
+  TOOL_NAMES.sendLater,
+  TOOL_NAMES.goalSet,
+  TOOL_NAMES.goalClear,
+  TOOL_NAMES.goalStatus,
+  TOOL_NAMES.goalPause,
+  TOOL_NAMES.goalResume,
+  TOOL_NAMES.updateAgentGraph,
+  TOOL_NAMES.yieldAgentGraph,
 ]);
 
 export function selectCollaborationTools(input: {
@@ -42,7 +51,8 @@ export function selectCollaborationTools(input: {
 }): MakaTool[] {
   if (input.mode === 'plan') {
     return input.tools.filter((tool) => {
-      if (tool.name === 'SubmitPlan' || tool.name === 'AskUserQuestion') return true;
+      if (tool.name === TOOL_NAMES.submitPlan || tool.name === TOOL_NAMES.askUserQuestion)
+        return true;
       if (PLAN_CONTROL_TOOLS.has(tool.name)) return false;
       const category = classifyToolUse({
         toolName: tool.name,
@@ -57,9 +67,9 @@ export function selectCollaborationTools(input: {
   }
 
   return input.tools.filter((tool) => {
-    if (tool.name === 'SubmitPlan') return false;
+    if (tool.name === TOOL_NAMES.submitPlan) return false;
     if (tool.categoryHint === 'subagent' && input.hasActiveExecution) return false;
-    if (tool.name === 'update_plan' || tool.name === 'cancel_plan') {
+    if (tool.name === TOOL_NAMES.updatePlan || tool.name === TOOL_NAMES.cancelPlan) {
       return input.hasActiveExecution;
     }
     return true;

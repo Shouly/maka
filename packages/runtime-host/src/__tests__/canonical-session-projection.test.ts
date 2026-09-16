@@ -744,6 +744,7 @@ function largePendingInteraction(sessionId: string, index: number): StoredIntera
       toolUseId: `tool-${index}`,
       questions: Array.from({ length: 3 }, (_, questionIndex) => ({
         question: `${questionIndex}${'x'.repeat(1023)}`,
+        header: `h${questionIndex}`,
         options: Array.from({ length: 3 }, (_, optionIndex) => ({
           label: `${optionIndex}${'l'.repeat(255)}`,
           description: 'z'.repeat(512),

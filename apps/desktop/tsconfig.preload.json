@@ -5,7 +5,12 @@
     "outDir": "dist-preload-types",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "types": ["node", "electron"]
+    "types": ["node", "electron"],
+    // The bridge contract and the shared IPC declarations are .d.ts files, so
+    // skipLibCheck would hide every error in them — including unbound types
+    // that silently degrade a bridge method to `any`. This program is the one
+    // that reads them all, so it is where they get checked.
+    "skipLibCheck": false
   },
   "include": ["src/preload/preload.ts"]
 }

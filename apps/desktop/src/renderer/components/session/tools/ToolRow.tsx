@@ -38,6 +38,7 @@ import {
   type ToolActivityItem,
 } from '@maka/ui';
 import { Anthropicon } from '../../icons/Anthropicon.js';
+import { isNoteItem } from '../../../lib/tool-delivery-results.js';
 import { ShimmerTitle } from '../../ui/shimmer-title.js';
 import { cn } from '../../../lib/cn.js';
 import { getMcpCatalog } from '../../../lib/ported/mcp-catalog.js';
@@ -49,6 +50,7 @@ import {
   StepLine,
   stepBodyClass,
   stepBodyInteractiveClass,
+  StepDot,
   stepIconColClass,
   stepRowClass,
 } from './tool-result.js';
@@ -110,6 +112,9 @@ export const ToolRow = memo(function ToolRow(props: ToolRowProps) {
   const title = toolRowTitle(item, locale);
   const statusLabel = toolRowStatusLabel(item, locale);
   const expandable = canExpandTool(item);
+  // A note that stayed in the timeline: its row IS the message, so it carries
+  // a dot rather than a tool glyph and never opens.
+  const isNote = isNoteItem(item);
   const mcp = parseMcpToolName(item.toolName);
   const requiresBypass = isRequiresBypassToolResult(item.result);
   const showSandbox = status === 'sandbox_blocked' || requiresBypass;
@@ -125,7 +130,11 @@ export const ToolRow = memo(function ToolRow(props: ToolRowProps) {
         )}
         aria-hidden="true"
       >
-        <Anthropicon name={toolActivityIcon(toolActivityKindOf(item))} size={20} />
+        {isNote ? (
+          <StepDot />
+        ) : (
+          <Anthropicon name={toolActivityIcon(toolActivityKindOf(item))} size={20} />
+        )}
       </div>
       <div className="flex min-w-0 flex-1 items-center gap-1">
         {expandable ? (
@@ -178,7 +187,17 @@ export const ToolRow = memo(function ToolRow(props: ToolRowProps) {
           <div className={stepBodyClass}>
             <span className="flex min-w-0 items-center gap-1.5">
               {mcp && <McpServerMark serverId={mcp.serverId} locale={locale} />}
-              <span className="min-w-0 truncate text-sm leading-5 text-text-muted">{title}</span>
+              <span
+                className={cn(
+                  'min-w-0 truncate text-sm leading-5',
+                  // A note carries the model's own words to the reader, not a
+                  // label for work it did — one step up the ladder from the
+                  // rows around it, which say what ran.
+                  isNote ? 'text-text-secondary' : 'text-text-muted',
+                )}
+              >
+                {title}
+              </span>
             </span>
             {statusLabel && (
               <span className="shrink-0 text-xs leading-4 text-text-muted">{statusLabel}</span>

@@ -219,7 +219,7 @@ test('computer params reject accessors before policy or execution', () => {
   assert.throws(() => snapshotComputerParams(input as never), /must be a plain data property/);
 });
 
-describe('buildComputerUseTools — the `maka_computer` MakaTool', () => {
+describe('buildComputerUseTools — the `Computer` MakaTool', () => {
   test('waits for presentation readiness before dispatch without waiting for finish', async () => {
     const events: string[] = [];
     let ready!: () => void;
@@ -567,7 +567,7 @@ describe('buildComputerUseTools — the `maka_computer` MakaTool', () => {
     const result = (await tool.impl({ action: 'wait' } as never, ctx())) as {
       text: string;
     };
-    assert.match(result.text, /computer\.wait ok/);
+    assert.match(result.text, /Computer\.wait ok/);
     await new Promise((resolve) => setImmediate(resolve));
   });
 
@@ -1530,8 +1530,8 @@ describe('buildComputerUseTools — the `maka_computer` MakaTool', () => {
       ctx(),
     )) as { text: string };
 
-    assert.match(result.text, /computer\.set_value ok via ax/);
-    assert.doesNotMatch(result.text, /computer\.type/);
+    assert.match(result.text, /Computer\.set_value ok via ax/);
+    assert.doesNotMatch(result.text, /Computer\.type/);
   });
 
   test('semantic recovery keeps the action name when fresh observation is unavailable', async () => {
@@ -1577,8 +1577,8 @@ describe('buildComputerUseTools — the `maka_computer` MakaTool', () => {
       )) as { text: string; error?: string };
 
       assert.equal(result.error, 'outcome_unknown');
-      assert.match(result.text, /computer\.set_value failed: outcome_unknown/);
-      assert.doesNotMatch(result.text, /computer\.type/);
+      assert.match(result.text, /Computer\.set_value failed: outcome_unknown/);
+      assert.doesNotMatch(result.text, /Computer\.type/);
     }
   });
 
@@ -2555,7 +2555,7 @@ describe('buildComputerUseTools — the `maka_computer` MakaTool', () => {
       } as never,
       ctx(),
     )) as { text: string };
-    assert.match(followUp.text, /computer\.click_element ok/);
+    assert.match(followUp.text, /Computer\.click_element ok/);
   });
 
   test('S17: surfaces the typed backend failure code without leaking raw driver text', async () => {

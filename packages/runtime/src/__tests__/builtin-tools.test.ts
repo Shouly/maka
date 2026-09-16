@@ -395,7 +395,7 @@ describe('builtin Bash streaming output', () => {
     assert.strictEqual(
       parameters.safeParse({
         command: 'sleep 60',
-        timeout_ms: 600_001,
+        timeout: 600_001,
         boundary_intent: 'current',
       }).success,
       false,
@@ -403,7 +403,7 @@ describe('builtin Bash streaming output', () => {
     assert.strictEqual(
       parameters.safeParse({
         command: 'sleep 60',
-        timeout_ms: 600_001,
+        timeout: 600_001,
         run_in_background: true,
         boundary_intent: 'current',
       }).success,
@@ -546,11 +546,11 @@ describe('builtin Bash streaming output', () => {
     const names = tools.map((tool) => tool.name);
 
     assert.strictEqual(names.filter((name) => name === 'Bash').length, 1);
-    assert.strictEqual(names.includes('StopBackgroundTask'), false);
+    assert.strictEqual(names.includes('TaskStop'), false);
     const bash = tools.find((tool) => tool.name === 'Bash');
     if (!bash) throw new Error('Bash tool missing');
     const result = await bash.impl(
-      { command: 'sleep 60', timeout_ms: 2_000, run_in_background: true, pty: true },
+      { command: 'sleep 60', timeout: 2_000, run_in_background: true, pty: true },
       {
         sessionId: 'session-1',
         runId: 'run-1',
@@ -1538,11 +1538,11 @@ describe('builtin Bash streaming output', () => {
     assert.strictEqual(providerSchema.allOf, undefined);
     assert.deepStrictEqual(
       Object.keys(providerSchema.properties as Record<string, unknown>).sort(),
-      ['limit', 'offset', 'path', 'ref'],
+      ['file_path', 'limit', 'offset', 'ref'],
     );
     // The strict file-vs-ref union remains the authoritative runtime validator.
     assert.strictEqual(
-      (await parameters.validate({ path: 'README.md', offset: 2, limit: 10 })).success,
+      (await parameters.validate({ file_path: 'README.md', offset: 2, limit: 10 })).success,
       true,
     );
     assert.strictEqual(
@@ -1562,7 +1562,7 @@ describe('builtin Bash streaming output', () => {
     assert.strictEqual(
       (
         await parameters.validate({
-          path: 'README.md',
+          file_path: 'README.md',
           ref: 'maka://runtime/background-tasks/shell-run-1',
         })
       ).success,
@@ -1578,7 +1578,7 @@ describe('builtin Bash streaming output', () => {
       emitOutput: () => {},
     };
     await assert.rejects(
-      async () => read.impl({ path: 'maka://runtime/background-tasks/shell-run-1' }, context),
+      async () => read.impl({ file_path: 'maka://runtime/background-tasks/shell-run-1' }, context),
       /must be read with the ref parameter/,
     );
     const result = await read.impl({ ref: 'maka://runtime/background-tasks/shell-run-1' }, context);
@@ -1656,16 +1656,19 @@ describe('builtin Bash streaming output', () => {
     // A blank ref alongside a path passes, and the ref key is dropped so the
     // canonical input is the pure file variant.
     const normalized = await parameters.validate({
-      path: 'config.yaml',
+      file_path: 'config.yaml',
       ref: '',
       offset: 2,
     });
     assert.equal(normalized.success, true);
     if (normalized.success) {
-      assert.deepEqual(normalized.value, { path: 'config.yaml', offset: 2 });
+      assert.deepEqual(normalized.value, { file_path: 'config.yaml', offset: 2 });
       assert.ok(!('ref' in (normalized.value as Record<string, unknown>)));
     }
-    assert.equal((await parameters.validate({ path: 'config.yaml', ref: '   ' })).success, true);
+    assert.equal(
+      (await parameters.validate({ file_path: 'config.yaml', ref: '   ' })).success,
+      true,
+    );
     // A lone blank ref still fails: there is no readable target.
     assert.equal((await parameters.validate({ ref: '' })).success, false);
     assert.equal((await parameters.validate({ ref: '   ' })).success, false);
@@ -1687,7 +1690,7 @@ describe('builtin Bash streaming output', () => {
     const ref = 'maka://runtime/background-tasks/shell-run-1';
 
     const normalized = await parameters.validate({
-      path: '',
+      file_path: '',
       offset: 0,
       limit: 1,
       ref,
@@ -1698,7 +1701,7 @@ describe('builtin Bash streaming output', () => {
     assert.equal(
       (
         await parameters.validate({
-          path: 'README.md',
+          file_path: 'README.md',
           offset: 0,
           limit: 1,
           ref,
@@ -1708,7 +1711,7 @@ describe('builtin Bash streaming output', () => {
     );
   });
 
-  test('StopBackgroundTask stops a runtime ref in the current session', async () => {
+  test('TaskStop stops a runtime ref in the current session', async () => {
     const calls: unknown[] = [];
     const backgroundTasks = {
       async stopBackgroundTask(sessionId: string, ref: string, abortSignal: AbortSignal) {
@@ -1738,10 +1741,8 @@ describe('builtin Bash streaming output', () => {
         };
       },
     } satisfies BackgroundTaskStopper;
-    const stop = buildBuiltinTools({ backgroundTasks }).find(
-      (tool) => tool.name === 'StopBackgroundTask',
-    );
-    if (!stop) throw new Error('StopBackgroundTask tool missing');
+    const stop = buildBuiltinTools({ backgroundTasks }).find((tool) => tool.name === 'TaskStop');
+    if (!stop) throw new Error('TaskStop tool missing');
 
     const result = await stop.impl(
       { ref: 'maka://runtime/background-tasks/shell-run-1' },
@@ -1769,12 +1770,12 @@ describe('builtin Bash streaming output', () => {
     ]);
   });
 
-  test('WriteStdin exposes a provider-tolerant terminal action schema', async () => {
+  test('TaskInput exposes a provider-tolerant terminal action schema', async () => {
     const ptyControls = {
       writeStdin: () => Promise.reject(new Error('not used')),
     } satisfies PtyControlWriter;
-    const write = buildBuiltinTools({ ptyControls }).find((tool) => tool.name === 'WriteStdin');
-    if (!write) throw new Error('WriteStdin tool missing');
+    const write = buildBuiltinTools({ ptyControls }).find((tool) => tool.name === 'TaskInput');
+    if (!write) throw new Error('TaskInput tool missing');
     const parameters = write.parameters as {
       jsonSchema: PromiseLike<{
         properties?: { ref?: { maxLength?: number }; input?: unknown };
@@ -1913,7 +1914,7 @@ describe('builtin Bash streaming output', () => {
     let err: { code?: number; stdout?: string; stderr?: string } | null = null;
     try {
       await bash.impl(
-        { command: 'fail', timeout_ms: 5_000 },
+        { command: 'fail', timeout: 5_000 },
         {
           sessionId: 'session-1',
           turnId: 'turn-1',
@@ -1941,7 +1942,7 @@ describe('builtin Bash streaming output', () => {
     const result = await bash.impl(
       {
         command: 'printf "out"; printf "err" >&2',
-        timeout_ms: 5_000,
+        timeout: 5_000,
       },
       {
         sessionId: 'session-1',
@@ -1987,7 +1988,7 @@ describe('builtin Bash streaming output', () => {
     const run = bash.impl(
       {
         command: 'printf "started"; sleep 5',
-        timeout_ms: 10_000,
+        timeout: 10_000,
       },
       {
         sessionId: 'session-1',
@@ -2014,7 +2015,7 @@ describe('builtin Bash streaming output', () => {
     if (!bash) throw new Error('Bash tool missing');
 
     const result = (await bash.impl(
-      { command: 'awk \'BEGIN{for(i=1;i<=5000;i++)print "line"i}\'', timeout_ms: 10_000 },
+      { command: 'awk \'BEGIN{for(i=1;i<=5000;i++)print "line"i}\'', timeout: 10_000 },
       {
         sessionId: 'session-1',
         turnId: 'turn-1',
@@ -2038,7 +2039,7 @@ describe('builtin Bash streaming output', () => {
     if (!bash) throw new Error('Bash tool missing');
 
     const result = (await bash.impl(
-      { command: 'perl -e \'print "x" x 2000000\'', timeout_ms: 10_000 },
+      { command: 'perl -e \'print "x" x 2000000\'', timeout: 10_000 },
       {
         sessionId: 'session-1',
         turnId: 'turn-1',
@@ -2061,7 +2062,7 @@ describe('builtin Bash streaming output', () => {
     let err: { code?: number; stdout?: string; stderr?: string } | null = null;
     try {
       await bash.impl(
-        { command: 'printf "out-data"; printf "err-data" >&2; exit 3', timeout_ms: 5_000 },
+        { command: 'printf "out-data"; printf "err-data" >&2; exit 3', timeout: 5_000 },
         {
           sessionId: 'session-1',
           turnId: 'turn-1',
@@ -2088,7 +2089,7 @@ describe('builtin Bash streaming output', () => {
     let err: { code?: number; stdout?: string; stderr?: string } | null = null;
     try {
       await bash.impl(
-        { command: 'printf "out-before"; printf "err-before" >&2; sleep 5', timeout_ms: 200 },
+        { command: 'printf "out-before"; printf "err-before" >&2; sleep 5', timeout: 200 },
         {
           sessionId: 'session-1',
           turnId: 'turn-1',
@@ -2132,7 +2133,7 @@ describe('builtin Bash sandbox denial classification', () => {
       let err: unknown = null;
       try {
         await bash.impl(
-          { command: 'rm -rf /', timeout_ms: 5_000 },
+          { command: 'rm -rf /', timeout: 5_000 },
           {
             sessionId: 'session-1',
             turnId: 'turn-1',
@@ -2164,7 +2165,7 @@ describe('builtin read tools path containment', () => {
     if (!readWithoutSnapshots) throw new Error('Read tool missing');
 
     await expectRejects(
-      runTool(readWithoutSnapshots, { path: 'notes.txt' }, root),
+      runTool(readWithoutSnapshots, { file_path: 'notes.txt' }, root),
       /snapshots are not available/,
     );
   });
@@ -2177,22 +2178,22 @@ describe('builtin read tools path containment', () => {
     await symlink(join(outside, 'secret.txt'), join(root, 'secret-link.txt'));
     const read = tool('Read');
 
-    const absoluteResult = await runTool(read, { path: join(root, 'inside.txt') }, root);
+    const absoluteResult = await runTool(read, { file_path: join(root, 'inside.txt') }, root);
     assert.partialDeepStrictEqual(absoluteResult, { content: 'inside' });
     await expectRejects(
-      runTool(read, { path: join(outside, 'secret.txt') }, root),
+      runTool(read, { file_path: join(outside, 'secret.txt') }, root),
       /Read path must stay inside/,
     );
     await expectRejects(
-      runTool(read, { path: '../outside.txt' }, root),
+      runTool(read, { file_path: '../outside.txt' }, root),
       /Read path must stay inside/,
     );
     await expectRejects(
-      runTool(read, { path: 'secret-link.txt' }, root),
+      runTool(read, { file_path: 'secret-link.txt' }, root),
       /Read path must stay inside/,
     );
 
-    const result = await runTool(read, { path: 'inside.txt' }, root);
+    const result = await runTool(read, { file_path: 'inside.txt' }, root);
     assert.partialDeepStrictEqual(result, { content: 'inside' });
   });
 
@@ -2210,12 +2211,12 @@ describe('builtin read tools path containment', () => {
       /Glob pattern must stay inside/,
     );
     await expectRejects(
-      runTool(glob, { pattern: '*.txt', cwd: 'outside-link' }, root),
-      /Glob cwd path must stay inside/,
+      runTool(glob, { pattern: '*.txt', path: 'outside-link' }, root),
+      /Glob path must stay inside/,
     );
     await expectRejects(
-      runTool(glob, { pattern: '*.txt', cwd: outside }, root),
-      /Glob cwd path must stay inside/,
+      runTool(glob, { pattern: '*.txt', path: outside }, root),
+      /Glob path must stay inside/,
     );
     await expectRejects(
       runTool(grep, { pattern: 'token', path: outside }, root),
@@ -2226,10 +2227,15 @@ describe('builtin read tools path containment', () => {
       /Grep path must stay inside/,
     );
 
+    const canonicalRoot = await realpath(root);
     const globResult = await runTool(glob, { pattern: '**/*.ts' }, root);
-    assert.deepStrictEqual((globResult as { files: string[] }).files, ['src/main.ts']);
-    const absoluteGlobResult = await runTool(glob, { pattern: '**/*.ts', cwd: root }, root);
-    assert.deepStrictEqual((absoluteGlobResult as { files: string[] }).files, ['src/main.ts']);
+    assert.deepStrictEqual((globResult as { files: string[] }).files, [
+      join(canonicalRoot, 'src', 'main.ts'),
+    ]);
+    const absoluteGlobResult = await runTool(glob, { pattern: '**/*.ts', path: root }, root);
+    assert.deepStrictEqual((absoluteGlobResult as { files: string[] }).files, [
+      join(canonicalRoot, 'src', 'main.ts'),
+    ]);
     const grepResult = await runTool(grep, { pattern: 'token', path: 'src' }, root);
     assert.strictEqual(JSON.stringify(grepResult).includes('main.ts'), true);
     const absoluteGrepResult = await runTool(
@@ -2248,6 +2254,11 @@ describe('builtin write tools path containment', () => {
       executor: fakeExecutor({
         writeLockKey: async ({ cwd, path }) => ({ key: JSON.stringify([cwd, path]) }),
         resolveWritablePath: async ({ cwd, path }) => ({ path: `${cwd}/${path}` }),
+        // The remote workspace has no such file yet, so this is a create and
+        // the read-before-overwrite guard does not apply.
+        readFile: async () => {
+          throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+        },
         writeFile: async ({ cwd, path, content }) => {
           writes.push({ cwd, path, content });
           return { ok: true, path, bytes: Buffer.byteLength(content, 'utf8') };
@@ -2258,7 +2269,7 @@ describe('builtin write tools path containment', () => {
 
     const result = await runTool(
       write,
-      { path: 'created.txt', content: 'from-executor' },
+      { file_path: 'created.txt', content: 'from-executor' },
       '/workspace',
     );
 
@@ -2283,7 +2294,7 @@ describe('builtin write tools path containment', () => {
     if (!edit) throw new Error('Edit tool missing');
 
     await expectRejects(
-      runTool(edit, { path: 'image.png', old_string: 'x', new_string: 'y' }, root),
+      runTool(edit, { file_path: 'image.png', old_string: 'x', new_string: 'y' }, root),
       /Edit does not support image files/,
     );
   });
@@ -2296,22 +2307,22 @@ describe('builtin write tools path containment', () => {
     const write = tool('Write');
 
     const absoluteWritePath = join(root, 'src', 'absolute.txt');
-    await runTool(write, { path: absoluteWritePath, content: 'absolute-inside' }, root);
+    await runTool(write, { file_path: absoluteWritePath, content: 'absolute-inside' }, root);
     assert.strictEqual(await readFile(absoluteWritePath, 'utf8'), 'absolute-inside');
     await expectRejects(
-      runTool(write, { path: join(outside, 'outside.txt'), content: 'x' }, root),
+      runTool(write, { file_path: join(outside, 'outside.txt'), content: 'x' }, root),
       /Write path must stay inside/,
     );
     await expectRejects(
-      runTool(write, { path: '../outside.txt', content: 'x' }, root),
+      runTool(write, { file_path: '../outside.txt', content: 'x' }, root),
       /Write path must stay inside/,
     );
     await expectRejects(
-      runTool(write, { path: 'outside-link/new.txt', content: 'x' }, root),
+      runTool(write, { file_path: 'outside-link/new.txt', content: 'x' }, root),
       /Write path must stay inside/,
     );
 
-    await runTool(write, { path: 'src/new.txt', content: 'inside' }, root);
+    await runTool(write, { file_path: 'src/new.txt', content: 'inside' }, root);
     assert.strictEqual(await readFile(join(root, 'src', 'new.txt'), 'utf8'), 'inside');
   });
 
@@ -2321,28 +2332,34 @@ describe('builtin write tools path containment', () => {
     await writeFile(join(root, 'inside.txt'), 'hello world', 'utf8');
     await writeFile(join(outside, 'secret.txt'), 'secret', 'utf8');
     await symlink(join(outside, 'secret.txt'), join(root, 'secret-link.txt'));
-    const edit = tool('Edit');
+    // The read-before-edit guard runs after the path is resolved, so an escape
+    // is still reported as an escape rather than as an unread file.
+    const edit = await sightedEditTool('inside.txt', root);
 
     await expectRejects(
       runTool(
         edit,
-        { path: join(outside, 'secret.txt'), old_string: 'secret', new_string: 'edited' },
+        { file_path: join(outside, 'secret.txt'), old_string: 'secret', new_string: 'edited' },
         root,
       ),
       /Edit path must stay inside/,
     );
     await expectRejects(
-      runTool(edit, { path: '../outside.txt', old_string: 'x', new_string: 'y' }, root),
+      runTool(edit, { file_path: '../outside.txt', old_string: 'x', new_string: 'y' }, root),
       /Edit path must stay inside/,
     );
     await expectRejects(
-      runTool(edit, { path: 'secret-link.txt', old_string: 'secret', new_string: 'edited' }, root),
+      runTool(
+        edit,
+        { file_path: 'secret-link.txt', old_string: 'secret', new_string: 'edited' },
+        root,
+      ),
       /Edit path must stay inside/,
     );
 
     await runTool(
       edit,
-      { path: join(root, 'inside.txt'), old_string: 'world', new_string: 'Maka' },
+      { file_path: join(root, 'inside.txt'), old_string: 'world', new_string: 'Maka' },
       root,
     );
     assert.strictEqual(await readFile(join(root, 'inside.txt'), 'utf8'), 'hello Maka');
@@ -2356,8 +2373,8 @@ describe('builtin write tools path containment', () => {
     await writeFile(join(root, 'large.ts'), `${content}\n`, 'utf8');
 
     const result = await runTool(
-      tool('Edit'),
-      { path: 'large.ts', old_string: 'const v500 = 500;', new_string: 'const v500 = -1;' },
+      await sightedEditTool('large.ts', root),
+      { file_path: 'large.ts', old_string: 'const v500 = 500;', new_string: 'const v500 = -1;' },
       root,
     );
 
@@ -2383,53 +2400,56 @@ describe('builtin write tools path containment', () => {
     const cwd = join(base, 'link-to-workspace');
     await symlink(workspace, cwd);
 
-    const read = tool('Read');
-    const write = tool('Write');
-    const edit = tool('Edit');
-    const glob = tool('Glob');
-    const grep = tool('Grep');
+    const built = toolset();
+    const read = built.Read!;
+    const write = built.Write!;
+    const edit = built.Edit!;
+    const glob = built.Glob!;
+    const grep = built.Grep!;
 
     assert.partialDeepStrictEqual(
-      await runTool(read, { path: join(cwd, 'src', 'inside.txt') }, cwd),
+      await runTool(read, { file_path: join(cwd, 'src', 'inside.txt') }, cwd),
       {
         content: 'inside token\n',
       },
     );
-    await runTool(write, { path: join(cwd, 'src', 'written.txt'), content: 'written\n' }, cwd);
+    await runTool(write, { file_path: join(cwd, 'src', 'written.txt'), content: 'written\n' }, cwd);
     assert.strictEqual(await readFile(join(workspace, 'src', 'written.txt'), 'utf8'), 'written\n');
     await runTool(
       edit,
-      { path: join(cwd, 'src', 'inside.txt'), old_string: 'token', new_string: 'edited' },
+      { file_path: join(cwd, 'src', 'inside.txt'), old_string: 'token', new_string: 'edited' },
       cwd,
     );
     assert.strictEqual(
       await readFile(join(workspace, 'src', 'inside.txt'), 'utf8'),
       'inside edited\n',
     );
-    const scopedGlobResult = await runTool(glob, { pattern: '*.txt', cwd: join(cwd, 'src') }, cwd);
-    assert.deepStrictEqual((scopedGlobResult as { files: string[] }).files, [
-      'inside.txt',
-      'written.txt',
-    ]);
+    const scopedGlobResult = await runTool(glob, { pattern: '*.txt', path: join(cwd, 'src') }, cwd);
+    // Absolute paths, most recently modified last; the two files were touched
+    // microseconds apart, so only the membership is deterministic here.
+    assert.deepStrictEqual(
+      [...(scopedGlobResult as { files: string[] }).files].sort(),
+      [join(workspace, 'src', 'inside.txt'), join(workspace, 'src', 'written.txt')].sort(),
+    );
     const grepResult = await runTool(grep, { pattern: 'edited', path: join(cwd, 'src') }, cwd);
     assert.strictEqual(JSON.stringify(grepResult).includes('inside.txt'), true);
 
     // Resolving into the canonical space must not turn "follow a symlink out of
     // the workspace" into a legal path.
     await expectRejects(
-      runTool(read, { path: join(outside, 'secret.txt') }, cwd),
+      runTool(read, { file_path: join(outside, 'secret.txt') }, cwd),
       /Read path must stay inside/,
     );
     await expectRejects(
-      runTool(read, { path: join(cwd, 'escape.txt') }, cwd),
+      runTool(read, { file_path: join(cwd, 'escape.txt') }, cwd),
       /Read path must stay inside/,
     );
     await expectRejects(
-      runTool(write, { path: join(cwd, 'escape.txt'), content: 'x' }, cwd),
+      runTool(write, { file_path: join(cwd, 'escape.txt'), content: 'x' }, cwd),
       /Write path must stay inside/,
     );
     await expectRejects(
-      runTool(write, { path: join(cwd, 'outside-link', 'new.txt'), content: 'x' }, cwd),
+      runTool(write, { file_path: join(cwd, 'outside-link', 'new.txt'), content: 'x' }, cwd),
       /Write path must stay inside/,
     );
     // A link whose target does not exist yet cannot be realpath'd, but a write
@@ -2437,7 +2457,7 @@ describe('builtin write tools path containment', () => {
     // hand rather than treated as a plain missing leaf.
     await symlink(join(outside, 'not-yet.txt'), join(workspace, 'dangling-escape.txt'));
     await expectRejects(
-      runTool(write, { path: join(cwd, 'dangling-escape.txt'), content: 'x' }, cwd),
+      runTool(write, { file_path: join(cwd, 'dangling-escape.txt'), content: 'x' }, cwd),
       /Write path must stay inside/,
     );
     await expectRejects(access(join(outside, 'not-yet.txt')), /ENOENT|no such file/);
@@ -2446,8 +2466,8 @@ describe('builtin write tools path containment', () => {
       /Grep path must stay inside/,
     );
     await expectRejects(
-      runTool(glob, { pattern: '*.txt', cwd: join(cwd, 'outside-link') }, cwd),
-      /Glob cwd path must stay inside/,
+      runTool(glob, { pattern: '*.txt', path: join(cwd, 'outside-link') }, cwd),
+      /Glob path must stay inside/,
     );
   });
 
@@ -2456,7 +2476,7 @@ describe('builtin write tools path containment', () => {
     const n = 20;
     const markers = Array.from({ length: n }, (_, i) => `marker-${String(i).padStart(2, '0')}`);
     await writeFile(join(root, 'data.txt'), `${markers.join('\n')}\n`, 'utf8');
-    const edit = tool('Edit');
+    const edit = await sightedEditTool('data.txt', root);
     // Each Edit is a read-modify-write (fs.readFile -> replace -> fs.writeFile).
     // Fired concurrently without the per-path lock, the writes clobber each other
     // and most edits are lost; the lock serializes them so every one lands.
@@ -2464,7 +2484,11 @@ describe('builtin write tools path containment', () => {
       markers.map((m, i) =>
         runTool(
           edit,
-          { path: 'data.txt', old_string: m, new_string: `done-${String(i).padStart(2, '0')}` },
+          {
+            file_path: 'data.txt',
+            old_string: m,
+            new_string: `done-${String(i).padStart(2, '0')}`,
+          },
           root,
         ),
       ),
@@ -2482,7 +2506,7 @@ describe('builtin write tools path containment', () => {
     const n = 20;
     const markers = Array.from({ length: n }, (_, i) => `marker-${String(i).padStart(2, '0')}`);
     await writeFile(join(root, 'data.txt'), `${markers.join('\n')}\n`, 'utf8');
-    const edit = tool('Edit');
+    const edit = await sightedEditTool('data.txt', root);
     // Alternate the spelling of the same file. The key resolves both spellings to
     // one absolute path, so all edits share a lock; without that collapse the two
     // groups would run concurrently and clobber each other.
@@ -2491,7 +2515,7 @@ describe('builtin write tools path containment', () => {
         runTool(
           edit,
           {
-            path: i % 2 === 0 ? 'data.txt' : './data.txt',
+            file_path: i % 2 === 0 ? 'data.txt' : './data.txt',
             old_string: m,
             new_string: `done-${String(i).padStart(2, '0')}`,
           },
@@ -2516,7 +2540,7 @@ describe('builtin write tools path containment', () => {
     const n = 20;
     const markers = Array.from({ length: n }, (_, i) => `marker-${String(i).padStart(2, '0')}`);
     await writeFile(join(workspace, 'data.txt'), `${markers.join('\n')}\n`, 'utf8');
-    const edit = tool('Edit');
+    const edit = await sightedEditTool('data.txt', cwd);
     // The relative spelling resolves against the canonical cwd while the absolute
     // one is spelled through the link. Unless the lock key canonicalises both, the
     // two groups take different locks and clobber each other.
@@ -2525,7 +2549,7 @@ describe('builtin write tools path containment', () => {
         runTool(
           edit,
           {
-            path: i % 2 === 0 ? 'data.txt' : join(cwd, 'data.txt'),
+            file_path: i % 2 === 0 ? 'data.txt' : join(cwd, 'data.txt'),
             old_string: m,
             new_string: `done-${String(i).padStart(2, '0')}`,
           },
@@ -2543,92 +2567,29 @@ describe('builtin write tools path containment', () => {
 
   test('Write then Edit on one file resolves inside the lock — the fresh file is found', async () => {
     const root = await mkdtemp(join(tmpdir(), 'maka-write-edit-'));
-    const write = tool('Write');
-    const edit = tool('Edit');
+    const built = toolset();
+    const write = built.Write!;
+    const edit = built.Edit!;
     // Edit now resolves its target inside the lock (containment + existence check
     // moved in). This guards that flow: a Write creates a brand-new file, then an
     // Edit on the same path still resolves and rewrites it.
-    await runTool(write, { path: 'fresh.txt', content: 'hello world\n' }, root);
-    await runTool(edit, { path: 'fresh.txt', old_string: 'world', new_string: 'Maka' }, root);
+    await runTool(write, { file_path: 'fresh.txt', content: 'hello world\n' }, root);
+    await runTool(edit, { file_path: 'fresh.txt', old_string: 'world', new_string: 'Maka' }, root);
     assert.strictEqual(await readFile(join(root, 'fresh.txt'), 'utf8'), 'hello Maka\n');
   });
 
   test('a failing Edit releases the lock for the next op on the same file', async () => {
     const root = await mkdtemp(join(tmpdir(), 'maka-edit-wedge-'));
     await writeFile(join(root, 'data.txt'), 'hello world\n', 'utf8');
-    const edit = tool('Edit');
+    const edit = await sightedEditTool('data.txt', root);
     // An Edit whose old_string is absent rejects; the lock must not wedge, so the
     // next Edit on the same file still runs.
     await expectRejects(
-      runTool(edit, { path: 'data.txt', old_string: 'absent', new_string: 'x' }, root),
+      runTool(edit, { file_path: 'data.txt', old_string: 'absent', new_string: 'x' }, root),
       /./,
     );
-    await runTool(edit, { path: 'data.txt', old_string: 'world', new_string: 'Maka' }, root);
+    await runTool(edit, { file_path: 'data.txt', old_string: 'world', new_string: 'Maka' }, root);
     assert.strictEqual(await readFile(join(root, 'data.txt'), 'utf8'), 'hello Maka\n');
-  });
-});
-
-describe('builtin FormatJson (file in place)', () => {
-  async function writeInput(root: string, name: string, content: string): Promise<string> {
-    const path = join(root, name);
-    await writeFile(path, content, 'utf8');
-    return name;
-  }
-
-  async function runFormatJson(args: { path: string; sort_keys?: boolean }, root: string) {
-    const t = tool('FormatJson');
-    return (await runTool(t, args, root)) as {
-      ok: boolean;
-      path: string;
-      valid: boolean;
-      error?: string;
-      bytesBefore: number;
-      bytesAfter?: number;
-      byteDelta: number;
-      changed: boolean;
-    };
-  }
-
-  test('rejects image results from the workspace executor', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'maka-formatjson-image-'));
-    const formatJson = buildBuiltinTools({
-      executor: fakeExecutor({
-        readFile: async () => ({ bytes: new Uint8Array([1]), mimeType: 'image/png' }),
-      }),
-    }).find((candidate) => candidate.name === 'FormatJson');
-    if (!formatJson) throw new Error('FormatJson tool missing');
-
-    await expectRejects(
-      runTool(formatJson, { path: 'image.png' }, root),
-      /FormatJson does not support image files/,
-    );
-  });
-
-  test('sort_keys: true preserves __proto__ as a data property', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'maka-formatjson-'));
-    const name = await writeInput(root, 'data.json', '{"__proto__":{"polluted":true},"a":1}');
-
-    await runFormatJson({ path: name, sort_keys: true }, root);
-
-    const parsed = JSON.parse(await readFile(join(root, name), 'utf8')) as Record<string, unknown>;
-    assert.strictEqual(Object.prototype.hasOwnProperty.call(parsed, '__proto__'), true);
-    assert.deepStrictEqual(parsed['__proto__'], { polluted: true });
-    assert.strictEqual(parsed.a, 1);
-  });
-
-  test('invalid JSON returns a structured error diagnostic (no write, byteDelta 0)', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'maka-formatjson-'));
-    const name = await writeInput(root, 'data.json', 'not json');
-
-    const result = await runFormatJson({ path: name }, root);
-
-    assert.strictEqual(result.ok, false);
-    assert.strictEqual(result.valid, false);
-    assert.match(String(result.error), /FormatJson: invalid JSON/);
-    assert.strictEqual(result.byteDelta, 0);
-    assert.strictEqual(result.changed, false);
-    // File is left untouched on invalid input.
-    assert.strictEqual(await readFile(join(root, name), 'utf8'), 'not json');
   });
 });
 
@@ -2751,6 +2712,25 @@ function tool(name: string) {
   return found;
 }
 
+/**
+ * One toolset, indexed by name.
+ *
+ * The session's file-sight ledger lives on the toolset, so a test that has to
+ * satisfy Write's read-before-overwrite or Edit's read-before-edit guard must
+ * take both tools from the same build — two `tool()` calls are two sessions as
+ * far as those guards are concerned.
+ */
+function toolset(): Record<string, ReturnType<typeof buildBuiltinTools>[number]> {
+  return Object.fromEntries(buildBuiltinTools().map((candidate) => [candidate.name, candidate]));
+}
+
+/** Edit, with `readPath` already read through the same toolset. */
+async function sightedEditTool(readPath: string, cwd: string) {
+  const built = toolset();
+  await runTool(built.Read!, { file_path: readPath }, cwd);
+  return built.Edit!;
+}
+
 function runTool(
   tool: ReturnType<typeof buildBuiltinTools>[number],
   args: unknown,
@@ -2809,3 +2789,262 @@ function unavailableLinuxManager(): SandboxManager {
     }),
   ]);
 }
+
+describe('builtin file tools speak the reference argument names', () => {
+  function modelText(
+    tool: ReturnType<typeof buildBuiltinTools>[number],
+    input: unknown,
+    output: unknown,
+  ): string {
+    const projected = tool.toModelOutput?.({ toolCallId: 'tool-1', input, output });
+    assert.ok(projected, 'tool declined to project this result');
+    assert.strictEqual(projected.type, 'text');
+    return (projected as { value: string }).value;
+  }
+
+  test('Read answers in cat -n format and numbers from the requested offset', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'maka-read-catn-'));
+    await writeFile(join(root, 'lines.txt'), 'alpha\nbeta\ngamma\n', 'utf8');
+    const read = tool('Read');
+
+    const whole = await runTool(read, { file_path: 'lines.txt' }, root);
+    assert.deepStrictEqual(whole, { content: 'alpha\nbeta\ngamma\n' });
+    assert.strictEqual(
+      modelText(read, { file_path: 'lines.txt' }, whole),
+      '1\talpha\n2\tbeta\n3\tgamma',
+    );
+
+    const windowed = await runTool(read, { file_path: 'lines.txt', offset: 1, limit: 2 }, root);
+    assert.strictEqual(
+      modelText(read, { file_path: 'lines.txt', offset: 1, limit: 2 }, windowed),
+      '2\tbeta\n3\tgamma',
+    );
+  });
+
+  test('Read caps an unbounded read at the default line window', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'maka-read-default-limit-'));
+    const lines = Array.from({ length: 2_100 }, (_, index) => `line ${index + 1}`);
+    await writeFile(join(root, 'big.txt'), `${lines.join('\n')}\n`, 'utf8');
+
+    const result = (await runTool(tool('Read'), { file_path: 'big.txt' }, root)) as {
+      content: string;
+    };
+
+    assert.strictEqual(result.content.split('\n').length, 2_000);
+    assert.strictEqual(result.content.startsWith('line 1\n'), true);
+    assert.strictEqual(result.content.endsWith('line 2000'), true);
+  });
+
+  test('Read names a directory, a missing file and an empty file', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'maka-read-failures-'));
+    await mkdir(join(root, 'folder'), { recursive: true });
+    await writeFile(join(root, 'empty.txt'), '', 'utf8');
+    const read = tool('Read');
+
+    await expectRejects(
+      runTool(read, { file_path: 'folder' }, root),
+      /EISDIR: illegal operation on a directory, read '.*folder'/,
+    );
+    await expectRejects(
+      runTool(read, { file_path: 'absent.txt' }, root),
+      /ENOENT: no such file or directory, read 'absent.txt'/,
+    );
+    const empty = await runTool(read, { file_path: 'empty.txt' }, root);
+    assert.deepStrictEqual(empty, { content: '' });
+    assert.match(
+      modelText(read, { file_path: 'empty.txt' }, empty),
+      /file exists but its contents are empty/,
+    );
+  });
+
+  test('Write reports a created file and an updated one', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'maka-write-messages-'));
+    const built = toolset();
+    const write = built.Write!;
+
+    const created = await runTool(write, { file_path: 'notes.txt', content: 'first\n' }, root);
+    assert.match(
+      modelText(write, { file_path: 'notes.txt' }, created),
+      /^File created successfully at: .*notes\.txt \(file state is current in your context/,
+    );
+
+    const updated = await runTool(write, { file_path: 'notes.txt', content: 'second\n' }, root);
+    assert.match(
+      modelText(write, { file_path: 'notes.txt' }, updated),
+      /^File updated successfully at: .*notes\.txt \(file state is current in your context/,
+    );
+  });
+
+  test('Edit refuses a file the session has not read, and reports success once it has', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'maka-edit-guard-'));
+    await writeFile(join(root, 'data.txt'), 'hello world\n', 'utf8');
+
+    await expectRejects(
+      runTool(
+        tool('Edit'),
+        { file_path: 'data.txt', old_string: 'world', new_string: 'Maka' },
+        root,
+      ),
+      /^Refusing to edit .*data\.txt: it has not been read in this session\. Read it first, then edit\.$/,
+    );
+    assert.strictEqual(await readFile(join(root, 'data.txt'), 'utf8'), 'hello world\n');
+
+    const edit = await sightedEditTool('data.txt', root);
+    const result = await runTool(
+      edit,
+      { file_path: 'data.txt', old_string: 'world', new_string: 'Maka' },
+      root,
+    );
+    assert.match(
+      modelText(edit, { file_path: 'data.txt' }, result),
+      /^The file .*data\.txt has been updated successfully\. \(file state is current in your context/,
+    );
+  });
+
+  test('Edit names both exits when old_string is not unique', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'maka-edit-multi-'));
+    await writeFile(join(root, 'data.txt'), 'x\nx\nx\n', 'utf8');
+    const edit = await sightedEditTool('data.txt', root);
+
+    await expectRejects(
+      runTool(edit, { file_path: 'data.txt', old_string: 'x', new_string: 'y' }, root),
+      /Found 3 matches of the string to replace, but replace_all is false\. To replace all occurrences, set replace_all to true\. To replace only one occurrence, please provide more context to uniquely identify the instance\.\nString: x/,
+    );
+
+    await runTool(
+      edit,
+      { file_path: 'data.txt', old_string: 'x', new_string: 'y', replace_all: true },
+      root,
+    );
+    assert.strictEqual(await readFile(join(root, 'data.txt'), 'utf8'), 'y\ny\ny\n');
+  });
+
+  test('Glob answers with absolute paths, most recently modified last', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'maka-glob-order-')));
+    for (const name of ['first.ts', 'second.ts', 'third.ts']) {
+      await writeFile(join(root, name), '// file\n', 'utf8');
+      await new Promise((resolve) => setTimeout(resolve, 12));
+    }
+    const glob = tool('Glob');
+
+    const result = (await runTool(glob, { pattern: '*.ts' }, root)) as { files: string[] };
+
+    assert.deepStrictEqual(result.files, [
+      join(root, 'first.ts'),
+      join(root, 'second.ts'),
+      join(root, 'third.ts'),
+    ]);
+    assert.strictEqual(modelText(glob, { pattern: '*.ts' }, result), result.files.join('\n'));
+    assert.strictEqual(
+      modelText(glob, { pattern: '*.md' }, await runTool(glob, { pattern: '*.md' }, root)),
+      'No files found',
+    );
+  });
+
+  test('Grep honours the ripgrep-shaped switches and pages with offset', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'maka-grep-switches-')));
+    await writeFile(join(root, 'a.ts'), 'before\nTOKEN here\nafter\n', 'utf8');
+    await writeFile(join(root, 'b.md'), 'token twice token\n', 'utf8');
+    const grep = tool('Grep');
+
+    const caseSensitive = (await runTool(
+      grep,
+      { pattern: 'token', output_mode: 'files_with_matches' },
+      root,
+    )) as { matches: string[] };
+    assert.deepStrictEqual(caseSensitive.matches, [join(root, 'b.md')]);
+
+    const insensitive = (await runTool(
+      grep,
+      { pattern: 'token', output_mode: 'files_with_matches', '-i': true },
+      root,
+    )) as { matches: string[] };
+    assert.deepStrictEqual([...insensitive.matches].sort(), [
+      join(root, 'a.ts'),
+      join(root, 'b.md'),
+    ]);
+
+    const typed = (await runTool(
+      grep,
+      { pattern: 'TOKEN', output_mode: 'content', type: 'ts' },
+      root,
+    )) as { matches: string[] };
+    assert.deepStrictEqual(typed.matches, [`${join(root, 'a.ts')}:2:TOKEN here`]);
+
+    const withoutLineNumbers = (await runTool(
+      grep,
+      { pattern: 'TOKEN', output_mode: 'content', type: 'ts', '-n': false },
+      root,
+    )) as { matches: string[] };
+    assert.deepStrictEqual(withoutLineNumbers.matches, [`${join(root, 'a.ts')}:TOKEN here`]);
+
+    const before = (await runTool(
+      grep,
+      { pattern: 'TOKEN', output_mode: 'content', type: 'ts', '-B': 1 },
+      root,
+    )) as { matches: string[] };
+    assert.deepStrictEqual(before.matches, [
+      `${join(root, 'a.ts')}-1-before`,
+      `${join(root, 'a.ts')}:2:TOKEN here`,
+    ]);
+
+    const after = (await runTool(
+      grep,
+      { pattern: 'TOKEN', output_mode: 'content', type: 'ts', '-A': 1 },
+      root,
+    )) as { matches: string[] };
+    assert.deepStrictEqual(after.matches, [
+      `${join(root, 'a.ts')}:2:TOKEN here`,
+      `${join(root, 'a.ts')}-3-after`,
+    ]);
+
+    const around = (await runTool(
+      grep,
+      { pattern: 'TOKEN', output_mode: 'content', type: 'ts', '-C': 1 },
+      root,
+    )) as { matches: string[] };
+    assert.deepStrictEqual(around.matches, [
+      `${join(root, 'a.ts')}-1-before`,
+      `${join(root, 'a.ts')}:2:TOKEN here`,
+      `${join(root, 'a.ts')}-3-after`,
+    ]);
+    assert.deepStrictEqual(
+      (
+        (await runTool(
+          grep,
+          { pattern: 'TOKEN', output_mode: 'content', type: 'ts', context: 1 },
+          root,
+        )) as { matches: string[] }
+      ).matches,
+      around.matches,
+    );
+
+    const paged = (await runTool(
+      grep,
+      { pattern: 'TOKEN', output_mode: 'content', type: 'ts', '-C': 1, offset: 2 },
+      root,
+    )) as { matches: string[]; truncated?: boolean };
+    assert.deepStrictEqual(paged.matches, [`${join(root, 'a.ts')}-3-after`]);
+    assert.strictEqual(paged.truncated, undefined);
+  });
+
+  test('Grep count mode rolls the per-file counts into a total', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'maka-grep-count-')));
+    await writeFile(join(root, 'a.txt'), 'token token\n', 'utf8');
+    await writeFile(join(root, 'b.txt'), 'token\n', 'utf8');
+    const grep = tool('Grep');
+
+    const result = (await runTool(grep, { pattern: 'token', output_mode: 'count' }, root)) as {
+      matches: string[];
+    };
+    const text = modelText(grep, { pattern: 'token', output_mode: 'count' }, result);
+
+    assert.match(text, /a\.txt:2/);
+    assert.match(text, /b\.txt:1/);
+    assert.match(text, /\n\nFound 3 total occurrences across 2 files\.$/);
+    assert.strictEqual(
+      modelText(grep, { pattern: 'absent' }, await runTool(grep, { pattern: 'absent' }, root)),
+      'No matches found',
+    );
+  });
+});

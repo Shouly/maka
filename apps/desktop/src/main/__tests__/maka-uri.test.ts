@@ -23,6 +23,7 @@ import {
   isMakaUriCandidate,
   isSafeExternalScheme,
   parseMakaUri,
+  parseComputerFileUri,
 } from '@maka/ui/maka-uri';
 
 describe('Maka URI safety boundary', () => {
@@ -114,5 +115,47 @@ describe('Maka URI safety boundary', () => {
     for (const href of rejected) {
       assert.equal(isSafeExternalScheme(href as string), false, String(href));
     }
+  });
+});
+
+describe('computer:// file citations', () => {
+  it('reads a relative markdown link as a path, so a citation can be opened', () => {
+    // The reference's own scheme for citing a file on the person's machine.
+    assert.equal(parseComputerFileUri('computer://src/foo.ts'), 'src/foo.ts');
+    assert.equal(parseComputerFileUri('computer://README.md'), 'README.md');
+    assert.equal(parseComputerFileUri('computer://docs/a%20b.md'), 'docs/a b.md');
+    // A single leading `./` is the same path spelled differently, and unlike
+    // `..` it cannot change which file is named.
+    assert.equal(parseComputerFileUri('computer://./docs/a%20b.md'), 'docs/a b.md');
+  });
+
+  it('refuses rather than repairs anything that is not a workspace-relative path', () => {
+    for (const href of [
+      'computer:///etc/passwd', // rooted
+      'computer://../../etc/passwd', // traversal
+      'computer://%2e%2e/etc/passwd', // traversal, encoded
+      'computer://a/../b', // traversal in the middle
+      'computer://a/./b', // non-canonical
+      'computer://./', // names nothing
+      'computer://.', // names nothing
+      'computer://C:/Windows/system32', // drive letter
+      'computer://a?b=1', // a query is not part of a path
+      'computer://a\u0000b', // control character
+      'computer://', // empty
+      'https://example.com', // a different scheme
+      'mailto:a@b.c', // a different scheme
+      'maka://settings/models', // the internal surface owns this one
+      'src/foo.ts', // a bare path is not a citation link
+      '//evil.com', // protocol-relative, not a path
+      '#heading', // an anchor
+      '', // empty
+    ]) {
+      assert.equal(parseComputerFileUri(href), null, href);
+    }
+  });
+
+  it('keeps the internal navigation surface closed to files', () => {
+    // `maka:` stays settings + compose; file citations are their own scheme.
+    assert.equal(parseMakaUri('maka://file/src/foo.ts'), null);
   });
 });

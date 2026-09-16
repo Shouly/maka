@@ -54,7 +54,7 @@ import { type ModelCallAttempt, type ModelCallKind } from '@maka/core/model-call
 import { type RuntimeEvent } from '@maka/core/runtime-event';
 import { createDefaultRuntimePolicy } from '@maka/core/runtime-policy';
 import type { PlanSessionState, PlanStore } from '@maka/core/plan';
-import type { SessionTodoToolStore } from '@maka/runtime/session-todo-tools';
+import type { SessionTaskToolStore } from '@maka/runtime/session-task-tools';
 import {
   serializeOAuthSubscriptionTokens,
   type OAuthSubscriptionTokens,
@@ -85,7 +85,7 @@ import {
   type RuntimePolicyStoresWriter,
 } from '@maka/storage/runtime-policy-stores';
 import { resolveStorageRoot, tryAcquireInteractiveRootOwner } from '@maka/storage/root-authority';
-import { openInteractiveSessionTodoStoreForWrite } from '@maka/storage/session-todo-authority';
+import { openInteractiveSessionTaskStoreForWrite } from '@maka/storage/session-task-authority';
 import {
   openInteractiveUsageStoresForWrite,
   type InteractiveUsageStoresWriter,
@@ -151,8 +151,11 @@ const MAX_IMPLEMENTATION_CHILD_REQUESTS =
 const HEADLESS_CODING_V1_PROMPT_HASH =
   'sha256:b2773282ac4755dc8d8a663eafdec68c3fa6f5680ec8557d261b5f723672b467';
 const HEADLESS_CODING_V1_TOOLS_HASH =
-  // ArchiveRead now describes both ledger and legacy resource references.
-  'sha256:22809de022f9c46186cae986eda23438efe9dbe6856b57abb0613ea48b51ad9c';
+  // Every first-party tool description was rewritten in the 2026-09-13 tool
+  // refactor (purpose, failure modes, guardrails, result shape), then the file,
+  // shell and search tools were aligned with the reference parameter names
+  // (`file_path`, `timeout`, the ripgrep-shaped Grep switches).
+  'sha256:0c1d0cb24396ededbd732a1d59a0369162b67894237d1c9c54cd0d358849e73c';
 const execFileAsync = promisify(execFile);
 test('backend creation resolves a bound Session by immutable Connection identity', async () => {
   let observedRef: unknown;
@@ -1931,7 +1934,7 @@ test('production backend creation continues after a Session Client Capability is
   }
 });
 
-test('production backend preserves coordinator Client Capability semantics across tool_search and T1', async () => {
+test('production backend preserves coordinator Client Capability semantics across ToolSearch and T1', async () => {
   const sessionId = 'backend-creation-session';
   const turnId = 'client-capability-turn';
   const runId = 'client-capability-run';
@@ -2107,9 +2110,9 @@ test('production backend preserves coordinator Client Capability semantics acros
       .filter((request) => request.body.stream === true)
       .map((request) => toolNames(request.body));
     assert.equal(providerToolSets.length, 3);
-    assert.ok(providerToolSets[0]?.includes('tool_search'));
+    assert.ok(providerToolSets[0]?.includes('ToolSearch'));
     assert.equal(providerToolSets[0]?.includes(tool.name), false);
-    assert.ok(providerToolSets[1]?.includes('tool_search'));
+    assert.ok(providerToolSets[1]?.includes('ToolSearch'));
     assert.ok(providerToolSets[1]?.includes(tool.name));
     assert.ok(providerToolSets[2]?.includes(tool.name));
   } finally {
@@ -2711,10 +2714,11 @@ test('production Host executes a canonical ai-sdk Session against a real provide
       model: MODEL_ID,
       permissionMode: 'ask',
     });
-    const sessionTodo = await openInteractiveSessionTodoStoreForWrite(owner.lease);
-    await sessionTodo.replaceAll(session.id, [
-      { content: 'HOSTED_SESSION_TODO_SENTINEL', status: 'pending' },
-    ]);
+    const sessionTask = await openInteractiveSessionTaskStoreForWrite(owner.lease);
+    await sessionTask.createTask(session.id, {
+      subject: 'HOSTED_SESSION_TASK_SENTINEL',
+      description: 'Sentinel task for the hosted prompt surface',
+    });
 
     composition = await createExecutionRuntimeHostComposition(
       {
@@ -2817,13 +2821,13 @@ test('production Host executes a canonical ai-sdk Session against a real provide
     assert.match(requestText, /HOSTED_SKILL_DESCRIPTION_SENTINEL/);
     assert.doesNotMatch(requestText, /HOSTED_SKILL_BODY_MUST_STAY_LAZY/);
     assert.match(requestText, /HOSTED_WORKSPACE_SENTINEL/);
-    assert.doesNotMatch(requestText, /HOSTED_SESSION_TODO_SENTINEL/);
+    assert.doesNotMatch(requestText, /HOSTED_SESSION_TASK_SENTINEL/);
     assert.match(requestText, /HOSTED_PERSONALIZATION_SENTINEL/);
     assert.match(requestText, /HOSTED_MEMORY_SENTINEL/);
     assert.match(JSON.stringify(mainRequests[1]?.body), /HOSTED_SKILL_BODY_MUST_STAY_LAZY/);
     // Tavily is selected but no web-search credential exists, so the provider
     // must never see WebSearch in the effective root tool surface. Non-direct
-    // bound tools stay deferred behind tool_search until activated.
+    // bound tools stay deferred behind ToolSearch until activated.
     assert.deepEqual(toolNames(request?.body), [
       'ArchiveRead',
       'AskUserQuestion',
@@ -2832,12 +2836,14 @@ test('production Host executes a canonical ai-sdk Session against a real provide
       'Glob',
       'Grep',
       'Read',
+      'SendUserFile',
+      'SendUserMessage',
       'Skill',
       'SkillSearch',
-      'StopBackgroundTask',
+      'TaskStop',
+      'ToolSearch',
       'WebFetch',
       'Write',
-      'tool_search',
     ]);
     assert.match(JSON.stringify(compactRequests[0]?.body), /context summarization assistant/);
 
@@ -3135,7 +3141,7 @@ test('production Host executes and durably supervises an Agent Graph over a real
     assert.equal(rootComposition?.composerId, 'maka.interactive');
     assert.equal(rootComposition?.contextWindow, 32_768);
     assert.match(rootComposition?.baseSystemPromptHash ?? '', /^sha256:[a-f0-9]{64}$/u);
-    assert.ok(rootComposition?.toolNames.includes('view_agent_graph'));
+    assert.ok(rootComposition?.toolNames.includes('ViewAgentGraph'));
     const wakeRuns = runs.filter((run) => run.opening.root.kind === 'agent_graph_supervisor_wake');
     const rootRunEvents = await execution.agentRunStore.readEvents(
       session.id,
@@ -3147,7 +3153,7 @@ test('production Host executes and durably supervises an Agent Graph over a real
     assert.ok(requestCompositions.length > 0);
     assert.match(requestCompositions[0]?.systemPromptHash ?? '', /^sha256:[a-f0-9]{64}$/u);
     assert.ok(
-      requestCompositions.some((snapshot) => snapshot.toolNames.includes('view_agent_graph')),
+      requestCompositions.some((snapshot) => snapshot.toolNames.includes('ViewAgentGraph')),
     );
     const requestCompositionIds = new Set(
       requestCompositions.map((snapshot) => snapshot.compositionId),
@@ -3183,13 +3189,13 @@ test('production Host executes and durably supervises an Agent Graph over a real
 
     const graphRequests = provider.requests.filter(
       (request) =>
-        request.body.stream === true && toolNames(request.body).includes('view_agent_graph'),
+        request.body.stream === true && toolNames(request.body).includes('ViewAgentGraph'),
     );
     assert.ok(graphRequests.length >= 4);
     for (const request of graphRequests) {
-      assert.ok(toolNames(request.body).includes('update_agent_graph'));
-      assert.ok(toolNames(request.body).includes('yield_agent_graph'));
-      assert.ok(toolNames(request.body).includes('agent_output'));
+      assert.ok(toolNames(request.body).includes('UpdateAgentGraph'));
+      assert.ok(toolNames(request.body).includes('YieldAgentGraph'));
+      assert.ok(toolNames(request.body).includes('AgentOutput'));
     }
     assert.ok(
       provider.requests.some(
@@ -3324,21 +3330,21 @@ test('production Host executes a durable runnable child with an exact tool ceili
 
     const requests = provider.requests.filter((request) => request.body.stream === true);
     assert.equal(requests.length, 4);
-    assert.ok(toolNames(requests[0]?.body).includes('tool_search'));
-    assert.equal(toolNames(requests[0]?.body).includes('agent_spawn'), false);
-    assert.ok(toolNames(requests[1]?.body).includes('agent_spawn'));
+    assert.ok(toolNames(requests[0]?.body).includes('ToolSearch'));
+    assert.equal(toolNames(requests[0]?.body).includes('Agent'), false);
+    assert.ok(toolNames(requests[1]?.body).includes('Agent'));
     // The same routed child surface removes web_research when Tavily cannot run.
-    assert.deepEqual(toolParameterEnum(requests[1]?.body, 'agent_spawn', 'profile'), [
-      'local_read',
-      'implementation',
-    ]);
+    assert.match(
+      toolParameterDescription(requests[1]?.body, 'Agent', 'subagent_type') ?? '',
+      /Built-in profiles available here: local_read, implementation\./,
+    );
     // A child now carries the archive decoder alongside its allowlist (#2026).
     // Its own placeholders name `ArchiveRead`, so the ceiling that governs
     // agent-permission tools cannot be the thing that decides whether the child
     // can read back a result the runtime itself pruned.
     assert.deepEqual(toolNames(requests[2]?.body), ['ArchiveRead', 'Glob', 'Grep', 'Read']);
-    assert.doesNotMatch(JSON.stringify(requests[2]?.body), /## Response format/u);
-    assert.ok(toolNames(requests[3]?.body).includes('agent_spawn'));
+    assert.doesNotMatch(JSON.stringify(requests[2]?.body), /<application_details>/u);
+    assert.ok(toolNames(requests[3]?.body).includes('Agent'));
 
     const sessions = await execution.sessionStore.listForRecovery();
     const child = sessions.find((session) => session.subagentRuntime?.profile === 'local_read');
@@ -3369,8 +3375,7 @@ test('production Host executes a durable runnable child with an exact tool ceili
       terminal.runId,
     );
     const spawnResult = parentRuntimeEvents.find(
-      (event) =>
-        event.content?.kind === 'function_response' && event.content.name === 'agent_spawn',
+      (event) => event.content?.kind === 'function_response' && event.content.name === 'Agent',
     );
     assert.ok(spawnResult?.content?.kind === 'function_response');
     const typedSpawnResult = decodeCanonicalToolResultContent(spawnResult.content.result);
@@ -3525,13 +3530,13 @@ test('production Host publishes and retires an implementation child patch', asyn
         requests.length <= MAX_IMPLEMENTATION_CHILD_REQUESTS + 3,
       JSON.stringify(providerRequestTrace(requests)),
     );
-    assert.ok(toolNames(requests[0]?.body).includes('tool_search'));
-    assert.equal(toolNames(requests[0]?.body).includes('agent_spawn'), false);
-    assert.ok(toolNames(requests[1]?.body).includes('agent_spawn'));
-    assert.deepEqual(toolParameterEnum(requests[1]?.body, 'agent_spawn', 'profile'), [
-      'local_read',
-      'implementation',
-    ]);
+    assert.ok(toolNames(requests[0]?.body).includes('ToolSearch'));
+    assert.equal(toolNames(requests[0]?.body).includes('Agent'), false);
+    assert.ok(toolNames(requests[1]?.body).includes('Agent'));
+    assert.match(
+      toolParameterDescription(requests[1]?.body, 'Agent', 'subagent_type') ?? '',
+      /Built-in profiles available here: local_read, implementation\./,
+    );
     const childToolNames = [
       'ArchiveRead',
       'Bash',
@@ -3539,9 +3544,9 @@ test('production Host publishes and retires an implementation child patch', asyn
       'Glob',
       'Grep',
       'Read',
-      'StopBackgroundTask',
+      'TaskInput',
+      'TaskStop',
       'Write',
-      'WriteStdin',
     ];
     const childRequests = requests.slice(2, -1);
     assert.ok(
@@ -3551,7 +3556,7 @@ test('production Host publishes and retires an implementation child patch', asyn
     for (const request of childRequests) {
       assert.deepEqual(toolNames(request.body), childToolNames);
     }
-    assert.ok(toolNames(requests.at(-1)?.body).includes('agent_spawn'));
+    assert.ok(toolNames(requests.at(-1)?.body).includes('Agent'));
 
     const sessions = await execution.sessionStore.listForRecovery();
     const child = sessions.find((session) => session.id !== parent.id);
@@ -3601,8 +3606,7 @@ test('production Host publishes and retires an implementation child patch', asyn
       terminal.runId,
     );
     const spawnResult = parentRuntimeEvents.find(
-      (event) =>
-        event.content?.kind === 'function_response' && event.content.name === 'agent_spawn',
+      (event) => event.content?.kind === 'function_response' && event.content.name === 'Agent',
     );
     assert.ok(spawnResult?.content?.kind === 'function_response');
     const typedSpawnResult = decodeCanonicalToolResultContent(spawnResult.content.result);
@@ -4013,12 +4017,12 @@ test('Host auxiliary models meter provider usage and abort physical requests', {
         { role: 'assistant' as const, content: 'SOURCE_ASSISTANT_SENTINEL' },
       ],
       sourceTools: {
-        memory_remember: {
+        MemoryRemember: {
           description: 'Remember durable information',
           inputSchema: z.object({}).strict(),
         },
       },
-      sourceActiveTools: ['memory_remember'],
+      sourceActiveTools: ['MemoryRemember'],
       sessionId: session.id,
       runId: 'memory-source-run',
       turnId: 'memory-source-turn',
@@ -4045,7 +4049,7 @@ test('Host auxiliary models meter provider usage and abort physical requests', {
     assert.ok(canonicalizeRequest);
     assert.equal(proposalRequest.sessionHeader, session.id);
     assert.equal(canonicalizeRequest.sessionHeader, session.id);
-    assert.deepEqual(toolNames(proposalRequest.body), ['memory_remember']);
+    assert.deepEqual(toolNames(proposalRequest.body), ['MemoryRemember']);
     assert.match(JSON.stringify(proposalRequest.body), /SOURCE_SYSTEM_SENTINEL/);
     assert.match(JSON.stringify(proposalRequest.body), /SOURCE_USER_SENTINEL/);
     assert.match(JSON.stringify(proposalRequest.body), /SOURCE_ASSISTANT_SENTINEL/);
@@ -4342,7 +4346,7 @@ test('one turn shares one canonical Skill inventory across prompt and lazy tools
     runtimePolicy: policy,
     skills,
     memory,
-    sessionTodo: {} as SessionTodoToolStore,
+    sessionTask: {} as SessionTaskToolStore,
   });
   const firstContext = {
     sessionId: 'session',
@@ -4352,7 +4356,7 @@ test('one turn shares one canonical Skill inventory across prompt and lazy tools
   } as const;
 
   const firstPrompt = (await composition.resolveSystemPrompt(firstContext)).text;
-  assert.match(firstPrompt ?? '', /^You are Maka,/);
+  assert.match(firstPrompt ?? '', /^The assistant is Copilot\./);
   assert.match(firstPrompt ?? '', /OLD_DESCRIPTION/);
   assert.match(firstPrompt ?? '', /MEMORY_BODY/);
   assert.equal(inventoryReads, 1);
@@ -4368,7 +4372,7 @@ test('one turn shares one canonical Skill inventory across prompt and lazy tools
   } satisfies MakaToolContext;
   const skillTool = composition.tools.find((tool) => tool.name === 'Skill') as
     | MakaTool<
-        { name: string },
+        { skill: string },
         { ok: true; skill: { instructions: string } } | { ok: false; reason: string }
       >
     | undefined;
@@ -4377,7 +4381,7 @@ test('one turn shares one canonical Skill inventory across prompt and lazy tools
     | undefined;
   assert.ok(skillTool);
   assert.ok(searchTool);
-  const loaded = await skillTool.impl({ name: 'old' }, toolContext);
+  const loaded = await skillTool.impl({ skill: 'old' }, toolContext);
   assert.equal(loaded.ok, true);
   if (!loaded.ok) return;
   assert.equal(loaded.skill.instructions, 'OLD_BODY');
@@ -4395,15 +4399,12 @@ test('one turn shares one canonical Skill inventory across prompt and lazy tools
   assert.equal(inventoryReads, 2);
 
   for (const prompt of [firstPrompt, nextPrompt]) {
-    assert.match(prompt ?? '', /^## Response format$/mu);
-    assert.equal(prompt?.match(/Use GitHub-Flavored Markdown for responses\./gmu)?.length, 1);
-    assert.match(
-      prompt ?? '',
-      /Keep simple answers simple; do not add headings or lists to simple answers\./u,
-    );
-    assert.match(prompt ?? '', /Use short headings and flat lists to organize longer answers\./u);
-    assert.match(prompt ?? '', /inline commands/u);
-    assert.match(prompt ?? '', /descriptive link text/u);
+    assert.match(prompt ?? '', /^<application_details>$/mu);
+    assert.equal(prompt?.match(/^<application_details>$/gmu)?.length, 1);
+    // One copy of each static section: the layer is prepended once per turn.
+    assert.equal(prompt?.match(/^<tone_and_formatting>$/gmu)?.length, 1);
+    assert.equal(prompt?.match(/^<workspace_and_tools>$/gmu)?.length, 1);
+    assert.match(prompt ?? '', /When done: one or two sentences on the outcome\./u);
   }
 });
 
@@ -4428,7 +4429,7 @@ test('one composer freezes Runtime Policy while each Run freezes its remaining p
         body: memoryBody,
       }),
     } as unknown as HostMemoryCoordinator,
-    sessionTodo: {} as SessionTodoToolStore,
+    sessionTask: {} as SessionTaskToolStore,
   });
   const context = {
     sessionId: 'session',
@@ -4479,7 +4480,7 @@ test('one composer freezes Runtime Policy while each Run freezes its remaining p
         body: memoryBody,
       }),
     } as unknown as HostMemoryCoordinator,
-    sessionTodo: {} as SessionTodoToolStore,
+    sessionTask: {} as SessionTaskToolStore,
   });
   assert.deepEqual(
     (await nextComposition.resolveSystemPrompt({ ...context, turnId: 'turn-3' })).sourceRevisions,
@@ -4529,7 +4530,7 @@ test('backend composition survives a moved saved Git Bash executable while Bash 
         body: '',
       }),
     } as unknown as HostMemoryCoordinator,
-    sessionTodo: {} as SessionTodoToolStore,
+    sessionTask: {} as SessionTaskToolStore,
     clientCapabilities: {
       snapshotForSession: () => undefined,
     } as unknown as HostClientCapabilityCoordinator,
@@ -4706,10 +4707,10 @@ test('a bound tool ceiling excludes dynamic Client Capability tools', () => {
       readCanonicalModelInventory: async () => ({ inventory: [] }),
     } as unknown as HostSkillCatalogCoordinator,
     memory: {} as HostMemoryCoordinator,
-    sessionTodo: {} as SessionTodoToolStore,
+    sessionTask: {} as SessionTaskToolStore,
     boundTools: [boundTool],
     parentAgentTools: buildParentAgentTools(),
-    scheduledTaskTool,
+    scheduledTaskTools: [scheduledTaskTool],
     builtinTools: {},
     clientCapabilities: {
       tools: [capabilityTool],
@@ -4743,16 +4744,18 @@ test('the headless coding profile freezes the Eval prompt and tool ceiling', asy
         throw new Error('Profiled prompt must not read product Memory');
       },
     } as unknown as HostMemoryCoordinator,
-    sessionTodo: {} as SessionTodoToolStore,
+    sessionTask: {} as SessionTaskToolStore,
     builtinTools: {},
     toolProfile: 'headless-coding-v1',
     parentAgentTools: buildParentAgentTools(),
-    scheduledTaskTool: {
-      name: 'ScheduledTask',
-      description: 'Must stay outside the Eval ceiling.',
-      parameters: {},
-      impl: async () => 'scheduled',
-    },
+    scheduledTaskTools: [
+      {
+        name: 'ScheduledTask',
+        description: 'Must stay outside the Eval ceiling.',
+        parameters: {},
+        impl: async () => 'scheduled',
+      },
+    ],
   });
 
   assert.deepEqual(
@@ -5049,7 +5052,7 @@ function backendCreationFixture(input: {
           body: '',
         }),
       } as unknown as HostMemoryCoordinator,
-      sessionTodo: {} as SessionTodoToolStore,
+      sessionTask: {} as SessionTaskToolStore,
       clientCapabilities: {
         snapshotForSession: input.snapshotClientCapabilities ?? (() => undefined),
       } as unknown as HostClientCapabilityCoordinator,
@@ -5367,6 +5370,24 @@ function toolParameterEnum(
   return schema && typeof schema === 'object' ? (schema as { enum?: unknown }).enum : undefined;
 }
 
+/** The `description` a tool's provider schema advertises for one parameter. */
+function toolParameterDescription(
+  body: Record<string, unknown> | undefined,
+  toolName: string,
+  property: string,
+): string | undefined {
+  const tools = Array.isArray(body?.tools) ? body.tools : [];
+  const tool = tools.find((candidate) => {
+    if (!candidate || typeof candidate !== 'object') return false;
+    const fn = (candidate as { function?: unknown }).function;
+    return Boolean(fn && typeof fn === 'object' && (fn as { name?: unknown }).name === toolName);
+  }) as { function?: { parameters?: { properties?: Record<string, unknown> } } } | undefined;
+  const schema = tool?.function?.parameters?.properties?.[property];
+  if (!schema || typeof schema !== 'object') return undefined;
+  const description = (schema as { description?: unknown }).description;
+  return typeof description === 'string' ? description : undefined;
+}
+
 function requireRuntimeResourceRef(body: Record<string, unknown>): string {
   const ref = JSON.stringify(body).match(/maka:\/\/runtime\/background-tasks\/[A-Za-z0-9_-]+/)?.[0];
   assert.ok(ref, 'provider fixture expected a background-task ref in model history');
@@ -5626,8 +5647,8 @@ async function handleProviderRequest(
       flow.activeRequestStarted.resolve();
       await flow.activeRequestRelease.promise;
     }
-    assert.ok(toolNames(body).includes('tool_search'));
-    respondProviderToolCall(response, streamRequestIndex, 'tool_search', {
+    assert.ok(toolNames(body).includes('ToolSearch'));
+    respondProviderToolCall(response, streamRequestIndex, 'ToolSearch', {
       query: flow.toolName,
     });
     return;
@@ -5674,7 +5695,7 @@ async function handleProviderRequest(
   }
   if (flow.kind === 'managed_bash' && flow.sandboxPaths && streamRequestIndex === 5) {
     respondProviderToolCall(response, streamRequestIndex, 'Write', {
-      path: flow.sandboxPaths.outsideWrite,
+      file_path: flow.sandboxPaths.outsideWrite,
       content: 'write denied',
     });
     return;
@@ -5688,7 +5709,7 @@ async function handleProviderRequest(
   }
   if (flow.kind === 'managed_bash' && flow.sandboxPaths && streamRequestIndex === 7) {
     respondProviderToolCall(response, streamRequestIndex, 'Write', {
-      path: flow.sandboxPaths.workspaceWrite,
+      file_path: flow.sandboxPaths.workspaceWrite,
       content: 'write allowed',
     });
     return;
@@ -5709,10 +5730,10 @@ async function handleProviderRequest(
     (flow.kind === 'child_agent' || flow.kind === 'implementation_child_agent') &&
     streamRequestIndex === 1
   ) {
-    assert.ok(toolNames(body).includes('tool_search'));
-    assert.equal(toolNames(body).includes('agent_spawn'), false);
-    respondProviderToolCall(response, streamRequestIndex, 'tool_search', {
-      query: 'agent_spawn',
+    assert.ok(toolNames(body).includes('ToolSearch'));
+    assert.equal(toolNames(body).includes('Agent'), false);
+    respondProviderToolCall(response, streamRequestIndex, 'ToolSearch', {
+      query: 'Agent',
     });
     return;
   }
@@ -5720,10 +5741,11 @@ async function handleProviderRequest(
     (flow.kind === 'child_agent' || flow.kind === 'implementation_child_agent') &&
     streamRequestIndex === 2
   ) {
-    assert.ok(toolNames(body).includes('agent_spawn'));
-    respondProviderToolCall(response, streamRequestIndex, 'agent_spawn', {
-      profile: flow.kind === 'child_agent' ? 'local_read' : 'implementation',
-      task:
+    assert.ok(toolNames(body).includes('Agent'));
+    respondProviderToolCall(response, streamRequestIndex, 'Agent', {
+      subagent_type: flow.kind === 'child_agent' ? 'local_read' : 'implementation',
+      description: flow.kind === 'child_agent' ? 'Inspect the boundary' : 'Write the sentinel',
+      prompt:
         flow.kind === 'child_agent'
           ? 'Inspect the hosted child execution boundary without changing files.'
           : 'Create implementation.txt with the requested sentinel.',
@@ -5738,7 +5760,7 @@ async function handleProviderRequest(
     return;
   }
   if (flow.kind === 'child_agent' && streamRequestIndex === 4) {
-    assert.ok(toolNames(body).includes('agent_spawn'));
+    assert.ok(toolNames(body).includes('Agent'));
     respondProviderText(response, RESPONSE_TEXT);
     return;
   }
@@ -5750,12 +5772,12 @@ async function handleProviderRequest(
       'Glob',
       'Grep',
       'Read',
-      'StopBackgroundTask',
+      'TaskInput',
+      'TaskStop',
       'Write',
-      'WriteStdin',
     ]);
     respondProviderToolCall(response, streamRequestIndex, 'Write', {
-      path: 'implementation.txt',
+      file_path: 'implementation.txt',
       content: 'HOSTED_IMPLEMENTATION_PATCH_SENTINEL\n',
     });
     return;
@@ -5770,7 +5792,7 @@ async function handleProviderRequest(
     return;
   }
   if (flow.kind === 'implementation_child_agent' && streamRequestIndex === 5) {
-    respondProviderToolCall(response, streamRequestIndex, 'WriteStdin', {
+    respondProviderToolCall(response, streamRequestIndex, 'TaskInput', {
       ref: requireRuntimeResourceRef(body),
       actions: [
         { type: 'text', text: 'ping' },
@@ -5789,7 +5811,7 @@ async function handleProviderRequest(
   if (
     flow.kind === 'implementation_child_agent' &&
     streamRequestIndex >= 7 &&
-    !toolNames(body).includes('agent_spawn')
+    !toolNames(body).includes('Agent')
   ) {
     const latestResult = latestToolResultText(body) ?? '';
     if (!flow.stopRequested) {
@@ -5805,7 +5827,7 @@ async function handleProviderRequest(
         return;
       }
       flow.stopRequested = true;
-      respondProviderToolCall(response, streamRequestIndex, 'StopBackgroundTask', {
+      respondProviderToolCall(response, streamRequestIndex, 'TaskStop', {
         ref: requireRuntimeResourceRef(body),
       });
       return;
@@ -5817,8 +5839,8 @@ async function handleProviderRequest(
     return;
   }
   if (flow.kind === 'client_capability' && streamRequestIndex === 1) {
-    assert.ok(toolNames(body).includes('tool_search'));
-    respondProviderToolCall(response, streamRequestIndex, 'tool_search', {
+    assert.ok(toolNames(body).includes('ToolSearch'));
+    respondProviderToolCall(response, streamRequestIndex, 'ToolSearch', {
       query: flow.toolName,
     });
     return;

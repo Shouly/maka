@@ -231,10 +231,11 @@ export function gateSkillsByHostCapabilities(
   host: HostCapabilities,
 ): GatedSkill[] {
   const caps = host.capabilities ?? new Set<string>();
+  const bound = (tool: string): boolean => host.toolNames.has(tool);
   return skills.map((skill) => {
-    const missingDeclaredTools = skill.declaredTools.filter((tool) => !host.toolNames.has(tool));
+    const missingDeclaredTools = skill.declaredTools.filter((tool) => !bound(tool));
     const requiredTools = skill.requiredTools;
-    const requiredToolsMissing = requiredTools.some((tool) => !host.toolNames.has(tool));
+    const requiredToolsMissing = requiredTools.some((tool) => !bound(tool));
     const requiredCapabilitiesMissing = skill.requiredCapabilities.some((cap) => !caps.has(cap));
     const eligible = !requiredToolsMissing && !requiredCapabilitiesMissing;
     const hiddenReason: SkillHostCompatibility['hiddenReason'] = requiredToolsMissing

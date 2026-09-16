@@ -37,7 +37,7 @@ const binding = {
   hostPathAccess: 'none' as const,
   descriptor: {
     serverId: 'desktop_browser',
-    name: 'browser_snapshot',
+    name: 'BrowserSnapshot',
     inputSchema: { type: 'object' },
   },
 };

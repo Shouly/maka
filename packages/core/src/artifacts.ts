@@ -93,6 +93,7 @@ export const ARTIFACT_SOURCES = [
   'subagent_writeback',
   'deep_research',
   'user_upload',
+  'user_delivery',
   'session_effect',
 ] as const;
 
@@ -154,6 +155,10 @@ const ARTIFACT_SOURCE_POLICIES = {
   subagent_writeback: { userDeletable: false, userVisible: true, sharedReadable: false },
   deep_research: { userDeletable: false, userVisible: true, sharedReadable: false },
   user_upload: { userDeletable: true, userVisible: false, sharedReadable: true },
+  // A file the model deliberately handed to the user (SendUserFile). It is a
+  // deliverable, not evidence: it belongs in the Files face, travels with a
+  // shared session, and the user who received it may delete it again.
+  user_delivery: { userDeletable: true, userVisible: true, sharedReadable: true },
   session_effect: { userDeletable: false, userVisible: false, sharedReadable: false },
 } as const satisfies Record<ArtifactSource, ArtifactSourcePolicy>;
 

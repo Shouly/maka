@@ -18,6 +18,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { projectBashToolResultForModel } from '../bash-model-output.js';
 import { RunHandoffGate } from '../run-handoff-gate.js';
 import type { ModelProjectionTransition } from '@maka/core/model-projection-transition';
 import { Buffer } from 'node:buffer';
@@ -556,7 +557,7 @@ describe('AiSdkBackend ApplyPatch routing', () => {
   });
 });
 
-/** Deferred memory triggers need one tool_search step before the model may call them. */
+/** Deferred memory triggers need one ToolSearch step before the model may call them. */
 function memorySearchChunks(searchToolName: string): LanguageModelV4StreamPart[] {
   return [
     { type: 'stream-start', warnings: [] },
@@ -652,7 +653,7 @@ describe('AiSdkBackend Memory Extraction triggers', () => {
         return {
           stream: simulateReadableStream({
             chunks: (modelCalls === 1
-              ? memorySearchChunks('maka_tool_search')
+              ? memorySearchChunks('CopilotToolSearch')
               : [
                   { type: 'stream-start', warnings: [] },
                   {
@@ -694,17 +695,17 @@ describe('AiSdkBackend Memory Extraction triggers', () => {
 
     const stepZeroToolNames = model.doStreamCalls[0]?.tools?.map((tool) => tool.name) ?? [];
     assert.equal(
-      stepZeroToolNames.some((name) => name === 'memory_remember' || name === 'memory_extract'),
+      stepZeroToolNames.some((name) => name === 'MemoryRemember' || name === 'MemoryExtract'),
       false,
     );
-    assert.ok(stepZeroToolNames.includes('maka_tool_search'));
+    assert.ok(stepZeroToolNames.includes('CopilotToolSearch'));
     const searchedToolNames = model.doStreamCalls[1]?.tools?.map((tool) => tool.name) ?? [];
-    assert.ok(searchedToolNames.includes('memory_remember'));
-    assert.ok(searchedToolNames.includes('memory_extract'));
+    assert.ok(searchedToolNames.includes('MemoryRemember'));
+    assert.ok(searchedToolNames.includes('MemoryExtract'));
     assert.equal(memoryCalled, false);
   });
 
-  test('runs memory_remember synchronously and returns the persisted requested Item to the next step', async () => {
+  test('runs MemoryRemember synchronously and returns the persisted requested Item to the next step', async () => {
     let modelCalls = 0;
     let snapshot: MemoryExtractionSourceSnapshot | undefined;
     const model = new MockLanguageModelV4({
@@ -720,7 +721,7 @@ describe('AiSdkBackend Memory Extraction triggers', () => {
                     {
                       type: 'tool-call',
                       toolCallId: 'remember-call',
-                      toolName: 'memory_remember',
+                      toolName: 'MemoryRemember',
                       input: '{}',
                     },
                     {
@@ -802,7 +803,7 @@ describe('AiSdkBackend Memory Extraction triggers', () => {
                     {
                       type: 'tool-call',
                       toolCallId: 'remember-call',
-                      toolName: 'memory_remember',
+                      toolName: 'MemoryRemember',
                       input: '{}',
                     },
                     {
@@ -866,7 +867,7 @@ describe('AiSdkBackend Memory Extraction triggers', () => {
     assert.ok(snapshot.sourceTools.Read, 'Tool schemas remain available for provider-prefix reuse');
   });
 
-  test('dispatches memory_extract only after the terminal Event is durably consumed', async () => {
+  test('dispatches MemoryExtract only after the terminal Event is durably consumed', async () => {
     let modelCalls = 0;
     let extractionSnapshot: MemoryExtractionSourceSnapshot | undefined;
     const model = new MockLanguageModelV4({
@@ -882,7 +883,7 @@ describe('AiSdkBackend Memory Extraction triggers', () => {
                     {
                       type: 'tool-call',
                       toolCallId: 'extract-call',
-                      toolName: 'memory_extract',
+                      toolName: 'MemoryExtract',
                       input: '{}',
                     },
                     {
@@ -926,7 +927,7 @@ describe('AiSdkBackend Memory Extraction triggers', () => {
       durable.ledger.some(
         (event) =>
           event.content?.kind === 'function_response' &&
-          event.content.name === 'memory_extract' &&
+          event.content.name === 'MemoryExtract' &&
           JSON.stringify(event.content.result).includes('accepted'),
       ),
     );
@@ -942,7 +943,7 @@ describe('AiSdkBackend sandbox boundary convergence', () => {
     const calls = [
       {
         toolCallId: 'boundary-request',
-        toolName: 'request_sandbox_boundary',
+        toolName: 'RequestSandboxBoundary',
         input: {
           expansion: { network: { enabled: true } },
           justification: 'Use the network.',
@@ -1066,7 +1067,7 @@ describe('AiSdkBackend sandbox boundary convergence', () => {
     assert.equal(events.filter((event) => event.type === 'sandbox_boundary_request').length, 1);
     assert.doesNotMatch(
       JSON.stringify(model.doStreamCalls[1]?.tools ?? []),
-      /request_sandbox_boundary/u,
+      /RequestSandboxBoundary/u,
     );
     assert.match(JSON.stringify(model.doStreamCalls[1]?.tools ?? []), /Bash/u);
     assert.deepEqual(model.doStreamCalls[3]?.tools ?? [], []);
@@ -1094,7 +1095,7 @@ describe('AiSdkBackend sandbox boundary convergence', () => {
                     toolCallId: 'code-boundary-request',
                     toolName: 'exec',
                     input: JSON.stringify({
-                      code: 'return await tools.request_sandbox_boundary({ expansion: { network: { enabled: true } }, justification: "Use the network." })',
+                      code: 'return await tools.RequestSandboxBoundary({ expansion: { network: { enabled: true } }, justification: "Use the network." })',
                     }),
                   },
                   {
@@ -1112,7 +1113,7 @@ describe('AiSdkBackend sandbox boundary convergence', () => {
                       toolName: 'exec',
                       input: JSON.stringify({
                         code: [
-                          'return await tools.request_sandbox_boundary({',
+                          'return await tools.RequestSandboxBoundary({',
                           '  expansion: { network: { enabled: true } },',
                           '  justification: "Try another expansion."',
                           '})',
@@ -1235,13 +1236,13 @@ describe('AiSdkBackend sandbox boundary convergence', () => {
       );
       assert.equal(
         events.filter(
-          (event) => event.type === 'tool_start' && event.toolName === 'request_sandbox_boundary',
+          (event) => event.type === 'tool_start' && event.toolName === 'RequestSandboxBoundary',
         ).length,
         2 - inheritedOffset,
       );
       assert.doesNotMatch(
         JSON.stringify(model.doStreamCalls[1 - inheritedOffset]?.tools ?? []),
-        /request_sandbox_boundary/u,
+        /RequestSandboxBoundary/u,
       );
       assert.match(JSON.stringify(model.doStreamCalls[1 - inheritedOffset]?.tools ?? []), /exec/u);
       assert.deepEqual(model.doStreamCalls[2 - inheritedOffset]?.tools ?? [], []);
@@ -1281,7 +1282,7 @@ describe('AiSdkBackend sandbox boundary convergence', () => {
               {
                 type: 'tool-call',
                 toolCallId: `invalid-boundary-${streamCalls}`,
-                toolName: 'request_sandbox_boundary',
+                toolName: 'RequestSandboxBoundary',
                 input: JSON.stringify(input),
               },
               {
@@ -3635,7 +3636,7 @@ describe('AiSdkBackend model history', () => {
             ? {
                 id: 'search-enable-call',
                 name: TOOL_SEARCH_NAME,
-                input: JSON.stringify({ query: 'enable inventory', limit: 1 }),
+                input: JSON.stringify({ query: 'enable inventory', max_results: 1 }),
               }
             : calls === 2
               ? { id: 'enable-call', name: 'enable_inventory', input: '{}' }
@@ -3643,7 +3644,7 @@ describe('AiSdkBackend model history', () => {
                 ? {
                     id: 'search-inventory-call',
                     name: TOOL_SEARCH_NAME,
-                    input: JSON.stringify({ query: 'look up current inventory', limit: 1 }),
+                    input: JSON.stringify({ query: 'look up current inventory', max_results: 1 }),
                   }
                 : calls === 4
                   ? {
@@ -3655,7 +3656,7 @@ describe('AiSdkBackend model history', () => {
                     ? {
                         id: 'search-disable-call',
                         name: TOOL_SEARCH_NAME,
-                        input: JSON.stringify({ query: 'disable inventory', limit: 1 }),
+                        input: JSON.stringify({ query: 'disable inventory', max_results: 1 }),
                       }
                     : calls === 6
                       ? { id: 'disable-call', name: 'disable_inventory', input: '{}' }
@@ -4423,10 +4424,15 @@ describe('AiSdkBackend model history', () => {
         `command ${index} should remain only in its paired Bash call`,
       );
       const output = toolResults[index]?.output;
-      assert.equal(output?.type, durable.status === 'completed' ? 'json' : 'error-json');
-      assert.equal(Object.hasOwn(output?.value ?? {}, 'cmd'), false);
-      const { cmd: _cmd, ...expected } = durable;
-      assert.deepEqual(output?.value, expected);
+      // A finished command reaches the model as plain text: its output, led by
+      // the exit code only when something went wrong. The command itself stays
+      // in the paired Bash call.
+      assert.equal(output?.type, durable.status === 'completed' ? 'text' : 'error-text');
+      const text = String(
+        output?.type === 'text' || output?.type === 'error-text' ? output.value : '',
+      );
+      assert.equal(text, projectBashToolResultForModel(durable));
+      assert.equal(text.includes(durable.cmd), false);
       assert.equal(durableResults[index]?.cmd, durable.cmd);
     }
   });
@@ -7893,11 +7899,11 @@ describe('AiSdkBackend error surfaces', () => {
 });
 
 describe('AiSdkBackend Plan tool boundaries', () => {
-  test('continues to a final response after update_plan completes execution', async () => {
+  test('continues to a final response after UpdatePlan completes execution', async () => {
     const { calls, events } = await runPlanToolBoundary({
       turnId: 'turn-plan-complete',
       prompt: 'execute the approved plan',
-      toolName: 'update_plan',
+      toolName: 'UpdatePlan',
       toolInput: { steps: [{ id: 'change', status: 'completed' }] },
       toolResult: {
         kind: 'plan_execution_completed',
@@ -7915,11 +7921,11 @@ describe('AiSdkBackend Plan tool boundaries', () => {
     assert.equal(events.find((event) => event.type === 'complete')?.stopReason, 'end_turn');
   });
 
-  test('continues to an acknowledgement after cancel_plan cancels execution', async () => {
+  test('continues to an acknowledgement after CancelPlan cancels execution', async () => {
     const { calls, events } = await runPlanToolBoundary({
       turnId: 'turn-plan-cancel',
       prompt: 'cancel the approved plan',
-      toolName: 'cancel_plan',
+      toolName: 'CancelPlan',
       toolInput: { reason: 'User cancelled the execution.' },
       toolResult: {
         kind: 'plan_execution_cancelled',
@@ -8411,7 +8417,7 @@ describe('AiSdkBackend usage telemetry', () => {
               {
                 type: 'tool-call',
                 toolCallId: 'yield-1',
-                toolName: 'yield_agent_graph',
+                toolName: 'YieldAgentGraph',
                 input: JSON.stringify({ reason: 'Waiting for committed child results.' }),
               },
               {
@@ -8435,7 +8441,7 @@ describe('AiSdkBackend usage telemetry', () => {
       modelFactory: () => model,
       tools: [
         {
-          ...testTool('yield_agent_graph', z.object({ reason: z.string() })),
+          ...testTool('YieldAgentGraph', z.object({ reason: z.string() })),
           impl: async ({ reason }) => ({
             kind: 'agent_graph_yielded' as const,
             pendingWorkCount: 2,
@@ -8475,7 +8481,7 @@ describe('AiSdkBackend usage telemetry', () => {
                 {
                   type: 'tool-call',
                   toolCallId: 'yield-with-sibling',
-                  toolName: 'yield_agent_graph',
+                  toolName: 'YieldAgentGraph',
                   input: JSON.stringify({ reason: 'Waiting for child results.' }),
                 },
                 {
@@ -8526,7 +8532,7 @@ describe('AiSdkBackend usage telemetry', () => {
       modelFactory: () => model,
       tools: [
         {
-          ...testTool('yield_agent_graph', z.object({ reason: z.string() })),
+          ...testTool('YieldAgentGraph', z.object({ reason: z.string() })),
           executionSemantics: 'exclusive_step',
           impl: async ({ reason }) => ({
             kind: 'agent_graph_yielded' as const,
@@ -8587,7 +8593,7 @@ describe('AiSdkBackend usage telemetry', () => {
                   {
                     type: 'tool-call',
                     toolCallId: 'malformed-yield',
-                    toolName: 'yield_agent_graph',
+                    toolName: 'YieldAgentGraph',
                     input: JSON.stringify({ reason: 'Invalid envelope.' }),
                   },
                   {
@@ -8641,7 +8647,7 @@ describe('AiSdkBackend usage telemetry', () => {
           }),
         },
         {
-          ...testTool('yield_agent_graph', z.object({ reason: z.string() })),
+          ...testTool('YieldAgentGraph', z.object({ reason: z.string() })),
           impl: async () => ({
             kind: 'agent_graph_yielded',
             pendingWorkCount: 0,
@@ -9250,7 +9256,7 @@ describe('AiSdkBackend usage telemetry', () => {
                   type: 'tool-call',
                   toolCallId: `read-${streamCalls}`,
                   toolName: 'Read',
-                  input: JSON.stringify({ path: 'notes.md' }),
+                  input: JSON.stringify({ file_path: 'notes.md' }),
                 },
                 {
                   type: 'finish',
@@ -9288,7 +9294,7 @@ describe('AiSdkBackend usage telemetry', () => {
         {
           name: 'Read',
           description: 'Read description',
-          parameters: z.object({ path: z.string() }),
+          parameters: z.object({ file_path: z.string() }),
           impl: async () => ({ body: readCalls++ === 0 ? oldBody : newBody }),
         },
       ],
@@ -9639,7 +9645,10 @@ describe('AiSdkBackend context budget and prompt attribution', () => {
       (item) => item.kind === 'tool_result' && item.toolCallId === 'tool-edit',
     );
 
-    assert.equal(result?.kind === 'tool_result' ? result.output : undefined, 'Edited a.ts (+1 -1)');
+    assert.equal(
+      result?.kind === 'tool_result' ? result.output : undefined,
+      'The file a.ts has been updated successfully. (file state is current in your context — no need to Read it back)',
+    );
     // The durable event itself keeps the full diff — only the model-facing
     // projection is bounded.
     const durable = events[1].content;
@@ -11697,7 +11706,7 @@ describe('AiSdkBackend tool execution', () => {
     };
     let release!: () => void;
     const tool: MakaTool = {
-      name: 'agent_spawn',
+      name: 'Agent',
       description: 'spawn child agent',
       parameters: {},
       categoryHint: 'subagent',
@@ -11875,7 +11884,7 @@ describe('AiSdkBackend tool execution', () => {
     let implStarted = 0;
     const release: Array<() => void> = [];
     const tool: MakaTool = {
-      name: 'agent_spawn',
+      name: 'Agent',
       description: 'read-only worker',
       parameters: {},
       categoryHint: 'subagent',
@@ -11939,7 +11948,7 @@ describe('AiSdkBackend tool execution', () => {
       },
     });
     const tool: MakaTool = {
-      name: 'agent_spawn',
+      name: 'Agent',
       description: 'spawn read-only worker',
       parameters: {},
       categoryHint: 'subagent',

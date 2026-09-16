@@ -29,7 +29,12 @@ import {
   type DirectoryReference,
   type QuoteRef,
 } from '@maka/core/events';
-import type { UserQuestionResponse } from '@maka/core/user-question';
+import {
+  USER_QUESTION_MAX_QUESTIONS,
+  USER_QUESTION_MIN_QUESTIONS,
+  isUserQuestionAnswerValue,
+  type UserQuestionResponse,
+} from '@maka/core/user-question';
 import type { SandboxBoundaryResponse } from '@maka/core/sandbox-boundary';
 import type { ClientCapabilityResponse } from '@maka/core/client-capability-grant';
 import { MAX_ATTACHMENT_COUNT } from '@maka/core/attachments';
@@ -122,15 +127,22 @@ export function normalizeUserQuestionResponse(input: unknown): UserQuestionRespo
     'Invalid user question response requestId',
     MAX_PERMISSION_REQUEST_ID_LENGTH,
   );
+  // One entry per question: a label or the user's own text, a multi-select
+  // array of labels, or `null` for a question they left alone.
   if (
     !Array.isArray(value.answers) ||
-    value.answers.length < 1 ||
-    value.answers.length > 3 ||
-    value.answers.some((answer) => answer !== null && typeof answer !== 'string')
+    value.answers.length < USER_QUESTION_MIN_QUESTIONS ||
+    value.answers.length > USER_QUESTION_MAX_QUESTIONS ||
+    value.answers.some((answer) => !isUserQuestionAnswerValue(answer))
   ) {
     throw new Error('Invalid user question response answers');
   }
-  return { requestId, answers: [...value.answers] as Array<string | null> };
+  return {
+    requestId,
+    answers: (value.answers as UserQuestionResponse['answers']).map((answer) =>
+      Array.isArray(answer) ? [...answer] : answer,
+    ),
+  };
 }
 
 export function normalizeRegenerateTurnInput(input: unknown): RegenerateTurnInput {

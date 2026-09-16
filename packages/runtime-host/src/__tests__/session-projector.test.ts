@@ -50,7 +50,7 @@ test('projects Client Capability approvals without exposing provider identities'
             providerId: 'provider-secret',
             contractId: 'contract-secret',
             serverId: 'desktop_browser',
-            toolName: 'browser_snapshot',
+            toolName: 'BrowserSnapshot',
             capability: 'browser',
             scope: { kind: 'browser_origin', origin: 'https://example.com' },
           },

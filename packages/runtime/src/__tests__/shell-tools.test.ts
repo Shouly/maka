@@ -179,23 +179,158 @@ describe('Bash tool shell is threaded through to execution, not just the descrip
 });
 
 describe('Bash provider-facing result projection', () => {
-  test('managed Bash removes only the duplicated foreground command', async () => {
+  const terminalResult = (overrides: Record<string, unknown> = {}) => ({
+    kind: 'terminal',
+    cwd: '/workspace',
+    cmd: 'printf foreground',
+    status: 'completed',
+    exitCode: 0,
+    output: {
+      mode: 'pipes',
+      stdout: 'foreground',
+      stderr: '',
+      stdoutTruncated: false,
+      stderrTruncated: false,
+      redacted: false,
+    },
+    ...overrides,
+  });
+
+  test('a successful foreground run is the captured output, as text', async () => {
     const tool = buildManagedBashTool(fakeShellRuns());
-    const terminal = {
-      kind: 'terminal',
-      cwd: '/workspace',
-      cmd: 'printf foreground',
-      status: 'completed',
-      exitCode: 0,
-      output: {
-        mode: 'pipes',
-        stdout: 'foreground',
-        stderr: '',
-        stdoutTruncated: false,
-        stderrTruncated: false,
-        redacted: false,
-      },
-    };
+    const terminal = terminalResult();
+
+    assert.deepEqual(
+      await tool.toModelOutput?.({ toolCallId: 'foreground', input: {}, output: terminal }),
+      { type: 'text', value: 'foreground' },
+    );
+    // The durable result is untouched: the command still reaches the UI.
+    assert.equal(terminal.cmd, 'printf foreground');
+  });
+
+  test('a failure leads with its exit code', async () => {
+    const tool = buildManagedBashTool(fakeShellRuns());
+
+    assert.deepEqual(
+      await tool.toModelOutput?.({
+        toolCallId: 'failed',
+        input: {},
+        output: terminalResult({
+          status: 'failed',
+          exitCode: 2,
+          output: {
+            mode: 'pipes',
+            stdout: '',
+            stderr: 'boom\n',
+            stdoutTruncated: false,
+            stderrTruncated: false,
+            redacted: false,
+          },
+        }),
+      }),
+      { type: 'text', value: 'Exit code 2\nboom' },
+    );
+  });
+
+  test('a timeout and a cancellation name themselves beside the code', async () => {
+    const tool = buildManagedBashTool(fakeShellRuns());
+    for (const [status, qualifier, exitCode] of [
+      ['timed_out', 'timed out', 124],
+      ['cancelled', 'cancelled', 130],
+    ] as const) {
+      assert.deepEqual(
+        await tool.toModelOutput?.({
+          toolCallId: status,
+          input: {},
+          output: terminalResult({
+            status,
+            exitCode,
+            output: {
+              mode: 'pipes',
+              stdout: 'partial',
+              stderr: '',
+              stdoutTruncated: false,
+              stderrTruncated: false,
+              redacted: false,
+            },
+          }),
+        }),
+        { type: 'text', value: `Exit code ${exitCode} (${qualifier})\npartial` },
+      );
+    }
+  });
+
+  test('a failure with no exit code says what happened in words', async () => {
+    const tool = buildManagedBashTool(fakeShellRuns());
+
+    assert.deepEqual(
+      await tool.toModelOutput?.({
+        toolCallId: 'no-code',
+        input: {},
+        output: {
+          kind: 'terminal',
+          cwd: '/workspace',
+          cmd: 'printf x',
+          status: 'failed',
+          failureMessage: 'The shell was killed by the host.',
+          output: {
+            mode: 'pipes',
+            stdout: '',
+            stderr: '',
+            stdoutTruncated: false,
+            stderrTruncated: false,
+            redacted: false,
+          },
+        },
+      }),
+      { type: 'text', value: 'The shell was killed by the host.\n(no output)' },
+    );
+  });
+
+  test('a silent successful command returns the no-output sentinel', async () => {
+    const tool = buildManagedBashTool(fakeShellRuns());
+
+    assert.deepEqual(
+      await tool.toModelOutput?.({
+        toolCallId: 'silent',
+        input: {},
+        output: terminalResult({
+          output: {
+            mode: 'pipes',
+            stdout: '',
+            stderr: '',
+            stdoutTruncated: false,
+            stderrTruncated: false,
+            redacted: false,
+          },
+        }),
+      }),
+      { type: 'text', value: '(no output)' },
+    );
+  });
+
+  test('a truncated capture says so instead of reading as complete', async () => {
+    const tool = buildManagedBashTool(fakeShellRuns());
+    const output = await tool.toModelOutput?.({
+      toolCallId: 'truncated',
+      input: {},
+      output: terminalResult({
+        output: {
+          mode: 'pipes',
+          stdout: 'tail',
+          stderr: '',
+          stdoutTruncated: true,
+          stderrTruncated: false,
+          redacted: false,
+        },
+      }),
+    });
+    assert.equal(output?.type, 'text');
+    assert.match(String(output?.value), /^tail\n\[Output was truncated/);
+  });
+
+  test('a background run keeps its structured ref', async () => {
+    const tool = buildManagedBashTool(fakeShellRuns());
     const background = {
       kind: 'shell_run',
       ref: 'maka://runtime/background-tasks/sr_test',
@@ -209,23 +344,58 @@ describe('Bash provider-facing result projection', () => {
     };
 
     assert.deepEqual(
-      await tool.toModelOutput?.({ toolCallId: 'foreground', input: {}, output: terminal }),
-      {
-        type: 'json',
-        value: {
-          kind: 'terminal',
-          cwd: '/workspace',
-          status: 'completed',
-          exitCode: 0,
-          output: terminal.output,
-        },
-      },
-    );
-    assert.deepEqual(
       await tool.toModelOutput?.({ toolCallId: 'background', input: {}, output: background }),
       { type: 'json', value: background },
     );
-    assert.equal(terminal.cmd, 'printf foreground');
+  });
+});
+
+describe('Bash description parameter', () => {
+  test('the managed schema accepts a short plain-words description and bounds it', () => {
+    const tool = buildManagedBashTool(fakeShellRuns(), { declareSandboxBoundary: false });
+    const schema = tool.parameters as {
+      safeParse(value: unknown): { success: boolean };
+    };
+    assert.equal(
+      schema.safeParse({ command: 'npm test', description: 'Run the unit test suite' }).success,
+      true,
+    );
+    assert.equal(
+      schema.safeParse({ command: 'npm test', description: 'x'.repeat(201) }).success,
+      false,
+    );
+  });
+
+  test('the description never reaches the launcher — only the command runs', async () => {
+    const launched: { command: string }[] = [];
+    const tool = buildManagedBashTool(
+      {
+        runForegroundBash: async (input) => {
+          launched.push({ command: input.command });
+          return {
+            kind: 'terminal',
+            cwd: input.cwd,
+            cmd: input.command,
+            status: 'completed',
+            exitCode: 0,
+            output: {
+              mode: 'pipes',
+              stdout: '',
+              stderr: '',
+              stdoutTruncated: false,
+              stderrTruncated: false,
+              redacted: false,
+            },
+          };
+        },
+        runBackgroundBash: () => Promise.reject(new Error('not used')),
+      },
+      { declareSandboxBoundary: false },
+    );
+
+    await tool.impl({ command: 'true', description: 'Do the thing' } as never, fakeToolContext());
+
+    assert.deepEqual(launched, [{ command: 'true' }]);
   });
 });
 
@@ -280,7 +450,7 @@ describe('shapeTerminalResult sandbox denial projection', () => {
   });
 });
 
-describe('WriteStdin provider/strict contract conformance', () => {
+describe('TaskInput provider/strict contract conformance', () => {
   const { providerParameters, strictParameters } = createWriteStdinSchemas();
 
   // Each example's first action, or undefined for a resize-only (action-less) example.
@@ -326,7 +496,7 @@ describe('WriteStdin provider/strict contract conformance', () => {
       });
       assert.ok(
         covering.length >= 1,
-        `no minimal WriteStdin example covers the '${event}' mouse event`,
+        `no minimal TaskInput example covers the '${event}' mouse event`,
       );
       for (const { label, payload } of covering) {
         acceptedByBothLayers(label, payload);
@@ -341,7 +511,7 @@ describe('WriteStdin provider/strict contract conformance', () => {
       const covered = WRITE_STDIN_MINIMAL_EXAMPLES.some(
         ({ payload }) => firstActionOf(payload)?.type === type,
       );
-      assert.ok(covered, `no minimal WriteStdin example covers the '${type}' action type`);
+      assert.ok(covered, `no minimal TaskInput example covers the '${type}' action type`);
     }
   });
 

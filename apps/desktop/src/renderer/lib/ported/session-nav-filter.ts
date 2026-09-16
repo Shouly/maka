@@ -28,5 +28,89 @@ import type { SessionSummary } from '@maka/core/session';
  * ever selected, which left one branch reachable — this one.
  */
 export function sessionMatchesRail(session: SessionSummary): boolean {
-  return !session.isArchived;
+  return !session.isArchived && !isScheduledRunSession(session);
+}
+
+/**
+ * The label the Runtime Host puts on a Session it opened for a scheduled task.
+ *
+ * Set in `HostScheduledTaskCoordinator#ensureAgentSession`; the two must stay
+ * spelled the same, which is why it is a named constant rather than a literal
+ * at the comparison.
+ */
+export const SCHEDULED_RUN_SESSION_LABEL = 'scheduled-task';
+
+/**
+ * A Session a scheduled task opened when it fired.
+ *
+ * These are kept out of Projects and Recents on purpose: a task that runs every
+ * morning would otherwise push a new row into the rail every day and bury the
+ * conversations the person actually started. They are reached from the task —
+ * the Scheduled band and the task's run history both open them — which is where
+ * a run belongs, beside the other runs of the same task.
+ */
+export function isScheduledRunSession(session: SessionSummary): boolean {
+  return session.labels?.includes(SCHEDULED_RUN_SESSION_LABEL) === true;
+}
+
+/**
+ * How many of each task's runs nobody has read yet.
+ *
+ * The reference puts this count where the sidebar row's trailing slot is, and
+ * Maka already has everything it needs: a run opens its own Session, the Host
+ * sets `hasUnread` on it when it produces output, and opening the Session
+ * clears it. Only the Scheduled band never asked.
+ *
+ * Sessions are keyed by the DESKTOP key (`[hostId, sessionId]`) while a run
+ * records the Host's raw session id, so the caller supplies the mapping it
+ * already has rather than this module re-deriving it — the same mismatch once
+ * crashed the sidebar by casting one into the other.
+ *
+ * Counted by SESSION, not by run: SendLater delivers several fires into one
+ * Session, and that Session is one thing to read, not three.
+ */
+export function unreadRunsByTask(
+  tasks: readonly {
+    readonly id: string;
+    readonly runs: readonly { readonly sessionId?: string }[];
+  }[],
+  unreadHostSessionIds: ReadonlySet<string>,
+): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>();
+  for (const task of tasks) {
+    const seen = new Set<string>();
+    for (const run of task.runs) {
+      if (run.sessionId && unreadHostSessionIds.has(run.sessionId)) seen.add(run.sessionId);
+    }
+    if (seen.size > 0) counts.set(task.id, seen.size);
+  }
+  return counts;
+}
+
+/**
+ * The scheduled task a Session came out of, if any.
+ *
+ * A run records the Host's raw session id; a Session is keyed by the desktop
+ * `[hostId, sessionId]` pair. The parse lives here so the two are never
+ * compared raw — doing that once crashed the sidebar.
+ *
+ * Kept out of the component because a connected component cannot be rendered
+ * under the presentation tests: `useStore` hands React `getInitialState()`
+ * there, so a store written before the render is not what the component sees.
+ */
+export function scheduledTaskIdForSession(
+  tasks: readonly {
+    readonly id: string;
+    readonly runs: readonly { readonly sessionId?: string }[];
+  }[],
+  desktopSessionKey: string,
+  parseKey: (key: string) => { sessionId: string },
+): string | undefined {
+  let hostSessionId: string;
+  try {
+    hostSessionId = parseKey(desktopSessionKey).sessionId;
+  } catch {
+    return undefined;
+  }
+  return tasks.find((task) => task.runs.some((run) => run.sessionId === hostSessionId))?.id;
 }

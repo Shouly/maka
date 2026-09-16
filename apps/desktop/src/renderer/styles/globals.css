@@ -1870,18 +1870,6 @@ dialog:modal {
   outline-offset: 2px;
 }
 
-/* The product's primary action colour is the (blue) accent, not relx's
-   brand orange (§2 of the rewrite plan). Solid-accent variant of the squish
-   control for the composer's send key and the ask-user submit key; same
-   contract as `.ui-control-squish-brand`, only the fill differs. */
-.ui-control-squish-accent-fill {
-  --control-fill: var(--fill-accent);
-  --control-fill-hover: var(--fill-accent-hover);
-  --control-inset: .5px;
-  --control-shadow: none;
-  --control-shadow-hover: none;
-}
-
 /* Keep settled history outside the viewport cheap to paint; live output needs
    its actual geometry on every frame.
 

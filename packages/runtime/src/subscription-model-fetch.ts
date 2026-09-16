@@ -373,7 +373,7 @@ function codexInstructionsFromBody(body: Record<string, unknown>): string {
       if (text) return text;
     }
   }
-  return 'You are Maka, a helpful AI assistant.';
+  return 'You are Copilot, a helpful AI assistant.';
 }
 
 function formatOpenAiCodexHttpError(statusCode: number, detail: string): string {

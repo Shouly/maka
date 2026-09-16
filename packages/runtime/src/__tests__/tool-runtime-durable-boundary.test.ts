@@ -1753,7 +1753,7 @@ function makeHarness(
           tool: target,
           turnId: 'turn-1',
           toolCallId: 'provider-call-1',
-          input: target.durableExecutionProfile ? { path: 'notes.txt' } : {},
+          input: target.durableExecutionProfile ? { file_path: 'notes.txt' } : {},
           abortSignal,
           eventSink: {
             push: (event) => {
@@ -1773,7 +1773,7 @@ function makeHarness(
           tool: target,
           turnId: 'turn-1',
           toolCallId: 'nested-call-1',
-          input: target.durableExecutionProfile ? { path: 'notes.txt' } : {},
+          input: target.durableExecutionProfile ? { file_path: 'notes.txt' } : {},
           abortSignal: new AbortController().signal,
           eventSink: {
             push: (event) => events.push(event),

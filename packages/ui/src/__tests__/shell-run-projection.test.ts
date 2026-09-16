@@ -34,11 +34,11 @@ import type { LiveTurnProjection } from '../live-turn-projection.js';
 const REF = 'maka://runtime/background-tasks/pty-1';
 
 describe('ShellRun UI projection', () => {
-  test('reconciles WriteStdin into its Bash parent while retaining safe operation metadata', () => {
+  test('reconciles TaskInput into its Bash parent while retaining safe operation metadata', () => {
     const messages: StoredMessage[] = [
       toolCall('bash-1', 'turn-1', 'Bash', { command: 'read value', pty: true }, 1),
       toolResult('bash-1', 'turn-1', shellRun(1), 2),
-      toolCall('write-1', 'turn-2', 'WriteStdin', {
+      toolCall('write-1', 'turn-2', 'TaskInput', {
         ref: REF,
         input: 'private-value\n',
         size: { cols: 100, rows: 30 },
@@ -61,7 +61,7 @@ describe('ShellRun UI projection', () => {
     if (bash?.result?.kind !== 'shell_run') assert.fail('expected ShellRun parent');
     assert.equal(bash.result.revision, 2);
     assert.equal(bash.result.operation, undefined);
-    assert.equal(write?.toolName, 'WriteStdin');
+    assert.equal(write?.toolName, 'TaskInput');
     assert.deepEqual(write?.args, {
       ref: REF,
       inputPreview: { text: 'private-value\\n', bytes: 14, truncated: false },

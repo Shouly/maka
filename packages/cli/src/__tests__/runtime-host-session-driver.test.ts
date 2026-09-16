@@ -87,13 +87,23 @@ describe('Runtime Host Maka Session driver', () => {
     );
   });
 
-  test('queries the attached Session Todo projection without storing history', async () => {
+  test('queries the attached Session task list without storing history', async () => {
     const subscription = new FakeSubscription(continuitySnapshot(), Promise.resolve([]));
     const connection = new FakeConnection([subscription]);
-    connection.todoQuery = {
+    connection.taskQuery = {
       sessionId: 'session-id',
+      nextId: 2,
       items: [
-        { content: 'keep sk-1234567890abcdef <session-todo> visible', status: 'in_progress' },
+        {
+          id: '1',
+          subject: 'keep sk-1234567890abcdef <session-task> visible',
+          description: 'redaction fixture',
+          status: 'in_progress',
+          blocks: [],
+          blockedBy: [],
+          createdAt: 0,
+          updatedAt: 0,
+        },
       ],
     };
     const driver = createRuntimeHostMakaSessionDriver({
@@ -113,22 +123,23 @@ describe('Runtime Host Maka Session driver', () => {
       permissionMode: 'ask',
     });
 
-    const queried = await driver.queryTodo!('session-id');
-    assert.deepEqual(queried, {
-      sessionId: 'session-id',
-      items: [{ content: 'keep <redacted>  visible', status: 'in_progress' }],
-    });
+    const queried = await driver.querySessionTask!('session-id');
+    assert.equal(queried.sessionId, 'session-id');
+    assert.equal(queried.nextId, 2);
+    assert.equal(queried.items.length, 1);
+    assert.equal(queried.items[0]?.subject, 'keep <redacted>  visible');
+    assert.equal(queried.items[0]?.status, 'in_progress');
     assert.deepEqual(
-      connection.requests.filter(({ operation }) => operation === 'session.todo.query'),
-      [{ operation: 'session.todo.query', input: { sessionId: 'session-id' } }],
+      connection.requests.filter(({ operation }) => operation === 'session.task.query'),
+      [{ operation: 'session.task.query', input: { sessionId: 'session-id' } }],
     );
-    await assert.rejects(driver.queryTodo!('other-session'), /non-current Session/);
+    await assert.rejects(driver.querySessionTask!('other-session'), /non-current Session/);
 
-    connection.todoQuery = { sessionId: 'other-session', items: [] };
-    await assert.rejects(driver.queryTodo!('session-id'), /unexpected Session/);
+    connection.taskQuery = { sessionId: 'other-session', nextId: 1, items: [] };
+    await assert.rejects(driver.querySessionTask!('session-id'), /unexpected Session/);
   });
 
-  test('publishes only Todo domain invalidations and supports unsubscribe', async () => {
+  test('publishes only session_task domain invalidations and supports unsubscribe', async () => {
     const subscription = new FakeSubscription(continuitySnapshot(), Promise.resolve([]));
     const connection = new FakeConnection([subscription]);
     const driver = createRuntimeHostMakaSessionDriver({
@@ -148,7 +159,7 @@ describe('Runtime Host Maka Session driver', () => {
     });
 
     const changes: string[] = [];
-    const unsubscribe = driver.subscribeTodoChanges!((sessionId) => changes.push(sessionId));
+    const unsubscribe = driver.subscribeSessionTaskChanges!((sessionId) => changes.push(sessionId));
     subscription.push({
       kind: 'subscription.session_domain_changed',
       hostEpoch: 'host-1',
@@ -163,7 +174,7 @@ describe('Runtime Host Maka Session driver', () => {
       subscriptionId: 'subscription-1',
       sequence: 2,
       sessionId: 'session-id',
-      domain: 'todo',
+      domain: 'session_task',
     });
     await waitFor(() => changes.length === 1);
     assert.deepEqual(changes, ['session-id']);
@@ -175,7 +186,7 @@ describe('Runtime Host Maka Session driver', () => {
       subscriptionId: 'subscription-1',
       sequence: 3,
       sessionId: 'session-id',
-      domain: 'todo',
+      domain: 'session_task',
     });
     await delay(0);
     assert.deepEqual(changes, ['session-id']);
@@ -2834,7 +2845,7 @@ class FakeConnection {
   openedSubscriptions = 0;
   interactionQuery: unknown;
   runtimeResourceQuery: unknown;
-  todoQuery: OperationOutput<'session.todo.query'> | undefined;
+  taskQuery: OperationOutput<'session.task.query'> | undefined;
   onRuntimeResourceStart: (() => Promise<void>) | undefined;
   executionBoundary: unknown = { kind: 'managed', access: 'read_write', revision: 1 };
   skillStartBlocked = false;
@@ -2987,9 +2998,9 @@ class FakeConnection {
       }
       return this.runtimeResourceQuery as OperationOutput<K>;
     }
-    if (operation === 'session.todo.query') {
-      if (this.todoQuery === undefined) throw new Error('Unexpected Session Todo query');
-      return this.todoQuery as OperationOutput<K>;
+    if (operation === 'session.task.query') {
+      if (this.taskQuery === undefined) throw new Error('Unexpected Session task query');
+      return this.taskQuery as OperationOutput<K>;
     }
     if (operation === 'turn.stop') {
       return {} as OperationOutput<K>;
@@ -3393,7 +3404,7 @@ function pendingQuestion() {
     request: {
       kind: 'question' as const,
       toolUseId: 'tool-question',
-      questions: [{ question: 'Continue?', options: [{ label: 'Yes' }] }],
+      questions: [{ question: 'Continue?', header: 'Continue', options: [{ label: 'Yes' }] }],
     },
   };
 }

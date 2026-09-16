@@ -4231,7 +4231,7 @@ Slug openai-work<cursor>
     await run;
   });
 
-  test('shows unavailable rather than empty when a driver lacks Todo queries', async () => {
+  test('shows unavailable rather than empty when a driver lacks task-list queries', async () => {
     const terminal = new FakeTerminal();
     const driver = new (class extends SlashCommandDriver {
       override getSessionId(): null {
@@ -4247,29 +4247,44 @@ Slug openai-work<cursor>
       permissionMode: 'bypass',
       terminal,
     });
-    terminal.input('/todo');
+    terminal.input('/tasks');
     terminal.input('\r');
-    await waitFor(() => plainTerminalOutput(terminal.screenOutput()).includes('Todo unavailable'));
-    assert.equal(plainTerminalOutput(terminal.screenOutput()).includes('No Todo items'), false);
+    await waitFor(() => plainTerminalOutput(terminal.screenOutput()).includes('Tasks unavailable'));
+    assert.equal(plainTerminalOutput(terminal.screenOutput()).includes('No tasks'), false);
     terminal.input('\x1b');
     terminal.input('/exit');
     terminal.input('\r');
     await run;
   });
 
-  test('refreshes Todo on domain invalidation and clears the old session after /new', async () => {
+  test('refreshes the task list on domain invalidation and clears the old session after /new', async () => {
     const terminal = new FakeTerminal();
     let changed: ((sessionId: string) => void) | undefined;
     let content = 'First current item';
     let unsubscribed = false;
     const driver = Object.assign(new SlashCommandDriver(), {
-      async queryTodo(sessionId: string) {
+      async querySessionTask(sessionId: string) {
         return {
           sessionId,
-          items: sessionId === 'session-new' ? [] : [{ content, status: 'in_progress' as const }],
+          nextId: 2,
+          items:
+            sessionId === 'session-new'
+              ? []
+              : [
+                  {
+                    id: '1',
+                    subject: content,
+                    description: content,
+                    status: 'in_progress' as const,
+                    blocks: [],
+                    blockedBy: [],
+                    createdAt: 0,
+                    updatedAt: 0,
+                  },
+                ],
         };
       },
-      subscribeTodoChanges(listener: (sessionId: string) => void) {
+      subscribeSessionTaskChanges(listener: (sessionId: string) => void) {
         changed = listener;
         return () => {
           unsubscribed = true;
@@ -4294,9 +4309,9 @@ Slug openai-work<cursor>
     await waitFor(() => driver.startNewSessionCalls === 1);
     await waitForTuiPaint(terminal);
     assert.equal(plainTerminalOutput(terminal.screenOutput()).includes(content), false);
-    terminal.input('/todo');
+    terminal.input('/tasks');
     terminal.input('\r');
-    await waitFor(() => plainTerminalOutput(terminal.screenOutput()).includes('No Todo items'));
+    await waitFor(() => plainTerminalOutput(terminal.screenOutput()).includes('No tasks'));
     terminal.input('\x1b');
     terminal.input('/exit');
     terminal.input('\r');
@@ -4304,15 +4319,34 @@ Slug openai-work<cursor>
     assert.equal(unsubscribed, true);
   });
 
-  test('opens current Todo during a turn without steering and returns Escape to the composer', async () => {
+  test('opens current task list during a turn without steering and returns Escape to the composer', async () => {
     const terminal = new FakeTerminal();
     const driver = Object.assign(new SteeringTurnDriver(), {
-      async queryTodo(sessionId: string) {
+      async querySessionTask(sessionId: string) {
         return {
           sessionId,
+          nextId: 3,
           items: [
-            { content: 'Verify current Todo', status: 'in_progress' as const },
-            { content: 'Already marked', status: 'completed' as const },
+            {
+              id: '1',
+              subject: 'Verify current task list',
+              description: 'Verify current task list',
+              status: 'in_progress' as const,
+              blocks: [],
+              blockedBy: [],
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            {
+              id: '2',
+              subject: 'Already marked',
+              description: 'Already marked',
+              status: 'completed' as const,
+              blocks: [],
+              blockedBy: [],
+              createdAt: 0,
+              updatedAt: 0,
+            },
           ],
         };
       },
@@ -4330,9 +4364,9 @@ Slug openai-work<cursor>
     terminal.input('\r');
     await waitFor(() => terminal.progressStates.at(-1) === true);
     await waitFor(() =>
-      plainTerminalOutput(terminal.screenOutput()).includes('Verify current Todo'),
+      plainTerminalOutput(terminal.screenOutput()).includes('Verify current task list'),
     );
-    terminal.input('/todo');
+    terminal.input('/tasks');
     terminal.input('\r');
     await waitFor(() => plainTerminalOutput(terminal.screenOutput()).includes('Already marked'));
     assert.deepEqual(driver.steered, []);
@@ -10142,10 +10176,19 @@ class UserQuestionPromptDriver extends FakeSessionDriver {
       questions: [
         {
           question: 'Choose an approach',
+          header: 'Approach',
           options: [{ label: 'Extend', description: 'Reuse the seam' }, { label: 'Separate' }],
         },
-        { question: 'Keep the default', options: [{ label: 'Yes' }, { label: 'No' }] },
-        { question: 'Anything else', options: [{ label: 'Nothing' }, { label: 'More detail' }] },
+        {
+          question: 'Keep the default',
+          header: 'Default',
+          options: [{ label: 'Yes' }, { label: 'No' }],
+        },
+        {
+          question: 'Anything else',
+          header: 'Else',
+          options: [{ label: 'Nothing' }, { label: 'More detail' }],
+        },
       ],
     };
     await new Promise<void>((resolve) => {
@@ -10190,6 +10233,7 @@ class LongOptionsQuestionDriver extends FakeSessionDriver {
       questions: [
         {
           question: 'Pick a strategy',
+          header: 'Strategy',
           options: [
             { label: '方案甲', description: `${filler}TAIL-A` },
             { label: '方案乙', description: `${filler}TAIL-B` },
@@ -10691,6 +10735,7 @@ class ReaderThenQuestionDriver extends ToolOutputDriver {
       questions: [
         {
           question: 'Choose an approach',
+          header: 'Approach',
           options: [{ label: 'Extend' }, { label: 'Separate' }],
         },
       ],

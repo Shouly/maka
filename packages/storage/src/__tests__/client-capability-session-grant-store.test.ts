@@ -50,7 +50,7 @@ test('persists Client Capability grants for one Session and purges them with it'
       providerId: 'provider-1',
       contractId: 'contract-1',
       serverId: 'desktop_browser',
-      toolName: 'browser_snapshot',
+      toolName: 'BrowserSnapshot',
       capability: 'browser' as const,
       scope: { kind: 'browser_origin' as const, origin: 'https://example.com' },
     };
@@ -83,7 +83,7 @@ test('persists Client Capability grants for one Session and purges them with it'
       assert.deepEqual(
         await store.readClientCapabilitySessionGrant({
           ...key,
-          toolName: 'browser_click',
+          toolName: 'BrowserClick',
         }),
         grant,
       );

@@ -34,6 +34,7 @@ try {
     'phase5b-state.test.ts',
     'composer-state.test.ts',
     'presentation.test.tsx',
+    'tool-delivery.test.tsx',
     'core-dialogue.test.ts',
     'local-messages.test.ts',
     'plan-state.test.ts',
@@ -51,6 +52,7 @@ try {
     'phase5b-state.test.mjs',
     'composer-state.test.mjs',
     'presentation.test.mjs',
+    'tool-delivery.test.mjs',
     'core-dialogue.test.mjs',
     'local-messages.test.mjs',
     'plan-state.test.mjs',
@@ -64,7 +66,11 @@ try {
     outdir: output,
     outExtension: { '.js': '.mjs' },
     jsx: 'automatic',
-    loader: { '.css': 'empty' },
+    // Vite serves SVG imports as URLs; esbuild needs telling. `dataurl` rather
+    // than `empty` because the provider brand marks are rendered as `img src`
+    // and an empty module would make that an empty string — a broken image in
+    // a test is worth seeing, an absent one is not.
+    loader: { '.css': 'empty', '.svg': 'dataurl' },
     banner: {
       js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
     },

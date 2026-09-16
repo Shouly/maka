@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import type {
   AgentRuntimeSettingsPatch,
   MutateRuntimePolicyInput,
@@ -94,22 +95,24 @@ export function buildHostAgentSettingsTools(
   authority: HostAgentSettingsToolAuthority,
 ): readonly MakaTool[] {
   const getTool: MakaTool<Record<string, never>, AgentSettingsSnapshot> = {
-    name: 'MakaSettingsGet',
-    displayName: 'Read Maka settings',
+    name: TOOL_NAMES.copilotSettingsGet,
+    displayName: 'Read Copilot settings',
     description:
-      'Read the safe, non-secret Runtime settings that Maka may help configure. ' +
-      'This never returns credentials, network proxy details, native client settings, or Bot settings.',
+      'Read the Copilot settings the agent may help the user configure. Returns the current values of those settings only; credentials, network proxy details, native client settings and Bot settings are never included. Use it before proposing a change with CopilotSettingsUpdate.',
     parameters: z.object({}).strict(),
     categoryHint: 'read',
     recoveryMode: 'replay_safe',
     impl: async () => projectSettings((await authority.read()).policy),
   };
   const updateTool: MakaTool<AgentSettingsPatch, AgentSettingsUpdateResult> = {
-    name: 'MakaSettingsUpdate',
-    displayName: 'Update Maka settings',
-    description:
-      'Update the safe, non-secret Runtime settings owned by the Runtime Host. ' +
-      'Use only when the user explicitly asks to change Maka itself. Every effective change requires confirmation.',
+    name: TOOL_NAMES.copilotSettingsUpdate,
+    displayName: 'Update Copilot settings',
+    description: [
+      "Change Copilot settings on the user's behalf, only when they explicitly asked to change Copilot itself. Pass just the fields to change.",
+      '',
+      '- Every effective change is listed back to the user for confirmation before it is applied; a declined confirmation changes nothing and the result says so.',
+      '- A patch that changes nothing returns the current settings unchanged. Secrets and connection credentials cannot be set here.',
+    ].join('\n'),
     parameters: agentSettingsPatchSchema,
     categoryHint: 'custom_tool',
     recoveryMode: 'never_auto_retry',
@@ -124,15 +127,16 @@ export function buildHostAgentSettingsTools(
           ok: false,
           applied: false,
           reason: 'confirmation_unavailable',
-          message: 'Maka settings were not changed because confirmation is unavailable.',
+          message: 'Copilot settings were not changed because confirmation is unavailable.',
           settings: projectSettings(initial.policy),
         };
       }
       const answer = await context.askUserQuestion([
         {
-          question: `Apply these Maka setting changes?\n${changes.map((change) => `• ${change}`).join('\n')}`,
+          question: `Apply these Copilot setting changes?\n${changes.map((change) => `• ${change}`).join('\n')}`,
+          header: 'Settings',
           options: [
-            { label: 'Apply changes', description: 'Persist the listed Maka settings now.' },
+            { label: 'Apply changes', description: 'Persist the listed Copilot settings now.' },
             { label: 'Cancel', description: 'Leave every setting unchanged.' },
           ],
         },
@@ -144,7 +148,7 @@ export function buildHostAgentSettingsTools(
           ok: true,
           applied: false,
           reason: 'cancelled',
-          message: 'Maka settings were not changed.',
+          message: 'Copilot settings were not changed.',
           settings: projectSettings(current.policy),
         };
       }
@@ -162,11 +166,11 @@ export function buildHostAgentSettingsTools(
           ok: true,
           applied: true,
           changes,
-          message: `Updated ${changes.length} Maka setting${changes.length === 1 ? '' : 's'}.`,
+          message: `Updated ${changes.length} Copilot setting${changes.length === 1 ? '' : 's'}.`,
           settings: projectSettings(updated.policy),
         };
       }
-      throw new Error('Runtime Policy kept changing while Maka settings were updated');
+      throw new Error('Runtime Policy kept changing while Copilot settings were updated');
     },
   };
   return [getTool, updateTool];
@@ -177,7 +181,7 @@ function unchanged(policy: RuntimePolicy): AgentSettingsUpdateResult {
     kind: 'maka_settings_update',
     ok: true,
     applied: false,
-    message: 'The requested Maka settings already have those values.',
+    message: 'The requested Copilot settings already have those values.',
     settings: projectSettings(policy),
   };
 }

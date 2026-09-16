@@ -32,7 +32,7 @@ import {
   type Terminal,
 } from '@earendil-works/pi-tui';
 import type { PermissionMode } from '@maka/core/permission';
-import { CurrentTodoStore, TodoOverlay, renderTodoIndicator } from './pi-tui-todo.js';
+import { CurrentTaskStore, TaskOverlay, renderTaskIndicator } from './pi-tui-task.js';
 import { isThinkingLevel, type ThinkingLevel } from '@maka/core/model-thinking';
 import { deriveConnectionSlug, type ProviderType } from '@maka/core/llm-connections';
 import type { OrchestrationMode } from '@maka/core/orchestration';
@@ -127,6 +127,7 @@ import {
 } from './pi-transcript.js';
 import { FormInteractionOverlay, type TuiFormDraft } from './pi-tui-form-interaction.js';
 import type { InteractionFormResponse } from '@maka/core/interaction';
+import type { UserQuestionResponse } from '@maka/core/user-question';
 import { runMakaPiTuiTurn, type MakaPiTuiTurnRequest } from './pi-tui-turn.js';
 import { editorTheme, selectListTheme } from './tui-ansi.js';
 import { MakaAutocompleteAboveEditorComponent } from './tui-autocomplete-layout.js';
@@ -521,7 +522,7 @@ export async function runMakaPiTui(input: MakaPiTuiInput): Promise<void> {
     | {
         requestId: string;
         index: number;
-        answers: Array<string | null>;
+        answers: UserQuestionResponse['answers'];
       }
     | undefined;
   let formResponseInFlightRequestId: string | undefined;
@@ -565,10 +566,10 @@ export async function runMakaPiTui(input: MakaPiTuiInput): Promise<void> {
   // overlay, not arm the double-Escape interrupt for the running Turn (#3380).
   let sessionPickerOverlayOpen = false;
   let transcriptOverlay: OverlayHandle | undefined;
-  let todoOverlay: OverlayHandle | undefined;
-  const closeTodoOverlay = (): void => {
-    todoOverlay?.hide();
-    todoOverlay = undefined;
+  let taskOverlay: OverlayHandle | undefined;
+  const closeTaskOverlay = (): void => {
+    taskOverlay?.hide();
+    taskOverlay = undefined;
   };
   let transcriptViewer: TranscriptViewerOverlay | undefined;
   let transcriptViewerSessionId: string | undefined;
@@ -692,30 +693,30 @@ export async function runMakaPiTui(input: MakaPiTuiInput): Promise<void> {
   const activityStrip = new MakaActivityStripComponent(metadata);
   const pendingQueue = new MakaPendingQueueComponent(state, locale);
   const statusLine = new MakaStatusLineComponent(metadata);
-  const currentTodo = new CurrentTodoStore(
+  const currentTasks = new CurrentTaskStore(
     {
       read: async (sessionId) => {
-        if (!input.driver.queryTodo) throw new Error('Todo query unavailable');
-        return input.driver.queryTodo(sessionId);
+        if (!input.driver.querySessionTask) throw new Error('Task list query unavailable');
+        return input.driver.querySessionTask(sessionId);
       },
     },
     () => {
       if (!closed) tui.requestRender();
     },
   );
-  const syncTodoSession = (): void => {
-    currentTodo.setSession(input.driver.getSessionId() ?? undefined);
+  const syncTaskSession = (): void => {
+    currentTasks.setSession(input.driver.getSessionId() ?? undefined);
   };
-  const unsubscribeTodoChanges = input.driver.subscribeTodoChanges?.((sessionId) => {
+  const unsubscribeSessionTaskChanges = input.driver.subscribeSessionTaskChanges?.((sessionId) => {
     if (sessionId !== input.driver.getSessionId()) return;
-    syncTodoSession();
-    void currentTodo.refresh();
+    syncTaskSession();
+    void currentTasks.refresh();
   });
-  const todoIndicator: Component = {
+  const taskIndicator: Component = {
     invalidate() {},
     render(width) {
-      if (!input.driver.queryTodo) return [];
-      const line = renderTodoIndicator(currentTodo.getState(), { locale, width });
+      if (!input.driver.querySessionTask) return [];
+      const line = renderTaskIndicator(currentTasks.getState(), { locale, width });
       return line === undefined ? [] : [line];
     },
   };
@@ -735,7 +736,7 @@ export async function runMakaPiTui(input: MakaPiTuiInput): Promise<void> {
     editorSurface,
     statusLine,
     terminal,
-    todoIndicator,
+    taskIndicator,
   );
   const attention = new AttentionController(terminal, {
     baseTitle: input.title,
@@ -1045,9 +1046,9 @@ export async function runMakaPiTui(input: MakaPiTuiInput): Promise<void> {
     unsubscribeModelCatalogChanges?.();
     unsubscribeSessionTitleChanges();
     unsubscribeGoalChanges?.();
-    unsubscribeTodoChanges?.();
-    currentTodo.dispose();
-    closeTodoOverlay();
+    unsubscribeSessionTaskChanges?.();
+    currentTasks.dispose();
+    closeTaskOverlay();
     void sideConversation?.stopParentObserver?.();
     unsubscribeStartedTurns();
     unsubscribeResolvedInteractions();
@@ -1674,7 +1675,7 @@ export async function runMakaPiTui(input: MakaPiTuiInput): Promise<void> {
   }
 
   const adoptSessionMetadata = (summary: SessionSummary, announceIdentity = true) => {
-    syncTodoSession();
+    syncTaskSession();
     cwd = summary.cwd ?? cwd;
     setSessionTitle(summary.name);
     model = summary.model;
@@ -1782,7 +1783,7 @@ export async function runMakaPiTui(input: MakaPiTuiInput): Promise<void> {
     activeTurn,
   }: MakaSessionSwitchResult): Promise<void> => {
     resetTranscriptViewer();
-    closeTodoOverlay();
+    closeTaskOverlay();
     adoptSessionMetadata(summary, false);
     replaceTranscript(messages);
     syncInteractionOverlays();
@@ -2180,7 +2181,10 @@ export async function runMakaPiTui(input: MakaPiTuiInput): Promise<void> {
     userQuestionOverlay = undefined;
   };
 
-  const finishUserQuestion = (requestId: string, answers: Array<string | null>): void => {
+  const finishUserQuestion = (
+    requestId: string,
+    answers: UserQuestionResponse['answers'],
+  ): void => {
     if (userQuestionInFlight) return;
     const respond = input.driver.respondToUserQuestion;
     if (!respond) {
@@ -2217,22 +2221,33 @@ export async function runMakaPiTui(input: MakaPiTuiInput): Promise<void> {
       return;
     }
     closeUserQuestionOverlay();
-    const advance = (answer: string | null): void => {
+    const advance = (answer: string | string[] | null): void => {
       progress.answers[progress.index] = answer;
       progress.index += 1;
       showUserQuestion();
     };
+    const multiSelect = question.multiSelect === true;
     userQuestionOverlay = showBottomPicker(
       new UserQuestionOverlay(tui, {
         title: question.question,
+        ...(question.header ? { header: question.header } : {}),
         rightLabel: `${progress.index + 1} / ${request.questions.length}`,
-        hint: '↑↓ move · type to answer · Enter select · Esc unanswered · Ctrl+C stop',
+        hint: multiSelect
+          ? '↑↓ move · Space toggle · Enter submit · type to answer · Esc unanswered · Ctrl+C stop'
+          : '↑↓ move · type to answer · Enter select · Esc unanswered · Ctrl+C stop',
         placeholder: 'Other: type your answer…',
         options: question.options,
+        multiSelect,
         // Live budget: terminal.rows changes on resize, so read it per render
         // rather than at overlay construction.
         maxRows: () => Math.max(1, terminal.rows - BOTTOM_PICKER_MARGIN_ROWS),
         onSelectOption: (index) => advance(question.options[index]?.label ?? null),
+        onSubmitSelection: (indexes) => {
+          const labels = indexes
+            .map((index) => question.options[index]?.label)
+            .filter((label): label is string => label !== undefined);
+          advance(labels.length > 0 ? labels : null);
+        },
         onSubmitText: (value) => advance(value),
         onSkip: () => advance(null),
       }),
@@ -2384,7 +2399,7 @@ export async function runMakaPiTui(input: MakaPiTuiInput): Promise<void> {
 
   const syncInteractionOverlays = (): void => {
     if (state.pendingInteraction) {
-      closeTodoOverlay();
+      closeTaskOverlay();
       transcriptOverlay?.hide();
       transcriptOverlay = undefined;
     }
@@ -3142,8 +3157,8 @@ export async function runMakaPiTui(input: MakaPiTuiInput): Promise<void> {
       return false;
     }
     resetTranscriptViewer();
-    closeTodoOverlay();
-    syncTodoSession();
+    closeTaskOverlay();
+    syncTaskSession();
     // A fresh session is not bound by the previous one's boundary. Falling back
     // to the *current* label would keep the previous Session's mode, including
     // Auto while a changed Host default creates with full access; the launch
@@ -3245,18 +3260,18 @@ export async function runMakaPiTui(input: MakaPiTuiInput): Promise<void> {
     });
   };
 
-  const showTodo = (): void => {
+  const showTasks = (): void => {
     if (state.pendingInteraction) return;
-    syncTodoSession();
-    void currentTodo.refresh();
-    closeTodoOverlay();
-    todoOverlay = tui.showOverlay(
-      new TodoOverlay({
+    syncTaskSession();
+    void currentTasks.refresh();
+    closeTaskOverlay();
+    taskOverlay = tui.showOverlay(
+      new TaskOverlay({
         locale,
         getState: () =>
-          input.driver.queryTodo ? currentTodo.getState() : { status: 'error', items: [] },
+          input.driver.querySessionTask ? currentTasks.getState() : { status: 'error', items: [] },
         viewportRows: () => terminal.rows,
-        onClose: closeTodoOverlay,
+        onClose: closeTaskOverlay,
         onChange: () => tui.requestRender(),
       }),
       { anchor: 'top-left', width: '100%', maxHeight: '100%' },
@@ -4131,20 +4146,20 @@ export async function runMakaPiTui(input: MakaPiTuiInput): Promise<void> {
         showTranscriptViewer();
       },
     },
-    todo: {
-      description: primaryGuidance.commands.todo,
+    tasks: {
+      description: primaryGuidance.commands.tasks,
       midTurn: 'local',
       run: (parts: string[]) => {
         if (parts.length !== 1) {
           state.entries.push({
             kind: 'notice',
             level: 'error',
-            text: TUI_COPY_RESOURCES.todo[locale].usage,
+            text: TUI_COPY_RESOURCES.tasks[locale].usage,
           });
           requestRender();
           return;
         }
-        showTodo();
+        showTasks();
       },
     },
     permissions: {
@@ -4613,7 +4628,7 @@ export async function runMakaPiTui(input: MakaPiTuiInput): Promise<void> {
     });
   }
 
-  syncTodoSession();
+  syncTaskSession();
   return closedPromise;
 }
 

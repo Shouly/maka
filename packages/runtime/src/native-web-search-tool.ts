@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import { z } from 'zod';
 import { resolveHostedWebSearchCapability } from '@maka/core/model-web-search';
 import { resolveModelRuntime } from './model-runtime.js';
@@ -25,7 +26,7 @@ import type { RuntimeExecutionConnection } from '@maka/core/llm-connections';
 import type { WebSearchSettings } from '@maka/core/web-search';
 import type { MakaTool } from './tool-runtime.js';
 
-export const NATIVE_WEB_SEARCH_TOOL_NAME = 'WebSearch';
+export const NATIVE_WEB_SEARCH_TOOL_NAME = TOOL_NAMES.webSearch;
 
 /**
  * Provider-executed search descriptor. AI SDK compiles this into the selected
@@ -43,7 +44,7 @@ export function buildNativeWebSearchTool(input?: {
     activityKind: 'websearch',
     categoryHint: 'web_read',
     description:
-      'Search and read the live web through the current model provider. Use it for current external information and source-backed answers.',
+      'Search and read the live web through the model provider itself. Use it for anything about the present-day world rather than answering from memory; results arrive with their sources, which you cite in your reply. Takes no arguments: state the query in your request.',
     parameters: z.object({}).strict(),
     providerTool: {
       ...(adapter === 'anthropic-messages'

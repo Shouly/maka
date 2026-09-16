@@ -37,6 +37,7 @@ import {
   isPlanTextWithinLimit,
 } from '@maka/core/plan';
 
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import type { MakaTool } from './tool-runtime.js';
 
 const MARKDOWN_PATTERN =
@@ -115,9 +116,14 @@ export function buildSubmitPlanTool(
   PlanToolResult
 > {
   return {
-    name: 'SubmitPlan',
-    description:
-      'Submit the finished implementation plan for user approval. Every step requires a concise plain-text title and a detailed plain-text description; do not use Markdown in either field. This ends the planning turn, so do not call it until the plan is ready to review.',
+    name: TOOL_NAMES.submitPlan,
+    description: [
+      'Submit the finished plan for the user to review. This ends the planning turn, so call it once, when the plan is complete — not to share a draft.',
+      '',
+      '- Every step has a short plain-text title and a detailed plain-text description of what to change and why; list the files it touches and its complexity when you know them. No Markdown in any field.',
+      '- Name the risks you saw; an empty list means you looked and found none.',
+      '- The user approves, asks for changes, or abandons the plan in the interface; an approved plan becomes an execution you report on with UpdatePlan. Fails when the plan exceeds its step, file or text limits.',
+    ].join('\n'),
     parameters: z
       .object({
         title: boundedTextSchema('Plan title'),
@@ -143,7 +149,7 @@ export function buildSubmitPlanTool(
         proposal:
           result.event.type === 'plan_submitted'
             ? result.event.proposal
-            : missingPlanToolProjection('SubmitPlan'),
+            : missingPlanToolProjection(TOOL_NAMES.submitPlan),
         storeVersion: result.state.storeVersion,
       };
     },
@@ -161,9 +167,13 @@ export function buildUpdatePlanTool(
   PlanToolResult
 > {
   return {
-    name: 'update_plan',
-    description:
-      'Update execution progress for the approved plan. Include every plan step and keep at most one step in_progress.',
+    name: TOOL_NAMES.updatePlan,
+    description: [
+      'Report progress on the approved plan. Pass every step with its current status — pending, in_progress, completed or skipped — and keep at most one step in_progress; add a short explanation when the plan is deviating from what was approved.',
+      '',
+      '- Replaces the whole progress record, so omit nothing. Fails when a step id is unknown or two steps are in progress.',
+      '- Completed means you verified the step; the user sees these statuses live.',
+    ].join('\n'),
     parameters: z.object({
       steps: z.array(executionStepSchema).min(1).max(PLAN_MAX_STEPS),
       explanation: boundedTextSchema('Plan progress explanation').optional(),
@@ -186,9 +196,9 @@ export function buildCancelPlanTool(
   executionId: string,
 ): MakaTool<{ reason: string }, PlanToolResult> {
   return {
-    name: 'cancel_plan',
+    name: TOOL_NAMES.cancelPlan,
     description:
-      'Cancel the active plan execution when the user explicitly asks to abandon it. Explain the user request in reason.',
+      'Abandon the plan that is being executed, only when the user explicitly asks to stop it. reason quotes or paraphrases what the user said; it is recorded with the cancellation. Do not cancel on your own judgement — finish, or ask.',
     parameters: z.object({
       reason: boundedTextSchema('Plan cancellation reason', PLAN_LIFECYCLE_REASON_MAX_BYTES),
     }),

@@ -30,7 +30,7 @@ import {
 } from '../operational-state-backup.js';
 import { openInteractiveScheduledTaskStoreForWrite } from '../scheduled-task-store.js';
 import { createSqlitePlanStore } from '../plan-store.js';
-import { createSqliteSessionTodoStore } from '../session-todo-store.js';
+import { createSqliteSessionTaskStore } from '../session-task-store.js';
 import { SQLITE_WORKFLOW_SCHEMA_VERSION } from '../sqlite-workflow-schema.js';
 import { resolveStorageRoot, tryAcquireInteractiveRootOwner } from '../root-authority.js';
 import {
@@ -133,11 +133,11 @@ describe('SQLite workflow stores', () => {
     });
   });
 
-  test('restores SessionTodo storage and drops Task Ledger events from workflow schema 10', async () => {
+  test('restores SessionTask storage and drops Task Ledger events from workflow schema 10', async () => {
     await withRoot(async (root) => {
-      createSqliteSessionTodoStore(root).close();
+      createSqliteSessionTaskStore(root).close();
 
-      // Recreate the schema-10 shape: SessionTodo storage did not exist yet and
+      // Recreate the schema-10 shape: SessionTask storage did not exist yet and
       // Task Ledger events did, so the migration has to add one and drop the other.
       const released = new DatabaseSync(join(root, 'runtime.sqlite'));
       try {
@@ -157,15 +157,15 @@ describe('SQLite workflow stores', () => {
             VALUES (?, 0, 'retired-event', '{}')
           `)
           .run(SESSION_ID);
-        released.exec('DROP TABLE workflow_session_todo_documents');
+        released.exec('DROP TABLE workflow_session_task_documents');
         setWorkflowSchemaVersion(released, 10);
       } finally {
         released.close();
       }
 
-      const migrated = createSqliteSessionTodoStore(root);
+      const migrated = createSqliteSessionTaskStore(root);
       try {
-        assert.deepEqual(await migrated.readOrBootstrap(SESSION_ID), { items: [] });
+        assert.deepEqual(await migrated.readOrBootstrap(SESSION_ID), { nextId: 1, items: [] });
       } finally {
         migrated.close();
       }
@@ -174,7 +174,7 @@ describe('SQLite workflow stores', () => {
       try {
         assert.equal(workflowSchemaVersion(verified), SQLITE_WORKFLOW_SCHEMA_VERSION);
         assert.equal(tableExists(verified, 'workflow_task_ledger_events'), false);
-        assert.equal(rowCount(verified, 'workflow_session_todo_documents'), 1);
+        assert.equal(rowCount(verified, 'workflow_session_task_documents'), 1);
       } finally {
         verified.close();
       }
@@ -418,7 +418,7 @@ describe('SQLite workflow stores', () => {
     });
   });
 
-  test('backs up and restores Plan and initialized SessionTodo state', async () => {
+  test('backs up and restores Plan and initialized SessionTask state', async () => {
     const base = await mkdtemp(join(tmpdir(), 'maka-workflow-backup-'));
     const stateRoot = join(base, 'state');
     const backupRoot = join(base, 'backup');
@@ -437,12 +437,17 @@ describe('SQLite workflow stores', () => {
       });
       planStore.close();
 
-      const todoStore = createSqliteSessionTodoStore(stateRoot);
-      await todoStore.replaceAll('todo-non-empty', [
-        { content: 'Restore current Todo', status: 'in_progress' },
-      ]);
-      await todoStore.replaceAll('todo-empty', []);
-      todoStore.close();
+      const taskStore = createSqliteSessionTaskStore(stateRoot);
+      const created = await taskStore.createTask('tasks-non-empty', {
+        subject: 'Restore current tasks',
+        description: 'Replay the task document through a backup and restore',
+      });
+      await taskStore.updateTask('tasks-non-empty', {
+        taskId: created.task.id,
+        status: 'in_progress',
+      });
+      await taskStore.readOrBootstrap('tasks-empty');
+      taskStore.close();
 
       await createOperationalStateBackup({ stateRoot, destinationRoot: backupRoot, now: () => 10 });
       await restoreOperationalStateBackup({ backupRoot, destinationRoot: restoreRoot });
@@ -456,14 +461,19 @@ describe('SQLite workflow stores', () => {
       } finally {
         restoredPlan.close();
       }
-      const restoredTodos = createSqliteSessionTodoStore(restoreRoot);
+      const restoredTasks = createSqliteSessionTaskStore(restoreRoot);
       try {
-        assert.deepEqual(await restoredTodos.readOrBootstrap('todo-non-empty'), {
-          items: [{ content: 'Restore current Todo', status: 'in_progress' }],
+        const restoredDocument = await restoredTasks.readOrBootstrap('tasks-non-empty');
+        assert.equal(restoredDocument.nextId, 2);
+        assert.equal(restoredDocument.items.length, 1);
+        assert.equal(restoredDocument.items[0]?.subject, 'Restore current tasks');
+        assert.equal(restoredDocument.items[0]?.status, 'in_progress');
+        assert.deepEqual(await restoredTasks.readOrBootstrap('tasks-empty'), {
+          nextId: 1,
+          items: [],
         });
-        assert.deepEqual(await restoredTodos.readOrBootstrap('todo-empty'), { items: [] });
       } finally {
-        restoredTodos.close();
+        restoredTasks.close();
       }
 
       const restored = new DatabaseSync(join(restoreRoot, 'runtime.sqlite'), { readOnly: true });
@@ -471,7 +481,7 @@ describe('SQLite workflow stores', () => {
         assert.equal(tableExists(restored, 'workflow_task_ledger_projections'), false);
         assert.equal(tableExists(restored, 'workflow_plan_projections'), false);
         assert.equal(rowCount(restored, 'workflow_plan_events'), 1);
-        assert.equal(rowCount(restored, 'workflow_session_todo_documents'), 2);
+        assert.equal(rowCount(restored, 'workflow_session_task_documents'), 2);
       } finally {
         restored.close();
       }
@@ -715,9 +725,9 @@ describe('SQLite workflow stores', () => {
       const task = await store.create(
         {
           title: 'Review SQLite',
-          intentBody: '',
+          intentBody: 'Continue the scheduled work.',
           schedule: { kind: 'once', runAt: now + 1_000 },
-          effect: { kind: 'notify', channel: 'local' },
+          effect: { kind: 'session_resume', sessionId: 'session-1' },
           createdBy: { kind: 'user' },
         },
         now,
@@ -765,9 +775,12 @@ describe('SQLite workflow stores', () => {
             execution: {
               cwd: '/workspace',
               backend: 'ai-sdk',
-              llmConnectionId: 'connection-default',
-              llmConnectionSlug: 'default',
-              model: 'test-model',
+              model: {
+                kind: 'pinned',
+                llmConnectionId: 'connection-default',
+                llmConnectionSlug: 'default',
+                model: 'test-model',
+              },
               permissionMode: 'ask',
               collaborationMode: 'agent',
               orchestrationMode: 'default',
@@ -778,7 +791,9 @@ describe('SQLite workflow stores', () => {
         now,
       );
       assert.equal(
-        task.effect.kind === 'agent_run' ? task.effect.execution.llmConnectionId : undefined,
+        task.effect.kind === 'agent_run' && task.effect.execution.model.kind === 'pinned'
+          ? task.effect.execution.model.llmConnectionId
+          : undefined,
         'connection-default',
       );
       const claim = await store.claimNow(task.id, now);
@@ -821,9 +836,14 @@ describe('SQLite workflow stores', () => {
                 kind: 'agent_run',
                 execution: {
                   cwd: '/workspace',
-                  llmConnectionId: 'connection-default',
-                  llmConnectionSlug: 'default',
-                  model: 'test-model',
+                  model: {
+                    kind: 'pinned',
+                    llmConnectionId: 'connection-default',
+                    llmConnectionSlug: 'default',
+                    model: 'test-model',
+                  },
+                  // `execute` was retired; a record still carrying it is
+                  // refused on the way in rather than folded silently.
                   permissionMode: 'execute',
                   collaborationMode: 'agent',
                   orchestrationMode: 'default',
@@ -844,9 +864,12 @@ describe('SQLite workflow stores', () => {
             kind: 'agent_run',
             execution: {
               cwd: '/workspace',
-              llmConnectionId: 'connection-default',
-              llmConnectionSlug: 'default',
-              model: 'test-model',
+              model: {
+                kind: 'pinned',
+                llmConnectionId: 'connection-default',
+                llmConnectionSlug: 'default',
+                model: 'test-model',
+              },
               permissionMode: 'ask',
               collaborationMode: 'agent',
               orchestrationMode: 'default',
@@ -903,9 +926,9 @@ describe('SQLite workflow stores', () => {
         const task = await store.create(
           {
             title: 'Bounded recurrence',
-            intentBody: '',
+            intentBody: 'Continue the scheduled work.',
             schedule: { kind: 'interval', everySeconds: 60, startAt: now + 1_000 },
-            effect: { kind: 'notify', channel: 'local' },
+            effect: { kind: 'session_resume', sessionId: 'session-1' },
             createdBy: { kind: 'user' },
           },
           now,

@@ -23,6 +23,7 @@ import {
   type PolicyDecision,
   type ToolCategory,
 } from '@maka/core/permission';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import {
   SUBAGENT_PROFILES,
   type SubagentPreset,
@@ -57,7 +58,7 @@ export type AgentWriteBackMode =
 export type AgentToolGroup = 'file_edit';
 
 const AGENT_TOOL_GROUP_ALTERNATIVES = {
-  file_edit: [['Write', 'Edit'], ['apply_patch']],
+  file_edit: [[TOOL_NAMES.write, TOOL_NAMES.edit], [TOOL_NAMES.applyPatch]],
 } as const satisfies Record<AgentToolGroup, readonly (readonly string[])[]>;
 
 export interface AgentProfileContract {
@@ -149,7 +150,7 @@ export const LOCAL_READ_AGENT_DEFINITION: AgentDefinition = {
     supportedWriteBack: [AGENT_WRITE_BACK_SUMMARY],
   },
   permissionMode: 'explore',
-  tools: ['Read', 'Glob', 'Grep'],
+  tools: [TOOL_NAMES.read, TOOL_NAMES.glob, TOOL_NAMES.grep],
   systemPrompt: [
     'You are a foreground local-read child agent.',
     'Use only the provided Read, Glob, and Grep tools.',
@@ -173,7 +174,7 @@ export const WEB_RESEARCH_AGENT_DEFINITION: AgentDefinition = {
     supportedWriteBack: [AGENT_WRITE_BACK_SUMMARY],
   },
   permissionMode: 'ask',
-  tools: ['WebSearch'],
+  tools: [TOOL_NAMES.webSearch],
   systemPrompt: [
     'You are a foreground web-research child agent.',
     'Use only the provided WebSearch tool.',
@@ -199,15 +200,15 @@ export const IMPLEMENTATION_AGENT_DEFINITION: AgentDefinition = {
   },
   permissionMode: 'ask',
   tools: [
-    'Read',
-    'Glob',
-    'Grep',
-    'Write',
-    'Edit',
-    'apply_patch',
-    'Bash',
-    'WriteStdin',
-    'StopBackgroundTask',
+    TOOL_NAMES.read,
+    TOOL_NAMES.glob,
+    TOOL_NAMES.grep,
+    TOOL_NAMES.write,
+    TOOL_NAMES.edit,
+    TOOL_NAMES.applyPatch,
+    TOOL_NAMES.bash,
+    TOOL_NAMES.taskInput,
+    TOOL_NAMES.taskStop,
   ],
   toolGroups: ['file_edit'],
   systemPrompt: [

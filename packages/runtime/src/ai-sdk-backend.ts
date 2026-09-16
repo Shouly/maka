@@ -25,6 +25,7 @@
  */
 
 import type { SessionEvent } from '@maka/core/events';
+import type { TurnReminderInput } from './system-prompt/turn-reminder.js';
 import type {
   BackendKind,
   RuntimeSystemNoteKind,
@@ -126,6 +127,12 @@ export interface AiSdkBackendInput extends AiSdkCompactionCapabilities {
   readExecutionBoundary: ToolRuntimeInput['readExecutionBoundary'];
   /** Reads the user's current Session permission selection for each local tool invocation. */
   readPermissionMode: ToolRuntimeInput['readPermissionMode'];
+  /**
+   * Renders the per-turn reminder (date, serving model, permission mode,
+   * sandbox boundary) the turn appends as a trailing user-role context. The
+   * host supplies it; a backend built without one sends no reminder.
+   */
+  renderTurnReminder?: (input: TurnReminderInput) => string | undefined;
   createSandboxBoundaryRequest?: ToolRuntimeInput['createSandboxBoundaryRequest'];
   settleSandboxBoundaryRequest?: ToolRuntimeInput['settleSandboxBoundaryRequest'];
 

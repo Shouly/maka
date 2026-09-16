@@ -282,6 +282,7 @@ describe('mapSessionEventToRuntimeEvent (pure)', () => {
         questions: [
           {
             question: 'Choose an approach',
+            header: 'Approach',
             options: [
               { label: 'Extend', description: 'Reuse the runtime seam' },
               { label: 'Separate' },
@@ -300,6 +301,7 @@ describe('mapSessionEventToRuntimeEvent (pure)', () => {
       questions: [
         {
           question: 'Choose an approach',
+          header: 'Approach',
           options: [
             { label: 'Extend', description: 'Reuse the runtime seam' },
             { label: 'Separate' },
@@ -560,7 +562,9 @@ const PROJECTION_SAMPLES: ProjectionSamples = {
       ts: 1,
       requestId: 'q-1',
       toolUseId: 'tool-1',
-      questions: [{ question: 'Which one?', options: [{ label: 'A', description: 'a' }] }],
+      questions: [
+        { question: 'Which one?', header: 'Which', options: [{ label: 'A', description: 'a' }] },
+      ],
     },
   },
   user_question_answer_ack: {

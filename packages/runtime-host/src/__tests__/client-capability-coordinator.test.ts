@@ -312,7 +312,7 @@ describe('Host Client Capability coordinator', () => {
       'local-connection',
       'local-native-registration',
       'desktop_browser',
-      ['browser_snapshot'],
+      ['BrowserSnapshot'],
       'cwd',
     );
     assert.deepEqual(await local.bindSession('local-session', 'local-connection'), {
@@ -340,7 +340,7 @@ describe('Host Client Capability coordinator', () => {
       'remote-connection',
       'spoofed-native-registration',
       'desktop_browser',
-      ['browser_snapshot'],
+      ['BrowserSnapshot'],
     );
     assert.deepEqual(await remote.bindSession('remote-session', 'remote-connection'), {
       ok: true,
@@ -393,7 +393,7 @@ describe('Host Client Capability coordinator', () => {
       (frame) => ({
         kind: 'browser_url',
         url:
-          frame.toolName === 'browser_navigate' && typeof frame.arguments.url === 'string'
+          frame.toolName === 'BrowserNavigate' && typeof frame.arguments.url === 'string'
             ? frame.arguments.url
             : 'https://example.com/current',
       }),
@@ -405,14 +405,14 @@ describe('Host Client Capability coordinator', () => {
       'connection-a',
       'registration-browser',
       'desktop_browser',
-      ['browser_snapshot', 'browser_click', 'browser_navigate'],
+      ['BrowserSnapshot', 'BrowserClick', 'BrowserNavigate'],
     );
     assert.deepEqual(await coordinator.bindSession('session-a', 'connection-a'), { ok: true });
     const snapshot = coordinator.snapshotForSession('session-a');
     assert.ok(snapshot);
     const tools = new Map(snapshot.tools.map((tool) => [tool.displayName, tool]));
 
-    const preparedSnapshot = await prepare(tools.get('browser_snapshot'), {}, 'tool-snapshot');
+    const preparedSnapshot = await prepare(tools.get('BrowserSnapshot'), {}, 'tool-snapshot');
     assert.equal(approvalCount, 1);
     assert.equal(
       sent.some((frame) => isRecord(frame) && frame.kind === 'client.capability.admitted'),
@@ -423,12 +423,12 @@ describe('Host Client Capability coordinator', () => {
       textResult('done'),
     );
 
-    const preparedClick = await prepare(tools.get('browser_click'), {}, 'tool-click');
+    const preparedClick = await prepare(tools.get('BrowserClick'), {}, 'tool-click');
     assert.equal(approvalCount, 1);
     assert.deepEqual(await preparedClick.execute(managedContext('tool-click')), textResult('done'));
 
     const preparedNavigate = await prepare(
-      tools.get('browser_navigate'),
+      tools.get('BrowserNavigate'),
       { url: 'https://other.example/path' },
       'tool-navigate',
     );

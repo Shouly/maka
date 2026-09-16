@@ -158,7 +158,7 @@ async function runSmoke() {
     const page = await bridge.connect({ cdpEndpoint: endpoint.cdpEndpoint });
     check('opencli CDPBridge.connect resolves a page', typeof page?.snapshot === 'function');
 
-    // Navigate via the agent path (opencli goto, same call browser_navigate makes).
+    // Navigate via the agent path (opencli goto, same call BrowserNavigate makes).
     await page.goto(fixtureUrl, { waitUntil: 'load' });
     const landed = (await page.getCurrentUrl?.()) ?? '';
     check('goto lands on the fixture URL', landed.startsWith(fixtureUrl), landed);

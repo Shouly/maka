@@ -147,6 +147,92 @@ describe('uncertain tool outcome metadata', () => {
   });
 });
 
+describe('user delivery tool results', () => {
+  const delivered = {
+    kind: 'user_file_delivery',
+    status: 'proactive',
+    caption: 'The migration plan, as promised.',
+    display: 'render',
+    files: [
+      {
+        artifactId: 'artifact-1',
+        name: 'plan.md',
+        path: '/workspace/plan.md',
+        kind: 'file',
+        mimeType: 'text/markdown',
+        sizeBytes: 42,
+      },
+    ],
+  } as const;
+
+  test('round-trips a delivered file through the canonical and stored boundaries', () => {
+    assert.deepEqual(decodeCanonicalToolResultContent(delivered), delivered);
+    assert.deepEqual(
+      toolResultContent(decodePersistedMessage(storedToolResult(delivered))),
+      delivered,
+    );
+  });
+
+  test('keeps the optional caption and mimeType genuinely optional', () => {
+    const minimal = {
+      kind: 'user_file_delivery',
+      status: 'normal',
+      display: 'attach',
+      files: [
+        {
+          artifactId: 'artifact-2',
+          name: 'chart.png',
+          path: '/workspace/chart.png',
+          kind: 'image',
+          sizeBytes: 9,
+        },
+      ],
+    } as const;
+
+    assert.deepEqual(decodeCanonicalToolResultContent(minimal), minimal);
+  });
+
+  test('rejects widened, empty or mistyped deliveries', () => {
+    for (const invalid of [
+      { ...delivered, status: 'urgent' },
+      { ...delivered, display: 'inline' },
+      { ...delivered, files: [] },
+      { ...delivered, unexpected: true },
+      { ...delivered, files: [{ ...delivered.files[0], kind: 'spreadsheet' }] },
+      { ...delivered, files: [{ ...delivered.files[0], sizeBytes: 'big' }] },
+      { ...delivered, files: [{ ...delivered.files[0], extra: 1 }] },
+      { kind: 'user_file_delivery', status: 'normal', files: delivered.files },
+    ]) {
+      assert.throws(
+        () => decodeCanonicalToolResultContent(invalid),
+        /Invalid tool result content/,
+        JSON.stringify(invalid),
+      );
+    }
+  });
+
+  test('round-trips a verbatim user message', () => {
+    const message = { kind: 'user_message', message: '**done** — the token is `abc`' } as const;
+
+    assert.deepEqual(decodeCanonicalToolResultContent(message), message);
+    assert.deepEqual(toolResultContent(decodePersistedMessage(storedToolResult(message))), message);
+  });
+
+  test('rejects widened or mistyped user messages', () => {
+    for (const invalid of [
+      { kind: 'user_message' },
+      { kind: 'user_message', message: 7 },
+      { kind: 'user_message', message: 'hi', markdown: true },
+    ]) {
+      assert.throws(
+        () => decodeCanonicalToolResultContent(invalid),
+        /Invalid tool result content/,
+        JSON.stringify(invalid),
+      );
+    }
+  });
+});
+
 describe('retired permission modes in stored subagent results', () => {
   const stored = {
     kind: 'subagent',

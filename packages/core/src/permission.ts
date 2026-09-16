@@ -19,6 +19,8 @@
 
 /** Legacy permission payloads and shared tool-category compatibility types. */
 
+import { TOOL_NAMES } from './tool-names.js';
+
 // ============================================================================
 // Mode + Tool categories
 // ============================================================================
@@ -127,22 +129,22 @@ export interface ToolExecutionFacts {
 
 export const BUILTIN_TOOL_CATEGORY: Record<string, ToolCategory> = {
   // read
-  Read: 'read',
-  ArchiveRead: 'read',
+  [TOOL_NAMES.read]: 'read',
+  [TOOL_NAMES.archiveRead]: 'read',
   search_files: 'read',
-  Grep: 'read',
-  Glob: 'read',
+  [TOOL_NAMES.grep]: 'read',
+  [TOOL_NAMES.glob]: 'read',
   // web read
-  WebFetch: 'web_read',
-  WebSearch: 'web_read',
+  [TOOL_NAMES.webFetch]: 'web_read',
+  [TOOL_NAMES.webSearch]: 'web_read',
   // file write
-  Write: 'file_write',
-  Edit: 'file_write',
-  apply_patch: 'file_write',
+  [TOOL_NAMES.write]: 'file_write',
+  [TOOL_NAMES.edit]: 'file_write',
+  [TOOL_NAMES.applyPatch]: 'file_write',
   patch: 'file_write',
   // shell — default unsafe; categorizeBash() may downgrade or upgrade
-  Bash: 'shell_unsafe',
-  WriteStdin: 'shell_unsafe',
+  [TOOL_NAMES.bash]: 'shell_unsafe',
+  [TOOL_NAMES.taskInput]: 'shell_unsafe',
 };
 
 // ============================================================================

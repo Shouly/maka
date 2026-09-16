@@ -312,7 +312,7 @@ The provider is silent while a tool runs. `ToolRuntime` pauses the model stream'
 
 ## Permission is runtime control flow, not a dialog box
 
-When a tool call would cross the current sandbox boundary, the tool does not fail silently and the UI does not suspend execution on its own. The tool returns a failure carrying `sandbox_boundary_required` and a concrete `expansion`; the model then calls `request_sandbox_boundary` to raise a **boundary expansion request**, and execution stops at a position that has an identity while it waits for an answer.
+When a tool call would cross the current sandbox boundary, the tool does not fail silently and the UI does not suspend execution on its own. The tool returns a failure carrying `sandbox_boundary_required` and a concrete `expansion`; the model then calls `RequestSandboxBoundary` to raise a **boundary expansion request**, and execution stops at a position that has an identity while it waits for an answer.
 
 While waiting, the Session projects `waiting_for_user`, but the Run retains its execution identity — it has not ended, it is parked. The decision is routed through `RuntimeKernel.respondToSandboxBoundary()` to the active Backend; the same path carries `respondToUserQuestion()` for the case where the model asks the user a question. While unanswered, `RuntimeKernel` registers both kinds as an active interaction, so a client that missed the live event can re-fetch what is pending instead of leaving the run stranded.
 

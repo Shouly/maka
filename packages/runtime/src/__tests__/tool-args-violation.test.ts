@@ -114,7 +114,7 @@ describe('tool argument field lookup', () => {
   test('Computer Use answers per action, not with every field of every action', () => {
     // Its wire schema is one flat object, because a function-tool JSON schema
     // must have an object at the top. Read as an object it names all 22 keys,
-    // so a `click_element` with a camelCase key was told `maka_computer` takes
+    // so a `click_element` with a camelCase key was told `Computer` takes
     // `menu`, `duration` and `region` — the model added one and was refused
     // again. The strict union knows which fields belong to which action.
     const perAction = toolParameterFields(
@@ -324,7 +324,7 @@ test('a sandbox denial names the tool that widens the boundary', async () => {
 
   // Naming the marker without the tool that acts on it is a dead end: the model
   // is told a boundary can be widened and not by what.
-  assert.match((result as { error?: string }).error ?? '', /request_sandbox_boundary/);
+  assert.match((result as { error?: string }).error ?? '', /RequestSandboxBoundary/);
 });
 
 describe('unrepairable tool calls', () => {

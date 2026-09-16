@@ -18,12 +18,12 @@
  */
 
 import type { InteractiveArtifactStoreWriter } from '@maka/storage/artifact-stores';
-import type { InteractiveSessionTodoWriter } from '@maka/storage/session-todo-authority';
+import type { InteractiveSessionTaskWriter } from '@maka/storage/session-task-authority';
 import type { InteractiveContextOffloadWriter } from '@maka/storage/context-offload-store';
 
 export interface SessionSidecarPurgeAuthority {
   readonly artifacts: Pick<InteractiveArtifactStoreWriter, 'purgeSessionArtifacts'>;
-  readonly sessionTodo: Pick<InteractiveSessionTodoWriter, 'purgeSessionState'>;
+  readonly sessionTask: Pick<InteractiveSessionTaskWriter, 'purgeSessionState'>;
   readonly contextOffload?: Pick<InteractiveContextOffloadWriter, 'retireSession'>;
   readonly purgeOperationalState: (sessionId: string) => Promise<void>;
 }
@@ -34,7 +34,7 @@ export async function purgeSessionSidecars(
 ): Promise<void> {
   const outcomes = await Promise.allSettled([
     authority.artifacts.purgeSessionArtifacts(sessionId),
-    authority.sessionTodo.purgeSessionState(sessionId),
+    authority.sessionTask.purgeSessionState(sessionId),
     ...(authority.contextOffload ? [authority.contextOffload.retireSession(sessionId)] : []),
     authority.purgeOperationalState(sessionId),
   ]);

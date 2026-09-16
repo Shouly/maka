@@ -50,7 +50,7 @@ function sectionedSummary(goal: string): string {
 }
 
 describe('HostMemoryExtractionCoordinator', () => {
-  test('extracts incidental memory through the post-terminal memory_extract path', async () => {
+  test('extracts incidental memory through the post-terminal MemoryExtract path', async () => {
     await withMemoryWriter(async (writer) => {
       const item = proposalItem('The project uses Rust.', 'workspace', 'event-user-1', 'uses Rust');
       const entries = [
@@ -102,7 +102,7 @@ describe('HostMemoryExtractionCoordinator', () => {
     });
   });
 
-  test('rejects requestedItems from memory_extract without advancing its terminal boundary', async () => {
+  test('rejects requestedItems from MemoryExtract without advancing its terminal boundary', async () => {
     await withMemoryWriter(async (writer) => {
       const invalid = proposalItem(
         'The project uses Rust.',
@@ -233,8 +233,8 @@ describe('HostMemoryExtractionCoordinator', () => {
       const replay = await coordinator.sourceCapabilities().remember(firstSnapshot);
       assert.deepEqual(replay, first);
       assert.equal(observed.length, 4, 'receipt replay must not call the provider');
-      assert.deepEqual(Object.keys(observed[0]!.snapshot.sourceTools), ['memory_remember']);
-      assert.deepEqual(observed[0]!.snapshot.sourceActiveTools, ['memory_remember']);
+      assert.deepEqual(Object.keys(observed[0]!.snapshot.sourceTools), ['MemoryRemember']);
+      assert.deepEqual(observed[0]!.snapshot.sourceActiveTools, ['MemoryRemember']);
       assert.doesNotMatch(observed[0]!.prompt, /Prefer concise Chinese\./);
       assert.match(observed[0]!.prompt, /"messagePositions":\[0\]/);
       await coordinator.close();
@@ -523,7 +523,7 @@ describe('HostMemoryExtractionCoordinator', () => {
     });
   });
 
-  test('treats a second memory_remember at an already processed boundary as a no-op', async () => {
+  test('treats a second MemoryRemember at an already processed boundary as a no-op', async () => {
     await withMemoryWriter(async (writer) => {
       const entries = [
         { ordinal: 1, event: textEvent('event-user-1', 'run-1', 'turn-1', 'Prefer Rust.') },
@@ -1328,7 +1328,7 @@ describe('HostMemoryExtractionCoordinator', () => {
     });
   });
 
-  test('keeps memory_remember requested semantics on the final split segment', async () => {
+  test('keeps MemoryRemember requested semantics on the final split segment', async () => {
     await withMemoryWriter(async (writer) => {
       const oldText = `Old incidental detail ${'ordinary context '.repeat(500)}`;
       const requestedText = `Remember that my preferred database is SQLite. ${'supporting context '.repeat(500)}`;
@@ -1381,7 +1381,7 @@ describe('HostMemoryExtractionCoordinator', () => {
     });
   });
 
-  test('restores the original requested Turn when retrying a pending memory_remember range', async () => {
+  test('restores the original requested Turn when retrying a pending MemoryRemember range', async () => {
     await withMemoryWriter(async (writer) => {
       const unrelated = textEvent(
         'remember-retry-unrelated',
@@ -2342,9 +2342,9 @@ function snapshot(
     sourceMessages: [{ role: 'user', content: text }],
     ...(indexedEventId ? { sourceEventMessagePositions: { [indexedEventId]: [0] } } : {}),
     sourceTools: {
-      memory_remember: { description: 'Remember', inputSchema: {} },
+      MemoryRemember: { description: 'Remember', inputSchema: {} },
     },
-    sourceActiveTools: ['memory_remember'],
+    sourceActiveTools: ['MemoryRemember'],
     sourceProviderOptions: { openai: { reasoningEffort: 'medium' } },
     sessionId: 'session-1',
     runId,
@@ -2371,9 +2371,9 @@ function extractSnapshot(
     ],
     ...(indexedEventId ? { sourceEventMessagePositions: { [indexedEventId]: [0] } } : {}),
     sourceTools: {
-      memory_extract: { description: 'Extract', inputSchema: {} },
+      MemoryExtract: { description: 'Extract', inputSchema: {} },
     },
-    sourceActiveTools: ['memory_extract'],
+    sourceActiveTools: ['MemoryExtract'],
     sourceProviderOptions: { openai: { reasoningEffort: 'medium' } },
     sessionId: 'session-1',
     runId,
@@ -2546,7 +2546,7 @@ function toolCallEvent(
     partial: false,
     role: 'model',
     author: 'agent',
-    content: { kind: 'function_call', id: toolCallId, name: 'memory_remember', args: {} },
+    content: { kind: 'function_call', id: toolCallId, name: 'MemoryRemember', args: {} },
   };
 }
 

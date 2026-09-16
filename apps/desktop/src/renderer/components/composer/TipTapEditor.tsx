@@ -496,11 +496,7 @@ export function TipTapEditor(props: {
                     role="option"
                     id={`${menuId}-${index}`}
                     aria-selected={isSelected}
-                    className={cn(
-                      menuItemClass,
-                      'w-full justify-start text-left',
-                      isSelected && 'bg-menu-hover',
-                    )}
+                    className={cn(menuItemClass, 'w-full text-left', isSelected && 'bg-menu-hover')}
                     // Keep the editor focused: a mousedown would blur it and
                     // close the list before the click lands.
                     onMouseDown={(event) => event.preventDefault()}

@@ -35,7 +35,7 @@ Agent 中的 Tool 则完全不同。
 
 Maka 引入 Deferred Tool 机制来应对这一瓶颈。Deferred Tool 并不改变工具的执行时机，核心在于按需控制 Tool Schema 暴露给模型的时间点。
 
-Runtime 始终完整持有当前 Run 所注册的全部 Tool Binding，但在初次调用模型时，仅向其暴露高频基础工具集以及一个专用的轻量级 `tool_search` 工具。其余扩展工具仅以能力分组和名称的形式登记在检索清单（Search Inventory）中，不携带详细的描述文本与参数 Schema。
+Runtime 始终完整持有当前 Run 所注册的全部 Tool Binding，但在初次调用模型时，仅向其暴露高频基础工具集以及一个专用的轻量级 `ToolSearch` 工具。其余扩展工具仅以能力分组和名称的形式登记在检索清单（Search Inventory）中，不携带详细的描述文本与参数 Schema。
 
 ```text
 Bound Tool Registry
@@ -46,7 +46,7 @@ Bound Tool Registry
                 │
                 └──── 轻量 Search Inventory
                            │
-                      tool_search
+                       ToolSearch
                            │
                     有界的匹配结果
                            │
@@ -55,7 +55,7 @@ Bound Tool Registry
                     注入匹配 Tool 的 Schema
 ```
 
-`tool_search` 面向 Runtime 已注册的内部能力执行本地检索。Maka 依据工具名称、描述语义及所属分类完成本地过滤，提取体积受限且条目数量有界的一组候选结果。返回给模型的内容仅包含被激活工具的名称标识，完整的 Schema 规范不会直接倾倒进 Tool Result，而是在下一次向 Provider 发起请求时，以标准的 Tool Projection 格式透明注入。
+`ToolSearch` 面向 Runtime 已注册的内部能力执行本地检索。Maka 依据工具名称、描述语义及所属分类完成本地过滤，提取体积受限且条目数量有界的一组候选结果。返回给模型的内容仅包含被激活工具的名称标识，完整的 Schema 规范不会直接倾倒进 Tool Result，而是在下一次向 Provider 发起请求时，以标准的 Tool Projection 格式透明注入。
 
 在 Maka 中，工具状态严格划分为三个层级：
 
@@ -68,15 +68,15 @@ Bound Tool Registry
 这里的“下一次”构成了严格的时序边界。Provider Step 一旦建立，本次请求携带的 Tool Schema 集合即行固化。若模型在单次回复中同时生成如下调用序列：
 
 ```text
-tool_search("browser click")
-browser_click(...)
+ToolSearch("browser click")
+BrowserClick(...)
 ```
 
-Maka 会明确拒绝执行第二个调用。`tool_search` 的生效结果只能投影至后续请求，绝不能反向修改已经交由 Provider 解析的 Schema 集合。只有推进至下一个推理步骤，`browser_click` 的完整规范才会进入上下文，模型方可基于实际观测到的接口定义生成准确参数。
+Maka 会明确拒绝执行第二个调用。`ToolSearch` 的生效结果只能投影至后续请求，绝不能反向修改已经交由 Provider 解析的 Schema 集合。只有推进至下一个推理步骤，`BrowserClick` 的完整规范才会进入上下文，模型方可基于实际观测到的接口定义生成准确参数。
 
 Deferred Tool 的激活范围被严格限定在当前 Turn 之内。在同一次用户交互轮次中，搜索激活的工具单调累积，Provider 侧的重试请求亦完整继承该工作集；一旦 Turn 执行结束，激活集合即刻释放。下一轮交互重新从基线工具集启动，避免偶发性调用的 Schema 成本永久滞留在后续的推理历史中。
 
-工具的可见性亦不等同于执行授权。即使 Schema 已完全可见，真实的调用请求仍须通过参数类型校验、并发配额审计以及环境权限判定。`tool_search` 仅管理模型的认知视野，系统安全边界始终由 Runtime 统一把关。
+工具的可见性亦不等同于执行授权。即使 Schema 已完全可见，真实的调用请求仍须通过参数类型校验、并发配额审计以及环境权限判定。`ToolSearch` 仅管理模型的认知视野，系统安全边界始终由 Runtime 统一把关。
 
 Deferred Tool 专注于约束进入模型注意力窗口的能力集合。Runtime 维护全局能力空间，模型则按需获取当前任务所需的紧凑子集。
 

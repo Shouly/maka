@@ -366,7 +366,7 @@ test('MCP text clipping never leaves an unpaired surrogate at the boundary', asy
     .map((item) => (item.type === 'text' ? item.text : ''))
     .join('');
   assert.ok(text.length <= 200_000);
-  assert.match(text, /…\[truncated by Maka\]/u);
+  assert.match(text, /…\[truncated by Copilot\]/u);
   assert.doesNotMatch(
     text,
     /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u,
@@ -433,7 +433,7 @@ test('a trusted composition can preserve provider-owned activity semantics', () 
     fakeProvider(
       [
         boundTool(
-          descriptor('desktop_computer_use', 'maka_computer'),
+          descriptor('desktop_computer_use', 'Computer'),
           binding('desktop-computer-binding'),
         ),
       ],

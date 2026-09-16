@@ -21,13 +21,14 @@ import type {
   SandboxBoundaryExpansion,
   SandboxBoundarySettlement,
 } from '@maka/core/sandbox-boundary';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import { z } from 'zod';
 
 import { sandboxBoundaryExpansionSchema } from './sandbox-boundary-declaration.js';
 import type { MakaTool } from './tool-runtime.js';
 
 /**
- * Refusal for a `request_sandbox_boundary` call that cannot be carried out.
+ * Refusal for a `RequestSandboxBoundary` call that cannot be carried out.
  *
  * Shared with `ToolRuntime.requestSandboxBoundary`, which is where the
  * production form of this failure is decided: ToolRuntime injects the context
@@ -36,11 +37,11 @@ import type { MakaTool } from './tool-runtime.js';
  * to say it.
  */
 export const SANDBOX_BOUNDARY_UNAVAILABLE =
-  'request_sandbox_boundary is not available on this surface, so the sandbox was not widened. ' +
+  'RequestSandboxBoundary is not available on this surface, so the sandbox was not widened. ' +
   'Retrying will fail the same way — redo the work inside the paths already allowed, or tell the ' +
   'user which path needs access.';
 
-export const REQUEST_SANDBOX_BOUNDARY_TOOL_NAME = 'request_sandbox_boundary';
+export const REQUEST_SANDBOX_BOUNDARY_TOOL_NAME = TOOL_NAMES.requestSandboxBoundary;
 
 export const SANDBOX_BOUNDARY_DENIED_FOR_TURN =
   'The user denied a sandbox boundary expansion for this Turn. Do not request another expansion. ' +
@@ -61,8 +62,13 @@ export function buildRequestSandboxBoundaryTool(): MakaTool<
   return {
     name: REQUEST_SANDBOX_BOUNDARY_TOOL_NAME,
     executionSemantics: 'exclusive_step',
-    description:
-      'Request the smallest session sandbox boundary expansion needed to retry a local tool that returned sandbox_boundary_required. If the user denies it, do not request another expansion in this Turn.',
+    description: [
+      'Ask the user to widen the session sandbox boundary so a local tool that answered sandbox_boundary_required can be retried.',
+      '',
+      '- Pass exactly the expansion that failure named (a path to read or write, or network access) — the smallest one that unblocks the call — and a one-sentence justification the user can judge.',
+      '- The turn pauses until the user decides. On approval the boundary revision advances and the original call can be repeated as it was; on denial, do not request another expansion in this turn — finish with what the boundary allows and say what you could not do.',
+      '- It never grants anything by itself; a call outside any boundary request is refused. Bash can declare a needed boundary up front instead, through its boundary_intent and required_boundary fields.',
+    ].join('\n'),
     parameters: z
       .object({
         expansion: sandboxBoundaryExpansionSchema,

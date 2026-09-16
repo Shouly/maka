@@ -254,16 +254,37 @@ function openAiOAuthBase(active: ModelsDevMetadata, modelId: string): ModelMetad
   return active.openai?.[modelId] ?? GENERATED_MODELS_DEV_METADATA.openai[modelId] ?? {};
 }
 
+/**
+ * Pin the OAuth path's context window on top of a catalog entry.
+ *
+ * The window and the input limit are one pair, not two facts: the catalog
+ * describes the public API, where both are larger, and narrowing only the
+ * window leaves `inputLimit > contextWindow`. `resolveModelLimits` then reads
+ * a contradiction and every turn on that model fails the budget check with
+ * "Model input limit exceeds the context window" before it reaches the
+ * provider. So the inherited input limit is clamped to the pinned window
+ * here, where the window is decided — a later pin cannot reintroduce the
+ * mismatch by forgetting the second field.
+ */
+function withPinnedContextWindow(base: ModelMetadata, contextWindow: number): ModelMetadata {
+  return {
+    ...base,
+    contextWindow,
+    ...(base.inputLimit === undefined
+      ? {}
+      : { inputLimit: Math.min(base.inputLimit, contextWindow) }),
+  };
+}
+
 function openAiOAuthModelMetadata(active: ModelsDevMetadata): Record<string, ModelMetadata> {
   return {
     'gpt-5.6-sol': {
-      ...openAiOAuthBase(active, 'gpt-5.6-sol'),
-      contextWindow: 372_000,
+      ...withPinnedContextWindow(openAiOAuthBase(active, 'gpt-5.6-sol'), 372_000),
       thinkingOptions: { efforts: ['none', 'low', 'medium', 'high', 'xhigh'] },
     },
-    'gpt-5.5': { ...openAiOAuthBase(active, 'gpt-5.5'), contextWindow: 272_000 },
-    'gpt-5.4': { ...openAiOAuthBase(active, 'gpt-5.4'), contextWindow: 272_000 },
-    'gpt-5.4-mini': { ...openAiOAuthBase(active, 'gpt-5.4-mini'), contextWindow: 272_000 },
+    'gpt-5.5': withPinnedContextWindow(openAiOAuthBase(active, 'gpt-5.5'), 272_000),
+    'gpt-5.4': withPinnedContextWindow(openAiOAuthBase(active, 'gpt-5.4'), 272_000),
+    'gpt-5.4-mini': withPinnedContextWindow(openAiOAuthBase(active, 'gpt-5.4-mini'), 272_000),
     'gpt-5.3-codex-spark': openAiOAuthBase(active, 'gpt-5.3-codex-spark'),
   };
 }

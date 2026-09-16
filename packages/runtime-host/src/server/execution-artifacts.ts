@@ -20,6 +20,7 @@
 import { createHash } from 'node:crypto';
 import { open, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
+import type { ArtifactRecord } from '@maka/core/artifacts';
 import { MAX_ATTACHMENT_BYTES } from '@maka/core/attachments';
 import {
   createToolResultArchiveCapability,
@@ -45,7 +46,14 @@ import type { SessionAdmissionGate } from './session-admission-gate.js';
 import type { SessionPresenceReader } from './session-presence.js';
 
 export interface HostExecutionArtifactServices {
-  recordToolArtifacts(event: ToolArtifactRecorderInput): Promise<void>;
+  /**
+   * Publish the candidates a tool call produced and answer with the records
+   * that were actually stored, in candidate order. A candidate whose bytes
+   * cannot be read or are over the attachment cap is skipped, so the answer may
+   * be shorter than the request: a caller that needs the ids (SendUserFile)
+   * matches the two lists rather than assuming they line up one to one.
+   */
+  recordToolArtifacts(event: ToolArtifactRecorderInput): Promise<ArtifactRecord[]>;
   publishChildWorkspacePatch: NonNullable<SessionManagerDeps['publishChildWorkspacePatch']>;
   /**
    * New archives use the Session ledger. Legacy Artifact refs retain their
@@ -77,14 +85,17 @@ export function createHostExecutionArtifactServices(input: {
       return runWrite(() => input.artifacts.create(artifact));
     });
 
-  const recordToolArtifacts = async (event: ToolArtifactRecorderInput): Promise<void> => {
+  const recordToolArtifacts = async (
+    event: ToolArtifactRecorderInput,
+  ): Promise<ArtifactRecord[]> => {
+    const recorded: ArtifactRecord[] = [];
     for (const candidate of event.candidates) {
       let content = candidate.content;
       if (content === undefined && candidate.sourcePath) {
         content = (await readBoundedSourceFile(event.cwd, candidate.sourcePath)) ?? undefined;
       }
       if (content === undefined || contentBytes(content) > MAX_ATTACHMENT_BYTES) continue;
-      await publish({
+      const artifact = await publish({
         sessionId: event.sessionId,
         turnId: event.turnId,
         name: candidate.name,
@@ -94,7 +105,9 @@ export function createHostExecutionArtifactServices(input: {
         source: candidate.source ?? 'tool_result',
         ...(candidate.summary ? { summary: candidate.summary } : {}),
       });
+      if (artifact) recorded.push(artifact);
     }
+    return recorded;
   };
 
   const prepareLedger = input.archiveEvidence

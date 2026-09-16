@@ -19,7 +19,13 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import type { ScheduledTask, ScheduledTaskEffect } from '@maka/core/scheduled-task';
+import type {
+  ScheduledTask,
+  ScheduledTaskEffect,
+  ScheduledTaskExecutionTemplate,
+  ScheduledTaskSchedule,
+} from '@maka/core/scheduled-task';
+import { normalizeCreateScheduledTaskInput } from '@maka/core/scheduled-task';
 import {
   decodeScheduledTaskQueryResult,
   decodeHostFrame,
@@ -97,39 +103,215 @@ describe('ScheduledTask protocol', () => {
     assertDropped(updated.kind === 'update' ? updated.patch.effect : undefined);
   });
 
-  test('requires Connection identity on Agent task mutations but accepts legacy reads', () => {
-    const legacy = agentRunEffect('project-1');
-    if (legacy.kind !== 'agent_run') return;
-    const { llmConnectionId: _legacyId, ...legacyExecution } = legacy.execution;
+  test('no layer silently drops a field: every schedule x model x optional set', () => {
+    // Both of this module's field bugs were the same shape — one layer wrote
+    // something another could not read or would not carry — and each was found
+    // by a user, not a test. Reading the codecs is how they were missed, so
+    // this walks the whole product instead: every schedule kind, both model
+    // choices, and every subset of the optional template fields, through core
+    // normalization and both protocol directions. Storage passes `value.effect`
+    // through from core verbatim, so it rides on the same guarantee.
+    const NOW = 1_700_000_000_000;
+    const SOON = NOW + 3_600_000;
+    const schedules: Record<string, ScheduledTaskSchedule> = {
+      once: { kind: 'once', runAt: SOON },
+      interval: { kind: 'interval', everySeconds: 3600, startAt: SOON },
+      calendar: { kind: 'calendar', recurrence: 'daily', anchorAt: SOON },
+      cron: { kind: 'cron', expression: '0 9 * * *', startAt: SOON },
+      manual: { kind: 'manual' },
+    };
+    const models = {
+      default: { kind: 'default' as const },
+      pinned: {
+        kind: 'pinned' as const,
+        llmConnectionId: 'c1',
+        llmConnectionSlug: 's1',
+        model: 'm1',
+      },
+    };
+    const optionals = {
+      projectId: 'p1',
+      thinkingLevel: 'medium',
+      toolMode: 'code_mode',
+    } as const;
+    const names = Object.keys(optionals) as (keyof typeof optionals)[];
+
+    let checked = 0;
+    for (const [scheduleName, schedule] of Object.entries(schedules)) {
+      for (const [modelName, model] of Object.entries(models)) {
+        for (let mask = 0; mask < 1 << names.length; mask += 1) {
+          const carried = names.filter((_, index) => mask & (1 << index));
+          const execution = {
+            cwd: '/w',
+            model,
+            permissionMode: 'ask',
+            collaborationMode: 'agent',
+            orchestrationMode: 'default',
+            ...Object.fromEntries(carried.map((name) => [name, optionals[name]])),
+          } as unknown as ScheduledTaskExecutionTemplate;
+          const where = `${scheduleName}/${modelName}/[${carried.join(',') || 'none'}]`;
+          const effect: ScheduledTaskEffect = { kind: 'agent_run', execution };
+
+          const normalized = normalizeCreateScheduledTaskInput(
+            { title: 't', intentBody: 'b', schedule, effect, createdBy: { kind: 'user' } },
+            NOW,
+          );
+          assert.ok(normalized.ok, `${where} core normalize: ${JSON.stringify(normalized)}`);
+          if (!normalized.ok || normalized.value.effect.kind !== 'agent_run') assert.fail(where);
+          assert.deepEqual(normalized.value.effect.execution, execution, `${where} core`);
+
+          const read = decodeScheduledTaskQueryResult({
+            kind: 'task',
+            task: { ...scheduledTask('task-1'), schedule, effect },
+          });
+          if (read.kind !== 'task' || read.task?.effect.kind !== 'agent_run') assert.fail(where);
+          assert.deepEqual(read.task.effect.execution, execution, `${where} protocol read`);
+          assert.deepEqual(read.task.schedule, schedule, `${where} protocol read schedule`);
+
+          const created = decodeScheduledTaskMutateInput({
+            kind: 'create',
+            input: { title: 't', intentBody: 'b', schedule, effect },
+          });
+          if (created.kind !== 'create' || created.input.effect.kind !== 'agent_run') {
+            assert.fail(where);
+          }
+          assert.deepEqual(created.input.effect.execution, execution, `${where} protocol create`);
+          checked += 1;
+        }
+      }
+    }
+    assert.equal(checked, 5 * 2 * 8, 'the whole matrix ran');
+  });
+
+  test('every field the template can carry survives the protocol, toolMode included', () => {
+    // The Host froze `toolMode` into templates it created for an agent and the
+    // decoder did not list it, so it wrote tasks it could not read back. One
+    // such task made EVERY `scheduled-task.query` throw, and the desktop list
+    // sat on "Could not refresh. These are the last results." for good — one
+    // row poisoning the whole page, with no way to see or remove it.
+    const base = agentRunEffect('project-1');
+    if (base.kind !== 'agent_run') return;
+    const full = {
+      ...base.execution,
+      thinkingLevel: 'medium' as const,
+      toolMode: 'code_mode' as const,
+    };
+    const fetched = decodeScheduledTaskQueryResult({
+      kind: 'task',
+      task: { ...scheduledTask('task-1'), effect: { kind: 'agent_run', execution: full } },
+    });
+    assert.equal(fetched.kind, 'task');
+    if (fetched.kind !== 'task' || fetched.task?.effect.kind !== 'agent_run') assert.fail();
+    // Carried, not merely tolerated: a template that loses its tool mode would
+    // silently move the task onto the default at its next run.
+    assert.deepEqual(fetched.task.effect.execution, full);
+
+    const created = decodeScheduledTaskMutateInput({
+      kind: 'create',
+      input: {
+        title: 'Frozen from a code-mode session',
+        intentBody: 'Summarize the workspace.',
+        schedule: { kind: 'once', runAt: 1 },
+        effect: { kind: 'agent_run', execution: full },
+      },
+    });
+    if (created.kind !== 'create' || created.input.effect.kind !== 'agent_run') assert.fail();
+    assert.deepEqual(created.input.effect.execution, full);
+
+    assert.throws(
+      () =>
+        decodeScheduledTaskQueryResult({
+          kind: 'task',
+          task: {
+            ...scheduledTask('task-1'),
+            effect: { kind: 'agent_run', execution: { ...base.execution, toolMode: 'nonsense' } },
+          },
+        }),
+      /tool mode/u,
+    );
+  });
+
+  test('a task may follow the default model, but a pinned one must name its Connection', () => {
+    const base = agentRunEffect('project-1');
+    if (base.kind !== 'agent_run') return;
+    // Following the owner's default names no Connection ON PURPOSE — it is
+    // resolved at every run — so this is an ordinary create, not a rejection.
+    const following = { ...base.execution, model: { kind: 'default' as const } };
+    assert.doesNotThrow(() =>
+      decodeScheduledTaskMutateInput({
+        kind: 'create',
+        input: {
+          title: 'Follows the default',
+          intentBody: 'Run it',
+          schedule: { kind: 'once', runAt: 1 },
+          effect: { kind: 'agent_run', execution: following },
+        },
+      }),
+    );
+    // A PINNED choice is the one that must carry the immutable id: the slug
+    // beside it is reusable, and resolving that would hand the task to
+    // whichever Connection holds the slug now.
+    const { llmConnectionId: _dropped, ...slugOnly } =
+      base.execution.model.kind === 'pinned' ? base.execution.model : ({} as never);
     assert.throws(
       () =>
         decodeScheduledTaskMutateInput({
           kind: 'create',
           input: {
-            title: 'Legacy task',
+            title: 'Pinned without an id',
             intentBody: 'Run it',
             schedule: { kind: 'once', runAt: 1 },
-            effect: { kind: 'agent_run', execution: legacyExecution },
+            effect: {
+              kind: 'agent_run',
+              execution: { ...base.execution, model: slugOnly },
+            },
           },
         }),
-      /requires Connection id/u,
+      /ScheduledTask pinned model/u,
     );
+    // Reading one back is the same shape it went in as.
     assert.deepEqual(
       decodeScheduledTaskQueryResult({
         kind: 'task',
         task: {
-          ...scheduledTask('legacy-task'),
-          effect: { kind: 'agent_run', execution: legacyExecution },
+          ...scheduledTask('following-task'),
+          effect: { kind: 'agent_run', execution: following },
         },
       }),
       {
         kind: 'task',
         task: {
-          ...scheduledTask('legacy-task'),
-          effect: { kind: 'agent_run', execution: legacyExecution },
+          ...scheduledTask('following-task'),
+          effect: { kind: 'agent_run', execution: following },
         },
       },
     );
+  });
+
+  test('every schedule kind survives the frame, manual included', () => {
+    // The one that was missing: the form's default cadence is `manual`, and a
+    // decoder that did not know the kind refused every task the page created.
+    const schedules = [
+      { kind: 'manual' as const },
+      { kind: 'once' as const, runAt: 1_000 },
+      { kind: 'interval' as const, everySeconds: 3_600, startAt: 1 },
+      { kind: 'calendar' as const, recurrence: 'daily' as const, anchorAt: 1 },
+      { kind: 'cron' as const, expression: '0 9 * * 1-5', startAt: 1 },
+    ];
+    for (const schedule of schedules) {
+      const decoded = decodeScheduledTaskMutateInput({
+        kind: 'create',
+        input: {
+          title: 'Round trip',
+          intentBody: 'Run it',
+          schedule,
+          effect: agentRunEffect('project-1'),
+        },
+      });
+      assert.equal(decoded.kind, 'create');
+      if (decoded.kind !== 'create') return;
+      assert.deepEqual(decoded.input.schedule, schedule, `${schedule.kind} survives`);
+    }
   });
 
   test('accepts signal-only catalog changes', () => {
@@ -204,9 +386,12 @@ function agentRunEffect(projectId: string | null | undefined): ScheduledTaskEffe
     execution: {
       cwd: '/workspace',
       ...(projectId === undefined ? {} : { projectId }),
-      llmConnectionId: 'connection-openai',
-      llmConnectionSlug: 'openai',
-      model: 'gpt-5',
+      model: {
+        kind: 'pinned',
+        llmConnectionId: 'connection-openai',
+        llmConnectionSlug: 'openai',
+        model: 'gpt-5',
+      },
       permissionMode: 'ask',
       collaborationMode: 'agent',
       orchestrationMode: 'default',
@@ -220,7 +405,7 @@ function scheduledTask(id: string, intentBody = ''): ScheduledTask {
     title: id,
     intent: { kind: 'text', body: intentBody },
     schedule: { kind: 'once', runAt: 1 },
-    effect: { kind: 'notify', channel: 'local' },
+    effect: { kind: 'session_resume', sessionId: 'session-1' },
     status: 'active',
     nextFireAt: 1,
     lastFireAt: null,

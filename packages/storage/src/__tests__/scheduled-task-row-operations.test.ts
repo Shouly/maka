@@ -59,7 +59,7 @@ test('ScheduledTask point operations do not materialize or rewrite unrelated row
         // Setup goes through the actual owner and public store, outside measurement.
         // Each unrelated task has a pending claim, so scanning either table fails.
         for (let index = 0; index < unrelatedCount; index += 1) {
-          const other = await store.create(notifyInput(`Unrelated ${index}`), NOW);
+          const other = await store.create(resumeInput(`Unrelated ${index}`), NOW);
           await store.claimNow(other.id, NOW);
         }
         const target = await store.create(agentInput(), NOW);
@@ -112,10 +112,10 @@ test('ScheduledTask point operations do not materialize or rewrite unrelated row
 test('ScheduledTask polls without new due or expired tasks perform no DML', async (t) => {
   await withStore(t, async ({ store, probe }) => {
     for (let index = 0; index < 32; index += 1) {
-      await store.create(notifyInput(`Future ${index}`), NOW);
+      await store.create(resumeInput(`Future ${index}`), NOW);
     }
     const due = await store.create(
-      { ...notifyInput('Already claimed'), schedule: { kind: 'once', runAt: NOW + 1 } },
+      { ...resumeInput('Already claimed'), schedule: { kind: 'once', runAt: NOW + 1 } },
       NOW,
     );
     await store.claimNow(due.id, NOW);
@@ -134,7 +134,7 @@ test('ScheduledTask polls without new due or expired tasks perform no DML', asyn
 test('ScheduledTask expiry updates only newly expired tasks, including a pending task', async (t) => {
   await withStore(t, async ({ store, probe }) => {
     const expiringInput = {
-      ...notifyInput('Expired with pending fire'),
+      ...resumeInput('Expired with pending fire'),
       schedule: { kind: 'interval', everySeconds: 60, startAt: NOW + 1_000 },
       expiresAt: NOW + 2_000,
     };
@@ -142,11 +142,11 @@ test('ScheduledTask expiry updates only newly expired tasks, including a pending
     const pendingClaim = await store.claimNow(pending.id, NOW);
     const otherExpired = await store.create({ ...expiringInput, title: 'Other expired task' }, NOW);
     const due = await store.create(
-      { ...notifyInput('Due'), schedule: { kind: 'once', runAt: NOW + 1_500 } },
+      { ...resumeInput('Due'), schedule: { kind: 'once', runAt: NOW + 1_500 } },
       NOW,
     );
     for (let index = 0; index < 32; index += 1) {
-      await store.create(notifyInput(`Unchanged ${index}`), NOW);
+      await store.create(resumeInput(`Unchanged ${index}`), NOW);
     }
 
     const first = await probe.measure(() => store.claimNextDue(NOW + 2_000));
@@ -178,7 +178,7 @@ test('ScheduledTask expiry updates only newly expired tasks, including a pending
 
 test('ScheduledTask native delivery allows waiting cancellation but cannot undo admission', async (t) => {
   await withStore(t, async ({ store, probe }) => {
-    const task = await store.create(notifyInput('Native notification'), NOW);
+    const task = await store.create(resumeInput('Native notification'), NOW);
     const waiting = await store.claimNow(task.id, NOW);
     await store.setFireNativeState(waiting.id, 'waiting_for_provider');
     const cancelled = await probe.measure(() => store.cancelWaitingNativeFire(task.id));
@@ -243,7 +243,7 @@ test('ScheduledTask execution binding is idempotent and does not retain caller-o
 
 test('ScheduledTask metadata updates keep schedule and expired-trigger semantics', async (t) => {
   await withStore(t, async ({ store, probe }) => {
-    const task = await store.create(notifyInput('Original title'), NOW);
+    const task = await store.create(resumeInput('Original title'), NOW);
     assert.equal(task.nextFireAt, NOW + 60_000);
     const updated = await store.update(task.id, { title: 'New title' }, NOW + 61_000);
     assert.equal(updated.title, 'New title');
@@ -256,7 +256,7 @@ test('ScheduledTask metadata updates keep schedule and expired-trigger semantics
 
     const expiring = await store.create(
       {
-        ...notifyInput('Expired trigger'),
+        ...resumeInput('Expired trigger'),
         schedule: { kind: 'interval', everySeconds: 60, startAt: NOW + 1_000 },
         expiresAt: NOW + 2_000,
       },
@@ -277,7 +277,7 @@ test('ScheduledTask metadata updates preserve a future snoozed occurrence', asyn
     const anchorAt = NOW + 60_000;
     const task = await store.create(
       {
-        ...notifyInput('Daily reminder'),
+        ...resumeInput('Daily reminder'),
         schedule: { kind: 'calendar', recurrence: 'daily', anchorAt },
       },
       NOW,
@@ -317,7 +317,7 @@ test('ScheduledTask metadata updates preserve a future snoozed occurrence', asyn
     });
     assert.equal(rescheduled.nextFireAt, editedAnchorAt);
 
-    const intervalTask = await store.create(notifyInput('Interval reminder'), NOW);
+    const intervalTask = await store.create(resumeInput('Interval reminder'), NOW);
     const snoozedInterval = await store.snooze(intervalTask.id, 10_000, NOW + 7);
     const renamedInterval = await store.update(
       intervalTask.id,
@@ -333,13 +333,13 @@ test('ScheduledTask due discovery rejects a damaged task identity before changin
   await withStore(t, async ({ store, probe }) => {
     const expiring = await store.create(
       {
-        ...notifyInput('Expiring task'),
+        ...resumeInput('Expiring task'),
         schedule: { kind: 'interval', everySeconds: 60, startAt: NOW + 1_000 },
         expiresAt: NOW + 2_000,
       },
       NOW,
     );
-    const future = await store.create(notifyInput('Unrelated future task'), NOW);
+    const future = await store.create(resumeInput('Unrelated future task'), NOW);
     // Both records came from the public API. This single-field corruption is a
     // fault injection: the expiry write must not follow a damaged JSON identity.
     probe.damageTaskIdentity(expiring.id, future.id);
@@ -408,27 +408,60 @@ test('ScheduledTask execution identity survives closing and reacquiring the root
   });
 });
 
-function notifyInput(title: string) {
+/** A task bound to the session that asked for it — SendLater's shape. */
+test('a manual task can be created, edited and run without ever having a next fire', async (t) => {
+  await withStore(t, async ({ store }) => {
+    const task = await store.create(
+      { ...resumeInput('On demand'), schedule: { kind: 'manual' } },
+      NOW,
+    );
+    assert.equal(task.nextFireAt, null);
+    assert.equal(task.status, 'active');
+
+    // Editing one used to throw 'Schedule has no fire within one year': the
+    // update path asked every active task for a next fire, and a manual task
+    // does not have one by design.
+    const renamed = await store.update(task.id, { title: 'Still on demand' }, NOW + 1_000);
+    assert.equal(renamed.title, 'Still on demand');
+    assert.equal(renamed.nextFireAt, null);
+
+    // Running it does not spend it: no schedule to exhaust.
+    const claim = await store.claimNow(task.id, NOW + 2_000);
+    const settled = await store.settleFire(claim.id, {
+      at: NOW + 2_000,
+      outcome: 'ok',
+      message: 'ran',
+    });
+    assert.equal(settled.status, 'active');
+    assert.equal(settled.nextFireAt, null);
+    assert.equal(settled.fireCount, 1);
+  });
+});
+
+function resumeInput(title: string) {
   return {
     title,
-    intentBody: '',
+    intentBody: 'Come back to this.',
     schedule: { kind: 'interval', everySeconds: 60, startAt: NOW + 60_000 },
-    effect: { kind: 'notify', channel: 'local' },
+    effect: { kind: 'session_resume', sessionId: 'session-1' },
     createdBy: { kind: 'user' },
   };
 }
 
 function agentInput() {
   return {
-    ...notifyInput('Target task'),
+    ...resumeInput('Target task'),
     intentBody: 'Perform the scheduled work.',
     effect: {
       kind: 'agent_run',
       execution: {
         cwd: '/workspace',
-        llmConnectionId: 'connection-default',
-        llmConnectionSlug: 'default',
-        model: 'test-model',
+        model: {
+          kind: 'pinned',
+          llmConnectionId: 'connection-default',
+          llmConnectionSlug: 'default',
+          model: 'test-model',
+        },
         permissionMode: 'ask',
         collaborationMode: 'agent',
         orchestrationMode: 'default',

@@ -66,9 +66,13 @@ test('Host WebFetch uses the resolved proxy snapshot and closes its transport', 
     },
   });
 
-  const result = await tool.impl({ url: 'https://example.com/page' }, context());
+  const result = await tool.impl(
+    { url: 'https://example.com/page', prompt: 'summarise' },
+    context(),
+  );
 
-  assert.equal(result, 'fetched body');
+  assert.match(String(result), /No summarising model is available/u);
+  assert.match(String(result), /fetched body$/u);
   assert.deepEqual(proxy, {
     enabled: true,
     type: 'http',
@@ -92,7 +96,7 @@ test('Host WebFetch fails closed before transport creation in privacy mode', asy
   });
 
   await assert.rejects(
-    async () => tool.impl({ url: 'https://example.com/page' }, context()),
+    async () => tool.impl({ url: 'https://example.com/page', prompt: 'summarise' }, context()),
     /disabled while privacy mode is active/i,
   );
   assert.equal(transportCreated, false);
@@ -118,7 +122,7 @@ test('Host WebFetch fails closed before transport creation when proxy credential
   });
 
   await assert.rejects(
-    async () => tool.impl({ url: 'https://example.com/page' }, context()),
+    async () => tool.impl({ url: 'https://example.com/page', prompt: 'summarise' }, context()),
     /configure the network proxy credential/i,
   );
   assert.equal(transportCreated, false);
@@ -151,7 +155,10 @@ test('Host WebFetch closes its transport when the owning turn is cancelled', asy
     }),
   });
 
-  const result = tool.impl({ url: 'https://example.com/page' }, context(abort.signal));
+  const result = tool.impl(
+    { url: 'https://example.com/page', prompt: 'summarise' },
+    context(abort.signal),
+  );
   await fetchStarted;
   abort.abort(new Error('turn cancelled'));
 

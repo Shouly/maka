@@ -275,7 +275,7 @@ function transcriptFixture(): TurnViewModel {
     toolName: 'Edit',
     activityKind: 'edit',
     status: 'completed',
-    args: { path: 'src/a.ts' },
+    args: { file_path: 'src/a.ts' },
     result: {
       kind: 'file_diff',
       paths: ['src/a.ts'],
@@ -874,5 +874,39 @@ test('steering rows retain attachments, directories, and inline references', () 
   assert.equal(
     card.querySelector('button')?.getAttribute('aria-label'),
     'Open attachment evidence.pdf',
+  );
+});
+
+test('a plain user turn renders no stray 0 where its chips would be', () => {
+  // `{count && <div/>}` renders a literal 0 in React when the count is zero.
+  // The chip row's guard used to end in a boolean, which hid that every other
+  // operand is a COUNT; removing the boolean put a bare 0 on screen under every
+  // message that carried no quote, folder, skill or file — which is most of
+  // them. The guard has to stay a boolean.
+  const turn = transcriptFixture();
+  const document = renderTree(
+    createElement(TranscriptTurn, {
+      // The fixture's own ask carries no quote, folder, skill or file — the
+      // ordinary case, and the one that put a 0 on screen.
+      turn: { ...turn, timeline: [], tools: [] },
+      live: false,
+      footerActions: [],
+      toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
+      onFooterAction: () => {},
+      onOpenLineage: () => {},
+      onOpenExternal: () => {},
+    }),
+  );
+  const text = document.documentElement.textContent ?? '';
+  assert.ok(text.includes('Fix the constant'), 'the message itself is on screen');
+  // Structural, not textual: the zero lands with no whitespace around it, so a
+  // word-boundary regex misses it. A bare "0" TEXT NODE is the actual defect.
+  const stray = [...document.querySelectorAll('*')].filter((element) =>
+    [...element.childNodes].some((node) => node.nodeType === 3 && node.textContent === '0'),
+  );
+  assert.deepEqual(
+    stray.map((element) => element.tagName + '.' + (element.getAttribute('class') ?? '')),
+    [],
+    'no element renders a bare 0 text node',
   );
 });

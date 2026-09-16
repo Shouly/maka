@@ -61,7 +61,7 @@ function question(requestId: string): UserQuestionRequestEvent {
     requestId,
     toolUseId: `call_${requestId}`,
     turnId: 'turn_1',
-    questions: [{ question: 'Choose', options: [{ label: 'A' }] }],
+    questions: [{ question: 'Choose', header: 'Choose', options: [{ label: 'A' }] }],
   };
 }
 

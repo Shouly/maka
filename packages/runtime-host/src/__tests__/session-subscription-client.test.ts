@@ -199,9 +199,9 @@ test('domain callbacks validate identity, support unsubscribe, and stop on close
     subscriptionId: 'subscription-domain',
     sequence: 1,
     sessionId: 'session-1',
-    domain: 'todo',
+    domain: 'session_task',
   });
-  assert.deepEqual(domains, ['todo']);
+  assert.deepEqual(domains, ['session_task']);
 
   unsubscribe();
   subscription.accept({
@@ -212,7 +212,7 @@ test('domain callbacks validate identity, support unsubscribe, and stop on close
     sessionId: 'session-1',
     domain: 'usage',
   });
-  assert.deepEqual(domains, ['todo']);
+  assert.deepEqual(domains, ['session_task']);
 
   await subscription.close();
   assert.throws(
@@ -223,7 +223,7 @@ test('domain callbacks validate identity, support unsubscribe, and stop on close
         subscriptionId: 'subscription-domain',
         sequence: 3,
         sessionId: 'other-session',
-        domain: 'todo',
+        domain: 'session_task',
       }),
     /Session subscription is closed|Session subscription frame identity changed/,
   );

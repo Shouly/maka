@@ -69,7 +69,7 @@ function newAdapter(): ModelAdapter {
  * wire after the AI SDK applies `activeTools`.
  */
 async function toolNamesSeenByProvider(activeNames: ReadonlySet<string>): Promise<string[]> {
-  const tools: MakaTool[] = [tool('Read'), tool('tool_search'), tool('Rive')];
+  const tools: MakaTool[] = [tool('Read'), tool('ToolSearch'), tool('Rive')];
   const invalid = tool('invalid');
   const canonical = canonicalizeToolSet(tools, invalid, activeNames);
 
@@ -105,22 +105,22 @@ async function toolNamesSeenByProvider(activeNames: ReadonlySet<string>): Promis
 
 describe('hidden tools are trimmed from the provider request (wire-level)', () => {
   test('a tool outside the active set never reaches the model; invalid is never advertised', async () => {
-    const seen = await toolNamesSeenByProvider(new Set(['Read', 'tool_search']));
+    const seen = await toolNamesSeenByProvider(new Set(['Read', 'ToolSearch']));
     assert.ok(seen.includes('Read'), 'active Read should reach the provider');
-    assert.ok(seen.includes('tool_search'), 'tool_search should reach the provider');
+    assert.ok(seen.includes('ToolSearch'), 'ToolSearch should reach the provider');
     assert.ok(!seen.includes('Rive'), 'unloaded Rive must NOT reach the provider');
     assert.ok(!seen.includes('invalid'), 'invalid is providerTools-only, never advertised');
   });
 
   test('a tool added to the active set does reach the model (ratchet activates it)', async () => {
-    const seen = await toolNamesSeenByProvider(new Set(['Read', 'tool_search', 'Rive']));
+    const seen = await toolNamesSeenByProvider(new Set(['Read', 'ToolSearch', 'Rive']));
     assert.ok(seen.includes('Rive'), 'activated Rive should reach the provider');
     assert.ok(seen.includes('Read'), 'active tools stay present after a load');
   });
 });
 
 describe('ModelAdapter provider-step boundary', () => {
-  test('uses a provider-safe alias for Maka tool_search on OpenAI Responses', async () => {
+  test('uses a provider-safe alias for Maka ToolSearch on OpenAI Responses', async () => {
     const adapter = new ModelAdapter({
       connection: {
         slug: 'codex-subscription',
@@ -135,7 +135,7 @@ describe('ModelAdapter provider-step boundary', () => {
       now: () => 0,
     });
     const modelTools: ModelToolSet = {
-      tool_search: {
+      ToolSearch: {
         description: 'Search Maka deferred tools',
         inputSchema: z.object({ query: z.string() }),
       },
@@ -179,7 +179,7 @@ describe('ModelAdapter provider-step boundary', () => {
             {
               type: 'tool-call',
               toolCallId: 'search-call',
-              toolName: 'tool_search',
+              toolName: 'ToolSearch',
               input: { query: 'browser' },
             },
           ],
@@ -190,17 +190,17 @@ describe('ModelAdapter provider-step boundary', () => {
             {
               type: 'tool-result',
               toolCallId: 'search-call',
-              toolName: 'tool_search',
+              toolName: 'ToolSearch',
               output: {
                 type: 'json',
-                value: { activated: ['browser_click'] },
+                value: { activated: ['BrowserClick'] },
               },
             },
           ],
         },
       ],
       tools: modelTools,
-      activeTools: ['tool_search'],
+      activeTools: ['ToolSearch'],
       onStreamActivity: () => {},
       abortSignal: new AbortController().signal,
       repairToolCall: async () => null,
@@ -211,11 +211,11 @@ describe('ModelAdapter provider-step boundary', () => {
     assert.deepEqual(seenTools, [TOOL_SEARCH_PROVIDER_NAME]);
     assert.equal(
       events.find((event) => event.kind === 'tool-call')?.toolCall.toolName,
-      'tool_search',
+      'ToolSearch',
     );
     assert.equal(
       events.find((event) => event.kind === 'provider-tool-result')?.toolName,
-      'tool_search',
+      'ToolSearch',
     );
   });
 

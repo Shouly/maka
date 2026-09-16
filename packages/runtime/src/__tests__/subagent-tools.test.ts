@@ -80,18 +80,27 @@ describe('subagent tools', () => {
       safeParse(input: unknown): { success: boolean };
     };
     assert.strictEqual(
-      spawnSchema.safeParse({ profile: LOCAL_READ_AGENT_PROFILE, task: 'Inspect the repo.' })
-        .success,
+      spawnSchema.safeParse({
+        subagent_type: LOCAL_READ_AGENT_PROFILE,
+        description: 'Inspect the repo',
+        prompt: 'Inspect the repo.',
+      }).success,
       true,
     );
     assert.strictEqual(
-      spawnSchema.safeParse({ profile: WEB_RESEARCH_AGENT_PROFILE, task: 'Search the web.' })
-        .success,
+      spawnSchema.safeParse({
+        subagent_type: WEB_RESEARCH_AGENT_PROFILE,
+        description: 'Search the web',
+        prompt: 'Search the web.',
+      }).success,
       false,
     );
     assert.strictEqual(
-      spawnSchema.safeParse({ profile: IMPLEMENTATION_AGENT_PROFILE, task: 'Change a file.' })
-        .success,
+      spawnSchema.safeParse({
+        subagent_type: IMPLEMENTATION_AGENT_PROFILE,
+        description: 'Change a file',
+        prompt: 'Change a file.',
+      }).success,
       false,
     );
     assert.deepStrictEqual(
@@ -100,7 +109,7 @@ describe('subagent tools', () => {
     );
   });
 
-  test('agent_spawn does not advertise retired task binding', async () => {
+  test('Agent does not advertise retired task binding', async () => {
     const advertisedProperties = async (tool: MakaTool) => {
       const schema = (await zodSchema(tool.parameters as never).jsonSchema) as {
         properties?: Record<string, unknown>;
@@ -109,45 +118,49 @@ describe('subagent tools', () => {
     };
 
     assert.deepStrictEqual(Object.keys(await advertisedProperties(buildSubagentSpawnTool())), [
-      'profile',
-      'subagent_id',
-      'task',
+      'subagent_type',
+      'description',
+      'prompt',
+      'model',
       'write_back',
       'isolation',
     ]);
   });
 
-  test('agent_spawn strips task_id when task binding is unavailable', () => {
+  test('Agent strips task_id when task binding is unavailable', () => {
     const schema = buildSubagentSpawnTool().parameters as {
       safeParse(input: unknown): { success: boolean; data?: Record<string, unknown> };
     };
 
     const parsed = schema.safeParse({
-      profile: LOCAL_READ_AGENT_PROFILE,
-      task: 'Inspect the repo.',
+      subagent_type: LOCAL_READ_AGENT_PROFILE,
+      description: 'Delegate one task',
+      prompt: 'Inspect the repo.',
       task_id: 'T1',
     });
     assert.strictEqual(parsed.success, true);
     assert.deepStrictEqual(parsed.data, {
-      profile: LOCAL_READ_AGENT_PROFILE,
-      task: 'Inspect the repo.',
+      subagent_type: LOCAL_READ_AGENT_PROFILE,
+      description: 'Delegate one task',
+      prompt: 'Inspect the repo.',
     });
 
     const presetParsed = schema.safeParse({
-      profile: 'not-a-real-profile',
-      subagent_id: 'fast-reader',
-      task: 'Inspect the repo.',
+      subagent_type: 'fast-reader',
+      prompt: 'Inspect the repo.',
+      description: 'Inspect the repo',
       task_id: { malformed: true },
       ignored: true,
     });
     assert.strictEqual(presetParsed.success, true);
     assert.deepStrictEqual(presetParsed.data, {
-      subagent_id: 'fast-reader',
-      task: 'Inspect the repo.',
+      subagent_type: 'fast-reader',
+      description: 'Inspect the repo',
+      prompt: 'Inspect the repo.',
     });
   });
 
-  test('agent_spawn names both recovery routes when no child selector is provided', () => {
+  test('Agent names both recovery routes when no child selector is provided', () => {
     const schema = buildSubagentSpawnTool({
       definitions: [LOCAL_READ_AGENT_DEFINITION, WEB_RESEARCH_AGENT_DEFINITION],
     }).parameters as {
@@ -157,13 +170,13 @@ describe('subagent tools', () => {
       };
     };
 
-    const parsed = schema.safeParse({ task: 'Inspect the repo.' });
+    const parsed = schema.safeParse({ prompt: 'Inspect the repo.', description: 'Inspect' });
     assert.strictEqual(parsed.success, false);
     assert.ok(
       parsed.error?.issues
         .map((issue) => issue.message)
         .includes(
-          'No child selector was provided. Call agent_list and pass a returned subagent_id to agent_spawn, or pass one legacy profile: local_read, web_research.',
+          'No child selector was provided. Call ListAgents and pass a returned subagent_id as subagent_type, or pass one built-in profile: local_read, web_research.',
         ),
     );
   });
@@ -310,8 +323,8 @@ describe('subagent tools', () => {
   test('child agent toolset keeps only built-in profile allowlisted tools', () => {
     const tools = buildChildAgentTools([
       ...buildBuiltinTools(),
-      testCatalogTool('WriteStdin', 'shell_unsafe'),
-      testCatalogTool('StopBackgroundTask', 'shell_unsafe'),
+      testCatalogTool('TaskInput', 'shell_unsafe'),
+      testCatalogTool('TaskStop', 'shell_unsafe'),
       {
         name: AGENT_SPAWN_TOOL_NAME,
         description: 'spawn',
@@ -339,8 +352,8 @@ describe('subagent tools', () => {
         'Edit',
         'apply_patch',
         'Bash',
-        'WriteStdin',
-        'StopBackgroundTask',
+        'TaskInput',
+        'TaskStop',
       ],
     );
     assert.deepStrictEqual(
@@ -354,8 +367,8 @@ describe('subagent tools', () => {
         'Edit',
         'apply_patch',
         'Bash',
-        'WriteStdin',
-        'StopBackgroundTask',
+        'TaskInput',
+        'TaskStop',
       ],
     );
   });
@@ -403,7 +416,7 @@ describe('subagent tools', () => {
     }
   });
 
-  test('agent_spawn delegates an explicit profile and task through the narrow context capability', async () => {
+  test('Agent delegates an explicit profile and task through the narrow context capability', async () => {
     const tool = buildSubagentSpawnTool();
     const abortController = new AbortController();
     const calls: unknown[] = [];
@@ -411,8 +424,9 @@ describe('subagent tools', () => {
 
     const result = await tool.impl(
       {
-        profile: LOCAL_READ_AGENT_PROFILE,
-        task: 'Inspect the runtime tests.',
+        subagent_type: LOCAL_READ_AGENT_PROFILE,
+        description: 'Delegate one task',
+        prompt: 'Inspect the runtime tests.',
       },
       {
         sessionId: 'session-1',
@@ -431,7 +445,7 @@ describe('subagent tools', () => {
             toolUseId: 'child-tool',
             toolName: 'Read',
             displayName: 'Read file',
-            args: { path: 'secret.txt' },
+            args: { file_path: 'secret.txt' },
           });
           input.onEvent?.({
             type: 'tool_result',
@@ -492,14 +506,15 @@ describe('subagent tools', () => {
     });
   });
 
-  test('agent_spawn bounds projected child tool activity', async () => {
+  test('Agent bounds projected child tool activity', async () => {
     const tool = buildSubagentSpawnTool();
     const output: string[] = [];
 
     await tool.impl(
       {
-        profile: LOCAL_READ_AGENT_PROFILE,
-        task: 'Inspect many files.',
+        subagent_type: LOCAL_READ_AGENT_PROFILE,
+        description: 'Delegate one task',
+        prompt: 'Inspect many files.',
       },
       {
         sessionId: 'session-1',
@@ -538,14 +553,15 @@ describe('subagent tools', () => {
     assert.strictEqual(output.at(-1), 'Child agent Local Read: completed\n');
   });
 
-  test('agent_spawn bounds projected child tool activity by characters', async () => {
+  test('Agent bounds projected child tool activity by characters', async () => {
     const tool = buildSubagentSpawnTool();
     const output: string[] = [];
 
     await tool.impl(
       {
-        profile: LOCAL_READ_AGENT_PROFILE,
-        task: 'Inspect verbose tool activity.',
+        subagent_type: LOCAL_READ_AGENT_PROFILE,
+        description: 'Delegate one task',
+        prompt: 'Inspect verbose tool activity.',
       },
       {
         sessionId: 'session-1',
@@ -591,7 +607,7 @@ describe('subagent tools', () => {
     assert.strictEqual(output.slice(1, -1).join('').length, 8_192);
   });
 
-  test('agent_spawn bounds projected startup failures', async () => {
+  test('Agent bounds projected startup failures', async () => {
     const tool = buildSubagentSpawnTool();
     const output: string[] = [];
 
@@ -599,8 +615,9 @@ describe('subagent tools', () => {
       Promise.resolve(
         tool.impl(
           {
-            profile: LOCAL_READ_AGENT_PROFILE,
-            task: 'Fail.',
+            subagent_type: LOCAL_READ_AGENT_PROFILE,
+            description: 'Delegate one task',
+            prompt: 'Fail.',
           },
           {
             sessionId: 'session-1',
@@ -622,33 +639,42 @@ describe('subagent tools', () => {
     assert.strictEqual((output[1]?.length ?? Number.POSITIVE_INFINITY) < 1_100, true);
   });
 
-  test('agent_spawn validates profile contracts and delegates worktree availability to runtime', async () => {
+  test('Agent validates profile contracts and delegates worktree availability to runtime', async () => {
     const tool = buildSubagentSpawnTool();
     const schema = tool.parameters as {
       safeParse(input: unknown): { success: boolean; data?: unknown };
     };
 
     assert.strictEqual(
-      schema.safeParse({ profile: LOCAL_READ_AGENT_PROFILE, task: 'Inspect the repo.' }).success,
+      schema.safeParse({
+        subagent_type: LOCAL_READ_AGENT_PROFILE,
+        prompt: 'Inspect the repo.',
+        description: 'Inspect the repo',
+      }).success,
       true,
     );
     assert.strictEqual(
-      schema.safeParse({ profile: WEB_RESEARCH_AGENT_PROFILE, task: 'Find current sources.' })
-        .success,
+      schema.safeParse({
+        subagent_type: WEB_RESEARCH_AGENT_PROFILE,
+        prompt: 'Find current sources.',
+        description: 'Find sources',
+      }).success,
       true,
     );
     assert.deepStrictEqual(
       schema.safeParse({
-        profile: IMPLEMENTATION_AGENT_PROFILE,
-        task: 'Edit the repo.',
+        subagent_type: IMPLEMENTATION_AGENT_PROFILE,
+        description: 'Delegate one task',
+        prompt: 'Edit the repo.',
         write_back: AGENT_WRITE_BACK_PATCH,
         isolation: AGENT_WORKSPACE_WORKTREE,
       }),
       {
         success: true,
         data: {
-          profile: IMPLEMENTATION_AGENT_PROFILE,
-          task: 'Edit the repo.',
+          subagent_type: IMPLEMENTATION_AGENT_PROFILE,
+          description: 'Delegate one task',
+          prompt: 'Edit the repo.',
           write_back: AGENT_WRITE_BACK_PATCH,
           isolation: AGENT_WORKSPACE_WORKTREE,
         },
@@ -656,16 +682,18 @@ describe('subagent tools', () => {
     );
     assert.deepStrictEqual(
       schema.safeParse({
-        profile: LOCAL_READ_AGENT_PROFILE,
-        task: 'Inspect the repo.',
+        subagent_type: LOCAL_READ_AGENT_PROFILE,
+        description: 'Delegate one task',
+        prompt: 'Inspect the repo.',
         write_back: AGENT_WRITE_BACK_SUMMARY,
         isolation: AGENT_WORKSPACE_SAME_WORKSPACE,
       }),
       {
         success: true,
         data: {
-          profile: LOCAL_READ_AGENT_PROFILE,
-          task: 'Inspect the repo.',
+          subagent_type: LOCAL_READ_AGENT_PROFILE,
+          description: 'Delegate one task',
+          prompt: 'Inspect the repo.',
           write_back: AGENT_WRITE_BACK_SUMMARY,
           isolation: AGENT_WORKSPACE_SAME_WORKSPACE,
         },
@@ -673,24 +701,27 @@ describe('subagent tools', () => {
     );
     assert.strictEqual(
       schema.safeParse({
-        profile: LOCAL_READ_AGENT_PROFILE,
-        task: 'Inspect the repo.',
+        subagent_type: LOCAL_READ_AGENT_PROFILE,
+        description: 'Delegate one task',
+        prompt: 'Inspect the repo.',
         write_back: 'patch',
       }).success,
       false,
     );
     assert.strictEqual(
       schema.safeParse({
-        profile: LOCAL_READ_AGENT_PROFILE,
-        task: 'Inspect the repo.',
+        subagent_type: LOCAL_READ_AGENT_PROFILE,
+        description: 'Delegate one task',
+        prompt: 'Inspect the repo.',
         isolation: 'worktree',
       }).success,
       false,
     );
     assert.strictEqual(
       schema.safeParse({
-        profile: IMPLEMENTATION_AGENT_PROFILE,
-        task: 'Edit the repo.',
+        subagent_type: IMPLEMENTATION_AGENT_PROFILE,
+        description: 'Delegate one task',
+        prompt: 'Edit the repo.',
         write_back: AGENT_WRITE_BACK_SUMMARY,
         isolation: AGENT_WORKSPACE_WORKTREE,
       }).success,
@@ -698,23 +729,16 @@ describe('subagent tools', () => {
     );
     assert.strictEqual(
       schema.safeParse({
-        profile: IMPLEMENTATION_AGENT_PROFILE,
-        task: 'Edit the repo.',
+        subagent_type: IMPLEMENTATION_AGENT_PROFILE,
+        description: 'Delegate one task',
+        prompt: 'Edit the repo.',
         write_back: AGENT_WRITE_BACK_PATCH,
         isolation: AGENT_WORKSPACE_SAME_WORKSPACE,
       }).success,
       false,
     );
     assert.strictEqual(
-      schema.safeParse({ agent: LOCAL_READ_AGENT_ID, task: 'Inspect the repo.' }).success,
-      false,
-    );
-    assert.strictEqual(
-      schema.safeParse({ profile: LOCAL_READ_AGENT_ID, task: 'Inspect the repo.' }).success,
-      false,
-    );
-    assert.strictEqual(
-      schema.safeParse({ profile: WEB_RESEARCH_AGENT_ID, task: 'Find current sources.' }).success,
+      schema.safeParse({ agent: LOCAL_READ_AGENT_ID, prompt: 'Inspect the repo.' }).success,
       false,
     );
     assert.strictEqual(
@@ -726,8 +750,9 @@ describe('subagent tools', () => {
     const calls: unknown[] = [];
     await tool.impl(
       {
-        profile: IMPLEMENTATION_AGENT_PROFILE,
-        task: 'Edit files.',
+        subagent_type: IMPLEMENTATION_AGENT_PROFILE,
+        description: 'Delegate one task',
+        prompt: 'Edit files.',
         write_back: AGENT_WRITE_BACK_PATCH,
         isolation: AGENT_WORKSPACE_WORKTREE,
       },
@@ -874,7 +899,7 @@ describe('subagent tools', () => {
     });
   });
 
-  test('agent_list keeps discovery compact, paginated, and free of execution history', async () => {
+  test('ListAgents keeps discovery compact, paginated, and free of execution history', async () => {
     const listTool = buildSubagentListTool();
     const schema = listTool.parameters as {
       safeParse(input: unknown): {
@@ -964,7 +989,7 @@ describe('subagent tools', () => {
     assert.strictEqual(JSON.stringify(worstCase).length <= 7_000, true);
   });
 
-  test('agent_output uses an explicit locator when a provider fills unrelated fields', async () => {
+  test('AgentOutput uses an explicit locator when a provider fills unrelated fields', async () => {
     const outputTool = buildSubagentOutputTool();
     const parsed = (
       outputTool.parameters as {
@@ -1116,3 +1141,122 @@ function testConnection(): LlmConnection {
     updatedAt: 1,
   };
 }
+
+describe('Agent — reference argument names', () => {
+  const spawnContext = {
+    sessionId: 'session-1',
+    turnId: 'parent-turn',
+    cwd: '/tmp',
+    toolCallId: 'tool-1',
+    abortSignal: new AbortController().signal,
+    emitOutput: () => {},
+  };
+
+  test('subagent_type carries a built-in profile or a preset id', () => {
+    const schema = buildSubagentSpawnTool().parameters as {
+      safeParse(input: unknown): { success: boolean; data?: Record<string, unknown> };
+    };
+
+    const builtinProfile = schema.safeParse({
+      subagent_type: LOCAL_READ_AGENT_PROFILE,
+      prompt: 'Inspect the repo.',
+      description: 'Inspect the repo',
+    });
+    assert.strictEqual(builtinProfile.success, true);
+    assert.deepStrictEqual(builtinProfile.data, {
+      subagent_type: LOCAL_READ_AGENT_PROFILE,
+      description: 'Inspect the repo',
+      prompt: 'Inspect the repo.',
+    });
+
+    const preset = schema.safeParse({
+      subagent_type: 'preset-1',
+      prompt: 'Inspect the repo.',
+      description: 'Inspect the repo',
+    });
+    assert.strictEqual(preset.success, true);
+    assert.deepStrictEqual((preset.data as { subagent_type: string }).subagent_type, 'preset-1');
+  });
+
+  test('description is required and prompt carries the brief', () => {
+    const schema = buildSubagentSpawnTool().parameters as {
+      safeParse(input: unknown): { success: boolean };
+    };
+
+    assert.strictEqual(
+      schema.safeParse({ subagent_type: LOCAL_READ_AGENT_PROFILE, prompt: 'Inspect.' }).success,
+      false,
+    );
+    assert.strictEqual(
+      schema.safeParse({
+        subagent_type: LOCAL_READ_AGENT_PROFILE,
+        prompt: 'Inspect.',
+        description: 'Inspect the repo',
+      }).success,
+      true,
+    );
+  });
+
+  test('a model override is accepted, ignored, and said so in the result', async () => {
+    const tool = buildSubagentSpawnTool();
+    const spawned: unknown[] = [];
+
+    const result = await tool.impl(
+      {
+        subagent_type: LOCAL_READ_AGENT_PROFILE,
+        description: 'Inspect the repo',
+        prompt: 'Inspect.',
+        model: 'some-other-model',
+      },
+      {
+        ...spawnContext,
+        spawnChildSession: async (input: { agentProfile: string }) => {
+          spawned.push(input);
+          return {
+            profile: input.agentProfile,
+            childSessionId: 'child-session',
+            agentId: requireBuiltinAgentDefinitionByProfile(input.agentProfile).id,
+            agentName: requireBuiltinAgentDefinitionByProfile(input.agentProfile).name,
+            turnId: 'child-turn',
+            runId: 'child-run',
+            status: 'completed',
+            permissionMode: 'explore',
+            summary: 'done',
+            artifactIds: [],
+          };
+        },
+      } as never,
+    );
+
+    assert.strictEqual(spawned.length, 1);
+    assert.strictEqual((spawned[0] as { model?: unknown }).model, undefined);
+    const projected = tool.toModelOutput?.({
+      toolCallId: 'tool-1',
+      input: {
+        subagent_type: LOCAL_READ_AGENT_PROFILE,
+        description: 'Inspect the repo',
+        prompt: 'Inspect.',
+        model: 'some-other-model',
+      },
+      output: result,
+    });
+    assert.ok(projected);
+    assert.strictEqual(projected.type, 'json');
+    assert.match(
+      String((projected as { value: { model_override?: unknown } }).value.model_override),
+      /^ignored: "some-other-model" was not applied/,
+    );
+    assert.strictEqual(
+      tool.toModelOutput?.({
+        toolCallId: 'tool-1',
+        input: {
+          subagent_type: LOCAL_READ_AGENT_PROFILE,
+          description: 'Inspect the repo',
+          prompt: 'Inspect.',
+        },
+        output: result,
+      }),
+      undefined,
+    );
+  });
+});

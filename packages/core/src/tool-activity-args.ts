@@ -18,6 +18,7 @@
  */
 
 import { redactSecrets } from './redaction.js';
+import { TOOL_NAMES } from './tool-names.js';
 import {
   encodedTerminalInputActionsByteLength,
   formatTerminalInputActions,
@@ -179,11 +180,11 @@ function isSafeProjectedInputText(text: string): boolean {
   );
 }
 
-export function projectToolActivityArgs(toolName: string, args: unknown): unknown {
-  // A Todo replacement is only a proposal until its tool result settles. The
-  // durable transcript must not resurrect those args as committed state.
-  if (toolName === 'todo_write') return {};
-  if (toolName !== 'WriteStdin') return args;
+export function projectToolActivityArgs(name: string, args: unknown): unknown {
+  // A task write is only a proposal until its tool result settles. The durable
+  // transcript must not resurrect those args as committed state.
+  if (name === TOOL_NAMES.taskCreate || name === TOOL_NAMES.taskUpdate) return {};
+  if (name !== TOOL_NAMES.taskInput) return args;
   const parsed = readWriteStdinArgs(args);
   if (!parsed) return {};
   const input = args as Record<string, unknown>;

@@ -43,7 +43,7 @@ function jsonSchema(schema: Record<string, unknown>): {
 
 test('publishes self-described session-affine Browser and Computer Use offers', () => {
   const provider = createDesktopNativeCapabilityProvider({
-    browserTools: [tool('browser_snapshot', z.object({ includeHidden: z.boolean().optional() }), async () => 'ok')],
+    browserTools: [tool('BrowserSnapshot', z.object({ includeHidden: z.boolean().optional() }), async () => 'ok')],
     resolveBrowserUrl: () => 'https://example.com/',
     releaseBrowserSession() {},
     computerUseTools: computerTools(async () => ({ text: 'ok' })),
@@ -64,7 +64,7 @@ test('publishes self-described session-affine Browser and Computer Use offers', 
         offerId: 'desktop_browser',
         version: '0',
         affinity: 'session',
-        toolNames: ['browser_snapshot'],
+        toolNames: ['BrowserSnapshot'],
         serverIds: ['desktop_browser'],
         activityKinds: [undefined],
       },
@@ -72,7 +72,7 @@ test('publishes self-described session-affine Browser and Computer Use offers', 
         offerId: 'desktop_computer_use',
         version: '0',
         affinity: 'session',
-        toolNames: ['maka_computer'],
+        toolNames: ['Computer'],
         serverIds: ['desktop_computer_use'],
         activityKinds: ['computer'],
       },
@@ -95,7 +95,7 @@ test('remote providers do not request Host paths and use a Client-owned cwd', as
   const provider = createDesktopNativeCapabilityProvider(
     {
       browserTools: [
-        tool('browser_navigate', z.object({ url: z.string() }), async (_args, context) => {
+        tool('BrowserNavigate', z.object({ url: z.string() }), async (_args, context) => {
           invokedCwd = context.cwd;
           return 'ok';
         }),
@@ -381,7 +381,7 @@ test('skips a malformed MCP tool without dropping the other offers', async () =>
   let healthyCalls = 0;
   const provider = createDesktopNativeCapabilityProvider({
     browserTools: [
-      tool('browser_snapshot', z.object({}), async () => {
+      tool('BrowserSnapshot', z.object({}), async () => {
         healthyCalls += 1;
         return 'snapshot';
       }),
@@ -427,7 +427,7 @@ test('skips a malformed MCP tool without dropping the other offers', async () =>
   const tools = provider.offers().flatMap((offer) => offer.tools);
   assert.deepEqual(
     tools.map((descriptor) => descriptor.name),
-    ['browser_snapshot', 'good_tool'],
+    ['BrowserSnapshot', 'good_tool'],
   );
   assert.doesNotThrow(() =>
     decodeClientCapabilityReplaceInput({
@@ -450,7 +450,7 @@ test('skips a malformed MCP tool without dropping the other offers', async () =>
     capabilityFrame({
       offerId: 'desktop_browser',
       serverId: 'desktop_browser',
-      toolName: 'browser_snapshot',
+      toolName: 'BrowserSnapshot',
       arguments: {},
     }),
   );
@@ -594,7 +594,7 @@ test('validates before admission and invokes the exact offered tool with Host co
   const provider = createDesktopNativeCapabilityProvider(
     {
       browserTools: [
-        tool('browser_navigate', z.object({ url: z.string().url() }), async (args, context) => {
+        tool('BrowserNavigate', z.object({ url: z.string().url() }), async (args, context) => {
           assert.equal(admitted, true);
           assert.deepEqual(browserOriginAdmission(context.sessionId), {
             sessionId: 'host-a:session-1',
@@ -615,7 +615,7 @@ test('validates before admission and invokes the exact offered tool with Host co
       ],
       resolveBrowserUrl: ({ sessionId, toolName, arguments: args }) => {
         assert.equal(sessionId, 'host-a:session-1');
-        assert.equal(toolName, 'browser_navigate');
+        assert.equal(toolName, 'BrowserNavigate');
         const url = String(args.url);
         resolvedUrls.push(url);
         return url;
@@ -668,7 +668,7 @@ test('does not execute Browser work when its Origin changes while admission is p
   let invoked = false;
   const provider = createDesktopNativeCapabilityProvider({
     browserTools: [
-      tool('browser_snapshot', z.object({}), async () => {
+      tool('BrowserSnapshot', z.object({}), async () => {
         invoked = true;
         return 'snapshot';
       }),
@@ -684,7 +684,7 @@ test('does not execute Browser work when its Origin changes while admission is p
     () =>
       call(
         provider,
-        capabilityFrame({ toolName: 'browser_snapshot', arguments: {} }),
+        capabilityFrame({ toolName: 'BrowserSnapshot', arguments: {} }),
       ),
     /Browser origin changed while admission was pending/u,
   );
@@ -697,7 +697,7 @@ test('watches Computer Use turns without widening Browser lifecycle', async () =
   let computerUseSessionId: string | undefined;
   const provider = createDesktopNativeCapabilityProvider(
     {
-      browserTools: [tool('browser_snapshot', z.object({}), async () => 'snapshot')],
+      browserTools: [tool('BrowserSnapshot', z.object({}), async () => 'snapshot')],
       resolveBrowserUrl: () => 'https://example.com/',
       releaseBrowserSession() {},
       computerUseTools: computerTools(async (_args, context) => {
@@ -716,7 +716,7 @@ test('watches Computer Use turns without widening Browser lifecycle', async () =
 
   await call(
     provider,
-    capabilityFrame({ toolName: 'browser_snapshot', arguments: {} }),
+    capabilityFrame({ toolName: 'BrowserSnapshot', arguments: {} }),
   );
   assert.deepEqual(usedSessions, ['session-1']);
   assert.deepEqual(computerUseTurns, []);
@@ -755,7 +755,7 @@ test('projects Computer Use screenshots and releases all native resources for a 
     (sessionId) => computerReleased.push(sessionId),
   );
   const provider = createDesktopNativeCapabilityProvider({
-    browserTools: [tool('browser_snapshot', z.object({}), async () => 'snapshot')],
+    browserTools: [tool('BrowserSnapshot', z.object({}), async () => 'snapshot')],
     resolveBrowserUrl: () => 'https://example.com/',
     releaseBrowserSession: (sessionId) => {
       browserReleased.push(sessionId);
@@ -772,7 +772,7 @@ test('projects Computer Use screenshots and releases all native resources for a 
     provider,
     capabilityFrame({
       sessionId: 'browser-session',
-      toolName: 'browser_snapshot',
+      toolName: 'BrowserSnapshot',
       arguments: {},
     }),
   );
@@ -813,7 +813,7 @@ test('projects Computer Use screenshots and releases all native resources for a 
 
 test('does not advertise unavailable capability groups or dispatch unknown identities', async () => {
   const provider = createDesktopNativeCapabilityProvider({
-    browserTools: [tool('browser_snapshot', z.object({}), async () => 'ok')],
+    browserTools: [tool('BrowserSnapshot', z.object({}), async () => 'ok')],
     resolveBrowserUrl: () => 'https://example.com/',
     releaseBrowserSession() {},
     computerUseTools: computerTools(),
@@ -894,7 +894,7 @@ test('chunks a dynamic capability group beyond the single-offer tool limit', asy
     tool(`mcp_tool_${String(index).padStart(3, '0')}`, z.object({}), async () => `tool-${index}`),
   );
   const provider = createDesktopNativeCapabilityProvider({
-    browserTools: [tool('browser_snapshot', z.object({}), async () => 'ok')],
+    browserTools: [tool('BrowserSnapshot', z.object({}), async () => 'ok')],
     resolveBrowserUrl: () => 'https://example.com/',
     releaseBrowserSession() {},
     computerUseTools: [] as never,
@@ -950,7 +950,7 @@ test('omits trailing dynamic tools beyond the manifest tool budget and keeps fix
   );
   const provider = createDesktopNativeCapabilityProvider(
     {
-      browserTools: [tool('browser_snapshot', z.object({}), async () => 'ok')],
+      browserTools: [tool('BrowserSnapshot', z.object({}), async () => 'ok')],
       resolveBrowserUrl: () => 'https://example.com/',
       releaseBrowserSession() {},
       computerUseTools: [] as never,
@@ -1229,7 +1229,7 @@ test('forwards Host cancellation to an admitted Desktop invocation', async () =>
   });
   const provider = createDesktopNativeCapabilityProvider({
     browserTools: [
-      tool('browser_navigate', z.object({ url: z.string() }), async (_args, context) => {
+      tool('BrowserNavigate', z.object({ url: z.string() }), async (_args, context) => {
         invocationStarted();
         await new Promise<never>((_resolve, reject) => {
           context.abortSignal.addEventListener(
@@ -1291,7 +1291,7 @@ function computerTools(
   const tools = (impl
     ? [
         {
-          ...tool('maka_computer', z.object({ wait: z.boolean().optional() }), impl),
+          ...tool('Computer', z.object({ wait: z.boolean().optional() }), impl),
           activityKind: 'computer' as const,
           toModelOutput: ({ output }: { output: unknown }) => {
             const result = output as {
@@ -1343,7 +1343,7 @@ function capabilityFrame(overrides: Partial<ClientCapabilityCallFrame> = {}): Cl
     registrationId: 'registration-1',
     offerId: 'desktop_browser',
     serverId: 'desktop_browser',
-    toolName: 'browser_navigate',
+    toolName: 'BrowserNavigate',
     arguments: { url: 'https://example.com' },
     sessionId: 'session-1',
     turnId: 'turn-1',
@@ -1357,7 +1357,7 @@ function computerFrame(overrides: Partial<ClientCapabilityCallFrame> = {}): Clie
   return capabilityFrame({
     offerId: 'desktop_computer_use',
     serverId: 'desktop_computer_use',
-    toolName: 'maka_computer',
+    toolName: 'Computer',
     arguments: {},
     ...overrides,
   });

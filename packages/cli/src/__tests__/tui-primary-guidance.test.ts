@@ -33,10 +33,10 @@ describe('TUI primary guidance catalog', () => {
     }
   });
 
-  test('describes /todo as the current session Todo list in every primary locale', () => {
-    assert.equal(getTuiPrimaryGuidance('en').commands.todo, 'Show the current session Todo list');
-    assert.equal(getTuiPrimaryGuidance('zh-CN').commands.todo, '查看当前会话待办清单');
-    assert.equal(getTuiPrimaryGuidance('zh-TW').commands.todo, '檢視目前會話待辦清單');
+  test('describes /tasks as the current session task list in every primary locale', () => {
+    assert.equal(getTuiPrimaryGuidance('en').commands.tasks, 'Show the current session task list');
+    assert.equal(getTuiPrimaryGuidance('zh-CN').commands.tasks, '查看当前会话任务清单');
+    assert.equal(getTuiPrimaryGuidance('zh-TW').commands.tasks, '檢視目前會話任務清單');
   });
 
   test('keeps keybinding tokens identical across locales', () => {

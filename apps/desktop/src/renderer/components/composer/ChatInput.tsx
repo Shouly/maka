@@ -64,13 +64,12 @@ import type { PermissionMode } from '@maka/core/permission';
 import type { ThinkingLevel } from '@maka/core/model-thinking';
 import type { ChatModelChoice } from '@maka/core/chat-model-choice';
 import { attachmentKindFromMimeType, guessMimeFromName } from '@maka/core/attachments';
+import { getConversationCopy, useUiLocale, useComposerHistory } from '@maka/ui';
 import {
-  getConversationCopy,
-  useUiLocale,
-  useComposerHistory,
-  createQuestionDrafts,
   buildUserQuestionResponse,
-} from '@maka/ui';
+  createQuestionDrafts,
+  readUserQuestions,
+} from '../../lib/user-question-shape.js';
 import {
   composerInputStore,
   EMPTY_INPUT,
@@ -395,16 +394,15 @@ function OwnedChatInput(props: {
       if (pendingQuestion && sessionId) {
         const text = serialized.text.trim();
         if (!text) return;
+        const questions = readUserQuestions(pendingQuestion);
         const panel = userQuestionPanelStore.getState();
         const known = panel.requestId === pendingQuestion.requestId;
-        const drafts = [
-          ...(known ? panel.drafts : createQuestionDrafts(pendingQuestion.questions)),
-        ];
+        const drafts = [...(known ? panel.drafts : createQuestionDrafts(questions))];
         const index = known ? panel.index : 0;
         drafts[index] = { kind: 'other', value: text };
         await answerUserQuestion(
           pendingQuestion,
-          buildUserQuestionResponse(pendingQuestion, drafts),
+          buildUserQuestionResponse(pendingQuestion, questions, drafts),
           (response) => turnActionsStore.respondQuestion(sessionId, response),
         );
         consumeDraft(sessionId);

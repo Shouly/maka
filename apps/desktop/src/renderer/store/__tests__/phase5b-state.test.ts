@@ -59,6 +59,7 @@ import {
   validateMcpServerDraft,
 } from '../../lib/ported/mcp-server-draft.js';
 import { formatCommandLine, parseCommandLine } from '../../lib/ported/mcp-server-command-line.js';
+import { createScheduledTaskFormSeed } from '@maka/ui';
 import {
   createScheduledTaskInputFromFields,
   scheduledTaskScheduleFromFields,
@@ -441,36 +442,50 @@ test('the MCP store reads config and statuses as one value', async () => {
 
 // ── scheduled tasks ────────────────────────────────────────────────────────
 
+const NOW = new Date(2026, 8, 7, 12, 0).getTime();
+
 const fields = (patch: Partial<ScheduledTaskFormFields> = {}): ScheduledTaskFormFields => ({
+  ...createScheduledTaskFormSeed({}, NOW),
   title: '  Water the plants  ',
   note: '  every morning  ',
-  runAtLocal: '2026-09-08T09:00',
-  recurrence: 'none',
-  cronExpression: '',
+  frequency: 'once',
+  dateLocal: '2026-09-08',
+  timeLocal: '09:00',
+  collaborationMode: 'agent',
+  orchestrationMode: 'default',
   ...patch,
 });
 
 test('the schedule form writes the shape the Host takes', () => {
-  const once = createScheduledTaskInputFromFields(fields());
+  const once = createScheduledTaskInputFromFields(fields(), NOW);
   assert.equal(once?.title, 'Water the plants');
   assert.equal(once?.intentBody, 'every morning');
   assert.equal(once?.schedule.kind, 'once');
-  // Delivery is local: bot channels need the Bots settings page the rewrite defers.
-  assert.deepEqual(once?.effect, { kind: 'notify', channel: 'local' });
+  // Every task the form builds opens a session of its own, and carries the
+  // execution settings that session will start with.
+  assert.equal(once?.effect.kind, 'agent_run');
+  assert.deepEqual(once?.effect.kind === 'agent_run' ? once.effect.execution.model : undefined, {
+    kind: 'default',
+  });
   assert.equal(
-    scheduledTaskScheduleFromFields(fields({ recurrence: 'cron', cronExpression: ' 0 9 * * * ' }))
-      ?.kind,
+    scheduledTaskScheduleFromFields(fields({ frequency: 'daily' }), NOW)?.kind,
+    'calendar',
+  );
+  assert.equal(
+    scheduledTaskScheduleFromFields(fields({ frequency: 'weekdays' }), NOW)?.kind,
     'cron',
   );
-  assert.equal(scheduledTaskScheduleFromFields(fields({ recurrence: 'daily' }))?.kind, 'calendar');
+  assert.deepEqual(scheduledTaskScheduleFromFields(fields({ frequency: 'manual' }), NOW), {
+    kind: 'manual',
+  });
   // An unparseable time describes no schedule, and the dialog must not submit.
-  assert.equal(createScheduledTaskInputFromFields(fields({ runAtLocal: '' })), null);
+  assert.equal(createScheduledTaskInputFromFields(fields({ timeLocal: '' }), NOW), null);
 });
 
 test('an agent-authored interval schedule is preserved rather than re-authored', () => {
   const locked = { kind: 'interval', everySeconds: 3_600, startAt: 0 } as const;
   assert.deepEqual(
-    scheduledTaskScheduleFromFields(fields({ recurrence: 'interval', lockedSchedule: locked })),
+    scheduledTaskScheduleFromFields(fields({ frequency: 'manual', lockedSchedule: locked }), NOW),
     locked,
   );
 });

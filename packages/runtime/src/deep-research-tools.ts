@@ -46,24 +46,25 @@ import {
   type DeepResearchStore,
 } from '@maka/core/deep-research-run';
 import { redactSecrets } from '@maka/core/redaction';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import { type ArtifactRecord } from '@maka/core/artifacts';
 import type { MakaTool, MakaToolContext } from './tool-runtime.js';
 
-export const DEEP_RESEARCH_START_TOOL_NAME = 'deep_research_start';
-export const DEEP_RESEARCH_SAVE_ARTIFACT_TOOL_NAME = 'deep_research_save_artifact';
-export const DEEP_RESEARCH_READ_ARTIFACT_TOOL_NAME = 'deep_research_read_artifact';
-export const DEEP_RESEARCH_UPDATE_CHECKLIST_TOOL_NAME = 'deep_research_update_checklist';
-export const DEEP_RESEARCH_RECORD_STEP_TOOL_NAME = 'deep_research_record_step';
-export const DEEP_RESEARCH_CHECKPOINT_TOOL_NAME = 'deep_research_checkpoint';
-export const DEEP_RESEARCH_STATUS_TOOL_NAME = 'deep_research_status';
-export const DEEP_RESEARCH_COMPLETE_TOOL_NAME = 'deep_research_complete';
+export const DEEP_RESEARCH_START_TOOL_NAME = TOOL_NAMES.deepResearchStart;
+export const DEEP_RESEARCH_SAVE_ARTIFACT_TOOL_NAME = TOOL_NAMES.deepResearchSaveArtifact;
+export const DEEP_RESEARCH_READ_ARTIFACT_TOOL_NAME = TOOL_NAMES.deepResearchReadArtifact;
+export const DEEP_RESEARCH_UPDATE_CHECKLIST_TOOL_NAME = TOOL_NAMES.deepResearchUpdateChecklist;
+export const DEEP_RESEARCH_RECORD_STEP_TOOL_NAME = TOOL_NAMES.deepResearchRecordStep;
+export const DEEP_RESEARCH_CHECKPOINT_TOOL_NAME = TOOL_NAMES.deepResearchCheckpoint;
+export const DEEP_RESEARCH_STATUS_TOOL_NAME = TOOL_NAMES.deepResearchStatus;
+export const DEEP_RESEARCH_COMPLETE_TOOL_NAME = TOOL_NAMES.deepResearchComplete;
 
-const DEEP_RESEARCH_ALLOWED_TOOL_NAMES = new Set([
-  'AskUserQuestion',
-  'Read',
-  'Glob',
-  'Grep',
-  'WebSearch',
+const DEEP_RESEARCH_ALLOWED_TOOL_NAMES: ReadonlySet<string> = new Set([
+  TOOL_NAMES.askUserQuestion,
+  TOOL_NAMES.read,
+  TOOL_NAMES.glob,
+  TOOL_NAMES.grep,
+  TOOL_NAMES.webSearch,
   DEEP_RESEARCH_START_TOOL_NAME,
   DEEP_RESEARCH_SAVE_ARTIFACT_TOOL_NAME,
   DEEP_RESEARCH_READ_ARTIFACT_TOOL_NAME,
@@ -143,9 +144,14 @@ function buildStartTool(deps: BuildDeepResearchToolsDeps): MakaTool<
   return {
     name: DEEP_RESEARCH_START_TOOL_NAME,
     displayName: 'Initialize Research Workspace',
-    description:
-      'Initialize the durable Deep Research workspace for this session. Call once before archiving sources, ' +
-      'writing evidence notes, or checkpointing. Retrying the same tool call is safe.',
+    description: [
+      'Open the durable Deep Research workspace for this session and fix its objective. Every other DeepResearch tool refuses until this has run, so call it once, first, as soon as a request is real research rather than a question you can answer from what you already have.',
+      '',
+      '- The workspace survives context compaction, interruption and process restart: it is where evidence lives, not the transcript. `scope_level` sets the budget, and the workspace opens in the knowledge_base stage with a fixed four-item checklist.',
+      '- Returns the whole workspace projection: objective, stage, checklist, report sections, artifact inventory and latest checkpoint. Every writing DeepResearch tool returns that same projection, so you see the current state after each write.',
+      '- Retrying the same tool call is safe.',
+      '- From here the lifecycle is: archive sources with DeepResearchSaveArtifact, record what you did with DeepResearchRecordStep, move the checklist with DeepResearchUpdateChecklist, checkpoint each round with DeepResearchCheckpoint, and close with DeepResearchComplete.',
+    ].join('\n'),
     parameters: z.object({
       objective: z
         .string()
@@ -183,9 +189,13 @@ function buildReadArtifactTool(deps: BuildDeepResearchToolsDeps): MakaTool<
   return {
     name: DEEP_RESEARCH_READ_ARTIFACT_TOOL_NAME,
     displayName: 'Read Research Artifact',
-    description:
-      'Read a bounded chunk of a persisted artifact from this Deep Research workspace. ' +
-      'Use artifact ids from deep_research_status to recover evidence after interruption or restart.',
+    description: [
+      'Read a bounded chunk of one artifact already saved in this research workspace. Use it to bring evidence back into context after compaction, an interruption or a restart, with the artifact ids DeepResearchStatus lists.',
+      '',
+      '- It reads a window, not a whole file. offset_chars and max_chars page through long artifacts, and every answer states the offset, end and total so the next call continues exactly where this one stopped.',
+      '- Page in only what you need. The workspace exists so evidence can stay out of context.',
+      '- Fails when the workspace has not been started, when the id belongs to another session, and when the stored content no longer matches the hash the research ledger recorded. That last one means the artifact changed underneath the workspace and can no longer be cited as evidence.',
+    ].join('\n'),
     parameters: z.object({
       artifact_id: stableIdSchema.describe('Research artifact id from the current workspace.'),
       offset_chars: z
@@ -266,9 +276,15 @@ function buildSaveArtifactTool(deps: BuildDeepResearchToolsDeps): MakaTool<
   return {
     name: DEEP_RESEARCH_SAVE_ARTIFACT_TOOL_NAME,
     displayName: 'Save Research Artifact',
-    description:
-      'Persist a Markdown research artifact outside the model context. Archive raw source material as role=source ' +
-      'before writing derived evidence notes or report content. Derived artifacts must cite source artifact ids.',
+    description: [
+      'Persist one Markdown artifact into the research workspace, outside the model context and readable again later by id. Anything worth citing later has to be saved here, because the transcript will not survive compaction.',
+      '',
+      '- Order matters. Archive raw source material first as role=source, each with the locator it came from — a URL, a repository path — and only then write what you concluded from it. An evidence_note, outline, report_section, report or handoff must cite the source artifact ids it rests on; a source artifact cites nothing.',
+      '- role=report_section also needs its section key and a status of drafted or completed. Those keys are the sections DeepResearchComplete checks for.',
+      '- Returns the new artifact id with the whole workspace projection. Keep the id: checklist evidence, checkpoints and completion all refer to artifacts by id.',
+      '- Retrying the identical call is safe. Retrying the same tool call with different content or metadata fails instead of writing twice; changed content belongs in a new call.',
+      '- Fails when the workspace has not been started, when it is already completed, and when a role rule above is unmet; the message names the field.',
+    ].join('\n'),
     parameters: z
       .object({
         role: z
@@ -444,18 +460,38 @@ function buildUpdateChecklistTool(deps: BuildDeepResearchToolsDeps): MakaTool<
   return {
     name: DEEP_RESEARCH_UPDATE_CHECKLIST_TOOL_NAME,
     displayName: 'Update Research Checklist',
-    description:
-      'Update one durable Deep Research checklist item. Completed items require saved evidence artifacts; ' +
-      'blocked items require a concrete blocker that remains visible after restart.',
+    description: [
+      'Move one item of the durable research checklist. The items are fixed at start, and the checklist is what DeepResearchComplete is measured against, so keep it current as the work happens rather than settling it at the end.',
+      '',
+      '- status=completed requires evidence_artifact_ids naming artifacts already saved here. An item cannot be completed on the strength of having looked; the evidence has to exist in the workspace.',
+      '- status=blocked requires blocked_reason, written so it still means something to a reader after a restart: what is missing, not that something is missing. A reason on any other status is rejected.',
+      '- in_progress and skipped are worth using honestly too; a skipped item is a decision a later reader needs to see.',
+      '- Returns the whole workspace projection, with every item shown alongside its evidence and blocker.',
+      '- Fails on an unknown item_id: the checklist is fixed and cannot be extended.',
+    ].join('\n'),
     parameters: z
       .object({
-        item_id: stableIdSchema.refine(
-          (value) => DEEP_RESEARCH_DEFAULT_CHECKLIST.some((item) => item.itemId === value),
-          'Unknown Deep Research checklist item.',
-        ),
-        status: z.enum(DEEP_RESEARCH_CHECKLIST_STATUSES),
-        evidence_artifact_ids: z.array(stableIdSchema).max(DEEP_RESEARCH_REFS_MAX).optional(),
-        blocked_reason: z.string().trim().min(1).max(DEEP_RESEARCH_STEP_TEXT_MAX_CHARS).optional(),
+        item_id: stableIdSchema
+          .refine(
+            (value) => DEEP_RESEARCH_DEFAULT_CHECKLIST.some((item) => item.itemId === value),
+            'Unknown Deep Research checklist item.',
+          )
+          .describe('Checklist item id, exactly as the workspace projection lists it.'),
+        status: z
+          .enum(DEEP_RESEARCH_CHECKLIST_STATUSES)
+          .describe('New status for this item. Replaces the current one.'),
+        evidence_artifact_ids: z
+          .array(stableIdSchema)
+          .max(DEEP_RESEARCH_REFS_MAX)
+          .optional()
+          .describe('Saved artifact ids that prove this item. Required for status=completed.'),
+        blocked_reason: z
+          .string()
+          .trim()
+          .min(1)
+          .max(DEEP_RESEARCH_STEP_TEXT_MAX_CHARS)
+          .optional()
+          .describe('What is missing. Required for status=blocked and rejected on any other.'),
       })
       .superRefine((input, ctx) => {
         if (input.status === 'completed' && (input.evidence_artifact_ids?.length ?? 0) === 0) {
@@ -527,34 +563,76 @@ function buildRecordStepTool(deps: BuildDeepResearchToolsDeps): MakaTool<
   return {
     name: DEEP_RESEARCH_RECORD_STEP_TOOL_NAME,
     displayName: 'Record Research Step',
-    description:
-      'Record a bounded local-exploration or web-research step, including its search roots/query terms, ' +
-      'stopping condition, inspected references, worker runs, evidence, and any blocker.',
+    description: [
+      'Record one bounded unit of investigation — a local exploration or a round of web research — after it has run. It is how a search becomes part of the durable record: what you were looking for, where you looked, when you stopped, and what came out.',
+      '',
+      '- kind=local_exploration requires the roots you searched under; kind=web_research requires the queries or keywords you ran. Declaring the bound is the point, and an unbounded sweep is not a step.',
+      '- stopping_condition and expected_evidence describe the step you just ran, not a plan. They are what tells a later reader whether it finished or merely ran out of patience.',
+      '- status=completed requires evidence_artifact_ids for artifacts already saved with DeepResearchSaveArtifact. status=blocked requires blocked_reason. status=stopped records a step you ended deliberately without evidence. A blocked reason on any other status is rejected.',
+      '- inspected_refs records what you actually opened and worker_run_ids the child runs that did the work, so the step can be audited without the transcript.',
+      '- Returns the whole workspace projection.',
+    ].join('\n'),
     parameters: z
       .object({
-        kind: z.enum(DEEP_RESEARCH_STEP_KINDS),
-        status: z.enum(DEEP_RESEARCH_STEP_STATUSES),
-        objective: boundedText,
-        summary: boundedText,
-        roots: boundedList.optional(),
-        keywords: boundedList.optional(),
-        ignored_paths: boundedList.optional(),
-        stopping_condition: boundedText,
-        expected_evidence: boundedText,
-        evidence_artifact_ids: z.array(stableIdSchema).max(DEEP_RESEARCH_REFS_MAX).optional(),
+        kind: z
+          .enum(DEEP_RESEARCH_STEP_KINDS)
+          .describe('local_exploration searches the workspace; web_research searches the web.'),
+        status: z
+          .enum(DEEP_RESEARCH_STEP_STATUSES)
+          .describe('How the step ended: completed, blocked, or stopped deliberately.'),
+        objective: boundedText.describe('What this one step set out to establish.'),
+        summary: boundedText.describe('What the step actually found.'),
+        roots: boundedList
+          .optional()
+          .describe('Directories or paths searched. Required for kind=local_exploration.'),
+        keywords: boundedList
+          .optional()
+          .describe('Queries or search terms used. Required for kind=web_research.'),
+        ignored_paths: boundedList
+          .optional()
+          .describe('Paths deliberately excluded from this step.'),
+        stopping_condition: boundedText.describe('What ended the step, as it actually ended.'),
+        expected_evidence: boundedText.describe('What the step was expected to produce.'),
+        evidence_artifact_ids: z
+          .array(stableIdSchema)
+          .max(DEEP_RESEARCH_REFS_MAX)
+          .optional()
+          .describe('Saved artifact ids produced by this step. Required for status=completed.'),
         inspected_refs: z
           .array(
             z.object({
-              kind: z.enum(DEEP_RESEARCH_INSPECTED_REF_KINDS),
-              locator: z.string().trim().min(1).max(DEEP_RESEARCH_LOCATOR_MAX_CHARS),
-              label: z.string().trim().min(1).max(DEEP_RESEARCH_STEP_TEXT_MAX_CHARS).optional(),
-              source_artifact_id: stableIdSchema.optional(),
+              kind: z
+                .enum(DEEP_RESEARCH_INSPECTED_REF_KINDS)
+                .describe('What kind of thing was opened.'),
+              locator: z
+                .string()
+                .trim()
+                .min(1)
+                .max(DEEP_RESEARCH_LOCATOR_MAX_CHARS)
+                .describe('Path, symbol, or URL, precise enough to open again.'),
+              label: z
+                .string()
+                .trim()
+                .min(1)
+                .max(DEEP_RESEARCH_STEP_TEXT_MAX_CHARS)
+                .optional()
+                .describe('Short human-readable name for this reference.'),
+              source_artifact_id: stableIdSchema
+                .optional()
+                .describe('Saved source artifact that archived this reference.'),
             }),
           )
           .max(DEEP_RESEARCH_STEP_LIST_ITEMS_MAX)
-          .optional(),
-        worker_run_ids: z.array(stableIdSchema).max(DEEP_RESEARCH_STEP_LIST_ITEMS_MAX).optional(),
-        blocked_reason: boundedText.optional(),
+          .optional()
+          .describe('What this step actually opened and read.'),
+        worker_run_ids: z
+          .array(stableIdSchema)
+          .max(DEEP_RESEARCH_STEP_LIST_ITEMS_MAX)
+          .optional()
+          .describe('Child agent run ids that carried out this step.'),
+        blocked_reason: boundedText
+          .optional()
+          .describe('What is missing. Required for status=blocked and rejected on any other.'),
       })
       .superRefine((input, ctx) => {
         if (input.kind === 'local_exploration' && (input.roots?.length ?? 0) === 0) {
@@ -643,9 +721,14 @@ function buildCheckpointTool(deps: BuildDeepResearchToolsDeps): MakaTool<
   return {
     name: DEEP_RESEARCH_CHECKPOINT_TOOL_NAME,
     displayName: 'Checkpoint Research',
-    description:
-      'Record a durable research checkpoint after a meaningful round or before context compaction. ' +
-      'Include unresolved questions, next steps, and the artifacts needed to resume.',
+    description: [
+      'Write a durable checkpoint at the end of a research round, and before anything that will cost you context. It is the resume point: a later turn, after compaction or a restart, reads this and carries on instead of running the round again.',
+      '',
+      '- Write it for a reader who has lost the conversation. open_questions are what is still unanswered, next_steps are concrete enough to act on without you, and artifact_ids name the artifacts that reader has to load to continue.',
+      '- `round` is monotonic, and `stage` says which half of the work you are in: knowledge_base while evidence is being gathered, report_writing once sections are being drafted.',
+      '- status=blocked records that research cannot proceed without outside input; active means it can.',
+      '- Returns the whole workspace projection, with this checkpoint as the latest one.',
+    ].join('\n'),
     parameters: z.object({
       round: z.number().int().min(1).describe('Monotonic research round number.'),
       stage: z.enum(DEEP_RESEARCH_ACTIVE_STAGES).describe('Current two-stage workflow phase.'),
@@ -691,9 +774,14 @@ function buildStatusTool(
   return {
     name: DEEP_RESEARCH_STATUS_TOOL_NAME,
     displayName: 'Read Research Workspace',
-    description:
-      'Read the durable Deep Research workspace projection. Use after interruption, context compaction, ' +
-      'or process restart to recover the objective, stage, latest checkpoint, and artifact inventory.',
+    description: [
+      'Read the durable research workspace: objective, stage, checklist with its evidence, report sections, artifact inventory, recent steps and the latest checkpoint. Takes no arguments and changes nothing.',
+      '',
+      '- Read it first in any turn that did not start this research — after compaction, an interruption or a restart — before deciding what to do next. The workspace, not the transcript, is the state of the work.',
+      '- The artifact inventory is where ids for DeepResearchReadArtifact come from. Older artifacts beyond the display limit are counted rather than listed.',
+      '- Answers with an uninitialized workspace when nothing has been started, which is how a fresh session tells itself apart from a resumed one. DeepResearchStart opens it.',
+      '- Every writing DeepResearch tool returns this same projection, so calling it straight after one of those is redundant.',
+    ].join('\n'),
     parameters: z.object({}),
     impl: async (_input, ctx) => {
       const run = await deps.store.read(ctx.sessionId);
@@ -719,9 +807,14 @@ function buildCompleteTool(deps: BuildDeepResearchToolsDeps): MakaTool<
   return {
     name: DEEP_RESEARCH_COMPLETE_TOOL_NAME,
     displayName: 'Complete Research',
-    description:
-      'Complete Deep Research only after every checklist item and required report section is settled. ' +
-      'A saved handoff artifact and structured implementation, issue/PR, and verification guidance are required.',
+    description: [
+      'Close the research workspace on a finished report. Call it only once every checklist item is settled and every report section has a current artifact; it is the last DeepResearch call, and the workspace cannot be written to afterwards.',
+      '',
+      '- Both ids must name artifacts already saved here: the final source-backed report (role=report) and the handoff (role=handoff). The handoff is what someone else picks the work up from, so implementation_tasks and verification_commands are required, along with at least one of recommended_issues or recommended_pull_requests.',
+      '- Before closing, every source artifact, every report section artifact, the report and the handoff are re-read and checked against the research ledger. The call fails if any is missing, belongs to another workspace, or no longer matches the hash recorded when it was saved.',
+      '- A report section with no current artifact fails the call. Save the missing section with DeepResearchSaveArtifact and call again.',
+      '- Returns the completed workspace projection. Retrying the same tool call is safe.',
+    ].join('\n'),
     parameters: z
       .object({
         report_artifact_id: stableIdSchema.describe(
@@ -730,10 +823,18 @@ function buildCompleteTool(deps: BuildDeepResearchToolsDeps): MakaTool<
         handoff_artifact_id: stableIdSchema.describe(
           'Artifact id of the saved role=handoff artifact.',
         ),
-        implementation_tasks: handoffList.min(1),
-        recommended_issues: handoffList.optional(),
-        recommended_pull_requests: handoffList.optional(),
-        verification_commands: handoffList.min(1),
+        implementation_tasks: handoffList
+          .min(1)
+          .describe('Concrete work items someone else can pick up from the handoff.'),
+        recommended_issues: handoffList
+          .optional()
+          .describe('Issues worth filing. At least one issue or pull request is required.'),
+        recommended_pull_requests: handoffList
+          .optional()
+          .describe('Pull requests worth opening. At least one issue or pull request is required.'),
+        verification_commands: handoffList
+          .min(1)
+          .describe('Commands that check the recommended work, runnable as written.'),
       })
       .superRefine((input, ctx) => {
         if (

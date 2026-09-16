@@ -425,7 +425,7 @@ test('answers a Client Capability approval through the existing Interaction auth
         providerId: 'provider-1',
         contractId: 'contract-1',
         serverId: 'desktop_browser',
-        toolName: 'browser_snapshot',
+        toolName: 'BrowserSnapshot',
         capability: 'browser' as const,
         scope: { kind: 'browser_origin' as const, origin: 'https://example.com' },
       },

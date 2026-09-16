@@ -186,7 +186,7 @@ const TRANSCRIPT_FIXTURE: TurnViewModel = (() => {
     toolName: 'Edit',
     activityKind: 'edit',
     status: 'completed',
-    args: { path: 'src/session/transcript.ts' },
+    args: { file_path: 'src/session/transcript.ts' },
     result: {
       kind: 'file_diff',
       paths: ['src/session/transcript.ts'],

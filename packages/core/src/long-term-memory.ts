@@ -258,7 +258,7 @@ export interface CommitMemoryExtractionRequest {
   readonly nextCursorOrdinal: number;
   readonly coverageHash: string;
   readonly items: readonly MemoryItemWrite[];
-  /** Indexes into items whose committed identities are observable to memory_remember. */
+  /** Indexes into items whose committed identities are observable to MemoryRemember. */
   readonly requestedItemIndexes: readonly number[];
   /** Explicit deterministic no-op for a user-requested batch rejected by policy. */
   readonly noOpReason?: 'sensitive_information';

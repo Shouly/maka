@@ -43,7 +43,7 @@ describe('clientCapabilityProviderId', () => {
         providerId: first,
         contractId: 'contract-1',
         serverId: 'desktop_browser',
-        toolName: 'browser_snapshot',
+        toolName: 'BrowserSnapshot',
         capability: 'browser',
         scope: { kind: 'browser_origin', origin: 'https://example.com' },
       }),

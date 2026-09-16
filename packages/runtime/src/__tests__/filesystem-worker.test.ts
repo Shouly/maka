@@ -239,7 +239,7 @@ describe('filesystem worker operations', () => {
       version: FILESYSTEM_WORKER_PROTOCOL_VERSION,
       requestId: 'request-1',
       ok: true,
-      result: { kind: 'grep', matches: ['1:const healthSignal = true;'] },
+      result: { kind: 'grep', matches: ['1:const healthSignal = true;'], mode: 'content' },
     });
   });
 
@@ -276,7 +276,7 @@ describe('filesystem worker operations', () => {
       version: FILESYSTEM_WORKER_PROTOCOL_VERSION,
       requestId: 'request-1',
       ok: true,
-      result: { kind: 'grep', matches: ['1:const style = "-webkit-box";'] },
+      result: { kind: 'grep', matches: ['1:const style = "-webkit-box";'], mode: 'content' },
     });
   });
 
@@ -305,7 +305,7 @@ describe('filesystem worker operations', () => {
       runGrep: async () => ({ exitCode: 1, stdout: '', stderrTail: '' }),
     });
     assert.equal(empty.ok, true);
-    if (empty.ok) assert.deepEqual(empty.result, { kind: 'grep', matches: [] });
+    if (empty.ok) assert.deepEqual(empty.result, { kind: 'grep', matches: [], mode: 'content' });
 
     const failed = await executeFilesystemWorkerRequest(request, {
       grepExecutable: '/usr/bin/rg',
@@ -482,7 +482,7 @@ describe('filesystem worker operations', () => {
 
     const response = await executeFilesystemWorkerRequest(
       await requestFor(
-        { kind: 'write', cwd: root, path: target, content: 'new' },
+        { kind: 'write', cwd: root, path: target, content: 'new', allowOverwrite: true },
         { enforcementPath: target, access: 'write', scope: 'exact', targetType: 'file' },
         target,
         'unchecked',
@@ -528,6 +528,7 @@ describe('filesystem worker operations', () => {
           path: target,
           oldString: 'const v0 = 0;',
           newString: 'const v0 = -1;',
+          allowEdit: true,
         },
         { enforcementPath: target, access: 'write', scope: 'exact', targetType: 'file' },
       ),
@@ -554,6 +555,7 @@ describe('filesystem worker operations', () => {
           path: target,
           oldString: 'const value = 1;',
           newString: replacement,
+          allowEdit: true,
         },
         { enforcementPath: target, access: 'write', scope: 'exact', targetType: 'file' },
       ),
@@ -566,25 +568,6 @@ describe('filesystem worker operations', () => {
     assert.equal(await readFile(target, 'utf8'), `${replacement}\n`);
   });
 
-  test('omits the diff when FormatJson leaves the file unchanged', async () => {
-    const root = await temporaryDirectory('maka-worker-format-same-');
-    const target = join(root, 'data.json');
-    await writeFile(target, '{\n  "a": 1\n}', 'utf8');
-
-    const response = await executeFilesystemWorkerRequest(
-      await requestFor(
-        { kind: 'format_json', cwd: root, path: target, sortKeys: false },
-        { enforcementPath: target, access: 'write', scope: 'exact', targetType: 'file' },
-      ),
-    );
-
-    assert.ok(response.ok);
-    assert.equal(response.result.kind, 'format_json');
-    if (response.result.kind !== 'format_json') return;
-    assert.equal(response.result.changed, false);
-    assert.equal(response.result.diff, undefined);
-  });
-
   test('reports no diff — not a new-file diff — when an existing file cannot be read', async () => {
     const root = await temporaryDirectory('maka-worker-unreadable-');
     const target = join(root, 'locked.md');
@@ -592,7 +575,7 @@ describe('filesystem worker operations', () => {
 
     const response = await executeFilesystemWorkerRequest(
       await requestFor(
-        { kind: 'write', cwd: root, path: target, content: 'replacement\n' },
+        { kind: 'write', cwd: root, path: target, content: 'replacement\n', allowOverwrite: true },
         { enforcementPath: target, access: 'write', scope: 'exact', targetType: 'file' },
       ),
     );
@@ -612,7 +595,13 @@ describe('filesystem worker operations', () => {
 
     const response = await executeFilesystemWorkerRequest(
       await requestFor(
-        { kind: 'write', cwd: root, path: target, content: 'not an image anymore\n' },
+        {
+          kind: 'write',
+          cwd: root,
+          path: target,
+          content: 'not an image anymore\n',
+          allowOverwrite: true,
+        },
         { enforcementPath: target, access: 'write', scope: 'exact', targetType: 'file' },
       ),
     );

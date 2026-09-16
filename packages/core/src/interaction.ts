@@ -46,13 +46,15 @@ import {
 export * from './interaction-permission-review.js';
 
 export const INTERACTION_MIN_QUESTIONS = 1;
-export const INTERACTION_MAX_QUESTIONS = 3;
+export const INTERACTION_MAX_QUESTIONS = 4;
 export const INTERACTION_MIN_OPTIONS_PER_QUESTION = 2;
-export const INTERACTION_MAX_OPTIONS_PER_QUESTION = 3;
+export const INTERACTION_MAX_OPTIONS_PER_QUESTION = 4;
 export const INTERACTION_ID_MAX_BYTES = 256;
 export const INTERACTION_QUESTION_MAX_BYTES = 1024;
 export const INTERACTION_OPTION_LABEL_MAX_BYTES = 256;
 export const INTERACTION_OPTION_DESCRIPTION_MAX_BYTES = 512;
+/** Chip label above a question. Twelve characters, so four bytes each at worst. */
+export const INTERACTION_QUESTION_HEADER_MAX_BYTES = 64;
 export const INTERACTION_ANSWER_MAX_BYTES = 2048;
 export const INTERACTION_REQUEST_MAX_BYTES = 16 * 1024;
 export const INTERACTION_SANDBOX_BOUNDARY_JUSTIFICATION_MAX_CHARS = 2_000;
@@ -89,7 +91,14 @@ export interface InteractionQuestionOption {
 
 export interface InteractionQuestion {
   readonly question: string;
+  /**
+   * Chip label. Required on every request written today; records from before
+   * the field existed decode to the empty string rather than failing.
+   */
+  readonly header: string;
   readonly options: readonly InteractionQuestionOption[];
+  /** Present only when the question takes several answers. */
+  readonly multiSelect?: boolean;
 }
 
 export interface InteractionPermissionRequest {
@@ -197,9 +206,15 @@ export type InteractionPermissionAnswer = {
   readonly kind: 'permission';
 } & InteractionPermissionDecisionFields;
 
+/**
+ * One entry per question: a string is one option label or the user's own text,
+ * a string array is a multi-select selection, `null` is a skip.
+ */
+export type InteractionQuestionAnswerValue = string | readonly string[] | null;
+
 export interface InteractionQuestionAnswer {
   readonly kind: 'question';
-  readonly answers: readonly (string | null)[];
+  readonly answers: readonly InteractionQuestionAnswerValue[];
 }
 
 export type InteractionFormResult =
@@ -242,7 +257,7 @@ export type InteractionCanonicalPermissionOutcome = {
 
 export interface InteractionCanonicalQuestionOutcome {
   readonly kind: 'question_answer';
-  readonly answers: readonly (string | null)[];
+  readonly answers: readonly InteractionQuestionAnswerValue[];
   readonly committedAt: number;
 }
 
@@ -373,7 +388,10 @@ const CLOSURE_OUTCOME_SHAPE = defineObjectShape<InteractionCanonicalClosureOutco
   ['kind', 'reason', 'committedAt'],
   [],
 );
-const QUESTION_SHAPE = defineObjectShape<InteractionQuestion>()(['question', 'options'], []);
+const QUESTION_SHAPE = defineObjectShape<InteractionQuestion>()(
+  ['question', 'header', 'options'],
+  ['multiSelect'],
+);
 const OPTION_SHAPE = defineObjectShape<InteractionQuestionOption>()(['label'], ['description']);
 const FORM_REQUESTER_SHAPE = defineObjectShape<InteractionRequesterProjection>()(
   ['name'],
@@ -685,7 +703,12 @@ export function projectInteractionQuestionRequest(
         throw new Error('Question option labels collide after safe projection');
       return {
         question: projectInteractionReviewText(question.question, INTERACTION_QUESTION_MAX_BYTES),
+        header:
+          question.header === ''
+            ? ''
+            : projectInteractionReviewText(question.header, INTERACTION_QUESTION_HEADER_MAX_BYTES),
         options,
+        ...(question.multiSelect ? { multiSelect: true } : {}),
       };
     }),
   };
@@ -810,9 +833,13 @@ export function interactionOutcomeMatchesRequestKind(
 
 export function interactionQuestionAnswerCountMatchesRequest(
   request: InteractionQuestionRequest,
-  answers: readonly (string | null)[],
+  answers: readonly InteractionQuestionAnswerValue[],
 ): boolean {
-  return request.questions.length === answers.length;
+  if (request.questions.length !== answers.length) return false;
+  // Only a multi-select question may answer with several labels at once.
+  return answers.every(
+    (answer, index) => !Array.isArray(answer) || request.questions[index]?.multiSelect === true,
+  );
 }
 
 export function interactionRememberForTurnIsEligible(
@@ -920,9 +947,15 @@ function decodeQuestion(value: unknown): InteractionQuestion {
   ).map(decodeOption);
   if (new Set(options.map((option) => option.label)).size !== options.length)
     throw new Error('Duplicate question option label');
+  // An absent key is how single-select is spelled, so `false` never reaches
+  // the wire and a single-select record stays byte-identical through decode.
+  const multiSelect =
+    record.multiSelect === undefined ? false : boolean(record.multiSelect, 'multiSelect');
   return deepFreeze({
     question: boundedString(record.question, 'question', INTERACTION_QUESTION_MAX_BYTES),
+    header: boundedText(record.header, 'question header', INTERACTION_QUESTION_HEADER_MAX_BYTES),
     options,
+    ...(multiSelect ? { multiSelect: true } : {}),
   });
 }
 
@@ -1384,11 +1417,20 @@ function formFieldWitness(field: InteractionFormField): InteractionFormValue {
   return field.options.slice(0, field.minItems ?? 0).map((option) => option.value);
 }
 
-function decodeAnswers(value: unknown): readonly (string | null)[] {
+function decodeAnswers(value: unknown): readonly InteractionQuestionAnswerValue[] {
   return Object.freeze(
-    plainArray(value, 'answers', 1, INTERACTION_MAX_QUESTIONS).map((answer) =>
-      answer === null ? null : boundedString(answer, 'answer', INTERACTION_ANSWER_MAX_BYTES),
-    ),
+    plainArray(value, 'answers', 1, INTERACTION_MAX_QUESTIONS).map((answer) => {
+      if (answer === null) return null;
+      // A multi-select question answers with the labels it picked.
+      if (Array.isArray(answer)) {
+        return Object.freeze(
+          plainArray(answer, 'answer', 0, INTERACTION_MAX_OPTIONS_PER_QUESTION).map((entry) =>
+            boundedString(entry, 'answer', INTERACTION_ANSWER_MAX_BYTES),
+          ),
+        );
+      }
+      return boundedString(answer, 'answer', INTERACTION_ANSWER_MAX_BYTES);
+    }),
   );
 }
 
@@ -1507,10 +1549,24 @@ function serializedLimit(value: unknown, maxBytes: number, label: string): void 
 }
 
 function equalAnswers(
-  left: readonly (string | null)[],
-  right: readonly (string | null)[],
+  left: readonly InteractionQuestionAnswerValue[],
+  right: readonly InteractionQuestionAnswerValue[],
 ): boolean {
-  return left.length === right.length && left.every((answer, index) => answer === right[index]);
+  return (
+    left.length === right.length &&
+    left.every((answer, index) => {
+      const other = right[index];
+      if (Array.isArray(answer) || Array.isArray(other)) {
+        return (
+          Array.isArray(answer) &&
+          Array.isArray(other) &&
+          answer.length === other.length &&
+          answer.every((entry, position) => entry === other[position])
+        );
+      }
+      return answer === other;
+    })
+  );
 }
 
 function equalFormValues(

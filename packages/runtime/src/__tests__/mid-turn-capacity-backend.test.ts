@@ -265,7 +265,7 @@ function buildFixture(options: MidTurnFixtureOptions = {}): MidTurnFixture {
   ];
   const chunksForCall = (call: number): LanguageModelV4StreamPart[] => {
     if (options.bigToolGroup) {
-      return call === 1 ? toolCallChunks('tool-1', 'tool_search', { query: 'Big' }) : doneChunks();
+      return call === 1 ? toolCallChunks('tool-1', 'ToolSearch', { query: 'Big' }) : doneChunks();
     }
     if (options.singleRequest) return doneChunks();
     if (call === 1) {
@@ -541,7 +541,7 @@ function buildFixture(options: MidTurnFixtureOptions = {}): MidTurnFixture {
         ? [
             {
               name: 'Big',
-              // A same-turn tool_search activation adds this schema to every later
+              // A same-turn ToolSearch activation adds this schema to every later
               // request; the trigger must count it (finding D).
               description: `BIG_SCHEMA ${'D'.repeat(12_000)}`,
               parameters: z.object({ q: z.string() }),
@@ -1170,7 +1170,7 @@ function defineMidTurnSuite(consumer: ConsumerMode): void {
     assert.equal(failedOpen?.failOpenReason, 'no_safe_completed_span');
   });
 
-  test('the trigger counts same-turn tool-schema growth from tool_search (review finding D)', async () => {
+  test('the trigger counts same-turn tool-schema growth from ToolSearch (review finding D)', async () => {
     // Review round-3 finding D repro: the model activates a ~12.7k-char tool
     // group mid-turn. The schema lands in every later request, so the payload
     // estimate must count it — without that the 500-token window is never

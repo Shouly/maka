@@ -212,7 +212,7 @@ export const COMPUTER_USE_SEMANTIC_ACTIONS = [
 ] as const;
 
 /**
- * Every action name the `maka_computer` tool accepts from a model, in wire
+ * Every action name the `Computer` tool accepts from a model, in wire
  * order.
  */
 export const CU_TOOL_ACTION_TYPES = [...COMPUTER_USE_SEMANTIC_ACTIONS, ...CU_ACTION_TYPES] as const;
@@ -359,7 +359,7 @@ export interface ComputerUseApprovalSummary {
  * The approval summary above is the host's projection for deciding and
  * displaying a permission. It was also being written into the model-facing
  * record of the call, and that had a cost nobody was watching for: the model's
- * transcript said it had called `maka_computer` with `approvalClass`,
+ * transcript said it had called `Computer` with `approvalClass`,
  * `rememberForTurnAllowed` and `windowId` — two host-only fields and a key in a
  * dialect the tool rejects — so it went on calling it that way. A real desktop
  * run failed six of eleven calls on shapes copied from its own history, and the

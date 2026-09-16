@@ -48,6 +48,7 @@ import { TUI_COPY_RESOURCES } from './tui-copy-catalog.js';
 import { isActiveShellRunStatus } from '@maka/core/shell-run';
 import { mergeShellRunStateWithDiagnostics } from '@maka/core/shell-run-result';
 import { projectToolActivityArgs } from '@maka/core/tool-activity-args';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import {
   type ToolActivityStatus,
   toolResultActivityStatus,
@@ -526,7 +527,7 @@ export function hydrateToolsWithStoredMessages(
     if (
       durable.result?.kind === 'shell_run' &&
       durable.callStatus !== 'errored' &&
-      entry.toolName === 'Bash'
+      entry.toolName === TOOL_NAMES.bash
     ) {
       applyShellRunResult(entry, structuredClone(durable.result));
     } else if (durable.result !== undefined && entry.result === undefined) {
@@ -816,7 +817,8 @@ export function applyMakaSessionEventToTranscript(
       break;
 
     case 'tool_start': {
-      // A Read / StopBackgroundTask aimed at a ref a visible Bash card owns is
+      const toolName = event.toolName;
+      // A Read / TaskStop aimed at a ref a visible Bash card owns is
       // internal polling of that run: it never gets a row, so an active polling
       // loop cannot flicker cards in and out of the transcript. The result
       // folds into the parent at tool_result. A poll is folded only when its
@@ -824,20 +826,20 @@ export function applyMakaSessionEventToTranscript(
       // renders normally and the tool_result fold below still applies.
       const ref = event.shellRunRef ?? readArgsRef(event.args);
       const suppressed =
-        (event.toolName === 'Read' || event.toolName === 'StopBackgroundTask') &&
+        (toolName === TOOL_NAMES.read || toolName === TOOL_NAMES.taskStop) &&
         !!ref &&
         !!findShellRunParent(state, ref, event.toolUseId);
       state.entries.push({
         kind: 'tool',
         turnId: event.turnId,
         toolUseId: event.toolUseId,
-        toolName: event.toolName,
+        toolName,
         ...(event.displayName ? { title: event.displayName } : {}),
         ...(event.intent ? { intent: event.intent } : {}),
         // Live Runtime Host frames omit full args; the bounded wire preview
         // still lets the compact row name the call. The turn-end reconcile
         // replaces it with the durable full args.
-        input: projectToolActivityArgs(event.toolName, event.args ?? event.argsPreview),
+        input: projectToolActivityArgs(toolName, event.args ?? event.argsPreview),
         resultVersion: 0,
         progress: createProgressBuffer(),
         outputDeltas: createOutputBuffer(),
@@ -860,7 +862,7 @@ export function applyMakaSessionEventToTranscript(
         : undefined;
       if (tool && parent && shellRun && !event.isError) {
         applyLiveShellRunResultToParent(state, parent, shellRun);
-        if (tool.toolName === 'Read' || tool.toolName === 'StopBackgroundTask') {
+        if (tool.toolName === TOOL_NAMES.read || tool.toolName === TOOL_NAMES.taskStop) {
           state.entries.splice(state.entries.indexOf(tool), 1);
         } else {
           applyOwnShellRunResult(tool, shellRun, event.durationMs);
@@ -871,7 +873,7 @@ export function applyMakaSessionEventToTranscript(
         if (tool.suppressed) unsuppressToolAtTail(state, tool);
         tool.callStatus = toolResultActivityStatus(event.isError, event.content);
         if (shellRun) {
-          if (tool.toolName === 'Bash') {
+          if (tool.toolName === TOOL_NAMES.bash) {
             applyShellRunResult(tool, shellRun);
           } else {
             applyOwnShellRunResult(tool, shellRun, event.durationMs);
@@ -1136,12 +1138,13 @@ function storedToolToTranscriptEntry(
   result: Extract<StoredMessage, { type: 'tool_result' }> | undefined,
   turnStatus: ReturnType<typeof deriveTurnRecords>[number]['status'] | undefined,
 ): MakaPiToolEntry {
+  const toolName = call.toolName;
   const entry: MakaPiToolEntry = {
     kind: 'tool',
     toolUseId: call.id,
-    toolName: call.toolName,
+    toolName,
     ...(call.displayName ? { title: call.displayName } : {}),
-    input: projectToolActivityArgs(call.toolName, call.args),
+    input: projectToolActivityArgs(toolName, call.args),
     progress: createProgressBuffer(),
     outputDeltas: createOutputBuffer(),
     ...(result ? { result: result.content } : {}),
@@ -1179,13 +1182,13 @@ function foldStoredShellRunChildren(entries: MakaPiTranscriptEntry[]): MakaPiTra
         .find(
           (candidate): candidate is MakaPiToolEntry =>
             candidate.kind === 'tool' &&
-            candidate.toolName === 'Bash' &&
+            candidate.toolName === TOOL_NAMES.bash &&
             candidate.result?.kind === 'shell_run' &&
             candidate.result.ref === shellRun.ref,
         );
       if (parent) {
         applyShellRunResult(parent, shellRun);
-        if (entry.toolName === 'Read' || entry.toolName === 'StopBackgroundTask') continue;
+        if (entry.toolName === TOOL_NAMES.read || entry.toolName === TOOL_NAMES.taskStop) continue;
       }
     }
     folded.push(entry);
@@ -1206,7 +1209,7 @@ export function makaPiToolPresentationStatus(entry: MakaPiToolEntry): MakaPiTool
   if (entry.result?.kind === 'subagent') return SUBAGENT_PRESENTATION_STATUS[entry.result.status];
   if (entry.result?.kind === 'shell_run') {
     if (entry.callStatus === 'errored') return 'error';
-    if (entry.toolName === 'WriteStdin') {
+    if (entry.toolName === TOOL_NAMES.taskInput) {
       return entry.result.operation?.kind === 'pty_control' && entry.result.operation.failed
         ? 'error'
         : 'done';
@@ -1276,7 +1279,7 @@ function applyOwnShellRunResult(
   operationDurationMs = entry.durationMs,
 ): void {
   entry.result = result;
-  if (entry.toolName === 'WriteStdin') {
+  if (entry.toolName === TOOL_NAMES.taskInput) {
     entry.durationMs = operationDurationMs;
   } else {
     entry.durationMs = Math.max(0, (result.completedAt ?? result.updatedAt) - result.startedAt);
@@ -2098,7 +2101,7 @@ function unsuppressToolAtTail(state: MakaPiTranscriptState, tool: MakaPiToolEntr
 }
 
 function isShellRunToolCard(tool: MakaPiToolEntry): boolean {
-  return tool.toolName === 'Bash' || tool.userOwned === true;
+  return tool.toolName === TOOL_NAMES.bash || tool.userOwned === true;
 }
 
 function createProgressBuffer(): BoundedChunkBuffer<string> {
@@ -2130,7 +2133,7 @@ function findShellRunParent(
     .find(
       (entry): entry is MakaPiToolEntry =>
         entry.kind === 'tool' &&
-        entry.toolName === 'Bash' &&
+        entry.toolName === TOOL_NAMES.bash &&
         entry.toolUseId !== childToolUseId &&
         entry.result?.kind === 'shell_run' &&
         entry.result.ref === ref,

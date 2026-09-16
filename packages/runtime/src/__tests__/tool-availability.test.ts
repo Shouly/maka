@@ -80,13 +80,13 @@ function runtime() {
     [
       tool('Read'),
       tool('Write'),
-      tool('browser_click', 'Click an element in the browser'),
+      tool('BrowserClick', 'Click an element in the browser'),
       tool('docs_edit', 'Edit a document'),
       tool('docs_read', 'Read a document'),
     ],
     {
       groups: [
-        { id: 'browser', toolNames: ['browser_click'], description: 'Browser automation' },
+        { id: 'browser', toolNames: ['BrowserClick'], description: 'Browser automation' },
         { id: 'docs', toolNames: ['docs_edit', 'docs_read'], description: 'Document tools' },
       ],
     },
@@ -101,23 +101,23 @@ function searchTool(plan: ReturnType<ToolAvailabilityRuntime['prepare']>): MakaT
 }
 
 describe('ToolAvailabilityRuntime — search activation', () => {
-  test('step 0 exposes direct tools and tool_search, but not searchable schemas', () => {
+  test('step 0 exposes direct tools and ToolSearch, but not searchable schemas', () => {
     const plan = runtime().prepare(new Map());
     assert.ok(plan.activeTools.includes('Read'));
     assert.ok(plan.activeTools.includes('Write'));
     assert.ok(plan.activeTools.includes(TOOL_SEARCH_NAME));
-    assert.ok(!plan.activeTools.includes('browser_click'));
+    assert.ok(!plan.activeTools.includes('BrowserClick'));
     assert.ok(!plan.activeTools.includes('docs_edit'));
   });
 
   test('a group cannot defer the fixed direct baseline', () => {
     const plan = new ToolAvailabilityRuntime(
-      [tool('Read'), tool('browser_click')],
-      { groups: [{ id: 'bad-source', toolNames: ['Read', 'browser_click'] }] },
+      [tool('Read'), tool('BrowserClick')],
+      { groups: [{ id: 'bad-source', toolNames: ['Read', 'BrowserClick'] }] },
       invalid,
     ).prepare(new Map());
     assert.ok(plan.activeTools.includes('Read'));
-    assert.ok(!plan.activeTools.includes('browser_click'));
+    assert.ok(!plan.activeTools.includes('BrowserClick'));
     assert.doesNotMatch(searchTool(plan).description, /- Read/);
   });
 
@@ -141,7 +141,7 @@ describe('ToolAvailabilityRuntime — search activation', () => {
 
   test('inventory contains group and canonical names without tool descriptions', () => {
     const connector = searchTool(runtime().prepare(new Map()));
-    assert.match(connector.description, /browser:\n- browser_click/);
+    assert.match(connector.description, /browser:\n- BrowserClick/);
     assert.match(connector.description, /docs:\n- docs_edit\n- docs_read/);
     assert.doesNotMatch(connector.description, /Click an element/);
     assert.doesNotMatch(connector.description, /Edit a document/);
@@ -182,9 +182,12 @@ describe('ToolAvailabilityRuntime — search activation', () => {
       },
     };
 
-    assert.deepEqual(await connector.impl({ query: 'edit document', limit: 1 }, tracedContext), {
-      activated: ['docs_edit'],
-    });
+    assert.deepEqual(
+      await connector.impl({ query: 'edit document', max_results: 1 }, tracedContext),
+      {
+        activated: ['docs_edit'],
+      },
+    );
     assert.ok(active.has('docs_edit'), 'turn-owned activation map changed');
     assert.ok(
       !plan.currentRepairToolNames().includes('docs_edit'),
@@ -236,33 +239,33 @@ describe('ToolAvailabilityRuntime — search activation', () => {
 
   test('an equivalent rebuilt Host wrapper keeps its activation', async () => {
     const active = new Map<string, string>();
-    const first = tool('todo_read', 'read the session todo');
+    const first = tool('NoteRead', 'read the session notes');
     const initial = new ToolAvailabilityRuntime(
       [first],
-      { groups: [{ id: 'todo', toolNames: ['todo_read'] }] },
+      { groups: [{ id: 'notes', toolNames: ['NoteRead'] }] },
       invalid,
     ).prepare(active);
-    await searchTool(initial).impl({ query: 'read todo' }, ctx);
+    await searchTool(initial).impl({ query: 'read notes' }, ctx);
 
-    const rebuilt = tool('todo_read', 'read the session todo');
+    const rebuilt = tool('NoteRead', 'read the session notes');
     assert.notEqual(rebuilt, first);
     const next = new ToolAvailabilityRuntime(
       [rebuilt],
-      { groups: [{ id: 'todo', toolNames: ['todo_read'] }] },
+      { groups: [{ id: 'notes', toolNames: ['NoteRead'] }] },
       invalid,
     ).prepare(active);
 
-    assert.equal(active.get('todo_read'), toolActivationKey(rebuilt));
-    assert.equal(next.activeTools.includes('todo_read'), true);
+    assert.equal(active.get('NoteRead'), toolActivationKey(rebuilt));
+    assert.equal(next.activeTools.includes('NoteRead'), true);
   });
 
   test('ordinary result is thin and contains no complete schemas', async () => {
     const connector = searchTool(runtime().prepare(new Map()));
     const output = await connector.impl({ query: 'browser click' }, ctx);
-    assert.deepEqual(output, { activated: ['browser_click'] });
+    assert.deepEqual(output, { activated: ['BrowserClick'] });
     assert.deepEqual(await connector.toModelOutput?.({ toolCallId: 'tc', input: {}, output }), {
       type: 'json',
-      value: { activated: ['browser_click'] },
+      value: { activated: ['BrowserClick'] },
     });
   });
 
@@ -271,11 +274,11 @@ describe('ToolAvailabilityRuntime — search activation', () => {
     const plan = runtime().prepare(active);
     const connector = searchTool(plan);
     await Promise.all([
-      connector.impl({ query: 'document read', limit: 1 }, ctx),
-      connector.impl({ query: 'browser click', limit: 1 }, ctx),
-      connector.impl({ query: 'browser click', limit: 1 }, ctx),
+      connector.impl({ query: 'document read', max_results: 1 }, ctx),
+      connector.impl({ query: 'browser click', max_results: 1 }, ctx),
+      connector.impl({ query: 'browser click', max_results: 1 }, ctx),
     ]);
-    assert.deepEqual([...active.keys()].sort(), ['browser_click', 'docs_read']);
+    assert.deepEqual([...active.keys()].sort(), ['BrowserClick', 'docs_read']);
   });
 
   test('already-active matches do not consume a later search limit or schema budget', async () => {
@@ -296,11 +299,11 @@ describe('ToolAvailabilityRuntime — search activation', () => {
     const connector = searchTool(plan);
 
     const first = (await connector.impl(
-      { query: 'calendar action', limit: 1 },
+      { query: 'calendar action', max_results: 1 },
       ctx,
     )) as ToolSearchResult;
     const second = (await connector.impl(
-      { query: 'calendar action', limit: 2 },
+      { query: 'calendar action', max_results: 2 },
       ctx,
     )) as ToolSearchResult;
 
@@ -366,7 +369,7 @@ describe('ToolAvailabilityRuntime — search activation', () => {
     ).prepare(active);
 
     const result = (await searchTool(plan).impl(
-      { query: 'budget branch', limit: 3 },
+      { query: 'budget branch', max_results: 3 },
       ctx,
     )) as ToolSearchResult;
 
@@ -388,10 +391,10 @@ describe('ToolAvailabilityRuntime — search activation', () => {
     const first = new Map<string, string>();
     const firstPlan = runtime().prepare(first);
     await searchTool(firstPlan).impl({ query: 'browser click' }, ctx);
-    assert.ok(firstPlan.projectActiveTools!().activeTools.includes('browser_click'));
+    assert.ok(firstPlan.projectActiveTools!().activeTools.includes('BrowserClick'));
 
     const secondPlan = runtime().prepare(new Map());
-    assert.ok(!secondPlan.activeTools.includes('browser_click'));
+    assert.ok(!secondPlan.activeTools.includes('BrowserClick'));
   });
 
   test('an ungrouped bound tool is deferred by default', () => {
@@ -419,7 +422,7 @@ describe('ToolAvailabilityRuntime — search activation', () => {
   test('buckets ungrouped native tools into capability families by categoryHint', () => {
     const plan = new ToolAvailabilityRuntime(
       [
-        withCategory('agent_spawn', 'subagent'),
+        withCategory('Agent', 'subagent'),
         withCategory('web_search', 'web_read'),
         withCategory('screen_click', 'computer_use'),
         withCategory('session_tool', 'custom_tool'), // no family mapping -> other
@@ -431,7 +434,7 @@ describe('ToolAvailabilityRuntime — search activation', () => {
 
     const bySource = plan.diagnostics([], 0)!.visibleToolNamesBySource!;
     // Distinct permission hints land in distinct browsing families, not one `other`.
-    assert.deepEqual(bySource.agents, ['agent_spawn']);
+    assert.deepEqual(bySource.agents, ['Agent']);
     assert.deepEqual(bySource.web, ['web_search']);
     assert.deepEqual(bySource.computer_use, ['screen_click']);
     // Only hint-less / custom_tool tools fall back to `other`.
@@ -442,21 +445,88 @@ describe('ToolAvailabilityRuntime — search activation', () => {
 
     // Family ids surface in the searchable inventory the model sees.
     const description = searchTool(plan).description;
-    assert.match(description, /agents:\n- agent_spawn/);
+    assert.match(description, /agents:\n- Agent/);
     assert.match(description, /web:\n- web_search/);
     assert.match(description, /computer_use:\n- screen_click/);
   });
 
   test('a caller-supplied group keeps precedence over a categoryHint family', () => {
     const plan = new ToolAvailabilityRuntime(
-      [withCategory('agent_spawn', 'subagent'), withCategory('agent_list', 'subagent')],
-      { groups: [{ id: 'orchestration', label: 'Orchestration', toolNames: ['agent_spawn'] }] },
+      [withCategory('Agent', 'subagent'), withCategory('ListAgents', 'subagent')],
+      { groups: [{ id: 'orchestration', label: 'Orchestration', toolNames: ['Agent'] }] },
       invalid,
     ).prepare(new Map());
 
     const bySource = plan.diagnostics([], 0)!.visibleToolNamesBySource!;
-    // The explicit group claims agent_spawn; only the remaining hinted tool is family-bucketed.
-    assert.deepEqual(bySource.orchestration, ['agent_spawn']);
-    assert.deepEqual(bySource.agents, ['agent_list']);
+    // The explicit group claims Agent; only the remaining hinted tool is family-bucketed.
+    assert.deepEqual(bySource.orchestration, ['Agent']);
+    assert.deepEqual(bySource.agents, ['ListAgents']);
+  });
+});
+
+describe('ToolSearch — query forms and the renamed limit', () => {
+  test('select: activates the named tools exactly, and nothing near them', async () => {
+    const active = new Map<string, string>();
+    const plan = runtime().prepare(active);
+
+    const result = (await searchTool(plan).impl(
+      { query: 'select:docs_edit,BrowserClick' },
+      ctx,
+    )) as ToolSearchResult;
+
+    assert.deepEqual(result.activated.sort(), ['BrowserClick', 'docs_edit']);
+    assert.deepEqual(
+      (
+        (await searchTool(runtime().prepare(new Map())).impl(
+          { query: 'select:docs_EDIT' },
+          ctx,
+        )) as ToolSearchResult
+      ).activated,
+      [],
+    );
+  });
+
+  test('+word requires the term in the tool name', async () => {
+    const plan = runtime().prepare(new Map());
+
+    const result = (await searchTool(plan).impl(
+      { query: '+docs document' },
+      ctx,
+    )) as ToolSearchResult;
+
+    assert.deepEqual(result.activated.sort(), ['docs_edit', 'docs_read']);
+    assert.deepEqual(
+      (
+        (await searchTool(runtime().prepare(new Map())).impl(
+          { query: '+browser document' },
+          ctx,
+        )) as ToolSearchResult
+      ).activated,
+      ['BrowserClick'],
+    );
+  });
+
+  test('max_results bounds the activation', async () => {
+    const plan = runtime().prepare(new Map());
+    const parameters = searchTool(plan).parameters as {
+      parse(value: unknown): Record<string, unknown>;
+    };
+
+    assert.deepEqual(parameters.parse({ query: 'docs', max_results: 2 }), {
+      query: 'docs',
+      max_results: 2,
+    });
+    const result = (await searchTool(plan).impl(
+      { query: '+docs', max_results: 1 },
+      ctx,
+    )) as ToolSearchResult;
+    assert.equal(result.activated.length, 1);
+  });
+
+  test('the inventory names the three query forms', () => {
+    const description = searchTool(runtime().prepare(new Map())).description;
+    assert.match(description, /Fetches full schema definitions for deferred tools/);
+    assert.match(description, /"select:Read,Edit,Grep"/);
+    assert.match(description, /"\+slack send"/);
   });
 });

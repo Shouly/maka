@@ -47,11 +47,6 @@ import {
   SQLITE_ARTIFACT_SCHEMA_VERSION,
 } from './sqlite-artifact-schema.js';
 import {
-  assertLegacySchedulingSchema,
-  insertMigratedScheduledTasks,
-  planLegacyScheduledTasks,
-} from './sqlite-legacy-scheduling.js';
-import {
   assertCurrentOperationalTargetSchema,
   assertReleasedLegacyRetirementShape,
   ensureOperationalSchemaRegistry,
@@ -413,7 +408,6 @@ function inspectOperationalStateSchemaInternal(
     registered.set(scope, version);
     if (scope === 'workflow' || scope === 'automation') versions.set(scope, version);
   }
-  assertLegacySchedulingSchema(database, versions);
   for (const [scope, version] of OPERATIONAL_SCHEMA_VERSIONS) {
     const registeredVersion = registered.get(scope);
     if (registeredVersion === undefined) {
@@ -461,20 +455,26 @@ export function migrateOperationalStateDatabaseInternal(db: DatabaseSync, now: (
   db.exec('BEGIN IMMEDIATE');
   try {
     const inspection = inspectOperationalStateSchema(db);
-    const legacyScheduledTasks = planLegacyScheduledTasks(db, inspection.versions);
     migrateSqliteRuntimeDatabase(db, { transaction: 'caller' });
     migrateSqliteSessionMetadataDatabase(db, { transaction: 'caller' });
     migrateSqliteCoreExecutionDatabase(db);
     migrateSqliteWorkflowDatabase(db);
-    insertMigratedScheduledTasks(db, legacyScheduledTasks);
     migrateSqliteUsageDatabase(db);
     migrateSqliteArtifactDatabase(db);
     ensureOperationalSchemaRegistry(db);
     const appliedAt = now();
+    // The released scheduling features are retired, not migrated. Plan
+    // Reminders were NOTIFICATIONS — a local toast or a bot message — and a
+    // scheduled task cannot be one any more: firing opens a session and runs
+    // the task's instructions. A reminder's note was written to be read by a
+    // person, so carrying one across would turn a nudge into unattended work.
+    // Their tables go with the Automation ones rather than being left behind
+    // full of rows nothing will ever read.
     db.exec(`
       DROP TABLE IF EXISTS automation_pending_fires;
       DROP TABLE IF EXISTS automation_definitions;
       DROP TABLE IF EXISTS automation_authority_state;
+      DROP TABLE IF EXISTS workflow_plan_reminders;
       DELETE FROM operational_schema_migrations WHERE scope = 'automation';
     `);
     retireCompletedLegacyMigrationMetadata(db);

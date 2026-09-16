@@ -69,9 +69,9 @@ describe('Memory Extraction provider prefix', () => {
     const messages = [{ role: 'user' as const, content: 'Remember concise answers.' }];
     const tools: ModelToolSet = {
       Read: { description: 'Read a file', inputSchema: z.object({ path: z.string() }) },
-      memory_remember: { description: 'Remember', inputSchema: z.object({}).strict() },
+      MemoryRemember: { description: 'Remember', inputSchema: z.object({}).strict() },
     };
-    const activeTools = ['Read', 'memory_remember'];
+    const activeTools = ['Read', 'MemoryRemember'];
     const adapter = new ModelAdapter({
       connection: { providerType: 'openai' } as never,
       apiKey: 'test',

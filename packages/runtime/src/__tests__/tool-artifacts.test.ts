@@ -28,6 +28,7 @@ import {
   deriveToolArtifactCandidates,
   extractStdoutRedirectPath,
   recordToolArtifactsSafely,
+  type ToolArtifactRecorderInput,
 } from '../tool-artifacts.js';
 import { ToolRuntime, type MakaTool, type ToolRuntimeInput } from '../tool-runtime.js';
 
@@ -36,7 +37,7 @@ describe('deriveToolArtifactCandidates', () => {
     const [candidate] = deriveToolArtifactCandidates({
       toolName: 'Write',
       cwd: '/workspace/maka',
-      args: { path: 'docs/report.html', content: '<h1>Report</h1>' },
+      args: { file_path: 'docs/report.html', content: '<h1>Report</h1>' },
       result: { ok: true, path: '/workspace/maka/docs/report.html', bytes: 15 },
     });
 
@@ -54,7 +55,7 @@ describe('deriveToolArtifactCandidates', () => {
     const [candidate] = deriveToolArtifactCandidates({
       toolName: 'Edit',
       cwd: '/workspace/maka',
-      args: { path: 'src/main.ts', old_string: 'const a = 1;', new_string: 'const a = 2;' },
+      args: { file_path: 'src/main.ts', old_string: 'const a = 1;', new_string: 'const a = 2;' },
       result: { ok: true, path: '/workspace/maka/src/main.ts', replacements: 1 },
     });
 
@@ -159,6 +160,77 @@ describe('ToolRuntime artifact recorder scheduling', () => {
     assert.strictEqual(
       events.some((event) => event.type === 'tool_result' && event.toolUseId === 'tool-1'),
       true,
+    );
+  });
+});
+
+describe('ToolRuntime in-flight artifact recording', () => {
+  test('a tool records its own artifacts during impl and reads the records back', async () => {
+    const calls: ToolArtifactRecorderInput[] = [];
+    const { runtime, events } = makeToolRuntime({
+      recordToolArtifacts: (input) => {
+        calls.push(input);
+        return input.candidates.map((candidate, index) => ({
+          id: `artifact-${index}`,
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          createdAt: 1,
+          name: candidate.name,
+          kind: candidate.kind,
+          sizeBytes: 3,
+          source: 'user_delivery' as const,
+          relativePath: `${input.sessionId}/${candidate.name}`,
+        }));
+      },
+    });
+    let recordedIds: string[] = [];
+
+    await runtime.settleToolCall({
+      tool: {
+        name: 'SendUserFile',
+        description: 'deliver',
+        parameters: {},
+        impl: async (_args, ctx) => {
+          const records = await ctx.recordArtifacts!([
+            {
+              kind: 'file',
+              name: 'report.md',
+              source: 'user_delivery',
+              sourcePath: '/w/report.md',
+            },
+          ]);
+          recordedIds = records.map((record) => record.id);
+          return { kind: 'text' as const, text: recordedIds.join(',') };
+        },
+      },
+      turnId: 'turn-1',
+      toolCallId: 'tool-1',
+      input: { files: ['report.md'] },
+      abortSignal: new AbortController().signal,
+      eventSink: {
+        push: (event) => events.push(event),
+        pushAndWaitUntilConsumed: async (event) => {
+          events.push(event);
+        },
+      },
+    });
+
+    assert.deepStrictEqual(recordedIds, ['artifact-0']);
+    // The in-flight lane carries the args and no result; the post-settlement
+    // derivation is unchanged and contributes nothing for this tool.
+    assert.strictEqual(calls.length, 1);
+    assert.deepStrictEqual(calls[0]?.args, { files: ['report.md'] });
+    assert.strictEqual(calls[0]?.result, undefined);
+    assert.strictEqual(calls[0]?.toolName, 'SendUserFile');
+    assert.strictEqual(calls[0]?.candidates.length, 1);
+    assert.deepStrictEqual(
+      deriveToolArtifactCandidates({
+        toolName: 'SendUserFile',
+        cwd: '/workspace/maka',
+        args: { files: ['report.md'] },
+        result: { kind: 'user_file_delivery' },
+      }),
+      [],
     );
   });
 });

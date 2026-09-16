@@ -20,20 +20,37 @@
 import { z } from 'zod';
 import { validateSandboxBoundaryExpansion } from '@maka/core/sandbox-boundary';
 
-// v6 adds the captured target identity (opaque decimal-string dev/ino) to
+// v9 widens Grep again, to the ripgrep switches the tool now exposes: a
+// `--type` filter, asymmetric context (`-A`/`-B`), an explicit line-number
+// toggle, and a result `offset` for paging past a capped answer. The worker
+// validates strictly, so a host that sends one of these to a v8 worker would be
+// rejected with a schema error rather than a version mismatch — bumping the
+// literal is what turns that into the handshake failure it actually is.
+//
+// v8 widened the search and write operations: Grep carries an output mode plus
+// the ripgrep flags the tool now exposes (case folding, context lines,
+// multiline), Glob answers with a `truncated` marker, Edit replaces more than
+// one occurrence, and Write carries the read-before-overwrite decision as
+// `allowOverwrite`. Host and worker are built from this file in one bundle, so
+// the literal version is the handshake that stops a stale worker from
+// answering a request whose fields it would silently ignore.
+//
+// v6 added the captured target identity (opaque decimal-string dev/ino) to
 // FilesystemWorkerTarget, so the worker can compare-and-swap against the
 // inode that was authorised at lock acquisition instead of only the path
 // string. The identity is carried as strings because bigint cannot cross the
 // JSON protocol boundary.
-export const FILESYSTEM_WORKER_PROTOCOL_VERSION = 7 as const;
+export const FILESYSTEM_WORKER_PROTOCOL_VERSION = 9 as const;
+
+/** Ripgrep output shapes the Grep tool can ask the worker for. */
+export const GREP_OUTPUT_MODES = ['content', 'files_with_matches', 'count'] as const;
+export type GrepOutputMode = (typeof GREP_OUTPUT_MODES)[number];
 
 /** The single authority on which operation kinds are writes. Shared by the
  * client (permission/identity decisions) and the worker (operation guards) so
  * the set cannot drift. */
 export function operationAccess(kind: FilesystemWorkerOperation['kind']): 'read' | 'write' {
-  return kind === 'write' || kind === 'apply_patch' || kind === 'edit' || kind === 'format_json'
-    ? 'write'
-    : 'read';
+  return kind === 'write' || kind === 'apply_patch' || kind === 'edit' ? 'write' : 'read';
 }
 
 const path = z.string().min(1).max(4096);
@@ -111,7 +128,22 @@ export const FilesystemWorkerOperationSchema = z.union([
       limit: z.number().int().positive().optional(),
     })
     .strict(),
-  z.object({ kind: z.literal('write'), cwd, path, content: z.string() }).strict(),
+  z
+    .object({
+      kind: z.literal('write'),
+      cwd,
+      path,
+      content: z.string(),
+      /**
+       * Whether this call is allowed to replace an EXISTING file. The host
+       * decides it (the session has seen the file through a file tool);
+       * the worker only enforces it, so the guard cannot be skipped by a
+       * caller that forgets to ask. Absent means "not allowed" — a stale
+       * host that never learned about the flag cannot clobber unread files.
+       */
+      allowOverwrite: z.boolean().optional(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal('apply_patch'),
@@ -129,14 +161,15 @@ export const FilesystemWorkerOperationSchema = z.union([
       path,
       oldString: z.string(),
       newString: z.string(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('format_json'),
-      cwd,
-      path,
-      sortKeys: z.boolean(),
+      /** Replace every exact occurrence instead of requiring a unique one. */
+      replaceAll: z.boolean().optional(),
+      /**
+       * Whether this session has already seen the file through a file tool.
+       * The host decides it, the worker only enforces it, and absent means
+       * "not allowed" — a stale host that never learned about the flag cannot
+       * edit blind.
+       */
+      allowEdit: z.boolean().optional(),
     })
     .strict(),
   z
@@ -155,8 +188,24 @@ export const FilesystemWorkerOperationSchema = z.union([
       path,
       pattern: z.string(),
       glob: z.string().min(1).optional(),
+      /** Ripgrep file-type filter (`--type`). */
+      type: z.string().min(1).max(64).optional(),
+      /** Ripgrep output shape; absent means `content`, the historical shape. */
+      outputMode: z.enum(GREP_OUTPUT_MODES).optional(),
+      /** Case-insensitive search (`-i`). */
+      ignoreCase: z.boolean().optional(),
+      /** Lines of context after each match (`-A`); content mode only. */
+      after: z.number().int().nonnegative().optional(),
+      /** Lines of context before each match (`-B`); content mode only. */
+      before: z.number().int().nonnegative().optional(),
+      /** Print line numbers (`-n`); content mode only, on unless explicitly false. */
+      lineNumbers: z.boolean().optional(),
+      /** Let the pattern span lines (`-U --multiline-dotall`). */
+      multiline: z.boolean().optional(),
       maxCountPerFile: z.number().int().positive(),
       limit: z.number().int().positive(),
+      /** Result lines to skip before `limit` applies, for paging. */
+      offset: z.number().int().nonnegative().optional(),
       timeoutMs: z.number().int().positive(),
     })
     .strict(),
@@ -196,7 +245,7 @@ export const FilesystemWorkerResultSchema = z.discriminatedUnion('kind', [
       kind: z.literal('edit'),
       ok: z.literal(true),
       path: z.string(),
-      replacements: z.literal(1),
+      replacements: z.number().int().positive(),
       matchedVia: z.enum(['exact', 'line-trimmed', 'whitespace', 'escape']),
       startLine: z.number().int().positive(),
       endLine: z.number().int().positive(),
@@ -205,20 +254,28 @@ export const FilesystemWorkerResultSchema = z.discriminatedUnion('kind', [
     .strict(),
   z
     .object({
-      kind: z.literal('format_json'),
-      ok: z.boolean(),
-      valid: z.boolean(),
-      path: z.string(),
-      error: z.string().optional(),
-      bytesBefore: z.number().int().nonnegative(),
-      bytesAfter: z.number().int().nonnegative().optional(),
-      byteDelta: z.number().int(),
-      changed: z.boolean(),
-      diff: z.string().optional(),
+      kind: z.literal('glob'),
+      files: z.array(z.string()),
+      /** More files matched than the limit returned. */
+      truncated: z.boolean().optional(),
     })
     .strict(),
-  z.object({ kind: z.literal('glob'), files: z.array(z.string()) }).strict(),
-  z.object({ kind: z.literal('grep'), matches: z.array(z.string()) }).strict(),
+  z
+    .object({
+      kind: z.literal('grep'),
+      /**
+       * Ripgrep's own output lines, one per array entry. The shape depends on
+       * `mode`; the durable result keeps this field under its original name so
+       * the existing UI renderer is unaffected by the added modes.
+       */
+      matches: z.array(z.string()),
+      mode: z.enum(GREP_OUTPUT_MODES).optional(),
+      /** More lines matched than `limit` returned. */
+      truncated: z.boolean().optional(),
+      /** How many matching lines were dropped by `limit`. */
+      omitted: z.number().int().nonnegative().optional(),
+    })
+    .strict(),
 ]);
 
 export const FilesystemWorkerErrorCodeSchema = z.enum([
@@ -228,6 +285,12 @@ export const FilesystemWorkerErrorCodeSchema = z.enum([
   'not_found',
   'edit_conflict',
   'grep_unavailable',
+  // Write refused to replace a file this session has never read (#tool-6):
+  // the model has to look before it overwrites.
+  'write_unread_target',
+  // Edit refused to change a file this session has never read: an edit written
+  // from a remembered shape lands on text that is no longer there.
+  'edit_unread_target',
   'sandbox_denied',
   'filesystem_denied',
   'filesystem_error',
@@ -240,6 +303,30 @@ export const FilesystemWorkerErrorCodeSchema = z.enum([
   // cannot be unlinked, only recursively removed — a different operation.
   'is_directory',
 ]);
+
+/**
+ * The refusal a Write gets when it would replace a file the session has never
+ * looked at (`write_unread_target`). It lives beside the code rather than in
+ * either backend: the worker and the host-local executor both raise it, and a
+ * guard that reads differently depending on which one ran is a guard the model
+ * cannot learn.
+ */
+export function unreadOverwriteMessage(path: string): string {
+  return (
+    `Refusing to overwrite ${path}: it exists and has not been read in this session. ` +
+    'Read it first (or use Edit for a partial change), then write.'
+  );
+}
+
+/**
+ * The refusal an Edit gets when the session has never read the file
+ * (`edit_unread_target`). Same reasoning as {@link unreadOverwriteMessage}, and
+ * the same placement: both backends raise it, after the path has been resolved,
+ * so a boundary violation is still reported as one.
+ */
+export function unreadEditMessage(path: string): string {
+  return `Refusing to edit ${path}: it has not been read in this session. Read it first, then edit.`;
+}
 
 export const FilesystemWorkerResponseSchema = z.discriminatedUnion('ok', [
   z

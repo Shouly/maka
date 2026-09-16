@@ -18,8 +18,76 @@
  */
 
 import { countDiffLineStats } from '@maka/core/unified-diff';
+import { TOOL_NAMES } from '@maka/core/tool-names';
+import type { GrepOutputMode } from './filesystem-worker/protocol.js';
 import type { ToolResultOutput } from './model-protocol.js';
 import { toolResultOutput } from './tool-result-output.js';
+
+/**
+ * A write tool has just shown the model the file's new state, so a Read of the
+ * same file right after is a call that can only confirm what the model already
+ * knows. Saying so once, on the result, is cheaper than the call it prevents.
+ */
+const STATE_IS_CURRENT_NOTE = ' (file state is current in your context — no need to Read it back)';
+
+/**
+ * What the model is owed for a Read: the file's lines, numbered the way `cat -n`
+ * numbers them.
+ *
+ * The numbers are not decoration. Every later Edit has to name text the model
+ * can only have got from a Read, and a numbered transcript is what lets it say
+ * *where* — to itself while reasoning, and to a person reading the transcript.
+ * They are also what makes a windowed read legible: line 4 of a read that
+ * started at `offset: 200` is line 204 of the file, and nothing else in the
+ * result says so.
+ *
+ * The durable result keeps the raw content, because the UI renders the file and
+ * not a listing of it; this is the model's view of the same bytes.
+ */
+const READ_EMPTY_FILE_NOTE =
+  '<system-reminder>The file exists but its contents are empty.</system-reminder>';
+
+export function readToolResultToModelOutput(
+  input: unknown,
+  output: unknown,
+): ToolResultOutput | undefined {
+  const content = readResultContent(output);
+  // Images, runtime resources and attachments answer in their own shapes; they
+  // have no lines to number, so they keep the default projection.
+  if (content === undefined) return undefined;
+  if (content === '') return { type: 'text', value: READ_EMPTY_FILE_NOTE };
+  return { type: 'text', value: numberReadLines(content, readOffset(input)) };
+}
+
+function readResultContent(output: unknown): string | undefined {
+  if (!output || typeof output !== 'object' || Array.isArray(output)) return undefined;
+  const keys = Object.keys(output);
+  if (keys.length !== 1 || keys[0] !== 'content') return undefined;
+  const content = (output as { content: unknown }).content;
+  return typeof content === 'string' ? content : undefined;
+}
+
+/** `offset` is a zero-based line offset, so the first line shown is `offset + 1`. */
+function readOffset(input: unknown): number {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return 0;
+  const offset = (input as { offset?: unknown }).offset;
+  return typeof offset === 'number' && Number.isFinite(offset) && offset > 0
+    ? Math.trunc(offset)
+    : 0;
+}
+
+function numberReadLines(content: string, offset: number): string {
+  // A file that ends in a newline has no final empty line; `cat -n` does not
+  // number one, and neither may this.
+  const body = content.endsWith('\n') ? content.slice(0, -1) : content;
+  const lines = body.split('\n');
+  let numbered = '';
+  for (let index = 0; index < lines.length; index++) {
+    if (index > 0) numbered += '\n';
+    numbered += `${offset + index + 1}\t${lines[index]}`;
+  }
+  return numbered;
+}
 
 /**
  * The diff is for the reader; the model is owed only what happened — a bounded
@@ -28,7 +96,7 @@ import { toolResultOutput } from './tool-result-output.js';
  * durable result where the UI renders it.
  */
 export function fileWriteToolResultToModelOutput(
-  toolName: 'Write' | 'Edit' | 'FormatJson',
+  toolName: FileWriteToolName,
   output: unknown,
 ): ToolResultOutput {
   const summary = fileWriteToolResultSummary(toolName, output);
@@ -44,24 +112,133 @@ export function fileWriteToolResultToModelOutput(
  * Same precedent as `projectBashToolResultForModel`.
  */
 export function projectFileWriteToolResultForModel(toolName: string, output: unknown): unknown {
-  if (toolName !== 'Edit' && toolName !== 'Write' && toolName !== 'FormatJson') return output;
+  if (!isFileWriteToolName(toolName)) return output;
   return fileWriteToolResultSummary(toolName, output) ?? output;
 }
 
+type FileWriteToolName = typeof TOOL_NAMES.write | typeof TOOL_NAMES.edit;
+
+function isFileWriteToolName(name: string): name is FileWriteToolName {
+  return name === TOOL_NAMES.write || name === TOOL_NAMES.edit;
+}
+
 function fileWriteToolResultSummary(
-  toolName: 'Write' | 'Edit' | 'FormatJson',
+  toolName: FileWriteToolName,
   output: unknown,
 ): string | undefined {
   if (isFileDiff(output)) {
     const path = output.paths[0] ?? 'file';
+    if (toolName === TOOL_NAMES.write) {
+      // `--- /dev/null` is how the diff says the file did not exist before, and
+      // "created" versus "updated" is the one fact a writer checks next.
+      const verb = output.diff.startsWith('--- /dev/null') ? 'created' : 'updated';
+      return `File ${verb} successfully at: ${path}${STATE_IS_CURRENT_NOTE}`;
+    }
+    if (toolName === TOOL_NAMES.edit) {
+      return `The file ${path} has been updated successfully.${STATE_IS_CURRENT_NOTE}`;
+    }
     const { additions, deletions } = countDiffLineStats(output.diff);
-    if (toolName === 'Write' && output.diff.startsWith('--- /dev/null'))
-      return `Created ${path} (+${additions})`;
-    const verb = toolName === 'Write' ? 'Overwrote' : toolName === 'Edit' ? 'Edited' : 'Formatted';
-    return `${verb} ${path} (+${additions} -${deletions})`;
+    return `Formatted ${path} (+${additions} -${deletions})${STATE_IS_CURRENT_NOTE}`;
   }
-  if (isFileWrite(output)) return `Wrote ${output.bytes} bytes to ${output.path}`;
+  if (isFileWrite(output))
+    return `File written successfully at: ${output.path} (${output.bytes} bytes)${STATE_IS_CURRENT_NOTE}`;
+  if (isEditResult(output))
+    return `The file ${output.path} has been updated successfully.${STATE_IS_CURRENT_NOTE}`;
   return undefined;
+}
+
+function isEditResult(output: unknown): output is { path: string; replacements: number } {
+  return (
+    typeof output === 'object' &&
+    output !== null &&
+    !Array.isArray(output) &&
+    typeof (output as { path?: unknown }).path === 'string' &&
+    typeof (output as { replacements?: unknown }).replacements === 'number'
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Search tools
+// ---------------------------------------------------------------------------
+
+/**
+ * Grep answers with what ripgrep printed, as text.
+ *
+ * Search output is lines, and lines survive a JSON array only by being counted,
+ * quoted and escaped — the model then has to undo all three before it can read
+ * a path. Returning the lines themselves costs less and reads the way `rg` does
+ * on a terminal. The durable result keeps `matches` as an array because the UI
+ * renders it; this is the model's view of the same facts.
+ */
+export function grepToolResultToModelOutput(output: unknown): ToolResultOutput {
+  const result = asGrepResult(output);
+  if (!result) return toolResultOutput(output, false);
+  return { type: 'text', value: grepResultText(result) };
+}
+
+function grepResultText(result: GrepLikeResult): string {
+  if (result.matches.length === 0) return 'No matches found';
+  const body =
+    result.mode === 'count'
+      ? [result.matches.join('\n'), '', countSummary(result.matches)].join('\n')
+      : result.matches.join('\n');
+  if (!result.truncated) return body;
+  const omitted = result.omitted ?? 0;
+  return `${body}\n[${omitted} more matching ${omitted === 1 ? 'line was' : 'lines were'} omitted. Narrow the search with path, glob or a stricter pattern, or raise head_limit, to see them.]`;
+}
+
+/** `path:count` lines rolled up, so the model does not have to add them itself. */
+function countSummary(lines: readonly string[]): string {
+  let total = 0;
+  for (const line of lines) {
+    const separator = line.lastIndexOf(':');
+    const count = separator === -1 ? Number.NaN : Number(line.slice(separator + 1));
+    if (Number.isFinite(count)) total += count;
+  }
+  return `Found ${total} total ${total === 1 ? 'occurrence' : 'occurrences'} across ${lines.length} ${lines.length === 1 ? 'file' : 'files'}.`;
+}
+
+/**
+ * Glob answers with one path per line, most recently modified LAST.
+ *
+ * The order is the useful half of the answer and the end of a list is where a
+ * reader's attention already is, so the freshest match sits there rather than
+ * at the top where a long list buries it.
+ */
+export function globToolResultToModelOutput(output: unknown): ToolResultOutput {
+  const result = asGlobResult(output);
+  if (!result) return toolResultOutput(output, false);
+  if (result.files.length === 0) return { type: 'text', value: 'No files found' };
+  const body = result.files.join('\n');
+  return {
+    type: 'text',
+    value: result.truncated
+      ? `${body}\n[More files matched than are shown; these are the most recently modified. Narrow the pattern or the path to see the rest.]`
+      : body,
+  };
+}
+
+interface GrepLikeResult {
+  readonly matches: string[];
+  readonly mode?: GrepOutputMode;
+  readonly truncated?: boolean;
+  readonly omitted?: number;
+}
+
+function asGrepResult(output: unknown): GrepLikeResult | undefined {
+  if (typeof output !== 'object' || output === null || Array.isArray(output)) return undefined;
+  const matches = (output as { matches?: unknown }).matches;
+  if (!Array.isArray(matches) || matches.some((line) => typeof line !== 'string')) {
+    return undefined;
+  }
+  return output as GrepLikeResult;
+}
+
+function asGlobResult(output: unknown): { files: string[]; truncated?: boolean } | undefined {
+  if (typeof output !== 'object' || output === null || Array.isArray(output)) return undefined;
+  const files = (output as { files?: unknown }).files;
+  if (!Array.isArray(files) || files.some((file) => typeof file !== 'string')) return undefined;
+  return output as { files: string[]; truncated?: boolean };
 }
 
 function isFileDiff(

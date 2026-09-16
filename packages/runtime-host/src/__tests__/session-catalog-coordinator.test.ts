@@ -820,7 +820,7 @@ test('creation refuses a retired provider on the default target', async () => {
     ok: false,
     error: {
       code: 'invalid_request',
-      message: 'Session model connection uses a sign-in that was removed from Maka',
+      message: 'Session model connection uses a sign-in that was removed from Copilot',
     },
   });
   assert.equal(createAttempts, 0);
@@ -859,7 +859,7 @@ test('creation refuses a retired provider named explicitly', async () => {
     ok: false,
     error: {
       code: 'invalid_request',
-      message: 'Session model connection uses a sign-in that was removed from Maka',
+      message: 'Session model connection uses a sign-in that was removed from Copilot',
     },
   });
   assert.equal(createAttempts, 0);

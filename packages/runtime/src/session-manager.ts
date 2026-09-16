@@ -29,6 +29,7 @@
  * persistence and same-session serialization semantics.
  */
 
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import type { WorkHubActionReceipt } from '@maka/core/workhub-action-result';
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
@@ -3654,7 +3655,7 @@ export class SessionManager {
     input: AgentOutputInput,
   ): Promise<AgentOutputResult> {
     if (!this.deps.runStore || !this.deps.runtimeEventStore) {
-      throw new Error('agent_output requires AgentRunStore and RuntimeEventStore');
+      throw new Error('AgentOutput requires AgentRunStore and RuntimeEventStore');
     }
     const located = await this.findChildRunForOutput(sessionId, input);
     const { invocation } = located;
@@ -4279,7 +4280,7 @@ export class SessionManager {
     graph?: NonNullable<SubagentSessionParent['graph']>;
   }> {
     if (Number(!!input.execution) + Number(!!input.runId) + Number(!!input.turnId) !== 1) {
-      throw new Error('agent_output requires exactly one execution, runId, or turnId locator');
+      throw new Error('AgentOutput requires exactly one execution, runId, or turnId locator');
     }
     if (input.execution?.kind === 'child_session') {
       const execution = input.execution;
@@ -4292,14 +4293,14 @@ export class SessionManager {
         child.subagentParent?.kind !== 'subagent' ||
         child.subagentParent.parentSessionId !== sessionId
       ) {
-        throw new Error('agent_output could not find the requested child session');
+        throw new Error('AgentOutput could not find the requested child session');
       }
       const runs = await this.listInvocations(child.id);
       const selected = execution.currentRunId
         ? runs.find((run) => run.runId === execution.currentRunId)
         : latestInvocation(runs);
       if (!selected || !isSessionInlineInvocation(selected.opening)) {
-        throw new Error('agent_output could not find the requested child session run');
+        throw new Error('AgentOutput could not find the requested child session run');
       }
       return {
         invocation: selected,
@@ -4315,7 +4316,7 @@ export class SessionManager {
     const legacyExecution =
       input.execution?.kind === 'legacy_child_run' ? input.execution : undefined;
     if (legacyExecution && legacyExecution.sessionId !== sessionId) {
-      throw new Error('agent_output could not find the requested legacy child run');
+      throw new Error('AgentOutput could not find the requested legacy child run');
     }
     const invocation = (await this.listInvocations(sessionId)).find((run) =>
       legacyExecution
@@ -4326,9 +4327,9 @@ export class SessionManager {
             ? run.turnId === input.turnId
             : false,
     );
-    if (!invocation) throw new Error('agent_output could not find the requested child agent run');
+    if (!invocation) throw new Error('AgentOutput could not find the requested child agent run');
     if (!invocation.opening.lineage?.parentRunId || isSessionInlineInvocation(invocation.opening)) {
-      throw new Error('agent_output only reads child agent runs');
+      throw new Error('AgentOutput only reads child agent runs');
     }
     return {
       invocation,
@@ -5584,7 +5585,7 @@ function tail<T>(items: readonly T[], max: number): T[] {
 function shellRunBashToolCallIds(messages: readonly StoredMessage[]): Set<string> {
   return new Set(
     messages.flatMap((message) =>
-      message.type === 'tool_call' && message.toolName === 'Bash' ? [message.id] : [],
+      message.type === 'tool_call' && message.toolName === TOOL_NAMES.bash ? [message.id] : [],
     ),
   );
 }

@@ -116,14 +116,14 @@ The first qualifying run completed with:
 - provider: OpenAI;
 - model: `gpt-5.4`;
 - evidence class: `real-runtime`;
-- tool exposure: direct E2E, with only the production `maka_computer` tool;
+- tool exposure: direct E2E, with only the production `Computer` tool;
 - action: one app-scoped `observe`;
 - tool latency: 1117 ms;
 - total run latency: 7502 ms;
 - terminal status: `complete / end_turn`;
 - fixture oracle: verification code matched and interaction count remained zero.
 
-The direct E2E tool exposure is deliberate. The default deferred `tool_search`
+The direct E2E tool exposure is deliberate. The default deferred `ToolSearch`
 path remains a separate product contract; the launcher narrows provider
 variables while still exercising the production tool implementation, permission
 engine, Runtime, Desktop host, and executor backend.

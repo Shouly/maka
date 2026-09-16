@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import { TOOL_NAMES, type ToolName } from '@maka/core/tool-names';
 import type { UiLocale } from './locale-helpers.js';
 import { redactSecrets } from './redact.js';
 import { getToolActivityCopy } from './tool-activity/copy.js';
@@ -47,7 +48,7 @@ export interface LoadToolResultDescription {
 }
 
 /**
- * Turn a `tool_search` result or historical `load_tools` result into friendly,
+ * Turn a `ToolSearch` result or historical `load_tools` result into friendly,
  * locale-aware card copy. Returns `null` for unexpected shapes.
  */
 export function describeLoadToolResult(
@@ -122,36 +123,40 @@ function loadToolGroupKind(
   const id = groupId?.toLowerCase() ?? '';
   const normalizedLabel = label?.toLowerCase() ?? '';
   const names = tools.map((name) => name.toLowerCase());
-  const hasTool = (name: string) =>
+  const hasName = (name: string) =>
     names.some((candidate) => candidate === name || candidate.endsWith(`__${name}`));
+  // A proxied name (`mcp__<server>__<tool>`) keeps the tool's own spelling in
+  // its suffix, which is why `hasName` matches the suffix as well as the whole
+  // string.
+  const hasTool = (canonical: ToolName) => hasName(canonical.toLowerCase());
 
   if (
     id === 'computer_use'
     || id.endsWith('_desktop_computer_use')
     || normalizedLabel === 'computer use'
-    || hasTool('maka_computer')
+    || hasTool(TOOL_NAMES.computer)
   ) return 'computer_use';
   if (
     id === 'browser'
     || id.endsWith('_desktop_browser')
     || normalizedLabel === 'browser'
-    || hasTool('browser_navigate')
+    || hasTool(TOOL_NAMES.browserNavigate)
   ) return 'browser';
   if (
     id === 'rive'
     || id.endsWith('_desktop_rive')
     || normalizedLabel === 'rive'
-    || hasTool('riveworkflow')
+    || hasName('riveworkflow')
   ) return 'rive';
   if (
     id === 'agent'
     || normalizedLabel === 'agent'
-    || hasTool('agent_spawn')
+    || hasTool(TOOL_NAMES.agent)
   ) return 'agent';
   if (
     id.endsWith('_desktop_settings')
     || normalizedLabel === 'client settings'
-    || hasTool('makasettingsget')
+    || hasTool(TOOL_NAMES.copilotSettingsGet)
   ) return 'settings';
   if (id.endsWith('_desktop_mcp') || normalizedLabel === 'mcp') return 'mcp';
   return 'generic';

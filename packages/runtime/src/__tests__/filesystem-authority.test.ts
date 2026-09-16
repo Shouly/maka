@@ -20,7 +20,16 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ExecutionBoundary } from '@maka/core/sandbox-boundary';
@@ -95,7 +104,7 @@ describe('file tools follow the execution boundary', () => {
 
       const written = await runTool(
         toolNamed(tools, 'Write'),
-        { path: target, content: 'hello' },
+        { file_path: target, content: 'hello' },
         cwd,
         BYPASS,
       );
@@ -105,12 +114,12 @@ describe('file tools follow the execution boundary', () => {
       assert.ok((written as { diff: string }).diff.includes('+hello'));
       assert.strictEqual(await readFile(target, 'utf8'), 'hello');
 
-      const read = await runTool(toolNamed(tools, 'Read'), { path: target }, cwd, BYPASS);
+      const read = await runTool(toolNamed(tools, 'Read'), { file_path: target }, cwd, BYPASS);
       assert.deepStrictEqual(read, { content: 'hello' });
 
       const edited = await runTool(
         toolNamed(tools, 'Edit'),
-        { path: target, old_string: 'hello', new_string: 'bye' },
+        { file_path: target, old_string: 'hello', new_string: 'bye' },
         cwd,
         BYPASS,
       );
@@ -120,22 +129,13 @@ describe('file tools follow the execution boundary', () => {
       assert.ok((edited as { diff: string }).diff.includes('+bye'));
       assert.strictEqual(await readFile(target, 'utf8'), 'bye');
 
-      await writeFile(join(outside, 'data.json'), '{"b":1,"a":2}', 'utf8');
-      const formatted = await runTool(
-        toolNamed(tools, 'FormatJson'),
-        { path: join(outside, 'data.json'), sort_keys: true },
-        cwd,
-        BYPASS,
-      );
-      assert.partialDeepStrictEqual(formatted, { kind: 'file_diff' });
-
       const globbed = (await runTool(
         toolNamed(tools, 'Glob'),
-        { pattern: '*.md', cwd: outside },
+        { pattern: '*.md', path: outside },
         cwd,
         BYPASS,
       )) as { files: string[] };
-      assert.deepStrictEqual(globbed.files, ['note.md']);
+      assert.deepStrictEqual(globbed.files, [await realpath(target)]);
     } finally {
       await cleanup();
     }
@@ -150,17 +150,17 @@ describe('file tools follow the execution boundary', () => {
 
       for (const boundary of [undefined, EXTERNAL]) {
         await assert.rejects(
-          runTool(toolNamed(tools, 'Write'), { path: target, content: 'x' }, cwd, boundary),
+          runTool(toolNamed(tools, 'Write'), { file_path: target, content: 'x' }, cwd, boundary),
           /Write path must stay inside session cwd/,
         );
         await assert.rejects(
-          runTool(toolNamed(tools, 'Read'), { path: target }, cwd, boundary),
+          runTool(toolNamed(tools, 'Read'), { file_path: target }, cwd, boundary),
           /Read path must stay inside session cwd/,
         );
         await assert.rejects(
           runTool(
             toolNamed(tools, 'Edit'),
-            { path: target, old_string: 'hello', new_string: 'bye' },
+            { file_path: target, old_string: 'hello', new_string: 'bye' },
             cwd,
             boundary,
           ),
@@ -186,12 +186,12 @@ describe('file tools follow the execution boundary', () => {
       await symlink(join(outside, 'secret.txt'), join(cwd, 'link.txt'));
 
       await assert.rejects(
-        runTool(toolNamed(tools, 'Read'), { path: 'link.txt' }, cwd),
+        runTool(toolNamed(tools, 'Read'), { file_path: 'link.txt' }, cwd),
         /Read path must stay inside session cwd/,
       );
       // Under bypass the same link resolves, because nothing is being escaped.
       assert.deepStrictEqual(
-        await runTool(toolNamed(tools, 'Read'), { path: 'link.txt' }, cwd, BYPASS),
+        await runTool(toolNamed(tools, 'Read'), { file_path: 'link.txt' }, cwd, BYPASS),
         {
           content: 'secret',
         },
@@ -240,7 +240,7 @@ describe('file tools follow the execution boundary', () => {
 
       const result = await runTool(
         toolNamed(tools, 'Write'),
-        { path: target, content: 'x' },
+        { file_path: target, content: 'x' },
         cwd,
         MANAGED,
       );
@@ -258,7 +258,7 @@ describe('file tools follow the execution boundary', () => {
     try {
       const tools = toolsFor();
       await assert.rejects(
-        runTool(toolNamed(tools, 'Write'), { path: 'note.md', content: 'x' }, cwd, MANAGED),
+        runTool(toolNamed(tools, 'Write'), { file_path: 'note.md', content: 'x' }, cwd, MANAGED),
         (error: unknown) =>
           error instanceof SandboxCommandError && error.reason === 'requires_bypass',
       );
@@ -285,6 +285,10 @@ describe('file tools follow the execution boundary', () => {
       // queued; a lockless implementation necessarily overlaps it with the
       // first read, which is still active at that exact boundary.
       const host = createLocalWorkspaceExecutor();
+      // Edit refuses a file the session has not read, so the target has to be
+      // read first — and that priming read must not trip the causal barriers
+      // below, which exist to observe the two Edits and nothing else.
+      let instrumented = false;
       let active = 0;
       let overlapped = false;
       let reads = 0;
@@ -305,11 +309,13 @@ describe('file tools follow the execution boundary', () => {
         executor: Object.assign(Object.create(host) as typeof host, {
           writeLockKey: async (input: Parameters<typeof host.writeLockKey>[0]) => {
             const result = await host.writeLockKey(input);
+            if (!instrumented) return result;
             keys += 1;
             if (keys === 2) secondKeyResolved();
             return result;
           },
           readFile: async (input: Parameters<typeof host.readFile>[0]) => {
+            if (!instrumented) return await host.readFile(input);
             active += 1;
             overlapped ||= active > 1;
             reads += 1;
@@ -324,6 +330,7 @@ describe('file tools follow the execution boundary', () => {
             }
           },
           readModifyWrite: async (input: Parameters<typeof pinnedReadModifyWrite>[0]) => {
+            if (!instrumented) return await pinnedReadModifyWrite(input);
             // The pinned read-modify-write is the mutation's read step now
             // (#2600); the causal barrier lives here for the same reason it
             // lived on readFile before.
@@ -343,12 +350,19 @@ describe('file tools follow the execution boundary', () => {
         }),
       });
       const edit = toolNamed(tools, 'Edit');
+      await runTool(toolNamed(tools, 'Read'), { file_path: target }, cwd, BYPASS);
+      instrumented = true;
 
-      const first = runTool(edit, { path: target, old_string: 'a', new_string: 'b' }, cwd, BYPASS);
+      const first = runTool(
+        edit,
+        { file_path: target, old_string: 'a', new_string: 'b' },
+        cwd,
+        BYPASS,
+      );
       await firstReadStartedPromise;
       const second = runTool(
         edit,
-        { path: join('..', 'outside', 'note.md'), old_string: 'b', new_string: 'c' },
+        { file_path: join('..', 'outside', 'note.md'), old_string: 'b', new_string: 'c' },
         cwd,
         BYPASS,
       );
@@ -380,6 +394,45 @@ describe('file tools follow the execution boundary', () => {
     }
   });
 
+  test('Glob lists matches newest-modified LAST and says when it capped the list', async () => {
+    const { cwd, cleanup } = await makeDirs();
+    try {
+      const tools = toolsFor();
+      const older = join(cwd, 'older.md');
+      const newer = join(cwd, 'newer.md');
+      await writeFile(older, 'a', 'utf8');
+      await writeFile(newer, 'b', 'utf8');
+      // Explicit timestamps: a same-second write order proves nothing.
+      await utimes(older, new Date('2026-01-01T00:00:00Z'), new Date('2026-01-01T00:00:00Z'));
+      await utimes(newer, new Date('2026-06-01T00:00:00Z'), new Date('2026-06-01T00:00:00Z'));
+
+      const tool = toolNamed(tools, 'Glob');
+      const result = (await runTool(tool, { pattern: '*.md' }, cwd, BYPASS)) as {
+        files: string[];
+      };
+      const canonicalCwd = await realpath(cwd);
+      assert.deepStrictEqual(result.files, [
+        join(canonicalCwd, 'older.md'),
+        join(canonicalCwd, 'newer.md'),
+      ]);
+
+      const rendered = tool.toModelOutput?.({ toolCallId: 't', input: {}, output: result });
+      assert.equal(rendered?.type, 'text');
+      assert.equal(
+        rendered?.type === 'text' ? rendered.value : '',
+        `${join(canonicalCwd, 'older.md')}\n${join(canonicalCwd, 'newer.md')}`,
+      );
+
+      const empty = (await runTool(tool, { pattern: '*.nope' }, cwd, BYPASS)) as {
+        files: string[];
+      };
+      const emptyRendered = tool.toModelOutput?.({ toolCallId: 't', input: {}, output: empty });
+      assert.equal(emptyRendered?.type === 'text' ? emptyRendered.value : '', 'No files found');
+    } finally {
+      await cleanup();
+    }
+  });
+
   test('a bypass boundary searches outside the session cwd', async () => {
     const { cwd, outside, cleanup } = await makeDirs();
     try {
@@ -388,7 +441,7 @@ describe('file tools follow the execution boundary', () => {
 
       const found = (await runTool(
         toolNamed(tools, 'Grep'),
-        { pattern: 'needle', path: outside },
+        { pattern: 'needle', path: outside, output_mode: 'content' },
         cwd,
         BYPASS,
       )) as { matches: string[] };
@@ -413,7 +466,7 @@ describe('file tools follow the execution boundary', () => {
       });
       const target = join(outside, 'note.md');
 
-      await runTool(toolNamed(tools, 'Write'), { path: target, content: 'host' }, cwd, BYPASS);
+      await runTool(toolNamed(tools, 'Write'), { file_path: target, content: 'host' }, cwd, BYPASS);
 
       assert.strictEqual(calls.length, 0);
       assert.strictEqual(await readFile(target, 'utf8'), 'host');
@@ -440,7 +493,12 @@ describe('file tools follow the execution boundary', () => {
         },
       });
 
-      const result = await runTool(toolNamed(tools, 'Read'), { path: 'image.png' }, cwd, MANAGED);
+      const result = await runTool(
+        toolNamed(tools, 'Read'),
+        { file_path: 'image.png' },
+        cwd,
+        MANAGED,
+      );
 
       assert.partialDeepStrictEqual(result, { kind: 'image', mimeType: 'image/png' });
       assert.strictEqual(snapshots.length, 1);

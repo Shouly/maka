@@ -139,6 +139,8 @@ export interface ComposerCopy {
     readonly somethingElse: string;
     readonly confirmNext: string;
     readonly confirmSubmit: string;
+    /** How many options a multi-select question has ticked so far. */
+    readonly selectedCount: (count: number) => string;
   };
   readonly send: {
     readonly currentTurn: string;
@@ -250,6 +252,7 @@ const COMPOSER_COPY = {
       somethingElse: '其他答案',
       confirmNext: '下一题',
       confirmSubmit: '提交答案',
+      selectedCount: (count) => `已选 ${count} 项`,
     },
     send: {
       currentTurn: '补充本轮',
@@ -359,6 +362,7 @@ const COMPOSER_COPY = {
       somethingElse: '其他答案',
       confirmNext: '下一題',
       confirmSubmit: '提交答案',
+      selectedCount: (count) => `已選 ${count} 項`,
     },
     send: {
       currentTurn: '補充本輪',
@@ -474,6 +478,7 @@ const COMPOSER_COPY = {
       somethingElse: 'Something else',
       confirmNext: 'Next question',
       confirmSubmit: 'Submit answers',
+      selectedCount: (count) => `${count} selected`,
     },
     send: {
       currentTurn: 'Add to this turn',

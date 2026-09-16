@@ -557,20 +557,30 @@ const USER_QUESTION_ROW_PREFIX_WIDTH = 2;
  * type-to-jump). Enter selects the highlighted option, or submits non-empty input
  * text; Esc leaves the whole question unanswered. Replaces the old two-step design
  * that swapped the option list out for a separate text overlay.
+ *
+ * A multi-select question toggles options with Space and submits the whole set
+ * with Enter.
  */
 export class UserQuestionOverlay implements Component {
   private readonly editor: Editor;
   // Highlight index over [0, options.length]. `options.length` is the input row.
   private activeIndex = 0;
+  // Multi-select only: the option indexes Space has turned on.
+  private readonly checked = new Set<number>();
 
   constructor(
     tui: TUI,
     private readonly input: {
       title: string;
+      /** Chip label rendered ahead of the question. */
+      header?: string;
       rightLabel: string;
       hint: string;
       placeholder: string;
       options: readonly UserQuestionOption[];
+      /** Space toggles, Enter submits every checked label at once. */
+      multiSelect?: boolean;
+      onSubmitSelection?(indexes: number[]): void;
       /**
        * Live row budget for the overlay (the runner derives it from
        * `terminal.rows`, so it stays correct across resizes). When the wrapped
@@ -623,10 +633,24 @@ export class UserQuestionOverlay implements Component {
       this.activeIndex = this.activeIndex === this.inputRowIndex ? 0 : this.activeIndex + 1;
       return;
     }
+    // Space is the multi-select toggle, so it never reaches the type-to-jump
+    // path below while an option is highlighted.
+    if (this.input.multiSelect && !this.onInputRow && data === ' ') {
+      if (this.checked.has(this.activeIndex)) this.checked.delete(this.activeIndex);
+      else this.checked.add(this.activeIndex);
+      return;
+    }
     if (matchesKey(data, Key.enter) || matchesKey(data, Key.return)) {
       // A held-key repeat must not double-advance onto the next question.
       if (isKeyRepeat(data)) return;
       if (!this.onInputRow) {
+        if (this.input.multiSelect) {
+          // Enter with nothing checked answers with the highlighted option, so
+          // the common single-answer case needs no Space at all.
+          if (this.checked.size === 0) this.checked.add(this.activeIndex);
+          this.input.onSubmitSelection?.([...this.checked].sort((a, b) => a - b));
+          return;
+        }
         this.input.onSelectOption(this.activeIndex);
         return;
       }
@@ -656,8 +680,9 @@ export class UserQuestionOverlay implements Component {
     const safeWidth = Math.max(1, width);
     // The title wraps like the option rows: a long question must not lose its
     // tail to a hard cut at the terminal width (#4610).
+    const chip = this.input.header ? `${ansi.accent(`[${this.input.header}]`)} ` : '';
     const wrappedTitle = wrapTextWithAnsi(
-      `${this.input.title} ${ansi.accent(this.input.rightLabel)}`,
+      `${chip}${this.input.title} ${ansi.accent(this.input.rightLabel)}`,
       safeWidth,
     );
     const titleLines = (wrappedTitle.length > 0 ? wrappedTitle : ['']).map((line) =>
@@ -668,7 +693,9 @@ export class UserQuestionOverlay implements Component {
     const divider = padLine(ansi.accent('-'.repeat(safeWidth)), safeWidth);
     const inputRows = this.renderInputRow(safeWidth);
     const optionRows = this.input.options.map((option, index) =>
-      formatUserQuestionOptionRow(option, index === this.activeIndex, safeWidth),
+      formatUserQuestionOptionRow(option, index === this.activeIndex, safeWidth, {
+        ...(this.input.multiSelect ? { checkbox: this.checked.has(index) } : {}),
+      }),
     );
     const assemble = (title: string[], options: string[][]): string[] => [
       ...title,
@@ -1169,18 +1196,21 @@ export function formatUserQuestionOptionRow(
   option: UserQuestionOption,
   active: boolean,
   width: number,
+  state: { checkbox?: boolean } = {},
 ): string[] {
   const safeWidth = Math.max(1, width);
   const prefix = active ? '→ ' : '  ';
+  const checkbox = state.checkbox === undefined ? '' : state.checkbox ? '[x] ' : '[ ] ';
   const body = option.description
-    ? `${option.label}  ${active ? option.description : ansi.dim(option.description)}`
-    : option.label;
+    ? `${checkbox}${option.label}  ${active ? option.description : ansi.dim(option.description)}`
+    : `${checkbox}${option.label}`;
   const wrapped = wrapTextWithAnsi(body, Math.max(1, safeWidth - USER_QUESTION_ROW_PREFIX_WIDTH));
   const continuation = ' '.repeat(USER_QUESTION_ROW_PREFIX_WIDTH);
-  return (wrapped.length > 0 ? wrapped : ['']).map((line, index) => {
+  const rows = (wrapped.length > 0 ? wrapped : ['']).map((line, index) => {
     const padded = padLine(`${index === 0 ? prefix : continuation}${line}`, safeWidth);
     return active ? ansi.reverse(padded) : padded;
   });
+  return rows;
 }
 
 /**

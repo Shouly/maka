@@ -25,6 +25,7 @@ import {
   providerReportsCompleteModelCatalog,
   resolveModelVisionSupport,
 } from '../model-metadata.js';
+import { modelLimitsConflict, resolveModelLimits } from '../model-thinking.js';
 import { PROVIDER_REGISTRY, providerFallbackModelIds } from '../provider-registry.js';
 import type { ModelInfo, ProviderType } from '../llm-connections.js';
 
@@ -204,6 +205,56 @@ describe('Volcengine Agent Plan official catalog mirror', () => {
       lookupModelMetadata('volcengine-agent-plan', 'minimax-m3').contextWindow,
       1_024_000,
     );
+  });
+
+  it('keeps the OAuth context-window pin and the input limit consistent', () => {
+    // The public catalog describes the public API, where both numbers are
+    // larger. Pinning only the window would leave inputLimit > contextWindow,
+    // which `resolveModelLimits` reads as a contradiction and every turn on
+    // the model then fails its budget check before reaching the provider.
+    for (const modelId of ['gpt-5.6-sol', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini']) {
+      const limits = resolveModelLimits('openai-codex', { id: modelId });
+      assert.equal(modelLimitsConflict(limits), false, modelId);
+      assert.ok((limits.contextWindow ?? 0) > 0, modelId);
+      assert.ok((limits.inputLimit ?? 0) <= (limits.contextWindow ?? 0), modelId);
+    }
+    // The pin is what narrows it: the public entry is far larger.
+    assert.equal(resolveModelLimits('openai', { id: 'gpt-5.6-sol' }).contextWindow, 1_050_000);
+    assert.equal(resolveModelLimits('openai-codex', { id: 'gpt-5.6-sol' }).contextWindow, 372_000);
+  });
+
+  it('clamps an inherited input limit to a narrower window the connection reports', () => {
+    // The OAuth catalog reports the window the plan allows; the limit falls
+    // back to models.dev's public figure, which is larger. That pairing is not
+    // a contradiction to report — it used to fail every turn on the model with
+    // "Model input limit exceeds the context window" before the request left.
+    const limits = resolveModelLimits('openai-codex', {
+      id: 'gpt-5.6-sol',
+      contextWindow: 272_000,
+    });
+    assert.deepEqual(limits, { contextWindow: 272_000, inputLimit: 272_000 });
+    assert.equal(modelLimitsConflict(limits), false);
+  });
+
+  it('leaves a user override alone so a contradictory pair is still reported', () => {
+    // Both numbers typed, and they do not fit.
+    const declared = resolveModelLimits(
+      'openai-codex',
+      { id: 'gpt-5.6-sol' },
+      { contextWindow: 100_000, inputLimit: 200_000 },
+    );
+    assert.deepEqual(declared, { contextWindow: 100_000, inputLimit: 200_000 });
+    assert.equal(modelLimitsConflict(declared), true);
+
+    // Only the window typed: narrowing it is not consent to narrow the limit,
+    // so the inherited limit stands and the user is told it no longer fits.
+    const narrowed = resolveModelLimits(
+      'openai-codex',
+      { id: 'gpt-5.6-sol', inputLimit: 300_000 },
+      { contextWindow: 100_000 },
+    );
+    assert.equal(narrowed.inputLimit, 300_000);
+    assert.equal(modelLimitsConflict(narrowed), true);
   });
 
   it('records the upstream retirement of glm-5.2, kimi-k2.6 and minimax-m2.7', () => {

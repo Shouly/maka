@@ -158,18 +158,18 @@ export interface PtyControlWriter {
 
 export function validateWriteStdinInput(input: ShellRunWriteInput): void {
   if (input.input !== undefined && input.actions !== undefined) {
-    throw new Error('WriteStdin raw input and terminal actions are mutually exclusive');
+    throw new Error('TaskInput raw input and terminal actions are mutually exclusive');
   }
   if (input.input === undefined && input.actions === undefined && input.size === undefined) {
-    throw new Error('WriteStdin requires input, actions, and/or size');
+    throw new Error('TaskInput requires input, actions, and/or size');
   }
   if (input.input !== undefined) {
-    if (input.input.length === 0) throw new Error('WriteStdin input must not be empty');
+    if (input.input.length === 0) throw new Error('TaskInput input must not be empty');
     if (!isWellFormedTerminalInput(input.input))
-      throw new Error('WriteStdin input must be well-formed Unicode');
+      throw new Error('TaskInput input must be well-formed Unicode');
     const bytes = Buffer.byteLength(input.input, 'utf8');
     if (bytes > MAX_WRITE_STDIN_INPUT_BYTES) {
-      throw new Error(`WriteStdin input exceeds the ${MAX_WRITE_STDIN_INPUT_BYTES}-byte limit`);
+      throw new Error(`TaskInput input exceeds the ${MAX_WRITE_STDIN_INPUT_BYTES}-byte limit`);
     }
   }
   if (input.actions !== undefined) validateTerminalInputActions(input.actions);
@@ -179,28 +179,28 @@ export function validateWriteStdinInput(input: ShellRunWriteInput): void {
       input.size.cols < MIN_PTY_COLS ||
       input.size.cols > MAX_PTY_COLS
     ) {
-      throw new Error(`WriteStdin cols must be between ${MIN_PTY_COLS} and ${MAX_PTY_COLS}`);
+      throw new Error(`TaskInput cols must be between ${MIN_PTY_COLS} and ${MAX_PTY_COLS}`);
     }
     if (
       !Number.isInteger(input.size.rows) ||
       input.size.rows < MIN_PTY_ROWS ||
       input.size.rows > MAX_PTY_ROWS
     ) {
-      throw new Error(`WriteStdin rows must be between ${MIN_PTY_ROWS} and ${MAX_PTY_ROWS}`);
+      throw new Error(`TaskInput rows must be between ${MIN_PTY_ROWS} and ${MAX_PTY_ROWS}`);
     }
   }
 }
 
 function validateTerminalInputActions(actions: readonly TerminalInputAction[]): void {
-  if (actions.length === 0) throw new Error('WriteStdin actions must not be empty');
+  if (actions.length === 0) throw new Error('TaskInput actions must not be empty');
   if (actions.length > MAX_WRITE_STDIN_ACTIONS) {
-    throw new Error(`WriteStdin actions must not exceed ${MAX_WRITE_STDIN_ACTIONS} entries`);
+    throw new Error(`TaskInput actions must not exceed ${MAX_WRITE_STDIN_ACTIONS} entries`);
   }
   for (const action of actions) {
     parseTerminalInputAction(action);
   }
   if (encodedTerminalInputActionsByteLength(actions) > MAX_WRITE_STDIN_INPUT_BYTES) {
-    throw new Error(`WriteStdin actions exceed the ${MAX_WRITE_STDIN_INPUT_BYTES}-byte limit`);
+    throw new Error(`TaskInput actions exceed the ${MAX_WRITE_STDIN_INPUT_BYTES}-byte limit`);
   }
 }
 

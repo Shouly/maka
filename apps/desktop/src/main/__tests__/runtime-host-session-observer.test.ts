@@ -2996,6 +2996,7 @@ test("rehydrates pending interactions and publishes answer acknowledgements", as
       questions: [
         {
           question: "Proceed?",
+          header: "Proceed",
           options: [{ label: "Yes", description: "Continue." }],
         },
       ],
@@ -3374,6 +3375,7 @@ function pendingQuestion(interactionId: string, turnId: string, runId: string) {
       questions: [
         {
           question: "Proceed?",
+          header: "Proceed",
           options: [{ label: "Yes", description: "Continue." }],
         },
       ],

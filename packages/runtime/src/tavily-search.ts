@@ -46,6 +46,10 @@ interface QueryTavilyInput {
   readonly apiKey: string;
   readonly query: string;
   readonly limit: number;
+  /** Only return results from these domains (Tavily `include_domains`). */
+  readonly allowedDomains?: readonly string[];
+  /** Never return results from these domains (Tavily `exclude_domains`). */
+  readonly blockedDomains?: readonly string[];
   readonly fetch?: typeof globalThis.fetch;
   readonly abortSignal?: AbortSignal;
   readonly timeoutMs?: number;
@@ -89,6 +93,8 @@ export async function queryTavily(input: QueryTavilyInput): Promise<WebSearchRes
         query,
         max_results: limit,
         search_depth: 'basic',
+        ...(input.allowedDomains?.length ? { include_domains: [...input.allowedDomains] } : {}),
+        ...(input.blockedDomains?.length ? { exclude_domains: [...input.blockedDomains] } : {}),
       }),
       signal: controller.signal,
     });

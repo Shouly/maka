@@ -23,7 +23,6 @@ import { isOrchestrationMode } from '@maka/core/orchestration';
 import { isPermissionMode } from '@maka/core/permission';
 import {
   isScheduledTaskStatus,
-  SCHEDULED_TASK_CHAT_ID_MAX_CHARS,
   SCHEDULED_TASK_CRON_MAX_CHARS,
   SCHEDULED_TASK_INTENT_MAX_CHARS,
   SCHEDULED_TASK_MAX_DELAY_MS,
@@ -38,11 +37,13 @@ import {
   type ScheduledTaskCreatedBy,
   type ScheduledTaskEffect,
   type ScheduledTaskExecutionTemplate,
+  type ScheduledTaskModelChoice,
   type ScheduledTaskRun,
   type ScheduledTaskSchedule,
   type UpdateScheduledTaskInput,
 } from '@maka/core/scheduled-task';
 import { isThinkingLevel } from '@maka/core/model-thinking';
+import { isToolMode } from '@maka/core/tool-mode';
 import {
   requireCount,
   requireEncodedByteLimit,
@@ -359,7 +360,7 @@ function decodeCreateInput(value: unknown): Omit<CreateScheduledTaskInput, 'crea
       SCHEDULED_TASK_INTENT_MAX_CHARS,
     ),
     schedule: decodeSchedule(input.schedule),
-    effect: decodeEffect(input.effect, { requireConnectionId: true }),
+    effect: decodeEffect(input.effect),
     ...(Object.hasOwn(input, 'maxFires')
       ? { maxFires: nullablePositiveCount(input.maxFires, 'ScheduledTask maxFires') }
       : {}),
@@ -398,9 +399,7 @@ function decodeUpdateInput(value: unknown): UpdateScheduledTaskInput {
         }
       : {}),
     ...(Object.hasOwn(patch, 'schedule') ? { schedule: decodeSchedule(patch.schedule) } : {}),
-    ...(Object.hasOwn(patch, 'effect')
-      ? { effect: decodeEffect(patch.effect, { requireConnectionId: true }) }
-      : {}),
+    ...(Object.hasOwn(patch, 'effect') ? { effect: decodeEffect(patch.effect) } : {}),
     ...(Object.hasOwn(patch, 'maxFires')
       ? { maxFires: nullablePositiveCount(patch.maxFires, 'ScheduledTask maxFires') }
       : {}),
@@ -412,6 +411,10 @@ function decodeUpdateInput(value: unknown): UpdateScheduledTaskInput {
 
 function decodeSchedule(value: unknown): ScheduledTaskSchedule {
   const schedule = requireRecord(value, 'ScheduledTask schedule');
+  if (schedule.kind === 'manual') {
+    requireExactRecord(schedule, 'ScheduledTask manual schedule', ['kind']);
+    return { kind: 'manual' };
+  }
   if (schedule.kind === 'once') {
     const exact = requireExactRecord(schedule, 'ScheduledTask once schedule', ['kind', 'runAt']);
     return { kind: 'once', runAt: requireCount(exact.runAt, 'ScheduledTask runAt') };
@@ -474,40 +477,8 @@ function decodeSchedule(value: unknown): ScheduledTaskSchedule {
   throw invalidProtocolFrame('Invalid ScheduledTask schedule');
 }
 
-function decodeEffect(
-  value: unknown,
-  options: { readonly requireConnectionId?: boolean } = {},
-): ScheduledTaskEffect {
+function decodeEffect(value: unknown): ScheduledTaskEffect {
   const effect = requireRecord(value, 'ScheduledTask effect');
-  if (effect.kind === 'notify') {
-    if (effect.channel === 'local') {
-      requireExactRecord(effect, 'ScheduledTask local notification effect', ['kind', 'channel']);
-      return { kind: 'notify', channel: 'local' };
-    }
-    if (effect.channel === 'bot') {
-      const exact = requireExactRecord(effect, 'ScheduledTask bot notification effect', [
-        'kind',
-        'channel',
-        'platform',
-        'chatId',
-      ]);
-      if (!isBotDeliveryProvider(exact.platform)) {
-        throw invalidProtocolFrame('Invalid ScheduledTask bot platform');
-      }
-      return {
-        kind: 'notify',
-        channel: 'bot',
-        platform: exact.platform,
-        chatId: boundedText(
-          exact.chatId,
-          'ScheduledTask bot chat id',
-          SCHEDULED_TASK_CHAT_ID_MAX_CHARS,
-          true,
-        ),
-      };
-    }
-    throw invalidProtocolFrame('Invalid ScheduledTask notification channel');
-  }
   if (effect.kind === 'agent_run') {
     const exact = requireExactRecord(effect, 'ScheduledTask Agent run effect', [
       'kind',
@@ -515,7 +486,7 @@ function decodeEffect(
     ]);
     return {
       kind: 'agent_run',
-      execution: decodeExecution(exact.execution, options.requireConnectionId === true),
+      execution: decodeExecution(exact.execution),
     };
   }
   if (effect.kind === 'session_resume') {
@@ -536,29 +507,26 @@ function decodeEffect(
   throw invalidProtocolFrame('Invalid ScheduledTask effect');
 }
 
-function decodeExecution(
-  value: unknown,
-  requireConnectionId = false,
-): ScheduledTaskExecutionTemplate {
+function decodeExecution(value: unknown): ScheduledTaskExecutionTemplate {
   // `backend` left the template (#3306), but templates frozen by older builds
   // still carry it and this is a closed shape: the key must stay tolerated on
   // the way in, and it never lands on the decoded value.
+  // `toolMode` belongs here because the template CARRIES it: a task an agent
+  // creates is frozen from the calling session's header, which names one. It
+  // was missing from this list, so the Host wrote tasks it could not read
+  // back — one of them poisoned every `scheduled-task.query` from then on and
+  // the desktop list sat on "Could not refresh" for good.
   const execution = requireShapedRecord(
     value,
     'ScheduledTask execution template',
-    [
-      'cwd',
-      'llmConnectionSlug',
-      'model',
-      'permissionMode',
-      'collaborationMode',
-      'orchestrationMode',
-    ],
-    ['projectId', 'thinkingLevel', 'backend', 'llmConnectionId'],
+    ['cwd', 'model', 'permissionMode', 'collaborationMode', 'orchestrationMode'],
+    ['projectId', 'thinkingLevel', 'toolMode', 'backend'],
   );
-  if (requireConnectionId && !Object.hasOwn(execution, 'llmConnectionId')) {
-    throw invalidProtocolFrame('ScheduledTask execution requires Connection id');
-  }
+  // `decodeModelChoice` already refuses a PINNED choice with no Connection id,
+  // which is the identity that must never be inferred from a reusable slug. A
+  // task that follows the owner's default names no Connection on purpose and
+  // is resolved at every run, so there is nothing here to require.
+  const model = decodeModelChoice(execution.model);
   if (!isPermissionMode(execution.permissionMode)) {
     throw invalidProtocolFrame('Invalid ScheduledTask permission mode');
   }
@@ -570,6 +538,9 @@ function decodeExecution(
   }
   if (Object.hasOwn(execution, 'thinkingLevel') && !isThinkingLevel(execution.thinkingLevel)) {
     throw invalidProtocolFrame('Invalid ScheduledTask thinking level');
+  }
+  if (Object.hasOwn(execution, 'toolMode') && !isToolMode(execution.toolMode)) {
+    throw invalidProtocolFrame('Invalid ScheduledTask tool mode');
   }
   if (
     Object.hasOwn(execution, 'projectId') &&
@@ -583,29 +554,46 @@ function decodeExecution(
     ...(Object.hasOwn(execution, 'projectId')
       ? { projectId: execution.projectId as string | null }
       : {}),
-    ...(Object.hasOwn(execution, 'llmConnectionId')
-      ? {
-          llmConnectionId: requireEntityId(
-            execution.llmConnectionId,
-            'ScheduledTask Connection id',
-          ),
-        }
-      : {}),
-    llmConnectionSlug: boundedText(
-      execution.llmConnectionSlug,
-      'ScheduledTask connection slug',
-      256,
-      true,
-    ),
-    model: boundedText(execution.model, 'ScheduledTask model', 512, true),
+    model,
     ...(Object.hasOwn(execution, 'thinkingLevel')
       ? {
           thinkingLevel: execution.thinkingLevel as ScheduledTaskExecutionTemplate['thinkingLevel'],
         }
       : {}),
+    ...(Object.hasOwn(execution, 'toolMode')
+      ? { toolMode: execution.toolMode as ScheduledTaskExecutionTemplate['toolMode'] }
+      : {}),
     permissionMode: execution.permissionMode,
     collaborationMode: execution.collaborationMode,
     orchestrationMode: execution.orchestrationMode,
+  };
+}
+
+function decodeModelChoice(value: unknown): ScheduledTaskModelChoice {
+  const choice = requireRecord(value, 'ScheduledTask model');
+  if (choice.kind === 'default') {
+    requireExactRecord(choice, 'ScheduledTask default model', ['kind']);
+    return { kind: 'default' };
+  }
+  if (choice.kind !== 'pinned') {
+    throw invalidProtocolFrame('Invalid ScheduledTask model kind');
+  }
+  const exact = requireExactRecord(choice, 'ScheduledTask pinned model', [
+    'kind',
+    'llmConnectionId',
+    'llmConnectionSlug',
+    'model',
+  ]);
+  return {
+    kind: 'pinned',
+    llmConnectionId: requireEntityId(exact.llmConnectionId, 'ScheduledTask Connection id'),
+    llmConnectionSlug: boundedText(
+      exact.llmConnectionSlug,
+      'ScheduledTask connection slug',
+      256,
+      true,
+    ),
+    model: boundedText(exact.model, 'ScheduledTask model', 512, true),
   };
 }
 

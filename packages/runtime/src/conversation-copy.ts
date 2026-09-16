@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import type { AgentRunEvent, AgentRunStore, EmittedAgentRunEvent } from '@maka/core/agent-run';
 import type { RuntimeEvent, RuntimeEventInvocationOpenedContent } from '@maka/core/runtime-event';
 import {
@@ -596,7 +597,10 @@ export async function cloneConversationRuntimeLedger(
     if (visiting.has(sourceId)) throw new Error('Cyclic copied archive reference');
     visiting.add(sourceId);
     const target = clonedEventBySourceId.get(sourceId);
-    if (target?.content?.kind === 'function_response' && target.content.name === 'ArchiveRead') {
+    if (
+      target?.content?.kind === 'function_response' &&
+      target.content.name === TOOL_NAMES.archiveRead
+    ) {
       const resolveResult = (value: unknown): unknown =>
         rewriteArchiveReadResult(value, references, (ref) => {
           const identity = parseToolResultArchiveResourceRef(ref);
@@ -630,7 +634,7 @@ export async function cloneConversationRuntimeLedger(
   for (const event of clonedEventBySourceId.values()) {
     if (event.content?.kind === 'text')
       event.content.text = rewriteLedgerArchiveText(event.content.text, references);
-    if (event.content?.kind === 'function_call' && event.content.name === 'ArchiveRead') {
+    if (event.content?.kind === 'function_call' && event.content.name === TOOL_NAMES.archiveRead) {
       const args = event.content.args;
       if (args && typeof args === 'object' && 'ref' in args && typeof args.ref === 'string') {
         event.content = {
@@ -677,7 +681,7 @@ export async function cloneConversationRuntimeLedger(
   const archiveReadCalls = new Set(
     flattenedPlans.flatMap((plan) =>
       plan.events.flatMap((event) =>
-        event.content?.kind === 'function_response' && event.content.name === 'ArchiveRead'
+        event.content?.kind === 'function_response' && event.content.name === TOOL_NAMES.archiveRead
           ? [`${event.turnId}:${event.content.id}`]
           : [],
       ),

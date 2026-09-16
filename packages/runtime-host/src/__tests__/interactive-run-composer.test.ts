@@ -20,7 +20,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createDefaultRuntimePolicy } from '@maka/core/runtime-policy';
-import type { SessionTodoToolStore } from '@maka/runtime/session-todo-tools';
+import type { SessionTaskToolStore } from '@maka/runtime/session-task-tools';
 import type { MakaTool } from '@maka/runtime/tool-runtime';
 import { createInteractiveRunComposer } from '../server/interactive-run-composer.js';
 import type { HostMemoryCoordinator } from '../server/memory-coordinator.js';
@@ -44,11 +44,11 @@ test('Deep Research keeps standard inspection tools and its durable workspace to
   });
   const composer = createFixtureComposer({
     hostTools: [tool('WebSearch')],
-    deepResearch: { tools: [tool('deep_research_status')] },
+    deepResearch: { tools: [tool('DeepResearchStatus')] },
   });
   const names = new Set(composer.tools.map(({ name }) => name));
 
-  for (const name of ['Read', 'Glob', 'Grep', 'WebSearch', 'deep_research_status']) {
+  for (const name of ['Read', 'Glob', 'Grep', 'WebSearch', 'DeepResearchStatus']) {
     assert.equal(names.has(name), true, `expected Deep Research tool ${name}`);
   }
   for (const name of ['Write', 'Edit', 'Bash', 'ExploreAgent']) {
@@ -271,7 +271,7 @@ function createFixtureComposer(
         body: undefined,
       }),
     } as unknown as HostMemoryCoordinator,
-    sessionTodo: {} as SessionTodoToolStore,
+    sessionTask: {} as SessionTaskToolStore,
     builtinTools: {},
     ...overrides,
   });

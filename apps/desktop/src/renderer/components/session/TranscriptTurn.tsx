@@ -54,6 +54,7 @@ import { getTranscriptCopy } from '../../locales/transcript-copy.js';
 import { TurnFooter } from './TurnFooter.js';
 import { UserMessageRow } from './UserMessageRow.js';
 import { ToolGroup } from './tools/ToolGroup.js';
+import { renderToolContent } from './tools/registry.js';
 import { useStore } from 'zustand';
 import { AskUserQuestionRecord } from './AskUserQuestionRecord.js';
 import { isAskUserQuestionTool, knownUserQuestionCalls } from '../../lib/ask-user-question.js';
@@ -136,7 +137,6 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
             ? { directoryReferences: turn.user.directoryReferences }
             : {})}
           {...(turn.user.inlineReferences ? { inlineReferences: turn.user.inlineReferences } : {})}
-          {...(turn.user.hostOrigin ? { hostOrigin: true } : {})}
           {...(openAttachment ? { onOpenAttachment: openAttachment } : {})}
           {...(props.onEditUserMessage
             ? { onEdit: () => props.onEditUserMessage?.(turn.turnId) }
@@ -159,6 +159,7 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
               <ToolGroup
                 key={`work-${entry.id}`}
                 entries={entry.children}
+                notes={entry.notes}
                 // A run is over once anything follows it — the answer's prose,
                 // a steering message, the next run — not only when the turn
                 // ends. An earlier run in a live turn folds to its summary the
@@ -180,6 +181,18 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
           }
           if (entry.kind === 'ask') {
             return <AskUserQuestionRecord key={`ask-${entry.id}`} item={entry.item} />;
+          }
+          if (entry.kind === 'delivery') {
+            // A handover — files, or a message addressed to the reader —
+            // stands in the turn the way prose does: its own block, at the
+            // answer's width, never folded into the run that produced it.
+            // The renderer is the registry's, so the shape of a
+            // `user_file_delivery` is decided in exactly one place.
+            return (
+              <div key={`delivery-${entry.id}`} data-maka-delivery={entry.id}>
+                {renderToolContent(entry.item, props.toolContext)}
+              </div>
+            );
           }
           if (entry.kind === 'user') {
             return (
@@ -203,7 +216,11 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
               className="chat-assistant-response standard-markdown"
               data-maka-contract="markdown"
             >
-              <Renderer noPadding onOpenExternal={props.onOpenExternal}>
+              <Renderer
+                noPadding
+                onOpenExternal={props.onOpenExternal}
+                {...(onOpenFile ? { onOpenFile: (path: string) => onOpenFile(path) } : {})}
+              >
                 {entry.text}
               </Renderer>
               {entry.truncated && (

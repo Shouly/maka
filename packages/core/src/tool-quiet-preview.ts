@@ -30,7 +30,9 @@
  */
 
 import { redactSecrets } from './display-redaction.js';
+import { truncateUtf16Safe } from './text-sanitize.js';
 import { projectToolActivityArgs, readWriteStdinInputPreview } from './tool-activity-args.js';
+import { TOOL_NAMES } from './tool-names.js';
 import type { UiLocale } from './ui-locale.js';
 
 // ── Locale ───────────────────────────────────────────────────────────────
@@ -130,6 +132,7 @@ const LIST_KEYS = [
 ] as const;
 
 const HEADLINE_KEYS = [
+  'file_path',
   'path',
   'file',
   'cmd',
@@ -252,12 +255,13 @@ export function formatToolInvocationLine(
   const command = extractToolCommand(item.args);
   if (command) return redactSecrets(command);
 
-  const path = stringField(args, 'path') ?? stringField(args, 'file');
+  const path =
+    stringField(args, 'file_path') ?? stringField(args, 'path') ?? stringField(args, 'file');
   const pattern = stringField(args, 'pattern');
   const query = stringField(args, 'query');
   const name = item.toolName;
 
-  if (name === 'WriteStdin') {
+  if (name === TOOL_NAMES.taskInput) {
     const parts: string[] = [s.backgroundTerminal];
     const input = readWriteStdinInputPreview(args);
     if (input)
@@ -269,7 +273,7 @@ export function formatToolInvocationLine(
     return parts.join(' · ');
   }
 
-  if (name === 'deep_research_start') {
+  if (name === TOOL_NAMES.deepResearchStart) {
     const objective = stringField(args, 'objective');
     if (objective) {
       const scopeLevel = stringField(args, 'scope_level');
@@ -277,12 +281,12 @@ export function formatToolInvocationLine(
     }
   }
 
-  if (name === 'GoalSet') {
+  if (name === TOOL_NAMES.goalSet) {
     const condition = stringField(args, 'condition');
     if (condition) return redactSecrets(condition);
   }
 
-  if (name === 'AskUserQuestion') {
+  if (name === TOOL_NAMES.askUserQuestion) {
     const questions = Array.isArray(args.questions) ? args.questions : undefined;
     const firstQuestion = questions
       ?.map((question) => stringField(asRecord(question), 'question'))
@@ -338,7 +342,24 @@ const ARGS_PREVIEW_MAX_CHARS = 2048;
 /** Question lists keep only their leading entries. */
 const ARGS_PREVIEW_LIST_MAX_ITEMS = 4;
 
-const COMMIT_RESULT_ONLY_TOOL_NAMES = new Set(['todo_write']);
+const COMMIT_RESULT_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
+  TOOL_NAMES.taskCreate,
+  TOOL_NAMES.taskUpdate,
+]);
+
+/**
+ * How much of a note reaches the live row.
+ *
+ * SendUserMessage is the one tool whose argument IS the thing the person is
+ * meant to read, so withholding it during the live window would hide the only
+ * content the tool exists to deliver — the row would name the call and show
+ * nothing. It is let through, bounded: the whole preview still has to fit
+ * `ARGS_PREVIEW_MAX_CHARS` of JSON and the wire's 8 KiB frame budget, and a
+ * preview over that budget is DROPPED rather than trimmed by the wire guard.
+ * A note longer than this shows its opening live and renders in full the
+ * moment the call settles, which is a second later at most.
+ */
+const USER_MESSAGE_PREVIEW_MAX_CHARS = 1_500;
 
 /**
  * Whitelist of scalar args keys {@link formatToolInvocationLine} can read, in
@@ -349,6 +370,7 @@ const ARGS_PREVIEW_SCALAR_KEYS = [
   'command',
   'cmd',
   'script',
+  'file_path',
   'path',
   'file',
   'pattern',
@@ -367,7 +389,7 @@ const ARGS_PREVIEW_SCALAR_KEYS = [
 
 // This tool's objective is the compact row's durable headline. Keep it
 // explicit rather than widening the generic wire allowlist with a broad key
-// such as `input`: non-WriteStdin tools otherwise retain arbitrary payloads.
+// such as `input`: non-TaskInput tools otherwise retain arbitrary payloads.
 const DEEP_RESEARCH_START_PREVIEW_SCALAR_KEYS = ['objective', 'scope_level'] as const;
 
 const ARGS_PREVIEW_NUMBER_KEYS = ['offset', 'limit'] as const;
@@ -440,21 +462,29 @@ function previewSize(value: unknown): Record<string, unknown> | undefined {
  * authority for full args.
  */
 export function projectToolArgsPreview(
-  toolName: string,
+  name: string,
   args: unknown,
 ): Record<string, unknown> | undefined {
   const record = asRecord(args);
   if (!record) return undefined;
-  // A Todo write's args are only a proposal. Showing them while the call is
+  // A task write's args are only a proposal. Showing them while the call is
   // live would present uncommitted state as fact; the settled tool_result owns
   // the complete committed snapshot.
-  if (COMMIT_RESULT_ONLY_TOOL_NAMES.has(toolName)) return undefined;
+  if (COMMIT_RESULT_ONLY_TOOL_NAMES.has(name)) return undefined;
 
-  // Apply the canonical activity projection first so WriteStdin's inputPreview
+  // A note's argument is the deliverable, not a description of a call.
+  if (name === TOOL_NAMES.sendUserMessage) {
+    const message = record.message;
+    if (typeof message !== 'string') return undefined;
+    const shown = truncateUtf16Safe(redactSecrets(message), USER_MESSAGE_PREVIEW_MAX_CHARS);
+    return shown.trim() ? { message: shown } : undefined;
+  }
+
+  // Apply the canonical activity projection first so TaskInput's inputPreview
   // shape (bounded, display-safe) is what the whitelist picks up.
-  const projected = asRecord(projectToolActivityArgs(toolName, args)) ?? record;
+  const projected = asRecord(projectToolActivityArgs(name, args)) ?? record;
   const scalarKeys =
-    toolName === 'deep_research_start'
+    name === TOOL_NAMES.deepResearchStart
       ? [...ARGS_PREVIEW_SCALAR_KEYS, ...DEEP_RESEARCH_START_PREVIEW_SCALAR_KEYS]
       : ARGS_PREVIEW_SCALAR_KEYS;
 
@@ -468,10 +498,10 @@ export function projectToolArgsPreview(
     const value = numberField(projected, key);
     if (value !== undefined) picked.set(key, value);
   }
-  // Only WriteStdin owns these shapes. Other tools retain arbitrary args, so
+  // Only TaskInput owns these shapes. Other tools retain arbitrary args, so
   // accepting a caller-supplied inputPreview here would reopen a generic free-
   // text payload path around its canonical safe-text projection.
-  if (toolName === 'WriteStdin') {
+  if (name === TOOL_NAMES.taskInput) {
     const inputPreview = previewInputPreview(projected.inputPreview);
     if (inputPreview) picked.set('inputPreview', inputPreview);
     const size = previewSize(projected.size);
@@ -479,7 +509,7 @@ export function projectToolArgsPreview(
   }
   // Only the built-in interaction tool owns this free-text shape. Arbitrary
   // third-party tools may use the same field names for private payloads.
-  if (toolName === 'AskUserQuestion') {
+  if (name === TOOL_NAMES.askUserQuestion) {
     const questions = previewQuestions(projected);
     if (questions) {
       picked.set('questions', questions.items);
@@ -548,7 +578,7 @@ export function formatQuietJsonValue(value: unknown, locale: UiLocale): QuietPre
     return { body: redactSecrets(String(value)) };
   }
 
-  // Known list payloads (Grep/Glob/tool_search/…).
+  // Known list payloads (Grep/Glob/ToolSearch/…).
   for (const key of LIST_KEYS) {
     if (!Array.isArray(record[key])) continue;
     const consumed = new Set<string>([key]);

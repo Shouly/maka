@@ -825,7 +825,7 @@ describe('Runtime Host bootstrap protocol', () => {
       ts: 1,
       toolUseId: 'tool-1',
       type: 'tool_start' as const,
-      toolName: 'maka_computer',
+      toolName: 'Computer',
     };
     assert.doesNotThrow(() =>
       decodeHostFrame({ ...envelope, event: { ...start, activityKind: 'computer' } }),
@@ -2456,7 +2456,7 @@ test('Client Capability tool descriptors preserve only known activity kinds', ()
         tools: [
           {
             serverId: 'desktop_computer_use',
-            name: 'maka_computer',
+            name: 'Computer',
             inputSchema: { type: 'object' },
             activityKind: 'computer',
           },
@@ -2497,7 +2497,7 @@ test('Client Capability tuple schemas accept only boolean or schema additionalIt
         tools: [
           {
             serverId: 'desktop_computer_use',
-            name: 'maka_computer',
+            name: 'Computer',
             inputSchema: {
               type: 'object',
               properties: {

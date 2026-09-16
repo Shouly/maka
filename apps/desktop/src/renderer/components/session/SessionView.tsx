@@ -57,7 +57,11 @@ import {
   useLiveTurnSnapshot,
   useShellLiveTurn,
 } from '../../hooks/use-workspace.js';
-import { openWorkbarFile, openWorkbarTerminal } from '../../hooks/use-workbar.js';
+import {
+  openWorkbarArtifact,
+  openWorkbarFile,
+  openWorkbarTerminal,
+} from '../../hooks/use-workbar.js';
 import { useTurnPresentation, pendingTurnActionKey } from '../../hooks/use-turn-presentation.js';
 import {
   activeSessionStore,
@@ -66,7 +70,9 @@ import {
   revisionActions,
   sessionsStore,
   turnActionsStore,
+  uiStore,
 } from '../../store/index.js';
+import { requestScheduledTaskFocus } from '../../store/scheduled-tasks-store.js';
 import { reviewableProposal } from '../../store/plan-store.js';
 import { revisionRefusalFor } from '../../store/revision-draft.js';
 import { pendingActionsOf } from '../../store/turn-actions-store.js';
@@ -282,7 +288,14 @@ function SessionTranscript(props: SessionViewProps) {
       // session rather than read from the pane, so a row in a child task's
       // transcript cannot open a file in its parent's pane.
       onOpenFile: (path: string | undefined) => openWorkbarFile(sessionId, path),
+      onOpenArtifact: (artifactId: string) => openWorkbarArtifact(sessionId, artifactId),
       onOpenTerminal: (ref: string) => openWorkbarTerminal(sessionId, ref),
+      // Leaves the session for the page that owns the task. The id travels out
+      // of band because the nav selection is persisted (see the store).
+      onOpenScheduledTask: (taskId: string) => {
+        requestScheduledTaskFocus(taskId);
+        uiStore.navigate({ section: 'automations', module: 'scheduled-tasks' });
+      },
     }),
     [sessionId],
   );

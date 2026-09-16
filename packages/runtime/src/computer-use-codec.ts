@@ -544,7 +544,7 @@ export function summarize(
     const detail =
       outcome.messageIsAppTextFree === true && outcome.message ? ` — ${outcome.message}` : '';
     return (
-      `maka_computer.${action.type} failed: ${outcome.error}${detail}${evidence}` +
+      `Computer.${action.type} failed: ${outcome.error}${detail}${evidence}` +
       (typeof outcome.completedSubSteps === 'number'
         ? ` (completed ${outcome.completedSubSteps} sub-steps)`
         : '')
@@ -573,7 +573,7 @@ export function summarize(
   // same clause it can act on, and that stays on both faces.
   const via = audience === 'host' ? ` via ${outcome.tier}` : '';
   return (
-    `maka_computer.${action.type} ${verdict}${via} (verified=${verified})${evidence}${shot}` +
+    `Computer.${action.type} ${verdict}${via} (verified=${verified})${evidence}${shot}` +
     (outcome.verified === false
       ? ' — dispatch could not be confirmed; re-screenshot before retrying'
       : outcome.verified === true && outcome.evidence?.effect === 'confirmed'

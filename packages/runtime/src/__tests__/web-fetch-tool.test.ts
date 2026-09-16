@@ -37,9 +37,13 @@ test('WebFetch forwards the canonical URL to its executor', async () => {
   });
   const abort = new AbortController();
 
-  const result = await tool.impl({ url: 'https://example.com/a/../page' }, context(abort.signal));
+  const result = await tool.impl(
+    { url: 'https://example.com/a/../page', prompt: 'What is on the page?' },
+    context(abort.signal),
+  );
 
-  assert.equal(result, 'page body');
+  assert.match(String(result), /No summarising model is available/u);
+  assert.match(String(result), /page body$/u);
   assert.deepEqual(received, {
     url: 'https://example.com/page',
     sessionId: 'session-1',
@@ -51,26 +55,52 @@ test('WebFetch accepts only an HTTP or HTTPS url argument', () => {
   const tool = buildWebFetchTool({ fetch: async () => 'unused' });
   const parameters = tool.parameters as ZodType;
 
-  assert.deepEqual(parameters.parse({ url: 'https://example.com/page' }), {
+  assert.deepEqual(parameters.parse({ url: 'https://example.com/page', prompt: 'summarise' }), {
     url: 'https://example.com/page',
+    prompt: 'summarise',
   });
-  assert.throws(() => parameters.parse({ url: 'file:///tmp/secret' }));
-  assert.throws(() => parameters.parse({ url: 'https://example.com', maxBytes: 1 }));
+  assert.throws(() => parameters.parse({ url: 'https://example.com/page' }));
+  assert.throws(() => parameters.parse({ url: 'file:///tmp/secret', prompt: 'x' }));
+  assert.throws(() => parameters.parse({ url: 'https://example.com', prompt: 'x', maxBytes: 1 }));
 });
 
 test('WebFetch bounds model output with a head-truncation marker', async () => {
   const tool = buildWebFetchTool({ fetch: async () => `begin:${'x'.repeat(60 * 1024)}:end` });
 
   const result = await tool.impl(
-    { url: 'https://example.com/large' },
+    { url: 'https://example.com/large', prompt: 'summarise' },
     context(new AbortController().signal),
   );
 
   assert.ok(typeof result === 'string');
-  assert.match(result, /^begin:/);
+  assert.match(result, /\n\nbegin:/);
   assert.doesNotMatch(result, /:end$/);
   assert.match(result, /WebFetch content truncated/);
-  assert.ok(Buffer.byteLength(result, 'utf8') <= WEB_FETCH_MODEL_OUTPUT_MAX_BYTES);
+  const content = result.slice(result.indexOf('\n\n') + 2);
+  assert.ok(Buffer.byteLength(content, 'utf8') <= WEB_FETCH_MODEL_OUTPUT_MAX_BYTES);
+});
+
+test('WebFetch answers the prompt with the executor model when one is wired', async () => {
+  let asked: { url: string; prompt: string; content: string } | undefined;
+  const tool = buildWebFetchTool({
+    fetch: async () => 'the page says hello',
+    answer: async (input) => {
+      asked = { url: input.url, prompt: input.prompt, content: input.content };
+      return 'It says hello.';
+    },
+  });
+
+  const result = await tool.impl(
+    { url: 'https://example.com/page', prompt: 'What does it say?' },
+    context(new AbortController().signal),
+  );
+
+  assert.equal(result, 'It says hello.');
+  assert.deepEqual(asked, {
+    url: 'https://example.com/page',
+    prompt: 'What does it say?',
+    content: 'the page says hello',
+  });
 });
 
 test('privacy mode removes WebFetch from a turn', () => {

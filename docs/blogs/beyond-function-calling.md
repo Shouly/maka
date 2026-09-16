@@ -35,7 +35,7 @@ When an agent exposes only elementary tools like `Read`, `Write`, and `Bash`, th
 
 Maka addresses this limitation through Deferred Tools. The mechanism does not alter execution timing; its purpose is to control when complete schemas become visible to the model.
 
-The runtime continuously retains all registered tool bindings for the active run. However, the initial request exposes only high-frequency primitives alongside a compact `tool_search` utility. Extended tools register solely by name and category in a lightweight inventory, omitting full descriptions and parameter schemas.
+The runtime continuously retains all registered tool bindings for the active run. However, the initial request exposes only high-frequency primitives alongside a compact `ToolSearch` utility. Extended tools register solely by name and category in a lightweight inventory, omitting full descriptions and parameter schemas.
 
 ```text
 Bound Tool Registry
@@ -46,7 +46,7 @@ Bound Tool Registry
                 │
                 └──── Lightweight Search Inventory
                            │
-                      tool_search
+                       ToolSearch
                            │
                     Bounded matches
                            │
@@ -55,7 +55,7 @@ Bound Tool Registry
                     injects matched schemas
 ```
 
-The `tool_search` utility performs local lookups across capabilities already registered with the runtime. Maka matches queries against tool names, descriptions, and functional categories, returning a size-bounded candidate set. The payload returned to the model contains only the activated tool identifiers. Full schemas are never dumped directly into the tool result payload; they are injected into the subsequent model turn through standard tool projection.
+The `ToolSearch` utility performs local lookups across capabilities already registered with the runtime. Maka matches queries against tool names, descriptions, and functional categories, returning a size-bounded candidate set. The payload returned to the model contains only the activated tool identifiers. Full schemas are never dumped directly into the tool result payload; they are injected into the subsequent model turn through standard tool projection.
 
 In Maka, tool state is organized into three distinct tiers:
 
@@ -68,15 +68,15 @@ Capability discovery does not introduce unregistered implementations or exceed t
 Step boundaries enforce strict temporal separation. Once a provider step is dispatched, its schema set is immutable. If a model generates the following sequence within a single completion:
 
 ```text
-tool_search("browser click")
-browser_click(...)
+ToolSearch("browser click")
+BrowserClick(...)
 ```
 
-Maka rejects the second call. Results from `tool_search` apply only to subsequent provider interactions; they cannot retroactively amend schemas already committed to the provider. The complete definition of `browser_click` enters context in the next step, allowing the model to construct arguments against a validated interface.
+Maka rejects the second call. Results from `ToolSearch` apply only to subsequent provider interactions; they cannot retroactively amend schemas already committed to the provider. The complete definition of `BrowserClick` enters context in the next step, allowing the model to construct arguments against a validated interface.
 
 Deferred activation is strictly scoped to the active turn. Discovered tools accumulate monotonically across retries within the turn, and release upon completion. Subsequent user turns reset to the baseline tool set, preventing intermittent tool usage from permanently burdening long-term inference context.
 
-Visibility does not equate to authorization. A visible schema still requires parameter validation, concurrency checks, and permission gates upon invocation. The `tool_search` mechanism regulates cognitive surface area; system safety remains the sole responsibility of runtime enforcement.
+Visibility does not equate to authorization. A visible schema still requires parameter validation, concurrency checks, and permission gates upon invocation. The `ToolSearch` mechanism regulates cognitive surface area; system safety remains the sole responsibility of runtime enforcement.
 
 Deferred Tools constrain the action space presented to the model. The runtime preserves comprehensive capabilities while exposing only task-relevant subsets per step.
 

@@ -121,7 +121,12 @@ describe('Runtime Interaction authority seam', () => {
           questions: [
             {
               question: 'Continue?',
-              options: [{ label: 'Yes' }, { label: 'No' }],
+              header: 'Continue',
+              multiSelect: false,
+              options: [
+                { label: 'Yes', description: 'Keep going' },
+                { label: 'No', description: 'Stop here' },
+              ],
             },
           ],
         },
@@ -165,7 +170,12 @@ describe('Runtime Interaction authority seam', () => {
         questions: [
           {
             question: 'Continue?',
-            options: [{ label: 'Yes' }, { label: 'No' }],
+            header: 'Continue',
+            multiSelect: false,
+            options: [
+              { label: 'Yes', description: 'Keep going' },
+              { label: 'No', description: 'Stop here' },
+            ],
           },
         ],
       },
@@ -198,7 +208,7 @@ describe('Runtime Interaction authority seam', () => {
     assert.equal(runtime.pendingUserQuestionCount(), 1);
     await question!.applyAnswer({ answers: ['Yes'] });
     assert.deepEqual(await pending, {
-      answers: [{ question: 'Continue?', answer: 'Yes' }],
+      answers: [{ question: 'Continue?', answer: 'Yes', selected: ['Yes'] }],
     });
 
     runtime.endTurn();
@@ -379,7 +389,12 @@ describe('Runtime Interaction authority seam', () => {
         questions: [
           {
             question: 'First?',
-            options: [{ label: 'Yes' }, { label: 'No' }],
+            header: 'First',
+            multiSelect: false,
+            options: [
+              { label: 'Yes', description: 'Keep going' },
+              { label: 'No', description: 'Stop here' },
+            ],
           },
         ],
       },
@@ -390,7 +405,12 @@ describe('Runtime Interaction authority seam', () => {
         questions: [
           {
             question: 'Second?',
-            options: [{ label: 'Yes' }, { label: 'No' }],
+            header: 'Second',
+            multiSelect: false,
+            options: [
+              { label: 'Yes', description: 'Keep going' },
+              { label: 'No', description: 'Stop here' },
+            ],
           },
         ],
       },
@@ -486,7 +506,12 @@ describe('Runtime Interaction authority seam', () => {
         questions: [
           {
             question: 'Continue?',
-            options: [{ label: 'Yes' }, { label: 'No' }],
+            header: 'Continue',
+            multiSelect: false,
+            options: [
+              { label: 'Yes', description: 'Keep going' },
+              { label: 'No', description: 'Stop here' },
+            ],
           },
         ],
       },
@@ -535,7 +560,12 @@ describe('Runtime Interaction authority seam', () => {
           questions: [
             {
               question: 'Continue?',
-              options: [{ label: 'Yes' }, { label: 'No' }],
+              header: 'Continue',
+              multiSelect: false,
+              options: [
+                { label: 'Yes', description: 'Keep going' },
+                { label: 'No', description: 'Stop here' },
+              ],
             },
           ],
         },

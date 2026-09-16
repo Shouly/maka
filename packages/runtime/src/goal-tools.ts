@@ -25,6 +25,7 @@
  * canonical registered tool identities.
  */
 
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import { z } from 'zod';
 import type { MakaTool } from './tool-runtime.js';
 import {
@@ -39,11 +40,11 @@ import {
 } from './goal-state.js';
 import type { GoalContinuationCoordinator, GoalControlDecline } from './goal-continuation.js';
 
-export const GOAL_SET_TOOL_NAME = 'GoalSet';
-export const GOAL_CLEAR_TOOL_NAME = 'GoalClear';
-export const GOAL_STATUS_TOOL_NAME = 'GoalStatus';
-export const GOAL_PAUSE_TOOL_NAME = 'GoalPause';
-export const GOAL_RESUME_TOOL_NAME = 'GoalResume';
+export const GOAL_SET_TOOL_NAME = TOOL_NAMES.goalSet;
+export const GOAL_CLEAR_TOOL_NAME = TOOL_NAMES.goalClear;
+export const GOAL_STATUS_TOOL_NAME = TOOL_NAMES.goalStatus;
+export const GOAL_PAUSE_TOOL_NAME = TOOL_NAMES.goalPause;
+export const GOAL_RESUME_TOOL_NAME = TOOL_NAMES.goalResume;
 
 /**
  * What a declined Goal mutation tells the model to do next.
@@ -178,11 +179,14 @@ function buildGoalSetTool(deps: GoalToolsDeps): MakaTool<
   return {
     name: GOAL_SET_TOOL_NAME,
     displayName: 'Goal Set',
-    description:
-      'Set an autonomous execution goal. After each turn an evaluator judges progress; ' +
-      'if the condition is not met the system continues working turn after turn until it is ' +
-      'met, deemed impossible, stalls, or hits a limit. Only one goal is active per session; ' +
-      'an unfinished goal must be cleared or completed before another can be set.',
+    description: [
+      'Arm an autonomous goal for this session. After every turn an evaluator judges whether the condition holds; while it does not, the system starts another turn by itself, until the goal is met, judged impossible, stalls, or hits its iteration, block or token cap.',
+      '',
+      '- condition must be observable and checkable ("all tests in packages/runtime pass"), not an aspiration.',
+      '- One goal per session: setting a new one while another is unfinished fails; GoalClear it first.',
+      '- Turns run under the goal may have nobody watching: state assumptions in your work and keep the todo list current.',
+      '- Returns the armed goal and its caps.',
+    ].join('\n'),
     parameters: z.object({
       condition: z
         .string()
@@ -263,7 +267,8 @@ function buildGoalClearTool(deps: GoalToolsDeps): MakaTool<Record<string, never>
   return {
     name: GOAL_CLEAR_TOOL_NAME,
     displayName: 'Goal Clear',
-    description: 'Clear the active goal, stopping autonomous execution after the current turn.',
+    description:
+      'End the active goal. Autonomous continuation stops after the current turn and the goal record closes; a session with no active goal answers that nothing was cleared.',
     parameters: z.object({}),
     impl: async (_input, ctx) => {
       if (deps.isAvailable?.() === false) return GOAL_AUTHORITY_GONE;
@@ -290,7 +295,7 @@ function buildGoalPauseTool(deps: GoalToolsDeps): MakaTool<Record<string, never>
     name: GOAL_PAUSE_TOOL_NAME,
     displayName: 'Goal Pause',
     description:
-      'Pause the active goal. Autonomous continuation stops until GoalResume is called; state is preserved.',
+      'Pause the active goal without ending it: no new autonomous turn starts until GoalResume, and the goal keeps its progress and caps. Only an active or waiting goal can be paused.',
     parameters: z.object({}),
     impl: async (_input, ctx) => {
       if (deps.isAvailable?.() === false) return GOAL_AUTHORITY_GONE;
@@ -316,7 +321,8 @@ function buildGoalResumeTool(deps: GoalToolsDeps): MakaTool<Record<string, never
   return {
     name: GOAL_RESUME_TOOL_NAME,
     displayName: 'Goal Resume',
-    description: 'Resume a paused goal, re-enabling autonomous continuation.',
+    description:
+      'Resume a paused goal so autonomous turns continue from where they stopped. Only a paused goal can be resumed.',
     parameters: z.object({}),
     impl: async (_input, ctx) => {
       if (deps.isAvailable?.() === false) return GOAL_AUTHORITY_GONE;
@@ -341,7 +347,8 @@ function buildGoalStatusTool(deps: GoalToolsDeps): MakaTool<Record<string, never
   return {
     name: GOAL_STATUS_TOOL_NAME,
     displayName: 'Goal Status',
-    description: 'Check the current goal status for this session.',
+    description:
+      "Read this session's goal: its condition, status, iteration and token spend against the caps, and the last evaluation. Answers that no goal is set when there is none.",
     parameters: z.object({}),
     impl: async (_input, ctx) => {
       await deps.flush?.(ctx.sessionId);

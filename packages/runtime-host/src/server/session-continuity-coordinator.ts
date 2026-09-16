@@ -21,6 +21,7 @@ import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { SessionEvent, ShellRunUpdate } from '@maka/core/events';
 import { projectToolArgsPreview } from '@maka/core/tool-quiet-preview';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import {
   decodeRuntimeResourceRef,
   encodeProtocolMessage,
@@ -2248,7 +2249,8 @@ function boundedUtf8(value: string, maxBytes: number): string {
 function toolStartShellRunRef(
   event: Extract<RuntimeSessionForwardedEvent, { type: 'tool_start' }>,
 ): string | undefined {
-  if (event.toolName !== 'Read' && event.toolName !== 'StopBackgroundTask') return undefined;
+  if (event.toolName !== TOOL_NAMES.read && event.toolName !== TOOL_NAMES.taskStop)
+    return undefined;
   const ref =
     event.args !== null && typeof event.args === 'object'
       ? (event.args as { ref?: unknown }).ref

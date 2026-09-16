@@ -115,7 +115,7 @@ test('tool search refreshes the catalog for the next code cell', async () => {
       catalogs.push(JSON.stringify(tools));
       const code =
         step++ === 0
-          ? 'return await tools.tool_search({ query: "lookup" })'
+          ? 'return await tools.ToolSearch({ query: "lookup" })'
           : 'return await tools.lookup({ id: "discovered" })';
       return {
         stream: convertArrayToReadableStream<LanguageModelV4StreamPart>([
@@ -157,7 +157,7 @@ test('tool search refreshes the catalog for the next code cell', async () => {
     if (mapped.partial !== true && mapped.content?.kind !== 'error') ledger.push(mapped);
   }
   assert.deepEqual(calls, [{ id: 'discovered' }], JSON.stringify(events));
-  assert.match(catalogs[0]!, /tool_search/);
+  assert.match(catalogs[0]!, /ToolSearch/);
   assert.match(catalogs[1]!, /Look up a node/);
 });
 
@@ -165,7 +165,7 @@ test('a nested question can be answered and a parked question can be stopped', a
   for (const stop of [false, true]) {
     const instance = backend(
       execThenStopModel(
-        'return await tools.AskUserQuestion({ questions: [{ question: "Continue?", options: [{ label: "Yes" }, { label: "No" }] }] })',
+        'return await tools.AskUserQuestion({ questions: [{ question: "Continue?", header: "Continue", multiSelect: false, options: [{ label: "Yes", description: "Keep going" }, { label: "No", description: "Stop here" }] }] })',
       ),
       [],
       undefined,

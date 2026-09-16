@@ -108,7 +108,7 @@ import type {
 } from '@maka/core/daily-review';
 import type { WebSearchProvider, WebSearchResponse } from '@maka/core/web-search';
 import type { BrowserState, BrowserViewRect } from '@maka/core/browser';
-import type { SessionTodoItem } from '@maka/core/session-todo';
+import type { SessionTask } from '@maka/core/session-task';
 import type { DeepResearchChangedEvent, DeepResearchClientProgress } from '@maka/core/deep-research-run';
 import type {
   DesktopTranscriptBatch,
@@ -229,7 +229,8 @@ export type AppIconImportResult =
     };
 
 export type { DesktopSessionSummary } from '../shared/desktop-session-projection.js';
-export type { WorkBoardChangedEvent, WorkBoardIpcResult } from '../shared/work-board-ipc.js';
+import type { WorkBoardChangedEvent, WorkBoardIpcResult } from '../shared/work-board-ipc.js';
+export type { WorkBoardChangedEvent, WorkBoardIpcResult };
 import type { PlanControlIpcResult } from '../shared/plan-mode-ipc.js';
 import type { DesktopConnectionSnapshot } from '../shared/desktop-connection-snapshot.js';
 import type { DesktopExternalSessionCatalogItem } from './external-session-catalog.js';
@@ -1030,8 +1031,8 @@ export interface MakaBridge {
     subscribeChanges(handler: (event: WorkBoardChangedEvent) => void): () => void;
   };
 
-  todo: {
-    read(sessionId: string): Promise<SessionTodoItem[]>;
+  sessionTask: {
+    read(sessionId: string): Promise<SessionTask[]>;
     subscribeChanges(handler: (event: { sessionId: string; at: number }) => void): () => void;
   };
   deepResearch: {
@@ -1378,7 +1379,16 @@ export interface MakaBridge {
       host?: DesktopRuntimeHostRef,
     ): Promise<{ ok: true; project: ProjectRecord } | { ok: false; reason: 'cancelled' }>;
     /** Open a catalogued project's folder in the OS file manager. */
-    reveal(projectId: string, host?: DesktopRuntimeHostRef): Promise<OpenPathResult>;
+    reveal(
+      projectId: string,
+      host?: DesktopRuntimeHostRef,
+    ): Promise<
+      | { ok: true; opened: string }
+      | {
+          ok: false;
+          reason: 'unknown-key' | 'not-allowed' | 'missing' | 'not-a-directory' | 'open-failed';
+        }
+    >;
     rename(projectId: string, name: string, host?: DesktopRuntimeHostRef): Promise<ProjectRecord>;
     archive(projectId: string, host?: DesktopRuntimeHostRef): Promise<ProjectRecord>;
     restore(projectId: string, host?: DesktopRuntimeHostRef): Promise<ProjectRecord>;
@@ -1695,7 +1705,12 @@ export interface MakaBridge {
     subscribeChanges(
       handler: (event: { type: 'scheduled_tasks_changed'; reason: string; taskId?: string; ts: number }) => void,
     ): () => void;
-    subscribeDue(handler: (task: Pick<ScheduledTask, 'id' | 'title'>) => void): () => void;
+    /**
+     * The whole task, not a summary: every firing now opens or wakes a Session,
+     * and the renderer reads `runs[0].sessionId` off this to land the reader on
+     * the run that just started rather than on the list.
+     */
+    subscribeDue(handler: (task: ScheduledTask) => void): () => void;
   };
   inspector: {
     /** Read-only per-session causal trace (#1625). */

@@ -51,6 +51,9 @@ import type { RuntimeEvent } from '@maka/core/runtime-event';
 import type { SandboxBoundaryResponse } from '@maka/core/sandbox-boundary';
 import type { UserQuestionResponse } from '@maka/core/user-question';
 import { DEFAULT_TOOL_MODE, isToolMode, type ToolMode } from '@maka/core/tool-mode';
+import { TOOL_NAMES } from '@maka/core/tool-names';
+import { executionBoundaryDisplayMode } from '@maka/core/sandbox-boundary';
+import { hostTimeZone } from './system-prompt/environment-prompt.js';
 import {
   resolveEffectiveOrchestration,
   type EffectiveOrchestration,
@@ -433,7 +436,7 @@ function projectToolModePlan(
     description: [
       execTool.description,
       'This is the only callable tool. Call the following tools from inside exec.',
-      'After tool_search, return its result and use the refreshed catalog in the next exec call.',
+      `After ${TOOL_NAMES.toolSearch}, return its result and use the refreshed catalog in the next exec call.`,
       JSON.stringify(catalog),
     ].join('\n'),
   };
@@ -675,6 +678,50 @@ export class AiSdkTurn {
   async close(): Promise<void> {
     this.deps.modelAdapter.endContinuation(this.turnId);
     await this.toolRuntime.endTurn(this.aborted ? 'aborted' : 'completed');
+  }
+
+  /**
+   * The facts that change between turns — date, serving model, permission mode
+   * and sandbox boundary — rendered once per model step. Readers a test
+   * backend does not provide are simply omitted from the block.
+   */
+  private async renderTurnReminder(): Promise<string | undefined> {
+    const backend = this.deps.backend as Partial<
+      Pick<
+        AiSdkBackendInput,
+        'readExecutionBoundary' | 'readPermissionMode' | 'header' | 'modelId' | 'renderTurnReminder'
+      >
+    >;
+    const render = backend.renderTurnReminder;
+    if (!render) return undefined;
+    let boundary:
+      | Awaited<ReturnType<NonNullable<AiSdkBackendInput['readExecutionBoundary']>>>
+      | undefined;
+    try {
+      boundary = await backend.readExecutionBoundary?.();
+    } catch {
+      boundary = undefined;
+    }
+    let permissionMode = boundary ? executionBoundaryDisplayMode(boundary) : undefined;
+    if (!permissionMode) {
+      try {
+        permissionMode = await backend.readPermissionMode?.();
+      } catch {
+        permissionMode = undefined;
+      }
+    }
+    const now = new Date(this.deps.now());
+    const timeZone = hostTimeZone();
+    return render({
+      now,
+      ...(timeZone ? { timeZone } : {}),
+      ...(backend.modelId ? { modelId: backend.modelId } : {}),
+      ...(permissionMode ? { permissionMode } : {}),
+      ...(backend.header?.collaborationMode
+        ? { collaborationMode: backend.header.collaborationMode }
+        : {}),
+      ...(boundary ? { executionBoundary: boundary } : {}),
+    });
   }
 
   requestStop(reason: 'user_stop' | 'redirect', mode: 'immediate' | 'after_step'): void {
@@ -1089,20 +1136,20 @@ export class AiSdkTurn {
     const requiredOrchestrationTools =
       this.orchestration.mode === 'swarm'
         ? new Set([
-            'agent_list',
-            'update_agent_graph',
-            'yield_agent_graph',
-            'agent_swarm_status',
-            'agent_output',
+            TOOL_NAMES.listAgents,
+            TOOL_NAMES.updateAgentGraph,
+            TOOL_NAMES.yieldAgentGraph,
+            TOOL_NAMES.swarmStatus,
+            TOOL_NAMES.agentOutput,
           ])
         : this.orchestration.mode === 'graph'
           ? new Set([
-              'agent_list',
-              'view_agent_graph',
-              'update_agent_graph',
-              'yield_agent_graph',
-              'agent_swarm_status',
-              'agent_output',
+              TOOL_NAMES.listAgents,
+              TOOL_NAMES.viewAgentGraph,
+              TOOL_NAMES.updateAgentGraph,
+              TOOL_NAMES.yieldAgentGraph,
+              TOOL_NAMES.swarmStatus,
+              TOOL_NAMES.agentOutput,
             ])
           : new Set<string>();
     const requestedToolMode: unknown =
@@ -1510,9 +1557,16 @@ export class AiSdkTurn {
                 ? []
                 : boundaryAwareToolNames(active ?? plan.currentRepairToolNames()),
           });
-          const dynamicContextMessages: ModelMessage[] = (resolvedSystemPrompt.contexts ?? []).map(
-            ({ text }) => ({ role: 'user', content: text }),
-          );
+          // Turn-specific facts ride with the turn as a trailing user-role
+          // context, never in the system prompt, so the provider prefix stays
+          // stable across turns (see system-prompt/turn-reminder.ts).
+          const turnReminder = await this.renderTurnReminder();
+          const dynamicContextMessages: ModelMessage[] = [
+            ...(resolvedSystemPrompt.contexts ?? []).map(
+              ({ text }): ModelMessage => ({ role: 'user', content: text }),
+            ),
+            ...(turnReminder ? [{ role: 'user' as const, content: turnReminder }] : []),
+          ];
           const contextualRequestMessages =
             dynamicContextMessages.length === 0
               ? requestMessages

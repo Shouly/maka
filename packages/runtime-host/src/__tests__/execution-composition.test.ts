@@ -129,7 +129,7 @@ test('idle schedules and armed or paused Goals allow production handoff and reco
         title: 'Future reminder',
         intentBody: 'Remind me tomorrow',
         schedule: { kind: 'once', runAt: Date.now() + 86_400_000 },
-        effect: { kind: 'notify', channel: 'local' },
+        effect: { kind: 'session_resume', sessionId: 'session-1' },
         createdBy: { kind: 'user' },
       },
       Date.now(),

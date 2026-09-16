@@ -36,6 +36,7 @@ import {
   type RuntimeInteractionRunIdentity,
   type RuntimeFormContinuation,
   type RuntimeSandboxBoundaryContinuation,
+  type RuntimeUserQuestionAnswer,
   type RuntimeUserQuestionContinuation,
 } from '@maka/runtime/interaction-authority';
 import {
@@ -289,7 +290,7 @@ describe('HostInteractionCoordinator', () => {
           providerId: 'provider-1',
           contractId: 'contract-1',
           serverId: 'desktop_browser',
-          toolName: 'browser_snapshot',
+          toolName: 'BrowserSnapshot',
           capability: 'browser',
           scope: { kind: 'browser_origin', origin: 'https://example.com' },
         },
@@ -1012,6 +1013,7 @@ function questionEvent(requestId: string, ts: number): UserQuestionRequestEvent 
     questions: [
       {
         question: 'Continue?',
+        header: 'Continue',
         options: [{ label: 'Yes' }, { label: 'No' }],
       },
     ],
@@ -1074,7 +1076,7 @@ function formContinuation(
 function questionContinuation(
   requestId: string,
   callbacks: {
-    answer?: (answers: readonly (string | null)[]) => unknown;
+    answer?: (answers: RuntimeUserQuestionAnswer['answers']) => unknown;
     closure?: (reason: Parameters<RuntimeUserQuestionContinuation['applyClosure']>[0]) => unknown;
   } = {},
 ): RuntimeUserQuestionContinuation {
@@ -1143,6 +1145,7 @@ function storedQuestion(
       questions: [
         {
           question: 'Continue?',
+          header: 'Continue',
           options: [{ label: 'Yes' }, { label: 'No' }],
         },
       ],

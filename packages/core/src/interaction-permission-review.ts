@@ -37,6 +37,7 @@ import {
 import { defineObjectShape, hasExactShape, type ExactObjectShape } from './record-schema.js';
 import { redactSecrets } from './redaction.js';
 import { projectWriteStdinPermissionSummary } from './tool-activity-args.js';
+import { TOOL_NAMES, type ToolName } from './tool-names.js';
 
 export const INTERACTION_TOOL_NAME_MAX_BYTES = 256;
 export const INTERACTION_PERMISSION_COMMAND_MAX_BYTES = 8 * 1024;
@@ -505,13 +506,13 @@ function decodeSandboxPrompt(record: Record<string, unknown>): InteractionSandbo
 }
 
 function projectToolReview(
-  toolName: string,
+  name: string,
   category: ToolCategory,
   args: unknown,
 ): InteractionToolPermissionReview {
   const record = projectionRecord(args);
-  switch (toolName) {
-    case 'Bash': {
+  switch (name) {
+    case TOOL_NAMES.bash: {
       const command = projectionString(record.command, INTERACTION_PERMISSION_COMMAND_MAX_BYTES);
       const cwd = optionalProjectionString(record, 'cwd', INTERACTION_PERMISSION_PATH_MAX_BYTES);
       if (category !== categorizeBash(command))
@@ -522,26 +523,26 @@ function projectToolReview(
         ...(cwd === undefined ? {} : { cwd: safeText(cwd, INTERACTION_PERMISSION_PATH_MAX_BYTES) }),
       };
     }
-    case 'Read':
-    case 'Write':
-    case 'Edit': {
+    case TOOL_NAMES.read:
+    case TOOL_NAMES.write:
+    case TOOL_NAMES.edit: {
       const path = projectionStringFrom(
         record,
-        'path',
         'file_path',
+        'path',
         INTERACTION_PERMISSION_PATH_MAX_BYTES,
       );
       return {
         kind: 'path',
-        operation: toolName === 'Read' ? 'read' : toolName === 'Write' ? 'write' : 'edit',
+        operation: name === TOOL_NAMES.read ? 'read' : name === TOOL_NAMES.write ? 'write' : 'edit',
         path: safeText(path, INTERACTION_PERMISSION_PATH_MAX_BYTES),
       };
     }
-    case 'Glob':
+    case TOOL_NAMES.glob:
       return projectSearch(record, 'glob');
-    case 'Grep':
+    case TOOL_NAMES.grep:
       return projectSearch(record, 'grep');
-    case 'WebFetch':
+    case TOOL_NAMES.webFetch:
       return {
         kind: 'web',
         targetKind: 'url',
@@ -550,7 +551,7 @@ function projectToolReview(
           INTERACTION_PERMISSION_TEXT_MAX_BYTES,
         ),
       };
-    case 'WebSearch':
+    case TOOL_NAMES.webSearch:
       return {
         kind: 'web',
         targetKind: 'query',
@@ -559,15 +560,15 @@ function projectToolReview(
           INTERACTION_PERMISSION_TEXT_MAX_BYTES,
         ),
       };
-    case 'WriteStdin':
+    case TOOL_NAMES.taskInput:
       return projectStdin(args);
-    case 'browser_navigate':
-    case 'browser_snapshot':
-    case 'browser_click':
-    case 'browser_type':
-    case 'browser_wait':
-    case 'browser_extract':
-      return projectBrowser(toolName, record);
+    case TOOL_NAMES.browserNavigate:
+    case TOOL_NAMES.browserSnapshot:
+    case TOOL_NAMES.browserClick:
+    case TOOL_NAMES.browserType:
+    case TOOL_NAMES.browserWait:
+    case TOOL_NAMES.browserExtract:
+      return projectBrowser(name, record);
     default:
       if (category === 'computer_use') return projectComputerUse(record);
       return projectGenericToolReview(record);
@@ -599,16 +600,16 @@ function projectGenericToolReview(record: Record<string, unknown>): InteractionG
 
 function projectBrowser(
   toolName:
-    | 'browser_navigate'
-    | 'browser_snapshot'
-    | 'browser_click'
-    | 'browser_type'
-    | 'browser_wait'
-    | 'browser_extract',
+    | typeof TOOL_NAMES.browserNavigate
+    | typeof TOOL_NAMES.browserSnapshot
+    | typeof TOOL_NAMES.browserClick
+    | typeof TOOL_NAMES.browserType
+    | typeof TOOL_NAMES.browserWait
+    | typeof TOOL_NAMES.browserExtract,
   record: Record<string, unknown>,
 ): InteractionBrowserReview {
   switch (toolName) {
-    case 'browser_navigate':
+    case TOOL_NAMES.browserNavigate:
       return {
         kind: 'browser',
         action: 'navigate',
@@ -617,9 +618,9 @@ function projectBrowser(
           INTERACTION_PERMISSION_TEXT_MAX_BYTES,
         ),
       };
-    case 'browser_snapshot':
+    case TOOL_NAMES.browserSnapshot:
       return { kind: 'browser', action: 'snapshot' };
-    case 'browser_click':
+    case TOOL_NAMES.browserClick:
       return {
         kind: 'browser',
         action: 'click',
@@ -628,7 +629,7 @@ function projectBrowser(
           INTERACTION_PERMISSION_PATH_MAX_BYTES,
         ),
       };
-    case 'browser_type': {
+    case TOOL_NAMES.browserType: {
       const submit = optionalProjectionBoolean(record, 'submit') ?? false;
       return {
         kind: 'browser',
@@ -641,9 +642,9 @@ function projectBrowser(
         submit,
       };
     }
-    case 'browser_wait':
+    case TOOL_NAMES.browserWait:
       return projectBrowserWait(record);
-    case 'browser_extract': {
+    case TOOL_NAMES.browserExtract: {
       const selector = optionalProjectionText(
         record,
         'selector',
@@ -1082,7 +1083,7 @@ function decodeSandboxRisk(value: unknown): SandboxEscalationRiskSummary {
 }
 
 function assertToolSemantics(
-  toolName: string,
+  name: string,
   category: ToolCategory,
   reason: InteractionPermissionReason,
   review: InteractionToolPermissionReview,
@@ -1092,45 +1093,46 @@ function assertToolSemantics(
     throw new Error('Permission category does not match reason');
   const identity: Record<string, readonly [ToolCategory, InteractionToolPermissionReview['kind']]> =
     {
-      Read: ['read', 'path'],
-      Write: ['file_write', 'path'],
-      Edit: ['file_write', 'path'],
-      Glob: ['read', 'search'],
-      Grep: ['read', 'search'],
-      WebFetch: ['web_read', 'web'],
-      WebSearch: ['web_read', 'web'],
-      WriteStdin: ['shell_unsafe', 'stdin'],
-      browser_navigate: ['browser', 'browser'],
-      browser_snapshot: ['browser', 'browser'],
-      browser_click: ['browser', 'browser'],
-      browser_type: ['browser', 'browser'],
-      browser_wait: ['browser', 'browser'],
-      browser_extract: ['browser', 'browser'],
+      [TOOL_NAMES.read]: ['read', 'path'],
+      [TOOL_NAMES.write]: ['file_write', 'path'],
+      [TOOL_NAMES.edit]: ['file_write', 'path'],
+      [TOOL_NAMES.glob]: ['read', 'search'],
+      [TOOL_NAMES.grep]: ['read', 'search'],
+      [TOOL_NAMES.webFetch]: ['web_read', 'web'],
+      [TOOL_NAMES.webSearch]: ['web_read', 'web'],
+      [TOOL_NAMES.taskInput]: ['shell_unsafe', 'stdin'],
+      [TOOL_NAMES.browserNavigate]: ['browser', 'browser'],
+      [TOOL_NAMES.browserSnapshot]: ['browser', 'browser'],
+      [TOOL_NAMES.browserClick]: ['browser', 'browser'],
+      [TOOL_NAMES.browserType]: ['browser', 'browser'],
+      [TOOL_NAMES.browserWait]: ['browser', 'browser'],
+      [TOOL_NAMES.browserExtract]: ['browser', 'browser'],
     };
   const expected =
-    toolName === 'Bash'
+    name === TOOL_NAMES.bash
       ? ([category, 'command'] as const)
-      : (identity[toolName] ??
+      : (identity[name] ??
         (category === 'computer_use'
           ? ([category, 'computer_use'] as const)
           : ([category, 'tool'] as const)));
   if (category !== expected[0] || review.kind !== expected[1])
     throw new Error('Permission review does not match tool identity');
   if (review.kind === 'browser') {
-    const actionByTool = {
-      browser_navigate: 'navigate',
-      browser_snapshot: 'snapshot',
-      browser_click: 'click',
-      browser_type: 'type',
-      browser_wait: 'wait',
-      browser_extract: 'extract',
-    } as const;
-    if (actionByTool[toolName as keyof typeof actionByTool] !== review.action)
+    const actionByTool: Partial<Record<ToolName, InteractionBrowserReview['action']>> = {
+      [TOOL_NAMES.browserNavigate]: 'navigate',
+      [TOOL_NAMES.browserSnapshot]: 'snapshot',
+      [TOOL_NAMES.browserClick]: 'click',
+      [TOOL_NAMES.browserType]: 'type',
+      [TOOL_NAMES.browserWait]: 'wait',
+      [TOOL_NAMES.browserExtract]: 'extract',
+    };
+    if (actionByTool[name as ToolName] !== review.action)
       throw new Error('Browser review does not match tool identity');
   }
-  if (toolName === 'WriteStdin' && remember) throw new Error('WriteStdin cannot be remembered');
+  if (name === TOOL_NAMES.taskInput && remember)
+    throw new Error(`${TOOL_NAMES.taskInput} cannot be remembered`);
   if (
-    toolName === 'Bash' &&
+    name === TOOL_NAMES.bash &&
     review.kind === 'command' &&
     category !== categorizeBash(review.command)
   )

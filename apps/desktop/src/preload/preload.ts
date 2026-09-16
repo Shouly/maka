@@ -196,7 +196,7 @@ import type {
 import type { WebSearchProvider, WebSearchResponse } from '@maka/core/web-search';
 import type { BrowserState, BrowserViewRect } from '@maka/core/browser';
 import { createBrowserSelectionCoordinator } from './browser-selection.js';
-import type { SessionTodoItem } from '@maka/core/session-todo';
+import type { SessionTask } from '@maka/core/session-task';
 import type { DeepResearchChangedEvent, DeepResearchClientProgress } from '@maka/core/deep-research-run';
 import {
   isWebSearchProvider,
@@ -1954,12 +1954,12 @@ const makaBridge = {
       return () => ipcRenderer.off('workBoard:changed', listener);
     },
   },
-  todo: {
-    read(sessionId: string): Promise<SessionTodoItem[]> {
-      return invokeProjectedSessionRuntimeHost('todo:read', sessionId);
+  sessionTask: {
+    read(sessionId: string): Promise<SessionTask[]> {
+      return invokeProjectedSessionRuntimeHost('session-task:read', sessionId);
     },
     subscribeChanges(handler: (event: { sessionId: string; at: number }) => void): () => void {
-      return subscribeEveryRuntimeHostEvent('todo:changed', (scope, event: { sessionId: string; at: number }) =>
+      return subscribeEveryRuntimeHostEvent('session-task:changed', (scope, event: { sessionId: string; at: number }) =>
         handler({
           ...event,
           sessionId: recordRuntimeHostSessionScope(scope, event.sessionId),
@@ -3367,10 +3367,10 @@ const makaBridge = {
     subscribeChanges(handler: (event: { type: 'scheduled_tasks_changed'; reason: string; taskId?: string; ts: number }) => void): () => void {
       return subscribeActiveRuntimeHostEvent('scheduled-tasks:changed', handler);
     },
-    subscribeDue(handler: (task: Pick<ScheduledTask, 'id' | 'title'>) => void): () => void {
+    subscribeDue(handler: (task: ScheduledTask) => void): () => void {
       return subscribeEveryRuntimeHostEvent(
         'scheduled-tasks:fired',
-        (_scope, task: Pick<ScheduledTask, 'id' | 'title'>) => handler(task),
+        (_scope, task: ScheduledTask) => handler(task),
       );
     },
   },

@@ -616,7 +616,7 @@ describe("live tool status over persisted", () => {
         id: "computer-1",
         turnId: "t1",
         ts: 3,
-        toolName: "maka_computer",
+        toolName: "Computer",
         args: { action: "click_element", element_id: "615" },
       },
       {
@@ -635,7 +635,7 @@ describe("live tool status over persisted", () => {
       id: "start-1",
       turnId: "t1",
       toolUseId: "computer-1",
-      toolName: "maka_computer",
+      toolName: "Computer",
       args: undefined,
       ts: 5,
     });
