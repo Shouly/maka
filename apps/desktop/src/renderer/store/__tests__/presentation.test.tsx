@@ -629,6 +629,37 @@ test('the status line shows the mark and the activity, and holds its label acros
   );
 });
 
+test('a turn that goes quiet says it is still working, and leaves the activity underneath', () => {
+  const base = transcriptFixture();
+  const thinking: TurnViewModel = {
+    ...base,
+    timeline: [{ kind: 'thinking', text: 't', messageId: 'm', live: true }],
+  };
+  const renderStatus = (streamUnsteady: boolean) =>
+    renderTree(
+      createElement(TurnRunningStatus, {
+        turnId: base.turnId,
+        startedAt: NOW,
+        turn: thinking,
+        streamUnsteady,
+      }),
+    ).querySelector('[data-maka-contract="turn-running-status"]');
+
+  const unsteady = renderStatus(true);
+  assert.equal(
+    unsteady?.getAttribute('aria-label'),
+    'Still working — taking longer than usual…',
+    'it reassures rather than diagnoses: a long tool call is silent too',
+  );
+  assert.equal(unsteady?.getAttribute('data-maka-stream'), 'unsteady');
+  // The activity is still derived underneath, so recovery has it to go back to.
+  assert.equal(unsteady?.getAttribute('data-maka-activity'), 'thinking');
+
+  const recovered = renderStatus(false);
+  assert.equal(recovered?.getAttribute('aria-label'), 'Thinking…');
+  assert.equal(recovered?.getAttribute('data-maka-stream'), null);
+});
+
 test('in a live turn only the newest run keeps its steps; an earlier one folds when the next block starts', () => {
   const base = transcriptFixture();
   const call = base.tools[1]!;

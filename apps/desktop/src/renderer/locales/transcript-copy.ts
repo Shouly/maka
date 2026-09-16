@@ -104,6 +104,21 @@ export interface TranscriptCopy {
     readonly thinkingActive: string;
     /** The status line while the answer's prose is still streaming. */
     readonly writing: string;
+    /**
+     * The status line once the turn has gone quiet for longer than usual. It
+     * REPLACES the activity phrase rather than joining it: the phrase names
+     * the last block this renderer heard about, which is precisely what a
+     * quiet stretch makes doubtful.
+     *
+     * It REASSURES; it does not diagnose. Silence is not evidence of a fault —
+     * any tool call longer than the staleness threshold (a build, a test run,
+     * a fetch) sends no events either, so "the connection dropped" or "nothing
+     * is arriving" would be wrong on the common case. What the reader needs at
+     * a minute in is that the work is still theirs and still running, and that
+     * this one is simply slower than most. The clock beside it already says
+     * how long, so the phrase never repeats that.
+     */
+    readonly streamUnsteady: string;
     /** The card that confirms a scheduled task the turn created or changed. */
     readonly scheduledTask: {
       readonly creating: string;
@@ -212,8 +227,6 @@ export interface TranscriptCopy {
     readonly openSettings: string;
     readonly retry: string;
     readonly dismiss: string;
-    readonly streamDegraded: string;
-    readonly streamStalled: string;
     readonly transcriptLoadFailed: string;
     readonly transcriptLoadFailedDetail: string;
     readonly resumeTitle: string;
@@ -390,6 +403,7 @@ const TRANSCRIPT_COPY = {
       thinkingOnly: '思考过程',
       thinkingActive: '正在思考…',
       writing: '正在撰写…',
+      streamUnsteady: '仍在处理，比平时久一些…',
       scheduledTask: {
         creating: '正在创建定时任务',
         created: '已创建定时任务',
@@ -488,8 +502,6 @@ const TRANSCRIPT_COPY = {
       openSettings: '打开设置',
       retry: '重试',
       dismiss: '知道了',
-      streamDegraded: '事件流不稳定，显示的内容可能滞后。',
-      streamStalled: '事件流已中断，正在重新连接。',
       transcriptLoadFailed: '消息加载失败',
       transcriptLoadFailedDetail: '没有读到这个任务的对话记录。可以重试，或稍后再打开。',
       resumeTitle: '上一轮被中断',
@@ -559,6 +571,7 @@ const TRANSCRIPT_COPY = {
       thinkingOnly: '思考過程',
       thinkingActive: '正在思考…',
       writing: '正在撰寫…',
+      streamUnsteady: '仍在處理，比平時久一些…',
       scheduledTask: {
         creating: '正在建立排程任務',
         created: '已建立排程任務',
@@ -657,8 +670,6 @@ const TRANSCRIPT_COPY = {
       openSettings: '開啟設定',
       retry: '重試',
       dismiss: '知道了',
-      streamDegraded: '事件流不穩定，顯示的內容可能落後。',
-      streamStalled: '事件流已中斷，正在重新連線。',
       transcriptLoadFailed: '訊息載入失敗',
       transcriptLoadFailedDetail: '沒有讀到這個任務的對話記錄。可以重試，或稍後再開啟。',
       resumeTitle: '上一輪被中斷',
@@ -733,6 +744,7 @@ const TRANSCRIPT_COPY = {
       thinkingOnly: 'Thought process',
       thinkingActive: 'Thinking…',
       writing: 'Writing…',
+      streamUnsteady: 'Still working — taking longer than usual…',
       scheduledTask: {
         creating: 'Creating scheduled task',
         created: 'Created scheduled task',
@@ -831,8 +843,6 @@ const TRANSCRIPT_COPY = {
       openSettings: 'Open settings',
       retry: 'Retry',
       dismiss: 'Dismiss',
-      streamDegraded: 'The event stream is unsteady; what you see may lag behind.',
-      streamStalled: 'The event stream dropped; reconnecting.',
       transcriptLoadFailed: 'Messages failed to load',
       transcriptLoadFailedDetail:
         "This task's conversation could not be read. Try again, or reopen it later.",

@@ -37,6 +37,7 @@ import * as transcripts from '../../bridge/transcripts.js';
 import * as shellRuns from '../../bridge/shell-runs.js';
 import { toUnsubscribe } from '../../bridge/bridge.js';
 import { createTranscriptProjection } from '@maka/ui';
+import { deriveLiveTurnSnapshot } from '../../lib/ported/live-turn-snapshot.js';
 import type {
   ActiveInteractionRequestEvent,
   SessionEvent,
@@ -256,6 +257,16 @@ const delta = (text: string): SessionEvent => ({
   ts: 1,
   text,
 });
+const toolStart = (): SessionEvent =>
+  ({
+    type: 'tool_start',
+    id: 'call',
+    turnId: 'turn',
+    ts: 1,
+    toolUseId: 'tool',
+    toolName: 'Bash',
+    args: { command: 'npm test' },
+  }) as unknown as SessionEvent;
 const question = (): ActiveInteractionRequestEvent =>
   ({
     type: 'user_question_request',
@@ -887,6 +898,35 @@ test('a stalled event stream on a running Session asks for the catalog and the t
   assert.equal(refreshes, 1, 'the refresh is on cooldown');
   f.observers[0]!.event(delta('hi'));
   assert.equal(f.store.getState().health?.status, 'recovered');
+  f.store.disconnect();
+});
+test('a tool call in flight is silence with a reason, and is never judged stale', async () => {
+  let refreshes = 0;
+  const f = fakeRuntime({
+    sessionStatus: () => 'running' as const,
+    refreshSessions: async () => {
+      refreshes++;
+    },
+    healthProbeIntervalMs: 60_000,
+  });
+  const id = sid('a');
+  f.store.observe(id, 'en');
+  await tick();
+  // A tool that will not answer for a minute — a build, a test run. It sends
+  // one event and then nothing, which is exactly what the threshold measures.
+  f.observers[0]!.event(toolStart());
+  assert.equal(
+    deriveLiveTurnSnapshot(f.store.getState().liveTurns[id]).hasInFlightTools,
+    true,
+    'the premise: the screen is showing a call that has not come back',
+  );
+  const health = f.store.getState().health!;
+  f.store.setState({
+    health: { ...health, subscribedAt: Date.now() - 60_000, lastEventAt: Date.now() - 60_000 },
+  });
+  f.store.probeHealth();
+  assert.equal(f.store.getState().health?.status, 'connected');
+  assert.equal(refreshes, 0, 'nothing to re-read: the Host is waiting on the tool, not wedged');
   f.store.disconnect();
 });
 test('an idle Session gets no health verdict at all', async () => {

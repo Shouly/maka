@@ -32,6 +32,14 @@
 // - The clock appears after 5s. A turn that answers in two seconds never shows
 //   a counter that would only have said "2s".
 //
+// One addition of Maka's own: a turn that has gone quiet speaks HERE rather
+// than in a notice card above the composer. The two always coincide — the
+// health probe only runs while a turn is active, which is exactly when this
+// line is up — and the line is where the reader is already looking when they
+// wonder whether anything is still happening. The phrase reassures rather than
+// warns: the quiet is usually a tool call outlasting the threshold, not a
+// fault. The clock stays, because how long is the one thing still certain.
+//
 // `startedAt` is the turn's own first-message timestamp, so the clock measures
 // the wait the user actually experienced — from pressing send, not from
 // whenever the model's first event happened to land. It is absent on the
@@ -58,6 +66,8 @@ export function TurnRunningStatus(props: {
   turnId?: string;
   /** The committed turn this line stands under; absent while the send is on its way. */
   turn?: TurnViewModel;
+  /** Nothing has arrived for long enough that the activity phrase may be behind. */
+  streamUnsteady?: boolean;
 }) {
   const locale = useUiLocale();
   const copy = getTranscriptCopy(locale).tools;
@@ -71,7 +81,9 @@ export function TurnRunningStatus(props: {
   if (held.current.turnId !== props.turnId)
     held.current = { turnId: props.turnId, label: undefined };
   if (activity.kind !== 'gap' && activity.kind !== 'none') held.current.label = activity.label;
-  const label = held.current.label ?? copy.working;
+  // The held label keeps being recorded underneath, so recovery puts the
+  // activity back without waiting for the next block.
+  const label = props.streamUnsteady ? copy.streamUnsteady : (held.current.label ?? copy.working);
 
   return (
     <div
@@ -81,6 +93,7 @@ export function TurnRunningStatus(props: {
       aria-label={label}
       data-maka-contract="turn-running-status"
       data-maka-activity={activity.kind}
+      {...(props.streamUnsteady ? { 'data-maka-stream': 'unsteady' } : {})}
     >
       <RelxMark size={32} animated className="text-fill-brand" />
       {/* Name the activity once; the clock must not announce each second. */}

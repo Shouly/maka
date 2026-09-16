@@ -696,10 +696,15 @@ export function createActiveSessionStore(
       if (!current()) return;
       const state = store.getState();
       const live = deriveLiveTurnSnapshot(state.liveTurns[sessionId]);
-      const hasLiveActivity =
-        (live.hasStreamingText && live.streamingMessageId === undefined) ||
-        live.hasInFlightTools ||
-        (state.interactions[sessionId]?.length ?? 0) > 0;
+      // Quiet the screen already explains is not a symptom, and this is where
+      // that is decided — the only verdict anyone renders is the one made
+      // here. A tool call in flight sends nothing until its result, and an
+      // open question sends nothing until the user answers; both routinely
+      // outlast the staleness threshold (a build, a test run, a question left
+      // on screen). Judging them would report a stalled stream on the most
+      // ordinary minute of work there is.
+      if (live.hasInFlightTools || (state.interactions[sessionId]?.length ?? 0) > 0) return;
+      const hasLiveActivity = live.hasStreamingText && live.streamingMessageId === undefined;
       const sessionStatus = options.sessionStatus?.(sessionId);
       if (!sessionExpectsEventStream(sessionStatus, hasLiveActivity)) return;
       const result = evaluateSessionEventStreamSnapshot({

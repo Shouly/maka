@@ -2728,7 +2728,7 @@
       "hookCalls": {
         "useEffect": 1,
         "useState": 3,
-        "useStore": 10,
+        "useStore": 8,
         "useUiLocale": 1
       },
       "lifecycleMethods": {},

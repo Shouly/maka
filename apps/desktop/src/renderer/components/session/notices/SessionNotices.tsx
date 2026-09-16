@@ -19,7 +19,12 @@
 
 // Everything the transcript has to say about the conversation rather than in
 // it: will the next send work, is the workspace still there, did the last run
-// stop halfway, is the event stream still arriving, what did compaction do.
+// stop halfway, what did compaction do.
+//
+// Event-stream health is NOT here. It only ever means something while a turn
+// is running, and the running turn already has a line of its own that the
+// reader is watching — so it speaks there (`TurnRunningStatus`) instead of
+// pushing a banner into the composer's stack.
 //
 // One region rather than one banner per source, and it renders in a fixed
 // order, because these overlap: a session whose connection is gone is also a
@@ -105,15 +110,6 @@ export function SessionNotices(props: {
   const onboarding = useStore(onboardingStore, (state) => state.snapshot);
   const connections = useStore(connectionsStore, (state) => state.data);
   const connectionsLoading = useStore(connectionsStore, (state) => state.loading);
-  const health = useStore(activeSessionStore, (state) => state.health);
-  // A pending interaction is drawn by InteractionPrompts in the composer's
-  // place; here it only silences the stream-health notice. The Host is quiet
-  // on purpose while it waits for the user, and "unsteady" would be a false
-  // alarm the whole time the question is on screen.
-  const awaitingAnswer = useStore(
-    activeSessionStore,
-    (state) => (state.interactions[props.sessionId]?.length ?? 0) > 0,
-  );
   const compaction = useStore(activeSessionStore, (state) => state.compactionOutcome);
   const transcriptError = useStore(activeSessionStore, (state) =>
     state.sessionId === props.sessionId ? state.transcriptError : undefined,
@@ -153,21 +149,18 @@ export function SessionNotices(props: {
   });
 
   const readinessNotice = deriveTaskReadinessNotice(readiness.snapshot, locale);
-  const streamStatus = health?.status;
   const resuming = pending.includes('resume');
   const compactionNotice =
     compaction && compaction !== dismissedCompaction
       ? compactionText(compaction, copy.notices)
       : undefined;
 
-  const streamNotice = !awaitingAnswer && (streamStatus === 'stale' || streamStatus === 'closed');
   const anything =
     transcriptError !== undefined ||
     healthNotice ||
     workspace ||
     readinessNotice ||
     props.resumeCandidateTurnId ||
-    streamNotice ||
     compactionNotice;
   if (!anything) return null;
 
@@ -283,16 +276,6 @@ export function SessionNotices(props: {
               },
             },
           ]}
-        />
-      )}
-
-      {streamNotice && (
-        <NoticeCard
-          tone="warning"
-          role="status"
-          title={
-            streamStatus === 'closed' ? copy.notices.streamStalled : copy.notices.streamDegraded
-          }
         />
       )}
 

@@ -151,6 +151,11 @@ function SessionTranscript(props: SessionViewProps) {
       // The composer yields to a turn-scoped prompt: an answer typed beside
       // it would race the one the prompt is waiting for.
       interactionPending: (state.interactions[sessionId]?.length ?? 0) > 0,
+      // The event stream has gone quiet for long enough that what is on screen
+      // may be behind. The status line says so (`TurnRunningStatus`); the
+      // health probe only runs while a turn is active, so the line is always up
+      // to carry it.
+      streamStale: state.health?.sessionId === sessionId && state.health.status === 'stale',
       // #1629: no boundary, no composer — but never silently. The notice
       // stands where the composer would be and hands the user another read.
       boundaryUnreadable: state.boundaryUnreadable,
@@ -373,6 +378,10 @@ function SessionTranscript(props: SessionViewProps) {
   const orphanRunningStatus =
     shellLive.showRunningStatus && !turns.some((turn) => turn.turnId === live.turnId);
   const activeTurn = turns.find((turn) => turn.turnId === live.turnId);
+  // No second rule here: the store already declines to call a turn quiet while
+  // something on screen explains the silence (a tool in flight, an open
+  // question). See `evaluateHealth`.
+  const streamUnsteady = feed.streamStale;
   // One keyed sibling survives promotion from a local send into a durable turn.
   const waitingStatus = (
     <TurnRunningStatus
@@ -383,6 +392,7 @@ function SessionTranscript(props: SessionViewProps) {
         activeTurn?.startedAt ??
         feed.transientMessages[0]?.ts
       }
+      streamUnsteady={streamUnsteady}
       {...(activeTurn ? { turn: activeTurn } : {})}
     />
   );
