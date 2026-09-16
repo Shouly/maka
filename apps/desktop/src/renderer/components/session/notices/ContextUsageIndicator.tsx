@@ -24,10 +24,25 @@
 // offers instead) and minus the proactive callout, which belongs to a product
 // decision Phase 3b makes with the composer.
 //
-// The rest is verbatim: 18px ring, 2px stroke, neutral until 80% and then
-// amber and red, breathing once it is worth attention. Neutral rather than
-// accent at rest on purpose — the composer's one coloured control is Send, and
-// a second one competing with it makes neither read as the important one.
+// The rest is verbatim: 2px stroke, neutral until 80% and then amber and red,
+// breathing once it is worth attention. Neutral rather than accent at rest on
+// purpose — the composer's one coloured control is Send, and a second one
+// competing with it makes neither read as the important one.
+//
+// Where it hangs is Maka's own: the reference puts it inside the composer
+// surface beside Send, this stands it on the meta row below, leading the model
+// chip (`ChatInput`). Two things follow from the move. The ring is 14px, not
+// the reference's 18: it now sits beside that chip's brand mark, which is
+// `size-3.5`, in a row set in 13px, and a ring drawn for a 32px button in the
+// surface reads a size too loud among them. The 24px box around it stays — it
+// is the row's own height, and the hit target should not shrink with the
+// drawing.
+//
+// The popover names no model. It used to print `usage.modelId`, the wire
+// spelling, while the chip four pixels away printed the display name: the same
+// fact twice, in two spellings, one of which the reader never chose. What the
+// popover is for is the number the chip cannot show — how much of the window
+// is gone — and the window's size is already in the line beneath the bar.
 
 import { memo, useEffect } from 'react';
 import { useStore } from 'zustand';
@@ -44,7 +59,7 @@ import {
 import { turnActionsStore } from '../../../store/index.js';
 import { getTranscriptCopy } from '../../../locales/transcript-copy.js';
 
-const SIZE = 18;
+const SIZE = 14;
 const STROKE = 2;
 const RADIUS = (SIZE - STROKE) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
@@ -163,7 +178,6 @@ export const ContextUsageIndicator = memo(function ContextUsageIndicator(props: 
           <p className="truncate text-xs leading-[1.0625rem] tabular-nums text-menu-text-muted">
             {label}
           </p>
-          {usage && <p className="truncate text-xs text-menu-text-muted">{usage.modelId}</p>}
           <button
             type="button"
             disabled={pending}

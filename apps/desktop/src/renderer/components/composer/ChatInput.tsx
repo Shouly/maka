@@ -1322,9 +1322,6 @@ function OwnedChatInput(props: {
               {/* The model chip lives IN the surface only on the welcome
                   page; a Session's sits on the meta row under it. */}
               {welcome && modelMenu(false)}
-              {/* The context ring sits beside Send: the moment to look at it
-                  is right before pressing it. */}
-              {hostSessionId && <ContextUsageIndicator sessionId={hostSessionId} />}
               {stopShown ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -1416,7 +1413,18 @@ function OwnedChatInput(props: {
               </Tooltip>
             )}
           </div>
-          <div className="flex shrink-0 items-center gap-1">{!welcome && modelMenu(true)}</div>
+          {/* The context ring leads the model chip. The reference keeps the
+              ring inside the surface beside Send, on the grounds that the
+              moment to read it is the moment before pressing it; this row is
+              where it belongs instead. How full the context is, is not an
+              action — it is a property of the task, like the permission mode
+              and the plan switch beside it — and a context window IS the
+              model's, so the two read as one statement and changing the model
+              says what it costs. Deviation from the reference, recorded. */}
+          <div className="flex shrink-0 items-center gap-1">
+            {hostSessionId && <ContextUsageIndicator sessionId={hostSessionId} />}
+            {!welcome && modelMenu(true)}
+          </div>
         </div>
       </TooltipProvider>
 
