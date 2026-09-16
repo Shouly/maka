@@ -61,6 +61,19 @@ export function openPath(
   return app().openPath(key, sessionId, host);
 }
 
+/**
+ * A delivered file, revealed where it lives rather than as a copy.
+ *
+ * Main resolves the session's own root and re-checks the realpath lands inside
+ * it, so a path from elsewhere is refused rather than shown.
+ */
+export function revealSessionFile(
+  sessionId: string,
+  path: string,
+): ReturnType<App['revealSessionFile']> {
+  return app().revealSessionFile(sessionId, path);
+}
+
 export function resolveProjectGitInfo(
   projectPath: string,
   host?: DesktopRuntimeHostRef,

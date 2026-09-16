@@ -36,6 +36,7 @@ import { TooltipProvider } from '../../components/ui/tooltip.js';
 import { TranscriptTurn } from '../../components/session/TranscriptTurn.js';
 import { AskUserQuestionRecord } from '../../components/session/AskUserQuestionRecord.js';
 import { renderToolContent } from '../../components/session/tools/registry.js';
+import { deliveryAutoOpenTarget } from '../../components/session/tools/renderers/DeliveryResults.js';
 import {
   canExpandTool,
   resolveToolRendererId,
@@ -127,7 +128,7 @@ test('a file delivery routes to its own renderer and never opens as a tool row',
   assert.equal(deliveryPlacement(item), 'block');
 });
 
-test('a delivery draws one card per file, with the size, the caption and the proactive tag', () => {
+test('a delivery draws one row card per file: a sentence, a kind line, and nothing else', () => {
   const item = call({
     toolUseId: 'send-files',
     toolName: 'SendUserFile',
@@ -137,24 +138,54 @@ test('a delivery draws one card per file, with the size, the caption and the pro
     createElement(
       Fragment,
       null,
-      renderToolContent(item, { ...CONTEXT, onOpenArtifact: () => {} }),
+      renderToolContent(item, {
+        ...CONTEXT,
+        onOpenArtifact: () => {},
+        onShowDeliveredFile: () => {},
+      }),
     ),
   );
-  const cards = [...document.querySelectorAll('[data-maka-attachment-card]')].map((card) =>
-    card.getAttribute('data-maka-attachment-card'),
-  );
-  assert.deepEqual(cards, ['plan.md', 'shot.png']);
   const text = document.documentElement.textContent ?? '';
-  assert.ok(text.includes('The two drafts, side by side.'), 'the caption is one line under it');
-  assert.ok(text.includes('Sent unprompted'), 'a proactive delivery says so');
-  assert.ok(text.includes('2 KB') || text.includes('2.0 KB'), `the size is on the card: ${text}`);
-  assert.ok(text.includes('MD'), 'and so is the extension badge');
-  // Opening a card is what the card is for, so it must be a real button with
-  // a name of its own.
-  const open = [...document.querySelectorAll('button')].map((button) =>
+
+  // The name is the filename made readable, and the line under it is the
+  // category and the extension — measured off the reference's cards.
+  assert.ok(text.includes('Plan'), `the title is a sentence, not a filename: ${text}`);
+  assert.ok(text.includes('Document · MD'), `the kind line is the word and the extension: ${text}`);
+  assert.ok(text.includes('Image · PNG'), text);
+  assert.ok(!text.includes('plan.md'), 'the raw filename is not the title');
+
+  // Three things the reference does NOT draw in the transcript, and neither
+  // does this: the caption, the status, and the byte size.
+  assert.ok(!text.includes('The two drafts, side by side.'), 'the caption is not drawn');
+  assert.ok(!text.includes('Sent unprompted'), 'the status is not drawn');
+  assert.ok(!/\d\s?KB/u.test(text), `the size is not drawn: ${text}`);
+
+  // Opening a card is what the card is for, so it is a real button with a
+  // name of its own, and the two file actions are reachable.
+  const labels = [...document.querySelectorAll('button')].map((button) =>
     button.getAttribute('aria-label'),
   );
-  assert.ok(open.includes('Open plan.md in Files'), open.join(', '));
+  assert.ok(labels.includes('Open plan.md in Files'), labels.join(', '));
+  // ONE action, named by the platform's own file manager. No app list: the
+  // file is in the user's project, so the platform's "Open With" already has
+  // one, maintained by the system.
+  assert.ok(/Show in (Finder|Explorer|file manager)/u.test(text), text);
+  assert.ok(!text.includes('Save'), `the file is already on this machine: ${text}`);
+});
+
+test('display: render opens the pane on the first file, but only while the turn is live', () => {
+  // History must not move the pane: a session full of old deliveries would
+  // take it away from whatever the reader had put there.
+  assert.equal(deliveryAutoOpenTarget({ result: DELIVERY as never, live: false }), undefined);
+  // The first card is the one opened — the same file `display`'s own default
+  // was decided from.
+  assert.equal(deliveryAutoOpenTarget({ result: DELIVERY as never, live: true }), 'artifact-1');
+  // `attach` is the model saying a preview would be noise.
+  assert.equal(
+    deliveryAutoOpenTarget({ result: { ...DELIVERY, display: 'attach' } as never, live: true }),
+    undefined,
+  );
+  assert.equal(deliveryAutoOpenTarget({ result: undefined, live: true }), undefined);
 });
 
 test('a delivery with no way into the Files face draws labels, not dead buttons', () => {
@@ -164,9 +195,11 @@ test('a delivery with no way into the Files face draws labels, not dead buttons'
     result: DELIVERY as never,
   });
   const document = renderTree(createElement(Fragment, null, renderToolContent(item, CONTEXT)));
-  for (const button of document.querySelectorAll('button')) {
-    assert.ok(button.hasAttribute('disabled'), 'a card with nowhere to go is not pressable');
-  }
+  // Not a disabled button — no button at all. The card is a label, and the
+  // name and kind still read, because that is the half of it that always works.
+  assert.equal(document.querySelectorAll('button').length, 0);
+  const text = document.documentElement.textContent ?? '';
+  assert.ok(text.includes('Plan') && text.includes('Document · MD'), text);
 });
 
 const note = (message: string) =>
@@ -316,7 +349,7 @@ test('notes are counted apart from the work, and consecutive ones do not merge',
   assert.equal(summarizeToolGroup([work, first, second], 'en'), 'Ran a command');
 });
 
-test('a block delivery closes its run; a note a row can hold does not', () => {
+test('delivered files gather at the foot of the turn; notes stay where they were said', () => {
   const work = call({ toolUseId: 'read-1', activityKind: 'read' });
   const files = call({
     toolUseId: 'send-files',
@@ -329,28 +362,30 @@ test('a block delivery closes its run; a note a row can hold does not', () => {
     [{ kind: 'tools', items: [work, files, inline, promoted] }],
     () => false,
   );
-  // The files break the run; the one-line note joins the run that follows;
-  // the note with a list breaks it again.
+  // The files were sent FIRST and come LAST: the reader meets the turn as a
+  // finished thing, and cards wedged between two paragraphs read as an
+  // interruption of the answer rather than as what it hands over. The note
+  // with a list still breaks its run where it was said.
   assert.deepEqual(
     grouped.map((entry) => entry.kind),
-    ['work', 'delivery', 'work', 'delivery'],
+    ['work', 'delivery', 'delivery'],
   );
-  const firstRun = grouped[0] as { children: readonly { items: ToolActivityItem[] }[] };
-  assert.deepEqual(
-    firstRun.children.flatMap((child) => child.items.map((item) => item.toolUseId)),
-    ['read-1'],
-    'a file delivery gives up its step entirely',
-  );
-  const secondRun = grouped[2] as {
+  assert.equal((grouped[2] as { item: ToolActivityItem }).item.toolUseId, 'send-files');
+  assert.equal((grouped[1] as { item: ToolActivityItem }).item.toolUseId, promoted.toolUseId);
+
+  // Taking the files out does NOT split the run they came from: the work
+  // carries on, and the one-line note is still part of it.
+  const run = grouped[0] as {
     children: readonly { items: ToolActivityItem[] }[];
     notes: number;
   };
   assert.deepEqual(
-    secondRun.children.flatMap((child) => child.items.map((item) => item.toolUseId)),
-    [inline.toolUseId],
+    run.children.flatMap((child) => child.items.map((item) => item.toolUseId)),
+    ['read-1', inline.toolUseId],
+    'a file delivery gives up its step entirely, and closes nothing',
   );
   // Both notes are counted against the run they came out of.
-  assert.equal(secondRun.notes, 2);
+  assert.equal(run.notes, 2);
 });
 
 test('a turn lays a delivery out beside its prose, the way a text entry stands', () => {

@@ -26,57 +26,58 @@
 // in the turn beside the prose (`groupTurnTimeline` gives it its own block),
 // at the width of the answer, and it is on screen without being asked for.
 //
-// The cards are the reference design system's `AttachmentPreview` geometry —
-// 120×120, name over an extension badge — which Maka already ports as
-// `AttachmentCard`, so a file the model sends and a file the user sent look
-// the same, because they are the same kind of thing.
+// The cards are `DeliveryFileCard`, which is NOT the attachment card: a file
+// handed over and a file shown back are different things, and that file has
+// the reasoning.
 
-import { memo } from 'react';
-import { formatBytes, useAttachmentImageSource, useUiLocale } from '@maka/ui';
-import { Anthropicon } from '../../../icons/Anthropicon.js';
+import { memo, useEffect } from 'react';
+import { useUiLocale } from '@maka/ui';
 import Markdown from '../../../ui/Markdown.js';
-import { AttachmentCard, AttachmentCardRow } from '../../../ui/attachment-card.js';
+import { DeliveryFileCard } from './DeliveryFileCard.js';
 import { getTranscriptCopy } from '../../../../locales/transcript-copy.js';
-import type {
-  UserFileDeliveryContent,
-  UserFileDeliveryFile,
-  UserMessageContent,
+import {
+  readUserFileDelivery,
+  type DurableToolResultContent,
+  type UserFileDeliveryContent,
+  type UserFileDeliveryFile,
+  type UserMessageContent,
 } from '../../../../lib/tool-delivery-results.js';
 
 /**
- * One card.
+ * `display: 'render'` opens the pane on the file, the moment it arrives.
  *
- * The thumbnail read is per-card rather than hoisted, because the attachment
- * authority's reader is already de-duplicated per (session, artifact) — and
- * because a delivery of ten files should not block its first card's paint on
- * the tenth file's bytes.
+ * The reference's words for that parameter are "the user should see the
+ * content inline in the side panel RIGHT NOW", so the card alone is not the
+ * whole of it — something has to move the pane.
  *
- * `display: 'attach'` means the model asked for the files to travel, not to be
- * shown, so an image under it keeps its name card: rendering it anyway would
- * overrule the call.
+ * Only while the turn is LIVE. Re-reading an old conversation must not move
+ * the pane: history is full of deliveries, and opening one on every session
+ * switch would take the pane away from whatever the reader had put there. The
+ * FIRST file is the one opened, because it is the card at the top and the same
+ * one `display`'s default was decided from.
  */
-const DeliveryCard = memo(function DeliveryCard(props: {
-  file: UserFileDeliveryFile;
-  render: boolean;
-  onOpen?: (file: UserFileDeliveryFile) => void;
+export function deliveryAutoOpenTarget(input: {
+  result: DurableToolResultContent | undefined;
+  live: boolean;
+}): string | undefined {
+  if (!input.live) return undefined;
+  const delivery = readUserFileDelivery(input.result);
+  if (delivery?.display !== 'render') return undefined;
+  return delivery.files[0]?.artifactId;
+}
+
+export const DeliveryAutoOpen = memo(function DeliveryAutoOpen(props: {
+  result: DurableToolResultContent | undefined;
+  live: boolean;
+  onOpenArtifact?: ((artifactId: string) => void) | undefined;
 }) {
-  const locale = useUiLocale();
-  const copy = getTranscriptCopy(locale).delivery;
-  const showImage = props.render && props.file.kind === 'image';
-  const source = useAttachmentImageSource(
-    showImage ? { artifactId: props.file.artifactId } : undefined,
-  );
-  const onOpen = props.onOpen;
-  return (
-    <AttachmentCard
-      name={props.file.name}
-      {...(props.file.mimeType ? { mimeType: props.file.mimeType } : {})}
-      {...(source ? { imageSrc: source } : {})}
-      {...(props.file.sizeBytes > 0 ? { meta: formatBytes(props.file.sizeBytes) } : {})}
-      {...(onOpen ? { onOpen: () => onOpen(props.file) } : {})}
-      openLabel={copy.openFile(props.file.name)}
-    />
-  );
+  const target = deliveryAutoOpenTarget(props);
+  const onOpenArtifact = props.onOpenArtifact;
+  useEffect(() => {
+    if (target === undefined || !onOpenArtifact) return;
+    onOpenArtifact(target);
+  }, [target, onOpenArtifact]);
+  return null;
 });
 
 export const UserFileDeliveryResult = memo(function UserFileDeliveryResult(props: {
@@ -85,46 +86,45 @@ export const UserFileDeliveryResult = memo(function UserFileDeliveryResult(props
   onOpenArtifact?: (artifactId: string) => void;
   /** The path route, for a pane that can only resolve a workspace path. */
   onOpenFile?: (path: string | undefined) => void;
+  /** Reveals the delivered file itself — never a copy of it. */
+  onShowDeliveredFile?: (path: string | undefined) => void;
 }) {
   const locale = useUiLocale();
   const copy = getTranscriptCopy(locale).delivery;
   const onOpenArtifact = props.onOpenArtifact;
   const onOpenFile = props.onOpenFile;
+  const onShowDeliveredFile = props.onShowDeliveredFile;
   // The id is the exact handle; the path is the fallback the Files face
   // resolves against its catalog. A card with neither is a label, not a
-  // button — `AttachmentCard` already draws that state.
+  // button — `DeliveryFileCard` draws that state by omitting the target.
   const open = onOpenArtifact
-    ? (file: UserFileDeliveryFile) => onOpenArtifact(file.artifactId)
+    ? (file: UserFileDeliveryFile) => () => onOpenArtifact(file.artifactId)
     : onOpenFile
-      ? (file: UserFileDeliveryFile) => onOpenFile(file.path)
+      ? (file: UserFileDeliveryFile) => () => onOpenFile(file.path)
       : undefined;
 
   if (props.result.files.length === 0) {
     return <p className="my-3 text-[0.8125rem] leading-[1.125rem] text-text-muted">{copy.empty}</p>;
   }
+  // Stacked, not a strip: the reference lays one card per row at the answer's
+  // width. `status` and `caption` are deliberately NOT drawn — the reference
+  // renders neither in the transcript, and a `proactive` pill exposes a tool
+  // parameter to a reader who never chose it.
   return (
-    <div className="my-3 flex min-w-0 flex-col gap-2" data-maka-file-delivery={props.result.status}>
-      {props.result.status === 'proactive' && (
-        <span className="inline-flex w-fit items-center gap-1 rounded-full bg-alpha-1 px-2 py-0.5 text-[0.6875rem] leading-4 text-text-muted">
-          <Anthropicon name="bullhorn" size={12} className="shrink-0" />
-          {copy.proactive}
-        </span>
-      )}
-      <AttachmentCardRow label={copy.filesLabel}>
-        {props.result.files.map((file) => (
-          <DeliveryCard
-            key={file.artifactId}
-            file={file}
-            render={props.result.display === 'render'}
-            {...(open ? { onOpen: open } : {})}
-          />
-        ))}
-      </AttachmentCardRow>
-      {props.result.caption && (
-        <p className="min-w-0 text-[0.8125rem] leading-[1.125rem] text-text-secondary">
-          {props.result.caption}
-        </p>
-      )}
+    <div
+      className="flex min-w-0 flex-col gap-2 pb-2 pt-4"
+      role="group"
+      aria-label={copy.filesLabel}
+      data-maka-file-delivery={props.result.status}
+    >
+      {props.result.files.map((file) => (
+        <DeliveryFileCard
+          key={file.artifactId}
+          file={file}
+          {...(open ? { onOpen: open(file) } : {})}
+          {...(onShowDeliveredFile ? { onShowInFolder: () => onShowDeliveredFile(file.path) } : {})}
+        />
+      ))}
     </div>
   );
 });

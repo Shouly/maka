@@ -122,6 +122,7 @@
     "src/renderer/components/session/tools/ToolGroup.tsx",
     "src/renderer/components/session/tools/ToolRow.tsx",
     "src/renderer/components/session/tools/registry.tsx",
+    "src/renderer/components/session/tools/renderers/DeliveryFileCard.tsx",
     "src/renderer/components/session/tools/renderers/DeliveryResults.tsx",
     "src/renderer/components/session/tools/renderers/DiffResult.tsx",
     "src/renderer/components/session/tools/renderers/ScheduledTaskResult.tsx",
@@ -274,6 +275,7 @@
     "src/renderer/lib/ported/composer-attachments.ts",
     "src/renderer/lib/ported/composer-defaults.ts",
     "src/renderer/lib/ported/connection-error-cleaner.ts",
+    "src/renderer/lib/ported/delivery-file-label.ts",
     "src/renderer/lib/ported/derive-turn-lineage-badges.ts",
     "src/renderer/lib/ported/desktop-slash-command.ts",
     "src/renderer/lib/ported/desktop-transcript-range-store.ts",
@@ -2399,6 +2401,7 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../../bridge/app.js": 1,
         "../../bridge/attachments.js": 1,
         "../../bridge/external-links.js": 1,
         "../../hooks/use-turn-presentation.js": 1,
@@ -2479,6 +2482,7 @@
       "dependencyPaths": {
         "../../lib/ask-user-question.js": 1,
         "../../lib/cn.js": 1,
+        "../../lib/tool-delivery-results.js": 1,
         "../../lib/turn-timeline-groups.js": 1,
         "../../locales/transcript-copy.js": 1,
         "../icons/Anthropicon.js": 1,
@@ -2486,6 +2490,7 @@
         "../ui/StreamPopMarkdown.js": 1,
         "./AskUserQuestionRecord.js": 1,
         "./tools/registry.js": 1,
+        "./tools/renderers/DeliveryResults.js": 1,
         "./tools/ToolGroup.js": 1,
         "./TurnFooter.js": 1,
         "./UserMessageRow.js": 1,
@@ -2819,21 +2824,40 @@
         "./tool-presentation.js": 1
       }
     },
-    "src/renderer/components/session/tools/renderers/DeliveryResults.tsx": {
+    "src/renderer/components/session/tools/renderers/DeliveryFileCard.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
-        "useAttachmentImageSource": 1,
-        "useUiLocale": 2
+        "useUiLocale": 1
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../../../../lib/platform.js": 1,
+        "../../../../lib/ported/delivery-file-label.js": 1,
         "../../../../locales/transcript-copy.js": 1,
         "../../../icons/Anthropicon.js": 1,
-        "../../../ui/attachment-card.js": 1,
+        "../../../ui/button.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/session/tools/renderers/DeliveryResults.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../../lib/tool-delivery-results.js": 1,
+        "../../../../locales/transcript-copy.js": 1,
         "../../../ui/Markdown.js": 1,
+        "./DeliveryFileCard.js": 1,
         "@maka/ui": 1,
         "react": 1
       }
@@ -5678,6 +5702,15 @@
       "dependencyPaths": {
         "@maka/core/connection-error-copy": 1
       }
+    },
+    "src/renderer/lib/ported/delivery-file-label.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
     },
     "src/renderer/lib/ported/derive-turn-lineage-badges.ts": {
       "bridgePaths": {},

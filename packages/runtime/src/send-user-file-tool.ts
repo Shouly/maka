@@ -18,6 +18,7 @@
  */
 
 import { basename, extname, isAbsolute, resolve } from 'node:path';
+import { isRenderableDeliveryPreview } from '@maka/core/artifacts';
 import type { ArtifactKind, ArtifactRecord } from '@maka/core/artifacts';
 import type { ToolResultContent } from '@maka/core/events';
 import { TOOL_NAMES } from '@maka/core/tool-names';
@@ -51,13 +52,17 @@ export const SEND_USER_FILE_UNAVAILABLE =
   'Retrying will fail the same way — tell the user where the file is on disk instead.';
 
 export const SEND_USER_FILE_DESCRIPTION = [
-  'Use this for any file the user would want to see — a document you wrote, a chart you rendered, a report, an export, an image.',
+  'Send files to the user. Use this for any file the user would want to see — a generated diagram, a report, a screenshot, a built artifact — and you want it surfaced, not just mentioned. Send deliverables as they are produced, not batched at the end of the task: a complete draft or a meaningfully updated version of the thing the user asked for is worth sending mid-task, so they can follow progress and redirect early. Do NOT send routine working files — scratch files, debug output, partial fragments, or every incremental save of something you are still actively editing; each call renders a file card in the conversation, and a stream of cards for one file is noise. Re-send a file only when it has meaningfully changed since the last send. Paths can be absolute or relative to the session working directory.',
   '',
-  '- Send each file as it is produced, not batched at the end: a file the user is waiting on is worth more the moment it exists than in a list later.',
-  '- Do not send routine working files. A scratch script, an intermediate dump, a config you touched on the way through is noise; send what they asked for and what they would want to keep.',
-  '- Each call renders one file card in the conversation, carrying the caption you write and a way to open or save the file. `render` previews it inline where the kind supports it; `attach` shows the card alone.',
-  '- `status` says why the file is arriving: `normal` when the user asked for it, `proactive` when you judged they would want it.',
-  '- A path that does not exist, names a directory, or falls outside what the session permissions allow fails the whole call and names the file — nothing is delivered, so fix that path and call again.',
+  'Add a `caption` when a one-liner of context helps ("the failing case is row 42", "before vs after"). Skip it if the file speaks for itself.',
+  '',
+  'Set `status` on every call. Use `proactive` when you are initiating — the user is away and this should reach them on its own (build artifact ready, report generated). Use `normal` when replying to something the user just said.',
+  '',
+  "Set `display` to choose how the file is presented. Use 'render' when the user should see the content in the Files face right now — a chart, a rendered HTML page, a diagram, an image. Use 'attach' when the file is something they will save and open elsewhere — source code, a spreadsheet, a document for another app — and a preview would just be noise. Leave it unset to let the client decide by file type.",
+  '',
+  'Files must already exist on this machine — the tool sends files, it does not fetch URLs or render content. When unsure of a path, verify with ls first; absolute paths avoid ambiguity about the working directory. A path that does not exist, names a directory, or falls outside what the session permissions allow fails the WHOLE call and names the file — nothing is delivered, so fix that path and call again.',
+  '',
+  'Example: SendUserFile({ files: ["report.md"], caption: "Here’s the report.", status: "normal" })',
 ].join('\n');
 
 export type SendUserFileArgs = {
@@ -125,7 +130,6 @@ export function buildSendUserFileTool(
       const recordArtifacts = ctx.recordArtifacts;
       if (!recordArtifacts) throw new Error(SEND_USER_FILE_UNAVAILABLE);
       const caption = args.caption?.trim();
-      const display = args.display ?? 'render';
       const candidates: ToolArtifactCandidate[] = [];
       const paths: string[] = [];
       // Every path is admitted before anything is recorded, so a bad path in
@@ -144,6 +148,12 @@ export function buildSendUserFileTool(
         });
         paths.push(path);
       }
+      // Unset means "decide by file type", as in the reference. The FIRST file
+      // decides, because it is the one the pane opens — a flag that said
+      // `render` while the pane showed a listing would be the two disagreeing.
+      const display =
+        args.display ??
+        (candidates[0] && isRenderableDeliveryPreview(candidates[0]) ? 'render' : 'attach');
       const records = await recordArtifacts(candidates);
       const aligned = alignRecordsToCandidates(candidates, records);
       const undelivered = aligned.flatMap((record, index) =>

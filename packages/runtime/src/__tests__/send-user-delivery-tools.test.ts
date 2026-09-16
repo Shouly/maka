@@ -118,17 +118,29 @@ describe('SendUserFile', () => {
     assert.deepEqual(decodeCanonicalToolResultContent(result), result);
   });
 
-  test('defaults display to render and omits an absent caption', async () => {
+  test('an unset display is decided by file type, as the reference has it', async () => {
     const tool = buildSendUserFileTool({ filesystem: fakeFilesystem([]) });
 
-    const result = await tool.impl(
-      { files: ['notes.txt'], status: 'normal' },
+    // "Leave it unset to let the client decide by file type" — a listing is
+    // not worth taking the pane for, so plain text attaches.
+    const text = await tool.impl({ files: ['notes.txt'], status: 'normal' }, recordingContext([]));
+    assert.equal(text.display, 'attach');
+    assert.equal(Object.hasOwn(text, 'caption'), false);
+    assert.equal(text.files[0]?.kind, 'file');
+
+    // The kinds the pane draws take it: an image, a page, a PDF, and the text
+    // kinds it renders rather than lists.
+    for (const file of ['shot.png', 'page.html', 'paper.pdf', 'notes.md', 'flow.mermaid']) {
+      const result = await tool.impl({ files: [file], status: 'normal' }, recordingContext([]));
+      assert.equal(result.display, 'render', file);
+    }
+
+    // An explicit choice is never second-guessed.
+    const forced = await tool.impl(
+      { files: ['shot.png'], status: 'normal', display: 'attach' },
       recordingContext([]),
     );
-
-    assert.equal(result.display, 'render');
-    assert.equal(Object.hasOwn(result, 'caption'), false);
-    assert.equal(result.files[0]?.kind, 'file');
+    assert.equal(forced.display, 'attach');
   });
 
   test('derives the artifact kind from the extension', async () => {
@@ -287,11 +299,19 @@ describe('SendUserFile', () => {
 
     assert.equal(tool.name, TOOL_NAMES.sendUserFile);
     assert.equal(tool.description, SEND_USER_FILE_DESCRIPTION);
-    assert.match(tool.description, /any file the user would want to see/);
-    assert.match(tool.description, /as it is produced, not batched at the end/);
-    assert.match(tool.description, /Do not send routine working files/);
-    assert.match(tool.description, /file card/);
-    assert.match(tool.description, /fails the whole call and names the file/);
+    // The reference's own sentences, which this description is ported from.
+    assert.match(tool.description, /any file the user would want to see/u);
+    assert.match(tool.description, /as they are produced, not batched at the end of the task/u);
+    assert.match(tool.description, /Do NOT send routine working files/u);
+    assert.match(tool.description, /a stream of cards for one file is noise/u);
+    assert.match(tool.description, /Re-send a file only when it has meaningfully changed/u);
+    assert.match(tool.description, /verify with ls first/u);
+    // Batch delivery is atomic, and the description is the only place that
+    // says so before the call is made.
+    assert.match(tool.description, /fails the WHOLE call and names the file/u);
+    // It must NOT promise that the card carries the caption: the transcript
+    // draws no caption, the same as the reference.
+    assert.doesNotMatch(tool.description, /carrying the caption/u);
   });
 });
 

@@ -101,8 +101,16 @@ export type TurnTimelineGroup =
  * `'step+block'` — the step is worth keeping as one line of the work, and the
  * message stands below the group as well (SendUserMessage).
  */
+/**
+ * A settled SendUserFile. Asked twice — once to place the call, once to hold
+ * it back — so it is named once.
+ */
+function isFileDeliveryItem(item: ToolActivityItem): boolean {
+  return durableResultOf(item)?.kind === 'user_file_delivery';
+}
+
 export function deliveryPlacement(item: ToolActivityItem): 'block' | 'inline' | undefined {
-  if (durableResultOf(item)?.kind === 'user_file_delivery') return 'block';
+  if (isFileDeliveryItem(item)) return 'block';
   // A scheduled task the turn created is something the person now owns, like a
   // delivered file — it stands in the turn rather than folding into the run
   // that made it, and the card is how they open it.
@@ -120,6 +128,20 @@ export function groupTurnTimeline(
   isAsk: (tool: ToolActivityItem) => boolean = (tool) => isAskUserQuestionTool(tool),
 ): TurnTimelineGroup[] {
   const out: TurnTimelineGroup[] = [];
+  // Delivered FILES are held back and laid out at the foot of the turn, in the
+  // order they were sent.
+  //
+  // The tool tells the model to send each file as it is produced rather than
+  // batching them, so the calls land mid-work — but the reader meets the turn
+  // as a finished thing, and a stack of cards wedged between two paragraphs
+  // reads as an interruption of the answer rather than as what the answer
+  // hands over. The reference does the same: its card stack is the next
+  // sibling AFTER the whole prose block, however early the call was made.
+  //
+  // Only files. A note (SendUserMessage) is addressed to the reader at the
+  // moment it is said, and a scheduled-task card belongs where the task was
+  // made; moving either would change what it means.
+  const files: TurnDeliveryEntry[] = [];
   let anchor = 'start';
   let run: FoldedTimelineChild[] | null = null;
   // Notes belonging to the run being built — the inline ones drawn in it, plus
@@ -162,6 +184,14 @@ export function groupTurnTimeline(
             rest.push(tool);
             continue;
           }
+          // A file leaves the timeline here and comes back at the foot of the
+          // turn. It does NOT close the run: the work it came out of carries
+          // on, and breaking the group around a card that is no longer there
+          // would split one run into two for no visible reason.
+          if (isFileDeliveryItem(tool)) {
+            files.push({ kind: 'delivery', id: tool.toolUseId, item: tool });
+            continue;
+          }
           // Everything else closes the run it came out of, so its block lands
           // AFTER that group rather than inside or before it. A promoted note
           // still counts toward that group's header on the way out.
@@ -189,5 +219,6 @@ export function groupTurnTimeline(
     anchor = item.messageId;
   }
   flush();
+  out.push(...files);
   return out;
 }

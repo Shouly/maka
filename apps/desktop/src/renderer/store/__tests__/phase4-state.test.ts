@@ -43,6 +43,12 @@ import {
   isMarkdownArtifactName,
   isMermaidArtifactName,
 } from '../../lib/ported/artifact-preview-text.js';
+import {
+  deliveryFileExtension,
+  deliveryFileGlyph,
+  deliveryFileKind,
+  deliveryFileTitle,
+} from '../../lib/ported/delivery-file-label.js';
 import { SessionTerminalHydration } from '../../lib/ported/session-terminal-hydration.js';
 import {
   createTraceRefreshCoalescer,
@@ -329,6 +335,49 @@ test('diffs are line-capped, links are counted, markdown opens rendered', () => 
   assert.equal(isMermaidArtifactName('flow.MMD'), true);
   assert.equal(isMermaidArtifactName('flow.md'), false);
   assert.equal(isMermaidArtifactName('mermaid.txt'), false);
+});
+
+// ── what a delivered file is called ────────────────────────────────────────
+
+test('a delivered file is titled as a sentence and typed as category plus extension', () => {
+  // Measured off the reference's cards: the filename is made readable, and
+  // only the first letter is raised — Title Case would make a headline of it.
+  assert.equal(deliveryFileTitle('send-user-file-tool-report.md'), 'Send user file tool report');
+  assert.equal(deliveryFileTitle('huge.csv'), 'Huge');
+  assert.equal(deliveryFileTitle('f09.txt'), 'F09');
+  assert.equal(deliveryFileTitle('quarterly_report_v2.docx'), 'Quarterly report v2');
+  // A name that is all extension is a name, not an empty title.
+  assert.equal(deliveryFileTitle('.gitignore'), '.gitignore');
+  assert.equal(deliveryFileTitle('README'), 'README');
+
+  assert.equal(deliveryFileExtension('report.md'), 'MD');
+  assert.equal(deliveryFileExtension('.gitignore'), undefined);
+  assert.equal(deliveryFileExtension('trailing.'), undefined);
+
+  // The kind word and the glyph are SEPARATE questions, and relx answers them
+  // differently on purpose — these are the three cases where they disagree.
+  assert.equal(deliveryFileKind('paper.pdf'), 'document');
+  assert.equal(
+    deliveryFileGlyph('paper.pdf'),
+    'file',
+    'a PDF is a Document but draws a plain file',
+  );
+  assert.equal(deliveryFileKind('flow.mermaid'), 'diagram');
+  assert.equal(deliveryFileGlyph('flow.mermaid'), 'code', 'a Diagram draws the code glyph');
+  assert.equal(deliveryFileKind('data.tsv'), 'file', 'tsv has no kind word of its own');
+  assert.equal(deliveryFileGlyph('data.tsv'), 'spreadsheet', 'but it still draws a spreadsheet');
+
+  assert.equal(deliveryFileKind('app.py'), 'code');
+  assert.equal(deliveryFileGlyph('shot.PNG'), 'image');
+  assert.equal(deliveryFileKind('theme.zip'), 'file');
+  assert.equal(deliveryFileGlyph('theme.zip'), 'archive');
+  // A skill is named by either spelling, and gets its own glyph.
+  assert.equal(deliveryFileKind('writing.skill'), 'skill');
+  assert.equal(deliveryFileKind('skills/writing/SKILL.md'), 'skill');
+  assert.equal(deliveryFileGlyph('writing.skill'), 'bookOpen');
+  // Anything unrecognised is a File that draws a file.
+  assert.equal(deliveryFileKind('README'), 'file');
+  assert.equal(deliveryFileGlyph('mystery.qqq'), 'file');
 });
 
 // ── the terminal's attach handshake ─────────────────────────────────────────

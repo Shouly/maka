@@ -67,6 +67,26 @@ export function parseArtifactPreviewUrl(
   return { sessionId, artifactId };
 }
 
+/**
+ * Does the preview pane SHOW this file, or only list it?
+ *
+ * SendUserFile's `display` is what tells the client whether to open the pane
+ * on a delivered file, and the reference leaves it unset to mean "decide by
+ * file type". This is that decision, in one place: an image, a page and a PDF
+ * are drawn, and so are the text kinds the pane renders rather than lists.
+ *
+ * Markdown and mermaid arrive as `file` — the first because its MIME is not an
+ * image, the second because it has no MIME at all — so the name has to be read
+ * for them. SVG never reaches that branch (`image/svg+xml` makes it an
+ * `image`); it stays in the pattern because this takes any `{name, kind}` and
+ * a caller that classifies differently should still get the right answer.
+ */
+export function isRenderableDeliveryPreview(input: { name: string; kind: ArtifactKind }): boolean {
+  if (input.kind === 'image' || input.kind === 'html' || input.kind === 'pdf') return true;
+  if (input.kind !== 'file') return false;
+  return /\.(?:md|markdown|mermaid|mmd|svg)$/iu.test(input.name);
+}
+
 /** Maximum encoded image payload admitted to a renderer preview. */
 export const ARTIFACT_IMAGE_PREVIEW_MAX_BYTES = 2 * 1024 * 1024;
 

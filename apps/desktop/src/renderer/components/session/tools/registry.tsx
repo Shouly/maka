@@ -86,6 +86,8 @@ export interface ToolContentContext {
   readonly onOpenArtifact?: (artifactId: string) => void;
   /** Opens the Scheduled tasks page on one task, from the card that made it. */
   readonly onOpenScheduledTask?: (taskId: string) => void;
+  /** Reveals a delivered file, by the path it was sent from. */
+  readonly onShowDeliveredFile?: (path: string | undefined) => void;
 }
 
 /**
@@ -187,6 +189,9 @@ export function renderToolContent(item: ToolActivityItem, context: ToolContentCo
           result={delivery}
           {...(context.onOpenArtifact ? { onOpenArtifact: context.onOpenArtifact } : {})}
           {...(context.onOpenFile ? { onOpenFile: context.onOpenFile } : {})}
+          {...(context.onShowDeliveredFile
+            ? { onShowDeliveredFile: context.onShowDeliveredFile }
+            : {})}
         />
       ) : null;
     }

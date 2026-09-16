@@ -1820,6 +1820,22 @@ export interface MakaBridge {
       projectPath: string;
       projectGit: { isGitRepo: boolean; branch?: string };
     }>;
+    revealSessionFile(
+      sessionId: string,
+      path: string,
+    ): Promise<
+      | { ok: true }
+      | {
+          ok: false;
+          reason:
+            | 'unknown-key'
+            | 'not-allowed'
+            | 'missing'
+            | 'not-a-directory'
+            | 'not-a-file'
+            | 'open-failed';
+        }
+    >;
     openPath(
       key: 'workspace' | 'skills' | 'memory' | 'project',
       sessionId?: string,

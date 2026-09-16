@@ -35,6 +35,7 @@
 //   why a command can never race the policy.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { revealSessionFile } from '../../bridge/app.js';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { userFacingText, type StoredMessage } from '@maka/core/session';
@@ -295,6 +296,24 @@ function SessionTranscript(props: SessionViewProps) {
       onOpenFile: (path: string | undefined) => openWorkbarFile(sessionId, path),
       onOpenArtifact: (artifactId: string) => openWorkbarArtifact(sessionId, artifactId),
       onOpenTerminal: (ref: string) => openWorkbarTerminal(sessionId, ref),
+      // A delivered file goes to its destination AS ITSELF. The artifact
+      // routes materialize a copy under a temp presentation root, which is
+      // right for something the session produced and wrong here: this file is
+      // already in the user's project, and revealing a shadow of it answers a
+      // question nobody asked. Main resolves this session's root and re-checks
+      // the path lands inside it, so a delivery from elsewhere is refused —
+      // and says so, because a button that silently does nothing is worse.
+      onShowDeliveredFile: (path: string | undefined) => {
+        if (path === undefined) return;
+        void revealSessionFile(sessionId, path).then((result) => {
+          if (result.ok) return;
+          const delivery = getTranscriptCopy(locale).delivery;
+          toastApi.error(
+            delivery.openFailed,
+            result.reason === 'not-allowed' ? delivery.openOutsideWorkspace : undefined,
+          );
+        });
+      },
       // Leaves the session for the page that owns the task. The id travels out
       // of band because the nav selection is persisted (see the store).
       onOpenScheduledTask: (taskId: string) => {

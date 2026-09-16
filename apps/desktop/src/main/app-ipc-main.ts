@@ -23,7 +23,12 @@ import { app, ipcMain, shell } from 'electron';
 import { resolveProjectGitInfo } from '@maka/runtime/system-prompt/project-context';
 import type { createMainWindowController } from './main-window.js';
 import type { ProjectRootController } from './project-root-controller.js';
-import { resolveOpenPath, type OpenPathResult } from './open-path-guard.js';
+import {
+  resolveOpenPath,
+  resolveSessionFilePath,
+  type OpenPathFailureReason,
+  type OpenPathResult,
+} from './open-path-guard.js';
 import { getE2eFixtureState, type resolveE2eFixture } from './e2e-fixture.js';
 import type { resolveBuildInfo } from './build-info.js';
 import type { DesktopUpdateChannel } from './app-update-attestation.js';
@@ -175,6 +180,36 @@ export function registerAppIpc(
       projectGit: await resolveProjectGitInfo(projectPath),
     };
   });
+  // A delivered file, opened where it actually lives. The artifact routes
+  // (`app:openArtifactPath`, `app:showArtifactInFolder`) materialize a copy
+  // under the presentation root, which is right for something the session
+  // produced and wrong for a file SendUserFile handed over: that one is
+  // already in the user's project, and revealing a shadow of it in a temp
+  // directory answers a question nobody asked.
+  //
+  // It REVEALS and does not open. Handing the path to `shell.openPath` would
+  // let the system launch whatever that extension is registered to, which is a
+  // capability nothing asks for: the card's one action is "show me where this
+  // is", and the platform's own Open With is a right-click away from there.
+  targetIpc.handle(
+    'app:revealSessionFile',
+    async (
+      _event,
+      sessionId: unknown,
+      path: unknown,
+    ): Promise<{ ok: true } | { ok: false; reason: OpenPathFailureReason }> => {
+      if (!allowLocalProjectPaths) return { ok: false, reason: 'not-allowed' };
+      if (typeof sessionId !== 'string' || typeof path !== 'string') {
+        return { ok: false, reason: 'missing' };
+      }
+      const root = await deps.getSessionProjectRoot(sessionId);
+      if (!root) return { ok: false, reason: 'missing' };
+      const resolved = await resolveSessionFilePath({ root, path });
+      if (!resolved.ok) return resolved;
+      shell.showItemInFolder(resolved.path);
+      return { ok: true };
+    },
+  );
   targetIpc.handle('app:openPath', async (_event, key: string, sessionId: unknown): Promise<OpenPathResult> => {
     if (!allowLocalProjectPaths && key !== 'workspace') {
       return { ok: false, reason: 'not-allowed' };

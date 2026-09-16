@@ -28,6 +28,8 @@
 // the same fact, so this catalog deliberately stops where those begin.
 
 import type { ToolSummaryKey } from '../components/session/tools/tool-presentation.js';
+import type { DeliveryFileKind } from '../lib/ported/delivery-file-label.js';
+import type { MakaPlatform } from '../lib/platform.js';
 import type { UiCatalog, UiLocale } from '@maka/core/ui-locale';
 
 /**
@@ -168,10 +170,17 @@ export interface TranscriptCopy {
   readonly delivery: {
     readonly filesLabel: string;
     readonly openFile: (name: string) => string;
-    /** The tag on a delivery the model offered rather than was asked for. */
-    readonly proactive: string;
     readonly messageLabel: string;
     readonly empty: string;
+    /** The word before the extension on a card: `Document · MD`, `Code · PY`. */
+    readonly kind: Readonly<Record<DeliveryFileKind, string>>;
+    /**
+     * The card's one action, named by the platform's own file manager — a
+     * generic "file manager" is a word nobody's desktop uses.
+     */
+    readonly showIn: Readonly<Record<MakaPlatform, string>>;
+    readonly openFailed: string;
+    readonly openOutsideWorkspace: string;
   };
   /** The Grep and Glob list panels. */
   readonly search: {
@@ -446,9 +455,26 @@ const TRANSCRIPT_COPY = {
     delivery: {
       filesLabel: '发来的文件',
       openFile: (name) => `在文件面板中打开 ${name}`,
-      proactive: '主动发来',
       messageLabel: '留言',
       empty: '这次没有发来文件。',
+      kind: {
+        skill: '技能',
+        presentation: '演示文稿',
+        spreadsheet: '电子表格',
+        document: '文档',
+        code: '代码',
+        diagram: '图表',
+        image: '图片',
+        audio: '音频',
+        file: '文件',
+      },
+      showIn: {
+        darwin: '在访达中显示',
+        win32: '在文件资源管理器中显示',
+        linux: '在文件管理器中显示',
+      },
+      openFailed: '打不开这个文件',
+      openOutsideWorkspace: '这个文件不在当前项目里，只能在文件面板中查看。',
     },
     search: {
       matchesLabel: '匹配结果',
@@ -614,9 +640,26 @@ const TRANSCRIPT_COPY = {
     delivery: {
       filesLabel: '傳來的檔案',
       openFile: (name) => `在檔案面板中開啟 ${name}`,
-      proactive: '主動傳來',
       messageLabel: '留言',
       empty: '這次沒有傳來檔案。',
+      kind: {
+        skill: '技能',
+        presentation: '簡報',
+        spreadsheet: '試算表',
+        document: '文件',
+        code: '程式碼',
+        diagram: '圖表',
+        image: '圖片',
+        audio: '音訊',
+        file: '檔案',
+      },
+      showIn: {
+        darwin: '在 Finder 中顯示',
+        win32: '在檔案總管中顯示',
+        linux: '在檔案管理器中顯示',
+      },
+      openFailed: '開不了這個檔案',
+      openOutsideWorkspace: '這個檔案不在目前專案內，只能在檔案面板中檢視。',
     },
     search: {
       matchesLabel: '符合的結果',
@@ -787,9 +830,27 @@ const TRANSCRIPT_COPY = {
     delivery: {
       filesLabel: 'Files sent to you',
       openFile: (name) => `Open ${name} in Files`,
-      proactive: 'Sent unprompted',
       messageLabel: 'Message',
       empty: 'No files came with this.',
+      kind: {
+        skill: 'Skill',
+        presentation: 'Presentation',
+        spreadsheet: 'Spreadsheet',
+        document: 'Document',
+        code: 'Code',
+        diagram: 'Diagram',
+        image: 'Image',
+        audio: 'Audio',
+        file: 'File',
+      },
+      showIn: {
+        darwin: 'Show in Finder',
+        win32: 'Show in Explorer',
+        linux: 'Show in file manager',
+      },
+      openFailed: 'That file would not open',
+      openOutsideWorkspace:
+        'This file is not in the project, so it can only be viewed in the Files face.',
     },
     search: {
       matchesLabel: 'Matches',

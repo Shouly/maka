@@ -40,6 +40,8 @@
 // selection belongs to.
 
 import { memo, useMemo } from 'react';
+import { DeliveryAutoOpen } from './tools/renderers/DeliveryResults.js';
+import { durableResultOf } from '../../lib/tool-delivery-results.js';
 import { finalAssistantReplyText, useUiLocale, type TurnViewModel } from '@maka/ui';
 import type { AttachmentRef } from '@maka/core/events';
 import Markdown from '../ui/Markdown.js';
@@ -190,6 +192,13 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
             // `user_file_delivery` is decided in exactly one place.
             return (
               <div key={`delivery-${entry.id}`} data-maka-delivery={entry.id}>
+                {/* Draws nothing: it is `display: 'render'` moving the pane
+                    onto the file, which only happens while the turn is live. */}
+                <DeliveryAutoOpen
+                  result={durableResultOf(entry.item)}
+                  live={props.live}
+                  onOpenArtifact={props.toolContext.onOpenArtifact}
+                />
                 {renderToolContent(entry.item, props.toolContext)}
               </div>
             );
