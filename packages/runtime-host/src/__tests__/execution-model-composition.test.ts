@@ -3351,7 +3351,7 @@ test('production Host executes a durable runnable child with an exact tool ceili
     // agent-permission tools cannot be the thing that decides whether the child
     // can read back a result the runtime itself pruned.
     assert.deepEqual(toolNames(requests[2]?.body), ['ArchiveRead', 'Glob', 'Grep', 'Read']);
-    assert.doesNotMatch(JSON.stringify(requests[2]?.body), /<application_details>/u);
+    assert.doesNotMatch(JSON.stringify(requests[2]?.body), /<situation>/u);
     assert.ok(toolNames(requests[3]?.body).includes('Agent'));
 
     const sessions = await execution.sessionStore.listForRecovery();
@@ -4407,12 +4407,12 @@ test('one turn shares one canonical Skill inventory across prompt and lazy tools
   assert.equal(inventoryReads, 2);
 
   for (const prompt of [firstPrompt, nextPrompt]) {
-    assert.match(prompt ?? '', /^<application_details>$/mu);
-    assert.equal(prompt?.match(/^<application_details>$/gmu)?.length, 1);
+    assert.match(prompt ?? '', /^<situation>$/mu);
+    assert.equal(prompt?.match(/^<situation>$/gmu)?.length, 1);
     // One copy of each static section: the layer is prepended once per turn.
     assert.equal(prompt?.match(/^<tone_and_formatting>$/gmu)?.length, 1);
     assert.equal(prompt?.match(/^<workspace_and_tools>$/gmu)?.length, 1);
-    assert.match(prompt ?? '', /When done: one or two sentences on the outcome\./u);
+    assert.match(prompt ?? '', /one or two sentences about the outcome/u);
   }
 });
 

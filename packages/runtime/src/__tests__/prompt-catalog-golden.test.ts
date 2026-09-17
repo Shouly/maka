@@ -61,13 +61,29 @@ test('static sections are ordered, unique and non-empty', () => {
     assert.ok(sections[index - 1]!.order < sections[index]!.order, 'orders ascend');
   }
   for (const section of sections) assert.ok(section.body.trim().length > 0, section.id);
-  assert.equal(ids[0], 'application-details');
+  assert.equal(ids[0], 'copilot-behavior');
+});
+
+test('every tag a section opens, it closes, in order', () => {
+  // A blunt check, earned: a search-and-replace keyed on `<user_wellbeing>`
+  // once matched the mention of that tag INSIDE `<chatting_with_person>` and
+  // swallowed everything from there to the real closing tag — three blocks and
+  // two closing tags gone, and every other test still green.
+  const text = assembleMainSessionSystemPrompt([]);
+  const open: string[] = [];
+  for (const [, closing, name] of text.matchAll(/^<(\/?)([a-z_]+)>$/gmu)) {
+    if (closing) assert.equal(open.pop(), name, `mismatched </${name}>`);
+    else open.push(name!);
+  }
+  assert.deepEqual(open, [], 'every opened tag is closed');
 });
 
 test('host fragments follow the static layer and empties are dropped', () => {
   const text = assembleMainSessionSystemPrompt(['', undefined, 'Project instructions']);
-  assert.match(text, /^The assistant is Copilot\./u);
-  assert.match(text, /<application_details>/u);
+  assert.match(text, /^The assistant is Copilot\.\n\n<copilot_behavior>/u);
+  // One file per top-level block, so the agentic half arrives whole.
+  assert.match(text, /<agentic_behavior>\n\n<situation>/u);
+  assert.match(text, /<\/how_a_task_runs>\n<\/agentic_behavior>/u);
   assert.match(text, /<workspace_and_tools>/u);
   assert.match(text, /Project instructions$/u);
   assert.doesNotMatch(text, /\n\n\n/u);

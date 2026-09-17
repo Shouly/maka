@@ -64,8 +64,21 @@ export function buildAskUserQuestionTool(): MakaTool<
       '',
       'Usage notes:',
       '- Users will always be able to select "Other" to provide custom text input',
-      '- Use multiSelect: true to allow multiple answers',
+      '- Use multiSelect: true to allow multiple answers to be selected for a question',
       '- If you recommend a specific option, make that the first option in the list and add "(Recommended)" at the end of the label',
+      '',
+      // The closing paragraph the reference ends on, and the one that does the
+      // work: "blocked" at the top says WHEN, this says what to do instead the
+      // rest of the time. `<starting>` turns on the same judgement — ask only
+      // when a wrong guess is expensive — so leaving it out left the tool
+      // sounding stricter than the rule it serves.
+      //
+      // NOT ported: the reference's plan-mode note. It names EnterPlanMode and
+      // ExitPlanMode, which are not how plan mode is entered here, and Maka's
+      // own plan-mode prompt already carries the rule for that mode ("use
+      // AskUserQuestion only when a bounded answer is required") where it
+      // applies rather than in a description that is always present.
+      "Reserve this for decisions where the user's answer changes what you do next — not for choices with a conventional default or facts you can verify in the codebase yourself. In those cases pick the obvious option, mention it in your response, and proceed.",
     ].join('\n'),
     parameters: z.object({
       questions: z

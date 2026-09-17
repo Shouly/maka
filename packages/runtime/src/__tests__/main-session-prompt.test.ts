@@ -28,10 +28,14 @@ import {
 test('main-session prompt closes on the outcome rather than narrating each step', () => {
   const prompt = assembleMainSessionSystemPrompt(['Project instructions']);
 
-  // The reference states this once, as a closing rule. It deliberately does
-  // not ask for narration before or between tool calls.
-  assert.match(prompt, /When done: one or two sentences on the outcome\./);
-  assert.match(prompt, /Do not recap every step/);
+  // The rule has two homes and no block of its own: the reference folded the
+  // standalone `<progress_updates>` into the register it belongs to and the end
+  // of the task. It still deliberately does not ask for narration before or
+  // between tool calls.
+  assert.match(prompt, /one or two sentences about the outcome/);
+  assert.match(prompt, /does not recap the steps/);
+  assert.match(prompt, /keeps narration to a minimum/);
+  assert.doesNotMatch(prompt, /<progress_updates>/);
   assert.doesNotMatch(prompt, /progress update before the first non-trivial tool call/);
   assert.doesNotMatch(prompt, /ProgressUpdate/);
   assert.match(prompt, /Project instructions$/);
@@ -42,14 +46,21 @@ test('the knowledge cutoff is interpolated, and its absence leaves no hole', () 
     knowledge_cutoff_section: renderKnowledgeCutoffSection('2026-05-05'),
   });
   assert.match(withCutoff, /<knowledge_cutoff>/);
-  assert.match(withCutoff, /is May 5, 2026\./);
+  assert.match(withCutoff, /past which it can't answer reliably, is May 5, 2026\./);
+  // The date also names what Copilot will not take a position on without
+  // searching, so an interpolation that only reached the opening sentence
+  // would leave the rest of the rule dateless.
+  assert.match(withCutoff, /neither confirms nor denies post-May 5, 2026 claims/);
   assert.doesNotMatch(withCutoff, /\{knowledge_cutoff_section\}/);
 
   // An unknown cutoff still states the behaviour; it never names a date.
   const unknown = assembleMainSessionSystemPrompt([], {
     knowledge_cutoff_section: renderKnowledgeCutoffSection(undefined),
   });
-  assert.match(unknown, /Copilot has a reliable knowledge cutoff date/);
+  assert.match(
+    unknown,
+    /Copilot has a reliable knowledge cutoff, past which it can't answer reliably\./,
+  );
 
   // A substitution that is not supplied collapses to nothing rather than
   // printing the placeholder at the model.

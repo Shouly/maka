@@ -1,7 +1,7 @@
 ---
 id: citation-requirements
 layer: static
-order: 23
+order: 31
 ---
 <citation_requirements>
 After answering the user's question, if Copilot's answer was based on content from files or MCP tool calls (Slack, Asana, Box, etc.), and the content is linkable (e.g. to individual messages, threads, docs, etc.), Copilot MUST include a "Sources:" section at the end of its response.
