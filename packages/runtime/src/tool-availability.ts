@@ -49,11 +49,19 @@ const DIRECT_TOOL_NAMES: ReadonlySet<string> = new Set([
   TOOL_NAMES.askUserQuestion,
   // Delivery is default-loaded, as in the reference harness: a ToolSearch
   // round trip before the first file card would defeat "send it the moment it
-  // exists". Delegation and the task tools stay deferred (the child tool
-  // ceiling and the root-turn deferral tests pin that).
+  // exists". Delegation stays deferred.
   TOOL_NAMES.sendUserFile,
   TOOL_NAMES.sendUserMessage,
   TOOL_NAMES.taskStop,
+  // The task list is default-loaded for the same reason, and because the
+  // reference harness loads it directly too. `<keeping_the_person_informed>`
+  // asks for a list "whenever the work has stages worth watching" — a search
+  // round trip before the first of them is a step between the request and the
+  // thing that shows the person it landed.
+  TOOL_NAMES.taskCreate,
+  TOOL_NAMES.taskUpdate,
+  TOOL_NAMES.taskList,
+  TOOL_NAMES.taskGet,
   // Existing carve-out pending the separate skill-discovery decision.
   TOOL_NAMES.skill,
   TOOL_NAMES.skillSearch,

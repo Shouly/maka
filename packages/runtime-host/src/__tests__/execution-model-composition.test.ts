@@ -2840,7 +2840,15 @@ test('production Host executes a canonical ai-sdk Session against a real provide
       'SendUserMessage',
       'Skill',
       'SkillSearch',
+      // The task list is default-loaded: `<keeping_the_person_informed>` asks
+      // for one whenever the work has stages worth watching, and a ToolSearch
+      // round trip before the first of them is a step between the request and
+      // the thing that shows the person it landed.
+      'TaskCreate',
+      'TaskGet',
+      'TaskList',
       'TaskStop',
+      'TaskUpdate',
       'ToolSearch',
       'WebFetch',
       'Write',
