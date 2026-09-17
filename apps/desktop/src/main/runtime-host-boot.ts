@@ -365,6 +365,19 @@ function activeRuntimeHostRef(): DesktopTargetScope | undefined {
 }
 const runtimeHostGeneration = app.isPackaged ? app.getVersion() : randomUUID();
 const e2eFixture = resolveDesktopE2eFixture();
+
+// Declared HERE, above the dialog helpers, because one of them runs during
+// module evaluation: a storage root whose identity does not match parks at a
+// repair dialog before the rest of this file has been reached. Left further
+// down, `showDesktopMessageBox` closed over a `const` in its temporal dead zone
+// and the repair dialog died with `Cannot access 'revealMode' before
+// initialization` — turning a recoverable startup into a fatal one, on the one
+// path whose whole job is to recover.
+const revealMode = resolveWindowRevealMode(
+  Boolean(e2eFixture) || isIsolatedE2e,
+  process.env.MAKA_E2E_SHOW_WINDOW === "1",
+  app.isPackaged,
+);
 const useBotOnboardingFixture = e2eFixture?.scenario === "settings-bots-onboarding";
 const workspaceRoot = join(
   userDataDir,
@@ -506,11 +519,6 @@ function ensureMcpReady(): Promise<void> {
   return mcpStartup;
 }
 const keepSystemAwake = createKeepSystemAwakeController(powerSaveBlocker);
-const revealMode = resolveWindowRevealMode(
-  Boolean(e2eFixture) || isIsolatedE2e,
-  process.env.MAKA_E2E_SHOW_WINDOW === "1",
-  app.isPackaged,
-);
 let onMainWindowClose = (): void => {};
 let onMainWindowClosed = (): void => {};
 const mainWindowController = createMainWindowController({

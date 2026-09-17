@@ -65,12 +65,12 @@ import {
 } from '@maka/ui/artifact-preview-registry';
 import { ARTIFACT_PDF_PREVIEW_MAX_BYTES, artifactPreviewUrl } from '@maka/core/artifacts';
 import { formatBytes, syntaxLanguageForPath, useUiLocale } from '@maka/ui';
+import type { ArtifactViewMode } from '../../store/workbar-store.js';
 import CodeRenderer from '../ui/CodeRenderer.js';
 import DiffRenderer from '../ui/DiffRenderer.js';
 import Markdown from '../ui/Markdown.js';
 import { MermaidDiagram } from '../ui/MermaidDiagram.js';
 import { LoadingSpinner } from '../ui/LoadingSpinner.js';
-import { SegmentedControl } from '../ui/segmented-control.js';
 import { PreviewNotice } from './PreviewNotice.js';
 import { readArtifactBinary, readArtifactText } from '../../bridge/artifacts.js';
 import {
@@ -80,7 +80,6 @@ import {
   ARTIFACT_TEXT_HIGHLIGHT_LINE_LIMIT,
   boundPreviewText,
   capPreviewLines,
-  countExternalLinks,
   isMarkdownArtifactName,
   isMermaidArtifactName,
   type BoundedPreviewText,
@@ -88,19 +87,36 @@ import {
 import { getArtifactCopy, type ArtifactCopy } from '../../locales/artifact-copy.js';
 import { getWorkbarCopy } from '../../locales/workbar-copy.js';
 
+/**
+ * Does this file have two ways to look at it?
+ *
+ * The answer decides whether the pane's header offers Rendered / Source at
+ * all. A `.py` is text either way — offering a choice that changes nothing is
+ * worse than offering none — while markdown, a mermaid source, a diff and a
+ * page each have a drawn form that is not their markup.
+ */
+export function artifactHasRenderedView(record: ArtifactDescriptor): boolean {
+  if (record.kind === 'diff' || record.kind === 'html') return true;
+  if (record.kind !== 'file') return false;
+  return isMarkdownArtifactName(record.name) || isMermaidArtifactName(record.name);
+}
+
 export function ArtifactPreview(props: {
   record: ArtifactDescriptor;
+  /** Chosen in the pane's header; ignored by the kinds that have one view. */
+  view?: ArtifactViewMode;
   onOpenExternally?: () => void;
 }) {
   const locale = useUiLocale();
   const copy = getArtifactCopy(locale);
+  const view = props.view ?? 'preview';
   switch (props.record.kind) {
     case 'file':
-      return <TextArtifact record={props.record} copy={copy} mode="file" />;
+      return <TextArtifact record={props.record} copy={copy} mode="file" view={view} />;
     case 'diff':
-      return <TextArtifact record={props.record} copy={copy} mode="diff" />;
+      return <TextArtifact record={props.record} copy={copy} mode="diff" view={view} />;
     case 'html':
-      return <TextArtifact record={props.record} copy={copy} mode="html" />;
+      return <TextArtifact record={props.record} copy={copy} mode="html" view={view} />;
     case 'image':
       return (
         <ImageArtifact
@@ -126,8 +142,9 @@ function TextArtifact(props: {
   record: ArtifactDescriptor;
   copy: ArtifactCopy;
   mode: 'file' | 'diff' | 'html';
+  view: ArtifactViewMode;
 }) {
-  const { copy, mode, record } = props;
+  const { copy, mode, record, view } = props;
   const result = useTextRead(record.sessionId, record.id);
   if (result.state === 'loading') {
     return (
@@ -146,40 +163,44 @@ function TextArtifact(props: {
     const failure = textFailureCopy(record, result.value.reason, copy);
     return <PreviewNotice tone={failure.tone} title={failure.title} detail={failure.description} />;
   }
+  // Source wins over every kind: it is the reader asking for the markup, and a
+  // file with no drawn form never offers the choice in the first place.
+  if (view === 'code' && artifactHasRenderedView(record)) {
+    return <SourceBody name={record.name} text={result.value.text} copy={copy} />;
+  }
   if (mode === 'diff') return <DiffBody name={record.name} text={result.value.text} copy={copy} />;
   if (mode === 'html') return <HtmlBody record={record} text={result.value.text} copy={copy} />;
   return <FileBody name={record.name} text={result.value.text} copy={copy} />;
 }
 
+function SourceBody(props: { name: string; text: string; copy: ArtifactCopy }) {
+  const bounded = boundPreviewText(props.text);
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-2" data-maka-artifact-preview="source">
+      <BoundedCode name={props.name} bounded={bounded} />
+      <PreviewLimits bounded={bounded} copy={props.copy} />
+    </div>
+  );
+}
+
+/**
+ * The drawn form of a text file. The choice between this and the markup is the
+ * header's — see `artifactHasRenderedView` — so this draws and nothing else.
+ */
 function FileBody(props: { name: string; text: string; copy: ArtifactCopy }) {
-  const markdown = isMarkdownArtifactName(props.name);
   const mermaid = isMermaidArtifactName(props.name);
-  const renderable = markdown || mermaid;
-  const [mode, setMode] = useState<'rendered' | 'source'>(renderable ? 'rendered' : 'source');
+  const markdown = isMarkdownArtifactName(props.name);
   const bounded = boundPreviewText(props.text);
   return (
     <div
       className="flex min-h-0 flex-1 flex-col gap-2"
       data-maka-artifact-preview={mermaid ? 'mermaid' : 'file'}
     >
-      {renderable && (
-        <SegmentedControl
-          size="sm"
-          className="self-start"
-          ariaLabel={props.copy.pane.previewNamed(props.name)}
-          value={mode}
-          onChange={setMode}
-          options={[
-            { value: 'rendered', label: props.copy.preview.rendered },
-            { value: 'source', label: props.copy.preview.source },
-          ]}
-        />
-      )}
-      {mode === 'rendered' && mermaid ? (
+      {mermaid ? (
         // The file IS the diagram source, so it goes to the renderer directly
         // rather than through a fence Markdown would have to parse back out.
         <MermaidDiagram code={bounded.displayText} />
-      ) : mode === 'rendered' ? (
+      ) : markdown ? (
         <Markdown noPadding disableRawHtml>
           {bounded.highlightedText}
         </Markdown>
@@ -225,17 +246,21 @@ function HtmlBody(props: { record: ArtifactDescriptor; text: string; copy: Artif
     );
   }
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2" data-maka-artifact-preview="html">
-      <p
-        className="text-xs leading-4 text-text-muted"
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-      >
-        {props.copy.preview.externalLinks(countExternalLinks(bounded.displayText))}
-      </p>
+    <div className="flex h-full min-h-0 w-full flex-col" data-maka-artifact-preview="html">
+      {/* No banner over the page. There used to be a line counting the links
+          and saying they were disabled — written when the frame was
+          `sandbox=""` and nothing in it ran at all. The page runs now, and the
+          line printed itself even for a page with zero links, which is a
+          caption about nothing standing between the reader and the artifact.
+          The reference shows the page and only the page. */}
+      {/* The page IS the pane: full height, full width, no frame of our own.
+          It used to carry `min-h-[320px]` and a rounded hairline border — a
+          card, sized by its floor, with the artifact inside it. A rendered
+          page has its own margins and its own background; anything we draw
+          around it is a second frame, and the floor became the CEILING, since
+          nothing above gave the iframe a height to grow into. */}
       <iframe
-        className="min-h-[320px] w-full flex-1 rounded-lg border-[0.5px] border-hairline bg-surface-2"
+        className="h-full w-full flex-1"
         title={props.copy.preview.frameTitle(name)}
         // `allow-scripts` alone: the page runs, and its origin stays opaque, so
         // it reads no storage and nothing of the app's. Adding
@@ -337,7 +362,7 @@ function ImageArtifact(props: {
   }
   return (
     <div
-      className="flex min-h-0 flex-1 items-center justify-center"
+      className="flex h-full min-h-0 items-center justify-center"
       data-maka-artifact-preview="image"
     >
       <img
@@ -388,7 +413,7 @@ function PdfArtifact(props: {
   if (blob.state === 'loading') return <PreviewLoading label={props.copy.preview.loadingPdf} />;
   if (blob.state === 'pdf') {
     return (
-      <div className="flex min-h-0 flex-1" data-maka-artifact-preview="pdf">
+      <div className="flex h-full min-h-0" data-maka-artifact-preview="pdf">
         {/* Chromium's own viewer. `plugins: true` on the window is what makes
             this paint rather than show a blank rectangle, and the CSP admits
             `object-src blob:` for exactly this. */}

@@ -30,16 +30,15 @@ import { createUiStore } from '../ui-store.js';
 import { createWorkbarStore, matchArtifactForPath } from '../workbar-store.js';
 import { resolveHotkey } from '../../hooks/use-hotkeys.js';
 import {
-  SESSION_WORKBAR_MAX_WIDTH,
-  SESSION_WORKBAR_MIN_WIDTH,
+  SESSION_WORKBAR_MAX_FRACTION,
+  SESSION_WORKBAR_MIN_FRACTION,
+  SESSION_WORKBAR_WIDTH_FRACTION,
   isSessionWorkbarCollapsed,
 } from '../../lib/ported/workbar-layout.js';
-import { nextArtifactListAction } from '../../lib/ported/artifact-list-keyboard.js';
 import {
   ARTIFACT_TEXT_HIGHLIGHT_LINE_LIMIT,
   boundPreviewText,
   capPreviewLines,
-  countExternalLinks,
   isMarkdownArtifactName,
   isMermaidArtifactName,
 } from '../../lib/ported/artifact-preview-text.js';
@@ -158,13 +157,26 @@ test('opening a face reveals the pane for that task and persists the topology', 
     ui.dispatchWorkbar({
       type: 'open',
       placement: 'right',
-      tab: { id: 'workbar:files', kind: 'files' },
+      tab: { id: 'workbar:review', kind: 'review' },
     });
     assert.equal(isSessionWorkbarCollapsed(ui.getState().workbar), false);
     const persisted = JSON.parse(localStorage.getItem('maka-session-workbar-panels-v3') ?? '');
     assert.equal(persisted.version, 3);
-    assert.deepEqual(persisted.right.tabs, [{ id: 'workbar:files', kind: 'files' }]);
-    assert.equal(persisted.right.activeTabId, 'workbar:files');
+    assert.deepEqual(persisted.right.tabs, [{ id: 'workbar:review', kind: 'review' }]);
+    assert.equal(persisted.right.activeTabId, 'workbar:review');
+
+    // The file viewer is the exception: it is opened by choosing a file and the
+    // chosen file is not persisted, so a restored tab would come back empty and
+    // hold the column with a notice.
+    ui.dispatchWorkbar({
+      type: 'open',
+      placement: 'right',
+      tab: { id: 'workbar:files', kind: 'files' },
+    });
+    assert.deepEqual(
+      JSON.parse(localStorage.getItem('maka-session-workbar-panels-v3') ?? '').right.tabs,
+      [{ id: 'workbar:review', kind: 'review' }],
+    );
 
     // Collapse is remembered PER TASK, under the v2 key. The v1 key had no
     // owner and is removed rather than migrated (`workbar-layout.ts`).
@@ -199,17 +211,23 @@ test('closing the last face hands the column back, and the width is clamped', ()
     // the session panel, which is what an empty column holds.
     assert.equal(isSessionWorkbarCollapsed(ui.getState().workbar), false);
 
-    // The guard on a *stored* number, not the width a reader sees: that ceiling
-    // is half the window, and it lives in `use-workbar` because only the hook
-    // has a frame to measure.
-    ui.dispatchWorkbar({ type: 'resize', placement: 'right', size: 10_000 });
-    assert.equal(ui.getState().workbar.rightWidth, SESSION_WORKBAR_MAX_WIDTH);
+    // What is stored is the pane's SHARE of the content area, so the bounds are
+    // shares too: at most the half it opens at, and never a sliver. The pixels
+    // a reader sees are resolved in `use-workbar`, which is the only place with
+    // a frame to measure.
+    ui.dispatchWorkbar({ type: 'resize', placement: 'right', size: 0.9 });
+    assert.equal(ui.getState().workbar.rightFraction, SESSION_WORKBAR_MAX_FRACTION);
     assert.equal(
-      localStorage.getItem('maka-session-workbar-width-v2'),
-      String(SESSION_WORKBAR_MAX_WIDTH),
+      localStorage.getItem('maka-session-workbar-split-v1'),
+      String(SESSION_WORKBAR_MAX_FRACTION),
     );
-    ui.dispatchWorkbar({ type: 'resize', placement: 'right', size: 10 });
-    assert.equal(ui.getState().workbar.rightWidth, SESSION_WORKBAR_MIN_WIDTH);
+    // The ceiling is NOT where the pane opens: an even split leaves the handle
+    // room to travel both ways, which the two being one number did not.
+    assert.notEqual(SESSION_WORKBAR_MAX_FRACTION, SESSION_WORKBAR_WIDTH_FRACTION);
+    // And the pixel key it replaces is not left behind to be read by anything.
+    assert.equal(localStorage.getItem('maka-session-workbar-width-v2'), null);
+    ui.dispatchWorkbar({ type: 'resize', placement: 'right', size: 0.01 });
+    assert.equal(ui.getState().workbar.rightFraction, SESSION_WORKBAR_MIN_FRACTION);
   } finally {
     restore();
   }
@@ -267,35 +285,6 @@ test('a path is matched on its basename, and the newest artifact of that name wi
   assert.equal(matchArtifactForPath(records, ''), undefined);
 });
 
-// ── the artifact list's keyboard ────────────────────────────────────────────
-
-test('the artifact list is one tab stop with a wrapping roving selection', () => {
-  const ids = ['a', 'b', 'c'];
-  assert.deepEqual(
-    nextArtifactListAction({ currentSelectedId: undefined, visibleIds: ids, key: 'ArrowDown' }),
-    { kind: 'select', targetId: 'a' },
-  );
-  assert.deepEqual(
-    nextArtifactListAction({ currentSelectedId: 'c', visibleIds: ids, key: 'ArrowDown' }),
-    { kind: 'select', targetId: 'a' },
-  );
-  assert.deepEqual(
-    nextArtifactListAction({ currentSelectedId: 'a', visibleIds: ids, key: 'End' }),
-    {
-      kind: 'select',
-      targetId: 'c',
-    },
-  );
-  assert.deepEqual(
-    nextArtifactListAction({ currentSelectedId: 'b', visibleIds: ids, key: 'Enter' }),
-    { kind: 'activate', targetId: 'b' },
-  );
-  assert.equal(
-    nextArtifactListAction({ currentSelectedId: 'b', visibleIds: [], key: 'ArrowDown' }).kind,
-    'noop',
-  );
-});
-
 // ── how much of a file the preview draws ────────────────────────────────────
 
 test('the preview bounds highlighting separately from display, and never cuts a codepoint', () => {
@@ -321,9 +310,6 @@ test('diffs are line-capped, links are counted, markdown opens rendered', () => 
   assert.equal(capped.text, 'a\nb');
   assert.equal(capped.hiddenLines, 2);
   assert.equal(capPreviewLines('a\nb', 5).hiddenLines, 0);
-
-  assert.equal(countExternalLinks('<a href="x">1</a> <A  class="y" HREF=z>2</A>'), 2);
-  assert.equal(countExternalLinks('<span>none</span>'), 0);
 
   assert.equal(isMarkdownArtifactName('notes.MD'), true);
   assert.equal(isMarkdownArtifactName('notes.markdown'), true);

@@ -90,11 +90,6 @@ export function capPreviewLines(
   return { text: lines.slice(0, limit).join('\n'), hiddenLines: lines.length - limit };
 }
 
-/** `<a href=…>` clicks are inert inside the preview's sandbox; count them to say so. */
-export function countExternalLinks(html: string): number {
-  return (html.match(/<a\s[^>]*href=/giu) ?? []).length;
-}
-
 /** A `.md` artifact opens rendered; everything else opens as source. */
 export function isMarkdownArtifactName(name: string): boolean {
   return /\.(?:md|markdown)$/iu.test(name);

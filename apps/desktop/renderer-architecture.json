@@ -217,7 +217,7 @@
     "src/renderer/components/welcome/WorkspacePicker.tsx",
     "src/renderer/components/workbar/ArtifactPreview.tsx",
     "src/renderer/components/workbar/BrowserTab.tsx",
-    "src/renderer/components/workbar/FilesTab.tsx",
+    "src/renderer/components/workbar/FilePreviewViewer.tsx",
     "src/renderer/components/workbar/InspectorTab.tsx",
     "src/renderer/components/workbar/PreviewNotice.tsx",
     "src/renderer/components/workbar/ReviewTab.tsx",
@@ -236,6 +236,7 @@
     "src/renderer/hooks/use-memory-state.ts",
     "src/renderer/hooks/use-oauth-login-flow.ts",
     "src/renderer/hooks/use-page-history.ts",
+    "src/renderer/hooks/use-session-artifacts.ts",
     "src/renderer/hooks/use-session-list.ts",
     "src/renderer/hooks/use-session-trace.ts",
     "src/renderer/hooks/use-settings-draft.ts",
@@ -267,7 +268,6 @@
     "src/renderer/lib/module-list-state.ts",
     "src/renderer/lib/platform.ts",
     "src/renderer/lib/ported/about-update-status.ts",
-    "src/renderer/lib/ported/artifact-list-keyboard.ts",
     "src/renderer/lib/ported/artifact-preview-text.ts",
     "src/renderer/lib/ported/attachment-preflight.ts",
     "src/renderer/lib/ported/branch-banner.ts",
@@ -442,6 +442,7 @@
     "src/renderer/store/revision-actions.ts",
     "src/renderer/store/revision-draft.ts",
     "src/renderer/store/scheduled-tasks-store.ts",
+    "src/renderer/store/session-artifacts-store.ts",
     "src/renderer/store/session-event-handlers.ts",
     "src/renderer/store/session-list-model.ts",
     "src/renderer/store/session-state.ts",
@@ -2359,6 +2360,7 @@
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
+        "useSessionArtifacts": 1,
         "useState": 1,
         "useTaskProgress": 1,
         "useUiLocale": 1
@@ -2367,8 +2369,11 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../../hooks/use-session-artifacts.js": 1,
         "../../hooks/use-task-progress.js": 1,
+        "../../hooks/use-workbar.js": 1,
         "../../lib/cn.js": 1,
+        "../../lib/ported/delivery-file-label.js": 1,
         "../../locales/session-panel-copy.js": 1,
         "../icons/Anthropicon.js": 1,
         "@maka/ui": 1,
@@ -4756,7 +4761,7 @@
       "environmentCapabilities": {},
       "hookCalls": {
         "useEffect": 3,
-        "useState": 4,
+        "useState": 3,
         "useUiLocale": 3
       },
       "lifecycleMethods": {},
@@ -4772,7 +4777,6 @@
         "../ui/LoadingSpinner.js": 1,
         "../ui/Markdown.js": 1,
         "../ui/MermaidDiagram.js": 1,
-        "../ui/segmented-control.js": 1,
         "./PreviewNotice.js": 1,
         "@maka/core/artifacts": 1,
         "@maka/ui": 1,
@@ -4809,20 +4813,18 @@
         "react": 1
       }
     },
-    "src/renderer/components/workbar/FilesTab.tsx": {
+    "src/renderer/components/workbar/FilePreviewViewer.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {
-        "clearTimeout": 2,
         "navigator.clipboard.writeText": 1,
-        "requestAnimationFrame": 1,
         "setTimeout": 1
       },
       "hookCalls": {
-        "useEffect": 4,
-        "useRef": 2,
-        "useState": 5,
-        "useStore": 2,
-        "useUiLocale": 1
+        "useEffect": 1,
+        "useSessionArtifacts": 1,
+        "useState": 2,
+        "useStore": 4,
+        "useUiLocale": 3
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
@@ -4830,22 +4832,26 @@
       "dependencyPaths": {
         "../../bridge/app.js": 1,
         "../../bridge/artifacts.js": 1,
+        "../../hooks/use-session-artifacts.js": 1,
+        "../../hooks/use-workbar.js": 1,
         "../../lib/cn.js": 1,
-        "../../lib/ported/artifact-list-keyboard.js": 1,
+        "../../lib/ported/artifact-preview-text.js": 1,
+        "../../lib/ported/delivery-file-label.js": 1,
         "../../locales/artifact-copy.js": 1,
-        "../../store/index.js": 1,
+        "../../store/session-artifacts-store.js": 1,
         "../../store/toast-store.js": 1,
         "../../store/workbar-store.js": 1,
         "../icons/Anthropicon.js": 1,
         "../ui/button.js": 1,
         "../ui/confirm-dialog.js": 1,
-        "../ui/dropdown-menu.js": 1,
-        "../ui/menu-variants.js": 1,
+        "../ui/LoadingSpinner.js": 1,
+        "../ui/right-pane-shell.js": 1,
+        "../ui/segmented-control.js": 1,
+        "../ui/split-button.js": 1,
         "./ArtifactPreview.js": 1,
         "./PreviewNotice.js": 1,
         "@maka/core/artifacts": 1,
         "@maka/core/redaction": 1,
-        "@maka/core/relative-time": 1,
         "@maka/ui": 1,
         "react": 1,
         "zustand": 1
@@ -4973,6 +4979,7 @@
       "hookCalls": {
         "useRef": 2,
         "useState": 1,
+        "useStore": 1,
         "useUiLocale": 1
       },
       "lifecycleMethods": {},
@@ -4980,18 +4987,20 @@
       "actionFactories": [],
       "dependencyPaths": {
         "../../locales/workbar-copy.js": 1,
+        "../../store/workbar-store.js": 1,
         "../icons/Anthropicon.js": 1,
         "../ui/button.js": 1,
         "../ui/right-pane-shell.js": 1,
         "../ui/tooltip.js": 1,
         "./BrowserTab.js": 1,
-        "./FilesTab.js": 1,
+        "./FilePreviewViewer.js": 1,
         "./InspectorTab.js": 1,
         "./ReviewTab.js": 1,
         "./TerminalTab.js": 1,
         "./WorkbarTabStrip.js": 1,
         "@maka/ui": 1,
-        "react": 1
+        "react": 1,
+        "zustand": 1
       }
     },
     "src/renderer/components/workbar/WorkbarTabStrip.tsx": {
@@ -5171,6 +5180,22 @@
       "actionFactories": [],
       "dependencyPaths": {
         "../store/page-history.js": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/hooks/use-session-artifacts.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 1,
+        "useStore": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../store/session-artifacts-store.js": 1,
         "react": 1,
         "zustand": 1
       }
@@ -5373,7 +5398,7 @@
       },
       "hookCalls": {
         "useEffect": 1,
-        "useStore": 2,
+        "useStore": 4,
         "useSyncExternalStore": 1
       },
       "lifecycleMethods": {},
@@ -5614,15 +5639,6 @@
       "dependencyPaths": {}
     },
     "src/renderer/lib/ported/about-update-status.ts": {
-      "bridgePaths": {},
-      "environmentCapabilities": {},
-      "hookCalls": {},
-      "lifecycleMethods": {},
-      "unresolvedDependencies": 0,
-      "actionFactories": [],
-      "dependencyPaths": {}
-    },
-    "src/renderer/lib/ported/artifact-list-keyboard.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {},
@@ -7261,6 +7277,23 @@
         "../bridge/scheduled-tasks.js": 1,
         "../bridge/session-keys.js": 1,
         "./resource-store.js": 1,
+        "zustand/vanilla": 1
+      }
+    },
+    "src/renderer/store/session-artifacts-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "clearTimeout": 2,
+        "setTimeout": 1
+      },
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/artifacts.js": 1,
+        "./index.js": 1,
+        "@maka/core/artifacts": 1,
         "zustand/vanilla": 1
       }
     },

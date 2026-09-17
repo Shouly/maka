@@ -156,6 +156,13 @@ export function RightPaneShell({
           'md:h-full md:z-20',
           !isExpanded && 'md:relative',
           width ? 'shrink-0' : 'min-w-0 flex-1',
+          // 这里**不要**放 width 过渡。拖动是每次 pointermove 直接把宽度写在这个
+          // 元素上的,一条过渡就会让每一次写入各自起一段 200ms 动画,面板于是追着
+          // 光标跑 —— 靠 `isResizing` 把类摘掉也不够,摘类要等一次 React 提交,
+          // 而指针已经在动了。
+          //
+          // 侧栏折叠时两列不同步的那一下闪烁,得换个治法:把宽度上移到列本身,
+          // 由列来做过渡,拖动改成写列。那是另一件事。
         )}
         style={width ? { width, minWidth } : undefined}
       >

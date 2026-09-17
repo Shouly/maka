@@ -1809,6 +1809,15 @@ html[data-maka-platform="win32"] .maka-pane-header {
   -webkit-app-region: no-drag;
 }
 
+/* …with one exception: a TITLE is not a control. The file viewer's header puts
+   the file's name across the middle of this line at `flex-1`, so opting it out
+   with the rest left the window almost nothing to be dragged by — the gaps the
+   rule counts on were gone. It opts back in, and stays the drag surface it
+   looks like. */
+.maka-pane-header-fullscreen > .maka-pane-title {
+  -webkit-app-region: drag;
+}
+
 .maka-no-drag {
   -webkit-app-region: no-drag;
 }

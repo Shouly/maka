@@ -42,10 +42,11 @@ import { uiStore } from '../store/index.js';
 import { workbarStore } from '../store/workbar-store.js';
 import {
   SESSION_WORKBAR_MAX_WIDTH,
+  SESSION_WORKBAR_MAX_FRACTION,
   SESSION_WORKBAR_MIN_WIDTH,
   SESSION_WORKBAR_WIDTH_FRACTION,
   isSessionWorkbarCollapsed,
-  workbarHoldsSessionColumn,
+  sessionWorkbarViewerId,
 } from '../lib/ported/workbar-layout.js';
 import {
   staticSessionWorkbarTabId,
@@ -66,6 +67,18 @@ export function isWorkbarFace(kind: SessionWorkbarTabKind): kind is WorkbarFace 
 /** Definition rows for the faces this phase draws, in registry order. */
 export const WORKBAR_FACE_DEFINITIONS = WORKBAR_TOOL_DEFINITIONS.filter((definition) =>
   isWorkbarFace(definition.kind),
+);
+
+/**
+ * The faces a reader can SUMMON, which is not all of them.
+ *
+ * Files is opened by choosing a file — from the session panel's Outputs, from
+ * a delivered card, from a `file_write` row. Offering it in a menu would open a
+ * viewer onto nothing and take the column away from the very list the reader
+ * would use to pick a file.
+ */
+export const WORKBAR_LAUNCHER_DEFINITIONS = WORKBAR_FACE_DEFINITIONS.filter(
+  (definition) => definition.kind !== 'files',
 );
 
 export interface WorkbarModel {
@@ -125,6 +138,24 @@ export function openWorkbarArtifact(sessionId: string, artifactId: string): void
   });
 }
 
+/**
+ * Put the file viewer away — the column falls back to another open viewer, or
+ * to the session panel.
+ *
+ * The viewer is closed rather than left showing an empty notice because it has
+ * no reason to hold the column without a file, and because the list a reader
+ * would pick the next file from is the thing behind it.
+ */
+export function closeWorkbarArtifact(sessionId: string): void {
+  workbarStore.selectArtifact(sessionId, undefined);
+  workbarStore.setPaneExpanded(false);
+  uiStore.dispatchWorkbar({
+    type: 'close',
+    placement: 'right',
+    tabIds: [staticSessionWorkbarTabId('files')],
+  });
+}
+
 export function openWorkbarTerminal(sessionId: string, ref: string): void {
   workbarStore.selectTerminalRun(sessionId, ref);
   uiStore.dispatchWorkbar({
@@ -153,14 +184,29 @@ function useFrameWidth(): number {
 export function useWorkbar(sessionId: string | undefined): WorkbarModel {
   const layout = useStore(uiStore, (state) => state.workbar);
   const expanded = useStore(workbarStore, (state) => state.paneExpanded);
+  const sidebarWidth = useStore(uiStore, (state) => state.sidebarWidth);
+  const sidebarCollapsed = useStore(uiStore, (state) => state.sidebarCollapsed);
   const frameWidth = useFrameWidth();
 
-  // Half the window. It is also the width the pane opens at: the stored
-  // default is the static ceiling, so a pane nobody has dragged is decided
-  // here rather than by anything on disk.
+  // Half of what the CONVERSATION has, not half of the window.
+  //
+  // The session list is a column of its own, so counting it into the half gave
+  // the pane a share of space the conversation never had: at 1512 with a 260
+  // list, half the window is 756 and leaves the transcript 496 — the pane wide,
+  // the thing being read narrow. Against the content the two come out even, at
+  // 626 each, which is what the reference splits.
+  //
+  // A collapsed list takes no layout width (`w-0`), and a peeking one is
+  // `fixed` — out of flow, and only reachable while collapsed — so one flag
+  // covers both.
+  const contentWidth = Math.max(0, frameWidth - (sidebarCollapsed ? 0 : sidebarWidth));
+
+  // How far the handle may TRAVEL — not where the pane opens. Those were the
+  // same number, which made every pane open pinned against its own ceiling:
+  // dragging narrower worked, dragging wider moved nothing at all.
   const maxWidth = Math.max(
     SESSION_WORKBAR_MIN_WIDTH,
-    Math.min(SESSION_WORKBAR_MAX_WIDTH, Math.round(frameWidth * SESSION_WORKBAR_WIDTH_FRACTION)),
+    Math.min(SESSION_WORKBAR_MAX_WIDTH, Math.round(contentWidth * SESSION_WORKBAR_MAX_FRACTION)),
   );
 
   // The layout remembers collapse per task, so it has to be told which task is
@@ -173,15 +219,17 @@ export function useWorkbar(sessionId: string | undefined): WorkbarModel {
     () => layout.panels.right.tabs.filter((tab) => isWorkbarFace(tab.kind)),
     [layout.panels.right.tabs],
   );
-  const activeTabId = tabs.some((tab) => tab.id === layout.panels.right.activeTabId)
-    ? layout.panels.right.activeTabId
-    : (tabs[0]?.id ?? null);
+  // ONE answer to "what is in the column", for this session: the viewer's tab
+  // id, or null for the session panel. The pane, the strip and the column's
+  // occupant all read this same value, so they cannot disagree — the blank
+  // pane came from a boolean occupant and a global active tab that could.
+  const columnViewerId = sessionWorkbarViewerId(layout);
+  const activeTabId = tabs.some((tab) => tab.id === columnViewerId) ? columnViewerId : null;
   const activeFace = tabs.find((tab) => tab.id === activeTabId)?.kind as WorkbarFace | undefined;
-  // The column is hidden only when the reader hid it. What it holds when shown
-  // is a separate, per-session fact — never inferred from the global tab list,
-  // which outlives the session that opened it.
+  // The column is hidden only when the reader hid it; what it holds when shown
+  // is the line above.
   const collapsed = isSessionWorkbarCollapsed(layout);
-  const workbarHasColumn = workbarHoldsSessionColumn(layout);
+  const workbarHasColumn = activeTabId !== null;
 
   const open = useCallback((face: WorkbarFace) => {
     uiStore.dispatchWorkbar({
@@ -197,6 +245,11 @@ export function useWorkbar(sessionId: string | undefined): WorkbarModel {
 
   const close = useCallback((tabId: string) => {
     uiStore.dispatchWorkbar({ type: 'close', placement: 'right', tabIds: [tabId] });
+    // Full screen is a posture taken for ONE file, not a setting. Keeping it
+    // across a close means the next file a reader opens — often one the model
+    // just delivered — covers the conversation they were reading, and they
+    // never asked for that.
+    workbarStore.setPaneExpanded(false);
   }, []);
 
   const setCollapsed = useCallback((next: boolean) => {
@@ -231,9 +284,18 @@ export function useWorkbar(sessionId: string | undefined): WorkbarModel {
     workbarStore.setPaneExpanded(next);
   }, []);
 
-  const resize = useCallback((width: number) => {
-    uiStore.dispatchWorkbar({ type: 'resize', placement: 'right', size: width });
-  }, []);
+  const resize = useCallback(
+    (width: number) => {
+      // The drag measures pixels; the store keeps the share they represent, so
+      // only this edge — which knows how wide the content area is — converts.
+      uiStore.dispatchWorkbar({
+        type: 'resize',
+        placement: 'right',
+        size: contentWidth > 0 ? width / contentWidth : SESSION_WORKBAR_WIDTH_FRACTION,
+      });
+    },
+    [contentWidth],
+  );
 
   return {
     tabs,
@@ -242,7 +304,13 @@ export function useWorkbar(sessionId: string | undefined): WorkbarModel {
     collapsed,
     workbarHasColumn,
     expanded: expanded && !collapsed,
-    width: Math.min(layout.rightWidth, maxWidth),
+    // The share, resolved against the content area and held inside the floor
+    // and the live ceiling. Collapsing the session list widens the content, so
+    // the same share is more pixels — which is the whole point of storing one.
+    width: Math.min(
+      maxWidth,
+      Math.max(SESSION_WORKBAR_MIN_WIDTH, Math.round(contentWidth * layout.rightFraction)),
+    ),
     minWidth: SESSION_WORKBAR_MIN_WIDTH,
     maxWidth,
     open,

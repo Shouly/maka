@@ -76,14 +76,21 @@ test('right workbar visibility belongs to each session and survives reload', asy
         .evaluate((element) => getComputedStyle(element).overflowX),
     )
     .toBe('visible');
-  // The pane opens at half the window, and half is also as far as the handle
-  // drags: wider than that it stops being a pane beside the transcript, and a
-  // reader who wants the whole frame has full screen for it. The column is
-  // what is measured — the 8px eave on the right is inside it.
+  // The pane opens at half the CONTENT — the window less the session list,
+  // which is a column of its own. Counting the list into the half gave the pane
+  // a share of space the conversation never had.
+  //
+  // Half is where it opens, NOT how far the handle goes: the two were one
+  // number once, so every pane opened pinned against its ceiling and could only
+  // ever be dragged narrower. The reference's range is 20–70% of the content,
+  // which puts an even split in the middle of it.
   const column = page.locator('[data-maka-contract="session-workbar-column"]');
+  const sidebarWidth = await page
+    .locator('#app-sidebar')
+    .evaluate((element) => Math.round(element.getBoundingClientRect().width));
   await expect
     .poll(async () => Math.round((await column.boundingBox())!.width))
-    .toBe(Math.round(frame.width / 2));
+    .toBe(Math.round((frame.width - sidebarWidth) / 2));
   // And the handle has to move the pane's edge. It moved nothing for a while:
   // the column held a width of its own, measured once as it opened, so a pane
   // dragged wider just hung off the window while the edge under the pointer

@@ -20,15 +20,19 @@
 import React, { useState } from 'react';
 import { Button } from './button';
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
-import { menuActionItemClass } from './menu-variants';
+import { menuActionItemClass, menuDangerItemClass } from './menu-variants';
 import { useUiLocale } from '@maka/ui';
-import { Anthropicon } from '../icons';
+import { Anthropicon, type AnthropiconName } from '../icons';
 import { getUiCopy } from '../../locales/ui-copy';
 import { cn } from '../../lib/cn';
 
 interface SplitButtonAction {
   label: string;
   onClick: () => void;
+  /** Drawn at 20, the size every other menu glyph in the app is drawn at. */
+  icon?: AnthropiconName;
+  /** Destructive, and tinted like every other destructive menu row. */
+  danger?: boolean;
 }
 
 interface SplitButtonProps {
@@ -73,9 +77,12 @@ export default function SplitButton({
         className="min-w-16 gap-2 px-3"
       >
         {showPrimaryIcon && primaryIcon ? (
-          <span className="flex items-center justify-center w-full">{primaryIcon}</span>
+          <span className="flex w-full items-center justify-center">{primaryIcon}</span>
         ) : (
-          primaryLabel
+          <>
+            {primaryIcon}
+            {primaryLabel}
+          </>
         )}
       </Button>
     );
@@ -96,9 +103,12 @@ export default function SplitButton({
         className="min-w-16 gap-2 rounded-r-none px-3"
       >
         {showPrimaryIcon && primaryIcon ? (
-          <span className="flex items-center justify-center w-full">{primaryIcon}</span>
+          <span className="flex w-full items-center justify-center">{primaryIcon}</span>
         ) : (
-          primaryLabel
+          <>
+            {primaryIcon}
+            {primaryLabel}
+          </>
         )}
       </Button>
 
@@ -127,8 +137,21 @@ export default function SplitButton({
                   action.onClick();
                   setIsOpen(false);
                 }}
-                className={cn(menuActionItemClass, 'whitespace-nowrap')}
+                className={cn(
+                  menuActionItemClass,
+                  'whitespace-nowrap',
+                  action.danger && menuDangerItemClass,
+                )}
               >
+                {/* No colour of its own: every menu glyph in the app inherits
+                    its item's, which is what lets a destructive row tint its
+                    icon too. A hardcoded muted grey drew these one shade off
+                    from every other menu and left `删除` looking ordinary. */}
+                {action.icon && (
+                  <span className="flex size-5 shrink-0 items-center justify-center">
+                    <Anthropicon name={action.icon} size={20} />
+                  </span>
+                )}
                 {action.label}
               </button>
             ))}

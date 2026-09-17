@@ -45,6 +45,7 @@ import { cn } from '../../lib/cn.js';
 import { isApplePlatform } from '../../hooks/use-hotkeys.js';
 import {
   WORKBAR_FACE_DEFINITIONS,
+  WORKBAR_LAUNCHER_DEFINITIONS,
   type WorkbarFace,
   type WorkbarModel,
 } from '../../hooks/use-workbar.js';
@@ -167,7 +168,7 @@ export function WorkbarTabStrip(props: { workbar: WorkbarModel }) {
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-60">
-          {WORKBAR_FACE_DEFINITIONS.map((definition) => {
+          {WORKBAR_LAUNCHER_DEFINITIONS.map((definition) => {
             const face = definition.kind as WorkbarFace;
             const checked = open.has(face);
             return (

@@ -38,6 +38,7 @@
 // decides for itself what to keep doing.
 
 import { useCallback, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useStore } from 'zustand';
 import { useUiLocale } from '@maka/ui';
 import { Anthropicon } from '../icons/Anthropicon.js';
 import { Button } from '../ui/button.js';
@@ -45,11 +46,12 @@ import { RightPaneHeader, RightPaneShell } from '../ui/right-pane-shell.js';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.js';
 import { WorkbarTabStrip } from './WorkbarTabStrip.js';
 import { BrowserTab } from './BrowserTab.js';
-import { FilesTab } from './FilesTab.js';
+import { FilePreviewHeader, FilePreviewViewer } from './FilePreviewViewer.js';
 import { InspectorTab } from './InspectorTab.js';
 import { ReviewTab } from './ReviewTab.js';
 import { TerminalTab } from './TerminalTab.js';
 import type { WorkbarFace, WorkbarModel } from '../../hooks/use-workbar.js';
+import { workbarStore } from '../../store/workbar-store.js';
 import { getWorkbarCopy } from '../../locales/workbar-copy.js';
 
 /** Below this the handle was a click, not a drag. */
@@ -60,6 +62,15 @@ const KEYBOARD_LARGE_STEP = 50;
 export function WorkbarPane(props: { sessionId: string; workbar: WorkbarModel }) {
   const copy = getWorkbarCopy(useUiLocale()).pane;
   const workbar = props.workbar;
+  const openArtifactId = useStore(
+    workbarStore,
+    (state) => state.artifactBySession[props.sessionId],
+  );
+  // The file's own header, and only while there IS a file. With nothing open
+  // there is nothing for it to say, and a header holding two icon keys and
+  // otherwise nothing reads as a pane that failed to draw.
+  const showsFileHeader = workbar.activeFace === 'files' && openArtifactId !== undefined;
+  const activeTabId = workbar.activeTabId;
   const [isResizing, setIsResizing] = useState(false);
   const dragRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
   const widthRef = useRef(workbar.width);
@@ -154,7 +165,21 @@ export function WorkbarPane(props: { sessionId: string; workbar: WorkbarModel })
       }}
     >
       <RightPaneHeader>
-        <WorkbarTabStrip workbar={workbar} />
+        {/* The header belongs to whatever the pane is SHOWING, as in the
+            reference — where each viewer owns this line and there is no strip
+            at all. Files is the first face to take it: the file's own name,
+            its views and its actions say more on the pane's top line than a
+            row of face names does. The strip stays for the faces that have not
+            taken their line yet, and goes when the last of them does. */}
+        {showsFileHeader ? (
+          <FilePreviewHeader sessionId={props.sessionId} />
+        ) : (
+          <WorkbarTabStrip workbar={workbar} />
+        )}
+        {/* 20, not 16. Every icon key on this line is 28×28 carrying a 20px
+            glyph — the reference's one size for a pane header — and these two
+            were drawing 16 next to the file's own 20s, which reads as two
+            ranks of control on one line rather than one row of them. */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -164,7 +189,7 @@ export function WorkbarPane(props: { sessionId: string; workbar: WorkbarModel })
               aria-pressed={workbar.expanded}
               onClick={() => workbar.setExpanded(!workbar.expanded)}
             >
-              <Anthropicon name={workbar.expanded ? 'collapse' : 'expand'} size={16} />
+              <Anthropicon name={workbar.expanded ? 'collapse' : 'expand'} size={20} />
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
@@ -177,9 +202,18 @@ export function WorkbarPane(props: { sessionId: string; workbar: WorkbarModel })
               variant="ghost"
               size="iconSm"
               aria-label={copy.close}
-              onClick={() => workbar.setCollapsed(true)}
+              // Close what is SHOWING. Another open viewer takes the column if
+              // there is one, and otherwise the column goes back to the session
+              // panel — it does not put the column away. Hiding the column
+              // outright is the titlebar switch's job, and it used to be this
+              // button's too, which meant closing a file hid the Outputs list
+              // the reader was going back to.
+              onClick={() => {
+                if (activeTabId) workbar.close(activeTabId);
+                else workbar.setCollapsed(true);
+              }}
             >
-              <Anthropicon name="x" size={16} />
+              <Anthropicon name="x" size={20} />
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom">{copy.close}</TooltipContent>
@@ -210,7 +244,7 @@ export function WorkbarPane(props: { sessionId: string; workbar: WorkbarModel })
 function Face(props: { face: WorkbarFace; sessionId: string; active: boolean }) {
   switch (props.face) {
     case 'files':
-      return <FilesTab sessionId={props.sessionId} active={props.active} />;
+      return <FilePreviewViewer sessionId={props.sessionId} active={props.active} />;
     case 'review':
       return <ReviewTab sessionId={props.sessionId} active={props.active} />;
     case 'terminal':

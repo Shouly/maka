@@ -56,13 +56,26 @@ export interface WorkbarSelectionState {
   pendingPathBySession: Readonly<Record<string, string | undefined>>;
   /** Shell-run ref the Terminal face is attached to, per session. */
   terminalRefBySession: Readonly<Record<string, string | undefined>>;
+  /**
+   * Rendered or source, for the file the pane has open.
+   *
+   * It lives here rather than inside the face because the CONTROL is in the
+   * pane's header and the body it governs is under it — two components, one
+   * answer. Per session, and reset by `selectArtifact`: the choice belongs to
+   * the file being read, and carrying "source" onto the next file would open
+   * a chart as its own markup.
+   */
+  artifactViewModeBySession: Readonly<Record<string, ArtifactViewMode | undefined>>;
 }
+
+export type ArtifactViewMode = 'preview' | 'code';
 
 const initialState = (): WorkbarSelectionState => ({
   paneExpanded: false,
   artifactBySession: {},
   pendingPathBySession: {},
   terminalRefBySession: {},
+  artifactViewModeBySession: {},
 });
 
 function withEntry<T>(
@@ -88,6 +101,12 @@ export function createWorkbarStore() {
       store.setState((state) => ({
         artifactBySession: withEntry(state.artifactBySession, sessionId, artifactId),
         pendingPathBySession: withEntry(state.pendingPathBySession, sessionId, undefined),
+        artifactViewModeBySession: withEntry(state.artifactViewModeBySession, sessionId, undefined),
+      }));
+    },
+    setArtifactViewMode(sessionId: string, mode: ArtifactViewMode) {
+      store.setState((state) => ({
+        artifactViewModeBySession: withEntry(state.artifactViewModeBySession, sessionId, mode),
       }));
     },
     /** A tool row's request, resolved against the artifact list when it arrives. */
@@ -100,6 +119,7 @@ export function createWorkbarStore() {
       store.setState((state) => ({
         artifactBySession: withEntry(state.artifactBySession, sessionId, artifactId),
         pendingPathBySession: withEntry(state.pendingPathBySession, sessionId, undefined),
+        artifactViewModeBySession: withEntry(state.artifactViewModeBySession, sessionId, undefined),
       }));
     },
     clearPendingPath(sessionId: string) {
@@ -125,6 +145,7 @@ export function createWorkbarStore() {
           artifactBySession: keep(state.artifactBySession),
           pendingPathBySession: keep(state.pendingPathBySession),
           terminalRefBySession: keep(state.terminalRefBySession),
+          artifactViewModeBySession: keep(state.artifactViewModeBySession),
         };
       });
     },

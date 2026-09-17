@@ -45,18 +45,23 @@
 // drawn above it.
 
 import { useMemo, useState, type ReactNode } from 'react';
+import type { ArtifactDescriptor } from '@maka/core/artifacts';
 import type { SessionTask } from '@maka/core/session-task';
 import { useUiLocale } from '@maka/ui';
 import { Anthropicon } from '../icons/Anthropicon.js';
 import { cn } from '../../lib/cn.js';
 import { openBlockersOf, useTaskProgress } from '../../hooks/use-task-progress.js';
-import { getSessionPanelCopy } from '../../locales/session-panel-copy.js';
+import { useSessionArtifacts } from '../../hooks/use-session-artifacts.js';
+import { openWorkbarArtifact } from '../../hooks/use-workbar.js';
+import { deliveryFileGlyph } from '../../lib/ported/delivery-file-label.js';
+import { getSessionPanelCopy, type SessionPanelCopy } from '../../locales/session-panel-copy.js';
 
 export function SessionPanel({ sessionId }: { sessionId: string }) {
   const copy = getSessionPanelCopy(useUiLocale());
   const progress = useTaskProgress(sessionId);
   const tasks = progress.tasks;
   const open = useMemo(() => tasks.filter((task) => task.status !== 'completed').length, [tasks]);
+  const outputs = useSessionArtifacts(sessionId);
 
   return (
     <div
@@ -97,10 +102,66 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
                 ))
               )}
             </PanelSection>
+            {/* Outputs, under Progress — the reference's own order and its own
+                word. What the task DID, then what it left behind. */}
+            <PanelSection
+              key={`outputs-${sessionId}`}
+              title={copy.outputs}
+              collapsedMeta={
+                outputs.records.length > 0 ? String(outputs.records.length) : undefined
+              }
+            >
+              {outputs.records.length === 0 ? (
+                <p className="pb-3 text-sm leading-5 text-text-muted">
+                  {outputs.error ? copy.outputsUnavailable : copy.outputsEmpty}
+                </p>
+              ) : (
+                <div className="space-y-1">
+                  {outputs.records.map((record) => (
+                    <OutputFileRow
+                      key={record.id}
+                      record={record}
+                      copy={copy}
+                      onSelect={() => openWorkbarArtifact(sessionId, record.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </PanelSection>
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * One produced file, as the reference draws it: a tile carrying the type's
+ * glyph, then the name, and nothing else. Size and time are the preview's to
+ * report — here they would push the name into a truncation at this width.
+ *
+ * NO selected state. The pane keeps its selection after it is closed (so
+ * reopening lands on the same file), and a row that stayed lit would read as
+ * "this file is still open" long after it was put away.
+ */
+function OutputFileRow(props: {
+  record: ArtifactDescriptor;
+  copy: SessionPanelCopy;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={props.onSelect}
+      aria-label={props.copy.openFile(props.record.name)}
+      data-maka-output-file={props.record.name}
+      className="-mx-1 flex w-[calc(100%+0.5rem)] cursor-pointer items-center gap-2.5 rounded-md px-1 py-1.5 text-left text-text-secondary outline-none transition-colors hover:bg-sidebar-menu-hover hover:text-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)]"
+    >
+      <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-sidebar-menu-hover text-text-muted">
+        <Anthropicon name={deliveryFileGlyph(props.record.name)} size={16} />
+      </span>
+      <span className="min-w-0 flex-1 truncate text-sm leading-5">{props.record.name}</span>
+    </button>
   );
 }
 

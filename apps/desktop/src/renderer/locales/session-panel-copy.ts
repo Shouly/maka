@@ -28,6 +28,11 @@ export interface SessionPanelCopy {
   readonly empty: string;
   readonly unavailable: string;
   readonly count: (done: number, total: number) => string;
+  /** The reference's own word for the files a task produced. */
+  readonly outputs: string;
+  readonly outputsEmpty: string;
+  readonly outputsUnavailable: string;
+  readonly openFile: (name: string) => string;
 }
 
 const COPY = {
@@ -37,6 +42,10 @@ const COPY = {
     empty: '这个会话还没有任务。',
     unavailable: '暂时读不到任务列表。',
     count: (done, total) => `${done} / ${total}`,
+    outputs: '产出文件',
+    outputsEmpty: '这个会话还没有产出文件。',
+    outputsUnavailable: '暂时读不到文件列表。',
+    openFile: (name) => `打开 ${name}`,
   },
   'zh-TW': {
     label: '工作階段面板',
@@ -44,6 +53,10 @@ const COPY = {
     empty: '這個工作階段還沒有任務。',
     unavailable: '暫時讀不到任務清單。',
     count: (done, total) => `${done} / ${total}`,
+    outputs: '產出檔案',
+    outputsEmpty: '這個工作階段還沒有產出檔案。',
+    outputsUnavailable: '暫時讀不到檔案清單。',
+    openFile: (name) => `開啟 ${name}`,
   },
   en: {
     label: 'Session panel',
@@ -51,6 +64,10 @@ const COPY = {
     empty: 'No tasks in this session yet.',
     unavailable: 'The task list is unavailable.',
     count: (done, total) => `${done} of ${total}`,
+    outputs: 'Outputs',
+    outputsEmpty: 'No files produced yet.',
+    outputsUnavailable: 'The file list is unavailable.',
+    openFile: (name) => `Open ${name}`,
   },
 } satisfies UiCatalog<SessionPanelCopy>;
 

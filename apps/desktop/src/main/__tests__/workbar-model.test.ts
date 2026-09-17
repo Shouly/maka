@@ -26,8 +26,9 @@ import {
   isSessionWorkbarCollapsed,
   persistWorkbarLayout,
   reduceWorkbarLayout,
+  sessionWorkbarViewerId,
   SESSION_BOTTOM_PANEL_MAX_HEIGHT,
-  SESSION_WORKBAR_MIN_WIDTH,
+  SESSION_WORKBAR_MIN_FRACTION,
 } from '../../renderer/lib/ported/workbar-layout.js';
 import {
   createSessionWorkbarPanelsState,
@@ -96,9 +97,9 @@ describe('Workbar topology', () => {
       panels: createSessionWorkbarPanelsState(),
       activeSessionId: 'session-a' as string | undefined,
       collapsedBySession: {} as Record<string, boolean>,
-      workbarBySession: {} as Record<string, boolean>,
+      viewerBySession: {} as Record<string, string | undefined>,
       bottomOpen: false,
-      rightWidth: 480,
+      rightFraction: 0.5,
       bottomHeight: 300,
     };
     state = reduceWorkbarLayout(state, {
@@ -110,9 +111,10 @@ describe('Workbar topology', () => {
     state = reduceWorkbarLayout(state, {
       type: 'resize',
       placement: 'right',
-      size: 12,
+      // A share, not pixels: a sliver is held at the floor.
+      size: 0.05,
     });
-    assert.equal(state.rightWidth, SESSION_WORKBAR_MIN_WIDTH);
+    assert.equal(state.rightFraction, SESSION_WORKBAR_MIN_FRACTION);
     state = reduceWorkbarLayout(state, {
       type: 'open',
       placement: 'bottom',
@@ -238,9 +240,9 @@ describe('Workbar topology', () => {
       ),
       activeSessionId: 'session-a',
       collapsedBySession: { 'session-a': false },
-      workbarBySession: { 'session-a': true },
+      viewerBySession: { 'session-a': 'workbar:review' },
       bottomOpen: true,
-      rightWidth: 544,
+      rightFraction: 0.4,
       bottomHeight: 388,
     };
     persistWorkbarLayout(layout);
@@ -266,9 +268,9 @@ describe('Workbar topology', () => {
       ),
       activeSessionId: 'session-a',
       collapsedBySession: { 'session-a': false },
-      workbarBySession: { 'session-a': true },
+      viewerBySession: { 'session-a': 'workbar:review' },
       bottomOpen: true,
-      rightWidth: 544,
+      rightFraction: 0.4,
       bottomHeight: 388,
     });
   });
@@ -325,6 +327,101 @@ describe('Workbar topology', () => {
     assert.equal(isSessionWorkbarCollapsed(loadWorkbarLayout('constructor')), false);
     localStorage.setItem('maka-session-workbar-collapsed-v2', '{broken');
     assert.deepEqual(loadWorkbarLayout().collapsedBySession, {});
+  });
+
+  // ── who holds the right column ────────────────────────────────────────────
+
+  const columnState = (viewerBySession: Record<string, string | undefined>, tabs = []) => ({
+    panels: createSessionWorkbarPanelsState(createSessionWorkbarTabsState(tabs, null)),
+    activeSessionId: 'session-a' as string | undefined,
+    collapsedBySession: {},
+    viewerBySession,
+    bottomOpen: false,
+    rightFraction: 0.5,
+    bottomHeight: 300,
+  });
+
+  it('gives the column to the viewer that was just opened, by id', () => {
+    let state = columnState({});
+    assert.equal(sessionWorkbarViewerId(state), null, 'a session starts on the session panel');
+
+    state = reduceWorkbarLayout(state, {
+      type: 'open',
+      placement: 'right',
+      tab: { id: 'workbar:review', kind: 'review' },
+    });
+    assert.equal(sessionWorkbarViewerId(state), 'workbar:review');
+
+    state = reduceWorkbarLayout(state, {
+      type: 'open',
+      placement: 'right',
+      tab: { id: 'workbar:terminal', kind: 'terminal' },
+    });
+    assert.equal(sessionWorkbarViewerId(state), 'workbar:terminal', 'the newest one shows');
+
+    state = reduceWorkbarLayout(state, {
+      type: 'activate',
+      placement: 'right',
+      tabId: 'workbar:review',
+    });
+    assert.equal(sessionWorkbarViewerId(state), 'workbar:review');
+  });
+
+  it('hands the column to the next viewer on close, and to the session panel when none is left', () => {
+    let state = columnState({});
+    for (const tab of [
+      { id: 'workbar:review', kind: 'review' as const },
+      { id: 'workbar:terminal', kind: 'terminal' as const },
+    ]) {
+      state = reduceWorkbarLayout(state, { type: 'open', placement: 'right', tab });
+    }
+    state = reduceWorkbarLayout(state, {
+      type: 'close',
+      placement: 'right',
+      tabIds: ['workbar:terminal'],
+    });
+    assert.equal(sessionWorkbarViewerId(state), 'workbar:review');
+    state = reduceWorkbarLayout(state, {
+      type: 'close',
+      placement: 'right',
+      tabIds: ['workbar:review'],
+    });
+    assert.equal(sessionWorkbarViewerId(state), null, 'the column goes back, it does not hide');
+    assert.equal(isSessionWorkbarCollapsed(state), false);
+  });
+
+  it('refuses a remembered viewer whose tab is gone', () => {
+    // The blank pane: one session remembered that a viewer held its column
+    // while the global tab list — emptied by closing that viewer in ANOTHER
+    // session, or by a restart that does not restore its kind — had nothing to
+    // show. The pane rendered a body over zero tabs.
+    const state = columnState({ 'session-a': 'workbar:files' });
+    assert.equal(sessionWorkbarViewerId(state), null);
+  });
+
+  it('never restores the file viewer, which has no file to come back to', () => {
+    cleanups.push(installMemoryLocalStorage());
+    const layout = {
+      ...columnState({ 'session-a': 'workbar:files' }),
+      panels: createSessionWorkbarPanelsState(
+        createSessionWorkbarTabsState(
+          [
+            { id: 'workbar:files', kind: 'files' },
+            { id: 'workbar:review', kind: 'review' },
+          ],
+          'workbar:files',
+        ),
+      ),
+    };
+    assert.equal(sessionWorkbarViewerId(layout), 'workbar:files', 'it holds the column now');
+    persistWorkbarLayout(layout);
+    assert.deepEqual(
+      readSessionWorkbarPanels().right.tabs.map((tab) => tab.kind),
+      ['review'],
+    );
+    // And so the next run opens on the session panel, whose Outputs list is
+    // where a file is chosen in the first place.
+    assert.equal(sessionWorkbarViewerId(loadWorkbarLayout('session-a')), null);
   });
 
   it('falls back to an empty topology for corrupt v3 storage', () => {

@@ -1191,7 +1191,7 @@ test('UI layout rejects non-finite sizes and keeps the expanded size on collapse
   store.setSidebarCollapsed(true);
   assert.equal(store.getState().sidebarWidth, 480);
   store.dispatchWorkbar({ type: 'resize', placement: 'right', size: Number.NaN });
-  assert.ok(Number.isFinite(store.getState().workbar.rightWidth));
+  assert.ok(Number.isFinite(store.getState().workbar.rightFraction));
 });
 test('bridge unsubscribe is idempotent', () => {
   let calls = 0;

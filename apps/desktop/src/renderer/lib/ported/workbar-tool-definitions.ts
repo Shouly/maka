@@ -85,8 +85,13 @@ const WORKBAR_TOOL_DEFINITION_BY_KIND = {
     kind: 'files',
     labelKey: 'files',
     icon: 'folder',
-    shortcut: 'mod+p',
-    persisted: true,
+    // No shortcut and not persisted, because this viewer is opened by CHOOSING
+    // A FILE and has nothing to show without one. The artifact id it needs is
+    // deliberately not persisted (an id outlives nothing — the Host may delete
+    // the file between runs), so a restored tab would come back empty and hold
+    // the column with a notice. The list it used to carry lives in the session
+    // panel's Outputs now, which is what the column falls back to.
+    persisted: false,
     singleton: true,
     defaultPlacement: 'right',
   },
