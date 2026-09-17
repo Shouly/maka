@@ -26,7 +26,11 @@ test('right workbar visibility belongs to each session and survives reload', asy
 }) => {
   await sendPrompt(page, 'first workbar owner');
   await ensureSidebarExpanded(page);
-  await page.getByRole('button', { name: '展开任务工作栏' }).click();
+  // A VIEWER is what puts the pane in the column, and the column's resting
+  // occupant is the session panel. This used to press the titlebar's workbar
+  // switch, which only ever hid the column and brought it back — it never chose
+  // what was in it, so the pane it went on to measure was never there.
+  await page.keyboard.press('Control+Shift+g');
   const panel = page.locator('#maka-workbar-pane');
   await expect(panel).toBeVisible();
   const frame = await page.evaluate(() => ({
@@ -85,12 +89,21 @@ test('right workbar visibility belongs to each session and survives reload', asy
   // ever be dragged narrower. The reference's range is 20–70% of the content,
   // which puts an even split in the middle of it.
   const column = page.locator('[data-maka-contract="session-workbar-column"]');
-  const sidebarWidth = await page
-    .locator('#app-sidebar')
-    .evaluate((element) => Math.round(element.getBoundingClientRect().width));
+  // Both sides measured in the SAME frame, and polled. The session list widens
+  // over 200ms, so reading its width once — right after the toggle reports
+  // itself expanded — reads it mid-animation and compares the pane against a
+  // content area that never existed.
   await expect
-    .poll(async () => Math.round((await column.boundingBox())!.width))
-    .toBe(Math.round((frame.width - sidebarWidth) / 2));
+    .poll(async () =>
+      page.evaluate(() => {
+        const box = (selector: string) =>
+          Math.round(document.querySelector(selector)?.getBoundingClientRect().width ?? 0);
+        const pane = box('[data-maka-contract="session-workbar-column"]');
+        const half = Math.round((window.innerWidth - box('#app-sidebar')) / 2);
+        return { pane, half, offBy: pane - half };
+      }),
+    )
+    .toEqual(expect.objectContaining({ offBy: 0 }));
   // And the handle has to move the pane's edge. It moved nothing for a while:
   // the column held a width of its own, measured once as it opened, so a pane
   // dragged wider just hung off the window while the edge under the pointer
