@@ -61,6 +61,18 @@ import {
   type DurableToolResultKind,
 } from '../../../lib/tool-delivery-results.js';
 import { toolRowDescription } from '../../../lib/tool-row-description.js';
+import {
+  isMemorySoftConflict,
+  isMemoryTool,
+  memoryBasename,
+  memoryBreadcrumb,
+  memoryCanExpand,
+  memoryErrorKind,
+  memoryPathsOf,
+  memoryResultText,
+  memoryToolVerb,
+  parseMemoryListResult,
+} from '../../../lib/memory-tool-results.js';
 
 /**
  * Which body a tool row renders. `none` means the row has a header and nothing
@@ -85,6 +97,7 @@ export type ToolRendererId =
   | 'grep'
   | 'glob'
   | 'tool_search'
+  | 'memory'
   | 'pending'
   | 'none';
 
@@ -148,6 +161,10 @@ export function resolveToolRendererId(item: ToolActivityItem): ToolRendererId {
   // anything as "these are now usable", which the row says in one line. The
   // reference gives it a renderer of its own with no body at all.
   if (isConnectorTool(item.toolName)) return 'tool_search';
+  // The memory family is decided by name too: six tools, one icon, one body
+  // shape per verb, and results that are plain text to the model — the text
+  // renderer would show the reader the version handshake.
+  if (isMemoryTool(item)) return 'memory';
   const result = durableResultOf(item);
   if (!result) return item.status === 'running' ? 'pending' : 'none';
   // Read, Grep and Glob hand the model plain text and keep a STRUCTURED
@@ -192,6 +209,7 @@ export function toolActivityIcon(kind: ToolActivityKind | undefined): Anthropico
  */
 export function toolRowIcon(item: ToolActivityItem): AnthropiconName {
   if (isConnectorTool(item.toolName)) return ICON_BY_ACTIVITY.search;
+  if (isMemoryTool(item)) return 'memory';
   return toolActivityIcon(toolActivityKindOf(item));
 }
 
@@ -204,6 +222,10 @@ export type ToolRowStatus = 'running' | 'completed' | 'errored' | 'interrupted' 
 
 export function toolRowStatus(item: ToolActivityItem): ToolRowStatus {
   if (isSandboxDeniedTool(item)) return 'sandbox_blocked';
+  // A memory version conflict is the model's routine merge-and-retry, not an
+  // error the reader should see in red; the row keeps its verb and says
+  // "merging" beside it (`toolRowStatusLabel`).
+  if (isMemorySoftConflict(item)) return 'completed';
   return toolActivityPresentationStatus(item);
 }
 
@@ -248,6 +270,37 @@ function taskIdArg(item: ToolActivityItem): string | undefined {
   return typeof taskId === 'string' && taskId.trim() ? taskId.trim() : undefined;
 }
 
+/**
+ * A memory row says what it did to which file: "Read food.md", "Saved
+ * profile.md". The six tools share one icon, so the verb is what tells them
+ * apart, and the name is the file's — the path itself goes to the trailing
+ * breadcrumb (`toolRowMeta`). A soft conflict keeps the present tense: nothing
+ * was saved yet, and "Saved x" over an unlanded write would be a lie.
+ */
+function memoryRowTitle(item: ToolActivityItem, locale: UiLocale): string | undefined {
+  const verb = memoryToolVerb(item.toolName);
+  if (!verb) return undefined;
+  const copy = getTranscriptCopy(locale).tools.memory;
+  const status = toolRowStatus(item);
+  if (status === 'errored') return copy.errors[memoryErrorKind(memoryResultText(item))];
+  const paths = memoryPathsOf(item);
+  const name =
+    paths.length > 1 ? copy.files(paths.length) : paths[0] ? memoryBasename(paths[0]) : undefined;
+  const settled = status !== 'running' && !isMemorySoftConflict(item);
+  switch (verb) {
+    case 'search':
+      return settled ? copy.searched : copy.searching;
+    case 'read':
+      return settled ? copy.read(name) : copy.reading(name);
+    case 'save':
+      return settled ? copy.saved(name) : copy.saving(name);
+    case 'update':
+      return settled ? copy.updated(name) : copy.updating(name);
+    case 'delete':
+      return settled ? copy.deleted(name) : copy.deleting(name);
+  }
+}
+
 export function toolRowTitle(item: ToolActivityItem, locale: UiLocale): string {
   if (isComputerTool(item)) {
     return computerActionLabel(item, locale) ?? resolveToolDisplayName(item, locale);
@@ -268,6 +321,8 @@ export function toolRowTitle(item: ToolActivityItem, locale: UiLocale): string {
   // Bash may carry a `description`, Agent must. The command and the prompt
   // are still one click away in the opened panel, which is where a reader who
   // wants the literal text goes anyway.
+  const memory = memoryRowTitle(item, locale);
+  if (memory) return memory;
   const task = taskRowTitle(item, locale);
   if (task) return task;
   const described = toolRowDescription(item);
@@ -280,11 +335,32 @@ export function toolRowTitle(item: ToolActivityItem, locale: UiLocale): string {
 /** The header's trailing note: the outcome in a word, when there is one to say. */
 export function toolRowStatusLabel(item: ToolActivityItem, locale: UiLocale): string | undefined {
   const copy = getToolActivityCopy(locale);
+  if (isMemorySoftConflict(item)) return getTranscriptCopy(locale).tools.memory.merging;
   const status = toolRowStatus(item);
   if (status === 'sandbox_blocked') return getTranscriptCopy(locale).sandbox.blockedLabel;
   if (status === 'interrupted') return copy.status.interrupted;
   if (status === 'errored') return copy.errorLabel;
   return undefined;
+}
+
+/**
+ * The header's trailing detail, before the status word: where in memory a row
+ * looked, and how many files a listing found. The title carries the file's
+ * name; this carries the rest of the path as a breadcrumb, which is how the
+ * reference draws it.
+ */
+export function toolRowMeta(item: ToolActivityItem, locale: UiLocale): string | undefined {
+  const verb = memoryToolVerb(item.toolName);
+  if (!verb || toolRowStatus(item) === 'errored') return undefined;
+  const copy = getTranscriptCopy(locale).tools.memory;
+  const paths = memoryPathsOf(item);
+  const parts: string[] = [];
+  if (paths.length === 1) parts.push(memoryBreadcrumb(paths[0]!));
+  if (verb === 'search' && item.status === 'completed') {
+    const count = parseMemoryListResult(memoryResultText(item)).length;
+    if (count > 0) parts.push(copy.files(count));
+  }
+  return parts.length > 0 ? parts.join(' · ') : undefined;
 }
 
 /**
@@ -306,6 +382,7 @@ export function canExpandTool(item: ToolActivityItem): boolean {
   // A search has no body: the row names what was asked, and what it found is
   // already usable. Opening it would show a list of names twice.
   if (renderer === 'tool_search') return false;
+  if (renderer === 'memory') return memoryCanExpand(item);
   if (renderer === 'pending') {
     return (item.outputChunks?.length ?? 0) > 0 || item.args !== undefined;
   }
@@ -323,7 +400,23 @@ export function canExpandTool(item: ToolActivityItem): boolean {
  * split: `task_create`/`task_update` say "Updated tasks", `task_get`/
  * `task_list` say "Checked tasks".
  */
-export type ToolSummaryKey = ToolActivityKind | 'taskRead' | 'toolSearch';
+export type ToolSummaryKey =
+  | ToolActivityKind
+  | 'taskRead'
+  | 'toolSearch'
+  | 'memorySearch'
+  | 'memoryRead'
+  | 'memorySave'
+  | 'memoryUpdate'
+  | 'memoryDelete';
+
+const MEMORY_SUMMARY_KEYS = {
+  search: 'memorySearch',
+  read: 'memoryRead',
+  save: 'memorySave',
+  update: 'memoryUpdate',
+  delete: 'memoryDelete',
+} as const satisfies Record<NonNullable<ReturnType<typeof memoryToolVerb>>, ToolSummaryKey>;
 
 /** The two task tools that change nothing. */
 const TASK_READ_TOOL_NAMES: ReadonlySet<string> = new Set([
@@ -337,6 +430,11 @@ export function toolSummaryKeyOf(item: ToolActivityItem): ToolSummaryKey {
   // "called a tool". It gets a phrase of its own for the same reason the task
   // readers do: the summary has to say what the turn actually did.
   if (isConnectorTool(item.toolName)) return 'toolSearch';
+  // Memory gets a phrase per verb, and the verbs merge onto one object in the
+  // summary — "Searched, read, and updated memory" — rather than counting as
+  // files read and files edited, which is what their activity kinds say.
+  const memory = memoryToolVerb(item.toolName);
+  if (memory) return MEMORY_SUMMARY_KEYS[memory];
   const kind = toolActivityKindOf(item);
   return kind === 'tasks' && TASK_READ_TOOL_NAMES.has(item.toolName) ? 'taskRead' : kind;
 }
@@ -373,10 +471,31 @@ export function summarizeToolGroup(items: readonly ToolActivityItem[], locale: U
     else buckets.set(key, { key, index: buckets.size, count: 1 });
   }
   if (buckets.size === 0) return copy.working;
-  const phrases = [...buckets.values()]
-    .sort((left, right) => right.count - left.count || left.index - right.index)
+  // Labels that share an object merge into one phrase, the object said once:
+  // a turn that searched, read and updated memory reads "Searched, read, and
+  // updated memory", not three phrases each ending in "memory". A lone verb
+  // keeps its own label, which is where a count lives when one is spoken.
+  const groups: { readonly object?: string; readonly index: number; entries: SummaryBucket[] }[] =
+    [];
+  for (const bucket of buckets.values()) {
+    const object = copy.summary[bucket.key].merge?.object;
+    const group = object ? groups.find((candidate) => candidate.object === object) : undefined;
+    if (group) group.entries.push(bucket);
+    else groups.push({ ...(object ? { object } : {}), index: bucket.index, entries: [bucket] });
+  }
+  const steps = (group: (typeof groups)[number]) =>
+    group.entries.reduce((total, entry) => total + entry.count, 0);
+  const phrases = groups
+    .sort((left, right) => steps(right) - steps(left) || left.index - right.index)
     .slice(0, TOOL_SUMMARY_MAX_PHRASES)
-    .map((bucket) => {
+    .map((group) => {
+      if (group.object && group.entries.length > 1) {
+        const verbs = [
+          ...new Set(group.entries.map((entry) => copy.summary[entry.key].merge!.verb)),
+        ];
+        return copy.joinMerged(verbs, group.object);
+      }
+      const bucket = group.entries[0]!;
       const label = copy.summary[bucket.key];
       // The count is still what ORDERS the phrases; whether it is spoken is
       // the label's own business. `other` exists for the kinds that count an

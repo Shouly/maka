@@ -50,6 +50,7 @@ import {
 import { GlobResult, GrepResult } from './renderers/SearchResults.js';
 import { UserFileDeliveryResult, UserMessageResult } from './renderers/DeliveryResults.js';
 import { ScheduledTaskResult } from './renderers/ScheduledTaskResult.js';
+import { MemoryResult } from './renderers/MemoryResult.js';
 import { resolveToolRendererId, type ToolRendererId } from './tool-presentation.js';
 import {
   durableResultOf,
@@ -108,6 +109,8 @@ export function renderToolContent(item: ToolActivityItem, context: ToolContentCo
     // than readable.
     case 'tool_search':
       return null;
+    case 'memory':
+      return <MemoryResult item={item} />;
     case 'diff':
       return result?.kind === 'file_diff' ? (
         <DiffResult

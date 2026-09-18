@@ -50,9 +50,17 @@ import {
   resolveToolRendererId,
   summarizeToolGroup,
   toolActivityIcon,
+  toolRowIcon,
+  toolRowMeta,
   toolRowStatus,
+  toolRowStatusLabel,
   toolRowTitle,
 } from '../../components/session/tools/tool-presentation.js';
+import {
+  memoryBreadcrumb,
+  parseMemoryListResult,
+  parseMemoryReadResult,
+} from '../../lib/memory-tool-results.js';
 import {
   askUserQuestionRecord,
   isAskUserQuestionTool,
@@ -225,6 +233,209 @@ test('the task summary names the verb, and never a call count', () => {
   assert.equal(
     activeToolLabel([{ ...taskTool('k', 'TaskList'), status: 'running' }], 'en'),
     'Checking progress',
+  );
+});
+
+// ── memory rows ─────────────────────────────────────────────────────────────
+
+const memoryTool = (
+  toolUseId: string,
+  toolName: string,
+  overrides: Partial<ToolActivityItem> = {},
+) =>
+  tool({
+    toolUseId,
+    toolName,
+    activityKind: toolName === 'MemoryList' || toolName === 'MemoryRead' ? 'read' : 'edit',
+    args: { path: '/topics/food.md' },
+    ...overrides,
+  });
+
+test('a memory tool is its own renderer, by name, with its own icon', () => {
+  for (const name of [
+    'MemoryList',
+    'MemoryRead',
+    'MemoryWrite',
+    'MemoryStrReplace',
+    'MemoryAppend',
+    'MemoryDelete',
+  ]) {
+    const item = memoryTool('m', name, { result: { kind: 'text', text: 'Saved /topics/food.md' } });
+    assert.equal(resolveToolRendererId(item), 'memory', name);
+    assert.equal(toolRowIcon(item), 'memory', name);
+  }
+});
+
+test('a memory row says the verb and the file, running and settled', () => {
+  const running = memoryTool('a', 'MemoryRead', { status: 'running', result: undefined });
+  assert.equal(toolRowTitle(running, 'en'), 'Reading food.md');
+  assert.equal(toolRowTitle(running, 'zh-CN'), '正在读取 food.md');
+  const read = memoryTool('b', 'MemoryRead', {
+    result: {
+      kind: 'text',
+      text: '[updated: 2026-09-18T01:00:00+00:00] [version: abc]\n- [stated] tea',
+    },
+  });
+  assert.equal(toolRowTitle(read, 'en'), 'Read food.md');
+  assert.equal(toolRowMeta(read, 'en'), 'Topics › Food');
+  const several = memoryTool('c', 'MemoryRead', {
+    args: { path: ['/topics/food.md', '/people/sam.md'] },
+    result: { kind: 'text', text: '== /topics/food.md ==\nx' },
+  });
+  assert.equal(toolRowTitle(several, 'en'), 'Read 2 files');
+  assert.equal(toolRowMeta(several, 'en'), undefined);
+  const listed = memoryTool('d', 'MemoryList', {
+    args: { path_prefix: '/topics/' },
+    result: {
+      kind: 'text',
+      text: '/topics/food.md  (21 bytes, updated 2026-09-18T01:00:00+00:00)\n/topics/music.md  (30 bytes, updated 2026-09-18T01:00:00+00:00)',
+    },
+  });
+  assert.equal(toolRowTitle(listed, 'en'), 'Searched memory');
+  assert.equal(toolRowMeta(listed, 'en'), 'Topics · 2 files');
+  assert.equal(toolRowTitle(memoryTool('e', 'MemoryDelete'), 'zh-TW'), '刪除了 food.md');
+});
+
+test('a memory version conflict is a merge in progress, not an error', () => {
+  const conflict = memoryTool('a', 'MemoryWrite', {
+    status: 'errored',
+    result: {
+      kind: 'text',
+      text: 'MemoryWrite failed: version conflict on /topics/food.md — it changed since you read it.',
+    },
+  });
+  assert.equal(toolRowStatus(conflict), 'completed');
+  assert.equal(toolRowTitle(conflict, 'en'), 'Saving food.md');
+  assert.equal(toolRowStatusLabel(conflict, 'en'), 'merging…');
+  assert.equal(canExpandTool(conflict), false);
+  // Delete never retries on its own, so its conflict is the failure it is.
+  const deleteConflict = memoryTool('b', 'MemoryDelete', {
+    status: 'errored',
+    result: { kind: 'text', text: 'MemoryDelete failed: version conflict on /topics/food.md' },
+  });
+  assert.equal(toolRowStatus(deleteConflict), 'errored');
+  assert.equal(toolRowTitle(deleteConflict, 'en'), 'Memory action failed');
+  // Hard errors name what went wrong, in the reader's terms.
+  const missing = memoryTool('c', 'MemoryStrReplace', {
+    status: 'errored',
+    result: { kind: 'text', text: 'MemoryStrReplace failed: old_str not found in /topics/food.md' },
+  });
+  assert.equal(toolRowTitle(missing, 'en'), "Memory edit didn't apply");
+  assert.equal(toolRowTitle(missing, 'zh-CN'), '记忆修改未生效');
+  const off = memoryTool('d', 'MemoryList', {
+    status: 'errored',
+    result: {
+      kind: 'text',
+      text: 'MemoryList failed: memory is turned off in Settings; nothing was read or saved.',
+    },
+  });
+  assert.equal(toolRowTitle(off, 'en'), 'Memory unavailable');
+});
+
+test('memory verbs merge onto one object in the group summary', () => {
+  const items = [
+    memoryTool('a', 'MemoryList'),
+    memoryTool('b', 'MemoryRead'),
+    memoryTool('c', 'MemoryRead'),
+    memoryTool('d', 'MemoryStrReplace'),
+  ];
+  assert.equal(summarizeToolGroup(items, 'en'), 'Searched, read, and updated memory');
+  assert.equal(summarizeToolGroup(items, 'zh-CN'), '搜索、读取并更新了记忆');
+  assert.equal(summarizeToolGroup(items, 'zh-TW'), '搜尋、讀取並更新了記憶');
+  assert.equal(summarizeToolGroup([memoryTool('e', 'MemoryRead')], 'en'), 'Read memory');
+  assert.equal(
+    summarizeToolGroup([memoryTool('f', 'MemoryRead'), memoryTool('g', 'MemoryAppend')], 'en'),
+    'Read and updated memory',
+  );
+  // Beside other work the merged phrase is one phrase, ordered by its steps.
+  assert.equal(
+    summarizeToolGroup([...items, tool({ toolUseId: 'h' })], 'en'),
+    'Searched, read, and updated memory and ran a command',
+  );
+  assert.equal(
+    activeToolLabel([{ ...memoryTool('i', 'MemoryWrite'), status: 'running' }], 'en'),
+    'Saving memory',
+  );
+});
+
+test('memory results are read as the memory, never the handshake', () => {
+  const list = parseMemoryListResult(
+    [
+      '/topics/food.md  (21 bytes, updated 2026-09-18T01:00:00+00:00)',
+      '  what they eat',
+      '/people/sam.md  (40 bytes, updated 2026-09-18T02:00:00+00:00)',
+      'More files follow; pass cursor="/people/sam.md" to continue.',
+    ].join('\n'),
+  );
+  assert.deepEqual(
+    list.map((entry) => [entry.path, entry.byteLength, entry.preview]),
+    [
+      ['/topics/food.md', 21, 'what they eat'],
+      ['/people/sam.md', 40, undefined],
+    ],
+  );
+  assert.equal(list[0]?.updatedAt, Date.parse('2026-09-18T01:00:00+00:00'));
+  assert.deepEqual(parseMemoryListResult('(empty)'), []);
+
+  const single = parseMemoryReadResult(
+    '[updated: 2026-09-18T01:00:00+00:00] [version: abcdef012345] (pass as if_version on your next MemoryWrite to this path)\n---\nname: food\n---\n- [stated] tea',
+  );
+  assert.equal(single.length, 1);
+  assert.equal(single[0]?.body, '---\nname: food\n---\n- [stated] tea');
+  assert.equal(single[0]?.updatedAt, Date.parse('2026-09-18T01:00:00+00:00'));
+
+  const several = parseMemoryReadResult(
+    [
+      '== /topics/food.md ==',
+      '[updated: 2026-09-18T01:00:00+00:00] [version: abcdef012345] (pass as if_version on your next MemoryWrite to this path)',
+      '- [stated] tea',
+      '',
+      '== /people/sam.md ==',
+      '<error>MemoryRead failed: not found</error>',
+    ].join('\n'),
+  );
+  assert.deepEqual(
+    several.map((doc) => [doc.path, doc.body, doc.error]),
+    [
+      ['/topics/food.md', '- [stated] tea', undefined],
+      ['/people/sam.md', '', 'MemoryRead failed: not found'],
+    ],
+  );
+  assert.equal(memoryBreadcrumb('/areas/design-system.md'), 'Areas › Design System');
+});
+
+test('a memory row opens onto its content, and a delete has none', () => {
+  assert.equal(canExpandTool(memoryTool('a', 'MemoryDelete')), false);
+  assert.equal(
+    canExpandTool(memoryTool('b', 'MemoryList', { result: { kind: 'text', text: '(empty)' } })),
+    false,
+  );
+  assert.equal(
+    canExpandTool(
+      memoryTool('c', 'MemoryList', {
+        result: {
+          kind: 'text',
+          text: '/topics/food.md  (21 bytes, updated 2026-09-18T01:00:00+00:00)',
+        },
+      }),
+    ),
+    true,
+  );
+  assert.equal(
+    canExpandTool(
+      memoryTool('d', 'MemoryWrite', { args: { path: '/x.md', content: '- [stated] x' } }),
+    ),
+    true,
+  );
+  assert.equal(
+    canExpandTool(
+      memoryTool('e', 'MemoryStrReplace', {
+        status: 'running',
+        result: undefined,
+        args: { path: '/x.md', old_str: 'a', new_str: 'b' },
+      }),
+    ),
+    false,
   );
 });
 

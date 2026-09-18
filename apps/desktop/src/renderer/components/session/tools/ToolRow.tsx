@@ -59,6 +59,7 @@ import {
   canExpandTool,
   toolRowIcon,
   toolActivityKindOf,
+  toolRowMeta,
   toolRowStatus,
   toolRowStatusLabel,
   toolRowTitle,
@@ -99,6 +100,7 @@ export const ToolRow = memo(function ToolRow(props: ToolRowProps) {
   const running = status === 'running';
   const title = toolRowTitle(item, locale);
   const statusLabel = toolRowStatusLabel(item, locale);
+  const meta = toolRowMeta(item, locale);
   const expandable = canExpandTool(item);
   // A note that stayed in the timeline: its row IS the message, so it carries
   // a dot rather than a tool glyph and never opens.
@@ -154,16 +156,25 @@ export const ToolRow = memo(function ToolRow(props: ToolRowProps) {
                 )}
               />
             </span>
-            {statusLabel && (
-              <span
-                className={cn(
-                  'shrink-0 text-xs leading-4',
-                  status === 'errored' || status === 'sandbox_blocked'
-                    ? 'text-danger'
-                    : 'text-text-muted',
+            {(meta || statusLabel) && (
+              <span className="flex shrink-0 items-center gap-2">
+                {meta && (
+                  <span className="max-w-48 truncate text-xs leading-4 text-text-muted">
+                    {meta}
+                  </span>
                 )}
-              >
-                {statusLabel}
+                {statusLabel && (
+                  <span
+                    className={cn(
+                      'shrink-0 text-xs leading-4',
+                      status === 'errored' || status === 'sandbox_blocked'
+                        ? 'text-danger'
+                        : 'text-text-muted',
+                    )}
+                  >
+                    {statusLabel}
+                  </span>
+                )}
               </span>
             )}
           </button>
@@ -183,8 +194,11 @@ export const ToolRow = memo(function ToolRow(props: ToolRowProps) {
                 {title}
               </span>
             </span>
-            {statusLabel && (
-              <span className="shrink-0 text-xs leading-4 text-text-muted">{statusLabel}</span>
+            {(meta || statusLabel) && (
+              <span className="flex shrink-0 items-center gap-2 text-xs leading-4 text-text-muted">
+                {meta && <span className="max-w-48 truncate">{meta}</span>}
+                {statusLabel && <span className="shrink-0">{statusLabel}</span>}
+              </span>
             )}
           </div>
         )}

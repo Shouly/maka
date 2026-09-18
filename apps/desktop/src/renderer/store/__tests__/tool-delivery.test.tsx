@@ -115,6 +115,79 @@ const DELIVERY = {
 
 // ── the two deliveries ─────────────────────────────────────────────────────
 
+test('a memory row draws the memory: a file list, a document, the two sides of an edit', () => {
+  const listed = renderTree(
+    renderToolContent(
+      call({
+        toolUseId: 'm1',
+        toolName: 'MemoryList',
+        args: { path_prefix: '/topics/' },
+        result: {
+          kind: 'text',
+          text: [
+            '/topics/food.md  (21 bytes, updated 2026-09-18T01:00:00+00:00)',
+            '  what they eat',
+            'More files follow; pass cursor="/topics/food.md" to continue.',
+          ].join('\n'),
+        },
+      }),
+      CONTEXT,
+    ),
+  );
+  assert.equal(listed.querySelectorAll('[data-maka-memory-file]').length, 1);
+  assert.match(listed.documentElement.textContent ?? '', /\/topics\/food\.md/);
+  assert.match(listed.documentElement.textContent ?? '', /what they eat/);
+  assert.doesNotMatch(listed.documentElement.textContent ?? '', /cursor/);
+
+  const read = renderTree(
+    renderToolContent(
+      call({
+        toolUseId: 'm2',
+        toolName: 'MemoryRead',
+        args: { path: '/topics/food.md' },
+        result: {
+          kind: 'text',
+          text: '[updated: 2026-09-18T01:00:00+00:00] [version: abcdef012345] (pass as if_version on your next MemoryWrite to this path)\n- [stated] drinks tea',
+        },
+      }),
+      CONTEXT,
+    ),
+  );
+  assert.match(read.documentElement.textContent ?? '', /\[stated\] drinks tea/);
+  assert.doesNotMatch(read.documentElement.textContent ?? '', /version|if_version/);
+
+  const edited = renderTree(
+    renderToolContent(
+      call({
+        toolUseId: 'm3',
+        toolName: 'MemoryStrReplace',
+        args: { path: '/topics/food.md', old_str: 'coffee', new_str: 'tea', if_version: 'abc' },
+        result: { kind: 'text', text: 'Saved /topics/food.md (version: def, 30 of 16384 bytes).' },
+      }),
+      CONTEXT,
+    ),
+  );
+  const labels = [...edited.querySelectorAll('p')].map((node) => node.textContent);
+  assert.deepEqual(labels, ['Removed', 'Added']);
+  assert.doesNotMatch(edited.documentElement.textContent ?? '', /abc|def/);
+
+  const deleted = renderToStaticMarkup(
+    createElement(LocaleProvider, {
+      locale: 'en',
+      children: renderToolContent(
+        call({
+          toolUseId: 'm4',
+          toolName: 'MemoryDelete',
+          args: { path: '/topics/food.md', if_version: 'abc' },
+          result: { kind: 'text', text: 'Deleted /topics/food.md.' },
+        }),
+        CONTEXT,
+      ),
+    }),
+  );
+  assert.equal(deleted, '');
+});
+
 test('a file delivery routes to its own renderer and never opens as a tool row', () => {
   const item = call({
     toolUseId: 'send-files',

@@ -28,6 +28,7 @@
 // the same fact, so this catalog deliberately stops where those begin.
 
 import type { ToolSummaryKey } from '../components/session/tools/tool-presentation.js';
+import type { MemoryErrorKind } from '../lib/memory-tool-results.js';
 import type { DeliveryFileKind } from '../lib/ported/delivery-file-label.js';
 import type { MakaPlatform } from '../lib/platform.js';
 import type { UiCatalog, UiLocale } from '@maka/core/ui-locale';
@@ -44,6 +45,13 @@ import type { UiCatalog, UiLocale } from '@maka/core/ui-locale';
 export interface ToolSummaryLabel {
   readonly one: string;
   readonly other: (count: number) => string;
+  /**
+   * Labels that share an `object` merge into one phrase when a group holds
+   * several of them, the object said once — "Searched, read, and updated
+   * memory". `verb` is the past-tense verb the phrase contributes; the
+   * locale's `joinMerged` puts the sentence together.
+   */
+  readonly merge?: { readonly verb: string; readonly object: string };
 }
 
 export interface TranscriptCopy {
@@ -126,6 +134,8 @@ export interface TranscriptCopy {
     readonly summary: Record<ToolSummaryKey, ToolSummaryLabel>;
     readonly active: Record<ToolSummaryKey, string>;
     readonly join: (phrases: readonly string[]) => string;
+    /** Several verbs on one object, as one phrase: `(['searched', 'read'], 'memory')`. */
+    readonly joinMerged: (verbs: readonly string[], object: string) => string;
     readonly expand: (name: string) => string;
     readonly collapse: (name: string) => string;
     /**
@@ -142,6 +152,30 @@ export interface TranscriptCopy {
       readonly fetched: (taskId: string | undefined) => string;
       readonly listing: string;
       readonly listed: string;
+    };
+    /**
+     * A memory row: the verb and the file, then what went wrong when
+     * something did. The six tools share an icon, so the verb is the row's
+     * whole identity, and each verb has a running and a settled form.
+     */
+    readonly memory: {
+      readonly searching: string;
+      readonly searched: string;
+      readonly reading: (name: string | undefined) => string;
+      readonly read: (name: string | undefined) => string;
+      readonly saving: (name: string | undefined) => string;
+      readonly saved: (name: string | undefined) => string;
+      readonly updating: (name: string | undefined) => string;
+      readonly updated: (name: string | undefined) => string;
+      readonly deleting: (name: string | undefined) => string;
+      readonly deleted: (name: string | undefined) => string;
+      /** "3 files": a listing's count, and the name of a read across several. */
+      readonly files: (count: number) => string;
+      /** Beside a write the model is merging after a version conflict. */
+      readonly merging: string;
+      readonly removed: string;
+      readonly added: string;
+      readonly errors: Record<MemoryErrorKind, string>;
     };
   };
   readonly result: {
@@ -260,6 +294,31 @@ const ZH_CN_ACTIVITY_SUMMARY: Record<ToolSummaryKey, ToolSummaryLabel> = {
   taskRead: { one: '查看了任务进度', other: () => '查看了任务进度' },
   toolSearch: { one: '加载了工具', other: () => '加载了工具' },
   tool: { one: '调用了工具', other: (n) => `调用 ${n} 次工具` },
+  memorySearch: {
+    one: '搜索了记忆',
+    other: () => '搜索了记忆',
+    merge: { verb: '搜索', object: '记忆' },
+  },
+  memoryRead: {
+    one: '读取了记忆',
+    other: () => '读取了记忆',
+    merge: { verb: '读取', object: '记忆' },
+  },
+  memorySave: {
+    one: '保存了记忆',
+    other: () => '保存了记忆',
+    merge: { verb: '保存', object: '记忆' },
+  },
+  memoryUpdate: {
+    one: '更新了记忆',
+    other: () => '更新了记忆',
+    merge: { verb: '更新', object: '记忆' },
+  },
+  memoryDelete: {
+    one: '删除了记忆',
+    other: () => '删除了记忆',
+    merge: { verb: '删除', object: '记忆' },
+  },
 };
 
 const ZH_CN_ACTIVITY_ACTIVE: Record<ToolSummaryKey, string> = {
@@ -276,6 +335,11 @@ const ZH_CN_ACTIVITY_ACTIVE: Record<ToolSummaryKey, string> = {
   taskRead: '正在查看任务进度',
   toolSearch: '正在加载工具',
   tool: '正在调用工具',
+  memorySearch: '正在搜索记忆',
+  memoryRead: '正在读取记忆',
+  memorySave: '正在保存记忆',
+  memoryUpdate: '正在更新记忆',
+  memoryDelete: '正在删除记忆',
 };
 
 const ZH_TW_ACTIVITY_SUMMARY: Record<ToolSummaryKey, ToolSummaryLabel> = {
@@ -292,6 +356,31 @@ const ZH_TW_ACTIVITY_SUMMARY: Record<ToolSummaryKey, ToolSummaryLabel> = {
   taskRead: { one: '查看了任務進度', other: () => '查看了任務進度' },
   toolSearch: { one: '載入了工具', other: () => '載入了工具' },
   tool: { one: '呼叫了工具', other: (n) => `呼叫 ${n} 次工具` },
+  memorySearch: {
+    one: '搜尋了記憶',
+    other: () => '搜尋了記憶',
+    merge: { verb: '搜尋', object: '記憶' },
+  },
+  memoryRead: {
+    one: '讀取了記憶',
+    other: () => '讀取了記憶',
+    merge: { verb: '讀取', object: '記憶' },
+  },
+  memorySave: {
+    one: '儲存了記憶',
+    other: () => '儲存了記憶',
+    merge: { verb: '儲存', object: '記憶' },
+  },
+  memoryUpdate: {
+    one: '更新了記憶',
+    other: () => '更新了記憶',
+    merge: { verb: '更新', object: '記憶' },
+  },
+  memoryDelete: {
+    one: '刪除了記憶',
+    other: () => '刪除了記憶',
+    merge: { verb: '刪除', object: '記憶' },
+  },
 };
 
 const ZH_TW_ACTIVITY_ACTIVE: Record<ToolSummaryKey, string> = {
@@ -308,6 +397,11 @@ const ZH_TW_ACTIVITY_ACTIVE: Record<ToolSummaryKey, string> = {
   taskRead: '正在查看任務進度',
   toolSearch: '正在載入工具',
   tool: '正在呼叫工具',
+  memorySearch: '正在搜尋記憶',
+  memoryRead: '正在讀取記憶',
+  memorySave: '正在儲存記憶',
+  memoryUpdate: '正在更新記憶',
+  memoryDelete: '正在刪除記憶',
 };
 
 const EN_ACTIVITY_SUMMARY: Record<ToolSummaryKey, ToolSummaryLabel> = {
@@ -324,6 +418,31 @@ const EN_ACTIVITY_SUMMARY: Record<ToolSummaryKey, ToolSummaryLabel> = {
   taskRead: { one: 'Checked tasks', other: () => 'Checked tasks' },
   toolSearch: { one: 'Loaded tools', other: () => 'Loaded tools' },
   tool: { one: 'Called a tool', other: (n) => `Called ${n} tools` },
+  memorySearch: {
+    one: 'Searched memory',
+    other: () => 'Searched memory',
+    merge: { verb: 'searched', object: 'memory' },
+  },
+  memoryRead: {
+    one: 'Read memory',
+    other: () => 'Read memory',
+    merge: { verb: 'read', object: 'memory' },
+  },
+  memorySave: {
+    one: 'Saved memory',
+    other: () => 'Saved memory',
+    merge: { verb: 'saved', object: 'memory' },
+  },
+  memoryUpdate: {
+    one: 'Updated memory',
+    other: () => 'Updated memory',
+    merge: { verb: 'updated', object: 'memory' },
+  },
+  memoryDelete: {
+    one: 'Deleted memory',
+    other: () => 'Deleted memory',
+    merge: { verb: 'deleted', object: 'memory' },
+  },
 };
 
 const EN_ACTIVITY_ACTIVE: Record<ToolSummaryKey, string> = {
@@ -340,6 +459,11 @@ const EN_ACTIVITY_ACTIVE: Record<ToolSummaryKey, string> = {
   taskRead: 'Checking progress',
   toolSearch: 'Loading tools',
   tool: 'Calling a tool',
+  memorySearch: 'Searching memory',
+  memoryRead: 'Reading memory',
+  memorySave: 'Saving memory',
+  memoryUpdate: 'Updating memory',
+  memoryDelete: 'Deleting memory',
 };
 
 /**
@@ -348,6 +472,25 @@ const EN_ACTIVITY_ACTIVE: Record<ToolSummaryKey, string> = {
  * concatenation — running the English rule over Chinese would insert " and "
  * into a Chinese sentence.
  */
+/**
+ * "搜索并读取了记忆", "搜索、读取并更新了记忆": the verbs run together with the
+ * enumeration comma, "并" before the last, and the aspect marker and object
+ * once at the end. Both Chinese locales share the shape; the marker differs.
+ */
+function joinChineseVerbs(verbs: readonly string[], object: string, and: string): string {
+  if (verbs.length <= 1) return `${verbs[0] ?? ''}了${object}`;
+  return `${verbs.slice(0, -1).join('、')}${and}${verbs[verbs.length - 1]}了${object}`;
+}
+
+/** "Searched memory", "Read and saved memory", "Searched, read, and updated memory". */
+function joinEnglishVerbs(verbs: readonly string[], object: string): string {
+  const [first = '', ...rest] = verbs;
+  const head = first.charAt(0).toUpperCase() + first.slice(1);
+  if (rest.length === 0) return `${head} ${object}`;
+  if (rest.length === 1) return `${head} and ${rest[0]} ${object}`;
+  return `${[head, ...rest.slice(0, -1)].join(', ')}, and ${rest[rest.length - 1]} ${object}`;
+}
+
 function joinEnglishPhrases(phrases: readonly string[]): string {
   const lowered = phrases.map((phrase, index) =>
     index === 0 ? phrase : `${phrase.charAt(0).toLowerCase()}${phrase.slice(1)}`,
@@ -419,6 +562,7 @@ const TRANSCRIPT_COPY = {
       summary: ZH_CN_ACTIVITY_SUMMARY,
       active: ZH_CN_ACTIVITY_ACTIVE,
       join: (phrases) => phrases.join('、'),
+      joinMerged: (verbs, object) => joinChineseVerbs(verbs, object, '并'),
       expand: (name) => `展开 ${name}`,
       collapse: (name) => `收起 ${name}`,
       task: {
@@ -430,6 +574,30 @@ const TRANSCRIPT_COPY = {
         fetched: (taskId) => (taskId ? `已读取任务 #${taskId}` : '已读取任务详情'),
         listing: '正在列出任务',
         listed: '已列出任务',
+      },
+      memory: {
+        searching: '正在搜索记忆',
+        searched: '搜索了记忆',
+        reading: (name) => (name ? `正在读取 ${name}` : '正在读取记忆'),
+        read: (name) => (name ? `读取了 ${name}` : '读取了记忆'),
+        saving: (name) => (name ? `正在保存 ${name}` : '正在保存记忆'),
+        saved: (name) => (name ? `保存了 ${name}` : '保存了记忆'),
+        updating: (name) => (name ? `正在更新 ${name}` : '正在更新记忆'),
+        updated: (name) => (name ? `更新了 ${name}` : '更新了记忆'),
+        deleting: (name) => (name ? `正在删除 ${name}` : '正在删除记忆'),
+        deleted: (name) => (name ? `删除了 ${name}` : '删除了记忆'),
+        files: (count) => `${count} 个文件`,
+        merging: '合并中…',
+        removed: '删除',
+        added: '新增',
+        errors: {
+          unavailable: '记忆不可用',
+          editNotApplied: '记忆修改未生效',
+          notFound: '记忆文件不存在',
+          tooLarge: '记忆文件过大',
+          rejected: '记忆请求被拒绝',
+          failed: '记忆操作失败',
+        },
       },
     },
     result: {
@@ -600,6 +768,7 @@ const TRANSCRIPT_COPY = {
       summary: ZH_TW_ACTIVITY_SUMMARY,
       active: ZH_TW_ACTIVITY_ACTIVE,
       join: (phrases) => phrases.join('、'),
+      joinMerged: (verbs, object) => joinChineseVerbs(verbs, object, '並'),
       expand: (name) => `展開 ${name}`,
       collapse: (name) => `收合 ${name}`,
       task: {
@@ -611,6 +780,30 @@ const TRANSCRIPT_COPY = {
         fetched: (taskId) => (taskId ? `已讀取任務 #${taskId}` : '已讀取任務詳情'),
         listing: '正在列出任務',
         listed: '已列出任務',
+      },
+      memory: {
+        searching: '正在搜尋記憶',
+        searched: '搜尋了記憶',
+        reading: (name) => (name ? `正在讀取 ${name}` : '正在讀取記憶'),
+        read: (name) => (name ? `讀取了 ${name}` : '讀取了記憶'),
+        saving: (name) => (name ? `正在儲存 ${name}` : '正在儲存記憶'),
+        saved: (name) => (name ? `儲存了 ${name}` : '儲存了記憶'),
+        updating: (name) => (name ? `正在更新 ${name}` : '正在更新記憶'),
+        updated: (name) => (name ? `更新了 ${name}` : '更新了記憶'),
+        deleting: (name) => (name ? `正在刪除 ${name}` : '正在刪除記憶'),
+        deleted: (name) => (name ? `刪除了 ${name}` : '刪除了記憶'),
+        files: (count) => `${count} 個檔案`,
+        merging: '合併中…',
+        removed: '刪除',
+        added: '新增',
+        errors: {
+          unavailable: '記憶不可用',
+          editNotApplied: '記憶修改未生效',
+          notFound: '記憶檔案不存在',
+          tooLarge: '記憶檔案過大',
+          rejected: '記憶請求被拒絕',
+          failed: '記憶操作失敗',
+        },
       },
     },
     result: {
@@ -781,6 +974,7 @@ const TRANSCRIPT_COPY = {
       summary: EN_ACTIVITY_SUMMARY,
       active: EN_ACTIVITY_ACTIVE,
       join: joinEnglishPhrases,
+      joinMerged: joinEnglishVerbs,
       expand: (name) => `Expand ${name}`,
       collapse: (name) => `Collapse ${name}`,
       task: {
@@ -792,6 +986,30 @@ const TRANSCRIPT_COPY = {
         fetched: (taskId) => (taskId ? `Fetched task #${taskId}` : 'Fetched task details'),
         listing: 'Listing tasks',
         listed: 'Listed tasks',
+      },
+      memory: {
+        searching: 'Searching memory',
+        searched: 'Searched memory',
+        reading: (name) => (name ? `Reading ${name}` : 'Reading memory'),
+        read: (name) => (name ? `Read ${name}` : 'Read memory'),
+        saving: (name) => (name ? `Saving ${name}` : 'Saving memory'),
+        saved: (name) => (name ? `Saved ${name}` : 'Saved memory'),
+        updating: (name) => (name ? `Updating ${name}` : 'Updating memory'),
+        updated: (name) => (name ? `Updated ${name}` : 'Updated memory'),
+        deleting: (name) => (name ? `Deleting ${name}` : 'Deleting memory'),
+        deleted: (name) => (name ? `Deleted ${name}` : 'Deleted memory'),
+        files: (count) => `${count} file${count === 1 ? '' : 's'}`,
+        merging: 'merging…',
+        removed: 'Removed',
+        added: 'Added',
+        errors: {
+          unavailable: 'Memory unavailable',
+          editNotApplied: "Memory edit didn't apply",
+          notFound: 'Memory file not found',
+          tooLarge: 'Memory file too large',
+          rejected: 'Memory request rejected',
+          failed: 'Memory action failed',
+        },
       },
     },
     result: {
