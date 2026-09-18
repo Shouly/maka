@@ -193,7 +193,11 @@ try {
     pinned.questionTop >= 16 && pinned.questionTop <= 40,
     `question pinned near the top: ${pinned.questionTop}`,
   );
-  assert.ok(pinned.floor !== '', 'the feed carries a floor so the question could reach the top');
+  assert.equal(
+    pinned.floor,
+    '',
+    'the first question is already at the top and needs no artificial floor',
+  );
   assert.ok(grown.scrollTop === pinned.scrollTop, 'the viewport does not follow the stream');
 
   // The jump-to-latest disc, while the answer is still generating: scroll the
@@ -312,6 +316,10 @@ try {
   await transcript()
     .getByText('Fake backend received: Session A second turn', { exact: false })
     .waitFor();
+  const secondTurnFloor = await transcript()
+    .locator('.chat-feed')
+    .evaluate((feed) => Number.parseFloat(feed.style.minHeight || '0'));
+  assert.ok(secondTurnFloor > 0, 'a later question gets room to move past existing history');
   // Past the question hold (450ms ease plus a 1200ms hold): reading history
   // is a decision the reader makes once the send has landed.
   await sleep(2500);

@@ -45,6 +45,7 @@ const ICON_BY_ACTION: Record<TurnFooterActionId, AnthropiconName> = {
 
 export const TurnFooter = memo(function TurnFooter(props: {
   actions: readonly TurnFooterAction[];
+  alwaysVisible?: boolean;
   lineageBadges?: readonly TurnLineageBadge[];
   onAction: (id: TurnFooterActionId) => void | Promise<void>;
   onOpenLineage: (turnId: string) => void;
@@ -55,7 +56,14 @@ export const TurnFooter = memo(function TurnFooter(props: {
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-2">
-      <div role="toolbar" aria-label={copy.actionsLabel} className={messageActionBarClass}>
+      <div
+        role="toolbar"
+        aria-label={copy.actionsLabel}
+        className={cn(
+          messageActionBarClass,
+          props.alwaysVisible && 'opacity-100 pointer-events-auto',
+        )}
+      >
         {props.actions.map((action) => (
           <Tooltip key={action.id}>
             <TooltipTrigger asChild>

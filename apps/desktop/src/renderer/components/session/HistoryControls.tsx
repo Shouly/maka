@@ -32,6 +32,8 @@
 import { memo } from 'react';
 import { getConversationCopy, useUiLocale } from '@maka/ui';
 import { Anthropicon } from '../icons/Anthropicon.js';
+import { WorkingMark } from '../icons/WorkingMark.js';
+import type { WorkingMarkActivity } from '../../lib/working-mark-sheets.js';
 import { cn } from '../../lib/cn.js';
 import { getTranscriptCopy } from '../../locales/transcript-copy.js';
 
@@ -74,6 +76,7 @@ export const TranscriptGapRow = memo(function TranscriptGapRow(props: {
 /** The floating "you have left the tail" affordance. */
 export const JumpToLatest = memo(function JumpToLatest(props: {
   streaming: boolean;
+  activity?: WorkingMarkActivity;
   onJump: () => void;
 }) {
   const locale = useUiLocale();
@@ -84,31 +87,27 @@ export const JumpToLatest = memo(function JumpToLatest(props: {
         type="button"
         onClick={props.onJump}
         aria-label={copy.jumpToLatest}
-        // relx `ChatMessages`' scroll-to-bottom button, class for class: a 36px
-        // disc on surface-3 with the hairline border and Tailwind's md/lg
-        // shadows, and while the answer is generating a band of accent light
-        // flowing down through it (`gradient-flow`, from relx's globals.css).
+        data-maka-contract="jump-to-latest"
         className={cn(
-          'group pointer-events-auto relative flex size-9 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-hairline bg-surface-3 shadow-md outline-none transition-all duration-200',
+          'group/latest pointer-events-auto relative flex size-9 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-hairline bg-surface-3 shadow-md outline-none transition-all duration-200',
           'hover:shadow-lg focus-visible:shadow-[var(--sidebar-focus-shadow)]',
         )}
       >
         {props.streaming && (
-          <span
-            aria-hidden="true"
-            className="absolute inset-0 z-10 rounded-full"
-            style={{
-              background:
-                'linear-gradient(180deg, transparent 0%, transparent 20%, rgba(237, 119, 91, 0.12) 50%, transparent 80%, transparent 100%)',
-              backgroundSize: '100% 300%',
-              animation: 'gradient-flow 3s ease-in-out infinite',
-            }}
+          <WorkingMark
+            activity={props.activity}
+            size={20}
+            className="absolute transition-opacity duration-200 motion-reduce:transition-none group-hover/latest:opacity-0 group-focus-visible/latest:opacity-0"
           />
         )}
         <Anthropicon
           name="arrowDown"
           size={18}
-          className="relative text-text-primary transition-colors"
+          className={cn(
+            'relative text-text-primary transition-opacity duration-200 motion-reduce:transition-none',
+            props.streaming &&
+              'opacity-0 group-hover/latest:opacity-100 group-focus-visible/latest:opacity-100',
+          )}
         />
       </button>
     </div>

@@ -1501,29 +1501,6 @@ pre[class*="language-"] {
   }
 }
 
-/* The eight-petal mark while a turn runs (`RelxMark animated`): each petal
-   breathes between full and 30% opacity on a 1.2s cycle, staggered clockwise
-   by the component. Same curve and range as the reference mark's animation.
-   reduced-motion holds every petal solid. */
-@keyframes relx-mark-breathe {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.3;
-  }
-}
-
-.relx-mark-petal {
-  animation: relx-mark-breathe 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .relx-mark-petal {
-    animation: none;
-  }
-}
-
 /* 行标题右缘渐隐裁剪(取代省略号)。
    标题 span 须占满剩余行宽(flex-1 min-w-0),短标题够不到
    渐隐区、不受影响。 */
@@ -1574,16 +1551,6 @@ pre[class*="language-"] {
 @media (prefers-reduced-motion: reduce) {
   .stream-pop {
     animation: none;
-  }
-}
-
-/* 🎯 渐变流动动画 - 用于按钮从上到下的流动效果 */
-@keyframes gradient-flow {
-  0% {
-    background-position: 0% 0%;
-  }
-  100% {
-    background-position: 0% 100%;
   }
 }
 

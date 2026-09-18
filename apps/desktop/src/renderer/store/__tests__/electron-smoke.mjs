@@ -452,28 +452,28 @@ try {
   assert.equal(await column.count(), 1);
   checks.push('the right column opens on the session panel and its switch reports the column');
 
-  // 4.1b A face takes the column only when someone opens one, and closing it
-  //      hands the column straight back — it never empties.
+  // 4.1b Files is now a viewer for a selected output, not an empty list face.
+  //      Without a file, its shortcut leaves the session panel in place.
   await page.keyboard.press('ControlOrMeta+p');
+  await panel.getByText('No files produced yet.', { exact: true }).waitFor();
+  assert.equal(await pane.count(), 0);
+
+  // Changes can be opened independently. Closing it hands the column back
+  // to the session panel; the column never becomes empty.
+  await page.keyboard.press('Control+Shift+G');
   await pane.waitFor();
   await panel.waitFor({ state: 'detached' });
-  await page.locator('[data-maka-contract="session-artifacts"]').waitFor();
-  await page.keyboard.press('ControlOrMeta+p');
+  await page.locator('[data-maka-contract="session-review"]').waitFor();
+  await page.keyboard.press('Control+Shift+G');
   await panel.waitFor();
   await pane.waitFor({ state: 'detached' });
-  await page.keyboard.press('ControlOrMeta+p');
-  await pane.waitFor();
   checks.push('a face takes the column only when opened, and hands it back when closed');
 
-  // 4.2 The Files face lists the task's artifacts. The deterministic backend
-  //     writes none that are user-visible, so what must be on screen is the
-  //     empty state — not a spinner and not a blank panel.
-  await page
-    .locator('[data-maka-contract="session-artifacts"]')
-    .getByText('No generated files', { exact: false })
-    .waitFor();
-  await page.screenshot({ path: SHOT('phase4-files-light.png') });
-  checks.push('the Files face reads the artifact catalog and states that it is empty');
+  // 4.2 Outputs owns the artifact catalog. This backend produces no visible
+  //     files, so the panel must report the empty state explicitly.
+  await panel.getByText('No files produced yet.', { exact: true }).waitFor();
+  await page.screenshot({ path: SHOT('phase4-outputs-light.png') });
+  checks.push('Outputs reads the artifact catalog and states that it is empty');
 
   // 4.3 ⌃⇧G opens Changes. The fixture workspace is not a git repository, and
   //     that is a FAILURE with a retry, never the "nothing changed" empty state.
@@ -554,10 +554,18 @@ try {
   await page.screenshot({ path: SHOT('phase4-browser-light.png') });
   checks.push('⌘T opens the Browser face with its address bar and navigation controls');
 
-  // 4.7 Five faces open, and the strip lists every one of them.
-  assert.equal(await page.locator('[role="tab"][data-maka-workbar-tab]').count(), 5);
+  // 4.7 All four independently opened faces stay in the strip; Files only
+  //     appears after a real output is selected.
+  assert.deepEqual(
+    await page
+      .locator('[role="tab"][data-maka-workbar-tab]')
+      .evaluateAll((tabs) => tabs.map((tab) => tab.getAttribute('data-maka-workbar-tab')).sort()),
+    ['browser', 'inspector', 'review', 'terminal'],
+  );
   assert.equal(await page.locator('[data-maka-contract="session-workbar-count"]').count(), 0);
-  checks.push('all five faces stay open in the strip without a header count badge');
+  checks.push(
+    'all opened faces stay in the strip without a header count badge or an empty file viewer',
+  );
 
   // 4.8 The pane in the dark theme.
   await runPaletteCommand(page, 'Theme · Dark');
@@ -595,10 +603,9 @@ try {
     JSON.parse(localStorage.getItem('maka-session-workbar-panels-v3') ?? '{}'),
   );
   assert.equal(panels.version, 3);
-  // Terminal is transient by definition; the other four survive a restart.
+  // Terminal and file selections are transient; the other faces survive restart.
   assert.deepEqual(panels.right.tabs.map((tab) => tab.kind).sort(), [
     'browser',
-    'files',
     'inspector',
     'review',
   ]);
@@ -1075,21 +1082,40 @@ try {
   await settings.getByText(PRESET, { exact: true }).waitFor({ state: 'detached' });
   checks.push('Subagents creates a preset through the settings IPC and deletes it again');
 
-  // 5b.4 Memory's agent-read switch is written to the Host, and reads back.
-  const AGENT_READ = 'Allow model context to read local memory';
+  // 5b.4 Every currently exposed Memory switch writes through the Host.
+  // Labels belong to the page's copy; the persistence contract must survive
+  // a renamed or consolidated setting without silently skipping a control.
   await openSettingsSection('Memory', 'memory');
-  const agentRead = page.getByRole('switch', { name: AGENT_READ, exact: true });
-  await agentRead.waitFor();
-  const agentReadBefore = await agentRead.getAttribute('aria-checked');
-  await agentRead.click();
-  await page.waitForFunction(
-    ([label, previous]) =>
-      document
-        .querySelector(`button[role="switch"][aria-label="${label}"]`)
-        ?.getAttribute('aria-checked') !== previous,
-    [AGENT_READ, agentReadBefore],
-  );
-  const agentReadAfter = await agentRead.getAttribute('aria-checked');
+  const memoryControls = page
+    .locator('[data-maka-contract="settings-content"][data-settings-section="memory"]')
+    .getByRole('switch');
+  await memoryControls.first().waitFor();
+  const memoryStates = [];
+  for (let index = 0; index < (await memoryControls.count()); index += 1) {
+    const control = memoryControls.nth(index);
+    const label = await control.getAttribute('aria-label');
+    assert.ok(label, 'each Memory setting has an accessible name');
+    assert.equal(
+      memoryStates.some((state) => state.label === label),
+      false,
+    );
+    const before = await control.getAttribute('aria-checked');
+    assert.ok(before === 'true' || before === 'false');
+    const expected = before === 'true' ? 'false' : 'true';
+    await control.click();
+    await page.waitForFunction(
+      ({ label, expected }) => {
+        const control = [...document.querySelectorAll('[role="switch"]')].find(
+          (node) => node.getAttribute('aria-label') === label,
+        );
+        return (
+          control?.getAttribute('aria-checked') === expected && !control.hasAttribute('disabled')
+        );
+      },
+      { label, expected },
+    );
+    memoryStates.push({ label, expected });
+  }
   await new Promise((settle) => setTimeout(settle, 300));
   await page.screenshot({ path: SHOT('phase5b-memory-light.png') });
 
@@ -1111,15 +1137,19 @@ try {
   await settings.getByRole('combobox', { name: 'Search source', exact: true }).click();
   await page.getByRole('option', { name: 'Current model', exact: true }).click();
   await openSettingsSection('Memory', 'memory');
-  await page.waitForFunction(
-    ([label, expected]) =>
-      document
-        .querySelector(`button[role="switch"][aria-label="${label}"]`)
-        ?.getAttribute('aria-checked') === expected,
-    [AGENT_READ, agentReadAfter],
-  );
+  for (const state of memoryStates) {
+    await page.waitForFunction(
+      ({ label, expected }) =>
+        [...document.querySelectorAll('[role="switch"]')].some(
+          (node) =>
+            node.getAttribute('aria-label') === label &&
+            node.getAttribute('aria-checked') === expected,
+        ),
+      state,
+    );
+  }
   checks.push(
-    'Memory toggles agent-read through the Host and reads it back; Web Search renders its test',
+    'Memory persists every exposed switch through the Host across navigation; Web Search renders its test',
   );
 
   // 5a.9 Archived tasks lists a task archived from the rail, and restores it.
@@ -1333,7 +1363,7 @@ try {
           'phase3a-model-switcher.png',
           'phase3a-revision-banner.png',
           'phase3a-tool-row.png',
-          'phase4-files-light.png',
+          'phase4-outputs-light.png',
           'phase4-review-light.png',
           'phase4-terminal-light.png',
           'phase4-inspector-light.png',

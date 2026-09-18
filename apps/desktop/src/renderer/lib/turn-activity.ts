@@ -33,7 +33,11 @@
 import { computerRunningLabel, type TurnViewModel } from '@maka/ui';
 import type { UiLocale } from '@maka/core/ui-locale';
 import { getTranscriptCopy } from '../locales/transcript-copy.js';
-import { activeToolLabel } from '../components/session/tools/tool-presentation.js';
+import {
+  activeToolLabel,
+  toolSummaryKeyOf,
+} from '../components/session/tools/tool-presentation.js';
+import type { WorkingMarkActivity } from './working-mark-sheets.js';
 
 export type TurnActivity =
   | { readonly kind: 'none' }
@@ -66,4 +70,38 @@ export function deriveTurnActivity(
     default:
       return { kind: 'gap' };
   }
+}
+
+/** Retain the newest activity through inter-block gaps, including when the jump button mounts late. */
+export function deriveWorkingMarkActivity(turn: TurnViewModel | undefined): WorkingMarkActivity {
+  if (!turn) return 'default';
+  if (turn.tools.some((tool) => tool.status === 'running' && tool.activityKind === 'computer')) {
+    return 'default';
+  }
+  for (let index = turn.timeline.length - 1; index >= 0; index--) {
+    const block = turn.timeline[index];
+    if (block?.kind === 'thinking') return 'think';
+    if (block?.kind === 'text') return 'write';
+    if (block?.kind !== 'tools') continue;
+    const tool =
+      [...block.items].reverse().find((item) => item.status === 'running') ?? block.items.at(-1);
+    if (!tool) continue;
+    switch (toolSummaryKeyOf(tool)) {
+      case 'read':
+      case 'webfetch':
+      case 'taskRead':
+        return 'read';
+      case 'search':
+      case 'websearch':
+      case 'explore':
+      case 'toolSearch':
+        return 'search';
+      case 'edit':
+      case 'command':
+        return 'code';
+      default:
+        return 'default';
+    }
+  }
+  return 'default';
 }

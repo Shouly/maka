@@ -17,7 +17,7 @@
  * under the License.
  */
 
-// The live turn's status line under the transcript: the breathing mark, what
+// The live turn's status line under the transcript: the working mark, what
 // the turn is doing now, and — once the wait is long enough to be worth
 // counting — how long it has been.
 //
@@ -53,8 +53,8 @@ import {
   useUiLocale,
   type TurnViewModel,
 } from '@maka/ui';
-import { RelxMark } from '../icons/RelxMark.js';
-import { deriveTurnActivity } from '../../lib/turn-activity.js';
+import { WorkingMark } from '../icons/WorkingMark.js';
+import { deriveTurnActivity, deriveWorkingMarkActivity } from '../../lib/turn-activity.js';
 import { getTranscriptCopy } from '../../locales/transcript-copy.js';
 
 const ELAPSED_TICK_MS = 1_000;
@@ -95,7 +95,10 @@ export function TurnRunningStatus(props: {
       data-maka-activity={activity.kind}
       {...(props.streamUnsteady ? { 'data-maka-stream': 'unsteady' } : {})}
     >
-      <RelxMark size={32} animated className="text-fill-brand" />
+      {/* Each source frame is 48px: display at 24px for native 2x density. */}
+      <span className="inline-flex size-8 shrink-0 items-center justify-center" aria-hidden="true">
+        <WorkingMark size={24} activity={deriveWorkingMarkActivity(props.turn)} />
+      </span>
       {/* Name the activity once; the clock must not announce each second. */}
       <span
         aria-hidden="true"

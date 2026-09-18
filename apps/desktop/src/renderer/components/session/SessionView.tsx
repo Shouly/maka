@@ -97,8 +97,8 @@ import { SelectionQuote } from './SelectionQuote.js';
 import { UserMessageRow } from './UserMessageRow.js';
 import { TranscriptTurn } from './TranscriptTurn.js';
 import { useQuestionPin } from './use-question-pin.js';
-import { TurnIdleMark } from './TurnIdleMark.js';
 import { TurnRunningStatus } from './TurnRunningStatus.js';
+import { deriveWorkingMarkActivity } from '../../lib/turn-activity.js';
 import { NoticeCard } from './notices/NoticeCard.js';
 import { RevisionBanner } from './notices/RevisionBanner.js';
 import { GoalBanner } from './notices/GoalBanner.js';
@@ -479,6 +479,11 @@ function SessionTranscript(props: SessionViewProps) {
                     turn={turn}
                     live={live.turnId === turn.turnId}
                     footerActions={presentation.footerActionsByTurn[turn.turnId] ?? []}
+                    footerAlwaysVisible={
+                      turn.status !== 'running' &&
+                      !feed.hasNewer &&
+                      turn.turnId === turns.at(-1)?.turnId
+                    }
                     {...(presentation.lineageBadgesByTurn[turn.turnId]
                       ? { lineageBadges: presentation.lineageBadgesByTurn[turn.turnId] }
                       : {})}
@@ -553,16 +558,6 @@ function SessionTranscript(props: SessionViewProps) {
                   ]
                 : []),
               ...(orphanRunningStatus ? [waitingStatus] : []),
-              // The foot of a settled conversation: the mark stands where the
-              // status line stood. Only at the true tail — never over a page
-              // of older history, never while anything is still on its way.
-              ...(turns.length > 0 &&
-              !running &&
-              !shellLive.showRunningStatus &&
-              !feed.hasNewer &&
-              transientPlacement.tail.length === 0
-                ? [<TurnIdleMark key={`idle:${sessionId}`} />]
-                : []),
             ]}
             {/* The end of content, as opposed to the end of the scroll height
                 the pinned question's floor extends. */}
@@ -572,6 +567,7 @@ function SessionTranscript(props: SessionViewProps) {
         {(contentBelow || feed.hasNewer) && (
           <JumpToLatest
             streaming={running}
+            activity={deriveWorkingMarkActivity(activeTurn)}
             onJump={() => {
               jumpToLatest();
               void loadHistory('latest');

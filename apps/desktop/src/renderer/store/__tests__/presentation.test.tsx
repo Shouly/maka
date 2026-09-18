@@ -46,9 +46,9 @@ import {
 } from '../../components/session/tools/tool-presentation.js';
 import { deriveTurnPresentation } from '../../hooks/use-turn-presentation.js';
 import { groupTurnTimeline } from '../../lib/turn-timeline-groups.js';
-import { deriveTurnActivity } from '../../lib/turn-activity.js';
+import { deriveTurnActivity, deriveWorkingMarkActivity } from '../../lib/turn-activity.js';
 import { TurnRunningStatus } from '../../components/session/TurnRunningStatus.js';
-import { TurnIdleMark } from '../../components/session/TurnIdleMark.js';
+import { JumpToLatest } from '../../components/session/HistoryControls.js';
 import { getTranscriptCopy } from '../../locales/transcript-copy.js';
 
 function render(text: string) {
@@ -601,8 +601,8 @@ test('the status line shows the mark and the activity, and holds its label acros
   assert.ok(line);
   assert.equal(line.getAttribute('aria-label'), 'Working on it…', 'nothing has landed yet');
   assert.equal(
-    line.querySelector('[data-maka-relx-mark]')?.getAttribute('data-maka-relx-mark'),
-    'breathing',
+    line.querySelector('[data-maka-working-mark]')?.getAttribute('data-maka-working-mark'),
+    'default',
   );
   assert.equal(
     line.querySelector('[data-maka-contract="turn-elapsed"]')?.textContent,
@@ -703,16 +703,58 @@ test('in a live turn only the newest run keeps its steps; an earlier one folds w
   assert.ok(newest.querySelector('[data-maka-thinking]'), 'the live run still shows its step');
 });
 
-test('the idle mark is a named button holding the still mark, with a quip for the tooltip', () => {
-  const document = renderTree(createElement(TurnIdleMark));
-  const mark = document.querySelector('[data-maka-contract="turn-idle-mark"]');
-  assert.ok(mark);
-  const button = mark.querySelector('button');
-  assert.equal(button?.getAttribute('aria-label'), 'End of conversation');
+test('working marks retain the last action between blocks and use semantic tool kinds', () => {
+  const base = transcriptFixture();
+  const mark = (timeline: TurnViewModel['timeline']) =>
+    deriveWorkingMarkActivity({ ...base, timeline });
+  assert.equal(deriveWorkingMarkActivity(undefined), 'default');
+  assert.equal(mark([]), 'default', 'a new turn never inherits the previous activity');
+  assert.equal(mark([{ kind: 'thinking', text: 't', messageId: 'm', live: false }]), 'think');
+  assert.equal(mark([{ kind: 'text', text: 'p', messageId: 'm', complete: true }]), 'write');
+  for (const [activityKind, expected] of [
+    ['read', 'read'],
+    ['webfetch', 'read'],
+    ['websearch', 'search'],
+    ['explore', 'search'],
+    ['edit', 'code'],
+    ['command', 'code'],
+    ['computer', 'default'],
+  ] as const) {
+    const item: ToolActivityItem = {
+      ...base.tools[1]!,
+      toolName: 'opaque_tool',
+      activityKind,
+      status: 'running',
+    };
+    assert.equal(mark([{ kind: 'tools', items: [item] }]), expected);
+    assert.equal(mark([{ kind: 'tools', items: [{ ...item, status: 'completed' }] }]), expected);
+  }
+  const read: ToolActivityItem = { ...base.tools[1]!, activityKind: 'read', status: 'running' };
+  const done: ToolActivityItem = { ...read, activityKind: 'edit', status: 'completed' };
   assert.equal(
-    button?.querySelector('[data-maka-relx-mark]')?.getAttribute('data-maka-relx-mark'),
-    'still',
+    mark([{ kind: 'tools', items: [read, done] }]),
+    'read',
+    'an in-flight tool wins over a completed sibling',
   );
+});
+
+test('the jump button has an animated working mark only during generation', () => {
+  const running = renderTree(
+    createElement(JumpToLatest, { streaming: true, activity: 'code', onJump() {} }),
+  );
+  const button = running.querySelector('[data-maka-contract="jump-to-latest"]');
+  assert.equal(button?.getAttribute('aria-label'), getTranscriptCopy('en').feed.jumpToLatest);
+  assert.equal(
+    button?.querySelector('[data-maka-working-mark]')?.getAttribute('data-maka-working-mark'),
+    'code',
+  );
+  const settled = renderTree(createElement(JumpToLatest, { streaming: false, onJump() {} }));
+  assert.equal(
+    settled.querySelector('[data-maka-working-mark]'),
+    null,
+    'no hidden animation after completion',
+  );
+  assert.ok(settled.querySelector('button[aria-label]'));
 });
 
 test('each result kind renders its own body, and a diff keeps its markers', () => {

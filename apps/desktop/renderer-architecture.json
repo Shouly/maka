@@ -56,7 +56,7 @@
     "src/renderer/components/dev/RuntimeDebug.tsx",
     "src/renderer/components/icons/Anthropicon.tsx",
     "src/renderer/components/icons/RelxLogo.tsx",
-    "src/renderer/components/icons/RelxMark.tsx",
+    "src/renderer/components/icons/WorkingMark.tsx",
     "src/renderer/components/icons/index.ts",
     "src/renderer/components/layout/AppLayout.tsx",
     "src/renderer/components/layout/AppShell.tsx",
@@ -109,7 +109,6 @@
     "src/renderer/components/session/ThinkingStep.tsx",
     "src/renderer/components/session/TranscriptTurn.tsx",
     "src/renderer/components/session/TurnFooter.tsx",
-    "src/renderer/components/session/TurnIdleMark.tsx",
     "src/renderer/components/session/TurnRunningStatus.tsx",
     "src/renderer/components/session/UserMessageRow.tsx",
     "src/renderer/components/session/message-action-bar.ts",
@@ -354,6 +353,8 @@
     "src/renderer/lib/turn-timeline-groups.ts",
     "src/renderer/lib/user-question-shape.ts",
     "src/renderer/lib/welcome-greeting.ts",
+    "src/renderer/lib/working-mark-player.ts",
+    "src/renderer/lib/working-mark-sheets.ts",
     "src/renderer/locales/agent-graph-copy.ts",
     "src/renderer/locales/artifact-copy.ts",
     "src/renderer/locales/browser-copy.ts",
@@ -423,6 +424,7 @@
     "src/renderer/store/__tests__/skills-module.test.tsx",
     "src/renderer/store/__tests__/streaming-switch-smoke.mjs",
     "src/renderer/store/__tests__/tool-delivery.test.tsx",
+    "src/renderer/store/__tests__/working-mark.test.ts",
     "src/renderer/store/active-session-store.ts",
     "src/renderer/store/bots-store.ts",
     "src/renderer/store/composer-draft-store.ts",
@@ -1310,15 +1312,28 @@
         "react": 1
       }
     },
-    "src/renderer/components/icons/RelxMark.tsx": {
+    "src/renderer/components/icons/WorkingMark.tsx": {
       "bridgePaths": {},
-      "environmentCapabilities": {},
-      "hookCalls": {},
+      "environmentCapabilities": {
+        "document.addEventListener": 1,
+        "document.hidden": 1,
+        "document.removeEventListener": 1,
+        "IntersectionObserver": 1,
+        "MutationObserver": 1,
+        "window.matchMedia": 1
+      },
+      "hookCalls": {
+        "useEffect": 2,
+        "useRef": 3
+      },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
-        "../../lib/cn.js": 1
+        "../../lib/cn.js": 1,
+        "../../lib/working-mark-player.js": 1,
+        "@maka/ui": 1,
+        "react": 1
       }
     },
     "src/renderer/components/icons/index.ts": {
@@ -2287,6 +2302,7 @@
         "../../lib/cn.js": 1,
         "../../locales/transcript-copy.js": 1,
         "../icons/Anthropicon.js": 1,
+        "../icons/WorkingMark.js": 1,
         "@maka/ui": 1,
         "react": 1
       }
@@ -2415,6 +2431,7 @@
         "../../lib/cn.js": 1,
         "../../lib/ported/session-workspace-errors.js": 1,
         "../../lib/transient-message-placement.js": 1,
+        "../../lib/turn-activity.js": 1,
         "../../locales/conversation-copy.js": 1,
         "../../locales/shell-copy.js": 1,
         "../../locales/transcript-copy.js": 1,
@@ -2437,7 +2454,6 @@
         "./PlanProposalCard.js": 1,
         "./SelectionQuote.js": 1,
         "./TranscriptTurn.js": 1,
-        "./TurnIdleMark.js": 1,
         "./TurnRunningStatus.js": 1,
         "./use-question-pin.js": 1,
         "./UserMessageRow.js": 1,
@@ -2526,28 +2542,6 @@
         "react": 1
       }
     },
-    "src/renderer/components/session/TurnIdleMark.tsx": {
-      "bridgePaths": {},
-      "environmentCapabilities": {
-        "window.clearTimeout": 1,
-        "window.setTimeout": 1
-      },
-      "hookCalls": {
-        "useRef": 1,
-        "useState": 1,
-        "useUiLocale": 1
-      },
-      "lifecycleMethods": {},
-      "unresolvedDependencies": 0,
-      "actionFactories": [],
-      "dependencyPaths": {
-        "../../locales/transcript-copy.js": 1,
-        "../icons/RelxMark.js": 1,
-        "../ui/tooltip.js": 1,
-        "@maka/ui": 1,
-        "react": 1
-      }
-    },
     "src/renderer/components/session/TurnRunningStatus.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {
@@ -2566,7 +2560,7 @@
       "dependencyPaths": {
         "../../lib/turn-activity.js": 1,
         "../../locales/transcript-copy.js": 1,
-        "../icons/RelxMark.js": 1,
+        "../icons/WorkingMark.js": 1,
         "@maka/ui": 1,
         "react": 1
       }
@@ -6582,6 +6576,26 @@
       "dependencyPaths": {
         "../locales/greeting-copy.js": 1
       }
+    },
+    "src/renderer/lib/working-mark-player.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./working-mark-sheets.js": 1
+      }
+    },
+    "src/renderer/lib/working-mark-sheets.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
     },
     "src/renderer/locales/artifact-copy.ts": {
       "bridgePaths": {},
