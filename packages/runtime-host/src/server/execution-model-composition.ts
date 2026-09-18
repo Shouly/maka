@@ -26,7 +26,8 @@ import type { ModelCallCommit } from '@maka/core/agent-run';
 import type { PermissionMode } from '@maka/core/permission';
 import { resolveCollaborationPermissionMode } from '@maka/core/collaboration';
 import { AiSdkBackend } from '@maka/runtime/ai-sdk-backend';
-import { renderTurnReminder } from '@maka/runtime/system-prompt/turn-reminder';
+import { SessionInjections } from '@maka/runtime/injection';
+import { hostTimeZone } from '@maka/runtime/system-prompt/environment-prompt';
 import {
   buildDefaultContextBudgetPolicy,
   resolveSelectedModelContextWindow,
@@ -371,9 +372,15 @@ async function buildHostAiSdkBackend(
         ...(input.context.recordSystemNote
           ? { recordSystemNote: input.context.recordSystemNote }
           : {}),
+        ...(input.context.recordInjection
+          ? { recordInjection: input.context.recordInjection }
+          : {}),
         readExecutionBoundary: () =>
           input.context.store.readExecutionBoundary(input.context.sessionId),
-        renderTurnReminder,
+        injections: new SessionInjections({
+          sessionId: input.context.sessionId,
+          ...(hostTimeZone() ? { timeZone: hostTimeZone()! } : {}),
+        }),
         readPermissionMode: async () =>
           (await input.context.store.readHeader(input.context.sessionId)).permissionMode,
         ...(input.context.store.createSandboxBoundaryRequest

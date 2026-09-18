@@ -37,6 +37,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, resolve as resolvePath } from 'node:path';
+import { FileChangeTrackerRegistry, type SessionFileChangeTracker } from './file-change-tracker.js';
 import { compilePermissionProfile } from '@maka/core/permission-profile-compiler';
 import { parseAttachmentResourceRef } from '@maka/core/attachments';
 import { type SandboxBoundaryExpansion } from '@maka/core/sandbox-boundary';
@@ -143,60 +144,6 @@ interface GrepToolInput {
 }
 
 /**
- * Which files a session has looked at, so Write can refuse to destroy content
- * the model has never seen.
- *
- * The tools are built once per composer and shared by every session that runs
- * through it, so the ledger is keyed by session and can never be a field on the
- * tool object. It is a cache, not an authority: forgetting an entry costs one
- * extra Read, so both dimensions are bounded and evict least-recently-used —
- * a long-lived host must not accumulate a set per session forever.
- */
-const MAX_LEDGER_SESSIONS = 256;
-const MAX_LEDGER_PATHS_PER_SESSION = 2048;
-
-class SessionFileSightLedger {
-  private readonly sessions = new Map<string, Set<string>>();
-
-  /** Record that `path` (canonical) came back through a file tool in this session. */
-  note(sessionId: string | undefined, path: string | undefined): void {
-    if (!sessionId || !path) return;
-    const seen = this.touch(sessionId);
-    // Re-inserting moves the path to the end, which is what makes the eviction
-    // below least-recently-used rather than first-seen.
-    seen.delete(path);
-    seen.add(path);
-    evictOldest(seen, MAX_LEDGER_PATHS_PER_SESSION);
-  }
-
-  has(sessionId: string | undefined, path: string | undefined): boolean {
-    if (!sessionId || !path) return false;
-    return this.sessions.get(sessionId)?.has(path) === true;
-  }
-
-  private touch(sessionId: string): Set<string> {
-    const existing = this.sessions.get(sessionId);
-    if (existing) {
-      this.sessions.delete(sessionId);
-      this.sessions.set(sessionId, existing);
-      return existing;
-    }
-    const created = new Set<string>();
-    this.sessions.set(sessionId, created);
-    evictOldest(this.sessions, MAX_LEDGER_SESSIONS);
-    return created;
-  }
-}
-
-function evictOldest(entries: Map<string, unknown> | Set<string>, limit: number): void {
-  while (entries.size > limit) {
-    const oldest = entries.keys().next();
-    if (oldest.done) return;
-    entries.delete(oldest.value);
-  }
-}
-
-/**
  * The canonical spelling a file tool's ledger entry is keyed by. The backends
  * answer with realpath'd targets, so the pre-call lookup has to canonicalise
  * the same way or every spelling of one file would look like a different file.
@@ -286,6 +233,13 @@ export interface BuildBuiltinToolsOptions {
   shellEnvironment?: Readonly<Record<string, string>>;
   permissionProfile?: PermissionProfile;
   sandboxManager?: SandboxManager;
+  /**
+   * Which files each session has read and written, and whether they still are
+   * as the model last saw them. Shared with the session's backend, which
+   * reports the changes on tool results; defaults to a registry of this tool
+   * set's own.
+   */
+  fileChanges?: FileChangeTrackerRegistry;
   /** Sandboxed worker used for all local filesystem tools. */
   filesystemWorker?: Pick<FilesystemWorkerClient, 'execute'>;
   /** Test/embedding override. Production callers use the current process platform. */
@@ -308,7 +262,9 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
   });
   const executionFacts = executor.facts;
   const acceptsResourceRefs = Boolean(options.runtimeResources || options.attachmentResources);
-  const fileSight = new SessionFileSightLedger();
+  const fileChanges = options.fileChanges ?? new FileChangeTrackerRegistry();
+  const trackerFor = (sessionId: string | undefined): SessionFileChangeTracker | undefined =>
+    sessionId ? fileChanges.forSession(sessionId) : undefined;
   const readDescription = [
     'Reads a file from the local filesystem.',
     '',
@@ -499,7 +455,9 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
           operation: input.operation,
           ...filesystemCall(ctx),
         });
-        fileSight.note(ctx.sessionId, canonicalFilePath(ctx.cwd, input.operation.path));
+        await trackerFor(ctx.sessionId)?.noteWritten(
+          canonicalFilePath(ctx.cwd, input.operation.path),
+        );
         return applied;
       }
       const operations = parseCodexV4aPatch(input);
@@ -507,7 +465,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
         operations,
         async (operation) => {
           await filesystem.applyPatch({ operation, ...filesystemCall(ctx) });
-          fileSight.note(ctx.sessionId, canonicalFilePath(ctx.cwd, operation.path));
+          await trackerFor(ctx.sessionId)?.noteWritten(canonicalFilePath(ctx.cwd, operation.path));
         },
         ctx.abortSignal,
       );
@@ -611,7 +569,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
             bytes: result.bytes,
             mimeType: result.mimeType,
           });
-          fileSight.note(sessionId, canonicalFilePath(cwd, path));
+          await trackerFor(sessionId)?.noteRead(canonicalFilePath(cwd, path));
           return { kind: 'image' as const, mimeType: result.mimeType, ref };
         }
         if (result.kind !== 'read')
@@ -623,7 +581,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
         // The session has now seen this file, so a later Write may replace it.
         // The read result carries no path, so the request is canonicalised the
         // same way the backends canonicalise their targets.
-        fileSight.note(sessionId, canonicalFilePath(cwd, path));
+        await trackerFor(sessionId)?.noteRead(canonicalFilePath(cwd, path));
         return { content: result.content };
       },
       toModelOutput: ({ input, output }) => readToolResultToModelOutput(input, output),
@@ -651,6 +609,11 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
         if (typeof path !== 'string' || path === '')
           throw new Error('Write requires file_path (the file to write).');
         const { content } = input as { content: string };
+        const tracker = trackerFor(ctx.sessionId);
+        const canonical = canonicalFilePath(ctx.cwd, path);
+        // A file that changed since the session last read it is written from a
+        // shape that is no longer there: refuse until a Read refreshes it.
+        await tracker?.assertUnchanged(canonical);
         const result = await filesystem.execute({
           operation: {
             kind: 'write',
@@ -659,13 +622,13 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
             // Whether this call may replace an existing file is a fact about
             // the session, which only this layer knows; the backends enforce
             // it at the point where "new vs existing" is established.
-            allowOverwrite: fileSight.has(ctx.sessionId, canonicalFilePath(ctx.cwd, path)),
+            allowOverwrite: tracker?.has(canonical) === true,
           },
           ...filesystemCall(ctx),
         });
         if (result.kind !== 'write')
           throw internalFilesystemWriteFailure('Write', 'the file was written');
-        fileSight.note(ctx.sessionId, result.path);
+        await tracker?.noteWritten(result.path);
         if (result.diff !== undefined)
           return { kind: 'file_diff' as const, paths: [result.path], diff: result.diff };
         return { kind: 'file_write' as const, path: result.path, bytes: result.bytes };
@@ -709,6 +672,9 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
           new_string: string;
           replace_all?: boolean;
         };
+        const tracker = trackerFor(ctx.sessionId);
+        const canonical = canonicalFilePath(ctx.cwd, path);
+        await tracker?.assertUnchanged(canonical);
         const result = await filesystem.execute({
           operation: {
             kind: 'edit',
@@ -721,7 +687,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
             // file's current text lands on text that is no longer there. Only
             // this layer knows what the session has seen; the backends enforce
             // it once the path has been resolved.
-            allowEdit: fileSight.has(ctx.sessionId, canonicalFilePath(ctx.cwd, path)),
+            allowEdit: tracker?.has(canonical) === true,
           },
           ...filesystemCall(ctx),
         });
@@ -731,7 +697,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
             'the edit was applied',
             'a different old_string will not help',
           );
-        fileSight.note(ctx.sessionId, result.path);
+        await tracker?.noteWritten(result.path);
         if (result.diff !== undefined)
           return { kind: 'file_diff' as const, paths: [result.path], diff: result.diff };
         return {

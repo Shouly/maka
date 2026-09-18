@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import { textAfterSystemReminders } from '@maka/runtime/injection';
 import assert from 'node:assert/strict';
 
 type ScenarioPhase =
@@ -192,18 +193,16 @@ function toolNames(body: Record<string, unknown>): string[] {
 }
 
 /**
- * The turn reminder rides with every request as a trailing user-role message
- * (`system-prompt/turn-reminder.ts`); it is system-delivered context, not the
- * user's words, so the scenario looks past it for the latest UserMessage.
+ * System-delivered context rides in user-role messages (`injection/`): the
+ * turn block trails the request as a message of nothing but reminder blocks,
+ * and a user message carries reminders ahead of the user's own words. The
+ * scenario looks past the former and reads the words out of the latter.
  */
 function isTurnReminder(record: { role?: unknown; content?: unknown }): boolean {
   return (
     record.role === 'user' &&
     typeof record.content === 'string' &&
-    // The turn reminder and the memory snapshot are both system-delivered
-    // user-role contexts that trail the user's own message.
-    (record.content.startsWith('<system-reminder>') ||
-      record.content.startsWith('<user_memory_snapshot>'))
+    textAfterSystemReminders(record.content) === ''
   );
 }
 
@@ -214,7 +213,9 @@ function latestUserText(body: Record<string, unknown>): string {
     if (!message || typeof message !== 'object') continue;
     const record = message as { role?: unknown; content?: unknown };
     if (isTurnReminder(record)) continue;
-    if (record.role === 'user') return requireString(record.content, 'latest UserMessage');
+    if (record.role === 'user') {
+      return textAfterSystemReminders(requireString(record.content, 'latest UserMessage'));
+    }
   }
   assert.fail('Graph provider request has no UserMessage');
 }

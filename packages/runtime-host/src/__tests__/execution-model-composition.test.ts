@@ -975,7 +975,9 @@ test('Host reopens one projected image from its ArtifactStore authority', async 
   const assertProjectedImage = (body: Record<string, unknown> | undefined) => {
     assert.ok(body);
     assert.doesNotMatch(JSON.stringify(body), /raw execution fact/u);
-    assert.deepEqual(JSON.parse(latestToolResultText(body) ?? 'null'), [
+    // The image part is the whole projection.
+    const parts = JSON.parse(latestToolResultText(body) ?? 'null') as unknown[];
+    assert.deepEqual(parts, [
       {
         type: 'file',
         mediaType: 'image/png',
@@ -4354,12 +4356,20 @@ test('one turn shares one canonical Skill inventory across prompt and lazy tools
   const firstResolved = await composition.resolveSystemPrompt(firstContext);
   const firstPrompt = firstResolved.text;
   assert.match(firstPrompt ?? '', /^The assistant is Copilot\./);
-  assert.match(firstPrompt ?? '', /OLD_DESCRIPTION/);
+  // The skills listing is system-delivered ahead of the turn's user text,
+  // not part of the cached prompt; the context carries it with its revision.
+  assert.doesNotMatch(firstPrompt ?? '', /OLD_DESCRIPTION/);
+  const skillsContextOf = (resolved: { contexts?: readonly { name: string; text: string }[] }) =>
+    resolved.contexts?.find((context) => context.name === 'skills')?.text ?? '';
+  assert.match(skillsContextOf(firstResolved), /OLD_DESCRIPTION/);
   // The memory snapshot is system-delivered with the turn, not part of the
   // cached prompt; the prompt carries the rules, the context carries the store.
   assert.doesNotMatch(firstPrompt ?? '', /MEMORY_BODY/);
   assert.match(firstPrompt ?? '', /^<user_memory>$/mu);
-  assert.deepEqual(firstResolved.contexts, [{ name: 'user_memory_snapshot', text: 'MEMORY_BODY' }]);
+  assert.equal(
+    firstResolved.contexts?.find((context) => context.name === 'user_memory_snapshot')?.text,
+    'MEMORY_BODY',
+  );
   assert.equal(inventoryReads, 1);
 
   inventory = [skillFixture('new', 'NEW_DESCRIPTION', 'NEW_BODY')];
@@ -4393,10 +4403,11 @@ test('one turn shares one canonical Skill inventory across prompt and lazy tools
   );
   assert.equal(inventoryReads, 1);
 
-  const nextPrompt = (await composition.resolveSystemPrompt({ ...firstContext, turnId: 'turn-2' }))
-    .text;
-  assert.match(nextPrompt ?? '', /NEW_DESCRIPTION/);
-  assert.doesNotMatch(nextPrompt ?? '', /OLD_DESCRIPTION/);
+  const nextResolved = await composition.resolveSystemPrompt({ ...firstContext, turnId: 'turn-2' });
+  const nextPrompt = nextResolved.text;
+  assert.doesNotMatch(nextPrompt ?? '', /NEW_DESCRIPTION|OLD_DESCRIPTION/);
+  assert.match(skillsContextOf(nextResolved), /NEW_DESCRIPTION/);
+  assert.doesNotMatch(skillsContextOf(nextResolved), /OLD_DESCRIPTION/);
   assert.equal(inventoryReads, 2);
 
   for (const prompt of [firstPrompt, nextPrompt]) {
@@ -4450,15 +4461,30 @@ test('one composer freezes Runtime Policy while each Run freezes its remaining p
     { id: 'runtime-policy', revision: '3' },
     { id: 'skill-catalog', revision: 'skills-3' },
   ]);
-  assert.deepEqual(first.contexts, [{ name: 'user_memory_snapshot', text: 'MEMORY_THREE' }]);
-  assert.match(first.text ?? '', /SKILL_THREE/u);
+  assert.equal(
+    first.contexts?.find((context) => context.name === 'user_memory_snapshot')?.text,
+    'MEMORY_THREE',
+  );
+  assert.doesNotMatch(first.text ?? '', /SKILL_THREE/u);
+  assert.equal(first.contexts?.find((context) => context.name === 'skills')?.revision, 'skills-3');
+  assert.match(
+    first.contexts?.find((context) => context.name === 'skills')?.text ?? '',
+    /SKILL_THREE/u,
+  );
   assert.deepEqual(next.sourceRevisions, [
     { id: 'memory', revision: 'memory-4' },
     { id: 'runtime-policy', revision: '3' },
     { id: 'skill-catalog', revision: 'skills-4' },
   ]);
-  assert.deepEqual(next.contexts, [{ name: 'user_memory_snapshot', text: 'MEMORY_FOUR' }]);
-  assert.match(next.text ?? '', /SKILL_FOUR/u);
+  assert.equal(
+    next.contexts?.find((context) => context.name === 'user_memory_snapshot')?.text,
+    'MEMORY_FOUR',
+  );
+  assert.doesNotMatch(next.text ?? '', /SKILL_FOUR/u);
+  assert.match(
+    next.contexts?.find((context) => context.name === 'skills')?.text ?? '',
+    /SKILL_FOUR/u,
+  );
 
   const nextComposition = createInteractiveRunComposer({
     runtimePolicy: { revision: policyRevision, policy: createDefaultRuntimePolicy() },

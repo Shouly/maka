@@ -32,7 +32,12 @@ export type HostModelPromptContext = SystemPromptContext;
 
 export interface ResolvedRunPrompt {
   readonly text: string | undefined;
-  readonly contexts?: readonly { readonly name: string; readonly text: string }[];
+  /** System-delivered blocks, recorded ahead of a turn's user text once and again only when `revision` (or the text) moves. */
+  readonly contexts?: readonly {
+    readonly name: string;
+    readonly text: string;
+    readonly revision?: string;
+  }[];
   readonly sourceRevisions: readonly RunCompositionSourceRevision[];
 }
 

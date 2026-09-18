@@ -25,7 +25,8 @@
  */
 
 import type { SessionEvent } from '@maka/core/events';
-import type { TurnReminderInput } from './system-prompt/turn-reminder.js';
+import type { SessionInjections } from './injection/session-injections.js';
+import type { RuntimeEventInjectionContent } from '@maka/core/runtime-event';
 import type {
   BackendKind,
   RuntimeSystemNoteKind,
@@ -122,11 +123,13 @@ export interface AiSdkBackendInput extends AiSdkCompactionCapabilities {
   /** Reads the user's current Session permission selection for each local tool invocation. */
   readPermissionMode: ToolRuntimeInput['readPermissionMode'];
   /**
-   * Renders the per-turn reminder (date, serving model, permission mode,
-   * sandbox boundary) the turn appends as a trailing user-role context. The
-   * host supplies it; a backend built without one sends no reminder.
+   * What the system says into this session's conversation besides the system
+   * prompt: the sent-time reminder on each user message and the durable
+   * blocks ahead of a turn's user text (contexts, deferred tools, session
+   * facts, date). The host supplies one per session; a backend built without
+   * it injects nothing.
    */
-  renderTurnReminder?: (input: TurnReminderInput) => string | undefined;
+  injections?: SessionInjections;
   createSandboxBoundaryRequest?: ToolRuntimeInput['createSandboxBoundaryRequest'];
   settleSandboxBoundaryRequest?: ToolRuntimeInput['settleSandboxBoundaryRequest'];
 
@@ -196,6 +199,15 @@ export interface AiSdkBackendInput extends AiSdkCompactionCapabilities {
    */
   recordSystemNote?: (kind: RuntimeSystemNoteKind, turnId: string, data?: unknown) => Promise<void>;
   /**
+   * Writes one block the system said ahead of this turn's user text — a
+   * context, the held tools, the session facts, the date — to the
+   * invocation's ledger, where every later request replays it.
+   */
+  recordInjection?: (
+    turnId: string,
+    content: Omit<RuntimeEventInjectionContent, 'kind'>,
+  ) => Promise<void>;
+  /**
    * Commits one settled provider request: the canonical attempt and, when it
    * is the completed main call, the derived latest-context row it authorises.
    * One object so a layer cannot forward half of it (#2323).
@@ -245,8 +257,17 @@ export interface AiSdkBackendInput extends AiSdkCompactionCapabilities {
 
 export interface ResolvedSystemPrompt {
   text?: string;
-  /** Per-step ephemeral user-role context, resolved once per logical request. */
-  contexts?: readonly { readonly name: string; readonly text: string }[];
+  /**
+   * System-delivered blocks resolved for the session — the memory snapshot,
+   * the skills listing, a plugin's context. Each is recorded ahead of the
+   * turn's user text the first time, and again only when its `revision`
+   * (or, without one, its text) changes.
+   */
+  contexts?: readonly {
+    readonly name: string;
+    readonly text: string;
+    readonly revision?: string;
+  }[];
   sourceRevisions: readonly RunCompositionSourceRevision[];
 }
 
@@ -398,6 +419,11 @@ export class AiSdkBackend implements AgentBackend {
       supportsVision: input.supportsVision,
       readAttachmentBytes: input.readAttachmentBytes,
       maxProviderImageRequestBytes: input.maxProviderImageRequestBytes,
+      // Replayed history says the same thing every time: a user message
+      // carries the reminder its send time renders to.
+      ...(input.injections
+        ? { userMessageReminders: (ts: number) => input.injections!.userMessageReminders(ts) }
+        : {}),
     });
     this.compaction = new AiSdkCompaction({
       input,

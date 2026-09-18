@@ -2488,6 +2488,7 @@ export class RuntimeKernel implements RuntimeKernelLike {
     BackendFactoryContext,
     | 'recordRunTrace'
     | 'recordSystemNote'
+    | 'recordInjection'
     | 'recordModelCallAttempt'
     | 'recordRunComposition'
     | 'recordRequestComposition'
@@ -2509,6 +2510,8 @@ export class RuntimeKernel implements RuntimeKernelLike {
       },
       recordSystemNote: (kind, turnId, data) =>
         runFor(turnId)?.recordSystemNote(kind, data) ?? Promise.resolve(),
+      recordInjection: (turnId, content) =>
+        runFor(turnId)?.recordInjection(content) ?? Promise.resolve(),
       ...(this.deps.runStore
         ? {
             // Resolved by runId rather than turnId: the canonical record names

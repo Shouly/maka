@@ -203,8 +203,12 @@ test('scoped Plugin Skill contributions join the canonical model inventory', asy
     turnId: 'turn-skill',
     cwd: '/workspace',
   });
-  assert.match(prompt.text ?? '', /plugin-probe/u);
-  assert.match(prompt.text ?? '', /Scoped skill for session-skill/u);
+  // The skills listing rides ahead of the turn's user text as a context, not
+  // in the cached prompt.
+  const skillsContext = prompt.contexts?.find((context) => context.name === 'skills')?.text ?? '';
+  assert.match(skillsContext, /plugin-probe/u);
+  assert.match(skillsContext, /Scoped skill for session-skill/u);
+  assert.doesNotMatch(prompt.text ?? '', /plugin-probe/u);
 });
 
 function tool(name: string): MakaTool {

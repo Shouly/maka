@@ -46,7 +46,10 @@ import {
   isSessionInlineInvocation,
 } from '@maka/core/runtime-invocation';
 import type { RuntimeInvocationRecord } from '@maka/core/runtime-invocation';
-import type { RuntimeInvocationLineage } from '@maka/core/runtime-event';
+import type {
+  RuntimeEventInjectionContent,
+  RuntimeInvocationLineage,
+} from '@maka/core/runtime-event';
 import {
   MODEL_PROJECTION_TRANSITION_EVENT_TYPE,
   type ModelProjectionTransition,
@@ -1150,6 +1153,29 @@ export class AgentRun {
         author: 'system',
         modelVisibility: 'hidden',
         content: { kind: 'system_note', note: kind, ...(data !== undefined ? { data } : {}) },
+      },
+    ]);
+  }
+
+  /**
+   * Record something the system told the model ahead of this turn's user
+   * text. Model-visible by nature: it is replayed there on every request, and
+   * a later turn reads it back to decide what has changed since.
+   */
+  async recordInjection(content: Omit<RuntimeEventInjectionContent, 'kind'>): Promise<void> {
+    await this.recordRuntimeEvents([
+      {
+        id: this.input.newId(),
+        invocationId: this.invocationId,
+        runId: this.runId,
+        sessionId: this.sessionId,
+        turnId: this.turnId,
+        ts: this.input.now(),
+        partial: false,
+        role: 'system',
+        author: 'system',
+        modelVisibility: 'visible',
+        content: { kind: 'injection', ...content },
       },
     ]);
   }

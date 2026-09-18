@@ -48,6 +48,7 @@
  * item without reviving the retired 0.1.x StoredMessage history path.
  */
 
+import { wrapSystemReminder } from './injection/system-reminder.js';
 import {
   isPartialRuntimeEvent,
   isTerminalRuntimeEvent,
@@ -223,6 +224,7 @@ export function estimateRuntimeEventChars(event: RuntimeEvent): number {
   else if (content?.kind === 'function_response')
     total += content.name.length + estimateEffectiveToolResultChars(content, event.sessionId);
   else if (content?.kind === 'error') total += content.message.length;
+  else if (content?.kind === 'injection') total += content.text.length;
   return total;
 }
 
@@ -336,6 +338,13 @@ export type RuntimeEventModelReplayItem =
        * dedupe works on identity, never on text.
        */
       steering?: { eventId: string };
+      /** The turn this text opened; how the turn's injections find their carrier. */
+      turnId?: string;
+      /**
+       * The system-delivered blocks recorded ahead of this user text, already
+       * enveloped, in ledger order. Materializers put them before the text.
+       */
+      injections?: readonly string[];
       eventId: string;
       ts: number;
     }
@@ -566,6 +575,9 @@ export function buildRuntimeEventModelReplayPlan(
   const includeSystemEvents = options.includeSystemEvents ?? false;
   const items: RuntimeEventModelReplayItem[] = [];
   const diagnostics: RuntimeEventReplayDiagnostic[] = [];
+  const injectionsByTurn = new Map<string, string[]>();
+  /** Where — and when — a turn's first injection stood, for a turn with no user text to carry them. */
+  const injectionAnchorByTurn = new Map<string, { index: number; ts: number }>();
   const callsById = new Map<
     string,
     {
@@ -648,6 +660,21 @@ export function buildRuntimeEventModelReplayPlan(
             { actionKeys: Object.keys(event.actions) },
           ),
         );
+      }
+      continue;
+    }
+
+    // A block the system said ahead of this turn's user text. It rides on
+    // that text's item (see the pass after the loop), so it is not an item
+    // of its own and never trips the system-role gate below.
+    if (event.content.kind === 'injection') {
+      if (event.content.text.length === 0) continue;
+      const turnId = event.turnId ?? '';
+      const blocks = injectionsByTurn.get(turnId) ?? [];
+      blocks.push(wrapSystemReminder(event.content.text));
+      injectionsByTurn.set(turnId, blocks);
+      if (!injectionAnchorByTurn.has(turnId)) {
+        injectionAnchorByTurn.set(turnId, { index: items.length, ts: event.ts });
       }
       continue;
     }
@@ -748,6 +775,7 @@ export function buildRuntimeEventModelReplayPlan(
           // Live events carry providerEventId; missing-ledger recovery carries
           // the same assistant message identity as storedMessageId.
           ...(assistantStepId ? { stepId: assistantStepId } : {}),
+          ...(event.turnId ? { turnId: event.turnId } : {}),
           eventId: event.id,
           ts: event.ts,
         });
@@ -965,7 +993,7 @@ export function buildRuntimeEventModelReplayPlan(
     );
   const semanticKinds = [...new Set(items.map((item) => item.kind))];
   return {
-    items,
+    items: attachInjections(items, injectionsByTurn, injectionAnchorByTurn),
     textMessages,
     semanticKinds,
     diagnostics,
@@ -974,6 +1002,53 @@ export function buildRuntimeEventModelReplayPlan(
       semanticKinds.includes('tool_call') ||
       semanticKinds.includes('tool_result'),
   };
+}
+
+/**
+ * Put each turn's injections on the user text that opened the turn — the
+ * head user message, never a steering interjection. A turn with no such text
+ * gets them as a user-role item of their own where the first of them stood,
+ * timed as the moment the system spoke, so a system-delivered fact is never
+ * dropped for want of a carrier and never dated 1970.
+ */
+function attachInjections(
+  items: RuntimeEventModelReplayItem[],
+  injectionsByTurn: ReadonlyMap<string, string[]>,
+  anchorByTurn: ReadonlyMap<string, { index: number; ts: number }>,
+): RuntimeEventModelReplayItem[] {
+  if (injectionsByTurn.size === 0) return items;
+  const out = [...items];
+  const standalone: { index: number; item: RuntimeEventModelReplayItem }[] = [];
+  for (const [turnId, blocks] of injectionsByTurn) {
+    const carrier = out.findIndex(
+      (item) =>
+        item.kind === 'text' && item.role === 'user' && !item.steering && item.turnId === turnId,
+    );
+    const item = carrier === -1 ? undefined : out[carrier];
+    if (item && item.kind === 'text') {
+      out[carrier] = { ...item, injections: [...(item.injections ?? []), ...blocks] };
+      continue;
+    }
+    const anchor = anchorByTurn.get(turnId) ?? { index: out.length, ts: 0 };
+    standalone.push({
+      index: anchor.index,
+      item: {
+        kind: 'text',
+        invocationId: '',
+        role: 'user',
+        content: '',
+        turnId,
+        injections: blocks,
+        eventId: `injection:${turnId}`,
+        ts: anchor.ts,
+      },
+    });
+  }
+  // Later anchors first, so earlier splices do not move the later ones.
+  for (const entry of standalone.sort((a, b) => b.index - a.index)) {
+    out.splice(entry.index, 0, entry.item);
+  }
+  return out;
 }
 
 function modelTextRole(role: RuntimeEventRole): TextModelMessage['role'] | undefined {

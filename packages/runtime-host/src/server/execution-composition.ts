@@ -186,6 +186,7 @@ import {
   hostedExecutionRunProfile,
 } from './hosted-execution-tool-profile.js';
 import { promptSection } from '@maka/runtime/system-prompt/main-session-prompt';
+import { FileChangeTrackerRegistry } from '@maka/runtime/file-change-tracker';
 import { HostMemoryCoordinator } from './memory-coordinator.js';
 import { HostMemoryPassCoordinator } from './memory-pass-coordinator.js';
 import { SessionOperationLane } from './session-operation-lane.js';
@@ -516,7 +517,11 @@ export async function createExecutionRuntimeHostComposition(
       sessionAdmission,
       sessions: stores.sessionStore,
     });
+    // One tracker per session for what the file tools read and wrote, so a
+    // Write or Edit from a stale shape is refused until a Read.
+    const fileChanges = new FileChangeTrackerRegistry();
     const builtinTools = {
+      fileChanges,
       shellRuns: runtimeResources,
       runtimeResources,
       attachmentResources: createArtifactAttachmentResourceReader({

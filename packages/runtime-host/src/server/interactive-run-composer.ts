@@ -282,7 +282,6 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
         const text = childInstruction
           ? joinFragments([
               environment,
-              skills.text,
               workspaceInstructions,
               CHILD_INSTRUCTION_BOUNDARY,
               childInstruction,
@@ -291,7 +290,6 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
               [
                 environment,
                 buildPersonalizationPromptFragment(promptState.policy.personalization).text,
-                skills.text,
                 workspaceInstructions,
                 input.plan?.mode === 'plan'
                   ? renderPlanModePrompt({ fullAccess: input.plan.permissionMode === 'bypass' })
@@ -308,16 +306,29 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
           latestCompletedPromptText !== undefined && latestCompletedPromptText.text === text
             ? latestCompletedPromptText.text
             : text;
-        // The memory snapshot is system-delivered into the conversation, not
-        // part of the system prompt: it changes whenever the background pass
-        // files something, and in the prompt it would invalidate the cached
-        // prefix every time. As a trailing context it rides with the turn the
-        // way the turn reminder does (see system-prompt/turn-reminder.ts).
+        // The memory snapshot and the skills listing are system-delivered
+        // into the conversation, not part of the system prompt: each changes
+        // on its own (the background pass files something, a skill is added),
+        // and in the prompt it would invalidate the cached prefix. As
+        // contexts they are recorded ahead of a turn's user text the first
+        // time and again only when their revision moves (see `injection/`).
+        const contexts = [
+          ...(promptState.memory
+            ? [
+                {
+                  name: 'user_memory_snapshot',
+                  text: promptState.memory,
+                  ...(promptState.memoryRevision ? { revision: promptState.memoryRevision } : {}),
+                },
+              ]
+            : []),
+          ...(skills.text
+            ? [{ name: 'skills', text: skills.text, revision: inventory.revision }]
+            : []),
+        ];
         const resolvedPrompt = Object.freeze({
           text: sharedText,
-          ...(promptState.memory
-            ? { contexts: [{ name: 'user_memory_snapshot', text: promptState.memory }] }
-            : {}),
+          ...(contexts.length > 0 ? { contexts } : {}),
           sourceRevisions: interactiveSourceRevisions({
             runtimePolicyRevision: promptState.runtimePolicyRevision,
             memoryRevision: promptState.memoryRevision,

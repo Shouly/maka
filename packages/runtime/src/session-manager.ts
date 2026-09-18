@@ -103,7 +103,10 @@ import { decodeAgentGraphIntentClaim } from '@maka/core/agent-graph-control';
 import { executionBoundaryContains } from '@maka/core/sandbox-boundary';
 import { failureClassFromCompleteStopReason } from '@maka/core/events';
 import { isActiveShellRunStatus } from '@maka/core/shell-run';
-import { isTerminalRuntimeEvent } from '@maka/core/runtime-event';
+import {
+  isTerminalRuntimeEvent,
+  type RuntimeEventInjectionContent,
+} from '@maka/core/runtime-event';
 import { runtimeHandoffPause, type RuntimeHandoffIntent } from '@maka/core/runtime-handoff';
 import { readLogicalRuntimeExecutionForRun } from '@maka/core/runtime-logical-execution';
 import {
@@ -716,6 +719,11 @@ export interface BackendFactoryContext {
    * invocation — to that invocation's RuntimeEvent ledger.
    */
   recordSystemNote?: (kind: RuntimeSystemNoteKind, turnId: string, data?: unknown) => Promise<void>;
+  /** Writes one block the system said ahead of a turn's user text to that invocation's ledger. */
+  recordInjection?: (
+    turnId: string,
+    content: Omit<RuntimeEventInjectionContent, 'kind'>,
+  ) => Promise<void>;
   /** Immutable Run policy snapshot; provider dispatch waits for this durable commit. */
   recordRunComposition?: (runId: string, snapshot: RunCompositionSnapshot) => Promise<void>;
   /** Append-only logical request surface; provider dispatch waits for this durable epoch. */

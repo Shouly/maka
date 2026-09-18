@@ -292,6 +292,11 @@ export function projectRuntimeEventsToStoredMessages(
           // invocation. Every reader joins it by invocationId; it has no chat row.
           projected = true;
           break;
+        case 'injection':
+          // Said to the model ahead of the turn's user text; the reader's
+          // transcript never shows it.
+          projected = true;
+          break;
         case 'error':
           if (!isTerminalRuntimeEvent(event)) {
             diagnostic(

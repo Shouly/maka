@@ -53,7 +53,6 @@ import type { UserQuestionResponse } from '@maka/core/user-question';
 import { DEFAULT_TOOL_MODE, isToolMode, type ToolMode } from '@maka/core/tool-mode';
 import { TOOL_NAMES } from '@maka/core/tool-names';
 import { executionBoundaryDisplayMode } from '@maka/core/sandbox-boundary';
-import { hostTimeZone } from './system-prompt/environment-prompt.js';
 import {
   resolveEffectiveOrchestration,
   type EffectiveOrchestration,
@@ -139,6 +138,7 @@ import {
   collectToolActivityTurnIds,
   compatibleProviderReasoningReplayEventIds,
   formatTextWithInlineRefs,
+  steeringEventIdOf,
   steeringMessagesMissingFromBase,
   steeringModelMessage,
   type RuntimeEventModelReplayPlan,
@@ -178,6 +178,8 @@ import {
 } from './history-compact-checkpoint.js';
 import { resolveSelectedModelContextWindow } from './context-budget-policy.js';
 import type { AiSdkBackendInput, ResolvedSystemPrompt } from './ai-sdk-backend.js';
+import { prependUserMessageReminders } from './injection/user-message-injections.js';
+import type { PermissionMode } from '@maka/core/permission';
 import {
   INVALID_TOOL_NAME,
   isProviderSandboxBoundaryAttempt,
@@ -681,19 +683,19 @@ export class AiSdkTurn {
   }
 
   /**
-   * The facts that change between turns — date, serving model, permission mode
-   * and sandbox boundary — rendered once per model step. Readers a test
-   * backend does not provide are simply omitted from the block.
+   * The facts a turn runs under — permission mode from the boundary when it
+   * has one, the boundary itself — read once at turn start. Readers a test
+   * backend does not provide are simply left out.
    */
-  private async renderTurnReminder(): Promise<string | undefined> {
-    const backend = this.deps.backend as Partial<
-      Pick<
-        AiSdkBackendInput,
-        'readExecutionBoundary' | 'readPermissionMode' | 'header' | 'modelId' | 'renderTurnReminder'
-      >
+  private async readTurnFacts(): Promise<{
+    permissionMode?: PermissionMode;
+    executionBoundary?: Awaited<
+      ReturnType<NonNullable<AiSdkBackendInput['readExecutionBoundary']>>
     >;
-    const render = backend.renderTurnReminder;
-    if (!render) return undefined;
+  }> {
+    const backend = this.deps.backend as Partial<
+      Pick<AiSdkBackendInput, 'readExecutionBoundary' | 'readPermissionMode'>
+    >;
     let boundary:
       | Awaited<ReturnType<NonNullable<AiSdkBackendInput['readExecutionBoundary']>>>
       | undefined;
@@ -710,18 +712,44 @@ export class AiSdkTurn {
         permissionMode = undefined;
       }
     }
-    const now = new Date(this.deps.now());
-    const timeZone = hostTimeZone();
-    return render({
-      now,
-      ...(timeZone ? { timeZone } : {}),
-      ...(backend.modelId ? { modelId: backend.modelId } : {}),
+    return {
       ...(permissionMode ? { permissionMode } : {}),
-      ...(backend.header?.collaborationMode
-        ? { collaborationMode: backend.header.collaborationMode }
-        : {}),
       ...(boundary ? { executionBoundary: boundary } : {}),
+    };
+  }
+
+  /**
+   * What the system says ahead of this turn's user text, recorded to the
+   * ledger before the first request goes out: the contexts the host resolved,
+   * the tools held behind ToolSearch, the session facts, the date — each only
+   * when the ledger does not already say it (see `injection/`). Returns the
+   * blocks as the model reads them, for a request built without the ledger.
+   */
+  private async recordTurnInjections(
+    input: BackendSendInput,
+    resolved: ResolvedSystemPrompt,
+    plan: ToolAvailabilityPlan,
+  ): Promise<string[]> {
+    const injections = this.deps.backend.injections;
+    const record = this.deps.backend.recordInjection;
+    if (!injections || !record || input.continuation) return [];
+    const facts = await this.readTurnFacts();
+    const active = new Set(plan.gating?.activeNames() ?? plan.activeTools);
+    const held = [...(plan.gating?.gatedNames ?? plan.deferredNames ?? [])].filter(
+      (name) => !active.has(name),
+    );
+    const planned = injections.planTurn(input.runtimeContext ?? [], {
+      now: new Date(this.deps.now()),
+      contexts: resolved.contexts ?? [],
+      deferredToolNames: held,
+      ...(this.deps.backend.modelId ? { modelId: this.deps.backend.modelId } : {}),
+      ...(this.deps.backend.header.collaborationMode
+        ? { collaborationMode: this.deps.backend.header.collaborationMode }
+        : {}),
+      ...facts,
     });
+    for (const injection of planned) await record(this.turnId, injection);
+    return planned.map((injection) => injections.renderBlock(injection));
   }
 
   requestStop(reason: 'user_stop' | 'redirect', mode: 'immediate' | 'after_step'): void {
@@ -1199,7 +1227,7 @@ export class AiSdkTurn {
           next.start();
         };
         const activeTools = plan.activeTools;
-        const currentUserContent = input.continuation
+        const builtUserContent = input.continuation
           ? undefined
           : await this.deps.messageProjection.buildCurrentUserContent(
               this.imageBudget,
@@ -1209,6 +1237,18 @@ export class AiSdkTurn {
               input.quotes,
               input.headAnchorRuntimeEvent?.id,
             );
+        // The sent-time reminder rides on the message from its first request,
+        // rendered from the ledger event's own timestamp so the durable replay
+        // on later steps produces the same bytes.
+        const currentUserContent =
+          builtUserContent === undefined
+            ? undefined
+            : prependUserMessageReminders(
+                builtUserContent,
+                this.deps.backend.injections?.userMessageReminders(
+                  input.headAnchorRuntimeEvent?.ts ?? this.deps.now(),
+                ) ?? [],
+              );
         const messages =
           currentUserContent === undefined
             ? [...priorReplay.messages]
@@ -1386,6 +1426,13 @@ export class AiSdkTurn {
           ]);
           capacityProviderTools.splice(0, capacityProviderTools.length, ...providerTools);
           await this.drainSteeringInto(input, queue);
+          // The turn's injections are recorded ahead of its first request, so
+          // the ledger projection below already carries them; a request built
+          // without the ledger gets them put on the user message here.
+          const turnInjectionBlocks =
+            completedProviderSteps.length === 0
+              ? await this.recordTurnInjections(input, resolvedSystemPrompt, plan)
+              : [];
           if (this.deps.backend.loadTurnRuntimeEvents) {
             requestMessages = await loadDurableTurnProjection();
           } else {
@@ -1395,6 +1442,9 @@ export class AiSdkTurn {
             );
             if (missingSteering.length > 0)
               requestMessages = [...requestMessages, ...missingSteering];
+            if (turnInjectionBlocks.length > 0) {
+              requestMessages = prependToHeadUserMessage(requestMessages, turnInjectionBlocks);
+            }
           }
           // Resolved BEFORE request projection so the capacity measurement and
           // the request that goes out are the same request: a finalization step
@@ -1429,20 +1479,10 @@ export class AiSdkTurn {
                 ? []
                 : boundaryAwareToolNames(active ?? plan.currentRepairToolNames()),
           });
-          // Turn-specific facts ride with the turn as a trailing user-role
-          // context, never in the system prompt, so the provider prefix stays
-          // stable across turns (see system-prompt/turn-reminder.ts).
-          const turnReminder = await this.renderTurnReminder();
-          const dynamicContextMessages: ModelMessage[] = [
-            ...(resolvedSystemPrompt.contexts ?? []).map(
-              ({ text }): ModelMessage => ({ role: 'user', content: text }),
-            ),
-            ...(turnReminder ? [{ role: 'user' as const, content: turnReminder }] : []),
-          ];
-          const contextualRequestMessages =
-            dynamicContextMessages.length === 0
-              ? requestMessages
-              : [...requestMessages, ...dynamicContextMessages];
+          // Everything the system says rides in the ledger and replays in
+          // place (see `injection/`); the request is the history and the
+          // current message, nothing appended per step.
+          const contextualRequestMessages = requestMessages;
           const shaped = requestProjection
             ? await requestProjection({
                 completedSteps: completedProviderSteps,
@@ -3104,6 +3144,23 @@ function isAgentGraphYieldToolResult(output: unknown): output is YieldAgentGraph
     result.reason.length <= 4_000 &&
     result.reason.trim() === result.reason
   );
+}
+
+/** The turn's injections go on the message that opened it: the last user message that is not steering. */
+function prependToHeadUserMessage(
+  messages: readonly ModelMessage[],
+  blocks: readonly string[],
+): ModelMessage[] {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (message.role !== 'user' || steeringEventIdOf(message) !== undefined) continue;
+    return [
+      ...messages.slice(0, index),
+      { ...message, content: prependUserMessageReminders(message.content, blocks) },
+      ...messages.slice(index + 1),
+    ];
+  }
+  return [...messages, { role: 'user', content: blocks.join('\n') }];
 }
 
 function priorReplayFailureTrace(replay: {

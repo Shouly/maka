@@ -246,6 +246,20 @@ export interface RuntimeEventSystemNoteContent {
   data?: unknown;
 }
 
+/**
+ * Something the system told the model ahead of a turn's user text — the
+ * memory snapshot, the tools held behind ToolSearch, the session facts, the
+ * date. Recorded on the turn it arrived with and replayed there every time,
+ * so it is said once and again only when it changes. `data` is what a later
+ * turn compares against to decide whether it changed. Never a chat row.
+ */
+export interface RuntimeEventInjectionContent {
+  kind: 'injection';
+  name: string;
+  text: string;
+  data?: Record<string, unknown>;
+}
+
 export interface RuntimeEventErrorContent {
   kind: 'error';
   retry?: ModelRetryDecision;
@@ -379,6 +393,7 @@ export type RuntimeEventContent =
   | RuntimeEventFunctionResponseContent
   | RuntimeEventErrorContent
   | RuntimeEventSystemNoteContent
+  | RuntimeEventInjectionContent
   | RuntimeEventInvocationOpenedContent;
 
 export const RUNTIME_EVENT_CONTENT_KINDS = [
@@ -388,6 +403,7 @@ export const RUNTIME_EVENT_CONTENT_KINDS = [
   'function_response',
   'error',
   'system_note',
+  'injection',
   'invocation_opened',
 ] as const;
 export type RuntimeEventContentKind = (typeof RUNTIME_EVENT_CONTENT_KINDS)[number];
@@ -753,6 +769,10 @@ const SYSTEM_NOTE_CONTENT_SHAPE = defineObjectShape<RuntimeEventSystemNoteConten
   ['kind', 'note'],
   ['data'],
 );
+const INJECTION_CONTENT_SHAPE = defineObjectShape<RuntimeEventInjectionContent>()(
+  ['kind', 'name', 'text'],
+  ['data'],
+);
 const INVOCATION_OPENED_CONTENT_SHAPE = defineObjectShape<RuntimeEventInvocationOpenedContent>()(
   ['kind', 'protocol', 'route', 'configuration', 'root', 'source'],
   ['lineage'],
@@ -1103,6 +1123,14 @@ function isRuntimeEventContent(value: unknown): value is RuntimeEventContent {
         hasExactShape(value, SYSTEM_NOTE_CONTENT_SHAPE) &&
         typeof value.note === 'string' &&
         isRuntimeSystemNoteKind(value.note)
+      );
+    case 'injection':
+      return (
+        hasExactShape(value, INJECTION_CONTENT_SHAPE) &&
+        typeof value.name === 'string' &&
+        value.name.length > 0 &&
+        typeof value.text === 'string' &&
+        (value.data === undefined || isRecord(value.data))
       );
     case 'invocation_opened':
       return isRuntimeInvocationOpened(value);
@@ -1578,6 +1606,8 @@ export function runtimeEventHasModelVisibleContent(event: RuntimeEvent): boolean
     case 'function_call':
     case 'function_response':
       return true;
+    case 'injection':
+      return content.text.length > 0;
     case 'error':
     case 'system_note':
     case 'invocation_opened':

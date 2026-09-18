@@ -169,6 +169,63 @@ function inInvocation(event: RuntimeEvent, suffix: string): RuntimeEvent {
   };
 }
 
+test('a turn with no user text carries its injections on an item of their own, timed as the system spoke', () => {
+  const items = buildRuntimeEventModelReplayPlan([
+    {
+      ...event({ id: 'u1', role: 'user', author: 'user', content: { kind: 'text', text: 'hi' } }),
+      turnId: 'turn-0',
+      ts: 5,
+    },
+    { ...injection('i1', 'SNAPSHOT'), ts: 40 },
+    { ...injection('i2', 'Today is Friday.'), ts: 41 },
+    assistantText('a1', 'step-1', 'Answer'),
+  ]).items;
+  assert.deepEqual(
+    items.map((item) =>
+      item.kind === 'text' ? [item.role, item.content, item.injections, item.ts] : item.kind,
+    ),
+    [
+      ['user', 'hi', undefined, 5],
+      [
+        'user',
+        '',
+        [
+          '<system-reminder>SNAPSHOT</system-reminder>',
+          '<system-reminder>Today is Friday.</system-reminder>',
+        ],
+        40,
+      ],
+      ['assistant', 'Answer', undefined, 1],
+    ],
+  );
+  // With a carrier, the same blocks ride on the head user text instead.
+  const carried = buildRuntimeEventModelReplayPlan([
+    { ...injection('i1', 'SNAPSHOT'), ts: 40 },
+    {
+      ...event({ id: 'u1', role: 'user', author: 'user', content: { kind: 'text', text: 'hi' } }),
+      ts: 41,
+    },
+  ]).items;
+  assert.deepEqual(
+    carried.map((item) =>
+      item.kind === 'text' ? [item.content, item.injections, item.ts] : item.kind,
+    ),
+    [['hi', ['<system-reminder>SNAPSHOT</system-reminder>'], 41]],
+  );
+});
+
+function injection(id: string, text: string): RuntimeEvent {
+  return {
+    ...event({
+      id,
+      role: 'system',
+      author: 'system',
+      content: { kind: 'injection', name: id, text },
+    }),
+    modelVisibility: 'visible',
+  };
+}
+
 function assistantText(id: string, stepId: string, text: string): RuntimeEvent {
   return event({
     id,

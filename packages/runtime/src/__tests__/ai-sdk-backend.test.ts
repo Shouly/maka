@@ -63,6 +63,7 @@ import {
 } from '../ai-sdk-backend.js';
 import type { DurableSessionEventSink, MakaTool, ToolRuntime } from '../tool-runtime.js';
 import type { MemoryPassTurn } from '../memory-pass.js';
+import { SessionInjections } from '../injection/session-injections.js';
 import { TOOL_SEARCH_NAME, TOOL_SEARCH_PROVIDER_NAME } from '../tool-availability.js';
 import { buildNativeWebSearchTool } from '../native-web-search-tool.js';
 import { canonicalizeToolSet } from '../request-shape.js';
@@ -15739,6 +15740,174 @@ function completionModel(): MockLanguageModelV4 {
     },
   });
 }
+
+describe('AiSdkBackend session injections', () => {
+  test('the system speaks ahead of the user text, on the message, and on the tool result — and only the ledger carries it', async () => {
+    const durable = durableTurnHarness('turn-inject', 'what is in the cupboard?');
+    let calls = 0;
+    const model = new MockLanguageModelV4({
+      doStream: async () => {
+        calls += 1;
+        const usage = {
+          inputTokens: { total: 100, noCache: 100, cacheRead: 0, cacheWrite: 0 },
+          outputTokens: { total: 0, text: 0, reasoning: 0 },
+        };
+        const chunks: LanguageModelV4StreamPart[] =
+          calls === 1
+            ? [
+                { type: 'stream-start', warnings: [] },
+                {
+                  type: 'tool-call',
+                  toolCallId: 'cupboard-1',
+                  toolName: 'cupboard',
+                  input: JSON.stringify({}),
+                },
+                {
+                  type: 'finish',
+                  finishReason: { unified: 'tool-calls', raw: 'tool_calls' },
+                  usage,
+                },
+              ]
+            : [
+                { type: 'stream-start', warnings: [] },
+                { type: 'text-start', id: 'answer' },
+                { type: 'text-delta', id: 'answer', delta: 'Tea.' },
+                { type: 'text-end', id: 'answer' },
+                { type: 'finish', finishReason: { unified: 'stop', raw: 'stop' }, usage },
+              ];
+        return {
+          stream: simulateReadableStream({ chunks, initialDelayInMs: null, chunkDelayInMs: null }),
+        };
+      },
+    });
+    const recorded: string[] = [];
+    const systemPrompt = async () => ({
+      text: 'SYSTEM_PROMPT',
+      contexts: [
+        {
+          name: 'user_memory_snapshot',
+          text: '<user_memory_snapshot>SNAPSHOT</user_memory_snapshot>',
+          revision: 'm1',
+        },
+        { name: 'plugin', text: 'PLUGIN_CONTEXT' },
+      ],
+      sourceRevisions: [],
+    });
+    const overriddenConnection = connection();
+    const backend = createBackend({
+      connection: overriddenConnection,
+      modelId: 'mock-model-id',
+      modelFactory: () => model,
+      tools: [
+        {
+          name: 'cupboard',
+          description: 'what is in the cupboard',
+          parameters: z.object({}),
+          impl: async () => ({ tea: true }),
+        },
+      ],
+      loadTurnRuntimeEvents: durable.loadTurnRuntimeEvents,
+      systemPrompt,
+      injections: new SessionInjections({ sessionId: 'session-1', timeZone: 'Asia/Shanghai' }),
+      // What the Host does: the block becomes an `injection` RuntimeEvent on
+      // the turn, which is what every later request replays.
+      recordInjection: async (turnId, content) => {
+        recorded.push(content.name);
+        durable.ledger.push({
+          id: `injection-${recorded.length}`,
+          invocationId: 'invocation-1',
+          runId: 'run-1',
+          sessionId: 'session-1',
+          turnId,
+          ts: 2,
+          partial: false,
+          role: 'system',
+          author: 'system',
+          modelVisibility: 'visible',
+          content: { kind: 'injection', ...content },
+        });
+      },
+    });
+
+    await drainDurably(
+      backend.send(durable.input({ runId: 'run-1', invocationId: 'invocation-1' })),
+      durable,
+    );
+    assert.equal(calls, 2);
+    assert.deepEqual(recorded, ['user_memory_snapshot', 'plugin', 'session_facts', 'date']);
+
+    type PromptMessage = {
+      role: string;
+      content: string | Array<{ type: string; text?: string; output?: { value?: unknown } }>;
+    };
+    const textOf = (message: PromptMessage) =>
+      typeof message.content === 'string'
+        ? message.content
+        : message.content
+            .filter((part) => part.type === 'text')
+            .map((part) => part.text ?? '')
+            .join('');
+    const first = model.doStreamCalls[0]?.prompt as PromptMessage[];
+    const second = model.doStreamCalls[1]?.prompt as PromptMessage[];
+
+    // Ahead of the user text: the recorded blocks in ledger order, then the
+    // sent-time reminder (from the anchor's own timestamp), then the words.
+    const userText =
+      /^<system-reminder><user_memory_snapshot>SNAPSHOT<\/user_memory_snapshot><\/system-reminder>\n<system-reminder>PLUGIN_CONTEXT<\/system-reminder>\n<system-reminder>\nThe model serving this session is mock-model-id\. Say so only if asked; it can change mid-session\.\nPermission mode: ask, [^\n]*\n(?:Sandbox boundary: [^\n]*\n)?<\/system-reminder>\n<system-reminder>Today's date is 1970-01-01\.<\/system-reminder>\n<system-reminder>The user's timezone is Asia\/Shanghai \(UTC\+08:00\)\. Message sent at Thu 1970-01-01 08:00 local time\.<\/system-reminder>\nwhat is in the cupboard\?$/u;
+    const firstUser = first.filter((message) => message.role === 'user');
+    assert.equal(firstUser.length, 1, JSON.stringify(first.map(textOf)));
+    assert.match(textOf(firstUser[0]!), userText);
+    // The second step replays the same message byte for byte from the ledger,
+    // and appends nothing after the tool result: the request is the history.
+    const secondUser = second.filter((message) => message.role === 'user');
+    assert.equal(secondUser.length, 1);
+    assert.equal(textOf(secondUser[0]!), textOf(firstUser[0]!));
+    assert.equal(second[second.length - 1]?.role, 'tool');
+    assert.doesNotMatch(String(model.doStreamCalls[0]?.prompt?.[0]?.content ?? ''), /SNAPSHOT/u);
+
+    // On the tool result: nothing rides after it unless a file the session
+    // wrote changed underneath, and none did here.
+    const toolMessage = second.find((message) => message.role === 'tool');
+    assert.ok(toolMessage);
+    const output = (
+      typeof toolMessage.content === 'string' ? undefined : toolMessage.content[0]?.output
+    ) as { type: string; value: unknown } | undefined;
+    assert.equal(output?.type, 'json');
+    assert.deepEqual(output?.value, { tea: true });
+
+    // The next turn says nothing again: the ledger already holds it all.
+    const next = durableTurnHarness('turn-inject-2', 'and the fridge?', {
+      runId: 'run-2',
+      invocationId: 'invocation-2',
+    });
+    const nextBackend = createBackend({
+      connection: overriddenConnection,
+      modelId: 'mock-model-id',
+      modelFactory: () => model,
+      tools: [],
+      loadTurnRuntimeEvents: next.loadTurnRuntimeEvents,
+      systemPrompt,
+      injections: new SessionInjections({ sessionId: 'session-1', timeZone: 'Asia/Shanghai' }),
+      recordInjection: async (_turnId, content) => {
+        recorded.push(`again:${content.name}`);
+      },
+    });
+    await drainDurably(
+      nextBackend.send(
+        next.input({
+          runId: 'run-2',
+          invocationId: 'invocation-2',
+          runtimeContext: durable.ledger,
+        }),
+      ),
+      next,
+    );
+    assert.deepEqual(
+      recorded.filter((name) => name.startsWith('again:')),
+      [],
+    );
+  });
+});
 
 describe('AiSdkBackend background memory pass', () => {
   test('hands the pass the whole turn: text before a tool call and the closing answer', async () => {
