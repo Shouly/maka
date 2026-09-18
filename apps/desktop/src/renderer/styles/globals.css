@@ -1398,10 +1398,17 @@ pre[class*="language-"] {
 .chat-assistant-response {
   color: var(--chat-text-primary);
   font-family: var(--chat-response-font);
-  /* 16/24 at the default root; rem so the font-size setting reaches it. */
-  font-size: 1rem;
+  /* 15/24 at the default root; rem so the font-size setting reaches it. */
+  font-size: 0.9375rem;
   font-weight: 400;
   line-height: 1.5rem;
+}
+
+/* Assistant prose follows the response's 24px rhythm. Markdown headings,
+   code, and tables retain their own typography. */
+.chat-assistant-response .markdown-body,
+.chat-assistant-response .markdown-body blockquote {
+  line-height: inherit;
 }
 
 .chat-composer-surface {

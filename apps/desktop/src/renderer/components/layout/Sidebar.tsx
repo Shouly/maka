@@ -218,19 +218,19 @@ export function Sidebar(props: SidebarProps) {
   // its direct children with a ref (see `SidebarGroup`), so a state can be
   // swapped for the list without a wrapper around either.
   const projectsBody = error ? (
-    <div key="error" className="p-2 text-sm text-danger" role="alert">
+    <div key="error" className="p-2 text-[0.8125rem] text-danger" role="alert">
       {copy.error}
     </div>
   ) : loading && model.total === 0 && entries.length === 0 ? (
     <div key="loading" className="space-y-[1.5px] pb-2" aria-hidden="true">
       {[0, 1, 2, 3].map((index) => (
-        <div key={index} className="h-8 animate-pulse rounded-lg bg-sidebar-selected/60" />
+        <div key={index} className="h-7 animate-pulse rounded-lg bg-sidebar-selected/60" />
       ))}
     </div>
   ) : entries.length === 0 ? (
     <div
       key="empty"
-      className="px-2 pb-2 text-sm leading-[1.3125rem] text-sidebar-text-muted"
+      className="px-2 pb-2 text-[0.8125rem] leading-5 text-sidebar-text-muted"
       role="status"
     >
       {copy.noProjects}
@@ -330,13 +330,13 @@ export function Sidebar(props: SidebarProps) {
                   onSelect={props.onNewTask}
                 />
                 <SidebarNavButton
-                  icon={<Anthropicon name="tool" className={navIconClass} />}
+                  icon={<Anthropicon name="tool" size={16} className={navIconClass} />}
                   label={copy.nav.extensions}
                   isActive={extensionsActive}
                   onSelect={openExtensions}
                 />
                 <SidebarNavButton
-                  icon={<Anthropicon name="clock" className={navIconClass} />}
+                  icon={<Anthropicon name="clock" size={16} className={navIconClass} />}
                   label={copy.nav.scheduled}
                   // The nav row means the LIST. While one task's page is open
                   // the selection belongs to that task's own row below, the
@@ -495,11 +495,14 @@ export function Sidebar(props: SidebarProps) {
                 else void updateStore.retry();
               }}
               className={cn(
-                'mb-1 flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-sm leading-[1.3125rem] transition-colors hover:bg-sidebar-hover focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none',
+                'mb-1 flex h-7 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-[0.8125rem] leading-5 transition-colors hover:bg-sidebar-hover focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none',
                 chip.kind === 'downloaded' ? 'text-accent' : 'text-danger',
               )}
             >
-              <Anthropicon name={chip.kind === 'downloaded' ? 'arrowUpCircle' : 'warningCircle'} />
+              <Anthropicon
+                name={chip.kind === 'downloaded' ? 'arrowUpCircle' : 'warningCircle'}
+                size={16}
+              />
               <span className="min-w-0 flex-1 truncate">
                 {chip.kind === 'downloaded'
                   ? copy.update.downloaded(chip.version ?? '')
@@ -512,7 +515,7 @@ export function Sidebar(props: SidebarProps) {
           )}
           {update.confirmation}
           <SidebarNavButton
-            icon={<Anthropicon name="settings" className={navIconClass} />}
+            icon={<Anthropicon name="settings" size={16} className={navIconClass} />}
             label={copy.nav.settings}
             onSelect={props.onOpenSettings}
           />

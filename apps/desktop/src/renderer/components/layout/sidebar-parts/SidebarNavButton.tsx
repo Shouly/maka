@@ -44,13 +44,13 @@ export function SidebarNavButton(props: {
       aria-label={props.label}
       aria-current={props.isActive ? 'page' : undefined}
       className={cn(
-        'group/navbtn flex h-8 w-full cursor-pointer items-center rounded-lg px-[2px] text-sidebar-text-secondary transition-[color,background-color,box-shadow] hover:bg-sidebar-hover hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none',
+        'group/navbtn flex h-7 w-full cursor-pointer items-center rounded-lg px-[2px] text-sidebar-text-secondary transition-[color,background-color,box-shadow] hover:bg-sidebar-hover hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none',
         props.isActive && 'bg-sidebar-selected text-sidebar-text-primary',
         props.className,
       )}
     >
-      <div className="mr-2 flex h-8 w-7 shrink-0 items-center justify-center">{props.icon}</div>
-      <span className="min-w-0 flex-1 truncate text-left text-sm leading-[1.3125rem]">
+      <div className="mr-2 flex h-7 w-7 shrink-0 items-center justify-center">{props.icon}</div>
+      <span className="min-w-0 flex-1 truncate text-left text-[0.8125rem] leading-5">
         {props.label}
       </span>
       {props.trailing}

@@ -92,7 +92,7 @@ export function ProjectRow(props: {
       )}
     >
       {renaming && project ? (
-        <div className="flex h-8 items-center px-[2px]">
+        <div className="flex h-7 items-center px-[2px]">
           <InlineRename
             value={project.name}
             label={copy.projectRowActions.rename}
@@ -120,11 +120,12 @@ export function ProjectRow(props: {
           aria-label={props.expanded ? copy.collapseProject(label) : copy.expandProject(label)}
           aria-expanded={props.expanded}
           aria-controls={tasksId}
-          className="group/item flex h-8 w-full min-w-0 cursor-pointer items-center rounded-lg px-[2px] text-left text-sm leading-[1.3125rem] text-sidebar-text-secondary transition-[color,box-shadow] hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none"
+          className="group/item flex h-7 w-full min-w-0 cursor-pointer items-center rounded-lg px-[2px] text-left text-[0.8125rem] leading-5 text-sidebar-text-secondary transition-[color,box-shadow] hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none"
         >
           <span className="group/project-icon relative mr-2 flex size-7 shrink-0 items-center justify-center">
             <Anthropicon
               name="projects"
+              size={16}
               className="absolute transition-opacity duration-[var(--dur-fast)] group-hover/project-icon:opacity-0"
             />
             <Anthropicon
@@ -142,7 +143,7 @@ export function ProjectRow(props: {
                 ref={nameRef}
                 onPointerEnter={checkClipped}
                 className={cn(
-                  'min-w-0 flex-1 overflow-hidden whitespace-nowrap fade-clip-end text-sm leading-[1.3125rem]',
+                  'min-w-0 flex-1 overflow-hidden whitespace-nowrap fade-clip-end text-[0.8125rem] leading-5',
                   'group-hover:pr-12 group-focus-within:pr-12',
                   menuOpen && 'fade-clip-wide pr-12',
                 )}

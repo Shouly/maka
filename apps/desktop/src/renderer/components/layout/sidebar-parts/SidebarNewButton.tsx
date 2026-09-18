@@ -41,11 +41,11 @@ export function SidebarNewButton(props: {
       aria-label={props.label}
       aria-current={props.isActive ? 'page' : undefined}
       className={cn(
-        'group/new flex h-8 w-full cursor-pointer items-center rounded-lg px-[2px] text-sidebar-text-secondary transition-[color,background-color,box-shadow] hover:bg-sidebar-hover hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none',
+        'group/new flex h-7 w-full cursor-pointer items-center rounded-lg px-[2px] text-sidebar-text-secondary transition-[color,background-color,box-shadow] hover:bg-sidebar-hover hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none',
         props.isActive && 'bg-sidebar-selected text-sidebar-text-primary',
       )}
     >
-      <div className="mr-2 flex h-8 w-7 shrink-0 items-center justify-center">
+      <div className="mr-2 flex h-7 w-7 shrink-0 items-center justify-center">
         <div
           className={cn(
             'flex size-[22px] items-center justify-center rounded-full transition-colors',
@@ -63,7 +63,7 @@ export function SidebarNewButton(props: {
           />
         </div>
       </div>
-      <span className="whitespace-nowrap text-sm leading-[1.3125rem]">{props.label}</span>
+      <span className="whitespace-nowrap text-[0.8125rem] leading-5">{props.label}</span>
       {props.shortcut && (
         <span className="ml-auto mr-2 translate-y-px text-[0.75rem] leading-[1.0625rem] text-sidebar-text-muted opacity-0 transition-opacity group-hover/new:opacity-100">
           {props.shortcut}

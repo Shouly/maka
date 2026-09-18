@@ -80,7 +80,7 @@ export function SessionRow(props: {
             aria-label={copy.waitingForUser}
             className="flex items-center text-warning"
           >
-            <Anthropicon name="questionCircle" size={20} />
+            <Anthropicon name="questionCircle" size={16} />
           </span>
         </TooltipTrigger>
         <TooltipContent side="top">{copy.waitingForUser}</TooltipContent>
@@ -89,7 +89,7 @@ export function SessionRow(props: {
       <Tooltip>
         <TooltipTrigger asChild>
           <span role="img" aria-label={copy.stale} className="flex items-center text-warning">
-            <Anthropicon name="warningCircle" size={20} />
+            <Anthropicon name="warningCircle" size={16} />
           </span>
         </TooltipTrigger>
         <TooltipContent side="top">{copy.stale}</TooltipContent>
@@ -131,7 +131,7 @@ export function SessionRow(props: {
       )}
     >
       {renaming ? (
-        <div className="flex h-8 items-center px-[2px]">
+        <div className="flex h-7 items-center px-[2px]">
           <InlineRename
             value={row.name}
             label={copy.rename.label}
@@ -166,7 +166,7 @@ export function SessionRow(props: {
             setRenaming(true);
           }}
           className={cn(
-            'group/item relative flex h-8 w-full cursor-pointer items-center rounded-lg px-[2px] py-0 text-left text-sm leading-[1.3125rem] text-sidebar-text-secondary transition-[color,box-shadow] hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none',
+            'group/item relative flex h-7 w-full cursor-pointer items-center rounded-lg px-[2px] py-0 text-left text-[0.8125rem] leading-5 text-sidebar-text-secondary transition-[color,box-shadow] hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none',
             props.isActive && 'text-sidebar-text-primary',
           )}
         >
@@ -179,7 +179,7 @@ export function SessionRow(props: {
                 ref={titleRef}
                 onPointerEnter={checkTitleClipped}
                 className={cn(
-                  'min-w-0 flex-1 overflow-hidden whitespace-nowrap fade-clip-end text-sm leading-[1.3125rem]',
+                  'min-w-0 flex-1 overflow-hidden whitespace-nowrap fade-clip-end text-[0.8125rem] leading-5',
                   menuOpen && 'fade-clip-wide',
                 )}
               >
