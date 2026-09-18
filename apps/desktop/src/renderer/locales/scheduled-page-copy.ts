@@ -64,6 +64,7 @@ export type ScheduledPageCopy = {
   resume: string;
   /** A run's session has been deleted since the run was recorded. */
   runSessionGone: string;
+  unreadRun: string;
 };
 
 const SCHEDULED_PAGE_COPY = {
@@ -79,6 +80,7 @@ const SCHEDULED_PAGE_COPY = {
     pause: '暂停',
     resume: '恢复',
     runSessionGone: '这次运行的任务已被删除。',
+    unreadRun: '未读',
   },
   'zh-TW': {
     sortBy: '排序方式',
@@ -92,6 +94,7 @@ const SCHEDULED_PAGE_COPY = {
     pause: '暫停',
     resume: '恢復',
     runSessionGone: '這次執行的任務已被刪除。',
+    unreadRun: '未讀',
   },
   en: {
     sortBy: 'Sort by',
@@ -105,6 +108,7 @@ const SCHEDULED_PAGE_COPY = {
     pause: 'Pause',
     resume: 'Resume',
     runSessionGone: 'That run’s task has been deleted.',
+    unreadRun: 'Unread',
   },
 } satisfies UiCatalog<ScheduledPageCopy>;
 

@@ -75,7 +75,6 @@
     "src/renderer/components/layout/sidebar-parts/SidebarNavButton.tsx",
     "src/renderer/components/layout/sidebar-parts/SidebarNewButton.tsx",
     "src/renderer/components/layout/sidebar-parts/SidebarRowActionTrigger.tsx",
-    "src/renderer/components/layout/sidebar-parts/SidebarScheduledSection.tsx",
     "src/renderer/components/layout/sidebar-parts/SidebarTabPanel.tsx",
     "src/renderer/components/layout/sidebar-parts/index.ts",
     "src/renderer/components/layout/sidebar-parts/sidebar-row-motion.ts",
@@ -1577,7 +1576,7 @@
         "useRef": 3,
         "useRovingRowFocus": 1,
         "useSessionList": 1,
-        "useStore": 7,
+        "useStore": 6,
         "useUiLocale": 1,
         "useUpdateInstall": 1
       },
@@ -1600,7 +1599,6 @@
         "./sidebar-parts/index.js": 1,
         "./sidebar-parts/SidebarAddProject.js": 1,
         "./sidebar-parts/SidebarGroup.js": 1,
-        "./sidebar-parts/SidebarScheduledSection.js": 1,
         "@maka/ui": 1,
         "motion/react": 1,
         "react": 1,
@@ -1806,30 +1804,6 @@
       "dependencyPaths": {
         "../../../lib/cn.js": 1,
         "../../icons/Anthropicon.js": 1,
-        "react": 1
-      }
-    },
-    "src/renderer/components/layout/sidebar-parts/SidebarScheduledSection.tsx": {
-      "bridgePaths": {},
-      "environmentCapabilities": {},
-      "hookCalls": {
-        "useState": 2,
-        "useUiLocale": 1
-      },
-      "lifecycleMethods": {},
-      "unresolvedDependencies": 0,
-      "actionFactories": [],
-      "dependencyPaths": {
-        "../../../lib/cn.js": 1,
-        "../../../locales/modules-copy.js": 1,
-        "../../../locales/settings-shared-copy.js": 1,
-        "../../icons/Anthropicon.js": 1,
-        "../../ui/confirm-dialog.js": 1,
-        "../../ui/dropdown-menu.js": 1,
-        "../../ui/menu-variants.js": 1,
-        "./SidebarGroup.js": 1,
-        "./SidebarRowActionTrigger.js": 1,
-        "@maka/ui": 1,
         "react": 1
       }
     },
@@ -2108,16 +2082,18 @@
         "useEffect": 2,
         "useSettingsErrorReporter": 1,
         "useState": 5,
-        "useStore": 5,
+        "useStore": 6,
         "useUiLocale": 1
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../../../bridge/session-keys.js": 1,
         "../../../hooks/use-settings.js": 1,
         "../../../lib/cn.js": 1,
         "../../../lib/module-list-state.js": 1,
+        "../../../lib/ported/session-nav-filter.js": 1,
         "../../../locales/modules-copy.js": 1,
         "../../../locales/scheduled-page-copy.js": 1,
         "../../../locales/settings-shared-copy.js": 1,

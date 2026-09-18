@@ -34,6 +34,8 @@ export function SidebarNavButton(props: {
   onSelect: () => void;
   /** Right-aligned trailing content: a count badge, a shortcut hint. */
   trailing?: ReactNode;
+  /** Unread activity in this destination; absent when everything is read. */
+  unreadLabel?: string;
   className?: string;
 }) {
   return (
@@ -42,6 +44,7 @@ export function SidebarNavButton(props: {
       onClick={props.onSelect}
       // Explicit, because the trailing count badge is inside the button.
       aria-label={props.label}
+      aria-description={props.unreadLabel}
       aria-current={props.isActive ? 'page' : undefined}
       className={cn(
         'group/navbtn flex h-7 w-full cursor-pointer items-center rounded-lg px-[2px] text-sidebar-text-secondary transition-[color,background-color,box-shadow] hover:bg-sidebar-hover hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none',
@@ -53,6 +56,13 @@ export function SidebarNavButton(props: {
       <span className="min-w-0 flex-1 truncate text-left text-[0.8125rem] leading-5">
         {props.label}
       </span>
+      {props.unreadLabel && (
+        <span
+          aria-hidden="true"
+          title={props.unreadLabel}
+          className="mr-2 size-1.5 shrink-0 rounded-full bg-accent-fill"
+        />
+      )}
       {props.trailing}
     </button>
   );

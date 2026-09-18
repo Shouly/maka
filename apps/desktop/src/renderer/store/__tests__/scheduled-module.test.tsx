@@ -59,8 +59,9 @@ import {
 import {
   scheduledTaskIdForSession,
   unreadRunsByTask,
+  unreadHostSessionIds,
 } from '../../lib/ported/session-nav-filter.js';
-import { SidebarScheduledSection } from '../../components/layout/sidebar-parts/SidebarScheduledSection.js';
+import { SidebarNavButton } from '../../components/layout/sidebar-parts/SidebarNavButton.js';
 import { getSidebarCopy } from '../../locales/sidebar-copy.js';
 import { getScheduledPageCopy } from '../../locales/scheduled-page-copy.js';
 import { getModulesCopy } from '../../locales/modules-copy.js';
@@ -277,9 +278,26 @@ test('the card menu carries a glyph on every row and repeats nothing the card do
   assert.ok(!text.includes(catalog.page.duplicate), 'no Duplicate row');
 });
 
+test('scheduled cards announce unread output without replacing their open or menu actions', () => {
+  for (const unread of [true, false]) {
+    const document = renderTree(
+      createElement(ScheduledTaskCard, {
+        ...noopCard,
+        task: task(),
+        unread,
+      }),
+    );
+    const body = document.querySelector('[data-card-body]');
+    assert.equal(body?.getAttribute('aria-description'), unread ? page.unreadRun : null);
+    assert.equal(body?.getAttribute('aria-label'), page.openTask(task().title));
+    assert.ok(document.querySelector(`button[aria-label="${modules.rowActions(task().title)}"]`));
+  }
+});
+
 // ── the detail page ────────────────────────────────────────────────────────
 
 const noopDetail = {
+  unreadSessionIds: new Set<string>(),
   busy: null,
   projectName: undefined,
   modelLabel: 'Default model',
@@ -326,6 +344,49 @@ test('run history links only the runs that produced a session', () => {
   assert.ok(text.includes('Delivery refused'));
   const links = [...document.querySelectorAll('li button')];
   assert.equal(links.length, 1, 'only the run with a session is a button');
+});
+
+test('history marks only unread sessions and clears every row sharing a read session', () => {
+  const parseKey = (id: string) => ({ sessionId: JSON.parse(id)[1] as string });
+  const runs = [
+    { id: 'unread', at: NOW, message: '', outcome: 'ok' as const, sessionId: 'shared' },
+    {
+      id: 'same-session',
+      at: NOW - 1000,
+      message: '',
+      outcome: 'failed' as const,
+      sessionId: 'shared',
+    },
+    { id: 'read', at: NOW - 2000, message: '', outcome: 'ok' as const, sessionId: 'read' },
+    { id: 'no-session', at: NOW - 3000, message: '', outcome: 'failed' as const },
+  ];
+  for (const hasUnread of [true, false]) {
+    const unreadSessionIds = unreadHostSessionIds(
+      [
+        { id: '["host","shared"]', hasUnread },
+        { id: '["host","read"]', hasUnread: false },
+        { id: 'invalid-key', hasUnread: true },
+      ],
+      parseKey,
+    );
+    const document = renderTree(
+      createElement(ScheduledTaskDetail, {
+        ...noopDetail,
+        task: task({ runs }),
+        unreadSessionIds,
+      }),
+    );
+    assert.equal(
+      document.querySelectorAll(`button[aria-description="${page.unreadRun}"]`).length,
+      hasUnread ? 2 : 0,
+    );
+    assert.equal(
+      document.querySelectorAll(`[title="${page.unreadRun}"]`).length,
+      hasUnread ? 2 : 0,
+    );
+    assert.equal(document.querySelectorAll('li button').length, 3);
+    assert.ok(document.documentElement.textContent?.includes(catalog.runStatus.failed));
+  }
 });
 
 test('history badges only the runs that did not happen', () => {
@@ -597,48 +658,23 @@ test('the sidebar counts unread RUNS, by session, and says nothing about the rea
   assert.equal(counts.has('never-ran'), false);
 });
 
-test('the sidebar band says what is unread and leaves failure to the task page', () => {
-  // Following the reference: the leading mark is read/unread — the same mark an
-  // ordinary chat row carries — and the trailing slot is the unread count. The
-  // mark used to mean "the last run failed", a second vocabulary for one dot.
-  const failedButRead = task({ id: 'quiet', title: 'Quiet task' });
-  const withUnread = task({ id: 'loud', title: 'Loud task' });
-  const document = renderTree(
-    createElement(SidebarScheduledSection, {
-      tasks: [failedButRead, withUnread],
-      activeSessionId: undefined,
-      openTaskId: null,
-      isContentHidden: false,
-      onContentHiddenChange: () => {},
-      copy: getSidebarCopy('en'),
-      unreadRuns: new Map([['loud', 3]]),
-      onOpenSession: () => {},
-      onOpenTask: () => {},
-      onTriggerTask: () => {},
-      onDeleteTask: () => {},
-    }),
-  );
-  const text = document.documentElement.textContent ?? '';
-  assert.ok(text.includes('Quiet task') && text.includes('Loud task'), 'both rows are listed');
-  assert.ok(text.includes('3 new'), 'the unread count takes the trailing slot');
-  // It is a PILL, not bare text: 5% ink behind it, measured off the reference.
-  const badge = [...document.querySelectorAll('span')].find(
-    (element) => (element.textContent ?? '').trim() === '3 new',
-  );
-  assert.match(badge?.getAttribute('class') ?? '', /bg-alpha-1/u, 'the count sits on a pill');
-  // The cadence word is gone from the band; it lives on the card and the page.
-  assert.ok(!text.includes('Daily'), 'no cadence word competes for the slot');
-  const rows = [...document.querySelectorAll('[data-scheduled-task]')];
-  const markOf = (id: string) =>
-    rows
-      .find((row) => row.getAttribute('data-scheduled-task') === id)
-      ?.querySelector('span.rounded-full')
-      ?.getAttribute('class') ?? '';
-  assert.match(markOf('loud'), /bg-accent-fill/u, 'unread reads as the accent mark');
-  assert.doesNotMatch(markOf('quiet'), /bg-accent-fill/u, 'read reads as the hollow ring');
-  // Nothing in this band speaks about failure any more.
-  assert.doesNotMatch(markOf('quiet'), /bg-danger/u);
-  assert.doesNotMatch(markOf('loud'), /bg-danger/u);
+test('Scheduled navigation announces unread results and removes the indicator when read', () => {
+  for (const unreadLabel of ['3 new', undefined]) {
+    const document = renderTree(
+      createElement(SidebarNavButton, {
+        icon: null,
+        label: 'Scheduled',
+        isActive: true,
+        unreadLabel,
+        onSelect: () => {},
+      }),
+    );
+    const button = document.querySelector('button');
+    assert.equal(button?.getAttribute('aria-label'), 'Scheduled');
+    assert.equal(button?.getAttribute('aria-current'), 'page');
+    assert.equal(button?.getAttribute('aria-description'), unreadLabel ?? null);
+    assert.equal(document.querySelector('[title="3 new"]') !== null, !!unreadLabel);
+  }
 });
 
 test('a run session knows the task it came from, through the key it is stored under', () => {
@@ -713,36 +749,4 @@ test('the session on screen always has a row, even when the rail hides it', () =
     ['chat'],
   );
   assert.equal(build(undefined).activeRow, undefined, 'nothing open, nothing to name');
-});
-
-test('a sidebar task row carries an actions trigger named after its task', () => {
-  // The reference's row menu is Run now / Mark all as read / Edit / Delete.
-  // "Mark all as read" is left out: it needs a Host operation Maka does not
-  // have — unread is only ever CLEARED, by opening a run.
-  const triggered: string[] = [];
-  const opened: string[] = [];
-  const document = renderTree(
-    createElement(SidebarScheduledSection, {
-      tasks: [task({ id: 'task-1', title: 'Morning briefing' })],
-      activeSessionId: undefined,
-      openTaskId: null,
-      isContentHidden: false,
-      onContentHiddenChange: () => {},
-      copy: getSidebarCopy('en'),
-      unreadRuns: new Map(),
-      onOpenSession: () => {},
-      onOpenTask: (id) => opened.push(id),
-      onTriggerTask: (id) => triggered.push(id),
-      onDeleteTask: () => {},
-    }),
-  );
-  const trigger = [...document.querySelectorAll('button')].find((button) =>
-    (button.getAttribute('aria-label') ?? '').includes('Morning briefing'),
-  );
-  assert.ok(trigger, 'the row has an actions trigger named after its task');
-  // The menu's CONTENTS cannot be checked here — it is portalled and closed
-  // under static rendering. `the Scheduled band's row menu runs, edits and
-  // deletes a task` in the Electron smoke opens it for real.
-  assert.equal(opened.length, 0, 'nothing fires from rendering alone');
-  assert.equal(triggered.length, 0);
 });

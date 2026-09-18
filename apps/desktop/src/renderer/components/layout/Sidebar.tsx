@@ -49,16 +49,11 @@ import {
 } from '../../lib/ported/session-list-layout.js';
 import { getSidebarCopy } from '../../locales/sidebar-copy.js';
 import { sessionsStore, scheduledTasksStore, uiStore, updateStore } from '../../store/index.js';
-import {
-  openScheduledTaskDetail,
-  requestScheduledTaskFocus,
-  scheduledTaskDetailStore,
-} from '../../store/scheduled-tasks-store.js';
-import { SidebarScheduledSection } from './sidebar-parts/SidebarScheduledSection.js';
+import { openScheduledTaskDetail } from '../../store/scheduled-tasks-store.js';
 import { updateChipOf } from '../../store/update-store.js';
 import type { SessionListGroup, SessionListRow } from '../../store/session-list-model.js';
 import { parseDesktopSessionKey } from '../../bridge/session-keys.js';
-import { unreadRunsByTask } from '../../lib/ported/session-nav-filter.js';
+import { unreadHostSessionIds, unreadRunsByTask } from '../../lib/ported/session-nav-filter.js';
 import {
   useProjectRows,
   useSessionList,
@@ -106,7 +101,6 @@ export function Sidebar(props: SidebarProps) {
   const projects = useProjectRows();
   const navigation = useStore(uiStore, (state) => state.navigation);
   const schedules = useStore(scheduledTasksStore, (state) => state.data);
-  const openScheduledTaskId = useStore(scheduledTaskDetailStore, (state) => state.taskId);
   const updateStatus = useStore(updateStore, (state) => state.status);
   const chip = updateChipOf(updateStatus);
   const update = useUpdateInstall();
@@ -119,24 +113,18 @@ export function Sidebar(props: SidebarProps) {
   // records the Host's session id while a Session is keyed by `[hostId,
   // sessionId]`, so the keys are parsed here rather than compared raw.
   const allSessions = useStore(sessionsStore, (state) => state.sessions);
-  const unreadRuns = useMemo(() => {
-    const unreadHostSessionIds = new Set<string>();
-    for (const session of allSessions) {
-      if (!session.hasUnread) continue;
-      try {
-        unreadHostSessionIds.add(parseDesktopSessionKey(session.id).sessionId);
-      } catch {
-        // A key this build cannot parse is not a reason to drop the whole band.
-      }
-    }
-    return unreadRunsByTask(schedules ?? [], unreadHostSessionIds);
+  const unreadRunCount = useMemo(() => {
+    const unread = unreadHostSessionIds(allSessions, parseDesktopSessionKey);
+    return [...unreadRunsByTask(schedules ?? [], unread).values()].reduce(
+      (total, count) => total + count,
+      0,
+    );
   }, [allSessions, schedules]);
   const restoredSelection = useRef(false);
   const previousLocation = useRef<string | undefined>(undefined);
   const projectsHidden = expansion['section:projects'] === false;
   const recentsHidden = expansion['section:recents'] === false;
   const pinnedHidden = expansion['section:pinned'] === false;
-  const scheduledHidden = expansion['section:scheduled'] === false;
 
   // The rail publishes its own width so the titlebar strip and any surface
   // measuring the shell can read it without reaching into React.
@@ -338,12 +326,8 @@ export function Sidebar(props: SidebarProps) {
                 <SidebarNavButton
                   icon={<Anthropicon name="clock" size={16} className={navIconClass} />}
                   label={copy.nav.scheduled}
-                  // The nav row means the LIST. While one task's page is open
-                  // the selection belongs to that task's own row below, the
-                  // way an open session lights its row and not "New task".
-                  isActive={
-                    navigation.selection.section === 'automations' && openScheduledTaskId === null
-                  }
+                  isActive={navigation.selection.section === 'automations'}
+                  unreadLabel={unreadRunCount > 0 ? copy.nav.unreadRuns(unreadRunCount) : undefined}
                   onSelect={() => {
                     openScheduledTaskDetail(null);
                     props.onSelectModule('scheduled-tasks');
@@ -362,54 +346,6 @@ export function Sidebar(props: SidebarProps) {
               onKeyDown={rovingProps.onKeyDown}
               onFocus={rovingProps.onFocus}
             >
-              {/* The tasks themselves, above the sessions. A nav row says the
-                  page exists; this says what is scheduled, and lights the task
-                  that produced whatever is being read. */}
-              <SidebarScheduledSection
-                tasks={schedules ?? []}
-                activeSessionId={activeId ?? undefined}
-                openTaskId={openScheduledTaskId}
-                isContentHidden={scheduledHidden}
-                onContentHiddenChange={(hidden) =>
-                  uiStore.setSidebarExpanded('section:scheduled', !hidden)
-                }
-                copy={copy}
-                unreadRuns={unreadRuns}
-                // The band's menu acts on the store directly: these are the
-                // same two writes the Scheduled page makes, and routing them up
-                // through the shell would only add a hop.
-                onTriggerTask={(taskId) => {
-                  void scheduledTasksStore.triggerNow(taskId).catch(() => {});
-                }}
-                onDeleteTask={(taskId) => {
-                  void scheduledTasksStore.remove(taskId).catch(() => {});
-                }}
-                // A run records the HOST's session id; a row's `id` is the
-                // renderer's {hostId, sessionId} key. Casting the raw id into a
-                // row shape compiled and then crashed the renderer inside the
-                // transcript store's key parser, so the row is looked up. When
-                // the session is gone the task's own page is the next best
-                // place to land.
-                onOpenSession={(hostSessionId, taskId) => {
-                  const row = model.rows.find((candidate) => {
-                    try {
-                      return parseDesktopSessionKey(candidate.id).sessionId === hostSessionId;
-                    } catch {
-                      return false;
-                    }
-                  });
-                  if (row) props.sessionActions.onOpen(row);
-                  else {
-                    requestScheduledTaskFocus(taskId);
-                    props.onSelectModule('scheduled-tasks');
-                  }
-                }}
-                onOpenTask={(taskId) => {
-                  requestScheduledTaskFocus(taskId);
-                  props.onSelectModule('scheduled-tasks');
-                }}
-              />
-
               {pinned.length > 0 && (
                 <SidebarGroup
                   groupKey="pinned"

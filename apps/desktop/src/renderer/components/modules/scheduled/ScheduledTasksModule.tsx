@@ -101,6 +101,8 @@ import { ModuleListSkeleton, ModulePage } from '../module-page.js';
 import { ScheduleFormDialog, blankScheduledTaskSeed } from './ScheduleFormDialog.js';
 import { ScheduledTaskDetail } from './ScheduledTaskDetail.js';
 import { cn } from '../../../lib/cn.js';
+import { parseDesktopSessionKey } from '../../../bridge/session-keys.js';
+import { unreadHostSessionIds } from '../../../lib/ported/session-nav-filter.js';
 import { moduleListState } from '../../../lib/module-list-state.js';
 import { useSettingsErrorReporter } from '../../../hooks/use-settings.js';
 import { toast } from '../../../store/toast-store.js';
@@ -137,6 +139,11 @@ export function ScheduledTasksModule() {
   const shared = getSettingsSharedCopy(locale);
   const report = useSettingsErrorReporter();
   const tasks = useStore(scheduledTasksStore, (state) => state.data);
+  const sessions = useStore(sessionsStore, (state) => state.sessions);
+  const unreadSessionIds = useMemo(
+    () => unreadHostSessionIds(sessions, parseDesktopSessionKey),
+    [sessions],
+  );
   const loading = useStore(scheduledTasksStore, (state) => state.loading);
   const error = useStore(scheduledTasksStore, (state) => state.error);
   // Client-owned, and read from the client snapshot rather than the Host's:
@@ -304,6 +311,7 @@ export function ScheduledTasksModule() {
       <>
         <ScheduledTaskDetail
           task={openTask}
+          unreadSessionIds={unreadSessionIds}
           busy={busy}
           onToggle={(enabled) =>
             void run(`enable:${openTask.id}`, copy.enableFailed, () =>
@@ -395,6 +403,9 @@ export function ScheduledTasksModule() {
             <ScheduledTaskCard
               key={task.id}
               task={task}
+              unread={task.runs.some(
+                (run) => !!run.sessionId && unreadSessionIds.has(run.sessionId),
+              )}
               busy={busy}
               locale={locale}
               catalog={catalog}
@@ -520,6 +531,7 @@ export function scheduledTaskCardActions(task: ScheduledTask): {
  */
 export function ScheduledTaskCard(props: {
   task: ScheduledTask;
+  unread?: boolean;
   busy: string | null;
   locale: Locale;
   catalog: ScheduledCatalog;
@@ -544,6 +556,7 @@ export function ScheduledTaskCard(props: {
         data-card-body
         onClick={props.onOpen}
         aria-label={page.openTask(task.title)}
+        aria-description={props.unread ? page.unreadRun : undefined}
         className={cn(listCardClass, 'cursor-pointer text-left')}
       >
         <div className={listCardTitleRowClass}>
@@ -570,6 +583,14 @@ export function ScheduledTaskCard(props: {
           </span>
         </div>
       </button>
+      {props.unread && (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute right-3 top-3 flex size-8 items-center justify-center group-hover:opacity-0 group-has-[:focus-visible]:opacity-0 group-has-[[aria-expanded=true]]:opacity-0"
+        >
+          <span className="size-1.5 rounded-full bg-accent-fill" />
+        </span>
+      )}
       <div className={listCardActionsSlotClass}>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

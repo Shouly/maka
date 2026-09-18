@@ -53,13 +53,29 @@ export function isScheduledRunSession(session: SessionSummary): boolean {
   return session.labels?.includes(SCHEDULED_RUN_SESSION_LABEL) === true;
 }
 
+/** Share the catalog's unread state between Scheduled navigation and history. */
+export function unreadHostSessionIds(
+  sessions: readonly Pick<SessionSummary, 'id' | 'hasUnread'>[],
+  parseKey: (key: string) => { sessionId: string },
+): ReadonlySet<string> {
+  const unread = new Set<string>();
+  for (const session of sessions) {
+    if (!session.hasUnread) continue;
+    try {
+      unread.add(parseKey(session.id).sessionId);
+    } catch {
+      // An unsupported desktop key must not hide other unread results.
+    }
+  }
+  return unread;
+}
+
 /**
  * How many of each task's runs nobody has read yet.
  *
- * The reference puts this count where the sidebar row's trailing slot is, and
- * Maka already has everything it needs: a run opens its own Session, the Host
- * sets `hasUnread` on it when it produces output, and opening the Session
- * clears it. Only the Scheduled band never asked.
+ * The sidebar aggregates these counts into the Scheduled menu indicator. A
+ * run opens its own Session; the Host sets `hasUnread` when it produces output,
+ * and opening that Session clears it.
  *
  * Sessions are keyed by the DESKTOP key (`[hostId, sessionId]`) while a run
  * records the Host's raw session id, so the caller supplies the mapping it

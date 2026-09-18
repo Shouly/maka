@@ -1294,35 +1294,25 @@ try {
   await moduleMain.getByText(REMINDER, { exact: true }).first().waitFor();
   await page.screenshot({ path: SHOT('phase5b-scheduled-task-light.png') });
 
-  // The Scheduled band's own row menu. Its contents cannot be checked by the
-  // presentation tests — the menu is portalled and closed under static
-  // rendering — so this is the only place the three rows are seen at all.
-  const scheduledRow = page.locator(`[data-scheduled-task]`).filter({ hasText: REMINDER });
-  await scheduledRow.waitFor();
-  await scheduledRow.hover();
-  await scheduledRow
-    .getByRole('button', { name: `Actions for scheduled task ${REMINDER}`, exact: true })
-    .click();
-  for (const label of ['Run now', 'Edit', 'Delete']) {
-    await page.getByRole('menuitem', { name: label, exact: true }).waitFor();
-  }
-  // The band with its row menu open: the trailing slot and the ⋯ share one
-  // corner, and only a picture shows whether they collide.
-  await page.screenshot({ path: SHOT('phase5b-scheduled-band-menu.png') });
-  // Edit opens the task's PAGE, not the create dialog.
-  await page.getByRole('menuitem', { name: 'Edit', exact: true }).click();
-  await moduleMain.getByRole('heading', { name: REMINDER }).waitFor();
-  checks.push(
-    'the Scheduled band row menu offers Run now, Edit and Delete, and Edit opens the task',
+  // Tasks live on the Scheduled page; the rail only provides its navigation
+  // entry and unread indicator, with no duplicate task rows or section.
+  assert.equal(await rail.locator('[data-maka-contract="scheduled-row"]').count(), 0);
+  assert.equal(
+    await rail.locator('section[aria-labelledby="sidebar-group-scheduled-label"]').count(),
+    0,
   );
-  // Back to the list: the titlebar breadcrumb is the way out of a task's page,
-  // and the card below is a different menu in a different content variant.
-  await page.getByRole('button', { name: 'Scheduled tasks', exact: true }).click();
+  await moduleMain.getByText(REMINDER, { exact: true }).first().click();
+  await moduleMain.getByRole('heading', { name: REMINDER }).waitFor();
+  assert.equal(
+    await rail.getByRole('button', { name: 'Scheduled', exact: true }).getAttribute('aria-current'),
+    'page',
+  );
+  checks.push('Scheduled has no sidebar task band and its menu stays selected on task details');
+  await rail.getByRole('button', { name: 'Scheduled', exact: true }).click();
   await moduleMain.getByText(REMINDER, { exact: true }).first().waitFor();
 
   await page.getByRole('button', { name: `More actions for ${REMINDER}`, exact: true }).click();
-  // The list CARD's menu, for comparison with the band's: a different content
-  // variant, and the sidebar's item shape does not belong in it.
+  // Task actions remain available from the list card's menu.
   await page.getByRole('menuitem', { name: 'Run now', exact: true }).waitFor();
   await page.screenshot({ path: SHOT('phase5b-scheduled-card-menu.png') });
   await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();

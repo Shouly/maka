@@ -67,14 +67,6 @@ export interface SidebarCopy {
   readonly collapseSection: (section: string) => string;
   readonly sessionActions: (name: string) => string;
   readonly projectActions: (name: string) => string;
-  /**
-   * The Scheduled band's row menu.
-   *
-   * Its own wording, not the list card's: the card's menu for the same task can
-   * be on screen at the same time, and two controls that do different things
-   * must not answer to one name.
-   */
-  readonly scheduledActions: (name: string) => string;
   readonly rowActions: {
     readonly rename: string;
     readonly flag: string;
@@ -100,9 +92,8 @@ export interface SidebarCopy {
     readonly mcp: string;
     readonly scheduled: string;
     /**
-     * Runs of one task nobody has read yet, in the row's trailing slot — the
-     * reference's "N new". It counts SESSIONS left unopened, so a task that
-     * fired twice overnight says 2.
+     * Accessible description for the Scheduled menu's unread indicator.
+     * Counts sessions with unread output across scheduled tasks.
      */
     readonly unreadRuns: (count: number) => string;
     readonly pending: (count: number) => string;
@@ -162,7 +153,6 @@ const SIDEBAR_COPY = {
     expandSection: (section) => `展开「${section}」`,
     collapseSection: (section) => `收起「${section}」`,
     sessionActions: (name) => `「${name}」的操作`,
-    scheduledActions: (name) => `定时任务「${name}」的操作`,
     projectActions: (name) => `项目「${name}」的操作`,
     rowActions: {
       rename: '重命名',
@@ -240,7 +230,6 @@ const SIDEBAR_COPY = {
     expandSection: (section) => `展開「${section}」`,
     collapseSection: (section) => `收起「${section}」`,
     sessionActions: (name) => `「${name}」的操作`,
-    scheduledActions: (name) => `定時任務「${name}」的操作`,
     projectActions: (name) => `專案「${name}」的操作`,
     rowActions: {
       rename: '重新命名',
@@ -324,7 +313,6 @@ const SIDEBAR_COPY = {
     expandSection: (section) => `Expand ${section}`,
     collapseSection: (section) => `Collapse ${section}`,
     sessionActions: (name) => `Actions for ${name}`,
-    scheduledActions: (name) => `Actions for scheduled task ${name}`,
     projectActions: (name) => `Actions for project ${name}`,
     rowActions: {
       rename: 'Rename',

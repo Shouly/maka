@@ -66,6 +66,7 @@ type Locale = Parameters<typeof scheduledTaskStatusLabel>[1];
 
 export function ScheduledTaskDetail(props: {
   task: ScheduledTask;
+  unreadSessionIds: ReadonlySet<string>;
   busy: string | null;
   onToggle: (enabled: boolean) => void;
   onRun: () => void;
@@ -166,6 +167,8 @@ export function ScheduledTaskDetail(props: {
               <Section label={detail.history}>
                 <RunHistory
                   runs={task.runs}
+                  unreadSessionIds={props.unreadSessionIds}
+                  unreadLabel={page.unreadRun}
                   locale={locale}
                   openLabel={detail.openRun}
                   emptyLabel={detail.noRuns}
@@ -212,6 +215,8 @@ function Section(props: { label: string; children: React.ReactNode }) {
  */
 function RunHistory(props: {
   runs: readonly ScheduledTaskRun[];
+  unreadSessionIds: ReadonlySet<string>;
+  unreadLabel: string;
   locale: Locale;
   openLabel: string;
   emptyLabel: string;
@@ -226,6 +231,7 @@ function RunHistory(props: {
         // Bound outside the handler: `sessionId` is optional, so the guard
         // below would not narrow inside a closure.
         const sessionId = run.sessionId;
+        const unread = sessionId !== undefined && props.unreadSessionIds.has(sessionId);
         // A run that went fine is the ordinary case and says nothing — that is
         // how the reference writes this list, and a badge on every row would
         // make the one row that matters harder to find, not easier.
@@ -245,14 +251,25 @@ function RunHistory(props: {
             <span className="text-sm leading-5 text-text-primary first-letter:uppercase">
               {formatTaskTime(run.at, props.locale)}
             </span>
-            {outcomeLabel !== undefined && (
-              <span
-                className={cn(
-                  statusChipClass,
-                  statusChipToneClass(scheduledTaskRunStatusSemantic(run.outcome)),
+            {(outcomeLabel !== undefined || unread) && (
+              <span className="ml-auto inline-flex shrink-0 items-center gap-2">
+                {outcomeLabel !== undefined && (
+                  <span
+                    className={cn(
+                      statusChipClass,
+                      statusChipToneClass(scheduledTaskRunStatusSemantic(run.outcome)),
+                    )}
+                  >
+                    {outcomeLabel}
+                  </span>
                 )}
-              >
-                {outcomeLabel}
+                {unread && (
+                  <span
+                    aria-hidden="true"
+                    title={props.unreadLabel}
+                    className="size-1.5 shrink-0 rounded-full bg-accent-fill"
+                  />
+                )}
               </span>
             )}
           </>
@@ -267,6 +284,7 @@ function RunHistory(props: {
                 type="button"
                 onClick={() => props.onOpenSession(sessionId)}
                 aria-label={`${props.openLabel}: ${formatTaskTime(run.at, props.locale)}`}
+                aria-description={unread ? props.unreadLabel : undefined}
                 className="-mx-2 flex w-[calc(100%+1rem)] cursor-pointer items-center justify-between gap-2 rounded-lg px-2 py-3 text-left outline-none transition-colors hover:bg-alpha-1 focus-visible:shadow-[var(--sidebar-focus-shadow)]"
               >
                 {body}
