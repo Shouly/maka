@@ -106,8 +106,12 @@ export const TOOL_NAMES = {
   readHistory: 'ReadHistory',
   copilotSettingsGet: 'CopilotSettingsGet',
   copilotSettingsUpdate: 'CopilotSettingsUpdate',
-  memoryRemember: 'MemoryRemember',
-  memoryExtract: 'MemoryExtract',
+  memoryList: 'MemoryList',
+  memoryRead: 'MemoryRead',
+  memoryWrite: 'MemoryWrite',
+  memoryStrReplace: 'MemoryStrReplace',
+  memoryAppend: 'MemoryAppend',
+  memoryDelete: 'MemoryDelete',
 } as const;
 
 export type ToolName = (typeof TOOL_NAMES)[keyof typeof TOOL_NAMES];

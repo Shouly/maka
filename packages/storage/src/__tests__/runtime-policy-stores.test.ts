@@ -476,7 +476,7 @@ describe('runtime policy stores', () => {
           expectedRevision: 0,
           operation: {
             kind: 'set_memory',
-            value: { enabled: false, agentReadEnabled: false },
+            value: { enabled: false },
           },
         }),
         {
@@ -3870,7 +3870,7 @@ describe('runtime policy stores', () => {
         expectedRevision: 1,
         operation: {
           kind: 'set_memory',
-          value: { enabled: false, agentReadEnabled: false },
+          value: { enabled: false },
         },
       });
       const third = stores.runtimePolicy.mutate({
@@ -3900,7 +3900,7 @@ describe('runtime policy stores', () => {
           displayName: 'Maka',
           assistantTone: 'concise',
         });
-        assert.deepEqual(snapshot.policy.memory, { enabled: false, agentReadEnabled: false });
+        assert.deepEqual(snapshot.policy.memory, { enabled: false });
         assert.deepEqual(snapshot.policy.privacy, { incognitoActive: true });
       } finally {
         await readerHandle.close();

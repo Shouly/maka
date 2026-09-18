@@ -40,8 +40,8 @@ const CAPABILITY_REASON_COPY = {
     activity_recorder_partial:
       'Daily Review 已聚合本地任务 / 工具 / 模型活动；当前不包含屏幕与应用级录制',
     activity_recorder_probe_hint: '打开 Daily Review 可查看本地活动聚合结果',
-    memory_partial: '本地 MEMORY.md 已可见；自动抽取/写入仍需用户确认',
-    memory_no_probe: '透明本地记忆为文件读写能力，不做后台探测',
+    memory_partial: '记忆文件保存在本机；模型按你的要求当场写入，其余由后台在每轮之后整理',
+    memory_no_probe: '记忆是本机的文件读写能力，不做后台探测',
     accessibility_status_ambiguous: 'macOS 不区分辅助功能权限是未授权还是未申请',
     screen_recording_status_mac_only: '屏幕录制权限状态仅能在 macOS 上读取',
     notifications_status_unreadable_macos:
@@ -67,8 +67,8 @@ const CAPABILITY_REASON_COPY = {
     activity_recorder_partial:
       'Daily Review 已彙整本機任務 / 工具 / 模型活動；目前不包含螢幕與應用程式層級錄製',
     activity_recorder_probe_hint: '開啟 Daily Review 可檢視本機活動彙整結果',
-    memory_partial: '本機 MEMORY.md 已可見；自動擷取/寫入仍需使用者確認',
-    memory_no_probe: '透明本機記憶為檔案讀寫能力，不做背景探測',
+    memory_partial: '記憶檔案儲存在本機；模型按你的要求當場寫入，其餘由背景在每輪之後整理',
+    memory_no_probe: '記憶是本機的檔案讀寫能力，不做背景探測',
     accessibility_status_ambiguous: 'macOS 不區分輔助使用權限是未授權還是未申請',
     screen_recording_status_mac_only: '螢幕錄製權限狀態僅能在 macOS 上讀取',
     notifications_status_unreadable_macos:
@@ -96,8 +96,8 @@ const CAPABILITY_REASON_COPY = {
       'Daily Review aggregates local task, tool, and model activity; screen and app-level recording is not included.',
     activity_recorder_probe_hint: 'Open Daily Review to see the local activity summary.',
     memory_partial:
-      'The local MEMORY.md is visible; automatic extraction and writes still require confirmation.',
-    memory_no_probe: 'Transparent local memory is plain file access, so no background probe runs.',
+      'Memory files live on this machine; the model writes on request and a background pass files the rest after each turn.',
+    memory_no_probe: 'Memory is plain file access on this machine, so no background probe runs.',
     accessibility_status_ambiguous:
       'macOS does not distinguish denied from never-requested Accessibility permission',
     screen_recording_status_mac_only:

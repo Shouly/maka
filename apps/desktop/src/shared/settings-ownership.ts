@@ -71,7 +71,7 @@ export function hasRuntimeHostSettingsPatch(
     patch.externalAgents ||
     patch.shell ||
       patch.network ||
-      patch.localMemory ||
+      patch.memory ||
       patch.workspaceInstructions ||
       patch.privacy ||
       patch.chatDefaults ||

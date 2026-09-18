@@ -74,6 +74,13 @@ const DIRECT_TOOL_NAMES: ReadonlySet<string> = new Set([
   TOOL_NAMES.skillSearch,
   // Provider-routed equivalent of the direct Write/Edit surface.
   TOOL_NAMES.applyPatch,
+  // Memory is read before the first reply and written on an explicit
+  // "remember"; only delete stays behind a search, as in the reference.
+  TOOL_NAMES.memoryList,
+  TOOL_NAMES.memoryRead,
+  TOOL_NAMES.memoryWrite,
+  TOOL_NAMES.memoryStrReplace,
+  TOOL_NAMES.memoryAppend,
 ]);
 
 /**

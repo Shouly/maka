@@ -56,11 +56,7 @@ test('the interactive tool surface matches its golden file', {
       readCanonicalModelInventory: async () => ({ inventory: [] }),
     } as unknown as HostSkillCatalogCoordinator,
     memory: {
-      readPromptProjection: async () => ({
-        bundleRevision: null,
-        memoryRevision: null,
-        body: undefined,
-      }),
+      readPromptProjection: async () => ({ revision: null }),
     } as unknown as HostMemoryCoordinator,
     sessionTask: {} as SessionTaskToolStore,
     builtinTools: {},

@@ -87,15 +87,6 @@ export interface HistoryCompactCheckpointHeadAnchor {
   turnId: string;
 }
 
-/** Last durable RuntimeEvent visible when an automatic Compaction triggered Memory extraction. */
-export interface HistoryCompactMemoryExtractionBoundary {
-  runId: string;
-  turnId: string;
-  runtimeEventId: string;
-  /** Omitted on existing checkpoints and equivalent to `eligible`. */
-  disposition?: 'eligible' | 'policy_denied';
-}
-
 interface HistoryCompactCheckpointBase {
   kind: 'maka.history_compact_checkpoint';
   checkpointId: string;
@@ -110,8 +101,6 @@ interface HistoryCompactCheckpointBase {
   phase?: HistoryCompactCheckpointPhase;
   /** Present only on `mid_turn` checkpoints; the covered head anchor re-rendered verbatim. */
   headAnchor?: HistoryCompactCheckpointHeadAnchor;
-  /** Absent for manual/legacy checkpoints, present for automatic Memory extraction triggers. */
-  memoryExtractionBoundary?: HistoryCompactMemoryExtractionBoundary;
   limitations: string[];
   estimatedTokens: number;
   previousCheckpointId?: string;
@@ -162,7 +151,6 @@ interface BuildHistoryCompactCheckpointBaseInput {
   phase?: HistoryCompactCheckpointPhase;
   /** Required when `phase` is `mid_turn`; must reference a covered RuntimeEvent. */
   headAnchor?: HistoryCompactCheckpointHeadAnchor;
-  memoryExtractionBoundary?: HistoryCompactMemoryExtractionBoundary;
 }
 
 export type BuildTextHistoryCompactCheckpointInput = BuildHistoryCompactCheckpointBaseInput & {
@@ -310,9 +298,6 @@ export function buildHistoryCompactCheckpoint(
       previousCheckpointId: input.previousCheckpointId,
       // Only hash the phase/anchor when set so pre_turn checkpoint ids stay stable.
       ...(phase ? { phase, headAnchor } : {}),
-      ...(input.memoryExtractionBoundary
-        ? { memoryExtractionBoundary: input.memoryExtractionBoundary }
-        : {}),
     }),
   ).slice(0, 32)}`;
   const common = {
@@ -326,9 +311,6 @@ export function buildHistoryCompactCheckpoint(
     coverage,
     ...(phase ? { phase } : {}),
     ...(headAnchor ? { headAnchor } : {}),
-    ...(input.memoryExtractionBoundary
-      ? { memoryExtractionBoundary: { ...input.memoryExtractionBoundary } }
-      : {}),
     limitations: providerState
       ? [
           'Provider-native replay state for the covered RuntimeEvent prefix.',
@@ -493,13 +475,6 @@ export function validateHistoryCompactCheckpointShape(
         nonEmpty(checkpoint.headAnchor.turnId))) &&
     (checkpoint.headAnchor === undefined ||
       (nonEmpty(checkpoint.headAnchor.runtimeEventId) && nonEmpty(checkpoint.headAnchor.turnId))) &&
-    (checkpoint.memoryExtractionBoundary === undefined ||
-      (nonEmpty(checkpoint.memoryExtractionBoundary.runId) &&
-        nonEmpty(checkpoint.memoryExtractionBoundary.turnId) &&
-        nonEmpty(checkpoint.memoryExtractionBoundary.runtimeEventId) &&
-        (checkpoint.memoryExtractionBoundary.disposition === undefined ||
-          checkpoint.memoryExtractionBoundary.disposition === 'eligible' ||
-          checkpoint.memoryExtractionBoundary.disposition === 'policy_denied'))) &&
     Array.isArray(checkpoint.limitations) &&
     checkpoint.limitations.every(nonEmpty) &&
     Number.isFinite(checkpoint.estimatedTokens) &&

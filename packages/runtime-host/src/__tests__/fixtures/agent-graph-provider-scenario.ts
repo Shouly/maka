@@ -200,7 +200,10 @@ function isTurnReminder(record: { role?: unknown; content?: unknown }): boolean 
   return (
     record.role === 'user' &&
     typeof record.content === 'string' &&
-    record.content.startsWith('<system-reminder>')
+    // The turn reminder and the memory snapshot are both system-delivered
+    // user-role contexts that trail the user's own message.
+    (record.content.startsWith('<system-reminder>') ||
+      record.content.startsWith('<user_memory_snapshot>'))
   );
 }
 

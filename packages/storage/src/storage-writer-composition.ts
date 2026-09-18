@@ -24,8 +24,7 @@ import { openInteractiveDailyReviewAuthorityForWrite } from './daily-review-auth
 import { openInteractiveDeepResearchStoreForWrite } from './deep-research-authority.js';
 import { openInteractiveExecutionStoresForWrite } from './execution-stores.js';
 import { openInteractiveGoalAuthorityForWrite } from './goal-authority.js';
-import { openInteractiveLongTermMemoryStoreForWrite } from './long-term-memory-store.js';
-import { openInteractiveMemoryBundleStoreForWrite } from './memory-bundle-store.js';
+import { openInteractiveMemoryFileStoreForWrite } from './memory-file-store.js';
 import { openInteractivePlanStoreForWrite } from './plan-authority.js';
 import { openInteractiveProjectCatalogForWrite } from './project-catalog-authority.js';
 import { assertStorageRootLease, type StorageRootLease } from './root-authority.js';
@@ -53,8 +52,7 @@ export interface StorageWriterComposition {
   readonly deepResearch: Awaited<ReturnType<typeof openInteractiveDeepResearchStoreForWrite>>;
   readonly dailyReview: Awaited<ReturnType<typeof openInteractiveDailyReviewAuthorityForWrite>>;
   readonly goal: Awaited<ReturnType<typeof openInteractiveGoalAuthorityForWrite>>;
-  readonly memoryBundle: Awaited<ReturnType<typeof openInteractiveMemoryBundleStoreForWrite>>;
-  readonly longTermMemory: Awaited<ReturnType<typeof openInteractiveLongTermMemoryStoreForWrite>>;
+  readonly memory: Awaited<ReturnType<typeof openInteractiveMemoryFileStoreForWrite>>;
   readonly sessionTask: Awaited<ReturnType<typeof openInteractiveSessionTaskStoreForWrite>>;
   readonly artifacts: Awaited<ReturnType<typeof openInteractiveArtifactStoreForWrite>>;
   readonly contextOffload?: Awaited<ReturnType<typeof openInteractiveContextOffloadStoreForWrite>>;
@@ -147,11 +145,7 @@ async function createComposition(
     closeWriter,
   );
   const goal = await openWriter(() => openInteractiveGoalAuthorityForWrite(lease), closeWriter);
-  const memoryBundle = await openWriter(() => openInteractiveMemoryBundleStoreForWrite(lease));
-  const longTermMemory = await openWriter(
-    () => openInteractiveLongTermMemoryStoreForWrite(lease),
-    closeWriter,
-  );
+  const memory = await openWriter(() => openInteractiveMemoryFileStoreForWrite(lease));
   const sessionTask = await openWriter(
     () => openInteractiveSessionTaskStoreForWrite(lease),
     closeWriter,
@@ -190,8 +184,7 @@ async function createComposition(
     deepResearch,
     dailyReview,
     goal,
-    memoryBundle,
-    longTermMemory,
+    memory,
     sessionTask,
     artifacts,
     ...(contextOffload ? { contextOffload } : {}),

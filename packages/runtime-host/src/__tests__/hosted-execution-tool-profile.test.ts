@@ -67,7 +67,7 @@ test('the headless coding profile freezes prompt, tools, memory, and foreground 
     'Grep',
     'apply_patch',
   ]);
-  assert.equal(profile.memoryExtraction, false);
+  assert.equal(profile.memoryPass, false);
   assert.equal(
     profile.systemPrompt,
     [
@@ -129,7 +129,7 @@ test('the WorkHub coordination profile has conversational authority but zero too
   const profile = hostedExecutionRunProfile('workhub-coordination-v1');
   assert.ok(profile);
   assert.deepEqual(profile.toolNames, []);
-  assert.equal(profile.memoryExtraction, false);
+  assert.equal(profile.memoryPass, false);
   assert.match(profile.systemPrompt, /conversational coordinator for WorkHub/u);
   assert.match(profile.systemPrompt, /no tools, filesystem authority/u);
 
@@ -200,7 +200,7 @@ test('WorkHub v2 can read its attachments without inheriting terminal, browser, 
     () => projectHostedExecutionTools(tools.slice(0, 4), 'workhub-coordination-v2'),
     /Hosted tool profile is unavailable/,
   );
-  assert.equal(hostedExecutionRunProfile('workhub-coordination-v2')?.memoryExtraction, false);
+  assert.equal(hostedExecutionRunProfile('workhub-coordination-v2')?.memoryPass, false);
   const prompt = hostedExecutionRunProfile('workhub-coordination-v2')?.systemPrompt ?? '';
   assert.match(prompt, /Intent never selects a target/u);
   assert.match(prompt, /call the tasks candidates operation before choosing/u);

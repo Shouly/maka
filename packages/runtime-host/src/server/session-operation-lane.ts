@@ -17,29 +17,30 @@
  * under the License.
  */
 
-export type MemoryExtractionLanePriority = 'foreground' | 'background';
+export type SessionOperationLanePriority = 'foreground' | 'background';
 
 interface LaneJob {
   readonly keys: readonly string[];
-  readonly priority: MemoryExtractionLanePriority;
+  readonly priority: SessionOperationLanePriority;
   readonly operation: () => Promise<unknown>;
   readonly resolve: (value: unknown) => void;
   readonly reject: (reason: unknown) => void;
 }
 
 /**
- * Process-local serialization shared by Memory Extraction and Session retirement.
- * Foreground user requests may pass queued background extraction, but never
- * preempt running work or pass an earlier foreground operation for the Session.
+ * Process-local serialization shared by the background memory pass and Session
+ * retirement. Foreground user requests may pass queued background work, but
+ * never preempt running work or pass an earlier foreground operation for the
+ * Session.
  */
-export class MemoryExtractionSessionLane {
+export class SessionOperationLane {
   readonly #held = new Set<string>();
   readonly #queue: LaneJob[] = [];
 
   run<T>(
     sessionId: string,
     operation: () => Promise<T>,
-    priority: MemoryExtractionLanePriority = 'foreground',
+    priority: SessionOperationLanePriority = 'foreground',
   ): Promise<T> {
     return this.runMany([sessionId], operation, priority);
   }
@@ -47,7 +48,7 @@ export class MemoryExtractionSessionLane {
   runMany<T>(
     sessionIds: readonly string[],
     operation: () => Promise<T>,
-    priority: MemoryExtractionLanePriority = 'foreground',
+    priority: SessionOperationLanePriority = 'foreground',
   ): Promise<T> {
     const keys = [...new Set(sessionIds)].sort();
     if (keys.length === 0) return operation();

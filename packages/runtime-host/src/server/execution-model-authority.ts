@@ -61,18 +61,12 @@ import {
 } from '@maka/runtime/network/scoped-fetch-transport';
 import {
   generateToolFreeModelCall,
-  generateProviderPrefixModelCall,
   type ToolFreeModelCallContent,
-  ProviderPrefixModelCallUnavailableError,
 } from '@maka/runtime/tool-free-model-call';
 import { resolveModelRuntime } from '@maka/runtime/model-runtime';
 import { type BackendFactoryContext } from '@maka/runtime/session-manager';
 import { type GoalEvaluatorResource } from '@maka/runtime/goal-evaluator';
 import { type ModelMessage } from '@maka/runtime/model-protocol';
-import {
-  memoryExtractionMaxOutputTokens,
-  type MemoryExtractionSourceSnapshot,
-} from '@maka/runtime/memory-extraction';
 import type { RuntimePolicyStoresWriter } from '@maka/storage/runtime-policy-stores';
 import type { InteractiveUsageStoresWriter } from '@maka/storage/usage-stores';
 import {
@@ -194,11 +188,15 @@ export interface HostDailyReviewModel {
   }): Promise<HostDailyReviewModelResult>;
 }
 
-export interface HostMemoryExtractionModel {
+export interface HostMemoryPassModel {
   generate(input: {
-    readonly snapshot: MemoryExtractionSourceSnapshot;
+    readonly sessionId: string;
+    readonly header: Pick<
+      SessionHeader,
+      'llmConnectionId' | 'llmConnectionSlug' | 'model' | 'thinkingLevel'
+    >;
+    readonly system: string;
     readonly prompt: string;
-    readonly stage: 'proposal' | 'localized' | 'canonicalize';
     readonly abortSignal: AbortSignal;
   }): Promise<
     | { readonly ok: true; readonly text: string }
@@ -293,50 +291,33 @@ function parseStrictJsonObject(text: string): unknown {
   return JSON.parse(trimmed);
 }
 
-/** Creates bounded extraction calls on the source Session's model authority. */
-export function createHostMemoryExtractionModel(
-  input: HostSessionEffectModelInput,
-): HostMemoryExtractionModel {
+const MEMORY_PASS_MAX_OUTPUT_TOKENS = 4_096;
+
+/** Creates the background memory pass's tool-free calls on the source Session's model authority. */
+export function createHostMemoryPassModel(input: HostSessionEffectModelInput): HostMemoryPassModel {
   const authority = createAuxiliaryModelCallAuthority(input);
   return Object.freeze({
     generate: async ({
-      snapshot,
+      sessionId,
+      header,
+      system,
       prompt,
-      stage,
       abortSignal,
-    }: Parameters<HostMemoryExtractionModel['generate']>[0]) => {
+    }: Parameters<HostMemoryPassModel['generate']>[0]) => {
       try {
-        const maxOutputTokens = memoryExtractionMaxOutputTokens(snapshot);
         const result = await runHostAuxiliaryModelCall(authority, {
-          transportContextId: snapshot.sessionId,
-          telemetrySessionId: snapshot.sessionId,
-          header: snapshot.sourceHeader,
-          callKind: 'memory_extraction',
-          callId: `memory_${stage}_${authority.newId()}`,
+          transportContextId: sessionId,
+          telemetrySessionId: sessionId,
+          header,
+          callKind: 'memory_pass',
+          callId: `memory_pass_${authority.newId()}`,
           abortSignal,
-          buildRequest: () =>
-            stage === 'canonicalize'
-              ? {
-                  prompt,
-                  maxOutputTokens,
-                  maxRetries: 0,
-                }
-              : snapshot.trigger === 'compaction'
-                ? {
-                    messages: [...snapshot.sourceMessages, { role: 'user', content: prompt }],
-                    maxOutputTokens,
-                    maxRetries: 0,
-                  }
-                : {
-                    ...(snapshot.sourceSystemPrompt ? { system: snapshot.sourceSystemPrompt } : {}),
-                    messages: [...snapshot.sourceMessages, { role: 'user', content: prompt }],
-                    tools: snapshot.sourceTools,
-                    activeTools: snapshot.sourceActiveTools,
-                    ...(snapshot.sourceProviderOptions
-                      ? { providerOptions: snapshot.sourceProviderOptions }
-                      : {}),
-                    maxOutputTokens,
-                  },
+          buildRequest: () => ({
+            prompt,
+            system,
+            maxOutputTokens: MEMORY_PASS_MAX_OUTPUT_TOKENS,
+            maxRetries: 0,
+          }),
         });
         return { ok: true as const, text: result.text };
       } catch (error) {
@@ -522,22 +503,12 @@ interface AuxiliaryModelCallAuthority {
   readonly newId: () => string;
 }
 
-type AuxiliaryModelRequest =
-  | (ToolFreeModelCallContent & {
-      readonly maxOutputTokens: number;
-      readonly maxRetries?: number;
-      readonly system?: string;
-      readonly providerOptions?: Record<string, unknown>;
-      readonly tools?: never;
-    })
-  | {
-      readonly messages: readonly ModelMessage[];
-      readonly system?: string;
-      readonly tools: MemoryExtractionSourceSnapshot['sourceTools'];
-      readonly activeTools: readonly string[];
-      readonly providerOptions?: Record<string, unknown>;
-      readonly maxOutputTokens?: number;
-    };
+type AuxiliaryModelRequest = ToolFreeModelCallContent & {
+  readonly maxOutputTokens: number;
+  readonly maxRetries?: number;
+  readonly system?: string;
+  readonly providerOptions?: Record<string, unknown>;
+};
 
 interface HostAuxiliaryModelCallInput {
   readonly transportContextId: string;
@@ -641,9 +612,7 @@ async function runHostAuxiliaryModelCall(
       modelId: target.model,
       startedAt,
     };
-    let result:
-      | Awaited<ReturnType<typeof generateToolFreeModelCall>>
-      | Awaited<ReturnType<typeof generateProviderPrefixModelCall>>;
+    let result: Awaited<ReturnType<typeof generateToolFreeModelCall>>;
     try {
       result = await readDuringBackendCreation(() => {
         const runtime = resolveModelRuntime(target.connection, target.model);
@@ -662,20 +631,12 @@ async function runHostAuxiliaryModelCall(
           requestHeaders: target.requestHeaders,
           resolvedRuntime: runtime,
         });
-        return request.tools !== undefined
-          ? generateProviderPrefixModelCall({
-              model,
-              ...request,
-              toolChoicePolicy: runtime.wire === 'anthropic-messages' ? 'omit' : 'none',
-              abortSignal: input.abortSignal,
-              providerOptions: request.providerOptions ?? providerOptions,
-            })
-          : generateToolFreeModelCall({
-              model,
-              ...request,
-              abortSignal: input.abortSignal,
-              providerOptions: request.providerOptions ?? providerOptions,
-            });
+        return generateToolFreeModelCall({
+          model,
+          ...request,
+          abortSignal: input.abortSignal,
+          providerOptions: request.providerOptions ?? providerOptions,
+        });
       }, input.abortSignal);
       const oauthFailure = readDeferredOAuthFailure?.();
       if (oauthFailure) throw oauthFailure;
@@ -860,7 +821,6 @@ function auxiliaryModelErrorClass(
     return reason instanceof Error && reason.name === 'TimeoutError' ? 'timeout' : 'aborted';
   }
   if (!(error instanceof Error)) return 'unknown';
-  if (error instanceof ProviderPrefixModelCallUnavailableError) return 'configuration';
   if (error instanceof AuxiliaryModelCallConfigurationError) return 'configuration';
   return 'provider';
 }

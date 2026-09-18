@@ -46,7 +46,6 @@ import { HistoryCompactSummarizerError } from '../history-compact-error.js';
 import { buildLlmHistorySummarizer } from '../history-compact-summarizer.js';
 import type { HistoryCompactSummaryInput } from '../ai-sdk-compaction-contract.js';
 import { decodeModelCallAttempt, type ModelCallAttempt } from '@maka/core/model-call-attempt';
-import type { MemoryExtractionSourceSnapshot } from '../memory-extraction.js';
 import {
   LATEST_CONTEXT_PROJECTION_TYPE,
   readLatestContextSnapshot,
@@ -97,7 +96,6 @@ interface MidTurnFixture {
   }>;
   /** JSON of each summarizer call's folded runtime events (coverage evidence). */
   summarizedSources: string[];
-  memorySnapshots: MemoryExtractionSourceSnapshot[];
   persist: (event: SessionEvent) => void;
 }
 
@@ -177,14 +175,6 @@ interface MidTurnFixtureOptions {
    * tool schemas at all.
    */
   childFinalization?: boolean;
-  /** Enable and capture automatic Memory extraction without allowing it to settle. */
-  captureMemoryExtraction?: boolean;
-  memoryGate?:
-    | { readonly allowed: true }
-    | {
-        readonly allowed: false;
-        readonly reason: 'disabled' | 'incognito' | 'unavailable';
-      };
 }
 
 /**
@@ -217,7 +207,6 @@ function buildFixture(options: MidTurnFixtureOptions = {}): MidTurnFixture {
     contextBudget?: ContextBudgetDiagnostic;
   }> = [];
   const summarizedSources: string[] = [];
-  const memorySnapshots: MemoryExtractionSourceSnapshot[] = [];
   let recordedAtThirdRequest = false;
   const fixture = { summarizerCalls: 0, ledgerReads: 0 };
   const usage = (input: number, output: number) => ({
@@ -626,22 +615,6 @@ function buildFixture(options: MidTurnFixtureOptions = {}): MidTurnFixture {
       return ledger.filter((event) => event.turnId === turnId);
     },
     allowMidTurnHistoryCompaction: true,
-    ...(options.captureMemoryExtraction
-      ? {
-          memoryExtraction: {
-            gate: async () => options.memoryGate ?? { allowed: true as const },
-            automaticGate: () => options.memoryGate ?? { allowed: true as const },
-            remember: async () => ({
-              status: 'unavailable' as const,
-              requestedItems: [],
-            }),
-            extract: (snapshot: MemoryExtractionSourceSnapshot) => {
-              memorySnapshots.push(snapshot);
-              return new Promise<void>(() => {});
-            },
-          },
-        }
-      : {}),
     // The send-level record is gone (#1679); its diagnostics moved to the run
     // trace, which is what these assertions observe now.
     recordRunTrace: (event) => {
@@ -679,7 +652,6 @@ function buildFixture(options: MidTurnFixtureOptions = {}): MidTurnFixture {
     messages,
     llmCalls,
     summarizedSources,
-    memorySnapshots,
     persist,
   };
 }
@@ -1501,48 +1473,6 @@ function defineMidTurnSuite(consumer: ConsumerMode): void {
 
 describe('mid-turn capacity compaction in the streaming backend', () => {
   defineMidTurnSuite('immediate');
-
-  test('dispatches a mid-turn Compaction recipe after persistence without awaiting it', async () => {
-    const fixture = buildFixture({
-      captureMemoryExtraction: true,
-      systemPromptChars: 32,
-    });
-    await runFixtureTurn(fixture);
-
-    assert.equal(fixture.recorded.length, 1);
-    assert.equal(fixture.memorySnapshots.length, 1);
-    const checkpoint = fixture.recorded[0]!;
-    const snapshot = fixture.memorySnapshots[0]!;
-    assert.equal(snapshot.trigger, 'compaction');
-    assert.equal(snapshot.compactionCheckpointId, checkpoint.checkpointId);
-    assert.equal(
-      snapshot.compactionBoundaryEventId,
-      checkpoint.memoryExtractionBoundary?.runtimeEventId,
-    );
-    assert.ok(
-      fixture.ledger.some((event) => event.id === snapshot.compactionBoundaryEventId),
-      'the frozen boundary must be durable before dispatch',
-    );
-    assert.deepEqual(snapshot.sourceMessages, []);
-    assert.equal(snapshot.rebuildSourceContextFromCompactionCheckpoint, true);
-    assert.equal(snapshot.sourceSystemPrompt, undefined);
-    assert.deepEqual(snapshot.sourceTools, {});
-    assert.deepEqual(snapshot.sourceActiveTools, []);
-    assert.equal(fixture.model.doStreamCalls.length, 3, 'the unresolved extraction must not block');
-  });
-
-  test('persists a denied marker without dispatching mid-turn Memory extraction', async () => {
-    const fixture = buildFixture({
-      captureMemoryExtraction: true,
-      memoryGate: { allowed: false, reason: 'disabled' },
-    });
-    await runFixtureTurn(fixture);
-
-    assert.equal(fixture.recorded.length, 1);
-    assert.equal(fixture.recorded[0]?.memoryExtractionBoundary?.disposition, 'policy_denied');
-    assert.equal(fixture.memorySnapshots.length, 0);
-    assert.equal(fixture.model.doStreamCalls.length, 3);
-  });
 });
 
 describe('mid-turn capacity compaction with a slow ledger consumer', () => {

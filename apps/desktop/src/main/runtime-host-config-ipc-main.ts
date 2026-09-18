@@ -46,8 +46,8 @@ import {
   projectHostConnections,
 } from './runtime-host-connections-ipc-main.js';
 import {
-  readRuntimeHostMemoryDocument,
-  replaceRuntimeHostMemoryDocument,
+  readRuntimeHostMemoryFiles,
+  writeRuntimeHostMemoryFiles,
 } from './runtime-host-memory-ipc-main.js';
 import {
   stripSettingsSecretsForExport,
@@ -251,7 +251,7 @@ export async function gatherRuntimeHostConfig(
     data.credentials = connectionCredentials(catalog.connections, secrets);
   }
   if (selected.has('memory')) {
-    data.memory = await readRuntimeHostMemoryDocument(deps.client, 'memory');
+    data.memory = await readRuntimeHostMemoryFiles(deps.client);
   }
   return buildConfigBundle({ appVersion: deps.appVersion, data });
 }
@@ -316,8 +316,7 @@ function runtimeHostTransferDeps(
     credentialStore: {
       setSecret: (entry) => saveConnectionCredential(deps.client, entry),
     },
-    writeMemory: (content) =>
-      replaceRuntimeHostMemoryDocument(deps.client, content),
+    writeMemory: (files) => writeRuntimeHostMemoryFiles(deps.client, files),
   };
 }
 

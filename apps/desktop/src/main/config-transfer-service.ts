@@ -27,6 +27,7 @@ import { canonicalConnectionEffectiveBaseUrl } from '@maka/core/runtime-policy';
 import {
   type ConfigBundle,
   type ConnectionConflictStrategy,
+  type MemoryImportSkipReason,
   planConnectionMerge,
 } from '@maka/storage/config-transfer';
 import { type CredentialKind } from '@maka/storage/credential-store';
@@ -64,14 +65,15 @@ export interface ConfigTransferDeps {
   credentialStore: {
     setSecret(entry: ExportedCredential): Promise<boolean>;
   };
-  writeMemory(content: string): Promise<void>;
+  writeMemory(files: Readonly<Record<string, string>>): Promise<void>;
 }
 
 export interface ConfigImportResult {
   connections?: { created: number; overwritten: number; skipped: number };
   settings?: { applied: boolean };
   credentials?: { applied: number; skipped: number };
-  memory?: { applied: boolean };
+  /** Memory files are written last and never sink the rest of the import. */
+  memory?: { applied: true } | { applied: false; reason: MemoryImportSkipReason };
 }
 
 export async function applyConfigImport(
@@ -179,9 +181,14 @@ export async function applyConfigImport(
     result.credentials = { applied: 0, skipped: settingsCredentialSkips };
   }
 
-  if (typeof bundle.data.memory === 'string') {
-    await deps.writeMemory(bundle.data.memory);
-    result.memory = { applied: true };
+  const memory = memoryFiles(bundle.data.memory);
+  if (memory) {
+    try {
+      await deps.writeMemory(memory);
+      result.memory = { applied: true };
+    } catch (error) {
+      result.memory = { applied: false, reason: memoryImportSkipReason(error) };
+    }
   }
 
   return result;
@@ -213,4 +220,31 @@ function canonicalEndpoint(value: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** Why the memory part of an import did not land, from the write's refusal. */
+export function memoryImportSkipReason(error: unknown): MemoryImportSkipReason {
+  const reason = error instanceof MemoryImportRefused ? error.reason : undefined;
+  return reason === 'disabled' || reason === 'incognito' ? reason : 'failed';
+}
+
+/** A memory write the Runtime Host refused during an import, with its reason. */
+export class MemoryImportRefused extends Error {
+  constructor(
+    readonly path: string,
+    readonly reason: string,
+  ) {
+    super(`Memory import refused ${path}: ${reason.replaceAll('_', ' ')}`);
+    this.name = 'MemoryImportRefused';
+  }
+}
+
+/** The exported memory: a map from memory path to file content, nothing else. */
+function memoryFiles(value: unknown): Record<string, string> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const files: Record<string, string> = {};
+  for (const [path, content] of Object.entries(value)) {
+    if (typeof content === 'string') files[path] = content;
+  }
+  return files;
 }

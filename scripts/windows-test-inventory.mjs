@@ -232,7 +232,6 @@ function classifySkip(path, title, expression) {
     value.includes('process death') ||
     value.includes('real-process crash') ||
     value.includes('sqlite-runtime-crash') ||
-    value.includes('sqlite-long-term-memory-crash') ||
     value.includes('sandbox')
   ) {
     return 'windows-backend-gap';

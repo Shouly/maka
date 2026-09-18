@@ -29,9 +29,12 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
+  PROMPT_CONDITIONS,
   assembleMainSessionSystemPrompt,
   mainSessionStaticPromptSections,
 } from '../system-prompt/main-session-prompt.js';
+
+const EVERY_CONDITION: ReadonlySet<string> = new Set(PROMPT_CONDITIONS);
 
 // dist/__tests__ → src/__tests__/golden: the golden lives beside the source so
 // a review reads it next to the Markdown it pins.
@@ -46,15 +49,24 @@ const goldenPath = join(
 );
 
 test('the static prompt layer matches its golden file', () => {
-  const actual = `${assembleMainSessionSystemPrompt([])}\n`;
+  const actual = `${assembleMainSessionSystemPrompt([], {}, EVERY_CONDITION)}\n`;
   if (process.env.MAKA_UPDATE_GOLDEN === '1') writeFileSync(goldenPath, actual, 'utf8');
   const expected = readFileSync(goldenPath, 'utf8');
   assert.equal(actual, expected, 'static prompt drifted; review and run with MAKA_UPDATE_GOLDEN=1');
 });
 
+test('a conditional section is present only when its capability is', () => {
+  const withMemory = assembleMainSessionSystemPrompt([], {}, new Set(['memory']));
+  const without = assembleMainSessionSystemPrompt([]);
+  assert.match(withMemory, /^<user_memory>$/mu);
+  assert.doesNotMatch(without, /<user_memory>/u);
+  // Everything unconditional is in both, in the same order.
+  assert.equal(without, withMemory.replace(/\n\n<user_memory>[\s\S]*<\/user_memory>/u, ''));
+});
+
 test('static sections are ordered, unique and non-empty', () => {
-  const sections = mainSessionStaticPromptSections();
-  assert.ok(sections.length >= 5);
+  const sections = mainSessionStaticPromptSections(EVERY_CONDITION);
+  assert.ok(sections.length >= 6);
   const ids = sections.map((section) => section.id);
   assert.equal(new Set(ids).size, ids.length);
   for (let index = 1; index < sections.length; index += 1) {
@@ -69,7 +81,7 @@ test('every tag a section opens, it closes, in order', () => {
   // once matched the mention of that tag INSIDE `<chatting_with_person>` and
   // swallowed everything from there to the real closing tag — three blocks and
   // two closing tags gone, and every other test still green.
-  const text = assembleMainSessionSystemPrompt([]);
+  const text = assembleMainSessionSystemPrompt([], {}, EVERY_CONDITION);
   const open: string[] = [];
   for (const [, closing, name] of text.matchAll(/^<(\/?)([a-z_]+)>$/gmu)) {
     if (closing) assert.equal(open.pop(), name, `mismatched </${name}>`);

@@ -92,7 +92,7 @@ import type {
   ArtifactTextReadResult,
 } from '@maka/core/artifacts';
 import type { CapabilitySnapshotCollection, PermissionSnapshot } from '@maka/core/capabilities';
-import type { LocalMemoryState } from '@maka/core/local-memory';
+import type { MemoryListState } from '../main/runtime-host-memory-ipc-main.js';
 import type {
   AuthorizationUrlPayload,
   SubscriptionActionResult,
@@ -118,6 +118,8 @@ import type { PetPackManifestV1 } from '@maka/core/pet';
 import type { WorkBoardItem, WorkBoardListQuery, WorkBoardPage } from '@maka/core/work-board';
 import type { WorkBoardMutationOptions } from '@maka/storage/work-board-store';
 import type {
+  MemoryDocumentProjection,
+  MemoryMutateResult,
   OperationInput,
   OperationOutcome,
   OperationOutput,
@@ -253,7 +255,7 @@ import type {
 import type { BotStatus, WechatBridgeQrCodeResult } from '@maka/runtime/bots';
 import type { ShellRunPtyDataEvent, ShellRunPtySnapshot } from '@maka/runtime/shell-run-contract';
 import type { BundledSkillCatalogEntry, ManagedSkillSourceEntry, ManagedSkillUpdatePreview, SkillEntry } from '@maka/ui';
-import type { ConfigCategory } from '@maka/storage/config-transfer';
+import type { ConfigCategory, MemoryImportSkipReason } from '@maka/storage/config-transfer';
 import type { OnboardingMilestone, OnboardingMilestoneId, OnboardingState } from '@maka/core/onboarding';
 import type {
   RemoteRuntimeHostProfile,
@@ -1565,16 +1567,14 @@ export interface MakaBridge {
     getSnapshot(host?: DesktopRuntimeHostRef): Promise<HealthSnapshot>;
   };
   memory: {
-    getState(sessionId?: string, host?: DesktopRuntimeHostRef): Promise<LocalMemoryState>;
-    save(content: string, host?: DesktopRuntimeHostRef): Promise<LocalMemoryState>;
-    reset(host?: DesktopRuntimeHostRef): Promise<LocalMemoryState>;
-    restoreLatestBackup(host?: DesktopRuntimeHostRef): Promise<{ ok: true; state: LocalMemoryState } | { ok: false; state: LocalMemoryState; code: string }>;
-    restoreBackup(kind: 'save' | 'reset' | 'restore', host?: DesktopRuntimeHostRef): Promise<{ ok: true; state: LocalMemoryState } | { ok: false; state: LocalMemoryState; code: string }>;
-    setEnabled(enabled: boolean, host?: DesktopRuntimeHostRef): Promise<LocalMemoryState>;
-    setAgentReadEnabled(enabled: boolean, host?: DesktopRuntimeHostRef): Promise<LocalMemoryState>;
-    openFile(host?: DesktopRuntimeHostRef): Promise<{ ok: true } | { ok: false; code: string }>;
-    openLatestBackup(host?: DesktopRuntimeHostRef): Promise<{ ok: true } | { ok: false; code: string }>;
-    openBackup(kind: 'save' | 'reset' | 'restore', host?: DesktopRuntimeHostRef): Promise<{ ok: true } | { ok: false; code: string }>;
+    list(host?: DesktopRuntimeHostRef): Promise<MemoryListState>;
+    read(path: string, host?: DesktopRuntimeHostRef): Promise<MemoryDocumentProjection | null>;
+    write(
+      input: { path: string; content: string; ifVersion: string },
+      host?: DesktopRuntimeHostRef,
+    ): Promise<MemoryMutateResult>;
+    delete(input: { path: string; ifVersion: string }, host?: DesktopRuntimeHostRef): Promise<MemoryMutateResult>;
+    setEnabled(enabled: boolean, host?: DesktopRuntimeHostRef): Promise<MemoryListState>;
   };
   attachments: {
     pickDirectory(): Promise<{ ok: true; reference: import('@maka/core/events').DirectoryReference } | { ok: false; reason: 'cancelled' }>;
@@ -1782,7 +1782,7 @@ export interface MakaBridge {
             };
             settings?: { applied: boolean };
             credentials?: { applied: number; skipped: number };
-            memory?: { applied: boolean };
+            memory?: { applied: true } | { applied: false; reason: MemoryImportSkipReason };
           };
         }
     >;

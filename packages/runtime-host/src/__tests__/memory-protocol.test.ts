@@ -17,165 +17,95 @@
  * under the License.
  */
 
-import { RuntimeHostProtocolError } from '../protocol/errors.js';
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import {
-  decodeClientFrame,
-  decodeHostFrame,
-  encodeProtocolMessage,
-  MEMORY_DOCUMENT_CHUNK_MAX_BYTES,
-  MEMORY_ENTRY_PAGE_MAX_ITEMS,
-  MEMORY_RESULT_MAX_BYTES,
-  RUNTIME_HOST_MAX_MESSAGE_BYTES,
-} from '../protocol/index.js';
+import { MEMORY_FILE_MAX_BYTES } from '@maka/core/memory-filesystem';
+import { RuntimeHostProtocolError } from '../protocol/errors.js';
+import { decodeClientFrame, decodeHostFrame } from '../protocol/index.js';
 
-const revision = `sha256:${'a'.repeat(64)}` as const;
+const document = {
+  path: '/topics/food.md',
+  content: '- [stated] drinks tea',
+  version: 'abcdef012345',
+  byteLength: 21,
+  updatedAt: 1_700_000_000_000,
+};
 
 describe('Memory protocol', () => {
-  test('accepts closed Memory operations and rejects open shapes', () => {
-    assert.doesNotThrow(() =>
-      request('memory.query', {
-        kind: 'document_continue',
-        document: 'memory',
-        revision,
-        cursor: 32,
-      }),
-    );
+  test('accepts the closed query and mutation shapes and rejects open ones', () => {
+    assert.doesNotThrow(() => request('memory.query', { kind: 'list' }));
+    assert.doesNotThrow(() => request('memory.query', { kind: 'read', path: '/profile.md' }));
     assert.doesNotThrow(() =>
       request('memory.mutate', {
-        kind: 'remember',
-        expectedRevision: revision,
-        title: 'Preference',
-        content: 'Use concise answers.',
-        scope: { kind: 'session', sessionId: 'session-1' },
+        kind: 'write',
+        path: '/profile.md',
+        content: 'x',
+        ifVersion: 'new',
       }),
     );
     assert.doesNotThrow(() =>
-      request('memory.mutate', {
-        kind: 'restore_backup',
-        expectedRevision: revision,
-        backupKind: 'save',
-        expectedBackupRevision: revision,
-      }),
+      request('memory.mutate', { kind: 'delete', path: '/profile.md', ifVersion: 'abcdef012345' }),
     );
-    assert.doesNotThrow(() =>
-      mutationResponse({
-        kind: 'backup_revision_conflict',
-        backupKind: 'save',
-        expectedRevision: revision,
-        actualRevision: `sha256:${'b'.repeat(64)}`,
-      }),
+
+    assert.throws(() => request('memory.query', { kind: 'list', path: '/x.md' }), isInvalidFrame);
+    assert.throws(() => request('memory.query', { kind: 'state' }), isInvalidFrame);
+    assert.throws(
+      () => request('memory.mutate', { kind: 'write', path: '/x.md', content: '' }),
+      isInvalidFrame,
     );
     assert.throws(
       () =>
         request('memory.mutate', {
-          kind: 'remember',
-          expectedRevision: revision,
-          title: 'Preference',
-          content: 'Use concise answers.',
-          scope: { kind: 'session' },
+          kind: 'write',
+          path: '/x.md',
+          content: 'x'.repeat(MEMORY_FILE_MAX_BYTES + 1),
+          ifVersion: 'new',
         }),
       isInvalidFrame,
     );
     assert.throws(
-      () =>
-        request('memory.query', {
-          kind: 'document_start',
-          document: 'memory',
-          path: '/tmp/MEMORY.md',
-        }),
+      () => request('memory.mutate', { kind: 'delete', path: '/x.md' }),
       isInvalidFrame,
     );
   });
 
-  test('keeps maximum document chunks inside both result and transport budgets', () => {
-    const chunkBase64 = Buffer.alloc(MEMORY_DOCUMENT_CHUNK_MAX_BYTES, 0x61).toString('base64');
-    const result = {
-      kind: 'document_page' as const,
-      document: 'memory' as const,
-      revision,
-      totalBytes: 128 * 1024,
-      offset: 0,
-      chunkBase64,
-      nextCursor: MEMORY_DOCUMENT_CHUNK_MAX_BYTES,
-    };
-    assert.doesNotThrow(() => response('memory.query', result));
-    assert.ok(Buffer.byteLength(JSON.stringify(result), 'utf8') <= MEMORY_RESULT_MAX_BYTES);
-    assert.ok(
-      encodeProtocolMessage({
-        requestId: 'memory-page',
-        operation: 'memory.query',
-        ok: true,
-        result,
-      }).byteLength <= RUNTIME_HOST_MAX_MESSAGE_BYTES,
-    );
-
-    const input = {
-      kind: 'replace_chunk' as const,
-      uploadId: 'upload-1',
-      offset: 0,
-      chunkBase64,
-    };
-    assert.doesNotThrow(() => request('memory.mutate', input));
-    assert.ok(
-      encodeProtocolMessage({
-        requestId: 'memory-chunk',
-        operation: 'memory.mutate',
-        input,
-      }).byteLength <= RUNTIME_HOST_MAX_MESSAGE_BYTES,
-    );
-    assert.throws(
-      () =>
-        request('memory.mutate', {
-          ...input,
-          chunkBase64: Buffer.alloc(MEMORY_DOCUMENT_CHUNK_MAX_BYTES + 1).toString('base64'),
-        }),
-      isInvalidFrame,
-    );
-  });
-
-  test('accepts an empty document page and rejects oversized entry projections', () => {
+  test('accepts the closed result shapes and rejects open ones', () => {
     assert.doesNotThrow(() =>
       response('memory.query', {
-        kind: 'document_page',
-        document: 'memory',
-        revision,
-        totalBytes: 0,
-        offset: 0,
-        chunkBase64: '',
-        nextCursor: null,
+        kind: 'list',
+        enabled: true,
+        incognitoActive: false,
+        directoryPath: '/tmp/root/memory',
+        files: [
+          {
+            path: '/topics/food.md',
+            byteLength: 21,
+            updatedAt: 1,
+            description: 'what they eat',
+            aliases: [],
+            sources: ['chat'],
+          },
+        ],
       }),
     );
+    assert.doesNotThrow(() => response('memory.query', { kind: 'document', document }));
+    assert.doesNotThrow(() => response('memory.query', { kind: 'document', document: null }));
+    assert.doesNotThrow(() =>
+      mutation({ kind: 'written', version: 'abcdef012345', byteLength: 21 }),
+    );
+    assert.doesNotThrow(() => mutation({ kind: 'deleted' }));
+    assert.doesNotThrow(() =>
+      mutation({ kind: 'rejected', reason: 'version_conflict', current: document }),
+    );
+    assert.doesNotThrow(() => mutation({ kind: 'rejected', reason: 'disabled', current: null }));
 
-    const entry = {
-      id: 'entry-1',
-      source: 'user_authored',
-      status: 'active',
-      title: 'Preference',
-      content: '\\'.repeat(4 * 1024),
-      scope: 'workspace',
-      tags: [],
-    };
-    const oversized = {
-      kind: 'entries_page',
-      view: 'active',
-      revision,
-      items: Array.from({ length: 16 }, (_, index) => ({ ...entry, id: `entry-${index}` })),
-      nextCursor: null,
-    };
-    assert.ok(Buffer.byteLength(JSON.stringify(oversized), 'utf8') > MEMORY_RESULT_MAX_BYTES);
-    assert.throws(() => response('memory.query', oversized), isInvalidFrame);
     assert.throws(
-      () =>
-        response('memory.query', {
-          ...oversized,
-          items: Array.from({ length: MEMORY_ENTRY_PAGE_MAX_ITEMS + 1 }, (_, index) => ({
-            ...entry,
-            id: `entry-${index}`,
-            content: 'bounded',
-          })),
-        }),
+      () => mutation({ kind: 'rejected', reason: 'invalid_state', current: null }),
+      isInvalidFrame,
+    );
+    assert.throws(() => mutation({ kind: 'written', version: 'abcdef012345' }), isInvalidFrame);
+    assert.throws(
+      () => response('memory.query', { kind: 'document', document: { ...document, extra: 1 } }),
       isInvalidFrame,
     );
   });
@@ -184,6 +114,7 @@ describe('Memory protocol', () => {
     assert.doesNotThrow(() => failure('memory.query', 'persistence_failed'));
     assert.doesNotThrow(() => failure('memory.mutate', 'commit_outcome_unknown'));
     assert.throws(() => failure('memory.query', 'commit_outcome_unknown'), isInvalidFrame);
+    assert.throws(() => failure('memory.mutate', 'session_archived'), isInvalidFrame);
   });
 });
 
@@ -195,7 +126,7 @@ function response(operation: 'memory.query', result: unknown): void {
   decodeHostFrame({ requestId: 'response', operation, ok: true, result });
 }
 
-function mutationResponse(result: unknown): void {
+function mutation(result: unknown): void {
   decodeHostFrame({ requestId: 'response', operation: 'memory.mutate', ok: true, result });
 }
 

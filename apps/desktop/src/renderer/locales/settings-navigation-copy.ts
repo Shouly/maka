@@ -59,7 +59,7 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
         label: '导入任务',
         description: '把本机其他 Agent 的对话记录转换成 Maka 任务。',
       },
-      memory: { label: '记忆', description: 'Maka 记住的内容，以及本地 MEMORY.md 文件。' },
+      memory: { label: '记忆', description: 'Copilot 记住的内容，以及本机的记忆文件。' },
       'daily-review': {
         label: '每日回顾',
         description: '每天分析本机任务，生成摘要、遗漏提醒和建议。',
@@ -107,7 +107,7 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
         label: '匯入任務',
         description: '把本機其他 Agent 的對話記錄轉換成 Maka 任務。',
       },
-      memory: { label: '記憶', description: 'Maka 記住的內容，以及本地 MEMORY.md 檔案。' },
+      memory: { label: '記憶', description: 'Copilot 記住的內容，以及本機的記憶檔案。' },
       'daily-review': {
         label: '每日回顧',
         description: '每天分析本機任務，生成摘要、遺漏提醒和建議。',
@@ -168,7 +168,7 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
       },
       memory: {
         label: 'Memory',
-        description: 'What Maka remembers, and the local MEMORY.md file.',
+        description: 'What Copilot remembers, and the memory files on this machine.',
       },
       'daily-review': {
         label: 'Daily Review',

@@ -206,7 +206,7 @@ const STATIC_COMMAND_KEYWORDS: Record<StaticCommandId, readonly string[]> = {
     '连接',
     '诊断',
   ],
-  'diag:open-local-memory': ['memory', 'md', 'open', '记忆', '本地', '编辑', 'edit'],
+  'diag:open-local-memory': ['memory', 'folder', 'open', '记忆', '目录', '打开'],
 };
 
 type ShellCopy = {
@@ -709,7 +709,7 @@ const ZH_STATIC_COMMANDS: Record<StaticCommandId, CommandCopy> = {
     group: '诊断',
   },
   'diag:open-local-memory': {
-    label: '打开本地 MEMORY.md',
+    label: '打开记忆目录',
     hint: '系统编辑器',
     group: '诊断',
   },
@@ -808,7 +808,7 @@ const EN_STATIC_COMMANDS: Record<StaticCommandId, CommandCopy> = {
     group: 'Diagnostics',
   },
   'diag:open-local-memory': {
-    label: 'Open local MEMORY.md',
+    label: 'Open the memory folder',
     hint: 'System editor',
     group: 'Diagnostics',
   },
@@ -963,9 +963,9 @@ const SHELL_COPY_BY_LOCALE = {
       invalidExport: '导出内容无效',
       writeFailed: '无法写入选择的位置',
       exportFallback: '导出当前任务失败，请稍后重试。',
-      memoryOpenFailedTitle: '无法打开 MEMORY.md',
+      memoryOpenFailedTitle: '无法打开记忆目录',
       openFailedTitle: '打开失败',
-      memoryOpenFallback: '无法打开 MEMORY.md，请稍后重试。',
+      memoryOpenFallback: '无法打开记忆目录，请稍后重试。',
       today: '今天',
       reviewCopiedTitle: '已复制今日回顾为 Markdown',
       reviewSummary: (sessions: number, requests: number) =>
@@ -1498,9 +1498,9 @@ const SHELL_COPY_BY_LOCALE = {
       invalidExport: '匯出內容無效',
       writeFailed: '無法寫入選擇的位置',
       exportFallback: '匯出目前任務失敗，請稍後重試。',
-      memoryOpenFailedTitle: '無法開啟 MEMORY.md',
+      memoryOpenFailedTitle: '無法開啟記憶目錄',
       openFailedTitle: '開啟失敗',
-      memoryOpenFallback: '無法開啟 MEMORY.md，請稍後重試。',
+      memoryOpenFallback: '無法開啟記憶目錄，請稍後重試。',
       today: '今天',
       reviewCopiedTitle: '已複製今日回顧為 Markdown',
       reviewSummary: (sessions: number, requests: number) =>
@@ -2036,9 +2036,9 @@ const SHELL_COPY_BY_LOCALE = {
       invalidExport: 'The export content is invalid',
       writeFailed: 'The selected location could not be written',
       exportFallback: 'The task could not be exported. Try again later.',
-      memoryOpenFailedTitle: 'Could not open MEMORY.md',
+      memoryOpenFailedTitle: 'Could not open the memory folder',
       openFailedTitle: 'Open failed',
-      memoryOpenFallback: 'MEMORY.md could not be opened. Try again later.',
+      memoryOpenFallback: 'The memory folder could not be opened. Try again later.',
       today: 'Today',
       reviewCopiedTitle: "Today's review copied as Markdown",
       reviewSummary: (sessions: number, requests: number) =>

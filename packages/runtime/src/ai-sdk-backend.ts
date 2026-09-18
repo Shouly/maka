@@ -74,14 +74,7 @@ import { AiSdkMessageProjection } from './ai-sdk-message-projection.js';
 import { AiSdkTurn, type AiSdkSessionState } from './ai-sdk-turn.js';
 import { buildInvalidMakaTool } from './ai-sdk-tool-repair.js';
 import { ToolAvailabilityRuntime, type ToolAvailabilityConfig } from './tool-availability.js';
-import {
-  MEMORY_EXTRACT_TOOL_NAME,
-  MEMORY_REMEMBER_TOOL_NAME,
-  buildMemoryExtractionTriggerTools,
-  type MemoryExtractionSourceCapabilities,
-  type MemoryExtractionSourceSnapshot,
-  type MemoryExtractionTrigger,
-} from './memory-extraction.js';
+import type { MemoryPassCapability } from './memory-pass.js';
 import { resolveModelRuntime } from './model-runtime.js';
 import { resolveNativeToolDeferral, type NativeToolDeferral } from './native-tool-deferral.js';
 import { routeApplyPatchTools } from './apply-patch-profile.js';
@@ -246,8 +239,8 @@ export interface AiSdkBackendInput extends AiSdkCompactionCapabilities {
    */
   supportsVision?: boolean;
   maxProviderImageRequestBytes?: number;
-  /** Host-owned bounded long-term-memory extraction. Source tools are Runtime-reserved. */
-  memoryExtraction?: MemoryExtractionSourceCapabilities;
+  /** Host-owned background memory pass, told about each finished turn. */
+  memoryPass?: MemoryPassCapability;
 }
 
 export interface ResolvedSystemPrompt {
@@ -306,7 +299,6 @@ export class AiSdkBackend implements AgentBackend {
   private readonly messageProjection: AiSdkMessageProjection;
   private readonly providerTelemetry: ProviderRequestTelemetry;
   private readonly resolvedProviderOptions: Record<string, unknown>;
-  private readonly memoryTools: readonly MakaTool[];
   private readonly applyPatchProfile: ReturnType<typeof resolveModelRuntime>['applyPatchProfile'];
   /** The wire that can hold a schema without showing it, when this model has one. */
   private readonly nativeToolDeferral: NativeToolDeferral | undefined;
@@ -349,8 +341,8 @@ export class AiSdkBackend implements AgentBackend {
     this.maxSteps = input.maxSteps;
     this.providerRetrySleep = input.providerRetrySleep ?? sleepForProviderRetry;
     // One resolved options value for every reader: the main call, the
-    // auxiliary memory-extraction call, and the provider request all use the
-    // same options value, so they cannot disagree on what was sent.
+    // auxiliary calls, and the provider request all use the same options
+    // value, so they cannot disagree on what was sent.
     const runtime = resolveModelRuntime(input.connection, input.modelId);
     this.resolvedProviderOptions =
       input.providerOptions ??
@@ -430,29 +422,6 @@ export class AiSdkBackend implements AgentBackend {
         ),
       canReplayProviderNative: (plan) => this.messageProjection.canReplayProviderNative(plan),
     });
-    if (
-      input.tools.some(
-        (tool) => tool.name === MEMORY_REMEMBER_TOOL_NAME || tool.name === MEMORY_EXTRACT_TOOL_NAME,
-      )
-    ) {
-      throw new Error('Long-term Memory trigger tool names are reserved by Runtime');
-    }
-    this.memoryTools = input.memoryExtraction
-      ? buildMemoryExtractionTriggerTools({
-          capabilities: input.memoryExtraction,
-          snapshot: (trigger, context) => this.memorySourceSnapshot(trigger, context),
-          markExtractRequested: (context) => {
-            const turn = [...this.activeTurns].find(
-              (candidate) =>
-                candidate.turnId === context.turnId && candidate.runId === context.runId,
-            );
-            if (turn) turn.memoryExtractRequested = true;
-          },
-          ...(input.connection.providerType === 'openai' && runtime.wire === 'openai-responses'
-            ? { unsupportedReason: 'provider_unsupported' as const }
-            : {}),
-        })
-      : [];
   }
 
   private snapshotToolAvailability(): {
@@ -460,21 +429,11 @@ export class AiSdkBackend implements AgentBackend {
     runtime: ToolAvailabilityRuntime;
   } {
     const hostTools = Object.freeze([...(this.input.resolveTools?.() ?? this.input.tools)]);
-    if (
-      hostTools.some(
-        (tool) => tool.name === MEMORY_REMEMBER_TOOL_NAME || tool.name === MEMORY_EXTRACT_TOOL_NAME,
-      )
-    ) {
-      throw new Error('Long-term Memory trigger tool names are reserved by Runtime');
-    }
     const modelTools = routeApplyPatchTools(hostTools, this.applyPatchProfile);
     return {
       hostTools,
       runtime: new ToolAvailabilityRuntime(
-        bindToolResultArchiveDecoder(
-          [...modelTools, ...this.memoryTools],
-          this.input.toolResultArchive,
-        ),
+        bindToolResultArchiveDecoder(modelTools, this.input.toolResultArchive),
         // Deferral is a property of the wire, not of the Host's binding, so it
         // is decided here rather than travelling in the composed config.
         this.input.toolAvailability && this.nativeToolDeferral !== undefined
@@ -483,22 +442,6 @@ export class AiSdkBackend implements AgentBackend {
         buildInvalidMakaTool(),
       ),
     };
-  }
-
-  private memorySourceSnapshot(
-    trigger: MemoryExtractionTrigger,
-    context: MakaToolContext,
-  ): MemoryExtractionSourceSnapshot | undefined {
-    if (trigger !== 'remember') return undefined;
-    const turn = [...this.activeTurns].find(
-      (candidate) => candidate.turnId === context.turnId && candidate.runId === context.runId,
-    );
-    return turn
-      ? turn.memorySourceSnapshot({
-          trigger: 'remember',
-          toolCallId: context.toolCallId,
-        })
-      : undefined;
   }
 
   /**

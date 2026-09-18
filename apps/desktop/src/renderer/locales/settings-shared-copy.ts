@@ -58,10 +58,6 @@ export type SettingsSharedCopy = {
     searchBehaviorHelp: string;
     dataLocation: string;
     dataLocationHelp: string;
-    memoryDocument: string;
-    memoryDocumentHelp: string;
-    memoryEntries: string;
-    memoryEntriesHelp: string;
     reviewSchedule: string;
     reviewScheduleHelp: string;
   };
@@ -93,11 +89,7 @@ const SETTINGS_SHARED_COPY_BY_LOCALE = {
     ready: '就绪',
     groups: {
       memorySources: '记忆',
-      memorySourcesHelp: 'Maka 会在任务中记住你确认过的信息，用于之后的回答。',
-      memoryDocument: '记忆文件与备份',
-      memoryDocumentHelp: '记忆保存在本机 MEMORY.md 里；这里可以直接编辑原文或恢复备份。',
-      memoryEntries: '已记住的内容',
-      memoryEntriesHelp: '可以筛选、手动添加，或把不再需要的条目归档。',
+      memorySourcesHelp: '对话之后，值得记住的内容会整理成本机上的记忆文件，供之后的回答使用。',
       searchProvider: '搜索服务商',
       searchProviderHelp: '联网搜索使用的服务商与凭据。',
       searchBehavior: '搜索行为',
@@ -133,11 +125,7 @@ const SETTINGS_SHARED_COPY_BY_LOCALE = {
     ready: '就緒',
     groups: {
       memorySources: '記憶',
-      memorySourcesHelp: 'Maka 會在任務中記住你確認過的資訊，用於之後的回答。',
-      memoryDocument: '記憶檔案與備份',
-      memoryDocumentHelp: '記憶儲存在本機 MEMORY.md 裡；這裡可以直接編輯原文或恢復備份。',
-      memoryEntries: '已記住的內容',
-      memoryEntriesHelp: '可以篩選、手動新增，或把不再需要的條目歸檔。',
+      memorySourcesHelp: '對話之後，值得記住的內容會整理成本機上的記憶檔案，供之後的回答使用。',
       searchProvider: '搜尋服務商',
       searchProviderHelp: '聯網搜尋使用的服務商與憑據。',
       searchBehavior: '搜尋行為',
@@ -177,11 +165,6 @@ const SETTINGS_SHARED_COPY_BY_LOCALE = {
       memorySources: 'Memory',
       memorySourcesHelp:
         'Maka remembers information you confirm in chat and uses it in later answers.',
-      memoryDocument: 'Memory file and backups',
-      memoryDocumentHelp:
-        'Memory lives in a local MEMORY.md; edit the raw file or restore a backup here.',
-      memoryEntries: 'What Maka remembers',
-      memoryEntriesHelp: 'Filter entries, add one manually, or archive what is no longer needed.',
       searchProvider: 'Search provider',
       searchProviderHelp: 'The provider and credentials web search uses.',
       searchBehavior: 'Search behavior',

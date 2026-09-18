@@ -415,67 +415,6 @@ describe('history compact checkpoint', () => {
     );
   });
 
-  test('binds an automatic Memory boundary into checkpoint identity', () => {
-    const source = [textEvent(0)];
-    const manual = buildHistoryCompactCheckpoint({
-      sessionId: 'session-1',
-      coveredRuntimeEvents: source,
-      summary: sectionedSummary('same summary'),
-    });
-    const automatic = buildHistoryCompactCheckpoint({
-      sessionId: 'session-1',
-      coveredRuntimeEvents: source,
-      summary: sectionedSummary('same summary'),
-      memoryExtractionBoundary: {
-        runId: 'run-1',
-        turnId: 'turn-1',
-        runtimeEventId: 'event-boundary',
-      },
-    });
-    const denied = buildHistoryCompactCheckpoint({
-      sessionId: 'session-1',
-      coveredRuntimeEvents: source,
-      summary: sectionedSummary('same summary'),
-      memoryExtractionBoundary: {
-        runId: 'run-1',
-        turnId: 'turn-1',
-        runtimeEventId: 'event-boundary',
-        disposition: 'policy_denied',
-      },
-    });
-
-    assert.notEqual(automatic.checkpointId, manual.checkpointId);
-    assert.notEqual(denied.checkpointId, automatic.checkpointId);
-    assert.equal(validateHistoryCompactCheckpointShape(manual, 'session-1'), true);
-    assert.equal(validateHistoryCompactCheckpointShape(automatic, 'session-1'), true);
-    assert.equal(
-      validateHistoryCompactCheckpointShape(
-        {
-          ...automatic,
-          memoryExtractionBoundary: {
-            ...automatic.memoryExtractionBoundary!,
-            runtimeEventId: '',
-          },
-        },
-        'session-1',
-      ),
-      false,
-    );
-    assert.equal(
-      validateHistoryCompactCheckpointShape(
-        {
-          ...denied,
-          memoryExtractionBoundary: {
-            ...denied.memoryExtractionBoundary!,
-            disposition: 'invalid' as never,
-          },
-        },
-        'session-1',
-      ),
-      false,
-    );
-  });
-
   test('reloads a valid provider-native V3 checkpoint from the run ledger', async () => {
     const checkpoint = buildHistoryCompactCheckpoint({
       sessionId: 'session-1',

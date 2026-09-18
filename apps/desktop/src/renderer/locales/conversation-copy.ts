@@ -389,7 +389,7 @@ export interface DesktopConversationCopy {
 type CallKindCopy = Record<Exclude<ModelCallKind, 'main'>, string>;
 
 const ZH_CALL_KIND: CallKindCopy = {
-  memory_extraction: '记忆提取',
+  memory_pass: '记忆整理',
   semantic_compact: '语义压缩',
   history_compact: '历史压缩',
   goal_evaluation: '目标评估',
@@ -401,7 +401,7 @@ const ZH_CALL_KIND: CallKindCopy = {
 };
 
 const EN_CALL_KIND: CallKindCopy = {
-  memory_extraction: 'Memory extraction',
+  memory_pass: 'Memory pass',
   semantic_compact: 'Semantic compaction',
   history_compact: 'History compaction',
   goal_evaluation: 'Goal evaluation',

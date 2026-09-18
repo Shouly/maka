@@ -17,31 +17,28 @@
  * under the License.
  */
 
-// The local-memory snapshot the settings page reads, and the way a mutation
-// replaces it.
+// The memory listing the settings page reads, and how a change replaces it.
 //
-// Every `memory.*` mutation answers with the complete new `LocalMemoryState`,
-// so re-reading after a write would be a second round trip for an answer the
-// first one already gave — and a window in which the page shows the old file.
-// `apply` takes the returned state; `reload` is for the button that exists
-// because the file can also change underneath (an external editor, another
-// window). A reload supersedes any applied state, which is what makes "Reload"
-// mean what it says.
+// The switch answers with the new listing, so `apply` takes what the write
+// returned rather than reading again. Files change underneath the page — the
+// background pass files after every turn, the model writes on request, the
+// user edits the folder directly — so `reload` exists and supersedes any
+// applied state, which is what makes "Reload" mean what it says.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getMemoryState, type LocalMemoryState } from '../bridge/memory.js';
+import { listMemory, type MemoryListState } from '../bridge/memory.js';
 import type { DesktopRuntimeHostRef } from '../bridge/projects.js';
 
-export interface MemoryStateRead {
-  readonly state: LocalMemoryState | undefined;
+export interface MemoryListRead {
+  readonly state: MemoryListState | undefined;
   readonly loading: boolean;
   readonly error: unknown;
   readonly reload: () => void;
-  readonly apply: (next: LocalMemoryState) => void;
+  readonly apply: (next: MemoryListState) => void;
 }
 
-export function useMemoryState(host: DesktopRuntimeHostRef | undefined): MemoryStateRead {
-  const [state, setState] = useState<LocalMemoryState | undefined>(undefined);
+export function useMemoryList(host: DesktopRuntimeHostRef | undefined): MemoryListRead {
+  const [state, setState] = useState<MemoryListState | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(undefined);
   const [tick, setTick] = useState(0);
@@ -53,30 +50,27 @@ export function useMemoryState(host: DesktopRuntimeHostRef | undefined): MemoryS
     const request = ++generation.current;
     setLoading(true);
     setError(undefined);
-    void getMemoryState(undefined, host).then(
+    void listMemory(host).then(
       (next) => {
         if (request !== generation.current) return;
         setState(next);
         setLoading(false);
       },
-      (reason: unknown) => {
+      (failure: unknown) => {
         if (request !== generation.current) return;
-        setError(reason);
+        setError(failure);
         setLoading(false);
       },
     );
   }, [host?.profileId, host?.hostId, tick]);
 
-  return {
-    state,
-    loading,
-    error,
-    reload: useCallback(() => setTick((value) => value + 1), []),
-    apply: useCallback((next: LocalMemoryState) => {
-      generation.current += 1;
-      setState(next);
-      setLoading(false);
-      setError(undefined);
-    }, []),
-  };
+  const reload = useCallback(() => setTick((value) => value + 1), []);
+  const apply = useCallback((next: MemoryListState) => {
+    generation.current += 1;
+    setState(next);
+    setLoading(false);
+    setError(undefined);
+  }, []);
+
+  return { state, loading, error, reload, apply };
 }

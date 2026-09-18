@@ -1667,8 +1667,6 @@ function registerHostClientIpc(
   registerRuntimeHostMemoryIpc({
     ipcMain: scopedIpc,
     client,
-    workspaceRoot,
-    openPath: (path) => shell.openPath(path),
     allowLocalPaths: !usesHostWorkspace,
   });
   const runtimeHostSettings = createRuntimeHostSettingsModule({

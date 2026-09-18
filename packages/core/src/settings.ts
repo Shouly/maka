@@ -27,13 +27,13 @@ import {
   mergeBotChatSettings,
   normalizeBotChatSettings,
 } from './bot-chat-settings.js';
-import type { LocalMemorySettings } from './local-memory.js';
+import type { MemorySettings } from './memory-filesystem.js';
 import {
   defaultWebSearchSettings,
   mergeWebSearchSettings,
   normalizeWebSearchSettings,
 } from './web-search.js';
-import { defaultLocalMemorySettings, normalizeLocalMemorySettings } from './local-memory.js';
+import { defaultMemorySettings, normalizeMemorySettings } from './memory-filesystem.js';
 import type { PermissionMode } from './permission.js';
 import { decodePersistedPermissionMode } from './permission.js';
 import type { UsageProvenance } from './usage-ledger-merge.js';
@@ -511,7 +511,7 @@ export interface AppSettings {
   personalization: PersonalizationSettings;
   onboarding: OnboardingSettings;
   webSearch: WebSearchSettings;
-  localMemory: LocalMemorySettings;
+  memory: MemorySettings;
   workspaceInstructions: WorkspaceInstructionsSettings;
   privacy: PrivacySettings;
   chatDefaults: ChatDefaultsSettings;
@@ -646,7 +646,7 @@ export type UpdateAppSettingsInput = Partial<{
   usage: Partial<UsageSettings>;
   appearance: Partial<AppearanceSettings>;
   personalization: Partial<PersonalizationSettings>;
-  localMemory: Partial<LocalMemorySettings>;
+  memory: Partial<MemorySettings>;
   workspaceInstructions: Partial<WorkspaceInstructionsSettings>;
   privacy: Partial<PrivacySettings>;
   chatDefaults: Partial<ChatDefaultsSettings>;
@@ -728,7 +728,7 @@ export function createDefaultSettings(): AppSettings {
       milestones: [],
     },
     webSearch: defaultWebSearchSettings(),
-    localMemory: defaultLocalMemorySettings(),
+    memory: defaultMemorySettings(),
     workspaceInstructions: {
       enabled: true,
     },
@@ -799,12 +799,9 @@ export function mergeSettings(current: AppSettings, patch: UpdateAppSettingsInpu
       // rather than the generic UpdateAppSettingsInput patch surface.
       // Keep the existing list intact when callers patch other sections.
     },
-    localMemory: patch.localMemory
-      ? normalizeLocalMemorySettings({
-          ...current.localMemory,
-          ...patch.localMemory,
-        })
-      : current.localMemory,
+    memory: patch.memory
+      ? normalizeMemorySettings({ ...current.memory, ...patch.memory })
+      : current.memory,
     workspaceInstructions: patch.workspaceInstructions
       ? normalizeWorkspaceInstructionsSettings({
           ...current.workspaceInstructions,
@@ -859,7 +856,7 @@ export function normalizeSettings(input: unknown): AppSettings {
     appearance: value.appearance,
     personalization: value.personalization,
     webSearch: value.webSearch,
-    localMemory: value.localMemory,
+    memory: value.memory,
     workspaceInstructions: value.workspaceInstructions,
     privacy: value.privacy,
     chatDefaults: value.chatDefaults,
@@ -945,7 +942,7 @@ export function normalizeSettings(input: unknown): AppSettings {
       milestones: sanitizeOnboardingMilestones(rawMilestones),
     },
     webSearch: normalizeWebSearchSettings(base.webSearch),
-    localMemory: normalizeLocalMemorySettings(base.localMemory),
+    memory: normalizeMemorySettings(base.memory),
     workspaceInstructions: normalizeWorkspaceInstructionsSettings(base.workspaceInstructions),
     privacy: normalizePrivacySettings(base.privacy),
     projects: normalizeProjectPreferencesSettings(base.projects),

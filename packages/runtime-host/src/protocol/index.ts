@@ -101,7 +101,13 @@ export const RUNTIME_HOST_REGISTRATION_SCHEMA_VERSION = 1 as const;
 export const RUNTIME_HOST_PROTOCOL_VERSION = 0 as const;
 // Increment when the same protocol version no longer guarantees safe Client-Host
 // interoperability. Mismatches are rejected before domain commands are admitted.
-export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 152 as const;
+export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 153 as const;
+// 153: Memory becomes a path-addressed filesystem on the wire. `memory.query`
+// answers `{list|read}` with files and version tokens and `memory.mutate` takes
+// `{write|delete}` with `ifVersion`; the entry/bundle/extraction operations,
+// the `agentReadEnabled` and `localMemory` policy fields, and the
+// `memoryExtractionBoundary` checkpoint field are gone. A 152 peer rejects every
+// memory frame at admission, so the pair must refuse each other at the handshake.
 // 152: Session TODO becomes Session Task on the wire (`session.todo.*` ->
 // `session.task.*`, and the interaction answer kind `todo` -> `session_task`),
 // and a ScheduledTask gains a `manual` schedule, loses the `notify` effect, and

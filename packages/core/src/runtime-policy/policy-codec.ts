@@ -308,16 +308,11 @@ function normalizePersonalizationPatch(
 }
 
 function normalizeMemoryPatch(value: unknown): AgentRuntimeSettingsPatch['memory'] {
-  const patch = exactRecord(value, 'memory patch', ['enabled', 'agentReadEnabled'], []);
+  const patch = exactRecord(value, 'memory patch', ['enabled'], []);
   return {
     ...(patch.enabled === undefined
       ? {}
       : { enabled: booleanValue(patch.enabled, 'memory enabled') }),
-    ...(patch.agentReadEnabled === undefined
-      ? {}
-      : {
-          agentReadEnabled: booleanValue(patch.agentReadEnabled, 'memory agentReadEnabled'),
-        }),
   };
 }
 
@@ -387,11 +382,8 @@ function normalizePersonalization(value: unknown): RuntimePolicy['personalizatio
 }
 
 function normalizeMemory(value: unknown): RuntimePolicy['memory'] {
-  const item = exactRecord(value, 'memory policy', ['enabled', 'agentReadEnabled']);
-  return {
-    enabled: booleanValue(item.enabled, 'memory enabled'),
-    agentReadEnabled: booleanValue(item.agentReadEnabled, 'memory agentReadEnabled'),
-  };
+  const item = exactRecord(value, 'memory policy', ['enabled']);
+  return { enabled: booleanValue(item.enabled, 'memory enabled') };
 }
 
 function normalizeWorkspaceInstructions(value: unknown): RuntimePolicy['workspaceInstructions'] {

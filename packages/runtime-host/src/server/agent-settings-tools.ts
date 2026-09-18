@@ -33,9 +33,7 @@ const personalizationPatchSchema = z
     assistantTone: z.string().max(4_096).optional(),
   })
   .strict();
-const memoryPatchSchema = z
-  .object({ enabled: z.boolean().optional(), agentReadEnabled: z.boolean().optional() })
-  .strict();
+const memoryPatchSchema = z.object({ enabled: z.boolean().optional() }).strict();
 const enabledPatchSchema = z.object({ enabled: z.boolean().optional() }).strict();
 const privacyPatchSchema = z.object({ incognitoActive: z.boolean().optional() }).strict();
 
@@ -211,12 +209,6 @@ function describeChanges(policy: RuntimePolicy, patch: AgentRuntimeSettingsPatch
     patch.personalization?.assistantTone,
   );
   compare(changes, 'Memory', policy.memory.enabled, patch.memory?.enabled);
-  compare(
-    changes,
-    'Agent memory access',
-    policy.memory.agentReadEnabled,
-    patch.memory?.agentReadEnabled,
-  );
   compare(
     changes,
     'Workspace instructions',

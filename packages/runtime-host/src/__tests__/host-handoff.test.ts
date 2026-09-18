@@ -106,7 +106,7 @@ test('handoff copy exposes background work even with zero operations and keeps l
     defaultAction: 'cancel',
     activity: {
       ...idle,
-      residencies: [{ label: 'memory-extraction', count: 2 }],
+      residencies: [{ label: 'memory-pass', count: 2 }],
       drainResidencies: 2,
     },
   };

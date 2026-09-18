@@ -2530,7 +2530,7 @@ describe('non-serving Runtime Host kernel', () => {
                 await admittedGate;
                 return {
                   ok: true,
-                  result: { kind: 'rejected', reason: 'invalid_state' },
+                  result: { kind: 'rejected', reason: 'disabled', current: null },
                 };
               },
               'goal.query': async ({ sessionId }) => {
@@ -2569,10 +2569,9 @@ describe('non-serving Runtime Host kernel', () => {
 
       try {
         const admitted = connected.connection.request('memory.mutate', {
-          kind: 'replace_begin',
-          expectedRevision: `sha256:${'a'.repeat(64)}`,
-          totalBytes: 0,
-          contentSha256: `sha256:${'b'.repeat(64)}`,
+          kind: 'delete',
+          path: '/topics/blocked.md',
+          ifVersion: 'aaaaaaaaaaaa',
         });
         await admittedEntered;
         const laneWaiter = connected.connection.request('goal.query', {
@@ -2596,7 +2595,7 @@ describe('non-serving Runtime Host kernel', () => {
           'liveness probes did not fire on the injected cadence',
         );
         releaseAdmitted();
-        assert.deepEqual(await admitted, { kind: 'rejected', reason: 'invalid_state' });
+        assert.deepEqual(await admitted, { kind: 'rejected', reason: 'disabled', current: null });
         assert.deepEqual(await laneWaiter, { sessionId: 'blocked-session', goal: null });
 
         const locallyTimed = connected.connection.request(
@@ -3001,7 +3000,7 @@ describe('non-serving Runtime Host kernel', () => {
               await handlerReleased;
               return {
                 ok: true,
-                result: { kind: 'rejected', reason: 'invalid_state' },
+                result: { kind: 'rejected', reason: 'disabled', current: null },
               };
             },
           },
@@ -3032,10 +3031,9 @@ describe('non-serving Runtime Host kernel', () => {
           requestId: 'blocked-memory-mutation',
           operation: 'memory.mutate',
           input: {
-            kind: 'replace_begin',
-            expectedRevision: `sha256:${'a'.repeat(64)}`,
-            totalBytes: 0,
-            contentSha256: `sha256:${'b'.repeat(64)}`,
+            kind: 'delete',
+            path: '/topics/blocked.md',
+            ifVersion: 'aaaaaaaaaaaa',
           },
         });
         const admittedConnectionId = await handlerEntered;

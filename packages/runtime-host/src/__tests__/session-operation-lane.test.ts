@@ -20,10 +20,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { MemoryExtractionSessionLane } from '../server/memory-extraction-session-lane.js';
+import { SessionOperationLane } from '../server/session-operation-lane.js';
 
-test('user-requested extraction passes queued background work without preempting the running job', async () => {
-  const lane = new MemoryExtractionSessionLane();
+test('a foreground operation passes queued background work without preempting the running job', async () => {
+  const lane = new SessionOperationLane();
   const order: string[] = [];
   let releaseRunning!: () => void;
   const runningGate = new Promise<void>((resolve) => {

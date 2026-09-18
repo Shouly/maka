@@ -152,7 +152,7 @@ import {
 import {
   createHostGoalEvaluator,
   createHostDailyReviewModel,
-  createHostMemoryExtractionModel,
+  createHostMemoryPassModel,
   createHostPluginModel,
   createHostSessionEffectModel,
   type HostWorkHubRoutingModel,
@@ -185,9 +185,10 @@ import {
   bindWorkHubRoutingDecisionPrompt,
   hostedExecutionRunProfile,
 } from './hosted-execution-tool-profile.js';
+import { promptSection } from '@maka/runtime/system-prompt/main-session-prompt';
 import { HostMemoryCoordinator } from './memory-coordinator.js';
-import { HostMemoryExtractionCoordinator } from './memory-extraction-coordinator.js';
-import { MemoryExtractionSessionLane } from './memory-extraction-session-lane.js';
+import { HostMemoryPassCoordinator } from './memory-pass-coordinator.js';
+import { SessionOperationLane } from './session-operation-lane.js';
 import { type HostMessageRootPort, HostMessageCoordinator } from './message-coordinator.js';
 import { HostNetworkProxyCoordinator } from './network-proxy-coordinator.js';
 import { HostOAuthExecutionAuthority } from './oauth-execution-authority.js';
@@ -332,7 +333,7 @@ export async function createExecutionRuntimeHostComposition(
   let graphControlStore: ReturnType<typeof createAgentGraphControlStore> | undefined;
   let graphClient: HostAgentGraphCoordinator | undefined;
   let sessionEffects: HostSessionEffectCoordinator | undefined;
-  let memoryExtraction: HostMemoryExtractionCoordinator | undefined;
+  let memoryPass: HostMemoryPassCoordinator | undefined;
   let unsubscribeTranscriptChanges: (() => void) | undefined;
   let transcriptReader: SessionTranscriptReader | undefined;
   let unsubscribeUsageChanges: (() => void) | undefined;
@@ -383,8 +384,11 @@ export async function createExecutionRuntimeHostComposition(
     const openedDeepResearchStore = storage.deepResearch;
     const openedDailyReviewStore = storage.dailyReview;
     const openedGoalStore = storage.goal;
-    const memoryStore = storage.memoryBundle;
-    const longTermMemoryStore = storage.longTermMemory;
+    const memoryStore = storage.memory;
+    const memory = new HostMemoryCoordinator({
+      store: memoryStore,
+      runtimePolicy: runtimePolicyStores.runtimePolicy,
+    });
     const sessionTaskStore = storage.sessionTask;
     const openedArtifactStore = storage.artifacts;
     const openedContextOffloadStore = storage.contextOffload;
@@ -437,7 +441,7 @@ export async function createExecutionRuntimeHostComposition(
       },
     );
     const sessionAdmission = new SessionAdmissionGate();
-    const memoryExtractionLane = new MemoryExtractionSessionLane();
+    const sessionLane = new SessionOperationLane();
     let runtimeResources: HostRuntimeResourceCoordinator | undefined;
     let continuity: SessionContinuityCoordinator | undefined;
     let graphCoordinator: AgentGraphCoordinator | undefined;
@@ -699,7 +703,9 @@ export async function createExecutionRuntimeHostComposition(
       createHostWebFetchToolFromService(webFetchService),
       ...runtimePolicy.modelTools,
     ];
-    const hostTools = [...childHostTools, ...historyTools];
+    // Memory tools bind only where the memory pass runs: the main session.
+    // Children get `childHostTools` and hosted profiles project their own list.
+    const hostTools = [...childHostTools, ...historyTools, ...memory.tools];
     const childAgentTools = createHostChildAgentToolComposition({
       builtinTools,
       hostTools: childHostTools,
@@ -809,7 +815,6 @@ export async function createExecutionRuntimeHostComposition(
     let rootCoordinator: RootTurnCoordinator | undefined;
     let workHubCoordination: HostWorkHubCoordinationCoordinator;
     let canonicalProjection: CanonicalSessionProjectionReader | undefined;
-    let memory: HostMemoryCoordinator | undefined;
     let clientCapabilities: HostClientCapabilityCoordinator | undefined;
     let oauth: HostOAuthCoordinator | undefined;
     let externalAgentSetup: HostExternalAgentSetupCoordinator | undefined;
@@ -955,44 +960,34 @@ export async function createExecutionRuntimeHostComposition(
             requireGraphSupervisorWake(graphSupervisorWake).notifyPermissionResponse(rootSessionId),
         ),
     });
-    memory = new HostMemoryCoordinator({
+    memoryPass = new HostMemoryPassCoordinator({
       store: memoryStore,
-      runtimePolicyStores,
-      activation: runtimePolicyActivation,
-      requestDrain: context.requestDrain,
-    });
-    memoryExtraction = new HostMemoryExtractionCoordinator({
-      store: longTermMemoryStore,
       policy: runtimePolicyStores.runtimePolicy,
       sessions: {
         readHeader: (sessionId) => stores.sessionStore.readHeaderSnapshot(sessionId),
+        readMessages: (sessionId) => stores.sessionStore.readMessagesSnapshot(sessionId),
       },
-      runtimeEvents: {
-        readSessionRuntimeEventEntries: (sessionId) =>
-          stores.runtimeEventStore.readSessionRuntimeEventEntries(sessionId),
-      },
-      historyCompaction: {
-        readLatestCheckpoint: async (sessionId) =>
-          loadLatestHistoryCompactCheckpointFromRunLedger(
-            stores.agentRunStore,
-            sessionId,
-            await sessionRunIds(stores.runtimeEventStore, sessionId),
-          ),
-        readCheckpoints: async (sessionId) =>
-          loadHistoryCompactCheckpointsFromRunLedger(
-            stores.agentRunStore,
-            sessionId,
-            await sessionRunIds(stores.runtimeEventStore, sessionId),
-          ),
-      },
-      model: createHostMemoryExtractionModel({
+      model: createHostMemoryPassModel({
         runtimePolicy: runtimePolicyStores,
         oauthCredentials,
         usage: openedUsageStores,
         requestDrain: context.requestDrain,
       }),
-      lane: memoryExtractionLane,
-      acquireResidency: () => context.acquireResidency('memory-extraction'),
+      lane: sessionLane,
+      acquireResidency: () => context.acquireResidency('memory-pass'),
+      rules: requireMemoryRules(),
+      // The pass answers to nobody in the turn, so its log line is the only
+      // place a silent store shows why: a failed call, an unparseable answer,
+      // or writes the store refused.
+      observe: (event) => {
+        const where = `[runtime-host] memory pass for ${event.sessionId}/${event.turnId}`;
+        if (event.kind === 'failed') {
+          console.error(`${where} failed: ${event.reason}`);
+        } else if (event.kind === 'settled' && (event.applied > 0 || event.dropped.length > 0)) {
+          const dropped = event.dropped.map((drop) => `${drop.path} (${drop.reason})`).join(', ');
+          console.error(`${where}: filed ${event.applied}${dropped ? `, dropped ${dropped}` : ''}`);
+        }
+      },
     });
     const hostAiSdkBackendInput = <T extends BackendPreparationContext>(backendContext: T) => ({
       context: backendContext,
@@ -1001,7 +996,7 @@ export async function createExecutionRuntimeHostComposition(
       createRunComposer: createInteractiveRunComposerFactory({
         skills,
         pluginSkills,
-        memory: requireMemory(memory),
+        memory: memory,
         sessionTask,
         clientCapabilities: requireClientCapabilities(clientCapabilities),
         resolveTavilyWebSearchReadiness: () =>
@@ -1050,9 +1045,9 @@ export async function createExecutionRuntimeHostComposition(
           );
         },
       }),
-      ...(hostedExecutionRunProfile(backendContext.header.toolProfile)?.memoryExtraction === false
+      ...(hostedExecutionRunProfile(backendContext.header.toolProfile)?.memoryPass === false
         ? {}
-        : { memoryExtraction }),
+        : { memoryPass }),
       artifacts: openedArtifactStore,
       ...(openedContextOffloadReader ? { contextOffload: openedContextOffloadReader } : {}),
       ...(storage.contextOffloadUnavailable ? { contextOffloadUnavailable: true } : {}),
@@ -1176,7 +1171,7 @@ export async function createExecutionRuntimeHostComposition(
           ...(knowledgeCutoff ? { knowledgeCutoff } : {}),
           shell: resolveTurnShellPlan(runtimePolicy.policy.shell),
           skills,
-          memory: requireMemory(memory),
+          memory: memory,
           sessionTask,
           ...(runProfile ? { toolProfile: header.toolProfile } : {}),
           ...(capabilitySnapshot ? { clientCapabilities: capabilitySnapshot } : {}),
@@ -1241,7 +1236,7 @@ export async function createExecutionRuntimeHostComposition(
             runtimePolicy,
             shell: resolveTurnShellPlan(runtimePolicy.policy.shell),
             skills,
-            memory: requireMemory(memory),
+            memory: memory,
             sessionTask,
             ...(capabilitySnapshot ? { clientCapabilities: capabilitySnapshot } : {}),
             builtinTools,
@@ -1944,12 +1939,6 @@ export async function createExecutionRuntimeHostComposition(
       },
     });
     async function applyRuntimePolicyMutationEffects(): Promise<void> {
-      try {
-        await requireMemory(memory).refreshAfterPolicyMutation();
-      } catch (error) {
-        context.requestDrain();
-        throw error;
-      }
       registerConfigurationMutation();
     }
     const connectionEffects = new HostConnectionEffectCoordinator({
@@ -2422,7 +2411,7 @@ export async function createExecutionRuntimeHostComposition(
       },
       worktrees: worktreeChildExecutor,
       requestDrain: context.requestDrain,
-      memoryExtractionLane,
+      sessionLane,
     });
     const hostedExecutionRunner = new HostHostedExecutionRunner({
       handlers: {
@@ -2478,15 +2467,9 @@ export async function createExecutionRuntimeHostComposition(
       }),
       createRuntimeHostDomainModule({
         id: 'memory',
-        handlers: [requireMemory(memory).handlers],
-        recovery: {
-          state: () => requireMemory(memory).recover(),
-        },
-        drain: [() => memoryExtraction?.beginDrain(), () => memory?.beginDrain()],
-        close: [() => memoryExtraction?.close(), () => memory?.close()],
-        releaseConnection: [
-          (connectionId) => requireMemory(memory).releaseConnection(connectionId),
-        ],
+        handlers: [memory.handlers],
+        drain: [() => memoryPass?.beginDrain(), () => memory.beginDrain()],
+        close: [() => memoryPass?.close(), () => memory.close()],
       }),
       createRuntimeHostDomainModule({
         id: 'plan',
@@ -2892,7 +2875,7 @@ export async function createExecutionRuntimeHostComposition(
       errors.push(closeError);
     }
     try {
-      await memoryExtraction?.close();
+      await memoryPass?.close();
     } catch (closeError) {
       errors.push(closeError);
     }
@@ -3039,9 +3022,10 @@ function requireCanonicalProjection(
   return projection;
 }
 
-function requireMemory(memory: HostMemoryCoordinator | undefined): HostMemoryCoordinator {
-  if (!memory) throw new Error('Runtime Host Memory coordinator is not composed');
-  return memory;
+function requireMemoryRules(): string {
+  const section = promptSection('user-memory');
+  if (!section) throw new Error('The user_memory prompt section is missing from the catalog');
+  return section.body;
 }
 
 function requireClientCapabilities(

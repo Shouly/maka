@@ -46,9 +46,22 @@ function sectionsOfLayer(layer: PromptSection['layer']): readonly PromptSection[
   );
 }
 
-/** The static prefix every main session shares, in catalog order. */
-export function mainSessionStaticPromptSections(): readonly PromptSection[] {
-  return sectionsOfLayer('static');
+/** Every named condition a section can carry; the golden pins the prompt with all of them on. */
+export const PROMPT_CONDITIONS = ['memory'] as const;
+export type PromptCondition = (typeof PROMPT_CONDITIONS)[number];
+
+/**
+ * The static prefix every main session shares, in catalog order. A section
+ * with a `condition` is present only when the session has that capability —
+ * telling the model about memory tools it does not have would be worse than
+ * silence — so there is one cached prefix per combination.
+ */
+export function mainSessionStaticPromptSections(
+  conditions: ReadonlySet<string> = new Set(),
+): readonly PromptSection[] {
+  return sectionsOfLayer('static').filter(
+    (section) => section.condition === null || conditions.has(section.condition),
+  );
 }
 
 /** One catalog section by id, for hosts that place a section themselves. */
@@ -82,9 +95,12 @@ function interpolate(body: string, values: MainSessionPromptSubstitutions): stri
 export function assembleMainSessionSystemPrompt(
   fragments: readonly (string | undefined)[],
   substitutions: MainSessionPromptSubstitutions = {},
+  conditions: ReadonlySet<string> = new Set(),
 ): string {
   return [
-    ...mainSessionStaticPromptSections().map((section) => interpolate(section.body, substitutions)),
+    ...mainSessionStaticPromptSections(conditions).map((section) =>
+      interpolate(section.body, substitutions),
+    ),
     ...fragments,
   ]
     .filter((fragment): fragment is string => Boolean(fragment?.trim()))

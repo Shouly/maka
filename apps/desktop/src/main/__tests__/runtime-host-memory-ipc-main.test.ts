@@ -19,105 +19,58 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createDefaultRuntimePolicy } from '@maka/core/runtime-policy';
-import { registerRuntimeHostMemoryIpc } from '../runtime-host-memory-ipc-main.js';
+import type { MemoryMutateInput, MemoryQueryInput } from '@maka/runtime-host/protocol';
+import {
+  readRuntimeHostMemoryFiles,
+  registerRuntimeHostMemoryIpc,
+  writeRuntimeHostMemoryFiles,
+} from '../runtime-host-memory-ipc-main.js';
 
-test('restarts the complete Memory projection when its component revisions differ', async () => {
-  const handlers = new Map<string, (...args: unknown[]) => unknown>();
-  const revisionA = revision('a');
-  const revisionB = revision('b');
-  const documentA = revision('c');
-  const documentB = revision('d');
-  const queries = [
-    state(revisionA, documentA),
-    documentPage(documentB, 'new content'),
-    entriesPage(revisionB, 'active'),
-    entriesPage(revisionB, 'archived'),
-    state(revisionB, documentB),
-    documentPage(documentB, 'new content'),
-    entriesPage(revisionB, 'active'),
-    entriesPage(revisionB, 'archived'),
-  ];
-  let stateReads = 0;
-  registerRuntimeHostMemoryIpc({
-    ipcMain: {
-      handle: (channel, handler) => {
-        handlers.set(channel, handler as (...args: unknown[]) => unknown);
-      },
+const FILE = {
+  path: '/topics/food.md',
+  byteLength: 21,
+  updatedAt: 1_700_000_000_000,
+  description: 'what they eat',
+  aliases: [],
+  sources: ['chat'],
+};
+const DOCUMENT = {
+  path: '/topics/food.md',
+  content: '- [stated] drinks tea',
+  version: 'abcdef012345',
+  byteLength: 21,
+  updatedAt: 1_700_000_000_000,
+};
+
+function fakeClient(log: string[]) {
+  return {
+    queryMemory: async (input: MemoryQueryInput) => {
+      log.push(`query ${input.kind}${input.kind === 'read' ? ` ${input.path}` : ''}`);
+      return input.kind === 'list'
+        ? {
+            kind: 'list' as const,
+            enabled: true,
+            incognitoActive: false,
+            directoryPath: '/tmp/root/memory',
+            files: [FILE],
+          }
+        : { kind: 'document' as const, document: input.path === DOCUMENT.path ? DOCUMENT : null };
     },
-    client: {
-      queryRuntimePolicy: async () => ({
-        revision: 1,
-        policy: createDefaultRuntimePolicy(),
-      }),
-      queryMemory: async (input: { kind: string }) => {
-        if (input.kind === 'state') stateReads += 1;
-        const result = queries.shift();
-        if (!result) throw new Error(`Unexpected Memory query: ${input.kind}`);
-        return result;
-      },
-    } as never,
-    workspaceRoot: '/tmp/maka-memory',
-    openPath: async () => '',
-  });
-
-  const projected = (await handlers.get('memory:getState')?.({})) as {
-    content: string;
-  };
-
-  assert.equal(projected.content, 'new content');
-  assert.equal(stateReads, 2);
-  assert.equal(queries.length, 0);
-});
-
-test('projects a fresh workspace as an empty usable Memory state', async () => {
-  const handlers = new Map<string, (...args: unknown[]) => unknown>();
-  const queries: string[] = [];
-  registerRuntimeHostMemoryIpc({
-    ipcMain: {
-      handle: (channel, handler) => {
-        handlers.set(channel, handler as (...args: unknown[]) => unknown);
-      },
+    mutateMemory: async (input: MemoryMutateInput) => {
+      log.push(`mutate ${input.kind} ${input.path} ${input.ifVersion}`);
+      if (input.kind === 'delete') return { kind: 'deleted' as const };
+      return input.ifVersion === 'new' && input.path === DOCUMENT.path
+        ? { kind: 'rejected' as const, reason: 'exists' as const, current: DOCUMENT }
+        : { kind: 'written' as const, version: 'fedcba543210', byteLength: input.content.length };
     },
-    client: {
-      queryRuntimePolicy: async () => ({
-        revision: 1,
-        policy: createDefaultRuntimePolicy(),
-      }),
-      queryMemory: async (input: { kind: string }) => {
-        queries.push(input.kind);
-        return {
-          kind: 'state',
-          revision: revision('a'),
-          memoryRevision: null,
-          pendingRevision: null,
-          agentReadEnabled: true,
-          status: 'missing',
-          entryCount: 0,
-          activeEntryCount: 0,
-          archivedEntryCount: 0,
-          proposalCount: 0,
-          backups: [],
-        };
-      },
-    } as never,
-    workspaceRoot: '/tmp/maka-memory',
-    openPath: async () => '',
-  });
-
-  const projected = (await handlers.get('memory:getState')?.({})) as {
-    status: string;
-    content: string;
-    entries: unknown[];
+    updateRuntimePolicy: async (build: (policy: unknown) => unknown) => {
+      log.push(`policy ${JSON.stringify(build({}))}`);
+      return {};
+    },
   };
+}
 
-  assert.equal(projected.status, 'ok');
-  assert.equal(projected.content, '');
-  assert.deepEqual(projected.entries, []);
-  assert.deepEqual(queries, ['state']);
-});
-
-test('does not project or open remote Runtime Host file paths', async () => {
+function register(log: string[], allowLocalPaths?: boolean) {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
   registerRuntimeHostMemoryIpc({
     ipcMain: {
@@ -125,101 +78,71 @@ test('does not project or open remote Runtime Host file paths', async () => {
         handlers.set(channel, handler as (...args: unknown[]) => unknown);
       },
     },
-    client: {
-      queryRuntimePolicy: async () => ({
-        revision: 1,
-        policy: createDefaultRuntimePolicy(),
-      }),
-      queryMemory: async () => ({
-        kind: 'state',
-        revision: revision('a'),
-        memoryRevision: null,
-        pendingRevision: null,
-        agentReadEnabled: true,
-        status: 'missing',
-        entryCount: 0,
-        activeEntryCount: 0,
-        archivedEntryCount: 0,
-        proposalCount: 0,
-        backups: [
-          {
-            kind: 'save',
-            revision: revision('b'),
-            updatedAt: 1,
-            sizeBytes: 10,
-            entryCount: 0,
-            activeEntryCount: 0,
-            archivedEntryCount: 0,
-            safeMode: false,
-          },
-        ],
-      }),
-    } as never,
-    workspaceRoot: '/client/maka-data',
-    allowLocalPaths: false,
-    openPath: async () => {
-      throw new Error('must not open a Client path');
-    },
+    client: fakeClient(log) as never,
+    ...(allowLocalPaths === undefined ? {} : { allowLocalPaths }),
   });
+  return handlers;
+}
 
-  const projected = (await handlers.get('memory:getState')?.({})) as {
-    path: string;
-    backups: Array<{ path: string }>;
-  };
-  const opened = (await handlers.get('memory:openFile')?.({})) as { ok: boolean; code: string };
-
-  assert.equal(projected.path, '');
-  assert.deepEqual(projected.backups.map(({ path }) => path), ['']);
-  assert.deepEqual(opened, { ok: false, code: 'remote_host_owned' });
+test('lists the files with the folder, and hides the folder for a remote Host', async () => {
+  const log: string[] = [];
+  const local = await register(log).get('memory:list')?.({});
+  assert.deepEqual(local, {
+    enabled: true,
+    incognitoActive: false,
+    directoryPath: '/tmp/root/memory',
+    files: [FILE],
+  });
+  const remote = (await register(log, false).get('memory:list')?.({})) as { directoryPath: string };
+  assert.equal(remote.directoryPath, '');
 });
 
-function revision(value: string): `sha256:${string}` {
-  return `sha256:${value.repeat(64)}`;
-}
+test('reads, writes and deletes pass the version through untouched', async () => {
+  const log: string[] = [];
+  const handlers = register(log);
+  assert.deepEqual(await handlers.get('memory:read')?.({}, '/topics/food.md'), DOCUMENT);
+  assert.equal(await handlers.get('memory:read')?.({}, '/missing.md'), null);
+  assert.deepEqual(
+    await handlers.get('memory:write')?.({}, { path: '/profile.md', content: 'x', ifVersion: 'new' }),
+    { kind: 'written', version: 'fedcba543210', byteLength: 1 },
+  );
+  assert.deepEqual(
+    await handlers.get('memory:write')?.({}, { path: '/profile.md', content: 'x' }),
+    { kind: 'rejected', reason: 'invalid_path', current: null },
+  );
+  assert.deepEqual(
+    await handlers.get('memory:delete')?.({}, { path: '/topics/food.md', ifVersion: 'abcdef012345' }),
+    { kind: 'deleted' },
+  );
+  assert.deepEqual(log, [
+    'query read /topics/food.md',
+    'query read /missing.md',
+    'mutate write /profile.md new',
+    'mutate delete /topics/food.md abcdef012345',
+  ]);
+});
 
-function state(
-  bundleRevision: `sha256:${string}`,
-  memoryRevision: `sha256:${string}`,
-) {
-  return {
-    kind: 'state' as const,
-    revision: bundleRevision,
-    memoryRevision,
-    pendingRevision: null,
-    agentReadEnabled: true,
-    status: 'ok' as const,
-    entryCount: 0,
-    activeEntryCount: 0,
-    archivedEntryCount: 0,
-    proposalCount: 0,
-    backups: [],
-  };
-}
+test('the switch writes the policy and answers with the fresh listing', async () => {
+  const log: string[] = [];
+  const state = (await register(log).get('memory:setEnabled')?.({}, false)) as { enabled: boolean };
+  assert.equal(state.enabled, true);
+  assert.deepEqual(log, ['policy {"kind":"set_memory","value":{"enabled":false}}', 'query list']);
+});
 
-function documentPage(
-  documentRevision: `sha256:${string}`,
-  content: string,
-) {
-  return {
-    kind: 'document_page' as const,
-    document: 'memory' as const,
-    revision: documentRevision,
-    totalBytes: Buffer.byteLength(content),
-    offset: 0,
-    chunkBase64: Buffer.from(content).toString('base64'),
-    nextCursor: null,
-  };
-}
-
-function entriesPage(
-  bundleRevision: `sha256:${string}`,
-  view: 'active' | 'archived',
-) {
-  return {
-    kind: 'entries_page' as const,
-    view,
-    revision: bundleRevision,
-    items: [],
-    nextCursor: null,
-  };
-}
+test('the configuration export reads every file, and the import replaces or creates each', async () => {
+  const log: string[] = [];
+  const client = fakeClient(log) as never;
+  assert.deepEqual(await readRuntimeHostMemoryFiles(client), {
+    '/topics/food.md': '- [stated] drinks tea',
+  });
+  await writeRuntimeHostMemoryFiles(client, {
+    '/topics/food.md': 'replaced',
+    '/people/sam.md': 'created',
+  });
+  assert.deepEqual(log.slice(2), [
+    'query read /topics/food.md',
+    'mutate write /topics/food.md abcdef012345',
+    'query read /people/sam.md',
+    'mutate write /people/sam.md new',
+  ]);
+});

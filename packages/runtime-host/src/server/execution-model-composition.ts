@@ -67,7 +67,7 @@ import {
 } from './oauth-execution-authority.js';
 import type { HostChildAgentBackendCapabilities } from './child-agent-composition.js';
 import type { HostExecutionArtifactServices } from './execution-artifacts.js';
-import type { HostMemoryExtractionCoordinator } from './memory-extraction-coordinator.js';
+import type { HostMemoryPassCoordinator } from './memory-pass-coordinator.js';
 import {
   readDuringBackendCreation,
   resolveExecutionTarget,
@@ -81,7 +81,7 @@ export interface HostAiSdkBackendInput {
   readonly runtimePolicy: HostExecutionRuntimePolicyAuthority;
   readonly oauthCredentials: HostOAuthExecutionAuthority;
   readonly createRunComposer: HostRunComposerFactory;
-  readonly memoryExtraction?: HostMemoryExtractionCoordinator;
+  readonly memoryPass?: HostMemoryPassCoordinator;
   readonly artifacts: HostExecutionArtifactAuthority;
   readonly contextOffload?: InteractiveContextOffloadReader;
   readonly contextOffloadUnavailable?: boolean;
@@ -439,16 +439,8 @@ async function buildHostAiSdkBackend(
         ...(!input.context.tools &&
         !input.context.header.subagentParent &&
         input.context.header.collaborationMode !== 'plan' &&
-        input.memoryExtraction
-          ? {
-              memoryExtraction: input.memoryExtraction.sourceCapabilities(
-                runtimePolicySnapshot.policy.privacy.incognitoActive
-                  ? { allowed: false, reason: 'incognito' }
-                  : runtimePolicySnapshot.policy.memory.enabled
-                    ? { allowed: true }
-                    : { allowed: false, reason: 'disabled' },
-              ),
-            }
+        input.memoryPass
+          ? { memoryPass: input.memoryPass }
           : {}),
         loadHistoryCompactCheckpoint: input.context.loadHistoryCompactCheckpoint,
         summarizeHistoryCompact,
@@ -477,7 +469,14 @@ async function buildHostAiSdkBackend(
               ? { emitSkillCatalogTrace: context.emitSkillCatalogTrace }
               : {}),
           });
-          return { text: resolved.text, sourceRevisions: resolved.sourceRevisions };
+          // Contexts ride with the turn as user-role messages (the memory
+          // snapshot, plugin contexts); dropping them here silently kept them
+          // out of every provider request.
+          return {
+            text: resolved.text,
+            ...(resolved.contexts ? { contexts: resolved.contexts } : {}),
+            sourceRevisions: resolved.sourceRevisions,
+          };
         },
         lookupPricing: pricing,
         recordModelCallAttempt,

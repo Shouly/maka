@@ -29,7 +29,7 @@ export const MODEL_CALL_KINDS = [
   'session_title',
   'session_recap',
   'daily_review',
-  'memory_extraction',
+  'memory_pass',
   'workhub_intent',
   'workhub_recall',
 ] as const;

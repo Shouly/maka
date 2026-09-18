@@ -593,7 +593,7 @@ const CONVERSATION_COPY = {
         newerDescription: '下方还有未加载的较新消息',
         newerAction: '加载较新消息',
       },
-      memory: '记忆', memoryAriaLabel: '本地记忆已启用', memoryTitle: '本地 MEMORY.md 已加入 agent 系统提示。点击进入设置 · 记忆管理。', deepResearch: '深度研究', deepResearchAriaLabel: '深度研究，只读探索', deepResearchTitle: '深度研究任务使用只读探索边界：先阅读和分析，默认不改文件。',
+      memory: '记忆', memoryAriaLabel: '记忆已启用', memoryTitle: '记忆已加入 Copilot 的系统提示。点击进入设置 · 记忆。', deepResearch: '深度研究', deepResearchAriaLabel: '深度研究，只读探索', deepResearchTitle: '深度研究任务使用只读探索边界：先阅读和分析，默认不改文件。',
       deepResearchProgress: {
         ariaLabel: '深度研究实时进度',
         title: '研究进度',
@@ -756,7 +756,7 @@ const CONVERSATION_COPY = {
         newerDescription: '下方還有未載入的較新訊息',
         newerAction: '載入較新訊息',
       },
-      memory: '記憶', memoryAriaLabel: '本地記憶已啟用', memoryTitle: '本地 MEMORY.md 已加入 agent 系統提示。點選進入設定 · 記憶管理。', deepResearch: '深度研究', deepResearchAriaLabel: '深度研究，只讀探索', deepResearchTitle: '深度研究任務使用只讀探索邊界：先閱讀和分析，預設不改檔案。',
+      memory: '記憶', memoryAriaLabel: '記憶已啟用', memoryTitle: '記憶已加入 Copilot 的系統提示。點選進入設定 · 記憶。', deepResearch: '深度研究', deepResearchAriaLabel: '深度研究，只讀探索', deepResearchTitle: '深度研究任務使用只讀探索邊界：先閱讀和分析，預設不改檔案。',
       deepResearchProgress: {
         ariaLabel: '深度研究即時進度',
         title: '研究進度',
@@ -945,7 +945,7 @@ const CONVERSATION_COPY = {
         newerDescription: 'Newer messages below are not loaded.',
         newerAction: 'Load newer messages',
       },
-      memory: 'Memory', memoryAriaLabel: 'Local memory enabled', memoryTitle: 'Local MEMORY.md is included in the agent system prompt. Click to manage it in Settings · Memory.', deepResearch: 'Deep Research', deepResearchAriaLabel: 'Deep Research, read-only exploration', deepResearchTitle: 'Deep Research uses a read-only boundary: inspect and analyze first, without changing files by default.',
+      memory: 'Memory', memoryAriaLabel: 'Memory enabled', memoryTitle: 'Memory is included in the Copilot system prompt. Click to manage it in Settings · Memory.', deepResearch: 'Deep Research', deepResearchAriaLabel: 'Deep Research, read-only exploration', deepResearchTitle: 'Deep Research uses a read-only boundary: inspect and analyze first, without changing files by default.',
       deepResearchProgress: {
         ariaLabel: 'Live Deep Research progress',
         title: 'Research progress',

@@ -18,7 +18,7 @@
  */
 
 import type { UiCatalog, UiLocale } from '@maka/core/ui-locale';
-import type { ConfigCategory } from '@maka/storage/config-transfer';
+import type { ConfigCategory, MemoryImportSkipReason } from '@maka/storage/config-transfer';
 
 export type DataSettingsCopy = {
   categories: Record<ConfigCategory, { label: string; detail: string; sensitive?: boolean }>;
@@ -27,6 +27,7 @@ export type DataSettingsCopy = {
     settings: string;
     credentials(applied: number, skipped: number): string;
     memory: string;
+    memorySkipped: Record<MemoryImportSkipReason, string>;
     empty: string;
   };
   loadFailed: string;
@@ -80,7 +81,7 @@ const SETTINGS_DATA_COPY = {
     categories: {
       connections: { label: '模型连接', detail: '供应商连接与默认模型（不含密钥）' },
       settings: { label: '应用设置', detail: '常规、搜索、机器人、代理等设置' },
-      memory: { label: '本地记忆', detail: '本机 MEMORY.md 的内容' },
+      memory: { label: '记忆', detail: '本机的全部记忆文件' },
       credentials: {
         label: '凭据（API 密钥、令牌）',
         detail: '模型密钥与订阅令牌等敏感信息',
@@ -94,6 +95,11 @@ const SETTINGS_DATA_COPY = {
       credentials: (applied, skipped) =>
         skipped > 0 ? `凭据 ${applied}（跳过 ${skipped}）` : `凭据 ${applied}`,
       memory: '记忆已应用',
+      memorySkipped: {
+        disabled: '记忆已关闭，记忆文件未导入',
+        incognito: '隐身中，记忆文件未导入',
+        failed: '记忆文件导入失败',
+      },
       empty: '文件不含可导入的内容',
     },
     loadFailed: '载入数据目录失败',
@@ -152,7 +158,7 @@ const SETTINGS_DATA_COPY = {
     categories: {
       connections: { label: '模型連線', detail: '供應商連線與預設模型（不含金鑰）' },
       settings: { label: '應用設定', detail: '常規、搜尋、機器人、代理等設定' },
-      memory: { label: '本地記憶', detail: '本機 MEMORY.md 的內容' },
+      memory: { label: '記憶', detail: '本機的全部記憶檔案' },
       credentials: {
         label: '憑據（API 金鑰、權杖）',
         detail: '模型金鑰與訂閱權杖等敏感資訊',
@@ -166,6 +172,11 @@ const SETTINGS_DATA_COPY = {
       credentials: (applied, skipped) =>
         skipped > 0 ? `憑據 ${applied}（跳過 ${skipped}）` : `憑據 ${applied}`,
       memory: '記憶已應用',
+      memorySkipped: {
+        disabled: '記憶已關閉，記憶檔案未匯入',
+        incognito: '隱身中，記憶檔案未匯入',
+        failed: '記憶檔案匯入失敗',
+      },
       empty: '檔案不含可匯入的內容',
     },
     loadFailed: '載入資料目錄失敗',
@@ -230,7 +241,7 @@ const SETTINGS_DATA_COPY = {
         label: 'App settings',
         detail: 'General, search, bot, proxy, and other settings',
       },
-      memory: { label: 'Local memory', detail: 'Contents of the local MEMORY.md file' },
+      memory: { label: 'Memory', detail: 'Every memory file on this machine' },
       credentials: {
         label: 'Credentials (API keys and tokens)',
         detail: 'Sensitive model keys and subscription tokens',
@@ -246,6 +257,11 @@ const SETTINGS_DATA_COPY = {
           ? `Credentials: ${applied} applied (${skipped} skipped)`
           : `Credentials: ${applied} applied`,
       memory: 'Memory applied',
+      memorySkipped: {
+        disabled: 'Memory is off; memory files were not imported',
+        incognito: 'Incognito; memory files were not imported',
+        failed: 'Memory files could not be imported',
+      },
       empty: 'The file contains no importable data',
     },
     loadFailed: 'Failed to load data directory',

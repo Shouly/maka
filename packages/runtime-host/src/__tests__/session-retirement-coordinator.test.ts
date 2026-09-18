@@ -44,7 +44,7 @@ import {
 } from '../server/scheduled-task-coordinator.js';
 import type { ConnectionContext } from '../server/operation-dispatcher.js';
 import { SessionAdmissionGate } from '../server/session-admission-gate.js';
-import { MemoryExtractionSessionLane } from '../server/memory-extraction-session-lane.js';
+import { SessionOperationLane } from '../server/session-operation-lane.js';
 import { HostSessionRetirementCoordinator } from '../server/session-retirement-coordinator.js';
 import { purgeSessionSidecars } from '../server/session-sidecar-purge.js';
 import { waitFor as pollFor } from '@maka/core/test-only/async-primitives';
@@ -1157,7 +1157,7 @@ describe('Host Session retirement coordinator', () => {
     });
   });
 
-  test('waits for an in-flight Memory Extraction before retiring its Session family', async () => {
+  test('waits for an in-flight memory pass before retiring its Session family', async () => {
     await withHarness(async (harness) => {
       let releaseExtraction!: () => void;
       let markExtractionStarted!: () => void;
@@ -1167,7 +1167,7 @@ describe('Host Session retirement coordinator', () => {
       const extractionRelease = new Promise<void>((resolve) => {
         releaseExtraction = resolve;
       });
-      const extraction = harness.memoryExtractionLane.run(harness.rootId, async () => {
+      const extraction = harness.sessionLane.run(harness.rootId, async () => {
         markExtractionStarted();
         await extractionRelease;
       });
@@ -1262,7 +1262,7 @@ async function withHarness(
       scheduledTasks: new Set<string>(),
     };
     const quiescentGraphs = new Set<string>();
-    const memoryExtractionLane = new MemoryExtractionSessionLane();
+    const sessionLane = new SessionOperationLane();
     const admission = new SessionAdmissionGate();
     const harness: RetirementHarness = {
       workspaceRoot: root,
@@ -1275,7 +1275,7 @@ async function withHarness(
       blockers,
       quiescentGraphs,
       admission,
-      memoryExtractionLane,
+      sessionLane,
       failRemoveCommit: false,
       failRemovalPublication: false,
       failArtifactCleanup: false,
@@ -1319,7 +1319,7 @@ async function withHarness(
         },
       },
       admission,
-      memoryExtractionLane,
+      sessionLane,
       root: {
         readRootState: (sessionId) =>
           blockers.root.has(sessionId)
@@ -1464,7 +1464,7 @@ interface RetirementHarness {
   };
   readonly quiescentGraphs: Set<string>;
   readonly admission: SessionAdmissionGate;
-  readonly memoryExtractionLane: MemoryExtractionSessionLane;
+  readonly sessionLane: SessionOperationLane;
   coordinator: HostSessionRetirementCoordinator;
   failRemoveCommit: boolean;
   failRemovalPublication: boolean;

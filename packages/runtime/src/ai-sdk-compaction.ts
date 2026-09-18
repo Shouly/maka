@@ -59,7 +59,6 @@ import {
   matchHistoryCompactCheckpointPrefix,
   projectHistoryCompactCheckpointReplay,
   type HistoryCompactCheckpoint,
-  type HistoryCompactMemoryExtractionBoundary,
   type HistoryCompactProviderState,
 } from './history-compact-checkpoint.js';
 import {
@@ -142,18 +141,6 @@ export interface ProviderImageBudget {
 export interface ProviderRequestOrigin {
   runId: string | undefined;
   imageBudget: ProviderImageBudget;
-}
-
-export interface AutomaticMemoryCompactionDispatch {
-  readonly checkpoint: HistoryCompactCheckpoint;
-  readonly activeTools: readonly string[];
-}
-
-export interface AutomaticMemoryCompactionDecision {
-  /** Frozen into the durable checkpoint before it is recorded. */
-  readonly disposition: 'eligible' | 'policy_denied';
-  /** False for policy denial and transient gate unavailability. */
-  readonly dispatch: boolean;
 }
 
 /** Constructor dependencies for AiSdkCompaction. */
@@ -288,7 +275,6 @@ export class AiSdkCompaction {
 
   public async compactHistory(
     input: Omit<BackendCompactHistoryInput, 'runId'> & { runId: string | undefined },
-    automaticMemoryBoundary?: HistoryCompactMemoryExtractionBoundary,
   ): Promise<AiSdkCompactHistoryResult> {
     const historyCompactAbortController = new AbortController();
     this.historyCompactAbortController = historyCompactAbortController;
@@ -383,7 +369,6 @@ export class AiSdkCompaction {
         ...(policy.historyCompact?.highWaterName !== undefined
           ? { highWaterName: policy.historyCompact.highWaterName }
           : {}),
-        ...(automaticMemoryBoundary ? { memoryExtractionBoundary: automaticMemoryBoundary } : {}),
         ...(previousCheckpoint ? { previousCheckpoint } : {}),
         // The planner projects the covered span to its effective view before
         // summarizing and pins its digest as coverage.effectiveSourceDigest:
@@ -930,8 +915,6 @@ export class AiSdkCompaction {
     providerTools: readonly MakaTool[],
     onDiagnosticPatch: (patch: Partial<ContextBudgetDiagnostic>) => void,
     origin: ProviderRequestOrigin,
-    memoryCompactionDecision?: () => AutomaticMemoryCompactionDecision,
-    onMemoryCompaction?: (input: AutomaticMemoryCompactionDispatch) => void,
     abortSignal?: AbortSignal,
   ): RequestProjectionStage | undefined {
     if (!state) return undefined;
@@ -1015,8 +998,6 @@ export class AiSdkCompaction {
         queue,
         minFlushedSteps: options.stepNumber,
         activeToolsForStep,
-        memoryCompactionDecision,
-        onMemoryCompaction,
         abortSignal,
       });
       if (outcome.decision === 'fail') {
@@ -1062,8 +1043,6 @@ export class AiSdkCompaction {
     queue: AsyncEventQueue<SessionEvent>;
     minFlushedSteps: number;
     activeToolsForStep: readonly string[];
-    memoryCompactionDecision?: () => AutomaticMemoryCompactionDecision;
-    onMemoryCompaction?: (input: AutomaticMemoryCompactionDispatch) => void;
     phase?: 'pre_turn' | 'mid_turn';
     abortSignal?: AbortSignal;
   }): Promise<ActiveRequestCompactionOutcome> {
@@ -1151,7 +1130,6 @@ export class AiSdkCompaction {
         diagnosticReason: 'head_anchor_not_durable',
       };
     }
-    const memoryDecision = input.memoryCompactionDecision?.();
     const plan = await planHistoryCompaction({
       sessionId: this.sessionId,
       phase: input.phase ?? 'mid_turn',
@@ -1169,16 +1147,6 @@ export class AiSdkCompaction {
         ? { highWaterName: compactPolicy.highWaterName }
         : {}),
       ...(state.previousCheckpoint ? { previousCheckpoint: state.previousCheckpoint } : {}),
-      ...(memoryDecision && orderedEvents.at(-1)
-        ? {
-            memoryExtractionBoundary: {
-              runId: orderedEvents.at(-1)!.runId,
-              turnId: orderedEvents.at(-1)!.turnId,
-              runtimeEventId: orderedEvents.at(-1)!.id,
-              disposition: memoryDecision.disposition,
-            },
-          }
-        : {}),
       projectEffectiveCoverage: (covered) => this.foldEffectiveModelHistory(covered),
       summarize: async ({ coveredRuntimeEvents, newlyFoldedRuntimeEvents, previousCheckpoint }) => {
         // Same contract as the standalone path: the planner hands the
@@ -1259,16 +1227,6 @@ export class AiSdkCompaction {
         diagnosticReason: 'write_failed',
       };
     }
-    if (memoryDecision?.dispatch && input.onMemoryCompaction) {
-      try {
-        input.onMemoryCompaction({
-          checkpoint: plan.checkpoint,
-          activeTools: activeToolsForStep,
-        });
-      } catch {
-        // Memory extraction is fail-open and must never perturb Compaction.
-      }
-    }
     state.previousCheckpoint = plan.checkpoint;
     state.projectionCheckpoint = plan.checkpoint;
     return {
@@ -1303,8 +1261,6 @@ export class AiSdkCompaction {
     queue: AsyncEventQueue<SessionEvent>;
     onDiagnosticPatch: (patch: Partial<ContextBudgetDiagnostic>) => void;
     origin: ProviderRequestOrigin;
-    memoryCompactionDecision?: () => AutomaticMemoryCompactionDecision;
-    onMemoryCompaction?: (input: AutomaticMemoryCompactionDispatch) => void;
     abortSignal?: AbortSignal;
   }): Promise<{ messages: ModelMessage[] } | undefined> {
     const state = input.midTurnState;
@@ -1338,8 +1294,6 @@ export class AiSdkCompaction {
       // only for the consumer to drain the durable ledger up to date.
       minFlushedSteps: state.flushedSteps,
       activeToolsForStep: input.activeTools,
-      memoryCompactionDecision: input.memoryCompactionDecision,
-      onMemoryCompaction: input.onMemoryCompaction,
       abortSignal: input.abortSignal,
     });
     if (outcome.decision !== 'compacted') {

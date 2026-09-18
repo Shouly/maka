@@ -143,7 +143,6 @@ export interface RuntimePolicy {
   };
   readonly memory: {
     readonly enabled: boolean;
-    readonly agentReadEnabled: boolean;
   };
   readonly workspaceInstructions: {
     readonly enabled: boolean;
@@ -254,7 +253,7 @@ export function createDefaultRuntimePolicy(): RuntimePolicy {
       autoBypassDomains: ['localhost', '127.0.0.1', '::1', '192.168.*', '10.*', '*.local'],
     },
     personalization: { displayName: '', assistantTone: '' },
-    memory: { enabled: true, agentReadEnabled: false },
+    memory: { enabled: true },
     workspaceInstructions: { enabled: true },
     privacy: { incognitoActive: false },
     chatDefaults: { permissionMode: 'ask' },

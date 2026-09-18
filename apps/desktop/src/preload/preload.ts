@@ -182,7 +182,11 @@ import type {
   ArtifactTextReadResult,
 } from '@maka/core/artifacts';
 import type { CapabilitySnapshotCollection, PermissionSnapshot } from '@maka/core/capabilities';
-import type { LocalMemoryState } from '@maka/core/local-memory';
+import type {
+  MemoryDocumentProjection,
+  MemoryMutateResult,
+} from '@maka/runtime-host/protocol';
+import type { MemoryListState } from '../main/runtime-host-memory-ipc-main.js';
 import type { SubscriptionActionResult } from '@maka/core/oauth-subscription';
 import type { CreateScheduledTaskInput, ScheduledTask, UpdateScheduledTaskInput } from '@maka/core/scheduled-task';
 import type { ProjectRecord } from '@maka/core/project';
@@ -221,7 +225,7 @@ import type { BotStatus, WechatBridgeQrCodeResult } from '@maka/runtime/bots';
 import type { ShellRunPtyDataEvent, ShellRunPtySnapshot } from '@maka/runtime/shell-run-contract';
 import type { GoalState } from '@maka/runtime/goal-state';
 import type { BundledSkillCatalogEntry, ManagedSkillSourceEntry, ManagedSkillUpdatePreview, SkillEntry } from '@maka/ui';
-import type { ConfigCategory } from '@maka/storage/config-transfer';
+import type { ConfigCategory, MemoryImportSkipReason } from '@maka/storage/config-transfer';
 import {
   SENSITIVE_PLACEHOLDER,
   type TestProxyInput,
@@ -3131,37 +3135,26 @@ const makaBridge = {
     },
   },
   memory: {
-    getState(sessionId?: string, host?: DesktopRuntimeHostRef): Promise<LocalMemoryState> {
-      return sessionId
-        ? invokeRuntimeHostForSession('memory:getState', sessionId)
-        : invokeSelectedRuntimeHost(host, 'memory:getState');
+    list(host?: DesktopRuntimeHostRef): Promise<MemoryListState> {
+      return invokeSelectedRuntimeHost(host, 'memory:list');
     },
-    save(content: string, host?: DesktopRuntimeHostRef): Promise<LocalMemoryState> {
-      return invokeSelectedRuntimeHost(host, 'memory:save', content);
+    read(path: string, host?: DesktopRuntimeHostRef): Promise<MemoryDocumentProjection | null> {
+      return invokeSelectedRuntimeHost(host, 'memory:read', path);
     },
-    reset(host?: DesktopRuntimeHostRef): Promise<LocalMemoryState> {
-      return invokeSelectedRuntimeHost(host, 'memory:reset');
+    write(
+      input: { path: string; content: string; ifVersion: string },
+      host?: DesktopRuntimeHostRef,
+    ): Promise<MemoryMutateResult> {
+      return invokeSelectedRuntimeHost(host, 'memory:write', input);
     },
-    restoreLatestBackup(host?: DesktopRuntimeHostRef): Promise<{ ok: true; state: LocalMemoryState } | { ok: false; state: LocalMemoryState; code: string }> {
-      return invokeSelectedRuntimeHost(host, 'memory:restoreLatestBackup');
+    delete(
+      input: { path: string; ifVersion: string },
+      host?: DesktopRuntimeHostRef,
+    ): Promise<MemoryMutateResult> {
+      return invokeSelectedRuntimeHost(host, 'memory:delete', input);
     },
-    restoreBackup(kind: 'save' | 'reset' | 'restore', host?: DesktopRuntimeHostRef): Promise<{ ok: true; state: LocalMemoryState } | { ok: false; state: LocalMemoryState; code: string }> {
-      return invokeSelectedRuntimeHost(host, 'memory:restoreBackup', kind);
-    },
-    setEnabled(enabled: boolean, host?: DesktopRuntimeHostRef): Promise<LocalMemoryState> {
+    setEnabled(enabled: boolean, host?: DesktopRuntimeHostRef): Promise<MemoryListState> {
       return invokeSelectedRuntimeHost(host, 'memory:setEnabled', enabled);
-    },
-    setAgentReadEnabled(enabled: boolean, host?: DesktopRuntimeHostRef): Promise<LocalMemoryState> {
-      return invokeSelectedRuntimeHost(host, 'memory:setAgentReadEnabled', enabled);
-    },
-    openFile(host?: DesktopRuntimeHostRef): Promise<{ ok: true } | { ok: false; code: string }> {
-      return invokeSelectedRuntimeHost(host, 'memory:openFile');
-    },
-    openLatestBackup(host?: DesktopRuntimeHostRef): Promise<{ ok: true } | { ok: false; code: string }> {
-      return invokeSelectedRuntimeHost(host, 'memory:openLatestBackup');
-    },
-    openBackup(kind: 'save' | 'reset' | 'restore', host?: DesktopRuntimeHostRef): Promise<{ ok: true } | { ok: false; code: string }> {
-      return invokeSelectedRuntimeHost(host, 'memory:openBackup', kind);
     },
   },
   attachments: {
@@ -3630,7 +3623,7 @@ const makaBridge = {
             };
             settings?: { applied: boolean };
             credentials?: { applied: number; skipped: number };
-            memory?: { applied: boolean };
+            memory?: { applied: true } | { applied: false; reason: MemoryImportSkipReason };
           };
         }
     > {

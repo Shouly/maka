@@ -36,7 +36,6 @@ import {
   midTurnHeadAnchorEvent,
   projectHistoryCompactCheckpointReplay,
   type HistoryCompactCheckpoint,
-  type HistoryCompactMemoryExtractionBoundary,
   type HistoryCompactProviderState,
 } from './history-compact-checkpoint.js';
 
@@ -193,8 +192,6 @@ export interface PlanHistoryCompactionInput {
    */
   invocations?: readonly RuntimeInvocationRecord[];
   acceptedRoute?: { modelId: string; connectionId?: string };
-  /** Present only when this automatic Compaction should create a Memory task. */
-  memoryExtractionBoundary?: HistoryCompactMemoryExtractionBoundary;
   /**
    * Projects the covered span to its effective (transition-folded) view. When
    * present, the summary is written from that view and its digest is pinned as
@@ -421,9 +418,6 @@ export async function planHistoryCompaction(
       ...(typeof compacted === 'string' ? { summary: compacted } : { providerState: compacted }),
       ...(phase === 'mid_turn'
         ? { phase: 'mid_turn' as const, headAnchor: input.headAnchor! }
-        : {}),
-      ...(input.memoryExtractionBoundary
-        ? { memoryExtractionBoundary: input.memoryExtractionBoundary }
         : {}),
       ...(input.highWaterName !== undefined ? { highWaterName: input.highWaterName } : {}),
       ...(input.highWaterSeq !== undefined ? { highWaterSeq: input.highWaterSeq } : {}),

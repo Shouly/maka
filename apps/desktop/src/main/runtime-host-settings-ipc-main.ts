@@ -284,7 +284,7 @@ async function loadRuntimeHostSettingsWithoutLane(
       ...local.personalization,
       ...policy.personalization,
     },
-    localMemory: policy.memory,
+    memory: policy.memory,
     workspaceInstructions: policy.workspaceInstructions,
     privacy: policy.privacy,
     chatDefaults: policy.chatDefaults,
@@ -368,8 +368,8 @@ async function applyHostPatchWithoutLane(
       },
     }));
   }
-  if (patch.localMemory) {
-    await mergePolicy(client, "memory", patch.localMemory, "set_memory");
+  if (patch.memory) {
+    await mergePolicy(client, "memory", patch.memory, "set_memory");
   }
   if (patch.workspaceInstructions) {
     await mergePolicy(

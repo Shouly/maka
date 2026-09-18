@@ -57,7 +57,7 @@ import type { SessionContinuityCoordinator } from './session-continuity-coordina
 import type { RootTurnCoordinator } from './root-turn-coordinator.js';
 import type { HostRuntimeResourceCoordinator } from './runtime-resource-coordinator.js';
 import { purgeSessionSidecars } from './session-sidecar-purge.js';
-import type { MemoryExtractionSessionLane } from './memory-extraction-session-lane.js';
+import type { SessionOperationLane } from './session-operation-lane.js';
 
 const FAMILY_STABILIZATION_ATTEMPTS = 4;
 
@@ -129,7 +129,7 @@ export interface HostSessionRetirementCoordinatorOptions {
   readonly purgeAgentGraphState: (sessionId: string) => Promise<void>;
   readonly worktrees?: Pick<SubagentWorktreeExecutor, 'retire'>;
   readonly requestDrain: () => void;
-  readonly memoryExtractionLane: MemoryExtractionSessionLane;
+  readonly sessionLane: SessionOperationLane;
 }
 
 interface StableFamily {
@@ -201,7 +201,7 @@ export class HostSessionRetirementCoordinator {
   readonly #purgeAgentGraphState: HostSessionRetirementCoordinatorOptions['purgeAgentGraphState'];
   readonly #worktrees: HostSessionRetirementCoordinatorOptions['worktrees'];
   readonly #requestDrain: () => void;
-  readonly #memoryExtractionLane: MemoryExtractionSessionLane;
+  readonly #sessionLane: SessionOperationLane;
   readonly #cleanupQueue = new Set<string>();
   readonly #retiredWorktrees = new Map<string, SubagentWorkspaceBinding>();
   #cleanupWorker: Promise<void> | null = null;
@@ -229,7 +229,7 @@ export class HostSessionRetirementCoordinator {
     this.#purgeAgentGraphState = options.purgeAgentGraphState;
     this.#worktrees = options.worktrees;
     this.#requestDrain = options.requestDrain;
-    this.#memoryExtractionLane = options.memoryExtractionLane;
+    this.#sessionLane = options.sessionLane;
   }
 
   async recover(): Promise<void> {
@@ -435,7 +435,7 @@ export class HostSessionRetirementCoordinator {
         ...planIds.archiveGuardSessionIds,
       ].sort();
       try {
-        return await this.#memoryExtractionLane.runMany(allSessionIds, () =>
+        return await this.#sessionLane.runMany(allSessionIds, () =>
           this.#admission.runMany(allSessionIds, async (admission) => {
             const stableIds = await this.#readRemovalPlanSessionIds(sessionId);
             if (
@@ -482,7 +482,7 @@ export class HostSessionRetirementCoordinator {
     let sessionIds = await this.#readFamilySessionIds(sessionId);
     for (let attempt = 0; attempt < FAMILY_STABILIZATION_ATTEMPTS; attempt += 1) {
       try {
-        return await this.#memoryExtractionLane.runMany(sessionIds, () =>
+        return await this.#sessionLane.runMany(sessionIds, () =>
           this.#admission.runMany(sessionIds, async (admission) => {
             const stableIds = await this.#readFamilySessionIds(sessionId);
             if (!sameIds(sessionIds, stableIds)) throw new RetryFamilyResolution(stableIds);

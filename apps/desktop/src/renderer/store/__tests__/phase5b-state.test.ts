@@ -50,7 +50,6 @@ import {
   nextSubagentDraftForName,
   subagentPresetAvailability,
 } from '../../lib/ported/subagent-preset-presentation.js';
-import { localMemoryPromptBlockedReason } from '../../lib/ported/memory-settings-presentation.js';
 import {
   createEmptyMcpDraft,
   mcpConfigFromDraft,
@@ -342,25 +341,6 @@ test('the preset id follows the name until the user takes it over', () => {
     new Set<string>(),
   );
   assert.equal(taken.id, 'my-own-id');
-});
-
-// ── memory ─────────────────────────────────────────────────────────────────
-
-test('memory names the first reason the model will not be given the file', () => {
-  const state = { enabled: true, status: 'ok' as const, agentReadEnabled: true };
-  assert.equal(localMemoryPromptBlockedReason(state), null);
-  assert.equal(localMemoryPromptBlockedReason({ ...state, enabled: false }), 'disabled');
-  // The master switch outranks everything, including a file that is fine.
-  assert.equal(
-    localMemoryPromptBlockedReason({ ...state, enabled: false, status: 'incognito_blocked' }),
-    'disabled',
-  );
-  assert.equal(
-    localMemoryPromptBlockedReason({ ...state, status: 'incognito_blocked' }),
-    'incognito',
-  );
-  assert.equal(localMemoryPromptBlockedReason({ ...state, status: 'safe_mode' }), 'safeMode');
-  assert.equal(localMemoryPromptBlockedReason({ ...state, agentReadEnabled: false }), 'agentRead');
 });
 
 // ── MCP ────────────────────────────────────────────────────────────────────

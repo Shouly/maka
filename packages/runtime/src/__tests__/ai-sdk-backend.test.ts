@@ -62,6 +62,7 @@ import {
   type RunTraceEvent,
 } from '../ai-sdk-backend.js';
 import type { DurableSessionEventSink, MakaTool, ToolRuntime } from '../tool-runtime.js';
+import type { MemoryPassTurn } from '../memory-pass.js';
 import { TOOL_SEARCH_NAME, TOOL_SEARCH_PROVIDER_NAME } from '../tool-availability.js';
 import { buildNativeWebSearchTool } from '../native-web-search-tool.js';
 import { canonicalizeToolSet } from '../request-shape.js';
@@ -94,7 +95,6 @@ import {
   readExternalExecutionBoundary,
   testToolResultArchive,
 } from './execution-boundary-test-helpers.js';
-import type { MemoryExtractionSourceSnapshot } from '../memory-extraction.js';
 import type { OpenAiResponsesSemanticBaseline } from '../openai-responses-continuation.js';
 import type { OpenAiResponsesTransportState } from '../openai-responses-websocket.js';
 import { getAIModel } from '../model-factory.js';
@@ -557,43 +557,10 @@ describe('AiSdkBackend ApplyPatch routing', () => {
   });
 });
 
-/** Deferred memory triggers need one ToolSearch step before the model may call them. */
-function memorySearchChunks(searchToolName: string): LanguageModelV4StreamPart[] {
-  return [
-    { type: 'stream-start', warnings: [] },
-    {
-      type: 'tool-call',
-      toolCallId: 'memory-search',
-      toolName: searchToolName,
-      input: JSON.stringify({ query: 'memory' }),
-    },
-    {
-      type: 'finish',
-      finishReason: { unified: 'tool-calls', raw: 'tool_calls' },
-      usage: emptyUsage(),
-    },
-  ];
-}
-
-function memoryFinishTextChunks(delta: string): LanguageModelV4StreamPart[] {
-  return [
-    { type: 'stream-start', warnings: [] },
-    { type: 'text-start', id: 'text-1' },
-    { type: 'text-delta', id: 'text-1', delta },
-    { type: 'text-end', id: 'text-1' },
-    {
-      type: 'finish',
-      finishReason: { unified: 'stop', raw: 'stop' },
-      usage: emptyUsage(),
-    },
-  ];
-}
-
-describe('AiSdkBackend Memory Extraction triggers', () => {
+describe('AiSdkBackend dynamic system prompt failure', () => {
   test('terminates cleanly when the dynamic system prompt rejects before Compaction', async () => {
     const model = completionModel();
     const recorded: HistoryCompactCheckpoint[] = [];
-    let dispatches = 0;
     const backend = createBackend({
       connection: connection(),
       modelId: 'mock-model-id',
@@ -610,14 +577,6 @@ describe('AiSdkBackend Memory Extraction triggers', () => {
       recordHistoryCompactCheckpoint: (checkpoint) => {
         recorded.push(checkpoint);
       },
-      memoryExtraction: {
-        gate: async () => ({ allowed: true }),
-        automaticGate: () => ({ allowed: true }),
-        remember: async () => ({ status: 'unavailable', requestedItems: [] }),
-        extract: () => {
-          dispatches += 1;
-        },
-      },
     });
 
     const events: SessionEvent[] = [];
@@ -633,7 +592,6 @@ describe('AiSdkBackend Memory Extraction triggers', () => {
 
     assert.equal(model.doStreamCalls.length, 0);
     assert.equal(recorded.length, 0);
-    assert.equal(dispatches, 0);
     assert.equal(
       events.some((event) => event.type === 'error'),
       true,
@@ -642,318 +600,6 @@ describe('AiSdkBackend Memory Extraction triggers', () => {
       events.some((event) => event.type === 'complete' && event.stopReason === 'error'),
       true,
     );
-  });
-
-  test('exposes explicitly unsupported Memory triggers on the native OpenAI Responses lane', async () => {
-    let modelCalls = 0;
-    let memoryCalled = false;
-    const model = new MockLanguageModelV4({
-      doStream: async () => {
-        modelCalls += 1;
-        return {
-          stream: simulateReadableStream({
-            chunks: (modelCalls === 1
-              ? memorySearchChunks('CopilotToolSearch')
-              : [
-                  { type: 'stream-start', warnings: [] },
-                  {
-                    type: 'finish',
-                    finishReason: { unified: 'stop', raw: 'stop' },
-                    usage: emptyUsage(),
-                  },
-                ]) as LanguageModelV4StreamPart[],
-            initialDelayInMs: null,
-            chunkDelayInMs: null,
-          }),
-        };
-      },
-    });
-    const durable = durableTurnHarness('turn-1', 'hello');
-    const backend = createBackend({
-      connection: { ...connection(), providerType: 'openai' },
-      modelId: 'gpt-5.4',
-      modelFactory: () => model,
-      tools: [],
-      toolAvailability: {},
-      loadTurnRuntimeEvents: durable.loadTurnRuntimeEvents,
-      memoryExtraction: {
-        gate: async () => ({ allowed: true }),
-        remember: async () => {
-          memoryCalled = true;
-          return { status: 'unavailable', requestedItems: [] };
-        },
-        extract: () => {
-          memoryCalled = true;
-        },
-      },
-    });
-
-    await drainDurably(
-      backend.send(durable.input({ runId: 'run-1', invocationId: 'invocation-1' })),
-      durable,
-    );
-
-    // This wire defers natively, so availability is no longer "was it sent".
-    // Every schema rides every request — that is what keeps the tool block, and
-    // the cached prefix in front of it, from moving when a search lands. What
-    // says a trigger is out of reach is `defer_loading` on its entry.
-    const deferLoadingOf = (tool: unknown): unknown =>
-      (tool as { providerOptions?: { openai?: { deferLoading?: unknown } } }).providerOptions
-        ?.openai?.deferLoading;
-    const stepZero = model.doStreamCalls[0]?.tools ?? [];
-    const deferredAt = (index: number, name: string) => {
-      const tool = (model.doStreamCalls[index]?.tools ?? []).find(
-        (candidate) => candidate.name === name,
-      );
-      assert.ok(tool, `${name} must ride the wire at step ${index}`);
-      return deferLoadingOf(tool) === true;
-    };
-    assert.equal(deferredAt(0, 'MemoryRemember'), true);
-    assert.equal(deferredAt(0, 'MemoryExtract'), true);
-    // The connector is OpenAI's own search tool here, so it keeps Maka's name
-    // rather than the alias a plain function would need, and it is never
-    // deferred — a deferred tool with nothing to point at it is a 400.
-    const connector = stepZero.find((tool) => tool.name === TOOL_SEARCH_NAME);
-    assert.ok(connector, 'the search connector must be declared');
-    assert.notEqual(deferLoadingOf(connector), true);
-    assert.equal(
-      stepZero.some((tool) => tool.name === TOOL_SEARCH_PROVIDER_NAME),
-      false,
-      'the alias belongs to a plain function, not to the provider tool itself',
-    );
-    // The gate, not the wire, is what kept the trigger from running.
-    assert.equal(memoryCalled, false);
-  });
-
-  test('runs MemoryRemember synchronously and returns the persisted requested Item to the next step', async () => {
-    let modelCalls = 0;
-    let snapshot: MemoryExtractionSourceSnapshot | undefined;
-    const model = new MockLanguageModelV4({
-      doStream: async () => {
-        modelCalls += 1;
-        return {
-          stream: simulateReadableStream({
-            chunks: (modelCalls === 1
-              ? memorySearchChunks(TOOL_SEARCH_NAME)
-              : modelCalls === 2
-                ? [
-                    { type: 'stream-start', warnings: [] },
-                    {
-                      type: 'tool-call',
-                      toolCallId: 'remember-call',
-                      toolName: 'MemoryRemember',
-                      input: '{}',
-                    },
-                    {
-                      type: 'finish',
-                      finishReason: { unified: 'tool-calls', raw: 'tool_calls' },
-                      usage: emptyUsage(),
-                    },
-                  ]
-                : memoryFinishTextChunks('Remembered.')) as LanguageModelV4StreamPart[],
-            initialDelayInMs: null,
-            chunkDelayInMs: null,
-          }),
-        };
-      },
-    });
-    const durable = durableTurnHarness('turn-memory', 'Remember that I prefer concise Chinese.');
-    const backend = createBackend({
-      connection: connection(),
-      modelId: 'mock-model-id',
-      modelFactory: () => model,
-      tools: [],
-      toolAvailability: {},
-      loadTurnRuntimeEvents: durable.loadTurnRuntimeEvents,
-      memoryExtraction: {
-        gate: async () => ({ allowed: true }),
-        remember: async (value) => {
-          snapshot = value;
-          return {
-            status: 'remembered',
-            requestedItems: [{ itemId: 'memory-1', content: 'User prefers concise Chinese.' }],
-          };
-        },
-        extract: () => {},
-      },
-    });
-
-    await drainDurably(
-      backend.send(durable.input({ runId: 'run-1', invocationId: 'invocation-1' })),
-      durable,
-    );
-
-    assert.equal(snapshot?.trigger, 'remember');
-    assert.equal(snapshot?.toolCallId, 'remember-call');
-    const sourceUserEvent = durable.ledger.find(
-      (event) => event.role === 'user' && event.content?.kind === 'text',
-    );
-    assert.ok(sourceUserEvent);
-    assert.deepEqual(snapshot?.sourceEventMessagePositions?.[sourceUserEvent.id], [0]);
-    assert.match(JSON.stringify(model.doStreamCalls[2]?.prompt), /User prefers concise Chinese/);
-  });
-
-  test('keeps the complete frozen provider context while evidence authority remains user-only', async () => {
-    let modelCalls = 0;
-    let snapshot: MemoryExtractionSourceSnapshot | undefined;
-    const model = new MockLanguageModelV4({
-      doStream: async () => {
-        modelCalls += 1;
-        const chunks: LanguageModelV4StreamPart[] =
-          modelCalls === 1
-            ? [
-                { type: 'stream-start', warnings: [] },
-                {
-                  type: 'tool-call',
-                  toolCallId: 'read-call',
-                  toolName: 'Read',
-                  input: JSON.stringify({ path: 'volatile.json' }),
-                },
-                {
-                  type: 'finish',
-                  finishReason: { unified: 'tool-calls', raw: 'tool_calls' },
-                  usage: emptyUsage(),
-                },
-              ]
-            : modelCalls === 2
-              ? memorySearchChunks(TOOL_SEARCH_NAME)
-              : modelCalls === 3
-                ? [
-                    { type: 'stream-start', warnings: [] },
-                    {
-                      type: 'tool-call',
-                      toolCallId: 'remember-call',
-                      toolName: 'MemoryRemember',
-                      input: '{}',
-                    },
-                    {
-                      type: 'finish',
-                      finishReason: { unified: 'tool-calls', raw: 'tool_calls' },
-                      usage: emptyUsage(),
-                    },
-                  ]
-                : memoryFinishTextChunks('Remembered.');
-        return {
-          stream: simulateReadableStream({
-            chunks,
-            initialDelayInMs: null,
-            chunkDelayInMs: null,
-          }),
-        };
-      },
-    });
-    const durable = durableTurnHarness('turn-memory-tool', 'Remember only what I explicitly said.');
-    const backend = createBackend({
-      connection: connection(),
-      modelId: 'mock-model-id',
-      modelFactory: () => model,
-      tools: [
-        {
-          name: 'Read',
-          description: 'read volatile data',
-          parameters: z.object({ path: z.string() }),
-          impl: async () => ({ value: 'TOOL-ONLY-SECRET' }),
-        },
-      ],
-      toolAvailability: {},
-      loadTurnRuntimeEvents: durable.loadTurnRuntimeEvents,
-      memoryExtraction: {
-        gate: async () => ({ allowed: true }),
-        remember: async (value) => {
-          snapshot = value;
-          return { status: 'not_applicable', requestedItems: [] };
-        },
-        extract: () => {},
-      },
-    });
-
-    await drainDurably(
-      backend.send(durable.input({ runId: 'run-1', invocationId: 'invocation-1' })),
-      durable,
-    );
-
-    assert.ok(snapshot);
-    const messagesJson = JSON.stringify(snapshot.sourceMessages);
-    assert.match(messagesJson, /TOOL-ONLY-SECRET/);
-    assert.match(messagesJson, /read-call/);
-    assert.match(messagesJson, /volatile\.json/);
-    assert.ok(snapshot.sourceMessages.some((message) => message.role === 'assistant'));
-    assert.ok(snapshot.sourceMessages.some((message) => message.role === 'tool'));
-    const sourceUserEvent = durable.ledger.find(
-      (event) => event.role === 'user' && event.content?.kind === 'text',
-    );
-    assert.ok(sourceUserEvent);
-    assert.deepEqual(snapshot.sourceEventMessagePositions?.[sourceUserEvent.id], [0]);
-    assert.ok(snapshot.sourceTools.Read, 'Tool schemas remain available for provider-prefix reuse');
-  });
-
-  test('dispatches MemoryExtract only after the terminal Event is durably consumed', async () => {
-    let modelCalls = 0;
-    let extractionSnapshot: MemoryExtractionSourceSnapshot | undefined;
-    const model = new MockLanguageModelV4({
-      doStream: async () => {
-        modelCalls += 1;
-        return {
-          stream: simulateReadableStream({
-            chunks: (modelCalls === 1
-              ? memorySearchChunks(TOOL_SEARCH_NAME)
-              : modelCalls === 2
-                ? [
-                    { type: 'stream-start', warnings: [] },
-                    {
-                      type: 'tool-call',
-                      toolCallId: 'extract-call',
-                      toolName: 'MemoryExtract',
-                      input: '{}',
-                    },
-                    {
-                      type: 'finish',
-                      finishReason: { unified: 'tool-calls', raw: 'tool_calls' },
-                      usage: emptyUsage(),
-                    },
-                  ]
-                : memoryFinishTextChunks('Done.')) as LanguageModelV4StreamPart[],
-            initialDelayInMs: null,
-            chunkDelayInMs: null,
-          }),
-        };
-      },
-    });
-    const durable = durableTurnHarness('turn-memory', 'This is durable project context.');
-    const backend = createBackend({
-      connection: connection(),
-      modelId: 'mock-model-id',
-      modelFactory: () => model,
-      tools: [],
-      toolAvailability: {},
-      loadTurnRuntimeEvents: durable.loadTurnRuntimeEvents,
-      memoryExtraction: {
-        gate: async () => ({ allowed: true }),
-        remember: async () => ({ status: 'unavailable', requestedItems: [] }),
-        extract: (snapshot) => {
-          extractionSnapshot = snapshot;
-        },
-      },
-    });
-
-    await drainDurably(
-      backend.send(durable.input({ runId: 'run-1', invocationId: 'invocation-1' })),
-      durable,
-    );
-    await new Promise<void>((resolve) => setImmediate(resolve));
-
-    assert.equal(modelCalls, 3);
-    assert.ok(
-      durable.ledger.some(
-        (event) =>
-          event.content?.kind === 'function_response' &&
-          event.content.name === 'MemoryExtract' &&
-          JSON.stringify(event.content.result).includes('accepted'),
-      ),
-    );
-    assert.equal(extractionSnapshot?.trigger, 'extract');
-    assert.ok(extractionSnapshot?.terminalEventId);
-    assert.ok(durable.ledger.some(({ id }) => id === extractionSnapshot?.terminalEventId));
   });
 });
 
@@ -4620,7 +4266,6 @@ describe('AiSdkBackend model history', () => {
 
   test('manual compactHistory writes a V2 checkpoint without the legacy artifact writer', async () => {
     const recorded: HistoryCompactCheckpoint[] = [];
-    let memoryDispatches = 0;
     const backend = createBackend({
       connection: connection(),
       modelId: 'mock-model-id',
@@ -4633,13 +4278,6 @@ describe('AiSdkBackend model history', () => {
       summarizeHistoryCompact: async () => structuredSummary('MANUAL_V2_HISTORY_COMPACT_SENTINEL'),
       recordHistoryCompactCheckpoint: (checkpoint) => {
         recorded.push(checkpoint);
-      },
-      memoryExtraction: {
-        gate: async () => ({ allowed: true }),
-        remember: async () => ({ status: 'unavailable', requestedItems: [] }),
-        extract: () => {
-          memoryDispatches += 1;
-        },
       },
     });
 
@@ -4677,8 +4315,6 @@ describe('AiSdkBackend model history', () => {
       structuredSummary('MANUAL_V2_HISTORY_COMPACT_SENTINEL'),
     );
     assert.deepEqual(recorded[0]?.coverage.eventCount, 3);
-    assert.equal(recorded[0]?.memoryExtractionBoundary, undefined);
-    assert.equal(memoryDispatches, 0);
     assert.equal(result.outcome.kind, 'compacted');
     assert.equal(result.contextBudget?.compactionDecisions?.[0]?.decision, 'replaced');
   });
@@ -16103,6 +15739,87 @@ function completionModel(): MockLanguageModelV4 {
     },
   });
 }
+
+describe('AiSdkBackend background memory pass', () => {
+  test('hands the pass the whole turn: text before a tool call and the closing answer', async () => {
+    const durable = durableTurnHarness('turn-memory', 'what should I drink?');
+    const handed: MemoryPassTurn[] = [];
+    let calls = 0;
+    const model = new MockLanguageModelV4({
+      doStream: async () => {
+        calls += 1;
+        const chunks: LanguageModelV4StreamPart[] =
+          calls === 1
+            ? [
+                { type: 'stream-start', warnings: [] },
+                { type: 'text-start', id: 'lead' },
+                { type: 'text-delta', id: 'lead', delta: 'Let me check the cupboard.' },
+                { type: 'text-end', id: 'lead' },
+                {
+                  type: 'tool-call',
+                  toolCallId: 'cupboard-1',
+                  toolName: 'cupboard',
+                  input: JSON.stringify({}),
+                },
+                {
+                  type: 'finish',
+                  finishReason: { unified: 'tool-calls', raw: 'tool_calls' },
+                  usage: emptyUsage(),
+                },
+              ]
+            : [
+                { type: 'stream-start', warnings: [] },
+                { type: 'text-start', id: 'answer' },
+                { type: 'text-delta', id: 'answer', delta: 'Tea it is.' },
+                { type: 'text-end', id: 'answer' },
+                {
+                  type: 'finish',
+                  finishReason: { unified: 'stop', raw: 'stop' },
+                  usage: emptyUsage(),
+                },
+              ];
+        return {
+          stream: simulateReadableStream({ chunks, initialDelayInMs: null, chunkDelayInMs: null }),
+        };
+      },
+    });
+    const backend = createBackend({
+      connection: connection(),
+      modelId: 'mock-model-id',
+      modelFactory: () => model,
+      tools: [
+        {
+          name: 'cupboard',
+          description: 'what is in the cupboard',
+          parameters: z.object({}),
+          impl: async () => ({ tea: true }),
+        },
+      ],
+      loadTurnRuntimeEvents: durable.loadTurnRuntimeEvents,
+      memoryPass: {
+        turnCompleted: (turn) => {
+          handed.push(turn);
+        },
+      },
+    });
+
+    await drainDurably(
+      backend.send(durable.input({ runId: 'run-1', invocationId: 'invocation-1' })),
+      durable,
+    );
+    await waitFor(() => handed.length === 1);
+
+    assert.equal(calls, 2);
+    assert.deepEqual(handed[0], {
+      sessionId: 'session-1',
+      runId: 'run-1',
+      turnId: 'turn-memory',
+      userText: 'what should I drink?',
+      assistantText: 'Let me check the cupboard.\n\nTea it is.',
+      wroteMemory: false,
+    });
+  });
+});
 
 function emptyUsage() {
   return {

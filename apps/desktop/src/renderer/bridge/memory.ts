@@ -19,55 +19,45 @@
 
 // The `memory` namespace of the preload bridge, wrapped.
 
-import type { LocalMemoryState } from '@maka/core/local-memory';
+import type { MemoryDocumentProjection, MemoryMutateResult } from '@maka/runtime-host/protocol';
+import type { MemoryListState } from '../../main/runtime-host-memory-ipc-main.js';
 import type { DesktopRuntimeHostRef, MakaBridge } from '../../preload/bridge-contract.js';
 import { requireNamespace } from './bridge.js';
 
 type Memory = MakaBridge['memory'];
 
-export type { LocalMemoryState };
-export type MemoryRestoreResult = Awaited<ReturnType<Memory['restoreLatestBackup']>>;
+export type { MemoryDocumentProjection, MemoryListState, MemoryMutateResult };
 
 const memory = (): Memory => requireNamespace('memory');
 
-export function getMemoryState(
-  sessionId?: string,
-  host?: DesktopRuntimeHostRef,
-): Promise<LocalMemoryState> {
-  return memory().getState(sessionId, host);
+export function listMemory(host?: DesktopRuntimeHostRef): Promise<MemoryListState> {
+  return memory().list(host);
 }
 
-export function saveMemory(
-  content: string,
+export function readMemoryFile(
+  path: string,
   host?: DesktopRuntimeHostRef,
-): Promise<LocalMemoryState> {
-  return memory().save(content, host);
+): Promise<MemoryDocumentProjection | null> {
+  return memory().read(path, host);
 }
 
-export function resetMemory(host?: DesktopRuntimeHostRef): Promise<LocalMemoryState> {
-  return memory().reset(host);
+export function writeMemoryFile(
+  input: { path: string; content: string; ifVersion: string },
+  host?: DesktopRuntimeHostRef,
+): Promise<MemoryMutateResult> {
+  return memory().write(input, host);
 }
 
-export function restoreLatestMemoryBackup(
+export function deleteMemoryFile(
+  input: { path: string; ifVersion: string },
   host?: DesktopRuntimeHostRef,
-): Promise<MemoryRestoreResult> {
-  return memory().restoreLatestBackup(host);
+): Promise<MemoryMutateResult> {
+  return memory().delete(input, host);
 }
 
 export function setMemoryEnabled(
   enabled: boolean,
   host?: DesktopRuntimeHostRef,
-): Promise<LocalMemoryState> {
+): Promise<MemoryListState> {
   return memory().setEnabled(enabled, host);
-}
-
-export function setMemoryAgentReadEnabled(
-  enabled: boolean,
-  host?: DesktopRuntimeHostRef,
-): Promise<LocalMemoryState> {
-  return memory().setAgentReadEnabled(enabled, host);
-}
-
-export function openMemoryFile(host?: DesktopRuntimeHostRef): ReturnType<Memory['openFile']> {
-  return memory().openFile(host);
 }

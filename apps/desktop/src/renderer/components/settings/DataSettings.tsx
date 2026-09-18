@@ -29,7 +29,11 @@
 // rather than one "clear local data" button.
 
 import { useState } from 'react';
-import { CONFIG_CATEGORIES, type ConfigCategory } from '@maka/storage/config-transfer';
+import {
+  CONFIG_CATEGORIES,
+  type ConfigCategory,
+  type MemoryImportSkipReason,
+} from '@maka/storage/config-transfer';
 import { clearGlobalInputHistory, useUiLocale } from '@maka/ui';
 import { Button } from '../ui/button.js';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.js';
@@ -291,7 +295,7 @@ function summarizeImport(
     connections?: { created: number; overwritten: number; skipped: number };
     settings?: { applied: boolean };
     credentials?: { applied: number; skipped: number };
-    memory?: { applied: boolean };
+    memory?: { applied: true } | { applied: false; reason: MemoryImportSkipReason };
   },
   copy: ReturnType<typeof getDataSettingsCopy>,
 ): string {
@@ -310,5 +314,6 @@ function summarizeImport(
       copy.importSummary.credentials(result.credentials.applied, result.credentials.skipped),
     );
   if (result.memory?.applied === true) parts.push(copy.importSummary.memory);
+  else if (result.memory) parts.push(copy.importSummary.memorySkipped[result.memory.reason]);
   return parts.length > 0 ? parts.join(' · ') : copy.importSummary.empty;
 }

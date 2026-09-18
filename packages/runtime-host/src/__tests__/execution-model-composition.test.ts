@@ -97,7 +97,7 @@ import { createHostChildAgentToolComposition } from '../server/child-agent-compo
 import {
   createHostDailyReviewModel,
   createHostGoalEvaluator,
-  createHostMemoryExtractionModel,
+  createHostMemoryPassModel,
   createHostSessionEffectModel,
   createHostWorkHubRoutingModel,
 } from '../server/execution-model-authority.js';
@@ -2691,7 +2691,7 @@ test('production Host executes a canonical ai-sdk Session against a real provide
       expectedRevision: policySnapshot.revision,
       operation: {
         kind: 'set_memory',
-        value: { enabled: true, agentReadEnabled: true },
+        value: { enabled: true },
       },
     });
     assert.equal(memoryEnabled.kind, 'committed');
@@ -2733,27 +2733,27 @@ test('production Host executes a canonical ai-sdk Session against a real provide
       { skillHomeDirectory: home },
     );
     await composition.recover();
-    const memoryState = await composition.handlers['memory.query'](
-      { kind: 'state' },
-      connectionContext,
-    );
-    assert.equal(memoryState.ok, true);
-    if (!memoryState.ok) return;
-    assert.equal(memoryState.result.kind, 'state');
-    if (memoryState.result.kind !== 'state') return;
     const remembered = await composition.handlers['memory.mutate'](
       {
-        kind: 'remember',
-        expectedRevision: memoryState.result.revision,
-        title: 'Hosted execution preference',
-        content: 'HOSTED_MEMORY_SENTINEL',
-        scope: { kind: 'workspace' },
+        kind: 'write',
+        path: '/preferences.md',
+        content: [
+          '---',
+          'name: preferences',
+          'description: how they want Copilot to behave',
+          'sources: [chat]',
+          '---',
+          '',
+          '- [stated] HOSTED_MEMORY_SENTINEL',
+          '',
+        ].join('\n'),
+        ifVersion: 'new',
       },
       connectionContext,
     );
     assert.equal(remembered.ok, true);
     if (!remembered.ok) return;
-    assert.equal(remembered.result.kind, 'committed');
+    assert.equal(remembered.result.kind, 'written');
 
     const turnIds: string[] = [];
     // Cross the explicitly declared Maka window without making the text-only
@@ -2788,11 +2788,8 @@ test('production Host executes a canonical ai-sdk Session against a real provide
         (invocation) => invocation.runId,
       ),
     );
-    const hostedMemoryBoundary = hostedCheckpoints.find(
-      (checkpoint) => checkpoint.memoryExtractionBoundary,
-    )?.memoryExtractionBoundary;
-    assert.equal(hostedMemoryBoundary?.disposition, 'eligible');
-    await waitForAutomaticMemoryRequestsToSettle(provider.requests);
+    assert.ok(hostedCheckpoints.length >= 1);
+    await waitForMemoryPassRequestsToSettle(provider.requests);
 
     const mainRequests = provider.requests.filter((request) => request.body.stream === true);
     const compactRequests = provider.requests.filter(
@@ -2801,10 +2798,12 @@ test('production Host executes a canonical ai-sdk Session against a real provide
         /context summarization assistant/.test(JSON.stringify(request.body)),
     );
     const memoryRequests = provider.requests.filter((request) =>
-      /Perform the first stage of long-term-memory extraction/.test(JSON.stringify(request.body)),
+      /background memory pass for Copilot/.test(JSON.stringify(request.body)),
     );
     assert.equal(mainRequests.length, 5);
     assert.ok(compactRequests.length >= 1);
+    // The pass runs after every finished turn, tool-free, and never sees the
+    // workspace instructions — only the exchange and the memory listing.
     assert.ok(memoryRequests.length >= 1);
     assert.ok(memoryRequests.every((memoryRequest) => toolNames(memoryRequest.body).length === 0));
     assert.ok(
@@ -2812,6 +2811,12 @@ test('production Host executes a canonical ai-sdk Session against a real provide
         (memoryRequest) =>
           !JSON.stringify(memoryRequest.body).includes('HOSTED_WORKSPACE_SENTINEL'),
       ),
+    );
+    assert.ok(
+      memoryRequests.every((memoryRequest) =>
+        JSON.stringify(memoryRequest.body).includes('HOSTED_MEMORY_SENTINEL'),
+      ),
+      'the pass sees the stored preferences in its snapshot',
     );
     const request = mainRequests[0];
     assert.equal(request?.authorization, `Bearer ${API_KEY}`);
@@ -2823,7 +2828,20 @@ test('production Host executes a canonical ai-sdk Session against a real provide
     assert.match(requestText, /HOSTED_WORKSPACE_SENTINEL/);
     assert.doesNotMatch(requestText, /HOSTED_SESSION_TASK_SENTINEL/);
     assert.match(requestText, /HOSTED_PERSONALIZATION_SENTINEL/);
-    assert.match(requestText, /HOSTED_MEMORY_SENTINEL/);
+    // The memory snapshot is system-delivered with the turn as a user-role
+    // context, never inside the cached system prompt.
+    const requestMessages = (request?.body.messages ?? []) as Array<{
+      role: string;
+      content: unknown;
+    }>;
+    assert.doesNotMatch(
+      JSON.stringify(requestMessages.filter((message) => message.role === 'system')),
+      /HOSTED_MEMORY_SENTINEL/,
+    );
+    assert.match(
+      JSON.stringify(requestMessages.filter((message) => message.role === 'user')),
+      /<user_memory_snapshot>[\s\S]*<preferences>[\s\S]*HOSTED_MEMORY_SENTINEL/,
+    );
     assert.match(JSON.stringify(mainRequests[1]?.body), /HOSTED_SKILL_BODY_MUST_STAY_LAZY/);
     // Tavily is selected but no web-search credential exists, so the provider
     // must never see WebSearch in the effective root tool surface. Non-direct
@@ -2835,6 +2853,13 @@ test('production Host executes a canonical ai-sdk Session against a real provide
       'Edit',
       'Glob',
       'Grep',
+      // Memory is read before the first reply and written on an explicit
+      // "remember"; only MemoryDelete stays behind ToolSearch.
+      'MemoryAppend',
+      'MemoryList',
+      'MemoryRead',
+      'MemoryStrReplace',
+      'MemoryWrite',
       'Read',
       'SendUserFile',
       'SendUserMessage',
@@ -4009,65 +4034,33 @@ test('Host auxiliary models meter provider usage and abort physical requests', {
     assert.ok(dailyReviewRequest);
     assert.equal(dailyReviewRequest.sessionHeader, 'daily-review-call-1');
 
-    const memoryModel = createHostMemoryExtractionModel({
+    const memoryModel = createHostMemoryPassModel({
       runtimePolicy: policy,
       oauthCredentials: new HostOAuthExecutionAuthority(policy),
       usage,
-      requestDrain: () => assert.fail('Memory extraction telemetry must not drain the Host'),
+      requestDrain: () => assert.fail('Memory pass telemetry must not drain the Host'),
       newId: () => 'memory-call-1',
     });
-    const memorySnapshot = {
-      trigger: 'remember' as const,
-      sourceHeader: session,
-      sourceSystemPrompt: 'SOURCE_SYSTEM_SENTINEL',
-      sourceMessages: [
-        { role: 'user' as const, content: 'SOURCE_USER_SENTINEL' },
-        { role: 'assistant' as const, content: 'SOURCE_ASSISTANT_SENTINEL' },
-      ],
-      sourceTools: {
-        MemoryRemember: {
-          description: 'Remember durable information',
-          inputSchema: z.object({}).strict(),
-        },
-      },
-      sourceActiveTools: ['MemoryRemember'],
-      sessionId: session.id,
-      runId: 'memory-source-run',
-      turnId: 'memory-source-turn',
-      workspaceKey: capability.canonicalPath,
-      toolCallId: 'memory-source-call',
-    };
     const memoryRequestsBefore = provider.requests.length;
-    const proposalResult = await memoryModel.generate({
-      snapshot: memorySnapshot,
-      prompt: 'PROPOSAL_PROMPT_SENTINEL',
-      stage: 'proposal',
+    const passResult = await memoryModel.generate({
+      sessionId: session.id,
+      header: session,
+      system: 'PASS_SYSTEM_SENTINEL',
+      prompt: 'PASS_PROMPT_SENTINEL',
       abortSignal: new AbortController().signal,
     });
-    assert.deepEqual(proposalResult, { ok: true, text: SUMMARY_TEXT });
-    const canonicalizeResult = await memoryModel.generate({
-      snapshot: memorySnapshot,
-      prompt: 'CANONICALIZE_PROMPT_SENTINEL',
-      stage: 'canonicalize',
-      abortSignal: new AbortController().signal,
-    });
-    assert.deepEqual(canonicalizeResult, { ok: true, text: SUMMARY_TEXT });
-    const [proposalRequest, canonicalizeRequest] = provider.requests.slice(memoryRequestsBefore);
-    assert.ok(proposalRequest);
-    assert.ok(canonicalizeRequest);
-    assert.equal(proposalRequest.sessionHeader, session.id);
-    assert.equal(canonicalizeRequest.sessionHeader, session.id);
-    assert.deepEqual(toolNames(proposalRequest.body), ['MemoryRemember']);
-    assert.match(JSON.stringify(proposalRequest.body), /SOURCE_SYSTEM_SENTINEL/);
-    assert.match(JSON.stringify(proposalRequest.body), /SOURCE_USER_SENTINEL/);
-    assert.match(JSON.stringify(proposalRequest.body), /SOURCE_ASSISTANT_SENTINEL/);
-    assert.match(JSON.stringify(proposalRequest.body), /PROPOSAL_PROMPT_SENTINEL/);
-    assert.deepEqual(toolNames(canonicalizeRequest.body), []);
-    assert.doesNotMatch(
-      JSON.stringify(canonicalizeRequest.body),
-      /SOURCE_(SYSTEM|USER|ASSISTANT)_SENTINEL/,
+    assert.deepEqual(passResult, { ok: true, text: SUMMARY_TEXT });
+    const [passRequest] = provider.requests.slice(memoryRequestsBefore);
+    assert.ok(passRequest);
+    assert.equal(passRequest.sessionHeader, session.id);
+    assert.deepEqual(toolNames(passRequest.body), []);
+    assert.match(JSON.stringify(passRequest.body), /PASS_SYSTEM_SENTINEL/);
+    assert.match(JSON.stringify(passRequest.body), /PASS_PROMPT_SENTINEL/);
+    const passLog = (await usage.telemetry.logs({ range: 'all' })).rows.find(
+      (row) => row.callKind === 'memory_pass',
     );
-    assert.match(JSON.stringify(canonicalizeRequest.body), /CANONICALIZE_PROMPT_SENTINEL/);
+    assert.ok(passLog);
+    assert.equal(passLog.callId, 'memory_pass_memory-call-1');
 
     assert.deepEqual(
       await sessionEffects.generateRecap({
@@ -4330,7 +4323,7 @@ test('one turn shares one canonical Skill inventory across prompt and lazy tools
     revision: 7,
     policy: {
       ...createDefaultRuntimePolicy(),
-      memory: { enabled: true, agentReadEnabled: true },
+      memory: { enabled: true },
       workspaceInstructions: { enabled: false },
     },
   };
@@ -4343,12 +4336,7 @@ test('one turn shares one canonical Skill inventory across prompt and lazy tools
     },
   } as unknown as HostSkillCatalogCoordinator;
   const memory = {
-    readPromptProjection: async () => ({
-      policy,
-      bundleRevision: null,
-      memoryRevision: null,
-      body: 'MEMORY_BODY',
-    }),
+    readPromptProjection: async () => ({ revision: 'memory-1', body: 'MEMORY_BODY' }),
   } as unknown as HostMemoryCoordinator;
   const composition = createInteractiveRunComposer({
     runtimePolicy: policy,
@@ -4363,10 +4351,15 @@ test('one turn shares one canonical Skill inventory across prompt and lazy tools
     workspaceRoot: '/workspace',
   } as const;
 
-  const firstPrompt = (await composition.resolveSystemPrompt(firstContext)).text;
+  const firstResolved = await composition.resolveSystemPrompt(firstContext);
+  const firstPrompt = firstResolved.text;
   assert.match(firstPrompt ?? '', /^The assistant is Copilot\./);
   assert.match(firstPrompt ?? '', /OLD_DESCRIPTION/);
-  assert.match(firstPrompt ?? '', /MEMORY_BODY/);
+  // The memory snapshot is system-delivered with the turn, not part of the
+  // cached prompt; the prompt carries the rules, the context carries the store.
+  assert.doesNotMatch(firstPrompt ?? '', /MEMORY_BODY/);
+  assert.match(firstPrompt ?? '', /^<user_memory>$/mu);
+  assert.deepEqual(firstResolved.contexts, [{ name: 'user_memory_snapshot', text: 'MEMORY_BODY' }]);
   assert.equal(inventoryReads, 1);
 
   inventory = [skillFixture('new', 'NEW_DESCRIPTION', 'NEW_BODY')];
@@ -4431,11 +4424,7 @@ test('one composer freezes Runtime Policy while each Run freezes its remaining p
       }),
     } as unknown as HostSkillCatalogCoordinator,
     memory: {
-      readPromptProjection: async () => ({
-        bundleRevision: `bundle-${memoryRevision}`,
-        memoryRevision,
-        body: memoryBody,
-      }),
+      readPromptProjection: async () => ({ revision: memoryRevision, body: memoryBody }),
     } as unknown as HostMemoryCoordinator,
     sessionTask: {} as SessionTaskToolStore,
   });
@@ -4458,19 +4447,17 @@ test('one composer freezes Runtime Policy while each Run freezes its remaining p
   assert.deepEqual(repeated, first);
   assert.deepEqual(first.sourceRevisions, [
     { id: 'memory', revision: 'memory-3' },
-    { id: 'memory-bundle', revision: 'bundle-memory-3' },
     { id: 'runtime-policy', revision: '3' },
     { id: 'skill-catalog', revision: 'skills-3' },
   ]);
-  assert.match(first.text ?? '', /MEMORY_THREE/u);
+  assert.deepEqual(first.contexts, [{ name: 'user_memory_snapshot', text: 'MEMORY_THREE' }]);
   assert.match(first.text ?? '', /SKILL_THREE/u);
   assert.deepEqual(next.sourceRevisions, [
     { id: 'memory', revision: 'memory-4' },
-    { id: 'memory-bundle', revision: 'bundle-memory-4' },
     { id: 'runtime-policy', revision: '3' },
     { id: 'skill-catalog', revision: 'skills-4' },
   ]);
-  assert.match(next.text ?? '', /MEMORY_FOUR/u);
+  assert.deepEqual(next.contexts, [{ name: 'user_memory_snapshot', text: 'MEMORY_FOUR' }]);
   assert.match(next.text ?? '', /SKILL_FOUR/u);
 
   const nextComposition = createInteractiveRunComposer({
@@ -4482,11 +4469,7 @@ test('one composer freezes Runtime Policy while each Run freezes its remaining p
       }),
     } as unknown as HostSkillCatalogCoordinator,
     memory: {
-      readPromptProjection: async () => ({
-        bundleRevision: `bundle-${memoryRevision}`,
-        memoryRevision,
-        body: memoryBody,
-      }),
+      readPromptProjection: async () => ({ revision: memoryRevision, body: memoryBody }),
     } as unknown as HostMemoryCoordinator,
     sessionTask: {} as SessionTaskToolStore,
   });
@@ -4494,7 +4477,6 @@ test('one composer freezes Runtime Policy while each Run freezes its remaining p
     (await nextComposition.resolveSystemPrompt({ ...context, turnId: 'turn-3' })).sourceRevisions,
     [
       { id: 'memory', revision: 'memory-4' },
-      { id: 'memory-bundle', revision: 'bundle-memory-4' },
       { id: 'runtime-policy', revision: '4' },
       { id: 'skill-catalog', revision: 'skills-4' },
     ],
@@ -4531,12 +4513,7 @@ test('backend composition survives a moved saved Git Bash executable while Bash 
       }),
     } as unknown as HostSkillCatalogCoordinator,
     memory: {
-      readPromptProjection: async () => ({
-        policy: { revision: 0, policy: createDefaultRuntimePolicy() },
-        bundleRevision: null,
-        memoryRevision: null,
-        body: '',
-      }),
+      readPromptProjection: async () => ({ revision: null }),
     } as unknown as HostMemoryCoordinator,
     sessionTask: {} as SessionTaskToolStore,
     clientCapabilities: {
@@ -4938,7 +4915,7 @@ async function waitForCanonicalRequests(
   return totalRequests;
 }
 
-async function waitForAutomaticMemoryRequestsToSettle(
+async function waitForMemoryPassRequestsToSettle(
   requests: readonly ProviderRequest[],
 ): Promise<void> {
   let stablePolls = 0;
@@ -4947,26 +4924,22 @@ async function waitForAutomaticMemoryRequestsToSettle(
     await waitFor(
       () => {
         const memoryCount = requests.filter((request) =>
-          /Perform the first stage of long-term-memory extraction/.test(
-            JSON.stringify(request.body),
-          ),
+          /background memory pass for Copilot/.test(JSON.stringify(request.body)),
         ).length;
         if (memoryCount > 0 && requests.length === previousCount) stablePolls += 1;
         else stablePolls = 0;
         previousCount = requests.length;
         return stablePolls >= 5;
       },
-      { timeoutMs: 5_000, pollMs: 10, message: 'memory extraction requests did not settle' },
+      { timeoutMs: 5_000, pollMs: 10, message: 'memory pass requests did not settle' },
     );
   } catch {
     throw new Error(
-      `Hosted automatic Memory extraction request did not settle: ${JSON.stringify(
+      `Hosted memory pass request did not settle: ${JSON.stringify(
         requests.map((request) => ({
           stream: request.body.stream,
           summary: /context summarization assistant/.test(JSON.stringify(request.body)),
-          memory: /Perform the first stage of long-term-memory extraction/.test(
-            JSON.stringify(request.body),
-          ),
+          memory: /background memory pass for Copilot/.test(JSON.stringify(request.body)),
         })),
       )}`,
     );
@@ -5053,12 +5026,7 @@ function backendCreationFixture(input: {
         }),
       } as unknown as HostSkillCatalogCoordinator,
       memory: {
-        readPromptProjection: async () => ({
-          policy: { revision: 0, policy: createDefaultRuntimePolicy() },
-          bundleRevision: null,
-          memoryRevision: null,
-          body: '',
-        }),
+        readPromptProjection: async () => ({ revision: null }),
       } as unknown as HostMemoryCoordinator,
       sessionTask: {} as SessionTaskToolStore,
       clientCapabilities: {
@@ -5589,9 +5557,7 @@ async function handleProviderRequest(
   }
   if (body.stream !== true) {
     const serialized = JSON.stringify(body);
-    const isMemoryExtraction = /Perform the first stage of long-term-memory extraction/.test(
-      serialized,
-    );
+    const isMemoryPass = /background memory pass for Copilot/.test(serialized);
     const isHistoryCompaction = /context summarization assistant/.test(serialized);
     const isGoalEvaluation = /goal evaluation judge/.test(serialized);
     const goalEvaluation =
@@ -5610,14 +5576,8 @@ async function handleProviderRequest(
             index: 0,
             message: {
               role: 'assistant',
-              content: isMemoryExtraction
-                ? JSON.stringify({
-                    status: 'complete',
-                    coverageStatus: 'processed',
-                    requestedStatus: 'not_applicable',
-                    requestedItems: [],
-                    incidentalItems: [],
-                  })
+              content: isMemoryPass
+                ? JSON.stringify({ operations: [] })
                 : goalEvaluation > 0
                   ? JSON.stringify({
                       met: goalEvaluation > 1,

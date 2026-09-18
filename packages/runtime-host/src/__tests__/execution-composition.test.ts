@@ -62,10 +62,6 @@ import { createAgentGraphControlStore } from '@maka/storage/agent-graph-control-
 import { openInteractiveExecutionStoresForWrite } from '@maka/storage/execution-stores';
 import { createSessionStore } from '@maka/storage/session-store';
 import {
-  LONG_TERM_MEMORY_DATABASE_NAME,
-  openInteractiveLongTermMemoryStoreForWrite,
-} from '@maka/storage/long-term-memory-store';
-import {
   resolveStorageRoot,
   tryAcquireInteractiveRootOwner,
   type InteractiveRootOwner,
@@ -554,40 +550,6 @@ test('a replacement leaves a root it no longer owns alone', async () => {
   assert.deepEqual(outcome, { outcome: 'already_terminal', targetTurnId: 'target-turn' });
 });
 
-test('production composition owns the long-term memory database lifecycle', async () => {
-  await withCompositionRoot(async ({ root, owner }) => {
-    const databasePath = join(root, LONG_TERM_MEMORY_DATABASE_NAME);
-    await assert.rejects(stat(databasePath), { code: 'ENOENT' });
-
-    const composition = await createExecutionRuntimeHostComposition(compositionContext(owner));
-    const workspaceExecution = composition.workspaceExecution;
-    assert.equal(workspaceExecution.state, 'ready');
-    const memory = await openInteractiveLongTermMemoryStoreForWrite(owner.lease);
-    assert.equal((await stat(databasePath)).isFile(), true);
-
-    composition.beginDrain();
-    assert.equal(workspaceExecution.state, 'draining');
-    await composition.close();
-    assert.equal(workspaceExecution.state, 'closed');
-    await assert.rejects(memory.readItem('after-close'), /closed/);
-    const Database = (require('node:sqlite') as typeof import('node:sqlite')).DatabaseSync;
-    const database = new Database(databasePath);
-    try {
-      const counts = database
-        .prepare(
-          `SELECT
-             (SELECT COUNT(*) FROM memory_items) AS item_count,
-             (SELECT COUNT(*) FROM memory_write_operations) AS operation_count`,
-        )
-        .get() as { item_count?: unknown; operation_count?: unknown };
-      assert.equal(counts.item_count, 0);
-      assert.equal(counts.operation_count, 0);
-    } finally {
-      database.close();
-    }
-  });
-});
-
 test('production composition reaches Ready when the optional context Store cannot open', async () => {
   await withCompositionRoot(async ({ root, owner }) => {
     const requestFingerprint = `sha256:${'a'.repeat(64)}` as const;
@@ -649,46 +611,6 @@ test('production composition reaches Ready when the optional context Store canno
       );
     } finally {
       await reopened.close?.();
-    }
-  });
-});
-
-test('production composition closes long-term memory after a later startup failure', async () => {
-  await withCompositionRoot(async ({ root, owner }) => {
-    const stores = await openInteractiveExecutionStoresForWrite(owner.lease);
-    const session = await stores.sessionStore.create({
-      cwd: root,
-      llmConnectionId: FAKE_CONNECTION_ID,
-      llmConnectionSlug: 'fake',
-      model: 'fake-model',
-      permissionMode: 'ask',
-    });
-    const memory = await openInteractiveLongTermMemoryStoreForWrite(owner.lease);
-
-    // Fail the composition after the memory store is opened: beginHostEpoch
-    // runs later in the startup sequence and rejects an invalid host epoch,
-    // so the composition must close every resource it opened, including
-    // long-term memory.
-    await assert.rejects(
-      createExecutionRuntimeHostComposition({
-        ...compositionContext(owner),
-        hostEpoch: 'invalid host epoch!',
-      }),
-    );
-    await assert.rejects(memory.readItem('after-failed-start'), /closed/);
-
-    await owner.close();
-    const recoveredCapability = await resolveStorageRoot({ path: root, kind: 'interactive' });
-    const recoveredOwner = await tryAcquireInteractiveRootOwner(recoveredCapability);
-    assert.ok(recoveredOwner);
-    if (!recoveredOwner) return;
-    try {
-      const recovered = await createExecutionRuntimeHostComposition(
-        compositionContext(recoveredOwner),
-      );
-      await recovered.close();
-    } finally {
-      await recoveredOwner.close();
     }
   });
 });

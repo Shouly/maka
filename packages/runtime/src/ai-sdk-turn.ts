@@ -117,11 +117,7 @@ import {
 } from './responses-reasoning-state.js';
 import type { ActiveToolResultPruneDiagnosticPatch } from './active-tool-result-prune.js';
 import { finitePositive } from './context-budget-helpers.js';
-import type {
-  AutomaticMemoryCompactionDecision,
-  AutomaticMemoryCompactionDispatch,
-  ProviderImageBudget,
-} from './ai-sdk-compaction.js';
+import type { ProviderImageBudget } from './ai-sdk-compaction.js';
 import {
   contextDiagnosticsCompactionOf,
   type ContextDiagnosticsCompaction,
@@ -160,7 +156,7 @@ import { AiSdkMessageProjection } from './ai-sdk-message-projection.js';
 import { ToolAvailabilityRuntime, type ToolAvailabilityPlan } from './tool-availability.js';
 import { renderSwarmModePrompt } from './swarm-mode.js';
 import { renderGraphModePrompt } from './graph-mode.js';
-import type { MemoryExtractionSourceSnapshot } from './memory-extraction.js';
+import { MEMORY_MUTATING_TOOL_NAMES } from './memory-tools.js';
 import { modelUsesNativeOpenAiResponses } from './model-runtime.js';
 import {
   applyRuntimeEventContextBudget,
@@ -648,13 +644,14 @@ export class AiSdkTurn {
   runTrace: RunTrace | null = null;
   readonly imageBudget: ProviderImageBudget = { used: 0, decisions: new Map() };
   injectedSteeringMessages: ModelMessage[] = [];
-  memoryExtractRequested = false;
-  memorySourceMessages: readonly ModelMessage[] | undefined;
-  memorySourceEventMessagePositions: Readonly<Record<string, readonly number[]>> | undefined;
-  memorySourceSystemPrompt: string | undefined;
-  memorySourceTools: ModelToolSet | undefined;
-  memorySourceActiveTools: readonly string[] | undefined;
-  finalAssistantText: string | undefined;
+  /** A memory tool succeeded in this turn; the background pass leaves the turn alone. */
+  memoryWritten = false;
+  /**
+   * Every step's text, in order, for the background memory pass: the pass
+   * re-reads the whole exchange, so text the model wrote before a tool call
+   * counts as much as its closing answer.
+   */
+  readonly assistantTextSteps: string[] = [];
   codeModeTools: ReadonlyMap<string, MakaTool> | undefined;
   readonly turnId: string;
   readonly runId: string | undefined;
@@ -748,139 +745,6 @@ export class AiSdkTurn {
 
   respondToUserQuestion(response: UserQuestionResponse): boolean {
     return this.toolRuntime.respondToUserQuestion(response);
-  }
-
-  memorySourceSnapshot(
-    boundary:
-      | { readonly trigger: 'remember'; readonly toolCallId: string }
-      | { readonly trigger: 'extract'; readonly terminalEventId: string },
-  ): MemoryExtractionSourceSnapshot | undefined {
-    if (
-      !this.runId ||
-      !this.memorySourceMessages ||
-      !this.memorySourceTools ||
-      !this.memorySourceActiveTools
-    ) {
-      return undefined;
-    }
-    const sourceMessages =
-      boundary.trigger === 'extract' && this.finalAssistantText
-        ? [
-            ...this.memorySourceMessages,
-            {
-              role: 'assistant' as const,
-              content: [{ type: 'text' as const, text: this.finalAssistantText }],
-            } as ModelMessage,
-          ]
-        : this.memorySourceMessages;
-    const memoryProjection = projectMemoryConversationPrefix(
-      sourceMessages,
-      this.memorySourceEventMessagePositions,
-    );
-    return {
-      ...boundary,
-      sourceHeader: memoryExtractionModelHeader(this.deps.backend.header),
-      ...(this.memorySourceSystemPrompt
-        ? { sourceSystemPrompt: this.memorySourceSystemPrompt }
-        : {}),
-      sourceMessages: structuredClone(memoryProjection.messages),
-      ...(memoryProjection.eventMessagePositions
-        ? {
-            sourceEventMessagePositions: structuredClone(memoryProjection.eventMessagePositions),
-          }
-        : {}),
-      sourceTools: { ...this.memorySourceTools },
-      sourceActiveTools: [...this.memorySourceActiveTools],
-      sourceProviderOptions: structuredClone(this.deps.resolvedProviderOptions),
-      ...(this.deps.modelAdapter.maxOutputTokens() !== undefined
-        ? { sourceMaxOutputTokens: this.deps.modelAdapter.maxOutputTokens() }
-        : {}),
-      ...(resolveSelectedModelContextWindow(
-        this.deps.backend.connection,
-        this.deps.backend.modelId,
-      ) !== undefined
-        ? {
-            sourceContextWindowTokens: resolveSelectedModelContextWindow(
-              this.deps.backend.connection,
-              this.deps.backend.modelId,
-            ),
-          }
-        : {}),
-      sessionId: this.deps.backend.sessionId,
-      runId: this.runId,
-      turnId: this.turnId,
-      workspaceKey: this.deps.backend.header.workspaceRoot,
-    };
-  }
-
-  private dispatchAutomaticMemoryCompaction(dispatch: AutomaticMemoryCompactionDispatch): void {
-    const capabilities = this.deps.backend.memoryExtraction;
-    const boundary = dispatch.checkpoint.memoryExtractionBoundary;
-    if (
-      !capabilities ||
-      !this.runId ||
-      !boundary ||
-      modelUsesNativeOpenAiResponses(this.deps.backend.connection, this.deps.backend.modelId)
-    ) {
-      return;
-    }
-    try {
-      capabilities.extract({
-        trigger: 'compaction',
-        sourceHeader: memoryExtractionModelHeader(this.deps.backend.header),
-        // Compaction messages are rebuilt from the durable RuntimeEvent prefix
-        // inside the background lane, avoiding a full Memory projection here.
-        sourceMessages: [],
-        rebuildSourceContextFromCompactionCheckpoint: true,
-        sourceTools: {},
-        sourceActiveTools: [],
-        ...(this.deps.modelAdapter.maxOutputTokens() !== undefined
-          ? { sourceMaxOutputTokens: this.deps.modelAdapter.maxOutputTokens() }
-          : {}),
-        ...(resolveSelectedModelContextWindow(
-          this.deps.backend.connection,
-          this.deps.backend.modelId,
-        ) !== undefined
-          ? {
-              sourceContextWindowTokens: resolveSelectedModelContextWindow(
-                this.deps.backend.connection,
-                this.deps.backend.modelId,
-              ),
-            }
-          : {}),
-        sessionId: this.deps.backend.sessionId,
-        runId: this.runId,
-        turnId: this.turnId,
-        workspaceKey: this.deps.backend.header.workspaceRoot,
-        compactionCheckpointId: dispatch.checkpoint.checkpointId,
-        compactionBoundaryEventId: boundary.runtimeEventId,
-      });
-    } catch {
-      // Automatic memory extraction is fail-open and must never perturb the caller.
-    }
-  }
-
-  private automaticMemoryCompactionSupported(): boolean {
-    return (
-      this.deps.backend.memoryExtraction !== undefined &&
-      !modelUsesNativeOpenAiResponses(this.deps.backend.connection, this.deps.backend.modelId)
-    );
-  }
-
-  private automaticMemoryCompactionDecision(): AutomaticMemoryCompactionDecision {
-    const capabilities = this.deps.backend.memoryExtraction;
-    if (!capabilities) return { disposition: 'eligible', dispatch: false };
-    if (this.deps.backend.header.subagentParent || this.deps.backend.header.isArchived) {
-      return { disposition: 'policy_denied', dispatch: false };
-    }
-    const gate = capabilities.automaticGate?.() ?? {
-      allowed: false as const,
-      reason: 'unavailable' as const,
-    };
-    if (gate.allowed) return { disposition: 'eligible', dispatch: true };
-    return gate.reason === 'unavailable'
-      ? { disposition: 'eligible', dispatch: false }
-      : { disposition: 'policy_denied', dispatch: false };
   }
 
   private createCodeModeExecTool(
@@ -1006,7 +870,7 @@ export class AiSdkTurn {
           ? { providerOptions: stepTextProviderOptions }
           : {}),
       } satisfies TextCompleteEvent);
-      this.finalAssistantText = stepText.length > 0 ? stepText : undefined;
+      if (stepText.length > 0) this.assistantTextSteps.push(stepText);
       resetStep();
     };
     let tokenUsage: NormalizedAiSdkUsage | undefined;
@@ -1474,12 +1338,6 @@ export class AiSdkTurn {
           capacityProviderTools,
           onMidTurnDiagnosticPatch,
           this,
-          this.automaticMemoryCompactionSupported()
-            ? () => this.automaticMemoryCompactionDecision()
-            : undefined,
-          this.automaticMemoryCompactionSupported()
-            ? (dispatch) => this.dispatchAutomaticMemoryCompaction(dispatch)
-            : undefined,
           turnAbortController.signal,
         );
         // When mid-turn capacity compaction is active, the prune must also cover
@@ -1649,13 +1507,6 @@ export class AiSdkTurn {
               !attemptSawToolActivity &&
               !attemptSawContinuationMetadata &&
               !attemptReachedStepBoundary;
-            this.memorySourceMessages = [...attemptMessages];
-            this.memorySourceEventMessagePositions =
-              this.deps.messageProjection.memoryEventMessagePositions(attemptMessages);
-            this.memorySourceSystemPrompt = requestSystemPrompt;
-            this.memorySourceTools = modelTools;
-            this.memorySourceActiveTools = [...activeToolsForRequest];
-            this.finalAssistantText = undefined;
             // Keep a denied boundary request as a Code Mode trap: the provider
             // no longer sees it as a direct tool, but a nested retry must still
             // reach ToolRuntime's denial latch instead of becoming an endlessly
@@ -2136,14 +1987,6 @@ export class AiSdkTurn {
                       queue,
                       onDiagnosticPatch: onMidTurnDiagnosticPatch,
                       origin: this,
-                      ...(this.automaticMemoryCompactionSupported()
-                        ? {
-                            memoryCompactionDecision: () =>
-                              this.automaticMemoryCompactionDecision(),
-                            onMemoryCompaction: (dispatch: AutomaticMemoryCompactionDispatch) =>
-                              this.dispatchAutomaticMemoryCompaction(dispatch),
-                          }
-                        : {}),
                       abortSignal: turnAbortController.signal,
                     })
                   : undefined;
@@ -2408,6 +2251,13 @@ export class AiSdkTurn {
               if (outcome.status === 'rejected') throw outcome.reason;
               const settlement = outcome.value;
               const toolCall = returnedToolCalls[index];
+              if (
+                toolCall &&
+                MEMORY_MUTATING_TOOL_NAMES.has(toolCall.toolName) &&
+                settlement.providerError === undefined
+              ) {
+                this.memoryWritten = true;
+              }
               if (isPlanToolResult(settlement.result)) {
                 this.handlePlanToolResult(settlement.result, queue);
               }
@@ -2648,17 +2498,22 @@ export class AiSdkTurn {
           stopReason,
         } satisfies CompleteEvent;
         queue.push(completeEvent);
-        if (this.memoryExtractRequested && this.deps.backend.memoryExtraction) {
-          const snapshot = this.memorySourceSnapshot({
-            trigger: 'extract',
-            terminalEventId: completeEvent.id,
-          });
-          if (snapshot) {
-            void queue
-              .waitUntilConsumedThroughCurrent()
-              .then(() => this.deps.backend.memoryExtraction?.extract(snapshot))
-              .catch(() => undefined);
-          }
+        // The background memory pass re-reads the finished exchange once the
+        // ledger has it. Fail-open: it never perturbs the turn.
+        const memoryPass = this.deps.backend.memoryPass;
+        if (memoryPass && this.runId && !input.continuation && typeof input.text === 'string') {
+          const turn = {
+            sessionId: this.deps.backend.sessionId,
+            runId: this.runId,
+            turnId,
+            userText: input.text,
+            assistantText: this.assistantTextSteps.join('\n\n'),
+            wroteMemory: this.memoryWritten,
+          };
+          void queue
+            .waitUntilConsumedThroughCurrent()
+            .then(() => memoryPass.turnCompleted(turn))
+            .catch(() => undefined);
         }
       } catch (err) {
         streamStatus = this.aborted ? 'aborted' : 'error';
@@ -3328,32 +3183,4 @@ function contextBudgetWithRequestProjectionDiagnostics(
   const mergedPatch = mergeContextBudgetDiagnosticPatches(prunePatch, compactionPatch);
   if (!mergedPatch) return base;
   return mergeContextBudgetDiagnostic(base ?? minimalContextBudgetDiagnostic(), mergedPatch);
-}
-
-function projectMemoryConversationPrefix(
-  messages: readonly ModelMessage[],
-  eventMessagePositions?: Readonly<Record<string, readonly number[]>>,
-): {
-  messages: ModelMessage[];
-  eventMessagePositions?: Readonly<Record<string, readonly number[]>>;
-} {
-  // Context visibility and durable evidence authority are separate boundaries.
-  // Keep the exact source prefix so the auxiliary request preserves referents
-  // and provider-cache shape. The Evidence Index and trusted admission layer
-  // independently restrict durable citations to user-authored RuntimeEvents.
-  return {
-    messages: [...messages],
-    ...(eventMessagePositions ? { eventMessagePositions } : {}),
-  };
-}
-
-function memoryExtractionModelHeader(
-  header: SessionHeader,
-): MemoryExtractionSourceSnapshot['sourceHeader'] {
-  return {
-    ...(header.llmConnectionId === undefined ? {} : { llmConnectionId: header.llmConnectionId }),
-    llmConnectionSlug: header.llmConnectionSlug,
-    model: header.model,
-    ...(header.thinkingLevel !== undefined ? { thinkingLevel: header.thinkingLevel } : {}),
-  };
 }

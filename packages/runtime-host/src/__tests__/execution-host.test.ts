@@ -529,7 +529,7 @@ test('two UDS Clients share one Runtime Policy authority and CAS winner', async 
           expectedRevision: initial.revision,
           operation: {
             kind: 'set_memory',
-            value: { enabled: false, agentReadEnabled: false },
+            value: { enabled: false },
           },
         }),
       ]);

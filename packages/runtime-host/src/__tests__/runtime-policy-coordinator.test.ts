@@ -88,7 +88,7 @@ test('model settings tool confirms and atomically updates canonical Runtime Poli
     const result = await tool.impl(
       {
         personalization: { assistantTone: 'Be direct.' },
-        memory: { agentReadEnabled: true },
+        memory: { enabled: false },
         webSearch: { enabled: true },
       },
       toolContext,
@@ -99,7 +99,7 @@ test('model settings tool confirms and atomically updates canonical Runtime Poli
     const snapshot = await stores.runtimePolicy.getSnapshot();
     assert.equal(snapshot.revision, 1);
     assert.equal(snapshot.policy.personalization.assistantTone, 'Be direct.');
-    assert.equal(snapshot.policy.memory.agentReadEnabled, true);
+    assert.equal(snapshot.policy.memory.enabled, false);
     assert.equal(snapshot.policy.webSearch.enabled, true);
   });
 });
@@ -164,7 +164,7 @@ test('production composition shares one gate across mutation and backend activat
           expectedRevision: initial.result.revision,
           operation: {
             kind: 'set_memory',
-            value: { enabled: false, agentReadEnabled: false },
+            value: { enabled: false },
           },
         },
         context,
@@ -276,7 +276,7 @@ test('production mutation releases the gate before active-turn backend disposal 
         expectedRevision: initial.result.revision,
         operation: {
           kind: 'set_memory',
-          value: { enabled: false, agentReadEnabled: false },
+          value: { enabled: false },
         },
       },
       context,
@@ -288,7 +288,7 @@ test('production mutation releases the gate before active-turn backend disposal 
       result: { kind: 'committed', revision: initial.result.revision + 1 },
     });
     const memory = await settlesWithin(
-      composition.handlers['memory.query']({ kind: 'state' }, context),
+      composition.handlers['memory.query']({ kind: 'list' }, context),
       'policy-dependent read',
     );
     assert.equal(memory.ok, true);
@@ -403,7 +403,7 @@ test('production policy mutation drains and poisons activation when cached backe
         expectedRevision: initial.result.revision,
         operation: {
           kind: 'set_memory',
-          value: { enabled: false, agentReadEnabled: false },
+          value: { enabled: false },
         },
       },
       context,
@@ -468,7 +468,7 @@ test('projects runtime policy CAS results without returning the committed snapsh
         expectedRevision: initial.result.revision,
         operation: {
           kind: 'set_memory',
-          value: { enabled: false, agentReadEnabled: false },
+          value: { enabled: false },
         },
       },
       context,
@@ -608,7 +608,7 @@ test('awaits committed mutation invalidation before returning the outcome', asyn
         expectedRevision: 0,
         operation: {
           kind: 'set_memory',
-          value: { enabled: false, agentReadEnabled: false },
+          value: { enabled: false },
         },
       },
       context,
@@ -645,7 +645,7 @@ test('preserves a committed mutation outcome when invalidation fails', async () 
           expectedRevision: 0,
           operation: {
             kind: 'set_memory',
-            value: { enabled: false, agentReadEnabled: false },
+            value: { enabled: false },
           },
         },
         context,
@@ -660,7 +660,7 @@ test('preserves a committed mutation outcome when invalidation fails', async () 
           expectedRevision: 1,
           operation: {
             kind: 'set_memory',
-            value: { enabled: true, agentReadEnabled: true },
+            value: { enabled: true },
           },
         },
         context,

@@ -21,7 +21,11 @@ import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 import type { LlmConnection } from '@maka/core/llm-connections';
 import type { CredentialKind } from '@maka/storage/credential-store';
-import { applyConfigImport, type ConfigTransferDeps } from '../config-transfer-service.js';
+import {
+  applyConfigImport,
+  type ConfigTransferDeps,
+  MemoryImportRefused,
+} from '../config-transfer-service.js';
 
 function conn(
   slug: string,
@@ -44,12 +48,12 @@ function makeDeps(overrides: Partial<ConfigTransferDeps> = {}): {
   saved: LlmConnection[];
   updatedSettings: unknown[];
   setCreds: Array<{ slug: string; kind: CredentialKind; value: string }>;
-  writtenMemory: string[];
+  writtenMemory: Record<string, string>[];
 } {
   const saved: LlmConnection[] = [];
   const updatedSettings: unknown[] = [];
   const setCreds: Array<{ slug: string; kind: CredentialKind; value: string }> = [];
-  const writtenMemory: string[] = [];
+  const writtenMemory: Record<string, string>[] = [];
   const deps: ConfigTransferDeps = {
     connectionStore: {
       list: async () => [conn('deepseek-main')],
@@ -70,8 +74,8 @@ function makeDeps(overrides: Partial<ConfigTransferDeps> = {}): {
         return true;
       },
     },
-    writeMemory: async (content) => {
-      writtenMemory.push(content);
+    writeMemory: async (files) => {
+      writtenMemory.push({ ...files });
     },
     ...overrides,
   };
@@ -90,7 +94,7 @@ describe('config-transfer-service', () => {
         connections: [conn('deepseek-main'), conn('brand-new')],
         settings: { theme: 'light' },
         credentials: [{ slug: 'brand-new', kind: 'api_key', value: 'sk-imported' }],
-        memory: '# imported memory',
+        memory: { '/profile.md': '# imported memory' },
       },
     };
     const result = await applyConfigImport(bundle as any, 'skip', deps);
@@ -101,7 +105,38 @@ describe('config-transfer-service', () => {
     assert.equal(updatedSettings.length, 1);
     assert.deepEqual(setCreds, [{ slug: 'brand-new', kind: 'api_key', value: 'sk-imported' }]);
     assert.deepEqual(result.credentials, { applied: 1, skipped: 0 });
-    assert.deepEqual(writtenMemory, ['# imported memory']);
+    assert.deepEqual(writtenMemory, [{ '/profile.md': '# imported memory' }]);
+  });
+
+  it('a refused memory write is reported, and the rest of the import stands', async () => {
+    const { deps, saved, updatedSettings } = makeDeps({
+      writeMemory: async () => {
+        throw new MemoryImportRefused('/profile.md', 'disabled');
+      },
+    });
+    const bundle = {
+      schemaVersion: 1,
+      exportedAt: '',
+      appVersion: '0.1.0',
+      includedData: ['connections', 'settings', 'memory'] as const,
+      data: {
+        connections: [conn('brand-new')],
+        settings: { theme: 'light' },
+        memory: { '/profile.md': '# imported memory' },
+      },
+    };
+    const result = await applyConfigImport(bundle as any, 'skip', deps);
+    assert.deepEqual(saved.map((c) => c.slug), ['brand-new']);
+    assert.equal(updatedSettings.length, 1);
+    assert.deepEqual(result.memory, { applied: false, reason: 'disabled' });
+
+    const failed = makeDeps({
+      writeMemory: async () => {
+        throw new Error('socket closed');
+      },
+    });
+    const outcome = await applyConfigImport(bundle as any, 'skip', failed.deps);
+    assert.deepEqual(outcome.memory, { applied: false, reason: 'failed' });
   });
 
   it('canonicalizes a legacy zh preference before the imported settings reach observers', async () => {
@@ -384,7 +419,7 @@ describe('config-transfer-service', () => {
           { slug: 'deepseek-main', kind: 'api_key', value: 'sk-live' },
           { slug: 'claude-subscription', kind: 'oauth_token', value: 'retired-secret' },
         ],
-        memory: '# imported memory',
+        memory: { '/profile.md': '# imported memory' },
       },
     };
 
@@ -395,7 +430,7 @@ describe('config-transfer-service', () => {
     // The rest of the bundle still lands — the point of the whole fix.
     assert.equal(result.settings?.applied, true);
     assert.equal(updatedSettings.length, 1);
-    assert.deepEqual(writtenMemory, ['# imported memory']);
+    assert.deepEqual(writtenMemory, [{ '/profile.md': '# imported memory' }]);
     // The retired connection's secret is skipped with it: only a created or
     // overwritten slug gets one written.
     assert.deepEqual(setCreds, [{ slug: 'deepseek-main', kind: 'api_key', value: 'sk-live' }]);
