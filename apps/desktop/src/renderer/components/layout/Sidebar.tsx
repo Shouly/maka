@@ -583,7 +583,10 @@ function ProjectTaskGroup(props: { id: string; label: string; children: ReactNod
       transition={{ duration: reduceMotion ? 0 : 0.18, ease: 'easeOut' }}
       className="overflow-hidden"
     >
-      <div className="space-y-[1.5px] pl-4">{props.children}</div>
+      {/* Project text starts after 2px padding + a 28px icon slot + an 8px gap.
+          Child rows supply their own 8px padding, so offset the group by 30px.
+          Keep the icon slot in rem so both titles align at every UI font size. */}
+      <div className="space-y-[1.5px] pl-[calc(1.75rem+2px)]">{props.children}</div>
     </motion.div>
   );
 }

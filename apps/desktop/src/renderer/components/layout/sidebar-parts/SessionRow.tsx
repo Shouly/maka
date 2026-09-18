@@ -71,7 +71,7 @@ export function SessionRow(props: {
   // row knows it whether or not the task is on screen. It outranks the
   // running dot (relx): the turn counts as running the whole time it waits,
   // and "waiting on you" is the state that deserves the eye.
-  const leading =
+  const statusMark =
     row.status === 'waiting_for_user' ? (
       <Tooltip>
         <TooltipTrigger asChild>
@@ -100,20 +100,14 @@ export function SessionRow(props: {
           <span
             role="status"
             aria-label={copy.running}
-            className="size-1.5 shrink-0 animate-status-dot-breathe rounded-full bg-sidebar-text-muted"
+            className="size-1.5 shrink-0 rounded-full bg-fill-brand"
           />
         </TooltipTrigger>
         <TooltipContent side="top">{copy.running}</TooltipContent>
       </Tooltip>
-    ) : (
-      <span
-        aria-hidden="true"
-        className={cn(
-          'size-1.5 shrink-0 rounded-full',
-          row.unread ? 'bg-accent-fill' : 'border-[1px] border-sidebar-text-muted/50',
-        )}
-      />
-    );
+    ) : row.unread ? (
+      <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-accent-fill" />
+    ) : null;
 
   return (
     <motion.div
@@ -123,7 +117,7 @@ export function SessionRow(props: {
       data-session-key={row.id}
       data-session-active={props.isActive ? 'true' : undefined}
       className={cn(
-        'group relative rounded-lg transition-colors',
+        'group group/session relative rounded-lg transition-colors',
         props.isActive
           ? 'bg-sidebar-selected'
           : 'hover:bg-sidebar-hover focus-within:bg-sidebar-hover',
@@ -131,7 +125,7 @@ export function SessionRow(props: {
       )}
     >
       {renaming ? (
-        <div className="flex h-7 items-center px-[2px]">
+        <div className="flex h-7 items-center px-2">
           <InlineRename
             value={row.name}
             label={copy.rename.label}
@@ -166,13 +160,10 @@ export function SessionRow(props: {
             setRenaming(true);
           }}
           className={cn(
-            'group/item relative flex h-7 w-full cursor-pointer items-center rounded-lg px-[2px] py-0 text-left text-[0.8125rem] leading-5 text-sidebar-text-secondary transition-[color,box-shadow] hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none',
+            'group/item relative flex h-7 w-full cursor-pointer items-center rounded-lg px-2 py-0 text-left text-[0.8125rem] leading-5 text-sidebar-text-secondary transition-[color,box-shadow] hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none',
             props.isActive && 'text-sidebar-text-primary',
           )}
         >
-          <span className="relative mr-2 flex size-7 shrink-0 items-center justify-center">
-            {leading}
-          </span>
           <Tooltip>
             <TooltipTrigger asChild>
               <span
@@ -180,7 +171,8 @@ export function SessionRow(props: {
                 onPointerEnter={checkTitleClipped}
                 className={cn(
                   'min-w-0 flex-1 overflow-hidden whitespace-nowrap fade-clip-end text-[0.8125rem] leading-5',
-                  menuOpen && 'fade-clip-wide',
+                  (statusMark || menuOpen) && 'fade-clip-wide pr-7',
+                  'group-hover/session:pr-7 group-focus-within/session:pr-7',
                 )}
               >
                 {row.displayName}
@@ -192,16 +184,33 @@ export function SessionRow(props: {
               </TooltipContent>
             )}
           </Tooltip>
+          {/* Status and actions share the same trailing slot. Keep the title's
+              width stable while the menu replaces the mark on hover/focus. */}
+          {statusMark && (
+            <span
+              data-session-status=""
+              className={cn(
+                'absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center',
+                menuOpen
+                  ? 'pointer-events-none opacity-0'
+                  : 'group-hover/session:pointer-events-none group-hover/session:opacity-0 group-focus-within/session:pointer-events-none group-focus-within/session:opacity-0',
+              )}
+            >
+              {statusMark}
+            </span>
+          )}
         </button>
       )}
 
+      {/* Swap immediately: fading the action out would briefly overlap the
+          restored status mark when hover/focus leaves the row. */}
       {!renaming && (
         <div
           className={cn(
-            'absolute right-1 top-1/2 flex -translate-y-1/2 items-center transition-opacity duration-[var(--dur-fast)]',
+            'absolute right-1 top-1/2 flex -translate-y-1/2 items-center',
             menuOpen
               ? 'pointer-events-auto opacity-100'
-              : 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100',
+              : 'pointer-events-none opacity-0 group-hover/session:pointer-events-auto group-hover/session:opacity-100 group-focus-within/session:pointer-events-auto group-focus-within/session:opacity-100',
           )}
         >
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
