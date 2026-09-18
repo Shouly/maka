@@ -154,7 +154,7 @@ import {
   stableHash,
   toolCatalogHash,
 } from './request-shape.js';
-import { toolAvailabilityHash } from './tool-availability.js';
+import { recoverActivatedToolNames, toolAvailabilityHash } from './tool-availability.js';
 import { ProviderRequestTelemetry } from './provider-request-telemetry.js';
 import { AiSdkMessageProjection } from './ai-sdk-message-projection.js';
 import { ToolAvailabilityRuntime, type ToolAvailabilityPlan } from './tool-availability.js';
@@ -451,6 +451,9 @@ function projectToolModePlan(
       ? { projectActiveTools: () => ({ activeTools: [execTool.name] }) }
       : {}),
     currentRepairToolNames: () => [execTool.name],
+    // Exec is the only tool on the wire here, so there is nothing left to hold
+    // back; the catalog above is prose, not schemas.
+    deferredNames: new Set<string>(),
     diagnostics: () => undefined,
   };
 }
@@ -1179,7 +1182,12 @@ export class AiSdkTurn {
       for (const tool of plan.providerTools) {
         modelTools[tool.name] = tool.providerTool
           ? { kind: 'provider', providerTool: tool.providerTool }
-          : { kind: 'function', description: tool.description, inputSchema: tool.parameters };
+          : {
+              kind: 'function',
+              description: tool.description,
+              inputSchema: tool.parameters,
+              ...(plan.deferredNames?.has(tool.name) ? { deferLoading: true } : {}),
+            };
       }
       toolRuntime.setGating(plan.gating);
       return { plan, providerTools: plan.providerTools, modelTools, nestedTools };
@@ -1222,6 +1230,12 @@ export class AiSdkTurn {
       return;
     }
     const priorReplay = priorReplayResult;
+    // The transcript is what the provider reads to decide which deferred tools
+    // it still holds expanded, so it is what this turn's activation map has to
+    // agree with. A no-op unless the wire defers natively.
+    this.deps
+      .snapshotToolAvailability()
+      .runtime.seedActivation(this.activeTools, recoverActivatedToolNames(priorReplay.messages));
     if (input.continuation && priorReplay.messages.length === 0) {
       const replay = priorReplayFailureTrace(priorReplay);
       const error = new ContinuationReplayEmptyError(replay.gate, replay.diagnosticCodes);

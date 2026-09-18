@@ -25,9 +25,12 @@ import {
   TOOL_SEARCH_MAX_SCHEMA_CHARS,
   TOOL_SEARCH_NAME,
   ToolAvailabilityRuntime,
+  recoverActivatedToolNames,
   toolAvailabilityHash,
   type ToolSearchResult,
 } from '../tool-availability.js';
+import { replayToolSearchOutput } from '../ai-sdk-message-projection.js';
+import type { ToolResultOutput } from '../model-protocol.js';
 import { bindToolActivationIdentity, toolActivationKey } from '../tool-activation-identity.js';
 import type { MakaTool, MakaToolContext } from '../tool-runtime.js';
 
@@ -89,6 +92,24 @@ function runtime() {
         { id: 'browser', toolNames: ['BrowserClick'], description: 'Browser automation' },
         { id: 'docs', toolNames: ['docs_edit', 'docs_read'], description: 'Document tools' },
       ],
+    },
+    invalid,
+  );
+}
+
+function nativeRuntime(dialect: 'anthropic' | 'openai-responses' = 'anthropic') {
+  return new ToolAvailabilityRuntime(
+    [
+      tool('Read'),
+      tool('BrowserClick', 'Click an element in the browser'),
+      tool('docs_edit', 'Edit a document'),
+    ],
+    {
+      groups: [
+        { id: 'browser', toolNames: ['BrowserClick'] },
+        { id: 'docs', toolNames: ['docs_edit'] },
+      ],
+      nativeDeferral: dialect,
     },
     invalid,
   );
@@ -528,5 +549,442 @@ describe('ToolSearch — query forms and the renamed limit', () => {
     assert.match(description, /Fetches full schema definitions for deferred tools/);
     assert.match(description, /"select:Read,Edit,Grep"/);
     assert.match(description, /"\+slack send"/);
+  });
+});
+
+describe('ToolAvailabilityRuntime — native deferral', () => {
+  test('the wire carries every schema and stops changing when a tool activates', async () => {
+    const active = new Map<string, string>();
+    const runtime = nativeRuntime();
+    const before = runtime.prepare(active);
+    // Everything is on the wire from step 0, including what the model may not
+    // yet see: that is what keeps the tool block — and the prefix cached behind
+    // it — identical across the search.
+    assert.ok(before.activeTools.includes('BrowserClick'));
+    assert.ok(before.activeTools.includes('docs_edit'));
+    assert.deepEqual([...(before.deferredNames ?? [])].sort(), ['BrowserClick', 'docs_edit']);
+    // ...while the execute-boundary gate still says no.
+    assert.ok(!before.gating?.activeNames().has('BrowserClick'));
+
+    await searchTool(before).impl({ query: 'select:BrowserClick' }, ctx);
+    const after = runtime.prepare(active);
+    assert.deepEqual(after.activeTools, before.activeTools, 'the request tool block is unmoved');
+    assert.ok(after.gating?.activeNames().has('BrowserClick'), 'but the gate has opened');
+    assert.ok(!after.gating?.activeNames().has('docs_edit'));
+  });
+
+  test('the withholding mode still answers by not sending', async () => {
+    const active = new Map<string, string>();
+    const plain = runtime();
+    const before = plain.prepare(active);
+    assert.ok(!before.activeTools.includes('BrowserClick'));
+    assert.equal(before.deferredNames, undefined);
+    await searchTool(before).impl({ query: 'select:BrowserClick' }, ctx);
+    assert.ok(plain.prepare(active).activeTools.includes('BrowserClick'));
+  });
+
+  test('Anthropic is handed references, not names', async () => {
+    const runtime = nativeRuntime();
+    const connector = searchTool(runtime.prepare(new Map()));
+    const output = (await connector.impl(
+      { query: 'select:BrowserClick' },
+      ctx,
+    )) as ToolSearchResult;
+    const model = connector.toModelOutput?.({ output } as never) as {
+      type: string;
+      value: readonly Record<string, unknown>[];
+    };
+    assert.equal(model.type, 'content');
+    assert.deepEqual(model.value, [
+      {
+        type: 'custom',
+        providerOptions: { anthropic: { type: 'tool-reference', toolName: 'BrowserClick' } },
+      },
+    ]);
+  });
+
+  test('the inventory promises only the signal this mode can send', () => {
+    const withholding = searchTool(runtime().prepare(new Map())).description;
+    assert.match(withholding, /A blocked result means/u);
+    for (const dialect of ['anthropic', 'openai-responses'] as const) {
+      const native = searchTool(nativeRuntime(dialect).prepare(new Map())).description;
+      assert.doesNotMatch(native, /A blocked result means/u, dialect);
+      assert.match(native, /fewer tools than you/u, dialect);
+    }
+  });
+
+  test('Anthropic is handed references and nothing else', async () => {
+    // The documented result is a list of references; a block beside them is a
+    // shape this has never put on a real request, so a budget refusal is
+    // reported through the run trace rather than mixed in here.
+    const runtime = nativeRuntime();
+    const connector = searchTool(runtime.prepare(new Map()));
+    const output = {
+      activated: ['BrowserClick'],
+      blocked: { name: 'docs_edit', reason: 'schema_too_large', schemaChars: 1 },
+    };
+    const model = connector.toModelOutput?.({ output } as never) as {
+      value: readonly Record<string, unknown>[];
+    };
+    assert.equal(model.value.length, 1);
+    assert.equal(model.value[0]?.type, 'custom');
+  });
+
+  test('a search that found nothing still says something', async () => {
+    const runtime = nativeRuntime();
+    const connector = searchTool(runtime.prepare(new Map()));
+    const output = (await connector.impl({ query: 'select:NotBound' }, ctx)) as ToolSearchResult;
+    const model = connector.toModelOutput?.({ output } as never) as {
+      value: readonly Record<string, unknown>[];
+    };
+    assert.equal(model.value.length, 1);
+    assert.equal(model.value[0]?.type, 'text');
+  });
+
+  test('OpenAI is handed whole declarations, and declares the connector as its own', async () => {
+    const runtime = nativeRuntime('openai-responses');
+    const connector = searchTool(runtime.prepare(new Map()));
+    // The connector IS OpenAI's search tool on this wire — that is what makes a
+    // deferred schema reachable at all.
+    assert.equal(connector.providerTool?.kind, 'openai-tool-search');
+    assert.ok(connector.providerTool?.description?.includes('BrowserClick'));
+    assert.equal(
+      (connector.providerTool?.parameters as { type?: string } | undefined)?.type,
+      'object',
+    );
+
+    const output = (await connector.impl(
+      { query: 'select:BrowserClick' },
+      ctx,
+    )) as ToolSearchResult;
+    const model = connector.toModelOutput?.({ output } as never) as {
+      type: string;
+      value: { tools: readonly Record<string, unknown>[] };
+    };
+    assert.equal(model.type, 'json');
+    assert.equal(model.value.tools.length, 1);
+    assert.equal(model.value.tools[0]?.type, 'function');
+    assert.equal(model.value.tools[0]?.name, 'BrowserClick');
+    assert.ok(model.value.tools[0]?.parameters, 'the definition carries its schema');
+  });
+
+  test('OpenAI wraps the search arguments, and the connector sees past it', async () => {
+    const runtime = nativeRuntime('openai-responses');
+    const connector = searchTool(runtime.prepare(new Map()));
+    // What the model actually sends on this wire (observed live): the search
+    // arguments nested under `arguments`, beside the call id the SDK already
+    // used. Validating the bare shape here failed every search before it ran.
+    const parsed = (
+      connector.parameters as { safeParse: (value: unknown) => { success: boolean } }
+    ).safeParse({
+      arguments: { query: 'select:BrowserClick', max_results: 1 },
+      call_id: 'call_abc',
+    });
+    assert.equal(parsed.success, true, 'the envelope must validate');
+
+    const output = (await connector.impl(
+      { arguments: { query: 'select:BrowserClick', max_results: 1 }, call_id: 'call_abc' },
+      ctx,
+    )) as ToolSearchResult;
+    assert.deepEqual(output.activated, ['BrowserClick']);
+  });
+
+  test('every other wire is still called with the arguments directly', async () => {
+    const connector = searchTool(nativeRuntime().prepare(new Map()));
+    const output = (await connector.impl(
+      { query: 'select:BrowserClick' },
+      ctx,
+    )) as ToolSearchResult;
+    assert.deepEqual(output.activated, ['BrowserClick']);
+  });
+
+  test('a ranked query answers with the true ranking, held or not', async () => {
+    const active = new Map<string, string>();
+    const runtime = nativeRuntime();
+    const connector = searchTool(runtime.prepare(active));
+    await connector.impl({ query: 'select:BrowserClick' }, ctx);
+    // Observed live: skipping the held best match answered a different question
+    // than the one asked — a search for the browser's snapshot tool came back
+    // with its click and type tools.
+    const again = (await connector.impl({ query: 'browser' }, ctx)) as ToolSearchResult;
+    assert.ok(again.activated.includes('BrowserClick'));
+  });
+
+  test('a tool asked for by name is always answered, loaded or not', async () => {
+    // Observed live: a second turn searched a tool the first had already loaded
+    // and got `{activated: []}`, which a reader cannot tell from "no such tool"
+    // — it read one empty result as a miss and another as a hit.
+    for (const dialect of ['anthropic', 'openai-responses'] as const) {
+      const active = new Map<string, string>();
+      const runtime = nativeRuntime(dialect);
+      const connector = searchTool(runtime.prepare(active));
+      const call = (query: string) =>
+        connector.impl(
+          dialect === 'openai-responses' ? { arguments: { query } } : { query },
+          ctx,
+        ) as Promise<ToolSearchResult> | ToolSearchResult;
+      assert.deepEqual((await call('select:BrowserClick')).activated, ['BrowserClick'], dialect);
+      assert.deepEqual(
+        (await call('select:BrowserClick')).activated,
+        ['BrowserClick'],
+        `${dialect}: asking twice must answer twice`,
+      );
+    }
+  });
+
+  test('the withholding mode still skips what it has already sent', async () => {
+    const active = new Map<string, string>();
+    const plain = runtime();
+    const connector = searchTool(plain.prepare(active));
+    const call = (query: string) => connector.impl({ query }, ctx) as Promise<ToolSearchResult>;
+    assert.deepEqual((await call('select:BrowserClick')).activated, ['BrowserClick']);
+    // There the schema is already on the wire, and re-admitting it would spend
+    // the schema budget on bytes the request is already carrying.
+    assert.deepEqual((await call('select:BrowserClick')).activated, []);
+    assert.ok(!(await call('browser')).activated.includes('BrowserClick'));
+  });
+
+  test('the connector is a plain function tool on every other wire', () => {
+    assert.equal(searchTool(nativeRuntime().prepare(new Map())).providerTool, undefined);
+    assert.equal(searchTool(runtime().prepare(new Map())).providerTool, undefined);
+  });
+
+  test('mode separates the two hashes', () => {
+    const groups = [{ id: 'docs', toolNames: ['docs_edit'] }];
+    assert.notEqual(
+      toolAvailabilityHash({ groups }),
+      toolAvailabilityHash({ groups, nativeDeferral: 'anthropic' }),
+    );
+  });
+});
+
+describe('recoverActivatedToolNames', () => {
+  test('reads a native turn back out of its references', () => {
+    assert.deepEqual(
+      recoverActivatedToolNames([
+        { role: 'user', content: 'hi' },
+        {
+          role: 'tool',
+          content: [
+            {
+              type: 'tool-result',
+              toolName: TOOL_SEARCH_NAME,
+              output: {
+                type: 'content',
+                value: [
+                  {
+                    type: 'custom',
+                    providerOptions: { anthropic: { type: 'tool-reference', toolName: 'Grep' } },
+                  },
+                  { type: 'text', text: 'ignored' },
+                ],
+              },
+            },
+          ],
+        },
+      ]),
+      ['Grep'],
+    );
+  });
+
+  test('reads a withholding turn back out of its json', () => {
+    assert.deepEqual(
+      recoverActivatedToolNames([
+        {
+          role: 'tool',
+          content: [
+            {
+              type: 'tool-result',
+              toolName: TOOL_SEARCH_NAME,
+              output: { type: 'json', value: { activated: ['Grep', 'Glob'] } },
+            },
+          ],
+        },
+      ]),
+      ['Grep', 'Glob'],
+    );
+  });
+
+  test('reads an OpenAI turn back out of its declarations', () => {
+    assert.deepEqual(
+      recoverActivatedToolNames([
+        {
+          role: 'tool',
+          content: [
+            {
+              type: 'tool-result',
+              toolName: TOOL_SEARCH_NAME,
+              output: {
+                type: 'json',
+                value: { tools: [{ type: 'function', name: 'Grep', parameters: {} }] },
+              },
+            },
+          ],
+        },
+      ]),
+      ['Grep'],
+    );
+  });
+
+  test('a result from any other tool says nothing about activation', () => {
+    assert.deepEqual(
+      recoverActivatedToolNames([
+        {
+          role: 'tool',
+          content: [
+            {
+              type: 'tool-result',
+              toolName: 'Read',
+              output: { type: 'json', value: { activated: ['Grep'] } },
+            },
+          ],
+        },
+      ]),
+      [],
+    );
+  });
+});
+
+describe('the API contracts the two wires impose', () => {
+  test('something is always left non-deferred, as Anthropic requires', () => {
+    // "At least one tool must have defer_loading=false" — a 400 otherwise. The
+    // connector is never deferrable, so the floor holds even where every bound
+    // tool is searchable.
+    const everythingSearchable = new ToolAvailabilityRuntime(
+      [tool('BrowserClick'), tool('docs_edit')],
+      {
+        groups: [{ id: 'all', toolNames: ['BrowserClick', 'docs_edit'] }],
+        nativeDeferral: 'anthropic',
+      },
+      invalid,
+    );
+    const plan = everythingSearchable.prepare(new Map());
+    const deferred = plan.deferredNames ?? new Set<string>();
+    const nonDeferred = plan.activeTools.filter((name) => !deferred.has(name));
+    assert.deepEqual(nonDeferred, [TOOL_SEARCH_NAME]);
+    assert.ok(!deferred.has(TOOL_SEARCH_NAME), 'the search tool may never defer itself');
+  });
+
+  test('a deferred tool never travels without the search tool beside it', () => {
+    // OpenAI answers `Deferred tools require tools.tool_search` with a 400
+    // (openai/codex#19486). The pair is declared together or not at all.
+    for (const dialect of ['openai-responses', 'anthropic'] as const) {
+      const plan = nativeRuntime(dialect).prepare(new Map());
+      const deferred = plan.deferredNames ?? new Set<string>();
+      if (deferred.size === 0) continue;
+      const connector = searchTool(plan);
+      assert.ok(plan.activeTools.includes(connector.name), dialect);
+      if (dialect === 'openai-responses') {
+        assert.equal(connector.providerTool?.kind, 'openai-tool-search', dialect);
+      }
+    }
+  });
+
+  test('a reference only ever names a tool that is on the wire', async () => {
+    const runtime = nativeRuntime();
+    const plan = runtime.prepare(new Map());
+    const connector = searchTool(plan);
+    const output = (await connector.impl({ query: 'docs' }, ctx)) as ToolSearchResult;
+    // "Tool reference not found in available tools" is a 400, so every name the
+    // search hands back has to be one the request also declares.
+    for (const name of output.activated) {
+      assert.ok(plan.activeTools.includes(name), name);
+    }
+  });
+
+  test('the diagnostic measures the context, not the wire', async () => {
+    const active = new Map<string, string>();
+    const runtime = nativeRuntime();
+    const before = runtime.prepare(active);
+    const idle = before.diagnostics(before.activeTools, 99_999);
+    assert.equal(idle?.visibleToolCount, 2, 'Read and the connector');
+    assert.ok(
+      (idle?.toolSchemaCharReduction ?? 0) > 0,
+      'holding two schemas out of context is a saving, whatever rode the wire',
+    );
+  });
+});
+
+describe('seedActivation', () => {
+  test('re-admits what the transcript already pointed at, and nothing else', () => {
+    const active = new Map<string, string>();
+    nativeRuntime().seedActivation(active, ['BrowserClick', 'Read', 'NotBound']);
+    // Read is direct — it was never deferred, so it is not an activation; a
+    // name this Runtime does not bind is a claim about some other tool set.
+    assert.deepEqual([...active.keys()], ['BrowserClick']);
+  });
+
+  test('the withholding mode forgets at the turn boundary, by design', () => {
+    const active = new Map<string, string>();
+    runtime().seedActivation(active, ['BrowserClick']);
+    assert.equal(active.size, 0);
+  });
+});
+
+describe('replayToolSearchOutput', () => {
+  const json = (activated: readonly string[]): ToolResultOutput => ({
+    type: 'json',
+    value: { activated: [...activated] },
+  });
+
+  test('replays a past search as the references that hold its tools open', () => {
+    assert.deepEqual(
+      replayToolSearchOutput(json(['Grep', 'Glob']), (names) => names),
+      {
+        type: 'content',
+        value: [
+          {
+            type: 'custom',
+            providerOptions: { anthropic: { type: 'tool-reference', toolName: 'Grep' } },
+          },
+          {
+            type: 'custom',
+            providerOptions: { anthropic: { type: 'tool-reference', toolName: 'Glob' } },
+          },
+        ],
+      },
+    );
+  });
+
+  test('a tool that is no longer bound is dropped, not replayed into a 400', () => {
+    assert.deepEqual(
+      replayToolSearchOutput(json(['Grep', 'Gone']), (names) =>
+        names.filter((name) => name !== 'Gone'),
+      ),
+      {
+        type: 'content',
+        value: [
+          {
+            type: 'custom',
+            providerOptions: { anthropic: { type: 'tool-reference', toolName: 'Grep' } },
+          },
+        ],
+      },
+    );
+  });
+
+  test('nothing left to point at replays as it was, never as empty content', () => {
+    const original = json(['Gone']);
+    assert.equal(
+      replayToolSearchOutput(original, () => []),
+      original,
+    );
+    assert.equal(
+      replayToolSearchOutput(original, () => undefined),
+      original,
+    );
+  });
+
+  test('a wire with no references replays unchanged', () => {
+    const original = json(['Grep']);
+    assert.equal(replayToolSearchOutput(original, undefined), original);
+  });
+
+  test('a result that is not a search payload is left alone', () => {
+    const text: ToolResultOutput = { type: 'text', value: 'hello' };
+    assert.equal(
+      replayToolSearchOutput(text, (names) => names),
+      text,
+    );
   });
 });

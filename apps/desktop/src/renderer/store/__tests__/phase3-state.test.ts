@@ -33,7 +33,7 @@ import {
 } from '@maka/core/events';
 import type { StoredMessage, TurnStatus } from '@maka/core/session';
 import type { ToolActivityItem, TurnViewModel } from '@maka/ui';
-import { diffSyntaxTokens } from '@maka/ui';
+import { diffSyntaxTokens, parseMcpToolName } from '@maka/ui';
 import { createRevisionDraftStore, revisionCopyId, revisionRefusalFor } from '../revision-draft.js';
 import { createContextUsageStore, projectContextUsage } from '../context-usage-store.js';
 import { createComposerDraftStore } from '../composer-draft-store.js';
@@ -53,7 +53,6 @@ import {
   toolRowStatus,
   toolRowTitle,
 } from '../../components/session/tools/tool-presentation.js';
-import { parseMcpToolName } from '../../components/session/tools/ToolRow.js';
 import {
   askUserQuestionRecord,
   isAskUserQuestionTool,

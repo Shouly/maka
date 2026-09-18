@@ -263,6 +263,7 @@ const ZH_CN_ACTIVITY_SUMMARY: Record<ToolSummaryKey, ToolSummaryLabel> = {
   browser: { one: '操作了浏览器', other: (n) => `操作浏览器 ${n} 次` },
   tasks: { one: '更新了任务进度', other: () => '更新了任务进度' },
   taskRead: { one: '查看了任务进度', other: () => '查看了任务进度' },
+  toolSearch: { one: '加载了工具', other: () => '加载了工具' },
   tool: { one: '调用了工具', other: (n) => `调用 ${n} 次工具` },
 };
 
@@ -278,6 +279,7 @@ const ZH_CN_ACTIVITY_ACTIVE: Record<ToolSummaryKey, string> = {
   browser: '正在操作浏览器',
   tasks: '正在更新任务进度',
   taskRead: '正在查看任务进度',
+  toolSearch: '正在加载工具',
   tool: '正在调用工具',
 };
 
@@ -293,6 +295,7 @@ const ZH_TW_ACTIVITY_SUMMARY: Record<ToolSummaryKey, ToolSummaryLabel> = {
   browser: { one: '操作了瀏覽器', other: (n) => `操作瀏覽器 ${n} 次` },
   tasks: { one: '更新了任務進度', other: () => '更新了任務進度' },
   taskRead: { one: '查看了任務進度', other: () => '查看了任務進度' },
+  toolSearch: { one: '載入了工具', other: () => '載入了工具' },
   tool: { one: '呼叫了工具', other: (n) => `呼叫 ${n} 次工具` },
 };
 
@@ -308,6 +311,7 @@ const ZH_TW_ACTIVITY_ACTIVE: Record<ToolSummaryKey, string> = {
   browser: '正在操作瀏覽器',
   tasks: '正在更新任務進度',
   taskRead: '正在查看任務進度',
+  toolSearch: '正在載入工具',
   tool: '正在呼叫工具',
 };
 
@@ -323,6 +327,7 @@ const EN_ACTIVITY_SUMMARY: Record<ToolSummaryKey, ToolSummaryLabel> = {
   browser: { one: 'Used the browser', other: (n) => `Used the browser ${n} times` },
   tasks: { one: 'Updated tasks', other: () => 'Updated tasks' },
   taskRead: { one: 'Checked tasks', other: () => 'Checked tasks' },
+  toolSearch: { one: 'Loaded tools', other: () => 'Loaded tools' },
   tool: { one: 'Called a tool', other: (n) => `Called ${n} tools` },
 };
 
@@ -338,6 +343,7 @@ const EN_ACTIVITY_ACTIVE: Record<ToolSummaryKey, string> = {
   browser: 'Using the browser',
   tasks: 'Updating progress',
   taskRead: 'Checking progress',
+  toolSearch: 'Loading tools',
   tool: 'Calling a tool',
 };
 

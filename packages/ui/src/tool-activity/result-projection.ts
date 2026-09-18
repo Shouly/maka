@@ -20,80 +20,12 @@
 import { isShellOutput } from '@maka/core/shell-run';
 import { type UiLocale } from '@maka/core/ui-locale';
 import type { ToolActivityItem } from '../materialize.js';
-import { formatQuietJsonValue } from './builtin-preview.js';
-import { isConnectorTool } from './display-name.js';
 import { getToolActivityCopy } from './copy.js';
-
-export function extractErrorText(result: ToolActivityItem['result'], locale: UiLocale): string {
-  if (!result) return '';
-  switch (result.kind) {
-    case 'text':
-      return result.text;
-    case 'json': {
-      // Same quiet formatter as the panel — never dump escaped JSON braces.
-      const quiet = formatQuietJsonValue(result.value, locale);
-      return quiet.headline ? `${quiet.headline}\n${quiet.body}` : quiet.body;
-    }
-    case 'terminal': {
-      const output = isShellOutput(result.output) ? result.output : undefined;
-      return result.failureMessage
-        || (output?.mode === 'pipes'
-          ? output.stderr || output.stdout
-          : output?.screen || output?.scrollback)
-        || (result.exitCode === undefined ? result.status : `exit ${result.exitCode}`);
-    }
-    case 'file_diff':
-      return result.diff;
-    case 'rive_workflow':
-      return result.error
-        ? [result.summary, result.error.reason, result.error.message].filter(Boolean).join('\n')
-        : result.summary;
-    default:
-      return result.kind;
-  }
-}
-
-export function isPermissionDeniedToolResult(result: ToolActivityItem['result']): boolean {
-  if (result?.kind !== 'text') return false;
-  return /^(User denied permission(?: request)?|用户已拒绝权限请求)$/.test(result.text.trim());
-}
 
 export function isRequiresBypassToolResult(result: ToolActivityItem['result']): boolean {
   return result?.kind === 'text'
     && result.sandboxFailure?.reason === 'requires_bypass'
     && result.sandboxFailure.source === 'client_capability';
-}
-
-/**
- * Result kinds (or tool-specific cards) that already paint their own chrome —
- * never nest them inside the shared quiet well.
- */
-export function resultOwnsOwnPanel(item: ToolActivityItem): boolean {
-  const result = item.result;
-  if (!result) return false;
-  if (isConnectorTool(item.toolName) && result.kind === 'json') return true;
-  switch (result.kind) {
-    case 'terminal':
-    case 'shell_run':
-    case 'web_search':
-    case 'web_search_error':
-    case 'file_diff':
-    case 'rive_workflow':
-    case 'user_file_delivery':
-    case 'user_message':
-      return true;
-    default:
-      return false;
-  }
-}
-
-export function isCancelledToolResult(result: ToolActivityItem['result']): boolean {
-  if (!result) return false;
-  if (result.kind === 'terminal' || result.kind === 'shell_run') {
-    return result.status === 'cancelled';
-  }
-  if (result.kind === 'agent_swarm') return result.status === 'cancelled';
-  return false;
 }
 
 function resultHasCapturedStreams(result: ToolActivityItem['result']): boolean {

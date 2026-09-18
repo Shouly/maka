@@ -194,3 +194,26 @@ describe('projectToolArgsPreview', () => {
     assert.equal(projectToolArgsPreview('Bash', { content: 'not a headline field' }), undefined);
   });
 });
+
+describe('formatToolInvocationLine — a wrapped call', () => {
+  const line = (args: unknown, toolName = 'ToolSearch') =>
+    formatToolInvocationLine({ toolName, args }, 'en');
+
+  it('reads the query out of a provider search envelope', () => {
+    // Declared as a provider's own search connector, the call arrives as
+    // `{ arguments: {...}, call_id }`. The wrapper stays in the durable record
+    // — replay reads the id back out of it — so the row unwraps it instead.
+    assert.equal(
+      line({ arguments: { query: 'select:BrowserClick', max_results: 1 }, call_id: 'call_x' }),
+      'select:BrowserClick',
+    );
+  });
+
+  it('still reads a bare call, which is what every other wire sends', () => {
+    assert.equal(line({ query: 'list scheduled tasks' }), 'list scheduled tasks');
+  });
+
+  it('no other tool is unwrapped: `arguments` is an ordinary name', () => {
+    assert.equal(line({ arguments: { query: 'nested' }, query: 'own' }, 'Grep'), 'own');
+  });
+});

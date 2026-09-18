@@ -196,6 +196,14 @@ export type ModelToolDefinition =
       description?: string;
       inputSchema: unknown;
       execute?: unknown;
+      /**
+       * Provider-neutral intent: this schema travels on the wire but must not
+       * enter the model's context until something points at it. The adapter
+       * lowers it to whatever the provider calls it (`defer_loading`); a
+       * provider that has no such notion ignores it, and the tool is simply
+       * visible — which is the pre-deferral behaviour, never a leak.
+       */
+      deferLoading?: boolean;
     }
   | {
       kind: 'provider';

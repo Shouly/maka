@@ -241,12 +241,28 @@ export interface ToolInvocationInput {
  * First-line invocation for the quiet panel from tool args — never a
  * pretty-printed args object.
  */
+/**
+ * The arguments a call was made with, as the tool itself names them.
+ *
+ * One tool's arguments arrive wrapped: where `ToolSearch` is declared as a
+ * provider's own search connector, the model's call carries them under
+ * `arguments`, beside the call id the transport uses. The wrapper has to stay
+ * in the durable record — replay reads the id back out of it to say the search
+ * ran here rather than at the provider — so it is unwrapped at the point of
+ * reading instead, and every row keeps showing the query it always showed.
+ */
+function readInvocationArgs(item: ToolInvocationInput): Record<string, unknown> | undefined {
+  const args = asRecord(item.args);
+  if (!args || item.toolName !== TOOL_NAMES.toolSearch) return args;
+  return asRecord(args.arguments) ?? args;
+}
+
 export function formatToolInvocationLine(
   item: ToolInvocationInput,
   locale: UiLocale,
 ): string | undefined {
   const s = strings(locale);
-  const args = asRecord(item.args);
+  const args = readInvocationArgs(item);
   if (!args) {
     if (typeof item.args === 'string' && item.args.trim()) return redactSecrets(item.args);
     return undefined;

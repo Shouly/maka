@@ -24,8 +24,15 @@ import MiniSearch from 'minisearch';
 import { z } from 'zod';
 
 import { estimateTokens } from './context-budget-helpers.js';
-import { canonicalizeToolSet, stableHash, toolSchemaCharsForDiagnostics } from './request-shape.js';
+import {
+  canonicalizeToolSet,
+  requestCompositionToolSchemas,
+  stableHash,
+  toolSchemaCharsForDiagnostics,
+} from './request-shape.js';
 import { toolActivationKey } from './tool-activation-identity.js';
+import type { JSONObject } from './model-protocol.js';
+import type { NativeToolDeferral } from './native-tool-deferral.js';
 import type { MakaTool, ToolGating } from './tool-runtime.js';
 
 /** Canonical name of Maka's provider-independent deferred-tool search connector. */
@@ -119,6 +126,13 @@ export interface ToolAvailabilityConfig {
    * bound tool direct for an explicit wire-schema ceiling.
    */
   groups?: readonly ToolGroup[];
+  /**
+   * The wire dialect that can hold a schema without showing it to the model.
+   * Availability then stops being "what was sent" and becomes "what was
+   * pointed at", which is what keeps the request's tool block — and the cached
+   * prefix standing on it — still across a search.
+   */
+  nativeDeferral?: NativeToolDeferral;
 }
 
 export interface ToolSearchResult {
@@ -134,7 +148,7 @@ export function toolAvailabilityHash(
   config: ToolAvailabilityConfig | undefined,
 ): `sha256:${string}` {
   return stableHash({
-    mode: config === undefined ? 'full' : 'search',
+    mode: config === undefined ? 'full' : (config.nativeDeferral ?? false) ? 'native' : 'search',
     groups: (config?.groups ?? []).map((group) => ({
       id: group.id,
       toolNames: [...new Set(group.toolNames)].sort(compareExactString),
@@ -160,6 +174,12 @@ export interface ToolAvailabilityPlan {
   currentRepairToolNames: () => string[];
   /** Execute-boundary gating against the immutable step-start snapshot. */
   gating?: ToolGating;
+  /**
+   * Tools whose schema rides the wire but must stay out of the model's
+   * context until something points at them. Only the native mode fills it;
+   * the withholding mode has no such tools, because it withholds instead.
+   */
+  deferredNames?: ReadonlySet<string>;
   diagnostics: (
     activeTools: readonly string[],
     visibleToolSchemaChars: number,
@@ -194,6 +214,7 @@ export class ToolAvailabilityRuntime {
   private readonly searchableNames: ReadonlySet<string>;
   private readonly directNames: ReadonlySet<string>;
   private readonly searchIndex?: MiniSearch<SearchDocument>;
+  private readonly nativeDeferral: NativeToolDeferral | undefined;
 
   constructor(
     tools: readonly MakaTool[],
@@ -206,6 +227,7 @@ export class ToolAvailabilityRuntime {
     if (tools.some((tool) => tool.name === TOOL_SEARCH_PROVIDER_NAME)) {
       throw new Error(`Tool name "${TOOL_SEARCH_PROVIDER_NAME}" is reserved by Runtime`);
     }
+    this.nativeDeferral = config?.nativeDeferral;
     this.tools = [...tools];
     this.toolsByName = new Map(tools.map((tool) => [tool.name, tool]));
     this.activationKeysByName = new Map(tools.map((tool) => [tool.name, toolActivationKey(tool)]));
@@ -361,6 +383,40 @@ export class ToolAvailabilityRuntime {
       return active;
     };
 
+    if (this.nativeDeferral !== undefined) {
+      // Every schema goes out, every step, in the same order — the tool block
+      // is written once and never rewritten, so the prefix cached behind it
+      // survives a search. What the model may SEE is `defer_loading` plus the
+      // references the connector hands back; what it may CALL is still
+      // `step.active`, and that stays this Runtime's answer alone.
+      const wire = canonical.activeTools;
+      computeActive();
+      return {
+        providerTools: canonical.providerTools,
+        activeTools: wire,
+        projectActiveTools: () => {
+          computeActive();
+          return { activeTools: wire };
+        },
+        currentRepairToolNames: () => [...step.active],
+        gating: { gatedNames: this.searchableNames, activeNames: () => step.active },
+        deferredNames: this.searchableNames,
+        // The wire is no longer the measure of anything: every schema is on it.
+        // What a reader wants to know is what reached the model's context, so
+        // both halves of the diagnostic come from the visible set — a char
+        // count of the whole wire beside a count of three tools would report
+        // this mode saving nothing, which is the opposite of true.
+        diagnostics: () => {
+          const visible = [...step.active];
+          return this.buildDiagnostic(
+            allTools,
+            visible,
+            toolSchemaCharsForDiagnostics(canonical.providerTools, visible),
+          );
+        },
+      };
+    }
+
     return {
       providerTools: canonical.providerTools,
       activeTools: computeActive(),
@@ -371,32 +427,118 @@ export class ToolAvailabilityRuntime {
     };
   }
 
+  /** The tools this Runtime holds back from the model's context. */
+  deferredToolNames(): ReadonlySet<string> {
+    return this.nativeDeferral === undefined ? new Set<string>() : this.searchableNames;
+  }
+
+  /**
+   * Re-admit the tools an earlier turn already pointed the provider at.
+   *
+   * Only in the native mode, and only for names this Runtime still binds: the
+   * transcript says what was pointed at, this says whether that still means
+   * anything. The withholding mode deliberately forgets at a turn boundary —
+   * nothing there outlives the request that carried it.
+   */
+  seedActivation(activeTools: Map<string, string>, names: readonly string[]): void {
+    if (this.nativeDeferral === undefined) return;
+    for (const name of names) {
+      if (!this.searchableNames.has(name)) continue;
+      const key = this.activationKeysByName.get(name);
+      if (key !== undefined) activeTools.set(name, key);
+    }
+  }
+
+  /** The activated tools as OpenAI function declarations, for its search output. */
+  private openAiToolDefinitions(names: readonly string[]): JSONObject[] {
+    const tools = names
+      .map((name) => this.toolsByName.get(name))
+      .filter((tool): tool is MakaTool => tool !== undefined);
+    return requestCompositionToolSchemas(
+      tools,
+      tools.map((tool) => tool.name),
+    ).map(
+      (shape) =>
+        ({
+          type: 'function',
+          name: shape.name,
+          description: shape.description,
+          // The complete declaration, `defer_loading` included: OpenAI asks for
+          // the whole definition back, and these are deferred tools being
+          // loaded — dropping the flag would describe them as something else.
+          defer_loading: true,
+          parameters: shape.inputSchema,
+        }) as JSONObject,
+    );
+  }
+
   private buildSearchConnector(
     activeTools: Map<string, string>,
   ): MakaTool<{ query: string; max_results?: number }, ToolSearchResult> {
+    const description = renderInventory(this.groups, this.nativeDeferral === undefined);
+    const searchArguments = z.object({
+      query: z
+        .string()
+        .trim()
+        .min(1)
+        .describe(
+          'Query to find deferred tools. Use "select:<tool_name>" for direct selection, or keywords to search.',
+        ),
+      max_results: z
+        .number()
+        .int()
+        .min(1)
+        .max(TOOL_SEARCH_MAX_LIMIT)
+        .optional()
+        .describe(`Maximum number of results to return (default: ${TOOL_SEARCH_DEFAULT_LIMIT})`),
+    });
+    // OpenAI's search tool owns its own call shape: the model's arguments
+    // arrive nested under `arguments`, beside the `call_id` the SDK has already
+    // used as the tool call's id. Runtime validates what actually arrives, or
+    // every search fails its own schema before it runs.
+    const openAiCall = this.nativeDeferral === 'openai-responses';
+    const parameters = openAiCall
+      ? z.object({ arguments: searchArguments, call_id: z.string().nullish() })
+      : searchArguments;
     return {
       name: TOOL_SEARCH_NAME,
-      description: renderInventory(this.groups),
-      parameters: z.object({
-        query: z
-          .string()
-          .trim()
-          .min(1)
-          .describe(
-            'Query to find deferred tools. Use "select:<tool_name>" for direct selection, or keywords to search.',
-          ),
-        max_results: z
-          .number()
-          .int()
-          .min(1)
-          .max(TOOL_SEARCH_MAX_LIMIT)
-          .optional()
-          .describe(`Maximum number of results to return (default: ${TOOL_SEARCH_DEFAULT_LIMIT})`),
-      }),
-      impl: ({ query, max_results: limit = TOOL_SEARCH_DEFAULT_LIMIT }, context) => {
+      description,
+      parameters,
+      // On OpenAI's Responses wire this IS the provider's search connector, so
+      // the declaration carries the prose and the argument schema; everywhere
+      // else it is an ordinary function tool. Either way Runtime runs it.
+      ...(openAiCall
+        ? {
+            providerTool: {
+              kind: 'openai-tool-search' as const,
+              description,
+              // The declaration describes the SEARCH arguments, not the
+              // envelope around them — that part is OpenAI's own.
+              parameters: toolArgumentSchema(TOOL_SEARCH_NAME, description, searchArguments),
+            },
+          }
+        : {}),
+      impl: (input, context) => {
+        const { query, max_results: limit = TOOL_SEARCH_DEFAULT_LIMIT } = unwrapSearchArguments(
+          input as Record<string, unknown>,
+        );
         const normalizedQuery = query.trim();
+        // Whether a tool already held is skipped depends on what the answer IS
+        // in this mode.
+        //
+        // Withholding: the answer is the activation, and a held tool's schema
+        // is already on the wire — re-admitting it would buy nothing and would
+        // spend the schema budget below on bytes already sent. Skipped.
+        //
+        // Native: the answer is the ranking, and the reader reads it as one.
+        // Dropping a held tool from it does not save anything — the definition
+        // is already loaded either way — it just answers a different question
+        // than the one asked. Observed live: a search for `+desktop_browser
+        // snapshot`, whose best match was held from an earlier turn, came back
+        // with the browser's click and type tools instead, and the reader
+        // recorded the result as wrong.
         const ranked = this.rankToolSearchQuery(normalizedQuery)
-          .filter((name) => !activeTools.has(name))
+          .filter((name) => this.nativeDeferral !== undefined || !activeTools.has(name))
           .slice(0, TOOL_SEARCH_MAX_LIMIT)
           .filter((name) => this.searchableNames.has(name));
         const activated: string[] = [];
@@ -437,6 +579,40 @@ export class ToolAvailabilityRuntime {
       },
       toModelOutput: ({ output }) => {
         const result = output as ToolSearchResult;
+        // Anthropic reads a reference, not a name: a `tool_reference` in this
+        // result is what makes the deferred definition appear, and it appears
+        // INLINE here rather than by rewriting the tool block, which is the
+        // whole point — the prefix in front of it never moves. Anything the
+        // reader still has to be told (a budget refusal, an empty search) rides
+        // alongside as text, because a result with no content at all is not a
+        // result.
+        // OpenAI loads from the definitions themselves rather than from a
+        // reference, so the search returns what it found in full. Its output
+        // contract has room for nothing else, so a budget refusal cannot be
+        // reported here — the reader simply gets fewer tools than it asked for.
+        if (this.nativeDeferral === 'openai-responses') {
+          return { type: 'json', value: { tools: this.openAiToolDefinitions(result.activated) } };
+        }
+        if (this.nativeDeferral === 'anthropic') {
+          const references = result.activated.map((toolName) => ({
+            type: 'custom' as const,
+            providerOptions: { anthropic: { type: 'tool-reference', toolName } },
+          }));
+          // References alone whenever there are any. Anthropic documents this
+          // result as a list of references and nothing else, and a block beside
+          // them is a shape nothing here has ever put on a real request — not
+          // worth risking on the rare path where a budget refusal happens. A
+          // refusal is already in the run trace, and the other native dialect
+          // has nowhere to report one either: the reader sees fewer tools,
+          // which is what a refusal means.
+          return references.length > 0
+            ? { type: 'content', value: references }
+            : // Nothing matched. A result still has to say something.
+              {
+                type: 'content',
+                value: [{ type: 'text', text: JSON.stringify({ activated: [] }) }],
+              };
+        }
         return {
           type: 'json',
           value: {
@@ -508,7 +684,7 @@ export class ToolAvailabilityRuntime {
     const toolSchemaCharReduction = Math.max(0, fullToolSchemaChars - visibleToolSchemaChars);
 
     return {
-      mode: 'search',
+      mode: this.nativeDeferral === undefined ? 'search' : 'native',
       enabledSourceIds,
       availableSourceIds,
       connectorToolName: TOOL_SEARCH_NAME,
@@ -524,7 +700,116 @@ export class ToolAvailabilityRuntime {
   }
 }
 
-function renderInventory(groups: readonly SearchGroup[]): string {
+/**
+ * The tools an earlier turn already pointed the provider at.
+ *
+ * In the native mode a reference keeps the tool expanded for the rest of the
+ * conversation, so the gate has to agree across turns or the two drift: the
+ * model sees a tool the gate has forgotten, calls it, and is told to search for
+ * what it is already holding — once per turn, and each search pays the cache
+ * cost the mode exists to avoid.
+ *
+ * This is one half. The other is the projection re-emitting those references
+ * when it replays the result: Runtime rebuilds the history every turn, and a
+ * result materialized as plain json says nothing to the provider. Identity is
+ * checked by the caller — a name recovered from the past is a claim, not a
+ * licence.
+ */
+export function recoverActivatedToolNames(messages: readonly unknown[]): string[] {
+  const names = new Set<string>();
+  for (const message of messages) {
+    if (!isRecord(message) || message.role !== 'tool' || !Array.isArray(message.content)) continue;
+    for (const part of message.content) {
+      if (!isRecord(part) || part.type !== 'tool-result') continue;
+      if (part.toolName !== TOOL_SEARCH_NAME && part.toolName !== TOOL_SEARCH_PROVIDER_NAME) {
+        continue;
+      }
+      const output = part.output;
+      if (!isRecord(output)) continue;
+      // Two shapes say the same thing: the json the search returns to a
+      // withholding wire, and the references it hands a native one.
+      if (output.type === 'json' && isRecord(output.value)) {
+        const activated = output.value.activated;
+        if (Array.isArray(activated)) {
+          for (const name of activated) if (typeof name === 'string') names.add(name);
+        }
+        // The third shape: OpenAI is handed whole declarations, and their names
+        // are the same claim the other two make.
+        const declarations = output.value.tools;
+        if (Array.isArray(declarations)) {
+          for (const declaration of declarations) {
+            if (isRecord(declaration) && typeof declaration.name === 'string') {
+              names.add(declaration.name);
+            }
+          }
+        }
+        continue;
+      }
+      if (output.type !== 'content' || !Array.isArray(output.value)) continue;
+      for (const contentPart of output.value) {
+        if (!isRecord(contentPart) || contentPart.type !== 'custom') continue;
+        const options = contentPart.providerOptions;
+        if (!isRecord(options)) continue;
+        const anthropic = options.anthropic;
+        if (!isRecord(anthropic) || anthropic.type !== 'tool-reference') continue;
+        if (typeof anthropic.toolName === 'string') names.add(anthropic.toolName);
+      }
+    }
+  }
+  return [...names];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/**
+ * The search arguments, whichever call shape carried them.
+ *
+ * A plain function tool is called with them directly. OpenAI's search tool
+ * wraps them: `{ arguments: { query, ... }, call_id }`, where `call_id` is the
+ * same value the SDK already used as the tool call's id — nothing here has to
+ * carry it, only to see past it.
+ */
+function unwrapSearchArguments(input: Record<string, unknown>): {
+  query: string;
+  max_results?: number;
+} {
+  const nested = input.arguments;
+  const source = (nested !== null && typeof nested === 'object' ? nested : input) as Record<
+    string,
+    unknown
+  >;
+  return {
+    query: String(source.query ?? ''),
+    ...(typeof source.max_results === 'number' ? { max_results: source.max_results } : {}),
+  };
+}
+
+/**
+ * A tool's argument schema as JSON Schema, through the same conversion the
+ * request composition uses — one source, so the declaration a provider reads
+ * can never drift from the schema Runtime validates against.
+ */
+function toolArgumentSchema(
+  name: string,
+  description: string,
+  parameters: unknown,
+): Record<string, unknown> {
+  const [shape] = requestCompositionToolSchemas(
+    [{ name, description, parameters, impl: () => undefined } as MakaTool],
+    [name],
+  );
+  return (shape?.inputSchema ?? {}) as Record<string, unknown>;
+}
+
+/**
+ * `reportsBudgetRefusals` — only the withholding mode hands a refusal back to
+ * the reader. The native dialects answer with references or declarations and
+ * have nowhere to put one, so promising a signal they never send would be an
+ * instruction about something that cannot happen.
+ */
+function renderInventory(groups: readonly SearchGroup[], reportsBudgetRefusals: boolean): string {
   const lines = groups.flatMap((group) => [
     `${group.id}:`,
     ...group.toolNames.map((name) => `- ${name}`),
@@ -536,8 +821,15 @@ function renderInventory(groups: readonly SearchGroup[]): string {
     'is known — there is no parameter schema, so the tool cannot be invoked, and a call',
     'before that fails as unknown. A successful search activates the top matches, whose',
     'full definitions appear on your next step; search again to activate more. Load every',
-    'tool you expect to need in one search. A blocked result means the best remaining',
-    'match did not fit the schema budget: narrow the query.',
+    ...(reportsBudgetRefusals
+      ? [
+          'tool you expect to need in one search. A blocked result means the best remaining',
+          'match did not fit the schema budget: narrow the query.',
+        ]
+      : [
+          'tool you expect to need in one search. A search that returns fewer tools than you',
+          'asked for has reached its budget: narrow the query and search again.',
+        ]),
     '',
     'Query forms:',
     '- "select:Read,Edit,Grep" — fetch these exact tools by name',

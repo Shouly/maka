@@ -193,6 +193,22 @@ export function toolCatalogHash(tools: readonly MakaTool[]): `sha256:${string}` 
 }
 
 /** Canonical, JSON-safe schemas for the exact provider-visible tool subset. */
+/**
+ * What a provider declaration is, for a diagnostic — its kind and the few knobs
+ * that distinguish two of the same kind.
+ *
+ * Not its prose or its schema. A declaration that carries them (the search
+ * connector carries the whole deferred inventory) would otherwise be written
+ * down twice in every request record, once here and once in `description`,
+ * and a diagnostic exists to say what was sent, not to repeat it.
+ */
+function providerToolShapeForDiagnostics(
+  providerTool: NonNullable<MakaTool['providerTool']>,
+): Record<string, unknown> {
+  const { description: _description, parameters: _parameters, ...rest } = providerTool;
+  return JSON.parse(stableStringify(rest)) as Record<string, unknown>;
+}
+
 export function requestCompositionToolSchemas(
   tools: readonly MakaTool[],
   activeToolNames: readonly string[],
@@ -212,12 +228,7 @@ export function requestCompositionToolSchemas(
         description: tool.description,
         inputSchema,
         ...(tool.providerTool
-          ? {
-              providerTool: JSON.parse(stableStringify(tool.providerTool)) as Record<
-                string,
-                unknown
-              >,
-            }
+          ? { providerTool: providerToolShapeForDiagnostics(tool.providerTool) }
           : {}),
       };
     })

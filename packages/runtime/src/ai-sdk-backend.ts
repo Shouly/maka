@@ -83,6 +83,7 @@ import {
   type MemoryExtractionTrigger,
 } from './memory-extraction.js';
 import { resolveModelRuntime } from './model-runtime.js';
+import { resolveNativeToolDeferral, type NativeToolDeferral } from './native-tool-deferral.js';
 import { routeApplyPatchTools } from './apply-patch-profile.js';
 import { bindToolResultArchiveDecoder } from './tool-result-archive-capability.js';
 import { resolveSelectedModelContextWindow } from './context-budget-policy.js';
@@ -307,6 +308,8 @@ export class AiSdkBackend implements AgentBackend {
   private readonly resolvedProviderOptions: Record<string, unknown>;
   private readonly memoryTools: readonly MakaTool[];
   private readonly applyPatchProfile: ReturnType<typeof resolveModelRuntime>['applyPatchProfile'];
+  /** The wire that can hold a schema without showing it, when this model has one. */
+  private readonly nativeToolDeferral: NativeToolDeferral | undefined;
 
   /** Bounds outstanding Code Mode cells on this backend. */
   private readonly codeCellAdmission = new AdmissionLimiter(MAX_ACTIVE_CODE_MODE_CELLS);
@@ -389,9 +392,17 @@ export class AiSdkBackend implements AgentBackend {
     });
     const applyPatchProfile = runtime.applyPatchProfile;
     this.applyPatchProfile = applyPatchProfile;
+    this.nativeToolDeferral = resolveNativeToolDeferral(runtime, input.modelId);
     this.messageProjection = new AiSdkMessageProjection({
       modelAdapter: this.modelAdapter,
       applyPatchProfile,
+      // Only Anthropic reads a reference out of the transcript; OpenAI is
+      // handed whole declarations, which its own replay carries.
+      replayToolSearchReferences: (activated) => {
+        if (this.nativeToolDeferral !== 'anthropic') return undefined;
+        const deferred = this.snapshotToolAvailability().runtime.deferredToolNames();
+        return activated.filter((name) => deferred.has(name));
+      },
       supportsVision: input.supportsVision,
       readAttachmentBytes: input.readAttachmentBytes,
       maxProviderImageRequestBytes: input.maxProviderImageRequestBytes,
@@ -464,7 +475,11 @@ export class AiSdkBackend implements AgentBackend {
           [...modelTools, ...this.memoryTools],
           this.input.toolResultArchive,
         ),
-        this.input.toolAvailability,
+        // Deferral is a property of the wire, not of the Host's binding, so it
+        // is decided here rather than travelling in the composed config.
+        this.input.toolAvailability && this.nativeToolDeferral !== undefined
+          ? { ...this.input.toolAvailability, nativeDeferral: this.nativeToolDeferral }
+          : this.input.toolAvailability,
         buildInvalidMakaTool(),
       ),
     };

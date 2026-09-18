@@ -34,6 +34,13 @@ import { buildPaletteCommands } from '../../components/palette/commands.js';
 import { TranscriptTurn } from '../../components/session/TranscriptTurn.js';
 import { renderToolContent } from '../../components/session/tools/registry.js';
 import {
+  canExpandTool,
+  resolveToolRendererId,
+  toolRowIcon,
+  toolRowTitle,
+  toolSummaryKeyOf,
+} from '../../components/session/tools/tool-presentation.js';
+import {
   toolRowStatus,
   toolRowStatusLabel,
 } from '../../components/session/tools/tool-presentation.js';
@@ -940,4 +947,67 @@ test('a plain user turn renders no stray 0 where its chips would be', () => {
     [],
     'no element renders a bare 0 text node',
   );
+});
+
+test('a tool search is its own row: what was asked, no body, nothing to open', () => {
+  const searchItem = (args: unknown): ToolActivityItem =>
+    ({
+      toolCallId: 'call-1',
+      toolName: 'ToolSearch',
+      status: 'completed',
+      args,
+      result: { kind: 'json', value: { activated: ['mcp__desktop_browser__BrowserSnapshot'] } },
+    }) as unknown as ToolActivityItem;
+
+  // Named: the row reads as loading that tool, not as the wire form.
+  assert.equal(
+    toolRowTitle(searchItem({ query: 'select:mcp__desktop_browser__BrowserSnapshot' }), 'en'),
+    // A proxied tool is named for its server on the wire; the row names the tool.
+    'Loading tool: BrowserSnapshot',
+  );
+  // The same call wrapped in a provider's search envelope reads identically.
+  assert.equal(
+    toolRowTitle(
+      searchItem({ arguments: { query: 'select:ScheduledTaskList' }, call_id: 'call_x' }),
+      'en',
+    ),
+    'Loading tool: ScheduledTaskList',
+  );
+  // Anything else is its own words.
+  assert.equal(
+    toolRowTitle(searchItem({ query: 'list scheduled tasks' }), 'en'),
+    'list scheduled tasks',
+  );
+  // No query at all still says what the row is.
+  assert.equal(toolRowTitle(searchItem({}), 'en'), 'Loading tools');
+
+  const item = searchItem({ query: 'select:ScheduledTaskList' });
+  assert.equal(resolveToolRendererId(item), 'tool_search');
+  assert.equal(canExpandTool(item), false, 'the row is the whole statement');
+  assert.equal(
+    renderToolContent(item, {
+      onOpenSession: () => {},
+      onOpenExternal: () => {},
+    }),
+    null,
+    'and it has no body to draw',
+  );
+});
+
+test('a tool search has its own icon and its own summary phrase', () => {
+  const item = {
+    toolCallId: 'call-1',
+    toolName: 'ToolSearch',
+    status: 'completed',
+    args: { query: 'select:Grep' },
+  } as unknown as ToolActivityItem;
+  // It searches, so it wears the glass the other searches wear — not the
+  // wrench every unclassified tool falls back to.
+  assert.equal(toolRowIcon(item), 'search');
+  assert.notEqual(toolRowIcon(item), 'tool');
+  // And a turn that only looked for tools must not report "called a tool".
+  assert.equal(toolSummaryKeyOf(item), 'toolSearch');
+  const copy = getTranscriptCopy('en').tools;
+  assert.equal(copy.summary.toolSearch.one, 'Loaded tools');
+  assert.equal(copy.active.toolSearch, 'Loading tools');
 });

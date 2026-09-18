@@ -216,9 +216,20 @@ export interface MakaTool<P = any, R = unknown> {
    * client-executed tools such as ApplyPatch still settle through ToolRuntime.
    */
   providerTool?: {
-    readonly kind: 'openai-apply-patch' | 'openai-web-search' | 'anthropic-web-search-20250305';
+    readonly kind:
+      | 'openai-apply-patch'
+      | 'openai-web-search'
+      | 'anthropic-web-search-20250305'
+      | 'openai-tool-search';
     readonly searchContextSize?: 'low' | 'medium' | 'high';
     readonly maxUses?: number;
+    /**
+     * `openai-tool-search` only: OpenAI owns the tool's identity, so its prose
+     * and its argument schema have to travel with the declaration rather than
+     * on the tool the way a plain function carries them.
+     */
+    readonly description?: string;
+    readonly parameters?: Record<string, unknown>;
   };
   /** Crash-recovery contract used by the durable tool boundary. */
   recoveryMode?: ToolRecoveryMode;

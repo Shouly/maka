@@ -42,6 +42,8 @@ import {
   getToolActivityCopy,
   isComputerTool,
   isSandboxDeniedTool,
+  describeToolSearchCall,
+  isConnectorTool,
   resolveToolDisplayName,
   toolActivityPresentationStatus,
   type ToolActivityItem,
@@ -82,6 +84,7 @@ export type ToolRendererId =
   | 'scheduled_task'
   | 'grep'
   | 'glob'
+  | 'tool_search'
   | 'pending'
   | 'none';
 
@@ -140,6 +143,11 @@ export function resolveToolRendererId(item: ToolActivityItem): ToolRendererId {
   // owns, not a step of the work — it gets a card that names it and opens it,
   // the way the reference does, rather than a row whose result they must read.
   if (isScheduledTaskWriteItem(item)) return 'scheduled_task';
+  // The discovery connector is decided by which tool it is, like the two above
+  // and for the same reason: its result is a list of names that only means
+  // anything as "these are now usable", which the row says in one line. The
+  // reference gives it a renderer of its own with no body at all.
+  if (isConnectorTool(item.toolName)) return 'tool_search';
   const result = durableResultOf(item);
   if (!result) return item.status === 'running' ? 'pending' : 'none';
   // Read, Grep and Glob hand the model plain text and keep a STRUCTURED
@@ -171,6 +179,20 @@ const ICON_BY_ACTIVITY: Record<ToolActivityKind, AnthropiconName> = {
 
 export function toolActivityIcon(kind: ToolActivityKind | undefined): AnthropiconName {
   return kind ? ICON_BY_ACTIVITY[kind] : 'tool';
+}
+
+/**
+ * The glyph a row wears.
+ *
+ * Normally the activity kind, which is what the tool said it was doing. The
+ * discovery connector declares no kind — none fits "finding the others" — so
+ * it falls back to the generic wrench every unclassified tool wears, which is
+ * the one row it should not look like. It searches, and it wears the glass the
+ * other searches wear.
+ */
+export function toolRowIcon(item: ToolActivityItem): AnthropiconName {
+  if (isConnectorTool(item.toolName)) return ICON_BY_ACTIVITY.search;
+  return toolActivityIcon(toolActivityKindOf(item));
 }
 
 /** The kind a row is treated as when the projection did not name one. */
@@ -236,6 +258,12 @@ export function toolRowTitle(item: ToolActivityItem, locale: UiLocale): string {
   // here — it is a block of the turn (`groupTurnTimeline`).
   const note = readNoteMessage(item);
   if (note) return note.replace(/\s+/gu, ' ').trim();
+  // A search reads as the question it asked, not as the generic invocation
+  // line: `select:X` is an identifier, and a row that printed it raw would
+  // make the reader parse a wire form.
+  if (isConnectorTool(item.toolName)) {
+    return describeToolSearchCall(item.args ?? item.argsPreview, locale);
+  }
   // A call that says what it is FOR outranks a call that says what it runs:
   // Bash may carry a `description`, Agent must. The command and the prompt
   // are still one click away in the opened panel, which is where a reader who
@@ -275,6 +303,9 @@ export function canExpandTool(item: ToolActivityItem): boolean {
   // line saying it happened; opening it would show the message a second time.
   if (renderer === 'user_file_delivery' || renderer === 'user_message') return false;
   if (renderer === 'scheduled_task') return false;
+  // A search has no body: the row names what was asked, and what it found is
+  // already usable. Opening it would show a list of names twice.
+  if (renderer === 'tool_search') return false;
   if (renderer === 'pending') {
     return (item.outputChunks?.length ?? 0) > 0 || item.args !== undefined;
   }
@@ -292,7 +323,7 @@ export function canExpandTool(item: ToolActivityItem): boolean {
  * split: `task_create`/`task_update` say "Updated tasks", `task_get`/
  * `task_list` say "Checked tasks".
  */
-export type ToolSummaryKey = ToolActivityKind | 'taskRead';
+export type ToolSummaryKey = ToolActivityKind | 'taskRead' | 'toolSearch';
 
 /** The two task tools that change nothing. */
 const TASK_READ_TOOL_NAMES: ReadonlySet<string> = new Set([
@@ -301,6 +332,11 @@ const TASK_READ_TOOL_NAMES: ReadonlySet<string> = new Set([
 ]);
 
 export function toolSummaryKeyOf(item: ToolActivityItem): ToolSummaryKey {
+  // The discovery connector declares no kind, so it lands in the bucket every
+  // unclassified tool lands in and a turn that only looked for tools reports
+  // "called a tool". It gets a phrase of its own for the same reason the task
+  // readers do: the summary has to say what the turn actually did.
+  if (isConnectorTool(item.toolName)) return 'toolSearch';
   const kind = toolActivityKindOf(item);
   return kind === 'tasks' && TASK_READ_TOOL_NAMES.has(item.toolName) ? 'taskRead' : kind;
 }

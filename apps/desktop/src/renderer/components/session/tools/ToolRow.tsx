@@ -34,6 +34,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   getToolActivityCopy,
   isRequiresBypassToolResult,
+  parseMcpToolName,
   useUiLocale,
   type ToolActivityItem,
 } from '@maka/ui';
@@ -56,25 +57,12 @@ import {
 } from './tool-result.js';
 import {
   canExpandTool,
-  toolActivityIcon,
+  toolRowIcon,
   toolActivityKindOf,
   toolRowStatus,
   toolRowStatusLabel,
   toolRowTitle,
 } from './tool-presentation.js';
-
-/**
- * `mcp__<server>__<tool>` is the name the runtime mints for a proxied MCP tool
- * (`packages/runtime/src/mcp-tools.ts`). Splitting it back out is how a row
- * says which server answered without the transcript carrying a second field.
- */
-export function parseMcpToolName(name: string): { serverId: string; toolName: string } | undefined {
-  if (!name.startsWith('mcp__')) return undefined;
-  const rest = name.slice('mcp__'.length);
-  const separator = rest.indexOf('__');
-  if (separator <= 0) return undefined;
-  return { serverId: rest.slice(0, separator), toolName: rest.slice(separator + 2) };
-}
 
 function McpServerMark(props: { serverId: string; locale: Parameters<typeof getMcpCatalog>[0] }) {
   const entry = getMcpCatalog(props.locale).find((row) => row.id === props.serverId);
@@ -130,11 +118,7 @@ export const ToolRow = memo(function ToolRow(props: ToolRowProps) {
         )}
         aria-hidden="true"
       >
-        {isNote ? (
-          <StepDot />
-        ) : (
-          <Anthropicon name={toolActivityIcon(toolActivityKindOf(item))} size={20} />
-        )}
+        {isNote ? <StepDot /> : <Anthropicon name={toolRowIcon(item)} size={20} />}
       </div>
       <div className="flex min-w-0 flex-1 items-center gap-1">
         {expandable ? (

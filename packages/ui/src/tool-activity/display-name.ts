@@ -28,7 +28,6 @@ import { redactSecrets } from '@maka/core/redaction';
 import { TOOL_NAMES } from '@maka/core/tool-names';
 import type { UiLocale } from '@maka/core/ui-locale';
 import type { ToolActivityItem } from '../materialize.js';
-import { describeLoadToolResult, loadToolDisplayName } from '../tool-format.js';
 
 /** True for the tool-discovery connector, whose row reads as its action. */
 export function isConnectorTool(name: string): boolean {
@@ -48,10 +47,5 @@ export function resolveToolDisplayName(item: ToolActivityItem, locale: UiLocale)
   const status = workHubControlStatus(item);
   if (status) return status;
   if (item.displayName) return item.displayName;
-  if (isConnectorTool(item.toolName)) {
-    const value = item.result?.kind === 'json' ? item.result.value : undefined;
-    return describeLoadToolResult(item.args, value, locale)?.actionLabel
-      ?? loadToolDisplayName(locale);
-  }
   return item.toolName;
 }

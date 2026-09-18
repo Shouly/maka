@@ -22,21 +22,29 @@ import { test } from 'node:test';
 import { projectToolArgsPreview } from '@maka/core/tool-quiet-preview';
 import { resolveToolDisplayName } from '../tool-activity/display-name.js';
 import type { ToolActivityItem } from '../materialize.js';
-import { describeLoadToolResult } from '../tool-format.js';
+import { describeToolSearchCall } from '../tool-format.js';
 
-test('custom load-tool groups use Traditional Chinese action copy', () => {
-  const result = describeLoadToolResult(
-    { group: 'custom' },
-    {
-      activated: ['custom_tool'],
-      group: { id: 'custom', label: '自訂工具', description: '專案工具' },
-    },
-    'zh-TW',
+test('a tool search row reads as the question it asked', () => {
+  // `select:X` names one tool and reads as loading it; anything else is its
+  // own words. The reference titles this row the same way.
+  assert.equal(describeToolSearchCall({ query: 'select:ScheduledTaskList' }, 'en'), 'Loading tool: ScheduledTaskList');
+  assert.equal(describeToolSearchCall({ query: 'select:A,B' }, 'zh-TW'), '載入工具：A');
+  assert.equal(describeToolSearchCall({ query: 'list scheduled tasks' }, 'en'), 'list scheduled tasks');
+  // Wrapped by a provider's own search connector, and read the same way.
+  assert.equal(
+    describeToolSearchCall({ arguments: { query: 'select:Grep' }, call_id: 'call_x' }, 'en'),
+    'Loading tool: Grep',
   );
-  assert.equal(result?.actionLabel, '啟用 自訂工具');
-  assert.equal(result?.title, '自訂工具 已啟用');
+  // No query, a blank one, and a non-object all still say what the row is.
+  assert.equal(describeToolSearchCall({}, 'en'), 'Loading tools');
+  assert.equal(describeToolSearchCall({ query: '   ' }, 'zh-CN'), '正在加载工具');
+  assert.equal(describeToolSearchCall(undefined, 'en'), 'Loading tools');
+  // A proxied tool is named for its server on the wire; the row names the tool.
+  assert.equal(
+    describeToolSearchCall({ query: 'select:mcp__desktop_browser__BrowserSnapshot' }, 'en'),
+    'Loading tool: BrowserSnapshot',
+  );
 });
-
 
 test('WorkHub control shows its user-language status in live and recorded tool rows', () => {
   const base: ToolActivityItem = { toolUseId: 'control', toolName: 'mcp__desktop_workhub__control', args: {}, status: 'running' };

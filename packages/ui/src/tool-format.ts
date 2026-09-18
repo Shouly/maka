@@ -22,144 +22,55 @@ import type { UiLocale } from './locale-helpers.js';
 import { redactSecrets } from './redact.js';
 import { getToolActivityCopy } from './tool-activity/copy.js';
 
-/** Locale-aware display name for the tool-discovery connector. */
-export function loadToolDisplayName(locale: UiLocale): string {
-  return getToolActivityCopy(locale).loadTools.displayName;
-}
-
-export type LoadToolGroupKind =
-  | 'browser'
-  | 'computer_use'
-  | 'mcp'
-  | 'rive'
-  | 'agent'
-  | 'settings'
-  | 'generic';
-
-export interface LoadToolResultDescription {
-  kind: LoadToolGroupKind;
-  actionLabel: string;
-  title: string;
-  description: string;
-  label: string;
-  countLabel: string;
-  groupId?: string;
-  toolIds: string[];
+/**
+ * `mcp__<server>__<tool>` is the name Runtime mints for a proxied MCP tool
+ * (`packages/runtime/src/mcp-tools.ts`). Splitting it back out is how a row
+ * says which server answered without the transcript carrying a second field —
+ * and how anything naming that tool says the tool rather than the wire.
+ */
+export function parseMcpToolName(name: string): { serverId: string; toolName: string } | undefined {
+  if (!name.startsWith('mcp__')) return undefined;
+  const rest = name.slice('mcp__'.length);
+  const separator = rest.indexOf('__');
+  if (separator <= 0) return undefined;
+  return { serverId: rest.slice(0, separator), toolName: rest.slice(separator + 2) };
 }
 
 /**
- * Turn a `ToolSearch` result or historical `load_tools` result into friendly,
- * locale-aware card copy. Returns `null` for unexpected shapes.
+ * The row for a tool search, from the call rather than the result.
+ *
+ * The reference titles this row with what was ASKED: a `select:` names one
+ * tool and reads as loading it, anything else reads as its own words. What the
+ * search FOUND is a separate statement (`describeLoadToolResult`) — a row that
+ * led with the answer would leave the question nowhere.
+ *
+ * The arguments may arrive wrapped. Where the connector is declared as a
+ * provider's own search tool, the model's call nests them under `arguments`
+ * beside the transport's call id, and that wrapper stays in the durable record
+ * because replay reads the id back out of it.
  */
-export function describeLoadToolResult(
-  args: unknown,
-  value: unknown,
-  locale: UiLocale,
-): LoadToolResultDescription | null {
-  const record = value as { activated?: unknown; loaded?: unknown } | null | undefined;
-  const loaded = record?.activated ?? record?.loaded;
-  if (!Array.isArray(loaded) || !loaded.every((name) => typeof name === 'string')) {
-    return null;
-  }
-  const tools = (loaded as string[]).map(safeDisplayText).filter(Boolean);
-  const argRecord = args as { group?: unknown; namespace?: unknown } | null | undefined;
-  const rawGroup = argRecord?.group ?? argRecord?.namespace;
-  const resultGroup = (value as { group?: unknown }).group;
-  const groupRecord =
-    resultGroup && typeof resultGroup === 'object'
-      ? resultGroup as { id?: unknown; label?: unknown; description?: unknown }
-      : undefined;
-  const groupId = firstSafeText(groupRecord?.id, rawGroup);
-  const suppliedLabel = firstSafeText(groupRecord?.label);
-  const suppliedDescription = firstSafeText(groupRecord?.description);
-  const kind = loadToolGroupKind(groupId, suppliedLabel, tools);
-  const n = tools.length;
+export function describeToolSearchCall(args: unknown, locale: UiLocale): string {
+  const outer = args as Record<string, unknown> | null | undefined;
+  const nested = outer?.arguments;
+  const source = (nested && typeof nested === 'object' ? nested : outer) as
+    | Record<string, unknown>
+    | null
+    | undefined;
+  const raw = typeof source?.query === 'string' ? source.query.trim() : '';
   const copy = getToolActivityCopy(locale).loadTools;
-  if (kind !== 'generic') {
-    const groupCopy = copy.groups[kind];
-    return {
-      kind,
-      actionLabel: groupCopy.action,
-      title: groupCopy.title,
-      description: groupCopy.description,
-      label: groupCopy.label,
-      countLabel: copy.count(n),
-      ...(groupId ? { groupId } : {}),
-      toolIds: tools,
-    };
-  }
-
-  const label = suppliedLabel ?? copy.fallbackLabel;
-  return {
-    kind,
-    actionLabel: suppliedLabel ? copy.namedAction(suppliedLabel) : copy.genericAction,
-    title: suppliedLabel ? copy.namedTitle(suppliedLabel) : copy.genericTitle,
-    description: suppliedDescription ?? copy.genericDescription,
-    label,
-    countLabel: copy.count(n),
-    ...(groupId ? { groupId } : {}),
-    toolIds: tools,
-  };
-}
-
-function firstSafeText(...values: unknown[]): string | undefined {
-  for (const value of values) {
-    if (typeof value !== 'string') continue;
-    const safe = safeDisplayText(value);
-    if (safe) return safe;
-  }
-  return undefined;
+  if (!raw) return copy.loadingTools;
+  const named = /^select:(.*)$/iu.exec(raw);
+  if (!named) return safeDisplayText(raw) || copy.loadingTools;
+  // `select:A,B` names several; the row says the first and the count is the
+  // group card's business.
+  const first = (named[1] ?? '').split(',')[0]?.trim() ?? '';
+  // A proxied tool is named for its server on the wire; the row names the tool.
+  const display = safeDisplayText(parseMcpToolName(first)?.toolName ?? first);
+  return display ? copy.loadingNamedTool(display) : copy.loadingTools;
 }
 
 function safeDisplayText(value: string): string {
   return redactSecrets(value.replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').replace(/\s+/g, ' ').trim());
-}
-
-function loadToolGroupKind(
-  groupId: string | undefined,
-  label: string | undefined,
-  tools: readonly string[],
-): LoadToolGroupKind {
-  const id = groupId?.toLowerCase() ?? '';
-  const normalizedLabel = label?.toLowerCase() ?? '';
-  const names = tools.map((name) => name.toLowerCase());
-  const hasName = (name: string) =>
-    names.some((candidate) => candidate === name || candidate.endsWith(`__${name}`));
-  // A proxied name (`mcp__<server>__<tool>`) keeps the tool's own spelling in
-  // its suffix, which is why `hasName` matches the suffix as well as the whole
-  // string.
-  const hasTool = (canonical: ToolName) => hasName(canonical.toLowerCase());
-
-  if (
-    id === 'computer_use'
-    || id.endsWith('_desktop_computer_use')
-    || normalizedLabel === 'computer use'
-    || hasTool(TOOL_NAMES.computer)
-  ) return 'computer_use';
-  if (
-    id === 'browser'
-    || id.endsWith('_desktop_browser')
-    || normalizedLabel === 'browser'
-    || hasTool(TOOL_NAMES.browserNavigate)
-  ) return 'browser';
-  if (
-    id === 'rive'
-    || id.endsWith('_desktop_rive')
-    || normalizedLabel === 'rive'
-    || hasName('riveworkflow')
-  ) return 'rive';
-  if (
-    id === 'agent'
-    || normalizedLabel === 'agent'
-    || hasTool(TOOL_NAMES.agent)
-  ) return 'agent';
-  if (
-    id.endsWith('_desktop_settings')
-    || normalizedLabel === 'client settings'
-    || hasTool(TOOL_NAMES.copilotSettingsGet)
-  ) return 'settings';
-  if (id.endsWith('_desktop_mcp') || normalizedLabel === 'mcp') return 'mcp';
-  return 'generic';
 }
 
 export function formatRedactedJson(value: unknown): string {

@@ -229,10 +229,16 @@ export type ToolSchemaChangeReason =
  */
 export interface ToolAvailabilityDiagnostic {
   /**
-   * `'search'` is the current provider-independent lazy-loading policy.
+   * How the turn kept a schema out of the model's context.
+   *
+   * `'search'` withholds it from the request entirely — Runtime's own policy,
+   * which every provider understands because it asks nothing of them.
+   * `'native'` sends it and marks it deferred, which only the providers with
+   * a deferral of their own accept, and which is what leaves the request's
+   * tool block — and the prefix cached behind it — unchanged across a search.
    * `'economy'` remains readable for historical telemetry.
    */
-  mode: 'economy' | 'search';
+  mode: 'economy' | 'search' | 'native';
   enabledSourceIds: ToolSourceId[];
   availableSourceIds?: ToolSourceId[];
   connectorToolName?: string;

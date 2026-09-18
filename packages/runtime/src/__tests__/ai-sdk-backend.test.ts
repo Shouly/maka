@@ -62,7 +62,7 @@ import {
   type RunTraceEvent,
 } from '../ai-sdk-backend.js';
 import type { DurableSessionEventSink, MakaTool, ToolRuntime } from '../tool-runtime.js';
-import { TOOL_SEARCH_NAME } from '../tool-availability.js';
+import { TOOL_SEARCH_NAME, TOOL_SEARCH_PROVIDER_NAME } from '../tool-availability.js';
 import { buildNativeWebSearchTool } from '../native-web-search-tool.js';
 import { canonicalizeToolSet } from '../request-shape.js';
 import {
@@ -693,15 +693,35 @@ describe('AiSdkBackend Memory Extraction triggers', () => {
       durable,
     );
 
-    const stepZeroToolNames = model.doStreamCalls[0]?.tools?.map((tool) => tool.name) ?? [];
+    // This wire defers natively, so availability is no longer "was it sent".
+    // Every schema rides every request — that is what keeps the tool block, and
+    // the cached prefix in front of it, from moving when a search lands. What
+    // says a trigger is out of reach is `defer_loading` on its entry.
+    const deferLoadingOf = (tool: unknown): unknown =>
+      (tool as { providerOptions?: { openai?: { deferLoading?: unknown } } }).providerOptions
+        ?.openai?.deferLoading;
+    const stepZero = model.doStreamCalls[0]?.tools ?? [];
+    const deferredAt = (index: number, name: string) => {
+      const tool = (model.doStreamCalls[index]?.tools ?? []).find(
+        (candidate) => candidate.name === name,
+      );
+      assert.ok(tool, `${name} must ride the wire at step ${index}`);
+      return deferLoadingOf(tool) === true;
+    };
+    assert.equal(deferredAt(0, 'MemoryRemember'), true);
+    assert.equal(deferredAt(0, 'MemoryExtract'), true);
+    // The connector is OpenAI's own search tool here, so it keeps Maka's name
+    // rather than the alias a plain function would need, and it is never
+    // deferred — a deferred tool with nothing to point at it is a 400.
+    const connector = stepZero.find((tool) => tool.name === TOOL_SEARCH_NAME);
+    assert.ok(connector, 'the search connector must be declared');
+    assert.notEqual(deferLoadingOf(connector), true);
     assert.equal(
-      stepZeroToolNames.some((name) => name === 'MemoryRemember' || name === 'MemoryExtract'),
+      stepZero.some((tool) => tool.name === TOOL_SEARCH_PROVIDER_NAME),
       false,
+      'the alias belongs to a plain function, not to the provider tool itself',
     );
-    assert.ok(stepZeroToolNames.includes('CopilotToolSearch'));
-    const searchedToolNames = model.doStreamCalls[1]?.tools?.map((tool) => tool.name) ?? [];
-    assert.ok(searchedToolNames.includes('MemoryRemember'));
-    assert.ok(searchedToolNames.includes('MemoryExtract'));
+    // The gate, not the wire, is what kept the trigger from running.
     assert.equal(memoryCalled, false);
   });
 

@@ -106,27 +106,14 @@ export interface ToolActivityCopy {
       string
     >;
   };
+  /**
+   * The tool-discovery connector's row. It reads as LOADING, not as
+   * searching: the search is how it finds a definition, the load is what the
+   * reader gets, and the row beside it already says which tool.
+   */
   loadTools: {
-    displayName: string;
-    genericAction: string;
-    genericTitle: string;
-    genericDescription: string;
-    fallbackLabel: string;
-    namedAction: (label: string) => string;
-    namedTitle: (label: string) => string;
-    count: (count: number) => string;
-    technicalDetails: string;
-    groupId: string;
-    toolIds: string;
-    groups: Record<
-      'browser' | 'computer_use' | 'mcp' | 'rive' | 'agent' | 'settings',
-      {
-        label: string;
-        action: string;
-        title: string;
-        description: string;
-      }
-    >;
+    loadingTools: string;
+    loadingNamedTool: (toolName: string) => string;
   };
   permissionDenied: string;
   result: {
@@ -256,25 +243,8 @@ const TOOL_ACTIVITY_COPY = {
       },
     },
     loadTools: {
-      displayName: '启用能力',
-      genericAction: '启用工具能力',
-      genericTitle: '工具能力已启用',
-      genericDescription: '现在可以使用这组工具。',
-      fallbackLabel: '工具',
-      namedAction: (label) => `启用 ${label}`,
-      namedTitle: (label) => `${label} 已启用`,
-      count: (n) => `${n} 项能力可用`,
-      technicalDetails: '技术详情',
-      groupId: '工具组',
-      toolIds: '工具',
-      groups: {
-        browser: { label: 'Browser', action: '启用浏览器操作', title: '浏览器操作已启用', description: '可以打开页面、读取内容并与网页交互。' },
-        computer_use: { label: 'Computer Use', action: '启用桌面操作', title: '桌面操作已启用', description: '可以查看和操作已授权的本地应用。' },
-        mcp: { label: 'MCP', action: '连接 MCP', title: 'MCP 工具已连接', description: '可以调用当前客户端连接的 MCP 服务。' },
-        rive: { label: 'Rive', action: '启用 Rive 工作流', title: 'Rive 工作流已启用', description: '可以运行可恢复的多智能体工作流。' },
-        agent: { label: 'Agent', action: '启用子智能体', title: '子智能体协作已启用', description: '可以并行分派、跟踪和汇总子任务。' },
-        settings: { label: '设置', action: '启用设置工具', title: '设置工具已启用', description: '可以读取或更新当前客户端设置。' },
-      },
+      loadingTools: '正在加载工具',
+      loadingNamedTool: (toolName) => `加载工具：${toolName}`,
     },
     permissionDenied: '用户已拒绝权限请求',
     result: {
@@ -364,25 +334,8 @@ const TOOL_ACTIVITY_COPY = {
       },
     },
     loadTools: {
-      displayName: '啟用能力',
-      genericAction: '啟用工具能力',
-      fallbackLabel: '工具',
-      namedAction: (label) => `啟用 ${label}`,
-      namedTitle: (label) => `${label} 已啟用`,
-      genericTitle: '工具能力已啟用',
-      genericDescription: '現在可以使用這組工具。',
-      count: (n) => `${n} 項能力可用`,
-      technicalDetails: '技術詳情',
-      groupId: '工具組',
-      toolIds: '工具',
-      groups: {
-        browser: { label: 'Browser', action: '啟用瀏覽器操作', title: '瀏覽器操作已啟用', description: '可以開啟頁面、讀取內容並與網頁互動。' },
-        computer_use: { label: 'Computer Use', action: '啟用桌面操作', title: '桌面操作已啟用', description: '可以檢視和操作已授權的本地應用。' },
-        mcp: { label: 'MCP', action: '連線 MCP', title: 'MCP 工具已連線', description: '可以呼叫目前客戶端連線的 MCP 服務。' },
-        rive: { label: 'Rive', action: '啟用 Rive 工作流', title: 'Rive 工作流已啟用', description: '可以執行可恢復的多智慧體工作流。' },
-        agent: { label: 'Agent', action: '啟用子智慧體', title: '子智慧體協作已啟用', description: '可以並行分派、跟蹤和彙總子任務。' },
-        settings: { label: '設定', action: '啟用設定工具', title: '設定工具已啟用', description: '可以讀取或更新目前客戶端設定。' },
-      },
+      loadingTools: '正在載入工具',
+      loadingNamedTool: (toolName) => `載入工具：${toolName}`,
     },
     permissionDenied: '使用者已拒絕權限請求',
     result: {
@@ -469,25 +422,8 @@ const TOOL_ACTIVITY_COPY = {
       },
     },
     loadTools: {
-      displayName: 'Enable capabilities',
-      genericAction: 'Enable tool capabilities',
-      genericTitle: 'Tool capabilities enabled',
-      genericDescription: 'This tool group is ready to use.',
-      fallbackLabel: 'Tools',
-      namedAction: (label) => `Enable ${label}`,
-      namedTitle: (label) => `${label} enabled`,
-      count: (n) => `${n} ${n === 1 ? 'capability' : 'capabilities'} available`,
-      technicalDetails: 'Technical details',
-      groupId: 'Group',
-      toolIds: 'Tools',
-      groups: {
-        browser: { label: 'Browser', action: 'Enable browser actions', title: 'Browser actions enabled', description: 'Open pages, read content, and interact with websites.' },
-        computer_use: { label: 'Computer Use', action: 'Enable desktop actions', title: 'Desktop actions enabled', description: 'View and operate authorized local applications.' },
-        mcp: { label: 'MCP', action: 'Connect MCP', title: 'MCP tools connected', description: 'Use MCP services connected by the current client.' },
-        rive: { label: 'Rive', action: 'Enable Rive workflows', title: 'Rive workflows enabled', description: 'Run durable multi-agent workflows.' },
-        agent: { label: 'Agent', action: 'Enable subagents', title: 'Subagent collaboration enabled', description: 'Delegate, track, and summarize tasks in parallel.' },
-        settings: { label: 'Settings', action: 'Enable settings tools', title: 'Settings tools enabled', description: 'Read or update settings owned by the current client.' },
-      },
+      loadingTools: 'Loading tools',
+      loadingNamedTool: (toolName) => `Loading tool: ${toolName}`,
     },
     permissionDenied: 'User denied the permission request',
     result: {

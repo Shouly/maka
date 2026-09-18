@@ -103,6 +103,11 @@ export function renderToolContent(item: ToolActivityItem, context: ToolContentCo
       return <PendingResult item={item} />;
     case 'none':
       return null;
+    // The reference registers this connector with no content component at all:
+    // the row is the whole statement, and the tools it found are usable rather
+    // than readable.
+    case 'tool_search':
+      return null;
     case 'diff':
       return result?.kind === 'file_diff' ? (
         <DiffResult

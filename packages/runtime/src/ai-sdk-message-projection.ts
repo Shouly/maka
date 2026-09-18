@@ -31,6 +31,7 @@ import {
   type ApplyPatchProfile,
 } from './apply-patch-profile.js';
 import { durableProjectionToToolResultOutput } from './durable-tool-result-projection.js';
+import { TOOL_SEARCH_NAME } from './tool-availability.js';
 import {
   historyCompactCheckpointToModelMessage,
   isProviderHistoryCompactCheckpoint,
@@ -63,6 +64,20 @@ import { toolResultOutput } from './tool-result-output.js';
 export interface AiSdkMessageProjectionInput {
   modelAdapter: ModelAdapter;
   applyPatchProfile: ApplyPatchProfile | null;
+  /**
+   * Native deferral only. A `ToolSearch` result is what holds a deferred tool
+   * open for the rest of the conversation, and Runtime rebuilds the history
+   * every turn — replayed as plain json the result says nothing to the
+   * provider, and from the second turn on the model is blind to everything it
+   * already found. Given what a past search activated, this answers with the
+   * names that may be pointed at again; `undefined` means this wire has no
+   * such notion and the result replays unchanged.
+   *
+   * Names are filtered, not trusted: a reference to a tool that is no longer
+   * bound is a 400, not a stale row, and the tool set does change under a
+   * conversation (a Plugin generation, a Profile switch).
+   */
+  replayToolSearchReferences?: (activated: readonly string[]) => readonly string[] | undefined;
   supportsVision?: boolean;
   readAttachmentBytes?: AttachmentByteReader;
   maxProviderImageRequestBytes?: number;
@@ -83,6 +98,35 @@ function isImageToolResult(
 
 function toolResultText(text: string): ToolResultOutput {
   return { type: 'content', value: [{ type: 'text', text }] };
+}
+
+/**
+ * Replay a `ToolSearch` result as the references it was: the provider expands a
+ * deferred tool from the reference in the transcript, so a replay that drops
+ * them takes the tool away again.
+ *
+ * A search that activated nothing, or one whose tools have all since gone,
+ * replays as it was — there is nothing to point at, and an empty content array
+ * is not a result.
+ */
+export function replayToolSearchOutput(
+  output: ToolResultOutput,
+  resolve: AiSdkMessageProjectionInput['replayToolSearchReferences'],
+): ToolResultOutput {
+  if (!resolve || output.type !== 'json') return output;
+  const value = output.value;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return output;
+  const activated = (value as { activated?: unknown }).activated;
+  if (!Array.isArray(activated)) return output;
+  const names = resolve(activated.filter((name): name is string => typeof name === 'string'));
+  if (names === undefined || names.length === 0) return output;
+  return {
+    type: 'content',
+    value: names.map((toolName) => ({
+      type: 'custom' as const,
+      providerOptions: { anthropic: { type: 'tool-reference', toolName } },
+    })),
+  };
 }
 
 function nativeApplyPatchFailureOutput(output: ToolResultOutput): ToolResultOutput {
@@ -345,6 +389,9 @@ export class AiSdkMessageProjection {
             result.isError,
             `runtime-event:${result.eventId}:tool-result`,
           );
+      if (toolName === TOOL_SEARCH_NAME && !result.isError) {
+        return replayToolSearchOutput(output, this.input.replayToolSearchReferences);
+      }
       if (toolName !== 'apply_patch') return output;
       return result.isError ? nativeApplyPatchFailureOutput(output) : output;
     };

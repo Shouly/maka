@@ -82,6 +82,7 @@ import {
 } from './openai-responses-websocket.js';
 import { openAiApplyPatchProviderTool } from './openai-apply-patch.js';
 import { TOOL_SEARCH_NAME } from './tool-availability.js';
+import { resolveNativeToolDeferral, type NativeToolDeferral } from './native-tool-deferral.js';
 
 /**
  * Whole-word only: the provider alias contains the canonical name, so a text
@@ -151,11 +152,13 @@ export interface ModelAdapterStreamInput {
 
 export class ModelAdapter {
   private readonly runtime: ResolvedModelRuntime;
+  private readonly nativeToolDeferral: NativeToolDeferral | undefined;
   private readonly openAiChatReasoningTransportState: OpenAiChatReasoningTransportState;
   private readonly openAiResponsesTransportState: OpenAiResponsesTransportState;
 
   constructor(private readonly input: ModelAdapterInput) {
     this.runtime = input.resolvedRuntime ?? resolveModelRuntime(input.connection, input.modelId);
+    this.nativeToolDeferral = resolveNativeToolDeferral(this.runtime, input.modelId);
     this.openAiChatReasoningTransportState = createOpenAiChatReasoningTransportState(
       this.runtime.reasoningReplay.kind === 'openai-chat-plaintext'
         ? this.runtime.reasoningReplay.requestField
@@ -255,12 +258,27 @@ export class ModelAdapter {
         })
       : input.model;
     const usesOpenAiResponsesAdapter = hasOpenAiResponsesAdapter(this.runtime);
+    // The alias exists because OpenAI owns a hosted tool of this name and a
+    // plain function may not squat on it. Where Maka declares the connector AS
+    // that hosted tool, the collision is the point rather than the problem, and
+    // the SDK maps the two names itself — aliasing on top would rename the very
+    // tool the provider is meant to recognise.
+    //
+    // The test is what THIS request declares, not what the model can do: a
+    // plain function named ToolSearch still needs the alias even on a wire that
+    // could have deferred, because it is still a function squatting on the
+    // name.
+    const declaresProviderToolSearch = Object.values(input.tools).some(
+      (definition) =>
+        definition.kind === 'provider' && definition.providerTool.kind === 'openai-tool-search',
+    );
+    const aliasesToolSearch = usesOpenAiResponsesAdapter && !declaresProviderToolSearch;
     const providerToolName = (name: string): string =>
-      usesOpenAiResponsesAdapter && name === TOOL_SEARCH_NAME ? TOOL_SEARCH_PROVIDER_NAME : name;
+      aliasesToolSearch && name === TOOL_SEARCH_NAME ? TOOL_SEARCH_PROVIDER_NAME : name;
     const runtimeToolName = (name: string): string =>
-      usesOpenAiResponsesAdapter && name === TOOL_SEARCH_PROVIDER_NAME ? TOOL_SEARCH_NAME : name;
-    const sdkTools = lowerModelTools(input.tools);
-    if (usesOpenAiResponsesAdapter && sdkTools[TOOL_SEARCH_NAME] !== undefined) {
+      aliasesToolSearch && name === TOOL_SEARCH_PROVIDER_NAME ? TOOL_SEARCH_NAME : name;
+    const sdkTools = lowerModelTools(input.tools, this.nativeToolDeferral);
+    if (aliasesToolSearch && sdkTools[TOOL_SEARCH_NAME] !== undefined) {
       sdkTools[TOOL_SEARCH_PROVIDER_NAME] = sdkTools[TOOL_SEARCH_NAME];
       delete sdkTools[TOOL_SEARCH_NAME];
     }
@@ -1224,19 +1242,43 @@ function parseProviderExecutedToolInput(input: unknown): unknown {
   }
 }
 
-export function lowerModelTools(tools: ModelToolSet): Record<string, unknown> {
+/**
+ * `deferLoading` is Runtime's word for it; each provider has its own, and only
+ * the two that have one get told. Everywhere else the flag falls away and the
+ * tool is plainly visible — the same request Maka sent before any of this.
+ */
+function deferralProviderOptions(
+  deferral: NativeToolDeferral | undefined,
+): Record<string, unknown> | undefined {
+  switch (deferral) {
+    case 'anthropic':
+      return { anthropic: { deferLoading: true } };
+    case 'openai-responses':
+      return { openai: { deferLoading: true } };
+    default:
+      return undefined;
+  }
+}
+
+export function lowerModelTools(
+  tools: ModelToolSet,
+  deferral?: NativeToolDeferral,
+): Record<string, unknown> {
   return Object.fromEntries(
-    Object.entries(tools).map(([name, definition]) => [
-      name,
-      definition.kind === 'provider'
-        ? compileProviderTool(definition.providerTool)
-        : {
-            ...(definition.description !== undefined
-              ? { description: definition.description }
-              : {}),
-            inputSchema: definition.inputSchema,
-          },
-    ]),
+    Object.entries(tools).map(([name, definition]) => {
+      if (definition.kind === 'provider')
+        return [name, compileProviderTool(definition.providerTool)];
+      const providerOptions =
+        definition.deferLoading === true ? deferralProviderOptions(deferral) : undefined;
+      return [
+        name,
+        {
+          ...(definition.description !== undefined ? { description: definition.description } : {}),
+          inputSchema: definition.inputSchema,
+          ...(providerOptions ? { providerOptions } : {}),
+        },
+      ];
+    }),
   );
 }
 
@@ -1253,6 +1295,19 @@ function compileProviderTool(
     case 'anthropic-web-search-20250305':
       return anthropic.tools.webSearch_20250305({
         ...(tool.maxUses !== undefined ? { maxUses: tool.maxUses } : {}),
+      });
+    // OpenAI's own search connector, executed here rather than at the provider:
+    // the model asks, Runtime ranks, and the answer comes back as the tool
+    // definitions the provider then loads. Declaring it this way is also what
+    // makes `defer_loading` mean anything on this wire — without a tool that
+    // can point at a deferred schema, deferring one would hide it for good.
+    case 'openai-tool-search':
+      // Every field is required on this declaration — type, execution,
+      // description and a parameters schema — so none of them is conditional.
+      return openai.tools.toolSearch({
+        execution: 'client',
+        description: tool.description ?? '',
+        parameters: tool.parameters ?? { type: 'object', properties: {} },
       });
   }
 }
