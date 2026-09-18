@@ -389,8 +389,25 @@ export class ModelAdapter {
         let streamedFinishReason: string | undefined;
         let streamedRawFinishReason: string | undefined;
         let sawUnfinalizedPlaintextSummary = false;
+        // Iterated by hand rather than `for await`: a consumer that stops early
+        // (the backend after the first error, a provider-mismatch throw) would
+        // make `for await` call the SDK iterator's `return()`, which cancels
+        // the SDK's piped stream with no reason. Node's pipeTo then rejects an
+        // in-flight write with that `undefined` reason after the turn has
+        // unwound (`writableStreamDefaultWriterWrite` on an errored
+        // destination), and marks it handled too late — an unhandled rejection
+        // nothing can catch. Draining the rest instead never cancels; the
+        // provider request itself still ends through `abortSignal`.
+        const chunks = (sdk.stream as AsyncIterable<AiSdkStreamChunk>)[Symbol.asyncIterator]();
+        let exhausted = false;
         try {
-          for await (const chunk of sdk.stream as AsyncIterable<AiSdkStreamChunk>) {
+          while (true) {
+            const next = await chunks.next();
+            if (next.done) {
+              exhausted = true;
+              break;
+            }
+            const chunk = next.value;
             onStreamActivity();
             if (
               chunk.type === 'finish' ||
@@ -429,6 +446,7 @@ export class ModelAdapter {
             yield { kind: 'error', failure };
           }
         } finally {
+          if (!exhausted) drainAbandonedStream(chunks);
           const [sdkUsage, sdkFinishReason] = await Promise.all([
             sdk.usage.catch(() => undefined),
             sdk.finishReason.catch(() => undefined),
@@ -1310,6 +1328,20 @@ function compileProviderTool(
         parameters: tool.parameters ?? { type: 'object', properties: {} },
       });
   }
+}
+
+/**
+ * Reads an SDK chunk stream to its end without looking at it. What is left
+ * after a consumer stops is short — a failed stream's tail, or a fetch the
+ * turn's `abortSignal` is already ending — and reading it, unlike cancelling
+ * it, leaves no half-piped write behind to reject on its own.
+ */
+function drainAbandonedStream(chunks: AsyncIterator<unknown>): void {
+  void (async () => {
+    while (!(await chunks.next()).done) {
+      // consume
+    }
+  })().catch(() => undefined);
 }
 
 function normalizeProviderFailure(error: unknown): ModelFailure {
