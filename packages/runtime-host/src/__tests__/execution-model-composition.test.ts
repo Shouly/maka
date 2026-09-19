@@ -4365,7 +4365,7 @@ test('one turn shares one canonical Skill inventory across prompt and lazy tools
   // The memory snapshot is system-delivered with the turn, not part of the
   // cached prompt; the prompt carries the rules, the context carries the store.
   assert.doesNotMatch(firstPrompt ?? '', /MEMORY_BODY/);
-  assert.match(firstPrompt ?? '', /^<user_memory>$/mu);
+  assert.match(firstPrompt ?? '', /^<memory_filesystem>$/mu);
   assert.equal(
     firstResolved.contexts?.find((context) => context.name === 'user_memory_snapshot')?.text,
     'MEMORY_BODY',

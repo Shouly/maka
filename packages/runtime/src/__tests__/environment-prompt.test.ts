@@ -29,20 +29,42 @@ test('environment block names the workspace facts and omits what the host does n
     branch: 'main',
     shell: 'zsh',
     timeZone: 'Asia/Shanghai',
+    now: new Date('2026-09-18T12:00:00Z'),
   });
   assert.equal(
     text,
     [
+      'The assistant is Copilot.',
+      '',
+      'The current date is (provided in the conversation below).',
+      '',
+      "Copilot is currently operating in the Copilot desktop app, on the person's own computer.",
+      '',
+      "The user's timezone is Asia/Shanghai (UTC+08:00).",
+      '',
       '<env>',
       'Primary working directory: /work/app',
       'Is a git repository: yes (branch main)',
       'Platform: macOS',
       'Shell: zsh',
-      'Time zone: Asia/Shanghai',
       '</env>',
     ].join('\n'),
   );
   assert.doesNotMatch(text, /language/u);
+  // No zone, no zone line — and an unknown zone name falls to UTC.
+  assert.doesNotMatch(
+    renderEnvironmentPromptFragment({ cwd: '/w', platform: 'darwin', gitRepository: false }),
+    /timezone/u,
+  );
+  assert.match(
+    renderEnvironmentPromptFragment({
+      cwd: '/w',
+      platform: 'darwin',
+      gitRepository: false,
+      timeZone: 'Mars/Olympus',
+    }),
+    /The user's timezone is UTC \(UTC\+00:00\)\./u,
+  );
 });
 
 test('unknown platforms pass through and Windows gets its label', () => {

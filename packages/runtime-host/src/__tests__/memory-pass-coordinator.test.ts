@@ -223,7 +223,10 @@ describe('background memory pass', () => {
     // The rulebook is Copilot's, so the preface says which parts are the pass's
     // and that "you do NOT file" in it is about Copilot.
     assert.match(fixture.prompts[0]!.system, /Filing is your job/);
-    assert.match(fixture.prompts[0]!.system, /From "What counts, for the pass and for you" onward/);
+    assert.match(
+      fixture.prompts[0]!.system,
+      /"Read before writing" and <privacy_requirements> are your rulebook in full/,
+    );
     assert.match(fixture.prompts[0]!.system, /<rules>\nRULES_SENTINEL\n<\/rules>/);
     // Stage one sees the listing and the exchange, not file bodies.
     assert.match(

@@ -23,8 +23,12 @@
  * session-level — nothing here changes between turns — so it belongs to the
  * cached system prompt, after the static layer. Anything that changes per turn
  * (the date, the serving model, the permission mode) is delivered with the
- * turn instead, so this block never churns the provider prefix.
+ * turn instead, so this block never churns the provider prefix. It opens the
+ * way the reference's tail does — who the assistant is, where the date comes
+ * from, where it runs, the user's zone — and the machine facts follow in <env>.
  */
+
+import { formatUtcOffset, resolveZone } from '../injection/user-message-injections.js';
 
 export interface EnvironmentPromptInput {
   readonly cwd: string;
@@ -37,6 +41,8 @@ export interface EnvironmentPromptInput {
   readonly branch?: string;
   /** IANA zone of the machine the tools run on. */
   readonly timeZone?: string;
+  /** The moment the zone's offset is read at; now when absent. */
+  readonly now?: Date;
   /** The user's interface locale (BCP 47), when the host knows it. */
   readonly locale?: string;
   /** The operating system's temporary directory, for scratch files. */
@@ -57,9 +63,17 @@ export function renderEnvironmentPromptFragment(input: EnvironmentPromptInput): 
   ];
   if (input.shell) lines.push(`Shell: ${input.shell}`);
   if (input.tmpDir) lines.push(`Temporary directory for scratch files: ${input.tmpDir}`);
-  if (input.timeZone) lines.push(`Time zone: ${input.timeZone}`);
   if (input.locale) lines.push(`User interface language: ${input.locale}`);
-  return ['<env>', ...lines, '</env>'].join('\n');
+  const zone = input.timeZone ? resolveZone(input.timeZone, input.now ?? new Date()) : undefined;
+  return [
+    'The assistant is Copilot.',
+    'The current date is (provided in the conversation below).',
+    "Copilot is currently operating in the Copilot desktop app, on the person's own computer.",
+    ...(zone
+      ? [`The user's timezone is ${zone} (${formatUtcOffset(input.now ?? new Date(), zone)}).`]
+      : []),
+    ['<env>', ...lines, '</env>'].join('\n'),
+  ].join('\n\n');
 }
 
 /** The host machine's IANA zone, or undefined when the runtime cannot say. */

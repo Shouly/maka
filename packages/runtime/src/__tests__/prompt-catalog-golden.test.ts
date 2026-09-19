@@ -58,10 +58,16 @@ test('the static prompt layer matches its golden file', () => {
 test('a conditional section is present only when its capability is', () => {
   const withMemory = assembleMainSessionSystemPrompt([], {}, new Set(['memory']));
   const without = assembleMainSessionSystemPrompt([]);
-  assert.match(withMemory, /^<user_memory>$/mu);
-  assert.doesNotMatch(without, /<user_memory>/u);
+  assert.match(withMemory, /^<memory_filesystem>$/mu);
+  assert.doesNotMatch(without, /<memory_filesystem>/u);
   // Everything unconditional is in both, in the same order.
-  assert.equal(without, withMemory.replace(/\n\n<user_memory>[\s\S]*<\/user_memory>/u, ''));
+  assert.equal(
+    without,
+    withMemory.replace(
+      /\n\n<memory_filesystem>[\s\S]*<\/memory_filesystem>\n\nMemory files are size-capped[^\n]*/u,
+      '',
+    ),
+  );
 });
 
 test('static sections are ordered, unique and non-empty', () => {
@@ -83,7 +89,8 @@ test('every tag a section opens, it closes, in order', () => {
   // two closing tags gone, and every other test still green.
   const text = assembleMainSessionSystemPrompt([], {}, EVERY_CONDITION);
   const open: string[] = [];
-  for (const [, closing, name] of text.matchAll(/^<(\/?)([a-z_]+)>$/gmu)) {
+  // An opening tag may carry attributes (`<example_group title="…">`).
+  for (const [, closing, name] of text.matchAll(/^<(\/?)([a-z_]+)(?: [^>]*)?>$/gmu)) {
     if (closing) assert.equal(open.pop(), name, `mismatched </${name}>`);
     else open.push(name!);
   }

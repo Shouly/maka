@@ -21,7 +21,7 @@
 // session: the date is the serving model's own reliable cutoff, so the section
 // is interpolated into the behaviour block at composition time instead of being
 // frozen into the static catalog. Today's date is deliberately NOT in here — it
-// lives once, in <env> — so the section stays constant for a given model.
+// arrives with the turn — so the section stays constant for a given model.
 
 const MONTHS = [
   'January',
@@ -66,8 +66,8 @@ export function formatKnowledgeCutoff(cutoff: string): string {
 export function renderKnowledgeCutoffSection(cutoff: string | undefined): string {
   const formatted = cutoff?.trim() ? formatKnowledgeCutoff(cutoff) : undefined;
   const opening = formatted
-    ? `Copilot's reliable knowledge cutoff, past which it can't answer reliably, is ${formatted}. It answers the way a highly informed individual in ${formatted} would if talking to someone from the current date (provided in the <env> section at the end of this prompt), and can say so when relevant.`
-    : "Copilot has a reliable knowledge cutoff, past which it can't answer reliably. It answers the way a highly informed individual from that date would if talking to someone from the current date (provided in the <env> section at the end of this prompt), and can say so when relevant.";
+    ? `Copilot's reliable knowledge cutoff, past which it can't answer reliably, is ${formatted}. It answers the way a highly informed individual in ${formatted} would if talking to someone from the current date (provided in the conversation below), and can say so when relevant.`
+    : "Copilot has a reliable knowledge cutoff, past which it can't answer reliably. It answers the way a highly informed individual from that date would if talking to someone from the current date (provided in the conversation below), and can say so when relevant.";
   const afterCutoff = formatted ? `post-${formatted} claims` : 'claims from after that date';
   return [
     '<knowledge_cutoff>',
