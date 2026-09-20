@@ -24,6 +24,8 @@ export type TurnOrigin =
   | { kind: 'scheduled_task'; scheduledTaskId: string }
   | { kind: 'legacy_automation'; automationId: string }
   | { kind: 'goal'; goalId: string }
+  /** A background task of this session finished; the turn announces it. */
+  | { kind: 'background_task'; ref: string; toolUseId: string }
   | {
       kind: 'agent_graph';
       graphId: string;
@@ -37,9 +39,14 @@ type ScheduledTaskOrigin = Extract<TurnOrigin, { kind: 'scheduled_task' }>;
 type LegacyAutomationOrigin = Extract<TurnOrigin, { kind: 'legacy_automation' }>;
 type GoalOrigin = Extract<TurnOrigin, { kind: 'goal' }>;
 type AgentGraphOrigin = Extract<TurnOrigin, { kind: 'agent_graph' }>;
+type BackgroundTaskOrigin = Extract<TurnOrigin, { kind: 'background_task' }>;
 
 const SCHEDULED_TASK_ORIGIN_SHAPE = defineObjectShape<ScheduledTaskOrigin>()(
   ['kind', 'scheduledTaskId'],
+  [],
+);
+const BACKGROUND_TASK_ORIGIN_SHAPE = defineObjectShape<BackgroundTaskOrigin>()(
+  ['kind', 'ref', 'toolUseId'],
   [],
 );
 const LEGACY_AUTOMATION_ORIGIN_SHAPE = defineObjectShape<LegacyAutomationOrigin>()(
@@ -75,6 +82,14 @@ export function decodeTurnOrigin(value: unknown): TurnOrigin | undefined {
     typeof value.goalId === 'string'
   ) {
     return { kind: 'goal', goalId: value.goalId };
+  }
+  if (
+    hasExactShape(value, BACKGROUND_TASK_ORIGIN_SHAPE) &&
+    value.kind === 'background_task' &&
+    typeof value.ref === 'string' &&
+    typeof value.toolUseId === 'string'
+  ) {
+    return { kind: 'background_task', ref: value.ref, toolUseId: value.toolUseId };
   }
   if (
     hasExactShape(value, AGENT_GRAPH_ORIGIN_SHAPE) &&

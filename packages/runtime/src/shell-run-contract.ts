@@ -24,7 +24,12 @@ import {
   type TerminalInputAction,
 } from '@maka/core/terminal-input';
 
-import { isShellRunId, SHELL_RUN_ID_MAX_CHARS, type ShellRunStore } from '@maka/core/shell-run';
+import {
+  isShellRunId,
+  SHELL_RUN_ID_MAX_CHARS,
+  type ShellRunRecord,
+  type ShellRunStore,
+} from '@maka/core/shell-run';
 
 import { type ShellRunUpdate, type ToolResultContent } from '@maka/core/events';
 
@@ -69,6 +74,12 @@ export interface ShellRunProcessManagerInput {
   now: () => number;
   onShellRunUpdate?: (update: ShellRunUpdate) => void;
   onPtyData?: (event: ShellRunPtyDataEvent) => void;
+  /**
+   * A background task reached a terminal state that the model has not been
+   * told about. Fires after the durable write; the Host wakes an idle session
+   * with it, a running turn picks it up at its next step boundary either way.
+   */
+  onTaskFinished?: (record: ShellRunRecord) => void;
   maxLiveShellRuns?: number;
   maxLivePtyRuns?: number;
   flushIntervalMs?: number;
@@ -93,6 +104,8 @@ export interface ShellRunBashInput {
   visibility?: 'model' | 'user';
   cwd: string;
   command: string;
+  /** The model's own words for the command; the completion notification repeats them. */
+  description?: string;
   /** Final executable argv. When present, bypasses host-shell parsing. */
   argv?: readonly string[];
   env?: NodeJS.ProcessEnv;

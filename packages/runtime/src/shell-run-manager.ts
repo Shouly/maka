@@ -78,6 +78,7 @@ import {
   type ShellRunProcessManagerInput,
   type ShellRunWriteInput,
 } from './shell-run-contract.js';
+import { taskNotificationOwed } from './injection/task-notification.js';
 import {
   compactShellRunContent,
   ptyControlOperation,
@@ -203,6 +204,10 @@ interface LiveShellRunBase {
   finished: CompletionLatch<ShellRunRecord>;
   onCompletion?: (outcome: { successful: boolean }) => void;
   completionNotified: boolean;
+  /** Handed off as a ref: its finish is owed to the model as a notification. */
+  background: boolean;
+  /** The model stopped it itself (TaskStop): the stop result already says how it ended. */
+  notificationSuppressed: boolean;
 }
 
 interface ShellRunSlotReservation {
@@ -258,6 +263,10 @@ export class ShellRunProcessManager
   private readonly sessionTerminationEpochs = new Map<string, number>();
   private readonly pendingStartups = new Map<string, Set<Promise<void>>>();
   private readonly startupOwners = new Set<string>();
+  /** Sessions with a finished task the model has not been told about (see pendingTaskNotifications). */
+  private readonly notificationDirty = new Set<string>();
+  /** Sessions whose stored runs were scanned for owed notifications in this process. */
+  private readonly notificationScanned = new Set<string>();
   private readonly maxLiveShellRuns: number;
   private readonly maxLivePtyRuns: number;
   private readonly flushIntervalMs: number;
@@ -311,13 +320,14 @@ export class ShellRunProcessManager
         const live = await this.start(ownedInput, mode, timeoutMs, false);
         const record = await this.persistObservation(live);
         if (input.abortSignal?.aborted) {
+          live.notificationSuppressed = true;
           this.requestForcedTermination(live, 'cancel');
-          return shellRunContent(await this.markObserved(await live.finished.join()));
+          return shellRunContent(await this.markSettled(await live.finished.join()));
         }
         live.visibleRef = true;
         let handoffRecord = live.record.revision >= record.revision ? live.record : record;
         if (isTerminalShellRunStatus(handoffRecord.status)) {
-          handoffRecord = await this.markObserved(handoffRecord);
+          handoffRecord = await this.markSettled(handoffRecord);
         }
         this.notifyShellRunUpdate(handoffRecord);
         return isTerminalShellRunStatus(handoffRecord.status)
@@ -534,13 +544,20 @@ export class ShellRunProcessManager
     const live = this.liveResource(sessionId, target.shellRunId);
     if (!live) return this.stopWithoutLive(sessionId, target.shellRunId, abortSignal, caller);
     assertShellRunCaller(live.record, caller);
+    // The model asked; the stop result tells it how the task ended, so no
+    // notification follows. A client stop leaves the notification owed: the
+    // model is still waiting to hear.
+    const settle = caller === 'model';
+    if (settle) live.notificationSuppressed = true;
+    const observe = (record: ShellRunRecord) =>
+      settle ? this.markSettled(record) : this.markObserved(record);
     if (live.driverExit) {
-      const record = await this.markObserved(await live.finished.join());
+      const record = await observe(await live.finished.join());
       return shellRunContent(record, { kind: 'stop', applied: false });
     }
     if (live.termination) {
       await this.waitForTerminationDecision(live.termination, abortSignal);
-      const record = await this.markObserved(await live.finished.join());
+      const record = await observe(await live.finished.join());
       return shellRunContent(record, { kind: 'stop', applied: false });
     }
     if (abortSignal.aborted) throw abortError('TaskStop aborted before termination was committed');
@@ -557,7 +574,7 @@ export class ShellRunProcessManager
         } catch (error) {
           if (isAbortError(error)) throw error;
           this.handleIntegrityFailure(live, asError(error, 'PTY stop sequencing failed'));
-          const record = await this.markObserved(await live.finished.join());
+          const record = await observe(await live.finished.join());
           return shellRunContent(record, { kind: 'stop', applied: false });
         }
       } else {
@@ -567,8 +584,32 @@ export class ShellRunProcessManager
       live.pendingStops.delete(pending);
       pending.dispose();
     }
-    const record = await this.markObserved(await live.finished.join());
+    const record = await observe(await live.finished.join());
     return shellRunContent(record, { kind: 'stop', applied });
+  }
+
+  /**
+   * Background tasks of the session whose end the model has not been told
+   * about. Sessions are scanned once per process and then only while a task
+   * finish has marked them; the store stays the authority for what is owed.
+   */
+  async pendingTaskNotifications(sessionId: string): Promise<ShellRunRecord[]> {
+    if (this.notificationScanned.has(sessionId) && !this.notificationDirty.has(sessionId)) {
+      return [];
+    }
+    const records = await this.input.store.listSessionShellRuns(sessionId);
+    const owed = records
+      .filter(taskNotificationOwed)
+      .sort((a, b) => (a.completedAt ?? a.updatedAt) - (b.completedAt ?? b.updatedAt));
+    this.notificationScanned.add(sessionId);
+    if (owed.length === 0) this.notificationDirty.delete(sessionId);
+    return owed;
+  }
+
+  /** The model has been told: the record is settled and will not be announced again. */
+  async markTaskNotified(sessionId: string, shellRunId: string): Promise<ShellRunRecord> {
+    const record = await this.readDurableRecord(sessionId, shellRunId);
+    return this.markSettled(record);
   }
 
   async listSessionUpdates(sessionId: string): Promise<ShellRunUpdate[]> {
@@ -611,7 +652,9 @@ export class ShellRunProcessManager
         this.startupOwners.has(record.shellRunId)
       )
         continue;
-      await this.markOrphaned(record, 'Runtime restarted without a live shell process handle');
+      this.notifyTaskFinished(
+        await this.markOrphaned(record, 'Runtime restarted without a live shell process handle'),
+      );
       recovered += 1;
     }
     return recovered;
@@ -760,6 +803,7 @@ export class ShellRunProcessManager
         shellRunId,
         timeoutMs,
         collector.snapshot(),
+        !forwardLive,
       );
       this.assertStartupAllowed(input.sessionId, sessionEpoch, input.abortSignal);
       spawnAttempted = true;
@@ -845,6 +889,7 @@ export class ShellRunProcessManager
         shellRunId,
         timeoutMs,
         collector.lastGoodSnapshot(),
+        true,
       );
       this.assertStartupAllowed(input.sessionId, sessionEpoch, input.abortSignal);
       driver = new PtyProcessDriver({
@@ -920,6 +965,8 @@ export class ShellRunProcessManager
       ...(timeoutMs !== undefined ? { timeoutMs } : {}),
       record,
       visibleRef: false,
+      background: record.background === true,
+      notificationSuppressed: false,
       pendingStops: new Set(),
       persistChain: Promise.resolve(),
       lastPersistedGeneration: 0,
@@ -939,6 +986,7 @@ export class ShellRunProcessManager
     shellRunId: string,
     timeoutMs: number | undefined,
     output: ShellOutput,
+    background: boolean,
   ): Promise<ShellRunRecord> {
     const startedAt = this.input.now();
     const record: ShellRunRecord = {
@@ -950,6 +998,8 @@ export class ShellRunProcessManager
       ...(input.visibility === undefined ? {} : { visibility: input.visibility }),
       cwd: input.cwd,
       command: redactSecrets(input.command),
+      ...(background ? { background: true } : {}),
+      ...(input.description !== undefined ? { description: redactSecrets(input.description) } : {}),
       status: 'starting',
       startedAt,
       updatedAt: startedAt,
@@ -1275,11 +1325,27 @@ export class ShellRunProcessManager
         finalRecord.status === 'completed' && finalRecord.exitCode === 0,
       );
       live.finished.resolve(finalRecord);
+      this.notifyTaskFinished(finalRecord);
       return finalRecord;
     } finally {
       this.notifyCompletionOwner(live, false);
       this.live.delete(live.shellRunId);
       this.releaseLiveSlot(live);
+    }
+  }
+
+  /**
+   * A durable terminal record the model is owed a notification for. Marks
+   * the session so the next step boundary looks, and tells the Host so an
+   * idle session gets woken.
+   */
+  private notifyTaskFinished(record: ShellRunRecord): void {
+    if (!taskNotificationOwed(record)) return;
+    this.notificationDirty.add(record.sessionId);
+    try {
+      this.input.onTaskFinished?.(record);
+    } catch {
+      // The store owns what is owed; a Host listener failing changes nothing durable.
     }
   }
 
@@ -1295,12 +1361,20 @@ export class ShellRunProcessManager
 
   private finalState(live: LiveShellRun): PersistPatch {
     const completedAt = this.input.now();
+    // A foreground command returns its end as the tool result; a task the
+    // model stopped itself gets it from TaskStop; a shutdown takes the session
+    // with it. None of those is owed a notification.
+    const settled =
+      !live.background || live.notificationSuppressed || live.lifecycleCause === 'shutdown'
+        ? { notifiedAt: completedAt }
+        : {};
     if (live.integrityFailure) {
       return {
         status: 'failed',
         failureMessage: safeFailureMessage(live.integrityFailure),
         exitCode: undefined,
         completedAt,
+        ...settled,
       };
     }
     if (live.lifecycleCause === 'timeout') {
@@ -1312,6 +1386,7 @@ export class ShellRunProcessManager
             : `Command timed out after ${live.timeoutMs}ms`,
         exitCode: 124,
         completedAt,
+        ...settled,
       };
     }
     if (live.lifecycleCause === 'cancel' || live.lifecycleCause === 'shutdown') {
@@ -1320,6 +1395,7 @@ export class ShellRunProcessManager
         failureMessage: 'Command cancelled',
         exitCode: 130,
         completedAt,
+        ...settled,
       };
     }
     const exitCode = naturalExitCode(live.driverExit);
@@ -1328,6 +1404,7 @@ export class ShellRunProcessManager
       ...(exitCode === 0 ? {} : { failureMessage: 'Command failed' }),
       exitCode,
       completedAt,
+      ...settled,
     };
   }
 
@@ -1619,6 +1696,7 @@ export class ShellRunProcessManager
         exitCode: undefined,
         completedAt: now,
         observedAt: now,
+        notifiedAt: now,
         updatedAt: now,
       };
     });
@@ -1654,6 +1732,7 @@ export class ShellRunProcessManager
           record,
           'Runtime restarted without a live shell process handle',
         );
+        this.notifyTaskFinished(record);
       }
       if (abortSignal.aborted)
         throw abortError('Read aborted before the durable runtime snapshot was observed');
@@ -1684,6 +1763,7 @@ export class ShellRunProcessManager
         record,
         'Runtime restarted without a live shell process handle',
       );
+      this.notifyTaskFinished(record);
     }
     if (input.abortSignal?.aborted) {
       throw abortError('TaskInput aborted before the terminal state was observed');
@@ -1715,11 +1795,12 @@ export class ShellRunProcessManager
         record,
         'Runtime restarted without a live shell process handle',
       );
+      if (caller !== 'model') this.notifyTaskFinished(record);
     }
     if (abortSignal?.aborted) {
       throw abortError('TaskStop aborted before the terminal state was observed');
     }
-    record = await this.markObserved(record);
+    record = caller === 'model' ? await this.markSettled(record) : await this.markObserved(record);
     return shellRunContent(record, { kind: 'stop', applied: false });
   }
 
@@ -1744,6 +1825,17 @@ export class ShellRunProcessManager
     if (!isTerminalShellRunStatus(record.status) || record.observedAt !== undefined) return record;
     return this.input.store.updateShellRun(record.sessionId, record.shellRunId, {
       observedAt: this.input.now(),
+    });
+  }
+
+  /** Observed and told: nothing about this run is owed to the model any more. */
+  private async markSettled(record: ShellRunRecord): Promise<ShellRunRecord> {
+    if (!isTerminalShellRunStatus(record.status)) return record;
+    if (record.observedAt !== undefined && record.notifiedAt !== undefined) return record;
+    const now = this.input.now();
+    return this.input.store.updateShellRun(record.sessionId, record.shellRunId, {
+      ...(record.observedAt === undefined ? { observedAt: now } : {}),
+      ...(record.notifiedAt === undefined ? { notifiedAt: now } : {}),
     });
   }
 

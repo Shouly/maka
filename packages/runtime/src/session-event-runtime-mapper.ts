@@ -493,10 +493,17 @@ function mapBackendSessionEvent(
       return {
         ...base,
         role: 'user',
-        author: 'user',
+        // A background-task notification is the system speaking in the user
+        // role; its origin says which task, for the transcript and recovery.
+        author: event.author ?? 'user',
         // Canonical content + steering marker: read models may prefer
         // displayText, while model replay uses text and materializes attachments.
-        content: { kind: 'text', ...normalizeMessageContent(event.content), steering: true },
+        content: {
+          kind: 'text',
+          ...normalizeMessageContent(event.content),
+          steering: true,
+          ...(event.origin ? { origin: event.origin } : {}),
+        },
         refs: {
           providerEventId: event.messageId,
           ...(event.submittedContentDigest

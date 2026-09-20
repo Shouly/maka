@@ -14535,6 +14535,51 @@ describe('AiSdkBackend steering durability and identity', () => {
     );
   });
 
+  test('a finished background task is announced at the next boundary as the system, not the user', async () => {
+    const model = textCompletionModel('the first answer');
+    const durable = durableTurnHarness('turn-1', 'start');
+    const backend = steeringBackend(model, {
+      loadTurnRuntimeEvents: durable.loadTurnRuntimeEvents,
+    });
+    let pulls = 0;
+    const acked: string[] = [];
+    const text =
+      '[SYSTEM NOTIFICATION - NOT USER INPUT]\n<task-notification>the build finished</task-notification>';
+    const events = await drainDurably(
+      backend.send(
+        durable.input({
+          pullTaskNotifications: async () =>
+            ++pulls === 2
+              ? [{ ref: 'maka://runtime/background-tasks/sr_1', toolUseId: 'call_1', text }]
+              : [],
+          ackTaskNotification: async (ref: string) => {
+            acked.push(ref);
+          },
+        }),
+      ),
+      durable,
+    );
+    const notices = events.filter((event) => event.type === 'steering_message');
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0]?.author, 'system');
+    assert.deepEqual(notices[0]?.origin, {
+      kind: 'background_task',
+      ref: 'maka://runtime/background-tasks/sr_1',
+      toolUseId: 'call_1',
+    });
+    assert.deepEqual(acked, ['maka://runtime/background-tasks/sr_1']);
+    // The model is asked again with the notification, verbatim — no
+    // "the user sent a message" envelope, because the user did not.
+    assert.equal(model.doStreamCalls.length, 2);
+    const prompt = JSON.stringify(model.doStreamCalls[1]?.prompt);
+    assert.match(prompt, /the build finished/);
+    assert.doesNotMatch(prompt, /The user sent a message while you were working/);
+    const ledgerNotice = durable.ledger.find(
+      (event) => event.content?.kind === 'text' && event.content.steering === true,
+    );
+    assert.equal(ledgerNotice?.author, 'system');
+  });
+
   test('the late-steer edge is skipped without a durable current-run reader', async () => {
     // The no-reader projection at the top of the loop appends steering alone —
     // it never appends the assistant output of the step just finished. Taking

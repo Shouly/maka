@@ -56,6 +56,7 @@ export { SHELL_RUN_SOURCE_TOOL_CALL_ID_MAX_BYTES } from './shell-run.js';
 import { type TokenUsageFields } from './usage-record-schema.js';
 import { defineObjectShape, hasExactShape, isRecord } from './record-schema.js';
 import type { DurableToolResultProjection } from './durable-tool-result-projection.js';
+import type { TurnOrigin } from './turn-origin.js';
 
 export const TOOL_OUTPUT_STREAMS = ['stdout', 'stderr'] as const;
 export const TOOL_OUTPUT_DELTA_MAX_CHARS = 8192;
@@ -1217,6 +1218,10 @@ export interface SteeringMessageEvent extends BaseEvent {
   messageId: string;
   content: MessageContent;
   submittedContentDigest?: `sha256:${string}`;
+  /** The system spoke mid-turn (a background task finished); absent means the user did. */
+  author?: 'system';
+  /** Provenance of a system-authored interjection. */
+  origin?: TurnOrigin;
 }
 
 /**

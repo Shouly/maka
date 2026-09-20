@@ -55,6 +55,7 @@ import type { TurnLineageBadge } from '@maka/ui';
 import { getTranscriptCopy } from '../../locales/transcript-copy.js';
 import { TurnFooter } from './TurnFooter.js';
 import { UserMessageRow } from './UserMessageRow.js';
+import { SystemNoticeRow } from './SystemNoticeRow.js';
 import { ToolGroup } from './tools/ToolGroup.js';
 import { renderToolContent } from './tools/registry.js';
 import { useStore } from 'zustand';
@@ -130,7 +131,10 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
       data-turn-status={turn.status}
       className={cn('group/turn flex flex-col', props.highlighted && 'highlight-message')}
     >
-      {turn.user && (
+      {turn.user && turn.user.hostOrigin?.kind === 'background_task' && (
+        <SystemNoticeRow messageId={turn.user.id} text={turn.user.text} />
+      )}
+      {turn.user && turn.user.hostOrigin?.kind !== 'background_task' && (
         <UserMessageRow
           messageId={turn.user.id}
           text={turn.user.text}
@@ -206,6 +210,15 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
             );
           }
           if (entry.kind === 'user') {
+            if (entry.message.hostOrigin?.kind === 'background_task') {
+              return (
+                <SystemNoticeRow
+                  key={`inserted-${entry.messageId}`}
+                  messageId={entry.message.id}
+                  text={entry.message.text}
+                />
+              );
+            }
             return (
               <UserMessageRow
                 key={`inserted-${entry.messageId}`}

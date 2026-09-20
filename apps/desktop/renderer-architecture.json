@@ -106,6 +106,7 @@
     "src/renderer/components/session/SessionPanel.tsx",
     "src/renderer/components/session/SessionUploadsDialog.tsx",
     "src/renderer/components/session/SessionView.tsx",
+    "src/renderer/components/session/SystemNoticeRow.tsx",
     "src/renderer/components/session/ThinkingStep.tsx",
     "src/renderer/components/session/TranscriptTurn.tsx",
     "src/renderer/components/session/TurnFooter.tsx",
@@ -2530,6 +2531,21 @@
         "zustand/react/shallow": 1
       }
     },
+    "src/renderer/components/session/SystemNoticeRow.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/transcript-copy.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
     "src/renderer/components/session/ThinkingStep.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {
@@ -2576,6 +2592,7 @@
         "../ui/Markdown.js": 1,
         "../ui/StreamPopMarkdown.js": 1,
         "./AskUserQuestionRecord.js": 1,
+        "./SystemNoticeRow.js": 1,
         "./tools/registry.js": 1,
         "./tools/renderers/DeliveryResults.js": 1,
         "./tools/ToolGroup.js": 1,

@@ -89,7 +89,7 @@ export function shellRunResultText(result: ShellRunLikeResult): string {
 function startedLine(result: ShellRunLikeResult): string {
   const terminal =
     result.mode === 'pty' ? ' It has a terminal: send keystrokes with TaskInput.' : '';
-  return `Command running in background with ref: ${result.ref}. To check its output, use Read on that ref; to end it, use TaskStop.${terminal}`;
+  return `Command running in background with ref: ${result.ref}. You will be notified when it completes. To check interim output, use Read on that ref; to end it, use TaskStop.${terminal}`;
 }
 
 /** The output as a Read would number it, ending in the status line. */

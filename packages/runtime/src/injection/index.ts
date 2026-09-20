@@ -47,3 +47,12 @@ export {
   type TurnInjectionFacts,
 } from './turn-injections.js';
 export { SessionInjections, type SessionInjectionsInput } from './session-injections.js';
+export {
+  TASK_NOTIFICATION_PREAMBLE,
+  renderTaskNotification,
+  renderTaskNotificationWake,
+  taskNotificationOwed,
+  taskNotificationStatus,
+  taskNotificationSummary,
+  type TaskNotificationStatus,
+} from './task-notification.js';

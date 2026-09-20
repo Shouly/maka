@@ -334,7 +334,7 @@ export function buildManagedBashTool(
     description: bashToolDescription(shell, [
       ...(options.lead ? [`- ${options.lead}`] : []),
       `- Foreground is the default: the command runs to completion and the result is what it printed. A failure leads with an \`Exit code N\` line; a command that printed nothing returns "(no output)".`,
-      `- Set \`run_in_background: true\` for a command that should keep running as a tracked task — a dev server, a watcher, a long build. It returns a ref instead of output: read what it prints with Read on that ref, and end it with TaskStop. Background runs have no default timeout (maximum explicit timeout ${MAX_SHELL_RUN_TIMEOUT_MS}ms).`,
+      `- Set \`run_in_background: true\` for a command that should keep running as a tracked task — a dev server, a watcher, a long build. It keeps running across turns and re-invokes you when it exits. No \`&\` needed. It returns a ref instead of output: read what it prints with Read on that ref, and end it with TaskStop. Background runs have no default timeout (maximum explicit timeout ${MAX_SHELL_RUN_TIMEOUT_MS}ms).`,
       '- Set `pty: true` together with `run_in_background: true` only when the command needs terminal semantics or later keystrokes; send those with TaskInput on the returned ref.',
       '- `description` is what the user reads in place of the raw command.',
       ...(declareSandboxBoundary ? ['- Enforced by the current session sandbox boundary.'] : []),
@@ -358,7 +358,7 @@ export function buildManagedBashTool(
     ...(options.executionFacts ? { executionFacts: options.executionFacts } : {}),
     impl: async (input, ctx) => {
       throwIfShellSetupFailed(shell);
-      const { command, timeout, run_in_background, pty } = input;
+      const { command, timeout, run_in_background, pty, description } = input;
       const normalizedRequiredBoundary = await preflightDeclaredSandboxBoundary(
         selectedBashBoundaryExpansion(input),
         ctx,
@@ -385,6 +385,7 @@ export function buildManagedBashTool(
           sourceToolCallId: ctx.toolCallId,
           cwd: transformed?.cwd ?? ctx.cwd,
           command,
+          ...(description !== undefined ? { description } : {}),
           ...(pty !== undefined ? { pty } : {}),
           ...(transformed?.argv ? { argv: transformed.argv } : { shell: shell.plan }),
           ...(transformed?.env ? { env: transformed.env } : {}),

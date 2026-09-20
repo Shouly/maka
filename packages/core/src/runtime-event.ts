@@ -316,6 +316,7 @@ export type RuntimeInvocationRootAuthority =
   | { kind: 'context_compact' }
   | { kind: 'scheduled_task'; scheduledTaskId: string }
   | { kind: 'goal'; goalId: string }
+  | { kind: 'background_task'; ref: string; toolUseId: string }
   | { kind: 'agent_graph_supervisor_wake'; wakeId: string; attemptId: string }
   | { kind: 'legacy_automation'; legacyAutomationId: string };
 
@@ -851,6 +852,9 @@ const INVOCATION_ROOT_SHAPES = {
     ['kind', 'goalId'],
     [],
   ),
+  background_task: defineObjectShape<
+    Extract<RuntimeInvocationRootAuthority, { kind: 'background_task' }>
+  >()(['kind', 'ref', 'toolUseId'], []),
   agent_graph_supervisor_wake: defineObjectShape<
     Extract<RuntimeInvocationRootAuthority, { kind: 'agent_graph_supervisor_wake' }>
   >()(['kind', 'wakeId', 'attemptId'], []),
@@ -1224,6 +1228,12 @@ function isRuntimeInvocationRootAuthority(value: unknown): value is RuntimeInvoc
       );
     case 'goal':
       return hasExactShape(value, INVOCATION_ROOT_SHAPES.goal) && isNonEmptyString(value.goalId);
+    case 'background_task':
+      return (
+        hasExactShape(value, INVOCATION_ROOT_SHAPES.background_task) &&
+        isNonEmptyString(value.ref) &&
+        isNonEmptyString(value.toolUseId)
+      );
     case 'agent_graph_supervisor_wake':
       return (
         hasExactShape(value, INVOCATION_ROOT_SHAPES.agent_graph_supervisor_wake) &&

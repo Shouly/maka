@@ -33,6 +33,9 @@ export function projectSessionCatalogMessages(messages: readonly StoredMessage[]
 }
 
 export function catalogPreviewForUserMessage(message: UserMessage): string | undefined {
+  // A background-task notification is the harness talking to the model; the
+  // Session list shows what the reader or the model last said, not that.
+  if (message.origin?.kind === 'background_task') return undefined;
   const text = normalizePreviewText(message.displayText ?? message.text);
   if (text) return truncatePreview(text);
   return message.attachments && message.attachments.length > 0 ? '附件' : undefined;

@@ -3854,6 +3854,18 @@ export class SessionManager {
         executionKind: input.execution.kind,
         goalId: input.execution.goalId,
       };
+    } else if (input.execution.kind === 'background_task') {
+      root = {
+        kind: 'background_task',
+        ref: input.execution.ref,
+        toolUseId: input.execution.toolUseId,
+      };
+      recoveryReason = 'background_task_internal_admission_without_run';
+      diagnostic = {
+        executionKind: input.execution.kind,
+        ref: input.execution.ref,
+        toolUseId: input.execution.toolUseId,
+      };
     } else if (
       input.execution.kind === 'workhub_coordination' &&
       input.execution.operation === 'action'

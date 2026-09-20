@@ -2787,6 +2787,112 @@ describe('ShellRunProcessManager', () => {
   });
 });
 
+describe('what a finished background task owes the model', () => {
+  test('a background exit is announced once: owed after the durable write, settled by the acknowledgement', async () => {
+    const cwd = await workspace();
+    const store = sqliteShellRunStore(cwd);
+    const finished: ShellRunRecord[] = [];
+    const manager = createManager(store, undefined, {
+      onTaskFinished: (record) => finished.push(record),
+    });
+    const started = await manager.runBackgroundBash({
+      ...shellInput({
+        cwd,
+        command: 'node -e "process.exit(0)"',
+        argv: [process.execPath, '-e', 'process.exit(0)'],
+      }),
+      description: 'Exit cleanly with token=abc123secret',
+    });
+    assert.equal(started.kind, 'shell_run');
+    await waitForTerminalShellRun(manager, started.ref);
+    await waitUntil(() => finished.length === 1);
+
+    const [record] = finished;
+    assert.equal(record?.status, 'completed');
+    assert.equal(record?.background, true);
+    assert.equal(record?.notifiedAt, undefined);
+    assert.equal(record?.description?.includes('abc123secret'), false);
+    assert.deepEqual(
+      (await manager.pendingTaskNotifications('session-1')).map((entry) => entry.shellRunId),
+      [record?.shellRunId],
+    );
+
+    const settled = await manager.markTaskNotified('session-1', record!.shellRunId);
+    assert.equal(typeof settled.notifiedAt, 'number');
+    assert.equal(typeof settled.observedAt, 'number');
+    assert.deepEqual(await manager.pendingTaskNotifications('session-1'), []);
+    assert.equal(finished.length, 1);
+  });
+
+  test('a foreground command owes nothing: its result already said how it ended', async () => {
+    const cwd = await workspace();
+    const store = sqliteShellRunStore(cwd);
+    const finished: ShellRunRecord[] = [];
+    const manager = createManager(store, undefined, {
+      onTaskFinished: (record) => finished.push(record),
+    });
+    await manager.runForegroundBash(
+      shellInput({ cwd, command: 'exit 3', argv: [process.execPath, '-e', 'process.exit(3)'] }),
+    );
+    const [record] = await store.listSessionShellRuns('session-1');
+    assert.equal(record?.background, undefined);
+    assert.equal(typeof record?.notifiedAt, 'number');
+    assert.deepEqual(await manager.pendingTaskNotifications('session-1'), []);
+    assert.deepEqual(finished, []);
+  });
+
+  test('a task the model stops itself is not announced; one the client stops still is', async () => {
+    const cwd = await workspace();
+    const store = sqliteShellRunStore(cwd);
+    const finished: ShellRunRecord[] = [];
+    const manager = createManager(store, undefined, {
+      onTaskFinished: (record) => finished.push(record),
+    });
+    const spin = (tool: string) =>
+      manager.runBackgroundBash(
+        shellInput({
+          cwd,
+          command: 'sleep',
+          argv: [process.execPath, '-e', 'setInterval(() => {}, 1000)'],
+          sourceToolCallId: tool,
+        }),
+      );
+    const byModel = await spin('tool-model');
+    const byClient = await spin('tool-client');
+    assert.equal(byModel.kind, 'shell_run');
+    assert.equal(byClient.kind, 'shell_run');
+
+    const stopped = await manager.stopBackgroundTask(
+      'session-1',
+      byModel.ref,
+      new AbortController().signal,
+      'model',
+    );
+    assert.equal(stopped.kind, 'shell_run');
+    assert.equal(stopped.kind === 'shell_run' && stopped.status, 'cancelled');
+    await manager.stopBackgroundTask(
+      'session-1',
+      byClient.ref,
+      new AbortController().signal,
+      'client',
+    );
+    await waitUntil(() => finished.length === 1);
+
+    assert.deepEqual(
+      finished.map((record) => record.sourceToolCallId),
+      ['tool-client'],
+    );
+    assert.deepEqual(
+      (await manager.pendingTaskNotifications('session-1')).map((entry) => entry.sourceToolCallId),
+      ['tool-client'],
+    );
+    const modelRecord = (await store.listSessionShellRuns('session-1')).find(
+      (record) => record.sourceToolCallId === 'tool-model',
+    );
+    assert.equal(typeof modelRecord?.notifiedAt, 'number');
+  });
+});
+
 function createManager(
   store: ShellRunStore,
   onShellRunUpdate?: (update: ShellRunUpdate) => void,
@@ -2797,6 +2903,7 @@ function createManager(
     flushIntervalMs?: number;
     pipeOutputDrainMs?: number;
     onPtyData?: ShellRunProcessManagerInput['onPtyData'];
+    onTaskFinished?: ShellRunProcessManagerInput['onTaskFinished'];
     scheduleFlush?: ShellRunProcessManagerInput['scheduleFlush'];
     scheduleTimeout?: ShellRunProcessManagerInput['scheduleTimeout'];
   } = {},

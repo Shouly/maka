@@ -162,6 +162,7 @@ import { HostExternalSessionCoordinator } from './external-session-coordinator.j
 import { HostSessionBundleCoordinator } from './session-bundle-coordinator.js';
 import { HostGoalCoordinator } from './goal-coordinator.js';
 import { HostGoalExecutionCoordinator } from './goal-execution-coordinator.js';
+import { HostBackgroundTaskNotificationCoordinator } from './background-task-notification-coordinator.js';
 import { HostHostedExecutionCoordinator } from './hosted-execution-coordinator.js';
 import { HostHostedExecutionRunner } from './hosted-execution-runner.js';
 import {
@@ -340,6 +341,7 @@ export async function createExecutionRuntimeHostComposition(
   let unsubscribeUsageChanges: (() => void) | undefined;
   let workspaceExecution: RuntimeHostWorkspaceExecutionComposition | undefined;
   let goalExecutions: HostGoalExecutionCoordinator | undefined;
+  let taskNotifications: HostBackgroundTaskNotificationCoordinator | undefined;
   let pluginPlatform: HostPluginPlatform | undefined;
   let manager: SessionManager | undefined;
   let modelMetadataRefresh: ReturnType<typeof startHostModelMetadataRefresh> | undefined;
@@ -456,6 +458,7 @@ export async function createExecutionRuntimeHostComposition(
       onPtyData: (event) => {
         void continuity?.enqueueRuntimeResourcePtyData(event);
       },
+      onTaskFinished: (record) => taskNotifications?.taskFinished(record),
     });
     const sandboxManager = createBuiltinSandboxManager();
     const filesystemWorkerLaunchSpecProvider =
@@ -1896,6 +1899,15 @@ export async function createExecutionRuntimeHostComposition(
         requireGoal(goal).matchesActive(sessionId, checkpoint, controlLease),
     });
     goalExecutions = goalExecutionCoordinator;
+    taskNotifications = new HostBackgroundTaskNotificationCoordinator({
+      executions: coordinator,
+      runtime: manager,
+      shellRuns,
+      onError: (sessionId, error) =>
+        console.error(
+          `[runtime-host] background task notification for session ${sessionId} failed: ${generalizedErrorMessage(error)}`,
+        ),
+    });
     goal = new HostGoalCoordinator({
       store: openedGoalStore,
       stores,
@@ -2712,7 +2724,11 @@ export async function createExecutionRuntimeHostComposition(
           state: () => requireGoal(goal).prepareRecovery(),
           domains: () => requireGoal(goal).recover(),
         },
-        drain: [() => goalExecutions?.beginDrain(), () => goal?.beginDrain()],
+        drain: [
+          () => goalExecutions?.beginDrain(),
+          () => taskNotifications?.beginDrain(),
+          () => goal?.beginDrain(),
+        ],
         close: [() => requireGoal(goal).close()],
       }),
       createRuntimeHostDomainModule({
@@ -2853,6 +2869,7 @@ export async function createExecutionRuntimeHostComposition(
       errors.push(closeError);
     }
     goalExecutions?.beginDrain();
+    taskNotifications?.beginDrain();
     try {
       await workspaceExecution?.close();
     } catch (closeError) {

@@ -89,6 +89,16 @@ export interface TranscriptCopy {
     readonly quotes: string;
     readonly skills: string;
   };
+  /**
+   * The one-line event that a background task ended and Copilot was told.
+   * `completed` and `failed` end with "…and went on", because the answer
+   * below is what it went on to; a task the reader stopped only stopped.
+   */
+  readonly taskFinished: {
+    readonly completed: (task: { title: string; detail?: string }) => string;
+    readonly failed: (task: { title: string; detail?: string }) => string;
+    readonly killed: (task: { title: string; detail?: string }) => string;
+  };
   readonly thinking: {
     readonly label: string;
     readonly active: string;
@@ -536,6 +546,12 @@ const TRANSCRIPT_COPY = {
       quotes: '引用内容',
       skills: '技能',
     },
+    taskFinished: {
+      completed: ({ title }) => `后台任务「${title}」已完成，Copilot 收到通知后继续。`,
+      failed: ({ title, detail }) =>
+        `后台任务「${title}」失败${detail ? `（${detail}）` : ''}，Copilot 收到通知后继续。`,
+      killed: ({ title }) => `后台任务「${title}」已停止。`,
+    },
     thinking: {
       label: '思考过程',
       active: '正在思考…',
@@ -742,6 +758,12 @@ const TRANSCRIPT_COPY = {
       quotes: '引用內容',
       skills: '技能',
     },
+    taskFinished: {
+      completed: ({ title }) => `背景任務「${title}」已完成，Copilot 收到通知後繼續。`,
+      failed: ({ title, detail }) =>
+        `背景任務「${title}」失敗${detail ? `（${detail}）` : ''}，Copilot 收到通知後繼續。`,
+      killed: ({ title }) => `背景任務「${title}」已停止。`,
+    },
     thinking: {
       label: '思考過程',
       active: '正在思考…',
@@ -947,6 +969,13 @@ const TRANSCRIPT_COPY = {
       inlineReferences: 'Referenced files',
       quotes: 'Quoted text',
       skills: 'Skills',
+    },
+    taskFinished: {
+      completed: ({ title }) =>
+        `Background task “${title}” finished; Copilot was notified and went on.`,
+      failed: ({ title, detail }) =>
+        `Background task “${title}” failed${detail ? ` (${detail})` : ''}; Copilot was notified and went on.`,
+      killed: ({ title }) => `Background task “${title}” was stopped.`,
     },
     thinking: {
       label: 'Thought process',

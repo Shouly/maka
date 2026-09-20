@@ -1426,6 +1426,7 @@ export class AiSdkTurn {
           ]);
           capacityProviderTools.splice(0, capacityProviderTools.length, ...providerTools);
           await this.drainSteeringInto(input, queue);
+          await this.drainTaskNotificationsInto(input, queue);
           // The turn's injections are recorded ahead of its first request, so
           // the ledger projection below already carries them; a request built
           // without the ledger gets them put on the user message here.
@@ -2381,6 +2382,7 @@ export class AiSdkTurn {
             // and the Host folds the message into the next Turn instead.
             const injectedBefore = this.injectedSteeringMessages.length;
             await this.drainSteeringInto(input, queue);
+            await this.drainTaskNotificationsInto(input, queue);
             // Re-read the stop flags: the drain awaits a durable push, so an
             // `after_step` stop or an abort can land while it is in flight, and
             // `mayTakeAnotherStep` is stale by now. Stop wins — the message is
@@ -3113,6 +3115,54 @@ export class AiSdkTurn {
         input.nackSteering?.(undelivered.map((lease) => lease.id));
       }
       throw error;
+    }
+  }
+
+  /**
+   * Background tasks that finished since the last boundary are announced
+   * here, one system-authored interjection each, the same way a steer lands.
+   * The store keeps what is owed: a lease not pushed stays owed and is pulled
+   * again at the next boundary (or by the Host's idle wake); one that was
+   * pushed is acknowledged before anything else can fail, so the ledger
+   * replay and the store agree it has been said.
+   */
+  private async drainTaskNotificationsInto(
+    input: BackendSendInput,
+    queue: AsyncEventQueue<SessionEvent>,
+  ): Promise<void> {
+    const pull = input.pullTaskNotifications;
+    if (!pull) return;
+    const leases = await pull();
+    if (leases.length === 0) return;
+    const turnId = this.turnId;
+    const abortSignal = this.abortController.signal;
+    for (const lease of leases) {
+      if (this.aborted || abortSignal?.aborted) {
+        throw Object.assign(new Error('aborted before a task notification was pushed'), {
+          name: 'AbortError',
+        });
+      }
+      if (queue.consumerDetached) {
+        throw new Error('task notification was not durably consumed: event consumer detached');
+      }
+      const eventId = this.deps.newId();
+      await queue.pushAndWaitUntilConsumed({
+        type: 'steering_message',
+        id: eventId,
+        turnId,
+        ts: this.deps.now(),
+        messageId: this.deps.newId(),
+        content: { text: lease.text },
+        author: 'system',
+        origin: { kind: 'background_task', ref: lease.ref, toolUseId: lease.toolUseId },
+      } satisfies SessionEvent);
+      this.injectedSteeringMessages.push(steeringModelMessage(eventId, lease.text));
+      await input.ackTaskNotification?.(lease.ref);
+      if (this.aborted || abortSignal?.aborted) {
+        throw Object.assign(new Error('aborted after a task notification was durable'), {
+          name: 'AbortError',
+        });
+      }
     }
   }
 }

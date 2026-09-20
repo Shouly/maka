@@ -139,6 +139,12 @@ export interface ShellRunRecord {
   status: ShellRunStatus;
   exitCode?: number;
   failureMessage?: string;
+  /** Handed to the model as a ref (Bash run_in_background); its finish is announced. */
+  background?: true;
+  /** What the model said the command does — the notification's summary names it. */
+  description?: string;
+  /** When the model was told this run had finished; absent while that is owed. */
+  notifiedAt?: number;
   startedAt: number;
   updatedAt: number;
   completedAt?: number;
@@ -159,7 +165,14 @@ export interface ShellRunRecord {
 export type ShellRunPatch = Partial<
   Pick<
     ShellRunRecord,
-    'status' | 'exitCode' | 'failureMessage' | 'updatedAt' | 'completedAt' | 'observedAt' | 'output'
+    | 'status'
+    | 'exitCode'
+    | 'failureMessage'
+    | 'updatedAt'
+    | 'completedAt'
+    | 'observedAt'
+    | 'notifiedAt'
+    | 'output'
   >
 >;
 
@@ -312,6 +325,7 @@ const SHELL_RUN_PATCH_KEYS: ReadonlySet<string> = new Set([
   'updatedAt',
   'completedAt',
   'observedAt',
+  'notifiedAt',
   'output',
 ]);
 
@@ -331,6 +345,9 @@ const SHELL_RUN_RECORD_KEYS: ReadonlySet<string> = new Set([
   'timeoutMs',
   'exitCode',
   'failureMessage',
+  'background',
+  'description',
+  'notifiedAt',
   'sandboxExecution',
   'sandboxEscalation',
   'revision',
@@ -369,7 +386,7 @@ export function normalizeShellRunRecord(
     record.cwd,
     record.command,
   ];
-  const optionalStrings = [record.sourceRunId, record.failureMessage];
+  const optionalStrings = [record.sourceRunId, record.failureMessage, record.description];
   const valid =
     hasOnlyKeys(record, SHELL_RUN_RECORD_KEYS) &&
     requiredStrings.every((item) => typeof item === 'string') &&
@@ -388,6 +405,8 @@ export function normalizeShellRunRecord(
     (record.timeoutMs === undefined || isFiniteNumber(record.timeoutMs)) &&
     (record.exitCode === undefined || isFiniteNumber(record.exitCode)) &&
     (record.observedAt === undefined || isFiniteNumber(record.observedAt)) &&
+    (record.notifiedAt === undefined || isFiniteNumber(record.notifiedAt)) &&
+    (record.background === undefined || record.background === true) &&
     isShellRunSandboxExecution(record.sandboxExecution) &&
     isShellRunSandboxEscalation(record.sandboxEscalation, record.sandboxExecution) &&
     optionalStrings.every((item) => item === undefined || typeof item === 'string');
@@ -530,6 +549,9 @@ function canonicalShellRunRecord(record: ShellRunRecord): ShellRunRecord {
     ...(record.timeoutMs !== undefined ? { timeoutMs: record.timeoutMs } : {}),
     ...(record.exitCode !== undefined ? { exitCode: record.exitCode } : {}),
     ...(record.failureMessage !== undefined ? { failureMessage: record.failureMessage } : {}),
+    ...(record.background === true ? { background: true } : {}),
+    ...(record.description !== undefined ? { description: record.description } : {}),
+    ...(record.notifiedAt !== undefined ? { notifiedAt: record.notifiedAt } : {}),
     ...(record.sandboxExecution !== undefined
       ? { sandboxExecution: { ...record.sandboxExecution } }
       : {}),

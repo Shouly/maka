@@ -116,6 +116,7 @@ function assertRunMatchesExecution(
     case 'scheduled_task':
     case 'legacy_automation':
     case 'goal':
+    case 'background_task':
     case 'agent_graph_supervisor_wake':
     case 'safe_boundary_continuation':
       if (invocationMatchesHostedRootExecution(run, execution)) return;
@@ -165,6 +166,7 @@ function assertTrustedAgentIdentity(
         | 'scheduled_task'
         | 'legacy_automation'
         | 'goal'
+        | 'background_task'
         | 'agent_graph_supervisor_wake'
         | 'safe_boundary_continuation';
     }

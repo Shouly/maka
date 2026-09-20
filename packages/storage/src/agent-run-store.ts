@@ -2124,6 +2124,20 @@ function normalizeRootExecutionDescriptor(value: unknown): RootExecutionDescript
     }
     return Object.freeze({ kind: 'goal', goalId: value.goalId });
   }
+  if (value.kind === 'background_task') {
+    if (
+      !hasExactKeys(value, ['kind', 'ref', 'toolUseId']) ||
+      typeof value.ref !== 'string' ||
+      value.ref.length === 0 ||
+      value.ref.length > 512 ||
+      typeof value.toolUseId !== 'string' ||
+      value.toolUseId.length === 0 ||
+      value.toolUseId.length > 512
+    ) {
+      throw new Error('Invalid root execution descriptor');
+    }
+    return Object.freeze({ kind: 'background_task', ref: value.ref, toolUseId: value.toolUseId });
+  }
   if (value.kind === 'agent_graph_supervisor_wake') {
     if (
       !hasExactKeys(value, ['kind', 'graphId', 'wakeId', 'attemptId']) ||

@@ -759,10 +759,13 @@ export function buildRuntimeEventModelReplayPlan(
           invocationId: event.invocationId,
           role,
           // A steered user event replays in its canonical provider form (the
-          // envelope); the raw text is a UI/transcript projection only.
-          content: steeringReplay
-            ? buildSteeringEnvelope(formatTextWithInlineRefs(event.content))
-            : formatTextWithInlineRefs(event.content),
+          // envelope); the raw text is a UI/transcript projection only. A
+          // system-authored interjection (a task notification) is its own
+          // canonical text: the user did not send it.
+          content:
+            steeringReplay && event.author !== 'system'
+              ? buildSteeringEnvelope(formatTextWithInlineRefs(event.content))
+              : formatTextWithInlineRefs(event.content),
           ...(steeringReplay ? { steering: { eventId: event.id } } : {}),
           ...(event.content.attachments ? { attachments: event.content.attachments } : {}),
           ...(event.content.providerOptions !== undefined

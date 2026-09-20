@@ -36,7 +36,7 @@ describe('a background task, as the model reads it', () => {
   test('starting answers with the ref and what to do with it', () => {
     assert.equal(
       shellRunResultText({ ...base, status: 'running' }),
-      `Command running in background with ref: ${ref}. To check its output, use Read on that ref; to end it, use TaskStop.`,
+      `Command running in background with ref: ${ref}. You will be notified when it completes. To check interim output, use Read on that ref; to end it, use TaskStop.`,
     );
     assert.match(
       shellRunResultText({ ...base, mode: 'pty', status: 'running' }),

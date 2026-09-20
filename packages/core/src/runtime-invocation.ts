@@ -261,6 +261,8 @@ export type RootExecutionDescriptor =
     }
   | { kind: 'legacy_automation'; automationId: string }
   | { kind: 'goal'; goalId: string }
+  /** A wake the Host admits when a background task finishes while the session is idle. */
+  | { kind: 'background_task'; ref: string; toolUseId: string }
   | {
       kind: 'agent_graph_supervisor_wake';
       graphId: string;
@@ -312,6 +314,7 @@ type HostedRootExecutionDescriptor = Extract<
       | 'scheduled_task'
       | 'legacy_automation'
       | 'goal'
+      | 'background_task'
       | 'agent_graph_supervisor_wake'
       | 'safe_boundary_continuation';
   }
@@ -380,6 +383,14 @@ export function invocationMatchesHostedRootExecution(
       return (
         root.kind === 'goal' &&
         root.goalId === execution.goalId &&
+        source.kind === 'fresh' &&
+        lineageIsExactly(lineage, {})
+      );
+    case 'background_task':
+      return (
+        root.kind === 'background_task' &&
+        root.ref === execution.ref &&
+        root.toolUseId === execution.toolUseId &&
         source.kind === 'fresh' &&
         lineageIsExactly(lineage, {})
       );

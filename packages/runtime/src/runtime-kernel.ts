@@ -92,6 +92,8 @@ import type {
 } from './session-manager.js';
 import type { TurnShellPlan } from './shell-detect.js';
 import type { ShellRunProcessManager } from './shell-run-manager.js';
+import { parseShellRunResourceRef, shellRunResourceRef } from './shell-run-contract.js';
+import { renderTaskNotification } from './injection/task-notification.js';
 import { buildStatusPatch, normalizeStopSessionSource } from './session-projection-helpers.js';
 import { buildToolsForAgentDefinition } from './agent-catalog.js';
 import { loadLatestHistoryCompactCheckpointFromRunLedger } from './history-compact-ledger.js';
@@ -1388,6 +1390,7 @@ export class RuntimeKernel implements RuntimeKernelLike {
         handoffBoundary: (signal, remainingSteps) =>
           run.reachHandoffBoundary(signal, remainingSteps),
         ...runtimeSteeringInput(owners.messageOwner),
+        ...this.taskNotificationInput(sessionId),
       },
       onSessionEvent: async (sessionEvent, runtimeEvent) => {
         this.assertInteractionPublication(interactionRun, sessionEvent);
@@ -1588,6 +1591,7 @@ export class RuntimeKernel implements RuntimeKernelLike {
         runtimeContextInvocations: admissionRoute.invocations,
         continuation: continuationMetadata,
         ...runtimeSteeringInput(owners.messageOwner),
+        ...this.taskNotificationInput(continuation.sessionId),
         ...(continuation.handoffRootRunId !== undefined
           ? {
               maxSteps: continuation.handoffRemainingSteps,
@@ -2225,6 +2229,30 @@ export class RuntimeKernel implements RuntimeKernelLike {
       if (claim.hostOperation && claim.run) runs.add(claim.run);
     }
     return [...runs];
+  }
+
+  /**
+   * The turn's view of finished background tasks: what is owed, rendered as
+   * the text the model is told, and the acknowledgement that settles it.
+   */
+  private taskNotificationInput(
+    sessionId: string,
+  ): Pick<BackendSendInput, 'pullTaskNotifications' | 'ackTaskNotification'> {
+    const shellRuns = this.deps.shellRuns;
+    if (!shellRuns) return {};
+    return {
+      pullTaskNotifications: async () =>
+        (await shellRuns.pendingTaskNotifications(sessionId)).map((record) => ({
+          ref: shellRunResourceRef(record.shellRunId),
+          toolUseId: record.sourceToolCallId,
+          text: renderTaskNotification(record),
+        })),
+      ackTaskNotification: async (ref) => {
+        const target = parseShellRunResourceRef(ref);
+        if (!target) throw new Error(`Task notification ref is not a background task: ${ref}`);
+        await shellRuns.markTaskNotified(sessionId, target.shellRunId);
+      },
+    };
   }
 
   hasActiveRuns(sessionId: string): boolean {

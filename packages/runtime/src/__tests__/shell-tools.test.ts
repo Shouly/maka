@@ -348,7 +348,7 @@ describe('Bash provider-facing result projection', () => {
       {
         type: 'text',
         value:
-          'Command running in background with ref: maka://runtime/background-tasks/sr_test. To check its output, use Read on that ref; to end it, use TaskStop.',
+          'Command running in background with ref: maka://runtime/background-tasks/sr_test. You will be notified when it completes. To check interim output, use Read on that ref; to end it, use TaskStop.',
       },
     );
   });

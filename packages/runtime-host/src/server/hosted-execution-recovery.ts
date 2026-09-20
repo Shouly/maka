@@ -309,6 +309,12 @@ export function hostedExecutionMessageOrigin(execution: RootExecutionDescriptor)
       };
     case 'goal':
       return { kind: 'goal' as const, goalId: execution.goalId };
+    case 'background_task':
+      return {
+        kind: 'background_task' as const,
+        ref: execution.ref,
+        toolUseId: execution.toolUseId,
+      };
     case 'agent_graph_supervisor_wake':
       return {
         kind: 'agent_graph' as const,
@@ -468,6 +474,7 @@ function recoveryExecutionContract(execution: RootExecutionDescriptor): Recovery
     case 'legacy_automation':
       return contract(false, true, 'host_recovery_closure');
     case 'goal':
+    case 'background_task':
       return contract(false, true, 'host_recovery_closure');
     case 'safe_boundary_continuation':
       return contract(false, false, 'root_replay');
@@ -497,6 +504,7 @@ function usesHostRecoveryClosure(execution: RootExecutionDescriptor): execution 
     kind:
       | 'workhub_coordination'
       | 'goal'
+      | 'background_task'
       | 'legacy_automation'
       | 'agent_graph_supervisor_wake'
       | 'linked_child_initial'
@@ -509,6 +517,7 @@ function usesHostRecoveryClosure(execution: RootExecutionDescriptor): execution 
     (execution.kind === 'workhub_coordination' && execution.operation === 'action') ||
     execution.kind === 'legacy_automation' ||
     execution.kind === 'goal' ||
+    execution.kind === 'background_task' ||
     execution.kind === 'agent_graph_supervisor_wake' ||
     execution.kind === 'linked_child_initial' ||
     execution.kind === 'linked_child_resume' ||

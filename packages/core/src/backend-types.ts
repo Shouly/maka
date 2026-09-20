@@ -57,6 +57,13 @@ export interface RuntimeContinuationMetadata {
   sandboxBoundaryDenied?: boolean;
 }
 
+/** One finished background task, rendered as the text the model is told. */
+export interface TaskNotificationLease {
+  readonly ref: string;
+  readonly toolUseId: string;
+  readonly text: string;
+}
+
 export interface BackendSendInput {
   /** Durable invocation spine id; distinct from runId for continuations. */
   invocationId?: string;
@@ -127,6 +134,13 @@ export interface BackendSendInput {
   ackSteering?: (leaseIds: readonly string[]) => void;
   /** Return undelivered leased steering messages to the queue (see pullSteering). */
   nackSteering?: (leaseIds: readonly string[]) => void;
+  /**
+   * Background tasks of this session that reached a terminal state and have
+   * not been announced. The turn announces each at its next step boundary,
+   * as a system-authored interjection, and acknowledges it once durable.
+   */
+  pullTaskNotifications?: () => Promise<readonly TaskNotificationLease[]>;
+  ackTaskNotification?: (ref: string) => Promise<void>;
   /** Exact hosted-Run Interaction authority. Omitted for embedded execution. */
   hostedInteraction?: HostedInteractionBridge;
 }
