@@ -48,7 +48,7 @@ export function SidebarNewButton(props: {
       <div className="mr-2 flex h-7 w-7 shrink-0 items-center justify-center">
         <div
           className={cn(
-            'flex size-[22px] items-center justify-center rounded-full transition-colors',
+            'flex size-[18px] items-center justify-center rounded-full transition-colors',
             props.isActive
               ? 'bg-transparent group-hover/new:bg-transparent'
               : 'bg-sidebar-add-chip group-hover/new:bg-sidebar-text-muted/25',
@@ -56,6 +56,8 @@ export function SidebarNewButton(props: {
         >
           <Anthropicon
             name="add"
+            size={16}
+            weight={500}
             className={cn(
               'text-sidebar-text-secondary transition-colors group-hover/new:text-sidebar-text-primary',
               props.isActive && 'text-sidebar-text-primary',
