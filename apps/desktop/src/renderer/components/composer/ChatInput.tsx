@@ -26,22 +26,10 @@
 //   session  `sessionId`; sends go straight to the Session, and while a turn
 //            runs they can steer the current answer or wait for the next.
 //
-// Layout is relx's `ChatInput`, the controls are upstream's composer footer:
-//
-//   lead (bottom-left)   the ＋ menu — add files, add folder, the Skills
-//                        submenu, set a goal, and below a divider the Plan
-//                        mode switch.
-//   trail (bottom-right) welcome: the model chip (its menu carries the
-//                        thinking level as an effort submenu) and the brand
-//                        Send; session: the context ring and one Send/Stop
-//                        slot — Stop while a turn runs and the draft is
-//                        empty, Send (queued mid-turn) as soon as there is
-//                        something to send.
-//   meta row (under)     left: the project (a picker for a new task, a
-//                        readout for a Session), the permission mode chip
-//                        (Auto / full access), and the Plan chip while it is
-//                        on, which is also the way out. Right: a Session's
-//                        model chip with its effort.
+// The input surface holds the editor and Send/Stop. Welcome keeps Add inside
+// its bottom-left corner; sessions put a smaller Add control in the footer.
+// The footer keeps workspace/Plan on the left and context usage, model with
+// thinking effort, then permissions on the right.
 //
 // Above the editor, staged attachments, folder references and quotes as
 // chips. A short session draft shares its line with the controls; the
@@ -773,9 +761,8 @@ function OwnedChatInput(props: {
   // -------------------------------------------------------------------------
   // Layout
   //
-  // relx `ChatInput` geometry: the surface holds only the editor, the lead
-  // controls pinned bottom-left and the send-side controls pinned
-  // bottom-right; see the file header for what goes in each group.
+  // The surface holds the editor and the bottom-right Send/Stop control;
+  // message context and session settings share the footer below it.
 
   const welcome = !sessionId;
   const hasChips =
@@ -953,11 +940,10 @@ function OwnedChatInput(props: {
   // one starts a task.
   const sendButtonClass = welcome
     ? 'ui-control-squish ui-control-squish-brand flex size-8 cursor-pointer items-center justify-center rounded-lg text-on-accent outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-50'
-    : 'ui-control-squish ui-control-squish-ghost flex size-8 cursor-pointer items-center justify-center rounded-lg text-text-primary outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-50';
-  // One slot, two states (upstream's send/stop toggle): Stop while a turn
-  // runs and there is nothing to send; Send, which queues mid-turn, as soon
-  // as there is. Nothing to send and nothing running: no button at all (relx),
-  // rather than a dimmed one taking width from the text line.
+    : 'ui-control-squish ui-control-squish-ghost flex size-8 cursor-pointer items-center justify-center rounded-lg text-text-primary outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-40';
+  // Sessions keep a dimmed, disabled return icon even when the draft is empty.
+  // A running turn uses the same slot for Stop until there is content to send.
+  // Welcome keeps its existing send-on-content behavior.
   const stopShown = props.running === true && !hasContent;
   const modeLocked = disabled || props.running || localPending;
   const currentThinking = session
@@ -967,9 +953,113 @@ function OwnedChatInput(props: {
         ? newTask.defaults.thinkingLevel
         : undefined));
 
-  const modelMenu = (dense: boolean) => (
+  const addContextMenu = (
+    <DropdownMenu
+      onOpenChange={(open) => {
+        if (open) void loadSkills();
+      }}
+    >
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label={common.composer.addContext}
+              disabled={disabled}
+              className={cn(
+                COMPOSER_ICON_CONTROL_CLASS,
+                !welcome && 'size-6 rounded-md text-text-secondary',
+              )}
+            >
+              <Anthropicon name="add" size={welcome ? 20 : 16} weight={welcome ? 433.25 : 533.25} />
+            </button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent side={menuSide}>{common.composer.addContext}</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent
+        align="start"
+        side={menuSide}
+        sideOffset={4}
+        alignOffset={-8}
+        // min-w-56: the reference's English rows ("Add files or
+        // photos ⌘U") stretch this menu to ~220px on their own; our
+        // four-character rows would leave it at the 128px floor.
+        // The height cap is the reference's.
+        className="min-w-56 max-h-[min(var(--radix-popper-available-height),24rem)]"
+        onCloseAutoFocus={(event) => {
+          if (!keepEditorFocus.current) return;
+          keepEditorFocus.current = false;
+          event.preventDefault();
+        }}
+      >
+        <DropdownMenuItem
+          disabled={props.running || !canStageContext}
+          onSelect={() => void pickFiles()}
+        >
+          <div className="flex flex-1 items-center gap-2 truncate">
+            <DropdownMenuItemIcon>
+              <Anthropicon name="attach" size={20} />
+            </DropdownMenuItemIcon>
+            <span className="truncate">{copy.menu.addFiles}</span>
+          </div>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          disabled={props.running || !directoryHostId}
+          onSelect={() => void pickDirectory()}
+        >
+          <div className="flex flex-1 items-center gap-2 truncate">
+            <DropdownMenuItemIcon>
+              <Anthropicon name="folder" size={20} />
+            </DropdownMenuItemIcon>
+            <span className="truncate">{copy.menu.addFolder}</span>
+          </div>
+        </DropdownMenuItem>
+        {/* Two groups, as the reference panel has them: above the
+            divider what goes INTO the message, below it how this
+            task runs, led by its submenu. Plan is a Session field
+            of its own and an independent switch, so the menu stays
+            open on the toggle and the row itself shows the change. */}
+        <DropdownMenuSeparator />
+        <SkillSubMenu
+          skills={skills}
+          disabled={!canStageContext}
+          onPick={insertSkill}
+          onManage={() => {
+            uiStore.closeSettings();
+            uiStore.navigate({ section: 'extensions', module: 'skills' });
+          }}
+        />
+        <DropdownMenuItem
+          disabled={props.running || localPending || Boolean(blocked)}
+          onSelect={() => void openGoal()}
+        >
+          <div className="flex flex-1 items-center gap-2 truncate">
+            <DropdownMenuItemIcon>
+              <Anthropicon name="flag" size={20} />
+            </DropdownMenuItemIcon>
+            <span className="truncate">{common.composer.setGoal}</span>
+          </div>
+        </DropdownMenuItem>
+        <DropdownMenuCheckboxItem
+          checked={plan}
+          disabled={modeLocked}
+          aria-description={plan ? common.composer.disablePlanMode : common.composer.enablePlanMode}
+          onSelect={(event) => event.preventDefault()}
+          onCheckedChange={() => togglePlan()}
+        >
+          <DropdownMenuItemIcon>
+            <Anthropicon name="tasks" size={20} />
+          </DropdownMenuItemIcon>
+          <span className="truncate">{common.composer.planModeLabel}</span>
+        </DropdownMenuCheckboxItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const modelMenu = (
     <ModelMenu
-      dense={dense}
+      dense
       choices={modelChoices}
       current={
         session
@@ -1115,21 +1205,16 @@ function OwnedChatInput(props: {
             </div>
           )}
 
-          {/* The text block: switching forms only moves its padding (see
-              useComposerInlineRow). The editor's own px-2 is part of the
-              lead gap, hence the -8px. The transition waits for `settled`:
-              the first commit can only be stacked and the jump to the real
-              form must not animate. */}
+          {/* Short drafts share a row with Send; longer drafts reserve a row
+              below the text. Welcome also keeps Add in that lower row. */}
           <div ref={inlineRow.hostRef} className="relative w-full min-w-0">
             <div
               style={inlineRow.vars}
               className={cn(
                 'w-full min-w-0',
                 inlineRow.settled &&
-                  'motion-safe:transition-[padding-left,padding-bottom] motion-safe:duration-200',
-                inlineRow.inline
-                  ? 'pb-0 pl-[calc(var(--cmp-lead-w)-8px)]'
-                  : 'pb-[calc(32px+0.5rem)] pl-0',
+                  'motion-safe:transition-[padding-bottom] motion-safe:duration-200',
+                inlineRow.inline ? 'pb-0' : 'pb-[calc(32px+0.5rem)]',
               )}
             >
               {/* ::before is the trail group's float: as wide as the group,
@@ -1206,122 +1291,15 @@ function OwnedChatInput(props: {
               </div>
             </div>
 
-            {/* Resting order (upstream): ＋ leftmost, then the permission
-                icon, then the mode readout. A mode turning on or off adds or
-                removes the last slot only, so nothing to its left moves. */}
-            <div
-              ref={inlineRow.leadRef}
-              className="absolute bottom-0 left-0 flex min-h-8 shrink-0 items-center gap-1 pr-2"
-            >
-              <DropdownMenu
-                onOpenChange={(open) => {
-                  if (open) void loadSkills();
-                }}
-              >
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        aria-label={common.composer.addContext}
-                        disabled={disabled}
-                        className={COMPOSER_ICON_CONTROL_CLASS}
-                      >
-                        <Anthropicon name="add" size={20} weight={433.25} />
-                      </button>
-                    </DropdownMenuTrigger>
-                  </TooltipTrigger>
-                  <TooltipContent side={menuSide}>{common.composer.addContext}</TooltipContent>
-                </Tooltip>
-                <DropdownMenuContent
-                  align="start"
-                  side={menuSide}
-                  sideOffset={4}
-                  alignOffset={-8}
-                  // min-w-56: the reference's English rows ("Add files or
-                  // photos ⌘U") stretch this menu to ~220px on their own; our
-                  // four-character rows would leave it at the 128px floor.
-                  // The height cap is the reference's.
-                  className="min-w-56 max-h-[min(var(--radix-popper-available-height),24rem)]"
-                  onCloseAutoFocus={(event) => {
-                    if (!keepEditorFocus.current) return;
-                    keepEditorFocus.current = false;
-                    event.preventDefault();
-                  }}
-                >
-                  <DropdownMenuItem
-                    disabled={props.running || !canStageContext}
-                    onSelect={() => void pickFiles()}
-                  >
-                    <div className="flex flex-1 items-center gap-2 truncate">
-                      <DropdownMenuItemIcon>
-                        <Anthropicon name="attach" size={20} />
-                      </DropdownMenuItemIcon>
-                      <span className="truncate">{copy.menu.addFiles}</span>
-                    </div>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={props.running || !directoryHostId}
-                    onSelect={() => void pickDirectory()}
-                  >
-                    <div className="flex flex-1 items-center gap-2 truncate">
-                      <DropdownMenuItemIcon>
-                        <Anthropicon name="folder" size={20} />
-                      </DropdownMenuItemIcon>
-                      <span className="truncate">{copy.menu.addFolder}</span>
-                    </div>
-                  </DropdownMenuItem>
-                  {/* Two groups, as the reference panel has them: above the
-                      divider what goes INTO the message, below it how this
-                      task runs, led by its submenu. Plan is a Session field
-                      of its own and an independent switch, so the menu stays
-                      open on the toggle and the row itself shows the change. */}
-                  <DropdownMenuSeparator />
-                  <SkillSubMenu
-                    skills={skills}
-                    disabled={!canStageContext}
-                    onPick={insertSkill}
-                    onManage={() => {
-                      uiStore.closeSettings();
-                      uiStore.navigate({ section: 'extensions', module: 'skills' });
-                    }}
-                  />
-                  <DropdownMenuItem
-                    disabled={props.running || localPending || Boolean(blocked)}
-                    onSelect={() => void openGoal()}
-                  >
-                    <div className="flex flex-1 items-center gap-2 truncate">
-                      <DropdownMenuItemIcon>
-                        <Anthropicon name="flag" size={20} />
-                      </DropdownMenuItemIcon>
-                      <span className="truncate">{common.composer.setGoal}</span>
-                    </div>
-                  </DropdownMenuItem>
-                  <DropdownMenuCheckboxItem
-                    checked={plan}
-                    disabled={modeLocked}
-                    aria-description={
-                      plan ? common.composer.disablePlanMode : common.composer.enablePlanMode
-                    }
-                    onSelect={(event) => event.preventDefault()}
-                    onCheckedChange={() => togglePlan()}
-                  >
-                    <DropdownMenuItemIcon>
-                      <Anthropicon name="tasks" size={20} />
-                    </DropdownMenuItemIcon>
-                    <span className="truncate">{common.composer.planModeLabel}</span>
-                  </DropdownMenuCheckboxItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-
+            {welcome && (
+              <div className="absolute bottom-0 left-0 flex min-h-8 items-center">
+                {addContextMenu}
+              </div>
+            )}
             <div
               ref={inlineRow.trailRef}
               className="absolute bottom-0 right-0 flex min-h-8 shrink-0 items-center gap-1 pl-2"
             >
-              {/* The model chip lives IN the surface only on the welcome
-                  page; a Session's sits on the meta row under it. */}
-              {welcome && modelMenu(false)}
               {stopShown ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -1352,7 +1330,7 @@ function OwnedChatInput(props: {
                   </TooltipContent>
                 </Tooltip>
               ) : (
-                (canSend || busy) && (
+                (!welcome || canSend || busy) && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
@@ -1379,19 +1357,10 @@ function OwnedChatInput(props: {
         </div>
 
         {/* Workspace selection is welcome-only; session project details live in the header. */}
-        <div className="mt-[6px] flex h-6 w-full items-center justify-between gap-2 px-3">
-          <div className="flex min-w-0 items-center gap-1">
-            {welcome && <WorkspacePicker dense side={menuSide} />}
-            <PermissionModeMenu
-              activeMode={mode}
-              side={menuSide}
-              disabled={modeLocked || pending.includes('permission')}
-              onSelect={(next) => {
-                // Full access is confirmed first; the dialog applies it.
-                if (next === 'bypass') setBypassOpen(true);
-                else void setMode(next).catch(() => {});
-              }}
-            />
+        <div className="mt-2 flex h-6 w-full items-center justify-between gap-2 px-2">
+          <div className={cn('flex min-w-0 items-center gap-1', !welcome && 'shrink-0')}>
+            {!welcome && addContextMenu}
+            {welcome && <WorkspacePicker dense side={menuSide} className="max-w-full shrink" />}
             {plan && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -1404,7 +1373,11 @@ function OwnedChatInput(props: {
                       togglePlan();
                       window.requestAnimationFrame(() => editor.current?.commands.focus('end'));
                     }}
-                    className={cn(COMPOSER_META_CHIP, COMPOSER_META_CHIP_ACTIVE)}
+                    className={cn(
+                      COMPOSER_META_CHIP,
+                      COMPOSER_META_CHIP_ACTIVE,
+                      'shrink-0 whitespace-nowrap',
+                    )}
                   >
                     {common.composer.planModeLabel}
                   </button>
@@ -1413,17 +1386,27 @@ function OwnedChatInput(props: {
               </Tooltip>
             )}
           </div>
-          {/* The context ring leads the model chip. The reference keeps the
-              ring inside the surface beside Send, on the grounds that the
-              moment to read it is the moment before pressing it; this row is
-              where it belongs instead. How full the context is, is not an
-              action — it is a property of the task, like the permission mode
-              and the plan switch beside it — and a context window IS the
-              model's, so the two read as one statement and changing the model
-              says what it costs. Deviation from the reference, recorded. */}
-          <div className="flex shrink-0 items-center gap-1">
-            {hostSessionId && <ContextUsageIndicator sessionId={hostSessionId} />}
-            {!welcome && modelMenu(true)}
+          {/* Session settings read left to right: context, model, permissions. */}
+          <div className="flex min-w-0 items-center gap-1">
+            {hostSessionId && (
+              <div className="shrink-0">
+                <ContextUsageIndicator sessionId={hostSessionId} />
+              </div>
+            )}
+            {/* The model label yields width before any action is squeezed. */}
+            <div className="min-w-0 max-w-[220px] [&>button]:max-w-full">{modelMenu}</div>
+            <div className="shrink-0 [&>button]:whitespace-nowrap">
+              <PermissionModeMenu
+                activeMode={mode}
+                side={menuSide}
+                disabled={modeLocked || pending.includes('permission')}
+                onSelect={(next) => {
+                  // Full access is confirmed first; the dialog applies it.
+                  if (next === 'bypass') setBypassOpen(true);
+                  else void setMode(next).catch(() => {});
+                }}
+              />
+            </div>
           </div>
         </div>
       </TooltipProvider>

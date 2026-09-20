@@ -5135,7 +5135,7 @@
       "hookCalls": {
         "useEffect": 3,
         "useLayoutEffect": 1,
-        "useRef": 4,
+        "useRef": 3,
         "useState": 3
       },
       "lifecycleMethods": {},

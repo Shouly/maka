@@ -17,16 +17,12 @@
  * under the License.
  */
 
-// Ported from the reference design system's `useComposerInlineRow`: whether
-// the composer's two control groups share a line with a short draft (the
-// session form) or drop under it (long drafts, attachments, and the welcome
-// surface, which always stacks).
+// Whether Send shares a line with a short draft (the session form) or drops
+// under it (long drafts, attachments, and the welcome surface).
 //
-// The controls are always `absolute bottom-0` at the two ends of the text
-// block; switching forms only moves the text block's padding — inline gives
-// up padding-left to the lead group, stacked takes it back and adds a
-// control's height of padding-bottom. The trail group is avoided through a
-// float on `.ProseMirror::before` so only the LAST line yields to it.
+// Send stays `absolute bottom-0 right-0`; stacked mode adds a control's height
+// of padding-bottom. Inline mode avoids it through a float on
+// `.ProseMirror::before` so only the LAST line yields to it.
 //
 // Two traps the reference documents and this port keeps:
 // 1. Hysteresis holds the invariant "empty ⇒ not wrapped". Listening for
@@ -52,14 +48,13 @@ const EDITOR_PY = 10;
 const MIN_TEXT_W = 200;
 
 export interface ComposerInlineRow {
-  /** Controls share the draft's line (not wrapped, and the two groups fit). */
+  /** Send shares the draft's line when it fits and the text has not wrapped. */
   inline: boolean;
   /** First real measurement landed; callers attach transitions only after. */
   settled: boolean;
-  /** CSS variables for the text block: both groups' widths, the text height. */
+  /** CSS variables for the text block: trailing controls and text height. */
   vars: CSSProperties;
   hostRef: RefObject<HTMLDivElement | null>;
-  leadRef: RefObject<HTMLDivElement | null>;
   trailRef: RefObject<HTMLDivElement | null>;
   editorRef: RefObject<HTMLDivElement | null>;
 }
@@ -82,12 +77,10 @@ function rootScale(): number {
 
 export function useComposerInlineRow({ enabled, empty, forceStacked }: Options): ComposerInlineRow {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const leadRef = useRef<HTMLDivElement | null>(null);
   const trailRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
 
   const [metrics, setMetrics] = useState({
-    leadW: 0,
     trailW: 0,
     hostW: 0,
     textH: LEADING,
@@ -101,7 +94,6 @@ export function useComposerInlineRow({ enabled, empty, forceStacked }: Options):
     const scale = rootScale();
     const leading = LEADING * scale;
     const next = {
-      leadW: leadRef.current?.offsetWidth ?? 0,
       trailW: trailRef.current?.offsetWidth ?? 0,
       hostW: host.clientWidth,
       scale,
@@ -114,7 +106,6 @@ export function useComposerInlineRow({ enabled, empty, forceStacked }: Options):
       textH: empty ? leading : Math.max(leading, editor.scrollHeight - EDITOR_PY * scale),
     };
     setMetrics((prev) =>
-      prev.leadW === next.leadW &&
       prev.trailW === next.trailW &&
       prev.hostW === next.hostW &&
       prev.textH === next.textH &&
@@ -125,16 +116,14 @@ export function useComposerInlineRow({ enabled, empty, forceStacked }: Options):
     setWrapped(empty ? false : next.textH > leading + 1 || wrapped);
   }, [empty, wrapped]);
 
-  // Layout effect, not effect: the first frame can only render stacked
-  // (leadW is 0), and measuring before paint lets it switch to the real form
-  // without the stacked frame ever showing.
+  // Measure before paint so the first frame already fits the available width.
   useLayoutEffect(measure);
 
   // Changes outside a render (viewport, fonts) go through a ResizeObserver.
   useEffect(() => {
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(() => measure());
-    for (const element of [hostRef.current, leadRef.current, trailRef.current, editorRef.current]) {
+    for (const element of [hostRef.current, trailRef.current, editorRef.current]) {
       if (element) observer.observe(element);
     }
     return () => observer.disconnect();
@@ -149,26 +138,21 @@ export function useComposerInlineRow({ enabled, empty, forceStacked }: Options):
   // jump does not animate; the next render attaches the class to stable styles.
   const [settled, setSettled] = useState(false);
   useEffect(() => {
-    if (!settled && metrics.leadW > 0) setSettled(true);
-  }, [settled, metrics.leadW]);
+    if (!settled && metrics.hostW > 0) setSettled(true);
+  }, [settled, metrics.hostW]);
 
-  const { leadW, trailW, hostW, textH, scale } = metrics;
-  // Unmeasured (first commit) renders single-line with one control plus its
-  // gap reserved on the left: an empty draft's real form IS single-line, and
+  const { trailW, hostW, textH, scale } = metrics;
+  // Unmeasured (first commit) renders single-line: an empty draft IS single-line, and
   // drawing stacked first would be a visible 40px jump on every mount.
-  const measured = leadW > 0;
+  const measured = hostW > 0;
   const inline =
-    enabled &&
-    !forceStacked &&
-    !wrapped &&
-    (!measured || hostW - leadW - trailW >= MIN_TEXT_W * scale);
+    enabled && !forceStacked && !wrapped && (!measured || hostW - trailW >= MIN_TEXT_W * scale);
 
   const vars = {
-    '--cmp-lead-w': `${measured ? leadW : (CONTROL_H + 8) * scale}px`,
     '--cmp-trail-w': `${trailW}px`,
     '--cmp-wrap-h': `${textH}px`,
     '--cmp-row-h': `${CONTROL_H * scale}px`,
   } as CSSProperties;
 
-  return { inline, settled, vars, hostRef, leadRef, trailRef, editorRef };
+  return { inline, settled, vars, hostRef, trailRef, editorRef };
 }
