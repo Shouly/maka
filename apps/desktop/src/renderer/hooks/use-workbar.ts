@@ -100,6 +100,7 @@ export interface WorkbarModel {
   toggleFace(face: WorkbarFace): void;
   setCollapsed(collapsed: boolean): void;
   toggle(): void;
+  showActivity(): void;
   setExpanded(expanded: boolean): void;
   resize(width: number): void;
 }
@@ -213,6 +214,7 @@ export function useWorkbar(sessionId: string | undefined): WorkbarModel {
   // in front before `isSessionWorkbarCollapsed` can answer.
   useEffect(() => {
     uiStore.dispatchWorkbar({ type: 'activate-session', sessionId });
+    workbarStore.setPaneExpanded(false);
   }, [sessionId]);
 
   const tabs = useMemo(
@@ -277,6 +279,11 @@ export function useWorkbar(sessionId: string | undefined): WorkbarModel {
     setCollapsed(!collapsed);
   }, [collapsed, setCollapsed]);
 
+  const showActivity = useCallback(() => {
+    uiStore.dispatchWorkbar({ type: 'show-session-panel' });
+    workbarStore.setPaneExpanded(false);
+  }, []);
+
   // Full screen covers the window outright, so it no longer has to make room
   // by putting the sidebar away — which it used to do, and which outlived the
   // full-screen state: the reader came back out to a rail they never collapsed.
@@ -303,7 +310,7 @@ export function useWorkbar(sessionId: string | undefined): WorkbarModel {
     activeFace,
     collapsed,
     workbarHasColumn,
-    expanded: expanded && !collapsed,
+    expanded: expanded && !collapsed && workbarHasColumn,
     // The share, resolved against the content area and held inside the floor
     // and the live ceiling. Collapsing the session list widens the content, so
     // the same share is more pixels — which is the whole point of storing one.
@@ -319,6 +326,7 @@ export function useWorkbar(sessionId: string | undefined): WorkbarModel {
     toggleFace,
     setCollapsed,
     toggle,
+    showActivity,
     setExpanded,
     resize,
   };

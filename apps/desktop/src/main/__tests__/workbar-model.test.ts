@@ -341,6 +341,20 @@ describe('Workbar topology', () => {
     bottomHeight: 300,
   });
 
+  it('opens activity from a hidden viewer without discarding its tabs or another session', () => {
+    let state = columnState({ 'session-b': 'workbar:terminal' });
+    state = reduceWorkbarLayout(state, { type: 'open', placement: 'right', tab: { id: 'workbar:terminal', kind: 'terminal' } });
+    state = reduceWorkbarLayout(state, { type: 'collapse', placement: 'right', collapsed: true });
+    const panels = state.panels;
+    state = reduceWorkbarLayout(state, { type: 'show-session-panel' });
+    assert.equal(sessionWorkbarViewerId(state), null);
+    assert.equal(isSessionWorkbarCollapsed(state), false);
+    assert.equal(state.panels, panels, 'the terminal remains mounted in its hidden viewer');
+    assert.equal(state.viewerBySession['session-b'], 'workbar:terminal');
+    state = reduceWorkbarLayout(state, { type: 'open', placement: 'right', tab: { id: 'workbar:terminal', kind: 'terminal' } });
+    assert.equal(sessionWorkbarViewerId(state), 'workbar:terminal', 'reopening the same tab reclaims the column');
+  });
+
   it('gives the column to the viewer that was just opened, by id', () => {
     let state = columnState({});
     assert.equal(sessionWorkbarViewerId(state), null, 'a session starts on the session panel');

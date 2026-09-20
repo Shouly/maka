@@ -104,6 +104,7 @@
     "src/renderer/components/session/PlanProposalCard.tsx",
     "src/renderer/components/session/SelectionQuote.tsx",
     "src/renderer/components/session/SessionPanel.tsx",
+    "src/renderer/components/session/SessionUploadsDialog.tsx",
     "src/renderer/components/session/SessionView.tsx",
     "src/renderer/components/session/ThinkingStep.tsx",
     "src/renderer/components/session/TranscriptTurn.tsx",
@@ -1416,19 +1417,22 @@
     "src/renderer/components/layout/AppShell.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {
-        "document.querySelector": 1,
-        "requestAnimationFrame": 1
+        "clearTimeout": 1,
+        "document.querySelector": 2,
+        "requestAnimationFrame": 2,
+        "setTimeout": 2
       },
       "hookCalls": {
-        "useEffect": 6,
+        "useEffect": 7,
         "usePageHistory": 1,
         "useReducedMotion": 1,
+        "useRef": 1,
         "useRendererStores": 1,
         "useScopedRuntimeHost": 1,
         "useSessionList": 1,
         "useShellHotkeys": 1,
         "useSidebarLayout": 1,
-        "useState": 4,
+        "useState": 5,
         "useStore": 13,
         "useUiLocale": 1,
         "useWorkbar": 1
@@ -2405,24 +2409,55 @@
     },
     "src/renderer/components/session/SessionPanel.tsx": {
       "bridgePaths": {},
-      "environmentCapabilities": {},
+      "environmentCapabilities": {
+        "document.documentElement": 1,
+        "ResizeObserver": 1
+      },
       "hookCalls": {
+        "useLayoutEffect": 1,
+        "useRef": 2,
         "useSessionArtifacts": 1,
-        "useState": 1,
+        "useState": 5,
         "useTaskProgress": 1,
-        "useUiLocale": 1
+        "useUiLocale": 2
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../../bridge/app.js": 1,
         "../../hooks/use-session-artifacts.js": 1,
         "../../hooks/use-task-progress.js": 1,
         "../../hooks/use-workbar.js": 1,
         "../../lib/cn.js": 1,
         "../../lib/ported/delivery-file-label.js": 1,
         "../../locales/session-panel-copy.js": 1,
+        "../../store/toast-store.js": 1,
         "../icons/Anthropicon.js": 1,
+        "../ui/button.js": 1,
+        "./SessionUploadsDialog.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/session/SessionUploadsDialog.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useState": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../../lib/ported/delivery-file-label.js": 1,
+        "../../locales/session-panel-copy.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/button.js": 1,
+        "../ui/dialog.js": 1,
+        "../workbar/ArtifactPreview.js": 1,
         "@maka/ui": 1,
         "react": 1
       }
@@ -5061,17 +5096,18 @@
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
+        "useSessionArtifacts": 1,
         "useUiLocale": 1
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../../hooks/use-session-artifacts.js": 1,
         "../../lib/cn.js": 1,
-        "../../locales/shell-copy.js": 1,
+        "../../locales/session-panel-copy.js": 1,
         "../icons/Anthropicon.js": 1,
-        "../layout/SidebarControls.js": 1,
-        "../ui/sidebar-tooltip.js": 1,
+        "../ui/button.js": 1,
         "@maka/ui": 1
       }
     },

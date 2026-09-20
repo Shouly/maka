@@ -343,6 +343,40 @@ try {
   checks.push(
     'file and skill mention atoms, dropped attachment, transmission and successful draft cleanup',
   );
+  const activityUpload = page.locator('#maka-session-panel');
+  const uploadActivityToggle = page.locator('[data-maka-contract="session-workbar-toggle"]');
+  if ((await uploadActivityToggle.getAttribute('aria-expanded')) !== 'true')
+    await uploadActivityToggle.click();
+
+  await activityUpload.getByRole('button', { name: 'Used in this session', exact: true }).waitFor();
+  await activityUpload.getByRole('button', { name: /^Uploads:/ }).click();
+  const uploadsDialog = page.getByRole('dialog', { name: 'Uploads', exact: true });
+  await uploadsDialog.waitFor();
+  await uploadsDialog.getByText('attachment content', { exact: true }).waitFor();
+  await uploadsDialog.getByRole('button', { name: 'Close preview', exact: true }).click();
+  await uploadsDialog.getByRole('button', { name: 'composer-note.txt', exact: true }).click();
+  await uploadsDialog.getByText('attachment content', { exact: true }).waitFor();
+  await page.keyboard.press('Escape');
+  await uploadsDialog.waitFor({ state: 'detached' });
+  await activityUpload.waitFor();
+  await transcript
+    .getByRole('button', { name: 'Open attachment composer-note.txt', exact: true })
+    .click();
+  const uploadViewer = page.locator('#maka-workbar-pane');
+  await uploadViewer.waitFor();
+  await uploadViewer.getByText('attachment content', { exact: true }).waitFor();
+  assert.equal(
+    await page.locator('[data-maka-contract="session-workbar-toggle"]').count(),
+    0,
+    'preview owns its own header',
+  );
+  await page.keyboard.press('ControlOrMeta+p');
+  await uploadViewer.waitFor({ state: 'detached' });
+  await activityUpload.waitFor();
+  await activityUpload.getByRole('button', { name: /^Uploads:/ }).waitFor();
+  checks.push(
+    'activity opens the uploads dialog and preview; transcript file preview restores activity',
+  );
 
   // The permission mode is a quiet icon menu beside ＋ (upstream's footer).
   await page.getByRole('button', { name: /Permission mode/ }).click();
@@ -430,23 +464,80 @@ try {
   await toggle.waitFor();
   await panel.waitFor();
   assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+  const activityGeometry = await page.evaluate(() => {
+    const header = document.querySelector('.maka-window-titlebar').getBoundingClientRect();
+    const panel = document.querySelector('#maka-session-panel').getBoundingClientRect();
+    return {
+      headerRight: header.right,
+      windowWidth: document.documentElement.clientWidth,
+      panelTop: panel.top,
+      headerBottom: header.bottom,
+    };
+  });
+  assert.ok(Math.abs(activityGeometry.headerRight - activityGeometry.windowWidth) < 1);
+  assert.ok(Math.abs(activityGeometry.panelTop - (activityGeometry.headerBottom - 4)) < 1);
+  const panelStyle = await page.evaluate(() => {
+    const panel = document.querySelector('#maka-session-panel');
+    const title = panel.querySelector('section button');
+    const body = panel.querySelector('section p');
+    const toggle = document.querySelector('[data-maka-contract="session-workbar-toggle"]');
+    const icon = toggle.querySelector('[data-anthropicon]');
+    const close = panel.querySelector('[aria-label="Close session panel"] [data-anthropicon]');
+    return {
+      width: panel.getBoundingClientRect().width,
+      title: getComputedStyle(title).fontSize,
+      titleLine: getComputedStyle(title).lineHeight,
+      body: getComputedStyle(body).fontSize,
+      icon: icon.getAttribute('data-anthropicon'),
+      iconSize: getComputedStyle(icon).fontSize,
+      closeSize: getComputedStyle(close).fontSize,
+    };
+  });
+  assert.deepEqual(panelStyle, {
+    width: 320,
+    title: '13px',
+    titleLine: '17px',
+    body: '14px',
+    icon: 'tasks',
+    iconSize: '18px',
+    closeSize: '18px',
+  });
+  assert.equal(
+    await toggle.locator('[data-maka-activity-count]').count(),
+    0,
+    'no numeric zero for empty outputs',
+  );
   await page.screenshot({ path: SHOT('phase4-session-panel.png') });
   // Collapsing narrows the column rather than unmounting it, so the session's
   // own state is not torn down and rebuilt every time the reader glances away.
-  const column = page.locator('[data-maka-contract="session-workbar-column"]');
+  const column = page.locator('[data-maka-contract="session-activity-column"]');
   await page.keyboard.press('ControlOrMeta+Alt+s');
   await page.waitForFunction(
     () =>
       document
-        .querySelector('[data-maka-contract="session-workbar-column"]')
+        .querySelector('[data-maka-contract="session-activity-column"]')
         ?.getAttribute('aria-hidden') === 'true',
   );
   assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+  await toggle.hover();
+  await panel.waitFor();
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'false', 'hover peeks without pinning');
+  assert.equal(
+    await column.getAttribute('aria-hidden'),
+    'true',
+    'peek does not reserve conversation width',
+  );
+  assert.equal(
+    await panel.getByRole('button', { name: 'Close session panel', exact: true }).count(),
+    0,
+  );
+  await page.mouse.move(400, 400);
+  await panel.waitFor({ state: 'hidden' });
   await page.keyboard.press('ControlOrMeta+Alt+s');
   await page.waitForFunction(
     () =>
       document
-        .querySelector('[data-maka-contract="session-workbar-column"]')
+        .querySelector('[data-maka-contract="session-activity-column"]')
         ?.getAttribute('aria-hidden') === null,
   );
   assert.equal(await column.count(), 1);
@@ -462,7 +553,7 @@ try {
   // to the session panel; the column never becomes empty.
   await page.keyboard.press('Control+Shift+G');
   await pane.waitFor();
-  await panel.waitFor({ state: 'detached' });
+  await panel.waitFor({ state: 'hidden' });
   await page.locator('[data-maka-contract="session-review"]').waitFor();
   await page.keyboard.press('Control+Shift+G');
   await panel.waitFor();
@@ -580,7 +671,7 @@ try {
   //     v2 key. (v1 was global and has no owner; `workbar-layout.ts` removes
   //     it.) The column narrows rather than unmounting, so the claim is the
   //     hidden state, not a missing node.
-  await toggle.click();
+  await page.keyboard.press('ControlOrMeta+Alt+s');
   await page.waitForFunction(
     () =>
       document
@@ -610,6 +701,20 @@ try {
     'review',
   ]);
   checks.push('the titlebar toggle collapses the pane and persists the workbar keys');
+  await toggle.click();
+  await panel.waitFor();
+  assert.equal(
+    await pane.locator('[data-maka-workbar-tab="terminal"]').count(),
+    1,
+    'activity preserves open tool tabs',
+  );
+  await page.keyboard.press('Control+`');
+  await pane.waitFor();
+  await panel.waitFor({ state: 'hidden' });
+  await page.keyboard.press('ControlOrMeta+Alt+s');
+  checks.push(
+    'the header opens activity from a hidden viewer and an existing terminal can reclaim the column',
+  );
 
   // 3a.7 The four timeline shapes, opened.
   //

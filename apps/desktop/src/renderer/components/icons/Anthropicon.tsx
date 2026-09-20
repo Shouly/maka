@@ -62,6 +62,7 @@ export const ANTHROPICON_SPECS = {
   camera: { glyph: '\uE025', size: 20, weight: 433.25 },
   caretDown: { glyph: '\uE027', size: 12, weight: 577.75 },
   caretRight: { glyph: '\uE02A', size: 12, weight: 577.75 },
+  caretUp: { glyph: '\uE02B', size: 12, weight: 577.75 },
   chat: { glyph: '\uE031', size: 16, weight: 533.25 },
   /** chat 的实心版,已选态用。 */
   chatFilled: { glyph: '\uE036', size: 16, weight: 533.25 },
@@ -70,6 +71,7 @@ export const ANTHROPICON_SPECS = {
   check: { glyph: '\uE03B', size: 16, weight: 533.25 },
   /** 圈内打勾。E03D 是实心圈版,要描边的取这个。 */
   checkCircle: { glyph: '\uE03C', size: 20, weight: 433.25 },
+  checkCircleFilled: { glyph: '\uE03D', size: 16, weight: 533.25 },
   checkDouble: { glyph: '\uE03E', size: 16, weight: 533.25 },
   clipboard: { glyph: '\uE041', size: 20, weight: 433.25 },
   clock: { glyph: '\uE043', size: 20, weight: 433.25 },

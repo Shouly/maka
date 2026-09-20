@@ -3738,6 +3738,9 @@ const makaBridge = {
     saveArtifactAs(sessionId: string, artifactId: string): Promise<ArtifactSaveResult> {
       return invokeSessionRuntimeHost('app:saveArtifactAs', sessionId, artifactId);
     },
+    saveArtifactsAs(sessionId: string, artifactIds: string[]): Promise<ArtifactSaveResult> {
+      return invokeSessionRuntimeHost('app:saveArtifactsAs', sessionId, artifactIds);
+    },
   },
   diagnostics: {
     takePreviousMainProcessInterruption(): Promise<boolean> {

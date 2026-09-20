@@ -25,9 +25,9 @@
 // `artifacts:list` calls per refresh and three chances to disagree about what
 // is in the catalog.
 //
-// Only USER-VISIBLE artifacts are kept (`isArtifactUserVisible`): a tool result
-// and its projections are the transcript's evidence, not the task's output, and
-// the timeline already shows them in place.
+// Outputs contains only user-visible artifacts (`isArtifactUserVisible`).
+// Uploads and ordinary tool results stay in separate collections for explicit
+// previews; neither contributes to Outputs, its count, or batch downloads.
 //
 // The list re-reads on the events that can change it — a settled tool result or
 // a finished turn — rather than on a timer, and writeback can commit a moment
@@ -44,6 +44,9 @@ const REFRESH_DEBOUNCE_MS = 400;
 
 export interface SessionArtifactsEntry {
   readonly records: readonly ArtifactDescriptor[];
+  readonly uploads: readonly ArtifactDescriptor[];
+  /** Explicit tool-row previews can resolve these without listing them as outputs. */
+  readonly toolResults: readonly ArtifactDescriptor[];
   /** False until the first read settles, so an empty list is not read as "none". */
   readonly loaded: boolean;
   readonly error: unknown;
@@ -51,6 +54,8 @@ export interface SessionArtifactsEntry {
 
 const EMPTY: SessionArtifactsEntry = Object.freeze({
   records: Object.freeze([]),
+  uploads: Object.freeze([]),
+  toolResults: Object.freeze([]),
   loaded: false,
   error: null,
 });
@@ -86,12 +91,14 @@ async function read(sessionId: string): Promise<void> {
     if (leases.get(sessionId) !== lease || request !== lease.request) return;
     put(sessionId, {
       records: next.filter((record) => isArtifactUserVisible(record)),
+      uploads: next.filter((record) => record.source === 'user_upload'),
+      toolResults: next.filter((record) => record.source === 'tool_result'),
       loaded: true,
       error: null,
     });
   } catch (error) {
     if (leases.get(sessionId) !== lease || request !== lease.request) return;
-    put(sessionId, { records: [], loaded: true, error });
+    put(sessionId, { records: [], uploads: [], toolResults: [], loaded: true, error });
   }
 }
 
@@ -109,10 +116,8 @@ export const sessionArtifactsStore = {
    *
    * The release is idempotent per call, and the last one out stops LISTENING —
    * it does not throw the list away. The session panel and the pane are two
-   * occupants of one column, so opening a file unmounts the panel and drops the
-   * count to zero on the way in; discarding there would make every switch
-   * between them re-read the catalog from scratch, with the pane drawing an
-   * empty state until it landed.
+   * surfaces of one session. Retaining the cache avoids an empty-state flash
+   * when a session is revisited or the header and viewer exchange readers.
    */
   retain(sessionId: string): () => void {
     let lease = leases.get(sessionId);

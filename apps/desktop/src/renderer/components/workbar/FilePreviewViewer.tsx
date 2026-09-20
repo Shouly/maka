@@ -76,7 +76,9 @@ function useOpenArtifact(sessionId: string, active: boolean) {
   const selectedId = useStore(workbarStore, (state) => state.artifactBySession[sessionId]);
   const pendingPath = useStore(workbarStore, (state) => state.pendingPathBySession[sessionId]);
   const record = selectedId
-    ? (artifacts.records.find((entry) => entry.id === selectedId) ?? null)
+    ? ([...artifacts.records, ...artifacts.uploads, ...artifacts.toolResults].find(
+        (entry) => entry.id === selectedId,
+      ) ?? null)
     : null;
   return { artifacts, selectedId, pendingPath, record };
 }
@@ -90,9 +92,13 @@ export function FilePreviewViewer(props: { sessionId: string; active: boolean })
     if (!active || !artifacts.loaded) return;
     // A `file_write` row asked for a path before the catalog could name an id.
     if (pendingPath) {
-      const match = matchArtifactForPath(artifacts.records, pendingPath);
+      const catalog = [...artifacts.records, ...artifacts.uploads, ...artifacts.toolResults];
+      // Transcript uploads carry an artifact ID, while tool rows carry a path.
+      const match =
+        catalog.find((entry) => entry.id === pendingPath) ??
+        matchArtifactForPath(catalog, pendingPath);
       if (match) workbarStore.resolvePendingPath(sessionId, match.id);
-      else if (artifacts.records.length > 0) workbarStore.clearPendingPath(sessionId);
+      else if (catalog.length > 0) workbarStore.clearPendingPath(sessionId);
       return;
     }
     // Nothing to show: a selection whose artifact left the catalog, or a
@@ -100,7 +106,16 @@ export function FilePreviewViewer(props: { sessionId: string; active: boolean })
     // column with a notice — the Outputs list behind it is where the next file
     // comes from.
     if (!record) closeWorkbarArtifact(sessionId);
-  }, [active, artifacts.loaded, artifacts.records, pendingPath, record, sessionId]);
+  }, [
+    active,
+    artifacts.loaded,
+    artifacts.records,
+    artifacts.uploads,
+    artifacts.toolResults,
+    pendingPath,
+    record,
+    sessionId,
+  ]);
 
   if (!record) {
     return (

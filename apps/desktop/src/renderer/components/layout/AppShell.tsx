@@ -30,7 +30,7 @@
 // change of what the main column shows. A row cannot own that, and thirty rows
 // each owning a copy of it would be thirty copies.
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'motion/react';
 import { useStore } from 'zustand';
 import { useUiLocale, MakaUriContext } from '@maka/ui';
@@ -163,6 +163,24 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
   const defaultHost = useStore(hostScopeStore, (state) => state.host);
   const { model } = useSessionList('');
   const workbar = useWorkbar(activeId);
+  const [peekSessionId, setPeekSessionId] = useState<string>();
+  const activityPeekTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const clearActivityPeekTimer = useCallback(() => clearTimeout(activityPeekTimer.current), []);
+  const dismissActivityPeek = useCallback(() => {
+    clearActivityPeekTimer();
+    setPeekSessionId(undefined);
+  }, [clearActivityPeekTimer]);
+  const peekActivity = useCallback(() => {
+    clearActivityPeekTimer();
+    if (activeId && workbar.collapsed)
+      activityPeekTimer.current = setTimeout(() => setPeekSessionId(activeId), 150);
+  }, [activeId, workbar.collapsed, clearActivityPeekTimer]);
+  const holdActivityPeek = useCallback(() => clearActivityPeekTimer(), [clearActivityPeekTimer]);
+  const leaveActivityPeek = useCallback(() => {
+    clearActivityPeekTimer();
+    activityPeekTimer.current = setTimeout(() => setPeekSessionId(undefined), 200);
+  }, [clearActivityPeekTimer]);
+
   // `model.activeRow`, not a lookup in `rows`: a scheduled task's runs are kept
   // out of the rail, and looking them up there left the titlebar with nothing
   // to name while one was open.
@@ -508,6 +526,19 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
             ? 'session'
             : 'welcome';
 
+  useEffect(() => {
+    dismissActivityPeek();
+    return clearActivityPeekTimer;
+  }, [
+    activeId,
+    view,
+    workbar.collapsed,
+    workbar.workbarHasColumn,
+    dismissActivityPeek,
+    clearActivityPeekTimer,
+  ]);
+  const activityPeek = peekSessionId === activeId && activeId !== undefined && workbar.collapsed;
+
   const historyLocation = useMemo<PageLocation>(() => {
     if (view === 'session' && activeId) return { view, sessionId: activeId };
     if (view === 'settings')
@@ -568,29 +599,17 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
 
   return (
     <MakaUriContext.Provider value={dispatchInternal}>
-      {/*
-        The window is two columns, not two rows: the right pane runs the FULL
-        height of the window, and the titlebar belongs to the column left of
-        it. That is the reference design's shape, and it is what makes the two
-        things below true without any code to keep them true:
-
-        - the pane's frame is the same 8px eave on all four sides, instead of
-          hanging 56px below the top edge because a window-wide titlebar was in
-          the way;
-        - the titlebar narrows when the pane opens, so the workbar toggle ends
-          up on the seam beside the pane rather than pinned above it.
-
-        Everything the pane needs from the shell it now gets from the layout.
-      */}
+      {/* Activity lives below the full conversation header. A file/tool viewer
+          owns a separate full-height column, matching its existing frame. */}
       <div className="flex min-h-0 flex-1 flex-row">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           <WindowTitlebar
             layout={layout}
             history={pageHistory}
             softEdge={view === 'session'}
             // Full screen is the pane owning the window; this row's controls would
             // all point underneath it (see `concealed`).
-            concealed={workbar.expanded}
+            concealed={view === 'session' && workbar.expanded}
             identity={
               // Settings owns the identity slot while it owns the content column;
               // the actions slot stays empty there (plan §2.12).
@@ -613,12 +632,13 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
               ) : undefined
             }
             actions={
-              view === 'session' && activeId ? (
-                // The model is chosen on the composer's meta row; the titlebar
-                // keeps only the workbar's switch, which has to be reachable while
-                // the pane is not on screen. In full screen the whole row is
-                // concealed, so this needs no case of its own.
-                <WorkbarToggle workbar={workbar} />
+              view === 'session' && activeId && (workbar.collapsed || !workbar.workbarHasColumn) ? (
+                <WorkbarToggle
+                  sessionId={activeId}
+                  workbar={workbar}
+                  onPointerEnter={peekActivity}
+                  onPointerLeave={leaveActivityPeek}
+                />
               ) : undefined
             }
           />
@@ -646,11 +666,20 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
             ) : view === 'automations' ? (
               <ScheduledTasksModule />
             ) : view === 'session' && activeId ? (
-              <SessionView
-                sessionId={activeId}
-                onOpenSettings={(section) => openSettings(section ?? 'models')}
-                onError={reportError}
-              />
+              <div className="flex min-h-0 flex-1">
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                  <SessionView
+                    sessionId={activeId}
+                    onOpenSettings={(section) => openSettings(section ?? 'models')}
+                    onError={reportError}
+                  />
+                </div>
+                {!localPending && (
+                  <WorkbarColumn activity collapsed={workbar.collapsed || workbar.workbarHasColumn}>
+                    <div className="w-[21rem]" aria-hidden="true" />
+                  </WorkbarColumn>
+                )}
+              </div>
             ) : (
               <TaskWelcomeContent
                 onOpenSettings={() => openSettings('projects')}
@@ -660,23 +689,29 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
               />
             )}
           </AppLayout>
+          {view === 'session' && activeId && !localPending && (
+            <SessionPanel
+              key={activeId}
+              sessionId={activeId}
+              hidden={(workbar.collapsed || workbar.workbarHasColumn) && !activityPeek}
+              peek={activityPeek}
+              onPointerEnter={holdActivityPeek}
+              onPointerLeave={leaveActivityPeek}
+              onClose={() => {
+                dismissActivityPeek();
+                workbar.setCollapsed(true);
+                requestAnimationFrame(() =>
+                  document
+                    .querySelector<HTMLElement>('[data-maka-contract="session-workbar-toggle"]')
+                    ?.focus(),
+                );
+              }}
+            />
+          )}
         </div>
-        {/* The pane is the second column of the window, so it needs nothing
-            from the first one: it starts at the top edge, it narrows the
-            titlebar and the transcript together, and full screen is simply
-            this column growing to the whole frame. */}
-        {/* One column, two occupants. The session panel is what the column
-            holds by default; opening a face takes it, and putting the face
-            away gives it back. `collapsed` is the switch between them, so the
-            titlebar keeps one button rather than two competing for a column
-            only one of them can have. */}
-        {view === 'session' && activeId && !localPending && (
-          <WorkbarColumn collapsed={workbar.collapsed}>
-            {workbar.workbarHasColumn ? (
-              <WorkbarPane sessionId={activeId} workbar={workbar} />
-            ) : (
-              <SessionPanel sessionId={activeId} />
-            )}
+        {view === 'session' && activeId && !localPending && workbar.tabs.length > 0 && (
+          <WorkbarColumn collapsed={workbar.collapsed || !workbar.workbarHasColumn}>
+            <WorkbarPane sessionId={activeId} workbar={workbar} />
           </WorkbarColumn>
         )}
       </div>
@@ -769,7 +804,7 @@ function hostRef(
  * box-shadow drawn outside its box, hairline ring included, and a clip here
  * would cut the left edge of that away.
  */
-function WorkbarColumn(props: { collapsed: boolean; children: ReactNode }) {
+function WorkbarColumn(props: { collapsed: boolean; children: ReactNode; activity?: boolean }) {
   const reduceMotion = useReducedMotion();
   return (
     <motion.div
@@ -786,13 +821,18 @@ function WorkbarColumn(props: { collapsed: boolean; children: ReactNode }) {
       initial={false}
       animate={{ width: props.collapsed ? 0 : 'auto' }}
       transition={{ duration: reduceMotion ? 0 : 0.2, ease: 'easeOut' }}
-      data-maka-contract="session-workbar-column"
+      data-maka-contract={props.activity ? 'session-activity-column' : 'session-workbar-column'}
       // Clipped ONLY while away. Open, this column must not clip: the pane's
       // frame is a box-shadow drawn outside its box, hairline ring included,
       // and a clip here cuts the left edge of that off. Collapsed it has to
       // clip, because the column stays mounted at zero width and its child
       // would otherwise hang over the transcript.
-      className={cn('flex shrink-0', props.collapsed && 'overflow-hidden')}
+      className={cn(
+        'flex shrink-0',
+        props.collapsed && 'overflow-hidden',
+        props.activity && props.collapsed && 'invisible',
+        props.activity && 'max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-20',
+      )}
     >
       {props.children}
     </motion.div>

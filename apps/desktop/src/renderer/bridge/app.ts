@@ -100,6 +100,14 @@ export function saveArtifactAs(
   return app().saveArtifactAs(sessionId, artifactId);
 }
 
+/** Export all selected outputs through one native folder picker. */
+export function saveArtifactsAs(
+  sessionId: string,
+  artifactIds: readonly string[],
+): Promise<ArtifactSaveOutcome> {
+  return app().saveArtifactsAs(sessionId, [...artifactIds]);
+}
+
 // ── app icon ───────────────────────────────────────────────────────────────
 
 export function listIconPreviews(): ReturnType<App['iconPreviews']> {

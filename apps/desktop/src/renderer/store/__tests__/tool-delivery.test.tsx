@@ -63,7 +63,8 @@ import {
   type QuestionDraft,
 } from '../../lib/user-question-shape.js';
 
-import { TaskProgressRow } from '../../components/session/SessionPanel.js';
+import { TaskProgressRow, ProgressSteps } from '../../components/session/SessionPanel.js';
+import { getSessionPanelCopy } from '../../locales/session-panel-copy.js';
 import { openBlockersOf } from '../../hooks/use-task-progress.js';
 
 function renderTree(node: Parameters<typeof renderToStaticMarkup>[0]) {
@@ -835,9 +836,10 @@ test('a running task shows its active form, and a finished one keeps its subject
   const rows = [...document.querySelectorAll('[data-maka-task-id]')];
   assert.equal(rows.length, 3);
 
-  // Completed: the check takes the badge, the subject is struck through.
+  // Completed: a neutral check marks the finished step; the subject stays readable.
   assert.equal(rows[0]?.getAttribute('data-maka-task-status'), 'completed');
-  assert.ok(rows[0]?.querySelector('.line-through'));
+  assert.ok(rows[0]?.querySelector('[data-anthropicon="checkCircleFilled"]'));
+  assert.equal(rows[0]?.querySelector('.line-through'), null);
 
   // Running: the badge keeps the id, and the label is the active form.
   const running = rows[1]?.textContent ?? '';
@@ -849,4 +851,25 @@ test('a running task shows its active form, and a finished one keeps its subject
   assert.ok(blocked.includes('Run the suite'));
   assert.ok(blocked.includes('blocked by #2'), blocked);
   assert.ok(!blocked.includes('#1'), blocked);
+});
+
+test('activity folds earlier completed steps while keeping ongoing and blocked work visible', () => {
+  const tasks = [
+    { ...TASKS[0]!, id: '1' },
+    { ...TASKS[1]!, id: '2' },
+    { ...TASKS[2]!, id: '3' },
+    { ...TASKS[0]!, id: '4' },
+    { ...TASKS[0]!, id: '5' },
+  ];
+  const document = renderTree(
+    createElement(ProgressSteps, { tasks, copy: getSessionPanelCopy('en') }),
+  );
+  assert.ok(document.querySelector('[data-maka-task-id="1"]')?.closest('[inert]'));
+  for (const id of ['2', '3', '4', '5'])
+    assert.ok(document.querySelector(`[data-maka-task-id="${id}"]`));
+  assert.ok(
+    document
+      .querySelector('button[aria-expanded="false"]')
+      ?.textContent?.startsWith('1 earlier step'),
+  );
 });

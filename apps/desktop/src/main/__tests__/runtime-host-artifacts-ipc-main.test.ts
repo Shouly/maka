@@ -458,3 +458,62 @@ test("Attachment byte IPC stops a stream that exceeds its preview admission", as
     { ok: false, reason: "too_large" },
   );
 });
+
+for (const mode of ['save', 'unicode-names', 'reveal-failure', 'cancel', 'source-failure', 'internal-artifact', 'internal-html'] as const) {
+  test(`batch output export: ${mode}`, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'maka-output-export-'));
+    await writeFile(join(root, 'existing.txt'), 'KEEP');
+    const handlers = new Map<string, Handler>();
+    let dialogs = 0;
+    let streams = 0;
+    const revealed: string[] = [];
+    try {
+      registerRuntimeHostArtifactsIpc({
+        uiLocale: () => 'en',
+        ipcMain: { handle: (channel: string, handler: Handler) => handlers.set(channel, handler) } as never,
+        client: {
+          hostEpoch: 'batch-export-test',
+          getArtifact: async (_sessionId: string, id: string) => ({
+            id, sessionId: 'session', turnId: 'turn', createdAt: 0,
+            name: mode === 'unicode-names' ? (id === 'one' ? 'caf\u00e9.txt' : 'cafe\u0301.txt') : id === 'one' ? 'report.txt' : 'REPORT.txt',
+            kind: mode === 'internal-html' ? 'html' : 'file', source: mode.startsWith('internal-') ? 'tool_result' : 'user_delivery', sizeBytes: mode === 'unicode-names' ? 3 : 4,
+          }),
+          streamArtifact: async (_sessionId: string, _id: string, writeChunk: (bytes: Uint8Array) => Promise<void>) => {
+            streams++;
+            const bytes = Buffer.from(mode === 'unicode-names' ? _id : 'DATA');
+            await writeChunk(bytes);
+            if (mode === 'source-failure' && streams === 2) throw new Error('source interrupted');
+            return bytes.byteLength;
+          },
+        } as never,
+        mainWindowController: {
+          showOpenDialog: async () => { dialogs++; return { canceled: mode === 'cancel', filePaths: [root] }; },
+        } as never,
+        showItemInFolder: (path) => { revealed.push(path); if (mode === 'reveal-failure') throw new Error('Finder unavailable'); },
+      });
+      const result = await handlers.get('app:saveArtifactsAs')!({}, 'session', ['one', 'two', 'one']);
+      assert.equal(await readFile(join(root, 'existing.txt'), 'utf8'), 'KEEP');
+      if (mode === 'save' || mode === 'unicode-names' || mode === 'reveal-failure') {
+        assert.equal(dialogs, 1);
+        assert.equal(streams, 2, 'duplicate IDs export once');
+        assert.equal(revealed.length, 1);
+        if (mode === 'unicode-names') {
+          assert.deepEqual(await readdir(revealed[0]!), ['2-caf\u00e9.txt', 'caf\u00e9.txt']);
+          assert.equal(await readFile(join(revealed[0]!, 'caf\u00e9.txt'), 'utf8'), 'one');
+          assert.equal(await readFile(join(revealed[0]!, '2-caf\u00e9.txt'), 'utf8'), 'two');
+        } else {
+          assert.deepEqual(await readdir(revealed[0]!), ['2-REPORT.txt', 'report.txt']);
+          assert.equal(await readFile(join(revealed[0]!, 'report.txt'), 'utf8'), 'DATA');
+        }
+        assert.deepEqual(result, { ok: true, saved: revealed[0] });
+      } else {
+        assert.deepEqual(result, { ok: false, reason: mode === 'cancel' ? 'canceled' : mode === 'source-failure' ? 'source_failed' : 'not_allowed' });
+        assert.deepEqual(await readdir(root), ['existing.txt'], 'no partially exported directory remains');
+        assert.equal(revealed.length, 0);
+        if (mode.startsWith('internal-')) assert.equal(dialogs, 0);
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+}

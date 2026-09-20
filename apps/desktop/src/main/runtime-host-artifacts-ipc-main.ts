@@ -19,11 +19,12 @@
 
 import type { UiCatalog, UiLocale } from '@maka/core/ui-locale';
 import { randomUUID } from "node:crypto";
-import { open, mkdir, rename, rm } from "node:fs/promises";
+import { open, mkdir, mkdtemp, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
   ARTIFACT_IMAGE_PREVIEW_MAX_BYTES,
+  isArtifactUserVisible,
   normalizeArtifactImagePreviewMime,
   resolveArtifactImagePreview,
   type ArtifactSaveResult,
@@ -165,6 +166,48 @@ export function registerRuntimeHostArtifactsIpc(
       }
     },
   );
+  deps.ipcMain.handle(
+    'app:saveArtifactsAs',
+    async (_event, sessionId: string, artifactIds: string[]): Promise<ArtifactSaveResult> => {
+      if (!Array.isArray(artifactIds) || artifactIds.length === 0 || artifactIds.length > 1000 ||
+          artifactIds.some((id) => typeof id !== 'string' || !id)) return { ok: false, reason: 'not_allowed' };
+      const records = [];
+      for (const id of new Set(artifactIds)) {
+        const record = await deps.client.getArtifact(sessionId, id);
+        if (!record) return { ok: false, reason: 'not_found' };
+        if (!isArtifactUserVisible(record)) return { ok: false, reason: 'not_allowed' };
+        records.push(record);
+      }
+      const result = await deps.mainWindowController.showOpenDialog({
+        title: ARTIFACT_DIALOG_COPY[deps.uiLocale()].downloadAll,
+        properties: ['openDirectory', 'createDirectory'],
+      });
+      if (result.canceled || !result.filePaths[0]) return { ok: false, reason: 'canceled' };
+      let folder: string | undefined;
+      try {
+        // A fresh directory prevents overwriting the user's files or following
+        // a pre-existing destination symlink. Every name is basename-sanitized.
+        folder = await mkdtemp(join(result.filePaths[0], 'Maka outputs-'));
+        const names = new Set<string>();
+        for (const record of records) {
+          // macOS treats canonically equivalent Unicode names as the same file.
+          // Normalize before deduplicating so both artifacts survive export.
+          const base = sanitizeArtifactName(record.name).normalize('NFC');
+          let name = base;
+          let suffix = 2;
+          while (names.has(name.toLowerCase())) name = `${suffix++}-${base}`;
+          names.add(name.toLowerCase());
+          await materializeArtifact(deps.client, sessionId, record.id, join(folder, name), record.sizeBytes);
+        }
+        // Revealing is optional; a Finder error must not delete a completed export.
+        try { deps.showItemInFolder(folder); } catch { /* Files were saved successfully. */ }
+        return { ok: true, saved: folder };
+      } catch (error) {
+        if (folder) await rm(folder, { recursive: true, force: true }).catch(() => undefined);
+        return { ok: false, reason: error instanceof ArtifactMaterializationError ? error.reason : 'target_write_failed' };
+      }
+    },
+  );
 }
 
 /** Guest-safe projection used by transcript attachment thumbnails. */
@@ -288,7 +331,7 @@ class ArtifactMaterializationError extends Error {
 }
 
 const ARTIFACT_DIALOG_COPY = {
-  'zh-CN': { saveAs: (name: string) => `另存为 ${name}` },
-  'zh-TW': { saveAs: (name: string) => `另存為 ${name}` },
-  en: { saveAs: (name: string) => `Save ${name} as` },
-} satisfies UiCatalog<{ saveAs(name: string): string }>;
+  'zh-CN': { downloadAll: '选择产出文件保存位置', saveAs: (name: string) => `另存为 ${name}` },
+  'zh-TW': { downloadAll: '選擇產出檔案儲存位置', saveAs: (name: string) => `另存為 ${name}` },
+  en: { downloadAll: 'Choose where to save outputs', saveAs: (name: string) => `Save ${name} as` },
+} satisfies UiCatalog<{ saveAs(name: string): string; downloadAll: string }>;

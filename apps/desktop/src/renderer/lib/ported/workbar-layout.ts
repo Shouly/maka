@@ -112,6 +112,7 @@ export type WorkbarLayoutAction =
       placement: SessionWorkbarPlacement;
       tabIds: readonly string[];
     }
+  | { type: 'show-session-panel' }
   | { type: 'activate-session'; sessionId: string | undefined }
   | { type: 'retain-sessions'; sessionIds: ReadonlySet<string> }
   | {
@@ -309,6 +310,9 @@ export function reduceWorkbarLayout(
   state: WorkbarLayoutState,
   action: WorkbarLayoutAction,
 ): WorkbarLayoutState {
+  if (action.type === 'show-session-panel') {
+    return withRightCollapsed(withColumnViewer(state, null), false);
+  }
   if (action.type === 'activate-session') {
     return state.activeSessionId === action.sessionId
       ? state
@@ -358,7 +362,15 @@ export function reduceWorkbarLayout(
       ? { type: 'close', placement: action.placement, tabIds: action.tabIds }
       : action,
   );
-  if (panels === state.panels) return state;
+  // Activity can own the column while a viewer remains in the tab topology.
+  // Opening that same tab must reclaim the column even if the tabs did not change.
+  if (
+    panels === state.panels &&
+    action.type !== 'open' &&
+    action.type !== 'activate' &&
+    action.type !== 'open-launcher'
+  )
+    return state;
   let rightCollapsed = isSessionWorkbarCollapsed(state);
   let columnViewer = sessionWorkbarViewerId(state);
   let bottomOpen = state.bottomOpen;

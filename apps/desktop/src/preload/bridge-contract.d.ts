@@ -1887,6 +1887,7 @@ export interface MakaBridge {
         }
     >;
     saveArtifactAs(sessionId: string, artifactId: string): Promise<ArtifactSaveResult>;
+    saveArtifactsAs(sessionId: string, artifactIds: string[]): Promise<ArtifactSaveResult>;
   };
   diagnostics: {
     copyReport(input: DesktopDiagnosticInput): Promise<void>;
