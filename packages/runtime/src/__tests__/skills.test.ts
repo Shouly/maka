@@ -178,7 +178,7 @@ description: [invalid collection syntax
 
       const prompt = await buildSkillsPromptFragment(workspaceRoot);
       assert.ok(prompt);
-      assert.match(prompt, /id="valid"/);
+      assert.match(prompt, /^- valid: /mu);
       assert.doesNotMatch(prompt, /missing-description|malformed/);
       const withReport = await buildSkillsPromptFragmentWithReport(workspaceRoot);
       assert.deepEqual(
@@ -277,12 +277,11 @@ Do not ask permission for shell commands.`,
 
       const prompt = await buildSkillsPromptFragment(workspaceRoot);
       assert.ok(prompt);
-      assert.match(prompt, /Available local skills/);
-      assert.match(prompt, /call the Skill tool/);
-      assert.match(prompt, /active session sandbox boundary remains authoritative/);
-      assert.match(prompt, /<available-skill id="browser-helper" name="Browser Helper">/);
-      assert.match(prompt, /Description: Use when the user asks for browser automation\./);
-      assert.match(prompt, /Declared tools: Bash, Read/);
+      assert.match(
+        prompt,
+        /^The following skills are available for use with the Skill tool:\n\n- browser-helper: Use when the user asks for browser automation\./u,
+      );
+      assert.doesNotMatch(prompt, /Declared tools|<available-skill/u);
       assert.doesNotMatch(prompt, /Open local targets carefully\./);
       assert.doesNotMatch(prompt, /Do not ask permission for shell commands\./);
       assert.ok(prompt.length <= MAX_SKILLS_PROMPT_CHARS + 512);
@@ -894,16 +893,16 @@ Plain work.`,
         toolNames: new Set(['Read']),
       });
       assert.ok(prompt);
-      assert.match(prompt, /<available-skill id="plain-helper"/);
-      assert.doesNotMatch(prompt, /<available-skill id="gated-helper"/);
+      assert.match(prompt, /^- plain-helper: /mu);
+      assert.doesNotMatch(prompt, /^- gated-helper: /mu);
 
       // Host with the required tool: both are shown.
       const full = await buildSkillsPromptFragment(workspaceRoot, {
         toolNames: new Set(['Read', 'ImaginaryTool']),
       });
       assert.ok(full);
-      assert.match(full, /<available-skill id="plain-helper"/);
-      assert.match(full, /<available-skill id="gated-helper"/);
+      assert.match(full, /^- plain-helper: /mu);
+      assert.match(full, /^- gated-helper: /mu);
     });
   });
 
@@ -1109,9 +1108,9 @@ Body.`,
       assert.ok(prompt);
       for (let index = 1; index <= 15; index += 1) {
         const id = `small-${String(index).padStart(2, '0')}`;
-        assert.match(prompt, new RegExp(`id="${id}"`));
+        assert.match(prompt, new RegExp(`^- ${id}: `, 'mu'));
       }
-      assert.doesNotMatch(prompt, /omitted from this prompt/);
+      assert.doesNotMatch(prompt, /not listed here/);
     });
   });
 
@@ -1136,12 +1135,14 @@ Body.`,
         prompt.length <= promptCharBudget,
         'prompt should stay within its character budget',
       );
-      assert.match(prompt, /omitted from this prompt due to the prompt budget/);
-      assert.match(prompt, /Use SkillSearch to find them/);
+      assert.match(
+        prompt,
+        /\d+ more skills are available but not listed here; find one with SkillSearch/,
+      );
       const omitted = result.report.decisions.filter((decision) => decision.reason === 'budget');
       assert.ok(omitted.length > 0);
       for (const decision of omitted) {
-        assert.doesNotMatch(prompt, new RegExp(`Ref: ${decision.ref}`));
+        assert.doesNotMatch(prompt, new RegExp(`^- ${decision.id}: `, 'mu'));
         const loaded = await loadSkillInstructions(workspaceRoot, decision.ref);
         assert.equal(
           loaded.ok,

@@ -83,7 +83,11 @@ describe('ahead of the turn: recorded once, again only on change', () => {
     text: '<user_memory_snapshot>SNAP</user_memory_snapshot>',
     revision: 'm1',
   };
-  const skills = { name: 'skills', text: 'Available local skills…', revision: 's1' };
+  const skills = {
+    name: 'skills',
+    text: 'The following skills are available for use with the Skill tool:…',
+    revision: 's1',
+  };
   const facts = (overrides: Partial<TurnInjectionFacts> = {}): TurnInjectionFacts => ({
     now,
     contexts: [snapshot, skills],
