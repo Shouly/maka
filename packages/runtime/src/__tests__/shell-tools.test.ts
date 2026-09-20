@@ -329,7 +329,7 @@ describe('Bash provider-facing result projection', () => {
     assert.match(String(output?.value), /^tail\n\[Output was truncated/);
   });
 
-  test('a background run keeps its structured ref', async () => {
+  test('a background run answers with a sentence naming its ref', async () => {
     const tool = buildManagedBashTool(fakeShellRuns());
     const background = {
       kind: 'shell_run',
@@ -345,7 +345,11 @@ describe('Bash provider-facing result projection', () => {
 
     assert.deepEqual(
       await tool.toModelOutput?.({ toolCallId: 'background', input: {}, output: background }),
-      { type: 'json', value: background },
+      {
+        type: 'text',
+        value:
+          'Command running in background with ref: maka://runtime/background-tasks/sr_test. To check its output, use Read on that ref; to end it, use TaskStop.',
+      },
     );
   });
 });

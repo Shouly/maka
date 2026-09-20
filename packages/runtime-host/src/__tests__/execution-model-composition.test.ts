@@ -5826,9 +5826,14 @@ async function handleProviderRequest(
       });
       return;
     }
+    // TaskStop answers the model with one JSON line, the reference's shape.
     const stopResult = requireLatestToolResult(body);
     assert.equal(stopResult.status, 'cancelled');
-    assert.deepEqual(stopResult.operation, { kind: 'stop', applied: true });
+    assert.equal(stopResult.task_type, 'local_bash');
+    assert.match(
+      String(stopResult.message),
+      /^Successfully stopped task: maka:\/\/runtime\/background-tasks\//u,
+    );
     respondProviderText(response, CHILD_AGENT_RESULT_TEXT);
     return;
   }

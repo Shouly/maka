@@ -19,6 +19,7 @@
 
 import type { PipeShellOutput, PtyShellOutput } from '@maka/core/shell-run';
 import type { ToolResultOutput } from './model-protocol.js';
+import { isShellRunResult, shellRunResultText } from './shell-run-model-output.js';
 import { toolResultOutput } from './tool-result-output.js';
 
 const NO_OUTPUT = '(no output)';
@@ -35,10 +36,11 @@ const NO_OUTPUT = '(no output)';
  * redaction and truncation bookkeeping — stays in the durable result, which is
  * what the UI renders.
  *
- * Background runs keep their structured shape: their payload is a ref the model
- * has to pass back to Read or TaskInput, not output to read.
+ * A background run answers in text too (`shell-run-model-output.ts`): the ref
+ * to keep when it starts, the output with a status line when it is read.
  */
 export function projectBashToolResultForModel(output: unknown): unknown {
+  if (isShellRunResult(output)) return shellRunResultText(output);
   if (
     !output ||
     typeof output !== 'object' ||
@@ -76,7 +78,7 @@ function terminalResultText(result: TerminalLikeResult): string {
  * model's next move (request a boundary expansion rather than retry), so it
  * stays in the text, naming the backend so the diagnosis is checkable.
  */
-function sandboxDenialNote(denial: unknown): string | undefined {
+export function sandboxDenialNote(denial: unknown): string | undefined {
   if (!denial || typeof denial !== 'object') return undefined;
   const signal = denial as { likely?: unknown; backend?: unknown; recovery?: unknown };
   if (signal.likely !== true) return undefined;
@@ -112,7 +114,7 @@ function failureHeader(result: TerminalLikeResult): string | undefined {
 }
 
 /** stdout then stderr for a piped run; the visible screen for a PTY one. */
-function capturedOutput(output: unknown): string {
+export function capturedOutput(output: unknown): string {
   if (!output || typeof output !== 'object') return '';
   const shell = output as Partial<PipeShellOutput> & Partial<PtyShellOutput>;
   if (shell.mode === 'pty') {

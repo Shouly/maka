@@ -21,6 +21,7 @@ import { countDiffLineStats } from '@maka/core/unified-diff';
 import { TOOL_NAMES } from '@maka/core/tool-names';
 import type { GrepOutputMode } from './filesystem-worker/protocol.js';
 import type { ToolResultOutput } from './model-protocol.js';
+import { isShellRunResult, shellRunResultText } from './shell-run-model-output.js';
 import { toolResultOutput } from './tool-result-output.js';
 
 /**
@@ -51,6 +52,8 @@ export function readToolResultToModelOutput(
   input: unknown,
   output: unknown,
 ): ToolResultOutput | undefined {
+  // A Read on a background-task ref answers with that task's output and status.
+  if (isShellRunResult(output)) return { type: 'text', value: shellRunResultText(output) };
   const result = readResult(output);
   // Images, runtime resources and attachments answer in their own shapes; they
   // have no lines to number, so they keep the default projection.
@@ -101,7 +104,7 @@ function readOffset(input: unknown): number {
     : 0;
 }
 
-function numberReadLines(content: string, offset: number): string {
+export function numberReadLines(content: string, offset: number): string {
   // A file that ends in a newline has no final empty line; `cat -n` does not
   // number one, and neither may this.
   const body = content.endsWith('\n') ? content.slice(0, -1) : content;

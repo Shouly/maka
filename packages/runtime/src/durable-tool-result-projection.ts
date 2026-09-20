@@ -47,6 +47,7 @@ import { toolResultOutput } from './tool-result-output.js';
 import { withToolResultArchiveResourceRef } from './tool-result-archive.js';
 import { projectBashToolResultForModel } from './bash-model-output.js';
 import { projectFileWriteToolResultForModel } from './file-tool-model-output.js';
+import { projectShellRunResultForModel } from './shell-run-model-output.js';
 
 const OMITTED_BINARY_TEXT =
   '[Binary tool output omitted from the durable model projection; repeat the tool call if it is still needed.]';
@@ -292,6 +293,7 @@ export function decodeEffectiveToolResultProjection(
     };
   }
   if (shellResult.state === 'valid') output = shellResult.content;
+  output = projectShellRunResultForModel(output);
   output =
     content.name === TOOL_NAMES.bash
       ? projectBashToolResultForModel(output)

@@ -65,6 +65,7 @@ import {
   isWellFormedTerminalInput,
 } from './shell-run-contract.js';
 import type { ChildFdInput } from './child-fd-input.js';
+import { shellRunResultToModelOutput } from './shell-run-model-output.js';
 import { bashToolResultToModelOutput } from './bash-model-output.js';
 import {
   BASH_REQUIRED_BOUNDARY_DESCRIPTION,
@@ -454,6 +455,7 @@ export function buildStopBackgroundTaskTool(backgroundTasks: BackgroundTaskStopp
         ),
     }),
     impl: ({ ref }, ctx) => backgroundTasks.stopBackgroundTask(ctx.sessionId, ref, ctx.abortSignal),
+    toModelOutput: ({ output }) => shellRunResultToModelOutput(output),
   };
 }
 
@@ -718,6 +720,7 @@ export function buildWriteStdinTool(ptyControls: PtyControlWriter): MakaTool {
     ].join('\n'),
     parameters,
     permissionArgs: (input) => parseInput(input),
+    toModelOutput: ({ output }) => shellRunResultToModelOutput(output),
     impl: (input, ctx) => {
       const { ref, input: rawInput, actions, size } = parseInput(input);
       return ptyControls.writeStdin({
