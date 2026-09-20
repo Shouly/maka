@@ -187,9 +187,11 @@ export function TipTapEditor(props: {
         Reference,
         Placeholder.configure({
           placeholder: () => live.current.placeholder,
-          // Show the hint whether or not the editor is focused (relx). The
-          // class is what paints it: the extension only sets the attribute.
-          showOnlyCurrent: false,
+          // An empty composer has one paragraph. Resolve its placeholder
+          // from the current view: the all-node cache can read the previous
+          // document's emptiness when a send or Backspace clears the draft.
+          // This follows the selection, not focus, so blur keeps the hint.
+          showOnlyCurrent: true,
           showOnlyWhenEditable: false,
           emptyEditorClass:
             'is-editor-empty before:pointer-events-none before:float-left before:h-0 before:text-text-muted before:content-[attr(data-placeholder)]',
@@ -234,12 +236,9 @@ export function TipTapEditor(props: {
     editor?.setEditable(!props.disabled, false);
   }, [editor, props.disabled]);
 
-  // The placeholder function reads the live prop, but the extension keeps
-  // its decorations in plugin state and only rescans on a transaction that
-  // changed the document or SET the selection — an empty transaction is
-  // handed back unchanged. Re-setting the current selection is the
-  // cheapest transaction that counts, so a prop change alone (an open
-  // question turning the hint into "Or reply directly…") gets drawn.
+  // A prop change alone does not update the ProseMirror view. Reapply its
+  // selection so the placeholder reads the latest prop, for example when an
+  // open question changes the hint to "Or reply directly…".
   useEffect(() => {
     if (!editor || editor.isDestroyed) return;
     const { tr, selection } = editor.state;

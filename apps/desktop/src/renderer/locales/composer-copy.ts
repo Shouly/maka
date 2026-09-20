@@ -37,6 +37,8 @@ export interface ComposerCopy {
   readonly placeholder: {
     readonly welcome: string;
     readonly session: string;
+    /** While the turn is active, including pauses between text and tool steps. */
+    readonly running: string;
     /** While an ask-user question is open: a send is that question's free-text answer. */
     readonly replyToQuestion: string;
   };
@@ -165,6 +167,7 @@ const COMPOSER_COPY = {
     placeholder: {
       welcome: '今天想做点什么？',
       session: '输入消息…',
+      running: '回复…',
       replyToQuestion: '或直接回复…',
     },
     hints: ['输入 / 选择技能', '输入 @ 引用文件'],
@@ -275,6 +278,7 @@ const COMPOSER_COPY = {
     placeholder: {
       welcome: '今天想做點什麼？',
       session: '輸入訊息…',
+      running: '回覆…',
       replyToQuestion: '或直接回覆…',
     },
     hints: ['輸入 / 選擇技能', '輸入 @ 引用檔案'],
@@ -385,6 +389,7 @@ const COMPOSER_COPY = {
     placeholder: {
       welcome: 'How can I help you today?',
       session: 'Write a message…',
+      running: 'Reply…',
       replyToQuestion: 'Or reply directly…',
     },
     hints: ['Type / for skills', 'Type @ for files'],

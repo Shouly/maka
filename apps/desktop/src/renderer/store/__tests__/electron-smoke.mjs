@@ -140,6 +140,24 @@ async function startTask(page, prompt) {
   await page.getByRole('button', { name: 'Send', exact: true }).click();
 }
 
+async function expectComposerPlaceholder(page, text) {
+  await page.waitForFunction((text) => {
+    const editor = document.querySelector('[data-maka-contract="composer-input"]');
+    return (
+      editor?.textContent === '' &&
+      [...editor.querySelectorAll('p')].some((node) => {
+        const style = getComputedStyle(node, '::before');
+        return (
+          node.dataset.placeholder === text &&
+          style.content === JSON.stringify(text) &&
+          style.visibility === 'visible' &&
+          style.display !== 'none'
+        );
+      })
+    );
+  }, text);
+}
+
 try {
   await seedE2eConnection(userDataDir);
   const workspaceRoot = path.join(userDataDir, 'workspaces', 'default');
@@ -199,6 +217,18 @@ try {
     .getByText('renderer loop are connected.', { exact: false })
     .waitFor();
   checks.push('new task from the welcome composer creates a session and streams a reply');
+
+  // The placeholder must actually paint after content becomes empty; its
+  // data attribute alone can survive while the editor's empty styling is stale.
+  await expectComposerPlaceholder(page, 'Write a message…');
+  const composerInput = page.getByLabel('Message input', { exact: true });
+  await composerInput.fill('temporary draft');
+  await composerInput.press('ControlOrMeta+a');
+  await composerInput.press('Backspace');
+  await expectComposerPlaceholder(page, 'Write a message…');
+  await composerInput.evaluate((node) => node.blur());
+  await expectComposerPlaceholder(page, 'Write a message…');
+  checks.push('composer placeholder paints after sending, deleting the draft, and losing focus');
 
   // ── Phase 3a: the transcript ──────────────────────────────────────────────
 
@@ -276,12 +306,7 @@ try {
   await composerStop.waitFor();
   assert.equal(await composerStop.isEnabled(), true);
   // The editor under the panel now offers a direct reply.
-  await page.waitForFunction(
-    () =>
-      document
-        .querySelector('[data-maka-contract="composer-input"] .is-editor-empty')
-        ?.getAttribute('data-placeholder') === 'Or reply directly…',
-  );
+  await expectComposerPlaceholder(page, 'Or reply directly…');
   await page.screenshot({ path: SHOT('phase3a-tool-row.png') });
   checks.push(
     'a question is pinned above the composer, which keeps Stop, and leaves no placeholder in the timeline',
@@ -1435,6 +1460,28 @@ try {
   await page.screenshot({ path: SHOT('phase5b-scheduled-dark.png') });
   await runPaletteCommand(page, 'Theme · Light');
   await page.waitForFunction(() => !document.documentElement.classList.contains('dark'));
+
+  // Hold a real streamed turn open so this checks the input while the answer
+  // is still arriving, not just the cleared editor after the turn completes.
+  await rail.getByRole('button', { name: 'New task', exact: true }).click();
+  await startTask(page, '__e2e_hold_open__');
+  await page
+    .locator('[data-maka-contract="transcript"]')
+    .getByText('Fake backend waiting for the test to stop the Turn.', { exact: false })
+    .waitFor();
+  await page.locator('[data-maka-contract="composer-stop"]').waitFor();
+  await expectComposerPlaceholder(page, 'Reply…');
+  await composerInput.fill('draft while streaming');
+  await composerInput.press('ControlOrMeta+a');
+  await composerInput.press('Backspace');
+  await composerInput.evaluate((node) => node.blur());
+  await expectComposerPlaceholder(page, 'Reply…');
+  assert.equal(await page.locator('[data-maka-contract="composer-stop"]').count(), 1);
+  await page.screenshot({ path: SHOT('composer-placeholder-streaming.png') });
+  await page.locator('[data-maka-contract="composer-stop"]').click();
+  await page.locator('[data-maka-contract="composer-stop"]').waitFor({ state: 'detached' });
+  await expectComposerPlaceholder(page, 'Write a message…');
+  checks.push('streaming keeps Reply visible after clearing and blur, then restores the idle hint');
 
   assert.deepEqual(errors, []);
   await writeFile(

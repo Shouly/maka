@@ -1268,7 +1268,9 @@ function OwnedChatInput(props: {
                       ? copy.placeholder.replyToQuestion
                       : welcome
                         ? copy.placeholder.welcome
-                        : copy.placeholder.session
+                        : props.running
+                          ? copy.placeholder.running
+                          : copy.placeholder.session
                   }
                 />
                 {/* The hint carousel: the editor's own placeholder is
