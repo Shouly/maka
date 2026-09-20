@@ -130,7 +130,7 @@ export function computeEditedSource(
   const MAX_FUZZY_SOURCE_LINES = 50_000;
 
   if (oldString === newString) {
-    throw new Error(`No changes to apply in ${where}: old_string and new_string are identical`);
+    throw new Error('No changes to make: old_string and new_string are exactly the same.');
   }
   if (oldString === '') {
     throw new Error(`old_string must not be empty in ${where}`);
@@ -213,10 +213,7 @@ export function computeEditedSource(
   // ---- helpers ----
 
   function notFoundMessage(): string {
-    return (
-      `String not found in ${where}. Read the file and copy the exact text you want to ` +
-      'replace — whitespace and indentation count.'
-    );
+    return `String to replace not found in file.\nString: ${truncateForMessage(oldString)}`;
   }
 
   function finish(

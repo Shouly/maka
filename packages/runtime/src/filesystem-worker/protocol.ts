@@ -217,6 +217,8 @@ export const FilesystemWorkerOperationSchema = z.union([
       before: z.number().int().nonnegative().optional(),
       /** Print line numbers (`-n`); content mode only, on unless explicitly false. */
       lineNumbers: z.boolean().optional(),
+      /** Print only the matched parts (`-o`); content mode only. */
+      onlyMatching: z.boolean().optional(),
       /** Let the pattern span lines (`-U --multiline-dotall`). */
       multiline: z.boolean().optional(),
       maxCountPerFile: z.number().int().positive(),
@@ -243,7 +245,16 @@ export const FILESYSTEM_TARGET_KINDS = ['file', 'directory', 'other'] as const;
 
 export const FilesystemWorkerResultSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('metadata'), targetType: z.enum(FILESYSTEM_TARGET_KINDS) }).strict(),
-  z.object({ kind: z.literal('read'), content: z.string() }).strict(),
+  z
+    .object({
+      kind: z.literal('read'),
+      content: z.string(),
+      /** Lines in the whole file, when the read was windowed. */
+      totalLines: z.number().int().nonnegative().optional(),
+      /** Lines of the file follow the returned window. */
+      truncated: z.boolean().optional(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal('read_image'),
@@ -332,11 +343,8 @@ export const FilesystemWorkerErrorCodeSchema = z.enum([
  * guard that reads differently depending on which one ran is a guard the model
  * cannot learn.
  */
-export function unreadOverwriteMessage(path: string): string {
-  return (
-    `Refusing to overwrite ${path}: it exists and has not been read in this session. ` +
-    'Read it first (or use Edit for a partial change), then write.'
-  );
+export function unreadOverwriteMessage(_path: string): string {
+  return 'File has not been read yet. Read it first before writing to it.';
 }
 
 /**
@@ -345,8 +353,8 @@ export function unreadOverwriteMessage(path: string): string {
  * the same placement: both backends raise it, after the path has been resolved,
  * so a boundary violation is still reported as one.
  */
-export function unreadEditMessage(path: string): string {
-  return `Refusing to edit ${path}: it has not been read in this session. Read it first, then edit.`;
+export function unreadEditMessage(_path: string): string {
+  return 'File has not been read yet. Read it first before writing to it.';
 }
 
 export const FilesystemWorkerResponseSchema = z.discriminatedUnion('ok', [

@@ -48,7 +48,7 @@ describe('computeEditedSource — exact match', () => {
   test('throws with the where label when old_string is absent', () => {
     assert.throws(
       () => computeEditedSource('hello', 'absent', 'x', 'src/a.txt'),
-      /String not found in src\/a\.txt\. Read the file and copy the exact text/,
+      /String to replace not found in file\.\nString: absent$/,
     );
   });
 
@@ -85,7 +85,7 @@ describe('computeEditedSource — exact match', () => {
   });
 
   test('rejects identical old_string and new_string', () => {
-    assert.throws(() => computeEditedSource('abc', 'abc', 'abc', 'b.txt'), /identical/);
+    assert.throws(() => computeEditedSource('abc', 'abc', 'abc', 'b.txt'), /exactly the same/);
   });
 
   test('rejects an empty old_string', () => {
@@ -248,14 +248,14 @@ describe('computeEditedSource — replace_all', () => {
         computeEditedSource('const  x   =   1;', 'const x = 1;', 'const x = 2;', 'w.ts', {
           replaceAll: true,
         }),
-      /String not found in w\.ts/,
+      /String to replace not found in file\./,
     );
   });
 
   test('identical old_string and new_string is still rejected', () => {
     assert.throws(
       () => computeEditedSource('abc abc', 'abc', 'abc', 'r.ts', { replaceAll: true }),
-      /identical/,
+      /exactly the same/,
     );
   });
 });

@@ -155,7 +155,7 @@ const HEADLESS_CODING_V1_TOOLS_HASH =
   // refactor (purpose, failure modes, guardrails, result shape), then the file,
   // shell and search tools were aligned with the reference parameter names
   // (`file_path`, `timeout`, the ripgrep-shaped Grep switches).
-  'sha256:0c1d0cb24396ededbd732a1d59a0369162b67894237d1c9c54cd0d358849e73c';
+  'sha256:efc60666004078c64e47f3b9a29d3da16ff14a7c031187e2b769093aa74f42b5';
 const execFileAsync = promisify(execFile);
 test('backend creation resolves a bound Session by immutable Connection identity', async () => {
   let observedRef: unknown;

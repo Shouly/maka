@@ -31,7 +31,7 @@ import {
 } from '../apply-patch-file.js';
 
 import { computeEditedSource } from '../edit-replace.js';
-import { readTextLineWindow } from '../text-line-window.js';
+import { readTextLineWindowFacts } from '../text-line-window.js';
 import { createEditUnifiedDiff, createUnifiedDiff } from '../unified-diff.js';
 import {
   compareAndDeleteEntry,
@@ -195,7 +195,7 @@ export async function executeFilesystemOperation(
         if (code === 'ENOENT' || code === 'ENOTDIR') {
           throw operationError(
             'not_found',
-            `ENOENT: no such file or directory, read '${operation.path}'`,
+            `File does not exist. Note: your current working directory is ${operation.cwd}.`,
           );
         }
         throw error;
@@ -222,12 +222,17 @@ export async function executeFilesystemOperation(
         }
       }
       const content = await fs.readFile(path, 'utf8');
+      const window = readTextLineWindowFacts(content, operation.offset, operation.limit);
       return {
         kind: 'read',
-        content: readTextLineWindow(content, operation.offset, operation.limit),
+        content: window.content,
+        ...(window.truncated ? { totalLines: window.totalLines, truncated: true } : {}),
       };
     }
     case 'write': {
+      // Write creates missing parent directories, like `mkdir -p`, but only
+      // inside the boundary the write itself is allowed into.
+      await ensureParentDirectories(operation.cwd, operation.path, 'Write', operationBoundary);
       const path = await resolveWritableAllowed(
         operation.cwd,
         operation.path,
@@ -447,6 +452,7 @@ export async function executeFilesystemOperation(
         after: operation.after,
         before: operation.before,
         lineNumbers: operation.lineNumbers,
+        onlyMatching: operation.onlyMatching,
         multiline: operation.multiline,
         maxCountPerFile: operation.maxCountPerFile,
       });
@@ -587,6 +593,37 @@ async function assertTargetUnchanged(
     }
     // identity === 'unchecked': nothing to compare, nothing to fail.
   }
+}
+
+/**
+ * Create the missing directories above a write target. The nearest existing
+ * ancestor has to be inside the boundary the write is allowed into; nothing
+ * is created outside it, and an existing parent is left alone.
+ */
+async function ensureParentDirectories(
+  cwd: string,
+  inputPath: string,
+  label: string,
+  permission: FilesystemWorkerRequest['operationBoundary'],
+): Promise<void> {
+  const { root, candidate } = await resolveCandidate(cwd, inputPath, label, 'write', permission);
+  const parent = dirname(await realpathAllowMissing(candidate));
+  if (await targetTypeOf(parent).then((type) => type !== 'missing')) return;
+  let ancestor = parent;
+  for (;;) {
+    const up = dirname(ancestor);
+    if (up === ancestor) break;
+    if ((await targetTypeOf(up)) !== 'missing') break;
+    ancestor = up;
+  }
+  const existing = await realpath(dirname(ancestor));
+  if (!isPathInside(root, existing) && !exactWriteCoversParent(permission, candidate, existing)) {
+    throw operationError(
+      'path_denied',
+      `${label} parent was not covered by the operation boundary.`,
+    );
+  }
+  await fs.mkdir(parent, { recursive: true });
 }
 
 async function resolveWritableAllowed(

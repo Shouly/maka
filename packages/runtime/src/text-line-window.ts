@@ -21,7 +21,27 @@
 // for lines outside the requested window. Empty and trailing lines count too.
 // A missing or zero limit is unbounded: end is the total line count.
 export function readTextLineWindow(content: string, offset?: number, limit?: number): string {
-  if (offset === undefined && limit === undefined) return content;
+  return readTextLineWindowFacts(content, offset, limit).content;
+}
+
+export interface TextLineWindow {
+  readonly content: string;
+  /** Lines in the file, the way `cat -n` counts them: a final newline ends the last line rather than starting one. */
+  readonly totalLines: number;
+  /** Zero-based index of the first line shown. */
+  readonly from: number;
+  /** Zero-based index one past the last line shown. */
+  readonly to: number;
+  /** Lines of the file follow the window. */
+  readonly truncated: boolean;
+}
+
+/** The window plus where it sits in the file, so a capped read can say so. */
+export function readTextLineWindowFacts(
+  content: string,
+  offset?: number,
+  limit?: number,
+): TextLineWindow {
   let lineCount = 1;
   for (
     let cursor = content.indexOf('\n');
@@ -30,11 +50,15 @@ export function readTextLineWindow(content: string, offset?: number, limit?: num
   ) {
     lineCount++;
   }
+  const totalLines = content.endsWith('\n') ? lineCount - 1 : lineCount;
+  if (offset === undefined && limit === undefined) {
+    return { content, totalLines, from: 0, to: lineCount, truncated: false };
+  }
   const start = offset ?? 0;
   const end = limit ? start + limit : lineCount;
   const from = sliceIndex(start, lineCount);
   const to = sliceIndex(end, lineCount);
-  if (from >= to) return '';
+  if (from >= to) return { content: '', totalLines, from, to: from, truncated: from < totalLines };
 
   const selected: string[] = [];
   let cursor = 0;
@@ -44,7 +68,7 @@ export function readTextLineWindow(content: string, offset?: number, limit?: num
     if (line >= from) selected.push(content.slice(cursor, lineEnd));
     cursor = lineEnd + 1;
   }
-  return selected.join('\n');
+  return { content: selected.join('\n'), totalLines, from, to, truncated: to < totalLines };
 }
 
 function sliceIndex(value: number, length: number): number {

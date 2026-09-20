@@ -41,7 +41,7 @@ import type { ChildFdInput } from './child-fd-input.js';
 import type { ShellPlan } from './shell-detect.js';
 import { isSupportedImagePath, readWorkspaceImage } from './image-file.js';
 import type { ImageMimeType } from './image-file.js';
-import { readTextLineWindow } from './text-line-window.js';
+import { readTextLineWindowFacts } from './text-line-window.js';
 import {
   applyGrepHeadLimit,
   buildRipgrepArgs,
@@ -96,6 +96,10 @@ export interface WorkspaceReadFileInput {
 
 export interface WorkspaceReadTextResult {
   content: string;
+  /** Lines in the whole file, when the read was windowed and more follow. */
+  totalLines?: number;
+  /** Lines of the file follow the returned window. */
+  truncated?: boolean;
 }
 
 export interface WorkspaceReadImageResult {
@@ -227,6 +231,8 @@ export interface WorkspaceGrepInput {
   before?: number;
   /** Print line numbers; content mode only, on unless explicitly false. */
   lineNumbers?: boolean;
+  /** Print only the matched parts of each line (`-o`); content mode only. */
+  onlyMatching?: boolean;
   multiline?: boolean;
   maxCountPerFile: number;
   limit: number;
@@ -289,6 +295,15 @@ export interface WorkspaceWritablePathResolver {
   resolveWritablePath(input: WorkspaceResolvePathInput): Promise<WorkspaceResolvePathResult>;
 }
 
+/**
+ * Create a directory and the missing directories above it, inside the scope.
+ * Write uses it for a target whose parent does not exist yet, the way
+ * `mkdir -p` would; an existing directory is left alone.
+ */
+export interface WorkspaceEnsureDirectoryExecutor {
+  ensureDirectory(input: WorkspaceResolvePathInput): Promise<void>;
+}
+
 export interface WorkspaceWriteLockProvider {
   writeLockKey(input: WorkspaceWriteLockKeyInput): Promise<WorkspaceWriteLockKeyResult>;
 }
@@ -337,7 +352,8 @@ export interface WorkspaceExecutor
     WorkspaceGlobExecutor,
     WorkspaceGrepExecutor,
     Partial<WorkspaceApplyPatchExecutor>,
-    Partial<WorkspaceReadModifyWriteExecutor> {}
+    Partial<WorkspaceReadModifyWriteExecutor>,
+    Partial<WorkspaceEnsureDirectoryExecutor> {}
 
 export class LocalWorkspaceExecutor implements WorkspaceExecutor {
   readonly facts = LOCAL_WORKSPACE_EXECUTOR_FACTS;
@@ -376,7 +392,19 @@ export class LocalWorkspaceExecutor implements WorkspaceExecutor {
       return await readWorkspaceImage(input.path);
     }
     const content = await fs.readFile(input.path, 'utf8');
-    return { content: readTextLineWindow(content, input.offset, input.limit) };
+    const window = readTextLineWindowFacts(content, input.offset, input.limit);
+    return {
+      content: window.content,
+      ...(window.truncated ? { totalLines: window.totalLines, truncated: true } : {}),
+    };
+  }
+
+  async ensureDirectory(input: WorkspaceResolvePathInput): Promise<void> {
+    // Canonicalised inside the scope first, so a path that climbs out of the
+    // cwd is refused before anything is created; every ancestor of a path
+    // inside the cwd is inside it too.
+    const { path } = await canonicalPathInScope(input.cwd, input.path, input.label, input.scope);
+    await fs.mkdir(path, { recursive: true });
   }
 
   async writeFile(input: WorkspaceWriteFileInput): Promise<WorkspaceWriteFileResult> {
@@ -525,6 +553,7 @@ export class LocalWorkspaceExecutor implements WorkspaceExecutor {
       after: input.after,
       before: input.before,
       lineNumbers: input.lineNumbers,
+      onlyMatching: input.onlyMatching,
       multiline: input.multiline,
       maxCountPerFile: input.maxCountPerFile,
     });

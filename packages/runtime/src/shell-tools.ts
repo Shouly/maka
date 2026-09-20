@@ -114,15 +114,10 @@ export function bashToolDescription(
   return [
     'Executes a bash command and returns its output.',
     '',
-    "- Working directory persists between calls, but prefer absolute paths — `cd` in a compound command can trigger a permission prompt. Shell state (env vars, functions) does not persist; the shell is initialized from the user's profile.",
+    "- Every call starts in the session working directory: a `cd` applies to that call only and does not carry over, so prefer absolute paths. Shell state (env vars, functions) does not persist either; the shell is initialized from the user's profile.",
     '- Command output is displayed to you, not reliably to the user.',
     `- \`timeout\` is in milliseconds: default ${DEFAULT_BASH_TIMEOUT_MS}, max ${maxTimeoutMs}.`,
-    '',
-    '# Git',
-    '- Interactive flags (`-i`, e.g. `git rebase -i`, `git add -i`) are not supported in this environment.',
-    '- Use the `gh` CLI for GitHub operations (PRs, issues, API).',
-    '- Commit or push only when the user asks. If on the default branch, branch first.',
-    '- Never rewrite published history, force-push, or discard uncommitted work without an explicit request. Stage the paths that changed, not everything.',
+    '- IMPORTANT: Avoid using this tool to run `find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task.',
     '',
     '# Copilot',
     ...(guidance ? [`- ${guidance}`] : []),
@@ -219,7 +214,6 @@ export function buildLocalForegroundBashTool(
     description: bashToolDescription(shell, [
       '- The command runs to completion and the result is what it printed. A failure leads with an `Exit code N` line; a command that printed nothing returns "(no output)".',
       '- `description` is what the user reads in place of the raw command.',
-      '- Read, Glob, Grep and Edit do the same work as cat/ls/find/sed with bounded output and the session boundary applied — reach for them first.',
       '- Subject to the permission policy of the session.',
     ]),
     ...(options.executionFacts ? { executionFacts: options.executionFacts } : {}),
@@ -342,7 +336,6 @@ export function buildManagedBashTool(
       `- Set \`run_in_background: true\` for a command that should keep running as a tracked task — a dev server, a watcher, a long build. It returns a ref instead of output: read what it prints with Read on that ref, and end it with TaskStop. Background runs have no default timeout (maximum explicit timeout ${MAX_SHELL_RUN_TIMEOUT_MS}ms).`,
       '- Set `pty: true` together with `run_in_background: true` only when the command needs terminal semantics or later keystrokes; send those with TaskInput on the returned ref.',
       '- `description` is what the user reads in place of the raw command.',
-      '- Read, Glob, Grep and Edit do the same work as cat/ls/find/sed with bounded output and the session boundary applied — reach for them first.',
       ...(declareSandboxBoundary ? ['- Enforced by the current session sandbox boundary.'] : []),
     ]),
     parameters: declareSandboxBoundary

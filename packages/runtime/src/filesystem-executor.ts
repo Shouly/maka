@@ -30,7 +30,7 @@
 
 import { Buffer } from 'node:buffer';
 import { lstat, realpath, stat } from 'node:fs/promises';
-import { isAbsolute } from 'node:path';
+import { dirname, isAbsolute } from 'node:path';
 import type { ExecutionBoundary } from '@maka/core/sandbox-boundary';
 import type { PermissionMode } from '@maka/core/permission';
 import type { PermissionProfile } from '@maka/core/permission-profile';
@@ -66,6 +66,7 @@ import type {
   WorkspaceSearchExecutor,
   WorkspacePathMetadataExecutor,
   WorkspaceWriteExecutor,
+  WorkspaceEnsureDirectoryExecutor,
 } from './workspace-executor.js';
 
 /** A file operation, named the same way on every backend. `cwd` is supplied per call. */
@@ -126,6 +127,7 @@ export type FilesystemWorkspaceExecutor = WorkspaceWriteExecutor &
   WorkspaceEditExecutor &
   Partial<WorkspaceApplyPatchExecutor> &
   Partial<WorkspaceReadModifyWriteExecutor> &
+  Partial<WorkspaceEnsureDirectoryExecutor> &
   WorkspaceSearchExecutor;
 
 export interface BoundaryFilesystemExecutorInput {
@@ -426,7 +428,9 @@ function createWorkspaceFilesystemExecutor(
           } catch (error) {
             const code = (error as NodeJS.ErrnoException).code;
             if (code === 'ENOENT' || code === 'ENOTDIR') {
-              throw new Error(`ENOENT: no such file or directory, read '${operation.path}'`);
+              throw new Error(
+                `File does not exist. Note: your current working directory is ${cwd}.`,
+              );
             }
             throw error;
           }
@@ -440,9 +444,23 @@ function createWorkspaceFilesystemExecutor(
           if ('bytes' in result) {
             return { kind: 'read_image', bytes: result.bytes, mimeType: result.mimeType };
           }
-          return { kind: 'read', content: result.content };
+          return {
+            kind: 'read',
+            content: result.content,
+            ...(result.truncated ? { totalLines: result.totalLines, truncated: true } : {}),
+          };
         }
         case 'write': {
+          // Write creates missing parent directories, like `mkdir -p`, inside
+          // the same scope the write itself is checked against.
+          if (workspace.ensureDirectory) {
+            await workspace.ensureDirectory({
+              cwd,
+              path: dirname(operation.path),
+              label: 'Write',
+              scope,
+            });
+          }
           const { path } = await workspace.resolveWritablePath({
             cwd,
             path: operation.path,
@@ -640,6 +658,9 @@ function createWorkspaceFilesystemExecutor(
             ...(operation.after !== undefined ? { after: operation.after } : {}),
             ...(operation.before !== undefined ? { before: operation.before } : {}),
             ...(operation.lineNumbers !== undefined ? { lineNumbers: operation.lineNumbers } : {}),
+            ...(operation.onlyMatching !== undefined
+              ? { onlyMatching: operation.onlyMatching }
+              : {}),
             ...(operation.multiline !== undefined ? { multiline: operation.multiline } : {}),
             maxCountPerFile: operation.maxCountPerFile,
             limit: operation.limit,

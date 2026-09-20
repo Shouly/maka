@@ -2848,13 +2848,13 @@ describe('builtin file tools speak the reference argument names', () => {
     );
     await expectRejects(
       runTool(read, { file_path: 'absent.txt' }, root),
-      /ENOENT: no such file or directory, read 'absent.txt'/,
+      /^File does not exist\. Note: your current working directory is .*\.$/,
     );
     const empty = await runTool(read, { file_path: 'empty.txt' }, root);
     assert.deepStrictEqual(empty, { content: '' });
     assert.match(
       modelText(read, { file_path: 'empty.txt' }, empty),
-      /file exists but its contents are empty/,
+      /Warning: the file exists but the contents are empty/,
     );
   });
 
@@ -2872,7 +2872,7 @@ describe('builtin file tools speak the reference argument names', () => {
     const updated = await runTool(write, { file_path: 'notes.txt', content: 'second\n' }, root);
     assert.match(
       modelText(write, { file_path: 'notes.txt' }, updated),
-      /^File updated successfully at: .*notes\.txt \(file state is current in your context/,
+      /^The file .*notes\.txt has been updated successfully\. \(file state is current in your context/,
     );
   });
 
@@ -2886,7 +2886,7 @@ describe('builtin file tools speak the reference argument names', () => {
         { file_path: 'data.txt', old_string: 'world', new_string: 'Maka' },
         root,
       ),
-      /^Refusing to edit .*data\.txt: it has not been read in this session\. Read it first, then edit\.$/,
+      /^File has not been read yet\. Read it first before writing to it\.$/,
     );
     assert.strictEqual(await readFile(join(root, 'data.txt'), 'utf8'), 'hello world\n');
 
@@ -2939,6 +2939,114 @@ describe('builtin file tools speak the reference argument names', () => {
     assert.strictEqual(
       modelText(glob, { pattern: '*.md' }, await runTool(glob, { pattern: '*.md' }, root)),
       'No files found',
+    );
+  });
+
+  test('a capped Read says which lines it showed and how to read on', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'maka-read-window-')));
+    await writeFile(
+      join(root, 'big.txt'),
+      `${Array.from({ length: 30 }, (_, i) => i + 1).join('\n')}\n`,
+    );
+    const read = tool('Read');
+    const windowed = await runTool(read, { file_path: 'big.txt', limit: 10 }, root);
+    assert.deepStrictEqual(windowed, {
+      content: '1\n2\n3\n4\n5\n6\n7\n8\n9\n10',
+      truncated: true,
+      totalLines: 30,
+    });
+    const text = modelText(read, { file_path: 'big.txt', limit: 10 }, windowed);
+    assert.match(text, /^1\t1\n2\t2\n/u);
+    assert.match(text, /\n\n\[Showing lines 1-10 of 30\. Pass offset: 10 to read on\.\]$/u);
+    const tail = await runTool(read, { file_path: 'big.txt', offset: 20, limit: 10 }, root);
+    assert.deepStrictEqual(tail, { content: '21\n22\n23\n24\n25\n26\n27\n28\n29\n30' });
+    assert.doesNotMatch(
+      modelText(read, { file_path: 'big.txt', offset: 20, limit: 10 }, tail),
+      /Showing lines/u,
+    );
+    const whole = await runTool(read, { file_path: 'big.txt' }, root);
+    assert.deepStrictEqual(whole, {
+      content: `${Array.from({ length: 30 }, (_, i) => i + 1).join('\n')}\n`,
+    });
+  });
+
+  test('Write creates the missing directories above its target', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'maka-write-mkdir-')));
+    const write = tool('Write');
+    const created = await runTool(
+      write,
+      { file_path: 'auto/created/dirs/nested.txt', content: 'deep\n' },
+      root,
+    );
+    assert.strictEqual(
+      await readFile(join(root, 'auto/created/dirs/nested.txt'), 'utf8'),
+      'deep\n',
+    );
+    assert.match(
+      modelText(write, { file_path: 'auto/created/dirs/nested.txt' }, created),
+      /^File created successfully at: /u,
+    );
+  });
+
+  test('Edit with replace_all says every occurrence went', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'maka-edit-all-')));
+    await writeFile(join(root, 'a.txt'), 'alpha\nbeta\nalpha\n', 'utf8');
+    const edit = await sightedEditTool('a.txt', root);
+    const result = await runTool(
+      edit,
+      { file_path: 'a.txt', old_string: 'alpha', new_string: 'ALPHA', replace_all: true },
+      root,
+    );
+    assert.match(
+      modelText(
+        edit,
+        { file_path: 'a.txt', old_string: 'alpha', new_string: 'ALPHA', replace_all: true },
+        result,
+      ),
+      /^The file .*a\.txt has been updated\. All occurrences were successfully replaced\. \(file state is current/u,
+    );
+    assert.strictEqual(await readFile(join(root, 'a.txt'), 'utf8'), 'ALPHA\nbeta\nALPHA\n');
+  });
+
+  test('Glob returns files only, never a directory that matches', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'maka-glob-files-')));
+    await mkdir(join(root, 'notes.txt'), { recursive: true });
+    await writeFile(join(root, 'real.txt'), 'x\n', 'utf8');
+    const glob = tool('Glob');
+    const result = (await runTool(glob, { pattern: '*.txt' }, root)) as { files: string[] };
+    assert.deepStrictEqual(result.files, [join(root, 'real.txt')]);
+  });
+
+  test('Grep prints only the match with -o, heads a file list with its count, and echoes paging', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'maka-grep-o-')));
+    await writeFile(
+      join(root, 's.py'),
+      'def foo():\n    return 1\n\ndef bar():\n    return 2\n',
+      'utf8',
+    );
+    const grep = tool('Grep');
+    const only = (await runTool(
+      grep,
+      { pattern: 'def \\w+', output_mode: 'content', '-o': true },
+      root,
+    )) as { matches: string[] };
+    assert.deepStrictEqual(only.matches, [
+      `${join(root, 's.py')}:1:def foo`,
+      `${join(root, 's.py')}:4:def bar`,
+    ]);
+    const files = await runTool(grep, { pattern: 'def' }, root);
+    assert.strictEqual(
+      modelText(grep, { pattern: 'def' }, files),
+      `Found 1 file\n${join(root, 's.py')}`,
+    );
+    const paged = await runTool(
+      grep,
+      { pattern: 'return', output_mode: 'content', head_limit: 1 },
+      root,
+    );
+    assert.match(
+      modelText(grep, { pattern: 'return', output_mode: 'content', head_limit: 1 }, paged),
+      /\n\n\[Showing results with pagination = limit: 1 — 1 more matching line not shown; narrow the search or page with offset\]$/u,
     );
   });
 
@@ -3045,7 +3153,7 @@ describe('builtin file tools speak the reference argument names', () => {
     assert.match(text, /\n\nFound 3 total occurrences across 2 files\.$/);
     assert.strictEqual(
       modelText(grep, { pattern: 'absent' }, await runTool(grep, { pattern: 'absent' }, root)),
-      'No matches found',
+      'No files found',
     );
   });
 });

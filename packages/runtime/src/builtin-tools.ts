@@ -134,6 +134,7 @@ interface GrepToolInput {
   readonly output_mode?: GrepOutputMode;
   readonly '-i'?: boolean;
   readonly '-n'?: boolean;
+  readonly '-o'?: boolean;
   readonly '-A'?: number;
   readonly '-B'?: number;
   readonly context?: number;
@@ -269,7 +270,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
     'Reads a file from the local filesystem.',
     '',
     '- `file_path` must be an absolute path, or a path relative to the session cwd; how far outside the cwd it may reach is decided by the session permissions.',
-    `- Reads up to ${DEFAULT_READ_LINE_LIMIT} lines by default.`,
+    `- Reads up to ${DEFAULT_READ_LINE_LIMIT} lines by default; a capped read says how many lines follow, and \`offset\` reaches them.`,
     '- When you already know which part of the file you need, only read that part with `offset` and `limit`. This can be important for larger files.',
     '- Results are returned using cat -n format, with line numbers starting at 1',
     ...(options.snapshotImage
@@ -282,8 +283,8 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
           '- Pass `ref` instead of `file_path` to read a whole runtime resource — a background task named by Bash, an attachment named in the conversation. Provide exactly one of `file_path` and `ref`.',
         ]
       : []),
-    '- Reading a directory, a missing file, or a path the session permissions do not cover returns an error rather than content; an empty file returns a note. Use Bash `ls` for a listing.',
-    '- Do NOT re-read a file you just edited to verify — Edit/Write would have errored if the change failed, and their result already states the new state.',
+    '- Reading a directory, a missing file, or a path the session permissions do not cover returns an error rather than content; an empty file returns a system reminder. Use Bash `ls` for a listing.',
+    '- Do NOT re-read a file you just edited to verify — Edit/Write would have errored if the change failed, and the harness tracks file state for you.',
   ].join('\n');
   const filePathField = z
     .string()
@@ -295,7 +296,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
     .int()
     .nonnegative()
     .describe(
-      'The line number to start reading from, counted from 0. Only provide if the file is too large to read at once',
+      'Zero-based line offset to start from: 0 is the first line. Only provide if the file is too large to read at once',
     )
     .optional();
   const limitField = z
@@ -582,7 +583,10 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
         // The read result carries no path, so the request is canonicalised the
         // same way the backends canonicalise their targets.
         await trackerFor(sessionId)?.noteRead(canonicalFilePath(cwd, path));
-        return { content: result.content };
+        return {
+          content: result.content,
+          ...(result.truncated ? { truncated: true, totalLines: result.totalLines } : {}),
+        };
       },
       toModelOutput: ({ input, output }) => readToolResultToModelOutput(input, output),
     },
@@ -599,7 +603,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
         file_path: z
           .string()
           .describe(
-            'The absolute path to the file to write; a path relative to the session cwd is also accepted. Parent directories must already exist.',
+            'The absolute path to the file to write; a path relative to the session cwd is also accepted. Missing parent directories are created.',
           ),
         content: z.string().describe('The content to write to the file'),
       }),
@@ -709,7 +713,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
           endLine: result.endLine,
         };
       },
-      toModelOutput: ({ output }) => fileWriteToolResultToModelOutput('Edit', output),
+      toModelOutput: ({ input, output }) => fileWriteToolResultToModelOutput('Edit', output, input),
     },
     {
       name: TOOL_NAMES.glob,
@@ -717,7 +721,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
       description: [
         'Fast file pattern matching. Supports glob patterns like "**/*.js" or "src/**/*.ts". Returns matching file paths sorted by modification time.',
         '',
-        `- Matches \`pattern\` case-insensitively against the paths under \`path\` (default: the session cwd).`,
+        "- Matches `pattern` against the paths under `path` (default: the session cwd), with the filesystem's own case rules. `*` stays within one directory level; `**` crosses them. Only files are returned, never directories.",
         `- Returns one absolute path per line, MOST RECENTLY MODIFIED LAST and capped at ${GLOB_RESULT_LIMIT} — the cap keeps the newest matches. A capped result says so, so narrow the pattern or the path when you need the rest.`,
         '- Returns "No files found" when nothing matches; a missing search root, or one the session permissions do not cover, fails with the reason.',
         '- Whether the pattern or `path` may leave the session cwd is decided by the session permissions; a pattern that climbs out of it is rejected.',
@@ -764,7 +768,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
         '- `output_mode`: "content" (matching lines), "files_with_matches" (paths only, default), or "count".',
         '- `multiline: true` for patterns that span lines.',
         `- Results are capped: \`head_limit\` lines (default ${DEFAULT_GREP_HEAD_LIMIT}), and an internal ceiling of ${GREP_HARD_LINE_CAP} lines that \`head_limit: 0\` does not lift. A capped result says how many lines were dropped; \`offset\` pages past them.`,
-        '- Returns plain text, or "No matches found". A missing path, or one the session permissions do not cover, fails with the reason.',
+        '- Returns plain text, or "No files found". A missing path, or one the session permissions do not cover, fails with the reason.',
       ].join('\n'),
       parameters: z.object({
         pattern: z
@@ -797,24 +801,26 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
           .boolean()
           .optional()
           .describe(
-            'Show line numbers in output (rg -n). Requires output_mode: "content"; on by default there.',
+            'Show line numbers in output (rg -n). Requires output_mode: "content", ignored otherwise. Defaults to true.',
+          ),
+        '-o': z
+          .boolean()
+          .optional()
+          .describe(
+            'Print only the matched (non-empty) parts of each matching line, one match per output line (rg -o / --only-matching). Requires output_mode: "content", ignored otherwise. Defaults to false.',
           ),
         '-A': z
           .number()
           .int()
           .nonnegative()
           .optional()
-          .describe(
-            'Number of lines to show after each match (rg -A). Requires output_mode: "content".',
-          ),
+          .describe('Number of lines to show after each match (rg -A)'),
         '-B': z
           .number()
           .int()
           .nonnegative()
           .optional()
-          .describe(
-            'Number of lines to show before each match (rg -B). Requires output_mode: "content".',
-          ),
+          .describe('Number of lines to show before each match (rg -B)'),
         context: z
           .number()
           .int()
@@ -828,19 +834,19 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
           .nonnegative()
           .optional()
           .describe(
-            `Limit output to the first N result lines (default ${DEFAULT_GREP_HEAD_LIMIT}). 0 removes your limit but the internal ceiling of ${GREP_HARD_LINE_CAP} lines still applies.`,
+            `Limit output to the first N lines/entries (default ${DEFAULT_GREP_HEAD_LIMIT}). Pass 0 for unlimited (use sparingly — large result sets waste context); an internal ceiling of ${GREP_HARD_LINE_CAP} lines still applies.`,
           ),
         offset: z
           .number()
           .int()
           .nonnegative()
           .optional()
-          .describe('Skip the first N result lines, to page past a capped result.'),
+          .describe('Skip first N lines/entries before applying head_limit. Defaults to 0.'),
         multiline: z
           .boolean()
           .optional()
           .describe(
-            'Enable multiline mode where . matches newlines and patterns can span lines (default: false)',
+            'Enable multiline mode where . matches newlines (rg -U --multiline-dotall). Default: false.',
           ),
       }),
       executionFacts,
@@ -849,6 +855,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
           input as GrepToolInput;
         const ignoreCase = input['-i'];
         const lineNumbers = input['-n'];
+        const onlyMatching = input['-o'];
         const bothWays = input['-C'] ?? context;
         const after = input['-A'] ?? bothWays;
         const before = input['-B'] ?? bothWays;
@@ -878,6 +885,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
                   ...(after !== undefined ? { after } : {}),
                   ...(before !== undefined ? { before } : {}),
                   ...(lineNumbers !== undefined ? { lineNumbers } : {}),
+                  ...(onlyMatching !== undefined ? { onlyMatching } : {}),
                 }
               : {}),
             ...(multiline !== undefined ? { multiline } : {}),
@@ -898,6 +906,10 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
           matches: result.matches,
           mode: result.mode ?? mode,
           ...(result.truncated ? { truncated: true, omitted: result.omitted ?? 0 } : {}),
+          // The caller's paging, echoed on the result so the model's view can
+          // say which slice it is looking at.
+          ...(head_limit !== undefined ? { limit: head_limit } : {}),
+          ...(offset !== undefined ? { offset } : {}),
         };
       },
       toModelOutput: ({ output }) => grepToolResultToModelOutput(output),
@@ -936,7 +948,6 @@ function buildExecutorBashTool(
       '- The command runs to completion and the result is what it printed. A failure leads with an `Exit code N` line; a command that printed nothing returns "(no output)".',
       '- A timeout, a cancellation or a non-zero exit fails the call and carries the captured output with it.',
       '- `description` is what the user reads in place of the raw command.',
-      '- Read, Glob, Grep and Edit do the same work as cat/ls/find/sed with bounded output and the session boundary applied — reach for them first.',
       '- Enforced by the current session sandbox boundary.',
     ]),
     parameters: preprocessBashBoundaryDeclaration(

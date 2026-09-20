@@ -65,7 +65,7 @@
   },
   {
     "name": "Bash",
-    "description": "Executes a bash command and returns its output.\n\n- Working directory persists between calls, but prefer absolute paths — `cd` in a compound command can trigger a permission prompt. Shell state (env vars, functions) does not persist; the shell is initialized from the user's profile.\n- Command output is displayed to you, not reliably to the user.\n- `timeout` is in milliseconds: default 120000, max 600000.\n\n# Git\n- Interactive flags (`-i`, e.g. `git rebase -i`, `git add -i`) are not supported in this environment.\n- Use the `gh` CLI for GitHub operations (PRs, issues, API).\n- Commit or push only when the user asks. If on the default branch, branch first.\n- Never rewrite published history, force-push, or discard uncommitted work without an explicit request. Stage the paths that changed, not everything.\n\n# Copilot\n- The command runs to completion and the result is what it printed. A failure leads with an `Exit code N` line; a command that printed nothing returns \"(no output)\".\n- A timeout, a cancellation or a non-zero exit fails the call and carries the captured output with it.\n- `description` is what the user reads in place of the raw command.\n- Read, Glob, Grep and Edit do the same work as cat/ls/find/sed with bounded output and the session boundary applied — reach for them first.\n- Enforced by the current session sandbox boundary.",
+    "description": "Executes a bash command and returns its output.\n\n- Every call starts in the session working directory: a `cd` applies to that call only and does not carry over, so prefer absolute paths. Shell state (env vars, functions) does not persist either; the shell is initialized from the user's profile.\n- Command output is displayed to you, not reliably to the user.\n- `timeout` is in milliseconds: default 120000, max 600000.\n- IMPORTANT: Avoid using this tool to run `find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task.\n\n# Copilot\n- The command runs to completion and the result is what it printed. A failure leads with an `Exit code N` line; a command that printed nothing returns \"(no output)\".\n- A timeout, a cancellation or a non-zero exit fails the call and carries the captured output with it.\n- `description` is what the user reads in place of the raw command.\n- Enforced by the current session sandbox boundary.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -203,7 +203,7 @@
   },
   {
     "name": "Glob",
-    "description": "Fast file pattern matching. Supports glob patterns like \"**/*.js\" or \"src/**/*.ts\". Returns matching file paths sorted by modification time.\n\n- Matches `pattern` case-insensitively against the paths under `path` (default: the session cwd).\n- Returns one absolute path per line, MOST RECENTLY MODIFIED LAST and capped at 200 — the cap keeps the newest matches. A capped result says so, so narrow the pattern or the path when you need the rest.\n- Returns \"No files found\" when nothing matches; a missing search root, or one the session permissions do not cover, fails with the reason.\n- Whether the pattern or `path` may leave the session cwd is decided by the session permissions; a pattern that climbs out of it is rejected.\n- Use it when you know the shape of a filename. Use Grep when you know what is inside the file.",
+    "description": "Fast file pattern matching. Supports glob patterns like \"**/*.js\" or \"src/**/*.ts\". Returns matching file paths sorted by modification time.\n\n- Matches `pattern` against the paths under `path` (default: the session cwd), with the filesystem's own case rules. `*` stays within one directory level; `**` crosses them. Only files are returned, never directories.\n- Returns one absolute path per line, MOST RECENTLY MODIFIED LAST and capped at 200 — the cap keeps the newest matches. A capped result says so, so narrow the pattern or the path when you need the rest.\n- Returns \"No files found\" when nothing matches; a missing search root, or one the session permissions do not cover, fails with the reason.\n- Whether the pattern or `path` may leave the session cwd is decided by the session permissions; a pattern that climbs out of it is rejected.\n- Use it when you know the shape of a filename. Use Grep when you know what is inside the file.",
     "inputSchema": {
       "properties": {
         "path": {
@@ -223,17 +223,17 @@
   },
   {
     "name": "Grep",
-    "description": "Content search built on ripgrep. Prefer this over `grep`/`rg` via Bash — results integrate with the permission UI and file links.\n\n- Full regex syntax (e.g. \"log.*Error\", \"function\\s+\\w+\"). Ripgrep, not grep — escape literal braces (`interface\\{\\}`).\n- Filter with `glob` (e.g. \"**/*.tsx\") or `type` (e.g. \"js\", \"py\", \"rust\").\n- `output_mode`: \"content\" (matching lines), \"files_with_matches\" (paths only, default), or \"count\".\n- `multiline: true` for patterns that span lines.\n- Results are capped: `head_limit` lines (default 250), and an internal ceiling of 2000 lines that `head_limit: 0` does not lift. A capped result says how many lines were dropped; `offset` pages past them.\n- Returns plain text, or \"No matches found\". A missing path, or one the session permissions do not cover, fails with the reason.",
+    "description": "Content search built on ripgrep. Prefer this over `grep`/`rg` via Bash — results integrate with the permission UI and file links.\n\n- Full regex syntax (e.g. \"log.*Error\", \"function\\s+\\w+\"). Ripgrep, not grep — escape literal braces (`interface\\{\\}`).\n- Filter with `glob` (e.g. \"**/*.tsx\") or `type` (e.g. \"js\", \"py\", \"rust\").\n- `output_mode`: \"content\" (matching lines), \"files_with_matches\" (paths only, default), or \"count\".\n- `multiline: true` for patterns that span lines.\n- Results are capped: `head_limit` lines (default 250), and an internal ceiling of 2000 lines that `head_limit: 0` does not lift. A capped result says how many lines were dropped; `offset` pages past them.\n- Returns plain text, or \"No files found\". A missing path, or one the session permissions do not cover, fails with the reason.",
     "inputSchema": {
       "properties": {
         "-A": {
-          "description": "Number of lines to show after each match (rg -A). Requires output_mode: \"content\".",
+          "description": "Number of lines to show after each match (rg -A)",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
         },
         "-B": {
-          "description": "Number of lines to show before each match (rg -B). Requires output_mode: \"content\".",
+          "description": "Number of lines to show before each match (rg -B)",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -249,7 +249,11 @@
           "type": "boolean"
         },
         "-n": {
-          "description": "Show line numbers in output (rg -n). Requires output_mode: \"content\"; on by default there.",
+          "description": "Show line numbers in output (rg -n). Requires output_mode: \"content\", ignored otherwise. Defaults to true.",
+          "type": "boolean"
+        },
+        "-o": {
+          "description": "Print only the matched (non-empty) parts of each matching line, one match per output line (rg -o / --only-matching). Requires output_mode: \"content\", ignored otherwise. Defaults to false.",
           "type": "boolean"
         },
         "context": {
@@ -263,17 +267,17 @@
           "type": "string"
         },
         "head_limit": {
-          "description": "Limit output to the first N result lines (default 250). 0 removes your limit but the internal ceiling of 2000 lines still applies.",
+          "description": "Limit output to the first N lines/entries (default 250). Pass 0 for unlimited (use sparingly — large result sets waste context); an internal ceiling of 2000 lines still applies.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
         },
         "multiline": {
-          "description": "Enable multiline mode where . matches newlines and patterns can span lines (default: false)",
+          "description": "Enable multiline mode where . matches newlines (rg -U --multiline-dotall). Default: false.",
           "type": "boolean"
         },
         "offset": {
-          "description": "Skip the first N result lines, to page past a capped result.",
+          "description": "Skip first N lines/entries before applying head_limit. Defaults to 0.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -308,7 +312,7 @@
   },
   {
     "name": "Read",
-    "description": "Reads a file from the local filesystem.\n\n- `file_path` must be an absolute path, or a path relative to the session cwd; how far outside the cwd it may reach is decided by the session permissions.\n- Reads up to 2000 lines by default.\n- When you already know which part of the file you need, only read that part with `offset` and `limit`. This can be important for larger files.\n- Results are returned using cat -n format, with line numbers starting at 1\n- Reading a directory, a missing file, or a path the session permissions do not cover returns an error rather than content; an empty file returns a note. Use Bash `ls` for a listing.\n- Do NOT re-read a file you just edited to verify — Edit/Write would have errored if the change failed, and their result already states the new state.",
+    "description": "Reads a file from the local filesystem.\n\n- `file_path` must be an absolute path, or a path relative to the session cwd; how far outside the cwd it may reach is decided by the session permissions.\n- Reads up to 2000 lines by default; a capped read says how many lines follow, and `offset` reaches them.\n- When you already know which part of the file you need, only read that part with `offset` and `limit`. This can be important for larger files.\n- Results are returned using cat -n format, with line numbers starting at 1\n- Reading a directory, a missing file, or a path the session permissions do not cover returns an error rather than content; an empty file returns a system reminder. Use Bash `ls` for a listing.\n- Do NOT re-read a file you just edited to verify — Edit/Write would have errored if the change failed, and the harness tracks file state for you.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -323,7 +327,7 @@
           "type": "integer"
         },
         "offset": {
-          "description": "The line number to start reading from, counted from 0. Only provide if the file is too large to read at once",
+          "description": "Zero-based line offset to start from: 0 is the first line. Only provide if the file is too large to read at once",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -663,7 +667,7 @@
           "type": "string"
         },
         "file_path": {
-          "description": "The absolute path to the file to write; a path relative to the session cwd is also accepted. Parent directories must already exist.",
+          "description": "The absolute path to the file to write; a path relative to the session cwd is also accepted. Missing parent directories are created.",
           "type": "string"
         }
       },

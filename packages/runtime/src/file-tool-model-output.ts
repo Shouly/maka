@@ -45,27 +45,52 @@ const STATE_IS_CURRENT_NOTE = ' (file state is current in your context — no ne
  * not a listing of it; this is the model's view of the same bytes.
  */
 const READ_EMPTY_FILE_NOTE =
-  '<system-reminder>The file exists but its contents are empty.</system-reminder>';
+  '<system-reminder>Warning: the file exists but the contents are empty.</system-reminder>';
 
 export function readToolResultToModelOutput(
   input: unknown,
   output: unknown,
 ): ToolResultOutput | undefined {
-  const content = readResultContent(output);
+  const result = readResult(output);
   // Images, runtime resources and attachments answer in their own shapes; they
   // have no lines to number, so they keep the default projection.
-  if (content === undefined) return undefined;
-  if (content === '') return { type: 'text', value: READ_EMPTY_FILE_NOTE };
-  return { type: 'text', value: numberReadLines(content, readOffset(input)) };
+  if (result === undefined) return undefined;
+  if (result.content === '') return { type: 'text', value: READ_EMPTY_FILE_NOTE };
+  const offset = readOffset(input);
+  const numbered = numberReadLines(result.content, offset);
+  if (!result.truncated || result.totalLines === undefined)
+    return { type: 'text', value: numbered };
+  // A capped read says so, or the model takes the window for the whole file.
+  const shown = numbered.split('\n').length;
+  const last = offset + shown;
+  return {
+    type: 'text',
+    value: `${numbered}\n\n[Showing lines ${offset + 1}-${last} of ${result.totalLines}. Pass offset: ${last} to read on.]`,
+  };
 }
 
-function readResultContent(output: unknown): string | undefined {
+function readResult(
+  output: unknown,
+): { content: string; truncated?: boolean; totalLines?: number } | undefined {
   if (!output || typeof output !== 'object' || Array.isArray(output)) return undefined;
   const keys = Object.keys(output);
-  if (keys.length !== 1 || keys[0] !== 'content') return undefined;
-  const content = (output as { content: unknown }).content;
-  return typeof content === 'string' ? content : undefined;
+  if (!keys.includes('content') || keys.some((key) => !READ_RESULT_KEYS.has(key))) {
+    return undefined;
+  }
+  const { content, truncated, totalLines } = output as {
+    content: unknown;
+    truncated?: unknown;
+    totalLines?: unknown;
+  };
+  if (typeof content !== 'string') return undefined;
+  return {
+    content,
+    ...(truncated === true ? { truncated: true } : {}),
+    ...(typeof totalLines === 'number' ? { totalLines } : {}),
+  };
 }
+
+const READ_RESULT_KEYS = new Set(['content', 'truncated', 'totalLines']);
 
 /** `offset` is a zero-based line offset, so the first line shown is `offset + 1`. */
 function readOffset(input: unknown): number {
@@ -98,8 +123,9 @@ function numberReadLines(content: string, offset: number): string {
 export function fileWriteToolResultToModelOutput(
   toolName: FileWriteToolName,
   output: unknown,
+  input?: unknown,
 ): ToolResultOutput {
-  const summary = fileWriteToolResultSummary(toolName, output);
+  const summary = fileWriteToolResultSummary(toolName, output, editReplacedAll(input));
   return summary !== undefined ? { type: 'text', value: summary } : toolResultOutput(output, false);
 }
 
@@ -122,28 +148,42 @@ function isFileWriteToolName(name: string): name is FileWriteToolName {
   return name === TOOL_NAMES.write || name === TOOL_NAMES.edit;
 }
 
+/** `replace_all: true` on the Edit call, so the receipt can say every occurrence went. */
+function editReplacedAll(input: unknown): boolean {
+  return (
+    typeof input === 'object' &&
+    input !== null &&
+    (input as { replace_all?: unknown }).replace_all === true
+  );
+}
+
+function editReceipt(path: string, replacedAll: boolean): string {
+  return replacedAll
+    ? `The file ${path} has been updated. All occurrences were successfully replaced.${STATE_IS_CURRENT_NOTE}`
+    : `The file ${path} has been updated successfully.${STATE_IS_CURRENT_NOTE}`;
+}
+
 function fileWriteToolResultSummary(
   toolName: FileWriteToolName,
   output: unknown,
+  replacedAll = false,
 ): string | undefined {
   if (isFileDiff(output)) {
     const path = output.paths[0] ?? 'file';
     if (toolName === TOOL_NAMES.write) {
       // `--- /dev/null` is how the diff says the file did not exist before, and
       // "created" versus "updated" is the one fact a writer checks next.
-      const verb = output.diff.startsWith('--- /dev/null') ? 'created' : 'updated';
-      return `File ${verb} successfully at: ${path}${STATE_IS_CURRENT_NOTE}`;
+      return output.diff.startsWith('--- /dev/null')
+        ? `File created successfully at: ${path}${STATE_IS_CURRENT_NOTE}`
+        : `The file ${path} has been updated successfully.${STATE_IS_CURRENT_NOTE}`;
     }
-    if (toolName === TOOL_NAMES.edit) {
-      return `The file ${path} has been updated successfully.${STATE_IS_CURRENT_NOTE}`;
-    }
+    if (toolName === TOOL_NAMES.edit) return editReceipt(path, replacedAll);
     const { additions, deletions } = countDiffLineStats(output.diff);
     return `Formatted ${path} (+${additions} -${deletions})${STATE_IS_CURRENT_NOTE}`;
   }
   if (isFileWrite(output))
     return `File written successfully at: ${output.path} (${output.bytes} bytes)${STATE_IS_CURRENT_NOTE}`;
-  if (isEditResult(output))
-    return `The file ${output.path} has been updated successfully.${STATE_IS_CURRENT_NOTE}`;
+  if (isEditResult(output)) return editReceipt(output.path, replacedAll);
   return undefined;
 }
 
@@ -177,14 +217,28 @@ export function grepToolResultToModelOutput(output: unknown): ToolResultOutput {
 }
 
 function grepResultText(result: GrepLikeResult): string {
-  if (result.matches.length === 0) return 'No matches found';
+  if (result.matches.length === 0) return 'No files found';
   const body =
     result.mode === 'count'
       ? [result.matches.join('\n'), '', countSummary(result.matches)].join('\n')
-      : result.matches.join('\n');
-  if (!result.truncated) return body;
+      : result.mode === 'files_with_matches' || result.mode === undefined
+        ? [
+            `Found ${result.matches.length} ${result.matches.length === 1 ? 'file' : 'files'}`,
+            ...result.matches,
+          ].join('\n')
+        : result.matches.join('\n');
+  // The paging state is echoed whenever the caller set it or the cap bit, so
+  // a partial list is never mistaken for the whole.
+  if (!result.truncated && result.limit === undefined && !result.offset) return body;
+  const paging = [
+    ...(result.limit !== undefined ? [`limit: ${result.limit}`] : []),
+    ...(result.offset ? [`offset: ${result.offset}`] : []),
+  ].join(', ');
   const omitted = result.omitted ?? 0;
-  return `${body}\n[${omitted} more matching ${omitted === 1 ? 'line was' : 'lines were'} omitted. Narrow the search with path, glob or a stricter pattern, or raise head_limit, to see them.]`;
+  const more = result.truncated
+    ? ` — ${omitted} more matching ${omitted === 1 ? 'line' : 'lines'} not shown; narrow the search or page with offset`
+    : '';
+  return `${body}\n\n[Showing results with pagination = ${paging || 'default'}${more}]`;
 }
 
 /** `path:count` lines rolled up, so the model does not have to add them itself. */
@@ -223,6 +277,10 @@ interface GrepLikeResult {
   readonly mode?: GrepOutputMode;
   readonly truncated?: boolean;
   readonly omitted?: number;
+  /** The caller's `head_limit`, when it set one. */
+  readonly limit?: number;
+  /** The caller's `offset`, when it set one. */
+  readonly offset?: number;
 }
 
 function asGrepResult(output: unknown): GrepLikeResult | undefined {

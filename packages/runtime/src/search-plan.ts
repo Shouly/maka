@@ -58,6 +58,8 @@ export interface RipgrepPlanInput {
   readonly before?: number | undefined;
   /** Print line numbers (`-n`); content mode only, on unless explicitly false. */
   readonly lineNumbers?: boolean | undefined;
+  /** Print only the matched parts of each line (`-o`); content mode only. */
+  readonly onlyMatching?: boolean | undefined;
   readonly multiline?: boolean | undefined;
   readonly maxCountPerFile: number;
 }
@@ -84,6 +86,7 @@ export function buildRipgrepArgs(input: RipgrepPlanInput): string[] {
     // Line numbers are the default in content mode — `path:line:text` is the
     // shape the tool advertises — and only an explicit `-n: false` drops them.
     if (input.lineNumbers !== false) args.push('-n');
+    if (input.onlyMatching) args.push('-o');
     args.push('--no-heading', '--with-filename', `--max-count=${input.maxCountPerFile}`);
     args.push(...contextArgs(input.before, input.after));
   }
@@ -157,20 +160,26 @@ export async function orderGlobMatchesByRecency(
 }
 
 async function sortByModifiedTime(base: string, files: readonly string[]): Promise<string[]> {
+  // Only files answer a Glob: a directory that happens to match the pattern
+  // is not something Read or Edit can take next.
   const stamped: { file: string; mtimeMs: number; index: number }[] = [];
+  const excluded = new Set<string>();
   const CONCURRENCY = 64;
   for (let start = 0; start < files.length; start += CONCURRENCY) {
     const batch = files.slice(start, start + CONCURRENCY);
     const stats = await Promise.all(
       batch.map(async (file) => {
         try {
-          return (await fs.stat(resolve(base, file))).mtimeMs;
+          const stat = await fs.stat(resolve(base, file));
+          if (!stat.isFile()) excluded.add(file);
+          return stat.mtimeMs;
         } catch {
           return Number.NEGATIVE_INFINITY;
         }
       }),
     );
     for (const [offset, file] of batch.entries()) {
+      if (excluded.has(file)) continue;
       stamped.push({
         file,
         mtimeMs: stats[offset] ?? Number.NEGATIVE_INFINITY,
