@@ -5273,12 +5273,13 @@
       "environmentCapabilities": {},
       "hookCalls": {
         "useEffect": 1,
-        "useStore": 1
+        "useStore": 2
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../store/index.js": 1,
         "../store/session-artifacts-store.js": 1,
         "react": 1,
         "zustand": 1

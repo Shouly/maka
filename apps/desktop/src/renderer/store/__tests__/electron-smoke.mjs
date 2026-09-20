@@ -100,6 +100,7 @@ let app;
 let page;
 const errors = [];
 const checks = [];
+let mainStderr = '';
 
 const SHOT = (name) => path.join(shots, name);
 /** The rail animates its width over 200ms; a screenshot mid-transition is a lie. */
@@ -185,6 +186,9 @@ try {
     env: buildFixtureEnv(userDataDir, path.join(userDataDir, 'home'), { showWindow: true }),
     timeout: 30000,
   });
+  app.process().stderr.on('data', (chunk) => {
+    mainStderr += chunk.toString();
+  });
   page = await app.firstWindow();
   page.setDefaultTimeout(20000);
   page.on('pageerror', (error) => errors.push(error.message));
@@ -217,6 +221,7 @@ try {
     .getByText('renderer loop are connected.', { exact: false })
     .waitFor();
   checks.push('new task from the welcome composer creates a session and streams a reply');
+  assert.doesNotMatch(mainStderr, /Error occurred in handler for 'artifacts:list'/);
 
   // The placeholder must actually paint after content becomes empty; its
   // data attribute alone can survive while the editor's empty styling is stale.
@@ -1471,6 +1476,14 @@ try {
     .waitFor();
   await page.locator('[data-maka-contract="composer-stop"]').waitFor();
   await expectComposerPlaceholder(page, 'Reply…');
+  // Host admission must start the first artifact read. A held-open turn has
+  // no completion event that could hide an earlier pending-session failure.
+  await page
+    .locator('[data-maka-contract="session-panel"]')
+    .getByText('No files produced yet.', { exact: true })
+    .waitFor({ state: 'attached' });
+  assert.doesNotMatch(mainStderr, /Error occurred in handler for 'artifacts:list'/);
+  checks.push('artifact reads wait for Host admission and load while the first turn is still open');
   await composerInput.fill('draft while streaming');
   await composerInput.press('ControlOrMeta+a');
   await composerInput.press('Backspace');

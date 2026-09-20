@@ -19,6 +19,7 @@
 
 import { useEffect } from 'react';
 import { useStore } from 'zustand';
+import { sessionsStore } from '../store/index.js';
 import {
   selectSessionArtifacts,
   sessionArtifactsStore,
@@ -33,9 +34,16 @@ import {
  * has no reason to hold a read open.
  */
 export function useSessionArtifacts(sessionId: string, active = true): SessionArtifactsEntry {
+  // The header already exists for a local pending session, before the Host
+  // can answer artifact queries. Admission starts the first read; waiting for
+  // a tool result or turn completion would leave Outputs stale during a run.
+  const hostAdmitted = useStore(sessionsStore, (state) => {
+    const session = state.sessions.find((row) => row.id === sessionId);
+    return session !== undefined && session.localState !== 'pending';
+  });
   useEffect(() => {
-    if (!active) return;
+    if (!active || !hostAdmitted) return;
     return sessionArtifactsStore.retain(sessionId);
-  }, [active, sessionId]);
+  }, [active, hostAdmitted, sessionId]);
   return useStore(sessionArtifactsStore, (state) => selectSessionArtifacts(state, sessionId));
 }
