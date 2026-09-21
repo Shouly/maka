@@ -26,6 +26,7 @@
 // nothing — a dead affordance reads as a bug in the child, not in the row.
 
 import { memo } from 'react';
+import { useStore } from 'zustand';
 import type { ToolResultContent } from '@maka/core/events';
 import {
   dotForStatus,
@@ -37,6 +38,7 @@ import {
 } from '@maka/ui';
 import { cn } from '../../../../lib/cn.js';
 import { getTranscriptCopy } from '../../../../locales/transcript-copy.js';
+import { sessionsStore } from '../../../../store/sessions-store.js';
 import { ToolResultPanel, ToolResultRow } from '../tool-result.js';
 
 type SubagentContent = Extract<ToolResultContent, { kind: 'subagent' }>;
@@ -112,6 +114,29 @@ function AgentRow(props: {
   );
 }
 
+/**
+ * What the child is doing NOW, not what it was doing when the tool returned.
+ *
+ * An Agent call hands back a running child, so its durable result says
+ * `running` for ever. The child's own Session is the one that knows: while a
+ * Turn of it is in flight it is running, and once none is it is done — and an
+ * abandoned Session says so itself.
+ */
+function useChildAgentStatus(result: SubagentContent): AgentStatus {
+  const child = useStore(sessionsStore, (state) =>
+    result.childSessionId
+      ? state.sessions.find((session) => session.id === result.childSessionId)
+      : undefined,
+  );
+  if (result.status !== 'running') return result.status;
+  if (!child) return result.status;
+  if ((child.runningTurnIds?.length ?? 0) > 0) return 'running';
+  if (child.status === 'waiting_for_user') return 'waiting_for_user';
+  if (child.status === 'aborted') return 'cancelled';
+  // The runtime authoritatively knows of no live Turn, so the child is done.
+  return child.runningTurnIds === undefined ? 'running' : 'completed';
+}
+
 export const SubagentResult = memo(function SubagentResult(props: {
   result: SubagentContent;
   onOpenSession: (sessionId: string) => void;
@@ -119,11 +144,12 @@ export const SubagentResult = memo(function SubagentResult(props: {
   const locale = useUiLocale();
   const copy = getTranscriptCopy(locale).result;
   const readOnly = props.result.permissionMode === 'explore';
+  const status = useChildAgentStatus(props.result);
   return (
     <ToolResultPanel variant="list">
       <AgentRow
         name={props.result.agentName}
-        status={props.result.status}
+        status={status}
         {...(props.result.durationMs !== undefined ? { durationMs: props.result.durationMs } : {})}
         readOnly={readOnly}
         {...(props.result.failureClass ? { failureClass: props.result.failureClass } : {})}

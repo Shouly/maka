@@ -23,7 +23,7 @@ import {
   type ProviderRetryEvent,
   type SessionEvent,
 } from '@maka/core/events';
-import type { StoredMessage } from '@maka/core/session';
+import type { StoredMessage, UserMessage } from '@maka/core/session';
 import type { UiLocale } from '@maka/core/ui-locale';
 import { materializeToolResultPreviewForActivity } from '@maka/core/tool-result-preview';
 import { applyAssistantComplete, applyAssistantDelta } from './assistant-stream.js';
@@ -66,6 +66,7 @@ export interface LiveTurnStepProjection {
   contentOrder?: LiveTurnStepContentKind[];
   /** Steering drained immediately before this provider step began. */
   leadingSteering?: LiveSteeringProjection[];
+
   thinking?: LiveThinkingProjection;
   text?: LiveTextProjection;
   tools: ToolActivityItem[];
@@ -87,6 +88,14 @@ export interface LiveSteeringProjection {
   id: string;
   content: MessageContent;
   ts: number;
+  /**
+   * Who interjected. A background task finishing speaks in the user's role
+   * but is not the user, and a live Turn has to know that as surely as the
+   * ledger does — otherwise the notification wears the reader's own bubble
+   * until the Turn ends and the projection is rebuilt from the ledger.
+   */
+  author?: 'system';
+  origin?: UserMessage['origin'];
 }
 
 export interface LiveTurnProjection {
@@ -229,6 +238,8 @@ export function applyLiveTurnEvent(
           id: event.messageId,
           content: structuredClone(event.content),
           ts: event.ts,
+          ...(event.author ? { author: event.author } : {}),
+          ...(event.origin ? { origin: structuredClone(event.origin) } : {}),
         },
       ],
     };

@@ -24,10 +24,10 @@
 // ended before it could.
 
 import { randomUUID } from 'node:crypto';
+import type { TaskNotificationLease } from '@maka/core/backend-types';
 import type { ShellRunRecord } from '@maka/core/shell-run';
-import { renderTaskNotificationWake } from '@maka/runtime/injection';
-import type { SessionManager } from '@maka/runtime/session-manager';
-import { shellRunResourceRef } from '@maka/runtime/shell-run-contract';
+import { renderNotificationWake, renderTaskNotification } from '@maka/runtime/injection';
+import type { ChildAgentFinishedRecord, SessionManager } from '@maka/runtime/session-manager';
 import type { ShellRunProcessManager } from '@maka/runtime/shell-run-manager';
 import type { HostedExecutionAuthority } from './hosted-execution-authority.js';
 
@@ -37,11 +37,17 @@ type NotificationShellRuns = Pick<
   ShellRunProcessManager,
   'pendingTaskNotifications' | 'markTaskNotified'
 >;
+type NotificationChildAgents = Pick<
+  SessionManager,
+  'pendingChildAgentNotificationLeases' | 'markChildAgentNotifiedByRef'
+>;
 
 export interface HostBackgroundTaskNotificationCoordinatorOptions {
   readonly executions: NotificationExecutions;
   readonly runtime: NotificationRuntime;
   readonly shellRuns: NotificationShellRuns;
+  /** Child agents of a Session; omitted in compositions without child agents. */
+  readonly childAgents?: NotificationChildAgents;
   readonly newId?: () => string;
   /** A delivery attempt failed; what is owed stays owed in the store. */
   readonly onError?: (sessionId: string, error: unknown) => void;
@@ -51,6 +57,7 @@ export class HostBackgroundTaskNotificationCoordinator {
   readonly #executions: NotificationExecutions;
   readonly #runtime: NotificationRuntime;
   readonly #shellRuns: NotificationShellRuns;
+  readonly #childAgents: NotificationChildAgents | undefined;
   readonly #newId: () => string;
   readonly #onError: HostBackgroundTaskNotificationCoordinatorOptions['onError'];
   readonly #flushing = new Map<string, Promise<void>>();
@@ -61,6 +68,7 @@ export class HostBackgroundTaskNotificationCoordinator {
     this.#executions = options.executions;
     this.#runtime = options.runtime;
     this.#shellRuns = options.shellRuns;
+    this.#childAgents = options.childAgents;
     this.#newId = options.newId ?? randomUUID;
     this.#onError = options.onError;
   }
@@ -69,6 +77,12 @@ export class HostBackgroundTaskNotificationCoordinator {
   taskFinished(record: ShellRunRecord): void {
     if (this.#draining) return;
     this.#schedule(record.sessionId);
+  }
+
+  /** The same, for a child agent that stopped. */
+  childAgentFinished(record: ChildAgentFinishedRecord): void {
+    if (this.#draining) return;
+    this.#schedule(record.parentSessionId);
   }
 
   /** Delivery in flight for the session, if any — tests join it. */
@@ -86,7 +100,9 @@ export class HostBackgroundTaskNotificationCoordinator {
       return;
     }
     const run = this.#flush(sessionId)
-      .catch((error) => this.#onError?.(sessionId, error))
+      .catch((error) => {
+        this.#onError?.(sessionId, error);
+      })
       .then(() => {
         this.#flushing.delete(sessionId);
         if (this.#again.delete(sessionId)) this.#schedule(sessionId);
@@ -94,16 +110,46 @@ export class HostBackgroundTaskNotificationCoordinator {
     this.#flushing.set(sessionId, run);
   }
 
+  /** Everything this Session owes the model, whatever kind of task produced it. */
+  async #pending(sessionId: string): Promise<TaskNotificationLease[]> {
+    const runs = await this.#shellRuns.pendingTaskNotifications(sessionId);
+    const agents = this.#childAgents
+      ? await this.#childAgents.pendingChildAgentNotificationLeases(sessionId)
+      : [];
+    return [
+      ...runs.map((record) => ({
+        id: record.shellRunId,
+        kind: 'command' as const,
+        toolUseId: record.sourceToolCallId,
+        text: renderTaskNotification(record),
+      })),
+      ...agents,
+    ];
+  }
+
+  /** The model has been told about this one; it will not be announced again. */
+  async #settle(sessionId: string, lease: TaskNotificationLease): Promise<void> {
+    if (lease.kind === 'command') {
+      await this.#shellRuns.markTaskNotified(sessionId, lease.id);
+      return;
+    }
+    await this.#childAgents?.markChildAgentNotifiedByRef(lease.id);
+  }
+
   async #flush(sessionId: string): Promise<void> {
     while (!this.#draining) {
-      const pending = await this.#shellRuns.pendingTaskNotifications(sessionId);
+      const pending = await this.#pending(sessionId);
       if (pending.length === 0) return;
       const preparation = this.#executions.prepare(sessionId);
       if (preparation.kind === 'unavailable') return;
       if (preparation.kind === 'busy') {
         // The running turn drains what is owed at its next boundary; when it
-        // ends, whatever it did not reach is still in the store.
-        await preparation.whenIdle;
+        // ends, whatever it did not reach is still in the store. How that
+        // turn ended is not this loop's business, and a turn that failed is
+        // exactly the one whose boundary drain never got to announce
+        // anything, so its rejection must not carry the notification away
+        // with it.
+        await preparation.whenIdle.catch(() => undefined);
         continue;
       }
       await this.#wake(sessionId, pending, preparation.admission);
@@ -113,7 +159,7 @@ export class HostBackgroundTaskNotificationCoordinator {
 
   async #wake(
     sessionId: string,
-    pending: readonly ShellRunRecord[],
+    pending: readonly TaskNotificationLease[],
     prepared: Extract<
       ReturnType<NotificationExecutions['prepare']>,
       { kind: 'prepared' }
@@ -122,12 +168,12 @@ export class HostBackgroundTaskNotificationCoordinator {
     const first = pending[0]!;
     const origin = {
       kind: 'background_task' as const,
-      ref: shellRunResourceRef(first.shellRunId),
-      toolUseId: first.sourceToolCallId,
+      ref: first.id,
+      toolUseId: first.toolUseId,
     };
     const execution = { sessionId, turnId: this.#newId(), runId: this.#newId() };
     const userMessageId = this.#newId();
-    const text = renderTaskNotificationWake(pending);
+    const text = renderNotificationWake(pending.map((lease) => lease.text));
     try {
       const initial = await prepared.admit({
         ...execution,
@@ -139,30 +185,34 @@ export class HostBackgroundTaskNotificationCoordinator {
           if (runId !== execution.runId || admittedMessageId !== userMessageId) {
             throw new Error('Hosted Execution changed the task notification identity');
           }
-          const shellRuns = this.#shellRuns;
+          const settle = (session: string, lease: TaskNotificationLease) =>
+            this.#settle(session, lease);
           const runtime = this.#runtime;
-          return (async function* () {
-            // The message is durable; settle what it says before the turn's
-            // own boundary drain can look and say it twice.
-            for (const record of pending) {
-              await shellRuns.markTaskNotified(sessionId, record.shellRunId);
-            }
-            yield* runtime.sendMessage(
-              sessionId,
-              { turnId: execution.turnId, text, origin },
-              {
-                runId,
-                userMessageId,
-                durability: 'required',
-                onRunStarted: async (startedRunId) => {
-                  if (startedRunId !== runId) {
-                    throw new Error('Runtime changed the task notification Run identity');
-                  }
-                  await onRunStarted();
-                },
+          return runtime.sendMessage(
+            sessionId,
+            { turnId: execution.turnId, text, origin },
+            {
+              runId,
+              userMessageId,
+              durability: 'required',
+              onRunStarted: async (startedRunId) => {
+                if (startedRunId !== runId) {
+                  throw new Error('Runtime changed the task notification Run identity');
+                }
+                // Settled here and not before: the Run has started, so the
+                // message carrying these notifications is in the ledger. A
+                // send that failed earlier would have settled them against a
+                // conversation that never received them — owed for ever, with
+                // the ledger saying they had been delivered. This still runs
+                // before the woken turn reaches its own first boundary, so it
+                // cannot announce them a second time.
+                for (const lease of pending) {
+                  await settle(sessionId, lease);
+                }
+                await onRunStarted();
               },
-            );
-          })();
+            },
+          );
         },
       });
       await initial.settled;

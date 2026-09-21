@@ -124,6 +124,12 @@ export interface InteractiveRunComposerInput {
   readonly toolProfile?: SessionToolProfile;
   readonly skillBudget?: SkillCatalogBudgetOptions;
   /**
+   * Which agents this Session can launch. Read here so the catalog reaches
+   * the model as context rather than as a tool call it must make before it
+   * can delegate anything.
+   */
+  readonly resolveAgentTypes?: (sessionId: string) => Promise<string | undefined>;
+  /**
    * Turn-scoped shell resolution captured at backend admission. One plan
    * drives guidance and every Bash execution for the turn; a broken saved
    * preference rides along as `setupError` so text-only turns still compose
@@ -247,8 +253,13 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
     const pending = Promise.all([
       readPromptState(input, context.sessionId, Boolean(childInstruction)),
       inventorySnapshotFor(context),
+      // A child agent cannot launch another, so it is told of none.
+      childInstruction
+        ? Promise.resolve(undefined)
+        : (input.resolveAgentTypes?.(context.sessionId).catch(() => undefined) ??
+          Promise.resolve(undefined)),
     ])
-      .then(async ([promptState, inventory]) => {
+      .then(async ([promptState, inventory, agentTypes]) => {
         const skills = buildSkillsPromptFragmentFromInventoryWithReport(
           inventory.inventory,
           hostCapabilities,
@@ -325,6 +336,7 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
           ...(skills.text
             ? [{ name: 'skills', text: skills.text, revision: inventory.revision }]
             : []),
+          ...(agentTypes ? [{ name: 'agent_types', text: agentTypes }] : []),
         ];
         const resolvedPrompt = Object.freeze({
           text: sharedText,

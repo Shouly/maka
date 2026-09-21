@@ -315,6 +315,8 @@ export interface MakaToolContext {
     agentProfile: AgentProfile;
     subagentId?: string;
     prompt: string;
+    /** The 3-5 word label; the child's completion notification repeats it. */
+    description?: string;
     /** Optional swarm identity, scoped to the owning tool call. */
     swarm?: {
       swarmId: string;
@@ -333,6 +335,10 @@ export interface MakaToolContext {
     onEvent?: (event: SessionEvent) => void;
   }) => Promise<unknown>;
   listChildAgents?: () => Promise<unknown>;
+  /** Continue a child agent this session started, on a new Turn of its own Session. */
+  sendChildAgentMessage?: (input: { childSessionId: string; text: string }) => Promise<unknown>;
+  /** End a child agent this session started. */
+  stopChildAgent?: (input: { childSessionId: string }) => Promise<unknown>;
   readChildAgentOutput?: (input: {
     execution?: SubagentExecutionRef;
     runId?: string;
@@ -463,6 +469,7 @@ export interface ToolRuntimeInput {
     agentProfile: AgentProfile;
     subagentId?: string;
     prompt: string;
+    description?: string;
     swarm?: {
       swarmId: string;
       itemId: string;
@@ -479,6 +486,10 @@ export interface ToolRuntimeInput {
     onEvent?: (event: SessionEvent) => void;
   }) => Promise<unknown>;
   listChildAgents?: () => Promise<unknown>;
+  /** Continue a child agent this session started, on a new Turn of its own Session. */
+  sendChildAgentMessage?: (input: { childSessionId: string; text: string }) => Promise<unknown>;
+  /** End a child agent this session started. */
+  stopChildAgent?: (input: { childSessionId: string }) => Promise<unknown>;
   readChildAgentOutput?: (input: {
     execution?: SubagentExecutionRef;
     runId?: string;
@@ -1751,6 +1762,10 @@ export class ToolRuntime {
               }
             : {}),
           ...(this.input.listChildAgents ? { listChildAgents: this.input.listChildAgents } : {}),
+          ...(this.input.sendChildAgentMessage
+            ? { sendChildAgentMessage: this.input.sendChildAgentMessage }
+            : {}),
+          ...(this.input.stopChildAgent ? { stopChildAgent: this.input.stopChildAgent } : {}),
           ...(this.input.readChildAgentOutput
             ? { readChildAgentOutput: this.input.readChildAgentOutput }
             : {}),
@@ -2631,6 +2646,9 @@ export class ToolRuntime {
                     agentProfile: spawnInput.agentProfile,
                     ...(spawnInput.subagentId ? { subagentId: spawnInput.subagentId } : {}),
                     prompt: spawnInput.prompt,
+                    ...(spawnInput.description !== undefined
+                      ? { description: spawnInput.description }
+                      : {}),
                     ...(spawnInput.swarm ? { swarm: spawnInput.swarm } : {}),
                     abortSignal,
                     onReady: async (ready) => {

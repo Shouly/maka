@@ -189,6 +189,8 @@ export interface AiSdkBackendInput extends AiSdkCompactionCapabilities {
   /** Optional pricing lookup shared with telemetry; defaults to builtin public pricing. */
   lookupPricing?: (modelKey: string) => PricingConfig | null;
   spawnChildSession?: ToolRuntimeInput['spawnChildSession'];
+  sendChildAgentMessage?: ToolRuntimeInput['sendChildAgentMessage'];
+  stopChildAgent?: ToolRuntimeInput['stopChildAgent'];
   listChildAgents?: () => Promise<unknown>;
   readChildAgentOutput?: ToolRuntimeInput['readChildAgentOutput'];
   /** Optional diagnostic trace hook for explaining a runtime turn without changing renderer events. */
@@ -505,6 +507,8 @@ export class AiSdkBackend implements AgentBackend {
       ...(identity.invocationId ? { invocationId: identity.invocationId } : {}),
       prepareDurableProjectionArtifact: input.prepareDurableProjectionArtifact,
       spawnChildSession: input.spawnChildSession,
+      sendChildAgentMessage: input.sendChildAgentMessage,
+      stopChildAgent: input.stopChildAgent,
       listChildAgents: input.listChildAgents,
       readChildAgentOutput: input.readChildAgentOutput,
       getRunTrace: () => identity.scope().runTrace,

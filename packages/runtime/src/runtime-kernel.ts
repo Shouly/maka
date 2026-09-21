@@ -92,7 +92,7 @@ import type {
 } from './session-manager.js';
 import type { TurnShellPlan } from './shell-detect.js';
 import type { ShellRunProcessManager } from './shell-run-manager.js';
-import { parseShellRunResourceRef, shellRunResourceRef } from './shell-run-contract.js';
+import type { TaskNotificationLease } from '@maka/core/backend-types';
 import { renderTaskNotification } from './injection/task-notification.js';
 import { buildStatusPatch, normalizeStopSessionSource } from './session-projection-helpers.js';
 import { buildToolsForAgentDefinition } from './agent-catalog.js';
@@ -283,6 +283,15 @@ export interface RuntimeKernelDeps {
   childTools?: readonly MakaTool[];
   resolveChildTools?: (sessionId: string) => Promise<ResolvedChildToolActivation>;
   shellRuns?: ShellRunProcessManager;
+  /**
+   * Child agents of a Session whose end the model has not been told about.
+   * Supplied by SessionManager, which owns child Sessions; the turn drains it
+   * beside the background-task notifications, as the same kind of fact.
+   */
+  childAgentNotifications?: {
+    pending: (sessionId: string) => Promise<readonly TaskNotificationLease[]>;
+    markNotified: (ref: string) => Promise<void>;
+  };
   cleanupHistoryCompactArtifacts?: (input: HistoryCompactCleanupRequest) => Promise<void>;
   inspectContinuationSafety?: (sessionId: string) => Promise<RuntimeContinuationSafetyObservation>;
   safeBoundaryResumeEnabled?: boolean;
@@ -2239,18 +2248,30 @@ export class RuntimeKernel implements RuntimeKernelLike {
     sessionId: string,
   ): Pick<BackendSendInput, 'pullTaskNotifications' | 'ackTaskNotification'> {
     const shellRuns = this.deps.shellRuns;
-    if (!shellRuns) return {};
+    const agents = this.deps.childAgentNotifications;
+    if (!shellRuns && !agents) return {};
     return {
-      pullTaskNotifications: async () =>
-        (await shellRuns.pendingTaskNotifications(sessionId)).map((record) => ({
-          ref: shellRunResourceRef(record.shellRunId),
-          toolUseId: record.sourceToolCallId,
-          text: renderTaskNotification(record),
-        })),
-      ackTaskNotification: async (ref) => {
-        const target = parseShellRunResourceRef(ref);
-        if (!target) throw new Error(`Task notification ref is not a background task: ${ref}`);
-        await shellRuns.markTaskNotified(sessionId, target.shellRunId);
+      // A store that cannot be read at a step boundary is not a reason to
+      // fail the turn: what is owed stays owed and is asked for again.
+      pullTaskNotifications: async () => [
+        ...(shellRuns
+          ? (await shellRuns.pendingTaskNotifications(sessionId).catch(() => [])).map((record) => ({
+              id: record.shellRunId,
+              kind: 'command' as const,
+              toolUseId: record.sourceToolCallId,
+              text: renderTaskNotification(record),
+            }))
+          : []),
+        ...(agents ? await agents.pending(sessionId) : []),
+      ],
+      ackTaskNotification: async (lease) => {
+        if (lease.kind === 'command') {
+          if (!shellRuns) throw new Error(`No background task owner for ${lease.id}`);
+          await shellRuns.markTaskNotified(sessionId, lease.id);
+          return;
+        }
+        if (!agents) throw new Error(`No agent owner for ${lease.id}`);
+        await agents.markNotified(lease.id);
       },
     };
   }

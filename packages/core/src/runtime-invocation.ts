@@ -286,6 +286,12 @@ export type RootExecutionDescriptor =
       agentId: string;
       agentName: string;
     }
+  /** A later Turn on a linked child: the parent sent it another message (SendMessage). */
+  | {
+      kind: 'linked_child_message';
+      agentId: string;
+      agentName: string;
+    }
   | {
       kind: 'linked_child_resume';
       agentId: string;

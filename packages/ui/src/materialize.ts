@@ -570,7 +570,7 @@ export function overlayLiveTurn(
       emittedSteeringIds.add(message.id);
       liveTimeline.push({
         kind: "user",
-        message: chatItemFromContent(message.id, message.ts, message.content),
+        message: chatItemFromContent(message.id, message.ts, message.content, message.origin),
         messageId: message.id,
       });
     }

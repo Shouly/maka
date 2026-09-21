@@ -480,6 +480,7 @@ function recoveryExecutionContract(execution: RootExecutionDescriptor): Recovery
       return contract(false, false, 'root_replay');
     case 'agent_graph_supervisor_wake':
     case 'linked_child_initial':
+    case 'linked_child_message':
     case 'linked_child_resume':
     case 'claimed_agent_graph_intent':
       return contract(false, true, 'host_recovery_closure');
@@ -508,6 +509,7 @@ function usesHostRecoveryClosure(execution: RootExecutionDescriptor): execution 
       | 'legacy_automation'
       | 'agent_graph_supervisor_wake'
       | 'linked_child_initial'
+      | 'linked_child_message'
       | 'linked_child_resume'
       | 'claimed_agent_graph_intent'
       | 'linked_child_provider_retry';
@@ -520,6 +522,7 @@ function usesHostRecoveryClosure(execution: RootExecutionDescriptor): execution 
     execution.kind === 'background_task' ||
     execution.kind === 'agent_graph_supervisor_wake' ||
     execution.kind === 'linked_child_initial' ||
+    execution.kind === 'linked_child_message' ||
     execution.kind === 'linked_child_resume' ||
     execution.kind === 'claimed_agent_graph_intent' ||
     execution.kind === 'linked_child_provider_retry'

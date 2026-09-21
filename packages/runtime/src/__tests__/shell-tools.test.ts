@@ -25,7 +25,7 @@ import {
   buildManagedBashTool,
   createWriteStdinSchemas,
   shapeTerminalResult,
-  WRITE_STDIN_EXAMPLE_REF,
+  WRITE_STDIN_EXAMPLE_TASK_ID,
   WRITE_STDIN_MINIMAL_EXAMPLES,
   type ShellRunLauncher,
 } from '../shell-tools.js';
@@ -329,7 +329,7 @@ describe('Bash provider-facing result projection', () => {
     assert.match(String(output?.value), /^tail\n\[Output was truncated/);
   });
 
-  test('a background run answers with a sentence naming its ref', async () => {
+  test('a background run answers with a sentence naming its ID', async () => {
     const tool = buildManagedBashTool(fakeShellRuns());
     const background = {
       kind: 'shell_run',
@@ -348,7 +348,7 @@ describe('Bash provider-facing result projection', () => {
       {
         type: 'text',
         value:
-          'Command running in background with ref: maka://runtime/background-tasks/sr_test. You will be notified when it completes. To check interim output, use Read on that ref; to end it, use TaskStop.',
+          'Command running in background with ID: sr_test. You will be notified when it completes. To end it, use TaskStop.',
       },
     );
   });
@@ -523,7 +523,7 @@ describe('TaskInput provider/strict contract conformance', () => {
     // A provider that fills every optional field with a null/0/'' placeholder
     // rather than omitting it must still round-trip to the minimal legal action.
     const withPlaceholders = {
-      ref: WRITE_STDIN_EXAMPLE_REF,
+      task_id: WRITE_STDIN_EXAMPLE_TASK_ID,
       actions: [
         {
           type: 'key',
@@ -553,7 +553,7 @@ describe('TaskInput provider/strict contract conformance', () => {
     // Mouse click without a button is structurally invalid.
     assert.equal(
       strictParameters.safeParse({
-        ref: WRITE_STDIN_EXAMPLE_REF,
+        task_id: WRITE_STDIN_EXAMPLE_TASK_ID,
         actions: [{ type: 'mouse', event: 'click', x: 0, y: 0 }],
       }).success,
       false,
@@ -569,7 +569,7 @@ describe('TaskInput provider/strict contract conformance', () => {
     // input and actions are mutually exclusive.
     assert.equal(
       strictParameters.safeParse({
-        ref: WRITE_STDIN_EXAMPLE_REF,
+        task_id: WRITE_STDIN_EXAMPLE_TASK_ID,
         input: 'x',
         actions: [{ type: 'key', key: 'enter' }],
       }).success,

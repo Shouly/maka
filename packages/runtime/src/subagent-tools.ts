@@ -34,7 +34,6 @@ import {
   requireAgentDefinitionByProfile,
   type AgentDefinition,
 } from './agent-catalog.js';
-import { ChildAgentProgressProjector } from './child-agent-progress.js';
 
 export const AGENT_SPAWN_TOOL_NAME = TOOL_NAMES.agent;
 export const AGENT_LIST_TOOL_NAME = TOOL_NAMES.listAgents;
@@ -115,24 +114,35 @@ export function buildSubagentSpawnTool(
   const isUnavailableBuiltinProfile = (value: string): boolean =>
     !isLegacyProfile(value) && allBuiltinProfiles.some((profile) => profile === value);
   const missingSelectorMessage =
-    'No child selector was provided. Call ListAgents and pass a returned subagent_id as ' +
-    `subagent_type, or pass one built-in profile: ${profiles.join(', ')}.`;
+    'No child selector was provided. Pass one of the agent types listed in your context as ' +
+    `subagent_type; the built-in profiles here are: ${profiles.join(', ')}.`;
   return {
     name: AGENT_SPAWN_TOOL_NAME,
     displayName: 'Agent',
     description: [
-      'Launch a new agent to handle complex, multi-step tasks.',
+      'Launch a new agent to handle complex, multi-step tasks. Each agent type has its own tools and its own model.',
       '',
-      'Reach for this when the work is self-contained and what you want back is the conclusion, not everything the child had to read to reach it — a search across many files, a round of research, an implementation slice. Delegate it and you keep the conclusion, not the file dumps. For a single-fact lookup where you already know the file or symbol, look it up yourself. Once you have delegated a search, do not also run it yourself.',
+      'The agent types this session can run are listed in your context, each with what it is for and what it can use. Pass one of those as `subagent_type`. ListAgents resolves a selector that came back unknown, and carries the contracts in full.',
       '',
-      '- Call ListAgents first and pass the `subagent_type` whose description fits the task; a built-in profile name is also a valid `subagent_type`.',
-      '- The child sees nothing of this conversation, cannot ask you or the user anything, and runs once, so write `prompt` as the whole brief.',
+      '## When to use',
+      '',
+      "A fresh agent costs more than it looks. It knows only what you put in the prompt, and you see only the summary it sends back — both handoffs drop detail, and neither of you can tell what the other missed. You can't watch it work, only wait or stop it. Its mistakes come back in the same confident register as its findings, and an agent handed your hypothesis tends to return it confirmed. Several at once spend tokens in a burst the user didn't ask for. Weigh those tokens against the accuracy they buy: the user pays for agents you did not need, and pays again for work you redo because you skipped one.",
+      '',
+      "Reach for this when you have independent work to run in parallel, when the user asks for a side quest that shouldn't block your main thread, or when answering would mean reading across several files — delegate that and you keep the conclusion, not the file dumps.",
+      '',
+      "Do the work yourself when it is a handful of tool calls or a lookup whose target you already know; don't delegate a check you could run inline. Delegate review only when you want a read that isn't anchored on yours — then give it the code, not your conclusion. Once you've delegated something, don't also run it yourself; wait for the result. When in doubt, don't spawn.",
+      '',
+      'When you do spawn one, brief it like the peer it is: state the goal and what you have already ruled out, point it at the files and docs worth reading instead of retyping them, and keep the scope explicit and narrow. That brief is the only context it will have, so it is your one lever on every cost above — and if you cannot write a clear one, you do not understand the task well enough to hand it off.',
+      '',
+      '- The child sees nothing of this conversation and cannot ask you or the user anything, so write `prompt` as the whole brief.',
       "- `description` is the 3-5 word label a person reads while the child runs; it is not part of the child's brief.",
-      '- The turn waits here until the child finishes.',
+      "- Agents run in the background: this returns an ID as soon as the child is running, and you'll be notified when it finishes. Never fabricate or predict a pending agent's results — the notification is never something you write yourself; if the user asks before it arrives, say it is still running.",
+      "- Don't duplicate a running agent's work: stay off the files and topics it is using.",
+      '- Use SendMessage with the agent ID to continue it with its context intact; a new Agent call starts a fresh one. End one early with TaskStop.',
       "- The agent's final report is not shown to the user — relay what matters in your own words.",
-      '- `write_back` and `isolation` must match the contract the selected agent declares and ListAgents shows; a mismatch is rejected before any child starts, and a worktree agent fails closed while no worktree executor exists.',
       '- Each agent carries its own model, so `model` is accepted and ignored; the result says so when you pass one.',
-      '- Returns the child status and summary plus the ids AgentOutput needs for its final text.',
+      '- `write_back` and `isolation` must match the contract the selected agent declares and ListAgents shows; a mismatch is rejected before any child starts, and `isolation: "worktree"` fails closed while no worktree executor exists.',
+      '- Returns the ID to send messages to, stop, or read with AgentOutput. The result carries nothing the child produced: none of it exists yet.',
       '- Fails when `subagent_type` is unknown or unavailable, which ListAgents resolves, and when this session has no child-agent capability at all; that one repeats on retry, so do the task with the tools you already have.',
     ].join('\n'),
     parameters: z
@@ -146,8 +156,8 @@ export function buildSubagentSpawnTool(
           // run can — and naming them is what keeps a wrong selector out of
           // the catalog lookup in the first place.
           .describe(
-            'The type of specialized agent to use for this task, from ListAgents. ' +
-              `Built-in profiles available here: ${profiles.join(', ')}.`,
+            'The type of specialized agent to use for this task, from the agent types listed ' +
+              `in your context. Built-in profiles available here: ${profiles.join(', ')}.`,
           ),
         description: z
           .string()
@@ -245,16 +255,18 @@ export function buildSubagentSpawnTool(
           },
         );
       }
-      let result: Omit<SubagentToolResult, 'kind'>;
-      const progress = new ChildAgentProgressProjector(ctx);
+      // The child's own activity belongs to the child's Session: this row
+      // closes as soon as the child is running, so anything streamed into it
+      // afterwards would arrive after the reader had stopped looking.
       ctx.emitOutput('stdout', `Starting child agent: ${definition.name}\n`);
+      let started: StartedChildAgent;
       try {
-        result = projectSubagentToolResult(
+        started = projectStartedChildAgent(
           await ctx.spawnChildSession({
             agentProfile: definition.profile,
             ...(preset ? { subagentId: preset } : {}),
             prompt: input.prompt,
-            onEvent: (event) => progress.observe(event),
+            description: input.description,
           }),
         );
       } catch (error) {
@@ -264,24 +276,38 @@ export function buildSubagentSpawnTool(
         );
         throw error;
       }
-      ctx.emitOutput('stdout', `Child agent ${definition.name}: ${result.status}\n`);
+      ctx.emitOutput('stdout', `Child agent ${definition.name} is running\n`);
       return {
         kind: 'subagent',
-        ...result,
+        childSessionId: started.childSessionId,
+        ...(started.agentId ? { agentId: started.agentId } : {}),
+        agentName: started.agentName,
+        turnId: started.turnId,
+        ...(started.runId ? { runId: started.runId } : {}),
+        // Running is the terminal state of THIS tool call: the child's own end
+        // arrives later, as a notification, not as this result.
+        status: 'running',
+        permissionMode: started.permissionMode,
+        summary: '',
+        artifactIds: [],
       } satisfies SubagentToolResult;
     },
     // A silently ignored argument is a lie the caller repeats. The durable
     // result stays the canonical subagent shape; the note rides on the model's
     // view of it, and only when a model override was actually asked for.
     toModelOutput: ({ input, output }) => {
+      const result = output as { kind?: string; childSessionId?: string; agentName?: string };
+      if (result?.kind !== 'subagent' || typeof result.childSessionId !== 'string') {
+        return undefined;
+      }
       const model = (input as { model?: unknown } | null)?.model;
-      if (typeof model !== 'string' || model.trim() === '') return undefined;
+      const ignored =
+        typeof model === 'string' && model.trim() !== ''
+          ? ` The agent carries its own model, so "${model}" was not applied.`
+          : '';
       return {
-        type: 'json',
-        value: {
-          ...(output as Record<string, unknown>),
-          model_override: `ignored: "${model}" was not applied because the selected agent carries its own model`,
-        },
+        type: 'text',
+        value: startedChildAgentText(result.childSessionId, ignored),
       };
     },
   };
@@ -316,31 +342,53 @@ async function resolvePresetDefinition(
   return requireAgentDefinitionByProfile(definitions, preset.profile);
 }
 
-function projectSubagentToolResult(value: unknown): Omit<SubagentToolResult, 'kind'> {
+interface StartedChildAgent {
+  childSessionId: string;
+  agentId?: string;
+  agentName: string;
+  turnId: string;
+  runId?: string;
+  permissionMode: SubagentToolResult['permissionMode'];
+}
+
+/** What the model is told the moment a child agent is running. */
+export function startedChildAgentText(agentId: string, trailer = ''): string {
+  return (
+    `Agent running in the background with ID: ${agentId}. ` +
+    'You will be notified when it finishes; until then you know nothing about its results. ' +
+    'To continue it with its context intact, use SendMessage with that ID; to end it, use TaskStop.' +
+    trailer
+  );
+}
+
+function projectStartedChildAgent(value: unknown): StartedChildAgent {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('Child agent returned an invalid result');
+    throw new Error('Child agent returned an invalid start result');
   }
   const raw = value as Record<string, unknown>;
   const decoded = decodeCanonicalToolResultContent({
     kind: 'subagent',
-    ...(raw.childSessionId !== undefined ? { childSessionId: raw.childSessionId } : {}),
+    childSessionId: raw.childSessionId,
     ...(raw.agentId !== undefined ? { agentId: raw.agentId } : {}),
     agentName: raw.agentName,
     turnId: raw.turnId,
     ...(raw.runId !== undefined ? { runId: raw.runId } : {}),
-    status: raw.status,
+    status: 'running',
     permissionMode: raw.permissionMode,
-    summary: raw.summary,
-    artifactIds: raw.artifactIds,
-    ...(raw.startedAt !== undefined ? { startedAt: raw.startedAt } : {}),
-    ...(raw.completedAt !== undefined ? { completedAt: raw.completedAt } : {}),
-    ...(raw.durationMs !== undefined ? { durationMs: raw.durationMs } : {}),
-    ...(raw.eventCount !== undefined ? { eventCount: raw.eventCount } : {}),
-    ...(raw.failureClass !== undefined ? { failureClass: raw.failureClass } : {}),
+    summary: '',
+    artifactIds: [],
   });
-  if (decoded.kind !== 'subagent') throw new Error('Child agent returned an invalid result');
-  const { kind: _kind, ...result } = decoded as SubagentToolResult;
-  return result;
+  if (decoded.kind !== 'subagent' || !decoded.childSessionId) {
+    throw new Error('Child agent returned an invalid start result');
+  }
+  return {
+    childSessionId: decoded.childSessionId,
+    ...(decoded.agentId ? { agentId: decoded.agentId } : {}),
+    agentName: decoded.agentName,
+    turnId: decoded.turnId,
+    ...(decoded.runId ? { runId: decoded.runId } : {}),
+    permissionMode: decoded.permissionMode,
+  };
 }
 
 function boundedChildError(error: unknown): string {
@@ -358,14 +406,14 @@ export function buildSubagentListTool(): MakaTool<
     name: AGENT_LIST_TOOL_NAME,
     displayName: 'Agent List',
     description: [
-      'List the child agents this session can actually run, with the selector each caller needs. Call it before the first delegation and again whenever a selector comes back unknown or unavailable: the catalog is per user and changes between sessions.',
+      'The agent catalog in full. The types you can launch are already listed in your context, so reach for this when that is not enough: a selector came back unknown or unavailable, you need the contracts behind an entry, or a graph tool needs an id.',
       '',
-      '- Match the task to an entry description, not to its name. Each entry carries the id, that description, the model behind it, and the workspace and write-back contract Agent will hold you to.',
+      '- Each entry carries the id, its description, the model behind it, and the workspace and write-back contract Agent will hold you to. Match a task to a description, never to a name.',
       '- The ids are not interchangeable: subagent_id is what Agent takes as subagent_type and UpdateAgentGraph as target_kind=new_preset, agent_id goes to UpdateAgentGraph as target_kind=new_agent, and a built-in profile is also a valid Agent subagent_type.',
       '- The default selection view lists only what is runnable. view=catalog adds the unavailable entries and the reason each is unavailable — read it to diagnose a rejected selector, not to pick from.',
       '- One page per call; a response carrying next_cursor has more entries behind it.',
       '- It reports no execution history at all. What a child did is read with AgentOutput, using the ids Agent or the graph returned.',
-      '- Fails when the session exposes no agent catalog; that repeats on retry, so pick a legacy profile from the Agent schema instead.',
+      '- Fails when the session exposes no agent catalog; that repeats on retry, so pick one of the types listed in your context instead.',
     ].join('\n'),
     parameters: z
       .object({
@@ -389,7 +437,7 @@ export function buildSubagentListTool(): MakaTool<
       if (!ctx.listChildAgents) {
         throw new Error(
           'ListAgents is not available in this session, so no agent catalog could be read. ' +
-            'Retrying ListAgents will fail the same way — pick a child agent profile from the Agent schema instead.',
+            'Retrying ListAgents will fail the same way — pick one of the agent types listed in your context instead.',
           { cause: new Error('listChildAgents capability is unavailable in this runtime context') },
         );
       }
@@ -746,12 +794,82 @@ export function buildSubagentProjectionTools(): MakaTool[] {
   return [buildSubagentListTool(), buildSubagentOutputTool()];
 }
 
+/**
+ * Another message for an agent this session already started.
+ *
+ * The child keeps its own Session, so a message here is a new Turn of it: it
+ * answers with everything it learned the first time. Like the first brief, the
+ * answer comes back as a notification, not as this tool's result.
+ */
+export function buildSendMessageToChildAgentTool(): MakaTool<{
+  agent_id: string;
+  message: string;
+}> {
+  return {
+    name: TOOL_NAMES.sendMessage,
+    // It starts a Turn of a child agent, so it belongs to the same category as
+    // Agent: the same permission class, and the same per-Turn cap on how many
+    // children one Turn may set running.
+    categoryHint: 'subagent',
+    description: [
+      'Send a message to an agent this session started, continuing it with its context intact.',
+      '',
+      '- `agent_id` is the ID the Agent tool returned.',
+      '- The agent picks up where it left off; a new Agent call would instead start one that knows nothing.',
+      '- It runs in the background like the first brief: you are notified when it finishes, and you know nothing about its answer until then.',
+      '- Only agents of the current session can be continued, and only one message at a time: an agent that is still working rejects a second one.',
+    ].join('\n'),
+    parameters: z.object({
+      agent_id: z.string().min(1).max(256).describe('The ID the Agent tool returned'),
+      message: z.string().min(1).max(60_000).describe('What to tell the agent'),
+    }),
+    impl: async (input, ctx) => {
+      if (!ctx.sendChildAgentMessage) {
+        throw new Error(
+          'SendMessage is not available in this session, so no agent was continued. ' +
+            'Retrying SendMessage will fail the same way — start a fresh agent with Agent instead.',
+        );
+      }
+      const started = projectStartedChildAgent(
+        await ctx.sendChildAgentMessage({
+          childSessionId: input.agent_id,
+          text: input.message,
+        }),
+      );
+      return {
+        kind: 'subagent',
+        childSessionId: started.childSessionId,
+        ...(started.agentId ? { agentId: started.agentId } : {}),
+        agentName: started.agentName,
+        turnId: started.turnId,
+        ...(started.runId ? { runId: started.runId } : {}),
+        status: 'running',
+        permissionMode: started.permissionMode,
+        summary: '',
+        artifactIds: [],
+      } satisfies SubagentToolResult;
+    },
+    toModelOutput: ({ output }) => {
+      const result = output as { childSessionId?: string };
+      if (typeof result?.childSessionId !== 'string') return undefined;
+      return {
+        type: 'text',
+        value:
+          `Message delivered; the agent is running again with ID: ${result.childSessionId}. ` +
+          'You will be notified when it finishes.',
+      };
+    },
+  };
+}
+
 export function buildParentAgentTools(
   deps: { definitions?: readonly AgentDefinition[] } = {},
 ): MakaTool[] {
   const definitions = deps.definitions ?? BUILTIN_AGENT_DEFINITIONS;
   return [
-    ...(definitions.length > 0 ? [buildSubagentSpawnTool({ ...deps, definitions })] : []),
+    ...(definitions.length > 0
+      ? [buildSubagentSpawnTool({ ...deps, definitions }), buildSendMessageToChildAgentTool()]
+      : []),
     ...buildSubagentProjectionTools(),
   ];
 }

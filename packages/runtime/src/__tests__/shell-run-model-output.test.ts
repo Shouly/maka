@@ -33,10 +33,10 @@ const pipes = (stdout: string, stderr = '') => ({
 });
 
 describe('a background task, as the model reads it', () => {
-  test('starting answers with the ref and what to do with it', () => {
+  test('starting answers with the ID and what to do with it', () => {
     assert.equal(
       shellRunResultText({ ...base, status: 'running' }),
-      `Command running in background with ref: ${ref}. You will be notified when it completes. To check interim output, use Read on that ref; to end it, use TaskStop.`,
+      `Command running in background with ID: sr_1. You will be notified when it completes. To end it, use TaskStop.`,
     );
     assert.match(
       shellRunResultText({ ...base, mode: 'pty', status: 'running' }),
@@ -117,8 +117,8 @@ describe('a background task, as the model reads it', () => {
       }),
     );
     assert.deepEqual(stopped, {
-      message: `Successfully stopped task: ${ref} (npm run dev)`,
-      ref,
+      message: 'Successfully stopped task: sr_1 (npm run dev)',
+      task_id: 'sr_1',
       task_type: 'local_bash',
       command: 'npm run dev',
       status: 'cancelled',
@@ -132,7 +132,7 @@ describe('a background task, as the model reads it', () => {
         operation: { kind: 'stop', applied: false },
       }),
     );
-    assert.equal(already.message, `Task ${ref} had already exited (code 0) (npm run dev)`);
+    assert.equal(already.message, `Task sr_1 had already exited (code 0) (npm run dev)`);
   });
 
   test('a TaskInput result leads with what the terminal took', () => {

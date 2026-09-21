@@ -2231,12 +2231,13 @@ function normalizeRootExecutionDescriptor(value: unknown): RootExecutionDescript
   }
   if (
     value.kind !== 'linked_child_initial' &&
+    value.kind !== 'linked_child_message' &&
     value.kind !== 'linked_child_resume' &&
     value.kind !== 'linked_child_provider_retry'
   ) {
     throw new Error('Invalid root execution descriptor');
   }
-  const hasSource = value.kind !== 'linked_child_initial';
+  const hasSource = value.kind !== 'linked_child_initial' && value.kind !== 'linked_child_message';
   if (
     !hasExactKeys(
       value,
@@ -2253,7 +2254,7 @@ function normalizeRootExecutionDescriptor(value: unknown): RootExecutionDescript
   ) {
     throw new Error('Invalid root execution descriptor');
   }
-  if (value.kind === 'linked_child_initial') {
+  if (value.kind === 'linked_child_initial' || value.kind === 'linked_child_message') {
     return Object.freeze({
       kind: value.kind,
       agentId: value.agentId,

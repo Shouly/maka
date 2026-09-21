@@ -78,6 +78,8 @@ export const TOOL_NAMES = {
   agent: 'Agent',
   listAgents: 'ListAgents',
   agentOutput: 'AgentOutput',
+  /** Continues a child agent this session started, with its context intact. */
+  sendMessage: 'SendMessage',
   swarmStatus: 'SwarmStatus',
   viewAgentGraph: 'ViewAgentGraph',
   updateAgentGraph: 'UpdateAgentGraph',

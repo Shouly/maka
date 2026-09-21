@@ -130,6 +130,7 @@ export function runtimeHostExecutionUnavailableReason(
 function isManagedWorktreeChildExecution(execution: RootExecutionDescriptor): boolean {
   return (
     execution.kind === 'linked_child_initial' ||
+    execution.kind === 'linked_child_message' ||
     execution.kind === 'linked_child_resume' ||
     execution.kind === 'linked_child_provider_retry' ||
     execution.kind === 'claimed_agent_graph_intent'

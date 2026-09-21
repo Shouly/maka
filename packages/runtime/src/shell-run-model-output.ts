@@ -38,6 +38,7 @@ interface ShellRunLikeResult {
   readonly cmd?: unknown;
   readonly exitCode?: unknown;
   readonly failureMessage?: unknown;
+  readonly outputFile?: unknown;
   readonly timeoutMs?: unknown;
   /** A pipes or PTY output record; `capturedOutput` reads whichever it is. */
   readonly output?: unknown;
@@ -89,7 +90,18 @@ export function shellRunResultText(result: ShellRunLikeResult): string {
 function startedLine(result: ShellRunLikeResult): string {
   const terminal =
     result.mode === 'pty' ? ' It has a terminal: send keystrokes with TaskInput.' : '';
-  return `Command running in background with ref: ${result.ref}. You will be notified when it completes. To check interim output, use Read on that ref; to end it, use TaskStop.${terminal}`;
+  const id = shellRunIdOfRef(result.ref);
+  const outputFile =
+    typeof result.outputFile === 'string'
+      ? ` Output is being written to: ${result.outputFile}. To check interim output, use Read on that file path.`
+      : '';
+  return `Command running in background with ID: ${id}. You will be notified when it completes.${outputFile} To end it, use TaskStop.${terminal}`;
+}
+
+/** The id inside a runtime ref; the model is given the id alone. */
+function shellRunIdOfRef(ref: string): string {
+  const prefix = 'maka://runtime/background-tasks/';
+  return ref.startsWith(prefix) ? ref.slice(prefix.length) : ref;
 }
 
 /** The output as a Read would number it, ending in the status line. */
@@ -131,13 +143,14 @@ function statusLine(result: ShellRunLikeResult): string {
 function stopResultLine(result: ShellRunLikeResult): string {
   const command = typeof result.cmd === 'string' ? result.cmd : '';
   const exitCode = typeof result.exitCode === 'number' ? ` (code ${result.exitCode})` : '';
+  const id = shellRunIdOfRef(result.ref);
   const message =
     result.operation?.applied === true
-      ? `Successfully stopped task: ${result.ref} (${command})`
-      : `Task ${result.ref} had already exited${exitCode} (${command})`;
+      ? `Successfully stopped task: ${id} (${command})`
+      : `Task ${id} had already exited${exitCode} (${command})`;
   return JSON.stringify({
     message,
-    ref: result.ref,
+    task_id: id,
     task_type: 'local_bash',
     command,
     status: result.status,

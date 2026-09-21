@@ -31,12 +31,20 @@ import { type SessionManager } from '@maka/runtime/session-manager';
 
 type ChildAgentAuthority = Pick<
   SessionManager,
-  'spawnChildSession' | 'listChildAgents' | 'readChildAgentOutput'
+  | 'spawnChildSession'
+  | 'listChildAgents'
+  | 'readChildAgentOutput'
+  | 'sendChildAgentMessage'
+  | 'stopChildAgent'
 >;
 
 export type HostChildAgentBackendCapabilities = Pick<
   ConstructorParameters<typeof AiSdkBackend>[0],
-  'spawnChildSession' | 'listChildAgents' | 'readChildAgentOutput'
+  | 'spawnChildSession'
+  | 'listChildAgents'
+  | 'readChildAgentOutput'
+  | 'sendChildAgentMessage'
+  | 'stopChildAgent'
 >;
 
 export interface HostChildAgentToolComposition {
@@ -78,12 +86,21 @@ export function bindHostChildAgentBackend(
         agentProfile: input.agentProfile,
         ...(input.subagentId ? { subagentId: input.subagentId } : {}),
         prompt: input.prompt,
+        ...(input.description !== undefined ? { description: input.description } : {}),
         ...(input.swarm ? { swarm: input.swarm } : {}),
         abortSignal: input.abortSignal,
         ...(input.onReady ? { onReady: input.onReady } : {}),
         ...(input.onEvent ? { onEvent: input.onEvent } : {}),
       }),
     listChildAgents: () => authority.listChildAgents(parentSessionId),
+    sendChildAgentMessage: (input) =>
+      authority.sendChildAgentMessage({
+        parentSessionId,
+        childSessionId: input.childSessionId,
+        text: input.text,
+      }),
+    stopChildAgent: (input) =>
+      authority.stopChildAgent({ parentSessionId, childSessionId: input.childSessionId }),
     readChildAgentOutput: (input) => authority.readChildAgentOutput(parentSessionId, input),
   };
 }

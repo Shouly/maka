@@ -1711,7 +1711,7 @@ describe('builtin Bash streaming output', () => {
     );
   });
 
-  test('TaskStop stops a runtime ref in the current session', async () => {
+  test('TaskStop stops a task of the current session by its ID', async () => {
     const calls: unknown[] = [];
     const backgroundTasks = {
       async stopBackgroundTask(sessionId: string, ref: string, abortSignal: AbortSignal) {
@@ -1745,7 +1745,7 @@ describe('builtin Bash streaming output', () => {
     if (!stop) throw new Error('TaskStop tool missing');
 
     const result = await stop.impl(
-      { ref: 'maka://runtime/background-tasks/shell-run-1' },
+      { task_id: 'shell-run-1' },
       {
         sessionId: 'session-1',
         runId: 'run-1',
@@ -1778,19 +1778,19 @@ describe('builtin Bash streaming output', () => {
     if (!write) throw new Error('TaskInput tool missing');
     const parameters = write.parameters as {
       jsonSchema: PromiseLike<{
-        properties?: { ref?: { maxLength?: number }; input?: unknown };
+        properties?: { task_id?: { maxLength?: number }; input?: unknown };
       }>;
       validate(value: unknown): PromiseLike<{ success: boolean; value?: unknown }>;
     };
-    const maxRef = shellRunResourceRef('x'.repeat(SHELL_RUN_ID_MAX_CHARS));
+    const maxRef = 'x'.repeat(SHELL_RUN_ID_MAX_CHARS);
     const refSchema = await parameters.jsonSchema;
 
-    assert.strictEqual(maxRef.length, MAX_SHELL_RUN_RESOURCE_REF_CHARS);
-    assert.strictEqual(refSchema.properties?.ref?.maxLength, MAX_SHELL_RUN_RESOURCE_REF_CHARS);
+    assert.strictEqual(maxRef.length, SHELL_RUN_ID_MAX_CHARS);
+    assert.strictEqual(refSchema.properties?.task_id?.maxLength, SHELL_RUN_ID_MAX_CHARS);
     assert.strictEqual(refSchema.properties?.input, undefined);
     assert.deepStrictEqual(
       await parameters.validate({
-        ref: maxRef,
+        task_id: maxRef,
         actions: [
           {
             type: 'text',
@@ -1831,7 +1831,7 @@ describe('builtin Bash streaming output', () => {
       {
         success: true,
         value: {
-          ref: maxRef,
+          task_id: maxRef,
           actions: [
             { type: 'text', text: 'hello' },
             { type: 'key', key: 'enter' },
@@ -1843,7 +1843,7 @@ describe('builtin Bash streaming output', () => {
     assert.strictEqual(
       (
         await parameters.validate({
-          ref: `${SHELL_RUN_RESOURCE_PREFIX}/shell-run-1`,
+          task_id: 'shell-run-1',
           actions: [],
           size: { cols: 240, rows: 100 },
         })
@@ -1853,7 +1853,7 @@ describe('builtin Bash streaming output', () => {
     assert.strictEqual(
       (
         await parameters.validate({
-          ref: `${SHELL_RUN_RESOURCE_PREFIX}/shell-run-1`,
+          task_id: 'shell-run-1',
           actions: [{ type: 'key', key: 'b', text: 'not-empty' }],
         })
       ).success,
@@ -1862,36 +1862,37 @@ describe('builtin Bash streaming output', () => {
     assert.strictEqual(
       (
         await parameters.validate({
-          ref: `${SHELL_RUN_RESOURCE_PREFIX}/shell-run-1`,
+          task_id: 'shell-run-1',
           actions: [{ type: 'text', text: null, key: null }],
         })
       ).success,
       false,
     );
     for (const ref of [
-      'ref',
-      `${SHELL_RUN_RESOURCE_PREFIX}/shell/run`,
-      `${SHELL_RUN_RESOURCE_PREFIX}/decoy/../shell-run-1`,
-      `${SHELL_RUN_RESOURCE_PREFIX}/shell-run-1?view=full`,
+      '',
+      'shell/run',
+      'decoy/../shell-run-1',
+      'shell-run-1?view=full',
       `${maxRef}x`,
     ]) {
       assert.strictEqual(
-        (await parameters.validate({ ref, actions: [{ type: 'key', key: 'enter' }] })).success,
+        (await parameters.validate({ task_id: ref, actions: [{ type: 'key', key: 'enter' }] }))
+          .success,
         false,
       );
     }
-    assert.strictEqual((await parameters.validate({ ref: maxRef })).success, false);
+    assert.strictEqual((await parameters.validate({ task_id: maxRef })).success, false);
     assert.strictEqual(
       (
         await parameters.validate({
-          ref: maxRef,
+          task_id: maxRef,
           actions: [{ type: 'text', text: '' }],
         })
       ).success,
       false,
     );
     assert.strictEqual(
-      (await parameters.validate({ ref: maxRef, size: { cols: 1, rows: 24 } })).success,
+      (await parameters.validate({ task_id: maxRef, size: { cols: 1, rows: 24 } })).success,
       false,
     );
   });

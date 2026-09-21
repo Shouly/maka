@@ -3129,7 +3129,8 @@ test('hosted linked child roots share admission, message, terminal, and stop aut
         initialEventCount += 1;
       },
     });
-    assert.equal(child.status, 'completed');
+    const childOutcome = await manager.waitForChildAgent(child.childSessionId);
+    assert.equal(childOutcome?.status, 'completed');
     assert.deepEqual(initialReady, {
       childSessionId: child.childSessionId,
       turnId: child.turnId,
@@ -3138,7 +3139,7 @@ test('hosted linked child roots share admission, message, terminal, and stop aut
       agentName: child.agentName,
       permissionMode: child.permissionMode,
     });
-    assert.equal(initialEventCount, child.eventCount);
+    assert.equal(initialEventCount, childOutcome?.eventCount);
     assert.ok(
       childSink.frames.some(
         (frame) =>
@@ -3209,16 +3210,26 @@ test('hosted linked child roots share admission, message, terminal, and stop aut
       abortSignal: callbackAbortController.signal,
       onReady: async (ready) => {
         stoppedReady = ready;
-        callbackAbortController.abort();
+        // A child is stopped by stopping it, not by cancelling the call that
+        // started it: that call is already over by the time most children are
+        // still working. The closure below is what a Stop must still deliver.
+        void manager.stopSession(ready.childSessionId).catch(() => undefined);
         await stopClosureObserved.promise;
       },
     });
     stopClosureSignal = undefined;
     assert.ok(stoppedReady);
-    assert.equal(callbackStopped.status, 'cancelled');
+    assert.equal(
+      (await manager.waitForChildAgent(callbackStopped.childSessionId))?.status,
+      'cancelled',
+    );
     assert.equal(callbackStopped.runId, stoppedReady.runId);
-    assert.deepEqual(coordinator.readRootState(stoppedReady.childSessionId), {
-      kind: 'idle',
+    // Stopping a child is asynchronous now: what matters is that its root
+    // goes idle, not that it already had by the time the stop call returned.
+    await waitFor(() => coordinator.readRootState(stoppedReady!.childSessionId).kind === 'idle', {
+      timeoutMs: 10_000,
+      pollMs: 25,
+      message: 'stopped child root did not go idle',
     });
     assert.equal(interactions.isPoisoned(), false);
     assert.equal(drainRequested, false);
@@ -3280,8 +3291,28 @@ test('hosted linked child roots share admission, message, terminal, and stop aut
     });
     assert.ok(joinedInitial);
     const joinedInterrupted = await joinedInitial;
-    assert.equal(interrupted.status, 'cancelled');
+    // A duplicate spawn joins the same child that is already running.
     assert.deepEqual(joinedInterrupted, interrupted);
+    // The child outlives the call that started it, so cancelling that call no
+    // longer ends it. Ending it is now its own act — the same one the Stop
+    // button performs — and that is what this section is about.
+    assert.equal(interrupted.childSessionId, joinedInterrupted.childSessionId);
+    // Started, not awaited: this child is parked on a question that only gets
+    // answered further down, and waiting for its stop here would deadlock the
+    // Turn that is supposed to answer it. What the stop must produce is a
+    // cancelled terminal fact, which is what the ledger is read for below.
+    void manager.stopSession(interrupted.childSessionId).catch(() => undefined);
+    await waitFor(
+      async () => {
+        const run = await readInvocation(stores, interrupted.childSessionId, interrupted.runId);
+        const events = await stores.runtimeEventStore.readImmutableRuntimeEvents(
+          interrupted.childSessionId,
+          interrupted.runId,
+        );
+        return classifyTerminalRuntimeLedger(run, events).kind === 'fact';
+      },
+      { timeoutMs: 10_000, pollMs: 25, message: 'interrupted child did not reach a terminal fact' },
+    );
     const interruptedRun = await readInvocation(
       stores,
       interrupted.childSessionId,
@@ -3296,11 +3327,12 @@ test('hosted linked child roots share admission, message, terminal, and stop aut
     if (interruptedTerminal.kind === 'fact') {
       assert.equal(interruptedTerminal.fact.runStatus, 'cancelled');
     }
-    assert.deepEqual(coordinator.readRootState(interrupted.childSessionId), {
-      kind: 'idle',
+    await waitFor(() => coordinator.readRootState(interrupted.childSessionId).kind === 'idle', {
+      timeoutMs: 10_000,
+      pollMs: 25,
+      message: 'interrupted child root did not go idle',
     });
     assert.equal(drainRequested, false);
-
     const answered = await interactions.handlers['interaction.answer'](
       {
         sessionId: pendingQuestion.sessionId,
@@ -3321,7 +3353,6 @@ test('hosted linked child roots share admission, message, terminal, and stop aut
         frame.snapshot.interactions.pending.length === 0,
       'resumed question projection',
     );
-
     await coordinator.stopRoot({
       sessionId: parent.id,
       turnId: parentTurnId,

@@ -103,6 +103,11 @@ type RetirementContinuity = Pick<
   'refreshCanonical' | 'retireSessions'
 >;
 
+/** A transient failure is retried this many times before the next Host start owns it. */
+const CLEANUP_ATTEMPT_LIMIT = 6;
+/** Backs off, because what usually blocks a cleanup is another process holding the same files. */
+const CLEANUP_RETRY_DELAY_MS = 250;
+
 export interface HostSessionRetirementCoordinatorOptions {
   readonly stores: RetirementStores;
   readonly admission: SessionAdmissionGate;
@@ -126,6 +131,8 @@ export interface HostSessionRetirementCoordinatorOptions {
   readonly sessionTask: Pick<InteractiveSessionTaskWriter, 'purgeSessionState'>;
   readonly contextOffload?: Pick<InteractiveContextOffloadWriter, 'retireSession'>;
   readonly purgeOperationalState: (sessionId: string) => Promise<void>;
+  /** Where background command output is written, so a retired Session's goes with it. */
+  readonly taskOutputRoot?: string;
   readonly purgeAgentGraphState: (sessionId: string) => Promise<void>;
   readonly worktrees?: Pick<SubagentWorktreeExecutor, 'retire'>;
   readonly requestDrain: () => void;
@@ -198,6 +205,7 @@ export class HostSessionRetirementCoordinator {
   readonly #sessionTask: HostSessionRetirementCoordinatorOptions['sessionTask'];
   readonly #contextOffload: HostSessionRetirementCoordinatorOptions['contextOffload'];
   readonly #purgeOperationalState: HostSessionRetirementCoordinatorOptions['purgeOperationalState'];
+  readonly #taskOutputRoot: HostSessionRetirementCoordinatorOptions['taskOutputRoot'];
   readonly #purgeAgentGraphState: HostSessionRetirementCoordinatorOptions['purgeAgentGraphState'];
   readonly #worktrees: HostSessionRetirementCoordinatorOptions['worktrees'];
   readonly #requestDrain: () => void;
@@ -226,6 +234,7 @@ export class HostSessionRetirementCoordinator {
     this.#sessionTask = options.sessionTask;
     this.#contextOffload = options.contextOffload;
     this.#purgeOperationalState = options.purgeOperationalState;
+    this.#taskOutputRoot = options.taskOutputRoot;
     this.#purgeAgentGraphState = options.purgeAgentGraphState;
     this.#worktrees = options.worktrees;
     this.#requestDrain = options.requestDrain;
@@ -240,6 +249,9 @@ export class HostSessionRetirementCoordinator {
 
   async close(): Promise<void> {
     this.#closing = true;
+    // A cleanup retry may be waiting out its backoff; shutdown must not sit
+    // through it, and the round after it must not start.
+    for (const wake of [...this.#cleanupWaiters]) wake();
     await this.#cleanupWorker;
   }
 
@@ -704,6 +716,11 @@ export class HostSessionRetirementCoordinator {
     }
   }
 
+  /** How many times a failed retirement cleanup has been tried, by Session. */
+  readonly #cleanupAttempts = new Map<string, number>();
+  /** Woken so a retry wait cannot outlive the Host's shutdown. */
+  readonly #cleanupWaiters = new Set<() => void>();
+
   #scheduleCleanup(sessionIds: readonly string[]): void {
     if (this.#closing) return;
     for (const sessionId of sessionIds) this.#cleanupQueue.add(sessionId);
@@ -717,11 +734,60 @@ export class HostSessionRetirementCoordinator {
   }
 
   async #drainCleanup(): Promise<void> {
+    // Cleanup accepted before `close()` still drains: shutdown skips the
+    // waiting between retries, not the work itself.
     while (this.#cleanupQueue.size > 0) {
       const batch = [...this.#cleanupQueue];
       this.#cleanupQueue.clear();
-      await Promise.allSettled(batch.map((sessionId) => this.#cleanupRetiredSession(sessionId)));
+      const outcomes = await Promise.allSettled(
+        batch.map((sessionId) => this.#cleanupRetiredSession(sessionId)),
+      );
+      // A cleanup that failed on something transient — a file another process
+      // was holding, a store busy for a moment — used to wait for the next
+      // Host start to be tried again, leaving the Session's worktree and
+      // sidecars on disk until then. Give it a few more attempts here.
+      const failed = batch.filter((_, index) => outcomes[index]?.status === 'rejected');
+      // A Session that needed a retry and then succeeded must not keep a
+      // spent budget: it would start the next retirement part-way through
+      // the attempt limit, with a longer first wait.
+      for (const [index, sessionId] of batch.entries()) {
+        if (outcomes[index]?.status === 'fulfilled') this.#cleanupAttempts.delete(sessionId);
+      }
+      for (const sessionId of failed) {
+        const attempts = (this.#cleanupAttempts.get(sessionId) ?? 0) + 1;
+        if (attempts > CLEANUP_ATTEMPT_LIMIT || this.#closing) {
+          this.#cleanupAttempts.delete(sessionId);
+          continue;
+        }
+        this.#cleanupAttempts.set(sessionId, attempts);
+        this.#cleanupQueue.add(sessionId);
+      }
+      if (failed.length > 0 && this.#cleanupQueue.size > 0) {
+        const worst = Math.max(...failed.map((id) => this.#cleanupAttempts.get(id) ?? 1));
+        const delay = CLEANUP_RETRY_DELAY_MS * 2 ** (worst - 1);
+        // `close()` awaits this worker, so the wait has to end the moment
+        // shutdown starts; and an unreferenced timer must not hold a Host
+        // open that has otherwise finished.
+        await this.#sleepUnlessClosing(delay);
+      }
     }
+  }
+
+  /** Waits, unless the Host starts closing first. */
+  #sleepUnlessClosing(delay: number): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        this.#cleanupWaiters.delete(wake);
+        resolve();
+      }, delay);
+      timer.unref?.();
+      const wake = (): void => {
+        clearTimeout(timer);
+        this.#cleanupWaiters.delete(wake);
+        resolve();
+      };
+      this.#cleanupWaiters.add(wake);
+    });
   }
 
   async #cleanupRetiredSession(sessionId: string): Promise<void> {
@@ -733,6 +799,7 @@ export class HostSessionRetirementCoordinator {
           sessionTask: this.#sessionTask,
           ...(this.#contextOffload ? { contextOffload: this.#contextOffload } : {}),
           purgeOperationalState: this.#purgeOperationalState,
+          ...(this.#taskOutputRoot !== undefined ? { taskOutputRoot: this.#taskOutputRoot } : {}),
         },
         sessionId,
       ),

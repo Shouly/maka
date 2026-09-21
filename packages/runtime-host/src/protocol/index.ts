@@ -101,7 +101,13 @@ export const RUNTIME_HOST_REGISTRATION_SCHEMA_VERSION = 1 as const;
 export const RUNTIME_HOST_PROTOCOL_VERSION = 0 as const;
 // Increment when the same protocol version no longer guarantees safe Client-Host
 // interoperability. Mismatches are rejected before domain commands are admitted.
-export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 153 as const;
+export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 154 as const;
+// 154: A steering event says who wrote it. `author` and `origin` are
+// optional on `subscription.session_event`, and a Client that does not know
+// them rejects the frame outright, closing the connection rather than the
+// one frame. A finished background task interjects in the user's role
+// without being the user, and a subscriber told only the words draws the
+// notification as the reader's own message.
 // 153: Memory becomes a path-addressed filesystem on the wire. `memory.query`
 // answers `{list|read}` with files and version tokens and `memory.mutate` takes
 // `{write|delete}` with `ifVersion`; the entry/bundle/extraction operations,

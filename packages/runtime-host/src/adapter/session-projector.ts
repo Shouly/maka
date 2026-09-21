@@ -634,6 +634,11 @@ function projectSessionEvent(
       turnId: event.turnId,
       ts: event.ts,
       messageId: event.messageId,
+      // Who interjected has to survive the rebuild. Without it the live row
+      // is a reader's bubble holding the whole raw notification, and it only
+      // corrects itself when the Turn settles and the ledger is read back.
+      ...(event.author ? { author: event.author } : {}),
+      ...(event.origin ? { origin: structuredClone(event.origin) } : {}),
       content: structuredClone(event.content),
     };
     return steering;

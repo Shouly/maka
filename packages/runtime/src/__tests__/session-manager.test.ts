@@ -2378,7 +2378,10 @@ describe('SessionManager child-session runtime primitive', () => {
     assert.strictEqual(childRun.opening.lineage?.parentRunId, undefined);
     assert.strictEqual(childRun.opening.lineage?.agentId, LOCAL_READ_AGENT_ID);
     assert.strictEqual(isSessionInlineInvocation(childRun.opening), true);
-    assert.strictEqual(result.status, 'completed');
+    assert.strictEqual(
+      (await manager.waitForChildAgent(result.childSessionId))?.status,
+      'completed',
+    );
     assert.deepStrictEqual(backendActivationSessions, [parent.id, result.childSessionId]);
     assert.strictEqual(
       (await runStore.readRuntimeEvents(result.childSessionId, childRun.runId)).every(
@@ -2648,7 +2651,10 @@ describe('SessionManager child-session runtime primitive', () => {
     const durableRetry = await manager.spawnChildSession(parent.id, spawnInput);
     assert.strictEqual(durableRetry.childSessionId, firstResult.childSessionId);
     assert.strictEqual(durableRetry.runId, firstResult.runId);
-    assert.strictEqual(durableRetry.summary, 'ok');
+    assert.strictEqual(
+      (await manager.waitForChildAgent(durableRetry.childSessionId))?.summary,
+      'ok',
+    );
     assert.strictEqual((await manager.listChildSessions(parent.id)).length, 1);
     assert.strictEqual(backendsBySession.get(firstResult.childSessionId)?.sendInputs.length, 1);
 
@@ -3116,8 +3122,9 @@ describe('SessionManager child-session runtime primitive', () => {
     });
     assert.strictEqual(recovered.childSessionId, child.id);
     assert.strictEqual(recovered.runId, 'stale-child-run');
-    assert.strictEqual(recovered.status, 'failed');
-    assert.strictEqual(recovered.failureClass, 'app_restarted');
+    const owed = await manager.pendingChildAgentNotifications(parent.id);
+    assert.strictEqual(owed[0]?.status, 'failed');
+    assert.strictEqual(owed[0]?.failureClass, 'app_restarted');
     assert.strictEqual((await manager.listChildSessions(parent.id)).length, 1);
 
     parentGate.release();
@@ -3206,7 +3213,10 @@ describe('SessionManager child-session runtime primitive', () => {
       prompt: 'inspect',
     });
 
-    assert.strictEqual(child.status, 'completed');
+    assert.strictEqual(
+      (await manager.waitForChildAgent(child.childSessionId))?.status,
+      'completed',
+    );
     assert.strictEqual(child.childSessionId === parent.id, false);
   });
 
@@ -3299,8 +3309,14 @@ describe('SessionManager child-session runtime primitive', () => {
     for (const gate of childGates) gate.release();
     while (!(await parentTurn.next()).done) {}
     const [childOneResult, childTwoResult] = await Promise.all([childOne, childTwo]);
-    assert.strictEqual(childOneResult.status, 'cancelled');
-    assert.strictEqual(childTwoResult.status, 'cancelled');
+    assert.strictEqual(
+      (await manager.waitForChildAgent(childOneResult.childSessionId))?.status,
+      'cancelled',
+    );
+    assert.strictEqual(
+      (await manager.waitForChildAgent(childTwoResult.childSessionId))?.status,
+      'cancelled',
+    );
   });
 
   for (const { name, stopOptions, stop } of [

@@ -55,7 +55,10 @@ function finishedRecord(shellRunId: string): ShellRunRecord {
   };
 }
 
-function harness(pending: ShellRunRecord[]) {
+function harness(
+  pending: ShellRunRecord[],
+  agentLeases: { id: string; kind: 'agent'; toolUseId: string; text: string }[] = [],
+) {
   const log: string[] = [];
   const admissions: HostedExecutionAdmission[] = [];
   let sent: { text: string; origin: unknown } | undefined;
@@ -86,11 +89,27 @@ function harness(pending: ShellRunRecord[]) {
   const coordinator = new HostBackgroundTaskNotificationCoordinator({
     executions: { prepare: () => preparation },
     runtime: {
-      sendMessage: ((_sessionId: string, input: { text: string; origin?: unknown }) => {
+      sendMessage: ((
+        _sessionId: string,
+        input: { text: string; origin?: unknown },
+        options: { runId: string; onRunStarted: (runId: string) => Promise<void> },
+      ) => {
         log.push('send');
         sent = { text: input.text, origin: input.origin };
-        return (async function* () {})();
+        // The real runtime reports the Run started once the message is
+        // durable, which is when the notifications are settled.
+        return (async function* () {
+          await options.onRunStarted(options.runId);
+        })();
       }) as never,
+    },
+    childAgents: {
+      pendingChildAgentNotificationLeases: async () => [...agentLeases],
+      markChildAgentNotifiedByRef: async (ref: string) => {
+        log.push(`agent-notified:${ref}`);
+        const index = agentLeases.findIndex((lease) => lease.id === ref);
+        if (index >= 0) agentLeases.splice(index, 1);
+      },
     },
     shellRuns: {
       pendingTaskNotifications: async () => [...pending],
@@ -124,17 +143,17 @@ describe('waking an idle session with what its background tasks owe', () => {
     h.coordinator.taskFinished(finishedRecord('sr_2'));
     await h.coordinator.settled('session-1');
 
-    assert.deepEqual(h.log, ['admit', 'notified:sr_1', 'notified:sr_2', 'send']);
+    assert.deepEqual(h.log, ['admit', 'send', 'notified:sr_1', 'notified:sr_2']);
     const [admission] = h.admissions;
     assert.deepEqual(admission?.execution, {
       kind: 'background_task',
-      ref: 'maka://runtime/background-tasks/sr_1',
+      ref: 'sr_1',
       toolUseId: 'call-sr_1',
     });
     const text = h.sent()?.text ?? '';
     assert.equal(admission?.content?.text, text);
     assert.equal(text.match(/<system-reminder>/g)?.length, 2);
-    assert.match(text, /<task-id>maka:\/\/runtime\/background-tasks\/sr_2<\/task-id>/);
+    assert.match(text, /<task-id>sr_2<\/task-id>/);
     assert.deepEqual(h.sent()?.origin, admission?.execution);
   });
 
@@ -154,6 +173,34 @@ describe('waking an idle session with what its background tasks owe', () => {
     release();
     await h.coordinator.settled('session-1');
     assert.deepEqual(h.log, []);
+  });
+
+  test('a finished child agent wakes the session the same way a command does', async () => {
+    const h = harness(
+      [],
+      [
+        {
+          id: 'child-1',
+          kind: 'agent' as const,
+          toolUseId: 'call-agent',
+          text: '[SYSTEM NOTIFICATION - NOT USER INPUT]\n<task-notification><task-id>child-1</task-id></task-notification>',
+        },
+      ],
+    );
+    h.coordinator.childAgentFinished({
+      parentSessionId: 'session-1',
+      childSessionId: 'child-1',
+    } as never);
+    await h.coordinator.settled('session-1');
+
+    assert.deepEqual(h.log, ['admit', 'send', 'agent-notified:child-1']);
+    assert.deepEqual(h.admissions[0]?.execution, {
+      kind: 'background_task',
+      ref: 'child-1',
+      toolUseId: 'call-agent',
+    });
+    assert.match(h.sent()?.text ?? '', /<task-id>child-1<\/task-id>/u);
+    assert.equal((h.sent()?.text ?? '').match(/<system-reminder>/g)?.length, 1);
   });
 
   test('nothing owed means nothing admitted', async () => {

@@ -14550,10 +14550,10 @@ describe('AiSdkBackend steering durability and identity', () => {
         durable.input({
           pullTaskNotifications: async () =>
             ++pulls === 2
-              ? [{ ref: 'maka://runtime/background-tasks/sr_1', toolUseId: 'call_1', text }]
+              ? [{ id: 'sr_1', kind: 'command' as const, toolUseId: 'call_1', text }]
               : [],
-          ackTaskNotification: async (ref: string) => {
-            acked.push(ref);
+          ackTaskNotification: async (lease: { id: string }) => {
+            acked.push(lease.id);
           },
         }),
       ),
@@ -14564,10 +14564,10 @@ describe('AiSdkBackend steering durability and identity', () => {
     assert.equal(notices[0]?.author, 'system');
     assert.deepEqual(notices[0]?.origin, {
       kind: 'background_task',
-      ref: 'maka://runtime/background-tasks/sr_1',
+      ref: 'sr_1',
       toolUseId: 'call_1',
     });
-    assert.deepEqual(acked, ['maka://runtime/background-tasks/sr_1']);
+    assert.deepEqual(acked, ['sr_1']);
     // The model is asked again with the notification, verbatim — no
     // "the user sent a message" envelope, because the user did not.
     assert.equal(model.doStreamCalls.length, 2);
@@ -14578,6 +14578,42 @@ describe('AiSdkBackend steering durability and identity', () => {
       (event) => event.content?.kind === 'text' && event.content.steering === true,
     );
     assert.equal(ledgerNotice?.author, 'system');
+  });
+
+  test('a task that finishes at the final boundary is announced and the turn still ends', async () => {
+    // The boundary a tool-free turn has is the one before its first token, so
+    // a task that finishes while the answer streams lands here. Announcing it
+    // asks the model again; what must not happen is the turn stopping there
+    // with the notification durable and nothing following it.
+    const model = textCompletionModel('the first answer');
+    const durable = durableTurnHarness('turn-1', 'start');
+    const backend = steeringBackend(model, {
+      loadTurnRuntimeEvents: durable.loadTurnRuntimeEvents,
+    });
+    const acked: string[] = [];
+    let pulls = 0;
+    const text =
+      '[SYSTEM NOTIFICATION - NOT USER INPUT]\n<task-notification><task-id>sr_1</task-id></task-notification>';
+    const events = await drainDurably(
+      backend.send(
+        durable.input({
+          pullTaskNotifications: async () =>
+            ++pulls === 2
+              ? [{ id: 'sr_1', kind: 'command' as const, toolUseId: 'call_1', text }]
+              : [],
+          ackTaskNotification: async (lease: { id: string }) => {
+            acked.push(lease.id);
+          },
+        }),
+      ),
+      durable,
+    );
+    assert.deepEqual(acked, ['sr_1']);
+    assert.equal(events.filter((event) => event.type === 'steering_message').length, 1);
+    // The turn asked the model again with the notification, and then ended.
+    assert.equal(model.doStreamCalls.length, 2);
+    assert.match(JSON.stringify(model.doStreamCalls[1]?.prompt), /task-notification/u);
+    assert.ok(events.some((event) => event.type === 'complete'));
   });
 
   test('the late-steer edge is skipped without a durable current-run reader', async () => {

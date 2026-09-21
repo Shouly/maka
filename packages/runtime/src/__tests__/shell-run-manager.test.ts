@@ -1262,11 +1262,11 @@ describe('ShellRunProcessManager', () => {
           'maka://runtime/background-tasks/%2Funsafe',
           NO_ABORT,
         ),
-      // Same reply as the other two ref-parse sites: the canonical form and
-      // where to get it, and no echo of the rejected string.
+      // Same reply as the other two parse sites: where to get the right ID,
+      // and no echo of the rejected string.
       (error: unknown) =>
         error instanceof Error &&
-        /maka:\/\/runtime\/background-tasks\/<id>/.test(error.message) &&
+        /Use the ID exactly as it was returned/u.test(error.message) &&
         !error.message.includes('%2Funsafe'),
     );
   });

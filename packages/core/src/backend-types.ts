@@ -59,7 +59,10 @@ export interface RuntimeContinuationMetadata {
 
 /** One finished background task, rendered as the text the model is told. */
 export interface TaskNotificationLease {
-  readonly ref: string;
+  /** The ID the model was given for this task. */
+  readonly id: string;
+  /** Which kind of task it was, so an acknowledgement reaches the right ledger. */
+  readonly kind: 'command' | 'agent';
   readonly toolUseId: string;
   readonly text: string;
 }
@@ -140,7 +143,7 @@ export interface BackendSendInput {
    * as a system-authored interjection, and acknowledges it once durable.
    */
   pullTaskNotifications?: () => Promise<readonly TaskNotificationLease[]>;
-  ackTaskNotification?: (ref: string) => Promise<void>;
+  ackTaskNotification?: (lease: TaskNotificationLease) => Promise<void>;
   /** Exact hosted-Run Interaction authority. Omitted for embedded execution. */
   hostedInteraction?: HostedInteractionBridge;
 }

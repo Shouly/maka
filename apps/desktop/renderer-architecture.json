@@ -3040,6 +3040,7 @@
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
+        "useStore": 1,
         "useUiLocale": 3
       },
       "lifecycleMethods": {},
@@ -3048,9 +3049,11 @@
       "dependencyPaths": {
         "../../../../lib/cn.js": 1,
         "../../../../locales/transcript-copy.js": 1,
+        "../../../../store/sessions-store.js": 1,
         "../tool-result.js": 1,
         "@maka/ui": 1,
-        "react": 1
+        "react": 1,
+        "zustand": 1
       }
     },
     "src/renderer/components/session/tools/renderers/TerminalResult.tsx": {

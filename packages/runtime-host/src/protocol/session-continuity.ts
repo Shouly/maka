@@ -22,6 +22,8 @@ import type { SandboxBoundaryFailureSignal, ToolResultPreviewContent } from '@ma
 import { decodeToolResultPreviewContent } from '@maka/core/tool-result-preview';
 import type { ToolActivityKind } from '@maka/core/events';
 import type { SessionStatus } from '@maka/core/session';
+import { decodeTurnOrigin } from '@maka/core/turn-origin';
+import type { TurnOrigin } from '@maka/core/turn-origin';
 import {
   assertExactKeys,
   requireCount,
@@ -227,6 +229,14 @@ export interface SessionSteeringEvent {
   turnId: string;
   ts: number;
   messageId: string;
+  /**
+   * Set when nobody typed this. A finished background task speaks in the
+   * user's role, and a subscriber told only the words renders the
+   * notification as the reader's own message.
+   */
+  author?: 'system';
+  /** Where a system-authored interjection came from. */
+  origin?: TurnOrigin;
   content: MessageContent;
 }
 
@@ -789,20 +799,26 @@ function decodeSessionFrameEvent(value: unknown): SessionToolEvent | SessionStee
 }
 
 function decodeSessionSteeringEvent(record: Record<string, unknown>): SessionSteeringEvent {
-  assertExactKeys(record, 'Session steering event', [
-    'type',
-    'id',
-    'turnId',
-    'ts',
-    'messageId',
-    'content',
-  ]);
+  const required = ['type', 'id', 'turnId', 'ts', 'messageId', 'content'] as const;
+  assertAllowedKeys(record, 'Session steering event', [...required, 'author', 'origin']);
+  if (required.some((key) => !Object.hasOwn(record, key))) {
+    throw invalidProtocolFrame('Invalid Session steering event fields');
+  }
+  if (Object.hasOwn(record, 'author') && record.author !== 'system') {
+    throw invalidProtocolFrame('Invalid Session steering event author');
+  }
+  const origin = Object.hasOwn(record, 'origin') ? decodeTurnOrigin(record.origin) : undefined;
+  if (Object.hasOwn(record, 'origin') && origin === undefined) {
+    throw invalidProtocolFrame('Invalid Session steering event origin');
+  }
   return {
     type: 'steering_message',
     id: requireId(record.id, 'Session steering event id'),
     turnId: requireEntityId(record.turnId, 'turnId'),
     ts: requireCount(record.ts, 'Session steering event timestamp'),
     messageId: requireEntityId(record.messageId, 'messageId'),
+    ...(record.author === 'system' ? { author: 'system' as const } : {}),
+    ...(origin ? { origin } : {}),
     content: decodeMessageAdmissionContent(record.content),
   };
 }

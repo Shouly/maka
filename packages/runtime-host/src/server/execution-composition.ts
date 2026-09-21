@@ -161,6 +161,7 @@ import { HostExecutionInspectCoordinator } from './execution-inspect-coordinator
 import { HostExternalSessionCoordinator } from './external-session-coordinator.js';
 import { HostSessionBundleCoordinator } from './session-bundle-coordinator.js';
 import { HostGoalCoordinator } from './goal-coordinator.js';
+import { renderAgentTypesPromptFragment } from '@maka/runtime/agent-types-context';
 import { HostGoalExecutionCoordinator } from './goal-execution-coordinator.js';
 import { HostBackgroundTaskNotificationCoordinator } from './background-task-notification-coordinator.js';
 import { HostHostedExecutionCoordinator } from './hosted-execution-coordinator.js';
@@ -194,6 +195,7 @@ import { SessionOperationLane } from './session-operation-lane.js';
 import { type HostMessageRootPort, HostMessageCoordinator } from './message-coordinator.js';
 import { HostNetworkProxyCoordinator } from './network-proxy-coordinator.js';
 import { HostOAuthExecutionAuthority } from './oauth-execution-authority.js';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { toRuntimePolicyProxy } from './runtime-policy-proxy.js';
 import { AcpSetupError } from './acp/connection.js';
@@ -459,6 +461,12 @@ export async function createExecutionRuntimeHostComposition(
         void continuity?.enqueueRuntimeResourcePtyData(event);
       },
       onTaskFinished: (record) => taskNotifications?.taskFinished(record),
+      // Where a background command's output is written for the model to Read.
+      // The temp directory, not the Host's own state: what the model is told
+      // to read it must be allowed to read, and the default permission
+      // profile grants the temp directory but only the Session's workspace
+      // otherwise. Session ids are unique, so one root serves every Session.
+      taskOutputRoot: join(tmpdir(), 'maka', 'tasks'),
     });
     const sandboxManager = createBuiltinSandboxManager();
     const filesystemWorkerLaunchSpecProvider =
@@ -1004,6 +1012,10 @@ export async function createExecutionRuntimeHostComposition(
       createRunComposer: createInteractiveRunComposerFactory({
         skills,
         pluginSkills,
+        resolveAgentTypes: async (sessionId: string) =>
+          renderAgentTypesPromptFragment(
+            await requireSessionManager(manager).listChildAgents(sessionId),
+          ),
         memory: memory,
         sessionTask,
         clientCapabilities: requireClientCapabilities(clientCapabilities),
@@ -1331,6 +1343,7 @@ export async function createExecutionRuntimeHostComposition(
       subagentCatalog,
       newId: randomUUID,
       now: Date.now,
+      onChildAgentFinished: (record) => taskNotifications?.childAgentFinished(record),
       safeBoundaryResumeEnabled: process.env.MAKA_RUNTIME_SAFE_BOUNDARY_RESUME === '1',
       inspectContinuationSafety: createLocalContinuationSafetyInspector({
         readSessionCwd: async (sessionId) =>
@@ -1903,6 +1916,7 @@ export async function createExecutionRuntimeHostComposition(
       executions: coordinator,
       runtime: manager,
       shellRuns,
+      childAgents: manager,
       onError: (sessionId, error) =>
         console.error(
           `[runtime-host] background task notification for session ${sessionId} failed: ${generalizedErrorMessage(error)}`,
@@ -2427,6 +2441,7 @@ export async function createExecutionRuntimeHostComposition(
         await openedGraphControlStore.purgeAgentGraphEpochs(sessionId);
       },
       worktrees: worktreeChildExecutor,
+      taskOutputRoot: join(tmpdir(), 'maka', 'tasks'),
       requestDrain: context.requestDrain,
       sessionLane,
     });

@@ -28,6 +28,7 @@ import type { LlmConnection } from '@maka/core/llm-connections';
 import type { SessionHeader } from '@maka/core/session';
 import type { SessionEvent } from '@maka/core/events';
 import { zodSchema } from 'ai';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import { buildBuiltinTools } from '../builtin-tools.js';
 import {
   AGENT_WORKSPACE_SAME_WORKSPACE,
@@ -68,7 +69,7 @@ describe('subagent tools', () => {
     assert.strictEqual(spawnTool.categoryHint, 'subagent');
     assert.deepStrictEqual(
       buildParentAgentTools().map((tool) => tool.name),
-      [AGENT_SPAWN_TOOL_NAME, AGENT_LIST_TOOL_NAME, AGENT_OUTPUT_TOOL_NAME],
+      [AGENT_SPAWN_TOOL_NAME, TOOL_NAMES.sendMessage, AGENT_LIST_TOOL_NAME, AGENT_OUTPUT_TOOL_NAME],
     );
   });
 
@@ -160,7 +161,7 @@ describe('subagent tools', () => {
     });
   });
 
-  test('Agent names both recovery routes when no child selector is provided', () => {
+  test('Agent names where the types are when no child selector is provided', () => {
     const schema = buildSubagentSpawnTool({
       definitions: [LOCAL_READ_AGENT_DEFINITION, WEB_RESEARCH_AGENT_DEFINITION],
     }).parameters as {
@@ -176,7 +177,7 @@ describe('subagent tools', () => {
       parsed.error?.issues
         .map((issue) => issue.message)
         .includes(
-          'No child selector was provided. Call ListAgents and pass a returned subagent_id as subagent_type, or pass one built-in profile: local_read, web_research.',
+          'No child selector was provided. Pass one of the agent types listed in your context as subagent_type; the built-in profiles here are: local_read, web_research.',
         ),
     );
   });
@@ -483,12 +484,12 @@ describe('subagent tools', () => {
     };
     assert.strictEqual(call.agentProfile, LOCAL_READ_AGENT_PROFILE);
     assert.strictEqual(call.prompt, 'Inspect the runtime tests.');
-    assert.strictEqual(typeof call.onEvent, 'function');
+    // No observer: the child's activity belongs to the child's own Session,
+    // because this row closes as soon as the child is running.
+    assert.strictEqual(call.onEvent, undefined);
     assert.deepStrictEqual(output, [
       { stream: 'stdout', chunk: 'Starting child agent: Local Read\n' },
-      { stream: 'stdout', chunk: 'Child tool started: Read file\n' },
-      { stream: 'stdout', chunk: 'Child tool finished: Read file\n' },
-      { stream: 'stdout', chunk: 'Child agent Local Read: completed\n' },
+      { stream: 'stdout', chunk: 'Child agent Local Read is running\n' },
     ]);
     assert.ok(!JSON.stringify(output).includes('secret.txt'));
     assert.ok(!JSON.stringify(output).includes('secret body'));
@@ -499,112 +500,11 @@ describe('subagent tools', () => {
       agentName: 'Local Read',
       turnId: 'child-turn',
       runId: 'child-run',
-      status: 'completed',
+      status: 'running',
       permissionMode: 'explore',
-      summary: 'done',
+      summary: '',
       artifactIds: [],
     });
-  });
-
-  test('Agent bounds projected child tool activity', async () => {
-    const tool = buildSubagentSpawnTool();
-    const output: string[] = [];
-
-    await tool.impl(
-      {
-        subagent_type: LOCAL_READ_AGENT_PROFILE,
-        description: 'Delegate one task',
-        prompt: 'Inspect many files.',
-      },
-      {
-        sessionId: 'session-1',
-        turnId: 'parent-turn',
-        cwd: '/tmp',
-        toolCallId: 'tool-1',
-        abortSignal: new AbortController().signal,
-        emitOutput: (_stream, chunk) => output.push(chunk),
-        spawnChildSession: async (input) => {
-          for (let index = 0; index < 100; index += 1) {
-            input.onEvent?.({
-              type: 'tool_start',
-              id: `start-${index}`,
-              turnId: 'child-turn',
-              ts: index,
-              toolUseId: `child-tool-${index}`,
-              toolName: 'Read',
-              args: { path: `${index}.txt` },
-            });
-          }
-          return {
-            agentId: requireBuiltinAgentDefinitionByProfile(input.agentProfile).id,
-            agentName: requireBuiltinAgentDefinitionByProfile(input.agentProfile).name,
-            turnId: 'child-turn',
-            status: 'completed',
-            permissionMode: 'explore',
-            summary: 'done',
-            artifactIds: [],
-          };
-        },
-      },
-    );
-
-    assert.strictEqual(output.length, 66);
-    assert.strictEqual(output[0], 'Starting child agent: Local Read\n');
-    assert.strictEqual(output.at(-1), 'Child agent Local Read: completed\n');
-  });
-
-  test('Agent bounds projected child tool activity by characters', async () => {
-    const tool = buildSubagentSpawnTool();
-    const output: string[] = [];
-
-    await tool.impl(
-      {
-        subagent_type: LOCAL_READ_AGENT_PROFILE,
-        description: 'Delegate one task',
-        prompt: 'Inspect verbose tool activity.',
-      },
-      {
-        sessionId: 'session-1',
-        turnId: 'parent-turn',
-        cwd: '/tmp',
-        toolCallId: 'tool-1',
-        abortSignal: new AbortController().signal,
-        emitOutput: (_stream, chunk) => output.push(chunk),
-        spawnChildSession: async (input) => {
-          input.onEvent?.({
-            type: 'tool_start',
-            id: 'start-1',
-            turnId: 'child-turn',
-            ts: 1,
-            toolUseId: 'child-tool-1',
-            toolName: 'x'.repeat(10_000),
-            args: {},
-          });
-          input.onEvent?.({
-            type: 'provider_retry',
-            id: 'retry-1',
-            turnId: 'child-turn',
-            ts: 2,
-            phase: 'scheduled',
-            attempt: 1,
-            maxAttempts: 2,
-            delayMs: 100,
-            reason: 'rate_limit',
-          });
-          return {
-            agentId: requireBuiltinAgentDefinitionByProfile(input.agentProfile).id,
-            agentName: requireBuiltinAgentDefinitionByProfile(input.agentProfile).name,
-            turnId: 'child-turn',
-            status: 'completed',
-            permissionMode: 'explore',
-            summary: 'done',
-            artifactIds: [],
-          };
-        },
-      },
-    );
-
-    assert.strictEqual(output.slice(1, -1).join('').length, 8_192);
   });
 
   test('Agent bounds projected startup failures', async () => {
@@ -1241,22 +1141,24 @@ describe('Agent — reference argument names', () => {
       output: result,
     });
     assert.ok(projected);
-    assert.strictEqual(projected.type, 'json');
+    // The model reads a ref and what to do with it, and is told plainly that
+    // its model choice did not travel.
+    assert.strictEqual(projected.type, 'text');
+    assert.match(String((projected as { value: string }).value), /with ID: child-session/u);
     assert.match(
-      String((projected as { value: { model_override?: unknown } }).value.model_override),
-      /^ignored: "some-other-model" was not applied/,
+      String((projected as { value: string }).value),
+      /The agent carries its own model, so "some-other-model" was not applied\./u,
     );
-    assert.strictEqual(
-      tool.toModelOutput?.({
-        toolCallId: 'tool-1',
-        input: {
-          subagent_type: LOCAL_READ_AGENT_PROFILE,
-          description: 'Inspect the repo',
-          prompt: 'Inspect.',
-        },
-        output: result,
-      }),
-      undefined,
-    );
+    const plain = tool.toModelOutput?.({
+      toolCallId: 'tool-1',
+      input: {
+        subagent_type: LOCAL_READ_AGENT_PROFILE,
+        description: 'Inspect the repo',
+        prompt: 'Inspect.',
+      },
+      output: result,
+    });
+    assert.strictEqual(plain?.type, 'text');
+    assert.doesNotMatch(String((plain as { value: string }).value), /was not applied/u);
   });
 });

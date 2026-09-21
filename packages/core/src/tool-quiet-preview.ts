@@ -144,6 +144,7 @@ const HEADLINE_KEYS = [
   'title',
   'id',
   'ref',
+  'task_id',
 ] as const;
 
 /** Diagnostic / meta fields shown after the primary body when still present. */
@@ -401,6 +402,7 @@ const ARGS_PREVIEW_SCALAR_KEYS = [
   'status',
   'id',
   'ref',
+  'task_id',
 ] as const;
 
 // This tool's objective is the compact row's durable headline. Keep it

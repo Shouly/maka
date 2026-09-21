@@ -165,6 +165,8 @@ export interface SubagentSessionSpawn {
   requestFingerprint: string;
   initialTurnId: string;
   initialRunId: string;
+  /** The parent's 3-5 word label for the task; the completion notification repeats it. */
+  description?: string;
 }
 
 /**
@@ -274,6 +276,13 @@ export interface SessionHeader {
   subagentRuntime?: SubagentSessionRuntime;
   /** Immutable idempotency and initial-run identity for child creation. */
   subagentSpawn?: SubagentSessionSpawn;
+  /**
+   * The latest Turn of this child Session its parent has been told about.
+   * A child stops once per Turn — its first, then one per message the parent
+   * sends it — and each stop is owed to the parent until this names it.
+   * Mutable, unlike the spawn identity above: it is a delivery fact, not identity.
+   */
+  subagentNotifiedTurnId?: string;
   /** Immutable host-managed filesystem isolation for this child Session. */
   subagentWorkspace?: SubagentWorkspaceBinding;
   /** Immutable Host publication identity for a cross-Session conversation copy. */
@@ -492,7 +501,7 @@ const SUBAGENT_SESSION_RUNTIME_SHAPE = defineObjectShape<SubagentSessionRuntime>
 );
 const SUBAGENT_SESSION_SPAWN_IDENTITY_SHAPE = defineObjectShape<SubagentSessionSpawn>()(
   ['schemaVersion', 'requestFingerprint', 'initialTurnId', 'initialRunId'],
-  [],
+  ['description'],
 );
 const SESSION_CONVERSATION_COPY_SHAPE = defineObjectShape<SessionConversationCopy>()(
   ['kind', 'sourceSessionId', 'requestFingerprint', 'state'],
@@ -576,7 +585,8 @@ export function isSubagentSessionSpawn(value: unknown): value is SubagentSession
     typeof value.requestFingerprint === 'string' &&
     SUBAGENT_REQUEST_FINGERPRINT_PATTERN.test(value.requestFingerprint) &&
     isSessionLineageId(value.initialTurnId) &&
-    isSessionLineageId(value.initialRunId)
+    isSessionLineageId(value.initialRunId) &&
+    (value.description === undefined || typeof value.description === 'string')
   );
 }
 

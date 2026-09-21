@@ -176,6 +176,34 @@ test('forwards the durable steering echo to subscribers as a session event', asy
   if (frame?.kind !== 'subscription.session_event') return;
   assert.deepEqual(frame.event, steering);
 
+  // A finished background task interjects in the user's role without being
+  // the user. Who authored it travels with the words: a subscriber told only
+  // the text draws the notification as the reader's own message. The frame
+  // must also still pass the receiver's decoder — it rejects any field the
+  // wire contract does not name, and the failure takes the whole connection
+  // down rather than the one frame.
+  sink.frames.length = 0;
+  const notice = {
+    type: 'steering_message' as const,
+    id: 'steering-event-2',
+    turnId: 'turn-1',
+    ts: 8,
+    messageId: 'steering-message-2',
+    author: 'system' as const,
+    origin: { kind: 'background_task' as const, ref: 'sr_1', toolUseId: 'tool-1' },
+    content: { text: 'a background task finished' },
+  };
+  await coordinator.acceptRuntimeEvent(SESSION_ID, 'run-1', notice);
+
+  const noticeFrame = sink.frames[0];
+  assert.equal(noticeFrame?.kind, 'subscription.session_event');
+  if (noticeFrame?.kind !== 'subscription.session_event') return;
+  assert.deepEqual(noticeFrame.event, notice);
+  const decoded = decodeSubscriptionFrame(JSON.parse(JSON.stringify(noticeFrame)));
+  assert.equal(decoded.kind, 'subscription.session_event');
+  if (decoded.kind !== 'subscription.session_event') return;
+  assert.deepEqual(decoded.event, notice);
+
   connection.abort(opened.subscriptionId);
   coordinator.close();
 });

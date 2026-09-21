@@ -79,6 +79,7 @@ import {
   type ShellRunWriteInput,
 } from './shell-run-contract.js';
 import { taskNotificationOwed } from './injection/task-notification.js';
+import { shellRunOutputFilePath, writeShellRunOutputFile } from './shell-run-output-file.js';
 import {
   compactShellRunContent,
   ptyControlOperation,
@@ -99,20 +100,18 @@ const PTY_RAW_PUBLISH_TARGET_BYTES = 32 * 1024;
 const PTY_RAW_PUBLISH_MAX_BYTES = 40 * 1024;
 
 /**
- * Shown whenever a `ref` argument does not parse. Echoing the rejected string
- * back taught the model nothing (and could carry command text back into the
- * transcript); the canonical shape and where to obtain it are the only useful
- * reply. Keep this in sync with the `ref` description in shell-tools.ts.
+ * Shown whenever a task cannot be named. Echoing the rejected string back
+ * taught the model nothing (and could carry command text back into the
+ * transcript); where to obtain the right one is the only useful reply.
  *
- * `Read({ ref })` reaches this through `resourceDetail`, not through
- * `stopBackgroundTask`: `classifyRuntimeResourceRef` waves through anything
- * shaped `maka://runtime/<something>`, so a mistyped path segment gets all the
- * way here. That is the likeliest place to mistype a ref, and it was the one
- * still echoing.
+ * It speaks of an ID, not of the internal ref built from it: the ID is the
+ * whole of what the model was ever given. A client passing a malformed ref
+ * lands here too, and reads a sentence written for the other caller — which
+ * is the right trade while the model is the one that can act on it.
  */
 const BACKGROUND_TASK_REF_HELP =
-  'That is not a runtime background task ref. Use the ref exactly as it was returned when the ' +
-  'background task started — the form is maka://runtime/background-tasks/<id>.';
+  'That is not a background task of this session. Use the ID exactly as it was returned when ' +
+  'the task started.';
 
 /**
  * The model reads {@link BACKGROUND_TASK_REF_HELP}; an operator reads the
@@ -265,6 +264,8 @@ export class ShellRunProcessManager
   private readonly startupOwners = new Set<string>();
   /** Sessions with a finished task the model has not been told about (see pendingTaskNotifications). */
   private readonly notificationDirty = new Set<string>();
+  /** Bumped whenever a session is marked dirty, so a stale scan cannot clear it. */
+  private readonly notificationGeneration = new Map<string, number>();
   /** Sessions whose stored runs were scanned for owed notifications in this process. */
   private readonly notificationScanned = new Set<string>();
   private readonly maxLiveShellRuns: number;
@@ -324,6 +325,9 @@ export class ShellRunProcessManager
           this.requestForcedTermination(live, 'cancel');
           return shellRunContent(await this.markSettled(await live.finished.join()));
         }
+        // Awaited: the very next thing this returns is the path, and a Read
+        // that lands before the first write would find nothing there.
+        await this.mirrorOutputFile(live.record);
         live.visibleRef = true;
         let handoffRecord = live.record.revision >= record.revision ? live.record : record;
         if (isTerminalShellRunStatus(handoffRecord.status)) {
@@ -597,12 +601,20 @@ export class ShellRunProcessManager
     if (this.notificationScanned.has(sessionId) && !this.notificationDirty.has(sessionId)) {
       return [];
     }
+    // A task can finish while this scan is reading, and a scan that never saw
+    // it must not clear the flag its finish raised.
+    const scannedGeneration = this.notificationGeneration.get(sessionId) ?? 0;
     const records = await this.input.store.listSessionShellRuns(sessionId);
     const owed = records
       .filter(taskNotificationOwed)
       .sort((a, b) => (a.completedAt ?? a.updatedAt) - (b.completedAt ?? b.updatedAt));
     this.notificationScanned.add(sessionId);
-    if (owed.length === 0) this.notificationDirty.delete(sessionId);
+    if (
+      owed.length === 0 &&
+      (this.notificationGeneration.get(sessionId) ?? 0) === scannedGeneration
+    ) {
+      this.notificationDirty.delete(sessionId);
+    }
     return owed;
   }
 
@@ -999,6 +1011,19 @@ export class ShellRunProcessManager
       cwd: input.cwd,
       command: redactSecrets(input.command),
       ...(background ? { background: true } : {}),
+      // Only a pipe task gets a file. A PTY is a live screen, rendered when
+      // it is observed rather than appended to, so what a file could hold is
+      // whatever the last cut happened to catch; TaskInput answers with the
+      // screen itself, which is what a terminal task is read through.
+      ...(background && output.mode === 'pipes' && this.input.taskOutputRoot !== undefined
+        ? {
+            outputFile: shellRunOutputFilePath(
+              this.input.taskOutputRoot,
+              input.sessionId,
+              shellRunId,
+            ),
+          }
+        : {}),
       ...(input.description !== undefined ? { description: redactSecrets(input.description) } : {}),
       status: 'starting',
       startedAt,
@@ -1199,6 +1224,7 @@ export class ShellRunProcessManager
           updatedAt: this.input.now(),
         });
         live.record = updated;
+        void this.mirrorOutputFile(updated);
         if (live.visibleRef) this.notifyShellRunUpdate(updated);
       }
       live.lastPersistedGeneration = Math.max(live.lastPersistedGeneration, snapshot.generation);
@@ -1325,6 +1351,7 @@ export class ShellRunProcessManager
         finalRecord.status === 'completed' && finalRecord.exitCode === 0,
       );
       live.finished.resolve(finalRecord);
+      void this.mirrorOutputFile(finalRecord);
       this.notifyTaskFinished(finalRecord);
       return finalRecord;
     } finally {
@@ -1342,6 +1369,10 @@ export class ShellRunProcessManager
   private notifyTaskFinished(record: ShellRunRecord): void {
     if (!taskNotificationOwed(record)) return;
     this.notificationDirty.add(record.sessionId);
+    this.notificationGeneration.set(
+      record.sessionId,
+      (this.notificationGeneration.get(record.sessionId) ?? 0) + 1,
+    );
     try {
       this.input.onTaskFinished?.(record);
     } catch {
@@ -1859,10 +1890,8 @@ export class ShellRunProcessManager
   ): Promise<ShellRunRecord> {
     if (!isActiveShellRunStatus(record.status)) return record;
     try {
-      return await this.input.store.updateShellRun(
-        record.sessionId,
-        record.shellRunId,
-        buildPatch(),
+      return this.mirrored(
+        await this.input.store.updateShellRun(record.sessionId, record.shellRunId, buildPatch()),
       );
     } catch (error) {
       let current: ShellRunRecord;
@@ -1872,8 +1901,26 @@ export class ShellRunProcessManager
         throw error;
       }
       if (!isActiveShellRunStatus(current.status)) return current;
-      return this.input.store.updateShellRun(current.sessionId, current.shellRunId, buildPatch());
+      return this.mirrored(
+        await this.input.store.updateShellRun(current.sessionId, current.shellRunId, buildPatch()),
+      );
     }
+  }
+
+  /**
+   * Keep the file the model reads in step with the durable record. Best
+   * effort by design: the record is the truth, and a file that cannot be
+   * written must not fail the run that is still going.
+   */
+  private mirrorOutputFile(record: ShellRunRecord): Promise<void> {
+    if (record.outputFile === undefined) return Promise.resolve();
+    return writeShellRunOutputFile(record).catch(() => undefined);
+  }
+
+  /** Mirror a record on its way through, for the paths that return one. */
+  private mirrored(record: ShellRunRecord): ShellRunRecord {
+    void this.mirrorOutputFile(record);
+    return record;
   }
 
   private notifyShellRunUpdate(record: ShellRunRecord): void {

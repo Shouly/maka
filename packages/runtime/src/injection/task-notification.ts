@@ -26,7 +26,6 @@
 // the user role — it says, before anything else, that no human wrote it.
 
 import type { ShellRunRecord } from '@maka/core/shell-run';
-import { shellRunResourceRef } from '../shell-run-contract.js';
 import { wrapSystemReminder } from './system-reminder.js';
 
 export const TASK_NOTIFICATION_PREAMBLE = [
@@ -37,6 +36,18 @@ export const TASK_NOTIFICATION_PREAMBLE = [
 ].join('\n');
 
 export type TaskNotificationStatus = 'completed' | 'failed' | 'killed';
+
+/**
+ * Text that came from somewhere else, put inside the block's own tags.
+ *
+ * A background command's description is the model's own words, but a child
+ * agent's answer is whatever it read while it worked. Either could close the
+ * block early and write the rest of the notification itself, so nothing
+ * interpolated here keeps its angle brackets.
+ */
+function inBlock(text: string): string {
+  return text.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
 
 /** Whether this record is one the model is still owed a notification for. */
 export function taskNotificationOwed(record: ShellRunRecord): boolean {
@@ -92,10 +103,70 @@ export function renderTaskNotification(record: ShellRunRecord): string {
     TASK_NOTIFICATION_PREAMBLE,
     '',
     '<task-notification>',
-    `<task-id>${shellRunResourceRef(record.shellRunId)}</task-id>`,
-    `<tool-use-id>${record.sourceToolCallId}</tool-use-id>`,
+    `<task-id>${inBlock(record.shellRunId)}</task-id>`,
+    `<tool-use-id>${inBlock(record.sourceToolCallId)}</tool-use-id>`,
+    ...(record.outputFile !== undefined
+      ? [`<output-file>${inBlock(record.outputFile)}</output-file>`]
+      : []),
     `<status>${taskNotificationStatus(record)}</status>`,
-    `<summary>${taskNotificationSummary(record)}</summary>`,
+    `<summary>${inBlock(taskNotificationSummary(record))}</summary>`,
+    '</task-notification>',
+  ].join('\n');
+}
+
+/** One finished child agent Turn, as the parent is told about it. */
+export interface ChildAgentNotificationFacts {
+  /** The agent's ID, as the model was given it. */
+  readonly id: string;
+  readonly toolUseId: string;
+  readonly status: 'completed' | 'failed' | 'cancelled' | 'running' | 'waiting_for_user';
+  /** The parent's 3-5 word label, or the agent's name when it gave none. */
+  readonly name: string;
+  /** The child's last words on that Turn. */
+  readonly result: string;
+  readonly failureClass?: string;
+  /**
+   * What the child produced and left behind — a worktree write-back patch,
+   * files it delivered. Named here because the tool call that started the
+   * child returned before any of it existed.
+   */
+  readonly artifactIds?: readonly string[];
+}
+
+export function childAgentNotificationStatus(
+  status: ChildAgentNotificationFacts['status'],
+): TaskNotificationStatus {
+  if (status === 'cancelled') return 'killed';
+  if (status === 'failed') return 'failed';
+  // Only a run that has ended is ever announced, so `running` here means the
+  // Run's terminal event stated no outcome. That is not evidence of failure,
+  // and saying it failed would invent one; the agent's own words carry what
+  // actually happened.
+  return 'completed';
+}
+
+/**
+ * An agent's end, in the same shape a background command's end takes.
+ *
+ * The note says what the parent cannot see for itself: an agent can be sent
+ * another message and run again, so one ref may be announced more than once.
+ */
+export function renderChildAgentNotification(facts: ChildAgentNotificationFacts): string {
+  const status = childAgentNotificationStatus(facts.status);
+  const detail = facts.failureClass ? ` (${inBlock(facts.failureClass)})` : '';
+  return [
+    TASK_NOTIFICATION_PREAMBLE,
+    '',
+    '<task-notification>',
+    `<task-id>${inBlock(facts.id)}</task-id>`,
+    `<tool-use-id>${inBlock(facts.toolUseId)}</tool-use-id>`,
+    `<status>${status}</status>`,
+    `<summary>Agent "${inBlock(facts.name)}" ${status === 'completed' ? 'finished' : status}${detail}</summary>`,
+    '<note>A task-notification fires each time this agent stops. You can send it another message with SendMessage and it will run again, so the same ID may notify more than once.</note>',
+    ...(facts.artifactIds && facts.artifactIds.length > 0
+      ? [`<artifacts>${inBlock(facts.artifactIds.join(' '))}</artifacts>`]
+      : []),
+    `<result>${inBlock(facts.result)}</result>`,
     '</task-notification>',
   ].join('\n');
 }
@@ -103,4 +174,9 @@ export function renderTaskNotification(record: ShellRunRecord): string {
 /** The idle form: the same body as the user message of a fresh turn, in the envelope. */
 export function renderTaskNotificationWake(records: readonly ShellRunRecord[]): string {
   return records.map((record) => wrapSystemReminder(renderTaskNotification(record))).join('\n\n');
+}
+
+/** The idle form for any already-rendered notification bodies. */
+export function renderNotificationWake(bodies: readonly string[]): string {
+  return bodies.map((body) => wrapSystemReminder(body)).join('\n\n');
 }

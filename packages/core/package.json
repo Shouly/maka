@@ -15,6 +15,7 @@
     "./runtime-handoff": "./dist/runtime-handoff.js",
     "./runtime-logical-execution": "./dist/runtime-logical-execution.js",
     "./runtime-event": "./dist/runtime-event.js",
+    "./turn-origin": "./dist/turn-origin.js",
     "./tool-names": "./dist/tool-names.js",
     "./tool-args-identity": "./dist/tool-args-identity.js",
     "./tool-ledger-scanner": "./dist/tool-ledger-scanner.js",

@@ -29,6 +29,8 @@
  * persistence and same-session serialization semantics.
  */
 
+import { renderChildAgentNotification } from './injection/task-notification.js';
+import type { TaskNotificationLease } from '@maka/core/backend-types';
 import { TOOL_NAMES } from '@maka/core/tool-names';
 import type { WorkHubActionReceipt } from '@maka/core/workhub-action-result';
 import { createHash } from 'node:crypto';
@@ -313,6 +315,8 @@ export interface SpawnChildSessionInput {
   /** User-approved catalog selector. The runtime resolves its frozen model target. */
   subagentId?: string;
   prompt: string;
+  /** The parent's 3-5 word label for the task; the completion notification repeats it. */
+  description?: string;
   name?: string;
   turnId?: string;
   runId?: string;
@@ -333,6 +337,30 @@ export interface SpawnChildSessionInput {
 type ResolvedSpawnChildSessionInput = SpawnChildSessionInput & {
   resolvedPreset?: ResolvedSubagentPreset;
 };
+
+/**
+ * What the parent learns the moment a child is running. The work itself is
+ * not waited for: the child keeps going after the parent's Turn ends, and its
+ * end arrives as a notification (see ChildAgentFinishedRecord).
+ */
+export interface StartChildSessionResult {
+  childSessionId: string;
+  agentId: string;
+  agentName: string;
+  profile: string;
+  turnId: string;
+  runId: string;
+  permissionMode: PermissionMode;
+  description?: string;
+}
+
+/** A child Turn that ended, as the parent is told about it. */
+export interface ChildAgentFinishedRecord extends SpawnChildSessionResult {
+  parentSessionId: string;
+  description?: string;
+  /** The tool call that started this child; the notification names it. */
+  toolCallId: string;
+}
 
 export interface SpawnChildSessionResult {
   childSessionId: string;
@@ -848,6 +876,12 @@ interface SessionManagerBaseDeps {
   runtimeKernel?: RuntimeKernelLike;
   /** Optional host-owned parent run authority for runtimes that execute the parent externally. */
   isParentRunActive?: (sessionId: string, runId: string, turnId: string) => boolean;
+  /**
+   * A child agent Turn ended and its parent has not been told. Fires after the
+   * outcome is durable; the Host wakes an idle parent with it, and a running
+   * parent Turn picks it up at its next step boundary either way.
+   */
+  onChildAgentFinished?: (record: ChildAgentFinishedRecord) => void;
   shellRuns?: ShellRunProcessManager;
   cleanupHistoryCompactArtifacts?: (input: HistoryCompactCleanupRequest) => Promise<void>;
   inspectContinuationSafety?: (sessionId: string) => Promise<RuntimeContinuationSafetyObservation>;
@@ -912,9 +946,27 @@ export class SessionManager {
   private readonly preparedTranscriptLedgers = new Set<string>();
   private readonly runtimeCommitSink?: RuntimeCommitSink;
   private readonly activeHostedLinkedChildSessions = new Set<string>();
+  /** Child Sessions whose Turn is still running here, by child Session id. */
+  private readonly childExecutions = new Map<
+    string,
+    { identity: RuntimeMessageRunIdentity; finished: Promise<void> }
+  >();
+  /** Parents with a child whose end they have not been told about. */
+  private readonly childNotificationDirty = new Set<string>();
+  /** Bumped whenever a parent is marked dirty, so a stale scan cannot clear it. */
+  private readonly childNotificationGeneration = new Map<string, number>();
+  /** Parents whose stored children were scanned for owed notifications in this process. */
+  private readonly childNotificationScanned = new Set<string>();
+  /** Which child a spawn key produced, so a duplicate call finds it. */
+  private readonly childSessionsBySpawnKey = new Map<string, string>();
+  /** What the first caller was told, so a duplicate is told the same. */
+  private readonly startedChildResults = new Map<string, StartChildSessionResult>();
+  /** The last finished Turn of each child this process ran, for callers that join one. */
+  private readonly lastChildOutcomes = new Map<string, ChildAgentFinishedRecord>();
+  private readonly childOutcomes = new Map<string, Promise<ChildAgentFinishedRecord | undefined>>();
   private readonly childSessionSpawns = new Map<
     string,
-    { requestFingerprint: string; promise: Promise<SpawnChildSessionResult> }
+    { requestFingerprint: string; promise: Promise<StartChildSessionResult> }
   >();
   private readonly claimedAgentGraphIntentRuns = new Map<
     string,
@@ -937,7 +989,17 @@ export class SessionManager {
         readMessagesAfter: (sessionId, request) => deps.store.readMessagesAfter(sessionId, request),
       });
     }
-    this.runtimeKernel = deps.runtimeKernel ?? new RuntimeKernel({ ...deps });
+    this.runtimeKernel =
+      deps.runtimeKernel ??
+      new RuntimeKernel({
+        ...deps,
+        // Child Sessions are this manager's to account for; the kernel only
+        // needs the two questions a turn asks at its boundaries.
+        childAgentNotifications: {
+          pending: (sessionId) => this.pendingChildAgentNotificationLeases(sessionId),
+          markNotified: (ref) => this.markChildAgentNotifiedByRef(ref),
+        },
+      });
   }
 
   // --------------------------------------------------------------------------
@@ -2524,7 +2586,7 @@ export class SessionManager {
   async spawnChildSession(
     parentSessionId: string,
     input: SpawnChildSessionInput,
-  ): Promise<SpawnChildSessionResult> {
+  ): Promise<StartChildSessionResult> {
     const resolvedInput = await this.resolveChildSessionSelector(input);
     const spawnKey = childSessionSpawnKey(parentSessionId, resolvedInput);
     const requestFingerprint = childSessionRequestFingerprint(parentSessionId, resolvedInput);
@@ -2535,22 +2597,488 @@ export class SessionManager {
       }
       return await inFlight.promise;
     }
+    // The first call returns as soon as the child is running, so a duplicate
+    // arrives while that child still owns its Session's execution. It is the
+    // same child: report it rather than racing its own gate.
+    const running = this.#startedChildFor(spawnKey);
+    if (running) return await running;
     const runtimeOwner = {
       execution: this.runtimeKernel.claimExecution(parentSessionId),
     };
+    // The claim and the hosted gate belong to the CHILD's run, which outlives
+    // this call: both are released when that run settles, not when the parent
+    // is told the child started.
     const promise = this.spawnChildSessionOnce(
       parentSessionId,
       resolvedInput,
       requestFingerprint,
       runtimeOwner,
-    ).finally(() => runtimeOwner.execution.release());
+    );
     this.childSessionSpawns.set(spawnKey, { requestFingerprint, promise });
     try {
-      return await promise;
+      const started = await promise;
+      this.childSessionsBySpawnKey.set(spawnKey, started.childSessionId);
+      this.startedChildResults.set(started.childSessionId, started);
+      return started;
     } finally {
       if (this.childSessionSpawns.get(spawnKey)?.promise === promise) {
         this.childSessionSpawns.delete(spawnKey);
       }
+    }
+  }
+
+  /** A child of this spawn key whose Turn is still running here. */
+  #startedChildFor(spawnKey: string): Promise<StartChildSessionResult> | undefined {
+    const childSessionId = this.childSessionsBySpawnKey.get(spawnKey);
+    if (childSessionId === undefined || !this.childExecutions.has(childSessionId)) return undefined;
+    const started = this.startedChildResults.get(childSessionId);
+    return started ? Promise.resolve(started) : undefined;
+  }
+
+  /**
+   * Run a child Turn to its end, away from whoever started it.
+   *
+   * The parent's Turn is already over by the time most children finish, so
+   * nothing here may depend on it: the outcome is projected, recorded, and
+   * handed to the notification listener, and the execution claim and hosted
+   * gate this run owns are released last.
+   */
+  #trackChildExecution(input: {
+    readonly parentSessionId: string;
+    readonly child: SessionHeader;
+    readonly identity: RuntimeMessageRunIdentity;
+    readonly snapshot: NonNullable<SessionHeader['subagentRuntime']>;
+    readonly description: string | undefined;
+    readonly toolCallId: string;
+    /** The spawn key this child answers, when a spawn produced it. */
+    readonly spawnKey?: string;
+    readonly startedAt: number;
+    readonly summary: ChildAgentSummaryAccumulator;
+    readonly execution: Promise<void>;
+    readonly release: () => void;
+  }): void {
+    const { identity, child, snapshot } = input;
+    const finished = (async (): Promise<void> => {
+      let aborted = false;
+      try {
+        await input.execution;
+      } catch (error) {
+        aborted = isAbortError(error);
+        if (!aborted) {
+          input.summary.recordExecutionFailure(error);
+        }
+      }
+      let record: ChildAgentFinishedRecord | undefined;
+      try {
+        record = {
+          ...(await this.#projectChildOutcome({
+            child,
+            snapshot,
+            turnId: identity.turnId,
+            runId: identity.runId,
+            startedAt: input.startedAt,
+            summary: input.summary,
+            aborted,
+          })),
+          parentSessionId: input.parentSessionId,
+          toolCallId: input.toolCallId,
+          ...(input.description !== undefined ? { description: input.description } : {}),
+        };
+      } catch {
+        // A child whose outcome cannot be projected is still owed to the
+        // parent, so the scan is told to look even though there is no record
+        // to hand over: it reads the durable Turn instead.
+        this.#markChildNotificationDirty(input.parentSessionId);
+      }
+      // Only this Run's own entries. A later Turn of the same child is keyed
+      // by the same Session id, and this tail runs long after its execution
+      // settled: projecting the outcome reads the store several times. Left
+      // unguarded, an older Turn's tail erases the entry a newer Turn is
+      // running under, and TaskStop then reports it stopped nothing.
+      if (this.childExecutions.get(child.id)?.identity.runId === identity.runId) {
+        this.childExecutions.delete(child.id);
+        this.startedChildResults.delete(child.id);
+        this.childOutcomes.delete(child.id);
+        if (input.spawnKey !== undefined) this.childSessionsBySpawnKey.delete(input.spawnKey);
+      }
+      if (record) {
+        this.lastChildOutcomes.set(child.id, record);
+        this.#announceChildFinished(record);
+      }
+    })().finally(() => input.release());
+    this.childExecutions.set(child.id, { identity, finished });
+    this.childOutcomes.set(
+      child.id,
+      finished.then(() => this.lastChildOutcomes.get(child.id)),
+    );
+    void finished.catch(() => undefined);
+  }
+
+  /** The outcome facts of one finished child Turn. */
+  async #projectChildOutcome(input: {
+    readonly child: SessionHeader;
+    readonly snapshot: NonNullable<SessionHeader['subagentRuntime']>;
+    readonly turnId: string;
+    readonly runId: string;
+    readonly startedAt: number;
+    readonly summary: ChildAgentSummaryAccumulator;
+    readonly aborted: boolean;
+  }): Promise<SpawnChildSessionResult> {
+    const { child, snapshot, summary } = input;
+    const completedAt = this.deps.now();
+    const run = await this.findRunByTurnId(child.id, input.turnId);
+    const facts = run ? invocationListingFacts(run) : undefined;
+    const failureClass = facts?.failureClass ?? summary.failureClass;
+    const artifacts = facts
+      ? await this.finalizeAndListChildTurnArtifacts(child.id, input.turnId, facts.status)
+      : [];
+    return {
+      childSessionId: child.id,
+      agentId: snapshot.agentId,
+      agentName: snapshot.agentName,
+      profile: snapshot.profile,
+      turnId: input.turnId,
+      runId: input.runId,
+      status: facts ? agentRunStatusForSpawnResult(facts.status) : summary.status(input.aborted),
+      permissionMode: child.permissionMode,
+      summary: summary.text(),
+      artifactIds: artifacts.map((artifact) => artifact.id),
+      startedAt: input.startedAt,
+      completedAt,
+      durationMs: Math.max(0, completedAt - input.startedAt),
+      eventCount: summary.eventCount,
+      ...(failureClass ? { failureClass } : {}),
+    };
+  }
+
+  /**
+   * Wait for a child agent's current Turn and report how it ended.
+   *
+   * Nothing in the product waits — the parent is notified instead — but a
+   * caller that started a child and wants its outcome in the same breath
+   * (a test, a scripted composition) joins it here.
+   */
+  async waitForChildAgent(childSessionId: string): Promise<ChildAgentFinishedRecord | undefined> {
+    const pending = this.childOutcomes.get(childSessionId);
+    if (pending) return await pending;
+    return this.lastChildOutcomes.get(childSessionId);
+  }
+
+  /**
+   * Another message for a child this Session started, on a new Turn of its own
+   * Session, so the child answers with everything it already knows. Returns
+   * once that Turn is running; its end is announced like any other.
+   */
+  async sendChildAgentMessage(input: {
+    parentSessionId: string;
+    childSessionId: string;
+    text: string;
+  }): Promise<StartChildSessionResult> {
+    const child = await this.deps.store.readHeader(input.childSessionId);
+    const snapshot = child.subagentRuntime;
+    const parent = child.subagentParent;
+    if (
+      parent?.kind !== 'subagent' ||
+      parent.parentSessionId !== input.parentSessionId ||
+      !snapshot
+    ) {
+      throw new Error('That agent belongs to another session');
+    }
+    const turnId = this.deps.newId();
+    const runId = this.deps.newId();
+    const identity = { sessionId: child.id, turnId, runId };
+    const releaseHostedExecution = this.acquireHostedLinkedChildExecution(child.id);
+    let runtimeExecution: RuntimeExecutionClaim;
+    try {
+      runtimeExecution = this.runtimeKernel.claimExecution(child.id);
+    } catch (error) {
+      releaseHostedExecution();
+      throw error;
+    }
+    const releaseOnce = onceOnly(() => {
+      releaseHostedExecution();
+      runtimeExecution.release();
+    });
+    try {
+      const startedAt = this.deps.now();
+      const summary = new ChildAgentSummaryAccumulator();
+      let announceStarted!: () => void;
+      let failStart!: (error: unknown) => void;
+      const started = new Promise<void>((resolve, reject) => {
+        announceStarted = resolve;
+        failStart = reject;
+      });
+      const execution = this.consumeLinkedRootExecution(
+        {
+          ...identity,
+          userMessageId: this.deps.newId(),
+          execution: {
+            kind: 'linked_child_message',
+            agentId: snapshot.agentId,
+            agentName: snapshot.agentName,
+          },
+          content: { text: input.text },
+          start: ({ runId: admittedRunId, userMessageId, onRunStarted }) =>
+            this.sendMessage(
+              child.id,
+              {
+                turnId,
+                text: input.text,
+                agentId: snapshot.agentId,
+                agentName: snapshot.agentName,
+              },
+              {
+                runId: admittedRunId,
+                ...(userMessageId ? { userMessageId } : {}),
+                durability: 'required',
+                onRunStarted,
+                execution: runtimeExecution,
+              },
+            ),
+          onReady: () => announceStarted(),
+          onEvent: (event) => summary.add(event),
+        },
+        true,
+      );
+      execution.then(() => announceStarted()).catch((error) => failStart(error));
+      this.#trackChildExecution({
+        parentSessionId: input.parentSessionId,
+        child,
+        identity,
+        snapshot,
+        toolCallId: parent.spawnedBy.toolCallId,
+        description: child.subagentSpawn?.description,
+        startedAt,
+        summary,
+        execution,
+        release: releaseOnce,
+      });
+      await started;
+      return {
+        childSessionId: child.id,
+        agentId: snapshot.agentId,
+        agentName: snapshot.agentName,
+        profile: snapshot.profile,
+        turnId,
+        runId,
+        permissionMode: child.permissionMode,
+        ...(child.subagentSpawn?.description !== undefined
+          ? { description: child.subagentSpawn.description }
+          : {}),
+      };
+    } catch (error) {
+      releaseOnce();
+      throw error;
+    }
+  }
+
+  /**
+   * End a child this Session started. Its Turn stops where it is; the stop
+   * result says so, and the child is still announced the way it would have
+   * been, carrying whatever it had reached (reference behaviour).
+   */
+  async stopChildAgent(input: { parentSessionId: string; childSessionId: string }): Promise<{
+    stopped: boolean;
+    agentName: string;
+    description?: string;
+    status: SpawnChildSessionResult['status'];
+  }> {
+    const child = await this.deps.store.readHeader(input.childSessionId);
+    const parent = child.subagentParent;
+    if (parent?.kind !== 'subagent' || parent.parentSessionId !== input.parentSessionId) {
+      throw new Error('That agent belongs to another session');
+    }
+    const identity = {
+      agentName: child.subagentRuntime?.agentName ?? child.name,
+      ...(child.subagentSpawn?.description !== undefined
+        ? { description: child.subagentSpawn.description }
+        : {}),
+    };
+    const live = this.childExecutions.get(child.id);
+    if (!live) {
+      return { stopped: false, ...identity, status: await this.#childAgentStatus(child.id) };
+    }
+    await this.stopLinkedRoot(live.identity, { source: 'stop_button' });
+    await live.finished.catch(() => undefined);
+    return { stopped: true, ...identity, status: await this.#childAgentStatus(child.id) };
+  }
+
+  /** How the child's latest Turn stands, for a caller reporting on it. */
+  async #childAgentStatus(childSessionId: string): Promise<SpawnChildSessionResult['status']> {
+    const run = latestInvocation(await this.listInvocations(childSessionId).catch(() => []));
+    if (!run) return 'running';
+    return agentRunStatusForSpawnResult(invocationListingFacts(run).status);
+  }
+
+  /**
+   * Child agent Turns of this parent whose end it has not been told about.
+   *
+   * The store is the authority: a child owes its parent a notification while
+   * its latest Turn is terminal and `subagentNotifiedTurnId` does not name it.
+   * That survives a restart, and it is what makes a resumed child (one the
+   * parent sent another message) owe a second notification under the same id.
+   */
+  async pendingChildAgentNotifications(
+    parentSessionId: string,
+  ): Promise<ChildAgentFinishedRecord[]> {
+    if (!this.deps.runStore) return [];
+    // Every step boundary asks. Reading every child of every parent each time
+    // is what makes that question expensive, so the store is consulted once
+    // per process and then only after a child has actually finished.
+    if (
+      this.childNotificationScanned.has(parentSessionId) &&
+      !this.childNotificationDirty.has(parentSessionId)
+    ) {
+      return [];
+    }
+    // A child can finish while this scan is reading, and its dirty flag would
+    // then be cleared by a scan that never saw it. Clear only the generation
+    // this scan started from.
+    const scannedGeneration = this.childNotificationGeneration.get(parentSessionId) ?? 0;
+    const children = await this.listChildSessions(parentSessionId);
+    const owed: ChildAgentFinishedRecord[] = [];
+    // A child this scan could not read is not a child with nothing to say.
+    // Treating a failed read as "clean" would clear the flag below and the
+    // parent would never be told, so the flag survives until a scan that
+    // actually saw every child.
+    let readEveryChild = true;
+    for (const summary of children) {
+      const child = await this.deps.store.readHeader(summary.id).catch(() => {
+        readEveryChild = false;
+        return undefined;
+      });
+      const snapshot = child?.subagentRuntime;
+      const parent = child?.subagentParent;
+      if (!child || !snapshot || !parent || parent.kind !== 'subagent') continue;
+      if (this.childExecutions.has(child.id)) continue;
+      const run = latestInvocation(
+        await this.listInvocations(child.id).catch(() => {
+          readEveryChild = false;
+          return [];
+        }),
+      );
+      if (!run?.terminalEvent) continue;
+      if (child.subagentNotifiedTurnId === run.turnId) continue;
+      const facts = invocationListingFacts(run);
+      owed.push({
+        childSessionId: child.id,
+        parentSessionId,
+        toolCallId: parent.spawnedBy.toolCallId,
+        agentId: snapshot.agentId,
+        agentName: snapshot.agentName,
+        profile: snapshot.profile,
+        turnId: run.turnId,
+        runId: run.runId,
+        status: agentRunStatusForSpawnResult(facts.status),
+        permissionMode: facts.permissionMode ?? child.permissionMode,
+        summary: await this.#childTurnSummaryText(child.id, run.turnId),
+        // What the child left behind. Only read here, never finalized: this
+        // scan runs at a step boundary of the PARENT, and finishing a child
+        // off from there would reach for locks its own run still holds.
+        artifactIds: (
+          await (this.deps.listArtifactsForTurn?.(child.id, run.turnId) ?? Promise.resolve([]))
+            .then((artifacts) => artifacts)
+            .catch(() => [])
+        ).map((artifact) => artifact.id),
+        startedAt: facts.createdAt,
+        completedAt: facts.completedAt ?? facts.updatedAt,
+        durationMs: facts.durationMs ?? 0,
+        eventCount: 0,
+        ...(facts.failureClass ? { failureClass: facts.failureClass } : {}),
+        ...(child.subagentSpawn?.description !== undefined
+          ? { description: child.subagentSpawn.description }
+          : {}),
+      });
+    }
+    if (readEveryChild) this.childNotificationScanned.add(parentSessionId);
+    if (
+      owed.length === 0 &&
+      readEveryChild &&
+      (this.childNotificationGeneration.get(parentSessionId) ?? 0) === scannedGeneration
+    ) {
+      this.childNotificationDirty.delete(parentSessionId);
+    }
+    return owed.sort((left, right) => left.completedAt - right.completedAt);
+  }
+
+  /**
+   * The Turn each outstanding lease speaks for. A ref names a child Session,
+   * not one of its Turns, so without this an acknowledgement would settle
+   * whatever Turn happened to be newest when it arrived — burying a Turn the
+   * model has not been told about, and losing the one it has.
+   */
+  private readonly childNotificationTurnByRef = new Map<string, string>();
+
+  /** The owed child notifications of this parent, rendered as the model reads them. */
+  async pendingChildAgentNotificationLeases(
+    parentSessionId: string,
+  ): Promise<TaskNotificationLease[]> {
+    const owed = await this.pendingChildAgentNotifications(parentSessionId).catch(() => []);
+    for (const record of owed) {
+      this.childNotificationTurnByRef.set(record.childSessionId, record.turnId);
+    }
+    return owed.map((record) => ({
+      id: record.childSessionId,
+      kind: 'agent' as const,
+      toolUseId: record.toolCallId,
+      text: renderChildAgentNotification({
+        id: record.childSessionId,
+        toolUseId: record.toolCallId,
+        status: record.status,
+        name: record.description ?? record.agentName,
+        result: record.summary,
+        ...(record.artifactIds.length > 0 ? { artifactIds: record.artifactIds } : {}),
+        ...(record.failureClass ? { failureClass: record.failureClass } : {}),
+      }),
+    }));
+  }
+
+  /** Settle a child notification the turn acknowledged, by the ref it was given. */
+  async markChildAgentNotifiedByRef(childSessionId: string): Promise<void> {
+    const delivered = this.childNotificationTurnByRef.get(childSessionId);
+    if (delivered !== undefined) {
+      this.childNotificationTurnByRef.delete(childSessionId);
+      await this.markChildAgentNotified(childSessionId, delivered);
+      return;
+    }
+    // No entry means this process never handed that ref out. Settling the
+    // newest Turn on a guess is exactly what the map exists to prevent: it
+    // would bury a Turn the model was never told about. Leave it owed.
+  }
+
+  /** The parent has been told about this child Turn; it will not be announced again. */
+  async markChildAgentNotified(childSessionId: string, turnId: string): Promise<void> {
+    await this.deps.store.updateHeader(childSessionId, { subagentNotifiedTurnId: turnId });
+  }
+
+  /** The child's last words on that Turn, as the parent's notification quotes them. */
+  async #childTurnSummaryText(childSessionId: string, turnId: string): Promise<string> {
+    const messages = await this.getMessages(childSessionId).catch(() => []);
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index]!;
+      if (message.type === 'assistant' && message.turnId === turnId && message.text.trim()) {
+        return trimSummary(message.text);
+      }
+    }
+    return '';
+  }
+
+  /** A parent has something new to be told; any scan in flight is now stale. */
+  #markChildNotificationDirty(parentSessionId: string): void {
+    this.childNotificationDirty.add(parentSessionId);
+    this.childNotificationGeneration.set(
+      parentSessionId,
+      (this.childNotificationGeneration.get(parentSessionId) ?? 0) + 1,
+    );
+  }
+
+  /** Tell the notification listener; what is owed stays owed in the store regardless. */
+  #announceChildFinished(record: ChildAgentFinishedRecord): void {
+    this.#markChildNotificationDirty(record.parentSessionId);
+    try {
+      this.deps.onChildAgentFinished?.(record);
+    } catch {
+      // The store owns what is owed; a listener failing changes nothing durable.
     }
   }
 
@@ -3201,7 +3729,41 @@ export class SessionManager {
     input: ResolvedSpawnChildSessionInput,
     requestFingerprint: string,
     runtimeOwner: { execution: RuntimeExecutionClaim },
-  ): Promise<SpawnChildSessionResult> {
+  ): Promise<StartChildSessionResult> {
+    // Everything below runs while holding the parent's execution claim, and
+    // most of it can throw before any child exists to inherit it. A leaked
+    // claim never settles, which hangs the parent's next Stop for ever, so
+    // the claim is released here unless a running child has taken it over.
+    let childOwnsResources = false;
+    const releaseUntilHandedOff = onceOnly(() => {
+      if (childOwnsResources) return;
+      runtimeOwner.execution.release();
+    });
+    try {
+      return await this.#startChildSession(
+        parentSessionId,
+        input,
+        requestFingerprint,
+        runtimeOwner,
+        {
+          handOff: () => {
+            childOwnsResources = true;
+          },
+        },
+      );
+    } catch (error) {
+      releaseUntilHandedOff();
+      throw error;
+    }
+  }
+
+  async #startChildSession(
+    parentSessionId: string,
+    input: ResolvedSpawnChildSessionInput,
+    requestFingerprint: string,
+    runtimeOwner: { execution: RuntimeExecutionClaim },
+    owner: { handOff: () => void },
+  ): Promise<StartChildSessionResult> {
     if (input.abortSignal?.aborted) {
       throw new Error('Child session spawn was cancelled before creation');
     }
@@ -3279,6 +3841,7 @@ export class SessionManager {
           requestFingerprint,
           initialTurnId: proposedTurnId,
           initialRunId: proposedRunId,
+          ...(input.description !== undefined ? { description: input.description } : {}),
         },
         ...(workspace ? { subagentWorkspace: workspace } : {}),
       },
@@ -3302,7 +3865,14 @@ export class SessionManager {
       throw error;
     }
     const releaseHostedExecution = this.acquireHostedLinkedChildExecution(child.id);
+    const releaseHostedExecutionAndClaim = onceOnly(() => {
+      releaseHostedExecution();
+      runtimeOwner.execution.release();
+    });
+    let releaseChildResources: (() => void) | undefined;
     try {
+      // From here the gate is held too, so the outer guard alone is not enough.
+      owner.handOff();
       const turnId = spawn.initialTurnId;
       const runId = spawn.initialRunId;
       const readyInfo = {
@@ -3333,8 +3903,47 @@ export class SessionManager {
       }
 
       if (!creation.created) {
-        const existing = await this.resolveExistingChildSpawn(child, input, notifyReady);
-        if (existing) return existing;
+        // Already created by an earlier call or recovered after a crash. Its
+        // Run owns itself; what it still owes the parent is found by the
+        // durable scan, so this call only reports that it is running.
+        const existing = await this.readInvocation(child.id, spawn.initialRunId).catch(
+          (error: unknown) => {
+            if (isNotFoundError(error)) return undefined;
+            throw error;
+          },
+        );
+        if (existing) {
+          // A Run the process no longer owns is not going to end on its own.
+          // Terminalize it from the ledger so what it owes the parent is
+          // visible to the notification scan rather than silently pending.
+          if (
+            !existing.terminalEvent &&
+            !this.runtimeKernel.hasActiveRun?.(child.id, existing.runId, existing.turnId)
+          ) {
+            await this.recoverAgentRunsFromLedger(child.id).catch(() => undefined);
+          }
+          // This call reports the child as running, so the model is waiting
+          // to hear about it again — even if its last Turn was already
+          // announced before this spawn was replayed.
+          await this.deps.store
+            .updateHeader(child.id, { subagentNotifiedTurnId: undefined })
+            .catch(() => undefined);
+          this.#markChildNotificationDirty(parentSessionId);
+          await notifyReady();
+          releaseHostedExecutionAndClaim();
+          return {
+            childSessionId: child.id,
+            agentId: snapshot.agentId,
+            agentName: snapshot.agentName,
+            profile: snapshot.profile,
+            turnId,
+            runId,
+            permissionMode: child.permissionMode,
+            ...(child.subagentSpawn?.description !== undefined
+              ? { description: child.subagentSpawn.description }
+              : {}),
+          };
+        }
       }
 
       // A committed metadata row without its initial AgentRun is a recoverable
@@ -3356,9 +3965,16 @@ export class SessionManager {
 
       const startedAt = this.deps.now();
       const summary = new ChildAgentSummaryAccumulator();
-      let aborted = false;
-      let stopPromise: Promise<void> | undefined;
       const identity = { sessionId: child.id, turnId, runId };
+      // Resolves when the child's Run is admitted and running. That — not the
+      // child's answer — is what the parent waits for: the work outlives the
+      // parent's Turn, and its end comes back as a notification.
+      let announceStarted!: () => void;
+      let failStart!: (error: unknown) => void;
+      const started = new Promise<void>((resolve, reject) => {
+        announceStarted = resolve;
+        failStart = reject;
+      });
       const execution = this.consumeLinkedRootExecution(
         {
           ...identity,
@@ -3386,7 +4002,10 @@ export class SessionManager {
                 execution: runtimeOwner.execution,
               },
             ),
-          onReady: notifyReady,
+          onReady: async () => {
+            await notifyReady();
+            announceStarted();
+          },
           onEvent: (event) => {
             summary.add(event);
             try {
@@ -3398,28 +4017,34 @@ export class SessionManager {
         },
         true,
       );
-      const onAbort = () => {
-        aborted = true;
-        stopPromise ??= this.stopLinkedRoot(identity, { source: 'stop_button' });
-      };
-      if (input.abortSignal) {
-        input.abortSignal.addEventListener('abort', onAbort, { once: true });
-        if (input.abortSignal.aborted) onAbort();
-      }
-      try {
-        await execution;
-      } finally {
-        input.abortSignal?.removeEventListener('abort', onAbort);
-        if (aborted) await stopPromise;
-      }
-
-      const completedAt = this.deps.now();
-      const run = await this.findRunByTurnId(child.id, turnId);
-      const facts = run ? invocationListingFacts(run) : undefined;
-      const failureClass = facts?.failureClass ?? summary.failureClass;
-      const artifacts = facts
-        ? await this.finalizeAndListChildTurnArtifacts(child.id, turnId, facts.status)
-        : [];
+      // A child that dies before it is running has no notification to send:
+      // the failure is this call's, and the caller sees it as a tool error.
+      // A child that SETTLES without ever reporting ready — cancelled between
+      // admission and dispatch — must not leave this call waiting for a ready
+      // that is never coming; its end is reported like any other.
+      execution.then(() => announceStarted()).catch((error) => failStart(error));
+      // One release, whoever gets there first: the background tail always
+      // releases, and a start that fails releases on its way out — the same
+      // claim and the same gate, so releasing twice must be impossible.
+      const releaseOnce = onceOnly(() => {
+        releaseHostedExecution();
+        runtimeOwner.execution.release();
+      });
+      releaseChildResources = releaseOnce;
+      this.#trackChildExecution({
+        parentSessionId,
+        child,
+        identity,
+        snapshot,
+        toolCallId: input.spawnedBy.toolCallId,
+        spawnKey: childSessionSpawnKey(parentSessionId, input),
+        description: input.description,
+        startedAt,
+        summary,
+        execution,
+        release: releaseOnce,
+      });
+      await started;
       return {
         childSessionId: child.id,
         agentId: snapshot.agentId,
@@ -3427,51 +4052,13 @@ export class SessionManager {
         profile: snapshot.profile,
         turnId,
         runId,
-        status: facts ? agentRunStatusForSpawnResult(facts.status) : summary.status(aborted),
         permissionMode: child.permissionMode,
-        summary: summary.text(),
-        artifactIds: artifacts.map((artifact) => artifact.id),
-        startedAt,
-        completedAt,
-        durationMs: Math.max(0, completedAt - startedAt),
-        eventCount: summary.eventCount,
-        ...(failureClass ? { failureClass } : {}),
+        ...(input.description !== undefined ? { description: input.description } : {}),
       };
-    } finally {
-      releaseHostedExecution();
-    }
-  }
-
-  private async resolveExistingChildSpawn(
-    child: SessionHeader,
-    input: SpawnChildSessionInput,
-    notifyReady: () => Promise<void>,
-  ): Promise<SpawnChildSessionResult | undefined> {
-    if (!this.deps.runStore || !this.deps.runtimeEventStore) return undefined;
-    const snapshot = child.subagentRuntime;
-    const spawn = child.subagentSpawn;
-    if (!snapshot || !spawn) {
-      throw new Error('Stored child session is missing its durable runtime or spawn identity');
-    }
-    let run = await this.readInvocation(child.id, spawn.initialRunId).catch((error) => {
-      if (isNotFoundError(error)) return undefined;
+    } catch (error) {
+      (releaseChildResources ?? releaseHostedExecutionAndClaim)();
       throw error;
-    });
-    if (!run) return undefined;
-    await notifyReady();
-
-    while (
-      !run.terminalEvent &&
-      this.runtimeKernel.hasActiveRun?.(child.id, run.runId, run.turnId)
-    ) {
-      await delay(25, undefined, input.abortSignal ? { signal: input.abortSignal } : undefined);
-      run = await this.readInvocation(child.id, spawn.initialRunId);
     }
-    if (!run.terminalEvent) {
-      await this.recoverAgentRunsFromLedger(child.id);
-      run = await this.readInvocation(child.id, spawn.initialRunId);
-    }
-    return await this.projectExistingChildSpawn(child, run);
   }
 
   private async projectExistingChildSpawn(
@@ -5295,6 +5882,21 @@ function agentRunStatusForSpawnResult(
   return 'completed';
 }
 
+/** Runs its callback the first time only; later calls do nothing. */
+function onceOnly(run: () => void): () => void {
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    run();
+  };
+}
+
+/** A cancelled child run reads as cancelled, not failed. */
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError');
+}
+
 function trimSummary(text: string): string {
   const trimmed = text.trim();
   return trimmed.length <= CHILD_AGENT_SUMMARY_MAX_CHARS
@@ -5339,6 +5941,14 @@ class ChildAgentSummaryAccumulator {
   status(aborted: boolean): SpawnChildSessionResult['status'] {
     if (aborted) return 'cancelled';
     return this.terminalStatus ?? 'running';
+  }
+
+  /** The execution threw rather than ending in an event the child reported. */
+  recordExecutionFailure(error: unknown): void {
+    this.terminalStatus = 'failed';
+    if (!this.lastError) {
+      this.lastError = trimSummary(error instanceof Error ? error.message : String(error));
+    }
   }
 
   text(): string {

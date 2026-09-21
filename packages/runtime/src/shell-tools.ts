@@ -30,8 +30,18 @@ import {
   TERMINAL_MOUSE_SCROLL_DIRECTIONS,
   type TerminalInputAction,
 } from '@maka/core/terminal-input';
-import { isActiveShellRunStatus } from '@maka/core/shell-run';
+import { isActiveShellRunStatus, isShellRunId, SHELL_RUN_ID_MAX_CHARS } from '@maka/core/shell-run';
 import { TOOL_NAMES } from '@maka/core/tool-names';
+import { shellRunResourceRef } from './shell-run-contract.js';
+
+/** A task id the command store has never heard of; it may still be an agent. */
+function isUnknownTaskError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true;
+  // An id the command store will not even parse is not a command id; it may
+  // still name an agent, whose ids are drawn from the same alphabet.
+  return /Invalid shell run id|not a background task/iu.test(error.message);
+}
 import { redactSecrets } from '@maka/core/redaction';
 import type { ToolResultContent } from '@maka/core/events';
 import type { ToolExecutionFacts } from '@maka/core/permission';
@@ -299,7 +309,7 @@ export function buildManagedBashTool(
     run_in_background: z
       .boolean()
       .optional()
-      .describe('Run the command detached as a tracked task and return a ref instead of output'),
+      .describe('Run the command detached as a tracked task and return an ID instead of output'),
     pty: z
       .boolean()
       .optional()
@@ -334,8 +344,8 @@ export function buildManagedBashTool(
     description: bashToolDescription(shell, [
       ...(options.lead ? [`- ${options.lead}`] : []),
       `- Foreground is the default: the command runs to completion and the result is what it printed. A failure leads with an \`Exit code N\` line; a command that printed nothing returns "(no output)".`,
-      `- Set \`run_in_background: true\` for a command that should keep running as a tracked task — a dev server, a watcher, a long build. It keeps running across turns and re-invokes you when it exits. No \`&\` needed. It returns a ref instead of output: read what it prints with Read on that ref, and end it with TaskStop. Background runs have no default timeout (maximum explicit timeout ${MAX_SHELL_RUN_TIMEOUT_MS}ms).`,
-      '- Set `pty: true` together with `run_in_background: true` only when the command needs terminal semantics or later keystrokes; send those with TaskInput on the returned ref.',
+      `- Set \`run_in_background: true\` for a command that should keep running as a tracked task — a dev server, a watcher, a long build. It keeps running across turns and re-invokes you when it exits. No \`&\` needed. It returns an ID and a file its output is written to: read that file to see what it printed, and end it with TaskStop. Background runs have no default timeout (maximum explicit timeout ${MAX_SHELL_RUN_TIMEOUT_MS}ms).`,
+      '- Set `pty: true` together with `run_in_background: true` only when the command needs terminal semantics or later keystrokes. A terminal task has a live screen rather than a log, so it writes no output file: send keystrokes with TaskInput on the returned ID and read the screen it answers with.',
       '- `description` is what the user reads in place of the raw command.',
       ...(declareSandboxBoundary ? ['- Enforced by the current session sandbox boundary.'] : []),
     ]),
@@ -443,25 +453,69 @@ export function buildStopBackgroundTaskTool(backgroundTasks: BackgroundTaskStopp
     description: [
       'Stops a running background task.',
       '',
-      '- `ref` is the runtime ref a background Bash returned, for example maka://runtime/background-tasks/<id>. Background shell runs are the only kind of task this accepts today.',
-      '- Only tasks of the current session can be stopped; a ref from elsewhere is rejected.',
+      '- `task_id` is the ID a background Bash or an Agent returned. Both kinds are accepted.',
+      '- Only tasks of the current session can be stopped; an ID from elsewhere is rejected.',
       '- Returns the task state after the stop. A task that had already finished is reported as such rather than failing.',
       '- Stop a task as soon as its work is done: one left running holds its process for the rest of the session.',
     ].join('\n'),
     parameters: z.object({
-      ref: z
-        .string()
-        .describe(
-          'The runtime background task ref, for example maka://runtime/background-tasks/<id>',
-        ),
+      task_id: z.string().describe('The ID of the background task or agent to stop'),
     }),
-    impl: ({ ref }, ctx) => backgroundTasks.stopBackgroundTask(ctx.sessionId, ref, ctx.abortSignal),
-    toModelOutput: ({ output }) => shellRunResultToModelOutput(output),
+    impl: async ({ task_id: taskId }, ctx) => {
+      // Both kinds wear the same shape of ID, so the answer decides which it
+      // is: the command store knows its own tasks, and anything it has never
+      // heard of is looked for among this Session's agents.
+      let unknownToCommands: unknown;
+      try {
+        return await backgroundTasks.stopBackgroundTask(
+          ctx.sessionId,
+          shellRunResourceRef(taskId),
+          ctx.abortSignal,
+        );
+      } catch (error) {
+        if (!isUnknownTaskError(error) || !ctx.stopChildAgent) throw error;
+        unknownToCommands = error;
+      }
+      // Neither kind claims it. The command store's answer is the one written
+      // for this case, so it is what the model reads — not the agent lookup's
+      // complaint about a Session that was never a Session.
+      const stopped = (await ctx.stopChildAgent({ childSessionId: taskId }).catch(() => {
+        throw unknownToCommands;
+      })) as {
+        stopped?: boolean;
+        agentName?: string;
+        description?: string;
+        status?: string;
+      };
+      // The same line a stopped background command answers with, so one tool
+      // reads one way whatever it stopped.
+      const command = stopped.description ?? stopped.agentName ?? 'agent';
+      return {
+        kind: 'text',
+        text: JSON.stringify({
+          message: stopped.stopped
+            ? `Successfully stopped task: ${taskId} (${command})`
+            : `Task ${taskId} had already finished (${command})`,
+          task_id: taskId,
+          task_type: 'local_agent',
+          command,
+          ...(stopped.status !== undefined ? { status: stopped.status } : {}),
+        }),
+      };
+    },
+    toModelOutput: ({ output }) => {
+      const text = output as { kind?: string; text?: string };
+      if (text?.kind === 'text' && typeof text.text === 'string') {
+        return { type: 'text', value: text.text };
+      }
+      return shellRunResultToModelOutput(output);
+    },
   };
 }
 
-/** A syntactically valid PTY ref used only in the documented TaskInput examples. */
-export const WRITE_STDIN_EXAMPLE_REF = 'maka://runtime/background-tasks/sr_example';
+/** A syntactically valid PTY task ID used only in the documented TaskInput examples. */
+export const WRITE_STDIN_EXAMPLE_TASK_ID = 'sr_example';
+export const WRITE_STDIN_EXAMPLE_REF = shellRunResourceRef(WRITE_STDIN_EXAMPLE_TASK_ID);
 
 /**
  * One minimal legal payload per TaskInput action type (plus a resize-only
@@ -477,55 +531,58 @@ export const WRITE_STDIN_MINIMAL_EXAMPLES: readonly {
 }[] = [
   {
     label: 'text',
-    payload: { ref: WRITE_STDIN_EXAMPLE_REF, actions: [{ type: 'text', text: 'hello' }] },
+    payload: { task_id: WRITE_STDIN_EXAMPLE_TASK_ID, actions: [{ type: 'text', text: 'hello' }] },
   },
   {
     label: 'key (named)',
-    payload: { ref: WRITE_STDIN_EXAMPLE_REF, actions: [{ type: 'key', key: 'enter' }] },
+    payload: { task_id: WRITE_STDIN_EXAMPLE_TASK_ID, actions: [{ type: 'key', key: 'enter' }] },
   },
   {
     label: 'key (chord)',
     payload: {
-      ref: WRITE_STDIN_EXAMPLE_REF,
+      task_id: WRITE_STDIN_EXAMPLE_TASK_ID,
       actions: [{ type: 'key', key: 'c', modifiers: ['ctrl'] }],
     },
   },
   {
     label: 'mouse click',
     payload: {
-      ref: WRITE_STDIN_EXAMPLE_REF,
+      task_id: WRITE_STDIN_EXAMPLE_TASK_ID,
       actions: [{ type: 'mouse', event: 'click', x: 0, y: 0, button: 'left' }],
     },
   },
   {
     label: 'mouse press',
     payload: {
-      ref: WRITE_STDIN_EXAMPLE_REF,
+      task_id: WRITE_STDIN_EXAMPLE_TASK_ID,
       actions: [{ type: 'mouse', event: 'press', x: 0, y: 0, button: 'left' }],
     },
   },
   {
     label: 'mouse release',
     payload: {
-      ref: WRITE_STDIN_EXAMPLE_REF,
+      task_id: WRITE_STDIN_EXAMPLE_TASK_ID,
       actions: [{ type: 'mouse', event: 'release', x: 0, y: 0, button: 'left' }],
     },
   },
   {
     label: 'mouse move',
     payload: {
-      ref: WRITE_STDIN_EXAMPLE_REF,
+      task_id: WRITE_STDIN_EXAMPLE_TASK_ID,
       actions: [{ type: 'mouse', event: 'move', x: 1, y: 1 }],
     },
   },
   {
     label: 'mouse scroll',
     payload: {
-      ref: WRITE_STDIN_EXAMPLE_REF,
+      task_id: WRITE_STDIN_EXAMPLE_TASK_ID,
       actions: [{ type: 'mouse', event: 'scroll', x: 0, y: 0, direction: 'up' }],
     },
   },
-  { label: 'resize only', payload: { ref: WRITE_STDIN_EXAMPLE_REF, size: { cols: 80, rows: 24 } } },
+  {
+    label: 'resize only',
+    payload: { task_id: WRITE_STDIN_EXAMPLE_TASK_ID, size: { cols: 80, rows: 24 } },
+  },
 ];
 
 /**
@@ -552,7 +609,7 @@ export const WRITE_STDIN_DESCRIPTION_EXAMPLE_JSON = JSON.stringify(
  */
 /** The validated shape the strict TaskInput schema yields after normalization. */
 export interface WriteStdinInput {
-  ref: string;
+  task_id: string;
   input?: string;
   actions?: TerminalInputAction[];
   size?: { cols: number; rows: number };
@@ -577,10 +634,10 @@ export function createWriteStdinSchemas(): {
     normalizeProviderWriteStdinInput,
     z
       .object({
-        ref: z
+        task_id: z
           .string()
-          .max(MAX_SHELL_RUN_RESOURCE_REF_CHARS)
-          .refine(isShellRunResourceRef, 'ref must be a canonical PTY Bash runtime ref'),
+          .max(SHELL_RUN_ID_MAX_CHARS)
+          .refine(isShellRunId, 'task_id must be the ID a PTY Bash task returned'),
         input: z
           .string()
           .min(1, 'input must not be empty')
@@ -670,10 +727,7 @@ export function createWriteStdinSchemas(): {
     .strict();
   const providerParameters = z
     .object({
-      ref: z
-        .string()
-        .max(MAX_SHELL_RUN_RESOURCE_REF_CHARS)
-        .describe('The runtime ref returned by a PTY Bash task'),
+      task_id: z.string().max(SHELL_RUN_ID_MAX_CHARS).describe('The ID a PTY Bash task returned'),
       actions: z
         .array(providerAction)
         .max(MAX_WRITE_STDIN_ACTIONS)
@@ -712,21 +766,21 @@ export function buildWriteStdinTool(ptyControls: PtyControlWriter): MakaTool {
     description: [
       'Sends text, keys and mouse actions to a background PTY task, and/or resizes it.',
       '',
-      '- `ref` is the runtime ref a `pty: true` background Bash returned.',
+      '- `task_id` is the ID a `pty: true` background Bash returned.',
       `- Named keys are ${TERMINAL_INPUT_NAMED_KEYS.join(', ')}. Use a printable ASCII key with ctrl or alt for a chord such as Ctrl-B; use a text action for ordinary typing.`,
       '- Mouse coordinates are zero-based terminal cells and only reach an application that has enabled SGR cell mouse reporting.',
       '- Actions are written atomically, in the order listed. They are ordinary audited tool-call data, not a secure channel — never send a secret through them.',
       `- Minimal example: ${WRITE_STDIN_DESCRIPTION_EXAMPLE_JSON}`,
-      '- Returns the terminal state at the next parser cut. That is the screen as it stands, NOT output attributed to this input; use Read on the ref to watch what follows.',
+      '- Returns the terminal state at the next parser cut. That is the screen as it stands, NOT output attributed to this input; call again to watch what follows.',
     ].join('\n'),
     parameters,
     permissionArgs: (input) => parseInput(input),
     toModelOutput: ({ output }) => shellRunResultToModelOutput(output),
     impl: (input, ctx) => {
-      const { ref, input: rawInput, actions, size } = parseInput(input);
+      const { task_id: taskId, input: rawInput, actions, size } = parseInput(input);
       return ptyControls.writeStdin({
         sessionId: ctx.sessionId,
-        ref,
+        ref: shellRunResourceRef(taskId),
         ...(rawInput !== undefined ? { input: rawInput } : {}),
         ...(actions !== undefined ? { actions } : {}),
         ...(size !== undefined ? { size } : {}),

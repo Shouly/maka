@@ -3154,10 +3154,13 @@ export class AiSdkTurn {
         messageId: this.deps.newId(),
         content: { text: lease.text },
         author: 'system',
-        origin: { kind: 'background_task', ref: lease.ref, toolUseId: lease.toolUseId },
+        origin: { kind: 'background_task', ref: lease.id, toolUseId: lease.toolUseId },
       } satisfies SessionEvent);
       this.injectedSteeringMessages.push(steeringModelMessage(eventId, lease.text));
-      await input.ackTaskNotification?.(lease.ref);
+      // The event is durable, so the model has been told whatever happens
+      // next. A bookkeeping write that fails here must not take the turn down
+      // with it: the worst it costs is the same notification once more.
+      await input.ackTaskNotification?.(lease).catch(() => undefined);
       if (this.aborted || abortSignal?.aborted) {
         throw Object.assign(new Error('aborted after a task notification was durable'), {
           name: 'AbortError',

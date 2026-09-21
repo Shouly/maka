@@ -792,6 +792,8 @@ type ShellRunResultMetadata = {
   completedAt?: number;
   exitCode?: number;
   failureMessage?: string;
+  /** Where a background command's output is being written for the model to read. */
+  outputFile?: string;
   revision: number;
   timeoutMs?: number;
   sandboxDenial?: SandboxDenialSignal | SandboxDenialRecovery;

@@ -49,8 +49,12 @@ export {
 export { SessionInjections, type SessionInjectionsInput } from './session-injections.js';
 export {
   TASK_NOTIFICATION_PREAMBLE,
+  childAgentNotificationStatus,
+  renderChildAgentNotification,
+  renderNotificationWake,
   renderTaskNotification,
   renderTaskNotificationWake,
+  type ChildAgentNotificationFacts,
   taskNotificationOwed,
   taskNotificationStatus,
   taskNotificationSummary,

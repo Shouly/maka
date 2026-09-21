@@ -218,7 +218,11 @@ function readWriteStdinArgs(args: unknown):
     actions?: readonly TerminalInputAction[];
     size?: { cols: number; rows: number };
   } = {};
-  if (typeof value.ref === 'string') parsed.ref = value.ref;
+  // Two real producers, not an alias: the tool hands the model's own
+  // `task_id`, and this function also reads back rows this file already
+  // projected, which carry `ref`. Re-projection has to stay idempotent.
+  if (typeof value.task_id === 'string') parsed.ref = value.task_id;
+  else if (typeof value.ref === 'string') parsed.ref = value.ref;
   if (typeof value.input === 'string') parsed.input = value.input;
   const actions = readTerminalInputActions(value.actions);
   if (actions) parsed.actions = actions;

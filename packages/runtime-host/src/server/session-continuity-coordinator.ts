@@ -2145,6 +2145,11 @@ function projectSessionEvent(
       turnId: event.turnId,
       ts: event.ts,
       messageId: event.messageId,
+      // Who interjected travels with it. A background task finishing speaks
+      // in the user's role but is not the user, and a subscriber that is told
+      // only the words renders the notification as the reader's own message.
+      ...(event.author ? { author: event.author } : {}),
+      ...(event.origin ? { origin: structuredClone(event.origin) } : {}),
       content: shared
         ? projectSharedSessionMessageContent(event.content, sessionId)
         : structuredClone(event.content),

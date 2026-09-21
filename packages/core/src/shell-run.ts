@@ -139,8 +139,10 @@ export interface ShellRunRecord {
   status: ShellRunStatus;
   exitCode?: number;
   failureMessage?: string;
-  /** Handed to the model as a ref (Bash run_in_background); its finish is announced. */
+  /** Handed to the model as an id (Bash run_in_background); its finish is announced. */
   background?: true;
+  /** Where this run's output is being written for the model to read. */
+  outputFile?: string;
   /** What the model said the command does — the notification's summary names it. */
   description?: string;
   /** When the model was told this run had finished; absent while that is owed. */
@@ -346,6 +348,7 @@ const SHELL_RUN_RECORD_KEYS: ReadonlySet<string> = new Set([
   'exitCode',
   'failureMessage',
   'background',
+  'outputFile',
   'description',
   'notifiedAt',
   'sandboxExecution',
@@ -386,7 +389,12 @@ export function normalizeShellRunRecord(
     record.cwd,
     record.command,
   ];
-  const optionalStrings = [record.sourceRunId, record.failureMessage, record.description];
+  const optionalStrings = [
+    record.sourceRunId,
+    record.failureMessage,
+    record.description,
+    record.outputFile,
+  ];
   const valid =
     hasOnlyKeys(record, SHELL_RUN_RECORD_KEYS) &&
     requiredStrings.every((item) => typeof item === 'string') &&
@@ -550,6 +558,7 @@ function canonicalShellRunRecord(record: ShellRunRecord): ShellRunRecord {
     ...(record.exitCode !== undefined ? { exitCode: record.exitCode } : {}),
     ...(record.failureMessage !== undefined ? { failureMessage: record.failureMessage } : {}),
     ...(record.background === true ? { background: true } : {}),
+    ...(record.outputFile !== undefined ? { outputFile: record.outputFile } : {}),
     ...(record.description !== undefined ? { description: record.description } : {}),
     ...(record.notifiedAt !== undefined ? { notifiedAt: record.notifiedAt } : {}),
     ...(record.sandboxExecution !== undefined

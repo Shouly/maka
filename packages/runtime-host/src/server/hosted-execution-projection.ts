@@ -122,6 +122,7 @@ function assertRunMatchesExecution(
       if (invocationMatchesHostedRootExecution(run, execution)) return;
       break;
     case 'linked_child_initial':
+    case 'linked_child_message':
     case 'claimed_agent_graph_intent':
       assertTrustedAgentIdentity(run, turnId, execution);
       if (lineage.resumedFromRunId === undefined && lineage.retriedFromRunId === undefined) return;

@@ -90,11 +90,16 @@ export interface TranscriptCopy {
     readonly skills: string;
   };
   /**
-   * The one-line event that a background task ended and Copilot was told.
-   * `completed` and `failed` end with "…and went on", because the answer
-   * below is what it went on to; a task the reader stopped only stopped.
+   * That a background task ended, in one clause. What Copilot did about it is
+   * the reply underneath, so the line does not narrate it.
    */
   readonly taskFinished: {
+    readonly completed: (task: { title: string; detail?: string }) => string;
+    readonly failed: (task: { title: string; detail?: string }) => string;
+    readonly killed: (task: { title: string; detail?: string }) => string;
+  };
+  /** The same event for a child agent rather than a command. */
+  readonly agentFinished: {
     readonly completed: (task: { title: string; detail?: string }) => string;
     readonly failed: (task: { title: string; detail?: string }) => string;
     readonly killed: (task: { title: string; detail?: string }) => string;
@@ -547,10 +552,14 @@ const TRANSCRIPT_COPY = {
       skills: '技能',
     },
     taskFinished: {
-      completed: ({ title }) => `后台任务「${title}」已完成，Copilot 收到通知后继续。`,
-      failed: ({ title, detail }) =>
-        `后台任务「${title}」失败${detail ? `（${detail}）` : ''}，Copilot 收到通知后继续。`,
-      killed: ({ title }) => `后台任务「${title}」已停止。`,
+      completed: ({ title }) => `后台任务「${title}」已完成`,
+      failed: ({ title, detail }) => `后台任务「${title}」失败${detail ? `（${detail}）` : ''}`,
+      killed: ({ title }) => `后台任务「${title}」已停止`,
+    },
+    agentFinished: {
+      completed: ({ title }) => `子助手「${title}」已完成`,
+      failed: ({ title, detail }) => `子助手「${title}」失败${detail ? `（${detail}）` : ''}`,
+      killed: ({ title }) => `子助手「${title}」已停止`,
     },
     thinking: {
       label: '思考过程',
@@ -759,10 +768,14 @@ const TRANSCRIPT_COPY = {
       skills: '技能',
     },
     taskFinished: {
-      completed: ({ title }) => `背景任務「${title}」已完成，Copilot 收到通知後繼續。`,
-      failed: ({ title, detail }) =>
-        `背景任務「${title}」失敗${detail ? `（${detail}）` : ''}，Copilot 收到通知後繼續。`,
-      killed: ({ title }) => `背景任務「${title}」已停止。`,
+      completed: ({ title }) => `背景任務「${title}」已完成`,
+      failed: ({ title, detail }) => `背景任務「${title}」失敗${detail ? `（${detail}）` : ''}`,
+      killed: ({ title }) => `背景任務「${title}」已停止`,
+    },
+    agentFinished: {
+      completed: ({ title }) => `子助手「${title}」已完成`,
+      failed: ({ title, detail }) => `子助手「${title}」失敗${detail ? `（${detail}）` : ''}`,
+      killed: ({ title }) => `子助手「${title}」已停止`,
     },
     thinking: {
       label: '思考過程',
@@ -971,11 +984,15 @@ const TRANSCRIPT_COPY = {
       skills: 'Skills',
     },
     taskFinished: {
-      completed: ({ title }) =>
-        `Background task “${title}” finished; Copilot was notified and went on.`,
+      completed: ({ title }) => `Background task finished: ${title}`,
       failed: ({ title, detail }) =>
-        `Background task “${title}” failed${detail ? ` (${detail})` : ''}; Copilot was notified and went on.`,
-      killed: ({ title }) => `Background task “${title}” was stopped.`,
+        `Background task failed: ${title}${detail ? ` (${detail})` : ''}`,
+      killed: ({ title }) => `Background task stopped: ${title}`,
+    },
+    agentFinished: {
+      completed: ({ title }) => `Agent finished: ${title}`,
+      failed: ({ title, detail }) => `Agent failed: ${title}${detail ? ` (${detail})` : ''}`,
+      killed: ({ title }) => `Agent stopped: ${title}`,
     },
     thinking: {
       label: 'Thought process',

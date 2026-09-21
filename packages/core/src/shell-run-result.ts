@@ -114,6 +114,7 @@ const CURRENT_SHELL_RUN_RESULT_SHAPE = defineObjectShape<ShellRunToolResultRecor
     'completedAt',
     'exitCode',
     'failureMessage',
+    'outputFile',
     'timeoutMs',
     'output',
     'operation',

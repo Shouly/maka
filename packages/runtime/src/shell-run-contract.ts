@@ -80,6 +80,12 @@ export interface ShellRunProcessManagerInput {
    * with it, a running turn picks it up at its next step boundary either way.
    */
   onTaskFinished?: (record: ShellRunRecord) => void;
+  /**
+   * Directory the output of background commands is written under, one folder
+   * per Session. Absent in compositions that hand the model no file system
+   * (tests, embedded runs); those simply write no file.
+   */
+  taskOutputRoot?: string;
   maxLiveShellRuns?: number;
   maxLivePtyRuns?: number;
   flushIntervalMs?: number;

@@ -133,8 +133,12 @@ export function TerminalTab(props: { sessionId: string; active: boolean }) {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Only terminals. A background command is a shell run of this Session too,
+  // but it has no terminal to attach to: picking one up here asked the Host to
+  // control something uncontrollable, which is all the reader saw of it.
   const runs = useMemo(
-    () => updates.filter((update) => update.sessionId === sessionId),
+    () =>
+      updates.filter((update) => update.sessionId === sessionId && update.result.mode === 'pty'),
     [sessionId, updates],
   );
   // A stored ref that is no longer in the catalog falls back to the newest

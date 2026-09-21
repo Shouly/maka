@@ -280,7 +280,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
       : []),
     ...(acceptsResourceRefs
       ? [
-          '- Pass `ref` instead of `file_path` to read a whole runtime resource — a background task named by Bash, an attachment named in the conversation. Provide exactly one of `file_path` and `ref`.',
+          '- Pass `ref` instead of `file_path` to read a whole runtime resource — an attachment named in the conversation. A background command is read by its output file path, like any other file. Provide exactly one of `file_path` and `ref`.',
         ]
       : []),
     '- Reading a directory, a missing file, or a path the session permissions do not cover returns an error rather than content; an empty file returns a system reminder. Use Bash `ls` for a listing.',

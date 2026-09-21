@@ -150,6 +150,7 @@ function shellRunStateContent(record: ShellRunRecord): ShellRunCompactResult {
     ...(record.timeoutMs !== undefined ? { timeoutMs: record.timeoutMs } : {}),
     ...(record.exitCode !== undefined ? { exitCode: record.exitCode } : {}),
     ...(record.failureMessage !== undefined ? { failureMessage: record.failureMessage } : {}),
+    ...(record.outputFile !== undefined ? { outputFile: record.outputFile } : {}),
     revision: record.revision,
   } as const;
   return record.output.mode === 'pipes' ? { ...state, mode: 'pipes' } : { ...state, mode: 'pty' };

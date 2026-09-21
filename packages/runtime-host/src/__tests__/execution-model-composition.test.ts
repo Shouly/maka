@@ -155,7 +155,7 @@ const HEADLESS_CODING_V1_TOOLS_HASH =
   // refactor (purpose, failure modes, guardrails, result shape), then the file,
   // shell and search tools were aligned with the reference parameter names
   // (`file_path`, `timeout`, the ripgrep-shaped Grep switches).
-  'sha256:efc60666004078c64e47f3b9a29d3da16ff14a7c031187e2b769093aa74f42b5';
+  'sha256:4fbe27eb212f31824ee9efc6943cba1b03611ba740997ab2ac4f7b0c60faebc6';
 const execFileAsync = promisify(execFile);
 test('backend creation resolves a bound Session by immutable Connection identity', async () => {
   let observedRef: unknown;
@@ -3363,24 +3363,6 @@ test('production Host executes a durable runnable child with an exact tool ceili
       }),
     );
 
-    const requests = provider.requests.filter((request) => request.body.stream === true);
-    assert.equal(requests.length, 4);
-    assert.ok(toolNames(requests[0]?.body).includes('ToolSearch'));
-    assert.equal(toolNames(requests[0]?.body).includes('Agent'), false);
-    assert.ok(toolNames(requests[1]?.body).includes('Agent'));
-    // The same routed child surface removes web_research when Tavily cannot run.
-    assert.match(
-      toolParameterDescription(requests[1]?.body, 'Agent', 'subagent_type') ?? '',
-      /Built-in profiles available here: local_read, implementation\./,
-    );
-    // A child now carries the archive decoder alongside its allowlist (#2026).
-    // Its own placeholders name `ArchiveRead`, so the ceiling that governs
-    // agent-permission tools cannot be the thing that decides whether the child
-    // can read back a result the runtime itself pruned.
-    assert.deepEqual(toolNames(requests[2]?.body), ['ArchiveRead', 'Glob', 'Grep', 'Read']);
-    assert.doesNotMatch(JSON.stringify(requests[2]?.body), /<situation>/u);
-    assert.ok(toolNames(requests[3]?.body).includes('Agent'));
-
     const sessions = await execution.sessionStore.listForRecovery();
     const child = sessions.find((session) => session.subagentRuntime?.profile === 'local_read');
     const webChild = sessions.find(
@@ -3393,9 +3375,53 @@ test('production Host executes a durable runnable child with an exact tool ceili
     if (!child) return;
     assert.equal(child.subagentWorkspace, undefined);
     assert.equal(child.cwd, project);
+    // The child outlives the parent's Turn now, so its end is something to
+    // wait for rather than something the parent's terminal implies.
+    await waitFor(
+      async () => {
+        const runs = await execution.runtimeEventStore.listSessionInvocations(child.id);
+        return runs.length === 1 && runtimeInvocationOutcome(runs[0]!) === 'completed';
+      },
+      { timeoutMs: 10_000, pollMs: 25, message: 'child agent did not finish' },
+    );
     const childRuns = await execution.runtimeEventStore.listSessionInvocations(child.id);
     assert.equal(childRuns.length, 1);
     assert.equal(childRuns[0] && runtimeInvocationOutcome(childRuns[0]), 'completed');
+    // Parent and child requests interleave now, so they are told apart by the
+    // surface each one carries rather than by position.
+    const streamed = provider.requests.filter((request) => request.body.stream === true);
+    // The child's surface is its allowlist exactly; everything else is the
+    // parent's, including its first request, which carries no Agent tool yet
+    // because the tools are still deferred.
+    const CHILD_SURFACE = ['ArchiveRead', 'Glob', 'Grep', 'Read'];
+    const isChildSurface = (request: (typeof streamed)[number]) =>
+      JSON.stringify(toolNames(request.body)) === JSON.stringify(CHILD_SURFACE);
+    const childRequests = streamed.filter(isChildSurface);
+    const parentRequests = streamed.filter((request) => !isChildSurface(request));
+    // How many times the parent is asked is no longer fixed: the child runs
+    // in the background, so whether its end lands inside this Turn or after it
+    // is a matter of timing. What this test is named for does not depend on
+    // that — each surface carries exactly the tools it is allowed.
+    assert.equal(childRequests.length, 1);
+    assert.ok(parentRequests.length >= 2);
+    assert.ok(toolNames(parentRequests[0]?.body).includes('ToolSearch'));
+    assert.equal(toolNames(parentRequests[0]?.body).includes('Agent'), false);
+    // The same routed child surface removes web_research when Tavily cannot run.
+    assert.match(
+      toolParameterDescription(
+        parentRequests.find((request) => toolNames(request.body).includes('Agent'))?.body,
+        'Agent',
+        'subagent_type',
+      ) ?? '',
+      /Built-in profiles available here: local_read, implementation\./,
+    );
+    // A child now carries the archive decoder alongside its allowlist (#2026).
+    // Its own placeholders name `ArchiveRead`, so the ceiling that governs
+    // agent-permission tools cannot be the thing that decides whether the child
+    // can read back a result the runtime itself pruned.
+    const childSurface = childRequests[0];
+    assert.deepEqual(toolNames(childSurface?.body), ['ArchiveRead', 'Glob', 'Grep', 'Read']);
+    assert.doesNotMatch(JSON.stringify(childSurface?.body), /<situation>/u);
     assert.equal(childRuns[0]?.opening.lineage?.parentRunId, undefined);
     const childMessages = await readLedgerMessages(execution.runtimeEventStore, child.id);
     assert.equal(
@@ -3415,9 +3441,14 @@ test('production Host executes a durable runnable child with an exact tool ceili
     assert.ok(spawnResult?.content?.kind === 'function_response');
     const typedSpawnResult = decodeCanonicalToolResultContent(spawnResult.content.result);
     assert.equal(typedSpawnResult.kind, 'subagent');
+    // The Agent call returns while the child is still working, so its result
+    // cannot carry what the child had not produced yet. The child's artifacts
+    // are asserted on the child's own Turn above.
+    // TODO(async-agents): name the write-back in the completion notification
+    // so the model can find the patch without going looking for it.
     assert.deepEqual(
       (typedSpawnResult as { artifactIds?: readonly string[] }).artifactIds ?? [],
-      childArtifacts.map((artifact) => artifact.id),
+      [],
     );
   } finally {
     try {
@@ -3560,17 +3591,20 @@ test('production Host publishes and retires an implementation child patch', asyn
     );
 
     const requests = provider.requests.filter((request) => request.body.stream === true);
-    assert.ok(
-      requests.length >= MIN_IMPLEMENTATION_CHILD_REQUESTS + 3 &&
-        requests.length <= MAX_IMPLEMENTATION_CHILD_REQUESTS + 3,
-      JSON.stringify(providerRequestTrace(requests)),
-    );
-    assert.ok(toolNames(requests[0]?.body).includes('ToolSearch'));
-    assert.equal(toolNames(requests[0]?.body).includes('Agent'), false);
-    assert.ok(toolNames(requests[1]?.body).includes('Agent'));
-    assert.match(
-      toolParameterDescription(requests[1]?.body, 'Agent', 'subagent_type') ?? '',
-      /Built-in profiles available here: local_read, implementation\./,
+    const sessions = await execution.sessionStore.listForRecovery();
+    const child = sessions.find((session) => session.id !== parent.id);
+    assert.ok(child);
+    assert.equal(child?.subagentRuntime?.profile, 'implementation');
+    // The child outlives the parent's Turn now, so its script finishes on its
+    // own time: wait for that before reading what it asked the provider.
+    await waitFor(
+      async () => {
+        const runs = await execution.runtimeEventStore.listSessionInvocations(child.id);
+        return (
+          runs.length >= 1 && runs.every((run) => runtimeInvocationOutcome(run) === 'completed')
+        );
+      },
+      { timeoutMs: 20_000, pollMs: 25, message: 'implementation child did not finish' },
     );
     const childToolNames = [
       'ArchiveRead',
@@ -3583,20 +3617,32 @@ test('production Host publishes and retires an implementation child patch', asyn
       'TaskStop',
       'Write',
     ];
-    const childRequests = requests.slice(2, -1);
+    // The child runs in the background, so parent and child requests interleave
+    // and neither their positions nor the running total is fixed. Each surface
+    // is still exactly what it was allowed to be.
+    // Read the provider's log again: the snapshot above was taken while the
+    // child was still asking.
+    const settled = provider.requests.filter((request) => request.body.stream === true);
+    const isChildRequest = (request: (typeof settled)[number]) =>
+      JSON.stringify(toolNames(request.body)) === JSON.stringify(childToolNames);
+    const childRequests = settled.filter(isChildRequest);
+    const parentRequests = settled.filter((request) => !isChildRequest(request));
     assert.ok(
       childRequests.length >= MIN_IMPLEMENTATION_CHILD_REQUESTS &&
         childRequests.length <= MAX_IMPLEMENTATION_CHILD_REQUESTS,
+      JSON.stringify(providerRequestTrace(settled)),
     );
-    for (const request of childRequests) {
-      assert.deepEqual(toolNames(request.body), childToolNames);
-    }
-    assert.ok(toolNames(requests.at(-1)?.body).includes('Agent'));
+    assert.ok(toolNames(parentRequests[0]?.body).includes('ToolSearch'));
+    assert.equal(toolNames(parentRequests[0]?.body).includes('Agent'), false);
+    const parentAgentRequest = parentRequests.find((request) =>
+      toolNames(request.body).includes('Agent'),
+    );
+    assert.ok(parentAgentRequest);
+    assert.match(
+      toolParameterDescription(parentAgentRequest?.body, 'Agent', 'subagent_type') ?? '',
+      /Built-in profiles available here: local_read, implementation\./,
+    );
 
-    const sessions = await execution.sessionStore.listForRecovery();
-    const child = sessions.find((session) => session.id !== parent.id);
-    assert.ok(child);
-    assert.equal(child?.subagentRuntime?.profile, 'implementation');
     assert.equal(child?.subagentParent?.parentSessionId, parent.id);
     if (!child) return;
     // The persisted header is a configuration projection, not execution
@@ -3618,6 +3664,13 @@ test('production Host publishes and retires an implementation child patch', asyn
       CHILD_AGENT_RESULT_TEXT,
     );
     const artifacts = await openInteractiveArtifactStoreForWrite(owner.lease);
+    // The write-back patch is published as the child is finished off, which
+    // now happens after its Run is terminal rather than inside the parent's
+    // tool call, so it is waited for like any other end-of-child fact.
+    await waitFor(
+      async () => (await artifacts.listTurnArtifacts(child.id, childRuns[0]!.turnId)).length === 2,
+      { timeoutMs: 20_000, pollMs: 25, message: 'child write-back patch was not published' },
+    );
     const childArtifacts = await artifacts.listTurnArtifacts(child.id, childRuns[0]!.turnId);
     assert.equal(childArtifacts.length, 2);
     assert.ok(
@@ -3646,11 +3699,13 @@ test('production Host publishes and retires an implementation child patch', asyn
     assert.ok(spawnResult?.content?.kind === 'function_response');
     const typedSpawnResult = decodeCanonicalToolResultContent(spawnResult.content.result);
     assert.equal(typedSpawnResult.kind, 'subagent');
-    assert.deepEqual(
-      (typedSpawnResult as { artifactIds?: readonly string[] }).artifactIds,
-      childArtifacts.map((artifact) => artifact.id),
-    );
-    const childSnapshot = await execution.sessionStore.readHeaderRecordSnapshot(child.id);
+    // The Agent call returns while the child is still working, so its result
+    // cannot carry what the child had not produced yet. The child's artifacts
+    // are asserted on the child's own Turn above.
+    // TODO(async-agents): name the write-back in the completion notification
+    // so the model can find the patch without going looking for it.
+    assert.deepEqual((typedSpawnResult as { artifactIds?: readonly string[] }).artifactIds, []);
+
     const worktreePath = child.subagentWorkspace?.worktreePath;
     assert.ok(worktreePath);
     await artifacts.purgeSessionArtifacts(child.id);
@@ -3689,14 +3744,31 @@ test('production Host publishes and retires an implementation child patch', asyn
         assert.match(recoveredPatchText.text, /\+HOSTED_IMPLEMENTATION_PATCH_SENTINEL/);
       }
     }
+    // Read the revision through the restarted Host, and read it here rather
+    // than before the wait above: the child's header moves while it is
+    // finished off, and removing a version that has already moved removes
+    // nothing while still reporting success.
+    const restartedStores = await openInteractiveExecutionStoresForWrite(restartedOwner.lease);
+    const childSnapshot = await restartedStores.sessionStore.readHeaderRecordSnapshot(child.id);
     const removed = await composition.handlers['session.remove'](
       { sessionId: child.id, expectedRevision: childSnapshot.revision },
       restartContext,
     );
     assert.equal(removed.ok, true);
+    // Removing the child retires its worktree, and that is filesystem work
+    // the call schedules rather than performs. Wait for it while the Host is
+    // still up: closing the composition first would race its own cleanup.
+    if (worktreePath) {
+      await waitFor(async () => !(await fileExists(worktreePath)), {
+        // Retirement is asynchronous and backs off when another process is
+        // holding the same files, which a full suite run makes likely.
+        timeoutMs: 30_000,
+        pollMs: 25,
+        message: `child worktree was not retired (child ${child.id}, path ${worktreePath})`,
+      });
+    }
     await composition.close();
     composition = undefined;
-    if (worktreePath) assert.equal(await fileExists(worktreePath), false);
   } finally {
     try {
       await composition?.close();
@@ -5390,10 +5462,13 @@ function toolParameterDescription(
   return typeof description === 'string' ? description : undefined;
 }
 
-function requireRuntimeResourceRef(body: Record<string, unknown>): string {
-  const ref = JSON.stringify(body).match(/maka:\/\/runtime\/background-tasks\/[A-Za-z0-9_-]+/)?.[0];
-  assert.ok(ref, 'provider fixture expected a background-task ref in model history');
-  return ref;
+/** The task ID the model was handed, read back out of its own history. */
+function requireBackgroundTaskId(body: Record<string, unknown>): string {
+  const id = JSON.stringify(body).match(
+    /Command running in background with ID: ([A-Za-z0-9_-]+)\./u,
+  )?.[1];
+  assert.ok(id, 'provider fixture expected a background task ID in model history');
+  return id;
 }
 
 async function git(cwd: string, ...args: string[]): Promise<string> {
@@ -5447,11 +5522,13 @@ type ProviderFlow =
       readonly toolName: string;
     }
   | { readonly kind: 'projection_image'; readonly toolName: string }
-  | { readonly kind: 'child_agent' }
+  | { readonly kind: 'child_agent'; agentCalled: boolean }
   | {
       readonly kind: 'implementation_child_agent';
       ptyReadCount: number;
       stopRequested: boolean;
+      agentCalled: boolean;
+      childStep: number;
     }
   | { readonly kind: 'agent_graph'; readonly scenario: AgentGraphProviderScenario };
 
@@ -5528,11 +5605,17 @@ async function startProvider(): Promise<{
     },
     configureChildAgentFlow: () => {
       if (flow.kind !== 'default') throw new Error('Provider flow is already configured');
-      flow = { kind: 'child_agent' };
+      flow = { kind: 'child_agent', agentCalled: false };
     },
     configureImplementationChildAgentFlow: () => {
       if (flow.kind !== 'default') throw new Error('Provider flow is already configured');
-      flow = { kind: 'implementation_child_agent', ptyReadCount: 0, stopRequested: false };
+      flow = {
+        kind: 'implementation_child_agent',
+        ptyReadCount: 0,
+        stopRequested: false,
+        agentCalled: false,
+        childStep: 0,
+      };
     },
     configureAgentGraphFlow: () => {
       if (flow.kind !== 'default') throw new Error('Provider flow is already configured');
@@ -5720,45 +5803,61 @@ async function handleProviderRequest(
     });
     return;
   }
-  if (
-    (flow.kind === 'child_agent' || flow.kind === 'implementation_child_agent') &&
-    streamRequestIndex === 1
-  ) {
-    assert.ok(toolNames(body).includes('ToolSearch'));
-    assert.equal(toolNames(body).includes('Agent'), false);
-    respondProviderToolCall(response, streamRequestIndex, 'ToolSearch', {
-      query: 'Agent',
-    });
-    return;
-  }
-  if (
-    (flow.kind === 'child_agent' || flow.kind === 'implementation_child_agent') &&
-    streamRequestIndex === 2
-  ) {
-    assert.ok(toolNames(body).includes('Agent'));
-    respondProviderToolCall(response, streamRequestIndex, 'Agent', {
-      subagent_type: flow.kind === 'child_agent' ? 'local_read' : 'implementation',
-      description: flow.kind === 'child_agent' ? 'Inspect the boundary' : 'Write the sentinel',
-      prompt:
-        flow.kind === 'child_agent'
-          ? 'Inspect the hosted child execution boundary without changing files.'
-          : 'Create implementation.txt with the requested sentinel.',
-      isolation: flow.kind === 'child_agent' ? 'same_workspace' : 'worktree',
-      write_back: flow.kind === 'child_agent' ? 'summary' : 'patch',
-    });
-    return;
-  }
-  if (flow.kind === 'child_agent' && streamRequestIndex === 3) {
-    assert.deepEqual(toolNames(body), ['ArchiveRead', 'Glob', 'Grep', 'Read']);
+  // The child runs in the background, so parent and child requests interleave
+  // and a global counter no longer says who is asking. Each ask is answered by
+  // the surface it carries.
+  if (flow.kind === 'child_agent') {
+    const tools = toolNames(body);
+    if (tools.includes('ToolSearch') && !tools.includes('Agent')) {
+      respondProviderToolCall(response, streamRequestIndex, 'ToolSearch', { query: 'Agent' });
+      return;
+    }
+    if (tools.includes('Agent')) {
+      if (!flow.agentCalled) {
+        flow.agentCalled = true;
+        respondProviderToolCall(response, streamRequestIndex, 'Agent', {
+          subagent_type: 'local_read',
+          description: 'Inspect the boundary',
+          prompt: 'Inspect the hosted child execution boundary without changing files.',
+          isolation: 'same_workspace',
+          write_back: 'summary',
+        });
+        return;
+      }
+      respondProviderText(response, RESPONSE_TEXT);
+      return;
+    }
+    assert.deepEqual(tools, ['ArchiveRead', 'Glob', 'Grep', 'Read']);
     respondProviderText(response, CHILD_AGENT_RESULT_TEXT);
     return;
   }
-  if (flow.kind === 'child_agent' && streamRequestIndex === 4) {
-    assert.ok(toolNames(body).includes('Agent'));
-    respondProviderText(response, RESPONSE_TEXT);
-    return;
+  // Parent and child interleave once the child runs in the background, so the
+  // parent's side of this flow answers by surface and the child keeps a step
+  // counter of its own.
+  if (flow.kind === 'implementation_child_agent') {
+    const tools = toolNames(body);
+    if (tools.includes('ToolSearch') && !tools.includes('Agent')) {
+      respondProviderToolCall(response, streamRequestIndex, 'ToolSearch', { query: 'Agent' });
+      return;
+    }
+    if (tools.includes('Agent')) {
+      if (!flow.agentCalled) {
+        flow.agentCalled = true;
+        respondProviderToolCall(response, streamRequestIndex, 'Agent', {
+          subagent_type: 'implementation',
+          description: 'Write the sentinel',
+          prompt: 'Create implementation.txt with the requested sentinel.',
+          isolation: 'worktree',
+          write_back: 'patch',
+        });
+        return;
+      }
+      respondProviderText(response, RESPONSE_TEXT);
+      return;
+    }
+    flow.childStep += 1;
   }
-  if (flow.kind === 'implementation_child_agent' && streamRequestIndex === 3) {
+  if (flow.kind === 'implementation_child_agent' && flow.childStep === 1) {
     assert.deepEqual(toolNames(body), [
       'ArchiveRead',
       'Bash',
@@ -5776,7 +5875,7 @@ async function handleProviderRequest(
     });
     return;
   }
-  if (flow.kind === 'implementation_child_agent' && streamRequestIndex === 4) {
+  if (flow.kind === 'implementation_child_agent' && flow.childStep === 2) {
     respondProviderToolCall(response, streamRequestIndex, 'Bash', {
       command: 'node pty-child.mjs',
       boundary_intent: 'current',
@@ -5785,9 +5884,9 @@ async function handleProviderRequest(
     });
     return;
   }
-  if (flow.kind === 'implementation_child_agent' && streamRequestIndex === 5) {
+  if (flow.kind === 'implementation_child_agent' && flow.childStep === 3) {
     respondProviderToolCall(response, streamRequestIndex, 'TaskInput', {
-      ref: requireRuntimeResourceRef(body),
+      task_id: requireBackgroundTaskId(body),
       actions: [
         { type: 'text', text: 'ping' },
         { type: 'key', key: 'enter' },
@@ -5795,18 +5894,15 @@ async function handleProviderRequest(
     });
     return;
   }
-  if (flow.kind === 'implementation_child_agent' && streamRequestIndex === 6) {
+  if (flow.kind === 'implementation_child_agent' && flow.childStep === 4) {
     flow.ptyReadCount = 1;
-    respondProviderToolCall(response, streamRequestIndex, 'Read', {
-      ref: requireRuntimeResourceRef(body),
+    respondProviderToolCall(response, streamRequestIndex, 'TaskInput', {
+      task_id: requireBackgroundTaskId(body),
+      size: { cols: 80, rows: 24 },
     });
     return;
   }
-  if (
-    flow.kind === 'implementation_child_agent' &&
-    streamRequestIndex >= 7 &&
-    !toolNames(body).includes('Agent')
-  ) {
+  if (flow.kind === 'implementation_child_agent' && flow.childStep >= 5) {
     const latestResult = latestToolResultText(body) ?? '';
     if (!flow.stopRequested) {
       if (!latestResult.includes('CHILD_PTY_OK:ping')) {
@@ -5815,14 +5911,15 @@ async function handleProviderRequest(
           'PTY child did not publish its input response',
         );
         flow.ptyReadCount += 1;
-        respondProviderToolCall(response, streamRequestIndex, 'Read', {
-          ref: requireRuntimeResourceRef(body),
+        respondProviderToolCall(response, streamRequestIndex, 'TaskInput', {
+          task_id: requireBackgroundTaskId(body),
+          size: { cols: 80, rows: 24 },
         });
         return;
       }
       flow.stopRequested = true;
       respondProviderToolCall(response, streamRequestIndex, 'TaskStop', {
-        ref: requireRuntimeResourceRef(body),
+        task_id: requireBackgroundTaskId(body),
       });
       return;
     }
@@ -5830,10 +5927,8 @@ async function handleProviderRequest(
     const stopResult = requireLatestToolResult(body);
     assert.equal(stopResult.status, 'cancelled');
     assert.equal(stopResult.task_type, 'local_bash');
-    assert.match(
-      String(stopResult.message),
-      /^Successfully stopped task: maka:\/\/runtime\/background-tasks\//u,
-    );
+    assert.match(String(stopResult.message), /^Successfully stopped task: [A-Za-z0-9_-]+ \(/u);
+    assert.match(String(stopResult.task_id), /^[A-Za-z0-9_-]+$/u);
     respondProviderText(response, CHILD_AGENT_RESULT_TEXT);
     return;
   }

@@ -116,6 +116,8 @@
     "./session-trace-projection": "./dist/session-trace-projection.js",
     "./shell-detect": "./dist/shell-detect.js",
     "./shell-run-contract": "./dist/shell-run-contract.js",
+    "./shell-run-output-file": "./dist/shell-run-output-file.js",
+    "./agent-types-context": "./dist/agent-types-context.js",
     "./skill-invocation": "./dist/skill-invocation.js",
     "./skill-invocation-receipt": "./dist/skill-invocation-receipt.js",
     "./skills": "./dist/skills.js",
