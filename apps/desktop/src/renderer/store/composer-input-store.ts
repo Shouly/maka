@@ -46,7 +46,6 @@ export interface InputDraft {
   document: JSONContent;
   attachments: readonly PendingAttachment[];
   directories: readonly DirectoryReference[];
-  error?: string;
   intent?: { revision: number; id: string };
   permission: PermissionMode;
   /**
@@ -158,9 +157,7 @@ export function createComposerInputStore(storage: ComposerDraftStorage = localSt
   };
 
   const patch = (key: string, update: Partial<InputDraft>) => {
-    const contentEdit = Object.keys(update).some(
-      (field) => field !== 'error' && field !== 'intent',
-    );
+    const contentEdit = Object.keys(update).some((field) => field !== 'intent');
     store.setState((s) => ({
       drafts: {
         ...s.drafts,
@@ -247,7 +244,6 @@ export function createComposerInputStore(storage: ComposerDraftStorage = localSt
       revoke(current.attachments.filter((a) => ids.has(a.stagingKey)));
       patch(key, {
         intent: undefined,
-        error: undefined,
         ...(JSON.stringify(current.document) === JSON.stringify(sent.document)
           ? { document: textDocument('') }
           : {}),

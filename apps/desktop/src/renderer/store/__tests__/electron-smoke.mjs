@@ -1491,10 +1491,121 @@ try {
   await expectComposerPlaceholder(page, 'Reply…');
   assert.equal(await page.locator('[data-maka-contract="composer-stop"]').count(), 1);
   await page.screenshot({ path: SHOT('composer-placeholder-streaming.png') });
+
+  // A setting rejected during an active turn is a transient notification,
+  // not an error row that changes the composer's layout or its unsent draft.
+  const toastComposer = page.locator('[aria-label="Message composer"]');
+  const draftBeforeRejection = 'Keep this unsent draft';
+  await composerInput.fill(draftBeforeRejection);
+  const heightBeforeRejection = await toastComposer.evaluate(
+    (node) => node.getBoundingClientRect().height,
+  );
+  const modelBeforeRejection = await switcher.innerText();
+  await switcher.click();
+  await page.getByRole('menuitem', { name: /^Effort/ }).hover();
+  await page.getByRole('menuitemradio', { name: 'Off', exact: true }).click();
+  const busyNotice = 'A task is running or waiting on you. Change this setting after it settles.';
+  const busyToast = page.locator('.ui-toast[data-state="open"]').filter({ hasText: busyNotice });
+  await busyToast.waitFor();
+  assert.equal(await busyToast.count(), 1);
+  assert.equal(
+    await busyToast.getByRole('button', { name: 'Copy diagnostics', exact: true }).count(),
+    0,
+  );
+  assert.equal(await toastComposer.getByText(busyNotice, { exact: true }).count(), 0);
+  assert.equal(await composerInput.innerText(), draftBeforeRejection);
+  assert.equal(await switcher.innerText(), modelBeforeRejection);
+  assert.equal(
+    await toastComposer.evaluate((node) => node.getBoundingClientRect().height),
+    heightBeforeRejection,
+  );
+  await busyToast.evaluate((node) =>
+    Promise.all(node.getAnimations({ subtree: true }).map((animation) => animation.finished)),
+  );
+  await page.screenshot({ path: SHOT('composer-setting-error-toast.png') });
+  await busyToast.locator('[toast-close]').click();
+  await busyToast.waitFor({ state: 'detached' });
+  assert.equal(await toastComposer.getByText(busyNotice, { exact: true }).count(), 0);
+  await composerInput.fill('');
+  checks.push(
+    'a busy setting shows one informational toast without diagnostics, resizing, or losing its draft',
+  );
+
   await page.locator('[data-maka-contract="composer-stop"]').click();
   await page.locator('[data-maka-contract="composer-stop"]').waitFor({ state: 'detached' });
   await expectComposerPlaceholder(page, 'Write a message…');
   checks.push('streaming keeps Reply visible after clearing and blur, then restores the idle hint');
+
+  // Refused sends retain their input, with one toast and no inline error.
+  // Override only this isolated app's submission handler after the real Host
+  // checks above; the app is closed at the end of the test.
+  const expectSendFailureToast = async (draft) => {
+    const notice = page.locator('.ui-toast[data-state="open"]');
+    await notice.waitFor();
+    assert.equal(await notice.count(), 1);
+    assert.equal(await composerInput.innerText(), draft);
+    assert.equal(await toastComposer.locator('[role="alert"]').count(), 0);
+    await notice.locator('[toast-close]').click();
+    await notice.waitFor({ state: 'detached' });
+    assert.equal(await composerInput.innerText(), draft);
+  };
+  await app.evaluate(({ ipcMain }) => {
+    ipcMain.removeHandler('session-local:submit');
+    ipcMain.handle('session-local:submit', () => ({
+      ok: false,
+      reason: 'attachment_blocked',
+      code: 'items_invalid',
+    }));
+  });
+  const refusedDraft = 'Keep this refused message';
+  await composerInput.fill(refusedDraft);
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await expectSendFailureToast(refusedDraft);
+  await app.evaluate(({ ipcMain }) => {
+    ipcMain.removeHandler('session-local:submit');
+    ipcMain.handle('session-local:submit', () => {
+      throw new Error('SESSION_WORKSPACE_UNAVAILABLE: isolated test workspace');
+    });
+  });
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await expectSendFailureToast(refusedDraft);
+  checks.push(
+    'refused sends and unavailable workspaces show one toast and retain retryable drafts',
+  );
+
+  // Hold the first submission until its welcome composer has unmounted. A
+  // mounted-only error reporter used to swallow this failure completely.
+  await app.evaluate(({ ipcMain }) => {
+    let rejectSubmission;
+    let markStarted;
+    const started = new Promise((resolve) => {
+      markStarted = resolve;
+    });
+    globalThis.makaComposerFailureProbe = {
+      started,
+      fail: () => rejectSubmission(new Error('Network connection lost')),
+    };
+    ipcMain.removeHandler('session-local:submit');
+    ipcMain.handle(
+      'session-local:submit',
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectSubmission = reject;
+          markStarted();
+        }),
+    );
+  });
+  await rail.getByRole('button', { name: 'New task', exact: true }).click();
+  const firstSendDraft = 'Keep the failed first message';
+  await startTask(page, firstSendDraft);
+  await page.locator('[data-maka-contract="welcome-surface"]').waitFor({ state: 'detached' });
+  await app.evaluate(async () => {
+    await globalThis.makaComposerFailureProbe.started;
+    globalThis.makaComposerFailureProbe.fail();
+    delete globalThis.makaComposerFailureProbe;
+  });
+  await expectSendFailureToast(firstSendDraft);
+  checks.push('a failed first send still notifies after the welcome composer unmounts');
 
   assert.deepEqual(errors, []);
   await writeFile(

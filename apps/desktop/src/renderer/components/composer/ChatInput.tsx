@@ -104,12 +104,13 @@ import { listInvocableSkills } from '../../bridge/skills.js';
 import { listLocalMessages } from '../../bridge/session-local.js';
 import { getSessionLocalCopy } from '../../locales/session-local-copy.js';
 import { removeSession } from '../../bridge/sessions.js';
+import { ExpectedOperationError } from '../../bridge/expected-operation-error.js';
 import { armGoal, getGoal } from '../../bridge/goal.js';
 import { getComposerCopy } from '../../locales/composer-copy.js';
 import { userQuestionPanelStore } from '../../store/user-question-panel-store.js';
 import { answerUserQuestion } from '../../lib/ask-user-question.js';
 import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
-import { getShellCopy, localizedShellErrorMessage } from '../../locales/shell-copy.js';
+import { localizedShellErrorMessage } from '../../locales/shell-copy.js';
 import { getTranscriptCopy } from '../../locales/transcript-copy.js';
 import {
   chatModelChoiceLabel,
@@ -218,7 +219,6 @@ function OwnedChatInput(props: {
   const pending = useStore(turnActionsStore, (s) => pendingActionsOf(s, sessionId));
 
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
   const [status, setStatus] = useState('');
   const [dragging, setDragging] = useState(false);
   const [bypassOpen, setBypassOpen] = useState(false);
@@ -288,10 +288,22 @@ function OwnedChatInput(props: {
   // shell's localizer rather than the raw `Error.message`.
   const errorText = (cause: unknown, fallback = copy.send.failedFallback) =>
     localizedShellErrorMessage(cause, fallback, locale);
-  const report = (cause: unknown, title = copy.send.failedTitle) => {
-    if (!mounted.current) return;
-    setError(errorText(cause));
-    props.onError?.(title, cause);
+  const report = (cause: unknown, title = copy.send.failedTitle, targetSessionId = sessionId) => {
+    // A busy session is an expected setting constraint, not a diagnostic incident.
+    if (cause instanceof ExpectedOperationError && cause.code === 'session_busy') {
+      toastApi.info(errorText(cause));
+      return;
+    }
+    // Toasts outlive the composer: a first send can unmount the welcome
+    // surface before admission fails, and switching tasks must not hide it.
+    if (props.onError) props.onError(title, cause);
+    else
+      toastApi.error(
+        title,
+        errorText(cause),
+        undefined,
+        targetSessionId ? { sessionId: targetSessionId } : undefined,
+      );
   };
 
   // Settings shown in the control row: the Session's own once it exists,
@@ -360,7 +372,6 @@ function OwnedChatInput(props: {
     if (lock.current || blocked || !hasContent) return;
     lock.current = true;
     setBusy(true);
-    setError('');
     setStatus('');
     setPreview(undefined);
 
@@ -504,16 +515,11 @@ function OwnedChatInput(props: {
         }
         // A refusal that admitted nothing: the Host blocked every `/skill:x`
         // in the message, or the preload's ingest guard turned the attachments
-        // back (#4878). The toast names the reason; the composer keeps the
-        // draft with a short one.
+        // back (#4878). The toast names the reason; the draft stays for retry.
         activeSessionStore.removeTransientMessage(owner, messageId);
         optimisticId = undefined;
         showSubmissionFeedback(locale, toastApi, result, owner);
         composerInputStore.patch(sessionId ? scopeKey : owner, {
-          error:
-            result.reason === 'attachment_blocked'
-              ? getShellCopy(locale).sessionSettingsActions.attachmentIngestBlocked[result.code]
-              : copy.send.skillFailedFallback,
           intent: undefined,
         });
         if (
@@ -580,15 +586,9 @@ function OwnedChatInput(props: {
           locale,
           owner ? { sessionId: owner } : undefined,
         );
-        composerInputStore.patch(owner && !sessionId ? owner : scopeKey, {
-          error: getShellCopy(locale).errors.workspaceUnavailableTitle,
-        });
         return;
       }
-      composerInputStore.patch(owner && !sessionId ? owner : scopeKey, {
-        error: errorText(cause),
-      });
-      report(cause);
+      report(cause, copy.send.failedTitle, owner);
     } finally {
       lock.current = false;
       if (mounted.current) setBusy(false);
@@ -1237,8 +1237,7 @@ function OwnedChatInput(props: {
                   target={localTarget ?? props.target}
                   document={draft.document}
                   onChange={(document) => {
-                    patch({ document, error: undefined });
-                    setError('');
+                    patch({ document });
                     history.resetNavigation();
                   }}
                   onEditor={(value) => {
@@ -1418,12 +1417,6 @@ function OwnedChatInput(props: {
           {blocked || status}
         </p>
       )}
-      {(error || draft.error) && (
-        <p role="alert" className="mt-1 px-3 text-sm text-danger">
-          {error || draft.error}
-        </p>
-      )}
-
       <ConfirmDialog
         open={bypassOpen}
         onOpenChange={setBypassOpen}
@@ -1552,7 +1545,6 @@ function GoalDialog(props: {
       props.onOpenChange(false);
       props.onStatus(copy.armedTitle);
     } catch (cause) {
-      setFieldError(cause instanceof Error ? cause.message : String(cause));
       props.onError(cause, copy.failedTitle);
     } finally {
       props.onBusy(false);

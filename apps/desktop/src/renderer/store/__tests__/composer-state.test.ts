@@ -95,7 +95,9 @@ test('admission retry identity survives first-session transfer and outcome_unkno
   const revision = store.read('new').revision,
     id = store.reserveIntent('new', revision);
   store.transfer('new', 'session');
-  store.patch('session', { error: 'unknown' });
+  // A failed send leaves the draft and its admission identity available for retry.
+  assert.equal(serializeComposer(store.read('session').document).text, 'hello');
+  assert.equal(store.read('session').revision, revision);
   assert.equal(store.reserveIntent('session', store.read('session').revision), id);
   store.setText('session', 'different');
   assert.notEqual(store.reserveIntent('session', store.read('session').revision), id);

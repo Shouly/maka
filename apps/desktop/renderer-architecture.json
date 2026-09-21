@@ -1103,7 +1103,7 @@
         "useComposerInlineRow": 1,
         "useEffect": 4,
         "useRef": 8,
-        "useState": 14,
+        "useState": 13,
         "useStore": 10,
         "useUiLocale": 2
       },
@@ -1112,6 +1112,7 @@
       "actionFactories": [],
       "dependencyPaths": {
         "../../bridge/attachments.js": 1,
+        "../../bridge/expected-operation-error.js": 1,
         "../../bridge/goal.js": 1,
         "../../bridge/new-tasks.js": 1,
         "../../bridge/session-local.js": 1,

@@ -153,7 +153,6 @@ export interface ComposerCopy {
     readonly failedTitle: string;
     readonly failedFallback: string;
     readonly skillFailedTitle: string;
-    readonly skillFailedFallback: string;
     readonly outcomeUnknownTitle: string;
     readonly outcomeUnknownDescription: string;
     readonly steeredTitle: string;
@@ -266,7 +265,6 @@ const COMPOSER_COPY = {
       failedTitle: '消息发送失败',
       failedFallback: '未能发送这条消息。',
       skillFailedTitle: '技能调用失败',
-      skillFailedFallback: '这条消息里的技能未能加载，消息没有发出。',
       outcomeUnknownTitle: '发送结果未知',
       outcomeUnknownDescription: '没有收到确认。消息可能已经送达，草稿已为你保留。',
       steeredTitle: '已作为补充说明送入当前回答',
@@ -377,7 +375,6 @@ const COMPOSER_COPY = {
       failedTitle: '訊息傳送失敗',
       failedFallback: '未能傳送這條訊息。',
       skillFailedTitle: '技能呼叫失敗',
-      skillFailedFallback: '這條訊息裡的技能未能載入，訊息沒有送出。',
       outcomeUnknownTitle: '傳送結果未知',
       outcomeUnknownDescription: '沒有收到確認。訊息可能已經送達，草稿已為你保留。',
       steeredTitle: '已作為補充說明送入目前回答',
@@ -494,7 +491,6 @@ const COMPOSER_COPY = {
       failedTitle: 'The message could not be sent',
       failedFallback: 'The message was not sent.',
       skillFailedTitle: 'A skill could not be invoked',
-      skillFailedFallback: 'A skill in this message failed to load, so the message was not sent.',
       outcomeUnknownTitle: 'The result is unknown',
       outcomeUnknownDescription:
         'No confirmation came back. The message may already have arrived; your draft has been kept.',
