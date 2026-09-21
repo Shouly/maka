@@ -122,7 +122,7 @@ export function buildSubagentSpawnTool(
     description: [
       'Launch a new agent to handle complex, multi-step tasks. Each agent type has its own tools and its own model.',
       '',
-      'The agent types this session can run are listed in your context, each with what it is for and what it can use. Pass one of those as `subagent_type`. ListAgents resolves a selector that came back unknown, and carries the contracts in full.',
+      'The agent types this session can run are listed in your context, each with what it is for and what it can use. Pass one of those as `subagent_type`. `ListAgents` with `view=selection` resolves a selector that came back unknown, and carries the contracts in full.',
       '',
       '## When to use',
       '',
@@ -204,7 +204,7 @@ export function buildSubagentSpawnTool(
               code: z.ZodIssueCode.custom,
               path: ['subagent_type'],
               message:
-                'subagent_type is not a well-formed preset id. Call ListAgents and pass a returned ' +
+                'subagent_type is not a well-formed preset id. Call ListAgents with view=selection and pass a returned ' +
                 `subagent_id, or one built-in profile: ${profiles.join(', ')}.`,
             });
           }
@@ -335,7 +335,10 @@ async function resolvePresetDefinition(
       (candidate as { id?: unknown }).id === subagentId &&
       typeof (candidate as { profile?: unknown }).profile === 'string',
   );
-  if (!preset) throw new Error(`Unknown subagent_id "${subagentId}". Call ListAgents first.`);
+  if (!preset)
+    throw new Error(
+      `Unknown subagent_id "${subagentId}". Call ListAgents with view=selection first.`,
+    );
   if (preset.availability?.status !== 'available') {
     throw new Error(`Subagent preset "${subagentId}" is unavailable.`);
   }
@@ -354,9 +357,17 @@ interface StartedChildAgent {
 /** What the model is told the moment a child agent is running. */
 export function startedChildAgentText(agentId: string, trailer = ''): string {
   return (
-    `Agent running in the background with ID: ${agentId}. ` +
-    'You will be notified when it finishes; until then you know nothing about its results. ' +
-    'To continue it with its context intact, use SendMessage with that ID; to end it, use TaskStop.' +
+    'Async agent launched successfully. (This tool result is internal metadata — never quote ' +
+    'or paste any part of it, including the agentId below, into a user-facing reply.)\n' +
+    `agentId: ${agentId} (internal ID - do not mention to user. Use SendMessage with ` +
+    `to: '${agentId}', summary: '<5-10 word recap>' to continue this agent, or TaskStop with ` +
+    'that ID to end it.)\n' +
+    'The agent is working in the background. You will be notified automatically when it ' +
+    'completes. You know nothing about its results until that notification arrives — do not ' +
+    'report, assume, or predict them; continue other work or respond to the user in the ' +
+    'meantime.\n' +
+    "Do not duplicate this agent's work — avoid working with the same files or topics it is " +
+    'using.' +
     trailer
   );
 }
@@ -406,7 +417,10 @@ export function buildSubagentListTool(): MakaTool<
     name: AGENT_LIST_TOOL_NAME,
     displayName: 'Agent List',
     description: [
-      'The agent catalog in full. The types you can launch are already listed in your context, so reach for this when that is not enough: a selector came back unknown or unavailable, you need the contracts behind an entry, or a graph tool needs an id.',
+      'The agents this session has started, and the catalog behind them.',
+      '',
+      '- With no arguments it lists the agents already running or finished here: the ID to message or stop, what type each one is, how it stands, and how long ago it started.',
+      '- The types you can launch are listed in your context, so reach for view=selection or view=catalog only when that is not enough: a selector came back unknown or unavailable, you need the contracts behind an entry, or a graph tool needs an id.',
       '',
       '- Each entry carries the id, its description, the model behind it, and the workspace and write-back contract Agent will hold you to. Match a task to a description, never to a name.',
       '- The ids are not interchangeable: subagent_id is what Agent takes as subagent_type and UpdateAgentGraph as target_kind=new_preset, agent_id goes to UpdateAgentGraph as target_kind=new_agent, and a built-in profile is also a valid Agent subagent_type.',
@@ -418,10 +432,11 @@ export function buildSubagentListTool(): MakaTool<
     parameters: z
       .object({
         view: z
-          .enum(['selection', 'catalog'])
-          .default('selection')
+          .enum(['agents', 'selection', 'catalog'])
+          .default('agents')
           .describe(
-            'selection lists runnable choices; catalog also includes unavailable choices and reasons.',
+            'agents lists what this session has started; selection lists runnable choices; ' +
+              'catalog also includes unavailable choices and reasons.',
           ),
         cursor: z
           .string()
@@ -441,9 +456,72 @@ export function buildSubagentListTool(): MakaTool<
           { cause: new Error('listChildAgents capability is unavailable in this runtime context') },
         );
       }
-      return projectAgentList(await ctx.listChildAgents(), input);
+      const catalog = await ctx.listChildAgents();
+      if ((input.view ?? 'agents') === 'agents') {
+        return { type: 'text', value: renderAgentRoster(ctx.sessionId, catalog, Date.now()) };
+      }
+      return projectAgentList(
+        catalog,
+        input as { view?: 'selection' | 'catalog'; cursor?: string },
+      );
     },
   };
+}
+
+/**
+ * The agents this Session has started, as a person would read them out.
+ *
+ * The roster is the answer to "what did I set running", so it names the id the
+ * other tools take, the type behind it, where it stands and how long ago it
+ * began — not the catalog of types, which the Session already carries in its
+ * context.
+ */
+export function renderAgentRoster(sessionId: string, catalog: unknown, now: number): string {
+  const raw =
+    catalog && typeof catalog === 'object' && !Array.isArray(catalog)
+      ? (catalog as Record<string, unknown>)
+      : {};
+  const executions = Array.isArray(raw.executions) ? raw.executions : [];
+  const rows: string[] = [];
+  for (const candidate of executions) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue;
+    const item = candidate as Record<string, unknown>;
+    const execution =
+      item.execution && typeof item.execution === 'object' && !Array.isArray(item.execution)
+        ? (item.execution as Record<string, unknown>)
+        : undefined;
+    const id =
+      typeof execution?.sessionId === 'string' && execution.kind === 'child_session'
+        ? execution.sessionId
+        : typeof execution?.runId === 'string'
+          ? execution.runId
+          : undefined;
+    if (id === undefined) continue;
+    const type = typeof item.profile === 'string' ? item.profile : 'agent';
+    const status = typeof item.status === 'string' ? item.status : 'running';
+    const started =
+      typeof item.createdAt === 'number' ? ` · started ${agoLabel(now - item.createdAt)}` : '';
+    const name = typeof item.agentName === 'string' ? ` · ${item.agentName}` : '';
+    rows.push(`  ${id} · ${type} · ${status}${started}${name}`);
+  }
+  const header =
+    `This session is ${sessionId} — the ID other tools use to reach it ` +
+    '(it is not listed below; a message to it would be a message to yourself).';
+  if (rows.length === 0) {
+    return `${header}\n\nSubagents (0): none started in this session yet.`;
+  }
+  return `${header}\n\nSubagents (${rows.length}):\n${rows.join('\n')}`;
+}
+
+/** How long ago, in the coarsest unit that still says something. */
+function agoLabel(elapsedMs: number): string {
+  const seconds = Math.max(0, Math.round(elapsedMs / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
 }
 
 function projectAgentList(
@@ -802,8 +880,9 @@ export function buildSubagentProjectionTools(): MakaTool[] {
  * answer comes back as a notification, not as this tool's result.
  */
 export function buildSendMessageToChildAgentTool(): MakaTool<{
-  agent_id: string;
+  to: string;
   message: string;
+  summary?: string;
 }> {
   return {
     name: TOOL_NAMES.sendMessage,
@@ -814,14 +893,25 @@ export function buildSendMessageToChildAgentTool(): MakaTool<{
     description: [
       'Send a message to an agent this session started, continuing it with its context intact.',
       '',
-      '- `agent_id` is the ID the Agent tool returned.',
+      "- `to` is the ID the Agent tool returned, or the agent's name.",
+      "- `summary` is a 5-10 word recap of what you are asking; it labels the row a person reads and is not part of the agent's brief.",
       '- The agent picks up where it left off; a new Agent call would instead start one that knows nothing.',
       '- It runs in the background like the first brief: you are notified when it finishes, and you know nothing about its answer until then.',
       '- Only agents of the current session can be continued, and only one message at a time: an agent that is still working rejects a second one.',
     ].join('\n'),
     parameters: z.object({
-      agent_id: z.string().min(1).max(256).describe('The ID the Agent tool returned'),
+      to: z
+        .string()
+        .min(1)
+        .max(256)
+        .describe("The ID the Agent tool returned, or the agent's name"),
       message: z.string().min(1).max(60_000).describe('What to tell the agent'),
+      summary: z
+        .string()
+        .min(1)
+        .max(AGENT_DESCRIPTION_MAX_CHARS)
+        .optional()
+        .describe('A 5-10 word recap of this message, for the transcript row'),
     }),
     impl: async (input, ctx) => {
       if (!ctx.sendChildAgentMessage) {
@@ -832,7 +922,7 @@ export function buildSendMessageToChildAgentTool(): MakaTool<{
       }
       const started = projectStartedChildAgent(
         await ctx.sendChildAgentMessage({
-          childSessionId: input.agent_id,
+          childSessionId: input.to,
           text: input.message,
         }),
       );
@@ -852,11 +942,14 @@ export function buildSendMessageToChildAgentTool(): MakaTool<{
     toModelOutput: ({ output }) => {
       const result = output as { childSessionId?: string };
       if (typeof result?.childSessionId !== 'string') return undefined;
+      const id = result.childSessionId;
       return {
         type: 'text',
-        value:
-          `Message delivered; the agent is running again with ID: ${result.childSessionId}. ` +
-          'You will be notified when it finishes.',
+        value: JSON.stringify({
+          success: true,
+          message: `Resuming agent ${id.slice(0, 7)}`,
+          resumedAgentId: id,
+        }),
       };
     },
   };

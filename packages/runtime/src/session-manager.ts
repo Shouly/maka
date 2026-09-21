@@ -2774,7 +2774,9 @@ export class SessionManager {
     childSessionId: string;
     text: string;
   }): Promise<StartChildSessionResult> {
-    const child = await this.deps.store.readHeader(input.childSessionId);
+    const child = await this.deps.store.readHeader(
+      await this.#resolveChildAgentHandle(input.parentSessionId, input.childSessionId),
+    );
     const snapshot = child.subagentRuntime;
     const parent = child.subagentParent;
     if (
@@ -2877,13 +2879,35 @@ export class SessionManager {
    * result says so, and the child is still announced the way it would have
    * been, carrying whatever it had reached (reference behaviour).
    */
+  /**
+   * The child Session a handle names.
+   *
+   * The model is given an agent's id, but it may also have been told the
+   * agent's name, and the tools accept either. An id is tried first: names are
+   * not unique across a Session's children, so the newest match wins, which is
+   * the one a person means when they say "that agent".
+   */
+  async #resolveChildAgentHandle(parentSessionId: string, handle: string): Promise<string> {
+    const direct = await this.deps.store.readHeader(handle).catch(() => undefined);
+    if (direct) return direct.id;
+    const children = await this.listChildSessions(parentSessionId).catch(() => []);
+    const named = children.filter((child) => child.name === handle);
+    const newest = named.at(-1);
+    if (!newest) throw new Error(`No agent of this session is called "${handle}"`);
+    return newest.id;
+  }
+
   async stopChildAgent(input: { parentSessionId: string; childSessionId: string }): Promise<{
     stopped: boolean;
     agentName: string;
     description?: string;
     status: SpawnChildSessionResult['status'];
   }> {
-    const child = await this.deps.store.readHeader(input.childSessionId);
+    const childSessionId = await this.#resolveChildAgentHandle(
+      input.parentSessionId,
+      input.childSessionId,
+    );
+    const child = await this.deps.store.readHeader(childSessionId);
     const parent = child.subagentParent;
     if (parent?.kind !== 'subagent' || parent.parentSessionId !== input.parentSessionId) {
       throw new Error('That agent belongs to another session');

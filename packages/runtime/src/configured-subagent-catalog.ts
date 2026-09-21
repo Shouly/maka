@@ -103,7 +103,10 @@ export function createConfiguredSubagentCatalog(deps: {
     },
     async resolve(id) {
       const preset = (await deps.getPresets()).find((candidate) => candidate.id === id);
-      if (!preset) throw new Error(`Unknown subagent_id "${id}". Call ListAgents before spawning.`);
+      if (!preset)
+        throw new Error(
+          `Unknown subagent_id "${id}". Call ListAgents with view=selection before spawning.`,
+        );
       const inspected = await inspect(preset);
       if (inspected.item.availability.status !== 'available') {
         throw new Error(

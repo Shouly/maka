@@ -691,7 +691,9 @@ describe('subagent tools', () => {
     const outputTool = buildSubagentOutputTool();
 
     const list = await listTool.impl(
-      {},
+      // The default view is the roster of agents this Session started; the
+      // catalog projection this test is about is the other one.
+      { view: 'selection' },
       {
         sessionId: 'session-1',
         turnId: 'parent-turn',
@@ -799,7 +801,7 @@ describe('subagent tools', () => {
     });
   });
 
-  test('ListAgents keeps discovery compact, paginated, and free of execution history', async () => {
+  test('ListAgents keeps the catalog view compact, paginated, and free of execution history', async () => {
     const listTool = buildSubagentListTool();
     const schema = listTool.parameters as {
       safeParse(input: unknown): {
@@ -807,7 +809,7 @@ describe('subagent tools', () => {
         data?: { view?: string; cursor?: string };
       };
     };
-    assert.deepStrictEqual(schema.safeParse({ ignored: true }).data, { view: 'selection' });
+    assert.deepStrictEqual(schema.safeParse({ ignored: true }).data, { view: 'agents' });
     assert.strictEqual(schema.safeParse({ cursor: 'not-a-cursor' }).success, false);
 
     const catalog = {
@@ -849,7 +851,7 @@ describe('subagent tools', () => {
         listChildAgents: async () => source,
       })) as Record<string, unknown>;
 
-    const first = await call({});
+    const first = await call({ view: 'selection' });
     assert.strictEqual((first.presets as unknown[]).length, 8);
     assert.deepStrictEqual(first.page, { returned: 8, total: 10, next_cursor: '8' });
     assert.strictEqual('definitions' in first, false);
@@ -857,7 +859,7 @@ describe('subagent tools', () => {
     assert.strictEqual('runs' in first, false);
     assert.strictEqual(JSON.stringify(first).length < 8_192, true);
 
-    const second = await call({ cursor: '8' });
+    const second = await call({ view: 'selection', cursor: '8' });
     assert.strictEqual((second.presets as unknown[]).length, 2);
     assert.deepStrictEqual(second.page, { returned: 2, total: 10 });
 
@@ -1144,7 +1146,11 @@ describe('Agent — reference argument names', () => {
     // The model reads a ref and what to do with it, and is told plainly that
     // its model choice did not travel.
     assert.strictEqual(projected.type, 'text');
-    assert.match(String((projected as { value: string }).value), /with ID: child-session/u);
+    assert.match(
+      String((projected as { value: string }).value),
+      /^Async agent launched successfully\./u,
+    );
+    assert.match(String((projected as { value: string }).value), /agentId: child-session/u);
     assert.match(
       String((projected as { value: string }).value),
       /The agent carries its own model, so "some-other-model" was not applied\./u,
