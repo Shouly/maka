@@ -28,6 +28,7 @@ import {
   type ThreadSearchMatchKind,
 } from '@maka/core/search';
 import { collapseSessionRevisions } from '@maka/core/session-revisions';
+import { ToolRefusal } from '@maka/core/events';
 import { redactSecrets } from '@maka/core/redaction';
 import { validateWorkspacePrivacyContext } from '@maka/core/incognito';
 import type { SessionSummary, StoredMessage } from '@maka/core/session';
@@ -533,7 +534,30 @@ function truncateUtf8(value: string, maxBytes: number): string {
   return `${body}…`;
 }
 
+/**
+ * These two tools RETURNED their failures as ordinary values.
+ *
+ * `{ kind: 'history_search_error', ok: false, reason, message }` looks like the
+ * shape web search uses, and web search's works — but only because
+ * `web_search_error` is a registered `ToolResultContent` kind, so
+ * `deriveToolResultStatus` recognises it. These kinds are not registered, so
+ * the result was wrapped as plain `json` and the call was graded a SUCCESS: no
+ * `isError` for the model, no mark on the row, the reason sitting in the body
+ * of a row that claimed everything went fine.
+ *
+ * Every reason either tool can reach is the tool working correctly and saying
+ * no — a query it will not run, a session that is not there, privacy mode —
+ * so they throw `ToolRefusal` with the reason as the class, which is how the
+ * memory tools already report the same kind of no.
+ *
+ * `aborted` is the one exception and it is deliberate: a call cut short by the
+ * turn's own stop is not a refusal and not a failure, and the abort machinery
+ * owns what happens next. Returning on an abort is what Computer Use does too.
+ */
 function historySearchError(error: SearchError) {
+  if (error.reason !== 'aborted') {
+    throw new ToolRefusal(error.message, { class: error.reason });
+  }
   return {
     kind: 'history_search_error' as const,
     ok: false as const,
@@ -543,5 +567,6 @@ function historySearchError(error: SearchError) {
 }
 
 function historyError(reason: HistoryReadErrorReason, message: string) {
+  if (reason !== 'aborted') throw new ToolRefusal(message, { class: reason });
   return { kind: 'history_read_error' as const, ok: false as const, reason, message };
 }

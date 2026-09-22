@@ -19,6 +19,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { ToolRefusal } from '@maka/core/events';
 import type { SessionSummary, StoredMessage } from '@maka/core/session';
 import type { ZodType } from 'zod';
 import {
@@ -260,11 +261,11 @@ test('ReadHistory excludes the currently executing turn only in the current sess
     historyDeps([session('current', 'Current', 2), session('past', 'Past', 1)], messages),
   );
 
-  assert.match(
-    JSON.stringify(
-      await tool.impl({ session_id: 'current', message_id: 'user-current-turn' }, context()),
+  assert.equal(
+    await refusalClassOf(
+      tool.impl({ session_id: 'current', message_id: 'user-current-turn' }, context()),
     ),
-    /message_not_found/u,
+    'message_not_found',
   );
   assert.match(
     JSON.stringify(
@@ -381,18 +382,18 @@ test('ReadHistory rejects mismatched or hidden message anchors', async () => {
   ]);
   const tool = buildReadHistoryTool(historyDeps([session('past', 'Past', 1)], messages));
 
-  assert.match(
-    JSON.stringify(
-      await tool.impl(
+  assert.equal(
+    await refusalClassOf(
+      tool.impl(
         { session_id: 'past', message_id: 'user-turn-1', turn_id: 'turn-other' },
         context(),
       ),
     ),
-    /anchor_mismatch/u,
+    'anchor_mismatch',
   );
-  assert.match(
-    JSON.stringify(await tool.impl({ session_id: 'past', message_id: 'hidden-note' }, context())),
-    /message_not_found/u,
+  assert.equal(
+    await refusalClassOf(tool.impl({ session_id: 'past', message_id: 'hidden-note' }, context())),
+    'message_not_found',
   );
 });
 
@@ -411,11 +412,15 @@ test('history access fails closed before transcript reads in incognito mode', as
     getPrivacyContext: async () => ({ incognitoActive: true }),
   };
 
-  const search = await buildSearchHistoryTool(deps).impl({ query: 'secret' }, context());
-  const read = await buildReadHistoryTool(deps).impl({ session_id: 'past' }, context());
+  const searchClass = await refusalClassOf(
+    buildSearchHistoryTool(deps).impl({ query: 'secret' }, context()),
+  );
+  const readClass = await refusalClassOf(
+    buildReadHistoryTool(deps).impl({ session_id: 'past' }, context()),
+  );
 
-  assert.match(JSON.stringify(search), /incognito_active/u);
-  assert.match(JSON.stringify(read), /incognito_active/u);
+  assert.equal(searchClass, 'incognito_active');
+  assert.equal(readClass, 'incognito_active');
   assert.equal(listCalls, 0);
   assert.equal(readCalls, 0);
 });
@@ -466,6 +471,24 @@ function assistant(text: string, turnId: string): StoredMessage {
   };
 }
 
+/**
+ * The class of the refusal a call throws.
+ *
+ * These tools used to RETURN their reasons inside a value, so the tests read
+ * them out of `JSON.stringify`. The reason is now the refusal's class, which is
+ * also what the transcript keys on — so asserting it here is asserting the
+ * thing the rest of the system reads.
+ */
+async function refusalClassOf(call: unknown): Promise<string | undefined> {
+  try {
+    const value = await call;
+    assert.fail(`expected a refusal, got ${JSON.stringify(value)}`);
+  } catch (thrown) {
+    assert.ok(thrown instanceof ToolRefusal, `expected a refusal, got ${String(thrown)}`);
+    return thrown.failureClass;
+  }
+}
+
 function context(abortSignal: AbortSignal = new AbortController().signal): MakaToolContext {
   return {
     sessionId: 'current',
@@ -476,3 +499,52 @@ function context(abortSignal: AbortSignal = new AbortController().signal): MakaT
     emitOutput: () => {},
   };
 }
+
+// Both tools used to RETURN their failures as ordinary values shaped like web
+// search's — and web search's works only because `web_search_error` is a
+// registered `ToolResultContent` kind. These kinds are not, so the result was
+// wrapped as plain `json` and the call was graded a SUCCESS: no `isError` for
+// the model, no mark on the row, the reason sitting inside a row that claimed
+// everything had gone fine. Every reason either tool can reach is the tool
+// working and saying no, so they refuse.
+test('SearchHistory refuses rather than reporting a failure as a success', async () => {
+  const tool = buildSearchHistoryTool(historyDeps([session('current', 'Current', 1)], new Map()));
+
+  let refusal: unknown;
+  try {
+    refusal = await tool.impl({ query: '', limit: 10 }, context());
+  } catch (thrown) {
+    refusal = thrown;
+  }
+  assert.ok(refusal instanceof ToolRefusal, `expected a refusal, got ${JSON.stringify(refusal)}`);
+  // The reason travels as the class, so the transcript keeps the detail the
+  // returned envelope used to carry in its `reason` field.
+  assert.equal(refusal.failureClass, 'invalid_query');
+  assert.ok(refusal.message.length > 0);
+});
+
+test('ReadHistory refuses a session it cannot find', async () => {
+  const tool = buildReadHistoryTool(historyDeps([session('current', 'Current', 1)], new Map()));
+  let refusal: unknown;
+  try {
+    refusal = await tool.impl({ session_id: '00000000-0000-4000-8000-000000000000' }, context());
+  } catch (thrown) {
+    refusal = thrown;
+  }
+  assert.ok(refusal instanceof ToolRefusal, `expected a refusal, got ${JSON.stringify(refusal)}`);
+  assert.equal(refusal.failureClass, 'session_not_found');
+});
+
+// The one reason that is neither: a call cut short by the turn's own stop is
+// not the tool deciding anything, and the abort machinery owns what follows.
+test('an aborted history call still returns rather than refusing', async () => {
+  const aborted = new AbortController();
+  aborted.abort();
+  const tool = buildSearchHistoryTool(historyDeps([session('current', 'Current', 1)], new Map()));
+  const result = (await tool.impl({ query: 'deploy', limit: 10 }, context(aborted.signal))) as {
+    kind: string;
+    reason: string;
+  };
+  assert.equal(result.kind, 'history_search_error');
+  assert.equal(result.reason, 'aborted');
+});
