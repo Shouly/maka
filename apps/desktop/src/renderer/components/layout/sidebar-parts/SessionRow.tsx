@@ -100,7 +100,7 @@ export function SessionRow(props: {
           <span
             role="status"
             aria-label={copy.running}
-            className="size-1.5 shrink-0 rounded-full bg-fill-brand"
+            className="animate-status-dot-breathe size-1.5 shrink-0 rounded-full bg-fill-brand [--status-dot-strong:var(--fill-brand)] [--status-dot-soft:color-mix(in_srgb,var(--fill-brand)_55%,var(--sidebar-background))]"
           />
         </TooltipTrigger>
         <TooltipContent side="top">{copy.running}</TooltipContent>

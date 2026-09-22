@@ -55,6 +55,8 @@ export function WorkspacePicker(props: {
   side?: 'top' | 'bottom';
   /** The meta row under the composer: 24px chip rather than the 32px control. */
   dense?: boolean;
+  /** Show a dropdown affordance beside the project label. */
+  showChevron?: boolean;
   /**
    * Controlled mode, for a form that owns its own workspace rather than the
    * app's next-task target — the scheduled-task dialog picks where ONE task
@@ -136,6 +138,9 @@ export function WorkspacePicker(props: {
           )}
         >
           <span className="min-w-0 truncate">{label}</span>
+          {props.showChevron && (
+            <Anthropicon name="caretDown" size={12} className="shrink-0 text-text-muted" />
+          )}
         </button>
       </PopoverTrigger>
       <PopoverContent

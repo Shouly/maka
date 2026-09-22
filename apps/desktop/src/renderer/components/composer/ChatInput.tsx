@@ -1361,7 +1361,9 @@ function OwnedChatInput(props: {
         <div className="mt-2 flex h-6 w-full items-center justify-between gap-2 px-2">
           <div className={cn('flex min-w-0 items-center gap-1', !welcome && 'shrink-0')}>
             {!welcome && addContextMenu}
-            {welcome && <WorkspacePicker dense side={menuSide} className="max-w-full shrink" />}
+            {welcome && (
+              <WorkspacePicker dense showChevron side={menuSide} className="max-w-full shrink" />
+            )}
             {plan && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -1395,8 +1397,10 @@ function OwnedChatInput(props: {
               </div>
             )}
             {/* The model label yields width before any action is squeezed. */}
-            <div className="min-w-0 max-w-[220px] [&>button]:max-w-full">{modelMenu}</div>
-            <div className="shrink-0 [&>button]:whitespace-nowrap">
+            <div className="flex min-w-0 max-w-[220px] items-center [&>button]:max-w-full">
+              {modelMenu}
+            </div>
+            <div className="flex shrink-0 items-center [&>button]:whitespace-nowrap">
               <PermissionModeMenu
                 activeMode={mode}
                 side={menuSide}
