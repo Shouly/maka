@@ -35,6 +35,7 @@
 
 import { SANDBOX_BOUNDARY_RESTART_CLOSURE_CLASS } from '@maka/core/sandbox-boundary';
 import type { SessionBlockedReason, SessionSummary } from '@maka/core/session';
+import type { ToolFailureKind } from '@maka/core/events';
 import type { ModelRetryDecision } from '@maka/core/model-failure';
 import type { UiLocale } from '@maka/core/ui-locale';
 import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
@@ -146,33 +147,53 @@ export function deriveFailedTurnSeverity(errorClass: string | undefined): Failed
 
 export interface FailedTurnExecutionState {
   retry?: ModelRetryDecision;
-  toolActivityCount: number;
-  erroredToolCount: number;
+  /** Calls that ran without a failure grade — they may already have changed things. */
+  ranCount: number;
+  /** The grades of the calls that failed, so a refusal is not read as damage. */
+  failureKinds: readonly ToolFailureKind[];
 }
 
 /**
- * What this turn already did before it failed, when that changes what sending
- * the next message costs. A tool that ran may have had side effects the retry
- * would repeat, so the user should read its result before deciding.
+ * What the reader should do next, given what this turn left behind.
  *
- * This is a SECOND sentence, not a replacement for `describeTurnErrorClass()`.
- * The retired `deriveFailedTurnRecovery()` ranked the two against each other
- * and let the tool branch win, so `auth` plus one errored tool advised
- * "inspect the tool result" and dropped "sign in again" — the only step that
- * could actually change the outcome. Both facts are true at once and the
- * banner has a slot for each (`title` / `description`), so neither has to
- * lose. Without a recorded retry decision or tool activity, there is no
- * supplementary guidance; loading older answer text must not change it.
+ * Not a report of what went wrong — that is the first sentence
+ * (`describeTurnErrorClass`), and this is the second. A reader does not need
+ * to know which tool it was or why the runtime declined to retry; they need to
+ * know whether anything on disk is half-changed and whether resending is safe.
+ * So the branches are ordered by what is at stake rather than by what the
+ * runtime happens to record.
+ *
+ * `failed` outranks everything because it is the loudest evidence that work
+ * was left half-done. A refusal ranks below it but is NOT a promise that
+ * nothing happened: a Bash command graded `denied` reached that grade from its
+ * terminal result (`tool-runtime.ts`, `terminalFailure.sandboxDenied`), so it
+ * ran, and it may have written inside the workspace before the sandbox stopped
+ * it. The refusal line therefore says the step did not get done, and still
+ * sends the reader to look — never that nothing changed.
+ *
+ * Both facts survive at once — the retired `deriveFailedTurnRecovery()` ranked
+ * this against the error class and let this one win, so `auth` plus a failed
+ * tool advised "inspect the tool result" and dropped "sign in again", the only
+ * step that could change the outcome. The banner has a slot for each, so
+ * neither has to lose, and nothing here may contradict the line above it.
+ *
+ * `side_effects` and `policy` / `budget` have no line of their own: the first
+ * is already told by the tool rows, and the other two answer "why was there no
+ * automatic retry", which is the runtime's business and not the reader's.
  */
 export function describeFailedTurnExecutionState(
   state: FailedTurnExecutionState,
   locale: UiLocale,
 ): string | undefined {
-  const turnCopy = getDesktopConversationCopy(locale).turnError;
-  if (state.retry?.decision === 'exhausted') return turnCopy.retryExhausted;
-  if (state.retry?.decision === 'declined') return turnCopy.retryDeclined[state.retry.because];
-  const copy = turnCopy.executionState;
-  if (state.erroredToolCount > 0) return copy.erroredTool;
-  if (state.toolActivityCount > 0) return copy.toolRan;
+  const copy = getDesktopConversationCopy(locale).turnError.executionState;
+  if (state.failureKinds.includes('failed')) return copy.halfDone;
+  if (state.ranCount > 0) return copy.checkChanges;
+  if (state.failureKinds.length > 0) return copy.notAllowed;
+  // Text the model had already written is the one thing the tool rows cannot
+  // show, so the retry decision still carries it.
+  if (state.retry?.decision === 'declined' && state.retry.because === 'observable_output') {
+    return copy.checkOutput;
+  }
+  if (state.retry?.decision === 'exhausted') return copy.retriedAlready;
   return undefined;
 }

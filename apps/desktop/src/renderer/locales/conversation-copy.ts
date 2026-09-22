@@ -354,8 +354,6 @@ export interface DesktopConversationCopy {
   turnError: {
     streamTruncated: string;
     requestRejected: string;
-    retryExhausted: string;
-    retryDeclined: Record<'side_effects' | 'observable_output' | 'policy' | 'budget', string>;
     unknown: string;
     contextOverflow: string;
     timeout: string;
@@ -370,7 +368,15 @@ export interface DesktopConversationCopy {
     permission: string;
     restarted: string;
     sandboxBoundaryClosed: string;
-    executionState: Record<'erroredTool' | 'toolRan', string>;
+    /**
+     * What to do next, given what the turn left behind. Every one of these is
+     * an instruction, never a report: the line above already says what went
+     * wrong, and a reader who has just lost a turn wants the next move.
+     */
+    executionState: Record<
+      'halfDone' | 'checkChanges' | 'notAllowed' | 'checkOutput' | 'retriedAlready',
+      string
+    >;
   };
 }
 
@@ -807,13 +813,6 @@ const COPY = {
     turnError: {
       streamTruncated: '响应中途断开。',
       requestRejected: '模型服务拒绝了请求，请检查模型与请求配置。',
-      retryExhausted: '已达到自动重试次数上限。',
-      retryDeclined: {
-        side_effects: '本次已有工具活动，为避免重复操作，未自动重试。请先检查工具结果。',
-        observable_output: '本次已有部分输出，未自动重试。请先检查已保留的内容。',
-        policy: '按当前重试规则，本次未自动重试。',
-        budget: '本次执行预算已用尽，未自动重试。',
-      },
       unknown: '出错了，暂时无法确定原因。',
       contextOverflow: '上下文超出模型窗口限制，减少附件或开启新任务。',
       timeout: '模型请求超时。',
@@ -830,8 +829,12 @@ const COPY = {
       sandboxBoundaryClosed:
         '本地应用重启时，等待确认的「允许访问工作区以外的内容」请求已按拒绝关闭。重新发消息可以再决定一次。',
       executionState: {
-        erroredTool: '这一轮有工具执行出错，先看它的结果，再决定要不要重发。',
-        toolRan: '这一轮已经执行过工具，可能已经产生实际改动，重发前先看工具结果。',
+        halfDone: '有一步没做完，东西可能改到一半。继续之前，先让它确认一下现在的状态。',
+        checkChanges: '它可能已经改过东西了。再发之前，先看一眼上面做了什么。',
+        notAllowed: '有一步没被允许执行，这件事没做完。先看一眼上面做到哪了，再决定怎么说。',
+        checkOutput: '上面已经写出来的内容还在。看一眼，再决定要不要重来。',
+        retriedAlready:
+          '它已经自己试过几次了，还是不行。直接重发多半还是一样，先看上面是什么原因。',
       },
     },
   },
@@ -1193,13 +1196,6 @@ const COPY = {
     turnError: {
       streamTruncated: '回應中途斷開。',
       requestRejected: '模型服務拒絕了請求，請檢查模型與請求設定。',
-      retryExhausted: '已達到自動重試次數上限。',
-      retryDeclined: {
-        side_effects: '本次已有工具活動，為避免重複操作，未自動重試。請先檢查工具結果。',
-        observable_output: '本次已有部分輸出，未自動重試。請先檢查已保留的內容。',
-        policy: '依目前重試規則，本次未自動重試。',
-        budget: '本次執行預算已用盡，未自動重試。',
-      },
       unknown: '出錯了，暫時無法確定原因。',
       contextOverflow: '上下文超出模型視窗限制，減少附件或開啟新任務。',
       timeout: '模型請求逾時。',
@@ -1216,8 +1212,12 @@ const COPY = {
       sandboxBoundaryClosed:
         '本機應用程式重啟時，等待確認的「允許存取工作區以外的內容」請求已按拒絕關閉。重新傳送訊息可以再次決定。',
       executionState: {
-        erroredTool: '這一輪有工具執行出錯，先看它的結果，再決定是否重發。',
-        toolRan: '這一輪已經執行過工具，可能已經產生實際變更，重發前先看工具結果。',
+        halfDone: '有一步沒做完，東西可能改到一半。繼續之前，先讓它確認一下目前的狀態。',
+        checkChanges: '它可能已經改過東西了。再傳之前，先看一眼上面做了什麼。',
+        notAllowed: '有一步沒被允許執行，這件事沒做完。先看一眼上面做到哪了，再決定怎麼說。',
+        checkOutput: '上面已經寫出來的內容還在。看一眼，再決定要不要重來。',
+        retriedAlready:
+          '它已經自己試過幾次了，還是不行。直接重傳多半還是一樣，先看上面是什麼原因。',
       },
     },
   },
@@ -1607,16 +1607,6 @@ const COPY = {
       streamTruncated: 'The response stream ended before completion.',
       requestRejected:
         'The model service rejected the request. Check the model and request configuration.',
-      retryExhausted: 'The automatic retry limit was reached.',
-      retryDeclined: {
-        side_effects:
-          'Tool activity already occurred in this attempt. Automatic retry was declined to avoid repeating operations. Check the tool results first.',
-        observable_output:
-          'This attempt already produced output, so it was not retried automatically. Check the retained content first.',
-        policy: 'This attempt was not retried under the current retry policy.',
-        budget:
-          'The execution budget was exhausted, so this attempt was not retried automatically.',
-      },
       unknown: 'Something went wrong; the cause is unknown.',
       contextOverflow: 'Context exceeded the model window. Reduce attachments or start a new task.',
       timeout: 'The model request timed out.',
@@ -1635,10 +1625,15 @@ const COPY = {
       sandboxBoundaryClosed:
         'The app restarted, so the pending request to reach outside the workspace was closed as denied. Send a message to decide again.',
       executionState: {
-        erroredTool:
-          'A tool errored during this turn. Read its result before deciding whether to send another message.',
-        toolRan:
-          'Tools already ran during this turn and may have made real changes. Read their results before sending another message.',
+        halfDone:
+          'A step did not finish, so things may be half-changed. Have it check where things stand before it carries on.',
+        checkChanges:
+          'It may already have changed things. Look at what it did above before you send again.',
+        notAllowed:
+          'A step was not allowed, so it did not get done. Look at how far it got before you decide what to say.',
+        checkOutput: 'What it already wrote is still above. Read it before you start over.',
+        retriedAlready:
+          'It already retried a few times and still failed. Resending as-is will likely do the same; look at the reason above first.',
       },
     },
   },

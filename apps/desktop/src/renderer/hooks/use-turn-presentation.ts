@@ -264,11 +264,17 @@ function deriveTurnPresentationEntry(input: {
   if (turn.status === 'failed' && (turn.failureMessage || !isRemediableOnlyToolFailure(turn))) {
     entry.failedReasonLabel = describeTurnErrorClass(turn.errorClass, uiLocale);
     entry.failedSeverity = deriveFailedTurnSeverity(turn.errorClass);
+    // The grades, not a count: a refused call changed nothing, and advice that
+    // tells the reader to go read its result sends them after a result that
+    // does not exist. `ranCount` is "a call ran", NOT "something changed" — a
+    // Read or a Grep runs and changes nothing, and no tool-name table can tell
+    // them apart without going stale the first time an MCP server adds one.
+    const failures = turn.tools.map(toolFailureOf).filter((failure) => failure !== undefined);
     entry.failedExecutionStateLabel = describeFailedTurnExecutionState(
       {
         retry: turn.retry,
-        toolActivityCount: turn.tools.length,
-        erroredToolCount: turn.tools.filter((tool) => toolFailureOf(tool) !== undefined).length,
+        ranCount: turn.tools.length - failures.length,
+        failureKinds: failures.map((failure) => failure.kind),
       },
       uiLocale,
     );
