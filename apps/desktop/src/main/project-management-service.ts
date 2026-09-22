@@ -83,6 +83,7 @@ export function createProjectManagementService(deps: {
   directoryCatalog?: ProjectDirectoryCatalog;
   chooseDirectory(): Promise<string | undefined>;
   selection: {
+    defaultPath(): Promise<string>;
     currentSelection(): Promise<CurrentProjectSelection>;
     setSelection(projectId: string | null, projectPath: string): void;
   };
@@ -92,21 +93,15 @@ export function createProjectManagementService(deps: {
 
   async function current(): Promise<CurrentProjectSelection> {
     const selection = await deps.selection.currentSelection();
-    if (selection.projectId === null) {
-      return selection;
+    if (selection.projectId == null) {
+      return { ...selection, path: await deps.selection.defaultPath() };
     }
     const projects = await deps.catalog.list();
-    const selectedProjectId = selection.projectId;
-    const requested =
-      typeof selectedProjectId === 'string'
-        ? selectableProject(projects, selectedProjectId)
-        : undefined;
+    const requested = selectableProject(projects, selection.projectId);
     if (!requested) {
-      if (typeof selectedProjectId === 'string') {
-        deps.selection.setSelection(null, selection.path);
-        return { projectId: null, path: selection.path };
-      }
-      return { projectId: undefined, path: selection.path };
+      const path = await deps.selection.defaultPath();
+      deps.selection.setSelection(null, path);
+      return { projectId: null, path };
     }
     const path = requested.preferredPath ?? selection.path;
     deps.selection.setSelection(requested.id, path);
@@ -164,9 +159,9 @@ export function createProjectManagementService(deps: {
         if (!deps.capabilities.selectNoProject) {
           throw new Error('The active Runtime Host requires a Project');
         }
-        const selection = await deps.selection.currentSelection();
-        deps.selection.setSelection(null, selection.path);
-        return { project: null, path: selection.path };
+        const path = await deps.selection.defaultPath();
+        deps.selection.setSelection(null, path);
+        return { project: null, path };
       }
       const id = requireProjectId(projectId);
       const selection = await deps.selection.currentSelection();

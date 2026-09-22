@@ -41,6 +41,8 @@ import {
 import type { DesktopSessionSummaryInput } from '../../shared/desktop-session-projection.js';
 import type { DesktopTranscriptReplicaSnapshot } from '../desktop-transcript-replica.js';
 import { createAttachmentApprovalRegistry } from '../attachment-approval.js';
+import { createProjectlessWorkspaces } from '../projectless-workspace.js';
+import { resolveDesktopSessionWorkspace } from '../new-session-project.js';
 
 const accepted: TurnMessageSubmitResult = {
   disposition: 'turn_started',
@@ -117,6 +119,70 @@ async function waitFor(predicate: () => boolean): Promise<void> {
   }
   assert.fail('Local state did not settle');
 }
+
+test('projectless creation persists its cwd before delivery and reuses it after a failed admission and restart', async (t) => {
+  const db = await database(t);
+  const workspaces = createProjectlessWorkspaces({
+    root: join(db.path, '..', 'Documents', 'Maka'),
+    previewRoot: join(db.path, '..', 'preview'),
+    reservationsRoot: join(db.path, '..', 'reservations'),
+  });
+  let allocations = 0;
+  const target: DesktopSessionLocalTarget = {
+    partition: 'authority', profileId: 'local',
+    scope: { hostId: 'root', targetEpoch: 'target' },
+  };
+  const createService = (target: DesktopSessionLocalTarget) => {
+    const service = new DesktopSessionLocalService(db.store, {
+      targets: () => [target], changed() {}, onError: (error) => assert.fail(String(error)),
+    });
+    db.beforeClose.push(() => service.close());
+    return service;
+  };
+  const first = createService(target);
+  type Ipc = Parameters<typeof registerDesktopSessionLocalIpc>[0]['ipcMain'];
+  let create!: Parameters<Ipc['handle']>[1];
+  const unexpected = async (): Promise<never> => { throw new Error('No Project should be read'); };
+  registerDesktopSessionLocalIpc({
+    ipcMain: { handle(channel, handler) { if (channel === 'session-local:create') create = handler; } },
+    service: first, approvals: createAttachmentApprovalRegistry(), resizeImage: async (bytes) => bytes,
+    resolveWorkspace: (_target, input) => resolveDesktopSessionWorkspace(
+      input, { current: unexpected, select: unexpected }, { register: unexpected },
+      { createProjectlessWorkspace: () => { allocations++; return workspaces.create(); } },
+    ),
+    changed() {},
+  });
+  await assert.rejects(
+    create({} as IpcMainInvokeEvent, target.scope, { projectId: null, model: 'incomplete-model' }),
+    /Explicit model selection requires/,
+  );
+  assert.equal(allocations, 0, 'invalid requests must not allocate directories');
+  const summary = await create({} as IpcMainInvokeEvent, target.scope, { projectId: null }) as DesktopSessionSummaryInput;
+  const original = db.store.creation(target.partition, summary.id)!;
+  assert.equal(original.workspace.kind, 'host_path');
+  assert.equal(summary.cwd, original.workspace.kind === 'host_path' ? original.workspace.path : undefined);
+  db.store.enqueue(target.partition, { ...intent('workspace-message', summary.id), staged: [] });
+  first.close();
+
+  const requests: unknown[] = [];
+  for (const epoch of ['first-attempt', 'after-restart']) {
+    db.reopen();
+    const resumed = createService({
+      ...target,
+      client: { ...client(epoch), createSession: async (input) => {
+        requests.push(input);
+        throw new RuntimeHostRequestInterruptedError('session.create', 'command', 'dispatched', 'connection_lost');
+      } },
+      submit: async () => accepted,
+    });
+    resumed.wake();
+    await waitFor(() => db.store.get(target.partition, 'workspace-message')?.error !== undefined && requests.length === (epoch === 'first-attempt' ? 1 : 2));
+    resumed.close();
+    assert.deepEqual(db.store.creation(target.partition, summary.id), original);
+  }
+  assert.deepEqual(requests, [original, original]);
+  assert.equal(allocations, 1);
+});
 
 test('local acceptance survives restart with attachment bytes and an immutable dispatch epoch', async (t) => {
   const db = await database(t);

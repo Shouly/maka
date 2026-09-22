@@ -49,7 +49,14 @@ function fixture() {
 
 test('task delegation binds the tool action to the Host turn and trusted creation context', async () => {
   const f = fixture();
+  const resolveContext = f.deps.createContext;
+  const contexts: unknown[] = [];
+  f.deps.createContext = (target, action) => {
+    contexts.push({ target, action });
+    return resolveContext(target, action);
+  };
   const result = await f.runtime.actTasks(scope, 'turn', 'tool-call', { operation: 'create_new', title: 'Fix login', text: 'Implement and test the login fix' });
+  assert.deepEqual(contexts, [{ target: scope, action: { turnId: 'turn', actionId: 'tool-call' } }]);
   assert.deepEqual(f.requests, [{
     turnId: 'turn', actionId: 'tool-call', proposal: { disposition: 'create_new', title: 'Fix login' },
     delegationText: 'Implement and test the login fix', create: { workspace: { kind: 'project', projectId: 'project' } },
@@ -125,7 +132,7 @@ test('the task tool exposes correction as a linked operation, not a disposition'
 test('a Host switch while resolving the workspace prevents delegation', async () => {
   const f = fixture();
   const original = f.deps.createContext;
-  f.deps.createContext = async (target) => { const context = await original(target); f.retire(); return context; };
+  f.deps.createContext = async (target, action) => { const context = await original(target, action); f.retire(); return context; };
   await assert.rejects(f.runtime.actTasks(scope, 'turn', 'tool-call', { operation: 'create_new', title: 'Work', text: 'Do work' }), /Runtime Host changed/);
   assert.deepEqual(f.requests, []);
 });

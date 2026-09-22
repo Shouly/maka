@@ -26,7 +26,7 @@ import {
 
 export interface WorkspaceSearchIpcDeps {
   ipcMain?: ReconnectableReadIpcMain;
-  getProjectRoot(sessionId: unknown, projectId: unknown): Promise<string>;
+  getProjectRoot(sessionId: unknown, projectId: unknown): Promise<string | undefined>;
   allowLocalWorkspace?: boolean;
 }
 
@@ -34,7 +34,7 @@ export function registerWorkspaceSearchIpc(deps: WorkspaceSearchIpcDeps): void {
   const ipcMain = deps.ipcMain ?? electronIpcMain;
   const searcher = createWorkspaceFileSearcher();
   // Composer `@` mention popup: active sessions resolve from their persisted
-  // cwd; the new-task surface resolves from the app project root. Git repos
+  // cwd; a new projectless task has no files until its workspace is created. Git repos
   // honor .gitignore + untracked via `git ls-files`; other trees fall back to
   // a bounded walk. See workspace-file-search.ts.
   handleReconnectableRead(ipcMain, 'workspace:searchFiles', async (_event, input: unknown) => {
@@ -46,6 +46,7 @@ export function registerWorkspaceSearchIpc(deps: WorkspaceSearchIpcDeps): void {
       projectId?: unknown;
     };
     const projectPath = await deps.getProjectRoot(request.sessionId, request.projectId);
+    if (projectPath === undefined) return { ok: true, files: [] };
     return searcher.search(projectPath, { query: request.query, limit: request.limit });
   });
 }

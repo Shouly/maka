@@ -4,6 +4,7 @@
     "src/renderer/app.tsx",
     "src/renderer/bridge/__tests__/composer-prompts-fixture.tsx",
     "src/renderer/bridge/__tests__/core-dialogue-fixture.tsx",
+    "src/renderer/bridge/__tests__/projectless-workspace-smoke.mjs",
     "src/renderer/bridge/app-window.ts",
     "src/renderer/bridge/app.ts",
     "src/renderer/bridge/artifacts.ts",

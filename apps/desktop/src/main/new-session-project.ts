@@ -35,7 +35,10 @@ export async function resolveDesktopSessionWorkspace(
   input: DesktopSessionWorkspaceInput,
   selection: DesktopSessionWorkspaceSelection,
   catalog: Pick<ProjectCatalog, 'register'>,
-  options: { readonly allowHostPath?: boolean } = {},
+  options: {
+    readonly allowHostPath?: boolean;
+    readonly createProjectlessWorkspace: () => Promise<string>;
+  },
 ): Promise<WorkspaceTarget> {
   if (input.cwd) {
     if (input.projectId === null) {
@@ -52,7 +55,7 @@ export async function resolveDesktopSessionWorkspace(
   if (input.projectId !== undefined) {
     if (input.projectId === null) {
       if (options.allowHostPath === false) throw remoteProjectRequired();
-      return { kind: 'host_path', path: (await selection.current()).path };
+      return { kind: 'host_path', path: await options.createProjectlessWorkspace() };
     }
     // Session creation names a Project; it must not also mutate the Host's
     // persisted current-Project preference. The Runtime Host validates the
@@ -71,7 +74,7 @@ export async function resolveDesktopSessionWorkspace(
     return { kind: 'project', projectId: current.projectId };
   }
   if (options.allowHostPath === false) throw remoteProjectRequired();
-  return { kind: 'host_path', path: current.path };
+  return { kind: 'host_path', path: await options.createProjectlessWorkspace() };
 }
 
 function remoteProjectRequired(): Error {

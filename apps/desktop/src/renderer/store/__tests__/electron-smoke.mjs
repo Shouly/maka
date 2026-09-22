@@ -28,6 +28,10 @@ import { resolveStorageRoot, tryAcquireInteractiveRootOwner } from '@maka/storag
 import { openInteractiveRuntimePolicyStoresForWrite } from '@maka/storage/runtime-policy-stores';
 import { buildFixtureEnv } from '../../../../../../scripts/fixture-env.mjs';
 import { closeElectronApplication } from '../../../../../../scripts/electron-lifecycle.mjs';
+import {
+  checkProjectlessWorkspaces,
+  seedProjectlessSkill,
+} from '../../bridge/__tests__/projectless-workspace-smoke.mjs';
 
 async function seedE2eConnection(userDataDir) {
   const workspaceRoot = path.join(userDataDir, 'workspaces', 'default');
@@ -161,6 +165,7 @@ async function expectComposerPlaceholder(page, text) {
 
 try {
   await seedE2eConnection(userDataDir);
+  await seedProjectlessSkill(path.join(userDataDir, 'home'));
   const workspaceRoot = path.join(userDataDir, 'workspaces', 'default');
   const projectRoot = path.join(userDataDir, 'composer-project');
   await mkdir(path.join(projectRoot, '.maka', 'skills', 'composer-review'), { recursive: true });
@@ -1610,6 +1615,29 @@ try {
   });
   await expectSendFailureToast(firstSendDraft);
   checks.push('a failed first send still notifies after the welcome composer unmounts');
+
+  await checkProjectlessWorkspaces({
+    userDataDir,
+    projectRoot,
+    checks,
+    restart: async () => {
+      await closeElectronApplication(app, 4000);
+      app = await electron.launch({
+        args: ['.'],
+        cwd: desktop,
+        env: buildFixtureEnv(userDataDir, path.join(userDataDir, 'home'), { showWindow: true }),
+        timeout: 30000,
+      });
+      app.process().stderr.on('data', (chunk) => {
+        mainStderr += chunk.toString();
+      });
+      page = await app.firstWindow();
+      page.setDefaultTimeout(20000);
+      page.on('pageerror', (error) => errors.push(error.message));
+      await page.locator('.appFrame').waitFor();
+      return page;
+    },
+  });
 
   assert.deepEqual(errors, []);
   await writeFile(

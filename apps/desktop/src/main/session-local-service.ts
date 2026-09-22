@@ -46,7 +46,7 @@ import type { AttachmentApprovalRegistry } from './attachment-approval.js';
 import { resolveAttachmentRefs, prepareIngestItems, type AttachmentSnapshotInput } from './attachment-ingest.js';
 import { mergeWorkspaceFileInlineReferences } from './session-workspace-inline-references.js';
 import {
-  resolveDesktopSessionCreateInput,
+  resolveDesktopSessionCreateOptions,
   toDesktopHostSessionSummary,
 } from './runtime-host-session-catalog-ipc-main.js';
 import { encodeDesktopTranscriptSnapshot } from './desktop-transcript-ipc.js';
@@ -518,11 +518,12 @@ export function registerDesktopSessionLocalIpc(deps: {
     'session-local:create',
     async (_event, scope: unknown, input: CreateSessionRequestInput = {}) => {
       const target = service.target(scope);
+      const options = resolveDesktopSessionCreateOptions(input, randomUUID());
       const workspace =
         typeof input.projectId === 'string'
           ? { kind: 'project' as const, projectId: input.projectId }
           : await deps.resolveWorkspace(target, input);
-      const creation = resolveDesktopSessionCreateInput(input, randomUUID(), workspace);
+      const creation = { ...options, workspace };
       const summary: DesktopSessionSummaryInput = {
         id: creation.sessionId,
         revision: 0,

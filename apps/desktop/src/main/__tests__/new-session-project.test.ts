@@ -27,6 +27,7 @@ test('registers an explicit unassociated Desktop directory as a Project target',
       { cwd: '/workspace' },
       selection(),
       { register: async () => ({ id: 'project-1' }) as never },
+      { createProjectlessWorkspace: unexpected },
     ),
     { kind: 'project', projectId: 'project-1' },
   );
@@ -38,6 +39,7 @@ test('preserves an explicit no-Project directory as a Host-path target', async (
       { cwd: '/standalone', projectId: null },
       selection(),
       { register: unexpected },
+      { createProjectlessWorkspace: unexpected },
     ),
     { kind: 'host_path', path: '/standalone' },
   );
@@ -57,6 +59,7 @@ test('uses an explicit Project identity without trusting the Client directory', 
       { cwd: '/stale/client/path', projectId: 'project-1' },
       projectSelection,
       { register: unexpected },
+      { createProjectlessWorkspace: unexpected },
     ),
     { kind: 'project', projectId: 'project-1' },
   );
@@ -72,6 +75,7 @@ test('uses the configured default before the current Project preference', async 
         defaultProjectId: 'default',
       }),
       { register: unexpected },
+      { createProjectlessWorkspace: unexpected },
     ),
     { kind: 'project', projectId: 'default' },
   );
@@ -87,19 +91,21 @@ test('falls back to the current preference when the configured default is stale'
         unavailableIds: ['missing'],
       }),
       { register: unexpected },
+      { createProjectlessWorkspace: unexpected },
     ),
     { kind: 'project', projectId: 'current' },
   );
 });
 
-test('falls back to the current Host path when no Project preference exists', async () => {
+test('allocates a task directory when no Project preference exists', async () => {
   assert.deepEqual(
     await resolveDesktopSessionWorkspace(
       {},
-      selection({ current: { projectId: null, path: '/standalone' } }),
+      selection({ current: { projectId: null, path: '/previous-project' } }),
       { register: unexpected },
+      { createProjectlessWorkspace: async () => '/task-workspace' },
     ),
-    { kind: 'host_path', path: '/standalone' },
+    { kind: 'host_path', path: '/task-workspace' },
   );
 });
 
@@ -110,7 +116,7 @@ test('requires a Host Project for remote session creation', async () => {
         { cwd: '/client/path' },
         selection(),
         { register: unexpected },
-        { allowHostPath: false },
+        { allowHostPath: false, createProjectlessWorkspace: unexpected },
       ),
     /Select a project from the remote Runtime Host/,
   );
@@ -119,10 +125,32 @@ test('requires a Host Project for remote session creation', async () => {
       { cwd: '/client/path', projectId: 'host-project' },
       selection(),
       { register: unexpected },
-      { allowHostPath: false },
+      { allowHostPath: false, createProjectlessWorkspace: unexpected },
     ),
     { kind: 'project', projectId: 'host-project' },
   );
+});
+
+test('explicit no-Project ignores both the current directory and the configured default', async () => {
+  let allocations = 0;
+  const noSelectionReads = { current: unexpected, select: unexpected, defaultProjectId: unexpected };
+  const options = { createProjectlessWorkspace: async () => `/tasks/${++allocations}` };
+  for (const index of [1, 2]) {
+    assert.deepEqual(
+      await resolveDesktopSessionWorkspace(
+        { projectId: null }, noSelectionReads, { register: unexpected }, options,
+      ),
+      { kind: 'host_path', path: `/tasks/${index}` },
+    );
+  }
+  await assert.rejects(
+    resolveDesktopSessionWorkspace(
+      { projectId: null }, noSelectionReads, { register: unexpected },
+      { ...options, allowHostPath: false },
+    ),
+    /Select a project from the remote Runtime Host/,
+  );
+  assert.equal(allocations, 2, 'a remote Host never allocates a Client directory');
 });
 
 function selection(

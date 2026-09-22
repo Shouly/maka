@@ -26,7 +26,7 @@ import type { DesktopRuntimeHostClient } from './runtime-host-client.js';
 interface WorkHubRuntimeDeps {
   client(scope: DesktopTargetScope): Pick<DesktopRuntimeHostClient, 'queryTurn' | 'stopTurn' | 'listWorkHubCoordinationCandidates' | 'actWorkHubCoordinationFromTurn' | 'selectAndDelegateWorkHubTarget'>;
   isCurrent(scope: DesktopTargetScope): boolean;
-  createContext(scope: DesktopTargetScope): Promise<{ workspace: WorkspaceTarget; defaults: WorkHubCreateDefaults }>;
+  createContext(scope: DesktopTargetScope, action: { turnId: string; actionId: string }): Promise<{ workspace: WorkspaceTarget; defaults: WorkHubCreateDefaults }>;
   changed(scope: DesktopTargetScope, reason: 'created' | 'status-change', sessionId: string): void;
 }
 
@@ -82,7 +82,7 @@ export function createWorkHubRuntime(deps: WorkHubRuntimeDeps) {
         ('operation' in proposal &&
           proposal.operation === 'correct' &&
           proposal.target.disposition === 'create_new');
-      const context = createsTarget ? await deps.createContext(scope) : undefined;
+      const context = createsTarget ? await deps.createContext(scope, { turnId, actionId }) : undefined;
       requireCurrent(scope);
       const result = await client.actWorkHubCoordinationFromTurn({
         turnId, actionId, proposal,

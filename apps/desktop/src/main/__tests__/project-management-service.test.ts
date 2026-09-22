@@ -63,6 +63,7 @@ test('owns Project selection and reversible lifecycle actions in Desktop', async
     catalog: managementCatalog(catalog),
     chooseDirectory: async () => nextDirectory,
     selection: {
+      defaultPath: async () => '/workspace',
       currentSelection: async () => ({
         projectId: 'project-1',
         path: selectedPaths.at(-1) ?? (await realpath(firstPath)),
@@ -111,6 +112,7 @@ test('adding a nested folder selects that folder instead of the parent project',
     catalog: managementCatalog(catalog),
     chooseDirectory: async () => nextDirectory,
     selection: {
+      defaultPath: async () => '/workspace',
       currentSelection: async () => ({ projectId: undefined, path: parentPath }),
       setSelection: (_projectId, path) => selected.push(path),
     },
@@ -155,6 +157,7 @@ test('can register a draft Project without changing the Host selection', async (
     },
     chooseDirectory: async () => '/workspace',
     selection: {
+      defaultPath: async () => '/workspace',
       currentSelection: async () => ({ projectId: undefined, path: '/current' }),
       setSelection: () => {
         selected = true;
@@ -179,6 +182,7 @@ test('rejects malformed Project identities before catalog access', async () => {
     },
     chooseDirectory: async () => undefined,
     selection: {
+      defaultPath: async () => '/workspace',
       currentSelection: async () => ({ projectId: undefined, path: '/workspace' }),
       setSelection() {},
     },
@@ -188,7 +192,7 @@ test('rejects malformed Project identities before catalog access', async () => {
   assert.throws(() => service.rename('project-1', ''), /Invalid project name/);
 });
 
-test('keeps an explicit no-Project selection local to Desktop', async () => {
+test('clearing a Project restores the neutral directory instead of its last path', async () => {
   const selections: Array<{ projectId: string | null; path: string }> = [];
   const service = createProjectManagementService({
     capabilities: LOCAL_CAPABILITIES,
@@ -202,7 +206,8 @@ test('keeps an explicit no-Project selection local to Desktop', async () => {
     },
     chooseDirectory: async () => undefined,
     selection: {
-      currentSelection: async () => ({ projectId: undefined, path: '/workspace' }),
+      defaultPath: async () => '/workspace',
+      currentSelection: async () => ({ projectId: 'last-project', path: '/last-project' }),
       setSelection: (projectId, path) => selections.push({ projectId, path }),
     },
   });
@@ -225,13 +230,14 @@ test('does not silently replace a stale Project preference with another Project'
     },
     chooseDirectory: async () => undefined,
     selection: {
+      defaultPath: async () => '/workspace',
       currentSelection: async () => ({ projectId: 'missing', path: '/last-known' }),
       setSelection: (projectId, path) => selections.push({ projectId, path }),
     },
   });
 
-  assert.deepEqual(await service.current(), { projectId: null, path: '/last-known' });
-  assert.deepEqual(selections, [{ projectId: null, path: '/last-known' }]);
+  assert.deepEqual(await service.current(), { projectId: null, path: '/workspace' });
+  assert.deepEqual(selections, [{ projectId: null, path: '/workspace' }]);
 });
 
 test('does not expose Client directory actions for a remote Host', async () => {
@@ -270,6 +276,7 @@ test('does not expose Client directory actions for a remote Host', async () => {
       return '/client/path';
     },
     selection: {
+      defaultPath: async () => '/workspace',
       currentSelection: async () => ({ projectId: 'remote', path: '/host/project' }),
       setSelection() {},
     },
@@ -334,6 +341,7 @@ test('preparing a directory does not register a project or change the current se
     catalog: managementCatalog(catalog),
     chooseDirectory: async () => folder,
     selection: {
+      defaultPath: async () => '/workspace',
       currentSelection: async () => ({ projectId: null, path: base }),
       setSelection: () => { selectionWrites++; },
     },

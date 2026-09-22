@@ -27,6 +27,7 @@ export interface CurrentProjectSelection {
 }
 
 export interface ProjectRootController {
+  defaultPath(): Promise<string>;
   current(): Promise<string>;
   currentSelection(): Promise<CurrentProjectSelection>;
   resolveExplicit(
@@ -41,7 +42,7 @@ export interface ProjectRootController {
 export interface ProjectRootControllerDeps {
   readonly rootId: string;
   readonly preferenceFile: string;
-  readonly fallbackRoots: () => string[];
+  readonly defaultPath: () => Promise<string>;
 }
 
 interface ProjectPreferenceFile {
@@ -86,13 +87,13 @@ export function createProjectRootController(
     return persistSelection(deps, projectId);
   }
 
-  return { current, currentSelection, resolveExplicit, setSelection };
+  return { defaultPath: deps.defaultPath, current, currentSelection, resolveExplicit, setSelection };
 }
 
 async function loadInitialSelection(
   deps: ProjectRootControllerDeps,
 ): Promise<CurrentProjectSelection> {
-  const fallbackPath = await resolveProjectRoot(deps.fallbackRoots());
+  const fallbackPath = await deps.defaultPath();
   const preference = await readPreference(deps.preferenceFile, deps.rootId);
   return { projectId: preference, path: fallbackPath };
 }

@@ -81,6 +81,7 @@ import { createMcpOAuthController } from "./mcp-oauth-controller.js";
 import { createWorkHubControl } from './workhub-control.js';
 import { createWorkHubPresentation } from './workhub-presentation.js';
 import { createWorkHubRuntime } from './workhub-runtime.js';
+import { createWorkHubCreationContexts } from './workhub-creation-context.js';
 import { createWindowsAppTray } from './windows-app-tray.js';
 import { readableAppIconPath } from './app-icon-surface.js';
 import { registerAppClientIpc, registerAppIpc } from "./app-ipc-main.js";
@@ -272,6 +273,7 @@ import {
   updateDesktopStartupProgress,
 } from './startup-presentation.js';
 import { registerWorkspaceSearchIpc } from "./workspace-search-ipc-main.js";
+import { createProjectlessWorkspaces } from './projectless-workspace.js';
 import {
   parseDesktopSessionResourceKey,
   requireDesktopTargetScope,
@@ -283,6 +285,12 @@ await resolveShellEnv();
 const MANAGED_UPDATE_RECONNECT_TIMEOUT_MS = 10_000;
 const buildInfo = resolveBuildInfo(app.isPackaged, app.getAppPath());
 const userDataDir = app.getPath("userData");
+const projectlessWorkspaces = createProjectlessWorkspaces({
+  root: join(isIsolatedE2e ? join(userDataDir, 'Documents') : app.getPath('documents'), 'Maka'),
+  previewRoot: join(userDataDir, 'projectless-preview'),
+  reservationsRoot: join(userDataDir, 'task-workspace-reservations'),
+});
+const workHubCreationContexts = createWorkHubCreationContexts(join(userDataDir, 'workhub-creation-contexts'));
 // The ripgrep this build ships, for the Runtime Host's Grep tool: packaged
 // under Resources/bin, in development under apps/desktop/resources/bin once
 // `prepare-ripgrep.mjs` has run. The Host process inherits this environment,
@@ -635,6 +643,7 @@ registerDesktopSessionLocalIpc({
     if (!context?.isActive()) throw new Error('Select a cached project before creating an offline task');
     return resolveDesktopSessionWorkspace(input, context.projectManagement, context.projectCatalog, {
       allowHostPath: !runtimeHostProfileUsesHostWorkspace(context.policy.kind),
+      createProjectlessWorkspace: () => projectlessWorkspaces.create(),
     });
   },
 });
@@ -894,14 +903,15 @@ const selectedDesktopWorkspaceTarget = async (
   if (runtimeHostProfileUsesHostWorkspace(target.kind)) return undefined;
   return { kind: "host_path", path: current.path };
 };
-const currentDesktopWorkspaceTarget = async (
+const createDesktopWorkspaceTarget = async (
   target: DesktopRuntimeHostTargetPolicy,
+  requestKey?: string,
 ): Promise<WorkspaceTarget> => {
-  const workspace = await selectedDesktopWorkspaceTarget(target);
-  if (!workspace) {
-    throw new Error("Select a project from the Runtime Host first");
-  }
-  return workspace;
+  const context = requireRuntimePolicyTarget(target);
+  return resolveDesktopSessionWorkspace({}, context.projectManagement, context.projectCatalog, {
+    allowHostPath: !runtimeHostProfileUsesHostWorkspace(target.kind),
+    createProjectlessWorkspace: () => projectlessWorkspaces.create(requestKey),
+  });
 };
 const requireWorkHubTarget = (scope: DesktopTargetScope): DesktopRuntimeHostTargetContext => {
   const target = runtimePolicyTargetsByEpoch.get(scope.targetEpoch);
@@ -917,10 +927,14 @@ const isCurrentWorkHubTarget = (scope: DesktopTargetScope): boolean => {
 const workHubRuntime = createWorkHubRuntime({
   client: (scope) => requireWorkHubTarget(scope).client,
   isCurrent: isCurrentWorkHubTarget,
-  createContext: async (scope) => ({
-    workspace: await currentDesktopWorkspaceTarget(requireWorkHubTarget(scope).policy),
-    defaults: { permissionMode: (await settingsStore.get()).chatDefaults.permissionMode },
-  }),
+  createContext: async (scope, action) => {
+    const target = requireWorkHubTarget(scope);
+    const key = JSON.stringify(['workhub', scope.hostId, action.turnId, action.actionId]);
+    return workHubCreationContexts.resolve(key, async () => ({
+      workspace: await createDesktopWorkspaceTarget(target.policy, key),
+      defaults: { permissionMode: (await settingsStore.get()).chatDefaults.permissionMode },
+    }));
+  },
   changed: emitSessionsChanged,
 });
 const workHubControl = createWorkHubControl({
@@ -1219,7 +1233,7 @@ const startLocalRuntimeHostManager = () => startRuntimeHostDesktopManager(
     },
     botRegistry,
     resolveBotCreateTarget: async (target) => ({
-      workspace: await currentDesktopWorkspaceTarget(target),
+      workspace: await createDesktopWorkspaceTarget(target),
     }),
     resolveSessionCreateProject: async (input, target) => {
       const currentTarget = requireRuntimePolicyTarget(target);
@@ -1235,7 +1249,10 @@ const startLocalRuntimeHostManager = () => startRuntimeHostDesktopManager(
             : {}),
         },
         currentTarget.projectCatalog,
-        { allowHostPath: !runtimeHostProfileUsesHostWorkspace(target.kind) },
+        {
+          allowHostPath: !runtimeHostProfileUsesHostWorkspace(target.kind),
+          createProjectlessWorkspace: () => projectlessWorkspaces.create(),
+        },
       );
     },
     emitSessionsChanged,
@@ -1529,7 +1546,7 @@ function registerHostClientIpc(
   const targetProjectRoot = createProjectRootController({
     rootId: target.rootId,
     preferenceFile: join(workspaceRoot, "project-preferences.json"),
-    fallbackRoots: () => [process.cwd(), app.getAppPath()],
+    defaultPath: () => projectlessWorkspaces.preview(),
   });
   const targetProjectCatalog = createRuntimeHostProjectCatalog(() => ({
     client,
@@ -1726,7 +1743,7 @@ function registerHostClientIpc(
         if (usesHostWorkspace) return undefined;
         return {
           kind: "host_path",
-          path: (await requireRuntimePolicyTarget(target).projectManagement.current()).path,
+          path: await projectlessWorkspaces.preview(),
         };
       }
       return selectedDesktopWorkspaceTarget(target);
@@ -1774,6 +1791,7 @@ function registerHostClientIpc(
   registerWorkspaceSearchIpc({
     ipcMain: scopedIpc,
     getProjectRoot: async (sessionId, projectId) => {
+      if (sessionId === undefined && projectId === null) return undefined;
       if (typeof projectId !== "string") {
         return resolveProjectRootForContext(sessionId);
       }

@@ -87,6 +87,6 @@ function controller(base: string, fallback: string, rootId: string) {
   return createProjectRootController({
     rootId,
     preferenceFile: join(base, 'project-preferences.json'),
-    fallbackRoots: () => [fallback],
+    defaultPath: async () => fallback,
   });
 }

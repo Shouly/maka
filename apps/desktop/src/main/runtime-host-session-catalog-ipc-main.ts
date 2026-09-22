@@ -124,11 +124,12 @@ export function registerRuntimeHostSessionCatalogIpc(
     pendingCleanup.add(sessionId);
   });
   ipcMain.handle('sessions:create', async (_event, input?: CreateSessionRequestInput) => {
+    const creation = resolveDesktopSessionCreateOptions(input, newId());
     const workspace = await deps.resolveCreateProject({
       ...(input?.cwd === undefined ? {} : { cwd: input.cwd }),
       ...(input?.projectId === undefined ? {} : { projectId: input.projectId }),
     });
-    const session = await deps.client.createSession(resolveDesktopSessionCreateInput(input, newId(), workspace));
+    const session = await deps.client.createSession({ ...creation, workspace });
     deps.emitSessionsChanged('created', session.id);
     return toDesktopHostSessionSummary(session);
   });
@@ -320,10 +321,14 @@ function normalizeSessionListFilter(value: unknown): SessionListFilter | undefin
   };
 }
 
-export function resolveDesktopSessionCreateInput(input: CreateSessionRequestInput | undefined, sessionId: string, workspace: WorkspaceTarget): SessionCreateInput {
+/** Validate the request before allocating a directory or changing Project selection. */
+export function resolveDesktopSessionCreateOptions(
+  input: CreateSessionRequestInput | undefined,
+  sessionId: string,
+): Omit<SessionCreateInput, 'workspace'> {
   const request = resolveCreateSessionRequest(input);
   return {
-    sessionId, workspace,
+    sessionId,
     ...(request.mode === undefined ? {} : { mode: request.mode }),
     name: request.name,
     ...(request.labels === undefined ? {} : { labels: request.labels }),

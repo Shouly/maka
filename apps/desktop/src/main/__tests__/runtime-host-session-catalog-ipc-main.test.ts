@@ -64,6 +64,22 @@ test('session creation forwards the caller name for a mode that carries none', a
 
 type IpcHandler = Parameters<Pick<IpcMain, 'handle'>['handle']>[1];
 
+test('rejects invalid creation before allocating a workspace', async () => {
+  const creates: SessionCreateInput[] = [];
+  const ipc = ipcHarness();
+  let resolved = false;
+  registerRuntimeHostSessionCatalogIpc({
+    ...createDeps(creates),
+    resolveCreateProject: async () => {
+      resolved = true;
+      throw new Error('Unexpected workspace allocation');
+    },
+  }, ipc as unknown as IpcMain);
+  await assert.rejects(ipc.invoke('sessions:create', { projectId: null, model: 'incomplete' }), /Explicit model selection/);
+  assert.equal(resolved, false);
+  assert.deepEqual(creates, []);
+});
+
 function ipcHarness() {
   const handlers = new Map<string, IpcHandler>();
   return {
