@@ -68,6 +68,7 @@ export type SessionSubmitResult = Awaited<ReturnType<Sessions['submitMessage']>>
 export type SessionStopInput = NonNullable<Parameters<Sessions['stop']>[1]>;
 export type SessionRemovalResult = Awaited<ReturnType<Sessions['remove']>>;
 export type SessionResumeResult = Awaited<ReturnType<Sessions['resumeLatest']>>;
+export type SessionResumeAvailability = Awaited<ReturnType<Sessions['queryResumeLatest']>>;
 export type SessionCompactResult = Awaited<ReturnType<Sessions['compact']>>;
 export type SessionModelConfiguration = Parameters<Sessions['setModelConfiguration']>[1];
 export type SessionRevisionFamilyOptions = { revisionFamily?: boolean };
@@ -230,6 +231,14 @@ export function abandonSessionCopy(sourceSessionId: string, copyId: string): Pro
 
 export function compactSession(sessionId: string): Promise<SessionCompactResult> {
   return sessions().compact(sessionId);
+}
+
+/**
+ * Ask the Host whether it would continue this Session's interrupted turn.
+ * Read-only: `resumeLatestTurn` is what actually starts one.
+ */
+export function queryLatestTurnResume(sessionId: string): Promise<SessionResumeAvailability> {
+  return sessions().queryResumeLatest(sessionId);
 }
 
 export function resumeLatestTurn(sessionId: string): Promise<SessionResumeResult> {

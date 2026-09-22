@@ -2164,6 +2164,12 @@ const makaBridge = {
     compact(sessionId: string): Promise<OperationOutput<'context.compact'>> {
       return invokeSessionRuntimeHost('sessions:compact', sessionId);
     },
+    queryResumeLatest(sessionId: string): Promise<
+      | { disposition: 'ready'; sourceTurnId: string }
+      | { disposition: 'park'; reason: string }
+    > {
+      return invokeSessionRuntimeHost('sessions:queryResumeLatest', sessionId);
+    },
     resumeLatest(sessionId: string): Promise<
       | { disposition: 'started'; runId: string; turnId: string }
       | { disposition: 'park'; rejectionReasons: string[]; diagnostics: unknown[] }

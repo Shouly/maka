@@ -2816,8 +2816,8 @@
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
-        "useEffect": 1,
-        "useState": 3,
+        "useEffect": 2,
+        "useState": 4,
         "useStore": 8,
         "useUiLocale": 1
       },
@@ -2825,6 +2825,7 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../../../bridge/sessions.js": 1,
         "../../../bridge/task-readiness.js": 1,
         "../../../lib/ported/session-health-notice.js": 1,
         "../../../lib/ported/task-readiness-notice.js": 1,

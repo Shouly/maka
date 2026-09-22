@@ -765,6 +765,27 @@ export function registerRuntimeHostSessionExecutionIpc(
     deps.emitSessionsChanged("status-change", sessionId, { turnId });
     return result;
   });
+  // Whether the Host would actually continue this Session's interrupted turn.
+  // The transcript can only see that a turn stopped; resuming is off unless the
+  // runtime opts in, and even then the Host parks for a moved workspace, a
+  // changed tool catalog or a busy Session. The renderer asks before it draws
+  // the Continue button so the offer is never one the Host refuses.
+  //
+  // Registered as a reconnectable read, like the other Session queries: the
+  // renderer asks this once and has nothing that would make it ask again, so a
+  // rejection because the Host was draining or the connection dropped would
+  // hide the button until the reader navigated away and back. The router
+  // instead waits for the replacement candidate and asks it.
+  handleReconnectableRead(
+    ipcMain,
+    "sessions:queryResumeLatest",
+    async (_event, sessionId: string) => {
+      const plan = await deps.client.queryTurnResume({ sessionId });
+      return plan.disposition === "ready"
+        ? { disposition: "ready" as const, sourceTurnId: plan.sourceTurnId }
+        : { disposition: "park" as const, reason: plan.reason };
+    },
+  );
   ipcMain.handle("sessions:resumeLatest", async (_event, sessionId: string) => {
     const plan = await deps.client.queryTurnResume({ sessionId });
     if (plan.disposition === "parked") {

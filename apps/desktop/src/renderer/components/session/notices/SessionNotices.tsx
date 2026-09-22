@@ -41,6 +41,7 @@ import { resumeParkToastCopy, useUiLocale } from '@maka/ui';
 import { toastApi } from '../../../store/toast-api.js';
 import { getShellCopy } from '../../../locales/shell-copy.js';
 import { getTaskReadinessSnapshot } from '../../../bridge/task-readiness.js';
+import { queryLatestTurnResume } from '../../../bridge/sessions.js';
 import {
   activeSessionStore,
   connectionsStore,
@@ -82,6 +83,56 @@ function useSessionReadiness(sessionId: string | undefined): {
     };
   }, [sessionId, nonce]);
   return { snapshot, refresh: () => setNonce((value) => value + 1) };
+}
+
+/**
+ * The turn a Continue button would actually continue, or nothing.
+ *
+ * The transcript can only see that a turn stopped halfway; whether it can be
+ * picked up again is the Host's answer. Resuming is off unless the runtime
+ * opts in, and even when it is on the Host parks for a moved workspace, a
+ * changed tool catalog or a busy Session — so asking first is what keeps the
+ * button from being an offer that is refused the moment it is taken. The click
+ * path still handles a park, because this answer is a snapshot and the
+ * Session can go busy between the two.
+ *
+ * Read here rather than in a store for the same reason as
+ * `useSessionReadiness`: one reader, no subscription, and the candidate turn
+ * changing is what asks again.
+ */
+function useResumableTurnId(
+  sessionId: string,
+  candidateTurnId: string | undefined,
+  sessionStatus: string | undefined,
+): string | undefined {
+  const [ready, setReady] = useState<{ sessionId: string; turnId: string } | undefined>(undefined);
+  useEffect(() => {
+    if (!candidateTurnId) return;
+    let cancelled = false;
+    // Every answer replaces the last one, a park and a rejection included.
+    // Keeping the previous `ready` through a later `session_busy` would put the
+    // button back in the exact state this hook exists to prevent: offered, and
+    // refused the moment it is taken.
+    void queryLatestTurnResume(sessionId)
+      .then((plan) => {
+        if (cancelled) return;
+        setReady(plan.disposition === 'ready' ? { sessionId, turnId: candidateTurnId } : undefined);
+      })
+      .catch(() => {
+        if (!cancelled) setReady(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // `sessionStatus` is in here for one park reason: the Host answers
+    // `session_busy` while an execution is still winding down, and the tail
+    // turn's id does not change when it finishes. Without it a Session asked
+    // one moment too early would never be asked again, and the button would
+    // stay hidden for a turn that can in fact be continued.
+  }, [sessionId, candidateTurnId, sessionStatus]);
+  return ready?.sessionId === sessionId && ready.turnId === candidateTurnId
+    ? candidateTurnId
+    : undefined;
 }
 
 function compactionText(
@@ -149,6 +200,11 @@ export function SessionNotices(props: {
   });
 
   const readinessNotice = deriveTaskReadinessNotice(readiness.snapshot, locale);
+  const resumableTurnId = useResumableTurnId(
+    props.sessionId,
+    props.resumeCandidateTurnId,
+    session?.status,
+  );
   const resuming = pending.includes('resume');
   const compactionNotice =
     compaction && compaction !== dismissedCompaction
@@ -160,7 +216,7 @@ export function SessionNotices(props: {
     healthNotice ||
     workspace ||
     readinessNotice ||
-    props.resumeCandidateTurnId ||
+    resumableTurnId ||
     compactionNotice;
   if (!anything) return null;
 
@@ -241,7 +297,7 @@ export function SessionNotices(props: {
         />
       )}
 
-      {props.resumeCandidateTurnId && (
+      {resumableTurnId && (
         <NoticeCard
           tone="warning"
           title={copy.notices.resumeTitle}

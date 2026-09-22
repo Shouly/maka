@@ -1219,6 +1219,11 @@ export interface MakaBridge {
     listTurns(sessionId: string): Promise<TurnRecord[]>;
     listTurnLandmarks(sessionId: string): Promise<OperationOutput<'session.turn_landmarks.query'>>;
     compact(sessionId: string): Promise<OperationOutput<'context.compact'>>;
+    /** Would the Host continue the interrupted turn, or will it park? */
+    queryResumeLatest(sessionId: string): Promise<
+      | { disposition: 'ready'; sourceTurnId: string }
+      | { disposition: 'park'; reason: string }
+    >;
     resumeLatest(sessionId: string): Promise<
       | { disposition: 'started'; runId: string; turnId: string }
       | { disposition: 'park'; rejectionReasons: string[]; diagnostics: unknown[] }

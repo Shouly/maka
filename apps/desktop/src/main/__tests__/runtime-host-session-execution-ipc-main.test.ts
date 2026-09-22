@@ -2234,6 +2234,56 @@ test('returns the attachment_blocked envelope when an approved source has expire
   assert.deepEqual(result, { ok: false, reason: "attachment_blocked", code: "source_expired" });
 });
 
+test('reports a parked resume without starting a turn', async () => {
+  const ipc = ipcHarness();
+  registerExecutionIpc(
+    {
+      client: executionClient({
+        queryTurnResume: async () => ({
+          sessionId: "session-1",
+          disposition: "parked",
+          reason: "resume_feature_disabled",
+        }),
+      }),
+    },
+    ipc,
+  );
+
+  // `startTurnResume` stays unavailable on purpose: the renderer asks this
+  // before it draws Continue, so the question must not be the answer.
+  assert.deepEqual(await ipc.invoke("sessions:queryResumeLatest", "session-1"), {
+    disposition: "park",
+    reason: "resume_feature_disabled",
+  });
+});
+
+test('reports a resumable turn so the renderer can offer Continue', async () => {
+  const ipc = ipcHarness();
+  registerExecutionIpc(
+    {
+      client: executionClient({
+        queryTurnResume: async () => ({
+          sessionId: "session-1",
+          disposition: "ready",
+          sourceRunId: "run-1",
+          sourceTurnId: "turn-1",
+          sourceRuntimeEventHighWater: 7,
+        }),
+      }),
+    },
+    ipc,
+  );
+
+  assert.deepEqual(await ipc.invoke("sessions:queryResumeLatest", "session-1"), {
+    disposition: "ready",
+    sourceTurnId: "turn-1",
+  });
+  // The renderer asks once and has nothing that would make it ask again, so a
+  // draining Host must be waited out by the router rather than rejected into a
+  // permanently hidden button.
+  assert.ok(ipc.reconnectableChannels.has("sessions:queryResumeLatest"));
+});
+
 type ExecutionClient = RuntimeHostSessionExecutionIpcDeps["client"];
 
 function executionClient(overrides: Partial<ExecutionClient>): ExecutionClient {
