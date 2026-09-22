@@ -35,10 +35,10 @@ export function Toaster() {
                 px-4 py-3 + 20 行高 = 单行 44px,与参照实测一致。 */}
             <div className="flex items-start gap-2 px-4 py-3">
               <ToastIcon variant={variant} />
-              <div className="min-w-0 flex-1 text-sm font-medium leading-5">
-                {description || title}
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium leading-5">{description || title}</div>
+                {action && <div className="mt-2 flex">{action}</div>}
               </div>
-              {action}
               {/* 负外边距把 32 的点击区收回到 20 的视觉行里,不额外撑高卡片 */}
               <ToastClose className="-mr-1 -mt-0.5 -mb-1" />
             </div>
