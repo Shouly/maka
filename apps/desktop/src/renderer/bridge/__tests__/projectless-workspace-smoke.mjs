@@ -95,7 +95,7 @@ export async function checkProjectlessWorkspaces({ restart, userDataDir, project
     await page.getByLabel('Task', { exact: true }).fill(prompt);
     await page.getByRole('button', { name: 'Send', exact: true }).click();
     await page
-      .locator('[data-maka-contract="transcript"]')
+      .getByLabel('Conversation transcript', { exact: true })
       .getByText('renderer loop are connected.', { exact: false })
       .waitFor();
     await page.waitForFunction(() => !document.querySelector('[data-turn-status="running"]'));
@@ -110,23 +110,16 @@ export async function checkProjectlessWorkspaces({ restart, userDataDir, project
   const relative = path.relative(root, firstInfo.projectPath);
   assert.match(relative.replaceAll(path.sep, '/'), /^\d{4}-\d{2}-\d{2}\/task-[a-f0-9-]+$/);
   assert.ok(first.projectId == null);
-  assert.deepEqual((await readdir(firstInfo.projectPath)).sort(), [
-    '.maka-workspace.json',
-    'AGENTS.md',
-    'outputs',
-    'work',
-  ]);
+  assert.deepEqual((await readdir(firstInfo.projectPath)).sort(), ['.maka-workspace.json']);
   await writeFile(
-    path.join(firstInfo.projectPath, 'outputs', 'workspace-proof.txt'),
+    path.join(firstInfo.projectPath, 'workspace-proof.txt'),
     'Persistent first task output',
   );
   const files = await page.evaluate(
     (id) => window.maka.workspace.searchFiles('workspace-proof', { sessionId: id }),
     first.id,
   );
-  assert.ok(
-    files.ok && files.files.some((file) => file.relativePath === 'outputs/workspace-proof.txt'),
-  );
+  assert.ok(files.ok && files.files.some((file) => file.relativePath === 'workspace-proof.txt'));
 
   if (process.platform !== 'win32') {
     const terminal = await page.evaluate((id) => window.maka.shellRuns.start(id), first.id);
@@ -150,17 +143,16 @@ export async function checkProjectlessWorkspaces({ restart, userDataDir, project
         (control) =>
           window.maka.shellRuns.write({
             ...control,
-            input: 'pwd -P > work/terminal-cwd.txt\r',
+            input: 'pwd -P > terminal-cwd.txt\r',
           }),
         control,
       );
       await expect
         .poll(async () =>
           (
-            await readFile(
-              path.join(firstInfo.projectPath, 'work', 'terminal-cwd.txt'),
-              'utf8',
-            ).catch(() => '')
+            await readFile(path.join(firstInfo.projectPath, 'terminal-cwd.txt'), 'utf8').catch(
+              () => '',
+            )
           ).trim(),
         )
         .toBe(firstInfo.projectPath);
@@ -177,11 +169,11 @@ export async function checkProjectlessWorkspaces({ restart, userDataDir, project
   await page.getByLabel('Message input', { exact: true }).fill('Continue in the same workspace');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await page
-    .locator('[data-maka-contract="transcript"]')
+    .getByLabel('Conversation transcript', { exact: true })
     .getByText('Continue in the same workspace', { exact: true })
     .waitFor();
   await page
-    .locator('[data-maka-contract="transcript"]')
+    .getByLabel('Conversation transcript', { exact: true })
     .getByText('renderer loop are connected.', { exact: false })
     .nth(1)
     .waitFor();
@@ -203,7 +195,7 @@ export async function checkProjectlessWorkspaces({ restart, userDataDir, project
     firstInfo,
   );
   assert.equal(
-    await readFile(path.join(firstInfo.projectPath, 'outputs', 'workspace-proof.txt'), 'utf8'),
+    await readFile(path.join(firstInfo.projectPath, 'workspace-proof.txt'), 'utf8'),
     'Persistent first task output',
   );
   await newTask();
@@ -211,9 +203,9 @@ export async function checkProjectlessWorkspaces({ restart, userDataDir, project
   const second = await createTask('Projectless workspace B');
   const secondInfo = await page.evaluate((id) => window.maka.app.sessionProjectInfo(id), second.id);
   assert.notEqual(secondInfo.projectPath, firstInfo.projectPath);
-  assert.deepEqual(await readdir(path.join(secondInfo.projectPath, 'outputs')), []);
+  assert.deepEqual(await readdir(secondInfo.projectPath), ['.maka-workspace.json']);
   checks.push(
-    'projectless tasks allocate separate work/output directories and preserve cwd and files across app restart',
+    'projectless tasks allocate independent directories without generated instructions and preserve cwd and files across app restart',
   );
 
   await newTask();
@@ -257,7 +249,7 @@ export async function checkProjectlessWorkspaces({ restart, userDataDir, project
   );
   assert.equal(
     await page
-      .locator('[data-maka-contract="transcript"]')
+      .getByLabel('Conversation transcript', { exact: true })
       .getByText('Project workspace regression', { exact: true })
       .count(),
     0,

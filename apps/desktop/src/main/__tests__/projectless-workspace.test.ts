@@ -43,28 +43,27 @@ test('preview does not allocate a task directory or expose earlier task files', 
   assert.deepEqual(await readdir(options.previewRoot), []);
   await assert.rejects(readdir(options.root), { code: 'ENOENT' });
   const cwd = await workspaces.create();
-  await writeFile(join(cwd, 'outputs', 'report.txt'), 'One task only');
+  await writeFile(join(cwd, 'report.txt'), 'One task only');
   assert.deepEqual(await readdir(await workspaces.preview()), []);
 });
 
-test('parallel tasks get distinct persistent directories with output instructions', async (t) => {
+test('parallel tasks get distinct empty persistent directories without injected workspace instructions', async (t) => {
   const { base, options, workspaces } = await fixture(t);
   const cwds = await Promise.all([workspaces.create(), workspaces.create(), workspaces.create()]);
   assert.equal(new Set(cwds).size, 3);
   for (const cwd of cwds) {
     assert.equal(dirname(cwd), join(options.root, '2026-09-22'));
-    assert.deepEqual((await readdir(cwd)).sort(), ['AGENTS.md', 'outputs', 'work']);
+    assert.deepEqual(await readdir(cwd), []);
     const instructions = await buildWorkspaceInstructionsPromptFragment(cwd, { homeDir: base });
-    assert.match(instructions ?? '', /Use work\//);
-    assert.match(instructions ?? '', /Use outputs\//);
+    assert.equal(instructions, undefined);
   }
-  const output = join(cwds[0]!, 'outputs', 'report.txt');
+  const output = join(cwds[0]!, 'report.txt');
   await writeFile(output, 'Saved output');
   // Recreating the manager (app restart) never clears previously created tasks.
   const next = await createProjectlessWorkspaces(options).create();
   assert.ok(!cwds.includes(next));
   assert.equal(await readFile(output, 'utf8'), 'Saved output');
-  assert.deepEqual(await readdir(join(next, 'outputs')), []);
+  assert.deepEqual(await readdir(next), []);
 });
 
 test('a workspace or date symlink cannot redirect allocation into a project', async (t) => {
@@ -87,21 +86,23 @@ test('a replayable creation retains its directory across concurrency, restart an
   const { options, workspaces } = await fixture(t);
   const paths = await Promise.all([workspaces.create('action-1'), workspaces.create('action-1')]);
   assert.equal(paths[0], paths[1]);
-  await writeFile(join(paths[0]!, 'outputs', 'report.txt'), 'Keep this');
+  await writeFile(join(paths[0]!, 'report.txt'), 'Keep this');
   const restarted = createProjectlessWorkspaces({ ...options, now: () => new Date(2026, 8, 23) });
   assert.equal(await restarted.create('action-1'), paths[0]);
-  assert.equal(await readFile(join(paths[0]!, 'outputs', 'report.txt'), 'utf8'), 'Keep this');
+  assert.equal(await readFile(join(paths[0]!, 'report.txt'), 'utf8'), 'Keep this');
   assert.notEqual(await restarted.create('action-2'), paths[0]);
 });
 
 test('replaying an initialized workspace preserves edits and refuses to recreate a deleted directory', async (t) => {
   const { options, workspaces } = await fixture(t);
   const cwd = await workspaces.create('action-1');
-  await rm(join(cwd, 'work'), { recursive: true });
-  await rm(join(cwd, 'AGENTS.md'));
+  await writeFile(join(cwd, 'AGENTS.md'), 'User-owned instructions');
+  await writeFile(join(cwd, 'report.txt'), 'User-owned output');
   const restarted = createProjectlessWorkspaces(options);
   assert.equal(await restarted.create('action-1'), cwd);
-  assert.deepEqual(await readdir(cwd), ['outputs']);
+  assert.deepEqual((await readdir(cwd)).sort(), ['AGENTS.md', 'report.txt']);
+  assert.equal(await readFile(join(cwd, 'AGENTS.md'), 'utf8'), 'User-owned instructions');
+  assert.equal(await readFile(join(cwd, 'report.txt'), 'utf8'), 'User-owned output');
   await rm(cwd, { recursive: true });
   await assert.rejects(restarted.create('action-1'), { code: 'ENOENT' });
   await assert.rejects(readdir(cwd), { code: 'ENOENT' });

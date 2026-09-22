@@ -21,16 +21,6 @@ import { createHash, randomUUID } from 'node:crypto';
 import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 
-const WORKSPACE_INSTRUCTIONS = `# Task workspace
-
-This directory belongs to one Maka task without an associated project.
-Use work/ for intermediate files, scripts, drafts, and temporary assets.
-Use outputs/ for finished files intended for the user, and deliver them using
-the available file-delivery tools. Keep ordinary conversational answers inline.
-The directory is persistent: later turns in this task use the same files.
-The generated directory name is an identifier, not user context.
-`;
-
 interface WorkspaceReservation {
   readonly cwd: string;
   readonly initialized: boolean;
@@ -56,17 +46,6 @@ export function createProjectlessWorkspaces(options: {
       String(date.getDate()).padStart(2, '0'),
     ].join('-');
     return join(await ensureDirectory(join(root, day)), `task-${randomUUID()}`);
-  }
-
-  async function initialize(cwd: string): Promise<string> {
-    await ensureDirectory(dirname(cwd));
-    await ensureDirectory(cwd);
-    await ensureDirectory(join(cwd, 'work'));
-    await ensureDirectory(join(cwd, 'outputs'));
-    await writeFile(join(cwd, 'AGENTS.md'), WORKSPACE_INSTRUCTIONS, { flag: 'wx' }).catch((error) => {
-      if (error.code !== 'EEXIST') throw error;
-    });
-    return cwd;
   }
 
   async function reserved(key: string): Promise<string> {
@@ -99,9 +78,10 @@ export function createProjectlessWorkspaces(options: {
       await existingDirectory(dirname(record.cwd));
       return existingDirectory(record.cwd);
     }
-    // Reserve before initialization; publish only after all initial files exist.
+    // Reserve before creation; publish only after the directory exists.
     if (raw === undefined) await writeReservation(file, record);
-    await initialize(record.cwd);
+    await ensureDirectory(dirname(record.cwd));
+    await ensureDirectory(record.cwd);
     await writeReservation(file, { ...record, initialized: true });
     return record.cwd;
   }
@@ -122,13 +102,7 @@ export function createProjectlessWorkspaces(options: {
       }
       const cwd = await nextPath();
       await mkdir(cwd);
-      try {
-        return await initialize(cwd);
-      } catch (error) {
-        // Only the unpublished directory from this allocation can be removed.
-        await rm(cwd, { recursive: true, force: true }).catch(() => undefined);
-        throw error;
-      }
+      return cwd;
     },
   };
 }
