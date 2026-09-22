@@ -817,7 +817,8 @@ const COPY = {
       contextOverflow: '上下文超出模型窗口限制，减少附件或开启新任务。',
       timeout: '模型请求超时。',
       auth: '模型鉴权失败，请到设置里重新连接或登录。',
-      providerBilling: '模型服务计费受限，请检查账号余额或订阅状态。',
+      providerBilling:
+        '这个模型账号没额度了：余额花完，或者订阅的用量窗口用满了。要等额度重置或者充值，才能接着用。',
       providerCapacity: '模型服务暂时满载。',
       rateLimit: '模型请求太频繁被限流了。',
       network: '网络连接失败，请检查网络。',
@@ -1200,7 +1201,8 @@ const COPY = {
       contextOverflow: '上下文超出模型視窗限制，減少附件或開啟新任務。',
       timeout: '模型請求逾時。',
       auth: '模型鑑權失敗，請到設定裡重新連線或登入。',
-      providerBilling: '模型服務計費受限，請檢查帳號餘額或訂閱狀態。',
+      providerBilling:
+        '這個模型帳號沒額度了：餘額花完，或者訂閱的用量視窗用滿了。要等額度重置或者儲值，才能接著用。',
       providerCapacity: '模型服務暫時滿載。',
       rateLimit: '模型請求太頻繁而受到速率限制。',
       network: '網路連線失敗，請檢查網路。',
@@ -1611,7 +1613,8 @@ const COPY = {
       contextOverflow: 'Context exceeded the model window. Reduce attachments or start a new task.',
       timeout: 'The model request timed out.',
       auth: 'Model authentication failed. Reconnect or sign in again from Settings.',
-      providerBilling: 'Model billing is restricted. Check the account balance or subscription.',
+      providerBilling:
+        'This model account has no allowance left: its credit is spent, or its plan window is used up. It stays closed until that is topped up or resets.',
       providerCapacity: 'The model service is temporarily at capacity.',
       rateLimit: 'Requests were rate-limited.',
       network: 'The network connection failed. Check the network.',

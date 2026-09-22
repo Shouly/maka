@@ -71,6 +71,7 @@ const PROVIDER_BILLING_PROVIDER_CODES: ReadonlySet<string> = new Set([
   'insufficient_quota', // OpenAI & OpenAI-compatible: error.code
   'insufficient_balance', // DeepSeek: error.code
   'quota_exceeded', // OpenAI-compatible variants: error.code
+  'usage_limit_reached', // OpenAI Codex subscription: error.type on a 429 plan window
 ]);
 
 /**
@@ -234,6 +235,9 @@ function retryMetadataFromFacts(
       ...(retryAfterMs !== undefined && retryAfterMs !== null ? { retryAfterMs } : {}),
     };
   }
+  // An exhausted account will not recover inside this turn: a Retry-After on
+  // the 429 names the plan reset, hours or days out.
+  if (errorClass === 'provider_billing') return { retryable: false };
   if (errorClass === 'rate_limit' || status === 429) {
     if (retryAfterMs === undefined || retryAfterMs === null) return { retryable: false };
     return { retryable: true, retryAfterMs };

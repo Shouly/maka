@@ -87,6 +87,38 @@ describe('Provider error classification', () => {
     assert.equal(providerModelFailure(quotaOn429).retryable, false);
   });
 
+  test('a Codex subscription window on 429 is an exhausted account, not a throttle', () => {
+    // A real Codex refusal: 429, but the body names a plan window whose
+    // `resets_in_seconds` was 398793 — 4.6 days, not a throttle.
+    const usageLimit = Object.assign(
+      new Error(
+        'Codex OAuth request failed: HTTP 429 {"error":{"type":"usage_limit_reached",' +
+          '"message":"The usage limit has been reached","plan_type":"prolite",' +
+          '"resets_at":1790472699,"resets_in_seconds":398793}} ' +
+          '(code=usage_limit_reached, status=429)',
+      ),
+      {
+        name: 'AI_APICallError',
+        statusCode: 429,
+        data: { error: { type: 'usage_limit_reached' } },
+      },
+    );
+    assert.equal(classifyError(usageLimit), 'provider_billing');
+    assert.equal(providerModelFailure(usageLimit).retryable, false);
+
+    // A Retry-After must not park the turn for the whole reset window.
+    const withRetryAfter = Object.assign(new Error('The usage limit has been reached'), {
+      name: 'AI_APICallError',
+      statusCode: 429,
+      data: { error: { type: 'usage_limit_reached' } },
+      responseHeaders: { 'retry-after': '398793' },
+    });
+    const failure = providerModelFailure(withRetryAfter);
+    assert.equal(failure.kind, 'provider_billing');
+    assert.equal(failure.retryable, false);
+    assert.equal(failure.retryAfterMs, undefined);
+  });
+
   test('plan-window wording on a credential-shaped status projects to billing', () => {
     // Providers that gate subscription windows behind 401/403 for validly
     // signed-in users (#2516): their own wording outranks the bare status,
