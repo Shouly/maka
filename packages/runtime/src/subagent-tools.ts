@@ -119,6 +119,7 @@ export function buildSubagentSpawnTool(
   return {
     name: AGENT_SPAWN_TOOL_NAME,
     displayName: 'Agent',
+    activityKind: 'delegate',
     description: [
       'Launch a new agent to handle complex, multi-step tasks. Each agent type has its own tools and its own model.',
       '',
@@ -416,6 +417,7 @@ export function buildSubagentListTool(): MakaTool<
   return {
     name: AGENT_LIST_TOOL_NAME,
     displayName: 'Agent List',
+    activityKind: 'delegate',
     description: [
       'The agents this session has started, and the catalog behind them.',
       '',
@@ -691,6 +693,7 @@ export function buildSubagentOutputTool(): MakaTool<
   return {
     name: AGENT_OUTPUT_TOOL_NAME,
     displayName: 'Agent Output',
+    activityKind: 'delegate',
     description: [
       'Read what one child agent produced, bounded. Use it after Agent returns, or once SwarmStatus or ViewAgentGraph shows a graph item completed, to get the answer itself rather than the trace that produced it.',
       '',
@@ -886,6 +889,7 @@ export function buildSendMessageToChildAgentTool(): MakaTool<{
 }> {
   return {
     name: TOOL_NAMES.sendMessage,
+    activityKind: 'delegate',
     // It starts a Turn of a child agent, so it belongs to the same category as
     // Agent: the same permission class, and the same per-Turn cap on how many
     // children one Turn may set running.

@@ -481,6 +481,10 @@ describe('ModelAdapter stream and error normalization', () => {
     ]);
   });
 
+  // The two sides of a tool's input mean different things. A provider-executed
+  // tool has begun work the Runtime cannot observe, so its input is only a
+  // retry hazard. A client-executed one is the CALL arriving — its name, then
+  // its arguments — and that is what the transcript shows while it arrives.
   test('surfaces provider-executed tool input as replay-unsafe activity', () => {
     const adapter = newAdapter();
     type Chunk = Parameters<typeof adapter.translateChunk>[0];
@@ -496,11 +500,60 @@ describe('ModelAdapter stream and error normalization', () => {
     );
     assert.deepEqual(
       adapter.translateChunk({
+        type: 'tool-input-end',
+        toolCallId: 'search-1',
+        providerExecuted: true,
+      } as Chunk),
+      [{ kind: 'provider-tool-input' }],
+    );
+  });
+
+  test('names a client-executed call before its arguments and streams them after', () => {
+    const adapter = newAdapter();
+    type Chunk = Parameters<typeof adapter.translateChunk>[0];
+
+    assert.deepEqual(
+      adapter.translateChunk({
         type: 'tool-input-start',
         toolCallId: 'read-1',
         toolName: 'Read',
         providerExecuted: false,
       } as Chunk),
+      [{ kind: 'tool-input-start', toolCallId: 'read-1', toolName: 'Read' }],
+    );
+    assert.deepEqual(
+      adapter.translateChunk({
+        type: 'tool-input-delta',
+        toolCallId: 'read-1',
+        inputTextDelta: '{"file_pa',
+      } as Chunk),
+      [{ kind: 'tool-input-delta', toolCallId: 'read-1', delta: '{"file_pa' }],
+    );
+    // The UI-message stream names the same field `id`; a replay fixture may
+    // carry either spelling.
+    assert.deepEqual(
+      adapter.translateChunk({
+        type: 'tool-input-delta',
+        id: 'read-1',
+        inputTextDelta: 'th":"/tmp/a"}',
+      } as Chunk),
+      [{ kind: 'tool-input-delta', toolCallId: 'read-1', delta: 'th":"/tmp/a"}' }],
+    );
+    assert.deepEqual(
+      adapter.translateChunk({ type: 'tool-input-end', toolCallId: 'read-1' } as Chunk),
+      [{ kind: 'tool-input-end', toolCallId: 'read-1' }],
+    );
+    // Nothing to say, and nothing that can be said about which call it was.
+    assert.deepEqual(
+      adapter.translateChunk({
+        type: 'tool-input-delta',
+        toolCallId: 'read-1',
+        inputTextDelta: '',
+      } as Chunk),
+      [],
+    );
+    assert.deepEqual(
+      adapter.translateChunk({ type: 'tool-input-start', toolName: 'Read' } as Chunk),
       [],
     );
   });

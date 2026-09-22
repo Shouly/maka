@@ -33,6 +33,8 @@ import { getShellCopy } from '../../locales/shell-copy.js';
 import { buildPaletteCommands } from '../../components/palette/commands.js';
 import { TranscriptTurn } from '../../components/session/TranscriptTurn.js';
 import { renderToolContent } from '../../components/session/tools/registry.js';
+import { ToolRow } from '../../components/session/tools/ToolRow.js';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import {
   canExpandTool,
   resolveToolRendererId,
@@ -876,6 +878,165 @@ test('a sandbox-denied row offers the way past it, and only then', () => {
   assert.equal(toolRowStatusLabel(denied, 'en'), getTranscriptCopy('en').sandbox.blockedLabel);
 });
 
+// A call the model is still writing is a row that exists and does not yet act.
+// Both halves of that were wrong on the first cut: the row wore the generic icon
+// until dispatch swapped it, and it held perfectly still while being the busiest
+// thing on screen. A Write, not a task tool — a task write's arguments are
+// withheld from a live row, which is the one shape that hides the flip below.
+test('a call still being written keeps its icon, its box and its sweep at dispatch', () => {
+  const arriving: ToolActivityItem = {
+    toolUseId: 'tool-arriving',
+    toolName: 'Write',
+    activityKind: 'edit',
+    status: 'running',
+    args: undefined,
+    input: { text: '{"file_path":"/tmp/a.ts"', preview: { file_path: '/tmp/a.ts' } },
+    argsPreview: { file_path: '/tmp/a.ts' },
+  };
+  // What the Host actually sends for a live call: the preview, never the args.
+  const dispatched: ToolActivityItem = {
+    toolUseId: 'tool-arriving',
+    toolName: 'Write',
+    activityKind: 'edit',
+    status: 'running',
+    args: undefined,
+    argsPreview: { file_path: '/tmp/a.ts' },
+  };
+
+  assert.equal(toolRowStatus(arriving), 'running');
+  assert.equal(toolRowTitle(arriving, 'en'), toolRowTitle(dispatched, 'en'));
+  assert.equal(toolRowIcon(arriving), toolRowIcon(dispatched));
+  // The row must not open and close around the handoff: the header would swap
+  // between a button and a div, React would rebuild the subtree, and the sweep
+  // would restart at the exact moment the row should read as one thing.
+  assert.equal(canExpandTool(arriving), canExpandTool(dispatched));
+  const render = (item: ToolActivityItem) =>
+    renderToStaticMarkup(
+      createElement(LocaleProvider, {
+        locale: 'en',
+        children: createElement(TooltipProvider, {
+          children: createElement(ToolRow, {
+            item,
+            isFirst: true,
+            isLast: true,
+            context: { onOpenSession: () => {}, onOpenExternal: () => {} },
+          }),
+        }),
+      }),
+    );
+  for (const markup of [render(arriving), render(dispatched)]) {
+    assert.ok(markup.includes('animate'), 'it sweeps on both sides of the handoff');
+    assert.ok(markup.includes('leading-5'), 'and states the same line box');
+  }
+});
+
+// The other end of the same handoff, and the one the test above missed: a call
+// is on screen from the moment it is NAMED, which is before its arguments have
+// said anything. Both rows below are live, a quarter of a second apart.
+test('a call keeps its box from the moment it is named, before any argument has closed', () => {
+  const named: ToolActivityItem = {
+    toolUseId: 'tool-named',
+    toolName: 'Write',
+    activityKind: 'edit',
+    status: 'running',
+    args: undefined,
+    input: { text: '{"file_pa' },
+  };
+  const reading: ToolActivityItem = {
+    ...named,
+    input: { text: '{"file_path":"/tmp/a.ts"', preview: { file_path: '/tmp/a.ts' } },
+    argsPreview: { file_path: '/tmp/a.ts' },
+  };
+
+  // The first key closes a fraction of a second in. Expandability that follows
+  // the arguments swaps the header from a div to a button right there, React
+  // rebuilds the subtree, and the sweep restarts in the middle of the run.
+  assert.equal(canExpandTool(named), canExpandTool(reading));
+  assert.equal(canExpandTool(named), true, 'a live call can be opened for as long as it is live');
+});
+
+// A lost fragment is a designed-for path — the preview stream is sheddable — so
+// the row must not open and close around one. It keeps the name the valid prefix
+// gave it, and with it whether it can be opened at all.
+test('a call whose argument stream broke keeps its box', () => {
+  const reading: ToolActivityItem = {
+    toolUseId: 'tool-gap',
+    toolName: 'Bash',
+    activityKind: 'command',
+    status: 'running',
+    args: undefined,
+    input: { text: '{"command":"ls', preview: { command: 'ls' } },
+    argsPreview: { command: 'ls' },
+  };
+  const broken: ToolActivityItem = {
+    ...reading,
+    input: { ...reading.input!, broken: true },
+  };
+
+  assert.equal(canExpandTool(broken), canExpandTool(reading));
+  assert.equal(toolRowTitle(broken, 'en'), toolRowTitle(reading, 'en'));
+});
+
+// A row that cannot be opened used to sit perfectly still for its whole run.
+test('a running row that cannot be opened shimmers too', () => {
+  // A search names what was asked in the row itself and has no body to open,
+  // so it is non-expandable at every point in its life.
+  const searching: ToolActivityItem = {
+    toolUseId: 'tool-search',
+    toolName: 'ToolSearch',
+    activityKind: 'search',
+    status: 'running',
+    args: { query: 'browser' },
+  };
+  assert.equal(canExpandTool(searching), false);
+  const markup = renderToStaticMarkup(
+    createElement(LocaleProvider, {
+      locale: 'en',
+      children: createElement(TooltipProvider, {
+        children: createElement(ToolRow, {
+          item: searching,
+          isFirst: true,
+          isLast: true,
+          context: { onOpenSession: () => {}, onOpenExternal: () => {} },
+        }),
+      }),
+    }),
+  );
+  assert.ok(markup.includes('animate'), 'it still moves while it works');
+  assert.ok(markup.includes('--base-color:var(--text-muted)'));
+});
+
+// A note settles one shade brighter than a tool row, so a sweep resting at the
+// tool row's colour hops on exactly the row the colour rule was written for.
+test('a live note sweeps to the colour a note settles at', () => {
+  const note: ToolActivityItem = {
+    toolUseId: 'tool-note',
+    toolName: TOOL_NAMES.sendUserMessage,
+    status: 'running',
+    args: { message: 'Heads up.' },
+  };
+  const markup = renderToStaticMarkup(
+    createElement(LocaleProvider, {
+      locale: 'en',
+      children: createElement(TooltipProvider, {
+        children: createElement(ToolRow, {
+          item: note,
+          isFirst: true,
+          isLast: true,
+          context: { onOpenSession: () => {}, onOpenExternal: () => {} },
+        }),
+      }),
+    }),
+  );
+
+  assert.ok(markup.includes('animate'), 'it sweeps while it is live');
+  assert.equal(
+    markup.includes('--base-color:var(--text-muted)'),
+    false,
+    'but not towards the tool row colour',
+  );
+});
+
 test('untrusted Markdown keeps HTML and redaction markers as text', () => {
   const document = render(
     '<style>body{display:none}</style>\n\n<details open><summary>click</summary>payload</details>\n\n<redacted>',
@@ -1043,9 +1204,9 @@ test('a tool search has its own icon and its own summary phrase', () => {
     status: 'completed',
     args: { query: 'select:Grep' },
   } as unknown as ToolActivityItem;
-  // It searches, so it wears the glass the other searches wear — not the
-  // wrench every unclassified tool falls back to.
-  assert.equal(toolRowIcon(item), 'search');
+  // The reference gives the discovery connector a glyph of its own — it is not
+  // a search over the workspace, it is what makes other tools reachable.
+  assert.equal(toolRowIcon(item), 'connectors');
   assert.notEqual(toolRowIcon(item), 'tool');
   // And a turn that only looked for tools must not report "called a tool".
   assert.equal(toolSummaryKeyOf(item), 'toolSearch');

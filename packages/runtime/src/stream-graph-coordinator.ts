@@ -1761,6 +1761,8 @@ function isMaterializedGraphClientEvent(
   return ![
     'text_delta',
     'thinking_delta',
+    'tool_input_start',
+    'tool_input_delta',
     'tool_output_delta',
     'tool_progress',
     'tool_result_preview',

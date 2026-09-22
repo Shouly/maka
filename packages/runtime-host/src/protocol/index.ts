@@ -101,7 +101,13 @@ export const RUNTIME_HOST_REGISTRATION_SCHEMA_VERSION = 1 as const;
 export const RUNTIME_HOST_PROTOCOL_VERSION = 0 as const;
 // Increment when the same protocol version no longer guarantees safe Client-Host
 // interoperability. Mismatches are rejected before domain commands are admitted.
-export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 154 as const;
+export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 155 as const;
+// 155: A tool call is on the wire while the model is still writing it.
+// `subscription.session_event` carries `tool_input_start` and
+// `tool_input_delta`, which a Client that does not know them decodes as an
+// unknown event and refuses. The argument fragment's byte bound is now derived
+// from what a reader keeps rather than from the Runtime's split size, because
+// the Host folds contiguous fragments into one frame.
 // 154: A steering event says who wrote it. `author` and `origin` are
 // optional on `subscription.session_event`, and a Client that does not know
 // them rejects the frame outright, closing the connection rather than the

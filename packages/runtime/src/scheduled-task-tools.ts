@@ -242,6 +242,7 @@ function buildCreateTool(deps: { authority: ScheduledTaskToolAuthority }): MakaT
   return {
     name: TOOL_NAMES.scheduledTaskCreate,
     displayName: 'Create scheduled task',
+    activityKind: 'schedule',
     description: [
       'Create a scheduled task. Each firing starts a FRESH SESSION on this computer, never this conversation — the user views each run independently. To schedule a one-off reminder that should arrive back in THIS conversation, use SendLater instead.',
       '',
@@ -300,6 +301,7 @@ function buildListTool(deps: { authority: ScheduledTaskToolAuthority }): MakaToo
   return {
     name: TOOL_NAMES.scheduledTaskList,
     displayName: 'List scheduled tasks',
+    activityKind: 'schedule',
     description: [
       'List the scheduled tasks on this computer. Use it to find task ids for ScheduledTaskUpdate, ScheduledTaskDelete and ScheduledTaskRun.',
       '',
@@ -390,6 +392,7 @@ function buildUpdateTool(deps: { authority: ScheduledTaskToolAuthority }): MakaT
   return {
     name: TOOL_NAMES.scheduledTaskUpdate,
     displayName: 'Update scheduled task',
+    activityKind: 'schedule',
     description: [
       "Update a scheduled task's name, schedule, enabled state or instructions. Only provided fields are changed; omit a field to leave it as-is. The task keeps its id and its run history.",
       '',
@@ -490,6 +493,7 @@ function buildDeleteTool(deps: { authority: ScheduledTaskToolAuthority }): MakaT
   return {
     name: TOOL_NAMES.scheduledTaskDelete,
     displayName: 'Delete scheduled task',
+    activityKind: 'schedule',
     description: [
       'Delete a scheduled task. Use this to undo a ScheduledTaskCreate call or to clean up a task whose work is done.',
       '',
@@ -521,6 +525,7 @@ function buildRunTool(deps: { authority: ScheduledTaskToolAuthority }): MakaTool
   return {
     name: TOOL_NAMES.scheduledTaskRun,
     displayName: 'Run scheduled task',
+    activityKind: 'schedule',
     description: [
       'Run a scheduled task immediately, outside of its schedule. Use this to kick off a task on demand — e.g. after noticing a condition the task is meant to handle, or to re-run a task whose last scheduled run failed.',
       '',
@@ -587,6 +592,7 @@ function buildSendLaterTool(deps: {
   return {
     name: TOOL_NAMES.sendLater,
     displayName: 'Send later',
+    activityKind: 'schedule',
     description: [
       'Schedule a message to be delivered back into THIS SESSION at a future time. The message arrives as an ordinary user turn, so you can use it to remind yourself to resume work, check on something, or continue after a delay.',
       '',

@@ -3749,6 +3749,8 @@ function isRuntimeSessionForwardedEvent(
     event.type === 'text_complete' ||
     event.type === 'thinking_delta' ||
     event.type === 'thinking_complete' ||
+    event.type === 'tool_input_start' ||
+    event.type === 'tool_input_delta' ||
     event.type === 'tool_start' ||
     event.type === 'tool_output_delta' ||
     event.type === 'tool_progress' ||

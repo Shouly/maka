@@ -44,7 +44,10 @@ import type { UiLocale } from '@maka/core/ui-locale';
 import type {
   LiveSteeringProjection,
   LiveTurnProjection,
+  LiveTurnStepContentKind,
 } from "./live-turn-projection.js";
+import { liveContentKey } from "./live-turn-projection.js";
+import type { LiveToolInput } from './tool-input-stream.js';
 import { getConversationCopy } from "./conversation-copy.js";
 
 export { isCancelledToolResultContent, isInFlightToolStatus, toolResultActivityStatus } from '@maka/core/tool-result-status';
@@ -110,6 +113,14 @@ export interface ToolActivityItem {
   /** Lifecycle of the tool invocation itself, independent of a returned resource. */
   status: ToolActivityStatus;
   args: unknown;
+  /**
+   * Live-only: the arguments while the MODEL is still writing them. Present
+   * between the call's first frame and the `tool_start` that replaces it with
+   * the parsed `args`, so its presence is what says a row is a call being
+   * written rather than one that is running. Its reading is mirrored into
+   * `argsPreview`, which every formatter already consults.
+   */
+  input?: LiveToolInput;
   result?: ToolResultContent;
   durationMs?: number;
   /** Live-only progress for a bounded multi-step tool invocation. */
@@ -513,7 +524,7 @@ export function overlayLiveTurn(
   if (
     targetIndex >= 0
     && liveTurn.steps.length === 0
-    && (liveTurn.pendingSteering?.length ?? 0) === 0
+    && (liveTurn.steering?.length ?? 0) === 0
   ) {
     return turns;
   }
@@ -524,7 +535,7 @@ export function overlayLiveTurn(
   if (
     targetIndex < 0
     && liveTurn.steps.length === 0
-    && (liveTurn.pendingSteering?.length ?? 0) === 0
+    && (liveTurn.steering?.length ?? 0) === 0
   ) {
     return turns;
   }
@@ -547,6 +558,10 @@ export function overlayLiveTurn(
     current.tools.map((tool) => [tool.toolUseId, tool]),
   );
   const liveContentKeys = new Set<string>();
+  // An interjection the ledger has caught up on is drawn ONCE, by the live
+  // projection, which is the copy that knows where it belongs: the persisted row
+  // lands wherever the transcript put it, and both would show.
+  for (const message of liveTurn.steering ?? []) liveContentKeys.add(`user\0${message.id}`);
   for (const step of liveTurn.steps) {
     if (step.thinking) liveContentKeys.add(`thinking\0${step.stepId}`);
     if (step.text) liveContentKeys.add(`text\0${step.stepId}`);
@@ -560,23 +575,13 @@ export function overlayLiveTurn(
       );
     }
   }
-  const liveTimeline: TurnTimelineItem[] = [];
-  const emittedSteeringIds = new Set<string>();
-  const appendLiveSteering = (
-    messages: readonly LiveSteeringProjection[],
-  ): void => {
-    for (const message of messages) {
-      if (emittedSteeringIds.has(message.id)) continue;
-      emittedSteeringIds.add(message.id);
-      liveTimeline.push({
-        kind: "user",
-        message: chatItemFromContent(message.id, message.ts, message.content, message.origin),
-        messageId: message.id,
-      });
-    }
-  };
+  // Content first, in STEP order, each row stamped with when it first appeared.
+  // Tools go in one at a time — an interjection can land between two calls of
+  // one step — and `mergeAdjacentTimeline` regroups them at the end.
+  const liveContent: { item: TurnTimelineItem; seq: number }[] = [];
+  const arrivalOf = (kind: LiveTurnStepContentKind, id: string): number =>
+    liveTurn.contentSeq?.[liveContentKey(kind, id)] ?? -1;
   for (const step of liveTurn.steps) {
-    appendLiveSteering(step.leadingSteering ?? []);
     const contentOrder = step.contentOrder ?? [
       ...(step.thinking ? ["thinking" as const] : []),
       ...(step.text ? ["text" as const] : []),
@@ -584,33 +589,48 @@ export function overlayLiveTurn(
     ];
     for (const kind of contentOrder) {
       if (kind === "thinking" && step.thinking?.text) {
-        liveTimeline.push({
-          kind: "thinking",
-          text: step.thinking.text,
-          messageId: step.stepId,
-          live: step.thinking.complete !== true,
-          truncated: step.thinking.truncated,
+        liveContent.push({
+          item: {
+            kind: "thinking",
+            text: step.thinking.text,
+            messageId: step.stepId,
+            live: step.thinking.complete !== true,
+            truncated: step.thinking.truncated,
+          },
+          seq: arrivalOf("thinking", step.stepId),
         });
       } else if (kind === "text" && step.text?.text) {
-        liveTimeline.push({
-          kind: "text",
-          text: step.text.text,
-          messageId: step.stepId,
-          live: true,
-          complete: step.text.complete,
-          truncated: step.text.truncated,
+        liveContent.push({
+          item: {
+            kind: "text",
+            text: step.text.text,
+            messageId: step.stepId,
+            live: true,
+            complete: step.text.complete,
+            truncated: step.text.truncated,
+          },
+          seq: arrivalOf("text", step.stepId),
         });
       } else if (kind === "tools") {
-        const stepTools = step.tools.flatMap((tool) => {
+        for (const tool of step.tools) {
           const projected = toolByUseId.get(tool.toolUseId);
-          return projected ? [projected] : [];
-        });
-        if (stepTools.length > 0)
-          liveTimeline.push({ kind: "tools", items: stepTools });
+          if (!projected) continue;
+          liveContent.push({
+            item: { kind: "tools", items: [projected] },
+            seq: arrivalOf("tools", tool.toolUseId),
+          });
+        }
       }
     }
   }
-  appendLiveSteering(liveTurn.pendingSteering ?? []);
+  // Each interjection renders after the last row that was already on screen when
+  // it arrived — named by the row's KEY, not by a position in this list. The row
+  // it follows may have been handed to the durable transcript since, and
+  // `settleLiveTurnStep` takes the whole step with it; a position would then
+  // point at nothing and the interjection would fall to the end of the Turn,
+  // moving under a reader who is still watching it. `contentSeq` outlives the
+  // content it stamped, which is what lets the anchor survive the handoff.
+  const liveTimeline: TurnTimelineItem[] = liveContent.map((entry) => entry.item);
   // Shared entries are handoff points: replace them in place while preserving
   // live production order. Appending all live content after settled rows moved
   // an earlier answer (and its steering anchor) behind later persisted steps.
@@ -624,6 +644,12 @@ export function overlayLiveTurn(
   const lastSettledContentIndex = current.timeline.findLastIndex((item) => item.kind !== 'user');
   const deferredSteering: TurnTimelineItem[] = [];
   for (const [index, item] of current.timeline.entries()) {
+    // The live projection still holds this interjection and places it by its
+    // arrival stamp, so the persisted row would be the same message twice.
+    // Checked ahead of the deferral, which bypasses the skip below — and only
+    // for an interjection: a CONTENT row in both places is a handoff, and the
+    // skip below is what flushes the live copy into its position.
+    if (item.kind === 'user' && liveContentKeys.has(timelineItemKey(item))) continue;
     if (item.kind === 'user' && item.steeringEventId !== undefined
       && !liveIndex.has(timelineItemKey(item)) && index > lastSettledContentIndex) {
       deferredSteering.push(item);
@@ -638,7 +664,51 @@ export function overlayLiveTurn(
   }
   appendLiveThrough(liveEntries.length - 1);
   timeline.push(...deferredSteering);
-  const mergedTimeline = mergeAdjacentTimeline(timeline);
+  // Then the interjections, each after the last row that was already on screen
+  // when it arrived. Two things decide that, and they are not the same order:
+  // the ARRIVAL stamp says what the reader had seen, and this list is in RENDER
+  // order — a step's answer precedes the tool it calls even when the tool's
+  // output streamed first. So the slot is where the run of already-visible rows
+  // ends, walked over the ASSEMBLED rows rather than the live ones: a row handed
+  // to the durable transcript keeps its key and its stamp, where a position in
+  // the live list stops meaning anything the moment `settleLiveTurnStep` takes
+  // the step away — and the interjection fell to the end of the Turn, moving
+  // under a reader who was still watching it.
+  const steeringBySlot = new Map<number, LiveSteeringProjection[]>();
+  for (const message of [...(liveTurn.steering ?? [])].sort(bySteeringArrival)) {
+    let slot = timeline.length;
+    if (message.seq !== undefined) {
+      slot = 0;
+      for (const [index, item] of timeline.entries()) {
+        // No stamp means this projection never watched the row arrive: it came
+        // from the durable transcript, which is to say from before. Reading that
+        // as "not yet arrived" put a fresh interjection above the answer a
+        // reconnected client had been reading.
+        const stamp = liveTurn.contentSeq?.[timelineItemKey(item)];
+        if (stamp === undefined || stamp < message.seq) slot = index + 1;
+      }
+    }
+    steeringBySlot.set(slot, [...(steeringBySlot.get(slot) ?? []), message]);
+  }
+  const emittedSteeringIds = new Set<string>();
+  const withSteering: TurnTimelineItem[] = [];
+  const emitSteeringAt = (slot: number): void => {
+    for (const message of steeringBySlot.get(slot) ?? []) {
+      if (emittedSteeringIds.has(message.id)) continue;
+      emittedSteeringIds.add(message.id);
+      withSteering.push({
+        kind: 'user',
+        message: chatItemFromContent(message.id, message.ts, message.content, message.origin),
+        messageId: message.id,
+      });
+    }
+  };
+  for (const [index, item] of timeline.entries()) {
+    emitSteeringAt(index);
+    withSteering.push(item);
+  }
+  emitSteeringAt(timeline.length);
+  const mergedTimeline = mergeAdjacentTimeline(withSteering);
   const next = {
     ...current,
     tools: timelineTools(mergedTimeline),
@@ -1191,7 +1261,18 @@ function chatItemFromContent(
 }
 
 function timelineItemKey(item: TurnTimelineItem): string {
-  return item.kind === 'tools' ? `tool\0${item.items[0]!.toolUseId}` : `${item.kind}\0${item.messageId}`;
+  if (item.kind === 'tools') return liveContentKey('tools', item.items[0]!.toolUseId);
+  if (item.kind === 'user') return `user\0${item.messageId}`;
+  return liveContentKey(item.kind, item.messageId);
+}
+
+/** Arrival order, with an unstamped message last — where it used to be pinned. */
+function bySteeringArrival(a: LiveSteeringProjection, b: LiveSteeringProjection): number {
+  // Compared, not subtracted: two unstamped messages would subtract to NaN, and
+  // a comparator returning NaN leaves the order to the engine's good nature.
+  const left = a.seq ?? Number.POSITIVE_INFINITY;
+  const right = b.seq ?? Number.POSITIVE_INFINITY;
+  return left === right ? 0 : left < right ? -1 : 1;
 }
 
 function flattenTimelineTools(items: readonly TurnTimelineItem[]): TurnTimelineItem[] {

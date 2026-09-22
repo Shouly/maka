@@ -35,10 +35,14 @@ import type {
   ThinkingCompleteEvent,
   ThinkingDeltaEvent,
   TokenUsageEvent,
+  ToolInputDeltaEvent,
+  ToolInputStartEvent,
   ToolResultContent,
   ToolResultEvent,
   ToolStartEvent,
 } from '@maka/core/events';
+import { TOOL_INPUT_DELTA_MAX_CHARS, TOOL_INPUT_PREVIEW_MAX_CHARS } from '@maka/core/events';
+import { chunkByCodepoint } from './tool-output-delta.js';
 import type {
   AssistantMessage,
   AssistantStepContentKind,
@@ -1530,6 +1534,49 @@ export class AiSdkTurn {
             let attemptSawThinking = false;
             let attemptSawToolActivity = false;
             let attemptSawContinuationMetadata = false;
+            // Client-executed calls this attempt has opened, each mapped to how
+            // much of its arguments has gone out. Membership is what tells a
+            // fragment apart from one belonging to a provider-executed tool,
+            // whose input is never shown; the count is the next fragment's
+            // offset. An entry is dropped once the call ends or has sent
+            // everything a reader will take.
+            const liveToolInput = new Map<string, number>();
+            // Forwarded as they come, like the assistant's own text: a provider
+            // writes arguments in fragments of tens of characters, and holding
+            // them back for a fuller frame is holding back the only thing this
+            // exists to show. Back-pressure belongs to the Host, which folds
+            // queued fragments into one frame when a subscriber falls behind;
+            // that is what `offset` is for.
+            const sendToolInput = (toolCallId: string, text: string): void => {
+              const sent = liveToolInput.get(toolCallId);
+              if (sent === undefined) return;
+              let offset = sent;
+              // Whole pieces only, split on a codepoint boundary — never cut to
+              // fit the bound. A cut leaves the OFFSETS contiguous while the
+              // text is not, so the far side splices the next fragment into the
+              // gap and reads a different, well-formed call: the one failure
+              // this design exists to prevent. Seen at the boundary with one
+              // unit of room left and an astral pair arriving, which cannot be
+              // halved. So the bound is where the stream STOPS, and the piece
+              // that crosses it goes whole — which is what the reader keeps too.
+              for (const delta of chunkByCodepoint(text, TOOL_INPUT_DELTA_MAX_CHARS)) {
+                queue.push({
+                  type: 'tool_input_delta',
+                  id: this.deps.newId(),
+                  turnId,
+                  ts: this.deps.now(),
+                  toolUseId: toolCallId,
+                  offset,
+                  delta,
+                } satisfies ToolInputDeltaEvent);
+                offset += delta.length;
+                if (offset >= TOOL_INPUT_PREVIEW_MAX_CHARS) break;
+              }
+              // Past the reading bound the far side keeps nothing more, so the
+              // call stops here rather than sending into a void.
+              if (offset >= TOOL_INPUT_PREVIEW_MAX_CHARS) liveToolInput.delete(toolCallId);
+              else liveToolInput.set(toolCallId, offset);
+            };
             let attemptReachedStepBoundary = false;
             const attemptHasNoObservableOutput = () =>
               !attemptSawText &&
@@ -1915,9 +1962,36 @@ export class AiSdkTurn {
                 // final tool-call/result event, retrying can repeat external
                 // work that the Runtime cannot observe or reconcile.
                 attemptSawToolActivity = true;
+              } else if (event.kind === 'tool-input-start') {
+                // Does NOT set `attemptSawToolActivity`: nothing has run, so a
+                // stream dying here leaves no side effect for a retry to repeat.
+                recordStepContent('tools');
+                liveToolInput.set(event.toolCallId, 0);
+                // The row's icon and fallback title come from the definition,
+                // which is already here; leaving them to `tool_start` draws the
+                // row generic first and right second.
+                const named = providerTools.find((tool) => tool.name === event.toolName);
+                queue.push({
+                  type: 'tool_input_start',
+                  id: this.deps.newId(),
+                  turnId,
+                  ts: this.deps.now(),
+                  toolUseId: event.toolCallId,
+                  toolName: event.toolName,
+                  ...(named?.activityKind ? { activityKind: named.activityKind } : {}),
+                  ...(named?.displayName ? { displayName: named.displayName } : {}),
+                  stepId: currentStepMessageId,
+                } satisfies ToolInputStartEvent);
+              } else if (event.kind === 'tool-input-delta') {
+                sendToolInput(event.toolCallId, event.delta);
+              } else if (event.kind === 'tool-input-end') {
+                liveToolInput.delete(event.toolCallId);
               } else if (event.kind === 'tool-call') {
                 attemptSawToolActivity = true;
                 recordStepContent('tools');
+                // `tool-input-end` is the natural close, but not every provider
+                // that streams input sends one; this one always arrives.
+                liveToolInput.delete(event.toolCall.toolCallId);
                 if (event.toolCall.providerExecuted) {
                   providerToolActivityCount += 1;
                   providerToolInputs.set(event.toolCall.toolCallId, event.toolCall.input);

@@ -56,6 +56,7 @@ import {
 } from './tool-result-archive-transition.js';
 import {
   isArchivedToolResultPlaceholder,
+  isUnarchivableToolResult,
   serializeToolResultForArchive,
   type ArchivedToolResultPlaceholder,
 } from './tool-result-archive.js';
@@ -279,6 +280,7 @@ async function rewriteToolResultPart(input: {
   const eligible = input.input.eligibleToolCallIds;
   if (eligible && !eligible.has(part.toolCallId)) return { changed: false };
 
+  if (isUnarchivableToolResult(part.toolName)) return { changed: false };
   const payload = extractPayload(part);
   if (!payload) return { changed: false };
   if (isArchivedPayload(payload.value)) return { changed: false };

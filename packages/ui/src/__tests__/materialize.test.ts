@@ -28,7 +28,7 @@ import {
   type TurnTimelineItem,
 } from "../materialize.js";
 import { applyLiveTurnEvent } from './live-turn-zh.js';
-import { armLiveTurn } from "../live-turn-projection.js";
+import { armLiveTurn, settleLiveTurnStep } from "../live-turn-projection.js";
 
 const originalUser = {
   type: "user" as const,
@@ -127,6 +127,38 @@ describe("steering timeline", () => {
     ], "en");
     const [deduplicated] = overlayLiveTurn(persisted, live, "en");
     assert.deepEqual(timelineText(deduplicated), ["text:before", "user:inserted instruction"]);
+  });
+
+  // An interjection is placed after the run of rows the reader had already seen.
+  // Those rows do not stay live: `settleLiveTurnStep` hands a finished step to
+  // the durable transcript and takes the WHOLE step with it, so a slot counted
+  // over the live rows pointed at nothing and the message fell to the end of the
+  // Turn — moving under a reader who was still watching it, mid-Turn.
+  test("holds an interjection in place when its step is handed to the transcript", () => {
+    const durable = materializeTurns([
+      originalUser,
+      { type: "assistant", id: "s1", turnId: "t1", ts: 1, text: "Let me check.", modelId: "fixture" },
+      { type: "tool_call", id: "tool-1", turnId: "t1", ts: 3, stepId: "s1", toolName: "Read", args: { file_path: "/tmp/a" } },
+    ], "en");
+
+    const answered = applyLiveTurnEvent(armLiveTurn("t1"), {
+      type: "text_complete", id: "e1", messageId: "s1", turnId: "t1", ts: 1, text: "Let me check.",
+    });
+    const interjected = applyLiveTurnEvent(answered, {
+      type: "steering_message", id: "e2", messageId: "steer-1", turnId: "t1", ts: 2,
+      content: { text: "Wait please" },
+    });
+    const live = applyLiveTurnEvent(interjected, {
+      type: "tool_start", id: "e3", turnId: "t1", ts: 3, stepId: "s1",
+      toolUseId: "tool-1", toolName: "Read", args: { file_path: "/tmp/a" },
+    });
+
+    const streaming = timelineText(overlayLiveTurn(durable, live, "en")[0]!);
+    const settledStep = settleLiveTurnStep(live, "s1");
+    const handedOver = timelineText(overlayLiveTurn(durable, settledStep!, "en")[0]!);
+
+    assert.deepEqual(streaming, ["text:Let me check.", "user:Wait please", "tools:"]);
+    assert.deepEqual(handedOver, streaming, "the handoff moves nothing");
   });
 
   test("keeps the current answer ahead of a durable steering event that arrives first", () => {

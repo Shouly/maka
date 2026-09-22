@@ -449,6 +449,28 @@ const PROJECTION_SAMPLES: ProjectionSamples = {
       { type: 'text_complete', id: 'e2', turnId: 'turn-1', ts: 2, messageId: 'm1', text: 'hi' },
     ],
   },
+  tool_input_start: {
+    subject: {
+      type: 'tool_input_start',
+      id: 'e',
+      turnId: 'turn-1',
+      ts: 1,
+      toolUseId: 'tool-1',
+      toolName: 'Read',
+      stepId: 'm1',
+    },
+  },
+  tool_input_delta: {
+    subject: {
+      type: 'tool_input_delta',
+      id: 'e',
+      turnId: 'turn-1',
+      ts: 1,
+      toolUseId: 'tool-1',
+      offset: 0,
+      delta: '{"path":"/tm',
+    },
+  },
   tool_start: {
     subject: {
       type: 'tool_start',

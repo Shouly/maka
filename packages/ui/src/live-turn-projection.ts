@@ -33,9 +33,10 @@ import { isInFlightToolStatus } from '@maka/core/tool-result-status';
 import type { ToolActivityItem } from './materialize.js';
 import { applyThinkingComplete, applyThinkingDelta } from './thinking-stream.js';
 import type { StreamingDisplayRedactionState } from './streaming-display-redaction.js';
+import { applyToolInputFragment, openToolInput } from './tool-input-stream.js';
 import { applyToolOutputChunk } from './tool-output-stream.js';
 
-type LiveTurnContentEvent = Extract<SessionEvent, { type: 'thinking_delta' | 'thinking_complete' | 'text_delta' | 'text_complete' | 'tool_start' | 'tool_output_delta' | 'tool_progress' | 'tool_result_preview' | 'tool_result' }>;
+type LiveTurnContentEvent = Extract<SessionEvent, { type: 'thinking_delta' | 'thinking_complete' | 'text_delta' | 'text_complete' | 'tool_input_start' | 'tool_start' | 'tool_output_delta' | 'tool_progress' | 'tool_result_preview' | 'tool_result' }>;
 
 /**
  * A provider retry event plus the CLIENT-local time it entered this
@@ -64,8 +65,6 @@ export interface LiveThinkingProjection {
 export interface LiveTurnStepProjection {
   stepId: string;
   contentOrder?: LiveTurnStepContentKind[];
-  /** Steering drained immediately before this provider step began. */
-  leadingSteering?: LiveSteeringProjection[];
 
   thinking?: LiveThinkingProjection;
   text?: LiveTextProjection;
@@ -88,6 +87,11 @@ export interface LiveSteeringProjection {
   id: string;
   content: MessageContent;
   ts: number;
+  /**
+   * Arrival stamp: the interjection renders after everything already on screen
+   * when it landed. Absent on a hand-built projection, which renders it last.
+   */
+  seq?: number;
   /**
    * Who interjected. A background task finishing speaks in the user's role
    * but is not the user, and a live Turn has to know that as surely as the
@@ -112,8 +116,20 @@ export interface LiveTurnProjection {
   /** Event ts of the first authority word about this Turn; a stable ts for the
    *  synthesized "compacting" row so reprojection does not churn identity. */
   startedAt?: number;
-  /** Steering acknowledged after the current content and awaiting its next provider step. */
-  pendingSteering?: LiveSteeringProjection[];
+  /**
+   * Every interjection this Turn has seen, in arrival order. One flat list, not
+   * a slot per step: an interjection can land between a step's answer and the
+   * tool that same step goes on to call, and a slot only describes a boundary.
+   */
+  steering?: LiveSteeringProjection[];
+  /**
+   * Arrival stamp per content item, keyed by `liveContentKey`. Content renders in
+   * STEP order, not arrival order, so these do not sort the content — they place
+   * the interjections within it.
+   */
+  contentSeq?: Record<string, number>;
+  /** Next value of the monotonic counter that stamps content and steering. */
+  nextSeq?: number;
   /**
    * Set by `armLiveTurn` and cleared by the first word the authority says about
    * this turn (`confirmLiveTurn`, or any event carrying the same turnId).
@@ -148,7 +164,10 @@ function projectToolActivityIdentity(event: {
 }
 
 function terminalizeLiveSteps(steps: readonly LiveTurnStepProjection[]): LiveTurnStepProjection[] {
-  return steps.map((step) => ({
+  // A call whose arguments never finished arriving was never dispatched and left
+  // no trace in the ledger. Interrupting it would pin a row the settled
+  // transcript has no counterpart for; it simply did not happen.
+  return withoutArrivingTools(steps).map((step) => ({
     ...step,
     ...(step.thinking ? { thinking: terminalThinking(step.thinking) } : {}),
     ...(step.text ? { text: terminalText(step.text) } : {}),
@@ -174,6 +193,15 @@ function inferredContentOrder(step: LiveTurnStepProjection): LiveTurnStepContent
     ...(step.text ? ['text' as const] : []),
     ...(step.tools.length > 0 ? ['tools' as const] : []),
   ];
+}
+
+/**
+ * Render identity of one live content item; the tool's is stable while an
+ * output-first tool is re-homed. Shared with `timelineItemKey` so a stamp and
+ * the row it stamps cannot key differently.
+ */
+export function liveContentKey(kind: LiveTurnStepContentKind, id: string): string {
+  return kind === 'tools' ? `tool\0${id}` : `${kind}\0${id}`;
 }
 
 function appendContentKind(
@@ -230,14 +258,17 @@ export function applyLiveTurnEvent(
     if (liveSteeringMessages(prior).some((message) => message.id === event.messageId)) {
       return confirmed(prior);
     }
+    const seq = prior.nextSeq ?? 0;
     return {
       ...confirmed(prior),
-      pendingSteering: [
-        ...(prior.pendingSteering ?? []),
+      nextSeq: seq + 1,
+      steering: [
+        ...(prior.steering ?? []),
         {
           id: event.messageId,
           content: structuredClone(event.content),
           ts: event.ts,
+          seq,
           ...(event.author ? { author: event.author } : {}),
           ...(event.origin ? { origin: structuredClone(event.origin) } : {}),
         },
@@ -248,7 +279,15 @@ export function applyLiveTurnEvent(
     const prior = current?.turnId === event.turnId
       ? current
       : { turnId: event.turnId, phase: 'waiting' as const, steps: [] };
-    return { ...confirmed(prior), providerRetry: { event, receivedAtMs: Date.now() } };
+    // The attempt that was writing these calls is being taken from the top, so
+    // a call it had half-written will never be dispatched and never reach the
+    // ledger. Left alone the row shimmers as a running call, with arguments
+    // that stop mid-word, for the rest of the Turn.
+    return {
+      ...confirmed(prior),
+      steps: withoutArrivingTools(prior.steps),
+      providerRetry: { event, receivedAtMs: Date.now() },
+    };
   }
   if (event.type === 'error' || event.type === 'abort') {
     if (!current || current.turnId !== event.turnId) return current;
@@ -259,15 +298,13 @@ export function applyLiveTurnEvent(
   }
   if (event.type === 'complete') {
     if (!current || current.turnId !== event.turnId) return current;
-    if (current.steps.length === 0 && liveSteeringMessages(current).length === 0) {
-      return undefined;
-    }
+    // Decided on the terminalized steps, as abort and error are: terminalizing
+    // drops a call whose arguments never finished arriving, so a Turn whose only
+    // step was one of those has nothing left and must not linger as a husk.
+    const steps = terminalizeLiveSteps(current.steps);
+    if (steps.length === 0 && liveSteeringMessages(current).length === 0) return undefined;
     const { providerRetry: _providerRetry, ...withoutRetry } = confirmed(current);
-    return {
-      ...withoutRetry,
-      terminal: true,
-      steps: terminalizeLiveSteps(current.steps),
-    };
+    return { ...withoutRetry, terminal: true, steps };
   }
   if (event.type === 'context_compaction_started') {
     const prior =
@@ -281,6 +318,8 @@ export function applyLiveTurnEvent(
     && event.type !== 'thinking_complete'
     && event.type !== 'text_delta'
     && event.type !== 'text_complete'
+    && event.type !== 'tool_input_start'
+    && event.type !== 'tool_input_delta'
     && event.type !== 'tool_start'
     && event.type !== 'tool_output_delta'
     && event.type !== 'tool_progress'
@@ -288,6 +327,16 @@ export function applyLiveTurnEvent(
     && event.type !== 'tool_result'
   ) {
     return current;
+  }
+  // A fragment needs a stream still open to continue: a client that joined
+  // mid-stream has no head for it, and a broken one has no way back. Answered
+  // here so neither can conjure a step, or a Turn, and so a broken stream costs
+  // nothing per fragment for the rest of the call.
+  if (event.type === 'tool_input_delta') {
+    const open = current?.turnId === event.turnId
+      && current.steps.some((step) => step.tools.some((tool) =>
+        tool.toolUseId === event.toolUseId && tool.input !== undefined && !tool.input.broken));
+    if (!open) return current;
   }
   const prior = current?.turnId === event.turnId
     ? current
@@ -298,6 +347,8 @@ export function applyLiveTurnEvent(
     || event.type === 'text_delta'
     || event.type === 'text_complete';
   const existingToolStep = event.type === 'tool_start'
+    || event.type === 'tool_input_start'
+    || event.type === 'tool_input_delta'
     || event.type === 'tool_output_delta'
     || event.type === 'tool_progress'
     || event.type === 'tool_result_preview'
@@ -306,22 +357,13 @@ export function applyLiveTurnEvent(
     : undefined;
   const stepId = messageEvent
     ? event.messageId
-    : event.type === 'tool_start'
+    : event.type === 'tool_start' || event.type === 'tool_input_start'
       ? event.stepId ?? existingToolStep?.stepId ?? `tool:${event.toolUseId}`
       : existingToolStep?.stepId ?? `tool:${event.toolUseId}`;
   const stepIndex = prior.steps.findIndex((step) => step.stepId === stepId);
   const isNewStep = stepIndex < 0;
-  const claimsPendingSteering = isNewStep
-    && existingToolStep === undefined
-    && (prior.pendingSteering?.length ?? 0) > 0;
   const step: LiveTurnStepProjection = isNewStep
-    ? {
-        stepId,
-        tools: [],
-        ...(claimsPendingSteering
-          ? { leadingSteering: prior.pendingSteering }
-          : {}),
-      }
+    ? { stepId, tools: [] }
     : prior.steps[stepIndex]!;
   let nextStep: LiveTurnStepProjection;
   if (event.type === 'thinking_delta') {
@@ -394,6 +436,38 @@ export function applyLiveTurnEvent(
           : { sourceEndOffset: event.text.length }),
       },
     };
+  } else if (event.type === 'tool_input_start') {
+    // Named, argument-less. `input` is what says so, and `tool_start` removes it.
+    // It only ever OPENS a row: a second one for a call already on screen —
+    // redelivered, or reordered behind its own dispatch — would reopen a stream
+    // at offset zero and read every fragment after it as a hole.
+    if (existingToolStep) return current;
+    const arriving: ToolActivityItem = {
+      toolUseId: event.toolUseId,
+      toolName: event.toolName,
+      ...(event.activityKind !== undefined ? { activityKind: event.activityKind } : {}),
+      ...(event.displayName !== undefined ? { displayName: event.displayName } : {}),
+      ...projectToolActivityIdentity(event),
+      ...(event.stepId !== undefined ? { stepId: event.stepId } : {}),
+      status: 'running',
+      args: undefined,
+      input: openToolInput(),
+    };
+    nextStep = { ...step, tools: [...step.tools, arriving] };
+  } else if (event.type === 'tool_input_delta') {
+    const toolIndex = step.tools.findIndex((candidate) => candidate.toolUseId === event.toolUseId);
+    const base = step.tools[toolIndex]!;
+    const input = applyToolInputFragment(base.input!, event, base.toolName);
+    const { argsPreview: _stale, ...withoutReading } = base;
+    const tool: ToolActivityItem = {
+      ...withoutReading,
+      input,
+      ...(input.preview === undefined ? {} : { argsPreview: input.preview }),
+    };
+    nextStep = {
+      ...step,
+      tools: step.tools.map((candidate, index) => index === toolIndex ? tool : candidate),
+    };
   } else if (event.type === 'tool_start') {
     const startedTool: ToolActivityItem = {
       toolUseId: event.toolUseId,
@@ -412,11 +486,19 @@ export function applyLiveTurnEvent(
       ? { ...existingTool, ...startedTool, status: existingTool.status }
       : startedTool;
     const toolIndex = step.tools.findIndex((candidate) => candidate.toolUseId === event.toolUseId);
+    // The arguments are here in full, so the partial reading goes with them.
+    const settleArrival = (candidate: ToolActivityItem): ToolActivityItem => {
+      const { input: _input, argsPreview: _argsPreview, ...settled } = candidate;
+      return event.argsPreview === undefined
+        ? settled
+        : { ...settled, argsPreview: event.argsPreview };
+    };
     nextStep = {
       ...step,
       tools: toolIndex >= 0
-        ? step.tools.map((candidate, index) => index === toolIndex ? { ...candidate, ...tool } : candidate)
-        : [...step.tools, tool],
+        ? step.tools.map((candidate, index) =>
+          index === toolIndex ? settleArrival({ ...candidate, ...tool }) : candidate)
+        : [...step.tools, settleArrival(tool)],
     };
   } else if (event.type === 'tool_output_delta') {
     const toolIndex = step.tools.findIndex((candidate) => candidate.toolUseId === event.toolUseId);
@@ -506,6 +588,19 @@ export function applyLiveTurnEvent(
     ...nextStep,
     contentOrder: appendContentKind(step, contentKind),
   };
+  // Stamp the item the first time it is seen, and never again: what a reader
+  // saw before an interjection landed does not change when more of it arrives,
+  // and an output-first tool keeps the moment it appeared even after it is
+  // re-homed into the step that finally claims it.
+  const contentKey = liveContentKey(contentKind, messageEvent ? stepId : event.toolUseId);
+  const alreadyStamped = priorWithoutRetry.contentSeq?.[contentKey] !== undefined;
+  const arrivalSeq = priorWithoutRetry.nextSeq ?? 0;
+  const arrival = alreadyStamped
+    ? {}
+    : {
+        nextSeq: arrivalSeq + 1,
+        contentSeq: { ...(priorWithoutRetry.contentSeq ?? {}), [contentKey]: arrivalSeq },
+      };
   let steps: LiveTurnStepProjection[];
   if (existingToolStep && existingToolStep.stepId !== stepId && !messageEvent) {
     const sourceIndex = prior.steps.findIndex((candidate) => candidate.stepId === existingToolStep.stepId);
@@ -518,8 +613,7 @@ export function applyLiveTurnEvent(
     }
     const sourceIsEmpty = !sourceWithoutTool.thinking
       && !sourceWithoutTool.text
-      && sourceWithoutTool.tools.length === 0
-      && (sourceWithoutTool.leadingSteering?.length ?? 0) === 0;
+      && sourceWithoutTool.tools.length === 0;
     steps = [];
     for (let index = 0; index < prior.steps.length; index += 1) {
       const candidate = prior.steps[index]!;
@@ -538,19 +632,47 @@ export function applyLiveTurnEvent(
       ? prior.steps.map((candidate, index) => index === stepIndex ? nextStep : candidate)
       : [...prior.steps, nextStep];
   }
-  const { pendingSteering: _pendingSteering, ...withoutPendingSteering } = priorWithoutRetry;
   return {
-    ...(claimsPendingSteering ? withoutPendingSteering : priorWithoutRetry),
+    ...priorWithoutRetry,
+    ...arrival,
     phase: 'streamed',
     steps,
   };
 }
 
+/**
+ * Drop every call whose arguments were still arriving, and any step left with
+ * nothing. Used where an attempt is abandoned: such a call was never dispatched
+ * and has no counterpart in the transcript to hand over to.
+ */
+function withoutArrivingTools(
+  steps: readonly LiveTurnStepProjection[],
+): LiveTurnStepProjection[] {
+  return steps.flatMap((step) => {
+    // `input` alone does not say the call was never dispatched: only `tool_start`
+    // clears it, and a client that missed that one frame — shed behind a
+    // backlog, or evicted and resubscribed across it — still carries it on a
+    // call that ran and returned. Evidence of running wins over its absence,
+    // and a settled STATUS is the strongest of it: a live `tool_result` carries
+    // status without a body (the Host omits the content and the client rebuilds
+    // it as `contentOmitted`), so asking for the body instead threw away the
+    // whole row — and with it the step, and with it the Turn.
+    const tools = step.tools.filter((tool) =>
+      tool.input === undefined ||
+      !isInFlightToolStatus(tool.status) ||
+      tool.result !== undefined ||
+      (tool.outputChunks?.length ?? 0) > 0);
+    if (tools.length === step.tools.length) return [step];
+    const next: LiveTurnStepProjection = { ...step, tools };
+    if (tools.length === 0 && next.contentOrder) {
+      next.contentOrder = next.contentOrder.filter((kind) => kind !== 'tools');
+    }
+    return next.thinking || next.text || next.tools.length > 0 ? [next] : [];
+  });
+}
+
 function liveSteeringMessages(current: LiveTurnProjection): LiveSteeringProjection[] {
-  return [
-    ...(current.pendingSteering ?? []),
-    ...current.steps.flatMap((step) => step.leadingSteering ?? []),
-  ];
+  return current.steering ?? [];
 }
 
 function replaySafeDelta(
@@ -688,13 +810,6 @@ export function reconcileTerminalLiveTurn(
   const steeringSettled = projection.terminal === true
     && transcriptReachedTerminal
     && liveSteeringMessages(projection).length > 0;
-  if (steeringSettled) {
-    steps = steps.map((step) => {
-      if (!step.leadingSteering) return step;
-      const { leadingSteering: _leadingSteering, ...withoutSteering } = step;
-      return withoutSteering;
-    });
-  }
   if (
     steps.length === 0
     && projection.terminal
@@ -706,6 +821,6 @@ export function reconcileTerminalLiveTurn(
   ) return undefined;
   if (steps.length === projection.steps.length && !steeringSettled) return projection;
   if (!steeringSettled) return { ...projection, steps };
-  const { pendingSteering: _pendingSteering, ...withoutSteering } = projection;
+  const { steering: _steering, ...withoutSteering } = projection;
   return { ...withoutSteering, steps };
 }

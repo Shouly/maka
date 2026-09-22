@@ -123,7 +123,8 @@ export function createToolOutputDeltaEmitter(
   };
 }
 
-function chunkByCodepoint(value: string, maxChars: number): string[] {
+/** Split at a codepoint boundary, so no piece ends on half a surrogate pair. */
+export function chunkByCodepoint(value: string, maxChars: number): string[] {
   const chunks: string[] = [];
   let current = '';
   for (const char of value) {

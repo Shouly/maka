@@ -48,6 +48,9 @@ import {
   isPartialRuntimeEvent,
   isTerminalRuntimeEvent,
   runtimeEventInvocationOpening,
+  runtimePartialStreamIdentity,
+  runtimePartialStreamKeyFor,
+  RUNTIME_TOOL_CALL_STREAM_PREFIX,
   TOOL_BOUNDARY_PROTOCOL_V1,
   type RuntimeEvent,
   type RuntimeEventManagedWorkspaceMutationV2,
@@ -3947,6 +3950,15 @@ export class SqliteRuntimeStore
   }
 
   private deleteCompletedPartialSnapshot(event: RuntimeEvent): void {
+    // A terminal event ends the run, so nothing it holds is still streaming —
+    // including a call the model began writing and never dispatched, which has
+    // no result of its own to retire it and would otherwise outlive the turn.
+    if (isTerminalRuntimeEvent(event)) {
+      this.db
+        .prepare('DELETE FROM runtime_partial_snapshots WHERE session_id = ? AND run_id = ?')
+        .run(event.sessionId, event.runId);
+      return;
+    }
     const completedPartialKey = completedPartialRuntimeStreamKey(event);
     if (!completedPartialKey) return;
     this.db
@@ -4875,30 +4887,12 @@ function partialRuntimeStream(event: RuntimeEvent):
       text: string;
     }
   | undefined {
-  if (!event.partial || event.status !== undefined || event.actions) return undefined;
-  const content = event.content;
-  let identity: string | undefined;
-  let text = '';
-  if (
-    content?.kind === 'text' &&
-    content.attachments === undefined &&
-    event.refs?.providerEventId &&
-    hasOnlyKeys(event.refs, ['providerEventId'])
-  ) {
-    identity = `${content.kind}:provider:${event.refs.providerEventId}`;
-    text = content.text;
-  } else if (
-    content?.kind === 'thinking' &&
-    content.signature === undefined &&
-    event.refs?.providerEventId &&
-    hasOnlyKeys(event.refs, ['providerEventId'])
-  ) {
-    identity = `${content.kind}:provider:${event.refs.providerEventId}`;
-    text = content.text;
-  } else if (!content && event.refs?.toolCallId && hasOnlyKeys(event.refs, ['toolCallId'])) {
-    identity = `tool:call:${event.refs.toolCallId}`;
-  }
+  // Which events form a stream is decided once, in core: the run batches by the
+  // same rule, and a disagreement costs a write per event on both sides.
+  const identity = runtimePartialStreamIdentity(event);
   if (!identity) return undefined;
+  const content = event.content;
+  const text = content?.kind === 'text' || content?.kind === 'thinking' ? content.text : '';
   const key = runtimePartialStreamKey(identity, event);
   const snapshot =
     content?.kind === 'text' || content?.kind === 'thinking'
@@ -4914,31 +4908,16 @@ function completedPartialRuntimeStreamKey(event: RuntimeEvent): string | undefin
   if ((content?.kind === 'text' || content?.kind === 'thinking') && event.refs?.providerEventId) {
     identity = `${content.kind}:provider:${event.refs.providerEventId}`;
   } else if (content?.kind === 'function_response' && event.refs?.toolCallId) {
-    identity = `tool:call:${event.refs.toolCallId}`;
+    // Retires every heartbeat of the call, whichever side voiced it — which is
+    // why the key for one does not carry a voice.
+    identity = `${RUNTIME_TOOL_CALL_STREAM_PREFIX}${event.refs.toolCallId}`;
   }
   return identity ? runtimePartialStreamKey(identity, event) : undefined;
 }
 
+/** The stored column: core decides what a stream IS and what scopes it. */
 function runtimePartialStreamKey(identity: string, event: RuntimeEvent): string {
-  return createHash('sha256')
-    .update(
-      JSON.stringify([
-        identity,
-        event.sessionId,
-        event.invocationId,
-        event.runId,
-        event.turnId,
-        event.branch ?? null,
-        event.role,
-        event.author,
-      ]),
-    )
-    .digest('hex');
-}
-
-function hasOnlyKeys(value: object, allowed: readonly string[]): boolean {
-  const allowedSet = new Set(allowed);
-  return Object.keys(value).every((key) => allowedSet.has(key));
+  return createHash('sha256').update(runtimePartialStreamKeyFor(identity, event)).digest('hex');
 }
 
 function decodeContinuationClaimRow(row: ContinuationClaimStorageRow): ContinuationClaimV1 {

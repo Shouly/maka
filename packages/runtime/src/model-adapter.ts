@@ -794,6 +794,8 @@ interface AiSdkStreamChunk {
   textDelta?: string;
   toolCallId?: string;
   toolName?: string;
+  /** Raw JSON fragment of a tool call's arguments (`tool-input-delta`). */
+  inputTextDelta?: string;
   input?: unknown;
   args?: unknown;
   providerExecuted?: boolean;
@@ -835,6 +837,16 @@ interface SdkStreamResult {
  * reason we have no case for — an ordinary finished turn. `other` with nothing
  * behind it is a stream that died without anyone saying so.
  */
+/**
+ * The call id on a tool-input frame. `toolCallId` is what the model stream says;
+ * `id` is the same value under the name the UI-message stream gives it, and a
+ * replay fixture may carry either.
+ */
+function chunkToolCallId(chunk: AiSdkStreamChunk): string | undefined {
+  if (typeof chunk.toolCallId === 'string' && chunk.toolCallId.length > 0) return chunk.toolCallId;
+  return typeof chunk.id === 'string' && chunk.id.length > 0 ? chunk.id : undefined;
+}
+
 function chunkFinishReason(chunk: AiSdkStreamChunk): string | undefined {
   const unified = rawFinishReasonString(chunk.finishReason);
   if (unified !== 'other' && unified !== 'unknown') return unified;
@@ -1122,10 +1134,33 @@ function translateChunk(
           : []),
       ];
     }
-    case 'tool-input-start':
-    case 'tool-input-delta':
-    case 'tool-input-end':
-      return chunk.providerExecuted === true ? [{ kind: 'provider-tool-input' }] : [];
+    // A provider names the tool in its first input frame and then streams the
+    // arguments as JSON text. For a provider-executed tool that is only evidence
+    // that external work has begun; for a client-executed one it is the call
+    // itself arriving, and it is what lets the transcript show which tool is
+    // being written instead of waiting out the argument stream in silence.
+    case 'tool-input-start': {
+      if (chunk.providerExecuted === true) return [{ kind: 'provider-tool-input' }];
+      const toolCallId = chunkToolCallId(chunk);
+      return toolCallId !== undefined && typeof chunk.toolName === 'string'
+        ? [{ kind: 'tool-input-start', toolCallId, toolName: chunk.toolName }]
+        : [];
+    }
+    // No `providerExecuted` on the delta frames — the id opened by
+    // `tool-input-start` is what says which side owns the call, so the fragment
+    // is forwarded and the turn drops the ones it never opened.
+    case 'tool-input-delta': {
+      const toolCallId = chunkToolCallId(chunk);
+      const delta = typeof chunk.inputTextDelta === 'string' ? chunk.inputTextDelta : chunk.delta;
+      return toolCallId !== undefined && typeof delta === 'string' && delta.length > 0
+        ? [{ kind: 'tool-input-delta', toolCallId, delta }]
+        : [];
+    }
+    case 'tool-input-end': {
+      if (chunk.providerExecuted === true) return [{ kind: 'provider-tool-input' }];
+      const toolCallId = chunkToolCallId(chunk);
+      return toolCallId === undefined ? [] : [{ kind: 'tool-input-end', toolCallId }];
+    }
     // Step boundaries (`start-step` / `finish-step`) and the terminal `finish`
     // carry no text/thinking to stream. The backend owns step accounting: it
     // counts and flushes one AssistantMessage per step and rotates the

@@ -402,7 +402,14 @@ const ARGS_PREVIEW_SCALAR_KEYS = [
   'status',
   'id',
   'ref',
+  // Both spellings are live: `task_id` is the background-task ref a shell run
+  // reports, `taskId` the session task the Task family names. Short ids, so
+  // neither can carry a payload the way a free-text field could.
   'task_id',
+  'taskId',
+  // Which skill is being run. Without it a Skill row is the bare word "Skill"
+  // for its whole life; `args`, the payload beside it, stays out.
+  'skill',
 ] as const;
 
 // This tool's objective is the compact row's durable headline. Keep it

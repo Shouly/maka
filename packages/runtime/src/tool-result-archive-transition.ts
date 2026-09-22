@@ -65,6 +65,7 @@ import {
   buildArchivedToolResultPlaceholder,
   buildLedgerArchivedToolResultPlaceholder,
   isArchivedToolResultPlaceholder,
+  isUnarchivableToolResult,
   type ArchivedToolResultPlaceholder,
   type ArchivedToolResultReason,
   type StaleToolResultArchiveCandidate,
@@ -154,6 +155,9 @@ export async function archiveToolResultAsTransition(
   services: ToolResultArchiveTransitionServices,
   request: ToolResultArchiveTransitionRequest,
 ): Promise<ToolResultArchiveTransitionOutcome | undefined> {
+  // The backstop: both prunes decline such a result before they get here, and
+  // this is what makes that a rule rather than two habits.
+  if (isUnarchivableToolResult(request.toolName)) return undefined;
   const bodySha256 = sha256(request.serializedResult);
   let archived: ToolResultArchiveLocation | void;
   try {
@@ -303,7 +307,8 @@ export function collectStaleToolResultArchiveCandidates(
       event.partial ||
       event.modelVisibility === 'hidden' ||
       content?.kind !== 'function_response' ||
-      protectedTurnIds.has(turnKey(event))
+      protectedTurnIds.has(turnKey(event)) ||
+      isUnarchivableToolResult(content.name)
     ) {
       continue;
     }

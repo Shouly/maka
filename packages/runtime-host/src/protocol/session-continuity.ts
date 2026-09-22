@@ -17,7 +17,11 @@
  * under the License.
  */
 
-import { TOOL_ACTIVITY_KINDS, TOOL_OUTPUT_DELTA_MAX_CHARS } from '@maka/core/events';
+import {
+  TOOL_ACTIVITY_KINDS,
+  TOOL_INPUT_PREVIEW_MAX_CHARS,
+  TOOL_OUTPUT_DELTA_MAX_CHARS,
+} from '@maka/core/events';
 import type { SandboxBoundaryFailureSignal, ToolResultPreviewContent } from '@maka/core/events';
 import { decodeToolResultPreviewContent } from '@maka/core/tool-result-preview';
 import type { ToolActivityKind } from '@maka/core/events';
@@ -65,6 +69,15 @@ export const SESSION_LIVE_DELTA_MAX_BYTES = 16 * 1024;
 // Core emits at most 8,192 UTF-16 code units per tool output event. A code unit
 // needs at most three UTF-8 bytes (an astral pair needs four bytes total).
 export const SESSION_TOOL_OUTPUT_DELTA_MAX_BYTES = 3 * TOOL_OUTPUT_DELTA_MAX_CHARS;
+/**
+ * A fragment on the wire can be larger than one the Runtime emits, because the
+ * Host folds contiguous fragments into a single frame when a subscriber falls
+ * behind. What bounds every fragment, split or folded, is what a reader keeps at
+ * all: nothing past `TOOL_INPUT_PREVIEW_MAX_CHARS` is read, so nothing past it
+ * is ever sent. (`TOOL_INPUT_DELTA_MAX_CHARS`, the Runtime's split size, is
+ * under that by construction, which `@maka/core`'s `events.test.ts` holds.)
+ */
+export const SESSION_TOOL_INPUT_DELTA_MAX_BYTES = 3 * TOOL_INPUT_PREVIEW_MAX_CHARS;
 export const SESSION_TOOL_NAME_MAX_BYTES = 256;
 export const SESSION_TOOL_INTENT_MAX_BYTES = 512;
 /**
@@ -74,6 +87,35 @@ export const SESSION_TOOL_INTENT_MAX_BYTES = 512;
  * `projectToolArgsPreview`'s 2,048-char JSON cap with UTF-8 headroom.
  */
 export const SESSION_TOOL_ARGS_PREVIEW_MAX_BYTES = 8 * 1024;
+/**
+ * The ceiling on one live subscription frame, delimiter included: the transport
+ * writes each frame followed by a newline (`transport/local-ipc-framing.ts`),
+ * so a frame at this bound plus its delimiter is exactly 64 KiB.
+ *
+ * NOT a transport limit — the same wire carries a 768 KiB request
+ * (`RUNTIME_HOST_MAX_MESSAGE_BYTES`). It is a limit on what one broadcast may
+ * cost everyone else, and it buys two things a bigger number would not.
+ *
+ * A subscriber is flushed one awaited frame at a time
+ * (`SessionContinuityCoordinator#pump`), so a frame's size is what every frame
+ * behind it waits on — and the subscriber may be across a peer link, not a
+ * local pipe. And it is what makes the queue budget legible: 32 queued frames
+ * (`MAX_SUBSCRIBER_QUEUED_FRAMES`) is a memory figure only once a frame has a
+ * size.
+ *
+ * Read it as a question about the payload rather than as a byte count. Every
+ * kind of live content bounds itself well under this on its own — a delta at
+ * 16 KiB, an args preview at 8 KiB, a snapshot at 56 KiB — so a field that
+ * pushes a frame near the ceiling is a field that does not belong in a
+ * broadcast at all. It belongs in the transcript or behind a request, which are
+ * pulled once by whoever actually needs them. A tool call's arguments are the
+ * worked example: a Write body is megabytes and none of it reaches a row, so
+ * what is broadcast is the bounded reading the row can use.
+ *
+ * A frame over the bound does not degrade. The decoder rejects it and the
+ * client's read loop fails the WHOLE CONNECTION, every subscription on it. That
+ * is why each producer bounds its own payload rather than leaving it to this.
+ */
 export const SESSION_SUBSCRIPTION_FRAME_MAX_BYTES = 64 * 1024 - 1;
 export const SESSION_RUNTIME_RESOURCE_PTY_DATA_MAX_BYTES = 48 * 1024;
 
@@ -168,6 +210,25 @@ interface SessionToolEventIdentity {
 }
 
 export type SessionToolEvent =
+  | (SessionToolEventIdentity & {
+      type: 'tool_input_start';
+      toolName: string;
+      activityKind?: ToolActivityKind;
+      displayName?: string;
+      stepId?: string;
+    })
+  | (SessionToolEventIdentity & {
+      type: 'tool_input_delta';
+      /** Where this fragment starts in the arguments, in UTF-16 code units. */
+      offset: number;
+      /**
+       * Raw JSON fragment of the call's arguments. Never trimmed here — this is
+       * one document cut into pieces and rejoined by offset, so a bound applied
+       * to a fragment would splice a hole into it. The Runtime splits to fit
+       * before anything reaches the wire.
+       */
+      delta: string;
+    })
   | (SessionToolEventIdentity & {
       type: 'tool_start';
       toolName: string;
@@ -831,6 +892,70 @@ function decodeSessionToolEvent(value: unknown): SessionToolEvent {
     ts: requireCount(record.ts, 'Session tool event timestamp'),
     toolUseId: requireId(record.toolUseId, 'toolUseId'),
   };
+  if (record.type === 'tool_input_start') {
+    assertAllowedKeys(record, 'Session tool input start event', [
+      'type',
+      'id',
+      'turnId',
+      'ts',
+      'toolUseId',
+      'toolName',
+      'activityKind',
+      'displayName',
+      'stepId',
+    ]);
+    assertRequiredKeys(record, 'Session tool input start event', [
+      'type',
+      'id',
+      'turnId',
+      'ts',
+      'toolUseId',
+      'toolName',
+    ]);
+    return {
+      type: record.type,
+      ...identity,
+      toolName: requireUtf8BoundedString(
+        record.toolName,
+        'Session tool name',
+        SESSION_TOOL_NAME_MAX_BYTES,
+      ),
+      ...(record.activityKind === undefined
+        ? {}
+        : { activityKind: requireToolActivityKind(record.activityKind) }),
+      ...(record.displayName === undefined
+        ? {}
+        : {
+            displayName: requireUtf8BoundedString(
+              record.displayName,
+              'Session tool display name',
+              SESSION_TOOL_NAME_MAX_BYTES,
+            ),
+          }),
+      ...(record.stepId === undefined ? {} : { stepId: requireEntityId(record.stepId, 'stepId') }),
+    };
+  }
+  if (record.type === 'tool_input_delta') {
+    assertExactKeys(record, 'Session tool input delta event', [
+      'type',
+      'id',
+      'turnId',
+      'ts',
+      'toolUseId',
+      'offset',
+      'delta',
+    ]);
+    return {
+      type: record.type,
+      ...identity,
+      offset: requireCount(record.offset, 'Session tool input offset'),
+      delta: requireUtf8BoundedString(
+        record.delta,
+        'Session tool input fragment',
+        SESSION_TOOL_INPUT_DELTA_MAX_BYTES,
+      ),
+    };
+  }
   if (record.type === 'tool_start') {
     const allowed = [
       'type',

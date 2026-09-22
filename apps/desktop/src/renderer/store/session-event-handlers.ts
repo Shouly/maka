@@ -303,6 +303,7 @@ export function createAppShellSessionEventHandlers(options: {
       canBatchDisplayEvents(sessionId) &&
       (event.type === 'text_delta' ||
         event.type === 'thinking_delta' ||
+        event.type === 'tool_input_delta' ||
         event.type === 'tool_output_delta')
     ) {
       scheduleDisplayEvent(sessionId, event);

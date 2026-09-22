@@ -23,6 +23,8 @@ import {
   aggregateMessageContents,
   decodeToolStepProgress,
   encodeToolStepProgress,
+  TOOL_INPUT_DELTA_MAX_CHARS,
+  TOOL_INPUT_PREVIEW_MAX_CHARS,
 } from '../events.js';
 
 test('aggregates inline references against the combined display text', () => {
@@ -98,4 +100,13 @@ test('rejects invalid tool step progress at both codec boundaries', () => {
     assert.strictEqual(decodeToolStepProgress(chunk), undefined);
   }
   assert.strictEqual(decodeToolStepProgress({ kind: 'stdout', text: 'steps:1/2' }), undefined);
+});
+
+// The wire bound on an argument fragment is derived from the reading bound
+// (`SESSION_TOOL_INPUT_DELTA_MAX_BYTES`), on the grounds that nothing past what
+// a reader keeps is ever sent. That holds only while the Runtime's split size
+// stays under it — raise it above and the decoder starts rejecting fragments,
+// which kills the subscription rather than degrading it.
+test('a split argument fragment can never exceed what a reader keeps', () => {
+  assert.ok(TOOL_INPUT_DELTA_MAX_CHARS <= TOOL_INPUT_PREVIEW_MAX_CHARS);
 });

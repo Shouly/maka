@@ -425,6 +425,36 @@ try {
     toolVisibleAfter: textAfterD.includes('README.md'),
     waitingVisibleAfter: textAfterD.includes('Fake backend waiting'),
   });
+  // Task E: a call is named, and then names what it does, while the model is
+  // still writing it. The fixture streams the arguments as a provider does —
+  // `file_path` closes in the first few fragments, the body takes a second and
+  // a half more — so the distance between the row appearing and the row saying
+  // what it writes is the whole question. Held back to the dispatch, that
+  // distance is the length of the argument stream and the row spends it showing
+  // the bare tool name.
+  await page.getByRole('button', { name: 'New task', exact: true }).first().click();
+  await startTask('__e2e_stream_tool_input__');
+  const toolRow = transcript().locator('[data-maka-tool-row]').first();
+  await toolRow.waitFor();
+  const appearedAt = Date.now();
+  await toolRow.getByText('fake-backend-demo.ts', { exact: false }).waitFor();
+  const namedAt = Date.now();
+  // And it still says it once the arguments land whole, from `args` rather than
+  // from the partial reading. A finished group collapses to its summary line, so
+  // the row has to be opened to be asked — reading it before the collapse is
+  // racing the thing under test.
+  await page
+    .getByRole('button', { name: 'Stop', exact: true })
+    .first()
+    .waitFor({ state: 'detached', timeout: 15000 });
+  await transcript().locator('[data-maka-tool-group] button[aria-expanded]').first().click();
+  await toolRow.waitFor();
+  findings.push({
+    inputStream: true,
+    namedAfterMs: namedAt - appearedAt,
+    namedWhenSettled: await toolRow.getByText('fake-backend-demo.ts', { exact: false }).count(),
+  });
+
   await page
     .getByRole('button', { name: 'Stop', exact: true })
     .first()
@@ -443,6 +473,15 @@ try {
     }
     if ('question' in finding)
       assert.equal(finding.panelAfter, 1, 'the pending question survives the switch');
+    if ('inputStream' in finding) {
+      // The fixture spends about 1.9s writing the arguments; the naming key
+      // closes in the first tenth of that.
+      assert.ok(
+        finding.namedAfterMs < 1000,
+        `the row named the call after ${finding.namedAfterMs}ms, which is the whole argument stream: it was not following it`,
+      );
+      assert.equal(finding.namedWhenSettled, 1, 'and it still says so once the call settles');
+    }
     if ('steps' in finding) {
       assert.ok(finding.settledVisibleBefore && finding.waitingVisibleAfter);
       assert.ok(
@@ -453,7 +492,7 @@ try {
   }
   assert.deepEqual(errors, []);
   console.log(
-    'Streaming switch smoke passed: text keeps streaming, a pending question and finished steps survive leaving and returning mid-Turn.',
+    'Streaming switch smoke passed: text keeps streaming, a pending question and finished steps survive leaving and returning mid-Turn, and a call names what it does while it is still being written.',
   );
 } finally {
   console.log(JSON.stringify({ findings, errors }, null, 2));

@@ -159,6 +159,7 @@ export function buildAgentSwarmStatusTool(input: {
   return {
     name: AGENT_SWARM_STATUS_TOOL_NAME,
     displayName: 'Agent swarm status',
+    activityKind: 'delegate',
     description: [
       'Read where the asynchronous swarm stands: one status per scheduled work item, the counts by status, and whether the swarm as a whole is running, needs_attention, or settled. Takes no arguments and changes nothing.',
       '',

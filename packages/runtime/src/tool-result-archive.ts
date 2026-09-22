@@ -18,6 +18,7 @@
  */
 
 import type { DurableToolResultProjection } from '@maka/core/durable-tool-result-projection';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import { createHash } from 'node:crypto';
 import {
   buildToolResultArchiveResourceRef,
@@ -47,6 +48,26 @@ export interface StaleToolResultPrunePolicy {
 export type ArchivedToolResultReason =
   | 'stale_tool_result_pruned_before_compact'
   | 'active_current_turn_tool_result_pruned_before_next_step';
+
+/**
+ * A tool result no prune may replace, whatever it weighs.
+ *
+ * A tool search output is not a result the model reads once — it IS the set of
+ * tools the model may call. The provider reads it that way: OpenAI documents
+ * that "tools that were not listed as part of this array will not be available
+ * to the model", and that changing the loaded set breaks the prompt cache from
+ * that point on. Its shape is the provider's too (`{ tools: [...] }`, validated
+ * on the way back out), so a placeholder in its place fails the request outright
+ * — which is how this was found.
+ *
+ * Archiving a declaration is a category error, so the rule is unconditional
+ * rather than a size exemption, and it lives here rather than in either prune:
+ * both reach the ledger through `archiveToolResultAsTransition`, and a rule a
+ * third producer could bypass is not a rule.
+ */
+export function isUnarchivableToolResult(toolName: string): boolean {
+  return toolName === TOOL_NAMES.toolSearch;
+}
 
 export const ARCHIVED_TOOL_RESULT_PLACEHOLDER_KIND = 'maka.archived_tool_result';
 

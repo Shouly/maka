@@ -27,6 +27,7 @@ import {
   encodeProtocolMessage,
   RUNTIME_HOST_MAX_MESSAGE_BYTES,
   SESSION_LIVE_DELTA_MAX_BYTES,
+  SESSION_TOOL_INPUT_DELTA_MAX_BYTES,
   SESSION_RUNTIME_RESOURCE_PTY_DATA_MAX_BYTES,
   SESSION_RUNTIME_RESOURCE_CHANGES_MAX,
   SESSION_SUBSCRIPTION_FRAME_MAX_BYTES,
@@ -99,6 +100,8 @@ export type RuntimeSessionForwardedEvent = Extract<
       | 'text_complete'
       | 'thinking_delta'
       | 'thinking_complete'
+      | 'tool_input_start'
+      | 'tool_input_delta'
       | 'tool_start'
       | 'tool_output_delta'
       | 'tool_progress'
@@ -694,6 +697,7 @@ export class SessionContinuityCoordinator implements SessionContinuityService {
     ) {
       return;
     }
+    if (event.type === 'tool_input_delta' && event.delta.length === 0) return;
     if (
       (event.type === 'tool_output_delta' && event.chunk.length === 0) ||
       (event.type === 'tool_progress' &&
@@ -1481,30 +1485,25 @@ export class SessionContinuityCoordinator implements SessionContinuityService {
       return;
     }
     const terminalBytes = terminalFrameByteBudget(subscriber, this.#hostEpoch);
-    // Assistant text/thinking floods arrive far faster than the
-    // one-awaited-send-at-a-time flush can drain them, and the queue budget
-    // exists to bound memory, not to force eviction. Fold a delta into the
-    // queued tail when it continues the same stream: projectors apply deltas
-    // by absolute startOffset, so a merged frame carries byte-identical
-    // content, and the absorbed frame never spends a sequence, keeping later
-    // frames contiguous. The in-flight head frame is never touched.
+    // The streams that flood — the assistant's text, and a tool call's
+    // arguments — arrive far faster than the one-awaited-send-at-a-time flush
+    // can drain them, and the queue budget exists to bound memory, not to force
+    // eviction. Fold such a frame into the queued tail when it continues the
+    // same stream: both address their fragments by offset, so a folded frame
+    // carries byte-identical content, and the absorbed frame never spends a
+    // sequence, keeping later frames contiguous. The in-flight head frame is
+    // never touched.
     const tail = subscriber.queue[subscriber.queue.length - 1];
     if (tail && (!subscriber.pumping || subscriber.queue.length > 1)) {
-      const mergedText = mergeableAssistantDeltaText(tail.frame, frame);
-      if (mergedText !== undefined && tail.frame.kind === 'subscription.session_delta') {
-        const merged: OrderedSubscriptionFrame = {
-          ...tail.frame,
-          delta: { ...tail.frame.delta, text: mergedText },
-        };
+      const merged = mergeQueuedFrame(tail.frame, frame);
+      if (merged) {
         const mergedEncodedBytes = encodeProtocolMessage(merged).byteLength;
-        // Merging must preserve the wire invariants the split path
-        // guarantees per frame: the decoder rejects a delta text beyond
-        // SESSION_LIVE_DELTA_MAX_BYTES and any subscription frame beyond
-        // SESSION_SUBSCRIPTION_FRAME_MAX_BYTES, so an oversized merge would
-        // break the very subscription coalescing tries to preserve. Keep
-        // the next delta as its own frame instead.
+        // A fold must preserve the wire invariants the split path guarantees
+        // per frame: the decoder rejects a subscription frame beyond
+        // SESSION_SUBSCRIPTION_FRAME_MAX_BYTES, so an oversized fold would break
+        // the very subscription coalescing tries to preserve. Keep the next
+        // frame as its own instead.
         if (
-          Buffer.byteLength(mergedText, 'utf8') <= SESSION_LIVE_DELTA_MAX_BYTES &&
           mergedEncodedBytes <= SESSION_SUBSCRIPTION_FRAME_MAX_BYTES &&
           subscriber.queuedBytes - tail.encodedBytes + mergedEncodedBytes + terminalBytes <=
             MAX_SUBSCRIBER_QUEUED_BYTES
@@ -1956,30 +1955,48 @@ function terminalFrameByteBudget(subscriber: Subscriber, hostEpoch: string): num
 }
 
 /**
- * Returns the concatenated text when `next` continues `tail`'s assistant
- * stream contiguously, making the two frames safe to ship as one. Reset and
- * completion frames never merge: a reset must land on its own boundary and a
- * completion closes the stream.
+ * The two queued frames as one, or undefined when `next` does not continue
+ * `tail` contiguously.
+ *
+ * An assistant stream will not fold across a reset or a completion: a reset
+ * must land on its own boundary and a completion closes the stream. Each stream
+ * also keeps its own per-field wire bound here, because the decoder enforces
+ * those bounds independently of the frame size and a fold that broke one would
+ * be rejected on arrival.
  */
-function mergeableAssistantDeltaText(
-  tail: SubscriptionFrame,
+function mergeQueuedFrame<T extends SubscriptionFrame>(
+  tail: T,
   next: SubscriptionFrame,
-): string | undefined {
-  if (tail.kind !== 'subscription.session_delta' || next.kind !== 'subscription.session_delta')
-    return undefined;
-  const a = tail.delta;
-  const b = next.delta;
-  if (
-    a.kind !== b.kind ||
-    a.turnId !== b.turnId ||
-    a.runId !== b.runId ||
-    a.messageId !== b.messageId
-  )
-    return undefined;
-  if (a.complete === true || b.complete === true || a.reset === true || b.reset === true)
-    return undefined;
-  if (a.startOffset + a.text.length !== b.startOffset) return undefined;
-  return a.text + b.text;
+): T | undefined {
+  if (tail.kind === 'subscription.session_delta' && next.kind === 'subscription.session_delta') {
+    const a = tail.delta;
+    const b = next.delta;
+    if (
+      a.kind !== b.kind ||
+      a.turnId !== b.turnId ||
+      a.runId !== b.runId ||
+      a.messageId !== b.messageId
+    )
+      return undefined;
+    if (a.complete === true || b.complete === true || a.reset === true || b.reset === true)
+      return undefined;
+    if (a.startOffset + a.text.length !== b.startOffset) return undefined;
+    const text = a.text + b.text;
+    if (Buffer.byteLength(text, 'utf8') > SESSION_LIVE_DELTA_MAX_BYTES) return undefined;
+    return { ...tail, delta: { ...a, text } };
+  }
+  if (tail.kind === 'subscription.session_event' && next.kind === 'subscription.session_event') {
+    const a = tail.event;
+    const b = next.event;
+    if (a.type !== 'tool_input_delta' || b.type !== 'tool_input_delta') return undefined;
+    if (tail.sessionId !== next.sessionId || tail.runId !== next.runId) return undefined;
+    if (a.turnId !== b.turnId || a.toolUseId !== b.toolUseId) return undefined;
+    if (a.offset + a.delta.length !== b.offset) return undefined;
+    const delta = a.delta + b.delta;
+    if (Buffer.byteLength(delta, 'utf8') > SESSION_TOOL_INPUT_DELTA_MAX_BYTES) return undefined;
+    return { ...tail, event: { ...a, delta } };
+  }
+  return undefined;
 }
 
 function immutableClone<T>(value: T): T {
@@ -2162,6 +2179,21 @@ function projectSessionEvent(
     toolUseId: event.toolUseId,
   };
   switch (event.type) {
+    case 'tool_input_start':
+      return {
+        type: event.type,
+        ...identity,
+        toolName: boundedUtf8(event.toolName, SESSION_TOOL_NAME_MAX_BYTES),
+        ...(event.activityKind === undefined ? {} : { activityKind: event.activityKind }),
+        ...(event.displayName === undefined
+          ? {}
+          : { displayName: boundedUtf8(event.displayName, SESSION_TOOL_NAME_MAX_BYTES) }),
+        ...(event.stepId === undefined ? {} : { stepId: event.stepId }),
+      };
+    case 'tool_input_delta':
+      // Verbatim: the Runtime only sends what fits, and anything dropped here
+      // would be dropped from the middle of the document.
+      return { type: event.type, ...identity, offset: event.offset, delta: event.delta };
     case 'tool_start': {
       const shellRunRef = toolStartShellRunRef(event);
       return {

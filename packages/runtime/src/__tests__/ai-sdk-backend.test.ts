@@ -37,6 +37,7 @@ import { createWorkspaceWritePermissionProfile } from '@maka/core/permission-pro
 import { createManagedExecutionBoundary } from '@maka/core/sandbox-boundary';
 import type { SessionHeader } from '@maka/core/session';
 import type { StorageRef } from '@maka/core/events';
+import { TOOL_INPUT_DELTA_MAX_CHARS, TOOL_INPUT_PREVIEW_MAX_CHARS } from '@maka/core/events';
 import { encodeCanonicalRuntimeEvent } from '@maka/core/canonical-runtime-event';
 import type { SessionEvent } from '@maka/core/events';
 import type { RuntimeEvent } from '@maka/core/runtime-event';
@@ -16804,3 +16805,273 @@ function runtimeExecute(
       })
     ).result;
 }
+
+// A provider writes a call's arguments in fragments of tens of bytes. One
+// subscription frame each would fill a subscriber's queue many times over on a
+// single Write and get it evicted as a slow consumer, so they are buffered —
+// but the opening keys are the call's NAME, and holding them back for a full
+// buffer would leave the row blank for exactly the calls this exists for.
+describe('AiSdkBackend streamed tool arguments', () => {
+  const streamedCall = (args: Record<string, unknown>, fragmentChars = 20) => {
+    const input = JSON.stringify(args);
+    const fragments: LanguageModelV4StreamPart[] = [];
+    for (let offset = 0; offset < input.length; offset += fragmentChars) {
+      fragments.push({
+        type: 'tool-input-delta',
+        id: 'call-1',
+        delta: input.slice(offset, offset + fragmentChars),
+      } as unknown as LanguageModelV4StreamPart);
+    }
+    return new MockLanguageModelV4({
+      doStream: async () => ({
+        stream: simulateReadableStream({
+          chunks: [
+            { type: 'stream-start', warnings: [] },
+            {
+              type: 'tool-input-start',
+              id: 'call-1',
+              toolName: 'Write',
+            } as unknown as LanguageModelV4StreamPart,
+            ...fragments,
+            { type: 'tool-input-end', id: 'call-1' } as unknown as LanguageModelV4StreamPart,
+            {
+              type: 'tool-call',
+              toolCallId: 'call-1',
+              toolName: 'Write',
+              input,
+            } as unknown as LanguageModelV4StreamPart,
+            {
+              type: 'finish',
+              finishReason: { unified: 'tool-calls', raw: 'tool_calls' },
+              usage: emptyUsage(),
+            },
+          ] as LanguageModelV4StreamPart[],
+          initialDelayInMs: null,
+          chunkDelayInMs: null,
+        }),
+      }),
+    });
+  };
+
+  const inputEvents = async (model: MockLanguageModelV4) => {
+    const backend = createBackend({
+      connection: connection(),
+      modelId: 'mock-model-id',
+      modelFactory: () => model,
+      tools: [],
+    });
+    const events: SessionEvent[] = [];
+    for await (const event of backend.send({
+      turnId: 'tool-input-turn',
+      runId: 'tool-input-run',
+      text: 'write it',
+      context: [],
+      runtimeContext: [],
+    })) {
+      events.push(event);
+    }
+    return {
+      start: events.find((event) => event.type === 'tool_input_start'),
+      deltas: events.flatMap((event) => (event.type === 'tool_input_delta' ? [event] : [])),
+    };
+  };
+
+  test('names the call, then forwards its arguments as the model writes them', async () => {
+    const body = 'export const line = 1;\n'.repeat(400);
+    const { start, deltas } = await inputEvents(
+      streamedCall({ file_path: '/tmp/a.ts', content: body }),
+    );
+
+    assert.equal(start?.type === 'tool_input_start' ? start.toolName : undefined, 'Write');
+    // Held back for a fuller frame, the opening keys — the only part of a call
+    // a row can use — would arrive at the same moment as the call itself.
+    assert.ok(deltas.length > 1, 'the arguments stream rather than landing at once');
+    assert.ok(deltas[0]!.delta.startsWith('{"file_path"'));
+    // Each fragment says where it belongs, which is what lets the reader tell a
+    // continuation from a replay from a hole — and the Host fold two of them
+    // into one frame without the reader seeing loss.
+    let offset = 0;
+    for (const delta of deltas) {
+      assert.equal(delta.offset, offset, 'placed where the last fragment ended');
+      assert.ok(delta.delta.length <= TOOL_INPUT_DELTA_MAX_CHARS, 'split to fit the wire');
+      offset += delta.delta.length;
+    }
+  });
+
+  // The far side concatenates these into one JSON document, so anything lost or
+  // reordered here reads back as a different, well-formed call.
+  test('carries the arguments character for character', async () => {
+    const args = { file_path: '/tmp/a.ts', content: 'let 🙂 = "quoted \\" brace }";\n'.repeat(20) };
+    const { deltas } = await inputEvents(streamedCall(args, 7));
+
+    assert.equal(deltas.map((delta) => delta.delta).join(''), JSON.stringify(args));
+  });
+
+  test('stops once the far side has all it will read', async () => {
+    const { deltas } = await inputEvents(
+      streamedCall({ file_path: '/tmp/a.ts', content: 'x'.repeat(200_000) }),
+    );
+    const sent = deltas.reduce((total, delta) => total + delta.delta.length, 0);
+
+    // Past the reading bound the far side discards whatever arrives; a 200k
+    // write used to ship every byte of it.
+    assert.ok(sent <= TOOL_INPUT_PREVIEW_MAX_CHARS + 1024, `sent ${sent} chars`);
+  });
+
+  // A step issues several calls at once and the provider interleaves their
+  // fragments. Each call is its own document, so the offsets have to be counted
+  // per id — one shared counter would hand both readers a spliced document that
+  // parses, which is the failure this whole design exists to make impossible.
+  test("counts each concurrent call's arguments on its own", async () => {
+    const inputs = {
+      'call-1': JSON.stringify({ file_path: '/tmp/a.ts' }),
+      'call-2': JSON.stringify({ command: 'ls -la' }),
+    };
+    const interleaved: LanguageModelV4StreamPart[] = [];
+    for (let offset = 0; offset < 40; offset += 8) {
+      for (const [id, input] of Object.entries(inputs)) {
+        const delta = input.slice(offset, offset + 8);
+        if (delta)
+          interleaved.push({
+            type: 'tool-input-delta',
+            id,
+            delta,
+          } as unknown as LanguageModelV4StreamPart);
+      }
+    }
+    const model = new MockLanguageModelV4({
+      doStream: async () => ({
+        stream: simulateReadableStream({
+          chunks: [
+            { type: 'stream-start', warnings: [] },
+            {
+              type: 'tool-input-start',
+              id: 'call-1',
+              toolName: 'Write',
+            } as unknown as LanguageModelV4StreamPart,
+            {
+              type: 'tool-input-start',
+              id: 'call-2',
+              toolName: 'Bash',
+            } as unknown as LanguageModelV4StreamPart,
+            ...interleaved,
+            {
+              type: 'tool-call',
+              toolCallId: 'call-1',
+              toolName: 'Write',
+              input: inputs['call-1'],
+            } as unknown as LanguageModelV4StreamPart,
+            {
+              type: 'tool-call',
+              toolCallId: 'call-2',
+              toolName: 'Bash',
+              input: inputs['call-2'],
+            } as unknown as LanguageModelV4StreamPart,
+            {
+              type: 'finish',
+              finishReason: { unified: 'tool-calls', raw: 'tool_calls' },
+              usage: emptyUsage(),
+            },
+          ] as LanguageModelV4StreamPart[],
+          initialDelayInMs: null,
+          chunkDelayInMs: null,
+        }),
+      }),
+    });
+
+    const { deltas } = await inputEvents(model);
+
+    for (const [id, input] of Object.entries(inputs)) {
+      const mine = deltas.filter((delta) => delta.toolUseId === id);
+      assert.ok(mine.length > 1, `${id} streamed in ${mine.length} fragments`);
+      let offset = 0;
+      for (const delta of mine) {
+        assert.equal(delta.offset, offset, `${id} placed where its own last fragment ended`);
+        offset += delta.delta.length;
+      }
+      assert.equal(mine.map((delta) => delta.delta).join(''), input);
+    }
+  });
+
+  // The bound is where the stream STOPS, never where a fragment is cut. A cut
+  // that dropped a character would leave the offsets still contiguous, so the
+  // far side would splice the next fragment into the gap and read a different,
+  // well-formed call — the one failure this whole design exists to prevent.
+  // Reproduced at the exact boundary: one unit of room left and an astral pair
+  // arriving, which cannot be halved.
+  test('stops rather than cutting a fragment it cannot send whole', async () => {
+    const head = '{"content":"';
+    const padding = 'x'.repeat(TOOL_INPUT_PREVIEW_MAX_CHARS - 1 - head.length);
+    // Two fragments after the boundary, not one: the first is the pair that
+    // cannot be halved, and the SECOND is what slides into the place it left.
+    const astral = '\u{1F642}X';
+    const rest = '"}';
+    const model = new MockLanguageModelV4({
+      doStream: async () => ({
+        stream: simulateReadableStream({
+          chunks: [
+            { type: 'stream-start', warnings: [] },
+            {
+              type: 'tool-input-start',
+              id: 'call-1',
+              toolName: 'Write',
+            } as unknown as LanguageModelV4StreamPart,
+            {
+              type: 'tool-input-delta',
+              id: 'call-1',
+              delta: head + padding,
+            } as unknown as LanguageModelV4StreamPart,
+            {
+              type: 'tool-input-delta',
+              id: 'call-1',
+              delta: astral,
+            } as unknown as LanguageModelV4StreamPart,
+            {
+              type: 'tool-input-delta',
+              id: 'call-1',
+              delta: rest,
+            } as unknown as LanguageModelV4StreamPart,
+            {
+              type: 'tool-call',
+              toolCallId: 'call-1',
+              toolName: 'Write',
+              input: head + padding + astral + rest,
+            } as unknown as LanguageModelV4StreamPart,
+            {
+              type: 'finish',
+              finishReason: { unified: 'tool-calls', raw: 'tool_calls' },
+              usage: emptyUsage(),
+            },
+          ] as LanguageModelV4StreamPart[],
+          initialDelayInMs: null,
+          chunkDelayInMs: null,
+        }),
+      }),
+    });
+
+    const { deltas } = await inputEvents(model);
+    const document = head + padding + astral + rest;
+
+    // Whatever was sent must be a PREFIX of what the model wrote, placed where
+    // it belongs. Anything else and the reader assembles a different call.
+    let offset = 0;
+    for (const delta of deltas) {
+      assert.equal(delta.offset, offset, 'placed where the last fragment ended');
+      offset += delta.delta.length;
+    }
+    const assembled = deltas.map((delta) => delta.delta).join('');
+    assert.equal(assembled, document.slice(0, assembled.length), 'a prefix, never a splice');
+    assert.ok(assembled.length >= TOOL_INPUT_PREVIEW_MAX_CHARS - 1);
+  });
+
+  // Most calls are short. A coalescing threshold large enough to matter for a
+  // file body is larger than the whole of one of these, so holding fragments
+  // back for it left every ordinary row sitting on the bare tool name for the
+  // length of the call.
+  test('streams a short call rather than holding it back', async () => {
+    const { deltas } = await inputEvents(streamedCall({ file_path: '/tmp/a.ts' }, 8));
+
+    assert.ok(deltas.length > 1, `sent ${deltas.length} frames`);
+    assert.equal(deltas.map((delta) => delta.delta).join(''), '{"file_path":"/tmp/a.ts"}');
+  });
+});

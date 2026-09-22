@@ -35,6 +35,8 @@ import {
   MANAGED_MUTATION_EXECUTION_PROFILE_V1_DIGEST,
   MANAGED_MUTATION_EXECUTION_PROFILE_V1_SPEC,
   runtimeEventHasModelVisibleContent,
+  runtimePartialStreamIdentity,
+  runtimePartialStreamKey,
   type RuntimeEvent,
   type RuntimeEventActions,
 } from '../runtime-event.js';
@@ -1014,4 +1016,110 @@ test('Coordination Runtime receipts survive decoding and reject unrecognized res
       actions: { coordination: { ...coordination, executionStatus: 'completed' } },
     }),
   );
+});
+
+// Which events form a live stream used to be decided twice — once where a run
+// batches them, once where the store upserts them — and the two copies did not
+// agree. The store grouped a contentless tool heartbeat by its call; the run did
+// not, so every one of them was written on its own AND closed whatever text
+// batch was open beside it. One rule now, and these pin it.
+describe('runtimePartialStreamIdentity', () => {
+  const base = {
+    id: 'e1',
+    invocationId: 'inv-1',
+    runId: 'run-1',
+    sessionId: 'sess-1',
+    turnId: 'turn-1',
+    ts: 1,
+    partial: true,
+    role: 'model',
+    author: 'agent',
+  } as const;
+
+  test('groups a contentless tool heartbeat by the call it belongs to', () => {
+    // tool_input_start, tool_input_delta, tool_output_delta, tool_progress and
+    // tool_result_preview all map to exactly this shape.
+    assert.equal(
+      runtimePartialStreamIdentity({ ...base, refs: { toolCallId: 'call-1' } }),
+      'tool:call:call-1',
+    );
+  });
+
+  test('groups assistant text and reasoning by the provider item', () => {
+    assert.equal(
+      runtimePartialStreamIdentity({
+        ...base,
+        content: { kind: 'text', text: 'hi' },
+        refs: { providerEventId: 'msg-1' },
+      }),
+      'text:provider:msg-1',
+    );
+    assert.equal(
+      runtimePartialStreamIdentity({
+        ...base,
+        content: { kind: 'thinking', text: 'hm' },
+        refs: { providerEventId: 'msg-1' },
+      }),
+      'thinking:provider:msg-1',
+    );
+  });
+
+  test('refuses anything a merge would lose', () => {
+    const cases: Record<string, Parameters<typeof runtimePartialStreamIdentity>[0]> = {
+      'not partial': { ...base, partial: false, refs: { toolCallId: 'call-1' } },
+      'carries a status': {
+        ...base,
+        status: 'completed',
+        refs: { toolCallId: 'call-1' },
+      },
+      'carries actions': {
+        ...base,
+        actions: { endInvocation: true },
+        refs: { toolCallId: 'call-1' },
+      },
+      'a fact, not a chunk': {
+        ...base,
+        content: { kind: 'function_call', id: 'call-1', name: 'Bash', args: {} },
+        refs: { toolCallId: 'call-1' },
+      },
+      // The ref that names the stream must be the ONLY one: another ref is
+      // identity, and a merge keeps just the first event's.
+      'a second ref': { ...base, refs: { toolCallId: 'call-1', operationId: 'op-1' } },
+      'no ref at all': { ...base },
+    };
+    for (const [why, event] of Object.entries(cases)) {
+      assert.equal(runtimePartialStreamIdentity(event), undefined, why);
+    }
+  });
+
+  // The model writing a call's arguments speaks as model/agent; the tool
+  // reporting its output speaks as tool/tool. Both are heartbeats of ONE call,
+  // and it is the call's function_response that retires the stream — so a key
+  // that carried the voice left the model-voiced snapshot with nothing that ever
+  // deleted it, and it outlived every turn that made one.
+  test("a call's heartbeats share one stream however they are voiced", () => {
+    const call = { ...base, refs: { toolCallId: 'call-1' } } as const;
+    assert.equal(
+      runtimePartialStreamKey(call),
+      runtimePartialStreamKey({ ...call, role: 'tool', author: 'tool' }),
+    );
+    // An assistant item keeps its voice: two speakers there are two streams.
+    const item = {
+      ...base,
+      content: { kind: 'text', text: 'hi' },
+      refs: { providerEventId: 'msg-1' },
+    } as const;
+    assert.notEqual(
+      runtimePartialStreamKey(item),
+      runtimePartialStreamKey({ ...item, role: 'tool', author: 'tool' }),
+    );
+  });
+
+  test('scopes the key to one run and lane, and drops with the identity', () => {
+    const event = { ...base, refs: { toolCallId: 'call-1' } } as const;
+    const key = runtimePartialStreamKey(event);
+    assert.ok(key?.includes('tool:call:call-1'));
+    assert.notEqual(key, runtimePartialStreamKey({ ...event, turnId: 'turn-2' }));
+    assert.equal(runtimePartialStreamKey({ ...base }), undefined);
+  });
 });

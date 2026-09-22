@@ -48,6 +48,7 @@ export const FAKE_HOLD_OPEN_PROMPT = '__e2e_hold_open__';
 export const FAKE_HOLD_OPEN_REWRITE_PROMPT = '__e2e_hold_open_rewrite__';
 /** Settles a text step and a tool step, then holds the Turn open until stopped. */
 export const FAKE_HOLD_OPEN_AFTER_STEPS_PROMPT = '__e2e_hold_open_after_steps__';
+export const FAKE_STREAM_TOOL_INPUT_PROMPT = '__e2e_stream_tool_input__';
 export const FAKE_MERMAID_PROMPT = '__e2e_mermaid__';
 export const FAKE_MERMAID_HOSTILE_PROMPT = '__e2e_mermaid_hostile__';
 export const FAKE_ERROR_PROMPT_PREFIX = '__e2e_error__:';
@@ -201,6 +202,87 @@ export class FakeBackend implements AgentBackend {
     };
 
     try {
+      // A call written slowly enough to watch: the tool is named first, then its
+      // arguments arrive as JSON text, exactly as a provider sends them. There
+      // is no other way to see this locally — a real model writes a short call
+      // faster than a frame.
+      if (input.text === FAKE_STREAM_TOOL_INPUT_PROMPT) {
+        const stepId = randomUUID();
+        const answerText = 'Writing a file so the call can be watched as it arrives.';
+        yield {
+          type: 'text_delta',
+          id: randomUUID(),
+          turnId,
+          ts: Date.now(),
+          messageId: stepId,
+          text: answerText,
+        };
+        yield {
+          type: 'text_complete',
+          id: randomUUID(),
+          turnId,
+          ts: Date.now(),
+          messageId: stepId,
+          text: answerText,
+        };
+        const toolUseId = randomUUID();
+        yield {
+          type: 'tool_input_start',
+          id: randomUUID(),
+          turnId,
+          ts: Date.now(),
+          toolUseId,
+          toolName: 'Write',
+          stepId,
+        };
+        const args = JSON.stringify({
+          file_path: '/tmp/fake-backend-demo.ts',
+          content: Array.from(
+            { length: 12 },
+            (_unused, line) => `export const line${line} = ${line};`,
+          ).join('\n'),
+        });
+        for (let offset = 0; offset < args.length; offset += 12) {
+          await sleep(60);
+          yield {
+            type: 'tool_input_delta',
+            id: randomUUID(),
+            turnId,
+            ts: Date.now(),
+            toolUseId,
+            offset,
+            delta: args.slice(offset, offset + 12),
+          };
+        }
+        yield {
+          type: 'tool_start',
+          id: randomUUID(),
+          turnId,
+          stepId,
+          ts: Date.now(),
+          toolUseId,
+          toolName: 'Write',
+          args: JSON.parse(args) as Record<string, unknown>,
+        };
+        await sleep(200);
+        yield {
+          type: 'tool_result',
+          id: randomUUID(),
+          turnId,
+          ts: Date.now(),
+          toolUseId,
+          isError: false,
+          content: { kind: 'json' as const, value: { written: true } },
+        };
+        yield {
+          type: 'complete',
+          id: randomUUID(),
+          turnId,
+          ts: Date.now(),
+          stopReason: 'end_turn' as const,
+        };
+        return;
+      }
       if (
         input.text === FAKE_HOLD_OPEN_PROMPT ||
         input.text === FAKE_HOLD_OPEN_REWRITE_PROMPT ||

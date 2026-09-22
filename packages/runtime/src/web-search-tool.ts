@@ -86,6 +86,7 @@ export function webSearchToolResultToModelOutput(output: unknown): ToolResultOut
 export function buildWebSearchTool(executor: WebSearchExecutor): MakaTool {
   return {
     name: WEB_SEARCH_TOOL_NAME,
+    activityKind: 'websearch',
     categoryHint: 'web_read',
     displayName: 'Web search',
     description: [

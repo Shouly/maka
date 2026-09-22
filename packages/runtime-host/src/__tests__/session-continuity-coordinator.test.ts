@@ -1047,6 +1047,119 @@ test('coalesces queued assistant deltas instead of evicting a slow subscriber', 
   coordinator.close();
 });
 
+// A tool call's arguments are the other stream that floods: a provider writes
+// them in fragments of tens of characters, and the Runtime forwards each as it
+// comes so the row can name the call while it is still being written. Without a
+// fold here the Runtime had to hold them back instead — and a threshold coarse
+// enough to matter for a file body is larger than most calls, so every ordinary
+// row sat on the bare tool name for the length of the call.
+test('coalesces queued tool input fragments instead of evicting a slow subscriber', async () => {
+  const coordinator = new SessionContinuityCoordinator(
+    HOST_EPOCH,
+    async () => canonical(),
+    new SessionAdmissionGate(),
+  );
+  const slowSink = new RecordingSink();
+  const slowConnection = coordinator.attachConnection('connection-slow', slowSink);
+  const slow = await open(coordinator, 'connection-slow');
+
+  await coordinator.acceptRuntimeEvent(SESSION_ID, 'run-1', {
+    type: 'tool_input_start',
+    id: 'input-start',
+    turnId: 'turn-1',
+    ts: 1,
+    toolUseId: 'tool-1',
+    toolName: 'Write',
+  });
+  const args = JSON.stringify({ file_path: '/tmp/a.ts', content: 'x'.repeat(600) });
+  for (let offset = 0; offset < args.length; offset += 8) {
+    await coordinator.acceptRuntimeEvent(SESSION_ID, 'run-1', {
+      type: 'tool_input_delta',
+      id: `input-${offset}`,
+      turnId: 'turn-1',
+      ts: 2 + offset,
+      toolUseId: 'tool-1',
+      offset,
+      delta: args.slice(offset, offset + 8),
+    });
+  }
+
+  slowConnection.activate(slow.subscriptionId);
+  // Two frames: the call's name, then every fragment folded into one. Unfolded
+  // these are eighty-odd frames against a thirty-two frame budget.
+  await waitFor(() => slowSink.frames.length === 2);
+
+  const folded = slowSink.frames[1];
+  assert.equal(folded?.kind, 'subscription.session_event');
+  if (folded?.kind !== 'subscription.session_event') return;
+  assert.equal(folded.event.type, 'tool_input_delta');
+  if (folded.event.type !== 'tool_input_delta') return;
+  assert.equal(folded.event.offset, 0);
+  assert.equal(folded.event.delta, args, 'content-identical, and the reader sees no loss');
+
+  // The fold spends no sequence, so what follows continues contiguously.
+  await coordinator.acceptRuntimeEvent(SESSION_ID, 'run-1', {
+    type: 'tool_input_delta',
+    id: 'input-tail',
+    turnId: 'turn-1',
+    ts: 9_000,
+    toolUseId: 'tool-1',
+    offset: args.length,
+    delta: '!',
+  });
+  await waitFor(() => slowSink.frames.length === 3);
+  const next = slowSink.frames[2];
+  assert.equal(next?.kind, 'subscription.session_event');
+  if (next?.kind !== 'subscription.session_event') return;
+  assert.equal(next.sequence, folded.sequence + 1);
+  coordinator.close();
+});
+
+// A fold is a concatenation, so it must only ever join fragments that were
+// already adjacent — and only within one call.
+test('refuses to fold tool input fragments that are not adjacent', async () => {
+  const coordinator = new SessionContinuityCoordinator(
+    HOST_EPOCH,
+    async () => canonical(),
+    new SessionAdmissionGate(),
+  );
+  const sink = new RecordingSink();
+  const connection = coordinator.attachConnection('connection-slow', sink);
+  const subscription = await open(coordinator, 'connection-slow');
+
+  for (const [toolUseId, offset, delta] of [
+    ['tool-1', 0, '{"a":1'],
+    ['tool-2', 6, ',"b":2'],
+    ['tool-1', 99, ',"c":3'],
+  ] as const) {
+    await coordinator.acceptRuntimeEvent(SESSION_ID, 'run-1', {
+      type: 'tool_input_delta',
+      id: `input-${toolUseId}-${offset}`,
+      turnId: 'turn-1',
+      ts: 2 + offset,
+      toolUseId,
+      offset,
+      delta,
+    });
+  }
+
+  connection.activate(subscription.subscriptionId);
+  await waitFor(() => sink.frames.length === 3);
+  assert.deepEqual(
+    sink.frames.map((frame) =>
+      frame.kind === 'subscription.session_event' && frame.event.type === 'tool_input_delta'
+        ? [frame.event.toolUseId, frame.event.offset]
+        : undefined,
+    ),
+    [
+      ['tool-1', 0],
+      ['tool-2', 6],
+      ['tool-1', 99],
+    ],
+  );
+  coordinator.close();
+});
+
 test('keeps stream, kind, and completion boundaries when coalescing deltas', async () => {
   const coordinator = new SessionContinuityCoordinator(
     HOST_EPOCH,

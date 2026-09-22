@@ -416,6 +416,17 @@ export type ModelStreamEvent =
   | { kind: 'thinking-signature'; signature: string; reasoningPartId?: string }
   /** Provider-side tool execution has begun, but no replayable call exists yet. */
   | { kind: 'provider-tool-input' }
+  /**
+   * The model has named a tool it is about to call and started writing its
+   * arguments. Display-only: the call becomes replayable at `tool-call`, and a
+   * stream that dies here leaves nothing to reconcile, which is what separates
+   * it from `provider-tool-input`.
+   */
+  | { kind: 'tool-input-start'; toolCallId: string; toolName: string }
+  /** One raw JSON fragment of the arguments for `toolCallId`. */
+  | { kind: 'tool-input-delta'; toolCallId: string; delta: string }
+  /** The arguments are fully written; whatever is still buffered can go out. */
+  | { kind: 'tool-input-end'; toolCallId: string }
   | { kind: 'tool-call'; toolCall: ToolCallPart }
   | {
       kind: 'provider-tool-result';

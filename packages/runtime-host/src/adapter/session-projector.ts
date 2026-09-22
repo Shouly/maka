@@ -649,6 +649,19 @@ function projectSessionEvent(
     ts: event.ts,
     toolUseId: event.toolUseId,
   };
+  if (event.type === 'tool_input_start') {
+    return {
+      type: 'tool_input_start',
+      ...base,
+      toolName: event.toolName,
+      ...(event.activityKind ? { activityKind: event.activityKind } : {}),
+      ...(event.displayName ? { displayName: event.displayName } : {}),
+      ...(event.stepId ? { stepId: event.stepId } : {}),
+    };
+  }
+  if (event.type === 'tool_input_delta') {
+    return { type: 'tool_input_delta', ...base, offset: event.offset, delta: event.delta };
+  }
   if (event.type === 'tool_start') {
     return {
       type: 'tool_start',

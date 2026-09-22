@@ -865,9 +865,17 @@ function isSheddableDelta(event: SessionEvent): boolean {
   // updates with a monotonic per-tool `seq` (renderers de-dupe and order by
   // it, so a shed range leaves a gap, never corruption), and the terminal
   // tool_result plus the durable transcript heal the tool's final output.
+  //
+  // tool_input_delta likewise. A shed fragment is a designed-for outcome — each
+  // fragment says where it belongs, so the reader sees the hole and closes that
+  // call's preview rather than reading past it — and the whole stream is
+  // superseded by `tool_start`. Leaving it out made it displace the assistant's
+  // own text on a full backlog: the least important stream in the channel
+  // evicting the most important one.
   return (
     event.type === 'text_delta' ||
     event.type === 'thinking_delta' ||
+    event.type === 'tool_input_delta' ||
     event.type === 'tool_output_delta'
   );
 }

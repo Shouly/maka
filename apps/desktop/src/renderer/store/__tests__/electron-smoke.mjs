@@ -1505,7 +1505,7 @@ try {
   await page.getByRole('menuitem', { name: /^Effort/ }).hover();
   await page.getByRole('menuitemradio', { name: 'Off', exact: true }).click();
   const busyNotice = 'A task is running or waiting on you. Change this setting after it settles.';
-  const busyToast = page.locator('.ui-toast[data-state="open"]').filter({ hasText: busyNotice });
+  const busyToast = page.locator('.ui-toast').filter({ hasText: busyNotice });
   await busyToast.waitFor();
   assert.equal(await busyToast.count(), 1);
   assert.equal(
@@ -1526,7 +1526,11 @@ try {
   await busyToast.locator('[toast-close]').click();
   await busyToast.waitFor({ state: 'detached' });
   assert.equal(await toastComposer.getByText(busyNotice, { exact: true }).count(), 0);
-  await composerInput.fill('');
+  // Wait for dismissal before returning focus to the editor. Use editor key
+  // events and verify the draft is empty before expecting the Stop control.
+  await composerInput.press('ControlOrMeta+a');
+  await composerInput.press('Backspace');
+  await expectComposerPlaceholder(page, 'Reply…');
   checks.push(
     'a busy setting shows one informational toast without diagnostics, resizing, or losing its draft',
   );

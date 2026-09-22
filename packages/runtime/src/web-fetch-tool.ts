@@ -60,6 +60,7 @@ const WEB_FETCH_NO_ANSWER_MODEL_NOTE =
 export function buildWebFetchTool(executor: WebFetchExecutor): MakaTool {
   return {
     name: WEB_FETCH_TOOL_NAME,
+    activityKind: 'webfetch',
     categoryHint: 'web_read',
     displayName: 'Web fetch',
     description: [

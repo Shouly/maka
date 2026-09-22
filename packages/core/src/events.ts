@@ -60,6 +60,30 @@ import type { TurnOrigin } from './turn-origin.js';
 
 export const TOOL_OUTPUT_STREAMS = ['stdout', 'stderr'] as const;
 export const TOOL_OUTPUT_DELTA_MAX_CHARS = 8192;
+/**
+ * How large a piece the Runtime cuts a provider's argument text into — NOT a
+ * ceiling on what arrives: the Host folds contiguous fragments into one frame
+ * when a subscriber falls behind, so a fragment on the wire can be several of
+ * these. (`SESSION_TOOL_INPUT_DELTA_MAX_BYTES` is the bound that holds there.)
+ *
+ * Sized so one piece, escaped into a subscription frame, stays well under the
+ * 64 KiB frame limit even when every character escapes to six bytes.
+ *
+ * Cutting here is safe and dropping is not: every piece says where it belongs,
+ * so the pieces concatenate back into exactly what the model wrote. Nothing on
+ * either side may cut a piece to fit a bound — that leaves the offsets
+ * contiguous while the text is not, and the reader splices a different,
+ * well-formed call out of the gap.
+ */
+export const TOOL_INPUT_DELTA_MAX_CHARS = 8192;
+/**
+ * How much of a call's arguments a reader keeps in order to read them as they
+ * arrive. A bound on the running preview, which re-reads what it has on each
+ * fragment and so costs the square of the length: 1.4s across half a megabyte,
+ * on the thread drawing the transcript. Past it the row stops following a head
+ * that already names the call, and `tool_start` brings the arguments whole.
+ */
+export const TOOL_INPUT_PREVIEW_MAX_CHARS = 16 * 1024;
 export const TOOL_ACTIVITY_KINDS = [
   // Driving the user's own machine is not "a tool call". It has its own risk,
   // its own approval classes and its own place in a transcript, and reading it
@@ -75,6 +99,16 @@ export const TOOL_ACTIVITY_KINDS = [
   'explore',
   'browser',
   'tasks',
+  // Two activities that are not "a tool call" either, and that had no kind to
+  // name them: both landed in `tool`, so a turn that handed work to a subagent
+  // wore the generic glyph and summarized as "Called a tool". Asking the person
+  // is a third, but it is NOT a kind: a live question carries no tool name at
+  // all (the projection fills in "Tool"), so only the request registry knows
+  // one — see `isAskUserQuestionTool`.
+  /** Work handed to another agent. */
+  'delegate',
+  /** A standing task: created, changed, listed or run. */
+  'schedule',
   'tool',
 ] as const;
 export type ToolActivityKind = (typeof TOOL_ACTIVITY_KINDS)[number];
@@ -582,6 +616,8 @@ export type SessionEvent =
   | TextCompleteEvent
   | ThinkingDeltaEvent
   | ThinkingCompleteEvent
+  | ToolInputStartEvent
+  | ToolInputDeltaEvent
   | ToolStartEvent
   | ToolOutputDeltaEvent
   | ToolProgressEvent
@@ -642,6 +678,47 @@ export interface ThinkingCompleteEvent extends BaseEvent {
   signature?: string;
   /** Provider-owned replay metadata that must survive backend recreation. */
   providerOptions?: Record<string, unknown>;
+}
+
+/**
+ * The model has begun writing a tool call: the name is known, the arguments are
+ * not. Transient; `tool_start` remains the call's one durable birth.
+ *
+ * A provider sends the tool's name in its first frame and streams the arguments
+ * after it. Without this the reader waits out that whole stream in silence — for
+ * a long Write body, seconds of a turn that looks stalled.
+ */
+export interface ToolInputStartEvent extends BaseEvent, ToolActivityIdentity {
+  type: 'tool_input_start';
+  toolUseId: string;
+  toolName: string;
+  /**
+   * What `tool_start` carries, from the same tool definition: without the kind
+   * the row picks the generic icon and swaps it at dispatch.
+   */
+  activityKind?: ToolActivityKind;
+  displayName?: string;
+  /** The assistant step this call belongs to; pairs with `ToolStartEvent.stepId`. */
+  stepId?: string;
+}
+
+/**
+ * One fragment of a tool call's arguments: raw JSON text belonging at `offset`
+ * in the document the model is writing.
+ *
+ * Addressed the way an assistant text delta is, not counted the way
+ * `tool_output_delta` is. These are pieces of ONE document, so a hole in them
+ * does not read as a hole — it reads as a different, well-formed call — and an
+ * offset is what makes a hole detectable. It also lets the Host fold two queued
+ * fragments into one frame, which is where back-pressure belongs and which a
+ * bare counter forbids: a merge would eat a number and read as loss.
+ */
+export interface ToolInputDeltaEvent extends BaseEvent {
+  type: 'tool_input_delta';
+  toolUseId: string;
+  /** Where this fragment starts in the arguments, in UTF-16 code units. */
+  offset: number;
+  delta: string;
 }
 
 export interface ToolStartEvent extends BaseEvent, ToolActivityIdentity {

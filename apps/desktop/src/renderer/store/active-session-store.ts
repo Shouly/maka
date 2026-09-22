@@ -101,15 +101,11 @@ function dropIncompleteStreams(projection: LiveTurnProjection): LiveTurnProjecti
       ...(dropText || text === undefined ? {} : { text }),
       ...(dropThinking || thinking === undefined ? {} : { thinking }),
     };
-    const empty =
-      next.text === undefined &&
-      next.thinking === undefined &&
-      next.tools.length === 0 &&
-      (next.leadingSteering?.length ?? 0) === 0;
+    const empty = next.text === undefined && next.thinking === undefined && next.tools.length === 0;
     return empty ? [] : [next];
   });
   if (!changed) return projection;
-  if (steps.length === 0 && (projection.pendingSteering?.length ?? 0) === 0) return undefined;
+  if (steps.length === 0 && (projection.steering?.length ?? 0) === 0) return undefined;
   return { ...projection, steps };
 }
 

@@ -54,7 +54,7 @@ import {
   MODEL_PROJECTION_TRANSITION_EVENT_TYPE,
   type ModelProjectionTransition,
 } from '@maka/core/model-projection-transition';
-import { isTerminalRuntimeEvent } from '@maka/core/runtime-event';
+import { isTerminalRuntimeEvent, runtimePartialStreamKey } from '@maka/core/runtime-event';
 import {
   ToolLedgerCorruptionError,
   ToolLedgerRejectionError,
@@ -262,7 +262,8 @@ export class AgentRun {
   private runtimeEventStoreAvailable = true;
   private runtimeEventStoreFailure: unknown;
   private lastAssistantPreview: AssistantMessage | undefined;
-  private runtimePartialStreamKey: string | undefined;
+  /** The partial stream currently being buffered, if any. */
+  private openPartialStreamKey: string | undefined;
   private runtimePartialBuffer: RuntimeEvent[] = [];
   private runtimePartialBufferBytes = 0;
   private runtimePartialFlushTimer: ReturnType<typeof setTimeout> | undefined;
@@ -875,7 +876,7 @@ export class AgentRun {
     runtimeEvent: RuntimeEvent,
     options: { requireTerminalWrite?: boolean; allowInteractionResume?: boolean } = {},
   ): Promise<void> {
-    const partialStreamKey = runtimePartialCoalescingKey(runtimeEvent);
+    const partialStreamKey = runtimePartialStreamKey(runtimeEvent);
     if (!partialStreamKey) await this.flushRuntimePartialBuffer(true);
     if (isTerminalRuntimeEvent(runtimeEvent)) {
       await this.recordRuntimeEvents([runtimeEvent], {
@@ -1871,13 +1872,13 @@ export class AgentRun {
       await this.recordRuntimeEvents([event]);
       return;
     }
-    if (this.runtimePartialStreamKey !== streamKey) {
+    if (this.openPartialStreamKey !== streamKey) {
       await this.flushRuntimePartialBuffer(true);
       // Persist the first chunk synchronously. Besides bounding crash loss, this
       // captures the immutable anchor before an upstream tool boundary can
       // commit while later chunks are waiting in the coalescer.
       await this.recordRuntimeEvents([event]);
-      this.runtimePartialStreamKey = streamKey;
+      this.openPartialStreamKey = streamKey;
       return;
     }
     this.runtimePartialBuffer.push(event);
@@ -1902,7 +1903,7 @@ export class AgentRun {
 
   private async flushRuntimePartialBuffer(closeStream: boolean): Promise<void> {
     const ownedPartialWork =
-      this.runtimePartialStreamKey !== undefined ||
+      this.openPartialStreamKey !== undefined ||
       this.runtimePartialBuffer.length > 0 ||
       this.runtimePartialFlushTimer !== undefined;
     if (this.runtimePartialFlushTimer) {
@@ -1912,7 +1913,7 @@ export class AgentRun {
     const events = this.runtimePartialBuffer;
     this.runtimePartialBuffer = [];
     this.runtimePartialBufferBytes = 0;
-    if (closeStream) this.runtimePartialStreamKey = undefined;
+    if (closeStream) this.openPartialStreamKey = undefined;
     if (events.length === 0) {
       // A timer flush may already be queued. Waiting here preserves the rule
       // that an immutable boundary never overtakes prior presentation text.
@@ -1965,29 +1966,6 @@ export class AgentRun {
       // Diagnostic persistence is best effort; never perturb model/tool execution.
     }
   }
-}
-
-function runtimePartialCoalescingKey(event: RuntimeEvent): string | undefined {
-  if (!event.partial || event.status !== undefined || event.actions) return undefined;
-  const content = event.content;
-  if (content?.kind !== 'text' && content?.kind !== 'thinking') return undefined;
-  if (content.kind === 'text' && content.attachments !== undefined) return undefined;
-  if (content.kind === 'thinking' && content.signature !== undefined) return undefined;
-  const providerEventId = event.refs?.providerEventId;
-  if (!providerEventId || Object.keys(event.refs ?? {}).some((key) => key !== 'providerEventId')) {
-    return undefined;
-  }
-  return JSON.stringify([
-    content.kind,
-    providerEventId,
-    event.sessionId,
-    event.invocationId,
-    event.runId,
-    event.turnId,
-    event.branch ?? null,
-    event.role,
-    event.author,
-  ]);
 }
 
 function runtimePartialTextBytes(event: RuntimeEvent): number {

@@ -58,6 +58,32 @@ describe('active current-turn tool-result pruning', () => {
     assert.equal(aboveDefault.diagnosticPatch.activePrunedToolResults, 1);
   });
 
+  // A tool search output is not a result: it IS the set of tools the model may
+  // call, and the provider reads it as such. Archived, its schema fails the
+  // request outright — and had it passed, the tools it declared would have gone
+  // with it, and the prompt cache with them.
+  test('never prunes a tool search output, whatever it weighs', async () => {
+    const definitions = 'x'.repeat(2048 * 8);
+    let archiveAttempts = 0;
+    const outcome = await rewriteActiveToolResultsInMessages({
+      messages: [largeToolMessage(TOOL_SEARCH_NAME, 'tool-search-1', definitions)],
+      policy: { enabled: true, maxCurrentResultEstimatedTokens: 1 },
+      stepNumber: 1,
+      turnId: 'turn-1',
+      charsPerToken: 1,
+      archiveToolResult: () => {
+        archiveAttempts += 1;
+        return { artifactId: 'must-not-happen' };
+      },
+    });
+
+    assert.equal(outcome.rewritten, 0);
+    assert.equal(archiveAttempts, 0, 'declined before the ledger, not after');
+    // And not counted as an archive that failed: nothing was attempted.
+    assert.equal(outcome.diagnosticPatch.activePrunedToolResults ?? 0, 0);
+    assert.doesNotMatch(JSON.stringify(outcome.messages), /maka\.archived_tool_result/);
+  });
+
   test('request projection composes active tools with rewritten messages', async () => {
     const originalMessages = [largeToolMessage('Read', 'tool-1', 'SECRET'.repeat(20))];
     const activePrune = async () => {

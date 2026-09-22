@@ -64,6 +64,7 @@ import {
 import {
   askUserQuestionRecord,
   isAskUserQuestionTool,
+  knownUserQuestionCalls,
   rememberedUserQuestionRecord,
 } from '../../lib/ask-user-question.js';
 import {
@@ -145,6 +146,74 @@ test('every activity kind has an icon and a summary phrase', () => {
     assert.ok(summary.length > 0, `${kind} has no summary`);
   }
   assert.equal(toolActivityIcon(undefined), 'tool');
+});
+
+// The reference gives a glyph per TOOL; an activity kind is one bucket wider
+// than that, and reading the icon off the kind is what put a pencil on Write and
+// a plain page on Read. Each pair below shares a kind and must not share a glyph.
+test('follows the reference glyph where a kind is too coarse for it', () => {
+  const t = (toolName: string, activityKind?: ToolActivityItem['activityKind']) =>
+    tool({ toolUseId: toolName, toolName, ...(activityKind ? { activityKind } : {}) });
+
+  assert.equal(toolRowIcon(t('Write', 'edit')), 'note');
+  assert.equal(toolRowIcon(t('Edit', 'edit')), 'edit');
+  assert.equal(toolRowIcon(t('Read', 'read')), 'code');
+  assert.equal(toolRowIcon(t('ArchiveRead', 'read')), 'file');
+  assert.equal(toolRowIcon(t('ToolSearch')), 'connectors');
+  assert.equal(toolRowIcon(t('Skill')), 'scroll');
+  assert.equal(toolRowIcon(t('SendUserFile')), 'file');
+  assert.equal(toolRowIcon(t('WebFetch', 'webfetch')), 'globe');
+  assert.equal(toolRowIcon(t('Agent', 'delegate')), 'agent');
+});
+
+// The reference has no scheduled task, so this one follows Maka's own: the
+// sidebar entry, the module, the detail chip and the card this very call draws
+// all wear a clock. A calendar on the row contradicted the card beside it.
+test('a scheduled task row wears the clock the rest of the app wears', () => {
+  assert.equal(
+    toolRowIcon(
+      tool({ toolUseId: 's', toolName: 'ScheduledTaskCreate', activityKind: 'schedule' }),
+    ),
+    'clock',
+  );
+});
+
+// A collapsed group is all a finished turn shows of its work. Every one of
+// these families used to land in the generic bucket and report "Called a tool"
+// under a generic wrench — a turn that handed work to a subagent said nothing
+// about it at all.
+test('names the work of the families that had no activity kind', () => {
+  const delegated = tool({ toolUseId: 'a', toolName: 'Agent', activityKind: 'delegate' });
+  assert.equal(summarizeToolGroup([delegated], 'en'), 'Delegated a task');
+  assert.equal(toolRowIcon(delegated), 'agent');
+
+  const scheduled = tool({
+    toolUseId: 'b',
+    toolName: 'ScheduledTaskUpdate',
+    activityKind: 'schedule',
+  });
+  assert.equal(summarizeToolGroup([scheduled], 'en'), 'Scheduled a task');
+  assert.equal(toolRowIcon(scheduled), 'clock');
+
+  // The question is decided by the request registry, not by a kind: a live one
+  // carries no tool name, so a kind would leave it generic for the whole wait
+  // and change the glyph under the reader the moment it settled.
+  const named = tool({ toolUseId: 'c', toolName: 'AskUserQuestion' });
+  const liveAndNameless = tool({ toolUseId: 'q', toolName: 'Tool' });
+  knownUserQuestionCalls.setState({ byToolUseId: { q: { questions: [] } } });
+  try {
+    for (const item of [named, liveAndNameless]) {
+      assert.equal(summarizeToolGroup([item], 'en'), 'Asked a question');
+      assert.equal(toolRowIcon(item), 'questionCircle');
+    }
+    // One mechanism, not two: the live header reads the same key.
+    assert.equal(
+      activeToolLabel([{ ...named, status: 'running' }], 'en'),
+      'Asking you a question…',
+    );
+  } finally {
+    knownUserQuestionCalls.setState({ byToolUseId: {} });
+  }
 });
 
 test('a row with no result yet renders what was asked for, not an empty result', () => {

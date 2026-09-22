@@ -185,12 +185,14 @@ const ICON_BY_ACTIVITY: Record<ToolActivityKind, AnthropiconName> = {
   read: 'file',
   search: 'search',
   websearch: 'globe',
-  webfetch: 'link',
+  webfetch: 'globe',
   edit: 'edit',
   command: 'terminal',
   explore: 'folderOpen',
   browser: 'cursorClick',
   tasks: 'tasks',
+  delegate: 'agent',
+  schedule: 'clock',
   tool: 'tool',
 };
 
@@ -199,17 +201,40 @@ export function toolActivityIcon(kind: ToolActivityKind | undefined): Anthropico
 }
 
 /**
- * The glyph a row wears.
+ * Tools whose glyph the reference draws differently from their activity kind.
  *
- * Normally the activity kind, which is what the tool said it was doing. The
- * discovery connector declares no kind — none fits "finding the others" — so
- * it falls back to the generic wrench every unclassified tool wears, which is
- * the one row it should not look like. It searches, and it wears the glass the
- * other searches wear.
+ * Two tables, because two populations ask the question. A tool this app has
+ * never heard of — an MCP or plugin tool, named at runtime — can only say which
+ * KIND of work it is doing (`mcp-tools.ts` maps a descriptor to one), so
+ * `ICON_BY_ACTIVITY` is the only answer available for it. A tool the app ships
+ * can be drawn as itself, and the reference does: `create_file` is a page and
+ * `str_replace` a pencil, though both are `edit` here.
+ *
+ * So the kind is the rule for a category and this is the exception for a name —
+ * and the kind must STAY coarse, because the same field buckets the collapsed
+ * summary, where Write and Edit belong in one phrase ("Edited 3 files"). One
+ * knob cannot be both, which is why keying the icon off the kind alone put a
+ * pencil on Write and a plain page on Read.
+ *
+ * Every row here is a real disagreement; a row that merely restates its kind
+ * belongs in `ICON_BY_ACTIVITY` instead.
  */
+const ICON_OVERRIDE_BY_TOOL: Readonly<Record<string, AnthropiconName>> = {
+  [TOOL_NAMES.write]: 'note',
+  [TOOL_NAMES.read]: 'code',
+  [TOOL_NAMES.toolSearch]: 'connectors',
+  [TOOL_NAMES.skill]: 'scroll',
+  [TOOL_NAMES.sendUserFile]: 'file',
+};
+
 export function toolRowIcon(item: ToolActivityItem): AnthropiconName {
-  if (isConnectorTool(item.toolName)) return ICON_BY_ACTIVITY.search;
+  const override = ICON_OVERRIDE_BY_TOOL[item.toolName];
+  if (override) return override;
   if (isMemoryTool(item)) return 'memory';
+  // Asked by the same predicate the summary asks, and for the same reason: a
+  // live question is not named, so a table keyed on the name would leave the row
+  // generic for the whole wait and flip the moment it settled.
+  if (isAskUserQuestionTool(item)) return 'questionCircle';
   return toolActivityIcon(toolActivityKindOf(item));
 }
 
@@ -383,9 +408,13 @@ export function canExpandTool(item: ToolActivityItem): boolean {
   // already usable. Opening it would show a list of names twice.
   if (renderer === 'tool_search') return false;
   if (renderer === 'memory') return memoryCanExpand(item);
-  if (renderer === 'pending') {
-    return (item.outputChunks?.length ?? 0) > 0 || item.args !== undefined;
-  }
+  // A call with no result yet — `pending` means running and unanswered — can be
+  // opened for as long as it is live, and nothing about the row may decide that
+  // twice. Keyed on what the row knows so far, the header is a div until the
+  // first argument key closes and a button after: React rebuilds the subtree at
+  // that moment and the sweep restarts in the middle of the run. `PendingResult`
+  // already draws the interval before the arguments say anything.
+  if (renderer === 'pending') return true;
   return true;
 }
 
@@ -402,6 +431,7 @@ export function canExpandTool(item: ToolActivityItem): boolean {
  */
 export type ToolSummaryKey =
   | ToolActivityKind
+  | 'ask'
   | 'taskRead'
   | 'toolSearch'
   | 'memorySearch'
@@ -430,6 +460,9 @@ export function toolSummaryKeyOf(item: ToolActivityItem): ToolSummaryKey {
   // "called a tool". It gets a phrase of its own for the same reason the task
   // readers do: the summary has to say what the turn actually did.
   if (isConnectorTool(item.toolName)) return 'toolSearch';
+  // Not an activity kind: only the request registry recognises a question while
+  // it is still being asked, because the live row has no tool name.
+  if (isAskUserQuestionTool(item)) return 'ask';
   // Memory gets a phrase per verb, and the verbs merge onto one object in the
   // summary — "Searched, read, and updated memory" — rather than counting as
   // files read and files edited, which is what their activity kinds say.
@@ -511,6 +544,5 @@ export function activeToolLabel(items: readonly ToolActivityItem[], locale: UiLo
   const copy = getTranscriptCopy(locale).tools;
   const running = [...items].reverse().find((item) => item.status === 'running');
   if (!running) return copy.working;
-  if (isAskUserQuestionTool(running)) return copy.asking;
   return copy.active[toolSummaryKeyOf(running)];
 }

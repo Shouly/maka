@@ -709,7 +709,7 @@ describe('reconcileTerminalLiveTurn', () => {
     const message = { id: 'steer-1', content: { text: 'change direction' }, ts: 2 };
     const withSteering: LiveTurnProjection = {
       ...toolOnly,
-      steps: [{ ...toolOnly.steps[0]!, leadingSteering: [message] }],
+      steering: [message],
     };
 
     assert.equal(reconcileTerminalLiveTurn(withSteering, []), withSteering);
@@ -732,7 +732,7 @@ describe('reconcileTerminalLiveTurn', () => {
     });
 
     assert.equal(aborted?.terminal, true);
-    assert.deepEqual(aborted?.pendingSteering, [message]);
+    assert.deepEqual(aborted?.steering, [{ ...message, seq: 0 }]);
   });
 
   it('retains interrupted live output until a persisted result covers it', () => {
@@ -1211,5 +1211,400 @@ describe('context-compaction live row', () => {
       turns[0]?.notes.map((note) => note.text),
       [getConversationCopy('en').messages.systemNotes.contextCompacted],
     );
+  });
+});
+
+// A tool call is written by the model before it is run by the Runtime, and the
+// two are different moments. Until this landed the row appeared at the second
+// one, so a long argument list — a Write body, a long command — was a stretch of
+// turn that looked stalled.
+describe('a tool call while the model is still writing it', () => {
+  const inputStart = {
+    type: 'tool_input_start' as const,
+    id: 'input-start-1',
+    turnId: 'turn-1',
+    ts: 100,
+    toolUseId: 'tool-1',
+    toolName: 'Write',
+    activityKind: 'edit' as const,
+    displayName: 'Write file',
+    stepId: 'step-1',
+  };
+  const fragment = (offset: number, delta: string, ts: number) => ({
+    type: 'tool_input_delta' as const,
+    id: `input-delta-${offset}`,
+    turnId: 'turn-1',
+    ts,
+    toolUseId: 'tool-1',
+    offset,
+    delta,
+  });
+
+  it('shows the tool by name before a single argument has arrived', () => {
+    const projection = applyLiveTurnEvent(undefined, inputStart);
+    const tool = projection.steps[0]?.tools[0];
+
+    assert.equal(projection.steps[0]?.stepId, 'step-1');
+    assert.equal(tool?.toolName, 'Write');
+    assert.equal(tool?.args, undefined);
+    // Without these the row picks the generic icon and the generic title, then
+    // swaps both when the call is dispatched — the row visibly changing its mind.
+    assert.equal(tool?.activityKind, 'edit');
+    assert.equal(tool?.displayName, 'Write file');
+    assert.deepEqual(tool?.input, { text: '' });
+    assert.deepEqual(
+      overlayLiveTurn([], projection, 'en')[0]?.timeline.map((item) => item.kind),
+      ['tools'],
+    );
+  });
+
+  // Every formatter in the transcript reads `args ?? argsPreview`, so mirroring
+  // the stream's reading there is what makes the row name itself as it fills in —
+  // without a single formatter knowing that a partial reading exists. What may
+  // be shown is the stream's business (`tool-input-stream.test.ts`); that the
+  // row wears it is this one's.
+  it('names what the call does as the arguments arrive', () => {
+    const started = applyLiveTurnEvent(undefined, inputStart);
+    const path = applyLiveTurnEvent(started, fragment(0, '{"file_path":"/tmp/a.ts"', 101))!;
+    const tool = path.steps[0]?.tools[0];
+
+    assert.deepEqual(tool?.argsPreview, { file_path: '/tmp/a.ts' });
+    assert.equal(tool?.argsPreview, tool?.input?.preview, 'the row wears what the stream read');
+  });
+
+  it('refuses a fragment that would concatenate onto the wrong offset', () => {
+    const started = applyLiveTurnEvent(undefined, inputStart);
+    const first = applyLiveTurnEvent(started, fragment(0, '{"file_path":"/tmp/a.ts"', 101))!;
+    const replayed = applyLiveTurnEvent(first, fragment(0, '{"file_path":"/tmp/a.ts"', 102))!;
+    const late = applyLiveTurnEvent(replayed, fragment(0, ',"content":"x"', 103))!;
+
+    assert.equal(late.steps[0]?.tools[0]?.input?.text, '{"file_path":"/tmp/a.ts"');
+    assert.deepEqual(late.steps[0]?.tools[0]?.argsPreview, { file_path: '/tmp/a.ts' });
+  });
+
+  // A client that joined mid-argument has no head to concatenate onto, so the
+  // fragment is dropped rather than used to build a document missing its start.
+  it('ignores a fragment for a call it never saw open', () => {
+    assert.equal(applyLiveTurnEvent(undefined, fragment(6, '_path":"/tmp/a.ts"', 101)), undefined);
+  });
+
+  it('hands the row over to the real call without moving or duplicating it', () => {
+    const started = applyLiveTurnEvent(undefined, inputStart);
+    const written = applyLiveTurnEvent(started, fragment(0, '{"file_path":"/tmp/a.ts"', 101))!;
+    const dispatched = applyLiveTurnEvent(written, {
+      type: 'tool_start', id: 'start-1', turnId: 'turn-1', ts: 103, stepId: 'step-1',
+      toolUseId: 'tool-1', toolName: 'Write', args: { file_path: '/tmp/a.ts', content: 'const a = 1\n' },
+    });
+
+    assert.equal(dispatched.steps.length, 1);
+    assert.equal(dispatched.steps[0]?.tools.length, 1);
+    const tool = dispatched.steps[0]?.tools[0];
+    assert.equal(tool?.input, undefined, 'the arguments are here in full');
+    assert.equal(tool?.argsPreview, undefined, 'the partial reading goes with it');
+    assert.deepEqual(tool?.args, { file_path: '/tmp/a.ts', content: 'const a = 1\n' });
+    assert.equal(tool?.status, 'running');
+  });
+
+  // Nothing ran and the ledger holds no call, so interrupting the row would pin
+  // a record of something that did not happen.
+  it('takes back a call whose arguments never finished arriving', () => {
+    const started = applyLiveTurnEvent(undefined, inputStart);
+    const written = applyLiveTurnEvent(started, fragment(0, '{"file_pa', 101))!;
+    const aborted = applyLiveTurnEvent(written, {
+      type: 'abort', id: 'abort-1', turnId: 'turn-1', ts: 102, reason: 'user_stop',
+    });
+
+    assert.equal(aborted, undefined);
+  });
+
+  it('keeps the answer that preceded it when only the call is taken back', () => {
+    const answer = applyLiveTurnEvent(undefined, {
+      type: 'text_complete', id: 'text-1', turnId: 'turn-1', ts: 99,
+      messageId: 'step-1', text: '我来写这个文件',
+    });
+    const started = applyLiveTurnEvent(answer, inputStart);
+    const aborted = applyLiveTurnEvent(started, {
+      type: 'abort', id: 'abort-1', turnId: 'turn-1', ts: 102, reason: 'user_stop',
+    });
+
+    assert.deepEqual(aborted?.steps[0]?.tools, []);
+    assert.deepEqual(aborted?.steps[0]?.contentOrder, ['text']);
+    assert.equal(aborted?.steps[0]?.text?.text, '我来写这个文件');
+  });
+});
+
+// `tool_start` carries the stepId of the assistant step it belongs to, so
+// "model speaks, then calls a tool" is ONE step. An interjection that lands
+// between the two is not the start of anything, and used to be appended to the
+// end of the live timeline — the reader's own words shown after the tool they
+// were trying to get ahead of.
+describe('an interjection that lands in the middle of a step', () => {
+  const steer = (id: string, ts: number, text: string) => ({
+    type: 'steering_message' as const,
+    id: `${id}-event`,
+    messageId: id,
+    turnId: 'turn-1',
+    ts,
+    content: { text },
+  });
+  const kinds = (projection: LiveTurnProjection) =>
+    overlayLiveTurn([], projection, 'en')[0]?.timeline.map((item) =>
+      item.kind === 'user' ? `user:${item.message.text}` : item.kind);
+
+  it('renders between the answer and the tool that answer goes on to call', () => {
+    const answer = applyLiveTurnEvent(undefined, {
+      type: 'text_delta', id: 'text-1', messageId: 'step-1', turnId: 'turn-1', ts: 100,
+      text: '我去查一下',
+    });
+    const interjected = applyLiveTurnEvent(answer, steer('steer-1', 101, '别查了'));
+    const projection = applyLiveTurnEvent(interjected, {
+      type: 'tool_start', id: 'start-1', turnId: 'turn-1', ts: 102, stepId: 'step-1',
+      toolUseId: 'tool-1', toolName: 'Grep', args: {},
+    });
+
+    assert.deepEqual(kinds(projection), ['text', 'user:别查了', 'tools']);
+  });
+
+  it('renders between two calls of the same step', () => {
+    let projection = applyLiveTurnEvent(undefined, {
+      type: 'tool_start', id: 'start-1', turnId: 'turn-1', ts: 100, stepId: 'step-1',
+      toolUseId: 'tool-1', toolName: 'Read', args: {},
+    });
+    projection = applyLiveTurnEvent(projection, steer('steer-1', 101, '等一下'))!;
+    projection = applyLiveTurnEvent(projection, {
+      type: 'tool_start', id: 'start-2', turnId: 'turn-1', ts: 102, stepId: 'step-1',
+      toolUseId: 'tool-2', toolName: 'Read', args: {},
+    });
+
+    assert.deepEqual(kinds(projection), ['tools', 'user:等一下', 'tools']);
+  });
+
+  it('keeps two interjections in the order they arrived', () => {
+    let projection = applyLiveTurnEvent(undefined, {
+      type: 'text_delta', id: 'text-1', messageId: 'step-1', turnId: 'turn-1', ts: 100, text: '好',
+    });
+    projection = applyLiveTurnEvent(projection, steer('steer-1', 101, '第一句'))!;
+    projection = applyLiveTurnEvent(projection, steer('steer-2', 102, '第二句'))!;
+
+    assert.deepEqual(kinds(projection), ['text', 'user:第一句', 'user:第二句']);
+  });
+
+  it('renders an interjection that beat every step to the front', () => {
+    const interjected = applyLiveTurnEvent(undefined, steer('steer-1', 99, '先说一句'));
+    const projection = applyLiveTurnEvent(interjected, {
+      type: 'text_delta', id: 'text-1', messageId: 'step-1', turnId: 'turn-1', ts: 100, text: '好',
+    });
+
+    assert.deepEqual(kinds(projection), ['user:先说一句', 'text']);
+  });
+});
+
+// A step issues several calls at once and the provider interleaves their
+// fragments. Each call is its own document with its own offsets, so the only
+// thing keeping them apart is the id on every frame.
+describe('several calls written at once', () => {
+  const open = (toolUseId: string, toolName: string, ts: number) => ({
+    type: 'tool_input_start' as const,
+    id: `open-${toolUseId}`,
+    turnId: 'turn-1',
+    ts,
+    toolUseId,
+    toolName,
+    stepId: 'step-1',
+  });
+  const part = (toolUseId: string, offset: number, delta: string, ts: number) => ({
+    type: 'tool_input_delta' as const,
+    id: `part-${toolUseId}-${offset}`,
+    turnId: 'turn-1',
+    ts,
+    toolUseId,
+    offset,
+    delta,
+  });
+
+  it('keeps each call\'s arguments to itself', () => {
+    let projection = applyLiveTurnEvent(undefined, open('tool-1', 'Read', 100));
+    projection = applyLiveTurnEvent(projection, open('tool-2', 'Bash', 101))!;
+    for (const event of [
+      part('tool-1', 0, '{"file_path":"/tmp', 102),
+      part('tool-2', 0, '{"command":"ls', 103),
+      part('tool-1', 18, '/a.ts"}', 104),
+      part('tool-2', 14, ' -la"}', 105),
+    ]) {
+      projection = applyLiveTurnEvent(projection, event)!;
+    }
+
+    // One step, two rows, in the order they were named.
+    assert.equal(projection.steps.length, 1);
+    const [first, second] = projection.steps[0]!.tools;
+    assert.equal(first?.toolUseId, 'tool-1');
+    assert.equal(second?.toolUseId, 'tool-2');
+    assert.equal(first?.input?.text, '{"file_path":"/tmp/a.ts"}');
+    assert.equal(second?.input?.text, '{"command":"ls -la"}');
+    assert.deepEqual(first?.argsPreview, { file_path: '/tmp/a.ts' });
+    assert.deepEqual(second?.argsPreview, { command: 'ls -la' });
+  });
+
+  // A hole is per call. The one that lost a fragment stops; the other does not
+  // even notice, which is the whole reason the id is on every frame.
+  it('breaks only the call that lost a fragment', () => {
+    let projection = applyLiveTurnEvent(undefined, open('tool-1', 'Read', 100));
+    projection = applyLiveTurnEvent(projection, open('tool-2', 'Bash', 101))!;
+    for (const event of [
+      part('tool-1', 0, '{"file_path":"/tmp/a.ts"', 102),
+      part('tool-2', 0, '{"command":"ls', 103),
+      part('tool-1', 99, ',"offset":1}', 104),
+      part('tool-2', 14, ' -la"}', 105),
+    ]) {
+      projection = applyLiveTurnEvent(projection, event)!;
+    }
+
+    const [first, second] = projection.steps[0]!.tools;
+    assert.equal(first?.input?.broken, true);
+    assert.deepEqual(first?.argsPreview, { file_path: '/tmp/a.ts' }, 'frozen at the valid prefix');
+    assert.equal(second?.input?.broken, undefined);
+    assert.deepEqual(second?.argsPreview, { command: 'ls -la' }, 'untouched by its neighbour');
+  });
+
+  // Each row is its own timeline entry, stamped when it appeared, so an
+  // interjection can land between two calls of the same step.
+  it('gives each call its own row in the timeline', () => {
+    let projection = applyLiveTurnEvent(undefined, open('tool-1', 'Read', 100));
+    projection = applyLiveTurnEvent(projection, part('tool-1', 0, '{"file_path":"/a"}', 101))!;
+    projection = applyLiveTurnEvent(projection, open('tool-2', 'Bash', 102))!;
+    projection = applyLiveTurnEvent(projection, part('tool-2', 0, '{"command":"ls"}', 103))!;
+
+    const timeline = overlayLiveTurn([], projection, 'en')[0]?.timeline ?? [];
+    assert.deepEqual(
+      timeline.flatMap((item) => (item.kind === 'tools' ? item.items.map((t) => t.toolUseId) : [])),
+      ['tool-1', 'tool-2'],
+    );
+  });
+});
+
+// A live `tool_result` carries a STATUS and no body: the Host omits the content
+// and the client rebuilds it as `contentOmitted`. Asking for the body as proof
+// that a call ran therefore threw away a call that had already returned — and
+// with it the step, and with it the whole Turn.
+describe('a completed call whose dispatch frame was lost', () => {
+  it('survives the terminal on its status, with no result body to show', () => {
+    // `tool_start` never arrives — shed behind a backlog, or missed across a
+    // resubscribe — so the row still carries the arriving `input`.
+    const opened = applyLiveTurnEvent(undefined, {
+      type: 'tool_input_start', id: 'open', turnId: 'turn-1', ts: 100,
+      toolUseId: 'tool-1', toolName: 'Read', stepId: 'step-1',
+    });
+    const returned = applyLiveTurnEvent(opened, {
+      type: 'tool_result', id: 'r1', turnId: 'turn-1', ts: 200,
+      toolUseId: 'tool-1', isError: false, contentOmitted: true,
+      content: { kind: 'text', text: '' },
+    })!;
+    assert.equal(returned.steps[0]?.tools[0]?.status, 'completed');
+    assert.equal(returned.steps[0]?.tools[0]?.result, undefined, 'status without a body');
+    assert.notEqual(returned.steps[0]?.tools[0]?.input, undefined);
+
+    const settled = applyLiveTurnEvent(returned, {
+      type: 'complete', id: 'done', turnId: 'turn-1', ts: 300, stopReason: 'end_turn',
+    });
+    assert.notEqual(settled, undefined, 'the Turn does not vanish');
+    assert.equal(settled?.steps[0]?.tools.length, 1, 'and neither does the call');
+  });
+});
+
+// Whatever the stream did on the way — a bound reached, a fragment lost — the
+// call still settles on the arguments that arrive whole.
+describe('a call that settles after a troubled stream', () => {
+  it('hands the row over to the arguments that arrive whole', () => {
+    const opened = applyLiveTurnEvent(undefined, {
+      type: 'tool_input_start', id: 'start', turnId: 'turn-1', ts: 100,
+      toolUseId: 'tool-1', toolName: 'Bash', stepId: 'step-1',
+    });
+    const written = applyLiveTurnEvent(opened, {
+      type: 'tool_input_delta', id: 'd0', turnId: 'turn-1', ts: 101,
+      toolUseId: 'tool-1', offset: 0, delta: '{"command":"ls',
+    })!;
+    const gapped = applyLiveTurnEvent(written, {
+      type: 'tool_input_delta', id: 'd2', turnId: 'turn-1', ts: 102,
+      toolUseId: 'tool-1', offset: 20, delta: ' -la"}',
+    })!;
+    assert.equal(gapped.steps[0]?.tools[0]?.input?.broken, true);
+
+    const dispatched = applyLiveTurnEvent(gapped, {
+      type: 'tool_start', id: 'start-1', turnId: 'turn-1', ts: 200, stepId: 'step-1',
+      toolUseId: 'tool-1', toolName: 'Bash', args: { command: 'ls -la' },
+    });
+
+    assert.equal(dispatched.steps[0]?.tools[0]?.input, undefined);
+    assert.deepEqual(dispatched.steps[0]?.tools[0]?.args, { command: 'ls -la' });
+  });
+
+  // Only `tool_start` clears `input`, so a client that missed that one frame —
+  // shed behind a backlog, or evicted and resubscribed across it — still carries
+  // it on a call that ran and returned. Dropping on `input` alone deleted it.
+  it('keeps a call that ran, even without the frame that dispatched it', () => {
+    const opened = applyLiveTurnEvent(undefined, {
+      type: 'tool_input_start', id: 'start', turnId: 'turn-1', ts: 100,
+      toolUseId: 'tool-1', toolName: 'Write', stepId: 'step-1',
+    });
+    const returned = applyLiveTurnEvent(opened, {
+      type: 'tool_result', id: 'result-1', turnId: 'turn-1', ts: 101,
+      toolUseId: 'tool-1', isError: false, content: { kind: 'text', text: 'written' },
+    });
+    const completed = applyLiveTurnEvent(returned, {
+      type: 'complete', id: 'complete-1', turnId: 'turn-1', ts: 102, stopReason: 'end_turn',
+    });
+
+    assert.equal(completed?.steps[0]?.tools.length, 1, 'the call that returned is still there');
+    assert.equal(completed?.steps[0]?.tools[0]?.status, 'completed');
+  });
+
+  it('drops a Turn that completes with nothing but an abandoned call', () => {
+    const opened = applyLiveTurnEvent(undefined, {
+      type: 'tool_input_start', id: 'start', turnId: 'turn-1', ts: 100,
+      toolUseId: 'tool-1', toolName: 'Write', stepId: 'step-1',
+    });
+    const completed = applyLiveTurnEvent(opened, {
+      type: 'complete', id: 'complete-1', turnId: 'turn-1', ts: 101, stopReason: 'end_turn',
+    });
+
+    assert.equal(completed, undefined, 'not a terminal husk with no steps in it');
+  });
+});
+
+// A retried attempt is the request taken from the top. A call it had half
+// written will never be dispatched, so it has no counterpart in the ledger to
+// settle against — left alone it shimmers as a running call for the whole Turn.
+describe('an attempt that is retried', () => {
+  it('takes back the calls it was part way through writing', () => {
+    const answered = applyLiveTurnEvent(undefined, {
+      type: 'text_complete', id: 'text-1', turnId: 'turn-1', ts: 99,
+      messageId: 'step-1', text: 'Let me look.',
+    });
+    const writing = applyLiveTurnEvent(answered, {
+      type: 'tool_input_start', id: 'start', turnId: 'turn-1', ts: 100,
+      toolUseId: 'tool-1', toolName: 'Bash', stepId: 'step-1',
+    });
+    const retried = applyLiveTurnEvent(writing, {
+      type: 'provider_retry', id: 'retry-1', turnId: 'turn-1', ts: 101,
+      phase: 'scheduled', attempt: 2, maxAttempts: 10, delayMs: 1_000, reason: 'rate_limit',
+    });
+
+    assert.deepEqual(retried?.steps[0]?.tools, [], 'the half-written call is gone');
+    assert.deepEqual(retried?.steps[0]?.contentOrder, ['text']);
+    assert.equal(retried?.steps[0]?.text?.text, 'Let me look.', 'the answer before it stays');
+    assert.ok(retried?.providerRetry, 'and the retry is still projected');
+  });
+
+  it('leaves a call that was already dispatched alone', () => {
+    const dispatched = applyLiveTurnEvent(undefined, {
+      type: 'tool_start', id: 'start-1', turnId: 'turn-1', ts: 100, stepId: 'step-1',
+      toolUseId: 'tool-1', toolName: 'Bash', args: { command: 'ls' },
+    });
+    const retried = applyLiveTurnEvent(dispatched, {
+      type: 'provider_retry', id: 'retry-1', turnId: 'turn-1', ts: 101,
+      phase: 'scheduled', attempt: 2, maxAttempts: 10, delayMs: 1_000, reason: 'rate_limit',
+    });
+
+    assert.equal(retried?.steps[0]?.tools.length, 1);
   });
 });

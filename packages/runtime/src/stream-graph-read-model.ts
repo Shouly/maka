@@ -914,6 +914,8 @@ function projectClientSessionEvent(
   switch (event.type) {
     case 'text_delta':
     case 'thinking_delta':
+    case 'tool_input_start':
+    case 'tool_input_delta':
     case 'tool_output_delta':
     case 'tool_progress':
     case 'tool_result_preview':

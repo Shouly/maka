@@ -134,7 +134,18 @@ export const ToolRow = memo(function ToolRow(props: ToolRowProps) {
             <span className="flex min-w-0 items-center gap-1.5">
               {mcp && <McpServerMark serverId={mcp.serverId} locale={locale} />}
               {running ? (
-                <ShimmerTitle title={title} isLoading className="min-w-0 truncate text-sm" />
+                <ShimmerTitle
+                  title={title}
+                  isLoading
+                  // Same box and same colour as the settled title, or it hops
+                  // when the sweep stops: `leading-5` because these sit in an
+                  // `items-center` row, and the base colour because a note
+                  // settles a shade brighter than a tool row.
+                  className={cn(
+                    'min-w-0 truncate text-sm leading-5',
+                    !isNote && '[--base-color:var(--text-muted)]',
+                  )}
+                />
               ) : (
                 <span
                   className={cn(
@@ -182,17 +193,34 @@ export const ToolRow = memo(function ToolRow(props: ToolRowProps) {
           <div className={stepBodyClass}>
             <span className="flex min-w-0 items-center gap-1.5">
               {mcp && <McpServerMark serverId={mcp.serverId} locale={locale} />}
-              <span
-                className={cn(
-                  'min-w-0 truncate text-sm leading-5',
-                  // A note carries the model's own words to the reader, not a
-                  // label for work it did — one step up the ladder from the
-                  // rows around it, which say what ran.
-                  isNote ? 'text-text-secondary' : 'text-text-muted',
-                )}
-              >
-                {title}
-              </span>
+              {running ? (
+                // The shimmer used to live only in the expandable branch, so a
+                // row that cannot be opened sat still for its whole run.
+                <ShimmerTitle
+                  title={title}
+                  isLoading
+                  // Same box and same colour as the settled title, or it hops
+                  // when the sweep stops: `leading-5` because these sit in an
+                  // `items-center` row, and the base colour because a note
+                  // settles a shade brighter than a tool row.
+                  className={cn(
+                    'min-w-0 truncate text-sm leading-5',
+                    !isNote && '[--base-color:var(--text-muted)]',
+                  )}
+                />
+              ) : (
+                <span
+                  className={cn(
+                    'min-w-0 truncate text-sm leading-5',
+                    // A note carries the model's own words to the reader, not a
+                    // label for work it did — one step up the ladder from the
+                    // rows around it, which say what ran.
+                    isNote ? 'text-text-secondary' : 'text-text-muted',
+                  )}
+                >
+                  {title}
+                </span>
+              )}
             </span>
             {(meta || statusLabel) && (
               <span className="flex shrink-0 items-center gap-2 text-xs leading-4 text-text-muted">

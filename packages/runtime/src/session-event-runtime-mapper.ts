@@ -295,6 +295,18 @@ function mapBackendSessionEvent(
       }
       return ev;
     }
+    // The model writing a call, not the call. Partial model-role heartbeats with
+    // no content: the canonical `function_call` is the `tool_start` above, and a
+    // call the stream abandons mid-argument must leave nothing behind.
+    case 'tool_input_start':
+    case 'tool_input_delta':
+      return {
+        ...base,
+        partial: true,
+        role: 'model',
+        author: 'agent',
+        refs: { toolCallId: event.toolUseId },
+      };
     case 'tool_output_delta':
       // Transient tool stdout/stderr side-channel. Carried as a partial
       // tool-role heartbeat; the canonical tool result is the function_response

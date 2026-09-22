@@ -22,7 +22,7 @@ import { applyLiveTurnEvent as applyLiveTurnEventWithLocale } from '../live-turn
 import type { LiveTurnProjection } from '../live-turn-projection.js';
 import type { SessionEvent } from '@maka/core/events';
 
-type LiveTurnContentEvent = Extract<SessionEvent, { type: 'thinking_delta' | 'thinking_complete' | 'text_delta' | 'text_complete' | 'tool_start' | 'tool_output_delta' | 'tool_progress' | 'tool_result_preview' | 'tool_result' }>;
+type LiveTurnContentEvent = Extract<SessionEvent, { type: 'thinking_delta' | 'thinking_complete' | 'text_delta' | 'text_complete' | 'tool_input_start' | 'tool_start' | 'tool_output_delta' | 'tool_progress' | 'tool_result_preview' | 'tool_result' }>;
 
 // Tests exercise projection logic, not copy; pin zh so markers stay verbatim.
 export function applyLiveTurnEvent(

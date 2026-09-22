@@ -102,6 +102,25 @@ describe('projectToolArgsPreview', () => {
     assert.deepEqual(preview, { path: 'packages/ui/src/tool-activity.tsx' });
   });
 
+  // The allowlist is the only way an argument reaches a live row, so a tool
+  // whose fields are not on it shows its bare name for as long as it runs.
+  // Both of these went unnoticed until the row started appearing while the
+  // arguments were still being written.
+  it('names the task a Task call is about, in either spelling', () => {
+    assert.deepEqual(projectToolArgsPreview('TaskGet', { taskId: '3' }), { taskId: '3' });
+    assert.deepEqual(projectToolArgsPreview('Read', { ref: 'r', task_id: '7' }), {
+      ref: 'r',
+      task_id: '7',
+    });
+  });
+
+  it('names the skill a Skill call runs, and not the payload beside it', () => {
+    assert.deepEqual(
+      projectToolArgsPreview('Skill', { skill: 'code-review', args: 'high --secret sk-abc' }),
+      { skill: 'code-review' },
+    );
+  });
+
   it('redacts secrets embedded in command strings', () => {
     const preview = projectToolArgsPreview('Bash', {
       command: 'curl -H "Authorization: Bearer super-secret-token-value" https://example.com',

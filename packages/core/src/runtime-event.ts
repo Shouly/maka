@@ -667,6 +667,79 @@ export type ToolRecoveryMode =
  * is superseded by a later non-partial event. Projections decide whether
  * to persist partials; model history MUST exclude them.
  */
+/**
+ * The live stream a partial RuntimeEvent belongs to, or undefined when it is
+ * not part of one.
+ *
+ * Two layers ask this question, and they MUST answer it the same way: a run
+ * coalesces a stream's events into one batched write, and the store upserts
+ * them into one row. A stream the store groups but the run does not is written
+ * one event at a time — and each of those writes also closes whatever batch was
+ * open, so it costs the stream beside it too. The live tool heartbeats sat in
+ * exactly that gap: grouped by call in the store, treated as standalone facts
+ * by the run.
+ *
+ * Membership means "mergeable without losing anything". A status or an action
+ * is a fact of its own; attachments and reasoning signatures belong to one
+ * block; and a ref beyond the one that names the stream is identity a merge
+ * would drop.
+ */
+export function runtimePartialStreamIdentity(event: RuntimeEvent): string | undefined {
+  if (!event.partial || event.status !== undefined || event.actions) return undefined;
+  const refs = event.refs;
+  const content = event.content;
+  // A heartbeat that states nothing is named by the call it belongs to: the
+  // live tool input, output and progress side-channels, whose canonical facts
+  // are the separate function_call / function_response events.
+  if (!content) {
+    return refs?.toolCallId !== undefined && hasOnlyRefKeys(refs, ['toolCallId'])
+      ? `${RUNTIME_TOOL_CALL_STREAM_PREFIX}${refs.toolCallId}`
+      : undefined;
+  }
+  if (content.kind !== 'text' && content.kind !== 'thinking') return undefined;
+  if (content.kind === 'text' && content.attachments !== undefined) return undefined;
+  if (content.kind === 'thinking' && content.signature !== undefined) return undefined;
+  return refs?.providerEventId !== undefined && hasOnlyRefKeys(refs, ['providerEventId'])
+    ? `${content.kind}:provider:${refs.providerEventId}`
+    : undefined;
+}
+
+/** Identities of this shape name a tool call rather than an assistant item. */
+export const RUNTIME_TOOL_CALL_STREAM_PREFIX = 'tool:call:';
+
+/**
+ * The identity above, scoped to the one run that produced it — and, for an
+ * assistant item, to the voice that produced it.
+ *
+ * A CALL's heartbeats are one stream however they are voiced. The model writing
+ * the arguments speaks as `model`/`agent` and the tool reporting its output as
+ * `tool`/`tool`, but both belong to the call, and it is the call's
+ * `function_response` that retires the stream. Keeping the voice in the key
+ * split them into two rows and retired only one: the model-voiced snapshot
+ * outlived every turn that made one, and nothing ever deleted it.
+ */
+export function runtimePartialStreamKeyFor(identity: string, event: RuntimeEvent): string {
+  return JSON.stringify([
+    identity,
+    event.sessionId,
+    event.invocationId,
+    event.runId,
+    event.turnId,
+    event.branch ?? null,
+    ...(identity.startsWith(RUNTIME_TOOL_CALL_STREAM_PREFIX) ? [] : [event.role, event.author]),
+  ]);
+}
+
+export function runtimePartialStreamKey(event: RuntimeEvent): string | undefined {
+  const identity = runtimePartialStreamIdentity(event);
+  return identity === undefined ? undefined : runtimePartialStreamKeyFor(identity, event);
+}
+
+function hasOnlyRefKeys(refs: RuntimeEventRefs, allowed: readonly string[]): boolean {
+  const allowedSet = new Set(allowed);
+  return Object.keys(refs).every((key) => allowedSet.has(key));
+}
+
 export interface RuntimeEvent {
   /** Event uuid — used for dedup on reconnect/replay. */
   id: string;
