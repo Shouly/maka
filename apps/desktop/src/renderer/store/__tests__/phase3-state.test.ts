@@ -52,6 +52,7 @@ import {
   toolActivityIcon,
   toolRowIcon,
   toolRowMeta,
+  toolRowFailure,
   toolRowStatus,
   toolRowStatusLabel,
   toolRowTitle,
@@ -232,17 +233,111 @@ test('a completed write says everything in its header, so it does not open', () 
   assert.equal(canExpandTool(item), false);
 });
 
-test('a sandbox denial is its own row status, not a generic error', () => {
+// The three grades, and what each one changes. This used to be a test about
+// the sandbox alone, because the sandbox was the only failure the row could
+// tell apart from any other.
+test('a failed row is graded, and only a boundary offers a way past it', () => {
   const denied = tool({
     status: 'errored',
-    result: { kind: 'text', text: 'nope', sandboxDenial: { likely: true } },
+    failure: { kind: 'denied', class: 'sandbox_denial', message: 'the sandbox said no' },
+    result: { kind: 'text', text: 'nope' },
   });
-  assert.equal(toolRowStatus(denied), 'sandbox_blocked');
-  // The same failure without the signal stays an ordinary error.
-  assert.equal(
-    toolRowStatus(tool({ status: 'errored', result: { kind: 'text', text: 'nope' } })),
-    'errored',
-  );
+  assert.deepEqual(toolRowFailure(denied), {
+    kind: 'denied',
+    tone: 'warning',
+    class: 'sandbox_denial',
+    message: 'the sandbox said no',
+    remedy: 'raise_permission',
+  });
+
+  // A rule that said no: the work did not happen, but nothing is broken and
+  // there is no control that would change it.
+  const refused = tool({
+    status: 'errored',
+    failure: { kind: 'refused', class: 'LoopGate', message: 'stop repeating this call' },
+    result: { kind: 'text', text: 'nope' },
+  });
+  assert.equal(toolRowFailure(refused)?.tone, 'warning');
+  assert.equal(toolRowFailure(refused)?.remedy, undefined);
+
+  // Unannotated reads as `failed` — an imported session, or a Host that
+  // predates the envelope, is drawn exactly as it was before it existed.
+  const bare = tool({ status: 'errored', result: { kind: 'text', text: 'nope' } });
+  assert.deepEqual(toolRowFailure(bare), { kind: 'failed', tone: 'danger' });
+
+  // The lifecycle no longer carries the failure's kind at all.
+  assert.equal(toolRowStatus(denied), 'errored');
+  // Neither a success nor a stop is a failure.
+  assert.equal(toolRowFailure(tool({ status: 'completed' })), undefined);
+  assert.equal(toolRowFailure(tool({ status: 'interrupted' })), undefined);
+});
+
+// The reason has to be reachable while the turn is still running, which is
+// exactly when the Host omits the result body.
+test('a live failure is readable before its result body arrives', () => {
+  const live = tool({
+    status: 'errored',
+    failure: { kind: 'failed', class: 'exit_1', message: 'ENOSPC: no space left on device' },
+    result: undefined,
+  });
+  assert.equal(canExpandTool(live), true);
+  assert.equal(toolRowFailure(live)?.message, 'ENOSPC: no space left on device');
+});
+
+// A background command inherited from another session. `shellRunSource` was
+// computed all the way to the row and then read by nobody, so all three cases
+// drew identically — including the one where the owner cannot be resolved and
+// the overlay falls back to the transcript's snapshot, which says `running`
+// and always will. That row shimmered for the rest of the session over a
+// process nobody here could see: the same shape as a detached Agent's row.
+test('an inherited background command says whose it is, and settles when it is lost', () => {
+  const run = (status: string) =>
+    ({
+      kind: 'shell_run',
+      ref: 'r1',
+      status,
+      cwd: '/w',
+      cmd: 'npm run dev',
+      startedAt: 0,
+      updatedAt: 1,
+      revision: 2,
+      mode: 'pipes',
+      output: {
+        mode: 'pipes',
+        stdout: '',
+        stderr: '',
+        stdoutTruncated: false,
+        stderrTruncated: false,
+        redacted: false,
+      },
+    }) as never;
+  const inherited = (source: ToolActivityItem['shellRunSource'], status = 'running') =>
+    tool({
+      toolName: 'Bash',
+      status: 'completed',
+      result: run(status),
+      ...(source ? { shellRunSource: source } : {}),
+    });
+
+  // Ours: watched, and nothing to say about it.
+  assert.equal(toolRowStatus(inherited(undefined)), 'running');
+  assert.equal(toolRowStatusLabel(inherited(undefined), 'en'), undefined);
+
+  // Someone else's, and still reachable: it really is running, so the row
+  // keeps running — its owner publishes updates and it will settle on its own.
+  assert.equal(toolRowStatus(inherited('owned')), 'running');
+  assert.equal(toolRowStatusLabel(inherited('owned'), 'en'), 'Running elsewhere');
+
+  // Someone else's and out of reach: nothing will ever update this row, so it
+  // must not go on claiming to watch it. `interrupted` is the honest word
+  // available — our view stopped, not necessarily the command — and the label
+  // is what keeps that from reading as "the command was interrupted".
+  assert.equal(toolRowStatus(inherited('unavailable')), 'interrupted');
+  assert.equal(toolRowStatusLabel(inherited('unavailable'), 'en'), 'Lost track of it');
+
+  // A run that already ended carries no badge: the fold only marks live ones,
+  // and a settled row must not be relabelled by a stale source.
+  assert.equal(toolRowStatus(inherited(undefined, 'completed')), 'completed');
 });
 
 test('a shell run reads its presentation status from the run, not the call', () => {
@@ -365,9 +460,70 @@ test('a memory row says the verb and the file, running and settled', () => {
   assert.equal(toolRowTitle(memoryTool('e', 'MemoryDelete'), 'zh-TW'), '刪除了 food.md');
 });
 
+// The status line under the transcript names the call in flight. A call the
+// MODEL labelled says what it is doing; "Running a command" was the same
+// sentence for every command in the session. Computer Use already worked this
+// way (`deriveTurnActivity` lets a running action name its target ahead of the
+// generic phrase) — this is that rule stopping being a one-family exception.
+test('a running call the model labelled says what it is doing', () => {
+  const bash = (args: unknown): ToolActivityItem => ({
+    toolUseId: 'bash-1',
+    toolName: 'Bash',
+    activityKind: 'command',
+    status: 'running',
+    args,
+  });
+  assert.equal(
+    activeToolLabel(
+      [bash({ command: 'npm run typecheck', description: 'Typecheck the renderer' })],
+      'en',
+    ),
+    'Typecheck the renderer',
+  );
+  // Live, before the arguments land, the preview carries it.
+  assert.equal(
+    activeToolLabel(
+      [
+        {
+          ...bash(undefined),
+          argsPreview: { command: 'npm run t', description: 'Typecheck the renderer' },
+        },
+      ],
+      'en',
+    ),
+    'Typecheck the renderer',
+  );
+  // Without one, the generic phrase — it is a fallback, not a replacement.
+  assert.equal(activeToolLabel([bash({ command: 'ls -la' })], 'en'), 'Running a command');
+
+  // An MCP tool's `description` is its own documentation echoed into the call,
+  // so every call of it would read identically; only Bash and Agent opt in.
+  assert.equal(
+    activeToolLabel(
+      [
+        {
+          toolUseId: 'mcp-1',
+          toolName: 'mcp__docs__search',
+          activityKind: 'tool',
+          status: 'running',
+          args: { description: 'Search the documentation for a topic' },
+        },
+      ],
+      'en',
+    ),
+    'Calling a tool',
+  );
+});
+
 test('a memory version conflict is a merge in progress, not an error', () => {
+  const conflictFailure = {
+    kind: 'refused' as const,
+    class: 'version_conflict',
+    message: '/topics/food.md changed since it was read; the change is being merged and retried.',
+  };
   const conflict = memoryTool('a', 'MemoryWrite', {
     status: 'errored',
+    failure: conflictFailure,
     result: {
       kind: 'text',
       text: 'MemoryWrite failed: version conflict on /topics/food.md — it changed since you read it.',
@@ -377,28 +533,66 @@ test('a memory version conflict is a merge in progress, not an error', () => {
   assert.equal(toolRowTitle(conflict, 'en'), 'Saving food.md');
   assert.equal(toolRowStatusLabel(conflict, 'en'), 'merging…');
   assert.equal(canExpandTool(conflict), false);
+
+  // The same write while it is still live, with no result body at all. Read
+  // from the body this said `failed` in danger red until the turn ended and
+  // then flipped to "merging…"; the class rides the event, so it cannot.
+  const live = memoryTool('a-live', 'MemoryWrite', {
+    status: 'errored',
+    failure: conflictFailure,
+    args: undefined,
+    argsPreview: { path: '/memories/topics/food.md' },
+    result: undefined,
+  });
+  assert.equal(toolRowStatus(live), 'completed');
+  assert.equal(toolRowFailure(live), undefined);
+  assert.equal(toolRowStatusLabel(live, 'en'), 'merging…');
+  assert.equal(toolRowTitle(live, 'en'), 'Saving food.md');
+
   // Delete never retries on its own, so its conflict is the failure it is.
   const deleteConflict = memoryTool('b', 'MemoryDelete', {
     status: 'errored',
+    failure: conflictFailure,
     result: { kind: 'text', text: 'MemoryDelete failed: version conflict on /topics/food.md' },
   });
   assert.equal(toolRowStatus(deleteConflict), 'errored');
-  assert.equal(toolRowTitle(deleteConflict, 'en'), 'Memory action failed');
-  // Hard errors name what went wrong, in the reader's terms.
+  // The store worked and said no — a refusal, not something broken.
+  assert.equal(toolRowFailure(deleteConflict)?.tone, 'warning');
+  // The row says what it set out to do, not what it did — and the reason is
+  // the one memory actually gave, not the nearest of six guessed phrases.
+  assert.equal(toolRowTitle(deleteConflict, 'en'), 'Delete food.md');
   const missing = memoryTool('c', 'MemoryStrReplace', {
     status: 'errored',
+    failure: { kind: 'refused', message: 'old_str not found in /topics/food.md' },
     result: { kind: 'text', text: 'MemoryStrReplace failed: old_str not found in /topics/food.md' },
   });
-  assert.equal(toolRowTitle(missing, 'en'), "Memory edit didn't apply");
-  assert.equal(toolRowTitle(missing, 'zh-CN'), '记忆修改未生效');
-  const off = memoryTool('d', 'MemoryList', {
+  assert.equal(toolRowTitle(missing, 'en'), 'Update food.md');
+  assert.equal(toolRowTitle(missing, 'zh-CN'), '更新 food.md');
+  // A reason matching none of the retired regexes used to be unreachable:
+  // "Memory action failed", and the row would not open.
+  const full = memoryTool('d', 'MemoryWrite', {
     status: 'errored',
+    failure: { kind: 'failed', message: 'ENOSPC: no space left on device' },
+    result: { kind: 'text', text: 'MemoryWrite failed: ENOSPC: no space left on device' },
+  });
+  assert.equal(canExpandTool(full), true);
+  assert.equal(toolRowFailure(full)?.message, 'ENOSPC: no space left on device');
+  const off = memoryTool('e', 'MemoryList', {
+    status: 'errored',
+    failure: {
+      kind: 'refused',
+      message: 'memory is turned off in Settings; nothing was read or saved.',
+    },
     result: {
       kind: 'text',
       text: 'MemoryList failed: memory is turned off in Settings; nothing was read or saved.',
     },
   });
-  assert.equal(toolRowTitle(off, 'en'), 'Memory unavailable');
+  assert.equal(toolRowTitle(off, 'en'), 'Search memory');
+  assert.equal(
+    toolRowFailure(off)?.message,
+    'memory is turned off in Settings; nothing was read or saved.',
+  );
 });
 
 test('memory verbs merge onto one object in the group summary', () => {
@@ -661,7 +855,7 @@ test('lineage badges appear only when the turn they point at is present', () => 
   assert.equal(orphan.lineageBadgesByTurn['turn-2'], undefined);
 });
 
-test('a failed turn names its reason, unless the sandbox already explained it', () => {
+test('a failed turn names its reason, unless every row already offered the fix', () => {
   const failed = createTurnPresentationDerivation().derive(
     [turn({ status: 'failed', errorClass: 'timeout' })],
     { activeId: 'session-1', pendingTurnActions: new Set(), uiLocale: 'en' },
@@ -676,7 +870,8 @@ test('a failed turn names its reason, unless the sandbox already explained it', 
         tools: [
           tool({
             status: 'errored',
-            result: { kind: 'text', text: 'nope', sandboxDenial: { likely: true } },
+            failure: { kind: 'denied', class: 'sandbox_denial', message: 'nope' },
+            result: { kind: 'text', text: 'nope' },
           }),
         ],
       }),
@@ -684,6 +879,26 @@ test('a failed turn names its reason, unless the sandbox already explained it', 
     { activeId: 'session-1', pendingTurnActions: new Set(), uiLocale: 'en' },
   );
   assert.equal(sandboxOnly.failedReasonLabels['turn-1'], undefined);
+
+  // A refusal has no control to offer, so the banner is the only thing that
+  // can explain the turn and it must not be suppressed.
+  const refusedOnly = createTurnPresentationDerivation().derive(
+    [
+      turn({
+        status: 'failed',
+        errorClass: 'tool_failed',
+        tools: [
+          tool({
+            status: 'errored',
+            failure: { kind: 'refused', class: 'LoopGate', message: 'stop repeating this' },
+            result: { kind: 'text', text: 'nope' },
+          }),
+        ],
+      }),
+    ],
+    { activeId: 'session-1', pendingTurnActions: new Set(), uiLocale: 'en' },
+  );
+  assert.ok(refusedOnly.failedReasonLabels['turn-1']);
 });
 
 test('an interrupted tail turn offers a safe resume', () => {

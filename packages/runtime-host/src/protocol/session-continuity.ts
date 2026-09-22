@@ -22,7 +22,8 @@ import {
   TOOL_INPUT_PREVIEW_MAX_CHARS,
   TOOL_OUTPUT_DELTA_MAX_CHARS,
 } from '@maka/core/events';
-import type { SandboxBoundaryFailureSignal, ToolResultPreviewContent } from '@maka/core/events';
+import { isToolFailure } from '@maka/core/events';
+import type { ToolFailure, ToolResultPreviewContent } from '@maka/core/events';
 import { decodeToolResultPreviewContent } from '@maka/core/tool-result-preview';
 import type { ToolActivityKind } from '@maka/core/events';
 import type { SessionStatus } from '@maka/core/session';
@@ -269,7 +270,15 @@ export type SessionToolEvent =
       type: 'tool_result';
       operationId?: string;
       status: 'completed' | 'errored';
-      sandboxFailureReason?: SandboxBoundaryFailureSignal['reason'];
+      /**
+       * Why the call failed, for a frame whose content is omitted.
+       *
+       * Replaces the single-purpose `sandboxFailureReason`, which carried this
+       * same idea for one kind of failure: a live row could say "blocked by
+       * the sandbox" and offer the fix, and could say nothing at all about any
+       * other failure until the turn ended and the transcript landed.
+       */
+      failure?: ToolFailure;
       durationMs?: number;
     })
   | (SessionToolEventIdentity & {
@@ -1090,7 +1099,7 @@ function decodeSessionToolEvent(value: unknown): SessionToolEvent {
       'toolUseId',
       'operationId',
       'status',
-      'sandboxFailureReason',
+      'failure',
       'durationMs',
     ];
     assertAllowedKeys(record, 'Session tool result event', allowed);
@@ -1105,8 +1114,11 @@ function decodeSessionToolEvent(value: unknown): SessionToolEvent {
     if (record.status !== 'completed' && record.status !== 'errored') {
       throw invalidProtocolFrame('Invalid Session tool result status');
     }
-    if (record.status === 'completed' && record.sandboxFailureReason !== undefined) {
-      throw invalidProtocolFrame('Completed Session tool result cannot carry a sandbox failure');
+    if (record.status === 'completed' && record.failure !== undefined) {
+      throw invalidProtocolFrame('Completed Session tool result cannot carry a failure');
+    }
+    if (record.failure !== undefined && !isToolFailure(record.failure)) {
+      throw invalidProtocolFrame('Invalid Session tool result failure');
     }
     return {
       type: record.type,
@@ -1115,9 +1127,7 @@ function decodeSessionToolEvent(value: unknown): SessionToolEvent {
         ? {}
         : { operationId: requireEntityId(record.operationId, 'operationId') }),
       status: record.status,
-      ...(record.sandboxFailureReason === undefined
-        ? {}
-        : { sandboxFailureReason: requireSandboxFailureReason(record.sandboxFailureReason) }),
+      ...(record.failure === undefined ? {} : { failure: record.failure as ToolFailure }),
       ...(record.durationMs === undefined
         ? {}
         : {
@@ -1152,11 +1162,6 @@ function decodeSessionToolEvent(value: unknown): SessionToolEvent {
     };
   }
   throw invalidProtocolFrame('Invalid Session tool event type');
-}
-
-function requireSandboxFailureReason(value: unknown): SandboxBoundaryFailureSignal['reason'] {
-  if (value === 'sandbox_boundary_required' || value === 'requires_bypass') return value;
-  throw invalidProtocolFrame('Invalid Session tool result sandbox failure reason');
 }
 
 function decodeSessionContinuityIdentity(value: unknown): SessionContinuityIdentity {

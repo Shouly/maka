@@ -642,7 +642,14 @@ describe('Runtime Host bootstrap protocol', () => {
         ...identity,
         type: 'tool_result',
         status: 'errored',
-        sandboxFailureReason: 'sandbox_boundary_required',
+        failure: { kind: 'denied', class: 'sandbox_boundary_required', message: 'blocked' },
+      },
+      { ...identity, type: 'tool_result', status: 'errored', failure: { kind: 'refused' } },
+      {
+        ...identity,
+        type: 'tool_result',
+        status: 'errored',
+        failure: { kind: 'failed', message: 'it broke' },
       },
       {
         ...identity,
@@ -691,17 +698,26 @@ describe('Runtime Host bootstrap protocol', () => {
         status: 'errored',
         error: 'raw provider error',
       },
+      // An unknown grade, an oversized reason, an unknown field inside the
+      // envelope, and a failure on a call that did not fail.
+      { ...identity, type: 'tool_result', status: 'errored', failure: { kind: 'exploded' } },
       {
         ...identity,
         type: 'tool_result',
         status: 'errored',
-        sandboxFailureReason: 'raw provider error',
+        failure: { kind: 'failed', message: 'x'.repeat(513) },
+      },
+      {
+        ...identity,
+        type: 'tool_result',
+        status: 'errored',
+        failure: { kind: 'failed', reason: 'raw provider error' },
       },
       {
         ...identity,
         type: 'tool_result',
         status: 'completed',
-        sandboxFailureReason: 'requires_bypass',
+        failure: { kind: 'denied', class: 'requires_bypass' },
       },
       {
         ...identity,

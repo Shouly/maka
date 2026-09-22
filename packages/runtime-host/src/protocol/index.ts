@@ -101,7 +101,10 @@ export const RUNTIME_HOST_REGISTRATION_SCHEMA_VERSION = 1 as const;
 export const RUNTIME_HOST_PROTOCOL_VERSION = 0 as const;
 // Increment when the same protocol version no longer guarantees safe Client-Host
 // interoperability. Mismatches are rejected before domain commands are admitted.
-export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 155 as const;
+// 156: a tool_result frame carries a `failure` envelope (kind/class/message)
+// and no longer carries `sandboxFailureReason`. An old client would read the
+// unknown key as a malformed frame and drop the connection.
+export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 156 as const;
 // 155: A tool call is on the wire while the model is still writing it.
 // `subscription.session_event` carries `tool_input_start` and
 // `tool_input_delta`, which a Client that does not know them decodes as an

@@ -54,6 +54,8 @@ import type {
 } from './shell-run.js';
 export { SHELL_RUN_SOURCE_TOOL_CALL_ID_MAX_BYTES } from './shell-run.js';
 import { type TokenUsageFields } from './usage-record-schema.js';
+import { redactSecrets } from './redaction.js';
+import { truncateUtf16Safe } from './text-sanitize.js';
 import { defineObjectShape, hasExactShape, isRecord } from './record-schema.js';
 import type { DurableToolResultProjection } from './durable-tool-result-projection.js';
 import type { TurnOrigin } from './turn-origin.js';
@@ -840,6 +842,177 @@ export interface ToolResultPreviewEvent extends BaseEvent, ToolActivityIdentity 
   content: ToolResultPreviewContent;
 }
 
+/**
+ * How much of a problem a failed call is, in the three grades the transcript
+ * draws differently.
+ *
+ * Coarse and closed on purpose. `ToolFailure.class` carries the fine grain —
+ * the same split this codebase already runs on elsewhere, where
+ * `ToolActivityKind` names a category and a per-tool table names the
+ * exceptions. A vocabulary that grew a member per situation would be a
+ * per-tool chain by another name, and the renderer cannot keep one current.
+ *
+ * - `refused` — the tool ran, understood the call, and said no. A domain rule
+ *   held. Nothing is broken, the reader has nothing to fix, and the model is
+ *   expected to do something else.
+ * - `denied` — a boundary outside the tool stopped it: the sandbox, the
+ *   permission mode, a capability the client does not have. The reader CAN
+ *   change the outcome, so this is the grade that earns an affordance.
+ * - `failed` — it broke.
+ *
+ * An unannotated throw is `failed`, so omitting the annotation changes
+ * nothing about how a call is drawn today.
+ */
+export type ToolFailureKind = 'refused' | 'denied' | 'failed';
+
+/** The reason a failure carries for the reader, bounded at the source. */
+export const TOOL_FAILURE_MESSAGE_MAX_CHARS = 512;
+
+/** The class name's bound. Generous for a machine token, and a hard ceiling. */
+export const TOOL_FAILURE_CLASS_MAX_CHARS = 128;
+
+/**
+ * Why a tool call did not produce what it was asked for.
+ *
+ * `isError` is the call-level contract the MODEL reads, and it is right as it
+ * stands — it is the tool_result convention. This is the contract the
+ * TRANSCRIPT reads, and the two answer different questions: the model needs to
+ * know the call did not succeed, the reader needs to know whether anything is
+ * broken. Collapsed into one bit, "the tool worked and said no" and "the tool
+ * crashed" are drawn identically.
+ *
+ * It rides the EVENT rather than `ToolResultContent` on purpose. Content is
+ * exactly what the Host omits from a live frame (`contentOmitted`), and the
+ * whole value of this envelope is that the reader sees the reason WHILE the
+ * turn is still running — which is also the only moment an affordance like
+ * "raise the permission mode and run it again" is worth offering. `isError`
+ * sits at this level for the same reason, and the retired
+ * `sandboxFailureReason` protocol field was this idea solved once for one
+ * kind of failure.
+ */
+export interface ToolFailure {
+  kind: ToolFailureKind;
+  /**
+   * The runtime's own class for this failure, when it computed one
+   * (`InvalidArguments`, `requires_bypass`, `LoopGate`, …). Closed at any
+   * moment and owned by the runtime, so a presentation table may key on it —
+   * unlike a tool name, which an MCP server can invent at runtime.
+   *
+   * Bounded like the message, and for a sharper reason: not every source is
+   * runtime-owned in practice. A workflow result's `error.reason` is an
+   * unbounded string the workflow chose, and an over-long one would fail the
+   * decoder's check — which is a dropped connection, not a long word.
+   */
+  class?: string;
+  /**
+   * The reason, redacted and capped at `TOOL_FAILURE_MESSAGE_MAX_CHARS`.
+   *
+   * The headline, not the transcript: the full output stays in `content`,
+   * which is where a reader who opens the row finds it. Capped here because
+   * this envelope ships on every failure, live, where `content` does not.
+   *
+   * Optional because for some failures there is no sentence to carry, only a
+   * shape: a child agent that did not finish, a swarm that failed. Those have
+   * a renderer of their own that says it better than any string the runtime
+   * could synthesize — and synthesizing one here would also be writing UI
+   * copy in a layer that does not know the reader's language. Absent means
+   * "the result body is the explanation", not "no reason".
+   */
+  message?: string;
+}
+
+export const TOOL_FAILURE_KINDS: readonly ToolFailureKind[] = ['refused', 'denied', 'failed'];
+
+/**
+ * Build a failure envelope, redacted and already at its bound.
+ *
+ * Both invariants live here rather than at each write site, and for the same
+ * reason: this envelope ships live and is persisted, so it has to be safe by
+ * construction and not by every caller remembering. A message over the bound
+ * would reach the protocol decoder as a malformed frame — a dropped
+ * connection, not a long sentence — and an unredacted one would put a secret
+ * into the transcript beside a result body that had already scrubbed it. That
+ * was not hypothetical: `formatSyntheticToolErrorText` redacts and the
+ * `ToolRefusal` branch beside it did not, so the same call's body read
+ * `API_TOKEN=[redacted]` while its summary carried the token.
+ */
+export function buildToolFailure(
+  kind: ToolFailureKind,
+  message: string | undefined,
+  failureClass?: string,
+): ToolFailure {
+  // Redact BEFORE truncating: a cut through a secret can leave a fragment the
+  // patterns no longer match, which is a half-secret shipped as if scrubbed.
+  const trimmed = message === undefined ? undefined : redactSecrets(message).trim();
+  return {
+    kind,
+    ...(failureClass
+      ? { class: truncateUtf16Safe(failureClass, TOOL_FAILURE_CLASS_MAX_CHARS) }
+      : {}),
+    ...(trimmed
+      ? {
+          message:
+            trimmed.length <= TOOL_FAILURE_MESSAGE_MAX_CHARS
+              ? trimmed
+              : // Never end on a dangling high surrogate: this string is
+                // JSON-encoded onto the wire and persisted, and half a pair
+                // decodes as U+FFFD on the far side.
+                `${truncateUtf16Safe(trimmed, TOOL_FAILURE_MESSAGE_MAX_CHARS - 1)}\u2026`,
+        }
+      : {}),
+  };
+}
+
+export function isToolFailure(value: unknown): value is ToolFailure {
+  if (!isRecord(value)) return false;
+  for (const key of Object.keys(value)) {
+    if (key !== 'kind' && key !== 'class' && key !== 'message') return false;
+  }
+  return (
+    (TOOL_FAILURE_KINDS as readonly unknown[]).includes(value.kind) &&
+    (value.message === undefined ||
+      (typeof value.message === 'string' &&
+        value.message.length > 0 &&
+        value.message.length <= TOOL_FAILURE_MESSAGE_MAX_CHARS)) &&
+    (value.class === undefined ||
+      (typeof value.class === 'string' &&
+        value.class.length > 0 &&
+        value.class.length <= TOOL_FAILURE_CLASS_MAX_CHARS))
+  );
+}
+
+/**
+ * A tool's reasoned no.
+ *
+ * Thrown where the truth is known — the tool, or the domain layer beneath it —
+ * because nothing further up can tell a rule from a crash. The runtime reads
+ * it into `failure.kind: 'refused'`; every other throw stays `failed`.
+ */
+export class ToolRefusal extends Error {
+  readonly failureKind = 'refused' as const;
+  /** The runtime class to record, when the domain has a name for this no. */
+  readonly failureClass: string | undefined;
+  /**
+   * One sentence for the transcript, when `message` is not one.
+   *
+   * A refusal often has to hand the MODEL more than a sentence so it can act —
+   * the memory tools return the file's current content with a version
+   * conflict, so the model can merge and retry in the same turn. None of that
+   * belongs in a row header, and truncating it to the envelope's bound would
+   * put 512 characters of the reader's own memory file there. Same split as
+   * `content` against `ToolFailure.message`: the full text for acting, one
+   * line for reading.
+   */
+  readonly summary: string | undefined;
+
+  constructor(message: string, options?: ErrorOptions & { class?: string; summary?: string }) {
+    super(message, options);
+    this.name = 'ToolRefusal';
+    this.failureClass = options?.class;
+    this.summary = options?.summary;
+  }
+}
+
 export interface ToolResultEvent extends BaseEvent, ToolActivityIdentity {
   type: 'tool_result';
   toolUseId: string;
@@ -854,6 +1027,12 @@ export interface ToolResultEvent extends BaseEvent, ToolActivityIdentity {
   /** The transport omitted durable result content; consumers must not treat the placeholder as authoritative. */
   contentOmitted?: true;
   isError: boolean;
+  /**
+   * Why the call failed, when it did. Absent on a success, and absent on a
+   * failure only where nothing annotated it — which reads as `failed`.
+   * Survives `contentOmitted`, which is the point of it.
+   */
+  failure?: ToolFailure;
   content: ToolResultContent;
   durationMs?: number;
 }

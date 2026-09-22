@@ -32,7 +32,12 @@ import {
 } from '@maka/core/sandbox-boundary';
 import { serializedByteLength } from '@maka/core/serialized-byte-length';
 import type { ArtifactRecord } from '@maka/core/artifacts';
-import { encodeToolStepProgress, ToolOutcomeUnknownError } from '@maka/core/events';
+import {
+  buildToolFailure,
+  encodeToolStepProgress,
+  ToolOutcomeUnknownError,
+  ToolRefusal,
+} from '@maka/core/events';
 import type {
   FormAnswerAckEvent,
   FormRequestEvent,
@@ -46,6 +51,8 @@ import type {
   ToolResultContent,
   ToolResultEvent,
   ToolStartEvent,
+  ToolFailure,
+  ToolFailureKind,
   ToolUncertainOutcomeSignal,
   UserQuestionRequestEvent,
 } from '@maka/core/events';
@@ -564,7 +571,9 @@ interface DurableToolAttempt {
     isError: boolean,
     modelProjection: DurableToolResultProjection,
     durationMs?: number,
+    failure?: ToolFailure,
   ): Promise<{ id: string; operationId: string; ts: number }>;
+  /** Verifies an owner-committed outcome; never adds to it (see the call site). */
   adoptCommittedOutcome(
     event: RuntimeEvent,
     result: ToolResultContent,
@@ -1119,6 +1128,13 @@ export class ToolRuntime {
     turnId: string,
     toolName: string,
     text: string,
+    /**
+     * Why this call failed, for the transcript. Separate from `text`, which is
+     * what the MODEL reads: that one runs to 4000 characters and holds the
+     * whole stderr tail, this one is the headline the reader sees on a live
+     * row whose content the Host has omitted.
+     */
+    failure: ToolFailure,
     queue: DurableSessionEventSink,
     sandboxDenial?: SandboxDenialSignal,
     sandboxFailure?: Extract<ToolResultContent, { kind: 'text' }>['sandboxFailure'],
@@ -1159,7 +1175,13 @@ export class ToolRuntime {
         },
         this.input.sessionId,
       ) ?? DURABLE_TOOL_RESULT_PROJECTION_FAILURE;
-    const durableOutcome = await durableAttempt?.commitOutcome(content, true, modelProjection);
+    const durableOutcome = await durableAttempt?.commitOutcome(
+      content,
+      true,
+      modelProjection,
+      undefined,
+      failure,
+    );
     queue.push({
       type: 'tool_result',
       id: durableOutcome?.id ?? this.input.newId(),
@@ -1168,6 +1190,7 @@ export class ToolRuntime {
       toolUseId,
       ...(durableOutcome ? { operationId: durableOutcome.operationId } : {}),
       isError: true,
+      failure,
       content,
       modelProjection,
       ...activityIdentity,
@@ -1367,6 +1390,16 @@ export class ToolRuntime {
      */
     const refuseBeforeDispatch = async (
       text: string,
+      /**
+       * How this particular guard failed. `refused` is the default because
+       * most of them are rules — but not all: the three that are a caught
+       * throw from a boundary that was supposed to work say `failed`, and the
+       * one the permission mode blocks says `denied`, because a reader can
+       * change that one and cannot change the others. Grading them here, at
+       * the site that knows, is what keeps the renderer out of the business
+       * of guessing from the message text.
+       */
+      failure: { class: string; kind?: ToolFailureKind },
       sandboxFailure?: Extract<ToolResultContent, { kind: 'text' }>['sandboxFailure'],
     ): Promise<void> => {
       publishCallEvent(buildCallEvent('preflight'));
@@ -1376,6 +1409,15 @@ export class ToolRuntime {
         turnId,
         tool.name,
         text,
+        // A sandbox signal outranks the site's own grade: wherever one is
+        // attached the call was stopped by a boundary the reader can move,
+        // and the signal names it more precisely than the guard could. The
+        // loop gate is the case that proves it — it is an ordinary refusal
+        // until it is carrying the boundary details of the call it is
+        // repeating, and then it is that call's denial.
+        sandboxFailure
+          ? buildToolFailure('denied', text, sandboxFailure.reason)
+          : buildToolFailure(failure.kind ?? 'refused', text, failure.class),
         queue,
         undefined,
         sandboxFailure,
@@ -1392,7 +1434,7 @@ export class ToolRuntime {
           sandboxBoundaryDecisionGeneration,
         );
       }
-      await refuseBeforeDispatch(admissionFailure);
+      await refuseBeforeDispatch(admissionFailure, { class: 'ExclusiveStepConflict' });
       trace?.emit('tool', 'tool_failed', 'Tool rejected by exclusive-step admission', {
         toolUseId,
         toolName: tool.name,
@@ -1435,7 +1477,7 @@ export class ToolRuntime {
               args: executionArgs,
               error: permissionArgsError,
             });
-      await refuseBeforeDispatch(msg);
+      await refuseBeforeDispatch(msg, { class: 'InvalidArguments' });
       this.input.recordToolInvocation?.({
         sessionId: this.input.sessionId,
         turnId,
@@ -1487,7 +1529,7 @@ export class ToolRuntime {
     // streak stays parked and every further identical repeat stays blocked.
     if (repeatedAmbiguousComputerTarget) {
       const reason = formatAmbiguousComputerLoopGateText();
-      await refuseBeforeDispatch(reason);
+      await refuseBeforeDispatch(reason, { class: 'AmbiguousComputerTarget' });
       trace?.emit('tool', 'tool_failed', 'Blocked repeated ambiguous Computer Use target', {
         toolUseId,
         toolName: tool.name,
@@ -1512,7 +1554,11 @@ export class ToolRuntime {
           sandboxBoundaryDecisionGeneration,
         );
       }
-      await refuseBeforeDispatch(reason, this.lastFailedToolCallBoundaryDetails);
+      await refuseBeforeDispatch(
+        reason,
+        { class: 'LoopGate' },
+        this.lastFailedToolCallBoundaryDetails,
+      );
       trace?.emit('tool', 'tool_failed', 'Loop-gate blocked a repeated identical failing call', {
         toolUseId,
         toolName: tool.name,
@@ -1527,7 +1573,7 @@ export class ToolRuntime {
     // only on the next provider step.
     if (deferredToolNotLoaded) {
       const reason = formatDeferredNotLoadedText(tool.name);
-      await refuseBeforeDispatch(reason);
+      await refuseBeforeDispatch(reason, { class: 'DeferredNotLoaded' });
       trace?.emit('tool', 'tool_failed', 'Deferred tool used before load', {
         toolUseId,
         toolName: tool.name,
@@ -1547,7 +1593,10 @@ export class ToolRuntime {
         clientCapabilityPermissionMode = await this.livePermissionMode(clientCapabilityBoundary);
       } catch (error) {
         const reason = formatSyntheticToolErrorText(error);
-        await refuseBeforeDispatch(reason);
+        await refuseBeforeDispatch(reason, {
+          class: 'ExecutionBoundaryUnavailable',
+          kind: 'failed',
+        });
         trace?.emit('tool', 'tool_failed', 'Client Capability boundary read failed', {
           toolUseId,
           toolName: tool.name,
@@ -1563,10 +1612,11 @@ export class ToolRuntime {
           ? CLIENT_CAPABILITY_BOUNDARY_MESSAGE
           : undefined;
       if (admissionFailure) {
-        await refuseBeforeDispatch(admissionFailure, {
-          reason: 'requires_bypass',
-          source: 'client_capability',
-        });
+        await refuseBeforeDispatch(
+          admissionFailure,
+          { class: 'ClientCapabilityBoundary' },
+          { reason: 'requires_bypass', source: 'client_capability' },
+        );
         trace?.emit('tool', 'tool_failed', 'Client Capability blocked by execution boundary', {
           toolUseId,
           toolName: tool.name,
@@ -1594,7 +1644,10 @@ export class ToolRuntime {
         });
       } catch (error) {
         const reason = formatSyntheticToolErrorText(error);
-        await refuseBeforeDispatch(reason);
+        await refuseBeforeDispatch(reason, {
+          class: 'ClientCapabilityPreparation',
+          kind: 'failed',
+        });
         trace?.emit('tool', 'tool_failed', 'Client Capability preparation failed', {
           toolUseId,
           toolName: tool.name,
@@ -1619,7 +1672,7 @@ export class ToolRuntime {
         !this.input.admitManagedMutation
       ) {
         const reason = 'Managed workspace mutation admission is unavailable before T1';
-        await refuseBeforeDispatch(reason);
+        await refuseBeforeDispatch(reason, { class: 'ManagedMutationUnavailable', kind: 'failed' });
         this.recordLoopGateOutcome(callSignature, true);
         return this.errorReturn(reason);
       }
@@ -1632,7 +1685,7 @@ export class ToolRuntime {
         });
       } catch (error) {
         const reason = `Managed workspace mutation admission failed: ${formatSyntheticToolErrorText(error)}`;
-        await refuseBeforeDispatch(reason);
+        await refuseBeforeDispatch(reason, { class: 'ManagedMutationAdmission', kind: 'failed' });
         this.recordLoopGateOutcome(callSignature, true);
         return this.errorReturn(reason);
       }
@@ -1648,7 +1701,7 @@ export class ToolRuntime {
         errorClass: 'RuntimeLimit',
         boundary: 'subagent_tool_admission',
       });
-      await refuseBeforeDispatch(SUBAGENT_TOOL_LIMIT_MESSAGE);
+      await refuseBeforeDispatch(SUBAGENT_TOOL_LIMIT_MESSAGE, { class: 'RuntimeLimit' });
       this.recordLoopGateOutcome(callSignature, true);
       return this.errorReturn(SUBAGENT_TOOL_LIMIT_MESSAGE);
     }
@@ -1964,6 +2017,8 @@ export class ToolRuntime {
         // collapses `aborted` into an error bit and therefore cannot drive live
         // tool status, telemetry, or subagent lifecycle projection.
         const toolResultStatus = deriveToolResultStatus(content, result);
+        const returnedFailure =
+          toolResultStatus === 'error' ? returnedResultFailure(content, result) : undefined;
         let durableOutcome: { id: string; operationId: string; ts: number } | undefined;
         if (settledExecution.kind === 'managed') {
           if (!durableAttempt) {
@@ -1971,6 +2026,14 @@ export class ToolRuntime {
               new Error('Managed mutation settlement has no durable T1 attempt'),
             );
           }
+          // No grade on this one, deliberately. Adoption exists to accept ONLY
+          // what the managed owner itself committed, byte for byte — rebuilding
+          // the event with a field the Runtime derived would be the Runtime
+          // asserting something about an event it did not author, which is the
+          // check's whole purpose. The live and stored `tool_result` below is
+          // graded either way; only the ledger copy of this one path is not,
+          // and it rebuilds as `failed`, which is what a managed mutation that
+          // returned an error is.
           durableOutcome = durableAttempt.adoptCommittedOutcome(
             settledExecution.durableOutcome,
             content,
@@ -1984,6 +2047,7 @@ export class ToolRuntime {
             outcome.isError,
             modelProjection,
             durationMs,
+            returnedFailure,
           );
         }
         if (hasSandboxDenial(content)) {
@@ -2015,6 +2079,11 @@ export class ToolRuntime {
           toolUseId,
           ...(durableOutcome ? { operationId: durableOutcome.operationId } : {}),
           isError: toolResultStatus !== 'success',
+          // A tool that RETURNED and reported bad news did its job; the bad
+          // news is the news. Nothing here decided to say no, so none of these
+          // is a refusal — and a sandbox denial that came back as content
+          // rather than as a throw is still something the reader can undo.
+          ...(returnedFailure ? { failure: returnedFailure } : {}),
           content,
           modelProjection,
           durationMs,
@@ -2140,11 +2209,17 @@ export class ToolRuntime {
           terminalResult,
         );
         const modelProjection = isPromiseLike(projected) ? await projected : projected;
+        const terminalGrade = buildToolFailure(
+          terminalFailure.sandboxDenied ? 'denied' : 'failed',
+          terminalFailure.message,
+          terminalFailure.sandboxDenied ? 'sandbox_denial' : errorClass,
+        );
         const durableOutcome = await durableAttempt?.commitOutcome(
           terminalFailure.content,
           true,
           modelProjection,
           durationMs,
+          terminalGrade,
         );
         queue.push({
           type: 'tool_result',
@@ -2154,6 +2229,11 @@ export class ToolRuntime {
           toolUseId,
           ...(durableOutcome ? { operationId: durableOutcome.operationId } : {}),
           isError: true,
+          // A denied command is one a reader can un-deny; a command that ran
+          // and exited non-zero is the tool working correctly and reporting
+          // bad news, which is a failure and not a refusal — the tool never
+          // decided anything.
+          failure: terminalGrade,
           content: terminalFailure.content,
           modelProjection,
           durationMs,
@@ -2196,13 +2276,29 @@ export class ToolRuntime {
             : uncertainOutcome
               ? `outcome_unknown: ${formatSyntheticToolErrorText(err)}`
               : formatSyntheticToolErrorText(err);
+      const sandboxDenial = sandboxDenialSignalFromError(err);
       await this.writeSyntheticToolResult(
         toolUseId,
         turnId,
         tool.name,
         msg,
+        // A tool that threw `ToolRefusal` decided something; anything else
+        // that reached this catch broke. The default is `failed`, so a tool
+        // that never learned about the type keeps being drawn exactly as it
+        // is today.
+        err instanceof ToolRefusal
+          ? buildToolFailure(
+              'refused',
+              err.summary ?? err.message,
+              err.failureClass ?? 'ToolRefusal',
+            )
+          : buildToolFailure(
+              sandboxDenial || attemptBoundaryDetails ? 'denied' : 'failed',
+              msg,
+              attemptBoundaryDetails?.reason ?? (sandboxDenial ? 'sandbox_denial' : errorClass),
+            ),
         queue,
-        sandboxDenialSignalFromError(err),
+        sandboxDenial,
         attemptBoundaryDetails,
         uncertainOutcome,
         activityIdentity,
@@ -2393,6 +2489,7 @@ export class ToolRuntime {
       modelProjection: DurableToolResultProjection,
       durationMs: number | undefined,
       ts: number,
+      failure: ToolFailure | undefined,
     ): RuntimeEvent => ({
       id: `${operationId}_response`,
       invocationId,
@@ -2411,6 +2508,7 @@ export class ToolRuntime {
         name: input.tool.name,
         result,
         ...(isError ? { isError: true } : {}),
+        ...(failure ? { failure } : {}),
         modelProjection,
       },
       refs: {
@@ -2429,7 +2527,7 @@ export class ToolRuntime {
     return {
       operationId,
       responseEventId: `${operationId}_response`,
-      commitOutcome: async (result, isError, modelProjection, durationMs) => {
+      commitOutcome: async (result, isError, modelProjection, durationMs, failure) => {
         if (committedOutcome) return committedOutcome;
         const responseEvent = buildResponseEvent(
           result,
@@ -2437,6 +2535,7 @@ export class ToolRuntime {
           modelProjection,
           durationMs,
           this.input.now(),
+          failure,
         );
         try {
           await sink.commitToolOutcome({
@@ -2471,7 +2570,14 @@ export class ToolRuntime {
       },
       adoptCommittedOutcome: (event, result, isError, modelProjection, durationMs) => {
         if (committedOutcome) return committedOutcome;
-        const expected = buildResponseEvent(result, isError, modelProjection, durationMs, event.ts);
+        const expected = buildResponseEvent(
+          result,
+          isError,
+          modelProjection,
+          durationMs,
+          event.ts,
+          undefined,
+        );
         if (!Number.isFinite(event.ts) || !isDeepStrictEqual(event, expected)) {
           throw new RuntimeCommitBoundaryError(
             'T2',
@@ -4071,6 +4177,70 @@ function isBoundaryAuthorityAttempt(toolName: string, args: unknown): boolean {
   );
 }
 
+/**
+ * The failure envelope for a call that returned rather than threw.
+ *
+ * Exhaustive over the same kinds `deriveToolResultStatus` grades, and it lives
+ * beside it for that reason: the two answer one question each about the same
+ * switch, and a kind added to one without the other is the drift this pairing
+ * exists to prevent.
+ *
+ * Several branches carry no message. That is not an omission — a child agent
+ * that did not finish has a card of its own that says so, and inventing an
+ * English sentence here would be writing UI copy in a layer that cannot know
+ * the reader's language. `message` is for reasons that arrive AS text.
+ */
+function returnedResultFailure(content: ToolResultContent, raw?: unknown): ToolFailure {
+  const returned = raw && typeof raw === 'object' ? (raw as { error?: unknown }).error : undefined;
+  if (typeof returned === 'string' && returned.length > 0) {
+    return buildToolFailure('failed', returned, 'ToolReturnedError');
+  }
+  if (content.kind === 'web_search_error') {
+    return buildToolFailure('failed', content.message, 'WebSearchError');
+  }
+  if (content.kind === 'rive_workflow') {
+    return buildToolFailure('failed', content.error?.message, content.error?.reason);
+  }
+  if (content.kind === 'terminal' || content.kind === 'shell_run') {
+    // Both facts are read BEFORE the denial test: `hasSandboxDenial` is a type
+    // predicate over three kinds, so its false branch narrows these two away
+    // and the exit code stops existing.
+    const headline = terminalFailureHeadline(content);
+    const exited = `exit_${content.exitCode ?? 'unknown'}`;
+    return hasSandboxDenial(content)
+      ? buildToolFailure('denied', headline, 'sandbox_denial')
+      : buildToolFailure('failed', headline, exited);
+  }
+  // These two carry their own state, so the class names what was OBSERVED
+  // rather than asserting one. Today the grading above only sends a `failed`
+  // child here, so the two forms agree — but they agreed by accident once
+  // before: while a launched-and-still-`running` child was graded an error,
+  // `${kind}_failed` recorded a failure for a child that went on to finish.
+  // Reading the status keeps the class true whatever the grading decides.
+  if (content.kind === 'subagent' || content.kind === 'agent_swarm') {
+    return buildToolFailure('failed', undefined, `${content.kind}_${content.status}`);
+  }
+  return buildToolFailure('failed', undefined, `${content.kind}_failed`);
+}
+
+/**
+ * The last thing a failed command said, for the envelope that ships live.
+ *
+ * The tail rather than the head: a shell error is what comes last, and this
+ * has one bounded line of room. The whole output stays in the result body.
+ */
+function terminalFailureHeadline(
+  content: Extract<ToolResultContent, { kind: 'terminal' } | { kind: 'shell_run' }>,
+): string | undefined {
+  if (content.failureMessage) return content.failureMessage;
+  const output = 'output' in content ? content.output : undefined;
+  if (!output || output.mode !== 'pipes') return undefined;
+  const tail = (output.stderr || output.stdout).trimEnd();
+  if (!tail) return undefined;
+  const lines = tail.split('\n');
+  return lines.slice(Math.max(0, lines.length - 3)).join('\n');
+}
+
 function deriveToolResultStatus(
   content: ToolResultContent,
   raw?: unknown,
@@ -4082,10 +4252,19 @@ function deriveToolResultStatus(
     (raw as { error: string }).error.length > 0
   )
     return 'error';
+  // Name the failure, never infer it from "not finished". An async Agent and a
+  // SendMessage to one both return `running` as the TERMINAL state of the call
+  // — the tool's own words are "Async agent launched successfully… you will be
+  // notified when it completes" — and reading that as an error told the model
+  // its delegation had failed, counted a successful launch towards the
+  // loop-gate's failure streak (so a few of them in a row would be blocked),
+  // and filed every one as an error in telemetry. `waiting_for_user` is the
+  // same shape: the child is asking something, not broken. The `agent_swarm`
+  // branch below was always written this way round; this one was the outlier.
   if (content.kind === 'subagent') {
-    if (content.status === 'completed') return 'success';
+    if (content.status === 'failed') return 'error';
     if (content.status === 'cancelled') return 'aborted';
-    return 'error';
+    return 'success';
   }
   if (content.kind === 'agent_swarm') {
     if (content.status === 'failed') return 'error';

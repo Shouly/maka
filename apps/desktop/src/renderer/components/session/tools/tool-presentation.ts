@@ -33,7 +33,7 @@
 // the runtime can emit resolves to a renderer id in a plain Node test, with no
 // DOM.
 
-import type { ToolActivityKind } from '@maka/core/events';
+import type { ToolActivityKind, ToolFailureKind } from '@maka/core/events';
 import type { UiLocale } from '@maka/core/ui-locale';
 import { TOOL_NAMES } from '@maka/core/tool-names';
 import {
@@ -41,12 +41,13 @@ import {
   formatToolInvocationLine,
   getToolActivityCopy,
   isComputerTool,
-  isSandboxDeniedTool,
+  toolFailureOf,
   describeToolSearchCall,
   isConnectorTool,
   resolveToolDisplayName,
   toolActivityPresentationStatus,
   type ToolActivityItem,
+  type ToolFailurePresentation,
 } from '@maka/ui';
 import type { AnthropiconName } from '../../icons/Anthropicon.js';
 import { getTranscriptCopy } from '../../../locales/transcript-copy.js';
@@ -67,7 +68,6 @@ import {
   memoryBasename,
   memoryBreadcrumb,
   memoryCanExpand,
-  memoryErrorKind,
   memoryPathsOf,
   memoryResultText,
   memoryToolVerb,
@@ -165,6 +165,14 @@ export function resolveToolRendererId(item: ToolActivityItem): ToolRendererId {
   // shape per verb, and results that are plain text to the model — the text
   // renderer would show the reader the version handshake.
   if (isMemoryTool(item)) return 'memory';
+  // A failed row whose whole result IS the error text has already shown it:
+  // the failure block carries that text, labelled and graded. Rendering the
+  // text body underneath says the same sentence twice — once designed, once as
+  // anonymous monospace — because both come from the one string the runtime
+  // wrote. When the body has more than the envelope could keep (a memory
+  // refusal returns the file's current content so the model can merge), they
+  // are different things and both belong.
+  if (failureMessageIsTheWholeResult(item)) return 'none';
   const result = durableResultOf(item);
   if (!result) return item.status === 'running' ? 'pending' : 'none';
   // Read, Grep and Glob hand the model plain text and keep a STRUCTURED
@@ -178,6 +186,31 @@ export function resolveToolRendererId(item: ToolActivityItem): ToolRendererId {
     if (readGlobResult(result.value)) return 'glob';
   }
   return rendererForResultKind(result.kind);
+}
+
+/**
+ * Whether the result body would only repeat the failure's reason.
+ *
+ * A string comparison, and deliberately not an inference: it asks "are these
+ * the same words", never "what kind of failure is this". The second question
+ * is the envelope's job, and guessing it from prose is what `memoryErrorKind`
+ * did before it was deleted.
+ */
+function failureMessageIsTheWholeResult(item: ToolActivityItem): boolean {
+  const message = toolRowFailure(item)?.message;
+  if (!message) return false;
+  const result = durableResultOf(item);
+  if (result?.kind !== 'text' && result?.kind !== 'summary') return false;
+  const body = (result.kind === 'text' ? result.text : result.summarized).trim();
+  // One direction only. "The body adds nothing" means the REASON already holds
+  // all of it — never the other way round, which is the case where the body
+  // holds more and both belong. The envelope is capped at 512 characters and
+  // the body runs to 4000, so reading it the other way suppressed a 832-
+  // character error the moment its first 511 characters matched, taking the
+  // actual cause at its tail with it.
+  const reason = message.replace(/\u2026$/u, '').trim();
+  if (!reason) return false;
+  return reason.startsWith(body);
 }
 
 const ICON_BY_ACTIVITY: Record<ToolActivityKind, AnthropiconName> = {
@@ -198,6 +231,24 @@ const ICON_BY_ACTIVITY: Record<ToolActivityKind, AnthropiconName> = {
 
 export function toolActivityIcon(kind: ToolActivityKind | undefined): AnthropiconName {
   return kind ? ICON_BY_ACTIVITY[kind] : 'tool';
+}
+
+/**
+ * The glyph that marks a failed row, in place of the word "Error".
+ *
+ * Three marks for three grades, from the families the icon set already draws
+ * the distinction in: the prohibition sign for a rule that said no, a lock for
+ * a boundary that can be opened, and the circled exclamation the rest of the
+ * terminal states use for something that broke.
+ */
+const MARK_BY_FAILURE: Readonly<Record<ToolFailureKind, AnthropiconName>> = {
+  refused: 'prohibit',
+  denied: 'lock',
+  failed: 'warningCircle',
+};
+
+export function toolFailureMark(failure: ToolFailurePresentation): AnthropiconName {
+  return MARK_BY_FAILURE[failure.kind];
 }
 
 /**
@@ -243,15 +294,33 @@ export function toolActivityKindOf(item: ToolActivityItem): ToolActivityKind {
   return item.activityKind ?? 'tool';
 }
 
-export type ToolRowStatus = 'running' | 'completed' | 'errored' | 'interrupted' | 'sandbox_blocked';
+export type ToolRowStatus = 'running' | 'completed' | 'errored' | 'interrupted';
 
+/**
+ * The row's lifecycle, and only that.
+ *
+ * `sandbox_blocked` used to live here as a fifth state, which made the sandbox
+ * the one failure the row could describe and every other failure a bare
+ * `errored`. What KIND of failure it was is `toolFailureOf`'s answer now, and
+ * it answers for all of them.
+ */
 export function toolRowStatus(item: ToolActivityItem): ToolRowStatus {
-  if (isSandboxDeniedTool(item)) return 'sandbox_blocked';
   // A memory version conflict is the model's routine merge-and-retry, not an
-  // error the reader should see in red; the row keeps its verb and says
+  // error the reader should see at all; the row keeps its verb and says
   // "merging" beside it (`toolRowStatusLabel`).
   if (isMemorySoftConflict(item)) return 'completed';
   return toolActivityPresentationStatus(item);
+}
+
+/**
+ * The failure a row is showing, if any — the single question the header, the
+ * body, the group summary and the turn banner all ask.
+ *
+ * A soft memory conflict is filtered out here too, so it cannot be graded as a
+ * failure by one caller and as a success by another.
+ */
+export function toolRowFailure(item: ToolActivityItem): ToolFailurePresentation | undefined {
+  return isMemorySoftConflict(item) ? undefined : toolFailureOf(item);
 }
 
 /**
@@ -270,21 +339,53 @@ export function toolRowStatus(item: ToolActivityItem): ToolRowStatus {
  */
 function taskRowTitle(item: ToolActivityItem, locale: UiLocale): string | undefined {
   const copy = getTranscriptCopy(locale).tools.task;
-  const running = toolRowStatus(item) === 'running';
+  const tense = toolRowTense(item);
   switch (item.toolName) {
     case TOOL_NAMES.taskCreate:
-      return running ? copy.creating : copy.created;
+      return tense === 'running'
+        ? copy.creating
+        : tense === 'done'
+          ? copy.created
+          : copy.attempted.create;
     case TOOL_NAMES.taskUpdate:
-      return running ? copy.updating : copy.updated;
+      return tense === 'running'
+        ? copy.updating
+        : tense === 'done'
+          ? copy.updated
+          : copy.attempted.update;
     case TOOL_NAMES.taskGet: {
       const taskId = taskIdArg(item);
-      return running ? copy.fetching(taskId) : copy.fetched(taskId);
+      return tense === 'running'
+        ? copy.fetching(taskId)
+        : tense === 'done'
+          ? copy.fetched(taskId)
+          : copy.attempted.fetch(taskId);
     }
     case TOOL_NAMES.taskList:
-      return running ? copy.listing : copy.listed;
+      return tense === 'running'
+        ? copy.listing
+        : tense === 'done'
+          ? copy.listed
+          : copy.attempted.list;
     default:
       return undefined;
   }
+}
+
+/**
+ * Which of the three forms a row's title takes.
+ *
+ * `done` is the only one that may assert an outcome, and a row earns it by
+ * settling WITHOUT failing and without being cut short. This is the rule that
+ * used to be `running ? present : past`, under which a refused TaskUpdate read
+ * "Task updated" — in red, beside the refusal that stopped it.
+ */
+type ToolRowTense = 'running' | 'done' | 'attempted';
+
+function toolRowTense(item: ToolActivityItem): ToolRowTense {
+  const status = toolRowStatus(item);
+  if (status === 'running') return 'running';
+  return status === 'completed' ? 'done' : 'attempted';
 }
 
 /** TaskGet names its target in the header; the id is the only arg worth reading. */
@@ -306,23 +407,43 @@ function memoryRowTitle(item: ToolActivityItem, locale: UiLocale): string | unde
   const verb = memoryToolVerb(item.toolName);
   if (!verb) return undefined;
   const copy = getTranscriptCopy(locale).tools.memory;
-  const status = toolRowStatus(item);
-  if (status === 'errored') return copy.errors[memoryErrorKind(memoryResultText(item))];
   const paths = memoryPathsOf(item);
   const name =
     paths.length > 1 ? copy.files(paths.length) : paths[0] ? memoryBasename(paths[0]) : undefined;
-  const settled = status !== 'running' && !isMemorySoftConflict(item);
+  // A soft conflict is not settled: nothing was written yet, and "Saved x"
+  // over an unlanded write would be a lie in the other direction.
+  const tense = isMemorySoftConflict(item) ? 'running' : toolRowTense(item);
   switch (verb) {
     case 'search':
-      return settled ? copy.searched : copy.searching;
+      return tense === 'running'
+        ? copy.searching
+        : tense === 'done'
+          ? copy.searched
+          : copy.attempted.search;
     case 'read':
-      return settled ? copy.read(name) : copy.reading(name);
+      return tense === 'running'
+        ? copy.reading(name)
+        : tense === 'done'
+          ? copy.read(name)
+          : copy.attempted.read(name);
     case 'save':
-      return settled ? copy.saved(name) : copy.saving(name);
+      return tense === 'running'
+        ? copy.saving(name)
+        : tense === 'done'
+          ? copy.saved(name)
+          : copy.attempted.save(name);
     case 'update':
-      return settled ? copy.updated(name) : copy.updating(name);
+      return tense === 'running'
+        ? copy.updating(name)
+        : tense === 'done'
+          ? copy.updated(name)
+          : copy.attempted.update(name);
     case 'delete':
-      return settled ? copy.deleted(name) : copy.deleting(name);
+      return tense === 'running'
+        ? copy.deleting(name)
+        : tense === 'done'
+          ? copy.deleted(name)
+          : copy.attempted.delete(name);
   }
 }
 
@@ -361,11 +482,17 @@ export function toolRowTitle(item: ToolActivityItem, locale: UiLocale): string {
 export function toolRowStatusLabel(item: ToolActivityItem, locale: UiLocale): string | undefined {
   const copy = getToolActivityCopy(locale);
   if (isMemorySoftConflict(item)) return getTranscriptCopy(locale).tools.memory.merging;
-  const status = toolRowStatus(item);
-  if (status === 'sandbox_blocked') return getTranscriptCopy(locale).sandbox.blockedLabel;
-  if (status === 'interrupted') return copy.status.interrupted;
-  if (status === 'errored') return copy.errorLabel;
-  return undefined;
+  // A background command inherited from another session says so, and which of
+  // the two it is: still running over there, or out of sight. Ahead of the
+  // interruption word because `lost` IS reported as an interruption — "已中断"
+  // would say the command stopped, when what stopped is our view of it.
+  const inherited = getTranscriptCopy(locale).inheritedRun;
+  if (item.shellRunSource === 'unavailable') return inherited.lost;
+  if (item.shellRunSource === 'owned') return inherited.elsewhere;
+  // A failure is marked with a glyph, not with the word "error" — see
+  // `toolRowFailure`. An interruption keeps its word: there is no glyph for
+  // "you stopped this", and it is not a failure to grade.
+  return toolRowStatus(item) === 'interrupted' ? copy.status.interrupted : undefined;
 }
 
 /**
@@ -376,7 +503,7 @@ export function toolRowStatusLabel(item: ToolActivityItem, locale: UiLocale): st
  */
 export function toolRowMeta(item: ToolActivityItem, locale: UiLocale): string | undefined {
   const verb = memoryToolVerb(item.toolName);
-  if (!verb || toolRowStatus(item) === 'errored') return undefined;
+  if (!verb || toolRowFailure(item)) return undefined;
   const copy = getTranscriptCopy(locale).tools.memory;
   const paths = memoryPathsOf(item);
   const parts: string[] = [];
@@ -396,6 +523,12 @@ export function toolRowMeta(item: ToolActivityItem, locale: UiLocale): string | 
  * header line.
  */
 export function canExpandTool(item: ToolActivityItem): boolean {
+  // A failed row always opens. The reason is the one thing it has to show, and
+  // before this it was the one thing it could not: live, the Host omits the
+  // result body, so the renderer resolved to `none` and the row that had just
+  // stopped being watchable also stopped being openable — with the streamed
+  // output still sitting on the item, unreachable until the turn ended.
+  if (toolRowFailure(item)) return true;
   const renderer = resolveToolRendererId(item);
   if (renderer === 'none') return false;
   if (renderer === 'file_write') return false;
@@ -539,10 +672,23 @@ export function summarizeToolGroup(items: readonly ToolActivityItem[], locale: U
   return copy.join(phrases);
 }
 
-/** What the group header says while its last row is still running. */
+/**
+ * What the transcript's status line says while a call is in flight.
+ *
+ * A call the MODEL labelled says what it is doing; the generic phrase is the
+ * fallback for the calls that cannot. Bash and Agent are the two tools that
+ * carry a `description` written for a reader, and "Running the renderer
+ * typecheck" is worth more under the transcript than "Running a command" —
+ * which was the same sentence for every command in the session.
+ *
+ * The same rule Computer Use already got: `deriveTurnActivity` lets a running
+ * computer action name its target ahead of the generic phrase. This extends it
+ * to the other two families that can name themselves rather than leaving it a
+ * one-family exception.
+ */
 export function activeToolLabel(items: readonly ToolActivityItem[], locale: UiLocale): string {
   const copy = getTranscriptCopy(locale).tools;
   const running = [...items].reverse().find((item) => item.status === 'running');
   if (!running) return copy.working;
-  return copy.active[toolSummaryKeyOf(running)];
+  return toolRowDescription(running) ?? copy.active[toolSummaryKeyOf(running)];
 }

@@ -2241,9 +2241,9 @@ function projectSessionEvent(
         ...identity,
         ...(event.operationId === undefined ? {} : { operationId: event.operationId }),
         status: event.isError ? 'errored' : 'completed',
-        ...(event.isError && event.content.kind === 'text' && event.content.sandboxFailure
-          ? { sandboxFailureReason: event.content.sandboxFailure.reason }
-          : {}),
+        // The whole envelope, not a reason code dug out of the content: the
+        // content is exactly what this frame omits.
+        ...(event.isError && event.failure ? { failure: event.failure } : {}),
         ...(event.durationMs === undefined ? {} : { durationMs: event.durationMs }),
       };
     case 'tool_result_preview':

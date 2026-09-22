@@ -21,18 +21,20 @@ import type { SessionEvent } from '@maka/core/events';
 
 type SandboxBoundaryFailureReason = 'sandbox_boundary_required' | 'requires_bypass';
 
+/**
+ * Read from the failure envelope, not from the result body.
+ *
+ * The body is what a live frame omits, so the old content-based read answered
+ * only for a locally executed run and returned nothing for the same denial
+ * arriving over the Host wire.
+ */
 export function sessionEventSandboxBoundaryFailureReason(
   event: SessionEvent,
 ): SandboxBoundaryFailureReason | undefined {
-  if (
-    event.type !== 'tool_result' ||
-    !event.isError ||
-    event.content.kind !== 'text' ||
-    !event.content.sandboxFailure
-  ) {
+  if (event.type !== 'tool_result' || !event.isError || event.failure?.kind !== 'denied') {
     return undefined;
   }
-  return normalizeSandboxBoundaryFailureReason(event.content.sandboxFailure.reason);
+  return normalizeSandboxBoundaryFailureReason(event.failure.class);
 }
 
 function normalizeSandboxBoundaryFailureReason(

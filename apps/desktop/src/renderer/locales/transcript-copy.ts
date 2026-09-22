@@ -28,7 +28,6 @@
 // the same fact, so this catalog deliberately stops where those begin.
 
 import type { ToolSummaryKey } from '../components/session/tools/tool-presentation.js';
-import type { MemoryErrorKind } from '../lib/memory-tool-results.js';
 import type { DeliveryFileKind } from '../lib/ported/delivery-file-label.js';
 import type { MakaPlatform } from '../lib/platform.js';
 import type { UiCatalog, UiLocale } from '@maka/core/ui-locale';
@@ -166,6 +165,21 @@ export interface TranscriptCopy {
       readonly fetched: (taskId: string | undefined) => string;
       readonly listing: string;
       readonly listed: string;
+      /**
+       * What the row says when the call did NOT do what it set out to do.
+       *
+       * A third form, not a nicety: with only a running and a settled form, a
+       * refused TaskUpdate had to pick between "updating" (it is not) and
+       * "updated" (it did not) — and it picked the second, so the row asserted
+       * the change it had just been refused. The attempt is the one thing that
+       * is true either way.
+       */
+      readonly attempted: {
+        readonly create: string;
+        readonly update: string;
+        readonly fetch: (taskId: string | undefined) => string;
+        readonly list: string;
+      };
     };
     /**
      * A memory row: the verb and the file, then what went wrong when
@@ -189,7 +203,14 @@ export interface TranscriptCopy {
       readonly merging: string;
       readonly removed: string;
       readonly added: string;
-      readonly errors: Record<MemoryErrorKind, string>;
+      /** The attempt, for a call that failed — see `task.attempted`. */
+      readonly attempted: {
+        readonly search: string;
+        readonly read: (name: string | undefined) => string;
+        readonly save: (name: string | undefined) => string;
+        readonly update: (name: string | undefined) => string;
+        readonly delete: (name: string | undefined) => string;
+      };
     };
   };
   readonly result: {
@@ -237,8 +258,21 @@ export interface TranscriptCopy {
     readonly omitted: (count: number) => string;
     readonly omittedUnknown: string;
   };
+  /**
+   * A background command inherited from another session, said in the row's
+   * trailing slot — the same place an interruption is said.
+   *
+   * Two states and they are not the same news. `elsewhere` is running and
+   * healthy, just not here: the owner session publishes its updates and this
+   * row settles when it ends. `lost` is the one that needed saying — the owner
+   * cannot be resolved, so the only state left is the transcript's snapshot,
+   * which says "running" and always will.
+   */
+  readonly inheritedRun: {
+    readonly elsewhere: string;
+    readonly lost: string;
+  };
   readonly sandbox: {
-    readonly blockedLabel: string;
     readonly action: string;
     readonly pending: string;
     readonly failedTitle: string;
@@ -615,6 +649,12 @@ const TRANSCRIPT_COPY = {
         fetched: (taskId) => (taskId ? `已读取任务 #${taskId}` : '已读取任务详情'),
         listing: '正在列出任务',
         listed: '已列出任务',
+        attempted: {
+          create: '创建任务',
+          update: '更新任务',
+          fetch: (taskId) => (taskId ? `读取任务 #${taskId}` : '读取任务详情'),
+          list: '列出任务',
+        },
       },
       memory: {
         searching: '正在搜索记忆',
@@ -631,13 +671,12 @@ const TRANSCRIPT_COPY = {
         merging: '合并中…',
         removed: '删除',
         added: '新增',
-        errors: {
-          unavailable: '记忆不可用',
-          editNotApplied: '记忆修改未生效',
-          notFound: '记忆文件不存在',
-          tooLarge: '记忆文件过大',
-          rejected: '记忆请求被拒绝',
-          failed: '记忆操作失败',
+        attempted: {
+          search: '搜索记忆',
+          read: (name) => (name ? `读取 ${name}` : '读取记忆'),
+          save: (name) => (name ? `保存 ${name}` : '保存记忆'),
+          update: (name) => (name ? `更新 ${name}` : '更新记忆'),
+          delete: (name) => (name ? `删除 ${name}` : '删除记忆'),
         },
       },
     },
@@ -692,8 +731,8 @@ const TRANSCRIPT_COPY = {
       omitted: (count) => `还有 ${count} 条未显示`,
       omittedUnknown: '结果已截断，还有内容未显示',
     },
+    inheritedRun: { elsewhere: '在其他会话中运行', lost: '已失去跟踪' },
     sandbox: {
-      blockedLabel: '被沙箱拦截',
       action: '切换到完全访问并重试',
       pending: '正在切换…',
       failedTitle: '切换权限模式失败',
@@ -830,6 +869,12 @@ const TRANSCRIPT_COPY = {
         fetched: (taskId) => (taskId ? `已讀取任務 #${taskId}` : '已讀取任務詳情'),
         listing: '正在列出任務',
         listed: '已列出任務',
+        attempted: {
+          create: '建立任務',
+          update: '更新任務',
+          fetch: (taskId) => (taskId ? `讀取任務 #${taskId}` : '讀取任務詳情'),
+          list: '列出任務',
+        },
       },
       memory: {
         searching: '正在搜尋記憶',
@@ -846,13 +891,12 @@ const TRANSCRIPT_COPY = {
         merging: '合併中…',
         removed: '刪除',
         added: '新增',
-        errors: {
-          unavailable: '記憶不可用',
-          editNotApplied: '記憶修改未生效',
-          notFound: '記憶檔案不存在',
-          tooLarge: '記憶檔案過大',
-          rejected: '記憶請求被拒絕',
-          failed: '記憶操作失敗',
+        attempted: {
+          search: '搜尋記憶',
+          read: (name) => (name ? `讀取 ${name}` : '讀取記憶'),
+          save: (name) => (name ? `儲存 ${name}` : '儲存記憶'),
+          update: (name) => (name ? `更新 ${name}` : '更新記憶'),
+          delete: (name) => (name ? `刪除 ${name}` : '刪除記憶'),
         },
       },
     },
@@ -907,8 +951,8 @@ const TRANSCRIPT_COPY = {
       omitted: (count) => `還有 ${count} 條未顯示`,
       omittedUnknown: '結果已截斷，還有內容未顯示',
     },
+    inheritedRun: { elsewhere: '在其他工作階段中執行', lost: '已失去追蹤' },
     sandbox: {
-      blockedLabel: '被沙箱攔截',
       action: '切換到完全存取並重試',
       pending: '正在切換…',
       failedTitle: '切換權限模式失敗',
@@ -1046,6 +1090,12 @@ const TRANSCRIPT_COPY = {
         fetched: (taskId) => (taskId ? `Fetched task #${taskId}` : 'Fetched task details'),
         listing: 'Listing tasks',
         listed: 'Listed tasks',
+        attempted: {
+          create: 'Create a task',
+          update: 'Update a task',
+          fetch: (taskId) => (taskId ? `Fetch task #${taskId}` : 'Fetch task details'),
+          list: 'List tasks',
+        },
       },
       memory: {
         searching: 'Searching memory',
@@ -1062,13 +1112,12 @@ const TRANSCRIPT_COPY = {
         merging: 'merging…',
         removed: 'Removed',
         added: 'Added',
-        errors: {
-          unavailable: 'Memory unavailable',
-          editNotApplied: "Memory edit didn't apply",
-          notFound: 'Memory file not found',
-          tooLarge: 'Memory file too large',
-          rejected: 'Memory request rejected',
-          failed: 'Memory action failed',
+        attempted: {
+          search: 'Search memory',
+          read: (name) => (name ? `Read ${name}` : 'Read memory'),
+          save: (name) => (name ? `Save ${name}` : 'Save memory'),
+          update: (name) => (name ? `Update ${name}` : 'Update memory'),
+          delete: (name) => (name ? `Delete ${name}` : 'Delete memory'),
         },
       },
     },
@@ -1124,8 +1173,8 @@ const TRANSCRIPT_COPY = {
       omitted: (count) => (count === 1 ? '1 more omitted' : `${count} more omitted`),
       omittedUnknown: 'Capped — more results omitted',
     },
+    inheritedRun: { elsewhere: 'Running elsewhere', lost: 'Lost track of it' },
     sandbox: {
-      blockedLabel: 'Blocked by sandbox',
       action: 'Switch to full access and retry',
       pending: 'Switching…',
       failedTitle: 'Could not change the permission mode',

@@ -205,52 +205,51 @@ export function parseMemoryReadResult(text: string | undefined): MemoryReadDocum
   });
 }
 
+/** The two refusals the model answers by merging and writing again. */
+const MEMORY_SOFT_CONFLICT_CLASSES: ReadonlySet<string> = new Set(['version_conflict', 'exists']);
+
 /**
  * A version conflict, or `new` on a path that exists, is not a failure in the
  * user's sense: the result hands the model the current content and it merges
- * and retries in the same turn. Such a row is not drawn red, or a self-healing
+ * and retries in the same turn. Such a row is not marked, or a self-healing
  * handshake would look like an accident.
+ *
+ * Read from the failure envelope, not from the result text. The text is
+ * exactly what a live frame omits, so the regex this used to run could not
+ * answer until the turn ended: the same write was drawn as a red failure while
+ * it ran and as "merging…" once the transcript landed. The class rides the
+ * event, so both phases now agree — and the renderer is out of the business of
+ * guessing a failure's kind from its prose, which is the rule that removed
+ * `memoryErrorKind`.
  *
  * MemoryDelete is the exception: it is the one tool the rules keep from
  * retrying on its own (read again, then decide), so its conflict is final and
  * the row must not sit on "Deleting…" forever.
  */
 export function isMemorySoftConflict(item: ToolActivityItem): boolean {
-  if (item.status !== 'errored' || item.toolName === TOOL_NAMES.memoryDelete) return false;
-  const text = memoryResultText(item) ?? '';
-  return /version conflict|already exists/u.test(text);
+  // The family check is not redundant: a class is a short token and these two
+  // are generic words. Without it this predicate would silence a failure on
+  // any tool that ever reports `version_conflict`, which is not what its name
+  // promises — the merge-and-retry handshake is memory's.
+  if (!isMemoryTool(item) || item.toolName === TOOL_NAMES.memoryDelete) return false;
+  const failureClass = item.failure?.class;
+  return failureClass !== undefined && MEMORY_SOFT_CONFLICT_CLASSES.has(failureClass);
 }
-
-export type MemoryErrorKind =
-  | 'unavailable'
-  | 'editNotApplied'
-  | 'notFound'
-  | 'tooLarge'
-  | 'rejected'
-  | 'failed';
 
 /**
- * Which failure a hard error is. "Memory unavailable" and "the edit did not
- * apply" are different situations for the reader — one says the feature is
- * off, the other that the memory is fine and this one change missed — and a
- * single "failed" would send them to Settings for the wrong one.
+ * Whether opening a memory row shows anything: the content, not the handshake.
+ *
+ * A failed row is no longer decided here — `canExpandTool` opens every failure
+ * before it asks. The six regexes that used to guess which failure it was, and
+ * the six translated phrases they chose between, are gone with it: the reason
+ * arrives as text on the failure envelope now, so the reader gets what memory
+ * actually said instead of the nearest of six guesses (and "no space left on
+ * device", matching none of them, used to read "Memory action failed" with the
+ * real message unreachable).
  */
-export function memoryErrorKind(text: string | undefined): MemoryErrorKind {
-  const message = text ?? '';
-  if (/memory is (?:turned off|off in incognito|unavailable while)/u.test(message)) {
-    return 'unavailable';
-  }
-  if (/old_str (?:not found|matches)/u.test(message)) return 'editNotApplied';
-  if (/does not exist/u.test(message)) return 'notFound';
-  if (/the limit is \d+ bytes/u.test(message)) return 'tooLarge';
-  if (/failed: path(?:_prefix)? /u.test(message)) return 'rejected';
-  return 'failed';
-}
-
-/** Whether opening a memory row shows anything: the content, not the handshake. */
 export function memoryCanExpand(item: ToolActivityItem): boolean {
   const verb = memoryToolVerb(item.toolName);
-  if (!verb || item.status === 'errored') return false;
+  if (!verb) return false;
   const args = memoryArgsOf(item);
   switch (verb) {
     case 'search':

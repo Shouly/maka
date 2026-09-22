@@ -21,6 +21,7 @@ import { createTestToolRuntime } from './execution-boundary-test-helpers.js';
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { z } from 'zod';
+import { ToolRefusal } from '@maka/core/events';
 import type { SessionEvent, ToolResultContent } from '@maka/core/events';
 import type { SessionHeader, StoredMessage } from '@maka/core/session';
 import type { ToolInvocationRecord } from '@maka/core/usage-stats/types';
@@ -593,5 +594,72 @@ describe('loop-gate for repeated identical FAILING tool calls', () => {
       true,
       'ShellRun observations do not surface as tool errors',
     );
+  });
+});
+
+// The failure envelope: `isError` is the bit the MODEL reads, and this is the
+// grade the transcript reads. Graded at the site that knows, because nothing
+// downstream can tell a rule that said no from something that broke — and the
+// renderer must never go back to guessing it from the message text.
+describe('a failed call is graded where the truth is known', () => {
+  const failureOf = (h: Harness) => {
+    const last = [...h.pushed].reverse().find((event) => event.type === 'tool_result');
+    return last?.type === 'tool_result' ? last.failure : undefined;
+  };
+
+  test('a guard that enforced a rule refuses; a guard that broke fails', async () => {
+    const h = makeHarness();
+    const t = makeFailingTool('Edit', h.impl, 'edit failed');
+    const args = { path: 'a.ts' };
+    for (let i = 0; i < LOOP_GATE_IDENTICAL_THRESHOLD; i++) await call(h, t, args);
+    // The gate is a rule: nothing is broken and the reader has nothing to fix.
+    assert.deepEqual(failureOf(h), {
+      kind: 'refused',
+      class: 'LoopGate',
+      message: formatLoopGateText('Edit'),
+    });
+  });
+
+  test('a tool that threw is failed, and carries what it said', async () => {
+    const h = makeHarness();
+    await call(h, makeFailingTool('Edit', h.impl, 'edit failed'), { path: 'a.ts' });
+    const failure = failureOf(h);
+    assert.equal(failure?.kind, 'failed');
+    assert.match(failure?.message ?? '', /edit failed/);
+  });
+
+  test('a tool that refused with ToolRefusal is not painted as a crash', async () => {
+    const h = makeHarness();
+    const refusing: MakaTool = {
+      name: 'TaskUpdate',
+      description: 'task',
+      parameters: z.object({}).passthrough(),
+      impl: () => {
+        throw new ToolRefusal('Task #3 cannot block itself', { class: 'SessionTaskRule' });
+      },
+    };
+    await call(h, refusing, { taskId: '3' });
+    assert.deepEqual(failureOf(h), {
+      kind: 'refused',
+      class: 'SessionTaskRule',
+      message: 'Task #3 cannot block itself',
+    });
+  });
+
+  test('a command that RETURNED a non-zero exit failed — the tool worked', async () => {
+    const h = makeHarness();
+    await call(h, makeTerminalTool('Bash', h.impl, 2), { command: 'false' });
+    const failure = failureOf(h);
+    assert.equal(failure?.kind, 'failed');
+    assert.equal(failure?.class, 'exit_2');
+    // The tail of what the command said, so a live row whose body the Host
+    // omitted still tells the reader why.
+    assert.equal(failure?.message, 'boom');
+  });
+
+  test('a successful call carries no envelope at all', async () => {
+    const h = makeHarness();
+    await call(h, makeTool('Bash', h.impl), { command: 'ls' });
+    assert.equal(failureOf(h), undefined);
   });
 });

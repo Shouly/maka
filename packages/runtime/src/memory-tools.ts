@@ -36,6 +36,7 @@ import {
   formatMemoryTimestamp,
   memoryFilePreview,
 } from '@maka/core/memory-filesystem';
+import { ToolRefusal } from '@maka/core/events';
 import { TOOL_NAMES } from '@maka/core/tool-names';
 import { z } from 'zod';
 import type { MakaTool } from './tool-runtime.js';
@@ -446,33 +447,63 @@ function renderMutation(toolName: string, path: string, result: MemoryToolMutati
     }
     case 'deleted':
       return `Deleted ${path}.`;
+    // Every branch below is the store working correctly and saying no, with
+    // the reason and the way forward. Thrown as plain Errors they reached the
+    // transcript as `failed` — the grade for something broken, in danger red —
+    // and the renderer had to sniff which one it was with a regex over this
+    // very text. `result.kind` is the vocabulary; it travels as the class.
+    //
+    // `summary` exists because four of these hand the MODEL the file's current
+    // content so it can merge and retry in the same turn. That is right for
+    // the model and wrong for a row header, which would show the reader 512
+    // characters of their own memory file.
     case 'exists':
-      throw new Error(
+      throw new ToolRefusal(
         `${toolName} failed: ${path} already exists — if_version must be its version token, not ${MEMORY_NEW_VERSION}. ${currentContentBlock(result.current)}`,
+        {
+          class: result.kind,
+          summary: `${path} already exists — read it first, then write with its version token.`,
+        },
       );
     case 'not_found':
-      throw new Error(
+      throw new ToolRefusal(
         toolName === TOOL_NAMES.memoryStrReplace || toolName === TOOL_NAMES.memoryDelete
           ? `${toolName} failed: ${path} does not exist.`
           : `${toolName} failed: ${path} does not exist — pass if_version ${MEMORY_NEW_VERSION} to create it.`,
+        { class: result.kind, summary: `${path} does not exist.` },
       );
     case 'version_conflict':
-      throw new Error(
+      throw new ToolRefusal(
         `${toolName} failed: version conflict on ${path} — it changed since you read it. Merge your change into the current content and retry with the current version. ${currentContentBlock(result.current)}`,
+        {
+          class: result.kind,
+          summary: `${path} changed since it was read; the change is being merged and retried.`,
+        },
       );
     case 'old_str_not_found':
-      throw new Error(
+      throw new ToolRefusal(
         `${toolName} failed: old_str not found in ${path} — it must match the file content exactly, including whitespace and newlines. ${currentContentBlock(result.current)}`,
+        {
+          class: result.kind,
+          summary: `The text to replace was not found in ${path}.`,
+        },
       );
     case 'old_str_ambiguous':
-      throw new Error(
+      throw new ToolRefusal(
         `${toolName} failed: old_str matches ${result.matches} places in ${path} — widen it with surrounding text until it matches exactly once. ${currentContentBlock(result.current)}`,
+        {
+          class: result.kind,
+          summary: `The text to replace appears ${result.matches} times in ${path}.`,
+        },
       );
     case 'oversize':
-      throw new Error(
+      throw new ToolRefusal(
         `${toolName} failed: the file would be ${result.byteLength} bytes; the limit is ${result.limit} bytes. Condense it — merge overlapping points, drop stale detail, or split the topic — and retry.`,
+        { class: result.kind },
       );
     case 'empty':
-      throw new Error(`${toolName} failed: content is empty; nothing was saved.`);
+      throw new ToolRefusal(`${toolName} failed: content is empty; nothing was saved.`, {
+        class: result.kind,
+      });
   }
 }

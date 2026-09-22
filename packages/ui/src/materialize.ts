@@ -34,6 +34,7 @@ import type {
   QuoteRef,
   ShellRunUpdate,
   ToolActivityKind,
+  ToolFailure,
   ToolResultContent,
   ToolStepProgress,
 } from '@maka/core/events';
@@ -122,6 +123,14 @@ export interface ToolActivityItem {
    */
   input?: LiveToolInput;
   result?: ToolResultContent;
+  /**
+   * Why the call failed, when it did.
+   *
+   * Present on a live row as well as a settled one: it rides the event, not
+   * the result body, so a row can say why it failed while the turn is still
+   * running — which is the only moment an affordance is worth offering.
+   */
+  failure?: ToolFailure;
   durationMs?: number;
   /** Live-only progress for a bounded multi-step tool invocation. */
   progress?: ToolStepProgress;
@@ -279,6 +288,7 @@ export function materializeTools(
           : unfinishedToolActivityStatus(turnStatusById.get(call.turnId)),
         args: projectToolActivityArgs(call.toolName, call.args),
         result: result?.content,
+        ...(result?.failure ? { failure: result.failure } : {}),
         durationMs: result?.durationMs,
       };
     });
@@ -793,12 +803,53 @@ export function applyShellRunOverlayEntry(
 
 /** Presentation is derived from invocation and resource facts, never persisted as another state. */
 export function toolActivityPresentationStatus(item: ToolActivityItem): ToolActivityStatus {
+  // A child agent's OUTCOME decides the row; its being under way does not.
+  //
+  // Asked before the `errored` short-circuit because a detached Agent commits
+  // its terminal result the moment it spawns, with the child still `running`,
+  // and that stored `isError` outlives the call: the row was drawn as a
+  // failure directly above its own card reading "running", for a child that
+  // went on to finish.
+  //
+  // This is NOT the background shell run next door, though it looks like it.
+  // A `shell_run` result is kept current by `applyShellRunOverlayEntry` and
+  // settles on its own, so mapping its `running` to a running row is honest.
+  // A subagent result has no such overlay — it is frozen at launch and the
+  // child's end arrives as a notification, never as an update to this result —
+  // so a running row here would shimmer for the rest of the session. The call
+  // is over: it launched what it was asked to launch. Where the child got to
+  // is the card's business, and the card links to it.
+  if (item.result?.kind === "subagent") {
+    return SUBAGENT_PRESENTATION_STATUS[item.result.status];
+  }
   if (item.status === "errored") return "errored";
   if (item.toolName === TOOL_NAMES.bash && item.result?.kind === "shell_run") {
+    // An inherited run whose owner can no longer be resolved is not a run this
+    // client is watching: the overlay falls back to the transcript's snapshot,
+    // which says `running` and will never say anything else. Left as a running
+    // row it shimmers for the rest of the session over a process nobody here
+    // can see. `interrupted` is the honest word available — the observation
+    // stopped, not necessarily the command — and `toolRowStatusLabel` says
+    // which of the two it was.
+    if (item.shellRunSource === "unavailable" && isActiveShellRunStatus(item.result.status)) {
+      return "interrupted";
+    }
     return SHELL_RUN_PRESENTATION_STATUS[item.result.status];
   }
   return item.status;
 }
+
+const SUBAGENT_PRESENTATION_STATUS = {
+  completed: "completed",
+  failed: "errored",
+  cancelled: "interrupted",
+  // The launch succeeded and the call ended there — see above.
+  running: "completed",
+  waiting_for_user: "completed",
+} as const satisfies Record<
+  Extract<ToolResultContent, { kind: "subagent" }>["status"],
+  ToolActivityStatus
+>;
 
 const SHELL_RUN_PRESENTATION_STATUS = {
   starting: "running",

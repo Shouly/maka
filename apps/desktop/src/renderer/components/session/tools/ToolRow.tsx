@@ -33,7 +33,6 @@ import { memo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   getToolActivityCopy,
-  isRequiresBypassToolResult,
   parseMcpToolName,
   useUiLocale,
   type ToolActivityItem,
@@ -57,13 +56,53 @@ import {
 } from './tool-result.js';
 import {
   canExpandTool,
+  toolFailureMark,
   toolRowIcon,
   toolActivityKindOf,
+  toolRowFailure,
   toolRowMeta,
   toolRowStatus,
   toolRowStatusLabel,
   toolRowTitle,
 } from './tool-presentation.js';
+import { ToolFailureBlock } from './ToolFailureBlock.js';
+
+/**
+ * The mark on a failed row.
+ *
+ * A glyph rather than the word "Error", in the row's trailing slot rather than
+ * on its title. That slot is where the word it replaced already lived, beside
+ * the other things a row says about its outcome; put next to the title it sat
+ * between the words and the caret that opens the row, wedged into the one gap
+ * that belongs to the affordance. The title itself is never recoloured — it is
+ * the line that has to stay readable down a column of twenty rows, and the
+ * weight of a failure belongs in the block that carries its reason.
+ */
+function FailureMark(props: {
+  failure: NonNullable<ReturnType<typeof toolRowFailure>>;
+  copy: ReturnType<typeof getToolActivityCopy>;
+}) {
+  // The label goes on the wrapper, not on the glyph: `Anthropicon` takes no
+  // `aria-label` — icons there are decorative and the containing control owns
+  // the name — so passing one was dropped on the floor, and the mark that is
+  // now the row's ONLY sign of failure said nothing at all to a screen reader.
+  return (
+    <span
+      role="img"
+      aria-label={props.copy.failure.mark[props.failure.kind]}
+      className={cn(
+        'flex shrink-0 items-center',
+        props.failure.tone === 'danger' ? 'text-danger' : 'text-warning',
+      )}
+    >
+      {/* 16, not the caret's 12: this is a status glyph read at a glance down a
+          column, not a hover affordance. It is the size the rest of the session
+          view gives an inline warning, and it sits flush in the trailing
+          group's 16px line box. */}
+      <Anthropicon name={toolFailureMark(props.failure)} size={16} />
+    </span>
+  );
+}
 
 function McpServerMark(props: { serverId: string; locale: Parameters<typeof getMcpCatalog>[0] }) {
   const entry = getMcpCatalog(props.locale).find((row) => row.id === props.serverId);
@@ -106,8 +145,7 @@ export const ToolRow = memo(function ToolRow(props: ToolRowProps) {
   // a dot rather than a tool glyph and never opens.
   const isNote = isNoteItem(item);
   const mcp = parseMcpToolName(item.toolName);
-  const requiresBypass = isRequiresBypassToolResult(item.result);
-  const showSandbox = status === 'sandbox_blocked' || requiresBypass;
+  const failure = toolRowFailure(item);
 
   const header = (
     <div className={stepRowClass}>
@@ -151,7 +189,6 @@ export const ToolRow = memo(function ToolRow(props: ToolRowProps) {
                   className={cn(
                     'min-w-0 truncate text-sm leading-5 text-text-muted transition-colors duration-200',
                     'group-hover/row:text-text-secondary group-focus-visible/row:text-text-secondary',
-                    status === 'errored' && 'text-danger',
                   )}
                 >
                   {title}
@@ -167,25 +204,11 @@ export const ToolRow = memo(function ToolRow(props: ToolRowProps) {
                 )}
               />
             </span>
-            {(meta || statusLabel) && (
-              <span className="flex shrink-0 items-center gap-2">
-                {meta && (
-                  <span className="max-w-48 truncate text-xs leading-4 text-text-muted">
-                    {meta}
-                  </span>
-                )}
-                {statusLabel && (
-                  <span
-                    className={cn(
-                      'shrink-0 text-xs leading-4',
-                      status === 'errored' || status === 'sandbox_blocked'
-                        ? 'text-danger'
-                        : 'text-text-muted',
-                    )}
-                  >
-                    {statusLabel}
-                  </span>
-                )}
+            {(meta || statusLabel || failure) && (
+              <span className="flex shrink-0 items-center gap-2 text-xs leading-4 text-text-muted">
+                {meta && <span className="max-w-48 truncate">{meta}</span>}
+                {statusLabel && <span className="shrink-0">{statusLabel}</span>}
+                {failure && <FailureMark failure={failure} copy={toolCopy} />}
               </span>
             )}
           </button>
@@ -222,10 +245,11 @@ export const ToolRow = memo(function ToolRow(props: ToolRowProps) {
                 </span>
               )}
             </span>
-            {(meta || statusLabel) && (
+            {(meta || statusLabel || failure) && (
               <span className="flex shrink-0 items-center gap-2 text-xs leading-4 text-text-muted">
                 {meta && <span className="max-w-48 truncate">{meta}</span>}
                 {statusLabel && <span className="shrink-0">{statusLabel}</span>}
+                {failure && <FailureMark failure={failure} copy={toolCopy} />}
               </span>
             )}
           </div>
@@ -244,27 +268,14 @@ export const ToolRow = memo(function ToolRow(props: ToolRowProps) {
           transition={{ duration: 0.2, ease: 'easeInOut' }}
           style={{ overflow: 'hidden' }}
         >
-          {showSandbox && (
-            <div className="mx-2.5 mt-1 flex flex-col gap-2 rounded-lg border-[0.5px] border-danger-line bg-danger-subtle p-3">
-              <p className="text-xs font-medium leading-5 text-danger">
-                {requiresBypass ? toolCopy.requiresBypass.title : toolCopy.sandboxBlocked.title}
-              </p>
-              <p className="text-xs leading-5 text-text-secondary">
-                {requiresBypass
-                  ? toolCopy.requiresBypass.description
-                  : toolCopy.sandboxBlocked.description}
-              </p>
-              {props.onSwitchToFullAccessAndRetry && (
-                <button
-                  type="button"
-                  onClick={props.onSwitchToFullAccessAndRetry}
-                  disabled={props.switching}
-                  className="ui-control-squish ui-control-squish-ghost inline-flex h-7 w-fit cursor-pointer items-center rounded-md px-2 text-xs leading-5 text-danger outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-50"
-                >
-                  {props.switching ? copy.sandbox.pending : copy.sandbox.action}
-                </button>
-              )}
-            </div>
+          {failure && (
+            <ToolFailureBlock
+              failure={failure}
+              {...(props.onSwitchToFullAccessAndRetry
+                ? { onSwitchToFullAccessAndRetry: props.onSwitchToFullAccessAndRetry }
+                : {})}
+              {...(props.switching !== undefined ? { switching: props.switching } : {})}
+            />
           )}
           {renderToolContent(item, props.context)}
         </motion.div>

@@ -2425,7 +2425,7 @@ test('tool_result clears retained tool_result_preview so a later open does not s
   coordinator.close();
 });
 
-test('publishes only the minimal sandbox failure reason from a tool result', async () => {
+test('publishes the failure grade and none of the result body', async () => {
   const coordinator = new SessionContinuityCoordinator(
     HOST_EPOCH,
     async () => canonical(),
@@ -2443,11 +2443,8 @@ test('publishes only the minimal sandbox failure reason from a tool result', asy
     ts: 2,
     toolUseId: 'tool-1',
     isError: true,
-    content: {
-      kind: 'text',
-      text: 'sensitive tool output',
-      sandboxFailure: { reason: 'sandbox_boundary_required' },
-    },
+    failure: { kind: 'denied', class: 'sandbox_boundary_required', message: 'the sandbox said no' },
+    content: { kind: 'text', text: 'sensitive tool output' },
   });
   await waitFor(() => sink.frames.length === 1);
 
@@ -2461,7 +2458,7 @@ test('publishes only the minimal sandbox failure reason from a tool result', asy
     ts: 2,
     toolUseId: 'tool-1',
     status: 'errored',
-    sandboxFailureReason: 'sandbox_boundary_required',
+    failure: { kind: 'denied', class: 'sandbox_boundary_required', message: 'the sandbox said no' },
   });
 
   connection.abort(opened.subscriptionId);

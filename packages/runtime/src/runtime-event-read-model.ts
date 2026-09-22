@@ -1020,6 +1020,7 @@ function projectFunctionResponse(
     ts: event.ts,
     toolUseId,
     isError: event.content.isError === true,
+    ...(event.content.failure ? { failure: event.content.failure } : {}),
     content: resultContent,
     ...(event.content.providerExecuted !== undefined
       ? { providerExecuted: event.content.providerExecuted }

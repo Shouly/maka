@@ -418,3 +418,54 @@ function toolResultContent(message: StoredMessage) {
   if (message.type !== 'tool_result') throw new Error('Expected tool result');
   return message.content;
 }
+
+// The failure envelope is a field on the MESSAGE, so it has to clear the
+// message's own shape check as well as the wire's. Each seam it crosses —
+// `TOOL_RESULT_MESSAGE_SHAPE` here, `FUNCTION_RESPONSE_CONTENT_SHAPE` for the
+// ledger, the protocol decoder for the wire — rejects an unknown key outright,
+// so a field added to one and missed at another does not degrade: it drops the
+// message or the connection.
+test('a tool result carries its failure envelope through the message shape', () => {
+  const decoded = decodePersistedMessage({
+    ...storedToolResult({ kind: 'text', text: 'nope' }),
+    isError: true,
+    failure: { kind: 'refused', class: 'SessionTaskRule', message: 'cannot block itself' },
+  });
+  assert.equal(decoded.type, 'tool_result');
+  assert.deepEqual(decoded.type === 'tool_result' ? decoded.failure : undefined, {
+    kind: 'refused',
+    class: 'SessionTaskRule',
+    message: 'cannot block itself',
+  });
+
+  // A success never carries one, and neither does a failure nothing annotated.
+  assert.equal(
+    (
+      decodePersistedMessage(storedToolResult({ kind: 'text', text: 'ok' })) as {
+        failure?: unknown;
+      }
+    ).failure,
+    undefined,
+  );
+
+  // A malformed envelope is not quietly dropped — the whole message is refused,
+  // the same as any other shape violation.
+  for (const failure of [
+    { kind: 'exploded' },
+    { kind: 'failed', reason: 'unknown key' },
+    { kind: 'failed', message: '' },
+    { kind: 'failed', message: 'x'.repeat(513) },
+    { kind: 'failed', class: 'c'.repeat(129) },
+    'failed',
+  ]) {
+    assert.throws(
+      () =>
+        decodePersistedMessage({
+          ...storedToolResult({ kind: 'text', text: 'nope' }),
+          isError: true,
+          failure,
+        }),
+      `accepted ${JSON.stringify(failure)}`,
+    );
+  }
+});

@@ -28,6 +28,8 @@ import {
   toolActivityPresentationStatus,
   type ToolActivityItem,
 } from '../materialize.js';
+import { isInFlightToolStatus } from '@maka/core/tool-result-status';
+import { toolFailureOf } from '../tool-failure.js';
 import { createTranscriptProjection } from '../transcript-projection.js';
 import type { LiveTurnProjection } from '../live-turn-projection.js';
 
@@ -251,6 +253,54 @@ describe('ShellRun UI projection', () => {
     assert.equal(overlaid.shellRunSource, undefined);
     assert.equal(toolActivityPresentationStatus(overlaid), 'running');
   });
+});
+
+// A detached Agent commits its terminal result the moment it spawns, with the
+// child still `running`, and nothing ever updates that result — the child's end
+// arrives as a notification. Two ways to get this wrong, and this row has been
+// both: graded from the stored `isError` it was a red failure above its own
+// card reading "running", and graded as a live run it shimmered for the rest of
+// the session. The launch is what the call did, and the launch is over.
+test('a launched child agent settles the row it was launched from', () => {
+  const agent = (status: string): ToolActivityItem => ({
+    toolUseId: 'agent-1',
+    toolName: 'Agent',
+    activityKind: 'delegate',
+    // What `deriveToolResultStatus` grades any non-completed subagent as.
+    status: 'errored',
+    args: {},
+    result: {
+      kind: 'subagent',
+      agentId: 'local-read',
+      agentName: 'Local Read',
+      childSessionId: 'child-1',
+      turnId: 'turn-1',
+      status,
+      permissionMode: 'explore',
+    } as never,
+  });
+
+  // Under way is not a running ROW: nothing will ever update this result, so a
+  // running row never stops shimmering.
+  assert.equal(toolActivityPresentationStatus(agent('running')), 'completed');
+  assert.equal(toolActivityPresentationStatus(agent('waiting_for_user')), 'completed');
+  assert.equal(toolActivityPresentationStatus(agent('completed')), 'completed');
+  // A child that genuinely failed still says so — that is what the table is for.
+  assert.equal(toolActivityPresentationStatus(agent('failed')), 'errored');
+  assert.equal(toolActivityPresentationStatus(agent('cancelled')), 'interrupted');
+
+  // No row is left mid-flight, which is what the shimmer keys on.
+  for (const status of ['running', 'waiting_for_user', 'completed', 'failed', 'cancelled']) {
+    assert.equal(
+      isInFlightToolStatus(toolActivityPresentationStatus(agent(status))),
+      false,
+      `${status} left the row running`,
+    );
+  }
+
+  // The failure grade follows, so only the real failure carries a mark.
+  assert.equal(toolFailureOf(agent('running')), undefined);
+  assert.equal(toolFailureOf(agent('failed'))?.kind, 'failed');
 });
 
 function toolCall(

@@ -44,9 +44,11 @@ import {
 import {
   hasMeaningfulMessageContent,
   isMessageContent,
+  isToolFailure,
   normalizeMessageContent,
   type MessageContent,
   type PermissionClosureReason,
+  type ToolFailure,
 } from './events.js';
 import {
   INTERACTION_ID_MAX_BYTES,
@@ -223,6 +225,15 @@ export interface RuntimeEventFunctionResponseContent {
   name: string;
   result: unknown;
   isError?: boolean;
+  /**
+   * The failure grade, carried so it survives the ledger.
+   *
+   * `runtime-event-read-model` rebuilds the transcript's `tool_result`
+   * messages from these events, so a grade that lived only on the
+   * SessionEvent would be correct until the first rebuild and then silently
+   * become `failed` for everything.
+   */
+  failure?: ToolFailure;
   providerExecuted?: boolean;
   /** Raw provider result retained for provider-native replay; never rendered directly. */
   providerOutput?: unknown;
@@ -833,7 +844,7 @@ const FUNCTION_CALL_CONTENT_SHAPE = defineObjectShape<RuntimeEventFunctionCallCo
 );
 const FUNCTION_RESPONSE_CONTENT_SHAPE = defineObjectShape<RuntimeEventFunctionResponseContent>()(
   ['kind', 'id', 'name', 'result'],
-  ['isError', 'providerExecuted', 'providerOutput', 'modelProjection'],
+  ['isError', 'failure', 'providerExecuted', 'providerOutput', 'modelProjection'],
 );
 const ERROR_CONTENT_SHAPE = defineObjectShape<RuntimeEventErrorContent>()(
   ['kind', 'message'],
@@ -1182,6 +1193,7 @@ function isRuntimeEventContent(value: unknown): value is RuntimeEventContent {
         typeof value.name === 'string' &&
         Object.hasOwn(value, 'result') &&
         (value.isError === undefined || typeof value.isError === 'boolean') &&
+        (value.failure === undefined || isToolFailure(value.failure)) &&
         (value.providerExecuted === undefined || typeof value.providerExecuted === 'boolean') &&
         (value.modelProjection === undefined ||
           decodesDurableToolResultProjection(value.modelProjection))

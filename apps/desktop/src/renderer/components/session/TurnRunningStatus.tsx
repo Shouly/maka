@@ -87,7 +87,7 @@ export function TurnRunningStatus(props: {
 
   return (
     <div
-      className="ml-1 mt-6 flex items-center gap-3"
+      className="ml-1 mt-6 flex min-w-0 items-center gap-3"
       role="status"
       aria-live="polite"
       aria-label={label}
@@ -100,11 +100,14 @@ export function TurnRunningStatus(props: {
         <WorkingMark size={24} activity={deriveWorkingMarkActivity(props.turn)} />
       </span>
       {/* Name the activity once; the clock must not announce each second. */}
+      {/* The label can now be the model's own description of the call, which is
+          bounded but not short; it yields width so the clock after it cannot be
+          pushed off the line or wrapped onto a second one. */}
       <span
         aria-hidden="true"
-        className="inline-flex items-center text-sm leading-5 text-text-muted"
+        className="inline-flex min-w-0 items-center text-sm leading-5 text-text-muted"
       >
-        <span>{label}</span>
+        <span className="truncate">{label}</span>
         <TurnElapsedTime startedAt={props.startedAt} turnId={props.turnId} />
       </span>
     </div>
@@ -144,7 +147,7 @@ function TurnElapsedTime(props: { startedAt?: number; turnId?: string }) {
     return () => window.clearInterval(tick);
   }, [startedAt]);
   return (
-    <span ref={rootRef} className="tabular-nums" data-maka-contract="turn-elapsed">
+    <span ref={rootRef} className="shrink-0 tabular-nums" data-maka-contract="turn-elapsed">
       {elapsedMs !== undefined && elapsedMs >= ELAPSED_SHOW_AFTER_MS && (
         <>
           <span className="mx-1 select-none">·</span>

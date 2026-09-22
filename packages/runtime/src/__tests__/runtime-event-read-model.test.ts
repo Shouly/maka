@@ -322,6 +322,51 @@ describe('projectRuntimeEventsToStoredMessages', () => {
     );
   });
 
+  // The transcript is rebuilt from the ledger, so a grade that lived only on
+  // the SessionEvent would be correct until the first rebuild and then become
+  // `failed` for everything — silently, because the default is exactly that.
+  test('rebuilds a failure envelope from the ledger, not just the live event', () => {
+    const out = projectRuntimeEventsToStoredMessages(
+      [
+        ev({
+          id: 'evt-refused-call',
+          ts: ts + 1,
+          role: 'model',
+          author: 'agent',
+          content: { kind: 'function_call', id: 'tool-r', name: 'TaskUpdate', args: {} },
+          refs: { toolCallId: 'tool-r', storedMessageId: 'call-r' },
+        }),
+        ev({
+          id: 'evt-refused-result',
+          ts: ts + 2,
+          role: 'tool',
+          author: 'tool',
+          content: {
+            kind: 'function_response',
+            id: 'tool-r',
+            name: 'TaskUpdate',
+            result: { kind: 'text', text: 'Error: Task #3 cannot block itself' },
+            isError: true,
+            failure: {
+              kind: 'refused',
+              class: 'SessionTaskRule',
+              message: 'Task #3 cannot block itself',
+            },
+          },
+          refs: { toolCallId: 'tool-r', storedMessageId: 'result-r' },
+        }),
+      ],
+      { invocations: [invocation] },
+    );
+    const result = out.messages.find((message) => message.type === 'tool_result');
+    assert.equal(result?.type, 'tool_result');
+    assert.deepEqual(result?.type === 'tool_result' ? result.failure : undefined, {
+      kind: 'refused',
+      class: 'SessionTaskRule',
+      message: 'Task #3 cannot block itself',
+    });
+  });
+
   test('projects user displayText from RuntimeEvent text content', () => {
     const typed = '/skill:alpha 帮我整理';
     const envelope = 'The user explicitly invoked…\n\n<user-message>\n帮我整理\n</user-message>';

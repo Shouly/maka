@@ -144,6 +144,12 @@ export const ToolGroup = memo(function ToolGroup(props: ToolGroupProps) {
     [steps],
   );
 
+  // The summary says what the run DID, and only that. A failure count rode
+  // beside it for one round: the line reads as a single statement about the
+  // work, and a second, louder statement about its outcome does not belong on
+  // it. The cost is deliberate — a finished, collapsed group shows no sign of
+  // a failure inside it, and the rows that carry their own marks are one click
+  // away.
   const notes = props.notes ?? 0;
   // A run of nothing but notes has no work to summarize, and "Thought process"
   // would be a lie — the note count carries it alone.

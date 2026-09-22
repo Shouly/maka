@@ -706,13 +706,10 @@ function projectSessionEvent(
     ...base,
     contentOmitted: true,
     isError: event.status === 'errored',
-    content: {
-      kind: 'text',
-      text: '',
-      ...(event.sandboxFailureReason
-        ? { sandboxFailure: { reason: event.sandboxFailureReason } }
-        : {}),
-    },
+    // The failure rides the event, so it survives the omitted content instead
+    // of being smuggled through a placeholder body the client then discards.
+    ...(event.failure ? { failure: event.failure } : {}),
+    content: { kind: 'text', text: '' },
     ...(event.operationId ? { operationId: event.operationId } : {}),
     ...(event.durationMs === undefined ? {} : { durationMs: event.durationMs }),
   };

@@ -34,6 +34,7 @@ import { buildPaletteCommands } from '../../components/palette/commands.js';
 import { TranscriptTurn } from '../../components/session/TranscriptTurn.js';
 import { renderToolContent } from '../../components/session/tools/registry.js';
 import { ToolRow } from '../../components/session/tools/ToolRow.js';
+import { ToolFailureBlock } from '../../components/session/tools/ToolFailureBlock.js';
 import { TOOL_NAMES } from '@maka/core/tool-names';
 import {
   canExpandTool,
@@ -43,6 +44,8 @@ import {
   toolSummaryKeyOf,
 } from '../../components/session/tools/tool-presentation.js';
 import {
+  toolFailureMark,
+  toolRowFailure,
   toolRowStatus,
   toolRowStatusLabel,
 } from '../../components/session/tools/tool-presentation.js';
@@ -865,17 +868,217 @@ test('a web search result is text, never markup from the page it found', () => {
   assert.ok(document.documentElement.textContent?.includes('example.com'));
 });
 
-test('a sandbox-denied row offers the way past it, and only then', () => {
+// Where the mark sits, and what opening the row actually shows. Asserted on
+// the markup rather than on the presentation functions: both of these were
+// right in the data and wrong on screen — the glyph was wedged between the
+// title and the caret that opens the row, and the reason was a bare coloured
+// paragraph under panels that all share one shape.
+test('a failed row marks its outcome in the trailing slot and reasons in a panel', () => {
+  const failed: ToolActivityItem = {
+    toolUseId: 'tool-failed',
+    toolName: 'Bash',
+    activityKind: 'command',
+    status: 'errored',
+    args: { command: 'cp big.iso /vol' },
+    failure: { kind: 'failed', message: 'ENOSPC: no space left on device' },
+    result: { kind: 'text', text: 'cp: /vol: No space left on device' },
+  };
+  const markup = renderToStaticMarkup(
+    createElement(LocaleProvider, {
+      locale: 'en',
+      children: createElement(TooltipProvider, {
+        children: createElement(ToolRow, {
+          item: failed,
+          isFirst: true,
+          isLast: true,
+          context: { onOpenSession: () => {}, onOpenExternal: () => {} },
+        }),
+      }),
+    }),
+  );
+  const { document } = parseHTML(`<main>${markup}</main>`);
+
+  // The title is the row's readable line and is never recoloured.
+  const title = document.querySelector('button span span');
+  assert.ok(title, 'the row has a title');
+  assert.doesNotMatch(title?.getAttribute('class') ?? '', /text-danger/);
+
+  // The mark is the LAST thing in the header, after the caret, in the slot the
+  // word "Error" used to occupy.
+  const header = document.querySelector('button');
+  const mark = header?.querySelector('[aria-label="Failed"]');
+  assert.ok(mark, 'the row carries a mark for a reader who cannot see the colour');
+  const caret = header?.querySelector('[class*="rotate-90"], [class*="caretRight"]');
+  void caret;
+  const marks = [...(header?.querySelectorAll('[aria-label="Failed"]') ?? [])];
+  const trailing = header?.lastElementChild;
+  assert.ok(
+    trailing?.contains(marks[0] ?? null),
+    'the mark sits in the trailing group, not between the title and the caret',
+  );
+
+  // What opening it shows. The row keeps its expansion in component state, so
+  // the body is asserted on the block itself.
+  const body = renderToStaticMarkup(
+    createElement(LocaleProvider, {
+      locale: 'en',
+      children: createElement(ToolFailureBlock, { failure: toolRowFailure(failed)! }),
+    }),
+  );
+  const panel = parseHTML(`<main>${body}</main>`).document;
+  // The grammar every other result body uses: a panel, one block, a label
+  // naming what the text is — not a bare coloured paragraph.
+  assert.ok(panel.querySelector('[class*="rounded-lg"][class*="border-hairline"]'), 'a panel');
+  assert.ok(panel.querySelector('[class*="bg-danger-subtle"]'), 'the block is tinted by grade');
+  // The label is the grade, so an amber refusal is never headed with a word
+  // that calls it an error.
+  assert.match(body, /Failed/, 'the reason is labelled, so it is not read as more output');
+  assert.match(body, /ENOSPC: no space left on device/);
+  assert.doesNotMatch(body, /This call failed/, 'no heading that restates the mark');
+
+  // Nothing to say and nothing to do draws nothing: the result body below is
+  // the explanation and the mark already said which way it went.
+  assert.equal(
+    renderToStaticMarkup(
+      createElement(LocaleProvider, {
+        locale: 'en',
+        children: createElement(ToolFailureBlock, { failure: { kind: 'failed', tone: 'danger' } }),
+      }),
+    ),
+    '',
+  );
+
+  // A boundary the reader can move keeps the card, because it carries an action.
+  const denied = renderToStaticMarkup(
+    createElement(LocaleProvider, {
+      locale: 'en',
+      children: createElement(ToolFailureBlock, {
+        failure: { kind: 'denied', tone: 'warning', class: 'requires_bypass', remedy: 'bypass' },
+        onSwitchToFullAccessAndRetry: () => {},
+      }),
+    }),
+  );
+  assert.match(denied, /<button/, 'the remedy is offered');
+});
+
+// One sentence, once. The synthetic-error path puts the SAME string in the
+// result body and in the envelope — the envelope because a live frame omits
+// the body — so once the body lands a short reason was drawn twice: labelled
+// and tinted in the failure block, then again as anonymous monospace below it.
+test('a failed row does not say its reason twice', () => {
+  const denied = 'Filesystem access was denied.';
+  const same: ToolActivityItem = {
+    toolUseId: 'tool-same',
+    toolName: 'Glob',
+    activityKind: 'search',
+    status: 'errored',
+    args: { pattern: '**/*' },
+    failure: { kind: 'failed', message: denied },
+    result: { kind: 'text', text: denied },
+  };
+  assert.equal(resolveToolRendererId(same), 'none', 'the block already showed it');
+  // Still openable: the block is what opening it shows.
+  assert.equal(canExpandTool(same), true);
+
+  // A body with more than the envelope holds is a different thing and both
+  // belong: a refusal hands the model what it needs to act — the memory tools
+  // return the file's current content so it can merge and retry. Suppression
+  // runs ONE way, "the reason already holds all of the body"; read the other
+  // way it fires whenever the body merely starts with the reason, which is
+  // exactly when the body has the part worth reading.
+  const richer: ToolActivityItem = {
+    ...same,
+    toolUseId: 'tool-richer',
+    failure: { kind: 'refused', class: 'old_str_not_found', message: 'No match in a.md.' },
+    result: {
+      kind: 'text',
+      text: 'Edit failed: old_str not found in a.md.\nCurrent content follows.\n---\nthe file',
+    },
+  };
+  assert.equal(resolveToolRendererId(richer), 'text');
+
+  // A TRUNCATED envelope is the clearest case of the body having more: the
+  // envelope stops at 512 characters and the body runs to 4000, so the cause
+  // at the tail of a long error lives only in the body. This test asserted the
+  // opposite for one round and locked the loss in.
+  const long = `${'x'.repeat(600)}\nCAUSE: the part that only the body has`;
+  assert.equal(
+    resolveToolRendererId({
+      ...same,
+      toolUseId: 'tool-cut',
+      failure: { kind: 'failed', message: `${long.slice(0, 511)}\u2026` },
+      result: { kind: 'text', text: long },
+    }),
+    'text',
+  );
+
+  // A summary that says more than the body still covers it: the reason holds
+  // every word the body has, so the body is the redundant one.
+  assert.equal(
+    resolveToolRendererId({
+      ...same,
+      toolUseId: 'tool-fuller-reason',
+      failure: { kind: 'failed', message: `${denied} Retry inside the workspace.` },
+      result: { kind: 'text', text: denied },
+    }),
+    'none',
+  );
+
+  // A terminal result complements the reason rather than repeating it: the
+  // command, the exit code and the whole output are not in the envelope.
+  assert.equal(
+    resolveToolRendererId({
+      ...same,
+      toolUseId: 'tool-terminal',
+      toolName: 'Bash',
+      activityKind: 'command',
+      failure: { kind: 'failed', class: 'exit_1', message: 'cp: no space left' },
+      result: {
+        kind: 'terminal',
+        cwd: '/w',
+        cmd: 'cp x /vol',
+        status: 'failed',
+        exitCode: 1,
+        output: {
+          mode: 'pipes',
+          stdout: '',
+          stderr: 'cp: no space left\n',
+          stdoutTruncated: false,
+          stderrTruncated: false,
+          redacted: false,
+        },
+      },
+    }),
+    'terminal',
+  );
+});
+
+// The row says what it failed at with a glyph, not with the word "Error", and
+// keeps its title readable — the weight of a failure belongs in the block that
+// carries the reason, which is the rule the sandbox card already followed and
+// nothing else did.
+test('a failed row is marked, not repainted', () => {
   const denied: ToolActivityItem = {
     toolUseId: 'tool-denied',
     toolName: 'Bash',
     activityKind: 'command',
     status: 'errored',
     args: { command: 'sudo ls' },
-    result: { kind: 'text', text: 'denied', sandboxDenial: { likely: true } },
+    failure: { kind: 'denied', class: 'sandbox_denial', message: 'denied' },
+    result: { kind: 'text', text: 'denied' },
   };
-  assert.equal(toolRowStatus(denied), 'sandbox_blocked');
-  assert.equal(toolRowStatusLabel(denied, 'en'), getTranscriptCopy('en').sandbox.blockedLabel);
+  assert.equal(toolRowStatus(denied), 'errored');
+  assert.equal(toolRowStatusLabel(denied, 'en'), undefined);
+  assert.equal(toolFailureMark(toolRowFailure(denied)!), 'lock');
+
+  const refused: ToolActivityItem = { ...denied, failure: { kind: 'refused', message: 'no' } };
+  assert.equal(toolFailureMark(toolRowFailure(refused)!), 'prohibit');
+  const failed: ToolActivityItem = { ...denied, failure: { kind: 'failed', message: 'broke' } };
+  assert.equal(toolFailureMark(toolRowFailure(failed)!), 'warningCircle');
+
+  // Only a boundary has something to offer.
+  assert.equal(toolRowFailure(denied)?.remedy, 'raise_permission');
+  assert.equal(toolRowFailure(refused)?.remedy, undefined);
 });
 
 // A call the model is still writing is a row that exists and does not yet act.

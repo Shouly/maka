@@ -65,6 +65,10 @@ export function isCancelledToolResultContent(content: ToolResultContent | undefi
     return content.status === 'cancelled';
   }
   if (content.kind === 'agent_swarm') return content.status === 'cancelled';
+  // A cancelled child agent is a stop like any other. Without this the swarm
+  // beside it read as interrupted and a single child read as errored, so the
+  // stored status disagreed with what the row drew.
+  if (content.kind === 'subagent') return content.status === 'cancelled';
   return false;
 }
 

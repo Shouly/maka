@@ -37,7 +37,7 @@ import {
   deriveTurnLineageMap,
   finalAssistantReplyText,
   formatTurnDuration,
-  isSandboxDeniedTool,
+  toolFailureOf,
   type TurnLineageBadge,
   type TurnLineageTarget,
   type TurnViewModel,
@@ -98,14 +98,22 @@ export function pendingTurnActionKey(
 }
 
 /**
- * A turn whose only failure was the sandbox refusing an action is not a failed
- * turn in the sense the reason label means — the tool rows already say
- * "blocked by sandbox" and offer the way past it, so a banner repeating it as
- * a turn-level error would name the same fact twice and offer nothing.
+ * A turn whose every failure already carries its own way out is not a failed
+ * turn in the sense the reason label means — those rows say what blocked them
+ * and offer the fix, so a banner would name the same fact twice and offer
+ * nothing.
+ *
+ * Asked of the failure envelope rather than of the sandbox specifically: the
+ * question was always "does the row already handle this", and the sandbox was
+ * only the one failure that could answer it.
  */
-function isSandboxOnlyToolFailure(turn: TurnViewModel): boolean {
-  const erroredTools = turn.tools.filter((tool) => tool.status === 'errored');
-  if (erroredTools.length === 0 || !erroredTools.every(isSandboxDeniedTool)) return false;
+function isRemediableOnlyToolFailure(turn: TurnViewModel): boolean {
+  // Asked entirely of the shared question. Filtering on the raw call status
+  // first let the banner count rows the transcript does not draw as failures —
+  // a launched child agent's call is stored errored and its row is not.
+  const failures = turn.tools.map(toolFailureOf).filter((failure) => failure !== undefined);
+  if (failures.length === 0) return false;
+  if (!failures.every((failure) => failure.remedy !== undefined)) return false;
   const errorClass = turn.errorClass?.toLowerCase();
   return (
     errorClass === undefined ||
@@ -253,14 +261,14 @@ function deriveTurnPresentationEntry(input: {
 
   const entry: TurnPresentationEntry = { footerActions };
 
-  if (turn.status === 'failed' && (turn.failureMessage || !isSandboxOnlyToolFailure(turn))) {
+  if (turn.status === 'failed' && (turn.failureMessage || !isRemediableOnlyToolFailure(turn))) {
     entry.failedReasonLabel = describeTurnErrorClass(turn.errorClass, uiLocale);
     entry.failedSeverity = deriveFailedTurnSeverity(turn.errorClass);
     entry.failedExecutionStateLabel = describeFailedTurnExecutionState(
       {
         retry: turn.retry,
         toolActivityCount: turn.tools.length,
-        erroredToolCount: turn.tools.filter((tool) => tool.status === 'errored').length,
+        erroredToolCount: turn.tools.filter((tool) => toolFailureOf(tool) !== undefined).length,
       },
       uiLocale,
     );

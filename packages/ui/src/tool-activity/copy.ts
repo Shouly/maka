@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import type { ToolFailureKind } from '@maka/core/events';
 import type { UiCatalog, UiLocale } from '@maka/core/ui-locale';
 
 type BackgroundTerminalStatus = 'running' | 'completed' | 'failed' | 'timed_out' | 'cancelled' | 'orphaned';
@@ -24,10 +25,20 @@ type WebCredentialCopyKey = 'env' | 'settings' | 'missing' | 'unknown';
 type WebGuidanceKey = 'env' | 'settings' | 'rate_limited' | 'not_configured' | 'timed_out' | 'privacy_mode' | 'unknown';
 
 export interface ToolActivityCopy {
-  errorLabel: string;
-  /** The two outcomes a tool row spells out next to its name. */
+  /**
+   * The trailing glyph on a failed row, named for a reader who cannot see it.
+   *
+   * There is no title beside it. A panel headed "This call failed" restates
+   * what the glyph already said and pushes the reason — the only part worth
+   * opening the row for — into its small print; the opened row shows the
+   * reason alone, and a titled panel only where there is something to DO
+   * (see `ToolFailureBlock`).
+   */
+  failure: {
+    mark: Record<ToolFailureKind, string>;
+  };
+  /** The one outcome a tool row still spells out next to its name. */
   status: {
-    sandboxBlocked: string;
     interrupted: string;
   };
   output: {
@@ -170,8 +181,10 @@ export interface ToolActivityCopy {
 
 const TOOL_ACTIVITY_COPY = {
   'zh-CN': {
-    errorLabel: '错误',
-    status: { sandboxBlocked: '可能被沙箱阻止', interrupted: '已中断' },
+    failure: {
+      mark: { refused: '被拒绝', denied: '被拦截', failed: '失败' },
+    },
+    status: { interrupted: '已中断' },
     output: { redacted: '[已脱敏]', truncated: '输出已截断' },
     copy: {
       idle: '复制',
@@ -261,8 +274,10 @@ const TOOL_ACTIVITY_COPY = {
     },
   },
   'zh-TW': {
-    errorLabel: '錯誤',
-    status: { sandboxBlocked: '可能被沙箱阻止', interrupted: '已中斷' },
+    failure: {
+      mark: { refused: '被拒絕', denied: '被攔截', failed: '失敗' },
+    },
+    status: { interrupted: '已中斷' },
     output: { redacted: '[已脫敏]', truncated: '輸出已截斷' },
     copy: {
       idle: '複製',
@@ -352,8 +367,10 @@ const TOOL_ACTIVITY_COPY = {
     },
   },
   en: {
-    errorLabel: 'Error',
-    status: { sandboxBlocked: 'Possibly blocked by sandbox', interrupted: 'Interrupted' },
+    failure: {
+      mark: { refused: 'Refused', denied: 'Blocked', failed: 'Failed' },
+    },
+    status: { interrupted: 'Interrupted' },
     output: { redacted: '[Redacted]', truncated: 'Output truncated' },
     copy: {
       idle: 'Copy',

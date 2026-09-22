@@ -27,10 +27,12 @@ import {
 
 import {
   decodeMessageContent,
+  isToolFailure,
   TOOL_ACTIVITY_KINDS,
   type MessageContent,
   type AttachmentRef,
   type ToolActivityKind,
+  type ToolFailure,
   type ToolResultContent,
 } from './events.js';
 import {
@@ -888,6 +890,11 @@ export interface ToolResultMessage {
   /** Matches ToolCallMessage.id. */
   toolUseId: string;
   isError: boolean;
+  /**
+   * Why the call failed, when it did. Absent on a success, and on a failure
+   * nothing annotated — which reads as `failed`.
+   */
+  failure?: ToolFailure;
   content: ToolResultContent;
   providerExecuted?: boolean;
   /** Raw provider result retained only for provider-native replay. */
@@ -1286,6 +1293,7 @@ const TOOL_CALL_MESSAGE_SHAPE = defineObjectShape<ToolCallMessage>()(
 const TOOL_RESULT_MESSAGE_SHAPE = defineObjectShape<ToolResultMessage>()(
   ['type', 'id', 'turnId', 'ts', 'toolUseId', 'isError', 'content'],
   [
+    'failure',
     'durationMs',
     'providerExecuted',
     'providerOutput',
@@ -1591,6 +1599,7 @@ function decodeMessage(
         hasMessageEnvelope(message, true) &&
         typeof message.toolUseId === 'string' &&
         typeof message.isError === 'boolean' &&
+        (message.failure === undefined || isToolFailure(message.failure)) &&
         (message.providerExecuted === undefined || typeof message.providerExecuted === 'boolean') &&
         isOptionalFiniteDuration(message.durationMs) &&
         isToolActivityIdentity(message)

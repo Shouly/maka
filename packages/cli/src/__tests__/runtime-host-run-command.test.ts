@@ -1655,7 +1655,7 @@ async function* projectedSameStepSandboxFailureEvents(turnId: string): AsyncIter
       ts: 3,
       toolUseId: 'tool-1',
       status: 'errored',
-      sandboxFailureReason: 'sandbox_boundary_required',
+      failure: { kind: 'denied', class: 'sandbox_boundary_required' },
     },
   } satisfies SubscriptionFrame).events;
   yield successfulToolResult(turnId, 4);
@@ -1818,6 +1818,7 @@ function sandboxFailureToolResult(
     ts,
     toolUseId,
     isError: true,
+    failure: { kind: 'denied', class: 'sandbox_boundary_required' },
     content: sandboxFailureContent(),
   };
 }

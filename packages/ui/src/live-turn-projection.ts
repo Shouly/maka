@@ -572,6 +572,10 @@ export function applyLiveTurnEvent(
       ...projectToolActivityIdentity(event),
       status: toolResultActivityStatus(event.isError, event.content),
       result: event.contentOmitted ? base.result : event.content,
+      // Unconditional: the failure envelope is not the result body and an
+      // omitted-content frame carries it in full. This is what lets a live row
+      // say why it failed instead of only that it did.
+      ...(event.failure ? { failure: event.failure } : {}),
       ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
     };
     nextStep = {

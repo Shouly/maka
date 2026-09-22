@@ -31,6 +31,7 @@ import {
   acquireOperationalStateDatabase,
   type OperationalStateDatabaseLease,
 } from './operational-state-store.js';
+import { ToolRefusal } from '@maka/core/events';
 import { assertSafeSessionId } from './session-store.js';
 import { chainWrite } from './write-queue.js';
 
@@ -117,7 +118,7 @@ class SqliteSessionTaskStoreImpl implements SqliteSessionTaskStore {
   ): Promise<{ document: SessionTaskDocument; task: SessionTask }> {
     return this.#mutate(sessionId, (current) => {
       const created = createSessionTask(current, input as never, Date.now());
-      if (!created.ok) throw new Error(created.message);
+      if (!created.ok) throw new ToolRefusal(created.message, { class: 'SessionTaskRule' });
       return { document: created.value.document, result: { task: created.value.task } };
     }).then(({ document, result }) => ({ document, task: result.task }));
   }
@@ -128,7 +129,7 @@ class SqliteSessionTaskStoreImpl implements SqliteSessionTaskStore {
   ): Promise<{ document: SessionTaskDocument; changed: readonly string[]; deleted: boolean }> {
     return this.#mutate(sessionId, (current) => {
       const updated = updateSessionTask(current, input as never, Date.now());
-      if (!updated.ok) throw new Error(updated.message);
+      if (!updated.ok) throw new ToolRefusal(updated.message, { class: 'SessionTaskRule' });
       return {
         document: updated.value.document,
         result: { changed: updated.value.changed, deleted: updated.value.deleted },

@@ -120,6 +120,7 @@
     "src/renderer/components/session/notices/PlanExecutionBanner.tsx",
     "src/renderer/components/session/notices/RevisionBanner.tsx",
     "src/renderer/components/session/notices/SessionNotices.tsx",
+    "src/renderer/components/session/tools/ToolFailureBlock.tsx",
     "src/renderer/components/session/tools/ToolGroup.tsx",
     "src/renderer/components/session/tools/ToolRow.tsx",
     "src/renderer/components/session/tools/registry.tsx",
@@ -2839,6 +2840,22 @@
         "zustand": 1
       }
     },
+    "src/renderer/components/session/tools/ToolFailureBlock.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../../locales/transcript-copy.js": 1,
+        "./tool-result.js": 1,
+        "@maka/ui": 1
+      }
+    },
     "src/renderer/components/session/tools/ToolGroup.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -2883,6 +2900,7 @@
         "./registry.js": 1,
         "./tool-presentation.js": 1,
         "./tool-result.js": 1,
+        "./ToolFailureBlock.js": 1,
         "@maka/ui": 1,
         "motion/react": 1,
         "react": 1

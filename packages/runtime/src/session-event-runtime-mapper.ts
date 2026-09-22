@@ -373,6 +373,7 @@ function mapBackendSessionEvent(
         name,
         result: event.content,
         ...(event.isError ? { isError: true as const } : {}),
+        ...(event.failure ? { failure: event.failure } : {}),
         ...(event.providerExecuted !== undefined
           ? { providerExecuted: event.providerExecuted }
           : {}),

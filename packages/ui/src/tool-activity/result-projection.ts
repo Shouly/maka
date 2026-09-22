@@ -22,12 +22,6 @@ import { type UiLocale } from '@maka/core/ui-locale';
 import type { ToolActivityItem } from '../materialize.js';
 import { getToolActivityCopy } from './copy.js';
 
-export function isRequiresBypassToolResult(result: ToolActivityItem['result']): boolean {
-  return result?.kind === 'text'
-    && result.sandboxFailure?.reason === 'requires_bypass'
-    && result.sandboxFailure.source === 'client_capability';
-}
-
 function resultHasCapturedStreams(result: ToolActivityItem['result']): boolean {
   if (!result) return false;
   if (result.kind === 'terminal' || result.kind === 'shell_run') {
