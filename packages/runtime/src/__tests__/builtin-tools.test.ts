@@ -2943,6 +2943,25 @@ describe('builtin file tools speak the reference argument names', () => {
     );
   });
 
+  test('Glob treats an empty path as the default and names a bad root the way Claude does', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'maka-glob-root-')));
+    await writeFile(join(root, 'a.ts'), '// file\n', 'utf8');
+    const glob = tool('Glob');
+
+    // Under strict decoding a model cannot omit an optional field and sends '' for it.
+    const defaulted = (await runTool(glob, { pattern: '*.ts', path: '' }, root)) as {
+      files: string[];
+    };
+    assert.deepStrictEqual(defaulted.files, [join(root, 'a.ts')]);
+
+    await assert.rejects(runTool(glob, { pattern: '*.ts', path: 'nope' }, root), {
+      message: `Directory does not exist: ${join(root, 'nope')}. Note: your current working directory is ${root}.`,
+    });
+    await assert.rejects(runTool(glob, { pattern: '*', path: 'a.ts' }, root), {
+      message: `Path is not a directory: ${join(root, 'a.ts')}`,
+    });
+  });
+
   test('a capped Read says which lines it showed and how to read on', async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), 'maka-read-window-')));
     await writeFile(

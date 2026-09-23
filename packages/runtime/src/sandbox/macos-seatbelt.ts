@@ -295,7 +295,7 @@ export class MacosSeatbeltBackend implements SandboxBackend {
       ok: true,
       exec: {
         argv: [MACOS_SEATBELT_EXECUTABLE, ...sandboxArgs],
-        cwd: command.cwd,
+        cwd: sandboxedProcessCwd(command.cwd, command.profile, command.pathContext),
         env: command.env,
         sandboxType: 'macos-seatbelt',
         effectiveProfile: command.profile,
@@ -305,6 +305,39 @@ export class MacosSeatbeltBackend implements SandboxBackend {
       preference,
     };
   }
+}
+
+/**
+ * The directory the sandboxed process starts in.
+ *
+ * A process whose working directory the profile does not cover cannot even
+ * ask where it is: Node's `fs.glob` calls `getcwd()` though it was handed an
+ * absolute `cwd`, and Seatbelt denies the call. The filesystem worker lands
+ * here on every request outside the session cwd, because its profile grants
+ * the one target and nothing else. The Linux backend meets the same case by
+ * mounting an empty directory at that path; Seatbelt cannot create one, so
+ * the process starts at `/`, which the base policy lets every profile read.
+ * Nothing is lost: a working directory the profile does not cover was never
+ * readable, so no relative path into it could have resolved. Bash never
+ * lands here — its cwd is the workspace root every restricted profile reads.
+ */
+function sandboxedProcessCwd(
+  cwd: string,
+  profile: PermissionProfile,
+  pathContext: SandboxPathContext,
+): string {
+  const roots = resolveRoots(profile, pathContext);
+  const target = resolveRootPath(cwd);
+  const covered =
+    roots.readableRoots.some((root) => rootCovers(root, target)) ||
+    roots.runtimeReadableRoots.some((path) => rootCovers({ path, match: 'subtree' }, target));
+  return covered ? cwd : '/';
+}
+
+function rootCovers(root: ResolvedRoot, path: string): boolean {
+  if (path === root.path) return true;
+  if (root.match !== 'subtree') return false;
+  return root.path === '/' || path.startsWith(`${root.path}/`);
 }
 
 function resolveRoots(profile: PermissionProfile, pathContext: SandboxPathContext): ResolvedRoots {

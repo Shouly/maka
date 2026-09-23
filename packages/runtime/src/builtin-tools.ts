@@ -718,22 +718,15 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
     {
       name: TOOL_NAMES.glob,
       activityKind: 'search',
-      description: [
+      description:
         'Fast file pattern matching. Supports glob patterns like "**/*.js" or "src/**/*.ts". Returns matching file paths sorted by modification time.',
-        '',
-        "- Matches `pattern` against the paths under `path` (default: the session cwd), with the filesystem's own case rules. `*` stays within one directory level; `**` crosses them. Only files are returned, never directories.",
-        `- Returns one absolute path per line, MOST RECENTLY MODIFIED LAST and capped at ${GLOB_RESULT_LIMIT} — the cap keeps the newest matches. A capped result says so, so narrow the pattern or the path when you need the rest.`,
-        '- Returns "No files found" when nothing matches; a missing search root, or one the session permissions do not cover, fails with the reason.',
-        '- Whether the pattern or `path` may leave the session cwd is decided by the session permissions; a pattern that climbs out of it is rejected.',
-        '- Use it when you know the shape of a filename. Use Grep when you know what is inside the file.',
-      ].join('\n'),
       parameters: z.object({
-        pattern: z.string().describe('The glob pattern to match files against, e.g. "**/*.txt".'),
+        pattern: z.string().describe('The glob pattern to match files against'),
         path: z
           .string()
           .optional()
           .describe(
-            'The directory to search in. Omit it for the session working directory; do not pass "undefined" or "null". How far outside the cwd it may reach is decided by the session permissions.',
+            'The directory to search in. If not specified, the current working directory will be used. IMPORTANT: Omit this field to use the default directory. DO NOT enter "undefined" or "null" - simply omit it for the default behavior. Must be a valid directory path if provided.',
           ),
       }),
       executionFacts,
@@ -741,7 +734,9 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
         const result = await filesystem.execute({
           operation: {
             kind: 'glob',
-            path: searchRoot ?? '.',
+            // Under strict decoding a model cannot leave an optional field
+            // out and sends the empty string; that is the default, not a path.
+            path: searchRoot === undefined || searchRoot === '' ? '.' : searchRoot,
             pattern,
             limit: GLOB_RESULT_LIMIT,
           },

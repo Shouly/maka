@@ -30,7 +30,7 @@
 
 import { Buffer } from 'node:buffer';
 import { lstat, realpath, stat } from 'node:fs/promises';
-import { dirname, isAbsolute } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import type { ExecutionBoundary } from '@maka/core/sandbox-boundary';
 import type { PermissionMode } from '@maka/core/permission';
 import type { PermissionProfile } from '@maka/core/permission-profile';
@@ -627,12 +627,35 @@ function createWorkspaceFilesystemExecutor(
         }
         case 'glob': {
           assertGlobPatternInScope(operation.pattern, scope);
-          const { path: base } = await workspace.resolveExistingPath({
+          // A missing root and a root that is a file each get their own
+          // sentence, in Claude's Glob wording, on every backend; the worker
+          // client makes the same check. Node's glob would otherwise answer a
+          // file root with an empty list, indistinguishable from no match.
+          const shown = resolve(cwd, operation.path);
+          let base: string;
+          try {
+            ({ path: base } = await workspace.resolveExistingPath({
+              cwd,
+              path: operation.path,
+              label: 'Glob',
+              scope,
+            }));
+          } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code === 'ENOENT' || code === 'ENOTDIR') {
+              throw new Error(
+                `Directory does not exist: ${shown}. Note: your current working directory is ${cwd}.`,
+              );
+            }
+            throw error;
+          }
+          const { targetType } = await workspace.pathMetadata({
             cwd,
-            path: operation.path,
+            path: base,
             label: 'Glob',
             scope,
           });
+          if (targetType !== 'directory') throw new Error(`Path is not a directory: ${shown}`);
           const { files, truncated } = await workspace.globFiles({
             cwd: base,
             pattern: operation.pattern,

@@ -190,6 +190,31 @@ describe('macOS filesystem worker smoke', { skip: process.platform !== 'darwin' 
     });
     assert.deepEqual(emptyResult, { kind: 'grep', matches: [], mode: 'content' });
   });
+
+  test('globs an approved root outside the session cwd', async () => {
+    // The worker is granted `outside` and nothing else, so the session cwd
+    // it would start in is unreadable to it, and Node's glob asks for the
+    // process cwd before it looks at anything.
+    const searchRoot = join(outside, 'glob');
+    await mkdir(searchRoot);
+    await writeFile(join(searchRoot, 'found.md'), 'found\n', 'utf8');
+
+    const result = await client.execute({
+      operation: { kind: 'glob', path: searchRoot, pattern: '*.md' },
+      cwd: workspace,
+      mode: 'ask',
+      executionBoundary: {
+        kind: 'managed',
+        revision: 1,
+        profile: applySandboxBoundaryExpansion(createWorkspaceWritePermissionProfile(), {
+          filesystem: { entries: [{ path: searchRoot, access: 'read', scope: 'subtree' }] },
+        }),
+      },
+      expectedIdentity: 'unchecked',
+    });
+
+    assert.deepEqual(result, { kind: 'glob', files: [join(searchRoot, 'found.md')] });
+  });
 });
 
 function grepOperation(path: string, pattern: string) {

@@ -18,9 +18,9 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { lstat, realpath } from 'node:fs/promises';
+import { lstat, realpath, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { canReadPath, canWritePath, type PermissionProfile } from '@maka/core/permission-profile';
 
 import { compilePermissionProfile } from '@maka/core/permission-profile-compiler';
@@ -215,6 +215,34 @@ export class FilesystemWorkerClient {
       cwd: canonicalCwd,
     });
     if (!parsedOperation.success) throw clientError('invalid_operation', 'validation', requestId);
+
+    // A search root that is missing or is a file fails the subtree
+    // normalisation below with one undifferentiated error; name the actual
+    // problem, in the wording Claude's Glob uses, before it gets there. Any
+    // other stat failure is left to that normalisation.
+    if (parsedOperation.data.kind === 'glob') {
+      const shown = resolve(input.cwd, parsedOperation.data.path);
+      const stats = await stat(resolve(canonicalCwd, parsedOperation.data.path)).catch(
+        (error: NodeJS.ErrnoException) =>
+          error.code === 'ENOENT' || error.code === 'ENOTDIR' ? 'missing' : undefined,
+      );
+      if (stats === 'missing') {
+        throw clientError(
+          'invalid_operation',
+          'validation',
+          requestId,
+          `Directory does not exist: ${shown}. Note: your current working directory is ${input.cwd}.`,
+        );
+      }
+      if (stats && !stats.isDirectory()) {
+        throw clientError(
+          'invalid_operation',
+          'validation',
+          requestId,
+          `Path is not a directory: ${shown}`,
+        );
+      }
+    }
 
     const access = operationAccess(parsedOperation.data.kind);
     // Reads never participate in CAS: the client sends 'unchecked' for them

@@ -220,4 +220,44 @@ describe('macOS Seatbelt smoke', { skip: !canRunSeatbelt }, () => {
 
     assert.notEqual(child.status, 0);
   });
+
+  it('can ask where it is when launched from outside its only granted root', async () => {
+    // The filesystem worker is granted one target and launched from the
+    // session cwd. Seatbelt denies getcwd() in a directory the profile does
+    // not cover, and Node's fs.glob calls getcwd() even when it is handed an
+    // absolute cwd — so Glob outside the session cwd failed. The test
+    // runner's own directory stands in for that session cwd: it is nowhere
+    // in this profile.
+    const target = await makeWorkspace();
+    cleanup.push(target);
+    const manager = new SandboxManager([new MacosSeatbeltBackend()]);
+    const result = manager.transform({
+      platform: 'darwin',
+      command: {
+        program: '/bin/pwd',
+        args: ['-P'],
+        cwd: resolve(process.cwd()),
+        profile: {
+          type: 'managed',
+          name: 'custom',
+          fileSystem: {
+            kind: 'restricted',
+            entries: [{ kind: 'path', access: 'read', path: target, match: 'subtree' }],
+          },
+          network: { kind: 'restricted' },
+        },
+        pathContext: { workspaceRoots: [] },
+      },
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+
+    const child = spawnSync(result.exec.argv[0], result.exec.argv.slice(1), {
+      cwd: result.exec.cwd,
+      encoding: 'utf8',
+    });
+
+    assert.equal(child.status, 0, child.stderr);
+    assert.equal(child.stdout.trim(), '/');
+  });
 });

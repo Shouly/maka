@@ -403,6 +403,43 @@ describe('MacosSeatbeltBackend', () => {
     }
   });
 
+  it('keeps a working directory the profile covers', () => {
+    const backend = new MacosSeatbeltBackend();
+    const result = backend.transform(workspaceCommand(createWorkspaceWritePermissionProfile()));
+
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.exec.cwd, '/repo');
+  });
+
+  it('starts at / when the profile does not cover the working directory', () => {
+    // The filesystem worker's shape: one granted target, and the session cwd
+    // it is launched from lies outside it.
+    const backend = new MacosSeatbeltBackend();
+    const request = workspaceCommand({
+      type: 'managed',
+      name: 'custom',
+      fileSystem: {
+        kind: 'restricted',
+        entries: [
+          {
+            kind: 'path',
+            access: 'read',
+            path: '/private/tmp/maka-worker-target',
+            match: 'subtree',
+          },
+        ],
+      },
+      network: { kind: 'restricted' },
+    });
+    const result = backend.transform({
+      ...request,
+      command: { ...request.command, pathContext: { workspaceRoots: [] } },
+    });
+
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.exec.cwd, '/');
+  });
+
   it('returns invalid_request for profiles that should have selected none before reaching backend', () => {
     const backend = new MacosSeatbeltBackend();
     const result = backend.transform(workspaceCommand(createDangerFullAccessPermissionProfile()));

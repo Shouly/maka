@@ -203,15 +203,15 @@
   },
   {
     "name": "Glob",
-    "description": "Fast file pattern matching. Supports glob patterns like \"**/*.js\" or \"src/**/*.ts\". Returns matching file paths sorted by modification time.\n\n- Matches `pattern` against the paths under `path` (default: the session cwd), with the filesystem's own case rules. `*` stays within one directory level; `**` crosses them. Only files are returned, never directories.\n- Returns one absolute path per line, MOST RECENTLY MODIFIED LAST and capped at 200 — the cap keeps the newest matches. A capped result says so, so narrow the pattern or the path when you need the rest.\n- Returns \"No files found\" when nothing matches; a missing search root, or one the session permissions do not cover, fails with the reason.\n- Whether the pattern or `path` may leave the session cwd is decided by the session permissions; a pattern that climbs out of it is rejected.\n- Use it when you know the shape of a filename. Use Grep when you know what is inside the file.",
+    "description": "Fast file pattern matching. Supports glob patterns like \"**/*.js\" or \"src/**/*.ts\". Returns matching file paths sorted by modification time.",
     "inputSchema": {
       "properties": {
         "path": {
-          "description": "The directory to search in. Omit it for the session working directory; do not pass \"undefined\" or \"null\". How far outside the cwd it may reach is decided by the session permissions.",
+          "description": "The directory to search in. If not specified, the current working directory will be used. IMPORTANT: Omit this field to use the default directory. DO NOT enter \"undefined\" or \"null\" - simply omit it for the default behavior. Must be a valid directory path if provided.",
           "type": "string"
         },
         "pattern": {
-          "description": "The glob pattern to match files against, e.g. \"**/*.txt\".",
+          "description": "The glob pattern to match files against",
           "type": "string"
         }
       },

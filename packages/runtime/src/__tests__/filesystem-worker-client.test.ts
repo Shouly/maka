@@ -20,6 +20,7 @@
 import assert from 'node:assert/strict';
 import { rmSync } from 'node:fs';
 import {
+  chmod,
   lstat,
   mkdtemp,
   mkdir,
@@ -613,6 +614,66 @@ function hasArgTriple(
     (value, index) => value === first && argv[index + 1] === second && argv[index + 2] === third,
   );
 }
+
+describe('filesystem worker client Glob roots', () => {
+  // The subtree normalisation fails a missing root and a file root with one
+  // shared error, which used to reach the model as "invalid_operation". The
+  // client now names each before any worker is launched.
+  function clientThatMustNotLaunch(): FilesystemWorkerClient {
+    return new FilesystemWorkerClient({
+      sandboxManager: new SandboxManager([new MacosSeatbeltBackend()]),
+      platform: 'darwin',
+      newId: () => 'request-1',
+      getLaunchSpec: async () => {
+        throw new Error('a bad Glob root must be refused before launch');
+      },
+    });
+  }
+
+  test('names a missing root and a file root in the wording of Claude Glob', async () => {
+    const cwd = await temporaryDirectory('maka-worker-glob-root-');
+    await writeFile(join(cwd, 'a.txt'), 'a\n', 'utf8');
+    const client = clientThatMustNotLaunch();
+
+    await assert.rejects(
+      client.execute({ operation: { kind: 'glob', path: 'nope', pattern: '*' }, cwd, mode: 'ask' }),
+      {
+        message: `Directory does not exist: ${join(cwd, 'nope')}. Note: your current working directory is ${cwd}.`,
+      },
+    );
+    await assert.rejects(
+      client.execute({
+        operation: { kind: 'glob', path: 'a.txt', pattern: '*' },
+        cwd,
+        mode: 'ask',
+      }),
+      { message: `Path is not a directory: ${join(cwd, 'a.txt')}` },
+    );
+  });
+
+  test('does not call a root it cannot stat missing', async () => {
+    const cwd = await temporaryDirectory('maka-worker-glob-locked-');
+    const locked = join(cwd, 'locked');
+    await mkdir(join(locked, 'inner'), { recursive: true });
+    await chmod(locked, 0o000);
+    try {
+      await assert.rejects(
+        clientThatMustNotLaunch().execute({
+          operation: { kind: 'glob', path: 'locked/inner', pattern: '*' },
+          cwd,
+          mode: 'ask',
+        }),
+        (error: unknown) => {
+          assert.ok(error instanceof FilesystemWorkerClientError);
+          assert.doesNotMatch(error.message, /Directory does not exist/);
+          return true;
+        },
+      );
+    } finally {
+      await chmod(locked, 0o700);
+    }
+  });
+});
 
 describe('filesystem worker client dispatch classification', () => {
   // The process-runner attaches a `dispatched` flag to its rejection so the
