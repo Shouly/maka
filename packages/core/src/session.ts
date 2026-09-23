@@ -35,13 +35,7 @@ import {
   type ToolFailure,
   type ToolResultContent,
 } from './events.js';
-import {
-  isPermissionMode,
-  isToolCategory,
-  type PermissionMode,
-  type PolicyDecision,
-  type ToolCategory,
-} from './permission.js';
+import { isPermissionMode, type PermissionMode } from './permission.js';
 import type { CollaborationMode } from './collaboration.js';
 import type { OrchestrationMode } from './orchestration.js';
 import type { ToolMode } from './tool-mode.js';
@@ -53,7 +47,6 @@ import {
   isRecord,
   pickShape,
 } from './record-schema.js';
-import { isPermissionDecisionFields } from './interaction-record-schema.js';
 import { isTokenUsageFields, type TokenUsageFields } from './usage-record-schema.js';
 import {
   decodeCanonicalToolResultContent,
@@ -152,7 +145,6 @@ export interface SubagentSessionRuntime {
   presetId?: string;
   systemPrompt: string;
   toolNames: string[];
-  categoryPolicy: Partial<Record<ToolCategory, PolicyDecision>>;
 }
 
 /**
@@ -193,10 +185,7 @@ export interface SessionConversationCopy {
   intent?: 'side_conversation';
 }
 
-export type SubagentSessionRuntimeSummary = Omit<
-  SubagentSessionRuntime,
-  'systemPrompt' | 'categoryPolicy'
->;
+export type SubagentSessionRuntimeSummary = Omit<SubagentSessionRuntime, 'systemPrompt'>;
 
 /**
  * Client-facing child-session relation when the durable spawn record remains
@@ -496,7 +485,6 @@ const SUBAGENT_SESSION_RUNTIME_SHAPE = defineObjectShape<SubagentSessionRuntime>
     'profile',
     'systemPrompt',
     'toolNames',
-    'categoryPolicy',
   ],
   ['presetId'],
   ['permissionCeiling'],
@@ -570,8 +558,7 @@ export function isSubagentSessionRuntime(value: unknown): value is SubagentSessi
     !Array.isArray(value.toolNames) ||
     value.toolNames.length > SUBAGENT_RUNTIME_TOOL_LIMIT ||
     !value.toolNames.every(isSessionLineageId) ||
-    new Set(value.toolNames).size !== value.toolNames.length ||
-    !isSubagentCategoryPolicy(value.categoryPolicy)
+    new Set(value.toolNames).size !== value.toolNames.length
   ) {
     return false;
   }
@@ -613,7 +600,7 @@ export function isSessionConversationCopy(value: unknown): value is SessionConve
 export function subagentSessionRuntimeSummary(
   value: SubagentSessionRuntime,
 ): SubagentSessionRuntimeSummary {
-  const { systemPrompt: _systemPrompt, categoryPolicy: _categoryPolicy, ...summary } = value;
+  const { systemPrompt: _systemPrompt, ...summary } = value;
   return summary;
 }
 
@@ -717,17 +704,6 @@ function isSessionLineageId(value: unknown): value is string {
   );
 }
 
-function isSubagentCategoryPolicy(
-  value: unknown,
-): value is Partial<Record<ToolCategory, PolicyDecision>> {
-  if (!isRecord(value)) return false;
-  return Object.entries(value).every(
-    ([category, decision]) =>
-      isToolCategory(category) &&
-      (decision === 'allow' || decision === 'prompt' || decision === 'block'),
-  );
-}
-
 export type SessionChangedReason =
   | 'created'
   | 'migrated'
@@ -777,7 +753,6 @@ export type StoredMessage =
   | AssistantMessage
   | ToolCallMessage
   | ToolResultMessage
-  | PermissionDecisionMessage
   | TokenUsageMessage
   | TurnStateMessage
   | WorkHubCoordinationMessage
@@ -905,22 +880,6 @@ export interface ToolResultMessage {
   modelVisibility?: 'visible' | 'hidden';
   parentToolCallId?: string;
   parentOperationId?: string;
-}
-
-export interface PermissionDecisionMessage {
-  type: 'permission_decision';
-  /** Equals PermissionRequestEvent.requestId for audit correlation. */
-  id: string;
-  turnId: string;
-  ts: number;
-  toolUseId: string;
-  toolName: string;
-  decision: 'allow' | 'deny';
-  rememberForTurn?: boolean;
-  reviewer?: import('./permission.js').ApprovalsReviewer;
-  rationale?: string;
-  riskLevel?: import('./permission.js').ApprovalRiskLevel;
-  hint?: string;
 }
 
 export interface TokenUsageMessage extends TokenUsageFields {
@@ -1303,10 +1262,6 @@ const TOOL_RESULT_MESSAGE_SHAPE = defineObjectShape<ToolResultMessage>()(
     'parentOperationId',
   ],
 );
-const PERMISSION_DECISION_MESSAGE_SHAPE = defineObjectShape<PermissionDecisionMessage>()(
-  ['type', 'id', 'turnId', 'ts', 'toolUseId', 'toolName', 'decision'],
-  ['rememberForTurn', 'reviewer', 'rationale', 'riskLevel', 'hint'],
-);
 const TOKEN_USAGE_MESSAGE_SHAPE = defineObjectShape<TokenUsageMessage>()(
   ['type', 'id', 'turnId', 'ts', 'input', 'output'],
   [
@@ -1605,16 +1560,6 @@ function decodeMessage(
         isToolActivityIdentity(message)
       )
         return message as unknown as ToolResultMessage;
-      break;
-    case 'permission_decision':
-      if (
-        hasExactShape(message, PERMISSION_DECISION_MESSAGE_SHAPE) &&
-        hasMessageEnvelope(message, true) &&
-        typeof message.toolUseId === 'string' &&
-        typeof message.toolName === 'string' &&
-        isPermissionDecisionFields(message, { allowHint: true })
-      )
-        return message as unknown as PermissionDecisionMessage;
       break;
     case 'token_usage':
       if (

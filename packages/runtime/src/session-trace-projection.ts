@@ -378,20 +378,6 @@ function projectEventSteps(events: readonly RuntimeEvent[]): TraceStep[] {
       continue;
     }
 
-    const decision = event.actions?.permissionDecision;
-    if (decision) {
-      steps.push({
-        kind: 'permission',
-        id: event.id,
-        turnId: event.turnId,
-        runId: event.runId,
-        startedAt: event.ts,
-        ...(decision.toolName !== undefined ? { toolName: decision.toolName } : {}),
-        decision: decision.decision,
-      });
-      continue;
-    }
-
     if (event.content?.kind === 'error') {
       steps.push({
         kind: 'error',

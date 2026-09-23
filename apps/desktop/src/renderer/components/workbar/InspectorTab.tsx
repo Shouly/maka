@@ -537,7 +537,6 @@ function StepRow(props: {
   const label = step.label ?? inspectorStepKindLabel(copy, step.kind);
   const qualifier = [
     step.callKind !== undefined ? copy.callKind(step.callKind) : undefined,
-    step.decision !== undefined ? copy.permissionDecision(step.decision) : undefined,
     step.detail,
   ]
     .filter((part): part is string => part !== undefined)

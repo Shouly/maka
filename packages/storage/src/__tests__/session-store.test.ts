@@ -620,7 +620,6 @@ describe('SQLite SessionStore', () => {
             profile: 'local_read',
             systemPrompt: 'Read the assigned workspace task.',
             toolNames: ['Read'],
-            categoryPolicy: { read: 'allow' },
           },
           subagentSpawn: {
             schemaVersion: 1,

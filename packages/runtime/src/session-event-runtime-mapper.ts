@@ -140,15 +140,12 @@ export function mapSessionEventToRuntimeEvent(
     // produced by a backend or the kernel.
     throw new Error(`${event.type} is not a backend event`);
   }
-  if (isLegacyPermissionSessionEvent(event)) {
-    throw new Error(`${event.type} is a legacy permission event and is not backend-mappable`);
-  }
   const narrowed: BackendSessionEvent = event;
   return mapBackendSessionEvent(narrowed, ctx, memory);
 }
 
 export function isLiveBackendSessionEvent(event: SessionEvent): event is BackendSessionEvent {
-  return !isHostProjectionSessionEvent(event) && !isLegacyPermissionSessionEvent(event);
+  return !isHostProjectionSessionEvent(event);
 }
 
 function isHostProjectionSessionEvent(event: SessionEvent): event is Extract<
@@ -168,24 +165,6 @@ function isHostProjectionSessionEvent(event: SessionEvent): event is Extract<
     event.type === 'context_compaction_started' ||
     event.type === 'client_capability_request' ||
     event.type === 'client_capability_decision_ack'
-  );
-}
-
-function isLegacyPermissionSessionEvent(event: SessionEvent): event is Extract<
-  SessionEvent,
-  {
-    type:
-      | 'permission_request'
-      | 'permission_answer_ack'
-      | 'permission_closure_ack'
-      | 'permission_decision_ack';
-  }
-> {
-  return (
-    event.type === 'permission_request' ||
-    event.type === 'permission_answer_ack' ||
-    event.type === 'permission_closure_ack' ||
-    event.type === 'permission_decision_ack'
   );
 }
 

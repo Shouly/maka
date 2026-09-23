@@ -28,12 +28,7 @@ import type {
   UserQuestionAnswerAckEvent,
   UserQuestionRequestEvent,
 } from '@maka/core/events';
-import type {
-  InteractionCanonicalPermissionOutcome,
-  InteractionClosureReason,
-  InteractionFormResult,
-  InteractionPermissionRequest,
-} from '@maka/core/interaction';
+import type { InteractionClosureReason, InteractionFormResult } from '@maka/core/interaction';
 import type { SandboxBoundarySettlement } from '@maka/core/sandbox-boundary';
 import type {
   HostedInteractionBridge,
@@ -123,19 +118,6 @@ export interface RuntimeInteractionRunOwner extends RuntimeInteractionRunFacet {
   withdrawFormRequest(requestId: string): Promise<void>;
   close(reason: RuntimeInteractionRunClosureReason): Promise<void>;
   release(): void;
-}
-
-export interface CanonicalPermissionOutcomeRecord {
-  readonly sessionId: string;
-  readonly runId: string;
-  readonly turnId: string;
-  readonly requestId: string;
-  readonly request: InteractionPermissionRequest;
-  readonly outcome: InteractionCanonicalPermissionOutcome;
-}
-
-export interface CanonicalPermissionOutcomeReader {
-  readPermissionOutcome(requestId: string): Promise<CanonicalPermissionOutcomeRecord | undefined>;
 }
 
 export interface RuntimeInteractionAuthority {

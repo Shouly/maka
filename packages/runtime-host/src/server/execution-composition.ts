@@ -129,7 +129,6 @@ import {
   bindHostChildAgentBackend,
   createHostChildAgentToolComposition,
 } from './child-agent-composition.js';
-import { HostCanonicalPermissionOutcomeReader } from './canonical-permission-outcome-reader.js';
 import { HostArtifactCoordinator } from './artifact-coordinator.js';
 import { HostAgentGraphCoordinator } from './agent-graph-coordinator.js';
 import { HostAgentGraphExecutionCoordinator } from './agent-graph-execution-coordinator.js';
@@ -884,12 +883,8 @@ export async function createExecutionRuntimeHostComposition(
       readGoal: (sessionId) => requireGoal(goal).readProjection(sessionId),
     });
     canonicalProjection = canonicalProjectionReader;
-    const canonicalPermissionOutcomes = new HostCanonicalPermissionOutcomeReader({
-      store: stores.interactionStore,
-    });
     transcriptReader = createSessionTranscriptReader({
       stores,
-      canonicalPermissionOutcomes,
       ensureTranscriptLedger: (sessionId) =>
         requireSessionManager(manager).ensureTranscriptLedgerForRead(sessionId),
     });
@@ -1280,7 +1275,6 @@ export async function createExecutionRuntimeHostComposition(
     };
     const recapReadModel = new RuntimeReadModel({
       runtimeEventStore: stores.runtimeEventStore,
-      canonicalPermissionOutcomes,
     });
     const sessionEffectCoordinator = new HostSessionEffectCoordinator({
       model: createHostSessionEffectModel({
@@ -1384,7 +1378,6 @@ export async function createExecutionRuntimeHostComposition(
         },
       },
       interactionAuthority: interactions,
-      canonicalPermissionOutcomes,
       shellRuns,
       planStore: openedPlanStore,
       resolveChildTools,

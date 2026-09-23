@@ -84,9 +84,7 @@ export async function openTranscriptNavigationLedger(messages: readonly StoredMe
     pending.sort((left, right) => left.index - right.index);
     const opened = new Set<string>();
     let appendedThrough = -1;
-    const reader = createSessionTranscriptReader({
-      stores, canonicalPermissionOutcomes: { readPermissionOutcome: async () => undefined },
-    });
+    const reader = createSessionTranscriptReader({ stores });
     return {
       sessionId, reader,
       async appendThrough(messageId: string) {

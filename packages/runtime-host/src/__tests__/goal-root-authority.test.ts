@@ -48,7 +48,6 @@ import {
   tryAcquireInteractiveRootOwner,
   type InteractiveRootOwner,
 } from '@maka/storage/root-authority';
-import { HostCanonicalPermissionOutcomeReader } from '../server/canonical-permission-outcome-reader.js';
 import { CanonicalSessionProjectionReader } from '../server/canonical-session-projection.js';
 import type { RuntimeHostResidency } from '../server/host-kernel.js';
 import { HostInteractionCoordinator } from '../server/interaction-coordinator.js';
@@ -653,9 +652,6 @@ async function createFixture(options: { recoverAdmissions?: boolean } = {}): Pro
     now: Date.now,
     messageAuthority: authority,
     interactionAuthority: interactions,
-    canonicalPermissionOutcomes: new HostCanonicalPermissionOutcomeReader({
-      store: stores.interactionStore,
-    }),
   });
   coordinator = new RootTurnCoordinator(
     manager,

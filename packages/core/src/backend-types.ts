@@ -227,10 +227,9 @@ export type BackendStopMode = 'immediate' | 'after_step';
 
 /**
  * The live session-event vocabulary accepted from a backend. `queue_update`
- * belongs to the runtime kernel, Client Capability approval events belong to
- * the Host-owned Interaction projection, and legacy permission requests and
- * acknowledgements were replaced by sandbox-boundary events. `send` stays
- * typed as `SessionEvent` for implementation ergonomics; the flow drops these
+ * belongs to the runtime kernel and Client Capability approval events belong
+ * to the Host-owned Interaction projection. `send` stays typed as
+ * `SessionEvent` for implementation ergonomics; the flow drops these
  * non-backend variants at ingress so they are never mapped or persisted by a
  * new run.
  */
@@ -244,11 +243,7 @@ export type BackendSessionEvent = Exclude<
         | 'message_admission'
         | 'client_capability_request'
         | 'client_capability_decision_ack'
-        | 'context_compaction_started'
-        | 'permission_request'
-        | 'permission_answer_ack'
-        | 'permission_closure_ack'
-        | 'permission_decision_ack';
+        | 'context_compaction_started';
     }
   >
 >;

@@ -43,8 +43,6 @@ export interface InspectorStepRow {
   detail?: string;
   /** Why this call was made, when it was not the turn's own request. */
   callKind?: string;
-  /** How a permission request was answered. */
-  decision?: string;
   durationMs?: number;
   /** Retries beyond the first attempt of one logical call. */
   retries?: number;
@@ -161,15 +159,6 @@ function toStepRow(step: TraceStep, attributedToStepId: string | undefined): Ins
       ...(step.recovered ? { recovered: step.recovered.disposition } : {}),
       ...(step.durationMs !== undefined ? { durationMs: step.durationMs } : {}),
       failed,
-    };
-  }
-  if (step.kind === 'permission') {
-    return {
-      id: step.id,
-      kind: step.kind,
-      ...(step.toolName !== undefined ? { label: step.toolName } : {}),
-      decision: step.decision,
-      failed: false,
     };
   }
   if (step.kind === 'compaction') {

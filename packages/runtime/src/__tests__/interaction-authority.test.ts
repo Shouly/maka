@@ -595,9 +595,6 @@ describe('Runtime Interaction authority seam', () => {
       newId: () => 'id',
       now: () => 1,
       interactionAuthority: authority(),
-      canonicalPermissionOutcomes: {
-        readPermissionOutcome: async () => undefined,
-      },
       runtimeKernel: {
         respondToUserQuestion: async () => {
           questionBroadcasts += 1;

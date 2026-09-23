@@ -226,7 +226,6 @@ test('carries the subagent subtree and its artifact bytes across', async () => {
           profile: 'local_read',
           systemPrompt: 'Read.',
           toolNames: ['Read'],
-          categoryPolicy: { read: 'allow' },
         },
         subagentSpawn: {
           schemaVersion: 1,

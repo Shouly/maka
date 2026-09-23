@@ -525,7 +525,6 @@ export class ExecutionFixture {
           profile: 'local_read',
           systemPrompt: 'Read the assigned workspace task.',
           toolNames: ['Read', 'Glob', 'Grep'],
-          categoryPolicy: { read: 'allow' },
         },
         subagentSpawn: {
           schemaVersion: 1,

@@ -618,11 +618,6 @@ function appendTurnTrace(
           `- [${step.id}] tool ${step.toolName} · ${step.status}${step.durationMs === undefined ? '' : ` · ${step.durationMs}ms`}${step.recoveryPolicy ? ` · recovery ${step.recoveryPolicy}` : ''}${step.recovered ? ` · ${step.recovered.disposition} (${step.recovered.reasonCode})` : ''}`,
         );
         break;
-      case 'permission':
-        lines.push(
-          `- [${step.id}] permission${step.toolName ? ` ${step.toolName}` : ''} · ${step.decision}`,
-        );
-        break;
       case 'compaction':
         lines.push(
           `- [${step.id}] compaction${step.checkpointId ? ` · checkpoint ${step.checkpointId}` : ''}`,

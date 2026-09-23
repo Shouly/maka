@@ -109,8 +109,6 @@ export type AgentGraphRecordFacet =
   | 'tool_dispatch'
   | 'tool_result'
   | 'artifact_update'
-  | 'permission_request'
-  | 'permission_decision'
   | 'user_question_request'
   | 'form_request'
   | 'transfer'
@@ -124,7 +122,7 @@ export type AgentGraphRecordFacet =
 export type AgentGraphSupervisorSignal =
   | {
       readonly kind: 'attention';
-      readonly reason: 'permission_request' | 'user_question_request' | 'form_request';
+      readonly reason: 'user_question_request' | 'form_request';
     }
   | {
       readonly kind: 'terminal';
@@ -1198,11 +1196,7 @@ function decodeSignal(value: unknown): AgentGraphSupervisorSignal {
   const record = requireShapedRecord(value, 'agent graph signal', ['kind'], ['reason', 'status']);
   if (record.kind === 'attention') {
     requireExactRecord(record, 'agent graph attention signal', ['kind', 'reason']);
-    if (
-      record.reason !== 'permission_request' &&
-      record.reason !== 'user_question_request' &&
-      record.reason !== 'form_request'
-    ) {
+    if (record.reason !== 'user_question_request' && record.reason !== 'form_request') {
       throw invalidProtocolFrame('Invalid agent graph attention reason');
     }
     return { kind: record.kind, reason: record.reason };
@@ -1434,8 +1428,6 @@ function requireFacet(value: unknown): AgentGraphRecordFacet {
     value === 'tool_dispatch' ||
     value === 'tool_result' ||
     value === 'artifact_update' ||
-    value === 'permission_request' ||
-    value === 'permission_decision' ||
     value === 'user_question_request' ||
     value === 'form_request' ||
     value === 'transfer' ||

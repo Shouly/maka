@@ -388,7 +388,6 @@ function projectHistoryMessage(message: StoredMessage): HistoryTurnMessage | und
         timestamp: message.ts,
       };
     case 'tool_result':
-    case 'permission_decision':
     case 'token_usage':
     case 'turn_state':
     case 'system_note':

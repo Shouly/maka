@@ -931,13 +931,6 @@ function projectClientSessionEvent(
       return { facets: ['tool_call'], signals: [] };
     case 'tool_result':
       return { facets: ['tool_result'], signals: [] };
-    case 'permission_request':
-      return {
-        facets: ['permission_request'],
-        signals: [{ kind: 'attention', reason: 'permission_request' }],
-      };
-    case 'permission_decision_ack':
-      return { facets: ['permission_decision'], signals: [] };
     case 'user_question_request':
       return {
         facets: ['user_question_request'],

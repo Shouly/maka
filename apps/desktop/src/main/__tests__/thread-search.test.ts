@@ -610,15 +610,6 @@ describe('thread search text projection', () => {
         ts: 1,
         status: 'completed',
       },
-      {
-        type: 'permission_decision',
-        id: 'pd1',
-        turnId: 't1',
-        ts: 1,
-        toolUseId: 'call1',
-        toolName: 'Bash',
-        decision: 'allow',
-      },
     ];
     for (const message of excluded) assert.equal(collectSearchableText(message), undefined);
   });

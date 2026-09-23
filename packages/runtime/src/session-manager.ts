@@ -43,8 +43,6 @@ import type {
   TextDeltaEvent,
   ErrorEvent,
   AbortEvent,
-  PermissionDecisionAckEvent,
-  PermissionRequestEvent,
   ShellRunUpdate,
   MessageContent,
 } from '@maka/core/events';
@@ -61,7 +59,6 @@ import type {
   TurnRecord,
   UserMessage,
   AssistantMessage,
-  PermissionDecisionMessage,
   PersistedBackendKind,
 } from '@maka/core/session';
 import type {
@@ -202,7 +199,6 @@ import {
 } from './message-authority.js';
 import {
   RuntimeInteractionInvariantError,
-  type CanonicalPermissionOutcomeReader,
   type RuntimeInteractionAuthority,
 } from './interaction-authority.js';
 import {
@@ -900,16 +896,10 @@ export interface ResolvedChildToolActivation {
   readonly shell?: TurnShellPlan;
 }
 
-type SessionManagerInteractionDeps =
-  | {
-      /** Hosted composition capabilities. Omit both for embedded interaction ownership. */
-      interactionAuthority: RuntimeInteractionAuthority;
-      canonicalPermissionOutcomes: CanonicalPermissionOutcomeReader;
-    }
-  | {
-      interactionAuthority?: undefined;
-      canonicalPermissionOutcomes?: undefined;
-    };
+type SessionManagerInteractionDeps = {
+  /** Hosted composition capability. Omit for embedded interaction ownership. */
+  interactionAuthority?: RuntimeInteractionAuthority;
+};
 
 export type SessionManagerDeps = SessionManagerBaseDeps & SessionManagerInteractionDeps;
 
@@ -3209,7 +3199,6 @@ export class SessionManager {
         workspace: definition.contract.workspace,
         permissionMode: childPermissionMode,
         toolNames: resolvedToolNames,
-        categoryPolicy: {},
         systemPrompt: definition.systemPrompt,
         ...(resolvedPreset
           ? {
@@ -3289,7 +3278,6 @@ export class SessionManager {
           ...(resolvedPreset ? { presetId: resolvedPreset.id } : {}),
           systemPrompt: definition.systemPrompt,
           toolNames: resolvedToolNames,
-          categoryPolicy: {},
         },
         subagentSpawn: {
           schemaVersion: SUBAGENT_SESSION_SPAWN_SCHEMA_VERSION,
@@ -3858,7 +3846,6 @@ export class SessionManager {
           ...(input.resolvedPreset ? { presetId: input.resolvedPreset.id } : {}),
           systemPrompt: definition.systemPrompt,
           toolNames: resolvedToolNames,
-          categoryPolicy: {},
         },
         subagentSpawn: {
           schemaVersion: SUBAGENT_SESSION_SPAWN_SCHEMA_VERSION,
@@ -5109,12 +5096,7 @@ export class SessionManager {
     if (!this.deps.runStore || !this.deps.runtimeEventStore) {
       throw new Error('RuntimeReadModel requires AgentRunStore and RuntimeEventStore');
     }
-    return new RuntimeReadModel({
-      runtimeEventStore: this.deps.runtimeEventStore,
-      ...(this.deps.canonicalPermissionOutcomes
-        ? { canonicalPermissionOutcomes: this.deps.canonicalPermissionOutcomes }
-        : {}),
-    });
+    return new RuntimeReadModel({ runtimeEventStore: this.deps.runtimeEventStore });
   }
 
   /**
@@ -6246,12 +6228,4 @@ function shellRunBashToolCallIds(messages: readonly StoredMessage[]): Set<string
 
 // Re-export the suppressed-unused types so this file is the canonical home
 // for them. (Avoids TS "imported but unused" warnings.)
-export type {
-  TextDeltaEvent,
-  CompleteEvent,
-  ErrorEvent,
-  AbortEvent,
-  PermissionRequestEvent,
-  PermissionDecisionAckEvent,
-  PermissionDecisionMessage,
-};
+export type { TextDeltaEvent, CompleteEvent, ErrorEvent, AbortEvent };

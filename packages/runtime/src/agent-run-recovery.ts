@@ -64,16 +64,14 @@ export function classifyAgentRunRecovery(
   const reason =
     lastEventType === 'model_stream_completed'
       ? 'model_stream_completed_without_runtime_terminal'
-      : lastEventType === 'permission_requested' || lastEventType === 'permission_failed'
-        ? 'stale_user_wait'
-        : lastEventType === 'tool_started'
-          ? 'tool_interrupted'
-          : lastEventType === undefined ||
-              lastEventType === 'turn_started' ||
-              lastEventType === 'model_resolved' ||
-              lastEventType === 'model_stream_started'
-            ? 'run_interrupted'
-            : 'non_terminal_run_recovered';
+      : lastEventType === 'tool_started'
+        ? 'tool_interrupted'
+        : lastEventType === undefined ||
+            lastEventType === 'turn_started' ||
+            lastEventType === 'model_resolved' ||
+            lastEventType === 'model_stream_started'
+          ? 'run_interrupted'
+          : 'non_terminal_run_recovered';
 
   return failedDecision(
     invocation,

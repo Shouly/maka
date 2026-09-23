@@ -214,7 +214,6 @@ describe('legacy child execution snapshots', () => {
     profile: 'local_read',
     systemPrompt: 'Read only.',
     toolNames: ['Read'],
-    categoryPolicy: { read: 'allow' },
   } as const;
 
   test('accepts a snapshot carrying a retired key', () => {

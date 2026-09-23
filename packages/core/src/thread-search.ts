@@ -31,7 +31,6 @@
  *   - Bounded substring scan over user-visible message types only:
  *       UserMessage / AssistantMessage / ToolCallMessage / ToolResultMessage.
  *     Excluded: SystemNoteMessage / TokenUsageMessage / TurnStateMessage /
- *     PermissionDecisionMessage.
  *   - Excludes sessions with `backend === 'fake'` (retired local simulation,
  *     plus the e2e fixtures that still seed it). Desktop also excludes archived
  *     sessions; Agent global history opts in to them explicitly.
@@ -462,7 +461,6 @@ export function threadSearchMatchKind(message: StoredMessage): ThreadSearchMatch
       return 'tool_intent';
     case 'tool_result':
       return 'tool_result';
-    case 'permission_decision':
     case 'token_usage':
     case 'turn_state':
     case 'workhub_coordination':
@@ -483,8 +481,6 @@ export function formatSearchResultSummary(message: StoredMessage): string {
         : `工具调用：${message.toolName}`;
     case 'tool_result':
       return message.isError ? '工具结果：失败' : '工具结果：成功';
-    case 'permission_decision':
-      return '权限记录';
     case 'token_usage':
       return '用量记录';
     case 'turn_state':
@@ -543,7 +539,6 @@ export function collectSearchableText(message: StoredMessage): string | undefine
       }
       return serialized;
     }
-    case 'permission_decision':
     case 'token_usage':
     case 'turn_state':
     case 'workhub_coordination':

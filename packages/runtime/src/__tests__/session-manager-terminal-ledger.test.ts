@@ -481,7 +481,6 @@ describe('SessionManager terminal ledger invariants', () => {
       newId: nextId(),
       now: nextNow(21_700),
       interactionAuthority: hostedInteractionAuthority(),
-      canonicalPermissionOutcomes: { readPermissionOutcome: async () => undefined },
     });
     const session = await manager.createSession(makeInput());
 

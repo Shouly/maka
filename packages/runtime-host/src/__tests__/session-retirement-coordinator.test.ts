@@ -799,7 +799,6 @@ describe('Host Session retirement coordinator', () => {
             profile: 'implementation',
             systemPrompt: 'Implement the task.',
             toolNames: ['Read', 'Write'],
-            categoryPolicy: {},
           },
           subagentSpawn: {
             schemaVersion: 1,
@@ -1558,7 +1557,6 @@ async function createClosedSubagent(
         profile: 'implementation',
         systemPrompt: 'Implement the task.',
         toolNames: ['Read', 'Write'],
-        categoryPolicy: {},
       },
       subagentSpawn: {
         schemaVersion: 1,
@@ -1637,7 +1635,6 @@ async function createClosedGraphOperator(
         profile: 'implementation',
         systemPrompt: 'Implement the assigned task.',
         toolNames: ['Read', 'Write'],
-        categoryPolicy: {},
       },
       subagentSpawn: {
         schemaVersion: 1,

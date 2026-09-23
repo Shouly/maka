@@ -107,7 +107,6 @@ export type ResumePlanDiagnosticCode =
   | 'unmatched_tool_result'
   | 'tool_name_mismatch'
   | 'runtime_offset_mismatch'
-  | 'pending_permission'
   | 'workspace_identity_mismatch'
   | 'background_operation_pending'
   | 'tool_catalog_mismatch'
@@ -151,7 +150,6 @@ export type ResumePlanDiagnosticCode =
 export type ResumeRejectionReason =
   | 'runtime_offset_mismatch'
   | 'dangling_tool_state'
-  | 'pending_permission'
   | 'workspace_identity_mismatch'
   | 'background_operation_pending'
   | 'tool_catalog_mismatch'
@@ -1072,9 +1070,8 @@ export function buildSafeBoundaryContinuationPlan(
     : buildResumePlanFromRuntimeEvents(events, {
         ...(expectedRuntimeEventHighWater !== undefined ? { expectedRuntimeEventHighWater } : {}),
       });
-  const phaseOneDiagnostics = collectPendingPermissionDiagnostics(events);
+  const phaseOneDiagnostics: ResumePlanDiagnostic[] = [];
   const phaseOneRejectionReasons: ResumeRejectionReason[] = [];
-  if (phaseOneDiagnostics.length > 0) phaseOneRejectionReasons.push('pending_permission');
   if (
     compositeReplay &&
     expectedRuntimeEventHighWater !== undefined &&
@@ -1319,29 +1316,6 @@ export function buildSafeBoundaryContinuationPlan(
       },
     },
   };
-}
-
-function collectPendingPermissionDiagnostics(
-  events: readonly RuntimeEvent[],
-): ResumePlanDiagnostic[] {
-  const pending = new Map<string, RuntimeEvent>();
-  for (const event of events) {
-    if (isPartialRuntimeEvent(event)) continue;
-    const request = event.actions?.permissionRequest;
-    if (request) pending.set(request.requestId, event);
-    const decision = event.actions?.permissionDecision;
-    if (decision) pending.delete(decision.requestId);
-    const accepted = event.actions?.permissionAnswerAccepted;
-    if (accepted) pending.delete(accepted.requestId);
-    const closed = event.actions?.permissionClosureAccepted;
-    if (closed) pending.delete(closed.requestId);
-  }
-  return [...pending.entries()].map(([requestId, event]) => ({
-    code: 'pending_permission',
-    message: 'permission request has no committed decision',
-    eventId: event.id,
-    detail: { requestId },
-  }));
 }
 
 function normalizeCwd(value: string): string {

@@ -30,13 +30,7 @@ import * as nodeCrypto from 'node:crypto';
 import type { ArtifactKind } from './artifacts.js';
 import type { ModelRetryDecision } from './model-failure.js';
 import { CONTEXT_OFFLOAD_ID_MAX_CODE_POINTS, type SessionContextRef } from './context-offload.js';
-import type {
-  AdditionalPermissionRequest,
-  PermissionMode,
-  PermissionRequest,
-  PermissionResponse,
-  SandboxEscalationRequest,
-} from './permission.js';
+import type { PermissionMode } from './permission.js';
 import type { SandboxBoundaryExpansion, SandboxBoundaryRequestStatus } from './sandbox-boundary.js';
 import type { InteractionFormField, InteractionRequesterProjection } from './interaction.js';
 import type { UserQuestionRequest } from './user-question.js';
@@ -625,14 +619,10 @@ export type SessionEvent =
   | ToolProgressEvent
   | ToolResultPreviewEvent
   | ToolResultEvent
-  | AnyPermissionRequestEvent
   | SandboxBoundaryRequestEvent
   | SandboxBoundaryDecisionAckEvent
   | ClientCapabilityRequestEvent
   | ClientCapabilityDecisionAckEvent
-  | PermissionAnswerAckEvent
-  | PermissionClosureAckEvent
-  | PermissionDecisionAckEvent
   | UserQuestionRequestEvent
   | UserQuestionAnswerAckEvent
   | FormRequestEvent
@@ -1305,29 +1295,6 @@ export interface ShellRunUpdate {
   result: ShellRunStateResult;
 }
 
-export interface PermissionRequestEvent extends BaseEvent, PermissionRequest {
-  type: 'permission_request';
-}
-
-export interface AdditionalPermissionRequestEvent extends BaseEvent, AdditionalPermissionRequest {
-  type: 'permission_request';
-  /** Additional-permission prompts deliberately do not expose raw tool arguments. */
-  args: undefined;
-  rememberForTurnAllowed?: false;
-}
-
-export interface SandboxEscalationRequestEvent extends BaseEvent, SandboxEscalationRequest {
-  type: 'permission_request';
-  /** Escalation prompts expose only bounded command and justification fields. */
-  args: undefined;
-  rememberForTurnAllowed?: false;
-}
-
-export type AnyPermissionRequestEvent =
-  | PermissionRequestEvent
-  | AdditionalPermissionRequestEvent
-  | SandboxEscalationRequestEvent;
-
 export interface UserQuestionRequestEvent extends BaseEvent, UserQuestionRequest {
   type: 'user_question_request';
 }
@@ -1399,44 +1366,6 @@ export interface FormAnswerAckEvent extends BaseEvent {
   type: 'form_answer_ack';
   requestId: string;
   toolUseId: string;
-}
-
-/**
- * Echo that the hosted runtime accepted a permission answer.
- * The canonical decision remains owned by the Interaction outcome.
- */
-export interface PermissionAnswerAckEvent extends BaseEvent {
-  type: 'permission_answer_ack';
-  requestId: string;
-  toolUseId: string;
-}
-
-export type PermissionClosureReason = 'timed_out';
-
-/**
- * Echo that the hosted runtime durably closed an unanswered permission request.
- * This acknowledgement carries identity and closure reason only.
- */
-export interface PermissionClosureAckEvent extends BaseEvent {
-  type: 'permission_closure_ack';
-  requestId: string;
-  toolUseId: string;
-  reason: PermissionClosureReason;
-}
-
-/**
- * Embedded/legacy echo of a permission decision. Hosted execution uses the
- * identity-only PermissionAnswerAckEvent instead.
- */
-export interface PermissionDecisionAckEvent extends BaseEvent {
-  type: 'permission_decision_ack';
-  requestId: string;
-  toolUseId: string;
-  decision: 'allow' | 'deny';
-  rememberForTurn?: boolean;
-  reviewer?: import('./permission.js').ApprovalsReviewer;
-  rationale?: string;
-  riskLevel?: import('./permission.js').ApprovalRiskLevel;
 }
 
 export interface PlanSubmittedEvent extends BaseEvent {
@@ -1632,10 +1561,6 @@ export interface ContextCompactionStartedEvent extends BaseEvent {
  * SessionCommand: commands that target a specific session.
  *
  * Connection-management commands live in ConnectionCommand (./connections.ts).
- *
- * `permission_response` composes PermissionResponse rather than flattening
- * its fields, so there is exactly ONE shape for a permission decision in
- * the codebase.
  */
 export type AttachmentIngestItem =
   | { approvalId: string; name: string; mimeType?: string }
@@ -1649,7 +1574,6 @@ export type SessionCommand =
       attachmentItems?: AttachmentIngestItem[];
     }
   | { type: 'stop' }
-  | { type: 'permission_response'; response: PermissionResponse }
   | {
       type: 'plan_response';
       planId: string;

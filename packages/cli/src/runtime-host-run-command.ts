@@ -846,7 +846,7 @@ class NonInteractiveInteractionController {
         ? 'interactive user questions are unavailable in non-interactive mode'
         : pending.request.kind === 'form'
           ? 'interactive user forms are unavailable in non-interactive mode'
-          : 'interactive permission requests are unavailable in non-interactive mode',
+          : 'interactive client capability requests are unavailable in non-interactive mode',
     );
   }
 

@@ -236,7 +236,6 @@ for (const coordination of [false, true])
 
       const read = createSessionTranscriptReader({
         stores,
-        canonicalPermissionOutcomes: { readPermissionOutcome: async () => undefined },
       });
       const messages = await read.readActiveOverlay(session.id, {
         sessionId: session.id,
@@ -351,31 +350,6 @@ test('pages the ledger without materializing Turns it takes no rows from', async
           refs: { toolCallId: 'tool-1', stepId: 'assistant-final' },
         });
         await append({
-          actions: {
-            permissionRequest: {
-              kind: 'tool_permission',
-              requestId: 'request-1',
-              toolUseId: 'tool-1',
-              toolName: 'Read',
-              category: 'read',
-              reason: 'custom',
-              args: {},
-              rememberForTurnAllowed: true,
-              hint: 'original permission hint',
-            },
-          },
-        });
-        await append({
-          actions: {
-            permissionDecision: {
-              requestId: 'request-1',
-              decision: 'allow',
-              rememberForTurn: true,
-            },
-          },
-          refs: { toolCallId: 'tool-1' },
-        });
-        await append({
           role: 'tool',
           author: 'tool',
           content: {
@@ -428,7 +402,6 @@ test('pages the ledger without materializing Turns it takes no rows from', async
     }
     const read = createSessionTranscriptReader({
       stores,
-      canonicalPermissionOutcomes: { readPermissionOutcome: async () => undefined },
     });
     // Measure actual JSON decoded, not only the eventual response size.
     //
@@ -620,7 +593,6 @@ test('stops scanning a control-only ledger at the cumulative immutable event lim
   } as unknown as ExecutionStoresWriter<'interactive'>;
   const read = createSessionTranscriptReader({
     stores,
-    canonicalPermissionOutcomes: { readPermissionOutcome: async () => undefined },
   });
 
   await assert.rejects(
@@ -668,7 +640,6 @@ test('stops an oversized active projection before retaining the full RuntimeEven
   } as unknown as ExecutionStoresWriter<'interactive'>;
   const read = createSessionTranscriptReader({
     stores,
-    canonicalPermissionOutcomes: { readPermissionOutcome: async () => undefined },
   });
 
   await assert.rejects(
@@ -736,7 +707,6 @@ test('pages a nested Turn the same way a single sweep reads it', async () => {
 
     const read = createSessionTranscriptReader({
       stores,
-      canonicalPermissionOutcomes: { readPermissionOutcome: async () => undefined },
     });
     const throughSequence = await read.readDurableHighWater(session.id);
 

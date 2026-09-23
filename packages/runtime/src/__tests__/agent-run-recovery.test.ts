@@ -24,7 +24,7 @@ import { classifyAgentRunRecovery } from '../agent-run-recovery.js';
 import { testInvocationOpening } from './invocation-fixture.js';
 
 describe('AgentRun startup recovery', () => {
-  test('fails a graph supervisor permission handoff once its live waiter is lost', () => {
+  test('fails a graph supervisor run the events never closed', () => {
     const invocation: RuntimeInvocationRecord = {
       sessionId: 'session-1',
       invocationId: 'invocation-1',
@@ -46,8 +46,8 @@ describe('AgentRun startup recovery', () => {
 
     const decision = classifyAgentRunRecovery(invocation, [
       {
-        type: 'permission_requested',
-        id: 'op-permission_requested',
+        type: 'tool_started',
+        id: 'op-tool_started',
         sessionId: 'session-1',
         runId: 'run-1',
         turnId: 'turn-1',
@@ -56,6 +56,6 @@ describe('AgentRun startup recovery', () => {
     ]);
     assert.equal(decision?.status, 'failed');
     assert.equal(decision?.failureClass, 'app_restarted');
-    assert.equal(decision?.diagnostic?.recoveryReason, 'stale_user_wait');
+    assert.equal(decision?.diagnostic?.recoveryReason, 'tool_interrupted');
   });
 });

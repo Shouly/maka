@@ -243,7 +243,6 @@ export interface DesktopConversationCopy {
     /** Why a model was called, when the reason was not the turn itself. */
     callKind: (kind: string) => string;
     /** How a permission request was answered. */
-    permissionDecision: (decision: string) => string;
     /** What a tool that failed was recovered as. */
     recoveredAs: (disposition: string) => string;
     /** Attempts beyond the first, in words rather than as `×N`. */
@@ -417,9 +416,6 @@ const EN_CALL_KIND: CallKindCopy = {
   workhub_intent: 'WorkHub intent',
   workhub_recall: 'WorkHub recall',
 };
-
-const ZH_PERMISSION_DECISION: Record<string, string> = { allow: '已允许', deny: '已拒绝' };
-const EN_PERMISSION_DECISION: Record<string, string> = { allow: 'Allowed', deny: 'Denied' };
 
 const ZH_RECOVERED: Record<string, string> = { completed: '已完成', parked: '已搁置' };
 
@@ -667,7 +663,6 @@ const COPY = {
       turnsShort: (count) => `${count} 轮的调用记录不全`,
       stepKind: { permission: '权限', compaction: '上下文压缩', error: '错误' },
       callKind: (kind) => ZH_CALL_KIND[kind as keyof CallKindCopy] ?? kind,
-      permissionDecision: (decision) => ZH_PERMISSION_DECISION[decision] ?? decision,
       recoveredAs: (disposition) => `已恢复：${ZH_RECOVERED[disposition] ?? disposition}`,
       retries: (count) => `重试 ${count} 次`,
       turnFailure: (code) => ZH_TURN_FAILURE[code] ?? '本轮失败',
@@ -1052,7 +1047,6 @@ const COPY = {
       turnsShort: (count) => `${count} 輪的呼叫記錄不全`,
       stepKind: { permission: '權限', compaction: '上下文壓縮', error: '錯誤' },
       callKind: (kind) => ZH_CALL_KIND[kind as keyof CallKindCopy] ?? kind,
-      permissionDecision: (decision) => ZH_PERMISSION_DECISION[decision] ?? decision,
       recoveredAs: (disposition) => `已恢復：${ZH_RECOVERED[disposition] ?? disposition}`,
       retries: (count) => `重試 ${count} 次`,
       turnFailure: (code) => ZH_TURN_FAILURE[code] ?? '本輪失敗',
@@ -1452,7 +1446,6 @@ const COPY = {
         `${count} turn${count === 1 ? '' : 's'} with an incomplete call record`,
       stepKind: { permission: 'Permission', compaction: 'Context compaction', error: 'Error' },
       callKind: (kind) => EN_CALL_KIND[kind as keyof CallKindCopy] ?? kind,
-      permissionDecision: (decision) => EN_PERMISSION_DECISION[decision] ?? decision,
       recoveredAs: (disposition) => `recovered as ${disposition}`,
       retries: (count) => `${count} retr${count === 1 ? 'y' : 'ies'}`,
       turnFailure: (code) => EN_TURN_FAILURE[code] ?? 'Turn failed',

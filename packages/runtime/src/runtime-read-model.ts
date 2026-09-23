@@ -23,10 +23,6 @@ import type { RuntimeInvocationRecord } from '@maka/core/runtime-invocation';
 import type { StoredMessage, TurnRecord } from '@maka/core/session';
 import { deriveTurnRecords } from '@maka/core/session';
 import { isSessionInlineInvocation } from '@maka/core/runtime-invocation';
-import type {
-  CanonicalPermissionOutcomeReader,
-  CanonicalPermissionOutcomeRecord,
-} from './interaction-authority.js';
 import {
   activePresentationRuntimeEvents,
   classifyRuntimeEventTerminalFact,
@@ -40,11 +36,8 @@ import {
   type RuntimeEventModelReplayPlan,
 } from './model-history.js';
 
-const CANONICAL_PERMISSION_READ_CONCURRENCY = 8;
-
 export interface RuntimeReadModelDeps {
   runtimeEventStore: RuntimeEventStore;
-  canonicalPermissionOutcomes?: CanonicalPermissionOutcomeReader;
 }
 
 export interface RuntimeReadModelSessionView {
@@ -183,19 +176,10 @@ export class RuntimeReadModel {
     terminalFacts?: RuntimeEventTerminalFact[];
     inFlightTurnIds?: ReadonlySet<string>;
   }): Promise<RuntimeReadModelSessionView> {
-    const canonicalPermissionRead = await this.readCanonicalPermissionOutcomes(input.events);
     const projected = projectRuntimeEventsToStoredMessages(input.events, {
       invocations: input.invocations,
-      canonicalPermissionOutcomes: canonicalPermissionRead.outcomes,
     });
-    const diagnostics = [
-      ...input.diagnostics,
-      ...canonicalPermissionRead.diagnostics,
-      ...projected.diagnostics,
-    ];
-    if (canonicalPermissionRead.diagnostics.length > 0) {
-      throw new RuntimeReadModelError('Canonical permission outcome read failed', diagnostics);
-    }
+    const diagnostics = [...input.diagnostics, ...projected.diagnostics];
     if (projected.diagnostics.some(isHardRuntimeEventReadModelDiagnostic)) {
       throw new RuntimeReadModelError('RuntimeEvent read projection is incomplete', diagnostics);
     }
@@ -212,52 +196,6 @@ export class RuntimeReadModel {
       terminalFacts: input.terminalFacts ?? [],
       replayPlan: buildRuntimeEventModelReplayPlan(input.events),
     };
-  }
-
-  private async readCanonicalPermissionOutcomes(events: readonly RuntimeEvent[]): Promise<{
-    outcomes: Map<string, CanonicalPermissionOutcomeRecord>;
-    diagnostics: RuntimeEventReadModelDiagnostic[];
-  }> {
-    const requestIds = [
-      ...new Set(
-        events.flatMap((event) =>
-          event.actions?.permissionAnswerAccepted
-            ? [event.actions.permissionAnswerAccepted.requestId]
-            : [],
-        ),
-      ),
-    ];
-    const outcomes = new Map<string, CanonicalPermissionOutcomeRecord>();
-    const diagnostics: RuntimeEventReadModelDiagnostic[] = [];
-    const reader = this.deps.canonicalPermissionOutcomes;
-    if (!reader) return { outcomes, diagnostics };
-
-    let nextIndex = 0;
-    const worker = async (): Promise<void> => {
-      while (nextIndex < requestIds.length) {
-        const requestId = requestIds[nextIndex]!;
-        nextIndex += 1;
-        try {
-          const outcome = await reader.readPermissionOutcome(requestId);
-          if (outcome) outcomes.set(requestId, outcome);
-        } catch (error) {
-          diagnostics.push(
-            readModelDiagnostic(
-              'incomplete_event',
-              'CanonicalPermissionOutcomeReader.readPermissionOutcome failed',
-              { requestId, error: errorMessage(error) },
-            ),
-          );
-        }
-      }
-    };
-    await Promise.all(
-      Array.from(
-        { length: Math.min(CANONICAL_PERMISSION_READ_CONCURRENCY, requestIds.length) },
-        worker,
-      ),
-    );
-    return { outcomes, diagnostics };
   }
 }
 

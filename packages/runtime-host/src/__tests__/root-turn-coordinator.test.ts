@@ -93,7 +93,6 @@ import { resolveStorageRoot, tryAcquireInteractiveRootOwner } from '@maka/storag
 import type { SubscriptionFrame, TurnSnapshot } from '../protocol/index.js';
 import { HostAgentGraphExecutionCoordinator } from '../server/agent-graph-execution-coordinator.js';
 import { HostArtifactCoordinator } from '../server/artifact-coordinator.js';
-import { HostCanonicalPermissionOutcomeReader } from '../server/canonical-permission-outcome-reader.js';
 import { CanonicalSessionProjectionReader } from '../server/canonical-session-projection.js';
 import { HostClientCapabilityCoordinator } from '../server/client-capability-coordinator.js';
 import { ClientCapabilityInvocationError } from '../server/client-capability-invocation-broker.js';
@@ -1851,7 +1850,6 @@ test('linked child Sessions reject public safe-boundary continuation', async () 
         profile: 'implementation',
         systemPrompt: IMPLEMENTATION_AGENT_DEFINITION.systemPrompt,
         toolNames: [...IMPLEMENTATION_AGENT_DEFINITION.tools],
-        categoryPolicy: {},
       },
       subagentSpawn: {
         schemaVersion: 1,
@@ -1995,7 +1993,6 @@ test('worktree child Sessions reject roots outside managed child execution', asy
         profile: 'implementation',
         systemPrompt: IMPLEMENTATION_AGENT_DEFINITION.systemPrompt,
         toolNames: [...IMPLEMENTATION_AGENT_DEFINITION.tools],
-        categoryPolicy: {},
       },
       subagentSpawn: {
         schemaVersion: 1,
@@ -3027,9 +3024,6 @@ test('hosted linked child roots share admission, message, terminal, and stop aut
       }),
       messageAuthority: authority,
       interactionAuthority,
-      canonicalPermissionOutcomes: new HostCanonicalPermissionOutcomeReader({
-        store: stores.interactionStore,
-      }),
     });
     coordinator = new RootTurnCoordinator(
       manager,
@@ -5963,7 +5957,6 @@ test('repeated handoffs preserve one logical admission, decreasing budget and ex
       if (attempt === 2) {
         const transcript = createSessionTranscriptReader({
           stores: fixture.stores,
-          canonicalPermissionOutcomes: { readPermissionOutcome: async () => undefined },
         });
         const overlay = await transcript.readActiveOverlay(fixture.sessionId, {
           sessionId: fixture.sessionId,
@@ -6361,9 +6354,6 @@ async function createFailureFixture(options: {
     ? new SessionManager({
         ...managerDeps,
         interactionAuthority: interactions,
-        canonicalPermissionOutcomes: new HostCanonicalPermissionOutcomeReader({
-          store: stores.interactionStore,
-        }),
       })
     : new SessionManager(managerDeps);
   const artifactAuthority = artifacts

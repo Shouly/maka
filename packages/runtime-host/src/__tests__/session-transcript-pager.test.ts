@@ -882,13 +882,11 @@ test('shared paging skips a full hidden storage batch before a visible message',
   const hidden = Array.from(
     { length: 257 },
     (_, index): StoredMessage => ({
-      type: 'permission_decision',
-      id: `permission-${index}`,
+      type: 'system_note',
+      id: `hidden-${index}`,
       turnId: `turn-${index}`,
       ts: index + 1,
-      toolUseId: `tool-${index}`,
-      toolName: 'write_file',
-      decision: 'allow',
+      kind: 'session_start',
     }),
   );
   const visible = userMessage(hidden.length, 'visible');
@@ -916,13 +914,11 @@ test('shared range edges cross a hidden storage batch between visible messages',
     ...Array.from(
       { length: 257 },
       (_, index): StoredMessage => ({
-        type: 'permission_decision',
-        id: `permission-between-${index}`,
+        type: 'system_note',
+        id: `hidden-between-${index}`,
         turnId: `turn-hidden-${index}`,
         ts: index + 2,
-        toolUseId: `tool-between-${index}`,
-        toolName: 'write_file',
-        decision: 'allow',
+        kind: 'session_start',
       }),
     ),
     userMessage(258, 'after'),

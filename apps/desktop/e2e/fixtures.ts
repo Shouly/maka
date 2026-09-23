@@ -252,7 +252,6 @@ async function seedParentRemovalSessions(userDataDir: string): Promise<void> {
         profile: 'implementation',
         systemPrompt: 'Implement the assigned task.',
         toolNames: ['Read', 'Write'],
-        categoryPolicy: {},
       },
       subagentSpawn: {
         schemaVersion: 1,

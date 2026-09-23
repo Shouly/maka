@@ -21,7 +21,6 @@ import type { RuntimeInvocationOutcome } from '@maka/core/runtime-invocation';
 import type { RunIdentity } from './terminal-run-commit.js';
 import { isRuntimeSystemNoteKind } from '@maka/core/session';
 import type {
-  PermissionDecisionMessage,
   StoredMessage,
   TokenUsageMessage,
   ToolCallMessage,
@@ -304,35 +303,6 @@ export function backfillRuntimeEventsFromStoredMessages(
         break;
       }
 
-      // The decision names the tool it answered for, so it converts on its own
-      // evidence; a matching call in the same turn is confirmation, not a
-      // requirement.
-      case 'permission_decision':
-        if (conversationTextOnly) break;
-        events.push({
-          ...base,
-          id: newId(),
-          role: 'system',
-          author: 'system',
-          actions: {
-            stateDelta: recoveryState(now, message),
-            permissionDecision: {
-              requestId: message.id,
-              decision: message.decision,
-              toolName: message.toolName,
-              ...(message.rememberForTurn !== undefined
-                ? { rememberForTurn: message.rememberForTurn }
-                : {}),
-              ...(message.reviewer !== undefined ? { reviewer: message.reviewer } : {}),
-              ...(message.rationale !== undefined ? { rationale: message.rationale } : {}),
-              ...(message.riskLevel !== undefined ? { riskLevel: message.riskLevel } : {}),
-              ...(message.hint !== undefined ? { hint: message.hint } : {}),
-            },
-          },
-          refs: { storedMessageId: message.id, toolCallId: message.toolUseId },
-        });
-        break;
-
       case 'token_usage':
         if (conversationTextOnly) break;
         events.push({
@@ -552,7 +522,7 @@ function latestTurnState(messages: readonly StoredMessage[]): TurnStateMessage |
 
 function safePriorToolCall(
   toolCalls: ReadonlyMap<string, ToolCallMessage>,
-  message: ToolResultMessage | PermissionDecisionMessage,
+  message: ToolResultMessage,
 ): ToolCallMessage | undefined {
   const call = toolCalls.get(message.toolUseId);
   if (!call) return undefined;

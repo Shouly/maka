@@ -29,13 +29,11 @@ export type RunTracePhase =
   | 'turn'
   | 'model'
   | 'tool'
-  | 'permission'
   | 'sandbox'
   | 'skill'
   | 'plan'
   | 'agent_graph'
-  | 'abort'
-  | 'usage';
+  | 'abort';
 
 export type RunTraceEventType =
   | 'turn_started'
@@ -47,7 +45,6 @@ export type RunTraceEventType =
   | 'plan_execution_cancelled'
   | 'plan_execution_interrupted'
   | 'plan_execution_resumed'
-  | 'plan_transition_failed'
   | 'graph_supervisor_yielded'
   | 'model_resolved'
   | 'model_resolve_failed'
@@ -63,18 +60,6 @@ export type RunTraceEventType =
   | 'skill_searched'
   | 'skill_loaded'
   | 'skill_load_failed'
-  | 'permission_requested'
-  | 'permission_decided'
-  | 'permission_failed'
-  | 'approval_routed'
-  | 'auto_review_started'
-  | 'auto_review_decided'
-  | 'auto_review_failed'
-  | 'sandbox_escalation_requested'
-  | 'sandbox_escalation_granted'
-  | 'sandbox_escalation_denied'
-  | 'sandbox_escalation_applied'
-  | 'sandbox_escalation_failed'
   | 'sandbox_denial_detected'
   | 'abort_requested';
 

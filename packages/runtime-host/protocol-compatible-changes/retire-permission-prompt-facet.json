@@ -1,0 +1,8 @@
+{
+  "epoch": 156,
+  "files": [
+    "packages/runtime-host/src/protocol/agent-graph.ts",
+    "packages/runtime-host/src/protocol/interaction.ts"
+  ],
+  "reason": "Retire the tool-permission prompt from the protocol: the 'permission_request' and 'permission_decision' record facets, the 'permission_request' supervisor attention reason, and the re-exported permission Interaction types. That prompt was replaced by session sandbox boundaries in #1581, and nothing has produced a permission Interaction, a permission decision action, or either facet since, so no peer has ever encoded or decoded one. Every other facet, attention reason, snapshot shape and error stays byte-identical, and the interaction.ts change is a type re-export only."
+}

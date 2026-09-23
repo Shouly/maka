@@ -1983,7 +1983,6 @@ describe('SqliteSessionMetadataStore', () => {
         profile: 'implementation',
         systemPrompt: 'Implement the task.',
         toolNames: ['Read', 'Write'],
-        categoryPolicy: {},
       },
       subagentSpawn: {
         schemaVersion: 1,
@@ -2061,7 +2060,6 @@ describe('SqliteSessionMetadataStore', () => {
         profile: 'implementation',
         systemPrompt: 'Implement the task.',
         toolNames: ['Read', 'Write'],
-        categoryPolicy: {},
       },
       subagentSpawn: {
         schemaVersion: 1,
@@ -3015,7 +3013,6 @@ describe('SqliteSessionMetadataStore', () => {
       profile: 'local_read',
       systemPrompt: 'Read the assigned workspace task.',
       toolNames: ['Read', 'Glob', 'Grep'],
-      categoryPolicy: { read: 'allow' as const },
     };
     const subagentSpawn = {
       schemaVersion: 1 as const,
@@ -3114,7 +3111,6 @@ describe('SqliteSessionMetadataStore', () => {
       profile: 'local_read',
       systemPrompt: 'Original durable prompt.',
       toolNames: ['Read'],
-      categoryPolicy: { read: 'allow' as const },
     };
     const childHeader = (overrides: Partial<SessionHeader>): SessionHeader =>
       fullHeader({
@@ -4239,7 +4235,6 @@ function graphChildHeader(overrides: Partial<SessionHeader> = {}): SessionHeader
       profile: 'local_read',
       systemPrompt: 'Read only.',
       toolNames: ['Read'],
-      categoryPolicy: { read: 'allow' },
     },
     subagentSpawn: {
       schemaVersion: 1,

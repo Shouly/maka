@@ -517,11 +517,6 @@ export async function cloneConversationRuntimeLedger(
       run.invocationId ? [[run.invocationId, targetInvocationIds.get(run.runId)!] as const] : [],
     ),
   );
-  const copiedPermissionDecisions = new Map(
-    input.copiedMessages.flatMap((message) =>
-      message.type === 'permission_decision' ? [[message.id, message] as const] : [],
-    ),
-  );
   const runtimeEventIds = new Map(
     flattenedPlans.flatMap(({ events }) =>
       events.map((event) => [event.id, input.newId()] as const),
@@ -563,7 +558,6 @@ export async function cloneConversationRuntimeLedger(
             invocationId,
           },
           references,
-          copiedPermissionDecisions,
         ),
       );
     }
@@ -1382,39 +1376,14 @@ function cloneRuntimeEvent(
     readonly invocationId: string;
   },
   references: ConversationCopyReferenceMap,
-  copiedPermissionDecisions: ReadonlyMap<
-    string,
-    Extract<StoredMessage, { type: 'permission_decision' }>
-  >,
 ): RuntimeEvent {
-  const rewritten = rewriteRuntimeEventReferences(event, references);
-  const cloned: RuntimeEvent = {
-    ...rewritten,
+  return {
+    ...rewriteRuntimeEventReferences(event, references),
     id: ids.eventId,
     invocationId: ids.invocationId,
     sessionId: ids.sessionId,
     runId: ids.runId,
   };
-  const accepted = event.actions?.permissionAnswerAccepted;
-  const decision = accepted ? copiedPermissionDecisions.get(accepted.requestId) : undefined;
-  if (!decision || !cloned.actions) return cloned;
-  const { permissionAnswerAccepted: _accepted, ...actions } = cloned.actions;
-  cloned.actions = {
-    ...actions,
-    permissionDecision: {
-      requestId: decision.id,
-      toolName: decision.toolName,
-      decision: decision.decision,
-      ...(decision.rememberForTurn !== undefined
-        ? { rememberForTurn: decision.rememberForTurn }
-        : {}),
-      ...(decision.reviewer !== undefined ? { reviewer: decision.reviewer } : {}),
-      ...(decision.rationale !== undefined ? { rationale: decision.rationale } : {}),
-      ...(decision.riskLevel !== undefined ? { riskLevel: decision.riskLevel } : {}),
-    },
-  };
-  cloned.ts = decision.ts;
-  return cloned;
 }
 
 /**

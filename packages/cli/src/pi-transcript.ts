@@ -1124,7 +1124,6 @@ function storedMessagesToTranscriptEntries(
         break;
       }
       case 'tool_result':
-      case 'permission_decision':
       case 'token_usage':
       case 'turn_state':
         break;

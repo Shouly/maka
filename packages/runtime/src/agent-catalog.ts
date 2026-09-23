@@ -20,7 +20,6 @@
 import {
   BUILTIN_TOOL_CATEGORY,
   type PermissionMode,
-  type PolicyDecision,
   type ToolCategory,
 } from '@maka/core/permission';
 import { TOOL_NAMES } from '@maka/core/tool-names';
@@ -302,14 +301,6 @@ export function listRunnableBuiltinAgentDefinitions(
         worktreeChildExecutorAvailable: options.worktreeChildExecutorAvailable,
       }).status === 'available',
   );
-}
-
-export function evaluateAgentDefinitionToolAccess(
-  definition: AgentRuntimeDefinition,
-  tool: Pick<MakaTool, 'name' | 'categoryHint'>,
-): { category: ToolCategory; decision: PolicyDecision } {
-  const category = categoryForTool(tool);
-  return { category, decision: definition.tools.includes(tool.name) ? 'allow' : 'block' };
 }
 
 export function evaluateAgentDefinitionAvailability(input: {

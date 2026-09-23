@@ -1169,7 +1169,6 @@ async function seedSource(
           profile: 'default',
           systemPrompt: 'Complete the delegated task.',
           toolNames: [],
-          categoryPolicy: {},
         },
         subagentSpawn: {
           schemaVersion: 1,
@@ -1400,7 +1399,6 @@ async function seedSource(
         profile: 'default',
         systemPrompt: 'Complete the delegated task.',
         toolNames: [],
-        categoryPolicy: {},
       },
       subagentSpawn: {
         schemaVersion: 1,

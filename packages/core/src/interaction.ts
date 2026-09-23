@@ -17,21 +17,8 @@
  * under the License.
  */
 
-import {
-  APPROVALS_REVIEWERS,
-  APPROVAL_RISK_LEVELS,
-  type ApprovalRiskLevel,
-  type ApprovalsReviewer,
-} from './permission.js';
 import { defineObjectShape, hasExactShape } from './record-schema.js';
-import {
-  InteractionPermissionProjectionError,
-  decodeInteractionPermissionPrompt,
-  projectInteractionReviewText,
-  projectInteractionPermissionPrompt,
-  type InteractionPermissionPrompt,
-  type InteractionPermissionProjectionInput,
-} from './interaction-permission-review.js';
+import { projectInteractionReviewText } from './interaction-review-text.js';
 import {
   SANDBOX_BOUNDARY_REQUEST_STATUSES,
   validateSandboxBoundaryExpansion,
@@ -43,7 +30,7 @@ import {
   type ClientCapabilityGrantTarget,
 } from './client-capability-grant.js';
 
-export * from './interaction-permission-review.js';
+export * from './interaction-review-text.js';
 
 export const INTERACTION_MIN_QUESTIONS = 1;
 export const INTERACTION_MAX_QUESTIONS = 4;
@@ -99,12 +86,6 @@ export interface InteractionQuestion {
   readonly options: readonly InteractionQuestionOption[];
   /** Present only when the question takes several answers. */
   readonly multiSelect?: boolean;
-}
-
-export interface InteractionPermissionRequest {
-  readonly kind: 'permission';
-  readonly toolUseId: string;
-  readonly prompt: InteractionPermissionPrompt;
 }
 
 export interface InteractionQuestionRequest {
@@ -192,19 +173,10 @@ export interface InteractionClientCapabilityRequest {
 }
 
 export type InteractionRequest =
-  | InteractionPermissionRequest
   | InteractionQuestionRequest
   | InteractionFormRequest
   | InteractionSandboxBoundaryRequest
   | InteractionClientCapabilityRequest;
-
-export type InteractionPermissionDecisionFields =
-  | { readonly decision: 'allow'; readonly rememberForTurn: boolean }
-  | { readonly decision: 'deny'; readonly rememberForTurn: false };
-
-export type InteractionPermissionAnswer = {
-  readonly kind: 'permission';
-} & InteractionPermissionDecisionFields;
 
 /**
  * One entry per question: a string is one option label or the user's own text,
@@ -241,19 +213,10 @@ export interface InteractionClientCapabilityAnswer {
 }
 
 export type InteractionAnswer =
-  | InteractionPermissionAnswer
   | InteractionQuestionAnswer
   | InteractionFormAnswer
   | InteractionSandboxBoundaryAnswer
   | InteractionClientCapabilityAnswer;
-
-export type InteractionCanonicalPermissionOutcome = {
-  readonly kind: 'permission_answer';
-  readonly reviewer: ApprovalsReviewer;
-  readonly rationale?: string;
-  readonly riskLevel?: ApprovalRiskLevel;
-  readonly committedAt: number;
-} & InteractionPermissionDecisionFields;
 
 export interface InteractionCanonicalQuestionOutcome {
   readonly kind: 'question_answer';
@@ -294,7 +257,6 @@ export interface InteractionCanonicalClosureOutcome {
 }
 
 export type InteractionCanonicalOutcome =
-  | InteractionCanonicalPermissionOutcome
   | InteractionCanonicalQuestionOutcome
   | InteractionCanonicalFormOutcome
   | InteractionCanonicalSandboxBoundaryOutcome
@@ -312,10 +274,6 @@ export type InteractionFormProjectionInput = InteractionFormInput & {
   readonly toolUseId: string;
 };
 
-const PERMISSION_REQUEST_SHAPE = defineObjectShape<InteractionPermissionRequest>()(
-  ['kind', 'toolUseId', 'prompt'],
-  [],
-);
 const QUESTION_REQUEST_SHAPE = defineObjectShape<InteractionQuestionRequest>()(
   ['kind', 'toolUseId', 'questions'],
   [],
@@ -330,10 +288,6 @@ const SANDBOX_BOUNDARY_REQUEST_SHAPE = defineObjectShape<InteractionSandboxBound
 );
 const CLIENT_CAPABILITY_REQUEST_SHAPE = defineObjectShape<InteractionClientCapabilityRequest>()(
   ['kind', 'toolUseId', 'target'],
-  [],
-);
-const PERMISSION_ANSWER_SHAPE = defineObjectShape<InteractionPermissionAnswer>()(
-  ['kind', 'decision', 'rememberForTurn'],
   [],
 );
 const QUESTION_ANSWER_SHAPE = defineObjectShape<InteractionQuestionAnswer>()(
@@ -359,10 +313,6 @@ const SANDBOX_BOUNDARY_ANSWER_SHAPE = defineObjectShape<InteractionSandboxBounda
 const CLIENT_CAPABILITY_ANSWER_SHAPE = defineObjectShape<InteractionClientCapabilityAnswer>()(
   ['kind', 'decision'],
   [],
-);
-const PERMISSION_OUTCOME_SHAPE = defineObjectShape<InteractionCanonicalPermissionOutcome>()(
-  ['kind', 'reviewer', 'committedAt', 'decision', 'rememberForTurn'],
-  ['rationale', 'riskLevel'],
 );
 const QUESTION_OUTCOME_SHAPE = defineObjectShape<InteractionCanonicalQuestionOutcome>()(
   ['kind', 'answers', 'committedAt'],
@@ -423,14 +373,7 @@ const FORM_MULTI_SELECT_FIELD_SHAPE = defineObjectShape<
 export function decodeInteractionRequest(value: unknown): InteractionRequest {
   const record = plainRecord(value, 'Interaction request');
   let request: InteractionRequest;
-  if (record.kind === 'permission') {
-    exact(record, PERMISSION_REQUEST_SHAPE, 'permission request');
-    request = {
-      kind: 'permission',
-      toolUseId: boundedString(record.toolUseId, 'toolUseId', INTERACTION_ID_MAX_BYTES),
-      prompt: decodeInteractionPermissionPrompt(record.prompt),
-    };
-  } else if (record.kind === 'question') {
+  if (record.kind === 'question') {
     exact(record, QUESTION_REQUEST_SHAPE, 'question request');
     request = {
       kind: 'question',
@@ -490,17 +433,7 @@ export function decodeInteractionRequest(value: unknown): InteractionRequest {
 export function decodeInteractionAnswer(value: unknown): InteractionAnswer {
   const record = plainRecord(value, 'Interaction answer');
   let answer: InteractionAnswer;
-  if (record.kind === 'permission') {
-    exact(record, PERMISSION_ANSWER_SHAPE, 'permission answer');
-    const decision = oneOf(record.decision, ['allow', 'deny'] as const, 'decision');
-    const rememberForTurn = boolean(record.rememberForTurn, 'rememberForTurn');
-    if (decision === 'deny' && rememberForTurn)
-      throw new Error('Denied permission cannot be remembered');
-    answer =
-      decision === 'deny'
-        ? { kind: 'permission', decision, rememberForTurn: false }
-        : { kind: 'permission', decision, rememberForTurn };
-  } else if (record.kind === 'question') {
+  if (record.kind === 'question') {
     exact(record, QUESTION_ANSWER_SHAPE, 'question answer');
     answer = { kind: 'question', answers: decodeAnswers(record.answers) };
   } else if (record.kind === 'form') {
@@ -557,40 +490,7 @@ export function decodeInteractionFormResponse(value: unknown): InteractionFormRe
 export function decodeInteractionCanonicalOutcome(value: unknown): InteractionCanonicalOutcome {
   const record = plainRecord(value, 'Interaction canonical outcome');
   let outcome: InteractionCanonicalOutcome;
-  if (record.kind === 'permission_answer') {
-    exact(record, PERMISSION_OUTCOME_SHAPE, 'permission outcome');
-    const decision = oneOf(record.decision, ['allow', 'deny'] as const, 'decision');
-    const rememberForTurn = boolean(record.rememberForTurn, 'rememberForTurn');
-    if (decision === 'deny' && rememberForTurn)
-      throw new Error('Denied permission cannot be remembered');
-    const reviewer = oneOf(record.reviewer, APPROVALS_REVIEWERS, 'reviewer');
-    if (record.rationale !== undefined && reviewer !== 'auto_review') {
-      throw new Error('Only auto-review permission outcomes can include rationale');
-    }
-    const common = {
-      kind: 'permission_answer' as const,
-      reviewer,
-      ...(record.rationale === undefined
-        ? {}
-        : {
-            rationale: boundedCharacterString(
-              record.rationale,
-              'rationale',
-              INTERACTION_AUTO_REVIEW_RATIONALE_MAX_CHARS,
-            ),
-          }),
-      ...(record.riskLevel === undefined
-        ? {}
-        : {
-            riskLevel: oneOf(record.riskLevel, APPROVAL_RISK_LEVELS, 'riskLevel'),
-          }),
-      committedAt: safeInteger(record.committedAt, 'committedAt', false),
-    };
-    outcome =
-      decision === 'deny'
-        ? { ...common, decision, rememberForTurn: false }
-        : { ...common, decision, rememberForTurn };
-  } else if (record.kind === 'question_answer') {
+  if (record.kind === 'question_answer') {
     exact(record, QUESTION_OUTCOME_SHAPE, 'question outcome');
     outcome = {
       kind: 'question_answer',
@@ -649,25 +549,6 @@ export function decodeInteractionCanonicalOutcome(value: unknown): InteractionCa
   }
   serializedLimit(outcome, INTERACTION_OUTCOME_SERIALIZED_MAX_BYTES, 'Interaction outcome');
   return deepFreeze(outcome);
-}
-
-export function projectInteractionPermissionRequest(
-  request: InteractionPermissionProjectionInput,
-): InteractionPermissionRequest {
-  const record = plainRecord(request, 'Permission request');
-  boundedString(record.requestId, 'requestId', INTERACTION_ID_MAX_BYTES);
-  const projected: InteractionPermissionRequest = {
-    kind: 'permission',
-    toolUseId: boundedString(record.toolUseId, 'toolUseId', INTERACTION_ID_MAX_BYTES),
-    prompt: projectInteractionPermissionPrompt(request),
-  };
-  try {
-    serializedLimit(projected, INTERACTION_REQUEST_MAX_BYTES, 'Interaction request');
-  } catch (error) {
-    if (error instanceof InteractionPermissionProjectionError) throw error;
-    throw new InteractionPermissionProjectionError();
-  }
-  return deepFreeze(projected);
 }
 
 export function projectInteractionQuestionRequest(
@@ -819,15 +700,13 @@ export function interactionOutcomeMatchesRequestKind(
 ): boolean {
   return (
     outcome.kind === 'closure' ||
-    (request.kind === 'permission'
-      ? outcome.kind === 'permission_answer'
-      : request.kind === 'question'
-        ? outcome.kind === 'question_answer'
-        : request.kind === 'form'
-          ? outcome.kind === 'form_answer'
-          : request.kind === 'sandbox_boundary'
-            ? outcome.kind === 'sandbox_boundary_decision'
-            : outcome.kind === 'client_capability_decision')
+    (request.kind === 'question'
+      ? outcome.kind === 'question_answer'
+      : request.kind === 'form'
+        ? outcome.kind === 'form_answer'
+        : request.kind === 'sandbox_boundary'
+          ? outcome.kind === 'sandbox_boundary_decision'
+          : outcome.kind === 'client_capability_decision')
   );
 }
 
@@ -839,19 +718,6 @@ export function interactionQuestionAnswerCountMatchesRequest(
   // Only a multi-select question may answer with several labels at once.
   return answers.every(
     (answer, index) => !Array.isArray(answer) || request.questions[index]?.multiSelect === true,
-  );
-}
-
-export function interactionRememberForTurnIsEligible(
-  request: InteractionRequest,
-  decision: InteractionPermissionDecisionFields,
-): boolean {
-  if (request.kind !== 'permission') return false;
-  if (!decision.rememberForTurn) return true;
-  return (
-    decision.decision === 'allow' &&
-    request.prompt.kind === 'tool_permission' &&
-    request.prompt.rememberForTurnAllowed
   );
 }
 
@@ -870,8 +736,7 @@ export function isInteractionAnswerValidForRequest(
     return request.kind === 'form' && interactionFormAnswerMatchesRequest(request, answer);
   }
   if (answer.kind === 'sandbox_boundary') return request.kind === 'sandbox_boundary';
-  if (answer.kind === 'client_capability') return request.kind === 'client_capability';
-  return interactionRememberForTurnIsEligible(request, answer);
+  return request.kind === 'client_capability';
 }
 
 export function isInteractionCanonicalOutcomeValidForRequest(
@@ -880,14 +745,7 @@ export function isInteractionCanonicalOutcomeValidForRequest(
 ): boolean {
   if (!interactionOutcomeMatchesRequestKind(request, outcome)) return false;
   if (outcome.kind === 'closure')
-    return (
-      request.kind === 'permission' ||
-      request.kind === 'client_capability' ||
-      outcome.reason !== 'timed_out'
-    );
-  if (outcome.kind === 'permission_answer') {
-    return interactionRememberForTurnIsEligible(request, outcome);
-  }
+    return request.kind === 'client_capability' || outcome.reason !== 'timed_out';
   if (outcome.kind === 'question_answer') {
     return (
       request.kind === 'question' &&
@@ -916,8 +774,6 @@ export function interactionCanonicalOutcomesEquivalent(
   right: InteractionCanonicalOutcome,
 ): boolean {
   if (left.kind !== right.kind) return false;
-  if (left.kind === 'permission_answer' && right.kind === 'permission_answer')
-    return left.decision === right.decision && left.rememberForTurn === right.rememberForTurn;
   if (left.kind === 'question_answer' && right.kind === 'question_answer')
     return equalAnswers(left.answers, right.answers);
   if (left.kind === 'form_answer' && right.kind === 'form_answer') {

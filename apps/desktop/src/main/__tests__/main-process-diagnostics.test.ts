@@ -558,15 +558,6 @@ test('copies bounded evidence for the exact failed Turn', async () => {
             recovered: { disposition: 'parked', reasonCode: 'host_restart' },
           },
           {
-            kind: 'permission',
-            id: 'permission-1',
-            turnId,
-            runId: 'run-1',
-            startedAt: 2_101,
-            toolName: 'web_search',
-            decision: 'denied',
-          },
-          {
             kind: 'compaction',
             id: 'compaction-1',
             turnId,
@@ -634,7 +625,6 @@ test('copies bounded evidence for the exact failed Turn', async () => {
     clipboard,
     /tool web_search · failed · 100ms · recovery retry_safe · parked \(host_restart\)/,
   );
-  assert.match(clipboard, /permission web_search · denied/);
   assert.match(clipboard, /compaction · checkpoint checkpoint-1/);
   assert.match(clipboard, /error · No endpoints accepted the request/);
 });

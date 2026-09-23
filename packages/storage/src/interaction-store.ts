@@ -48,7 +48,6 @@ import {
 } from './operational-state-store.js';
 import { isSafeStorageId } from './storage-id.js';
 
-const REMEMBER_SCOPE_ID = /^[0-9a-f]{64}$/;
 export const STORED_INTERACTION_REQUEST_MAX_BYTES = 20 * 1024;
 export const STORED_INTERACTION_OUTCOME_MAX_BYTES = 12 * 1024;
 export const STORED_CLIENT_CAPABILITY_SESSION_GRANT_MAX_BYTES = 12 * 1024;
@@ -63,7 +62,6 @@ export interface InteractionIdentity {
 export interface StoredInteractionRequest extends InteractionIdentity {
   readonly createdAt: number;
   readonly request: InteractionRequest;
-  readonly rememberScopeId?: string;
 }
 
 export interface StoredInteractionOutcome extends InteractionIdentity {
@@ -665,7 +663,7 @@ function normalizeRequest(value: unknown, source: DecodeSource): StoredInteracti
   const record = closedRecord(
     value,
     ['sessionId', 'turnId', 'runId', 'requestId', 'createdAt', 'request'],
-    ['rememberScopeId'],
+    [],
     source,
   );
   const createdAt = record.createdAt;
@@ -698,12 +696,6 @@ function normalizeRequest(value: unknown, source: DecodeSource): StoredInteracti
     if (error instanceof InteractionStoreError) throw error;
     decodeFailure(source, 'Invalid Interaction request', error);
   }
-  const rememberScopeId =
-    record.rememberScopeId === undefined
-      ? undefined
-      : assertRememberScopeId(record.rememberScopeId, source);
-  if (rememberScopeId !== undefined && !isRememberScopeEligible(request))
-    decodeFailure(source, 'rememberScopeId requires a rememberable tool permission request');
   return {
     sessionId: assertId(record.sessionId, source),
     turnId: assertId(record.turnId, source),
@@ -711,7 +703,6 @@ function normalizeRequest(value: unknown, source: DecodeSource): StoredInteracti
     requestId: assertId(record.requestId, source),
     createdAt: createdAt as number,
     request,
-    ...(rememberScopeId === undefined ? {} : { rememberScopeId }),
   };
 }
 
@@ -790,20 +781,6 @@ function assertId(
 ): string {
   if (!isSafeStorageId(value)) decodeFailure(source, message);
   return value;
-}
-
-function assertRememberScopeId(value: unknown, source: DecodeSource): string {
-  if (typeof value !== 'string' || !REMEMBER_SCOPE_ID.test(value))
-    decodeFailure(source, 'rememberScopeId must be a lowercase 64-character SHA-256 digest');
-  return value;
-}
-
-function isRememberScopeEligible(request: InteractionRequest): boolean {
-  return (
-    request.kind === 'permission' &&
-    request.prompt.kind === 'tool_permission' &&
-    request.prompt.rememberForTurnAllowed
-  );
 }
 
 function closedRecord(

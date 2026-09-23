@@ -2064,10 +2064,10 @@ describe('Runtime Host Maka Session driver', () => {
     });
   });
 
-  test('publishes a pending permission that has no transcript event', async () => {
-    const permission = pendingPermission();
+  test('publishes a pending sandbox boundary that has no transcript event', async () => {
+    const boundary = pendingBoundary();
     const subscription = new FakeSubscription(
-      continuitySnapshot({ interactions: { pending: [permission] } }),
+      continuitySnapshot({ interactions: { pending: [boundary] } }),
       Promise.resolve([]),
     );
     const connection = new FakeConnection([subscription]);
@@ -2083,7 +2083,7 @@ describe('Runtime Host Maka Session driver', () => {
 
     await driver.switchSession('session-1');
 
-    assert.deepEqual(await published.promise, permission);
+    assert.deepEqual(await published.promise, boundary);
   });
 
   test('keeps Host-triggered prompts out of rewind', async () => {
@@ -2407,7 +2407,7 @@ describe('Runtime Host Maka Session driver', () => {
 
   test('observes actionable and terminal parent status from the Host projection', async () => {
     const subscription = new FakeSubscription(
-      continuitySnapshot({ interactions: { pending: [pendingPermission()] } }),
+      continuitySnapshot({ interactions: { pending: [pendingBoundary()] } }),
       Promise.resolve([]),
     );
     const driver = createRuntimeHostMakaSessionDriver({
@@ -2433,7 +2433,7 @@ describe('Runtime Host Maka Session driver', () => {
   });
 
   test('clears parent status when observer recovery is exhausted', async () => {
-    const snapshot = continuitySnapshot({ interactions: { pending: [pendingPermission()] } });
+    const snapshot = continuitySnapshot({ interactions: { pending: [pendingBoundary()] } });
     const initial = new FakeSubscription(snapshot, Promise.resolve([]));
     const ended = Array.from({ length: 8 }, (_, index) => {
       const subscription = new FakeSubscription(
@@ -3429,7 +3429,7 @@ function pendingForm() {
   };
 }
 
-function pendingPermission() {
+function pendingBoundary() {
   return {
     schemaVersion: 1 as const,
     interactionId: 'permission-1',
@@ -3440,16 +3440,9 @@ function pendingPermission() {
     status: 'pending' as const,
     outcome: null,
     request: {
-      kind: 'permission' as const,
-      toolUseId: 'tool-permission',
-      prompt: {
-        kind: 'tool_permission' as const,
-        toolName: 'Bash',
-        category: 'shell_unsafe' as const,
-        reason: 'shell_dangerous' as const,
-        review: { kind: 'command' as const, command: 'echo protected', cwd: '/tmp' },
-        rememberForTurnAllowed: true,
-      },
+      kind: 'sandbox_boundary' as const,
+      expansion: { network: { enabled: true as const } },
+      justification: 'reach the package registry',
     },
   };
 }

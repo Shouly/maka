@@ -131,40 +131,6 @@ function baseEvents(): RuntimeEvent[] {
       refs: { toolCallId: 'tool-1' },
     }),
     ev({
-      id: 'evt-permission-request',
-      ts: ts + 3,
-      role: 'system',
-      author: 'system',
-      actions: {
-        permissionRequest: {
-          kind: 'tool_permission',
-          requestId: 'req-1',
-          toolUseId: 'tool-1',
-          toolName: 'Read',
-          category: 'read',
-          reason: 'custom',
-          args: { path: '/tmp/a.txt' },
-          rememberForTurnAllowed: true,
-          hint: 'needs read access',
-        },
-      },
-      refs: { toolCallId: 'tool-1' },
-    }),
-    ev({
-      id: 'evt-permission-decision',
-      ts: ts + 4,
-      role: 'system',
-      author: 'user',
-      actions: {
-        permissionDecision: {
-          requestId: 'req-1',
-          decision: 'allow',
-          rememberForTurn: true,
-        },
-      },
-      refs: { toolCallId: 'tool-1' },
-    }),
-    ev({
       id: 'evt-tool-result',
       ts: ts + 5,
       role: 'tool',
@@ -233,17 +199,6 @@ function equivalentLegacyMessages(): StoredMessage[] {
       displayName: 'Read file',
       intent: 'inspect',
       args: { path: '/tmp/a.txt' },
-    },
-    {
-      type: 'permission_decision',
-      id: 'req-1',
-      turnId,
-      ts: ts + 4,
-      toolUseId: 'tool-1',
-      toolName: 'Read',
-      decision: 'allow',
-      rememberForTurn: true,
-      hint: 'needs read access',
     },
     {
       type: 'tool_result',
@@ -400,15 +355,7 @@ describe('projectRuntimeEventsToStoredMessages', () => {
 
     assert.deepStrictEqual(
       out.messages.map((message) => message.type),
-      [
-        'user',
-        'tool_call',
-        'permission_decision',
-        'tool_result',
-        'assistant',
-        'token_usage',
-        'turn_state',
-      ],
+      ['user', 'tool_call', 'tool_result', 'assistant', 'token_usage', 'turn_state'],
     );
     assert.partialDeepStrictEqual(out.messages[1], {
       type: 'tool_call',
@@ -418,25 +365,17 @@ describe('projectRuntimeEventsToStoredMessages', () => {
       intent: 'inspect',
     });
     assert.partialDeepStrictEqual(out.messages[2], {
-      type: 'permission_decision',
-      id: 'req-1',
-      toolUseId: 'tool-1',
-      toolName: 'Read',
-      decision: 'allow',
-      hint: 'needs read access',
-    });
-    assert.partialDeepStrictEqual(out.messages[3], {
       type: 'tool_result',
       id: 'legacy-result',
       toolUseId: 'tool-1',
       durationMs: 42,
     });
-    assert.partialDeepStrictEqual(out.messages[4], {
+    assert.partialDeepStrictEqual(out.messages[3], {
       type: 'assistant',
       modelId: 'claude-sonnet-4-5',
       text: 'The file says: file contents',
     });
-    assert.partialDeepStrictEqual(out.messages[6], {
+    assert.partialDeepStrictEqual(out.messages[5], {
       type: 'turn_state',
       status: 'completed',
       parentTurnId: 'parent-turn',
@@ -1499,15 +1438,6 @@ describe('projectRuntimeEventsToStoredMessages', () => {
           content: { kind: 'thinking', text: 'private reasoning' },
         }),
         ev({
-          id: 'evt-permission-orphan',
-          actions: {
-            permissionDecision: {
-              requestId: 'missing-request',
-              decision: 'deny',
-            },
-          },
-        }),
-        ev({
           id: 'evt-invalid-result',
           role: 'tool',
           author: 'tool',
@@ -1529,13 +1459,7 @@ describe('projectRuntimeEventsToStoredMessages', () => {
     // catch-all never downgrades a projector that attempted a message.
     assert.deepStrictEqual(
       out.diagnostics.map((diag) => diag.code),
-      [
-        'incomplete_event',
-        'unclaimed_control_fact',
-        'incomplete_event',
-        'unsupported_event',
-        'unsupported_event',
-      ],
+      ['incomplete_event', 'unsupported_event', 'unsupported_event'],
     );
   });
 
@@ -1910,11 +1834,9 @@ describe('projectRuntimeEventsToStoredMessages', () => {
  *
  * This is the premise the read model's soft path rests on. An unclaimed
  * content-free event degrades the view instead of withholding it, which is only
- * safe while every action a reader can meet is claimed — several of them
- * (`permissionDecision`, `tokenUsage`, the terminal fact) do produce rows, and
- * `runtime-event-backfill.ts` already writes a content-free event that becomes a
- * visible `permission_decision`. The SessionEvent mapper contract
- * only covers events built by `mapSessionEventToRuntimeEvent`; tool-runtime,
+ * safe while every action a reader can meet is claimed — some of them
+ * (`tokenUsage`, the terminal fact) do produce rows. The SessionEvent mapper
+ * contract only covers events built by `mapSessionEventToRuntimeEvent`; tool-runtime,
  * terminal-run-commit and the backfill write RuntimeEvents directly. Keying this
  * table on the action surface itself covers those paths too.
  */
@@ -1983,33 +1905,9 @@ const ACTION_COVERAGE_SAMPLES: ActionCoverageSamples = {
     },
   },
   artifactDelta: { action: { 'artifact-1': 42 } },
-  permissionRequest: {
-    action: {
-      kind: 'tool_permission',
-      requestId: 'coverage-request',
-      toolUseId: 'coverage-tool',
-      toolName: 'Read',
-      category: 'read',
-      reason: 'custom',
-      args: { path: '/tmp/a.txt' },
-      rememberForTurnAllowed: true,
-    },
-    event: { refs: { toolCallId: 'coverage-tool' } },
-  },
-  permissionDecision: {
-    action: { requestId: 'coverage-request', decision: 'allow', toolName: 'Read' },
-    event: { refs: { toolCallId: 'coverage-tool' } },
-  },
   // The canonical outcome lives in InteractionStore, so a standalone acceptance
   // reports an `incomplete_event`. That is a completeness diagnostic, not a
   // coverage gap: the projection still claims the field.
-  permissionAnswerAccepted: {
-    action: { requestId: 'coverage-request' },
-    event: { author: 'user', refs: { toolCallId: 'coverage-tool' } },
-  },
-  permissionClosureAccepted: {
-    action: { requestId: 'coverage-request', reason: 'timed_out' },
-  },
   userQuestionRequest: {
     action: {
       requestId: 'coverage-question',
@@ -2235,30 +2133,6 @@ describe('legacy transcript conversion keeps every row', () => {
     assert.partialDeepStrictEqual(
       projected.messages.filter((message) => message.type === 'tool_call'),
       [{ id: 'tool-native', toolName: 'WebSearch' }],
-    );
-  });
-
-  test('converts a permission decision on its own evidence', () => {
-    const decision: StoredMessage = {
-      type: 'permission_decision',
-      id: 'request-1',
-      turnId,
-      ts,
-      toolUseId: 'tool-1',
-      toolName: 'Bash',
-      decision: 'allow',
-      hint: 'rm -rf build',
-    };
-
-    const converted = convert([decision]);
-    assert.deepStrictEqual(converted.diagnostics, []);
-
-    const projected = projectRuntimeEventsToStoredMessages(converted.events, {
-      invocations: [invocation],
-    });
-    assert.deepStrictEqual(
-      projected.messages.filter((message) => message.type === 'permission_decision'),
-      [decision],
     );
   });
 

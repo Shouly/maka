@@ -279,24 +279,7 @@ function canonicalOutcomeForHistoricalAnswer(
       'Sandbox boundary answers require their canonical boundary settlement',
     );
   }
-  if (answer.kind === 'client_capability') {
-    return clientCapabilityCanonicalOutcome(answer, committedAt);
-  }
-  return answer.decision === 'deny'
-    ? {
-        kind: 'permission_answer',
-        decision: 'deny',
-        rememberForTurn: false,
-        reviewer: 'user',
-        committedAt,
-      }
-    : {
-        kind: 'permission_answer',
-        decision: 'allow',
-        rememberForTurn: answer.rememberForTurn,
-        reviewer: 'user',
-        committedAt,
-      };
+  return clientCapabilityCanonicalOutcome(answer, committedAt);
 }
 
 function sandboxBoundaryInteractionBase(request: SandboxBoundaryRequest) {

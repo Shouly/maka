@@ -190,7 +190,6 @@ async function createSubagentSession(
       profile: 'local_read',
       systemPrompt: 'Read the assigned workspace task.',
       toolNames: ['Read'],
-      categoryPolicy: { read: 'allow' },
     },
     subagentSpawn: {
       schemaVersion: 1,
@@ -368,7 +367,6 @@ test('exports the complete subagent subtree with per-session artifacts', async (
           profile: 'local_read',
           systemPrompt: 'Read the assigned workspace task.',
           toolNames: ['Read'],
-          categoryPolicy: { read: 'allow' },
         },
         subagentSpawn: {
           schemaVersion: 1,
@@ -400,7 +398,6 @@ test('exports the complete subagent subtree with per-session artifacts', async (
           profile: 'local_read',
           systemPrompt: 'Read the assigned workspace task.',
           toolNames: ['Read'],
-          categoryPolicy: { read: 'allow' },
         },
         subagentSpawn: {
           schemaVersion: 1,
@@ -428,7 +425,6 @@ test('exports the complete subagent subtree with per-session artifacts', async (
           profile: 'local_read',
           systemPrompt: 'Read the assigned workspace task.',
           toolNames: ['Read'],
-          categoryPolicy: { read: 'allow' },
         },
         subagentSpawn: {
           schemaVersion: 1,
@@ -789,7 +785,6 @@ test(
           profile: 'local_read',
           systemPrompt: 'Read the assigned workspace task.',
           toolNames: ['Read'],
-          categoryPolicy: { read: 'allow' },
         },
         subagentSpawn: {
           schemaVersion: 1,

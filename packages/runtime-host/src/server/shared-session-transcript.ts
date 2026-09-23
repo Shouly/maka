@@ -165,7 +165,6 @@ export function projectSharedSessionTranscriptMessage(
             kind: message.kind,
           }
         : null;
-    case 'permission_decision':
     case 'workhub_coordination':
       return null;
   }

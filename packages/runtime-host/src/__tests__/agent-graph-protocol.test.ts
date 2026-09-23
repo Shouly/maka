@@ -361,8 +361,8 @@ function activity() {
     operatorId: 'operator:1',
     activationId: 'activation:1',
     eventTime: 10,
-    facets: ['permission_request'] as const,
-    signals: [{ kind: 'attention', reason: 'permission_request' }] as const,
+    facets: ['user_question_request'] as const,
+    signals: [{ kind: 'attention', reason: 'user_question_request' }] as const,
     run: { sessionId: 'child-1', agentRunId: 'run:1', turnId: 'turn:1' },
   };
 }

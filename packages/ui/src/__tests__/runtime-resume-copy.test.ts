@@ -27,7 +27,6 @@ const CJK = /[\u3400-\u9fff]/u;
 test('resolves English park copy for every known reason with no Chinese (#4489)', () => {
   const reasons = [
     'dangling_tool_state',
-    'pending_permission',
     'workspace_identity_mismatch',
     'tool_catalog_mismatch',
     'provider_replay_unsupported',
@@ -49,10 +48,10 @@ test('resolves English park copy for every known reason with no Chinese (#4489)'
 });
 
 test('keeps the Chinese copy for zh-CN', () => {
-  const copy = resumeParkToastCopy(['pending_permission'], 'zh-CN');
+  const copy = resumeParkToastCopy(['dangling_tool_state'], 'zh-CN');
 
   assert.equal(copy.title, '暂时无法继续这一轮');
-  assert.equal(copy.description, '上次执行仍在等待权限确认。');
+  assert.equal(copy.description, '上次工具执行中断，记录已保留，暂时不能自动继续。');
 });
 
 test('resolves the missing-candidate special case per locale', () => {
@@ -71,6 +70,6 @@ test('falls back to the generic description for unknown reasons and dedupes repe
   assert.equal(unknown.title, 'This round cannot be resumed yet');
   assert.equal(unknown.description, 'This task does not currently meet the conditions to continue.');
 
-  const deduped = resumeParkToastCopy(['pending_permission', 'pending_permission'], 'zh-CN');
-  assert.equal(deduped.description, '上次执行仍在等待权限确认。');
+  const deduped = resumeParkToastCopy(['dangling_tool_state', 'dangling_tool_state'], 'zh-CN');
+  assert.equal(deduped.description, '上次工具执行中断，记录已保留，暂时不能自动继续。');
 });

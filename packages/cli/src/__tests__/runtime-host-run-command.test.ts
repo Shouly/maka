@@ -190,10 +190,10 @@ describe('Runtime Host maka run adapter', () => {
     assert.equal(contextInput?.sessionCwdOverride?.sessionId, 'session-existing');
   });
 
-  test('fails the public command explicitly when an ordinary Host Turn requests permission', async () => {
+  test('fails the public command explicitly when an ordinary Host Turn requests a client capability', async () => {
     const stderr: string[] = [];
     const fixture = runFixture({
-      pendingInteractions: [pendingPermission('turn-1')],
+      pendingInteractions: [pendingCapability('turn-1')],
       pendingAfterTurnStarts: true,
     });
 
@@ -221,7 +221,7 @@ describe('Runtime Host maka run adapter', () => {
     );
 
     assert.equal(exitCode, 1);
-    assert.match(stderr.join(''), /interactive permission requests are unavailable/);
+    assert.match(stderr.join(''), /interactive client capability requests are unavailable/);
     assert.deepEqual(fixture.exactTurnStops, [
       { sessionId: 'session-created', turnId: 'turn-1', runId: 'run-1' },
     ]);
@@ -1400,7 +1400,7 @@ function pendingForm(turnId: string): InteractionPendingSnapshot {
   };
 }
 
-function pendingPermission(turnId: string): InteractionPendingSnapshot {
+function pendingCapability(turnId: string): InteractionPendingSnapshot {
   return {
     schemaVersion: 1,
     interactionId: 'permission-1',
@@ -1411,15 +1411,15 @@ function pendingPermission(turnId: string): InteractionPendingSnapshot {
     status: 'pending',
     outcome: null,
     request: {
-      kind: 'permission',
-      toolUseId: 'tool-permission',
-      prompt: {
-        kind: 'tool_permission',
-        toolName: 'Bash',
-        category: 'shell_unsafe',
-        reason: 'shell_dangerous',
-        review: { kind: 'command', command: 'echo protected', cwd: '/workspace' },
-        rememberForTurnAllowed: true,
+      kind: 'client_capability',
+      toolUseId: 'tool-capability',
+      target: {
+        providerId: 'provider',
+        contractId: 'contract',
+        serverId: 'server',
+        toolName: 'tool',
+        capability: 'desktop_mcp',
+        scope: { kind: 'mcp_tool', serverId: 'server', toolName: 'tool' },
       },
     },
   };

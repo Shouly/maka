@@ -61,7 +61,7 @@ export const SESSION_TRACE_SCHEMA_VERSION = 1 as const;
  * failed, the context compacted"), which is a projection of several event
  * shapes rather than a rename of one.
  */
-export type TraceStepKind = 'model_call' | 'tool' | 'permission' | 'compaction' | 'error';
+export type TraceStepKind = 'model_call' | 'tool' | 'compaction' | 'error';
 
 /** One physical provider request, as metered. */
 export interface TraceModelAttempt {
@@ -165,16 +165,6 @@ export interface TraceToolStep {
   recovered?: TraceToolRecovery;
 }
 
-export interface TracePermissionStep {
-  kind: 'permission';
-  id: string;
-  turnId: string;
-  runId: string;
-  startedAt: number;
-  toolName?: string;
-  decision: string;
-}
-
 /**
  * A compaction boundary that was durably written — the checkpoint the next
  * request replays from.
@@ -202,12 +192,7 @@ export interface TraceErrorStep {
   message: string;
 }
 
-export type TraceStep =
-  | TraceModelCallStep
-  | TraceToolStep
-  | TracePermissionStep
-  | TraceCompactionStep
-  | TraceErrorStep;
+export type TraceStep = TraceModelCallStep | TraceToolStep | TraceCompactionStep | TraceErrorStep;
 
 /**
  * What ended a turn badly, and what the trace believes caused it.
@@ -369,10 +354,6 @@ const TOOL_RECOVERY_SHAPE = defineObjectShape<TraceToolRecovery>()(
   ['disposition', 'reasonCode'],
   [],
 );
-const PERMISSION_STEP_SHAPE = defineObjectShape<TracePermissionStep>()(
-  ['kind', 'id', 'turnId', 'runId', 'startedAt', 'decision'],
-  ['toolName'],
-);
 const COMPACTION_STEP_SHAPE = defineObjectShape<TraceCompactionStep>()(
   ['kind', 'id', 'turnId', 'runId', 'startedAt'],
   ['checkpointId'],
@@ -443,14 +424,6 @@ function isTraceStep(value: unknown): value is TraceStep {
     typeof value.turnId === 'string' &&
     typeof value.runId === 'string' &&
     isNonnegativeNumber(value.startedAt);
-  if (value.kind === 'permission') {
-    return (
-      hasExactShape(value, PERMISSION_STEP_SHAPE) &&
-      common &&
-      isOptionalString(value.toolName) &&
-      typeof value.decision === 'string'
-    );
-  }
   if (value.kind === 'compaction') {
     return (
       hasExactShape(value, COMPACTION_STEP_SHAPE) && common && isOptionalString(value.checkpointId)

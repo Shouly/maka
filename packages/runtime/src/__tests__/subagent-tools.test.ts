@@ -46,7 +46,6 @@ import {
   WEB_RESEARCH_AGENT_PROFILE,
   assertAgentDefinitionRunnable,
   evaluateAgentDefinitionAvailability,
-  evaluateAgentDefinitionToolAccess,
   listBuiltinAgentDefinitions,
   requireBuiltinAgentDefinitionByProfile,
 } from '../agent-catalog.js';
@@ -258,41 +257,9 @@ describe('subagent tools', () => {
     });
   });
 
-  test('agent definition policy uses the explicit tool allowlist', () => {
-    assert.deepStrictEqual(
-      evaluateAgentDefinitionToolAccess(
-        LOCAL_READ_AGENT_DEFINITION,
-        testCatalogTool('Read', 'read'),
-      ),
-      {
-        category: 'read',
-        decision: 'allow',
-      },
-    );
-    assert.deepStrictEqual(
-      evaluateAgentDefinitionToolAccess(
-        LOCAL_READ_AGENT_DEFINITION,
-        testCatalogTool('Write', 'file_write'),
-      ),
-      {
-        category: 'file_write',
-        decision: 'block',
-      },
-    );
-    assert.deepStrictEqual(
-      evaluateAgentDefinitionToolAccess(
-        {
-          ...LOCAL_READ_AGENT_DEFINITION,
-          id: 'web-review',
-          tools: ['WebSearch'],
-        },
-        testCatalogTool('WebSearch', 'web_read'),
-      ),
-      {
-        category: 'web_read',
-        decision: 'allow',
-      },
-    );
+  test('an agent definition carries an explicit tool allowlist', () => {
+    assert.deepStrictEqual(LOCAL_READ_AGENT_DEFINITION.tools.includes('Read'), true);
+    assert.deepStrictEqual(LOCAL_READ_AGENT_DEFINITION.tools.includes('Write'), false);
   });
 
   test('implementation remains available with the Write and Edit fallback', () => {
@@ -407,10 +374,6 @@ describe('subagent tools', () => {
       await runTool(runtime, tools, 'Glob', { pattern: '*.txt' }, events);
       await runTool(runtime, tools, 'Grep', { pattern: 'SUBAGENT_CHILD_TOOL_MARKER' }, events);
 
-      assert.strictEqual(
-        events.some((event) => event.type === 'permission_request'),
-        false,
-      );
       assert.strictEqual(tools.has('Bash'), true);
     } finally {
       await rm(cwd, { recursive: true, force: true });

@@ -31,7 +31,6 @@ export interface ResumeParkToastCopy {
  */
 interface ResumeParkReasonCopy {
   dangling_tool_state: string;
-  pending_permission: string;
   background_operation_pending: string;
   workspace_identity_mismatch: string;
   workspace_identity_missing: string;
@@ -77,7 +76,6 @@ const RESUME_PARK_COPY = {
     missingCandidateDescription: '任务已是最新状态。',
     reasons: {
       dangling_tool_state: '上次工具执行中断，记录已保留，暂时不能自动继续。',
-      pending_permission: '上次执行仍在等待权限确认。',
       background_operation_pending: '仍有后台操作没有结束，暂时不能继续。',
       workspace_identity_mismatch: '当前工作区与中断时不一致。',
       workspace_identity_missing: '无法确认中断时的工作区。',
@@ -114,7 +112,6 @@ const RESUME_PARK_COPY = {
     missingCandidateDescription: '任務已是最新狀態。',
     reasons: {
       dangling_tool_state: '上次工具執行中斷，記錄已保留，暫時不能自動繼續。',
-      pending_permission: '上次執行仍在等待權限確認。',
       background_operation_pending: '仍有後台操作沒有結束，暫時不能繼續。',
       workspace_identity_mismatch: '目前工作區與中斷時不一致。',
       workspace_identity_missing: '無法確認中斷時的工作區。',
@@ -152,7 +149,6 @@ const RESUME_PARK_COPY = {
     reasons: {
       dangling_tool_state:
         'The previous tool run was interrupted; its records are preserved, so it cannot continue automatically yet.',
-      pending_permission: 'The previous run is still waiting for a permission approval.',
       background_operation_pending: 'Background operations are still running, so this round cannot continue yet.',
       workspace_identity_mismatch: 'The current workspace does not match the one from the interrupted run.',
       workspace_identity_missing: 'The workspace from the interrupted run could not be identified.',

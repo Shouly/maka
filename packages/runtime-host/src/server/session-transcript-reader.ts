@@ -30,10 +30,6 @@ import {
   projectRuntimeEventsToStoredMessages,
   projectRuntimeEventUserMessage,
 } from '@maka/runtime/runtime-event-read-model';
-import {
-  type CanonicalPermissionOutcomeReader,
-  type CanonicalPermissionOutcomeRecord,
-} from '@maka/runtime/interaction-authority';
 import type {
   ExecutionStoresWriter,
   SessionTranscriptMessageLookupRequest,
@@ -51,7 +47,6 @@ import type {
 import { foldTurnContribution } from '@maka/storage/session-message-projection';
 import { SESSION_TRANSCRIPT_OVERLAY_MAX_MESSAGES, type TurnSnapshot } from '../protocol/index.js';
 
-const PERMISSION_OUTCOME_READ_CONCURRENCY = 8;
 /** One event can emit content, a permission, usage, and terminal/notice rows. */
 const EVENT_SEQUENCE_STRIDE = 8;
 export const ACTIVE_TRANSCRIPT_OVERLAY_MAX_MESSAGES = SESSION_TRANSCRIPT_OVERLAY_MAX_MESSAGES;
@@ -77,7 +72,6 @@ const TRANSCRIPT_LOOKUP_MAX_TURNS = 2;
 
 export function createSessionTranscriptReader(input: {
   stores: ExecutionStoresWriter<'interactive'>;
-  canonicalPermissionOutcomes: CanonicalPermissionOutcomeReader;
   /**
    * Converts a Session whose transcript predates the ledger, before this reader
    * looks for invocations that only the conversion can create. Omitted only by
@@ -153,16 +147,9 @@ export function createSessionTranscriptReader(input: {
         events.push(
           ...(await readEvents(runId)).filter(affectsRuntimeEventStoredMessageProjection),
         );
-      const canonicalPermissionOutcomes = await readCanonicalPermissionOutcomes(
-        events,
-        input.canonicalPermissionOutcomes,
-      );
       const projected = projectRuntimeEventsToStoredMessages(
         activePresentationRuntimeEvents(events),
-        {
-          invocations: runIds.map((runId) => invocations.get(runId)!),
-          canonicalPermissionOutcomes,
-        },
+        { invocations: runIds.map((runId) => invocations.get(runId)!) },
       );
       if (projected.diagnostics.some(isHardRuntimeEventReadModelDiagnostic)) {
         throw new Error('Active RuntimeEvent transcript projection is incomplete');
@@ -213,7 +200,6 @@ export interface SessionTranscriptReader {
  */
 function createDurableLedgerTranscriptReader(input: {
   stores: ExecutionStoresWriter<'interactive'>;
-  canonicalPermissionOutcomes: CanonicalPermissionOutcomeReader;
 }) {
   const store = input.stores.runtimeEventStore;
   const highWater = async (sessionId: string): Promise<number | null> => {
@@ -228,10 +214,6 @@ function createDurableLedgerTranscriptReader(input: {
     const events = turn.events.map((entry) => entry.event);
     const projected = projectRuntimeEventsToStoredMessages(events, {
       invocations: [turn.invocation],
-      canonicalPermissionOutcomes: await readCanonicalPermissionOutcomes(
-        events,
-        input.canonicalPermissionOutcomes,
-      ),
     });
     if (projected.diagnostics.some(isHardRuntimeEventReadModelDiagnostic)) {
       throw new Error('Durable RuntimeEvent transcript projection is incomplete');
@@ -577,38 +559,6 @@ function assertActiveOverlayBounded(messages: readonly StoredMessage[]): void {
       throw new Error('Active Session transcript overlay exceeds its byte limit');
     }
   }
-}
-
-async function readCanonicalPermissionOutcomes(
-  events: readonly RuntimeEvent[],
-  reader: CanonicalPermissionOutcomeReader,
-): Promise<ReadonlyMap<string, CanonicalPermissionOutcomeRecord>> {
-  const requestIds = new Set(
-    events.flatMap((event) => {
-      const requestId = event.actions?.permissionAnswerAccepted?.requestId;
-      return requestId ? [requestId] : [];
-    }),
-  );
-  const outcomes = new Map<string, CanonicalPermissionOutcomeRecord>();
-  const ids = [...requestIds];
-  let encodedBytes = 0;
-  for (let index = 0; index < ids.length; index += PERMISSION_OUTCOME_READ_CONCURRENCY) {
-    const batch = await Promise.all(
-      ids.slice(index, index + PERMISSION_OUTCOME_READ_CONCURRENCY).map(async (requestId) => ({
-        requestId,
-        outcome: await reader.readPermissionOutcome(requestId),
-      })),
-    );
-    for (const item of batch) {
-      if (!item.outcome) continue;
-      encodedBytes += Buffer.byteLength(JSON.stringify(item.outcome), 'utf8');
-      if (encodedBytes > ACTIVE_TRANSCRIPT_OVERLAY_MAX_BYTES) {
-        throw new Error('Active Session permission outcomes exceed the transcript byte limit');
-      }
-      outcomes.set(item.requestId, item.outcome);
-    }
-  }
-  return outcomes;
 }
 
 async function readActiveRuntimeEvents(

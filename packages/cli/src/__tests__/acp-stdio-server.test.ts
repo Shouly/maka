@@ -44,7 +44,6 @@ describe('Maka ACP stdio server', () => {
     'recovery',
     'question',
     'form',
-    'permission',
     'sandbox_boundary',
     'client_capability',
   ] as const) {
@@ -1236,18 +1235,6 @@ const unsupportedRequests = {
     message: 'Configure',
     requester: { name: 'test', source: 'MCP' },
     fields: [{ kind: 'string', name: 'name', label: 'Name', required: true }],
-  },
-  permission: {
-    kind: 'permission',
-    toolUseId: 'tool-1',
-    prompt: {
-      kind: 'tool_permission',
-      toolName: 'Bash',
-      category: 'shell_unsafe',
-      reason: 'shell_dangerous',
-      review: { kind: 'command', command: 'echo test', cwd: '/workspace' },
-      rememberForTurnAllowed: true,
-    },
   },
   sandbox_boundary: {
     kind: 'sandbox_boundary',

@@ -35,8 +35,6 @@ export const AGENT_GRAPH_RECORD_FACETS = [
   'tool_dispatch',
   'tool_result',
   'artifact_update',
-  'permission_request',
-  'permission_decision',
   'user_question_request',
   'form_request',
   'transfer',
@@ -57,10 +55,7 @@ export type AgentGraphActivationStatus =
   | 'aborted'
   | 'cancelled';
 
-export type AgentGraphSupervisorAttentionReason =
-  | 'permission_request'
-  | 'user_question_request'
-  | 'form_request';
+export type AgentGraphSupervisorAttentionReason = 'user_question_request' | 'form_request';
 
 export type AgentGraphSupervisorSignal =
   | {
@@ -528,8 +523,6 @@ function runtimeEventFacets(
   const actions = event.actions;
   if (actions?.toolDispatch) facets.push('tool_dispatch');
   if (actions?.artifactDelta) facets.push('artifact_update');
-  if (actions?.permissionRequest) facets.push('permission_request');
-  if (actions?.permissionDecision) facets.push('permission_decision');
   if (actions?.userQuestionRequest) facets.push('user_question_request');
   if (actions?.formRequest) facets.push('form_request');
   if (actions?.transferToAgent) facets.push('transfer');
@@ -546,9 +539,6 @@ function runtimeEventSupervisorSignals(
   run: RuntimeInvocationRecord,
 ): AgentGraphSupervisorSignal[] {
   const signals: AgentGraphSupervisorSignal[] = [];
-  if (event.actions?.permissionRequest) {
-    signals.push({ kind: 'attention', reason: 'permission_request' });
-  }
   if (event.actions?.userQuestionRequest) {
     signals.push({ kind: 'attention', reason: 'user_question_request' });
   }

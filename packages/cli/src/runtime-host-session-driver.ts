@@ -1788,7 +1788,7 @@ function sideConversationParentStatus(
   const pendingKinds = new Set(
     snapshot.interactions.pending.map((interaction) => interaction.request.kind),
   );
-  if (pendingKinds.has('permission') || pendingKinds.has('sandbox_boundary')) {
+  if (pendingKinds.has('sandbox_boundary')) {
     return 'needs_approval';
   }
   if (pendingKinds.has('question')) return 'needs_input';

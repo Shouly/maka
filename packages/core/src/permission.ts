@@ -54,12 +54,6 @@ export function decodePersistedPermissionMode(value: unknown): PermissionMode | 
   return isPermissionMode(value) ? value : undefined;
 }
 
-export const APPROVALS_REVIEWERS = ['user', 'auto_review'] as const;
-export type ApprovalsReviewer = (typeof APPROVALS_REVIEWERS)[number];
-
-export const APPROVAL_RISK_LEVELS = ['low', 'medium', 'high', 'critical'] as const;
-export type ApprovalRiskLevel = (typeof APPROVAL_RISK_LEVELS)[number];
-
 export function isPermissionMode(value: unknown): value is PermissionMode {
   return typeof value === 'string' && (PERMISSION_MODES as readonly string[]).includes(value);
 }
@@ -102,9 +96,6 @@ export const TOOL_CATEGORIES: readonly ToolCategory[] = [
 export function isToolCategory(value: unknown): value is ToolCategory {
   return typeof value === 'string' && (TOOL_CATEGORIES as readonly string[]).includes(value);
 }
-
-/** Legacy category-policy value retained for agent tool-availability records. */
-export type PolicyDecision = 'allow' | 'prompt' | 'block';
 
 // ============================================================================
 // Tool execution environment facts
@@ -398,113 +389,4 @@ export function classifyToolUse(input: {
     if (typeof cmd === 'string') category = categorizeBash(cmd);
   }
   return category;
-}
-
-export function permissionReasonForCategory(c: ToolCategory): PermissionRequest['reason'] {
-  switch (c) {
-    case 'shell_unsafe':
-      return 'shell_dangerous';
-    case 'file_write':
-      return 'file_write';
-    case 'fs_destructive':
-      return 'fs_destructive';
-    case 'network_send':
-      return 'network';
-    case 'git_destructive':
-      return 'git_destructive';
-    case 'privileged':
-      return 'privileged';
-    case 'browser':
-      return 'browser';
-    case 'computer_use':
-      return 'computer_use';
-    case 'client_capability':
-      return 'custom';
-    default:
-      return 'custom';
-  }
-}
-
-// ============================================================================
-// Request / Response shapes
-// ============================================================================
-
-export interface PermissionRequest {
-  kind: 'tool_permission';
-  requestId: string;
-  toolUseId: string;
-  toolName: string;
-  category: ToolCategory;
-  reason:
-    | 'shell_dangerous'
-    | 'file_write'
-    | 'fs_destructive'
-    | 'network'
-    | 'git_destructive'
-    | 'privileged'
-    | 'browser'
-    | 'computer_use'
-    | 'custom';
-  args: unknown;
-  hint?: string;
-  rememberForTurnAllowed: boolean;
-}
-
-export interface AdditionalPermissionRequest {
-  kind: 'additional_permissions';
-  requestId: string;
-  toolUseId: string;
-  toolName: string;
-  category: ToolCategory;
-  reason: 'additional_permissions';
-  additionalPermissions: import('./additional-permissions.js').AdditionalPermissionProfile;
-  cwd: string;
-  justification: string;
-  intentHash: string;
-  permissionsHash: string;
-  risk: import('./additional-permissions.js').AdditionalPermissionRiskSummary;
-  alsoApprovesToolExecution: boolean;
-  availableDecisions: readonly ['allow_once', 'deny'];
-  hint?: string;
-}
-
-export interface SandboxEscalationRiskSummary {
-  readonly unsandboxedExecution: true;
-  readonly unrestrictedFileSystem: true;
-  readonly unrestrictedNetwork: true;
-  readonly protectedMetadataExposed: true;
-}
-
-export interface SandboxEscalationRequest {
-  kind: 'sandbox_escalation';
-  requestId: string;
-  toolUseId: string;
-  toolName: 'Bash';
-  category: ToolCategory;
-  reason: 'sandbox_escalation';
-  command: string;
-  cwd: string;
-  justification: string;
-  intentHash: string;
-  commandHash: string;
-  trigger: 'proactive' | 'sandbox_denial';
-  risk: SandboxEscalationRiskSummary;
-  alsoApprovesToolExecution: boolean;
-  availableDecisions: readonly ['allow_once', 'deny'];
-  hint?: string;
-}
-
-/** Permission prompt payloads that may be carried by canonical runtime events. */
-export type PermissionRequestPayload =
-  | PermissionRequest
-  | AdditionalPermissionRequest
-  | SandboxEscalationRequest;
-
-export interface PermissionResponse {
-  requestId: string;
-  decision: 'allow' | 'deny';
-  rememberForTurn?: boolean;
-  reviewer?: ApprovalsReviewer;
-  rationale?: string;
-  riskLevel?: ApprovalRiskLevel;
 }

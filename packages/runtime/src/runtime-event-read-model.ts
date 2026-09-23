@@ -53,7 +53,6 @@ const SETTLED_SANDBOX_BOUNDARY_STATUSES: readonly SettledSandboxBoundaryStatus[]
   SANDBOX_BOUNDARY_REQUEST_STATUSES.filter(
     (status): status is SettledSandboxBoundaryStatus => status !== 'pending',
   );
-import type { CanonicalPermissionOutcomeRecord } from './interaction-authority.js';
 import { isArchivedToolResultPlaceholder } from './tool-result-archive.js';
 
 export type RuntimeEventReadModelDiagnosticCode =
@@ -129,9 +128,6 @@ export function affectsRuntimeEventStoredMessageProjection(event: RuntimeEvent):
     event.actions?.coordination !== undefined ||
     event.content !== undefined ||
     isTerminalRuntimeEvent(event) ||
-    event.actions?.permissionRequest !== undefined ||
-    event.actions?.permissionDecision !== undefined ||
-    event.actions?.permissionAnswerAccepted !== undefined ||
     event.actions?.tokenUsage !== undefined
   );
 }
@@ -174,7 +170,6 @@ export interface ProjectRuntimeEventsToStoredMessagesOptions {
   invocations:
     | readonly RuntimeInvocationRecord[]
     | Readonly<Record<string, RuntimeInvocationRecord>>;
-  canonicalPermissionOutcomes?: ReadonlyMap<string, CanonicalPermissionOutcomeRecord>;
 }
 
 export interface ArchivedToolResultReadModelStatus {
@@ -202,18 +197,6 @@ interface ProjectionState {
   invocations: Map<string, RuntimeInvocationRecord>;
   diagnostics: RuntimeEventReadModelDiagnostic[];
   toolNameByUseId: Map<string, string>;
-  permissionRequestById: Map<
-    string,
-    {
-      requestId: string;
-      toolUseId: string;
-      toolName: string;
-      sessionId: string;
-      runId: string;
-      turnId: string;
-      hint?: string;
-    }
-  >;
   /**
    * Thinking awaiting its assistant text row, keyed by the step message id
    * (function of the event's providerEventId / storedMessageId — the same id the
@@ -240,7 +223,6 @@ export function projectRuntimeEventsToStoredMessages(
     invocations: normalizeInvocations(options.invocations),
     diagnostics: [],
     toolNameByUseId: new Map(),
-    permissionRequestById: new Map(),
     thinkingByMessageId: new Map(),
     contentOrderByMessageId: new Map(),
   };
@@ -316,21 +298,6 @@ export function projectRuntimeEventsToStoredMessages(
       projected = true;
     }
 
-    if (event.actions?.permissionRequest) {
-      const request = event.actions.permissionRequest;
-      state.permissionRequestById.set(request.requestId, {
-        requestId: request.requestId,
-        toolUseId: request.toolUseId,
-        toolName: request.toolName,
-        sessionId: event.sessionId,
-        runId: event.runId,
-        turnId: event.turnId,
-        ...(request.hint !== undefined ? { hint: request.hint } : {}),
-      });
-      state.toolNameByUseId.set(request.toolUseId, request.toolName);
-      projected = true;
-    }
-
     if (event.actions?.userQuestionRequest) {
       // The matching function_call/function_response own the legacy rows;
       // this request is live interaction state only.
@@ -352,22 +319,6 @@ export function projectRuntimeEventsToStoredMessages(
     if (event.actions?.formAnswerAccepted) {
       // InteractionStore owns the canonical result. This Run-local audit fact
       // intentionally has no legacy chat row.
-      projected = true;
-    }
-
-    if (event.actions?.permissionAnswerAccepted) {
-      projectCanonicalPermissionOutcome(
-        event,
-        state,
-        messages,
-        options.canonicalPermissionOutcomes,
-      );
-      projected = true;
-    }
-
-    if (event.actions?.permissionClosureAccepted) {
-      // The canonical closure is already represented by this identity-only
-      // RuntimeEvent; unlike an answer it has no legacy permission-decision row.
       projected = true;
     }
 
@@ -438,10 +389,6 @@ export function projectRuntimeEventsToStoredMessages(
       projected = true;
     }
 
-    if (event.actions?.permissionDecision) {
-      projected = projectPermissionDecision(event, state, messages) || projected;
-    }
-
     if (event.actions?.tokenUsage) {
       projected = projectTokenUsage(event, state, messages) || projected;
     }
@@ -453,8 +400,8 @@ export function projectRuntimeEventsToStoredMessages(
     if (!projected) {
       // Content is the only payload an unclaimed shape could still have owed a
       // row, so its absence is what makes degrading safe here — not a promise
-      // that actions never produce rows (permissionDecision, tokenUsage and the
-      // terminal fact all do). What holds that up is claim coverage: every
+      // that actions never produce rows (tokenUsage and the terminal fact both
+      // do). What holds that up is claim coverage: every
       // action field a reader can meet is claimed above, proven by the
       // projection-coverage contract, so nothing with a row reaches this branch.
       if (event.content === undefined) {
@@ -1052,138 +999,6 @@ function toolActivityIdentity(event: RuntimeEvent): {
       ? { parentOperationId: event.refs.parentOperationId }
       : {}),
   };
-}
-
-function projectPermissionDecision(
-  event: RuntimeEvent,
-  state: ProjectionState,
-  messages: StoredMessage[],
-): boolean {
-  const decision = event.actions?.permissionDecision;
-  if (!decision) return false;
-  const request = state.permissionRequestById.get(decision.requestId);
-  const toolUseId = event.refs?.toolCallId ?? request?.toolUseId;
-  if (!toolUseId) {
-    diagnostic(
-      state,
-      event,
-      'incomplete_event',
-      'permission decision requires refs.toolCallId or a paired permission request',
-    );
-    return false;
-  }
-  if (request && request.toolUseId !== toolUseId) {
-    diagnostic(
-      state,
-      event,
-      'tool_use_id_mismatch',
-      'permission decision toolUseId does not match its paired permission request',
-    );
-    return false;
-  }
-  const toolStateName = state.toolNameByUseId.get(toolUseId);
-  const toolName = decision.toolName ?? request?.toolName ?? toolStateName;
-  if (!toolName) {
-    diagnostic(
-      state,
-      event,
-      'incomplete_event',
-      'permission decision requires durable toolName or a paired permission request or tool call',
-    );
-    return false;
-  }
-  if (
-    (request?.toolName !== undefined && request.toolName !== toolName) ||
-    (toolStateName !== undefined && toolStateName !== toolName)
-  ) {
-    diagnostic(
-      state,
-      event,
-      'incomplete_event',
-      'permission decision toolName does not match its paired request or tool call',
-    );
-    return false;
-  }
-  // The prompt's own wording when the request survived, and the decision's copy
-  // of it when the decision is all that is left.
-  const hint = request?.hint ?? decision.hint;
-  messages.push({
-    type: 'permission_decision',
-    id: decision.requestId,
-    turnId: event.turnId,
-    ts: event.ts,
-    toolUseId,
-    toolName,
-    decision: decision.decision,
-    ...(decision.rememberForTurn !== undefined
-      ? { rememberForTurn: decision.rememberForTurn }
-      : {}),
-    ...(decision.reviewer !== undefined ? { reviewer: decision.reviewer } : {}),
-    ...(decision.rationale !== undefined ? { rationale: decision.rationale } : {}),
-    ...(decision.riskLevel !== undefined ? { riskLevel: decision.riskLevel } : {}),
-    ...(hint !== undefined ? { hint } : {}),
-  });
-  return true;
-}
-
-function projectCanonicalPermissionOutcome(
-  event: RuntimeEvent,
-  state: ProjectionState,
-  messages: StoredMessage[],
-  outcomes: ReadonlyMap<string, CanonicalPermissionOutcomeRecord> | undefined,
-): void {
-  const accepted = event.actions?.permissionAnswerAccepted;
-  if (!accepted) return;
-  const ledgerRequest = state.permissionRequestById.get(accepted.requestId);
-  const canonical = outcomes?.get(accepted.requestId);
-  const toolUseId = event.refs?.toolCallId;
-  if (!canonical || !toolUseId) {
-    diagnostic(
-      state,
-      event,
-      'incomplete_event',
-      'permission answer acceptance requires a canonical Interaction outcome',
-      { requestId: accepted.requestId },
-    );
-    return;
-  }
-  const outcome = canonical.outcome;
-  if (
-    canonical.sessionId !== event.sessionId ||
-    canonical.runId !== event.runId ||
-    canonical.turnId !== event.turnId ||
-    canonical.requestId !== accepted.requestId ||
-    canonical.request.toolUseId !== toolUseId ||
-    (ledgerRequest !== undefined &&
-      (ledgerRequest.sessionId !== event.sessionId ||
-        ledgerRequest.runId !== event.runId ||
-        ledgerRequest.turnId !== event.turnId ||
-        ledgerRequest.toolUseId !== toolUseId ||
-        ledgerRequest.toolName !== canonical.request.prompt.toolName))
-  ) {
-    diagnostic(
-      state,
-      event,
-      'incomplete_event',
-      'permission answer canonical outcome identity does not match its acceptance',
-      { requestId: accepted.requestId },
-    );
-    return;
-  }
-  messages.push({
-    type: 'permission_decision',
-    id: accepted.requestId,
-    turnId: event.turnId,
-    ts: outcome.committedAt,
-    toolUseId,
-    toolName: canonical.request.prompt.toolName,
-    decision: outcome.decision,
-    rememberForTurn: outcome.rememberForTurn,
-    reviewer: outcome.reviewer,
-    ...(outcome.rationale !== undefined ? { rationale: outcome.rationale } : {}),
-    ...(outcome.riskLevel !== undefined ? { riskLevel: outcome.riskLevel } : {}),
-    ...(ledgerRequest?.hint !== undefined ? { hint: ledgerRequest.hint } : {}),
-  });
 }
 
 function projectTokenUsage(

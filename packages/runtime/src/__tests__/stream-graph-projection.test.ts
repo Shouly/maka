@@ -67,34 +67,6 @@ describe('committed stream graph projection', () => {
             content: { kind: 'text', text: 'mutable-stream-chunk' },
           }),
           runtimeEvent(runA, {
-            id: 'a-permission',
-            ts: baseTs + 4,
-            actions: {
-              permissionRequest: {
-                kind: 'tool_permission',
-                requestId: 'permission-a',
-                toolUseId: 'tool-a',
-                toolName: 'Read',
-                category: 'read',
-                reason: 'custom',
-                args: {},
-                rememberForTurnAllowed: true,
-              },
-            },
-          }),
-          runtimeEvent(runA, {
-            id: 'a-permission-decision',
-            ts: baseTs + 5,
-            author: 'user',
-            actions: {
-              permissionDecision: {
-                requestId: 'permission-a',
-                decision: 'allow',
-                rememberForTurn: false,
-              },
-            },
-          }),
-          runtimeEvent(runA, {
             id: 'a-complete',
             ts: baseTs + 8,
             status: 'completed',
@@ -153,34 +125,24 @@ describe('committed stream graph projection', () => {
     assert.equal(projection.ignoredPartialEvents, 1);
     assert.deepEqual(
       projection.records.map((record) => record.source.runtimeEventId),
-      [
-        'a-message',
-        'b-tool-call',
-        'a-permission',
-        'a-permission-decision',
-        'b-tool-result',
-        'b-failed',
-        'a-complete',
-      ],
+      ['a-message', 'b-tool-call', 'b-tool-result', 'b-failed', 'a-complete'],
     );
     assert.deepEqual(
       projection.records.map((record) => record.eventTime),
-      [baseTs + 1, baseTs + 2, baseTs + 4, baseTs + 5, baseTs + 6, baseTs + 7, baseTs + 8],
+      [baseTs + 1, baseTs + 2, baseTs + 6, baseTs + 7, baseTs + 8],
     );
     assert.deepEqual(
       projection.records
         .filter((record) => record.operatorId === 'research')
         .map((record) => record.orderKey.committedEventOrdinal),
-      [0, 1, 2, 3],
+      [0, 1],
       'partial events do not renumber committed source facts',
     );
     assert.deepEqual(projection.records[0]?.facets, ['message']);
     assert.deepEqual(projection.records[1]?.facets, ['tool_call']);
-    assert.deepEqual(projection.records[5]?.facets, ['error', 'failed']);
-    assert.deepEqual(projection.records[2]?.supervisorSignals, [
-      { kind: 'attention', reason: 'permission_request' },
-    ]);
-    assert.deepEqual(projection.records[5]?.supervisorSignals, [
+    assert.deepEqual(projection.records[3]?.facets, ['error', 'failed']);
+    assert.deepEqual(projection.records[2]?.supervisorSignals, []);
+    assert.deepEqual(projection.records[3]?.supervisorSignals, [
       { kind: 'terminal', status: 'failed' },
     ]);
     assert.deepEqual(
@@ -189,9 +151,7 @@ describe('committed stream graph projection', () => {
       'the supervisor observes every graph record, not only attention records',
     );
     assert.deepEqual(projection.supervisorMetaStream[0]?.signals, []);
-    assert.deepEqual(projection.supervisorMetaStream[2]?.signals, [
-      { kind: 'attention', reason: 'permission_request' },
-    ]);
+    assert.deepEqual(projection.supervisorMetaStream[2]?.signals, []);
     assert.equal(
       replayAgentGraphRecords(projection.records.slice(0, 3)).operators.research?.status,
       'running',
@@ -199,10 +159,10 @@ describe('committed stream graph projection', () => {
     );
     assert.equal(projection.state.operators.research?.status, 'completed');
     assert.equal(projection.state.operators.verify?.status, 'failed');
-    assert.equal(projection.state.operators.research?.activations['run-a']?.recordCount, 4);
+    assert.equal(projection.state.operators.research?.activations['run-a']?.recordCount, 2);
     assert.equal(projection.records[0]?.previousRecordId, undefined);
     assert.equal(
-      projection.records[2]?.previousRecordId,
+      projection.records[4]?.previousRecordId,
       projection.records[0]?.recordId,
       'predecessors are activation-local rather than global',
     );
@@ -532,22 +492,6 @@ describe('committed stream graph projection', () => {
           run,
           events: [
             runtimeEvent(run, {
-              id: 'permission-request',
-              ts: baseTs + 1,
-              actions: {
-                permissionRequest: {
-                  kind: 'tool_permission',
-                  requestId: 'permission-1',
-                  toolUseId: 'tool-1',
-                  toolName: 'Read',
-                  category: 'read',
-                  reason: 'custom',
-                  args: {},
-                  rememberForTurnAllowed: true,
-                },
-              },
-            }),
-            runtimeEvent(run, {
               id: 'question-request',
               ts: baseTs + 2,
               actions: {
@@ -588,14 +532,13 @@ describe('committed stream graph projection', () => {
     assert.deepEqual(
       records.map((record) => record.supervisorSignals),
       [
-        [{ kind: 'attention', reason: 'permission_request' }],
         [{ kind: 'attention', reason: 'user_question_request' }],
         [],
         [{ kind: 'attention', reason: 'form_request' }],
       ],
     );
-    assert.deepEqual(records[2]?.facets, ['runtime_fact']);
-    assert.deepEqual(records[3]?.facets, ['form_request']);
+    assert.deepEqual(records[1]?.facets, ['runtime_fact']);
+    assert.deepEqual(records[2]?.facets, ['form_request']);
     assert.equal(replayAgentGraphRecords(records).operators.research?.status, 'running');
   });
 
