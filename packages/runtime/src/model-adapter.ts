@@ -277,7 +277,10 @@ export class ModelAdapter {
       aliasesToolSearch && name === TOOL_SEARCH_NAME ? TOOL_SEARCH_PROVIDER_NAME : name;
     const runtimeToolName = (name: string): string =>
       aliasesToolSearch && name === TOOL_SEARCH_PROVIDER_NAME ? TOOL_SEARCH_NAME : name;
-    const sdkTools = lowerModelTools(input.tools, this.nativeToolDeferral);
+    const { providerType } = this.input.connection;
+    const sdkTools = lowerModelTools(input.tools, this.nativeToolDeferral, {
+      nonStrictFunctions: providerType === 'openai' || providerType === 'openai-codex',
+    });
     if (aliasesToolSearch && sdkTools[TOOL_SEARCH_NAME] !== undefined) {
       sdkTools[TOOL_SEARCH_PROVIDER_NAME] = sdkTools[TOOL_SEARCH_NAME];
       delete sdkTools[TOOL_SEARCH_NAME];
@@ -1313,9 +1316,18 @@ function deferralProviderOptions(
   }
 }
 
+/**
+ * `nonStrictFunctions` marks every function tool `strict: false`. Without
+ * the field the Responses API defaults to strict and the model omits
+ * nothing: it filled Glob's `path` with "" and put `network` on every
+ * boundary request, which turned the network on for the session. Only
+ * OpenAI and Codex connections send it; other servers speaking the same
+ * adapter (Volcengine, relays) are not known to accept the field.
+ */
 export function lowerModelTools(
   tools: ModelToolSet,
   deferral?: NativeToolDeferral,
+  options: { readonly nonStrictFunctions?: boolean } = {},
 ): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(tools).map(([name, definition]) => {
@@ -1328,6 +1340,7 @@ export function lowerModelTools(
         {
           ...(definition.description !== undefined ? { description: definition.description } : {}),
           inputSchema: definition.inputSchema,
+          ...(options.nonStrictFunctions ? { strict: false } : {}),
           ...(providerOptions ? { providerOptions } : {}),
         },
       ];

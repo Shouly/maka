@@ -726,6 +726,59 @@ describe('responses wire request body', () => {
     });
   });
 
+  test('sends function tools non-strict to OpenAI and Codex only', async () => {
+    const cases = [
+      { providerType: 'openai-codex', modelId: 'gpt-5.6-sol', strict: false },
+      { providerType: 'openai', modelId: 'gpt-5.4', strict: false },
+      { providerType: 'volcengine-agent-plan', modelId: 'ark-code-latest', strict: undefined },
+      { providerType: 'deepseek', modelId: 'deepseek-v4-flash', strict: undefined },
+    ] as const;
+    for (const { providerType, modelId, strict } of cases) {
+      const connection = conn(providerType);
+      connection.defaultModel = modelId;
+      const bodies: Record<string, unknown>[] = [];
+      const fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return Response.json({
+          id: 'r',
+          object: 'response',
+          status: 'completed',
+          output: [],
+          usage: { input_tokens: 1, output_tokens: 1 },
+        });
+      }) as unknown as typeof globalThis.fetch;
+      const adapter = new ModelAdapter({
+        connection,
+        apiKey: 'test-key',
+        modelId,
+        modelFactory: (input) => getAIModel({ connection, apiKey: input.apiKey, modelId, fetch }),
+        newId: () => 'test-id',
+        now: () => 0,
+      });
+      const result = await adapter.startStream({
+        model: adapter.resolveModel(),
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'find files' }] }],
+        tools: {
+          Glob: {
+            description: 'Fast file pattern matching.',
+            inputSchema: z.object({ pattern: z.string(), path: z.string().optional() }),
+          },
+        },
+        activeTools: ['Glob'],
+        system: 'Use Glob.',
+        onStreamActivity: () => {},
+        abortSignal: new AbortController().signal,
+        repairToolCall: async () => null,
+      });
+      for await (const _event of result.events) void _event;
+      const tool = (bodies[0]?.tools as Array<Record<string, unknown>> | undefined)?.find(
+        (entry) => entry.name === 'Glob',
+      );
+      assert.ok(tool, providerType);
+      assert.equal(tool.strict, strict, providerType);
+    }
+  });
+
   test('DeepSeek uses plaintext Responses options without asking for encrypted content', async () => {
     const bodies: Record<string, unknown>[] = [];
     let headers: Headers | undefined;
