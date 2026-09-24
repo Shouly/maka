@@ -310,6 +310,11 @@ export type SandboxBoundaryExpansionValidationResult =
       message: string;
     };
 
+/** `/`, or a drive root such as `C:\\` or `C:/`. */
+function isFilesystemRoot(path: string): boolean {
+  return path === '/' || /^[A-Za-z]:[\\/]?$/.test(path);
+}
+
 export function validateSandboxBoundaryExpansion(
   input: unknown,
 ): SandboxBoundaryExpansionValidationResult {
@@ -649,9 +654,9 @@ function validateFilesystem(
         'Sandbox boundary filesystem entry must contain path, access, and scope.',
       );
     }
-    // `/` is a normalized absolute path, but not an expansion anyone can ask
-    // for: it would be the whole disk.
-    if (!isNormalizedAbsolutePath(candidate.path) || candidate.path === '/') {
+    // `/` and a Windows drive root are normalized absolute paths, but not
+    // expansions anyone can ask for: each would be the whole disk.
+    if (!isNormalizedAbsolutePath(candidate.path) || isFilesystemRoot(candidate.path)) {
       return invalid('invalid_path', 'Sandbox boundary path must be a normalized absolute path.');
     }
     if (candidate.path.length > MAX_SANDBOX_BOUNDARY_PATH_CHARS) {

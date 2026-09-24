@@ -123,6 +123,17 @@ describe('SandboxBoundaryExpansion', () => {
     });
   });
 
+  test('refuses the filesystem root on every platform', () => {
+    // `/` and a drive root are each the whole disk, which no expansion may ask for.
+    for (const path of ['/', 'C:\\', 'c:/', 'D:']) {
+      const result = validateSandboxBoundaryExpansion({
+        filesystem: { entries: [{ path, access: 'write', scope: 'subtree' }] },
+      });
+      assert.strictEqual(result.ok, false, path);
+      if (!result.ok) assert.strictEqual(result.reason, 'invalid_path', path);
+    }
+  });
+
   test('accepts normalized Windows drive paths and compares them case-insensitively', () => {
     const result = validateSandboxBoundaryExpansion({
       filesystem: {
@@ -151,13 +162,6 @@ describe('SandboxBoundaryExpansion', () => {
     });
     assert.strictEqual(canReadPath(widened, 'd:\\outside\\tree\\file.txt'), true);
     assert.strictEqual(canReadPath(widened, 'D:\\Outside\\Sibling\\file.txt'), false);
-
-    assert.strictEqual(
-      validateSandboxBoundaryExpansion({
-        filesystem: { entries: [{ path: 'C:\\', access: 'read', scope: 'subtree' }] },
-      }).ok,
-      true,
-    );
   });
 
   test('rejects non-normalized Windows boundary paths', () => {

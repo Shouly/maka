@@ -2312,7 +2312,7 @@ export class AiSdkTurn {
                 const sandboxBoundaryAttempt = isProviderSandboxBoundaryAttempt(toolCall);
                 const deniedBoundaryRequest =
                   toolRuntime.hasSandboxBoundaryDenial() &&
-                  toolCall.toolName.toLowerCase() === REQUEST_SANDBOX_BOUNDARY_TOOL_NAME;
+                  toolCall.toolName === REQUEST_SANDBOX_BOUNDARY_TOOL_NAME;
                 if (deniedBoundaryRequest) {
                   toolRuntime.forceSandboxBoundaryFinalization();
                 }

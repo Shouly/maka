@@ -21,6 +21,7 @@ import { z } from 'zod';
 
 import type { RepairableAiSdkToolCall } from './model-adapter.js';
 import { SandboxCommandError } from './sandbox/errors.js';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import { REQUEST_SANDBOX_BOUNDARY_TOOL_NAME } from './sandbox-boundary-tool.js';
 import {
   formatSyntheticToolErrorText,
@@ -112,9 +113,10 @@ export function isProviderSandboxBoundaryAttempt(toolCall: {
   toolName: string;
   input: unknown;
 }): boolean {
-  const toolName = toolCall.toolName.toLowerCase();
-  if (toolName === REQUEST_SANDBOX_BOUNDARY_TOOL_NAME) return true;
-  if (toolName !== 'bash') return false;
+  // Tool names are matched as registered; lower-casing the call's name against
+  // a PascalCase constant made this branch unreachable for a year of renames.
+  if (toolCall.toolName === REQUEST_SANDBOX_BOUNDARY_TOOL_NAME) return true;
+  if (toolCall.toolName !== TOOL_NAMES.bash) return false;
   const parsed = parseToolCallInput(toolCall.input);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
   const boundaryIntent = (parsed as Record<string, unknown>).boundary_intent;
