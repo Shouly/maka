@@ -86,19 +86,21 @@ export interface TurnStatusProps {
 }
 
 /**
- * The clay ring beside a run that waits on the user: the reference's 20px
- * mark — a 2px ring around an 8px dot, in the brand's clay (#d97757, which is
- * `--fill-brand-hover` here) — hung 18px left of the text column, where the
- * working mark hangs. A waiting turn is a running turn, so the settled turn's
- * paint containment never clips it.
+ * The amber ring beside a run that waits on the user, measured off the
+ * reference: a 14px ring with a 1px stroke around a 9px dot, in the pill's
+ * amber (#f0ac55), centred in the 20px slot where the working mark sits, 18px
+ * left of the text column. A waiting turn is a running turn, so the settled
+ * turn's paint containment never clips it.
  */
 function BlockedMark() {
   return (
     <span
       aria-hidden="true"
-      className="absolute -left-7 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-full border-2 border-[var(--fill-brand-hover)]"
+      className="absolute -left-7 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center"
     >
-      <span className="size-2 rounded-full bg-[var(--fill-brand-hover)]" />
+      <span className="flex size-[14px] items-center justify-center rounded-full border-[1px] border-[#f0ac55]">
+        <span className="size-[9px] rounded-full bg-[#f0ac55]" />
+      </span>
     </span>
   );
 }
