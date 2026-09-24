@@ -103,7 +103,7 @@ export const UserFileDeliveryResult = memo(function UserFileDeliveryResult(props
       : undefined;
 
   if (props.result.files.length === 0) {
-    return <p className="my-3 text-[0.8125rem] leading-[1.125rem] text-text-muted">{copy.empty}</p>;
+    return <p className="text-[0.8125rem] leading-[1.125rem] text-text-muted">{copy.empty}</p>;
   }
   // Stacked, not a strip: the reference lays one card per row at the answer's
   // width. `status` and `caption` are deliberately NOT drawn — the reference
@@ -111,7 +111,7 @@ export const UserFileDeliveryResult = memo(function UserFileDeliveryResult(props
   // parameter to a reader who never chose it.
   return (
     <div
-      className="flex min-w-0 flex-col gap-2 pb-2 pt-4"
+      className="flex min-w-0 flex-col gap-2"
       role="group"
       aria-label={copy.filesLabel}
       data-maka-file-delivery={props.result.status}

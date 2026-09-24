@@ -58,12 +58,12 @@ export function AskUserQuestionRecord(props: { item: ToolActivityItem }) {
 
   return (
     <dl
-      className="my-3 flex min-w-0 flex-col gap-3 rounded-xl border border-hairline p-4"
+      className="flex min-w-0 flex-col gap-3 rounded-xl border-[1px] border-hairline p-4"
       data-maka-ask-user-record={props.item.toolUseId}
     >
       {record.map((pair, index) => (
         <div key={`${index}-${pair.question}`} className="flex min-w-0 flex-col gap-1">
-          <dt className="text-sm leading-5 text-text-muted">{pair.question}</dt>
+          <dt className="text-sm leading-5 text-text-secondary">{pair.question}</dt>
           <dd
             className={cn(
               'flex min-w-0 flex-col text-sm leading-5',

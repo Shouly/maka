@@ -218,7 +218,7 @@ export function TurnStatusPending(props: { live: TurnStatusLive; writing?: boole
       : copy.working;
   return (
     <div
-      className="my-3.5 flex min-w-0"
+      className="-my-1.5 flex min-w-0"
       role="status"
       aria-label={label}
       data-maka-turn-pending=""
@@ -273,12 +273,12 @@ export const TurnStatus = memo(function TurnStatus(props: TurnStatusProps) {
 
   return (
     // The row's text sits on the prose column: `.standard-markdown` pads its
-    // paragraphs by 0.5rem, and so does the row's `px-2`. 14px above and below
-    // the 32px row, and the opened card ends 6px under it: the reference's
-    // spacing, which puts the row's words 20px from the prose around it — the
-    // same distance as between two paragraphs.
+    // paragraphs by 0.5rem, and so does the row's `px-2`. The column keeps
+    // blocks 20px apart and the row pulls 6px into that on each side — its
+    // own vertical padding — so its WORDS stand 20px from the prose around
+    // them, and the opened card ends 6px under it for the same reason.
     <div
-      className="my-3.5 flex min-w-0 flex-col"
+      className="-my-1.5 flex min-w-0 flex-col"
       data-maka-turn-status={props.group.id}
       data-state={state}
       {...(state === 'busy' ? { role: 'status' } : {})}

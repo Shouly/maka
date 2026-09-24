@@ -225,37 +225,31 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
     if (entry.kind === 'user') {
       if (entry.message.hostOrigin?.kind === 'background_task') {
         return (
-          <SystemNoticeRow
-            key={`inserted-${entry.messageId}`}
-            messageId={entry.message.id}
-            text={entry.message.text}
-          />
+          <div key={`inserted-${entry.messageId}`} className="-my-3">
+            <SystemNoticeRow messageId={entry.message.id} text={entry.message.text} />
+          </div>
         );
       }
       return (
-        <UserMessageRow
-          key={`inserted-${entry.messageId}`}
-          messageId={entry.message.id}
-          text={entry.message.text}
-          {...(entry.message.ts !== undefined ? { ts: entry.message.ts } : {})}
-          {...(entry.message.quotes ? { quotes: entry.message.quotes } : {})}
-          attachments={entry.message.attachments}
-          directoryReferences={entry.message.directoryReferences}
-          inlineReferences={entry.message.inlineReferences}
-          {...(openAttachment ? { onOpenAttachment: openAttachment } : {})}
-        />
+        <div key={`inserted-${entry.messageId}`} className="-mt-5">
+          <UserMessageRow
+            messageId={entry.message.id}
+            text={entry.message.text}
+            {...(entry.message.ts !== undefined ? { ts: entry.message.ts } : {})}
+            {...(entry.message.quotes ? { quotes: entry.message.quotes } : {})}
+            attachments={entry.message.attachments}
+            directoryReferences={entry.message.directoryReferences}
+            inlineReferences={entry.message.inlineReferences}
+            {...(openAttachment ? { onOpenAttachment: openAttachment } : {})}
+          />
+        </div>
       );
     }
     const Renderer = entry.live && !entry.complete ? StreamPopMarkdown : Markdown;
     return (
       <div
         key={`text-${entry.messageId}-${index}`}
-        className={cn(
-          'chat-assistant-response standard-markdown',
-          // Two prose blocks in a row — a line and the message after it —
-          // stand a paragraph apart, as the reference's blocks do.
-          grouped[index - 1]?.kind === 'text' && 'mt-5',
-        )}
+        className="chat-assistant-response standard-markdown"
         data-maka-contract="markdown"
       >
         <Renderer
@@ -308,7 +302,11 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
         />
       )}
 
-      <div className="flex flex-col">
+      {/* The reference's block column: every block 20px from the next, and a
+          status row pulls itself 6px into that on each side. Nothing here
+          carries its own vertical margin. The 10px on top puts the first
+          block's words 44px under the user's bubble, as the reference does. */}
+      <div className="flex flex-col gap-5 pt-2.5">
         {tailIndex < 0 && pendingStatus}
         {grouped.flatMap((entry, index) => {
           const drawn = drawEntry(entry, index);
