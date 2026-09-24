@@ -28,6 +28,7 @@ import {
   createReadOnlyPermissionProfile,
   createWorkspaceWritePermissionProfile,
   isCanonicalReadOnlyPermissionProfile,
+  isReadOnlyDerivedPermissionProfile,
   isDeniedPath,
   isProtectedMetadataPath,
   isReadOnlyPermissionProfile,
@@ -218,6 +219,29 @@ describe('isReadOnlyPermissionProfile', () => {
       name: 'custom',
     };
     assert.strictEqual(isReadOnlyPermissionProfile(renamedButStillReadOnly), true);
+  });
+});
+
+describe('isReadOnlyDerivedPermissionProfile', () => {
+  test('tells a Read only profile from a Manual one after expansions, by shape', () => {
+    const readOnly = createReadOnlyPermissionProfile();
+    const manual = createWorkspaceWritePermissionProfile();
+    const grant = {
+      kind: 'path' as const,
+      access: 'write' as const,
+      path: '/outside',
+      match: 'subtree' as const,
+    };
+    const expandedReadOnly = {
+      ...readOnly,
+      fileSystem: { ...readOnly.fileSystem, entries: [...readOnly.fileSystem.entries, grant] },
+      network: { kind: 'enabled' as const },
+    };
+    const { name: _name, ...unnamedManual } = manual;
+    assert.strictEqual(isReadOnlyDerivedPermissionProfile(readOnly), true);
+    assert.strictEqual(isReadOnlyDerivedPermissionProfile(expandedReadOnly), true);
+    assert.strictEqual(isReadOnlyDerivedPermissionProfile(manual), false);
+    assert.strictEqual(isReadOnlyDerivedPermissionProfile(unnamedManual), false);
   });
 });
 

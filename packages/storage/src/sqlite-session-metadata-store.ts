@@ -23,7 +23,7 @@ import { dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
-import { isCanonicalReadOnlyPermissionProfile } from '@maka/core/permission-profile';
+import { isReadOnlyDerivedPermissionProfile } from '@maka/core/permission-profile';
 import type { DatabaseSync } from 'node:sqlite';
 import {
   AGENT_GRAPH_CLIENT_PROJECTION_SCHEMA_VERSION,
@@ -4592,7 +4592,9 @@ export class SqliteSessionMetadataStore {
           `Managed sandbox boundary history is invalid: ${sessionId}`,
         );
       }
-      if (!isCanonicalReadOnlyPermissionProfile(boundary.profile)) return boundary.profile;
+      // Grants approved under Read only stay with Read only: Manual resumes
+      // from its own latest profile, or from its genesis.
+      if (!isReadOnlyDerivedPermissionProfile(boundary.profile)) return boundary.profile;
     }
     return requireManagedProfile(createGenesisExecutionBoundary('ask'));
   }
@@ -4855,7 +4857,7 @@ export class SqliteSessionMetadataStore {
       kind === 'managed'
         ? projectedMode === 'explore'
           ? requireManagedProfile(createGenesisExecutionBoundary('explore'))
-          : current.kind === 'managed' && !isCanonicalReadOnlyPermissionProfile(current.profile)
+          : current.kind === 'managed' && !isReadOnlyDerivedPermissionProfile(current.profile)
             ? current.profile
             : this.readLatestAutoSandboxProfileSync(sessionId)
         : undefined;

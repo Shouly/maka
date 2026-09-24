@@ -5172,16 +5172,27 @@ describe('SessionManager permission mode updates', () => {
         const expanded = await store.readExecutionBoundary(session.id);
         assert.strictEqual(expanded.kind, 'managed');
         if (expanded.kind !== 'managed') throw new Error('Expected a managed boundary');
-        assert.strictEqual(expanded.profile.name, 'read-only');
-        assert.strictEqual(isReadOnlyPermissionProfile(expanded.profile), false);
-        assert.strictEqual(
-          expanded.profile.network.kind,
-          grant === 'network' ? 'enabled' : 'restricted',
-        );
-        assert.strictEqual(
-          canWritePath(expanded.profile, outsidePath, { workspaceRoots: [workspaceRoot] }),
-          grant === 'write',
-        );
+        if (route === 'configuration') {
+          // A grant approved under Read only stays with Read only: Manual
+          // starts from its own genesis, which opens the network and writes
+          // the workspace but nothing outside it.
+          assert.deepStrictEqual(expanded.profile, createWorkspaceWritePermissionProfile());
+          assert.strictEqual(
+            canWritePath(expanded.profile, outsidePath, { workspaceRoots: [workspaceRoot] }),
+            false,
+          );
+        } else {
+          assert.strictEqual(expanded.profile.name, 'read-only');
+          assert.strictEqual(isReadOnlyPermissionProfile(expanded.profile), false);
+          assert.strictEqual(
+            expanded.profile.network.kind,
+            grant === 'network' ? 'enabled' : 'restricted',
+          );
+          assert.strictEqual(
+            canWritePath(expanded.profile, outsidePath, { workspaceRoots: [workspaceRoot] }),
+            grant === 'write',
+          );
+        }
         assert.deepStrictEqual(calls, []);
 
         const activeTurn = manager

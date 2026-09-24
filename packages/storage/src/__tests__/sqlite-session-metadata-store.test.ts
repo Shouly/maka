@@ -2461,7 +2461,7 @@ describe('SqliteSessionMetadataStore', () => {
       assert.equal(restored.revision, 3);
       assert.equal((await store.read('session-1')).header.permissionMode, 'ask');
       if (restored.kind === 'managed') {
-        assert.equal(canReadPath(restored.profile, '/outside/kept/file.txt'), true);
+        assert.equal(canWritePath(restored.profile, '/outside/kept/file.txt'), true);
       }
       assert.equal((await store.setExecutionBoundaryKind('session-1', 'managed')).revision, 3);
     } finally {
@@ -2504,6 +2504,62 @@ describe('SqliteSessionMetadataStore', () => {
       assert.equal(restored.kind, 'managed');
       if (restored.kind === 'managed') {
         assert.deepEqual(restored.profile, createWorkspaceWritePermissionProfile());
+      }
+    } finally {
+      store.close();
+    }
+  });
+
+  test('grants approved under Read only do not follow the session into Manual', async () => {
+    // A Read only session that approved one write grant is still a Read only
+    // session. Switching it to Manual used to keep that profile because it was
+    // no longer the canonical read-only shape, so Manual could not write its
+    // own workspace.
+    const store = createSqliteSessionMetadataStore(':memory:', { now: nextNow(221) });
+    const workspaceFile = `${fullHeader().cwd}/src/index.ts`;
+    try {
+      await store.create(fullHeader({ permissionMode: 'explore' }));
+      await store.createSandboxBoundaryRequest({
+        sessionId: 'session-1',
+        requestId: 'read-only-grant',
+        turnId: 'turn-1',
+        expansion: {
+          filesystem: {
+            entries: [{ path: '/outside/notes', access: 'write', scope: 'subtree' }],
+          },
+        },
+        justification: 'Write notes.',
+      });
+      await store.settleSandboxBoundaryRequest({
+        sessionId: 'session-1',
+        requestId: 'read-only-grant',
+        decision: 'allow',
+      });
+
+      const manual = await store.setExecutionBoundaryKind('session-1', 'managed', {
+        permissionMode: 'ask',
+      });
+      assert.equal(manual.kind, 'managed');
+      if (manual.kind === 'managed') {
+        assert.deepEqual(manual.profile, createWorkspaceWritePermissionProfile());
+        assert.equal(
+          canWritePath(manual.profile, workspaceFile, { workspaceRoots: [fullHeader().cwd] }),
+          true,
+        );
+      }
+
+      // The same through Full access: the Read only grant is not "the latest
+      // Manual profile" either.
+      const back = await store.setExecutionBoundaryKind('session-1', 'managed', {
+        permissionMode: 'explore',
+      });
+      assert.equal(back.kind, 'managed');
+      await store.setExecutionBoundaryKind('session-1', 'bypass', { permissionMode: 'bypass' });
+      const afterBypass = await store.setExecutionBoundaryKind('session-1', 'managed', {
+        permissionMode: 'ask',
+      });
+      if (afterBypass.kind === 'managed') {
+        assert.deepEqual(afterBypass.profile, createWorkspaceWritePermissionProfile());
       }
     } finally {
       store.close();

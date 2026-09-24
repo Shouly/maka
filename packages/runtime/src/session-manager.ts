@@ -70,7 +70,10 @@ import type {
 import type { SandboxBoundaryResponse } from '@maka/core/sandbox-boundary';
 import type { UserQuestionResponse } from '@maka/core/user-question';
 import type { PermissionMode } from '@maka/core/permission';
-import { isCanonicalReadOnlyPermissionProfile } from '@maka/core/permission-profile';
+import {
+  isCanonicalReadOnlyPermissionProfile,
+  isReadOnlyDerivedPermissionProfile,
+} from '@maka/core/permission-profile';
 import { DEFAULT_TOOL_MODE } from '@maka/core/tool-mode';
 import type {
   CreateSandboxBoundaryRequest,
@@ -5881,9 +5884,11 @@ function executionBoundaryMatchesPermissionMode(
 ): boolean {
   if (mode === 'bypass') return boundary.kind === 'bypass';
   if (boundary.kind !== 'managed') return false;
+  // By shape, not name: an expanded profile keeps its genesis name, and a
+  // custom one may have none.
   return mode === 'explore'
-    ? boundary.profile.name === 'read-only'
-    : boundary.profile.name !== 'read-only';
+    ? isReadOnlyDerivedPermissionProfile(boundary.profile)
+    : !isReadOnlyDerivedPermissionProfile(boundary.profile);
 }
 
 function narrowsExecutionAuthority(

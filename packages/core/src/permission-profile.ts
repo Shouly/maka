@@ -163,6 +163,19 @@ export function isReadOnlyPermissionProfile(profile: PermissionProfileManaged): 
 }
 
 /**
+ * Whether a managed profile descends from the Read only genesis. An approved
+ * expansion adds only path entries and may open the network, so what tells a
+ * Read only profile from a Manual one is the special write entries Manual
+ * starts with (workspace, temp) and Read only never gains. The name cannot
+ * say: a profile keeps its genesis name through expansions, and may have none.
+ */
+export function isReadOnlyDerivedPermissionProfile(profile: PermissionProfileManaged): boolean {
+  return !profile.fileSystem.entries.some(
+    (entry) => entry.kind === 'special' && entry.access === 'write',
+  );
+}
+
+/**
  * True only for the canonical Explore policy, independently of its display name.
  * A read-only profile may still grant extra read paths that restoring Explore
  * would revoke. Treat every other policy conservatively as a possible narrowing.
