@@ -88,50 +88,19 @@ describe('computeEditedSource — exact match', () => {
     assert.throws(() => computeEditedSource('abc', 'abc', 'abc', 'b.txt'), /exactly the same/);
   });
 
-  test('rejects an empty old_string', () => {
-    assert.throws(() => computeEditedSource('abc', '', 'x', 'b.txt'), /must not be empty/);
-  });
-});
-
-describe('computeEditedSource — fuzzy cascade', () => {
-  test('line-trimmed: tolerates indentation drift on a multi-line block', () => {
-    const content = 'function f() {\n    return 1;\n}\n'; // 4-space body
-    const oldString = 'function f() {\n  return 1;\n}'; // model used 2-space body
-    const result = computeEditedSource(
-      content,
-      oldString,
-      'function f() {\n    return 2;\n}',
-      'f.ts',
+  test('an empty old_string creates the file only when it is empty', () => {
+    assert.throws(
+      () => computeEditedSource('abc', '', 'x', 'b.txt'),
+      /Cannot create new file - file already exists\.$/,
     );
-    assert.equal(result.matchedVia, 'line-trimmed');
-    assert.equal(result.content, 'function f() {\n    return 2;\n}\n');
-    assert.equal(result.startLine, 1);
-    assert.equal(result.endLine, 3);
-  });
-
-  test('whitespace: tolerates collapsed internal whitespace', () => {
-    const content = 'const  x   =   1;';
-    const result = computeEditedSource(content, 'const x = 1;', 'const x = 2;', 'w.ts');
-    assert.equal(result.matchedVia, 'whitespace');
-    assert.equal(result.content, 'const x = 2;');
-  });
-
-  test('escape: tolerates literal backslash escapes in old_string', () => {
-    const content = 'line1\nline2';
-    const result = computeEditedSource(content, 'line1\\nline2', 'X', 'e.ts');
-    assert.equal(result.matchedVia, 'escape');
-    assert.equal(result.content, 'X');
-    assert.equal(result.startLine, 1);
-    assert.equal(result.endLine, 2);
-  });
-
-  test('line-trimmed: preserves a trailing newline in old_string (no extra blank line)', () => {
-    const content = '  abcde\n  fghij\n';
-    const result = computeEditedSource(content, 'abcde\nfghij\n', 'xxxxx\nyyyyy\n', 'n.ts');
-    assert.equal(result.matchedVia, 'line-trimmed');
-    assert.equal(result.content, 'xxxxx\nyyyyy\n');
-    assert.equal(result.startLine, 1);
-    assert.equal(result.endLine, 2);
+    assert.deepEqual(computeEditedSource('', '', 'new\n', 'b.txt'), {
+      content: 'new\n',
+      matchedVia: 'exact',
+      startLine: 1,
+      endLine: 1,
+      replacements: 1,
+    });
+    assert.equal(computeEditedSource('  \n', '', 'x', 'b.txt').content, 'x');
   });
 
   test("a span's trailing newline is a terminator, not an extra line, for endLine", () => {
@@ -145,70 +114,63 @@ describe('computeEditedSource — fuzzy cascade', () => {
   });
 });
 
-describe('computeEditedSource — anti-corruption guards', () => {
-  test('rejects multiple distinct fuzzy candidates instead of guessing', () => {
-    const content = 'function a() {\n  x;\n}\nfunction a() {\n   x;\n}\n';
-    const oldString = 'function a() {\n    x;\n}'; // matches both blocks by trimmed lines
+describe('computeEditedSource — nothing but the text is matched', () => {
+  test('indentation drift is not found', () => {
+    const content = 'function f() {\n    return 1;\n}\n';
     assert.throws(
-      () => computeEditedSource(content, oldString, 'Y', 'a.ts'),
-      /different line-trimmed candidates/,
+      () => computeEditedSource(content, 'function f() {\n  return 1;\n}', 'x', 'f.ts'),
+      /String to replace not found in file\./,
     );
   });
 
-  test('rejects a fuzzy span that occurs more than once', () => {
-    const content = 'function a() {\n  x;\n}\nfunction a() {\n  x;\n}\n';
-    const oldString = 'function a() {\n    x;\n}';
+  test('collapsed whitespace and literal escapes are not found', () => {
     assert.throws(
-      () => computeEditedSource(content, oldString, 'Y', 'a.ts'),
-      /occurs more than once/,
+      () => computeEditedSource('const  x   =   1;', 'const x = 1;', 'y', 'w.ts'),
+      /not found/,
     );
-  });
-
-  test('rejects a too-short old_string for a non-exact match', () => {
-    const content = 'a   b';
-    assert.throws(() => computeEditedSource(content, 'a b', 'c', 's.ts'), /too short/);
-  });
-
-  test('a multi-line old_string never collapses onto a single line (whitespace)', () => {
-    const content = 'header\nalpha beta\nfooter\n';
-    assert.throws(() => computeEditedSource(content, 'alpha\nbeta', 'X', 'w.ts'), /not found/);
+    assert.throws(
+      () => computeEditedSource('line1\nline2', 'line1\\nline2', 'X', 'e.ts'),
+      /not found/,
+    );
+    assert.throws(
+      () => computeEditedSource('\tindented', '    indented', 'x', 't.txt'),
+      /not found/,
+    );
   });
 });
 
-describe('computeEditedSource — verbatim replacement (no indentation migration)', () => {
-  test('fuzzy match writes new_string verbatim; the file indentation is NOT migrated', () => {
-    const content = 'def f():\n        return 1\n'; // 8-space body on disk
-    const oldString = 'def f():\n    return 1'; // model used a 4-space body
-    const newString = 'def f():\n    return 2'; // model's new_string is also 4-space
-    const result = computeEditedSource(content, oldString, newString, 'p.py');
-    assert.equal(result.matchedVia, 'line-trimmed');
-    // new_string is inserted exactly as given (4-space), deliberately NOT
-    // re-indented to the file's 8-space — callers own the final formatting.
-    assert.equal(result.content, 'def f():\n    return 2\n');
+describe('computeEditedSource — quotes', () => {
+  test('straight quotes match curly ones, and the replacement keeps the curly style', () => {
+    const content = 'It\u2019s a \u201csmart quote\u201d test.\n';
+    const result = computeEditedSource(content, '"smart quote"', '"plain quote"', 'q.txt');
+    assert.equal(result.matchedVia, 'quotes');
+    assert.equal(result.content, 'It\u2019s a \u201cplain quote\u201d test.\n');
+  });
+
+  test('single quotes: apostrophes stay apostrophes, others open and close', () => {
+    const content = '\u2018quoted\u2019 and it\u2019s\n';
+    const result = computeEditedSource(content, "'quoted' and it's", "'cited' and that's", 'q.txt');
+    assert.equal(result.content, '\u2018cited\u2019 and that\u2019s\n');
+  });
+
+  test('a file with straight quotes is left straight', () => {
+    const result = computeEditedSource('say "hi"\n', '"hi"', '"bye"', 'q.txt');
+    assert.equal(result.matchedVia, 'exact');
+    assert.equal(result.content, 'say "bye"\n');
   });
 });
 
-describe('computeEditedSource — oversized / binary fuzzy guards', () => {
-  test('binary (NUL) file: exact still edits, fuzzy is refused', () => {
-    const nul = String.fromCharCode(0);
-    const content = 'alpha' + nul + 'needle here';
-    assert.equal(
-      computeEditedSource(content, 'needle here', 'replaced', 'b.bin').content,
-      'alpha' + nul + 'replaced',
-    );
-    assert.throws(() => computeEditedSource(content, 'needle  here', 'x', 'b.bin'), /looks binary/);
+describe('computeEditedSource — line endings', () => {
+  test('a CRLF file is matched with LF and written back as CRLF', () => {
+    const result = computeEditedSource('one\r\ntwo\r\nthree\r\n', 'one\ntwo', 'ONE\nTWO', 'c.txt');
+    assert.equal(result.content, 'ONE\r\nTWO\r\nthree\r\n');
+    assert.equal(result.startLine, 1);
+    assert.equal(result.endLine, 2);
   });
 
-  test('oversized file: exact still edits, fuzzy is refused', () => {
-    const content = 'x'.repeat(1_000_001) + '\nunique anchor line\n'; // > MAX_FUZZY_SOURCE_BYTES
-    assert.equal(
-      computeEditedSource(content, 'unique anchor line', 'edited anchor', 'big.txt').matchedVia,
-      'exact',
-    );
-    assert.throws(
-      () => computeEditedSource(content, '  unique anchor line  ', 'x', 'big.txt'),
-      /too large to fuzzy-match/,
-    );
+  test('a CRLF old_string matches an LF file, and the file stays LF', () => {
+    const result = computeEditedSource('one\ntwo\n', 'one\r\ntwo', 'X', 'c.txt');
+    assert.equal(result.content, 'X\n');
   });
 });
 
@@ -239,10 +201,7 @@ describe('computeEditedSource — replace_all', () => {
     assert.equal(result.content, '$&x $&x');
   });
 
-  test('the fuzzy cascade is never used: a drifted old_string fails as not found', () => {
-    // Without replace_all this whitespace drift would match; replace_all has
-    // no "exactly one candidate" guard to make a fuzzy match safe, so it is
-    // exact-only by construction.
+  test('a drifted old_string fails as not found', () => {
     assert.throws(
       () =>
         computeEditedSource('const  x   =   1;', 'const x = 1;', 'const x = 2;', 'w.ts', {

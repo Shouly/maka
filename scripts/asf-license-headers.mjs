@@ -208,7 +208,6 @@ export const exclusionRules = [
         'experiments/windows-sandbox/launcher/Cargo.lock',
         'patches/run-2.1.4-source.diff',
         // Adapted from opencode under MIT; attribution pinned by #3325.
-        'packages/runtime/src/edit-replace.ts',
         'packages/runtime/src/tool-output.ts',
         // Adapted from Vercel AI SDK material; recorded by the #2907 origin audit.
         'packages/runtime/src/model-protocol.ts',
@@ -314,8 +313,7 @@ export const exclusionRules = [
  * the failure this rule exists to avoid.
  *
  * This is a net, not a proof. It catches a file that states its origin; it
- * cannot catch prose that merely alludes to one, and `edit-replace.ts` — which
- * says it "matches opencode's replacers" — is invisible to it.
+ * cannot catch prose that merely alludes to one.
  */
 const provenanceMarkers = [
   /\bSPDX-License-Identifier\b/,

@@ -283,7 +283,7 @@ export const FilesystemWorkerResultSchema = z.discriminatedUnion('kind', [
       ok: z.literal(true),
       path: z.string(),
       replacements: z.number().int().positive(),
-      matchedVia: z.enum(['exact', 'line-trimmed', 'whitespace', 'escape']),
+      matchedVia: z.enum(['exact', 'quotes']),
       startLine: z.number().int().positive(),
       endLine: z.number().int().positive(),
       diff: z.string().optional(),

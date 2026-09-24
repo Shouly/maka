@@ -245,7 +245,6 @@ describe('ASF header classification', () => {
 
   test('excludes the mixed-origin files Maka adapted from upstream projects', () => {
     for (const path of [
-      'packages/runtime/src/edit-replace.ts',
       'packages/runtime/src/model-protocol.ts',
       'packages/runtime/src/tool-output.ts',
       'packages/eval/harbor/deepseek-harness-profile/cordis.patch.yml',
