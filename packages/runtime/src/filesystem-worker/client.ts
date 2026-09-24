@@ -18,9 +18,10 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import { lstat, realpath, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { canReadPath, canWritePath, type PermissionProfile } from '@maka/core/permission-profile';
 
 import { compilePermissionProfile } from '@maka/core/permission-profile-compiler';
@@ -29,7 +30,10 @@ import { type ExecutionBoundary, type SandboxBoundaryExpansion } from '@maka/cor
 
 import { type PermissionMode } from '@maka/core/permission';
 
-import { normalizeSandboxBoundaryPath } from '../sandbox-boundary-path.js';
+import {
+  materializeApprovedWriteDirectories,
+  normalizeSandboxBoundaryPath,
+} from '../sandbox-boundary-path.js';
 import { resolveCanonicalDirectoryEntryTarget } from '../path-containment.js';
 import { pinExistingLinuxProfilePath } from '../sandbox/linux-profile-path.js';
 import { classifyWindowsBrokerFailure } from '../sandbox/windows-broker-errors.js';
@@ -265,26 +269,46 @@ export class FilesystemWorkerClient {
         'A write operation requires an explicit expectedIdentity: {dev, ino}, "missing", or "unchecked".',
       );
     }
+    // A directory approved before it existed is created before anything is
+    // resolved against it.
+    if (access === 'write') {
+      const granted =
+        input.executionBoundary?.kind === 'managed'
+          ? input.executionBoundary.profile
+          : input.permissionProfile;
+      if (granted) materializeApprovedWriteDirectories(granted);
+    }
     const entryMode = operationUsesDirectoryEntry(parsedOperation.data);
     // The wire identity contract is derived below from the caller's explicit
     // expectedIdentity; the normalised target itself has no identity field,
     // so the declared type omits it.
+    const resolvedTarget: Omit<FilesystemWorkerTarget, 'identity'> & {
+      writableAncestor?: string;
+    } = await (entryMode
+      ? normalizeDirectoryEntryTarget({
+          path: parsedOperation.data.path,
+          access,
+          cwd: canonicalCwd,
+        })
+      : normalizeSandboxBoundaryPath({
+          path: parsedOperation.data.path,
+          access,
+          scope: operationScope(parsedOperation.data.kind),
+          cwd: canonicalCwd,
+        })
+    ).catch(() => {
+      throw clientError('invalid_operation', 'validation', requestId);
+    });
+    // Write creates missing parent directories, and a grant for the file alone
+    // lets the worker create nothing above it. It is granted the nearest
+    // existing directory to create them in instead — when the session may
+    // write there, which is checked below.
+    const creationAncestor =
+      !entryMode && parsedOperation.data.kind === 'write' && resolvedTarget.targetType === 'missing'
+        ? await nearestExistingAncestorOfMissingParent(resolvedTarget.enforcementPath)
+        : undefined;
     const target: Omit<FilesystemWorkerTarget, 'identity'> & { writableAncestor?: string } =
-      await (entryMode
-        ? normalizeDirectoryEntryTarget({
-            path: parsedOperation.data.path,
-            access,
-            cwd: canonicalCwd,
-          })
-        : normalizeSandboxBoundaryPath({
-            path: parsedOperation.data.path,
-            access,
-            scope: operationScope(parsedOperation.data.kind),
-            cwd: canonicalCwd,
-          })
-      ).catch(() => {
-        throw clientError('invalid_operation', 'validation', requestId);
-      });
+      creationAncestor ? { ...resolvedTarget, writableAncestor: creationAncestor } : resolvedTarget;
     // The identity was captured by the caller at lock acquisition (T0) and
     // passed in as expectedIdentity. Do NOT re-derive it here: re-deriving at
     // this point (after the lock is held) would sample the post-queue inode,
@@ -343,32 +367,48 @@ export class FilesystemWorkerClient {
       ...(platform === 'win32' ? {} : { slashTmp: await canonicalPath('/tmp') }),
       ...(runtimeWritableRoots ? { runtimeWritableRoots } : {}),
     };
-    const allowed =
-      access === 'write'
-        ? canWritePath(effectiveProfile, target.enforcementPath, pathContext)
-        : canReadPath(effectiveProfile, target.enforcementPath, pathContext);
-    if (!allowed) {
+    // Claude's Edit checks that the file exists before anything asks for
+    // access: a grant for a file that is not there would unblock nothing.
+    // Only where the session may read, so the answer tells it nothing new.
+    if (
+      parsedOperation.data.kind === 'edit' &&
+      target.targetType === 'missing' &&
+      canReadPath(effectiveProfile, target.enforcementPath, pathContext)
+    ) {
       throw clientError(
-        input.executionBoundary?.kind === 'managed' ? 'sandbox_boundary_required' : 'path_denied',
+        'invalid_operation',
         'validation',
         requestId,
-        undefined,
+        `File does not exist. Note: your current working directory is ${input.cwd}.`,
+      );
+    }
+    const ancestorWritable =
+      creationAncestor === undefined ||
+      canWritePath(effectiveProfile, creationAncestor, pathContext);
+    const allowed =
+      access === 'write'
+        ? canWritePath(effectiveProfile, target.enforcementPath, pathContext) && ancestorWritable
+        : canReadPath(effectiveProfile, target.enforcementPath, pathContext);
+    // What to ask for: the target itself, or — when directories above it are
+    // missing — the topmost missing one, which the grant can name before it
+    // exists. Asking for the file would not let the directories be created.
+    const requested =
+      creationAncestor !== undefined && !ancestorWritable
+        ? {
+            path: topmostMissingDirectory(creationAncestor, target.enforcementPath),
+            access: 'write' as const,
+            scope: 'subtree' as const,
+          }
+        : { path: target.enforcementPath, access, scope: target.scope };
+    if (!allowed) {
+      const managed = input.executionBoundary?.kind === 'managed';
+      throw clientError(
+        managed ? 'sandbox_boundary_required' : 'path_denied',
+        'validation',
+        requestId,
+        managed ? boundaryRequiredMessage(target.enforcementPath, requested) : undefined,
         true,
-        input.executionBoundary?.kind === 'managed'
-          ? {
-              requiredExpansion: {
-                filesystem: {
-                  entries: [
-                    {
-                      path: target.enforcementPath,
-                      access,
-                      scope: target.scope,
-                    },
-                  ],
-                },
-              },
-            }
-          : {},
+        managed ? { requiredExpansion: { filesystem: { entries: [requested] } } } : {},
       );
     }
 
@@ -686,7 +726,42 @@ export function filesystemWorkerRuntimeWritableRoots(input: {
     return undefined;
   }
   if (input.entryMode) return input.writableAncestor ? [input.writableAncestor] : undefined;
-  return input.targetType === 'missing' ? [dirname(input.enforcementPath)] : undefined;
+  return input.targetType === 'missing'
+    ? [input.writableAncestor ?? dirname(input.enforcementPath)]
+    : undefined;
+}
+
+/**
+ * The nearest existing directory above a missing target whose own parent is
+ * missing too; undefined when the parent exists and nothing needs creating.
+ */
+async function nearestExistingAncestorOfMissingParent(path: string): Promise<string | undefined> {
+  let missing = dirname(path);
+  if (
+    await stat(missing).then(
+      () => true,
+      () => false,
+    )
+  )
+    return undefined;
+  for (;;) {
+    const up = dirname(missing);
+    if (up === missing) return undefined;
+    if (
+      await stat(up).then(
+        (metadata) => metadata.isDirectory(),
+        () => false,
+      )
+    )
+      return up;
+    missing = up;
+  }
+}
+
+/** The first directory below `ancestor` on the way to `path`. */
+function topmostMissingDirectory(ancestor: string, path: string): string {
+  const [first = ''] = relative(ancestor, path).split(sep);
+  return join(ancestor, first);
 }
 
 function deriveWorkerProfile(
@@ -760,6 +835,23 @@ async function normalizeDirectoryEntryTarget(input: {
     targetType,
     writableAncestor: target.existingAncestor,
   };
+}
+
+/**
+ * The model is told to request exactly the expansion the failure named, and
+ * the grant that unblocks a call is not always its own path — a Write into
+ * missing directories needs the topmost of them. So the sentence names it, in
+ * the tool's own field names; the user reads the same line in the tool row.
+ */
+function boundaryRequiredMessage(
+  path: string,
+  requested: { path: string; access: 'read' | 'write'; scope: 'exact' | 'subtree' },
+): string {
+  return (
+    `${requested.access === 'write' ? 'Writing' : 'Reading'} ${path} is outside the session sandbox. ` +
+    `Call ${TOOL_NAMES.requestSandboxBoundary} for ${requested.access} access to ${requested.path} ` +
+    `(scope ${requested.scope}), then repeat this call unchanged.`
+  );
 }
 
 function clientError(

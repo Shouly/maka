@@ -641,7 +641,13 @@ async function ensureParentDirectories(
     ancestor = up;
   }
   const existing = await realpath(dirname(ancestor));
-  if (!isPathInside(root, existing) && !exactWriteCoversParent(permission, candidate, existing)) {
+  if (
+    !isPathInside(root, existing) &&
+    !exactWriteCoversParent(permission, candidate, existing) &&
+    // The client grants the nearest existing directory as a subtree when the
+    // parents are missing, and only when the session may write there.
+    !sandboxBoundaryExpansionAllowsPath(permission, existing, 'write')
+  ) {
     throw operationError(
       'path_denied',
       `${label} parent was not covered by the operation boundary.`,
@@ -672,7 +678,11 @@ async function resolveWritableAllowed(
   const followed = await realpathAllowMissing(candidate);
   const parent = await realpath(dirname(followed));
   assertAllowed(root, followed, label, 'write', permission);
-  if (!isPathInside(root, parent) && !exactWriteCoversParent(permission, followed, parent)) {
+  if (
+    !isPathInside(root, parent) &&
+    !exactWriteCoversParent(permission, followed, parent) &&
+    !sandboxBoundaryExpansionAllowsPath(permission, parent, 'write')
+  ) {
     throw operationError(
       'path_denied',
       `${label} parent was not covered by the operation boundary.`,

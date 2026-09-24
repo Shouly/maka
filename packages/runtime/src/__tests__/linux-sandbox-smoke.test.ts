@@ -173,7 +173,9 @@ describe('Linux sandbox smoke', () => {
         ],
         cwd: workspace,
         env: { ...process.env },
-        profile: createWorkspaceWritePermissionProfile(),
+        // The seccomp filter closes the network, so the profile must: Manual
+        // leaves it open.
+        profile: { ...createWorkspaceWritePermissionProfile(), network: { kind: 'restricted' } },
         pathContext: {
           workspaceRoots: [workspace],
           tmpdir: tmpdir(),

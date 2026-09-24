@@ -304,7 +304,11 @@ test('keeps the default and explicit direct provider surfaces byte-identical', a
 });
 
 test('denies a nested MCP call before invoking its provider', async () => {
-  const boundary = createManagedExecutionBoundary(createWorkspaceWritePermissionProfile(), 0);
+  // Manual opens the network; the expansion under test needs it closed.
+  const boundary = createManagedExecutionBoundary(
+    { ...createWorkspaceWritePermissionProfile(), network: { kind: 'restricted' } },
+    0,
+  );
   let pendingRequest: SandboxBoundaryRequest | undefined;
   let providerCalls = 0;
   const tools = buildMcpTools({

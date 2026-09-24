@@ -397,13 +397,19 @@ test('production Host executes Bash against the current live sandbox boundary', 
       false,
     );
 
-    const requestId = 'hosted-managed-bash-network-expansion';
+    const requestId = 'hosted-managed-bash-write-expansion';
     await execution.sessionStore.createSandboxBoundaryRequest({
       sessionId: session.id,
       requestId,
       turnId: firstTurnId,
       runId: firstTerminal.runId,
-      expansion: { network: { enabled: true } },
+      // A write nothing touches: the network is already open, and the paths
+      // the sandbox turn checks must stay closed.
+      expansion: {
+        filesystem: {
+          entries: [{ path: '/maka-host-granted', access: 'write', scope: 'subtree' }],
+        },
+      },
       justification: 'Exercise the live per-turn boundary projection.',
     });
     const expanded = await execution.sessionStore.settleSandboxBoundaryRequest({
@@ -459,9 +465,10 @@ test('production Host executes Bash against the current live sandbox boundary', 
         latestToolResultText(sandboxRequests[4]!.body) ?? '',
         /Operation not permitted/u,
       );
+      // The model is told which grant would unblock the Write.
       assert.match(
         latestToolResultText(sandboxRequests[5]!.body) ?? '',
-        /sandbox_boundary_required/u,
+        /is outside the session sandbox\. Call RequestSandboxBoundary for write access to .*write-denied\.txt \(scope exact\)/u,
       );
       assert.equal(await fileExists(sandboxPaths.outsideBash), false);
       assert.equal(await fileExists(sandboxPaths.outsideWrite), false);

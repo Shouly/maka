@@ -458,13 +458,27 @@ function profileContainsExpansion(
       (existing) =>
         existing.access !== 'deny' &&
         accessCovers(existing.access, requested.access) &&
-        resolvedEntryRoots(existing, context).some((root) =>
-          requested.scope === 'exact'
-            ? pathCoveredByRoot(requested.path, root)
-            : root.scope === 'subtree' && pathWithinRoot(requested.path, root.path),
-        ),
+        (coversWholeFilesystem(existing, context)
+          ? isNormalizedAbsolutePath(requested.path)
+          : resolvedEntryRoots(existing, context).some((root) =>
+              requested.scope === 'exact'
+                ? pathCoveredByRoot(requested.path, root)
+                : root.scope === 'subtree' && pathWithinRoot(requested.path, root.path),
+            )),
     ),
   );
+}
+
+/**
+ * `:root` is the whole filesystem on every platform. As the single root `/`
+ * it would cover no `C:\` path, and a Windows Read only session could not
+ * read even its own workspace.
+ */
+function coversWholeFilesystem(
+  entry: FileSystemSandboxEntry,
+  context: PermissionProfileMatchContext,
+): boolean {
+  return entry.kind === 'special' && entry.special === ':root' && context.root === undefined;
 }
 
 function sandboxProfileContains(parent: SandboxProfile, child: SandboxProfile): boolean {
@@ -637,7 +651,9 @@ function validateFilesystem(
         'Sandbox boundary filesystem entry must contain path, access, and scope.',
       );
     }
-    if (!isNormalizedAbsolutePath(candidate.path)) {
+    // `/` is a normalized absolute path, but not an expansion anyone can ask
+    // for: it would be the whole disk.
+    if (!isNormalizedAbsolutePath(candidate.path) || candidate.path === '/') {
       return invalid('invalid_path', 'Sandbox boundary path must be a normalized absolute path.');
     }
     if (candidate.path.length > MAX_SANDBOX_BOUNDARY_PATH_CHARS) {

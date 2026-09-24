@@ -118,6 +118,11 @@ export interface PermissionProfileMatchContext {
   minimalRoots?: readonly string[];
 }
 
+/**
+ * Read-only, as Codex's is: anything on the machine may be read (the OS's own
+ * privacy protections still apply), nothing may be written, and the network
+ * stays closed.
+ */
 export function createReadOnlyPermissionProfile(): PermissionProfileManaged {
   return {
     type: 'managed',
@@ -128,9 +133,26 @@ export function createReadOnlyPermissionProfile(): PermissionProfileManaged {
         {
           kind: 'special',
           access: 'read',
-          special: ':workspace_roots',
+          special: ':root',
         },
       ],
+    },
+    network: { kind: 'restricted' },
+  };
+}
+
+/**
+ * Read-only and held to the workspace roots, for a surface someone other than
+ * the machine's owner drives — an attached checkout served to a remote client
+ * — where the built-in whole-disk read would hand them the machine.
+ */
+export function createWorkspaceReadOnlyPermissionProfile(): PermissionProfileManaged {
+  return {
+    type: 'managed',
+    name: 'workspace-read-only',
+    fileSystem: {
+      kind: 'restricted',
+      entries: [{ kind: 'special', access: 'read', special: ':workspace_roots' }],
     },
     network: { kind: 'restricted' },
   };
@@ -168,11 +190,17 @@ export function isCanonicalReadOnlyPermissionProfile(profile: PermissionProfileM
     fileSystem.entries.length === 1 &&
     entry?.kind === 'special' &&
     entry.access === 'read' &&
-    entry.special === ':workspace_roots' &&
+    entry.special === ':root' &&
     network.kind === 'restricted'
   );
 }
 
+/**
+ * The Manual mode, as Codex's workspace-write is: reads reach the whole machine
+ * (the OS's privacy protections still apply), writes are held to the
+ * workspace and the temporary directories, and the network is open. Writing
+ * anywhere else is the one thing that needs the user's approval.
+ */
 export function createWorkspaceWritePermissionProfile(): PermissionProfileManaged {
   return {
     type: 'managed',
@@ -180,6 +208,11 @@ export function createWorkspaceWritePermissionProfile(): PermissionProfileManage
     fileSystem: {
       kind: 'restricted',
       entries: [
+        {
+          kind: 'special',
+          access: 'read',
+          special: ':root',
+        },
         {
           kind: 'special',
           access: 'write',
@@ -197,7 +230,7 @@ export function createWorkspaceWritePermissionProfile(): PermissionProfileManage
         },
       ],
     },
-    network: { kind: 'restricted' },
+    network: { kind: 'enabled' },
   };
 }
 
@@ -310,6 +343,11 @@ function entryMatchesPath(
   if (entry.kind === 'path' && entry.match === 'exact') {
     return samePath(path, entry.path);
   }
+  // `:root` is the whole filesystem on every platform; as the root `/` alone
+  // it would cover no `C:\` path.
+  if (entry.kind === 'special' && entry.special === ':root' && context.root === undefined) {
+    return isNormalizedAbsolutePath(path);
+  }
   return entryRoots(entry, context).some((root) => pathWithinRoot(path, root));
 }
 
@@ -373,4 +411,9 @@ function trimTrailingSlashes(value: string): string {
   const trimmed = trimTrailingPathSeparators(value);
   return trimmed || '/';
 }
-import { pathWithinRoot, samePath, trimTrailingPathSeparators } from './absolute-path.js';
+import {
+  isNormalizedAbsolutePath,
+  pathWithinRoot,
+  samePath,
+  trimTrailingPathSeparators,
+} from './absolute-path.js';

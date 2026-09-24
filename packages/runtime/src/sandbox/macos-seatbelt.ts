@@ -502,15 +502,22 @@ function buildReadableRootsPolicy(roots: ResolvedRoots): string {
       accessRootClause(seatbeltPathClause(root, `READABLE_ROOT_${index}`), denyRequirements),
     )
     .join('\n');
+  // `/` has no ancestors, and Seatbelt rejects the whole policy over a
+  // `path-ancestors` of it ("argument expected"); a full-disk read needs none.
   const ancestorParams = roots.readableRoots
-    .map((_, index) =>
-      accessRootClause(`(path-ancestors (param "READABLE_ROOT_${index}"))`, [
-        '(vnode-type DIRECTORY)',
-        ...denyRequirements,
-      ]),
+    .flatMap((root, index) =>
+      root.path === '/'
+        ? []
+        : [
+            accessRootClause(`(path-ancestors (param "READABLE_ROOT_${index}"))`, [
+              '(vnode-type DIRECTORY)',
+              ...denyRequirements,
+            ]),
+          ],
     )
     .join('\n');
-  return `(allow file-read*\n${params})\n\n(allow file-read-data\n${ancestorParams})`;
+  const ancestors = ancestorParams ? `\n\n(allow file-read-data\n${ancestorParams})` : '';
+  return `(allow file-read*\n${params})${ancestors}`;
 }
 
 function buildWritableRootsPolicy(roots: ResolvedRoots): string {

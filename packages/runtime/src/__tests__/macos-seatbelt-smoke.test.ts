@@ -23,7 +23,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 
 import { applySandboxBoundaryExpansion } from '@maka/core/sandbox-boundary';
 
@@ -34,6 +34,7 @@ import {
 
 import { MACOS_SEATBELT_EXECUTABLE, MacosSeatbeltBackend } from '../sandbox/macos-seatbelt.js';
 import { SandboxManager } from '../sandbox/sandbox-manager.js';
+import { buildBuiltinTools } from '../builtin-tools.js';
 
 const canRunSeatbelt = process.platform === 'darwin' && existsSync(MACOS_SEATBELT_EXECUTABLE);
 
@@ -59,6 +60,20 @@ function profileWithDeniedChild(workspaceRoot: string): PermissionProfile {
           path: join(workspaceRoot, 'secret'),
         },
       ],
+    },
+    network: { kind: 'restricted' },
+  };
+}
+
+function workspaceOnlyProfile(): PermissionProfile {
+  const profile = createWorkspaceWritePermissionProfile();
+  return {
+    ...profile,
+    fileSystem: {
+      ...profile.fileSystem,
+      entries: profile.fileSystem.entries.filter(
+        (entry) => !(entry.kind === 'special' && entry.special === ':root'),
+      ),
     },
     network: { kind: 'restricted' },
   };
@@ -120,15 +135,86 @@ describe('macOS Seatbelt smoke', { skip: !canRunSeatbelt }, () => {
     await writeFile(ancestorFile, 'private');
     cleanup.push(ancestorRoot);
 
-    const listAncestor = runSeatbeltCommand(workspaceRoot, '/bin/ls ..');
+    // A profile that reads only the workspace: the built-in ones read the
+    // whole disk, where there is no ancestor left to protect.
+    const listAncestor = runSeatbeltCommand(workspaceRoot, '/bin/ls ..', workspaceOnlyProfile());
     assert.equal(listAncestor.status, 0, listAncestor.stderr);
 
     const readAncestorFile = runSeatbeltCommand(
       workspaceRoot,
       `/bin/cat ${JSON.stringify(ancestorFile)}`,
+      workspaceOnlyProfile(),
     );
     assert.notEqual(readAncestorFile.status, 0);
     assert.match(readAncestorFile.stderr, /Operation not permitted/);
+  });
+
+  it('lets the built-in Manual profile read outside the workspace but not write there', async () => {
+    const workspaceRoot = await makeWorkspace();
+    const outsideRoot = await realpath(await mkdtemp(join(homedir(), '.maka-seatbelt-read-')));
+    cleanup.push(workspaceRoot, outsideRoot);
+    const outsideFile = join(outsideRoot, 'readable.txt');
+    await writeFile(outsideFile, 'readable outside');
+
+    const read = runSeatbeltCommand(workspaceRoot, `/bin/cat ${JSON.stringify(outsideFile)}`);
+    assert.equal(read.status, 0, read.stderr);
+    assert.equal(read.stdout, 'readable outside');
+
+    const write = runSeatbeltCommand(
+      workspaceRoot,
+      `printf nope > ${JSON.stringify(join(outsideRoot, 'denied.txt'))}`,
+    );
+    assert.notEqual(write.status, 0);
+  });
+
+  it('lets Bash create inside a directory approved before it existed', async () => {
+    const workspace = await makeWorkspace();
+    const outsideRoot = await realpath(await mkdtemp(join(homedir(), '.maka-seatbelt-new-')));
+    cleanup.push(workspace, outsideRoot);
+    const approved = join(outsideRoot, 'approved-new');
+    const bash = buildBuiltinTools({
+      sandboxManager: new SandboxManager([new MacosSeatbeltBackend()]),
+      sandboxPlatform: 'darwin',
+    }).find((tool) => tool.name === 'Bash');
+    assert.ok(bash);
+    const executionBoundary = {
+      kind: 'managed' as const,
+      revision: 1,
+      profile: applySandboxBoundaryExpansion(createWorkspaceWritePermissionProfile(), {
+        filesystem: { entries: [{ path: approved, access: 'write', scope: 'subtree' }] },
+      }),
+    };
+    const context = {
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      toolCallId: 'tool-1',
+      cwd: workspace,
+      permissionMode: 'ask' as const,
+      abortSignal: new AbortController().signal,
+      emitOutput: () => {},
+      executionBoundary,
+    };
+
+    await bash.impl(
+      {
+        command: `mkdir -p ${JSON.stringify(join(approved, 'x'))} && printf ok > ${JSON.stringify(join(approved, 'x', 'f.txt'))}`,
+        boundary_intent: 'current',
+      } as never,
+      context,
+    );
+    assert.equal(await readFile(join(approved, 'x', 'f.txt'), 'utf8'), 'ok');
+    // The grant is that directory, not its parent.
+    await assert.rejects(
+      Promise.resolve(
+        bash.impl(
+          {
+            command: `printf no > ${JSON.stringify(join(outsideRoot, 'sibling.txt'))}`,
+            boundary_intent: 'current',
+          } as never,
+          context,
+        ),
+      ),
+    );
   });
 
   it('allows temp writes when workspace and temp roots use symlinked paths', async () => {
@@ -219,6 +305,39 @@ describe('macOS Seatbelt smoke', { skip: !canRunSeatbelt }, () => {
     );
 
     assert.notEqual(child.status, 0);
+  });
+
+  it('runs the Command Line Tools shims and python3 from a sandboxed Bash', {
+    skip: !existsSync('/Library/Developer/CommandLineTools/usr/lib/libxcrun.dylib'),
+  }, async () => {
+    // /usr/bin/git, python3, make and clang are xcrun shims that load
+    // libxcrun from the Command Line Tools, and git reads ~/.gitconfig
+    // before anything else; both were outside the sandbox, so every one
+    // of them failed under the ask boundary.
+    const workspace = await makeWorkspace();
+    cleanup.push(workspace);
+    const bash = buildBuiltinTools({
+      permissionProfile: createWorkspaceWritePermissionProfile(),
+      sandboxManager: new SandboxManager([new MacosSeatbeltBackend()]),
+      sandboxPlatform: 'darwin',
+    }).find((tool) => tool.name === 'Bash');
+    assert.ok(bash);
+    const result = await bash.impl(
+      {
+        command: 'git init -q . && git status --short && /usr/bin/python3 -c "print(6 * 7)"',
+        boundary_intent: 'current',
+      } as never,
+      {
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        toolCallId: 'tool-1',
+        cwd: workspace,
+        permissionMode: 'ask',
+        abortSignal: new AbortController().signal,
+        emitOutput: () => {},
+      },
+    );
+    assert.match(JSON.stringify(result), /42/);
   });
 
   it('can ask where it is when launched from outside its only granted root', async () => {

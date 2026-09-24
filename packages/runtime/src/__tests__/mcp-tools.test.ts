@@ -248,7 +248,11 @@ test('prepared MCP execution receives the Runtime-owned form callback after admi
 
 test('Direct-mode MCP calls request managed network expansion before provider dispatch', async () => {
   const sequence: string[] = [];
-  const boundary = createManagedExecutionBoundary(createWorkspaceWritePermissionProfile(), 0);
+  // Manual opens the network; the expansion under test needs it closed.
+  const boundary = createManagedExecutionBoundary(
+    { ...createWorkspaceWritePermissionProfile(), network: { kind: 'restricted' } },
+    0,
+  );
   const [tool] = buildMcpTools(
     fakeProvider(
       [boundTool(descriptor('server', 'mutate'), binding('managed-network-binding'))],

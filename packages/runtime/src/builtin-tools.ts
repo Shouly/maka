@@ -94,6 +94,7 @@ import { profileRequiresSandbox, type SandboxManager } from './sandbox/sandbox-m
 import { SandboxCommandError } from './sandbox/errors.js';
 import { isLikelySandboxDenial } from './sandbox/detect.js';
 import { linuxExecutableRoots } from './sandbox/linux-sandbox.js';
+import { materializeApprovedWriteDirectories } from './sandbox-boundary-path.js';
 import { pinExistingLinuxProfilePath } from './sandbox/linux-profile-path.js';
 import type { SandboxPlatform, SandboxType } from './sandbox/types.js';
 import type { ChildFdInput } from './child-fd-input.js';
@@ -1149,6 +1150,8 @@ function sandboxCommand(
     return undefined;
   }
 
+  // An approved directory may not exist yet; the Linux mount below needs it to.
+  materializeApprovedWriteDirectories(effective.profile);
   let preparedProfile: PreparedLinuxProfilePaths = {
     paths: [],
     unavailablePaths: [],

@@ -20,6 +20,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { pathWithinRoot } from '../absolute-path.js';
+import { assessSandboxBoundaryExpansion } from '../sandbox-boundary.js';
 import {
   canReadPath,
   canWritePath,
@@ -41,7 +42,7 @@ const WORKSPACE_CONTEXT = {
 };
 
 describe('PermissionProfile factories', () => {
-  test('read-only profile allows workspace reads and blocks writes', () => {
+  test('read-only profile reads anywhere and writes nowhere', () => {
     const profile = createReadOnlyPermissionProfile();
 
     assert.strictEqual(
@@ -54,7 +55,7 @@ describe('PermissionProfile factories', () => {
     );
     assert.strictEqual(
       canReadPath(profile, '/workspace/project2/src/index.ts', WORKSPACE_CONTEXT),
-      false,
+      true,
     );
     assert.strictEqual(
       canWritePath(profile, '/workspace/project2/src/index.ts', WORKSPACE_CONTEXT),
@@ -76,6 +77,32 @@ describe('PermissionProfile factories', () => {
     assert.strictEqual(
       canWritePath(profile, '/workspace/project2/src/index.ts', WORKSPACE_CONTEXT),
       false,
+    );
+    // Codex's workspace-write: reads reach the whole machine, the network is open.
+    assert.strictEqual(
+      canReadPath(profile, '/workspace/project2/src/index.ts', WORKSPACE_CONTEXT),
+      true,
+    );
+    assert.strictEqual(canReadPath(profile, '/etc/hosts', WORKSPACE_CONTEXT), true);
+    assert.deepStrictEqual(profile.network, { kind: 'enabled' });
+  });
+
+  test('the built-in profiles read Windows paths anywhere too', () => {
+    // `:root` is the whole filesystem: as `/` alone it covered no `C:\\` path,
+    // and Read only on Windows could not read even its own workspace.
+    const context = { workspaceRoots: ['C:\\work'] };
+    const readOnly = createReadOnlyPermissionProfile();
+    const manual = createWorkspaceWritePermissionProfile();
+    assert.strictEqual(canReadPath(readOnly, 'C:\\work\\a.txt', context), true);
+    assert.strictEqual(canReadPath(readOnly, 'D:\\other\\b.txt', context), true);
+    assert.strictEqual(canWritePath(manual, 'D:\\other\\b.txt', context), false);
+    assert.strictEqual(
+      assessSandboxBoundaryExpansion(
+        manual,
+        { filesystem: { entries: [{ path: 'D:\\other', access: 'read', scope: 'subtree' }] } },
+        context,
+      ).outcome,
+      'noop',
     );
   });
 
@@ -233,7 +260,7 @@ describe('isCanonicalReadOnlyPermissionProfile', () => {
         ...profile,
         fileSystem: {
           ...profile.fileSystem,
-          entries: [{ kind: 'special', access: 'read', special: ':root' }],
+          entries: [{ kind: 'special', access: 'read', special: ':workspace_roots' }],
         },
       },
       {

@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { createReadOnlyPermissionProfile } from '@maka/core/permission-profile';
+import { createWorkspaceReadOnlyPermissionProfile } from '@maka/core/permission-profile';
 import {
   createManagedExecutionBoundary,
   type ExecutionBoundary,
@@ -149,7 +149,11 @@ export function createRuntimeHostWorkspaceExecutionComposition(
         return await input.filesystemWorker.execute({
           operation,
           cwd: profile.cwd,
-          executionBoundary: createManagedExecutionBoundary(createReadOnlyPermissionProfile(), 0),
+          // Held to the checkout: the built-in Read only reads the whole disk.
+          executionBoundary: createManagedExecutionBoundary(
+            createWorkspaceReadOnlyPermissionProfile(),
+            0,
+          ),
           ...(abortSignal ? { abortSignal } : {}),
         });
       } finally {

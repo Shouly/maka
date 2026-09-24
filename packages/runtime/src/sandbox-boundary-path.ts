@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { promises as fs } from 'node:fs';
+import { mkdirSync, promises as fs } from 'node:fs';
 import { resolve } from 'node:path';
 import { realpathAllowMissing } from './path-containment.js';
 import {
@@ -27,6 +27,7 @@ import {
   type SandboxBoundaryExpansion,
   type SandboxBoundaryScope,
 } from '@maka/core/sandbox-boundary';
+import type { PermissionProfile } from '@maka/core/permission-profile';
 
 export interface NormalizedSandboxBoundaryPath {
   readonly displayPath: string;
@@ -69,9 +70,13 @@ export async function normalizeSandboxBoundaryPath(input: {
   const targetType = await targetTypeFor(enforcementPath);
   const scope =
     input.scope === 'auto' ? (targetType === 'directory' ? 'subtree' : 'exact') : input.scope;
-  if (scope === 'subtree' && targetType !== 'directory') {
+  // A directory that does not exist yet can be granted — `mkdir ~/new` needs
+  // exactly that, and refusing it left the parent (the whole home directory)
+  // as the only thing to ask for. It is created before a sandbox that has to
+  // name it runs (`materializeApprovedWriteDirectories`).
+  if (scope === 'subtree' && targetType !== 'directory' && targetType !== 'missing') {
     throw new SandboxBoundaryDeclarationError(
-      'A subtree sandbox boundary must target an existing directory.',
+      'A subtree sandbox boundary must target a directory, existing or not yet created.',
     );
   }
   return { displayPath, enforcementPath, access: input.access, scope, targetType };
@@ -128,4 +133,24 @@ function isMissingPathError(error: unknown): boolean {
     'code' in error &&
     (error.code === 'ENOENT' || error.code === 'ENOTDIR')
   );
+}
+
+/**
+ * Create the directories an approved write grant names but that do not exist
+ * yet. A grant can name a directory before it exists, and Linux mounts and
+ * Windows ACLs can only name existing paths, so each one is made real, empty,
+ * before a sandbox that enforces it starts. Only write grants that the user
+ * approved as whole directories are created; a failure is left for the
+ * sandboxed operation to report.
+ */
+export function materializeApprovedWriteDirectories(profile: PermissionProfile): void {
+  if (profile.type !== 'managed' || profile.fileSystem.kind !== 'restricted') return;
+  for (const entry of profile.fileSystem.entries) {
+    if (entry.kind !== 'path' || entry.access !== 'write' || entry.match === 'exact') continue;
+    try {
+      mkdirSync(entry.path, { recursive: true });
+    } catch {
+      // Reported by the operation that needed it.
+    }
+  }
 }

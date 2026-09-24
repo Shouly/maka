@@ -51,7 +51,7 @@ import {
   isSandboxBoundaryRestartClosure,
 } from '@maka/core/sandbox-boundary';
 import {
-  canReadPath,
+  canWritePath,
   createReadOnlyPermissionProfile,
   createWorkspaceWritePermissionProfile,
   isReadOnlyPermissionProfile,
@@ -5093,7 +5093,9 @@ describe('SessionManager permission mode updates', () => {
   });
 
   for (const route of ['configuration', 'boundary'] as const) {
-    for (const grant of ['read', 'write', 'network'] as const) {
+    // Reads need no approval in any managed mode — Read only reads the whole
+    // disk — so only a write or the network can be granted and revoked.
+    for (const grant of ['write', 'network'] as const) {
       test(`restoring Explore revokes an approved ${grant} through the durable ${route} path`, async (t) => {
         const root = await mkdtemp(join(tmpdir(), 'maka-explore-read-revocation-'));
         const store = createSessionStore(root);
@@ -5171,14 +5173,14 @@ describe('SessionManager permission mode updates', () => {
         assert.strictEqual(expanded.kind, 'managed');
         if (expanded.kind !== 'managed') throw new Error('Expected a managed boundary');
         assert.strictEqual(expanded.profile.name, 'read-only');
-        assert.strictEqual(isReadOnlyPermissionProfile(expanded.profile), grant === 'read');
+        assert.strictEqual(isReadOnlyPermissionProfile(expanded.profile), false);
         assert.strictEqual(
           expanded.profile.network.kind,
           grant === 'network' ? 'enabled' : 'restricted',
         );
         assert.strictEqual(
-          canReadPath(expanded.profile, outsidePath, { workspaceRoots: [workspaceRoot] }),
-          grant !== 'network',
+          canWritePath(expanded.profile, outsidePath, { workspaceRoots: [workspaceRoot] }),
+          grant === 'write',
         );
         assert.deepStrictEqual(calls, []);
 
@@ -5219,9 +5221,10 @@ describe('SessionManager permission mode updates', () => {
         if (narrowed.kind !== 'managed') throw new Error('Expected a managed boundary');
         assert.deepStrictEqual(narrowed.profile, createReadOnlyPermissionProfile());
         assert.strictEqual(
-          canReadPath(narrowed.profile, outsidePath, { workspaceRoots: [workspaceRoot] }),
+          canWritePath(narrowed.profile, outsidePath, { workspaceRoots: [workspaceRoot] }),
           false,
         );
+        assert.strictEqual(narrowed.profile.network.kind, 'restricted');
         assert.strictEqual((await store.readHeader(session.id)).permissionMode, 'explore');
       });
     }

@@ -241,11 +241,17 @@ function buildBubblewrapArgvWithRoots(
   roots: ResolvedLinuxRoots,
 ): readonly string[] {
   const { command } = input;
+  // A full-disk read is the host root bound read-only FIRST, as Codex does:
+  // bubblewrap mounts in order and a later mount covers an earlier one, so
+  // `/proc`, `/dev`, the temp tmpfs and every writable bind must land on top
+  // of it. Bound last, it would cover them all with the host's read-only view.
+  const fullDiskRead = roots.readableRoots.some((root) => posix.normalize(root) === '/');
   const argv: string[] = [
     input.bwrapPath,
     '--die-with-parent',
     '--new-session',
     ...LINUX_BWRAP_REQUIRED_NAMESPACE_ARGS,
+    ...(fullDiskRead ? ['--ro-bind', '/', '/'] : []),
     '--proc',
     '/proc',
     '--dev',
@@ -360,6 +366,7 @@ function buildBubblewrapArgvWithRoots(
     argv.push('--dir', command.cwd);
   }
   for (const root of profileReadableRoots) {
+    if (fullDiskRead && posix.normalize(root) === '/') continue;
     const pinned = pinnedProfilePaths.get(root);
     if (exactReadableRoots.has(root) && !pinned) continue;
     argv.push('--ro-bind', pinned ? `/proc/self/fd/${pinned.fd}` : root, root);

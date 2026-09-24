@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import { realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import {
   assessSandboxBoundaryExpansion,
@@ -62,7 +63,9 @@ const filesystemEntrySchema = z
       .describe('Use read for inspection; use write only when the command will modify the target.'),
     scope: z
       .enum(['exact', 'subtree'])
-      .describe('Use exact for one file and subtree for an existing directory.'),
+      .describe(
+        'Use exact for one file and subtree for a directory, including one not created yet.',
+      ),
   })
   .strict();
 
@@ -160,11 +163,14 @@ export async function preflightDeclaredSandboxBoundary(
   }
   const boundary = ctx.executionBoundary;
   if (!boundary || boundary.kind === 'bypass' || boundary.kind === 'external') return normalized;
+  // The declaration was canonicalised above, so the roots it is measured
+  // against must be too: `/tmp` is `/private/tmp` on macOS, and a spelling
+  // mismatch asked the user to approve what the profile already granted.
+  const canonicalCwd = await canonicalPath(ctx.cwd);
   const assessment = assessSandboxBoundaryExpansion(boundary.profile, normalized, {
-    root: ctx.cwd,
-    workspaceRoots: [ctx.cwd],
-    tmpdir: tmpdir(),
-    ...(process.platform === 'win32' ? {} : { slashTmp: '/tmp' }),
+    workspaceRoots: [canonicalCwd],
+    tmpdir: await canonicalPath(tmpdir()),
+    ...(process.platform === 'win32' ? {} : { slashTmp: await canonicalPath('/tmp') }),
   });
   if (assessment.outcome === 'noop') return normalized;
   if (assessment.outcome === 'conflict') {
@@ -186,4 +192,8 @@ export async function preflightDeclaredSandboxBoundary(
     requiredExpansion: normalized,
     message: 'Bash requires an approved session sandbox boundary expansion.',
   });
+}
+
+async function canonicalPath(path: string): Promise<string> {
+  return await realpath(path).catch(() => path);
 }

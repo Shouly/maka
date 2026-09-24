@@ -33,6 +33,7 @@ import {
   canWritePath,
   createDangerFullAccessPermissionProfile,
   createReadOnlyPermissionProfile,
+  createWorkspaceReadOnlyPermissionProfile,
   createWorkspaceWritePermissionProfile,
   type PermissionProfileManaged,
 } from '../permission-profile.js';
@@ -141,7 +142,9 @@ describe('SandboxBoundaryExpansion', () => {
       },
     });
 
-    const widened = applySandboxBoundaryExpansion(createReadOnlyPermissionProfile(), {
+    // A base that reads only its workspace: the built-in Read only reads the
+    // whole disk, where no sibling is left unreadable.
+    const widened = applySandboxBoundaryExpansion(createWorkspaceReadOnlyPermissionProfile(), {
       filesystem: {
         entries: [{ path: 'D:\\Outside\\Tree', access: 'read', scope: 'subtree' }],
       },

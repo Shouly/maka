@@ -58,6 +58,35 @@ function workspaceRequest(profile: PermissionProfile): SandboxTransformRequest {
   };
 }
 
+/**
+ * The mount mechanics below are exercised with profiles that read only the
+ * workspace and keep the network closed; the built-in profiles read the whole
+ * disk now, which binds `/` and would hide every narrower mount under test.
+ */
+function workspaceReadProfile(): PermissionProfile {
+  return {
+    ...createReadOnlyPermissionProfile(),
+    fileSystem: {
+      kind: 'restricted',
+      entries: [{ kind: 'special', access: 'read', special: ':workspace_roots' }],
+    },
+  };
+}
+
+function workspaceWriteProfile(): PermissionProfile {
+  const profile = createWorkspaceWritePermissionProfile();
+  return {
+    ...profile,
+    fileSystem: {
+      ...profile.fileSystem,
+      entries: profile.fileSystem.entries.filter(
+        (entry) => !(entry.kind === 'special' && entry.special === ':root'),
+      ),
+    },
+    network: { kind: 'restricted' },
+  };
+}
+
 function enabledNetworkProfile(): PermissionProfile {
   const profile = createWorkspaceWritePermissionProfile();
   return { ...profile, network: { kind: 'enabled' } };
@@ -142,7 +171,7 @@ describe('detectLinuxSandboxCapability', () => {
 
 describe('buildBubblewrapArgv', () => {
   it('mounts read-only profiles without a writable workspace bind', () => {
-    const request = workspaceRequest(createReadOnlyPermissionProfile());
+    const request = workspaceRequest(workspaceReadProfile());
     const argv = buildBubblewrapArgv({ bwrapPath: '/usr/bin/bwrap', command: request.command });
 
     assert.ok(hasTriple(argv, '--ro-bind', '/repo/project', '/repo/project'));
@@ -150,7 +179,7 @@ describe('buildBubblewrapArgv', () => {
   });
 
   it('materializes writable workspace metadata, temp, cwd, and network restrictions', () => {
-    const request = workspaceRequest(createWorkspaceWritePermissionProfile());
+    const request = workspaceRequest(workspaceWriteProfile());
     const argv = buildBubblewrapArgv({
       bwrapPath: '/usr/bin/bwrap',
       command: request.command,
@@ -173,6 +202,39 @@ describe('buildBubblewrapArgv', () => {
     assert.deepEqual(argv.slice(-4), ['--', '/bin/sh', '-lc', 'echo hi']);
   });
 
+  it('binds the host root read-only first for the built-in full-disk read', () => {
+    // bubblewrap mounts in order and a later mount covers an earlier one, so
+    // `/` must come before `/proc`, `/dev`, the temp tmpfs and every writable
+    // bind; bound last it would cover them with the host's read-only view.
+    const argv = buildBubblewrapArgv({
+      bwrapPath: '/usr/bin/bwrap',
+      command: workspaceRequest(createWorkspaceWritePermissionProfile()).command,
+    });
+    const at = (...sequence: string[]) =>
+      argv.findIndex((_, index) => sequence.every((arg, offset) => argv[index + offset] === arg));
+    const root = at('--ro-bind', '/', '/');
+    assert.ok(root > 0, argv.join(' '));
+    assert.equal(argv.filter((arg, index) => arg === '/' && argv[index - 1] === '/').length, 1);
+    for (const later of [
+      at('--proc', '/proc'),
+      at('--dev', '/dev'),
+      at('--tmpfs', '/tmp'),
+      at('--bind', '/repo/project', '/repo/project'),
+    ]) {
+      assert.ok(later > root, argv.join(' '));
+    }
+    // Manual mode keeps the network open.
+    assert.equal(argv.includes('--unshare-net'), false);
+
+    const readOnly = buildBubblewrapArgv({
+      bwrapPath: '/usr/bin/bwrap',
+      command: workspaceRequest(createReadOnlyPermissionProfile()).command,
+    });
+    assert.ok(hasTriple(readOnly, '--ro-bind', '/', '/'));
+    assert.equal(hasTriple(readOnly, '--bind', '/repo/project', '/repo/project'), false);
+    assert.ok(readOnly.includes('--unshare-net'));
+  });
+
   it('keeps the host network namespace when network is enabled', () => {
     const request = workspaceRequest(enabledNetworkProfile());
     const argv = buildBubblewrapArgv({ bwrapPath: '/usr/bin/bwrap', command: request.command });
@@ -192,7 +254,7 @@ describe('buildBubblewrapArgv', () => {
   });
 
   it('mounts an absolute program directory outside the default host paths', () => {
-    const request = workspaceRequest(createWorkspaceWritePermissionProfile());
+    const request = workspaceRequest(workspaceWriteProfile());
     const programDirectory = '/opt/hostedtoolcache/node/22.23.1/x64/bin';
     const argv = buildBubblewrapArgv({
       bwrapPath: '/usr/bin/bwrap',
@@ -208,7 +270,7 @@ describe('buildBubblewrapArgv', () => {
   });
 
   it('mounts runtime roots needed by a shell-launched executable', () => {
-    const request = workspaceRequest(createWorkspaceWritePermissionProfile());
+    const request = workspaceRequest(workspaceWriteProfile());
     const runtimeRoot = '/opt/hostedtoolcache/node/22.23.1/x64';
     const argv = buildBubblewrapArgv({
       bwrapPath: '/usr/bin/bwrap',
@@ -426,7 +488,7 @@ describe('LinuxBubblewrapBackend', () => {
     const backend = new LinuxBubblewrapBackend({
       capability: { available: true, bwrapPath: '/usr/bin/bwrap' },
     });
-    const result = backend.transform(workspaceRequest(createWorkspaceWritePermissionProfile()));
+    const result = backend.transform(workspaceRequest(workspaceWriteProfile()));
 
     assert.equal(result.ok, true);
     if (result.ok) {

@@ -56,6 +56,35 @@ function workspaceCommand(profile: PermissionProfile): SandboxTransformRequest {
   };
 }
 
+/**
+ * The policy mechanics below are exercised with profiles that read only the
+ * workspace and keep the network closed; the built-in profiles read the whole
+ * disk, whose single `/` root would hide the roots under test.
+ */
+function workspaceReadProfile(): PermissionProfile {
+  return {
+    ...createReadOnlyPermissionProfile(),
+    fileSystem: {
+      kind: 'restricted',
+      entries: [{ kind: 'special', access: 'read', special: ':workspace_roots' }],
+    },
+  };
+}
+
+function workspaceWriteProfile(): PermissionProfile {
+  const profile = createWorkspaceWritePermissionProfile();
+  return {
+    ...profile,
+    fileSystem: {
+      ...profile.fileSystem,
+      entries: profile.fileSystem.entries.filter(
+        (entry) => !(entry.kind === 'special' && entry.special === ':root'),
+      ),
+    },
+    network: { kind: 'restricted' },
+  };
+}
+
 function restrictedProfileWithEnabledNetwork(): PermissionProfile {
   return {
     type: 'managed',
@@ -139,7 +168,7 @@ describe('escapeSeatbeltRegex', () => {
 describe('buildSeatbeltPolicy', () => {
   it('builds read-only policy with readable workspace roots and no writable workspace roots', () => {
     const result = buildSeatbeltPolicy({
-      profile: createReadOnlyPermissionProfile(),
+      profile: workspaceReadProfile(),
       pathContext: { workspaceRoots: ['/repo'] },
     });
 
@@ -153,7 +182,7 @@ describe('buildSeatbeltPolicy', () => {
 
   it('builds workspace-write policy with parameterized workspace and temp roots', () => {
     const result = buildSeatbeltPolicy({
-      profile: createWorkspaceWritePermissionProfile(),
+      profile: workspaceWriteProfile(),
       pathContext: {
         workspaceRoots: ['/repo'],
         tmpdir: '/private/tmp/maka-test',
@@ -173,8 +202,32 @@ describe('buildSeatbeltPolicy', () => {
     ]);
   });
 
+  it('reads the whole disk for the built-in profiles, with no ancestor rule for /', () => {
+    const manual = buildSeatbeltPolicy({
+      profile: createWorkspaceWritePermissionProfile(),
+      pathContext: {
+        workspaceRoots: ['/repo'],
+        tmpdir: '/private/tmp/maka-test',
+        slashTmp: '/tmp',
+      },
+    });
+    assert.equal(manual.definitionArgs[0], '-DREADABLE_ROOT_0=/');
+    // `/` has no ancestors, and Seatbelt rejects the whole policy over a
+    // `path-ancestors` of it.
+    assert.doesNotMatch(manual.policy, /path-ancestors \(param "READABLE_ROOT_0"\)/);
+    assert.match(manual.policy, /\(allow network\*\)/);
+
+    const readOnly = buildSeatbeltPolicy({
+      profile: createReadOnlyPermissionProfile(),
+      pathContext: { workspaceRoots: ['/repo'] },
+    });
+    assert.deepEqual(readOnly.definitionArgs, ['-DREADABLE_ROOT_0=/']);
+    assert.doesNotMatch(readOnly.policy, /WRITABLE_ROOT/);
+    assert.match(readOnly.policy, /\(deny network\*\)/);
+  });
+
   it('allows directory reads along every readable root ancestor chain', () => {
-    const policy = policyText(createReadOnlyPermissionProfile());
+    const policy = policyText(workspaceReadProfile());
 
     assert.match(
       policy,
@@ -187,7 +240,7 @@ describe('buildSeatbeltPolicy', () => {
 
     try {
       const result = buildSeatbeltPolicy({
-        profile: createWorkspaceWritePermissionProfile(),
+        profile: workspaceWriteProfile(),
         pathContext: {
           workspaceRoots: ['/repo'],
           tmpdir: linkedTempRoot,
@@ -317,7 +370,7 @@ describe('buildSeatbeltPolicy', () => {
   });
 
   it('emits network restricted and enabled policy sections', () => {
-    assert.match(policyText(createWorkspaceWritePermissionProfile()), /\(deny network\*\)/);
+    assert.match(policyText(workspaceWriteProfile()), /\(deny network\*\)/);
     assert.match(policyText(restrictedProfileWithEnabledNetwork()), /\(allow network\*\)/);
   });
 
@@ -375,7 +428,7 @@ describe('buildSeatbeltPolicy', () => {
 describe('createSeatbeltExecArgs', () => {
   it('creates sandbox-exec arguments using -p policy, -D roots, -- separator, and inner argv', () => {
     const args = createSeatbeltExecArgs({
-      profile: createWorkspaceWritePermissionProfile(),
+      profile: workspaceWriteProfile(),
       pathContext: { workspaceRoots: ['/repo'] },
       innerArgv: ['/bin/zsh', '-lc', 'echo ok'],
     });

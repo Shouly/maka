@@ -20,7 +20,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { pathWithinRoot, samePath, trimTrailingPathSeparators } from '../absolute-path.js';
+import {
+  isNormalizedAbsolutePath,
+  pathWithinRoot,
+  samePath,
+  trimTrailingPathSeparators,
+} from '../absolute-path.js';
+import { validateSandboxBoundaryExpansion } from '../sandbox-boundary.js';
 import { canonicalWindowsPath } from '../windows-path.js';
 
 describe('absolute path comparison', () => {
@@ -29,6 +35,24 @@ describe('absolute path comparison', () => {
     assert.equal(pathWithinRoot('/Workspace/src', '/workspace'), false);
     assert.equal(samePath('C:\\Workspace\\Project', 'c:\\workspace\\project'), true);
     assert.equal(samePath('/Workspace/project', '/workspace/project'), false);
+  });
+});
+
+describe('the filesystem root', () => {
+  it('is a normalized absolute path that holds every other one', () => {
+    // A full-disk read is a `/` root; splitting "/" on "/" yields an empty
+    // second segment, which used to disqualify the root itself.
+    assert.equal(isNormalizedAbsolutePath('/'), true);
+    assert.equal(pathWithinRoot('/usr/share', '/'), true);
+    assert.equal(pathWithinRoot('/', '/'), true);
+    assert.equal(isNormalizedAbsolutePath('/usr/'), false);
+  });
+
+  it('is still not a boundary expansion anyone can request', () => {
+    const result = validateSandboxBoundaryExpansion({
+      filesystem: { entries: [{ path: '/', access: 'write', scope: 'subtree' }] },
+    });
+    assert.equal(result.ok, false);
   });
 });
 

@@ -191,6 +191,103 @@ describe('macOS filesystem worker smoke', { skip: process.platform !== 'darwin' 
     assert.deepEqual(emptyResult, { kind: 'grep', matches: [], mode: 'content' });
   });
 
+  test('Write creates missing directories wherever the session may write', async () => {
+    // A grant for the file alone let the worker create nothing above it, so
+    // a Write into a new directory failed even inside the workspace.
+    const inside = join(workspace, 'new-dir', 'deeper', 'inside.txt');
+    await client.execute({
+      operation: { kind: 'write', path: inside, content: 'inside' },
+      cwd: workspace,
+      mode: 'ask',
+      executionBoundary: {
+        kind: 'managed',
+        revision: 0,
+        profile: createWorkspaceWritePermissionProfile(),
+      },
+      expectedIdentity: 'unchecked',
+    });
+    assert.equal(await readFile(inside, 'utf8'), 'inside');
+
+    // Outside, the ask is the topmost missing directory — not its parent,
+    // which here is the whole home directory — and once it is approved the
+    // same Write goes through.
+    const outsideTarget = join(outside, 'created', 'deeper', 'outside.txt');
+    let executionBoundary: ExecutionBoundary = {
+      kind: 'managed',
+      revision: 0,
+      profile: createWorkspaceWritePermissionProfile(),
+    };
+    await assert.rejects(
+      client.execute({
+        operation: { kind: 'write', path: outsideTarget, content: 'outside' },
+        cwd: workspace,
+        mode: 'ask',
+        executionBoundary,
+        expectedIdentity: 'unchecked',
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof FilesystemWorkerClientError);
+        assert.equal(error.reason, 'sandbox_boundary_required');
+        assert.deepEqual(error.requiredExpansion, {
+          filesystem: {
+            entries: [{ path: join(outside, 'created'), access: 'write', scope: 'subtree' }],
+          },
+        });
+        // The model only has the sentence to go on, so it names that grant.
+        assert.equal(
+          error.message,
+          `Writing ${outsideTarget} is outside the session sandbox. Call RequestSandboxBoundary ` +
+            `for write access to ${join(outside, 'created')} (scope subtree), then repeat this call unchanged.`,
+        );
+        if (executionBoundary.kind === 'managed' && error.requiredExpansion)
+          executionBoundary = {
+            kind: 'managed',
+            revision: 1,
+            profile: applySandboxBoundaryExpansion(
+              executionBoundary.profile,
+              error.requiredExpansion,
+            ),
+          };
+        return true;
+      },
+    );
+    await client.execute({
+      operation: { kind: 'write', path: outsideTarget, content: 'outside' },
+      cwd: workspace,
+      mode: 'ask',
+      executionBoundary,
+      expectedIdentity: 'unchecked',
+    });
+    assert.equal(await readFile(outsideTarget, 'utf8'), 'outside');
+  });
+
+  test('Edit of a missing file says so instead of asking for access', async () => {
+    // A grant for a file that is not there unblocks nothing; the model
+    // approved one and hit the same wall again.
+    await assert.rejects(
+      client.execute({
+        operation: {
+          kind: 'edit',
+          path: join(outside, 'absent', 'edit-me.txt'),
+          oldString: 'a',
+          newString: 'b',
+          allowEdit: true,
+        },
+        cwd: workspace,
+        mode: 'ask',
+        executionBoundary: {
+          kind: 'managed',
+          revision: 0,
+          profile: createWorkspaceWritePermissionProfile(),
+        },
+        expectedIdentity: 'unchecked',
+      }),
+      {
+        message: `File does not exist. Note: your current working directory is ${workspace}.`,
+      },
+    );
+  });
+
   test('globs an approved root outside the session cwd', async () => {
     // The worker is granted `outside` and nothing else, so the session cwd
     // it would start in is unreadable to it, and Node's glob asks for the

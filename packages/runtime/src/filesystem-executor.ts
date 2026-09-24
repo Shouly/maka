@@ -560,12 +560,24 @@ function createWorkspaceFilesystemExecutor(
           return { kind: 'apply_patch', ok: true, path: patched.path };
         }
         case 'edit': {
-          const { path } = await workspace.resolveExistingPath({
-            cwd,
-            path: operation.path,
-            label: 'Edit',
-            scope,
-          });
+          let path: string;
+          try {
+            ({ path } = await workspace.resolveExistingPath({
+              cwd,
+              path: operation.path,
+              label: 'Edit',
+              scope,
+            }));
+          } catch (error) {
+            // Claude's Edit wording, as Read's and the worker client's.
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code === 'ENOENT' || code === 'ENOTDIR') {
+              throw new Error(
+                `File does not exist. Note: your current working directory is ${cwd}.`,
+              );
+            }
+            throw error;
+          }
           if (isSupportedImagePath(path)) throw new Error('Edit does not support image files.');
           // After resolution, so a path the boundary rejects is still reported
           // as a boundary violation rather than as an unread file.

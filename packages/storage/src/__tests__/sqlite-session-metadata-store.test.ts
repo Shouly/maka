@@ -18,7 +18,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -28,6 +28,7 @@ import { AgentGraphClientTerminalCursorError } from '@maka/core/agent-graph-clie
 import { messageContentDigest, type MessageContent } from '@maka/core/events';
 import {
   canReadPath,
+  canWritePath,
   createReadOnlyPermissionProfile,
   createWorkspaceWritePermissionProfile,
 } from '@maka/core/permission-profile';
@@ -2188,7 +2189,7 @@ describe('SqliteSessionMetadataStore', () => {
           requestId,
           turnId: 'turn-1',
           expansion: {
-            filesystem: { entries: [{ path, access: 'read', scope: 'subtree' }] },
+            filesystem: { entries: [{ path, access: 'write', scope: 'subtree' }] },
           },
           justification: `Read ${path}.`,
         });
@@ -2211,8 +2212,8 @@ describe('SqliteSessionMetadataStore', () => {
       assert.equal(second.boundary.revision, 2);
       assert.equal(second.boundary.kind, 'managed');
       if (second.boundary.kind === 'managed') {
-        assert.equal(canReadPath(second.boundary.profile, '/outside/a/file.txt'), true);
-        assert.equal(canReadPath(second.boundary.profile, '/outside/b/file.txt'), true);
+        assert.equal(canWritePath(second.boundary.profile, '/outside/a/file.txt'), true);
+        assert.equal(canWritePath(second.boundary.profile, '/outside/b/file.txt'), true);
       }
 
       const retry = await store.settleSandboxBoundaryRequest({
@@ -2223,6 +2224,41 @@ describe('SqliteSessionMetadataStore', () => {
       assert.equal(retry.request.status, 'approved');
       assert.equal(retry.boundary.revision, 2);
       assert.equal((await store.readExecutionBoundary('session-1')).revision, 2);
+    } finally {
+      store.close();
+    }
+  });
+
+  test('approves a request the boundary already grants under another spelling as a no-op', async () => {
+    // Requests carry canonical paths; `/tmp` is `/private/tmp` on macOS, and
+    // workspace-write already grants it.
+    const store = createSqliteSessionMetadataStore(':memory:', { now: nextNow(110) });
+    try {
+      await store.create(fullHeader(), {
+        kind: 'managed',
+        revision: 0,
+        profile: createWorkspaceWritePermissionProfile(),
+      });
+      await store.createSandboxBoundaryRequest({
+        sessionId: 'session-1',
+        requestId: 'request-tmp',
+        turnId: 'turn-1',
+        expansion: {
+          filesystem: {
+            entries: [{ path: await realpath('/tmp'), access: 'write', scope: 'subtree' }],
+          },
+        },
+        justification: 'Write under /tmp.',
+      });
+
+      const settled = await store.settleSandboxBoundaryRequest({
+        sessionId: 'session-1',
+        requestId: 'request-tmp',
+        decision: 'allow',
+      });
+      assert.equal(settled.request.status, 'approved');
+      assert.equal(settled.changed, false);
+      assert.equal(settled.boundary.revision, 0);
     } finally {
       store.close();
     }
@@ -2247,12 +2283,12 @@ describe('SqliteSessionMetadataStore', () => {
             filesystem: {
               entries: Array.from({ length: 15 }, (_, entry) => ({
                 path: `/outside/${request}/${entry}-${'x'.repeat(4_000)}`,
-                access: 'read' as const,
+                access: 'write' as const,
                 scope: 'exact' as const,
               })),
             },
           },
-          justification: 'Read generated inputs.',
+          justification: 'Write generated outputs.',
         });
         const before = await store.readExecutionBoundary('session-1');
         try {
@@ -2331,7 +2367,7 @@ describe('SqliteSessionMetadataStore', () => {
           turnId: 'turn-1',
           expansion: {
             filesystem: {
-              entries: [{ path: outsidePath, access: 'read', scope: 'subtree' }],
+              entries: [{ path: outsidePath, access: 'write', scope: 'subtree' }],
             },
           },
           justification: `Read ${outsidePath}.`,
@@ -2365,8 +2401,8 @@ describe('SqliteSessionMetadataStore', () => {
         assert.equal(boundary.kind, 'managed');
         assert.equal(boundary.revision, 2);
         if (boundary.kind === 'managed') {
-          assert.equal(canReadPath(boundary.profile, '/outside/a/file.txt'), true);
-          assert.equal(canReadPath(boundary.profile, '/outside/b/file.txt'), true);
+          assert.equal(canWritePath(boundary.profile, '/outside/a/file.txt'), true);
+          assert.equal(canWritePath(boundary.profile, '/outside/b/file.txt'), true);
         }
       } finally {
         verify.close();
@@ -2598,8 +2634,11 @@ describe('SqliteSessionMetadataStore', () => {
         sessionId: 'session-1',
         requestId: 'atomic-request',
         turnId: 'turn-1',
-        expansion: { network: { enabled: true } },
-        justification: 'Fetch a dependency.',
+        // A write outside the workspace: the network is already open.
+        expansion: {
+          filesystem: { entries: [{ path: '/outside/atomic', access: 'write', scope: 'subtree' }] },
+        },
+        justification: 'Write the generated output.',
       });
 
       armed = true;

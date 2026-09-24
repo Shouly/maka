@@ -29,7 +29,7 @@ describe('deep research session profile', () => {
     assert.equal(boundary.profile.name, 'read-only');
     assert.deepEqual(boundary.profile.fileSystem, {
       kind: 'restricted',
-      entries: [{ kind: 'special', access: 'read', special: ':workspace_roots' }],
+      entries: [{ kind: 'special', access: 'read', special: ':root' }],
     });
     assert.equal(boundary.profile.network.kind, 'restricted');
   });

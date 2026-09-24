@@ -42,7 +42,8 @@ describe('compilePermissionProfile', () => {
     assert.equal(ask.profileName, 'workspace-write');
     assert.equal(ask.profile.type, 'managed');
     assert.equal(ask.profile.name, 'workspace-write');
-    assert.deepEqual(ask.network, { kind: 'restricted' });
+    // Codex's workspace-write: the network is open.
+    assert.deepEqual(ask.network, { kind: 'enabled' });
   });
 
   it('maps bypass to danger-full-access', () => {

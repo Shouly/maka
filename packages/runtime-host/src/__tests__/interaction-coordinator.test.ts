@@ -421,7 +421,14 @@ describe('HostInteractionCoordinator', () => {
       });
       const identity = { ...RUN, sessionId: session.id };
       const requestId = 'boundary_1';
-      const expansion = { network: { enabled: true as const } };
+      // A write outside the workspace: the network is already open.
+      const expansion = {
+        filesystem: {
+          entries: [
+            { path: '/outside/coordinator', access: 'write' as const, scope: 'subtree' as const },
+          ],
+        },
+      };
       const candidate: SandboxBoundaryRequest = {
         sessionId: session.id,
         requestId,

@@ -19,6 +19,8 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { canReadPath } from '@maka/core/permission-profile';
+import type { ExecutionBoundary } from '@maka/core/sandbox-boundary';
 import {
   createAttachedWorkspaceExecutionProfile,
   createRuntimeHostWorkspaceExecutionComposition,
@@ -27,10 +29,12 @@ import {
 
 test('executes read-only operations in the attached checkout', async () => {
   const calls: string[] = [];
+  let boundary: ExecutionBoundary | undefined;
   const composition = createRuntimeHostWorkspaceExecutionComposition({
     filesystemWorker: {
       async execute(input) {
         calls.push(`${input.cwd}:${input.operation.kind}`);
+        boundary = input.executionBoundary;
         return { kind: 'read', content: 'attached' };
       },
     },
@@ -42,6 +46,15 @@ test('executes read-only operations in the attached checkout', async () => {
     { kind: 'read', content: 'attached' },
   );
   assert.deepEqual(calls, ['/attached:read']);
+  // A remote client reads the checkout and nothing else: not the whole disk
+  // the built-in Read only reaches.
+  assert.equal(boundary?.kind, 'managed');
+  if (boundary?.kind === 'managed') {
+    const context = { workspaceRoots: ['/attached'] };
+    assert.equal(canReadPath(boundary.profile, '/attached/README.md', context), true);
+    assert.equal(canReadPath(boundary.profile, '/etc/passwd', context), false);
+    assert.equal(boundary.profile.network.kind, 'restricted');
+  }
   await composition.close();
 });
 

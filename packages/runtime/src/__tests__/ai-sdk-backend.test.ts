@@ -612,9 +612,15 @@ describe('AiSdkBackend sandbox boundary convergence', () => {
       {
         toolCallId: 'boundary-request',
         toolName: 'RequestSandboxBoundary',
+        // Writing beside the workspace: Manual already reads the whole disk
+        // and has the network open, so a write is what still needs approval.
         input: {
-          expansion: { network: { enabled: true } },
-          justification: 'Use the network.',
+          expansion: {
+            filesystem: {
+              entries: [{ path: resolve(cwd, '..'), access: 'write', scope: 'subtree' }],
+            },
+          },
+          justification: 'Write beside the workspace.',
         },
       },
       {
@@ -634,11 +640,11 @@ describe('AiSdkBackend sandbox boundary convergence', () => {
         toolCallId: 'boundary-retry',
         toolName: 'Bash',
         input: {
-          command: 'read outside the workspace',
+          command: 'write outside the workspace',
           boundary_intent: 'expand',
           required_boundary: {
             filesystem: {
-              entries: [{ path: resolve(cwd, '..'), access: 'read', scope: 'subtree' }],
+              entries: [{ path: resolve(cwd, '..'), access: 'write', scope: 'subtree' }],
             },
           },
         },

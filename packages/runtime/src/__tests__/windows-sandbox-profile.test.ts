@@ -29,6 +29,25 @@ import {
 import { compileWindowsSandboxPolicy } from '../sandbox/windows-profile.js';
 import type { SandboxCommand } from '../sandbox/types.js';
 
+/**
+ * The Windows backend runs the filesystem worker, whose profiles name their
+ * targets and keep the network closed; the built-in Manual profile reads the
+ * whole disk and opens the network, which this preview does not implement.
+ */
+function workspaceWriteProfile(): PermissionProfileManaged {
+  const profile = createWorkspaceWritePermissionProfile();
+  return {
+    ...profile,
+    fileSystem: {
+      ...profile.fileSystem,
+      entries: profile.fileSystem.entries.filter(
+        (entry) => !(entry.kind === 'special' && entry.special === ':root'),
+      ),
+    },
+    network: { kind: 'restricted' },
+  };
+}
+
 function command(profile: PermissionProfileManaged): SandboxCommand {
   return {
     program: String.raw`C:\Program Files\nodejs\node.exe`,
@@ -46,7 +65,7 @@ function command(profile: PermissionProfileManaged): SandboxCommand {
 }
 
 test('compiles workspace-write roots, runtime roots, network, and environment', () => {
-  const policy = compileWindowsSandboxPolicy(command(createWorkspaceWritePermissionProfile()));
+  const policy = compileWindowsSandboxPolicy(command(workspaceWriteProfile()));
   assert.deepEqual(policy, {
     readRoots: [
       String.raw`C:\work\repo`,
@@ -67,7 +86,7 @@ test('fails closed on write shapes that need parent-entry authority', () => {
   // directory-entry mutation; representing it would widen the kernel grant
   // to recursive Modify on the parent, so the preview refuses instead.
   const withParentRoot: SandboxCommand = {
-    ...command(createWorkspaceWritePermissionProfile()),
+    ...command(workspaceWriteProfile()),
     pathContext: {
       workspaceRoots: [String.raw`C:\work\repo`],
       tmpdir: String.raw`C:\Users\user\AppData\Local\Temp`,
@@ -122,21 +141,21 @@ test('compiles an exact file grant as a non-recursive broker root', () => {
 });
 
 test('rejects noncanonical paths and case-insensitive duplicate environment names', () => {
-  const invalidPath = command(createWorkspaceWritePermissionProfile());
+  const invalidPath = command(workspaceWriteProfile());
   invalidPath.pathContext = { workspaceRoots: ['C:/work/repo'] };
   assert.throws(() => compileWindowsSandboxPolicy(invalidPath), /use backslashes/);
 
-  const volumeRoot = command(createWorkspaceWritePermissionProfile());
+  const volumeRoot = command(workspaceWriteProfile());
   volumeRoot.pathContext = { workspaceRoots: ['C:\\'] };
   assert.throws(() => compileWindowsSandboxPolicy(volumeRoot), /volume roots are not supported/);
 
-  const duplicateEnvironment = command(createWorkspaceWritePermissionProfile());
+  const duplicateEnvironment = command(workspaceWriteProfile());
   duplicateEnvironment.env = { Path: 'one', PATH: 'two' };
   assert.throws(() => compileWindowsSandboxPolicy(duplicateEnvironment), /Duplicate/);
 });
 
 test('accepts real Windows environment names with parentheses and rejects block-breaking names', () => {
-  const parenthesized = command(createWorkspaceWritePermissionProfile());
+  const parenthesized = command(workspaceWriteProfile());
   parenthesized.env = {
     'CommonProgramFiles(x86)': String.raw`C:\Program Files (x86)\Common Files`,
     'ProgramFiles(x86)': String.raw`C:\Program Files (x86)`,
@@ -148,7 +167,7 @@ test('accepts real Windows environment names with parentheses and rejects block-
   });
 
   for (const badName of ['A=B', '=C:', 'BAD\0NAME', '']) {
-    const invalid = command(createWorkspaceWritePermissionProfile());
+    const invalid = command(workspaceWriteProfile());
     invalid.env = { [badName]: 'value' };
     assert.throws(
       () => compileWindowsSandboxPolicy(invalid),
@@ -156,7 +175,7 @@ test('accepts real Windows environment names with parentheses and rejects block-
     );
   }
 
-  const nulValue = command(createWorkspaceWritePermissionProfile());
+  const nulValue = command(workspaceWriteProfile());
   nulValue.env = { GOOD_NAME: 'has\0nul' };
   assert.throws(
     () => compileWindowsSandboxPolicy(nulValue),

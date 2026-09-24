@@ -114,7 +114,7 @@
                         "type": "string"
                       },
                       "scope": {
-                        "description": "Use exact for one file and subtree for an existing directory.",
+                        "description": "Use exact for one file and subtree for a directory, including one not created yet.",
                         "enum": [
                           "exact",
                           "subtree"
@@ -372,7 +372,7 @@
                         "type": "string"
                       },
                       "scope": {
-                        "description": "Use exact for one file and subtree for an existing directory.",
+                        "description": "Use exact for one file and subtree for a directory, including one not created yet.",
                         "enum": [
                           "exact",
                           "subtree"

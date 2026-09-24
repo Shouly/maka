@@ -19,11 +19,17 @@
 
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
 
+import { createWorkspaceWritePermissionProfile } from '@maka/core/permission-profile';
+
 import { preflightDeclaredSandboxBoundary } from '../sandbox-boundary-declaration.js';
+import {
+  materializeApprovedWriteDirectories,
+  normalizeSandboxBoundaryExpansion,
+} from '../sandbox-boundary-path.js';
 import { SandboxCommandError } from '../sandbox/errors.js';
 import type { MakaToolContext } from '../tool-runtime.js';
 
@@ -67,6 +73,108 @@ describe('declared Bash sandbox boundary error classification', () => {
       ),
       (error: unknown) => error === injected && !(error instanceof SandboxCommandError),
     );
+  });
+});
+
+describe('declared Bash sandbox boundary against the current profile', () => {
+  test('runs what Manual grants, under any spelling, and asks only to write outside', async () => {
+    // `/tmp` and the tmpdir are symlinks on macOS; the declaration is
+    // canonicalised, and the profile's roots must be measured the same way.
+    const cwd = await fs.mkdtemp(join(tmpdir(), 'maka-boundary-granted-'));
+    try {
+      const ctx: MakaToolContext = {
+        ...toolContext(cwd),
+        executionBoundary: {
+          kind: 'managed',
+          revision: 0,
+          profile: createWorkspaceWritePermissionProfile(),
+        },
+      };
+      for (const path of ['/tmp', tmpdir(), cwd]) {
+        const normalized = await preflightDeclaredSandboxBoundary(
+          { filesystem: { entries: [{ path, access: 'write', scope: 'subtree' }] } },
+          ctx,
+        );
+        assert.equal(normalized?.filesystem?.entries.length, 1, path);
+      }
+      // Manual reads the whole disk (`:root` is `/`, not the cwd) and has the
+      // network open; writing outside the workspace is what still asks.
+      for (const expansion of [
+        { filesystem: { entries: [{ path: '/usr/share', access: 'read', scope: 'subtree' }] } },
+        { network: { enabled: true } },
+      ] as const) {
+        assert.ok(await preflightDeclaredSandboxBoundary(expansion, ctx));
+      }
+      await assert.rejects(
+        preflightDeclaredSandboxBoundary(
+          { filesystem: { entries: [{ path: homedir(), access: 'write', scope: 'subtree' }] } },
+          ctx,
+        ),
+        (error: unknown) =>
+          error instanceof SandboxCommandError && error.reason === 'sandbox_boundary_required',
+      );
+    } finally {
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('a directory granted before it exists', () => {
+  test('can be declared as a subtree, while an existing file cannot', async () => {
+    const cwd = await fs.mkdtemp(join(tmpdir(), 'maka-boundary-missing-dir-'));
+    try {
+      await fs.writeFile(join(cwd, 'file.txt'), 'x', 'utf8');
+      // Refusing this left the parent — the whole home directory — as the
+      // only thing a model could ask for to run `mkdir ~/new`.
+      const normalized = await normalizeSandboxBoundaryExpansion(
+        {
+          filesystem: {
+            entries: [{ path: join(cwd, 'new', 'deeper'), access: 'write', scope: 'subtree' }],
+          },
+        },
+        cwd,
+      );
+      assert.equal(normalized.filesystem?.entries[0]?.scope, 'subtree');
+      await assert.rejects(
+        normalizeSandboxBoundaryExpansion(
+          {
+            filesystem: {
+              entries: [{ path: join(cwd, 'file.txt'), access: 'write', scope: 'subtree' }],
+            },
+          },
+          cwd,
+        ),
+        /must target a directory/,
+      );
+    } finally {
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('is created before a sandbox that has to name it runs', async () => {
+    const cwd = await fs.mkdtemp(join(tmpdir(), 'maka-boundary-materialize-'));
+    try {
+      const granted = join(cwd, 'granted', 'deeper');
+      const readOnly = join(cwd, 'read-only');
+      const exactFile = join(cwd, 'exact', 'file.txt');
+      materializeApprovedWriteDirectories({
+        ...createWorkspaceWritePermissionProfile(),
+        fileSystem: {
+          kind: 'restricted',
+          entries: [
+            { kind: 'path', access: 'write', path: granted, match: 'subtree' },
+            { kind: 'path', access: 'read', path: readOnly, match: 'subtree' },
+            { kind: 'path', access: 'write', path: exactFile, match: 'exact' },
+          ],
+        },
+      });
+      assert.equal((await fs.stat(granted)).isDirectory(), true);
+      // Only directories approved for writing are made; nothing else.
+      await assert.rejects(fs.stat(readOnly), { code: 'ENOENT' });
+      await assert.rejects(fs.stat(join(cwd, 'exact')), { code: 'ENOENT' });
+    } finally {
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
   });
 });
 

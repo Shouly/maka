@@ -130,7 +130,7 @@ describe('ahead of the turn: recorded once, again only on change', () => {
     assert.deepEqual(planned[2]?.data, { names: ['MemoryDelete', 'ScheduledTaskCreate'] });
     assert.match(
       planned[3]?.text ?? '',
-      /serving this session is claude-opus-5[\s\S]*Permission mode: ask, workspace-write[\s\S]*managed, revision 3/u,
+      /serving this session is claude-opus-5[\s\S]*Permission mode: ask, reads anywhere on this machine, writes inside the workspace[\s\S]*managed, revision 3/u,
     );
     assert.equal(planned[4]?.text, "Today's date is 2026-09-18.");
     assert.deepEqual(planned[4]?.data, { date: '2026-09-18' });
@@ -204,6 +204,11 @@ describe('ahead of the turn: recorded once, again only on change', () => {
       bypass[0]!.text,
       /Permission mode: bypass, full access[\s\S]*Sandbox boundary: bypass/u,
     );
+    // Codex's wording: nothing to ask for, and a destructive command waits
+    // only when the user did not clearly ask for it — not a blanket confirm.
+    assert.match(bypass[0]!.text, /Nothing needs the user's approval\./u);
+    assert.match(bypass[0]!.text, /unless the user has clearly asked for that operation/u);
+    assert.doesNotMatch(bypass[0]!.text, /confirm before anything irreversible/u);
   });
 
   test('a context without a revision is compared by its text, and an empty one is never said', () => {

@@ -24,13 +24,35 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 
-import { createWorkspaceWritePermissionProfile } from '@maka/core/permission-profile';
+import {
+  createWorkspaceWritePermissionProfile,
+  type PermissionProfileManaged,
+} from '@maka/core/permission-profile';
 
 import {
   createWindowsBrokerManifestWriter,
   WindowsBrokerSandboxBackend,
   type WindowsBrokerManifest,
 } from '../sandbox/windows-sandbox.js';
+
+/**
+ * The Windows backend runs the filesystem worker, whose profiles name their
+ * targets and keep the network closed; the built-in Manual profile reads the
+ * whole disk and opens the network, which this preview does not implement.
+ */
+function workspaceWriteProfile(): PermissionProfileManaged {
+  const profile = createWorkspaceWritePermissionProfile();
+  return {
+    ...profile,
+    fileSystem: {
+      ...profile.fileSystem,
+      entries: profile.fileSystem.entries.filter(
+        (entry) => !(entry.kind === 'special' && entry.special === ':root'),
+      ),
+    },
+    network: { kind: 'restricted' },
+  };
+}
 
 test('writes broker manifests to exclusive per-process temporary files', async () => {
   const root = await mkdtemp(join(tmpdir(), 'maka-windows-manifest-test-'));
@@ -89,7 +111,7 @@ test('transforms a Windows managed profile into a broker-client invocation', () 
       args: ['/d', '/c', 'exit 0'],
       cwd: String.raw`C:\work\repo`,
       env: { SystemRoot: String.raw`C:\Windows` },
-      profile: createWorkspaceWritePermissionProfile(),
+      profile: workspaceWriteProfile(),
       pathContext: { workspaceRoots: [String.raw`C:\work\repo`] },
     },
   });
@@ -145,7 +167,7 @@ test('rejects a request id with characters that are unsafe in a manifest filenam
       args: [],
       cwd: String.raw`C:\work\repo`,
       env: {},
-      profile: createWorkspaceWritePermissionProfile(),
+      profile: workspaceWriteProfile(),
       pathContext: { workspaceRoots: [String.raw`C:\work\repo`] },
     },
   });
@@ -169,7 +191,7 @@ test('rejects a request id whose derived launch id exceeds the native protocol b
       args: [],
       cwd: String.raw`C:\work\repo`,
       env: {},
-      profile: createWorkspaceWritePermissionProfile(),
+      profile: workspaceWriteProfile(),
       pathContext: { workspaceRoots: [String.raw`C:\work\repo`] },
     },
   });
@@ -190,7 +212,7 @@ test('rejects an invalid per-invocation client nonce', () => {
       args: [],
       cwd: String.raw`C:\work\repo`,
       env: {},
-      profile: createWorkspaceWritePermissionProfile(),
+      profile: workspaceWriteProfile(),
       pathContext: { workspaceRoots: [String.raw`C:\work\repo`] },
     },
   });
@@ -214,7 +236,7 @@ test('rejects a noncanonical materialized manifest path', () => {
       args: [],
       cwd: String.raw`C:\work\repo`,
       env: {},
-      profile: createWorkspaceWritePermissionProfile(),
+      profile: workspaceWriteProfile(),
       pathContext: { workspaceRoots: [String.raw`C:\work\repo`] },
     },
   });
@@ -245,7 +267,7 @@ test('honors a configured broker timeout and rejects out-of-range values', () =>
       program: String.raw`C:\Windows\System32\cmd.exe`,
       args: [],
       cwd: String.raw`C:\work\repo`,
-      profile: createWorkspaceWritePermissionProfile(),
+      profile: workspaceWriteProfile(),
       pathContext: { workspaceRoots: [String.raw`C:\work\repo`] },
     },
   };
@@ -273,7 +295,7 @@ test('fails closed when broker client is unavailable or policy cannot be compile
       program: String.raw`C:\Windows\System32\cmd.exe`,
       args: [],
       cwd: String.raw`C:\work\repo`,
-      profile: createWorkspaceWritePermissionProfile(),
+      profile: workspaceWriteProfile(),
       pathContext: { workspaceRoots: [String.raw`C:\work\repo`] },
     },
   };

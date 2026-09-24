@@ -136,22 +136,23 @@ describe('filesystem worker client permission snapshots', () => {
     });
   }
 
-  test('returns the smallest session boundary expansion for an external path', async () => {
+  test('returns the smallest session boundary expansion for an external write', async () => {
     const workspace = await temporaryDirectory('maka-worker-client-boundary-workspace-');
     const outside = await mkdtemp(join(homedir(), '.maka-worker-client-boundary-outside-'));
     cleanup.push(outside);
     const target = join(outside, 'blocked.txt');
     await writeFile(target, 'blocked', 'utf8');
     const { client, requests } = fakeClient();
+    const executionBoundary = createManagedExecutionBoundary(
+      createWorkspaceWritePermissionProfile(),
+      0,
+    );
 
     await assert.rejects(
       client.execute({
-        operation: { kind: 'read', path: target },
+        operation: { kind: 'write', path: target, content: 'changed' },
         cwd: workspace,
-        executionBoundary: createManagedExecutionBoundary(
-          createWorkspaceWritePermissionProfile(),
-          0,
-        ),
+        executionBoundary,
         expectedIdentity: 'unchecked',
       }),
       (error: unknown) => {
@@ -159,13 +160,22 @@ describe('filesystem worker client permission snapshots', () => {
         assert.equal(error.reason, 'sandbox_boundary_required');
         assert.deepEqual(error.requiredExpansion, {
           filesystem: {
-            entries: [{ path: target, access: 'read', scope: 'exact' }],
+            entries: [{ path: target, access: 'write', scope: 'exact' }],
           },
         });
         return true;
       },
     );
     assert.equal(requests.length, 0);
+
+    // Manual reads the whole disk: the same file is read without asking.
+    await client.execute({
+      operation: { kind: 'read', path: target },
+      cwd: workspace,
+      executionBoundary,
+      expectedIdentity: 'unchecked',
+    });
+    assert.equal(requests.length, 1);
   });
 
   test('rejects a workspace write under an explicit read-only profile', async () => {
@@ -231,11 +241,14 @@ describe('filesystem worker client permission snapshots', () => {
     };
     const { client, requests } = fakeClient();
 
+    // The built-in modes read the whole disk; a custom profile reads only
+    // what it names, and one that names nothing reads nothing.
     await assert.rejects(
       client.execute({
         operation: { kind: 'read', path: target },
         cwd: workspace,
         mode: 'explore',
+        permissionProfile: { ...profile, fileSystem: { kind: 'restricted', entries: [] } },
         expectedIdentity: 'unchecked',
       }),
       isPathDenied,

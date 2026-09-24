@@ -41,6 +41,7 @@ import {
   createDangerFullAccessPermissionProfile,
   createWorkspaceWritePermissionProfile,
   type PermissionProfile,
+  type PermissionProfileManaged,
 } from '@maka/core/permission-profile';
 import { buildBuiltinTools } from '../builtin-tools.js';
 import { SandboxManager } from '../sandbox/sandbox-manager.js';
@@ -465,7 +466,7 @@ describe('builtin Bash streaming output', () => {
     assert.match(modelVisibleSchema, /normalized absolute path/);
     assert.match(
       modelVisibleSchema,
-      /Use exact for one file and subtree for an existing directory/,
+      /Use exact for one file and subtree for a directory, including one not created yet/,
     );
     assert.match(modelVisibleSchema, /loopback connection, or listener/);
     assert.match(modelVisibleSchema, /Omit for offline commands and tests/);
@@ -600,7 +601,8 @@ describe('builtin Bash streaming output', () => {
     };
     const bash = buildBuiltinTools({
       shellRuns,
-      permissionProfile: createWorkspaceWritePermissionProfile(),
+      // The seccomp filter is what closes the network, so the profile must.
+      permissionProfile: closedNetworkWorkspaceProfile(),
       sandboxManager: availableLinuxManager(),
       sandboxPlatform: 'linux',
     }).find((candidate) => candidate.name === 'Bash');
@@ -1044,7 +1046,7 @@ describe('builtin Bash streaming output', () => {
     assert.strictEqual(calls[0]?.sandboxType, undefined);
   });
 
-  test('requires an approved network expansion before declared Bash network access', async () => {
+  test('requires an approved network expansion before declared Bash network access when the network is closed', async () => {
     const calls: any[] = [];
     const shellRuns: ShellRunLauncher = {
       async runForegroundBash(input) {
@@ -1091,7 +1093,7 @@ describe('builtin Bash streaming output', () => {
       executionBoundary: {
         kind: 'managed' as const,
         revision: 0,
-        profile: createWorkspaceWritePermissionProfile(),
+        profile: closedNetworkWorkspaceProfile(),
       },
     };
 
@@ -1132,6 +1134,16 @@ describe('builtin Bash streaming output', () => {
       },
     });
     assert.strictEqual(calls.length, 1);
+
+    // The built-in Manual profile has the network open: nothing to approve.
+    await bash.impl(args as never, {
+      ...context,
+      executionBoundary: {
+        ...context.executionBoundary,
+        profile: createWorkspaceWritePermissionProfile(),
+      },
+    });
+    assert.strictEqual(calls.length, 2);
   });
 
   test('fails closed when a required command sandbox is unavailable', async () => {
@@ -2784,6 +2796,11 @@ function fakeExecutor(overrides: Partial<WorkspaceExecutor>): WorkspaceExecutor 
   return Object.assign(base, overrides);
 }
 
+/** Manual's writable roots with the network closed, as Read only keeps it. */
+function closedNetworkWorkspaceProfile(): PermissionProfileManaged {
+  return { ...createWorkspaceWritePermissionProfile(), network: { kind: 'restricted' } };
+}
+
 function availableLinuxManager(): SandboxManager {
   return new SandboxManager([
     new LinuxBubblewrapBackend({
@@ -3005,6 +3022,14 @@ describe('builtin file tools speak the reference argument names', () => {
       if (savedHome === undefined) delete process.env.HOME;
       else process.env.HOME = savedHome;
     }
+  });
+
+  test('Edit names a missing file the way Claude does', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'maka-edit-missing-')));
+    await assert.rejects(
+      runTool(tool('Edit'), { file_path: 'absent.txt', old_string: 'a', new_string: 'b' }, root),
+      { message: `File does not exist. Note: your current working directory is ${root}.` },
+    );
   });
 
   test('Grep names a missing search root the way Claude does', async () => {

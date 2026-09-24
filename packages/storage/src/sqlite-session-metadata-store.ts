@@ -21,7 +21,7 @@ import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { isCanonicalReadOnlyPermissionProfile } from '@maka/core/permission-profile';
 import type { DatabaseSync } from 'node:sqlite';
@@ -777,12 +777,28 @@ export class SqliteSessionMetadataStore {
         };
       }
 
-      const assessment = assessSandboxBoundaryExpansion(current.profile, request.expansion, {
-        root: record.header.cwd,
-        workspaceRoots: [record.header.cwd],
-        tmpdir: tmpdir(),
-        slashTmp: '/tmp',
-      });
+      // A request may spell a granted root either way — `/tmp` or the
+      // `/private/tmp` it resolves to on macOS — so it is measured against
+      // both; a grant the profile already holds is not appended again.
+      const canonicalCwd = canonicalPathSync(record.header.cwd);
+      const assessments = [
+        {
+          workspaceRoots: [record.header.cwd],
+          tmpdir: tmpdir(),
+          slashTmp: '/tmp',
+        },
+        {
+          workspaceRoots: [canonicalCwd],
+          tmpdir: canonicalPathSync(tmpdir()),
+          slashTmp: canonicalPathSync('/tmp'),
+        },
+      ].map((context) =>
+        assessSandboxBoundaryExpansion(current.profile, request.expansion, context),
+      );
+      const assessment =
+        assessments.find((candidate) => candidate.outcome === 'conflict') ??
+        assessments.find((candidate) => candidate.outcome === 'noop') ??
+        assessments[0]!;
       if (assessment.outcome === 'conflict') {
         this.settleSandboxBoundaryRequestRow({
           sessionId: input.sessionId,
@@ -6688,4 +6704,12 @@ function requireTranscriptRecordByteLength(
     throw new StoredSessionMessageIncompatibleError(sessionId, sequence);
   }
   return value as number;
+}
+
+function canonicalPathSync(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
 }
