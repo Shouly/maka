@@ -25,6 +25,8 @@ import { parseHTML } from 'linkedom';
 import { LocaleProvider, TOOL_LINE_CAP, type ToolActivityItem, type TurnViewModel } from '@maka/ui';
 import Markdown from '../../components/ui/Markdown.js';
 import { TooltipProvider } from '../../components/ui/tooltip.js';
+import { PermissionModeMenu } from '../../components/composer/PermissionModeMenu.js';
+import { resolveCollaborationPermissionMode } from '@maka/core/collaboration';
 import { SessionRow } from '../../components/layout/sidebar-parts/SessionRow.js';
 import { PaletteResults } from '../../components/palette/CommandPalette.js';
 import { buildSessionListModel } from '../session-list-model.js';
@@ -1416,4 +1418,24 @@ test('a tool search has its own icon and its own summary phrase', () => {
   const copy = getTranscriptCopy('en').tools;
   assert.equal(copy.summary.toolSearch.one, 'Loaded tools');
   assert.equal(copy.active.toolSearch, 'Loading tools');
+});
+
+test('the permission chip names the boundary Plan holds the session to', () => {
+  // Plan leaves the header's mode alone and runs the session read-only; the
+  // chip used to name the header's mode, so Plan read "Manual".
+  const chip = (activeMode: 'explore' | 'ask', chosenMode: 'ask') =>
+    renderTree(
+      createElement(PermissionModeMenu, {
+        activeMode: resolveCollaborationPermissionMode({
+          collaborationMode: activeMode === 'explore' ? 'plan' : 'agent',
+          permissionMode: chosenMode,
+        }),
+        chosenMode,
+        side: 'top',
+        onSelect: () => {},
+      }),
+    ).querySelector('button');
+  assert.equal(chip('explore', 'ask')?.textContent, 'Read only');
+  assert.equal(chip('explore', 'ask')?.getAttribute('aria-label'), 'Permission mode: Read only');
+  assert.equal(chip('ask', 'ask')?.textContent, 'Manual');
 });

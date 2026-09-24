@@ -200,6 +200,8 @@ export interface ConversationCopy {
     configureTitle: string;
   };
   permissions: {
+    /** The heading over the picker's rows. */
+    menuTitle: string;
     mode: Record<PermissionMode, { label: string; hint: string }>;
     modeAriaLabel: (label: string) => string;
   };
@@ -521,10 +523,11 @@ const CONVERSATION_COPY = {
       configureAriaLabel: (label) => `配置模型连接，当前 ${label}`, configureTitle: '配置模型连接',
     },
     permissions: {
+      menuTitle: '权限模式',
       mode: {
-        explore: { label: '只读', hint: '只读搜索，不写文件、不上网；需要时先问你。' },
-        ask: { label: '自动', hint: '自动完成工作目录内的操作；需要额外的文件或网络访问权限时，会先询问你。' },
-        bypass: { label: '完全权限', hint: '允许直接读写文件和访问网络，不再为这些操作逐项请求授权。' },
+        explore: { label: '只读', hint: 'Maka 只读取和搜索，修改文件或联网前会先询问你。' },
+        ask: { label: '手动', hint: 'Maka 修改工作目录以外的文件前，会先询问你。' },
+        bypass: { label: '完全权限', hint: 'Maka 自主工作，直接使用任何文件或联网，不再询问。' },
       },
       modeAriaLabel: (label) => `权限模式：${label}`,
     },
@@ -684,10 +687,11 @@ const CONVERSATION_COPY = {
       configureAriaLabel: (label) => `設定模型連線，目前 ${label}`, configureTitle: '設定模型連線',
     },
     permissions: {
+      menuTitle: '權限模式',
       mode: {
-        explore: { label: '只讀', hint: '只讀搜尋，不寫檔案、不上網；需要時先問你。' },
-        ask: { label: '自動', hint: '自動完成工作目錄內的操作；需要額外的檔案或網路存取權限時，會先詢問你。' },
-        bypass: { label: '完全權限', hint: '允許直接讀寫檔案和存取網路，不再為這些操作逐項請求授權。' },
+        explore: { label: '只讀', hint: 'Maka 只讀取和搜尋，修改檔案或連網前會先詢問你。' },
+        ask: { label: '手動', hint: 'Maka 修改工作目錄以外的檔案前，會先詢問你。' },
+        bypass: { label: '完全權限', hint: 'Maka 自主工作，直接使用任何檔案或連網，不再詢問。' },
       },
       modeAriaLabel: (label) => `權限模式：${label}`,
     },
@@ -873,10 +877,11 @@ const CONVERSATION_COPY = {
       configureAriaLabel: (label) => `Configure model connections, currently ${label}`, configureTitle: 'Configure model connections',
     },
     permissions: {
+      menuTitle: 'Permission mode',
       mode: {
-        explore: { label: 'Read only', hint: 'Read and search only; asks before write or network.' },
-        ask: { label: 'Auto', hint: "Works automatically in your working directory. Asks before using additional file or network permissions." },
-        bypass: { label: 'Full access', hint: 'Can read and edit files and access the network without asking for permission for each operation.' },
+        explore: { label: 'Read only', hint: 'Maka reads and searches only, and asks before editing files or going online.' },
+        ask: { label: 'Manual', hint: 'Maka asks before changing files outside the workspace.' },
+        bypass: { label: 'Full access', hint: 'Maka runs on its own and never stops to ask for access.' },
       },
       modeAriaLabel: (label) => `Permission mode: ${label}`,
     },

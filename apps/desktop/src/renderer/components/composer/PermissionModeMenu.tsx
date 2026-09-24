@@ -18,21 +18,21 @@
  */
 
 // The composer's permission control (upstream `PermissionModeSelect`) as a
-// meta-row chip under the surface — the mode's label as text, opening a
-// radio menu of the two selectable modes. Read-only (`explore`) is a real
-// boundary a Session can be running under, so it is displayed with its own
-// words, but never offered — the picker lists Auto and full access.
-// Each mode explains its boundary in a tooltip on its menu row.
+// meta-row chip under the surface — the mode's label as text, opening the
+// menu of Claude's permission picker: a "Permission mode" heading, then each
+// selectable mode as its name over a sentence saying when Maka asks, the
+// chosen one checked. Read-only (`explore`) is a real boundary a Session can
+// be running under, so the chip names it in its own words, but the menu never
+// offers it — the picker lists Manual and Full access.
 
 import type { PermissionMode } from '@maka/core/permission';
 import type { ChatDefaultPermissionMode } from '@maka/core/settings';
 import { CHAT_DEFAULT_PERMISSION_MODES } from '@maka/core/settings';
 import { getConversationCopy, useUiLocale } from '@maka/ui';
-import { Anthropicon, type AnthropiconName } from '../icons/Anthropicon.js';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItemIcon,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
@@ -41,18 +41,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.js';
 import { COMPOSER_META_CHIP, COMPOSER_META_CHIP_IDLE } from '../../lib/composer-surface.js';
 import { cn } from '../../lib/cn.js';
 
-const MODE_ICON: Record<PermissionMode, AnthropiconName> = {
-  explore: 'eye',
-  ask: 'shieldCheck',
-  bypass: 'shieldAlert',
-};
-
 /** relx 32px ghost icon control: the ＋ trigger in the surface. */
 export const COMPOSER_ICON_CONTROL_CLASS =
   'ui-control-squish ui-control-squish-ghost flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-text-primary outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-60';
 
 export function PermissionModeMenu(props: {
+  /** The boundary the Session runs under, which the chip names. */
   activeMode: PermissionMode;
+  /** The mode the Session chose, which the menu marks; Plan can hold it read-only. */
+  chosenMode?: PermissionMode;
   onSelect: (mode: ChatDefaultPermissionMode) => void;
   disabled?: boolean;
   side: 'top' | 'bottom';
@@ -60,8 +57,9 @@ export function PermissionModeMenu(props: {
   const copy = getConversationCopy(useUiLocale()).permissions;
   const meta = copy.mode[props.activeMode];
   const label = copy.modeAriaLabel(meta.label);
-  const selected = (CHAT_DEFAULT_PERMISSION_MODES as readonly string[]).includes(props.activeMode)
-    ? props.activeMode
+  const chosen = props.chosenMode ?? props.activeMode;
+  const selected = (CHAT_DEFAULT_PERMISSION_MODES as readonly string[]).includes(chosen)
+    ? chosen
     : undefined;
   return (
     <DropdownMenu>
@@ -81,31 +79,32 @@ export function PermissionModeMenu(props: {
         </TooltipTrigger>
         <TooltipContent side={props.side}>{`${meta.label} — ${meta.hint}`}</TooltipContent>
       </Tooltip>
-      <DropdownMenuContent align="start" side={props.side} sideOffset={6}>
+      <DropdownMenuContent align="start" side={props.side} sideOffset={6} className="w-72">
+        <DropdownMenuLabel className="font-medium text-menu-text-muted">
+          {copy.menuTitle}
+        </DropdownMenuLabel>
         <DropdownMenuRadioGroup
-          aria-label={label}
+          aria-label={copy.menuTitle}
           value={selected}
           onValueChange={(value) => props.onSelect(value as ChatDefaultPermissionMode)}
         >
           {CHAT_DEFAULT_PERMISSION_MODES.map((mode) => (
-            <Tooltip key={mode}>
-              <TooltipTrigger asChild>
-                <DropdownMenuRadioItem
-                  value={mode}
-                  reserveIndicator
-                  className="w-full"
-                  aria-description={copy.mode[mode].hint}
-                >
-                  <DropdownMenuItemIcon>
-                    <Anthropicon name={MODE_ICON[mode]} size={20} />
-                  </DropdownMenuItemIcon>
-                  <span className="truncate">{copy.mode[mode].label}</span>
-                </DropdownMenuRadioItem>
-              </TooltipTrigger>
-              <TooltipContent side="right" align="center" variant="description">
-                {copy.mode[mode].hint}
-              </TooltipContent>
-            </Tooltip>
+            <DropdownMenuRadioItem
+              key={mode}
+              value={mode}
+              reserveIndicator
+              className="gap-3 py-2"
+              aria-label={copy.mode[mode].label}
+              aria-description={copy.mode[mode].hint}
+              data-maka-permission-mode={mode}
+            >
+              {/* The row wrapper truncates; the sentence wraps instead. */}
+              <span className="flex min-w-0 flex-col gap-0.5 whitespace-normal">
+                <span>{copy.mode[mode].label}</span>
+                {/* The model menu's subline: the same small muted line under a name. */}
+                <span className="text-xs text-menu-text-muted">{copy.mode[mode].hint}</span>
+              </span>
+            </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>

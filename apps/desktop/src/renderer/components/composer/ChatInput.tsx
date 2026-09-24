@@ -126,6 +126,7 @@ import {
   showSessionWorkspaceUnavailableToast,
 } from '../../lib/ported/session-workspace-errors.js';
 import { toastApi } from '../../store/toast-api.js';
+import { resolveCollaborationPermissionMode } from '@maka/core/collaboration';
 import { COMPOSER_ICON_CONTROL_CLASS, PermissionModeMenu } from './PermissionModeMenu.js';
 import { TipTapEditor } from './TipTapEditor.js';
 import { Button } from '../ui/button.js';
@@ -325,6 +326,12 @@ function OwnedChatInput(props: {
       ? draft.permission
       : (newTask.defaults?.permissionMode ?? draft.permission));
   const plan = session ? session.collaborationMode === 'plan' : draft.plan;
+  // Plan holds the session read-only at dispatch; the chip names that, not
+  // the header's mode, which Plan leaves as the user chose it.
+  const effectiveMode = resolveCollaborationPermissionMode({
+    collaborationMode: plan ? 'plan' : 'agent',
+    permissionMode: mode,
+  });
   const activeChoice = (session ? connections : newTask.connections)?.chatModelChoices.find(
     (choice) =>
       choice.connectionSlug === (session?.llmConnectionSlug ?? newTask.model?.llmConnectionSlug) &&
@@ -1402,7 +1409,8 @@ function OwnedChatInput(props: {
             </div>
             <div className="flex shrink-0 items-center [&>button]:whitespace-nowrap">
               <PermissionModeMenu
-                activeMode={mode}
+                activeMode={effectiveMode}
+                chosenMode={mode}
                 side={menuSide}
                 disabled={modeLocked || pending.includes('permission')}
                 onSelect={(next) => {
