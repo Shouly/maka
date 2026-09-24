@@ -315,6 +315,16 @@ export async function executeFilesystemOperation(
     }
     case 'apply_patch': {
       if (operation.action !== 'update') {
+        // A create makes missing parent directories, under the same rule as
+        // Write: only inside the session cwd or the boundary.
+        if (operation.action === 'create') {
+          await ensureParentDirectories(
+            operation.cwd,
+            operation.path,
+            'ApplyPatch create',
+            operationBoundary,
+          );
+        }
         const path = await resolveDirectoryEntryAllowed(
           operation.cwd,
           operation.path,

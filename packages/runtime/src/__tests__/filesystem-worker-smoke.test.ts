@@ -18,6 +18,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, realpath, rm, utimes, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -338,6 +339,79 @@ describe('macOS filesystem worker smoke', { skip: process.platform !== 'darwin' 
       expectedIdentity: 'unchecked',
     });
     assert.equal(await readFile(configPath, 'utf8'), '[user]\n\tname = t\n');
+  });
+
+  test('apply_patch create into missing directories asks for the topmost one, like Write', async () => {
+    // The nearest existing ancestor is `outside`, which the session cannot
+    // write; the grant to ask for is the first missing directory below it,
+    // and until it is approved nothing is created and no worker is launched.
+    const target = join(outside, 'patched', 'deeper', 'file.txt');
+    const manual = {
+      kind: 'managed' as const,
+      revision: 0,
+      profile: createWorkspaceWritePermissionProfile(),
+    };
+    await assert.rejects(
+      client.execute({
+        operation: { kind: 'apply_patch', path: target, action: 'create', diff: '+patched\n' },
+        cwd: workspace,
+        mode: 'ask',
+        executionBoundary: manual,
+        expectedIdentity: 'missing',
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof FilesystemWorkerClientError);
+        assert.equal(error.reason, 'sandbox_boundary_required');
+        assert.deepEqual(error.requiredExpansion, {
+          filesystem: {
+            entries: [{ path: join(outside, 'patched'), access: 'write', scope: 'subtree' }],
+          },
+        });
+        return true;
+      },
+    );
+    assert.equal(existsSync(join(outside, 'patched')), false);
+    const granted = {
+      ...manual,
+      revision: 1,
+      profile: applySandboxBoundaryExpansion(manual.profile, {
+        filesystem: {
+          entries: [{ path: join(outside, 'patched'), access: 'write', scope: 'subtree' }],
+        },
+      }),
+    };
+    await client.execute({
+      operation: { kind: 'apply_patch', path: target, action: 'create', diff: '+patched\n' },
+      cwd: workspace,
+      mode: 'ask',
+      executionBoundary: granted,
+      expectedIdentity: 'missing',
+    });
+    assert.equal(await readFile(target, 'utf8'), 'patched');
+  });
+
+  test('apply_patch delete of a missing file says so instead of asking for access', async () => {
+    const target = join(outside, 'gone', 'file.txt');
+    await assert.rejects(
+      client.execute({
+        operation: { kind: 'apply_patch', path: target, action: 'delete' },
+        cwd: workspace,
+        mode: 'ask',
+        executionBoundary: {
+          kind: 'managed',
+          revision: 0,
+          profile: createWorkspaceWritePermissionProfile(),
+        },
+        expectedIdentity: 'missing',
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof FilesystemWorkerClientError);
+        assert.equal(error.reason, 'invalid_operation');
+        assert.match(error.message, /^File does not exist\./);
+        return true;
+      },
+    );
+    assert.equal(existsSync(join(outside, 'gone')), false);
   });
 
   test('Edit of a missing file says so instead of asking for access', async () => {

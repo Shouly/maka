@@ -298,12 +298,16 @@ export class FilesystemWorkerClient {
     ).catch(() => {
       throw clientError('invalid_operation', 'validation', requestId);
     });
-    // Write creates missing parent directories, and a grant for the file alone
-    // lets the worker create nothing above it. It is granted the nearest
-    // existing directory to create them in instead — when the session may
-    // write there, which is checked below.
+    // Write and apply_patch create make missing parent directories, and a
+    // grant for the file alone lets the worker create nothing above it. They
+    // are granted the nearest existing directory to create them in instead —
+    // when the session may write there, which is checked below.
     const creationAncestor =
-      !entryMode && parsedOperation.data.kind === 'write' && resolvedTarget.targetType === 'missing'
+      (parsedOperation.data.kind === 'write' ||
+        (parsedOperation.data.kind === 'apply_patch' &&
+          parsedOperation.data.action === 'create')) &&
+      resolvedTarget.targetType === 'missing' &&
+      resolvedTarget.writableAncestor === undefined
         ? await nearestExistingAncestorOfMissingParent(resolvedTarget.enforcementPath)
         : undefined;
     const target: Omit<FilesystemWorkerTarget, 'identity'> & { writableAncestor?: string } =
@@ -366,11 +370,14 @@ export class FilesystemWorkerClient {
       ...(platform === 'win32' ? {} : { slashTmp: await canonicalPath('/tmp') }),
       ...(runtimeWritableRoots ? { runtimeWritableRoots } : {}),
     };
-    // Edit checks that the file exists before anything asks for access: a
-    // grant for a file that is not there would unblock nothing. Only where the
-    // session may read, so the answer tells it nothing new.
+    // Edit and apply_patch delete check that the file exists before anything
+    // asks for access: a grant for a file that is not there would unblock
+    // nothing. Only where the session may read, so the answer tells it nothing
+    // new.
     if (
-      parsedOperation.data.kind === 'edit' &&
+      (parsedOperation.data.kind === 'edit' ||
+        (parsedOperation.data.kind === 'apply_patch' &&
+          parsedOperation.data.action === 'delete')) &&
       target.targetType === 'missing' &&
       canReadPath(effectiveProfile, target.enforcementPath, pathContext)
     ) {
@@ -828,12 +835,16 @@ async function normalizeDirectoryEntryTarget(input: {
     if (code !== 'ENOENT' && code !== 'ENOTDIR') throw error;
     targetType = 'missing';
   }
+  // Creating or deleting an entry writes its directory (a delete goes through
+  // a sibling tombstone), so the parent is the grant when it exists. Missing
+  // parents are the caller's to decide on, as for Write.
+  const parent = dirname(target.path);
   return {
     enforcementPath: target.path,
     access: input.access,
     scope: 'exact',
     targetType,
-    writableAncestor: target.existingAncestor,
+    ...(target.existingAncestor === parent ? { writableAncestor: parent } : {}),
   };
 }
 
