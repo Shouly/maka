@@ -309,7 +309,7 @@ describe('buildSeatbeltPolicy', () => {
         fileSystem: {
           kind: 'restricted',
           entries: [
-            { kind: 'path', access: 'write', path: linkedTarget, match: 'subtree' },
+            { kind: 'path', access: 'write', path: realTarget, match: 'subtree' },
             {
               kind: 'path',
               access: 'deny',
@@ -321,13 +321,64 @@ describe('buildSeatbeltPolicy', () => {
         network: { kind: 'restricted' },
       };
       const result = buildSeatbeltPolicy({ profile, pathContext: { workspaceRoots: ['/repo'] } });
-      const canonicalTarget = realpathSync(linkedTarget);
+      const canonicalTarget = realpathSync(realTarget);
 
       assert.ok(result.definitionArgs.includes(`-DWRITABLE_ROOT_0=${canonicalTarget}`));
       assert.ok(
         result.policy.includes(`(require-not (literal "${join(canonicalTarget, 'blocked.txt')}"))`),
       );
       assert.ok(!result.policy.includes(`(literal "${join(linkedTarget, 'blocked.txt')}")`));
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a writable root that resolves through a symlink below the system directory', () => {
+    const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'maka-seatbelt-linked-root-')));
+    const realTarget = join(scratch, 'real');
+    const linkedRoot = join(scratch, 'root');
+    mkdirSync(realTarget);
+    symlinkSync(realTarget, linkedRoot);
+
+    try {
+      const granted: PermissionProfile = {
+        type: 'managed',
+        name: 'custom',
+        fileSystem: {
+          kind: 'restricted',
+          entries: [{ kind: 'path', access: 'write', path: linkedRoot, match: 'subtree' }],
+        },
+        network: { kind: 'restricted' },
+      };
+      assert.throws(
+        () => buildSeatbeltPolicy({ profile: granted, pathContext: { workspaceRoots: ['/repo'] } }),
+        /resolves to .* not to itself/,
+      );
+      // The same root as the workspace, and as a read root, where following is fine.
+      assert.throws(
+        () =>
+          buildSeatbeltPolicy({
+            profile: workspaceWriteProfile(),
+            pathContext: { workspaceRoots: [linkedRoot] },
+          }),
+        /resolves to .* not to itself/,
+      );
+      const readOnly = buildSeatbeltPolicy({
+        profile: workspaceReadProfile(),
+        pathContext: { workspaceRoots: [linkedRoot] },
+      });
+      assert.ok(readOnly.definitionArgs.includes(`-DREADABLE_ROOT_0=${realTarget}`));
+      // The system aliases under /private are the one level a writable root
+      // may pass through.
+      const viaSlashTmp = buildSeatbeltPolicy({
+        profile: workspaceWriteProfile(),
+        pathContext: { workspaceRoots: ['/repo'], slashTmp: '/tmp', tmpdir: tmpdir() },
+      });
+      const writableRoots = viaSlashTmp.definitionArgs
+        .filter((arg) => arg.startsWith('-DWRITABLE_ROOT_'))
+        .map((arg) => arg.slice(arg.indexOf('=') + 1));
+      assert.ok(writableRoots.includes(realpathSync('/tmp')));
+      assert.ok(writableRoots.includes(realpathSync(tmpdir())));
     } finally {
       rmSync(scratch, { recursive: true, force: true });
     }

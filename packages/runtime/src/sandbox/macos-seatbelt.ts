@@ -369,6 +369,7 @@ function resolveRoots(profile: PermissionProfile, pathContext: SandboxPathContex
       addUniqueResolvedRoots(readableRoots, roots);
     }
     if (entry.access === 'write') {
+      for (const root of roots) assertRealWritableRoot(root);
       addUniqueResolvedRoots(writableRoots, roots);
       if (entry.kind === 'special' && entry.special === ':workspace_roots') {
         addUniqueRoots(
@@ -398,28 +399,56 @@ function resolveRoots(profile: PermissionProfile, pathContext: SandboxPathContex
   };
 }
 
+interface EntryRoot extends ResolvedRoot {
+  /** The path as the profile or path context named it, before canonicalization. */
+  source: string;
+}
+
 function rootsForEntry(
   entry: PermissionProfileManagedEntry,
   pathContext: SandboxPathContext,
-): readonly ResolvedRoot[] {
-  if (entry.kind === 'path') {
-    return [{ path: resolveRootPath(entry.path), match: entry.match ?? 'subtree' }];
-  }
+): readonly EntryRoot[] {
+  const root = (source: string, match: 'exact' | 'subtree'): EntryRoot => ({
+    path: resolveRootPath(source),
+    match,
+    source,
+  });
+  if (entry.kind === 'path') return [root(entry.path, entry.match ?? 'subtree')];
 
   switch (entry.special) {
     case ':root':
-      return [{ path: resolveRootPath('/'), match: 'subtree' }];
+      return [root('/', 'subtree')];
     case ':workspace_roots':
-      return pathContext.workspaceRoots.map((path) => ({
-        path: resolveRootPath(path),
-        match: 'subtree' as const,
-      }));
+      return pathContext.workspaceRoots.map((path) => root(path, 'subtree'));
     case ':tmpdir':
-      return pathContext.tmpdir
-        ? [{ path: resolveRootPath(pathContext.tmpdir), match: 'subtree' }]
-        : [];
+      return pathContext.tmpdir ? [root(pathContext.tmpdir, 'subtree')] : [];
     case ':slash_tmp':
-      return [{ path: resolveRootPath(pathContext.slashTmp ?? '/tmp'), match: 'subtree' }];
+      return [root(pathContext.slashTmp ?? '/tmp', 'subtree')];
+  }
+}
+
+/**
+ * A writable root is re-resolved on every launch, and Seatbelt grants whatever
+ * the canonical path names then. So a writable root may pass through a symlink
+ * only at the top-level system directory (`/tmp`, `/var`, `/etc` live under
+ * `/private`); a link anywhere deeper would move the grant to wherever the
+ * link points, and the policy is not built.
+ */
+function assertRealWritableRoot(root: EntryRoot): void {
+  const lexical = resolve(root.source);
+  const [, head = '', ...rest] = lexical.split('/');
+  let expected = lexical;
+  if (head) {
+    try {
+      expected = resolve(realpathSync(`/${head}`), ...rest);
+    } catch {
+      expected = lexical;
+    }
+  }
+  if (root.path !== expected) {
+    throw new Error(
+      `Writable root ${JSON.stringify(root.source)} resolves to ${JSON.stringify(root.path)}, not to itself; a writable root must be a real directory named by its own path, so the sandbox policy was not built.`,
+    );
   }
 }
 
