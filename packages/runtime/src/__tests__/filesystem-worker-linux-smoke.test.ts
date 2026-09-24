@@ -124,7 +124,7 @@ describe('Linux filesystem worker smoke', { skip }, () => {
       mode: 'ask',
       expectedIdentity: 'unchecked',
     });
-    assert.deepEqual(glob, { kind: 'glob', files: ['health.ts'] });
+    assert.deepEqual(glob, { kind: 'glob', files: ['health.ts'], total: 1 });
 
     const grep = await client.execute({
       operation: {

@@ -19,7 +19,6 @@
 
 import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
-import { glob as nodeGlob } from 'node:fs/promises';
 import { dirname, isAbsolute, parse, resolve } from 'node:path';
 import { isPathInside } from '../path-containment.js';
 import { sandboxPathApi } from './sandbox-paths.js';
@@ -45,8 +44,12 @@ import { isSupportedImagePath, readWorkspaceImage } from '../image-file.js';
 import {
   applyGrepHeadLimit,
   buildRipgrepArgs,
-  GLOB_SCAN_CAP,
-  orderGlobMatchesByRecency,
+  GLOB_RESULT_LIMIT,
+  GLOB_TIMEOUT_MESSAGE,
+  nodeGlob,
+  orderGrepFilesNewestFirst,
+  ripgrepAnswered,
+  ripgrepGlob,
 } from '../search-plan.js';
 import {
   FILESYSTEM_WORKER_PROTOCOL_VERSION,
@@ -68,7 +71,6 @@ import { isLikelySandboxDenial } from '../sandbox/detect.js';
 // realpath is denied. See sandbox-paths.ts.
 const { realpath, realpathAllowMissing, resolveCanonicalDirectoryEntryTarget } = sandboxPathApi();
 
-const DEFAULT_GLOB_LIMIT = 200;
 const MAX_GREP_OUTPUT_BYTES = 8 * 1024 * 1024;
 const MAX_GREP_STDERR_BYTES = 16 * 1024;
 
@@ -392,7 +394,6 @@ export async function executeFilesystemOperation(
       }
     }
     case 'glob': {
-      assertContainedGlobPattern(operation.pattern);
       const path = await resolveExistingAllowed(
         operation.cwd,
         operation.path,
@@ -400,21 +401,32 @@ export async function executeFilesystemOperation(
         'read',
         operationBoundary,
       );
-      const limit = operation.limit ?? DEFAULT_GLOB_LIMIT;
-      const scanned: string[] = [];
-      const scanCap = Math.max(limit, GLOB_SCAN_CAP);
-      for await (const file of nodeGlob(operation.pattern, { cwd: path })) {
-        scanned.push(typeof file === 'string' ? file : (file as { name: string }).name);
-        if (scanned.length >= scanCap) break;
-      }
-      // Newest-first is a property of the whole match set, so the walk
-      // over-collects and the order is decided here, not by directory order.
-      const ordered = await orderGlobMatchesByRecency(path, scanned, limit);
-      return {
-        kind: 'glob',
-        files: ordered.files,
-        ...(ordered.truncated ? { truncated: true } : {}),
+      const search = {
+        root: path,
+        pattern: operation.pattern,
+        limit: operation.limit ?? GLOB_RESULT_LIMIT,
       };
+      // The Windows sandbox preview cannot start ripgrep (see Grep below).
+      if (dependencies.windowsSandboxed || !dependencies.grepExecutable)
+        return { kind: 'glob', ...(await nodeGlob(search)) };
+      const outcome = await ripgrepGlob({ executable: dependencies.grepExecutable, ...search });
+      const sandboxDenied = isLikelySandboxDenial({
+        stdout: '',
+        stderr: outcome.stderr,
+        sandboxed: true,
+      });
+      // As in Grep, a denial with nothing listed stays an error, so the
+      // model learns a wider boundary is needed.
+      if (outcome.ok && !(sandboxDenied && outcome.total === 0))
+        return { kind: 'glob', files: outcome.files, total: outcome.total };
+      if (!outcome.ok && outcome.reason === 'timeout')
+        throw operationError('filesystem_error', GLOB_TIMEOUT_MESSAGE);
+      throw operationError(
+        sandboxDenied ? 'sandbox_denied' : 'filesystem_error',
+        outcome.stderr
+          ? `Glob failed while listing files.\n${outcome.stderr}`
+          : 'Glob failed while listing files.',
+      );
     }
     case 'grep': {
       const path = await resolveExistingAllowed(
@@ -464,19 +476,31 @@ export async function executeFilesystemOperation(
         cwd: parse(path).root,
         timeoutMs: operation.timeoutMs,
       });
-      if (result.exitCode === 1) return { kind: 'grep', matches: [], mode };
-      if (result.exitCode !== 0) {
-        const detail = result.stderrTail.trim();
+      const detail = result.stderrTail.trim();
+      const sandboxDenied = isLikelySandboxDenial({
+        stdout: result.stdout,
+        stderr: detail,
+        sandboxed: true,
+      });
+      // A denial with nothing printed stays an error, unlike Claude's Grep:
+      // the model can only ask for a wider boundary if it learns of one.
+      const deniedOutright = sandboxDenied && result.stdout.trim() === '';
+      if (
+        deniedOutright ||
+        !ripgrepAnswered(result.exitCode, result.stdout.trim() !== '', detail)
+      ) {
         throw operationError(
-          isLikelySandboxDenial({ stdout: result.stdout, stderr: detail, sandboxed: true })
-            ? 'sandbox_denied'
-            : 'filesystem_error',
+          sandboxDenied ? 'sandbox_denied' : 'filesystem_error',
           detail
             ? `Grep failed while searching files.\n${detail}`
             : 'Grep failed while searching files.',
         );
       }
-      const limited = applyGrepHeadLimit(result.stdout, operation.limit, operation.offset);
+      const stdout =
+        mode === 'files_with_matches'
+          ? await orderGrepFilesNewestFirst(result.stdout)
+          : result.stdout;
+      const limited = applyGrepHeadLimit(stdout, operation.limit, operation.offset);
       return {
         kind: 'grep',
         matches: limited.matches,
@@ -725,12 +749,6 @@ function exactWriteCoversParent(
         dirname(entry.path) === parent,
     ) ?? false
   );
-}
-
-function assertContainedGlobPattern(pattern: string): void {
-  if (isAbsolute(pattern) || pattern.split(/[\\/]+/).includes('..')) {
-    throw operationError('path_denied', 'Glob pattern must stay inside its search root.');
-  }
 }
 
 async function targetTypeOf(path: string): Promise<FilesystemWorkerTarget['targetType']> {

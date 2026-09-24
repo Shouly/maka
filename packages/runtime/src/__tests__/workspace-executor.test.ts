@@ -19,7 +19,7 @@
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, truncate, utimes, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, truncate, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalWorkspaceExecutor } from '../workspace-executor.js';
@@ -222,7 +222,7 @@ describe('LocalWorkspaceExecutor file operations', () => {
     assert.partialDeepStrictEqual(readResult, { content: 'line2\nline3' });
   });
 
-  test('keeps the newest matches, lists them oldest-first, and reports the cap it hit', async () => {
+  test('lists the oldest matches first, relative to the root, and counts the rest', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'maka-workspace-glob-'));
     await mkdir(join(cwd, 'src'), { recursive: true });
     await writeFile(join(cwd, 'src', 'a.ts'), 'a', 'utf8');
@@ -235,19 +235,16 @@ describe('LocalWorkspaceExecutor file operations', () => {
     await utimes(join(cwd, 'src', 'c.js'), new Date(2000), new Date(2000));
     const executor = new LocalWorkspaceExecutor();
 
-    // The cap keeps the newest matches; the printed order puts the newest last,
-    // and every path is absolute.
+    // Claude's Glob keeps the oldest when it caps, so the newest is what a
+    // capped list leaves out.
     const capped = await executor.globFiles({ cwd, pattern: 'src/*.*', limit: 2 });
-    assert.deepStrictEqual(capped.files, [join(cwd, 'src', 'c.js'), join(cwd, 'src', 'a.ts')]);
-    assert.equal(capped.truncated, true);
+    assert.deepStrictEqual(capped, { files: [join('src', 'b.ts'), join('src', 'c.js')], total: 3 });
 
     const whole = await executor.globFiles({ cwd, pattern: 'src/*.*', limit: 10 });
-    assert.deepStrictEqual(whole.files, [
-      join(cwd, 'src', 'b.ts'),
-      join(cwd, 'src', 'c.js'),
-      join(cwd, 'src', 'a.ts'),
-    ]);
-    assert.equal(whole.truncated, undefined);
+    assert.deepStrictEqual(whole, {
+      files: [join('src', 'b.ts'), join('src', 'c.js'), join('src', 'a.ts')],
+      total: 3,
+    });
   });
 
   test('greps file contents with rg-compatible no-match behavior', async () => {
@@ -288,5 +285,32 @@ describe('LocalWorkspaceExecutor file operations', () => {
     assert.deepStrictEqual(optionLikePattern.matches, [
       `${join(cwd, 'src', 'main.ts')}:1:export const token = 1; // --flag`,
     ]);
+  });
+
+  test('keeps the matches when a directory under the root cannot be read', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'maka-workspace-grep-locked-'));
+    await mkdir(join(cwd, 'locked'));
+    await writeFile(join(cwd, 'open.md'), 'TODO: open\n', 'utf8');
+    await writeFile(join(cwd, 'locked', 'hidden.md'), 'TODO: hidden\n', 'utf8');
+    await chmod(join(cwd, 'locked'), 0o000);
+    const executor = new LocalWorkspaceExecutor();
+    const grep = (pattern: string) =>
+      executor.grepFiles({
+        cwd,
+        pattern,
+        path: cwd,
+        maxCountPerFile: 50,
+        limit: 200,
+        timeoutMs: 5_000,
+      });
+    try {
+      assert.deepStrictEqual((await grep('TODO')).matches, [
+        `${join(cwd, 'open.md')}:1:TODO: open`,
+      ]);
+      assert.deepStrictEqual((await grep('absent')).matches, []);
+      await assert.rejects(grep('('), /regex parse error/);
+    } finally {
+      await chmod(join(cwd, 'locked'), 0o700);
+    }
   });
 });

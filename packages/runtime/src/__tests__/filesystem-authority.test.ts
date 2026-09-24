@@ -201,16 +201,17 @@ describe('file tools follow the execution boundary', () => {
     }
   });
 
-  test('a glob pattern may only leave the search root under a bypass boundary', async () => {
+  test('an absolute glob pattern reaches outside the session cwd only under a bypass boundary', async () => {
     const { cwd, outside, cleanup } = await makeDirs();
     try {
       const tools = toolsFor();
       await writeFile(join(outside, 'note.md'), '', 'utf8');
       const absolute = join(outside, '*.md');
 
+      // The pattern's literal head is its search root, judged like any path.
       await assert.rejects(
         runTool(toolNamed(tools, 'Glob'), { pattern: absolute }, cwd),
-        /Glob pattern must stay inside session cwd/,
+        /Glob path must stay inside session cwd/,
       );
       const globbed = (await runTool(
         toolNamed(tools, 'Glob'),
@@ -394,7 +395,7 @@ describe('file tools follow the execution boundary', () => {
     }
   });
 
-  test('Glob lists matches newest-modified LAST and says when it capped the list', async () => {
+  test('Glob lists matches oldest first, relative to the session cwd', async () => {
     const { cwd, cleanup } = await makeDirs();
     try {
       const tools = toolsFor();
@@ -418,10 +419,7 @@ describe('file tools follow the execution boundary', () => {
 
       const rendered = tool.toModelOutput?.({ toolCallId: 't', input: {}, output: result });
       assert.equal(rendered?.type, 'text');
-      assert.equal(
-        rendered?.type === 'text' ? rendered.value : '',
-        `${join(canonicalCwd, 'older.md')}\n${join(canonicalCwd, 'newer.md')}`,
-      );
+      assert.equal(rendered?.type === 'text' ? rendered.value : '', 'older.md\nnewer.md');
 
       const empty = (await runTool(tool, { pattern: '*.nope' }, cwd, BYPASS)) as {
         files: string[];

@@ -216,31 +216,36 @@ export class FilesystemWorkerClient {
     });
     if (!parsedOperation.success) throw clientError('invalid_operation', 'validation', requestId);
 
-    // A search root that is missing or is a file fails the subtree
-    // normalisation below with one undifferentiated error; name the actual
-    // problem, in the wording Claude's Glob uses, before it gets there. Any
-    // other stat failure is left to that normalisation.
-    if (parsedOperation.data.kind === 'glob') {
+    // The subtree normalisation below fails every unusable search root with
+    // one undifferentiated error; name the actual problem first, as Claude's
+    // Glob and Grep do: their own sentence for a missing root, Glob's for a
+    // file, and the filesystem's own message for anything else (EACCES,
+    // ELOOP, ...).
+    const searchKind = parsedOperation.data.kind;
+    if (searchKind === 'glob' || searchKind === 'grep') {
       const shown = resolve(input.cwd, parsedOperation.data.path);
-      const stats = await stat(resolve(canonicalCwd, parsedOperation.data.path)).catch(
-        (error: NodeJS.ErrnoException) =>
-          error.code === 'ENOENT' || error.code === 'ENOTDIR' ? 'missing' : undefined,
-      );
-      if (stats === 'missing') {
+      const stats = await stat(shown).catch((error: NodeJS.ErrnoException) => error);
+      if (stats instanceof Error && (stats.code === 'ENOENT' || stats.code === 'ENOTDIR')) {
         throw clientError(
           'invalid_operation',
           'validation',
           requestId,
-          `Directory does not exist: ${shown}. Note: your current working directory is ${input.cwd}.`,
+          `${searchKind === 'glob' ? 'Directory' : 'Path'} does not exist: ${shown}. Note: your current working directory is ${input.cwd}.`,
         );
       }
-      if (stats && !stats.isDirectory()) {
-        throw clientError(
-          'invalid_operation',
-          'validation',
-          requestId,
-          `Path is not a directory: ${shown}`,
-        );
+      // Grep searches a file as readily as a directory, and any other failure
+      // is the search's to report.
+      if (searchKind === 'glob') {
+        if (stats instanceof Error)
+          throw clientError('invalid_operation', 'validation', requestId, stats.message);
+        if (!stats.isDirectory()) {
+          throw clientError(
+            'invalid_operation',
+            'validation',
+            requestId,
+            `Path is not a directory: ${shown}`,
+          );
+        }
       }
     }
 

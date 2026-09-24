@@ -29,6 +29,7 @@ import {
   realpath,
   rm,
   symlink,
+  utimes,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -2207,9 +2208,16 @@ describe('builtin read tools path containment', () => {
     const glob = tool('Glob');
     const grep = tool('Grep');
 
+    // A pattern cannot climb out of its root; it just matches nothing there.
+    const climbed = await runTool(glob, { pattern: '../*.txt' }, root);
+    assert.deepStrictEqual(
+      glob.toModelOutput?.({ toolCallId: 'tool-1', input: {}, output: climbed }),
+      { type: 'text', value: 'No files found' },
+    );
+    // An absolute pattern names its own root, which the scope then judges.
     await expectRejects(
-      runTool(glob, { pattern: '../*.txt' }, root),
-      /Glob pattern must stay inside/,
+      runTool(glob, { pattern: join(outside, '*.txt') }, root),
+      /Glob path must stay inside/,
     );
     await expectRejects(
       runTool(glob, { pattern: '*.txt', path: 'outside-link' }, root),
@@ -2228,14 +2236,14 @@ describe('builtin read tools path containment', () => {
       /Grep path must stay inside/,
     );
 
-    const canonicalRoot = await realpath(root);
+    // Spelled as the root was given, not as the filesystem resolves it.
     const globResult = await runTool(glob, { pattern: '**/*.ts' }, root);
     assert.deepStrictEqual((globResult as { files: string[] }).files, [
-      join(canonicalRoot, 'src', 'main.ts'),
+      join(root, 'src', 'main.ts'),
     ]);
     const absoluteGlobResult = await runTool(glob, { pattern: '**/*.ts', path: root }, root);
     assert.deepStrictEqual((absoluteGlobResult as { files: string[] }).files, [
-      join(canonicalRoot, 'src', 'main.ts'),
+      join(root, 'src', 'main.ts'),
     ]);
     const grepResult = await runTool(grep, { pattern: 'token', path: 'src' }, root);
     assert.strictEqual(JSON.stringify(grepResult).includes('main.ts'), true);
@@ -2426,11 +2434,11 @@ describe('builtin write tools path containment', () => {
       'inside edited\n',
     );
     const scopedGlobResult = await runTool(glob, { pattern: '*.txt', path: join(cwd, 'src') }, cwd);
-    // Absolute paths, most recently modified last; the two files were touched
-    // microseconds apart, so only the membership is deterministic here.
+    // Spelled through the link the root was given by; the two files were
+    // touched microseconds apart, so only the membership is deterministic.
     assert.deepStrictEqual(
       [...(scopedGlobResult as { files: string[] }).files].sort(),
-      [join(workspace, 'src', 'inside.txt'), join(workspace, 'src', 'written.txt')].sort(),
+      [join(cwd, 'src', 'inside.txt'), join(cwd, 'src', 'written.txt')].sort(),
     );
     const grepResult = await runTool(grep, { pattern: 'edited', path: join(cwd, 'src') }, cwd);
     assert.strictEqual(JSON.stringify(grepResult).includes('inside.txt'), true);
@@ -2770,7 +2778,7 @@ function fakeExecutor(overrides: Partial<WorkspaceExecutor>): WorkspaceExecutor 
     resolveExistingPath: async ({ path }) => ({ path }),
     resolveWritablePath: async ({ path }) => ({ path }),
     writeLockKey: async ({ cwd, path }) => ({ key: `${cwd}:${path}` }),
-    globFiles: async () => ({ files: [] }),
+    globFiles: async () => ({ files: [], total: 0 }),
     grepFiles: async () => ({ matches: [] }),
   };
   return Object.assign(base, overrides);
@@ -2921,7 +2929,7 @@ describe('builtin file tools speak the reference argument names', () => {
     assert.strictEqual(await readFile(join(root, 'data.txt'), 'utf8'), 'y\ny\ny\n');
   });
 
-  test('Glob answers with absolute paths, most recently modified last', async () => {
+  test('Glob answers oldest first, relative to the session cwd', async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), 'maka-glob-order-')));
     for (const name of ['first.ts', 'second.ts', 'third.ts']) {
       await writeFile(join(root, name), '// file\n', 'utf8');
@@ -2936,7 +2944,10 @@ describe('builtin file tools speak the reference argument names', () => {
       join(root, 'second.ts'),
       join(root, 'third.ts'),
     ]);
-    assert.strictEqual(modelText(glob, { pattern: '*.ts' }, result), result.files.join('\n'));
+    assert.strictEqual(
+      modelText(glob, { pattern: '*.ts' }, result),
+      'first.ts\nsecond.ts\nthird.ts',
+    );
     assert.strictEqual(
       modelText(glob, { pattern: '*.md' }, await runTool(glob, { pattern: '*.md' }, root)),
       'No files found',
@@ -2959,6 +2970,47 @@ describe('builtin file tools speak the reference argument names', () => {
     });
     await assert.rejects(runTool(glob, { pattern: '*', path: 'a.ts' }, root), {
       message: `Path is not a directory: ${join(root, 'a.ts')}`,
+    });
+  });
+
+  test('a leading ~ is the home directory, not a folder under the cwd', async () => {
+    const home = await realpath(await mkdtemp(join(tmpdir(), 'maka-tilde-home-')));
+    const savedHome = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      const built = toolset();
+      await runTool(built.Write!, { file_path: '~/notes/a.txt', content: 'hi\n' }, home);
+      assert.strictEqual(await readFile(join(home, 'notes/a.txt'), 'utf8'), 'hi\n');
+      await assert.rejects(access(join(home, '~')), { code: 'ENOENT' });
+
+      assert.deepStrictEqual(await runTool(built.Read!, { file_path: '~/notes/a.txt' }, home), {
+        content: 'hi\n',
+      });
+      await runTool(
+        built.Edit!,
+        { file_path: '~/notes/a.txt', old_string: 'hi', new_string: 'hello' },
+        home,
+      );
+      assert.strictEqual(await readFile(join(home, 'notes/a.txt'), 'utf8'), 'hello\n');
+
+      const globbed = (await runTool(built.Glob!, { pattern: '*.txt', path: '~/notes' }, home)) as {
+        files: string[];
+      };
+      assert.deepStrictEqual(globbed.files, [join(home, 'notes/a.txt')]);
+      const grepped = (await runTool(built.Grep!, { pattern: 'hello', path: '~/notes' }, home)) as {
+        matches: string[];
+      };
+      assert.deepStrictEqual(grepped.matches, [join(home, 'notes/a.txt')]);
+    } finally {
+      if (savedHome === undefined) delete process.env.HOME;
+      else process.env.HOME = savedHome;
+    }
+  });
+
+  test('Grep names a missing search root the way Claude does', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'maka-grep-root-')));
+    await assert.rejects(runTool(tool('Grep'), { pattern: 'x', path: 'nope' }, root), {
+      message: `Path does not exist: ${join(root, 'nope')}. Note: your current working directory is ${root}.`,
     });
   });
 
@@ -3055,10 +3107,7 @@ describe('builtin file tools speak the reference argument names', () => {
       `${join(root, 's.py')}:4:def bar`,
     ]);
     const files = await runTool(grep, { pattern: 'def' }, root);
-    assert.strictEqual(
-      modelText(grep, { pattern: 'def' }, files),
-      `Found 1 file\n${join(root, 's.py')}`,
-    );
+    assert.strictEqual(modelText(grep, { pattern: 'def' }, files), 'Found 1 file\ns.py');
     const paged = await runTool(
       grep,
       { pattern: 'return', output_mode: 'content', head_limit: 1 },
@@ -3155,6 +3204,42 @@ describe('builtin file tools speak the reference argument names', () => {
     )) as { matches: string[]; truncated?: boolean };
     assert.deepStrictEqual(paged.matches, [`${join(root, 'a.ts')}-3-after`]);
     assert.strictEqual(paged.truncated, undefined);
+  });
+
+  test('Grep spells paths as its root was written, relative to the cwd, newest file first', async () => {
+    // Not realpath'd: on macOS the tmpdir is /var/..., which the search
+    // resolves to /private/var/..., and the answer keeps the written form.
+    const root = await mkdtemp(join(tmpdir(), 'maka-grep-spelling-'));
+    await writeFile(join(root, 'first.md'), 'TODO first\n', 'utf8');
+    await writeFile(join(root, 'url.txt'), 'see http://example.com/./a\n', 'utf8');
+    await writeFile(join(root, 'second.md'), 'TODO second\n', 'utf8');
+    await utimes(join(root, 'first.md'), new Date(1_000), new Date(1_000));
+    await utimes(join(root, 'second.md'), new Date(2_000), new Date(2_000));
+    const grep = tool('Grep');
+
+    const files = (await runTool(grep, { pattern: 'TODO' }, root)) as { matches: string[] };
+    assert.deepStrictEqual(files.matches, [join(root, 'second.md'), join(root, 'first.md')]);
+    assert.strictEqual(
+      modelText(grep, { pattern: 'TODO' }, files),
+      'Found 2 files\nsecond.md\nfirst.md',
+    );
+
+    const lines = (await runTool(
+      grep,
+      { pattern: 'TODO first', path: 'first.md', output_mode: 'content' },
+      root,
+    )) as { matches: string[] };
+    assert.deepStrictEqual(lines.matches, [`${join(root, 'first.md')}:1:TODO first`]);
+    assert.strictEqual(
+      modelText(grep, { pattern: 'TODO first', output_mode: 'content' }, lines),
+      'first.md:1:TODO first',
+    );
+
+    // Only the path is respelled; the matched text is left exactly as found.
+    const url = (await runTool(grep, { pattern: 'http', output_mode: 'content' }, root)) as {
+      matches: string[];
+    };
+    assert.deepStrictEqual(url.matches, [`${join(root, 'url.txt')}:1:see http://example.com/./a`]);
   });
 
   test('Grep count mode rolls the per-file counts into a total', async () => {

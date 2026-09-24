@@ -587,7 +587,7 @@ function fakeResult(request: FilesystemWorkerRequest): FilesystemWorkerResult {
     case 'grep':
       return { kind: 'grep', matches: ['file.ts:1:value'] };
     case 'glob':
-      return { kind: 'glob', files: [] };
+      return { kind: 'glob', files: [], total: 0 };
     default:
       throw new Error(`Unexpected fake worker operation: ${request.operation.kind}`);
   }
@@ -615,7 +615,7 @@ function hasArgTriple(
   );
 }
 
-describe('filesystem worker client Glob roots', () => {
+describe('filesystem worker client search roots', () => {
   // The subtree normalisation fails a missing root and a file root with one
   // shared error, which used to reach the model as "invalid_operation". The
   // client now names each before any worker is launched.
@@ -625,7 +625,7 @@ describe('filesystem worker client Glob roots', () => {
       platform: 'darwin',
       newId: () => 'request-1',
       getLaunchSpec: async () => {
-        throw new Error('a bad Glob root must be refused before launch');
+        throw new Error('a bad search root must be refused before launch');
       },
     });
   }
@@ -651,7 +651,29 @@ describe('filesystem worker client Glob roots', () => {
     );
   });
 
-  test('does not call a root it cannot stat missing', async () => {
+  test('names a missing Grep root in the wording of Claude Grep', async () => {
+    const cwd = await temporaryDirectory('maka-worker-grep-root-');
+    await assert.rejects(
+      clientThatMustNotLaunch().execute({
+        operation: {
+          kind: 'grep',
+          path: 'nope',
+          pattern: 'x',
+          outputMode: 'files_with_matches',
+          maxCountPerFile: 1,
+          limit: 10,
+          timeoutMs: 1_000,
+        },
+        cwd,
+        mode: 'ask',
+      }),
+      {
+        message: `Path does not exist: ${join(cwd, 'nope')}. Note: your current working directory is ${cwd}.`,
+      },
+    );
+  });
+
+  test('answers a root it cannot stat with the filesystem message', async () => {
     const cwd = await temporaryDirectory('maka-worker-glob-locked-');
     const locked = join(cwd, 'locked');
     await mkdir(join(locked, 'inner'), { recursive: true });
@@ -663,10 +685,8 @@ describe('filesystem worker client Glob roots', () => {
           cwd,
           mode: 'ask',
         }),
-        (error: unknown) => {
-          assert.ok(error instanceof FilesystemWorkerClientError);
-          assert.doesNotMatch(error.message, /Directory does not exist/);
-          return true;
+        {
+          message: `EACCES: permission denied, stat '${join(locked, 'inner')}'`,
         },
       );
     } finally {

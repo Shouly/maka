@@ -18,7 +18,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, utimes, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
@@ -197,7 +197,16 @@ describe('macOS filesystem worker smoke', { skip: process.platform !== 'darwin' 
     // process cwd before it looks at anything.
     const searchRoot = join(outside, 'glob');
     await mkdir(searchRoot);
-    await writeFile(join(searchRoot, 'found.md'), 'found\n', 'utf8');
+    // Only ripgrep lists the dotfile and leaves out the upper-case name, so
+    // this also proves the sandboxed worker ran ripgrep, not the fallback.
+    for (const [name, time] of [
+      ['found.md', 1_000],
+      ['.hidden.md', 2_000],
+      ['UPPER.MD', 3_000],
+    ] as const) {
+      await writeFile(join(searchRoot, name), `${name}\n`, 'utf8');
+      await utimes(join(searchRoot, name), new Date(time), new Date(time));
+    }
 
     const result = await client.execute({
       operation: { kind: 'glob', path: searchRoot, pattern: '*.md' },
@@ -213,7 +222,7 @@ describe('macOS filesystem worker smoke', { skip: process.platform !== 'darwin' 
       expectedIdentity: 'unchecked',
     });
 
-    assert.deepEqual(result, { kind: 'glob', files: [join(searchRoot, 'found.md')] });
+    assert.deepEqual(result, { kind: 'glob', files: ['found.md', '.hidden.md'], total: 2 });
   });
 });
 

@@ -35,8 +35,8 @@ import {
   realpathSync,
   unlinkSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, resolve as resolvePath } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { basename, dirname, isAbsolute, join, resolve as resolvePath } from 'node:path';
 import { FileChangeTrackerRegistry, type SessionFileChangeTracker } from './file-change-tracker.js';
 import { compilePermissionProfile } from '@maka/core/permission-profile-compiler';
 import { parseAttachmentResourceRef } from '@maka/core/attachments';
@@ -50,7 +50,12 @@ import {
   grepToolResultToModelOutput,
   readToolResultToModelOutput,
 } from './file-tool-model-output.js';
-import { GREP_HARD_LINE_CAP } from './search-plan.js';
+import {
+  GLOB_RESULT_LIMIT,
+  GREP_HARD_LINE_CAP,
+  respellSearchLine,
+  splitAbsoluteGlobPattern,
+} from './search-plan.js';
 import { GREP_OUTPUT_MODES, type GrepOutputMode } from './filesystem-worker/protocol.js';
 import { openAiApplyPatchInputSchema } from './openai-apply-patch.js';
 import { parseCodexV4aPatch } from './codex-v4a-patch.js';
@@ -92,7 +97,6 @@ import { linuxExecutableRoots } from './sandbox/linux-sandbox.js';
 import { pinExistingLinuxProfilePath } from './sandbox/linux-profile-path.js';
 import type { SandboxPlatform, SandboxType } from './sandbox/types.js';
 import type { ChildFdInput } from './child-fd-input.js';
-import { normalizeSandboxBoundaryPath } from './sandbox-boundary-path.js';
 import type { FilesystemWorkerClient } from './filesystem-worker/client.js';
 import {
   BASH_REQUIRED_BOUNDARY_DESCRIPTION,
@@ -115,8 +119,6 @@ const DEFAULT_READ_LINE_LIMIT = 2_000;
 const DEFAULT_GREP_HEAD_LIMIT = 250;
 /** Matching lines ripgrep may report per file in `content` mode. */
 const GREP_MAX_COUNT_PER_FILE = 50;
-/** Paths one Glob call returns, after the recency ordering. */
-const GLOB_RESULT_LIMIT = 200;
 
 /**
  * The validated Grep arguments.
@@ -151,6 +153,18 @@ interface GrepToolInput {
  */
 function canonicalFilePath(cwd: string, path: string): string {
   return canonicalExistingPath(isAbsolute(path) ? path : resolvePath(cwd, path));
+}
+
+/**
+ * A path argument as Claude's file tools read it (`expandPath`): a leading `~`
+ * is the user's home. Models write `~/notes.md` the way people do, and taken
+ * literally it names a directory called `~` under the cwd — where a Write
+ * would quietly land.
+ */
+function expandHomePath(path: string): string {
+  if (path === '~') return homedir();
+  if (path.startsWith('~/')) return join(homedir(), path.slice(2));
+  return path;
 }
 
 /**
@@ -533,12 +547,13 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
           return await options.runtimeResources.readRuntimeResource(sessionId, ref, abortSignal);
         }
 
-        const { file_path: path } = input as { file_path?: string };
-        if (typeof path !== 'string' || path === '') {
+        const { file_path: requestedPath } = input as { file_path?: string };
+        if (typeof requestedPath !== 'string' || requestedPath === '') {
           throw new Error(
             'Read requires file_path (the file to read) or ref (a runtime resource).',
           );
         }
+        const path = expandHomePath(requestedPath);
         const { offset, limit } = input as { offset?: number; limit?: number };
         const runtimeRef = classifyRuntimeResourceRef(path);
         if (runtimeRef === 'unsupported')
@@ -609,9 +624,10 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
       }),
       executionFacts,
       impl: async (input, ctx) => {
-        const { file_path: path } = input as { file_path?: string };
-        if (typeof path !== 'string' || path === '')
+        const { file_path: requestedPath } = input as { file_path?: string };
+        if (typeof requestedPath !== 'string' || requestedPath === '')
           throw new Error('Write requires file_path (the file to write).');
+        const path = expandHomePath(requestedPath);
         const { content } = input as { content: string };
         const tracker = trackerFor(ctx.sessionId);
         const canonical = canonicalFilePath(ctx.cwd, path);
@@ -668,9 +684,10 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
       }),
       executionFacts,
       impl: async (input, ctx) => {
-        const { file_path: path } = input as { file_path?: string };
-        if (typeof path !== 'string' || path === '')
+        const { file_path: requestedPath } = input as { file_path?: string };
+        if (typeof requestedPath !== 'string' || requestedPath === '')
           throw new Error('Edit requires file_path (the file to modify).');
+        const path = expandHomePath(requestedPath);
         const { old_string, new_string, replace_all } = input as {
           old_string: string;
           new_string: string;
@@ -731,13 +748,17 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
       }),
       executionFacts,
       impl: async ({ pattern, path: searchRoot }, ctx) => {
+        // Under strict decoding a model cannot leave an optional field out
+        // and sends the empty string; that is the default, not a path.
+        const search = splitAbsoluteGlobPattern(pattern) ?? {
+          root: searchRoot === undefined || searchRoot === '' ? '.' : expandHomePath(searchRoot),
+          pattern,
+        };
         const result = await filesystem.execute({
           operation: {
             kind: 'glob',
-            // Under strict decoding a model cannot leave an optional field
-            // out and sends the empty string; that is the default, not a path.
-            path: searchRoot === undefined || searchRoot === '' ? '.' : searchRoot,
-            pattern,
+            path: search.root,
+            pattern: search.pattern,
             limit: GLOB_RESULT_LIMIT,
           },
           ...filesystemCall(ctx),
@@ -748,7 +769,15 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
             'no file list came back',
             'no files match the pattern',
           );
-        return { files: result.files, ...(result.truncated ? { truncated: true } : {}) };
+        // Joined onto the root as it was written, so `/tmp` stays `/tmp`
+        // rather than the `/private/tmp` the search resolved it to.
+        const root = resolvePath(ctx.cwd, search.root);
+        const omitted = result.total - result.files.length;
+        return {
+          files: result.files.map((file) => join(root, file)),
+          cwd: ctx.cwd,
+          ...(omitted > 0 ? { truncated: true, omitted } : {}),
+        };
       },
       toModelOutput: ({ output }) => globToolResultToModelOutput(output),
     },
@@ -860,6 +889,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
         const requested = head_limit ?? DEFAULT_GREP_HEAD_LIMIT;
         const limit =
           requested === 0 ? GREP_HARD_LINE_CAP : Math.min(requested, GREP_HARD_LINE_CAP);
+        const searchRoot = path === undefined ? '.' : expandHomePath(path);
         // Self-bound: ripgrep finishes in well under a second normally, but a
         // pathological tree (network mount, /proc, a FIFO) could hang it. The
         // stream watchdog no longer caps tool execution, so each spawning tool
@@ -867,7 +897,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
         const result = await filesystem.execute({
           operation: {
             kind: 'grep',
-            path: path ?? '.',
+            path: searchRoot,
             pattern,
             ...(glob ? { glob } : {}),
             ...(type ? { type } : {}),
@@ -897,8 +927,12 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
             'no search result came back',
             'the pattern is absent',
           );
+        // Spelled as the call wrote its root, as Glob's paths are.
+        const root = resolvePath(ctx.cwd, searchRoot);
+        const resolvedRoot = canonicalExistingPath(root);
         return {
-          matches: result.matches,
+          matches: result.matches.map((line) => respellSearchLine(line, resolvedRoot, root)),
+          cwd: ctx.cwd,
           mode: result.mode ?? mode,
           ...(result.truncated ? { truncated: true, omitted: result.omitted ?? 0 } : {}),
           // The caller's paging, echoed on the result so the model's view can

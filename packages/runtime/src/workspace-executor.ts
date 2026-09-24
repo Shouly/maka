@@ -19,7 +19,6 @@
 
 import { promises as fs } from 'node:fs';
 import { exec, execFile } from 'node:child_process';
-import { glob as nodeGlob } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 import {
   isPathInside,
@@ -45,8 +44,14 @@ import { readTextLineWindowFacts } from './text-line-window.js';
 import {
   applyGrepHeadLimit,
   buildRipgrepArgs,
-  GLOB_SCAN_CAP,
-  orderGlobMatchesByRecency,
+  GLOB_RESULT_LIMIT,
+  GLOB_TIMEOUT_MESSAGE,
+  type GlobSearchOutcome,
+  type GlobSearchResult,
+  nodeGlob,
+  orderGrepFilesNewestFirst,
+  ripgrepAnswered,
+  ripgrepGlob,
 } from './search-plan.js';
 import type { GrepOutputMode } from './filesystem-worker/protocol.js';
 
@@ -209,11 +214,7 @@ export interface WorkspaceGlobInput {
   limit?: number;
 }
 
-export interface WorkspaceGlobResult {
-  files: string[];
-  /** More files matched the pattern than `limit` returned. */
-  truncated?: boolean;
-}
+export type WorkspaceGlobResult = GlobSearchResult;
 
 export interface WorkspaceGrepInput {
   cwd: string;
@@ -521,15 +522,25 @@ export class LocalWorkspaceExecutor implements WorkspaceExecutor {
   }
 
   async globFiles(input: WorkspaceGlobInput): Promise<WorkspaceGlobResult> {
-    const scanned: string[] = [];
-    const limit = input.limit ?? 200;
-    const scanCap = Math.max(limit, GLOB_SCAN_CAP);
-    for await (const file of nodeGlob(input.pattern, { cwd: input.cwd })) {
-      scanned.push(typeof file === 'string' ? file : (file as { name: string }).name);
-      if (scanned.length >= scanCap) break;
+    const search = {
+      root: input.cwd,
+      pattern: input.pattern,
+      limit: input.limit ?? GLOB_RESULT_LIMIT,
+    };
+    let outcome: GlobSearchOutcome;
+    try {
+      outcome = await ripgrepGlob({ executable: await this.ripgrepExecutable(), ...search });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return await nodeGlob(search);
+      throw error;
     }
-    const ordered = await orderGlobMatchesByRecency(input.cwd, scanned, limit);
-    return { files: ordered.files, ...(ordered.truncated ? { truncated: true } : {}) };
+    if (outcome.ok) return { files: outcome.files, total: outcome.total };
+    if (outcome.reason === 'timeout') throw new Error(GLOB_TIMEOUT_MESSAGE);
+    throw new Error(
+      outcome.stderr
+        ? `Glob failed while listing files.\n${outcome.stderr}`
+        : 'Glob failed while listing files.',
+    );
   }
 
   // Resolved once per executor: the bundled copy first, then PATH and the
@@ -557,23 +568,31 @@ export class LocalWorkspaceExecutor implements WorkspaceExecutor {
       multiline: input.multiline,
       maxCountPerFile: input.maxCountPerFile,
     });
+    let stdout: string;
     try {
-      const { stdout } = await execFileAsync(await this.ripgrepExecutable(), args, {
+      ({ stdout } = await execFileAsync(await this.ripgrepExecutable(), args, {
         cwd: input.cwd,
         maxBuffer: 5 * 1024 * 1024,
         timeout: input.timeoutMs,
         ...(input.abortSignal ? { signal: input.abortSignal } : {}),
-      });
-      const limited = applyGrepHeadLimit(stdout, input.limit, input.offset);
-      return {
-        matches: limited.matches,
-        mode,
-        ...(limited.truncated ? { truncated: true, omitted: limited.omitted } : {}),
-      };
+      }));
     } catch (error: any) {
-      if (error?.code === 1) return { matches: [], mode };
-      throw error;
+      stdout = typeof error?.stdout === 'string' ? error.stdout : '';
+      const stderr = typeof error?.stderr === 'string' ? error.stderr : '';
+      if (
+        typeof error?.code !== 'number' ||
+        !ripgrepAnswered(error.code, stdout.trim() !== '', stderr)
+      )
+        throw error;
     }
+    const ordered =
+      mode === 'files_with_matches' ? await orderGrepFilesNewestFirst(stdout) : stdout;
+    const limited = applyGrepHeadLimit(ordered, input.limit, input.offset);
+    return {
+      matches: limited.matches,
+      mode,
+      ...(limited.truncated ? { truncated: true, omitted: limited.omitted } : {}),
+    };
   }
 }
 

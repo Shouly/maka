@@ -626,7 +626,6 @@ function createWorkspaceFilesystemExecutor(
           };
         }
         case 'glob': {
-          assertGlobPatternInScope(operation.pattern, scope);
           // A missing root and a root that is a file each get their own
           // sentence, in Claude's Glob wording, on every backend; the worker
           // client makes the same check. Node's glob would otherwise answer a
@@ -656,20 +655,32 @@ function createWorkspaceFilesystemExecutor(
             scope,
           });
           if (targetType !== 'directory') throw new Error(`Path is not a directory: ${shown}`);
-          const { files, truncated } = await workspace.globFiles({
+          const { files, total } = await workspace.globFiles({
             cwd: base,
             pattern: operation.pattern,
             ...(operation.limit !== undefined ? { limit: operation.limit } : {}),
           });
-          return { kind: 'glob', files, ...(truncated ? { truncated: true } : {}) };
+          return { kind: 'glob', files, total };
         }
         case 'grep': {
-          const { path } = await workspace.resolveExistingPath({
-            cwd,
-            path: operation.path,
-            label: 'Grep',
-            scope,
-          });
+          let path: string;
+          try {
+            ({ path } = await workspace.resolveExistingPath({
+              cwd,
+              path: operation.path,
+              label: 'Grep',
+              scope,
+            }));
+          } catch (error) {
+            // Claude's Grep wording, as the worker client gives it too.
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code === 'ENOENT' || code === 'ENOTDIR') {
+              throw new Error(
+                `Path does not exist: ${resolve(cwd, operation.path)}. Note: your current working directory is ${cwd}.`,
+              );
+            }
+            throw error;
+          }
           const grepped = await workspace.grepFiles({
             cwd,
             pattern: operation.pattern,
@@ -718,18 +729,6 @@ function assertOverwriteAllowed(
 ): void {
   if (!existed || allowOverwrite === true) return;
   throw new Error(unreadOverwriteMessage(path));
-}
-
-/**
- * A glob pattern is expanded by the walker rather than resolved as a path, so
- * its escapes have to be caught lexically. Under host scope there is nothing to
- * escape from and the pattern is left alone.
- */
-function assertGlobPatternInScope(pattern: string, scope: WorkspacePathScope): void {
-  if (scope === 'host') return;
-  if (isAbsolute(pattern) || pattern.split(/[\\/]+/).includes('..')) {
-    throw new Error('Glob pattern must stay inside session cwd');
-  }
 }
 
 /** The canonical spelling of an existing directory, or the input when it is not resolvable here. */

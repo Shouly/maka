@@ -134,7 +134,7 @@ export const GlobResult = memo(function GlobResult(props: {
           </span>
         </ToolResultRow>
       ))}
-      {props.result.truncated && <OmittedRow count={0} />}
+      {props.result.truncated && <OmittedRow count={props.result.omitted} />}
     </ToolResultPanel>
   );
 });

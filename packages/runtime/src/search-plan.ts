@@ -23,11 +23,12 @@
 // Grep and Glob each run in two places — the sandboxed filesystem worker and
 // the host-local workspace executor — and the two must answer identically, or
 // the tool's contract changes with the boundary the session happens to carry.
-// The ripgrep argument vector, the head-limit arithmetic and the newest-first
-// ordering therefore live here rather than being written twice.
+// The ripgrep argument vectors, the head-limit arithmetic and the Glob walk
+// therefore live here rather than being written twice.
 
+import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
-import { resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import type { GrepOutputMode } from './filesystem-worker/protocol.js';
 
 /**
@@ -37,12 +38,11 @@ import type { GrepOutputMode } from './filesystem-worker/protocol.js';
  */
 export const GREP_HARD_LINE_CAP = 2_000;
 
-/**
- * How many glob matches are collected before ordering. Newest-first is a
- * property of the whole match set, so the walk has to over-collect past the
- * returned limit; this bounds how far.
- */
-export const GLOB_SCAN_CAP = 2_000;
+/** How many Glob paths are listed; the rest are counted, not listed. */
+export const GLOB_RESULT_LIMIT = 100;
+
+/** Claude's Glob gives ripgrep 20 seconds. */
+export const GLOB_TIMEOUT_MS = 20_000;
 
 export interface RipgrepPlanInput {
   readonly pattern: string;
@@ -131,64 +131,272 @@ export function applyGrepHeadLimit(stdout: string, limit: number, offset = 0): G
 }
 
 /**
- * Keep the `limit` most recently modified matches and answer with them
- * OLDEST first, so the freshest file is the last line of the result.
- *
- * The two halves are deliberately different orders: the cap has to keep the
- * newest matches (dropping them would be dropping the answer), while the
- * printed order puts the newest at the end, where the reader's eye already is
- * after a long list.
- *
- * Paths come back absolute. A relative path is only meaningful next to the
- * search root, which the result does not carry, and every other tool that
- * consumes one — Read, Edit, the interface's file links — wants it absolute.
- *
- * A file whose mtime cannot be read (deleted between the walk and the stat,
- * or unreadable) sorts oldest rather than failing the call: a search result is
- * worth more than a perfect order. Ties keep the walk's own order, so a tree
- * written in one operation still reads deterministically.
+ * Claude's Grep lists matching files newest first, ties by name, and only then
+ * applies the head limit, so a capped list keeps the most recently touched
+ * files. ripgrep itself prints them in whatever order its threads finish.
+ * A file that cannot be stat'd sorts oldest rather than failing the search.
  */
-export async function orderGlobMatchesByRecency(
-  base: string,
-  files: readonly string[],
-  limit: number,
-): Promise<{ files: string[]; truncated: boolean }> {
-  const ordered = await sortByModifiedTime(base, files);
-  const kept = ordered.slice(0, limit);
-  kept.reverse();
-  return { files: kept.map((file) => resolve(base, file)), truncated: ordered.length > limit };
+export async function orderGrepFilesNewestFirst(stdout: string): Promise<string> {
+  const files = stdout.split('\n').filter(Boolean);
+  const stamped = await Promise.all(
+    files.map(async (file) => ({
+      file,
+      mtimeMs: await fs
+        .stat(file)
+        .then((stat) => stat.mtimeMs)
+        .catch(() => 0),
+    })),
+  );
+  stamped.sort(
+    (left, right) => right.mtimeMs - left.mtimeMs || left.file.localeCompare(right.file),
+  );
+  return stamped.map((entry) => entry.file).join('\n');
 }
 
-async function sortByModifiedTime(base: string, files: readonly string[]): Promise<string[]> {
-  // Only files answer a Glob: a directory that happens to match the pattern
-  // is not something Read or Edit can take next.
-  const stamped: { file: string; mtimeMs: number; index: number }[] = [];
-  const excluded = new Set<string>();
-  const CONCURRENCY = 64;
-  for (let start = 0; start < files.length; start += CONCURRENCY) {
-    const batch = files.slice(start, start + CONCURRENCY);
-    const stats = await Promise.all(
-      batch.map(async (file) => {
-        try {
-          const stat = await fs.stat(resolve(base, file));
-          if (!stat.isFile()) excluded.add(file);
-          return stat.mtimeMs;
-        } catch {
-          return Number.NEGATIVE_INFINITY;
-        }
-      }),
-    );
-    for (const [offset, file] of batch.entries()) {
-      if (excluded.has(file)) continue;
-      stamped.push({
-        file,
-        mtimeMs: stats[offset] ?? Number.NEGATIVE_INFINITY,
-        index: start + offset,
-      });
+/**
+ * One ripgrep output line with its path spelled as the call wrote the search
+ * root. ripgrep prints the path it was handed, which the search resolved
+ * (`/tmp` → `/private/tmp` on macOS), so the resolved root is swapped back
+ * for the written one. The root is either a directory, followed by a
+ * separator, or the one file searched, followed by `:` (a match or count) or
+ * `-` (a context line).
+ */
+export function respellSearchLine(line: string, resolvedRoot: string, writtenRoot: string): string {
+  if (resolvedRoot === writtenRoot) return line;
+  // Concatenated, never `join`ed: the rest of the line is matched text, which
+  // path normalisation would rewrite (`http://` to `http:/`, `./` dropped).
+  if (line.startsWith(`${resolvedRoot}${sep}`))
+    return `${writtenRoot.endsWith(sep) ? writtenRoot.slice(0, -1) : writtenRoot}${line.slice(resolvedRoot.length)}`;
+  if (line === resolvedRoot) return writtenRoot;
+  if (line.startsWith(`${resolvedRoot}:`) || line.startsWith(`${resolvedRoot}-`))
+    return `${writtenRoot}${line.slice(resolvedRoot.length)}`;
+  return line;
+}
+
+const RIPGREP_INPUT_ERROR =
+  /^rg: (?:regex parse error|error parsing glob|unrecognized file type|error parsing flag|compiled regex exceeds size limit)/m;
+
+/**
+ * Whether a ripgrep run answered the search, read the way Claude's Grep reads
+ * it. Exit 2 means some path failed, not the search: an unreadable directory
+ * under the root still leaves every other match in stdout, and those are the
+ * answer. It is a failure only when nothing was printed and ripgrep refused
+ * the input itself — the pattern, a glob, a type name.
+ */
+export function ripgrepAnswered(exitCode: number, printed: boolean, stderr: string): boolean {
+  if (exitCode === 0 || exitCode === 1) return true;
+  if (exitCode !== 2) return false;
+  return printed || !RIPGREP_INPUT_ERROR.test(stderr);
+}
+
+/**
+ * An absolute pattern names its own search directory, and it wins over
+ * `path`: the literal segments before the first glob character become the
+ * directory, the rest the pattern. A pattern with no glob character is a file
+ * name under its parent. Relative patterns are left alone.
+ */
+export function splitAbsoluteGlobPattern(
+  pattern: string,
+): { readonly root: string; readonly pattern: string } | undefined {
+  if (!isAbsolute(pattern)) return undefined;
+  const glob = /[*?[{]/.exec(pattern);
+  if (!glob) return { root: dirname(pattern), pattern: basename(pattern) };
+  const literal = pattern.slice(0, glob.index);
+  const cut = Math.max(literal.lastIndexOf('/'), literal.lastIndexOf(sep));
+  if (cut === -1) return undefined;
+  let root = cut === 0 ? '/' : literal.slice(0, cut);
+  if (/^[A-Za-z]:$/.test(root)) root += sep;
+  return { root, pattern: pattern.slice(cut + 1) };
+}
+
+/**
+ * A pattern that repeats the end of its own search root — `docs/*.md` under
+ * `…/docs` — means the root, not a `docs` directory inside it. When no such
+ * directory exists, the repeated segments are dropped and the rest anchored
+ * at the root.
+ */
+export async function anchorRepeatedGlobPrefix(root: string, pattern: string): Promise<string> {
+  const segments = pattern.split('/');
+  let literal = 0;
+  while (
+    literal < segments.length - 1 &&
+    segments[literal] !== '' &&
+    !/[*?[\]{}!]/.test(segments[literal] ?? '')
+  )
+    literal++;
+  const rootSegments = root.split(/[\\/]+/).filter(Boolean);
+  for (let count = literal; count > 0; count--) {
+    const head = segments.slice(0, count);
+    const tail = rootSegments.slice(-count);
+    if (tail.length !== count || !head.every((segment, index) => segment === tail[index])) continue;
+    return (await isRealDirectoryChain(root, head))
+      ? pattern
+      : `/${segments.slice(count).join('/')}`;
+  }
+  return pattern;
+}
+
+async function isRealDirectoryChain(root: string, segments: readonly string[]): Promise<boolean> {
+  let cursor = root;
+  for (const segment of segments) {
+    cursor = join(cursor, segment);
+    try {
+      const stat = await fs.lstat(cursor);
+      if (!stat.isDirectory() || stat.isSymbolicLink()) return false;
+    } catch {
+      return false;
     }
   }
-  stamped.sort((left, right) =>
-    left.mtimeMs === right.mtimeMs ? left.index - right.index : right.mtimeMs - left.mtimeMs,
-  );
-  return stamped.map((entry) => entry.file);
+  return segments.length > 0;
+}
+
+/** Glob's matches: paths relative to the search root. */
+export interface GlobSearchResult {
+  /** At most the requested limit, oldest first. */
+  readonly files: string[];
+  /** Every match, listed or not. */
+  readonly total: number;
+}
+
+/** `stderr` names the paths ripgrep could not read, even on success. */
+export type GlobSearchOutcome =
+  | ({ readonly ok: true; readonly stderr: string } & GlobSearchResult)
+  | { readonly ok: false; readonly reason: 'failed' | 'timeout'; readonly stderr: string };
+
+export const GLOB_TIMEOUT_MESSAGE = `Ripgrep search timed out after ${GLOB_TIMEOUT_MS / 1000} seconds. The search may have matched files but did not complete in time. Try searching a more specific path or pattern.`;
+
+const MAX_GLOB_STDERR_BYTES = 16 * 1024;
+
+/**
+ * Claude's Glob, which is ripgrep listing files: every file under the root,
+ * dotfiles and ignored files included, symlinks neither listed nor followed,
+ * case-sensitive, ascending by modification time. A pattern without a `/`
+ * matches a file name at any depth; one with a `/` is anchored at the root.
+ *
+ * ripgrep anchors a slash glob only when it runs from the root and searches
+ * `.`, so that is how it is launched. Only the first `limit` paths are kept;
+ * the rest are counted as they stream past, so a huge tree costs a counter.
+ */
+export async function ripgrepGlob(input: {
+  readonly executable: string;
+  readonly root: string;
+  readonly pattern: string;
+  readonly limit: number;
+  readonly abortSignal?: AbortSignal | undefined;
+}): Promise<GlobSearchOutcome> {
+  const pattern = await anchorRepeatedGlobPrefix(input.root, input.pattern);
+  return await new Promise((resolvePromise, reject) => {
+    const child = spawn(
+      input.executable,
+      [
+        '--files',
+        '--null',
+        '--glob',
+        pattern,
+        '--sort=modified',
+        '--no-ignore',
+        '--hidden',
+        '--',
+        '.',
+      ],
+      {
+        cwd: input.root,
+        shell: false,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        ...(input.abortSignal ? { signal: input.abortSignal } : {}),
+      },
+    );
+    const files: string[] = [];
+    let total = 0;
+    let pending = Buffer.alloc(0);
+    let stderr = Buffer.alloc(0);
+    let settled = false;
+    const settle = (outcome: GlobSearchOutcome | Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (outcome instanceof Error) reject(outcome);
+      else resolvePromise(outcome);
+    };
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      settle({ ok: false, reason: 'timeout', stderr: '' });
+    }, GLOB_TIMEOUT_MS);
+    child.stdout.on('data', (chunk: Buffer) => {
+      let data = pending.length > 0 ? Buffer.concat([pending, chunk]) : chunk;
+      let end = data.indexOf(0);
+      while (end !== -1) {
+        total++;
+        if (files.length < input.limit)
+          files.push(rootRelative(data.subarray(0, end).toString('utf8')));
+        data = data.subarray(end + 1);
+        end = data.indexOf(0);
+      }
+      // A path cut off by a failed run never gets its terminator and is not
+      // counted.
+      pending = Buffer.from(data);
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr = Buffer.concat([stderr, chunk]);
+      if (stderr.length > MAX_GLOB_STDERR_BYTES)
+        stderr = stderr.subarray(stderr.length - MAX_GLOB_STDERR_BYTES);
+    });
+    child.once('error', (error) => settle(error));
+    child.once('close', (exitCode) => {
+      const detail = stderr.toString('utf8').trim();
+      settle(
+        ripgrepAnswered(exitCode ?? 2, total > 0, detail)
+          ? { ok: true, files, total, stderr: detail }
+          : { ok: false, reason: 'failed', stderr: detail },
+      );
+    });
+  });
+}
+
+function rootRelative(path: string): string {
+  return path.startsWith(`.${sep}`) || path.startsWith('./') ? path.slice(2) : path;
+}
+
+/**
+ * Glob where ripgrep cannot run — the Windows sandbox preview, which cannot
+ * start a grandchild process, or a runtime without ripgrep. Node's walk
+ * cannot match Claude's Glob exactly (it follows the platform's case rule and
+ * skips dotfiles), so this keeps what it can: slash-less patterns recurse,
+ * only regular files answer, and the order and count are the same.
+ */
+export async function nodeGlob(input: {
+  readonly root: string;
+  readonly pattern: string;
+  readonly limit: number;
+}): Promise<GlobSearchResult> {
+  const anchored = await anchorRepeatedGlobPrefix(input.root, input.pattern);
+  // ripgrep only filters what it finds under the root, so `..` matches
+  // nothing; Node's walk would follow it out of the root.
+  if (anchored.split(/[\\/]/).includes('..')) return { files: [], total: 0 };
+  const pattern =
+    anchored === ''
+      ? '**/*'
+      : anchored.startsWith('/')
+        ? anchored.slice(1)
+        : anchored.includes('/')
+          ? anchored
+          : `**/${anchored}`;
+  const stamped: { file: string; mtimeMs: number }[] = [];
+  for await (const entry of fs.glob(pattern, { cwd: input.root, withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const path = join(entry.parentPath, entry.name);
+    const file = relative(input.root, path);
+    if (file.startsWith('..') || isAbsolute(file)) continue;
+    const mtimeMs = await fs
+      .stat(path)
+      .then((stat) => stat.mtimeMs)
+      .catch(() => Number.NEGATIVE_INFINITY);
+    stamped.push({ file, mtimeMs });
+  }
+  // Array sort is stable, so equal times keep the walk's order.
+  stamped.sort((left, right) => left.mtimeMs - right.mtimeMs);
+  return {
+    files: stamped.slice(0, input.limit).map((entry) => entry.file),
+    total: stamped.length,
+  };
 }

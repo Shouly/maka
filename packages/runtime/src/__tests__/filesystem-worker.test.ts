@@ -280,7 +280,7 @@ describe('filesystem worker operations', () => {
     });
   });
 
-  test('returns no Grep matches for exit code 1 and surfaces bounded stderr for failures', async () => {
+  test('reads Grep exit codes the way Claude does and surfaces bounded stderr for failures', async () => {
     const root = await temporaryDirectory('maka-worker-grep-result-');
     const target = join(root, 'file.ts');
     await writeFile(target, 'const value = 1;', 'utf8');
@@ -312,14 +312,43 @@ describe('filesystem worker operations', () => {
       runGrep: async () => ({
         exitCode: 2,
         stdout: '',
-        stderrTail: 'rg: invalid regular expression\n',
+        stderrTail: 'rg: regex parse error:\n    (?:()\n    ^\nerror: unclosed group\n',
       }),
     });
     assert.equal(failed.ok, false);
     if (!failed.ok) {
       assert.equal(failed.error.code, 'filesystem_error');
-      assert.match(failed.error.message, /rg: invalid regular expression/);
+      assert.match(failed.error.message, /rg: regex parse error/);
     }
+
+    // Exit 2 with matches printed: one path failed, the search did not.
+    const partial = await executeFilesystemWorkerRequest(request, {
+      grepExecutable: '/usr/bin/rg',
+      runGrep: async () => ({
+        exitCode: 2,
+        stdout: `${target}:1:const value = 1;\n`,
+        stderrTail: 'rg: /work/locked: Permission denied (os error 13)\n',
+      }),
+    });
+    assert.equal(partial.ok, true);
+    if (partial.ok)
+      assert.deepEqual(partial.result, {
+        kind: 'grep',
+        matches: [`${target}:1:const value = 1;`],
+        mode: 'content',
+      });
+
+    const unreadableOnly = await executeFilesystemWorkerRequest(request, {
+      grepExecutable: '/usr/bin/rg',
+      runGrep: async () => ({
+        exitCode: 2,
+        stdout: '',
+        stderrTail: 'rg: /work/locked: Permission denied (os error 13)\n',
+      }),
+    });
+    assert.equal(unreadableOnly.ok, true);
+    if (unreadableOnly.ok)
+      assert.deepEqual(unreadableOnly.result, { kind: 'grep', matches: [], mode: 'content' });
 
     const sandboxDenied = await executeFilesystemWorkerRequest(request, {
       grepExecutable: '/usr/bin/rg',

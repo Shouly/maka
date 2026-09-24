@@ -240,6 +240,8 @@ export interface GrepResultShape {
 export interface GlobResultShape {
   readonly files: readonly string[];
   readonly truncated: boolean;
+  /** Matches the cap left out. */
+  readonly omitted: number;
 }
 
 function isGrepMode(value: unknown): value is GrepMode {
@@ -266,7 +268,11 @@ export function readGlobResult(value: unknown): GlobResultShape | undefined {
   if (!record) return undefined;
   const files = stringsOf(record.files);
   if (!files) return undefined;
-  return { files, truncated: record.truncated === true };
+  return {
+    files,
+    truncated: record.truncated === true,
+    omitted: typeof record.omitted === 'number' ? record.omitted : 0,
+  };
 }
 
 /** One row of a Grep panel: the path is a link, the rest is what was found. */

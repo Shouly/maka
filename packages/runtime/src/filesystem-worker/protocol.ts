@@ -20,7 +20,11 @@
 import { z } from 'zod';
 import { validateSandboxBoundaryExpansion } from '@maka/core/sandbox-boundary';
 
-// v9 widens Grep again, to the ripgrep switches the tool now exposes: a
+// v10 moves Glob to ripgrep, as Claude's Glob is: an empty pattern lists
+// every file, and the answer is root-relative paths, oldest first, with the
+// full match count in `total` in place of the `truncated` marker.
+//
+// v9 widened Grep again, to the ripgrep switches the tool now exposes: a
 // `--type` filter, asymmetric context (`-A`/`-B`), an explicit line-number
 // toggle, and a result `offset` for paging past a capped answer. The worker
 // validates strictly, so a host that sends one of these to a v8 worker would be
@@ -40,7 +44,7 @@ import { validateSandboxBoundaryExpansion } from '@maka/core/sandbox-boundary';
 // inode that was authorised at lock acquisition instead of only the path
 // string. The identity is carried as strings because bigint cannot cross the
 // JSON protocol boundary.
-export const FILESYSTEM_WORKER_PROTOCOL_VERSION = 9 as const;
+export const FILESYSTEM_WORKER_PROTOCOL_VERSION = 10 as const;
 
 /** Ripgrep output shapes the Grep tool can ask the worker for. */
 export const GREP_OUTPUT_MODES = ['content', 'files_with_matches', 'count'] as const;
@@ -194,7 +198,8 @@ export const FilesystemWorkerOperationSchema = z.union([
       kind: z.literal('glob'),
       cwd,
       path,
-      pattern: z.string().min(1),
+      // Empty lists every file, as Claude's Glob does.
+      pattern: z.string(),
       limit: z.number().int().positive().optional(),
     })
     .strict(),
@@ -287,9 +292,10 @@ export const FilesystemWorkerResultSchema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('glob'),
+      /** Relative to the search root, oldest first, at most the limit. */
       files: z.array(z.string()),
-      /** More files matched than the limit returned. */
-      truncated: z.boolean().optional(),
+      /** Every match, listed or not. */
+      total: z.number().int().nonnegative(),
     })
     .strict(),
   z

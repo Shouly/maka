@@ -17,10 +17,12 @@
  * under the License.
  */
 
+import { relative, sep } from 'node:path';
 import { countDiffLineStats } from '@maka/core/unified-diff';
 import { TOOL_NAMES } from '@maka/core/tool-names';
 import type { GrepOutputMode } from './filesystem-worker/protocol.js';
 import type { ToolResultOutput } from './model-protocol.js';
+import { isPathInside } from './path-containment.js';
 import { isShellRunResult, shellRunResultText } from './shell-run-model-output.js';
 import { toolResultOutput } from './tool-result-output.js';
 
@@ -216,7 +218,15 @@ function isEditResult(output: unknown): output is { path: string; replacements: 
 export function grepToolResultToModelOutput(output: unknown): ToolResultOutput {
   const result = asGrepResult(output);
   if (!result) return toolResultOutput(output, false);
-  return { type: 'text', value: grepResultText(result) };
+  // Paths inside the session cwd read relative to it, as Glob's and Claude's do.
+  const cwd = result.cwd;
+  const matches =
+    cwd === undefined
+      ? result.matches
+      : result.matches.map((line) =>
+          line.startsWith(`${cwd}${sep}`) ? line.slice(cwd.length + 1) : line,
+        );
+  return { type: 'text', value: grepResultText({ ...result, matches }) };
 }
 
 function grepResultText(result: GrepLikeResult): string {
@@ -256,27 +266,35 @@ function countSummary(lines: readonly string[]): string {
 }
 
 /**
- * Glob answers with one path per line, most recently modified LAST.
- *
- * The order is the useful half of the answer and the end of a list is where a
- * reader's attention already is, so the freshest match sits there rather than
- * at the top where a long list buries it.
+ * Glob answers as Claude's does: one path per line, oldest first, relative to
+ * the session cwd when the file is inside it and absolute when it is not. A
+ * capped list says how many it left out.
  */
 export function globToolResultToModelOutput(output: unknown): ToolResultOutput {
   const result = asGlobResult(output);
   if (!result) return toolResultOutput(output, false);
   if (result.files.length === 0) return { type: 'text', value: 'No files found' };
-  const body = result.files.join('\n');
+  const body = result.files
+    .map((file) =>
+      result.cwd !== undefined && isPathInside(result.cwd, file)
+        ? relative(result.cwd, file)
+        : file,
+    )
+    .join('\n');
+  const omitted = result.omitted ?? 0;
   return {
     type: 'text',
-    value: result.truncated
-      ? `${body}\n[More files matched than are shown; these are the most recently modified. Narrow the pattern or the path to see the rest.]`
-      : body,
+    value:
+      omitted > 0
+        ? `${body}\n(Showing ${result.files.length} of ${result.files.length + omitted} matching files; ${omitted} more are not listed. Narrow the pattern or path to see the rest.)`
+        : body,
   };
 }
 
 interface GrepLikeResult {
   readonly matches: string[];
+  /** The session cwd, which the model's view of the paths is relative to. */
+  readonly cwd?: string;
   readonly mode?: GrepOutputMode;
   readonly truncated?: boolean;
   readonly omitted?: number;
@@ -295,11 +313,13 @@ function asGrepResult(output: unknown): GrepLikeResult | undefined {
   return output as GrepLikeResult;
 }
 
-function asGlobResult(output: unknown): { files: string[]; truncated?: boolean } | undefined {
+function asGlobResult(
+  output: unknown,
+): { files: string[]; cwd?: string; omitted?: number } | undefined {
   if (typeof output !== 'object' || output === null || Array.isArray(output)) return undefined;
   const files = (output as { files?: unknown }).files;
   if (!Array.isArray(files) || files.some((file) => typeof file !== 'string')) return undefined;
-  return output as { files: string[]; truncated?: boolean };
+  return output as { files: string[]; cwd?: string; omitted?: number };
 }
 
 function isFileDiff(
