@@ -618,6 +618,9 @@ function memoryStore(): SessionStore {
     setExecutionBoundaryKind: async () => {
       throw new Error('not implemented');
     },
+    syncExecutionBoundary: async () => {
+      throw new Error('not implemented');
+    },
     readExecutionBoundary: async () => {
       throw new Error('not implemented');
     },

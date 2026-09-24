@@ -437,6 +437,11 @@ export interface SessionAuthorityStore extends SessionStore, MessageAdmissionSto
       labels?: readonly string[];
     },
   ): Promise<ExecutionBoundary>;
+  syncExecutionBoundary(
+    sessionId: string,
+    boundary: ExecutionBoundary,
+    projection: { permissionMode: SessionHeader['permissionMode'] },
+  ): Promise<ExecutionBoundary>;
   probeStableSessionCreate(
     sessionId: string,
     requestFingerprint: string,
@@ -925,6 +930,15 @@ class SqliteSessionStore implements SessionAuthorityStore {
   ): Promise<ExecutionBoundary> {
     await this.ensureReady();
     return this.metadata.setExecutionBoundaryKind(sessionId, kind, projection);
+  }
+
+  async syncExecutionBoundary(
+    sessionId: string,
+    boundary: ExecutionBoundary,
+    projection: { permissionMode: SessionHeader['permissionMode'] },
+  ): Promise<ExecutionBoundary> {
+    await this.ensureReady();
+    return this.metadata.syncExecutionBoundary(sessionId, boundary, projection);
   }
 
   async list(filter?: SessionListFilter): Promise<SessionSummary[]> {

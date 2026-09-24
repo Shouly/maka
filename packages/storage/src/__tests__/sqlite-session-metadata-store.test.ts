@@ -2489,6 +2489,48 @@ describe('SqliteSessionMetadataStore', () => {
     }
   });
 
+  test('syncExecutionBoundary appends a revision only when the authority changes', async () => {
+    const store = createSqliteSessionMetadataStore(':memory:', { now: nextNow(213) });
+    try {
+      await store.create(fullHeader({ permissionMode: 'explore' }), {
+        kind: 'managed',
+        profile: createWorkspaceWritePermissionProfile(),
+        revision: 0,
+      });
+
+      const same = await store.syncExecutionBoundary(
+        'session-1',
+        { kind: 'managed', profile: createWorkspaceWritePermissionProfile(), revision: 9 },
+        { permissionMode: 'ask' },
+      );
+      assert.equal(same.revision, 0);
+      assert.equal((await store.read('session-1')).header.permissionMode, 'ask');
+
+      const bypass = await store.syncExecutionBoundary(
+        'session-1',
+        { kind: 'bypass', revision: 0 },
+        { permissionMode: 'bypass' },
+      );
+      assert.deepEqual(bypass, { kind: 'bypass', revision: 1 });
+      assert.deepEqual(await store.readExecutionBoundary('session-1'), bypass);
+      assert.equal((await store.read('session-1')).header.permissionMode, 'bypass');
+
+      const readOnly = await store.syncExecutionBoundary(
+        'session-1',
+        { kind: 'managed', profile: createReadOnlyPermissionProfile(), revision: 0 },
+        { permissionMode: 'explore' },
+      );
+      assert.equal(readOnly.revision, 2);
+      assert.equal(readOnly.kind, 'managed');
+      if (readOnly.kind === 'managed') {
+        assert.deepEqual(readOnly.profile, createReadOnlyPermissionProfile());
+      }
+      assert.equal((await store.read('session-1')).header.permissionMode, 'explore');
+    } finally {
+      store.close();
+    }
+  });
+
   test('restores canonical Auto when an Explore-origin session has no Auto history', async () => {
     const store = createSqliteSessionMetadataStore(':memory:', { now: nextNow(218) });
     try {

@@ -102,7 +102,11 @@ import {
   subagentSessionRuntimeSummary,
 } from '@maka/core/session';
 import { decodeAgentGraphIntentClaim } from '@maka/core/agent-graph-control';
-import { executionBoundaryContains } from '@maka/core/sandbox-boundary';
+import {
+  deriveLinkedChildExecutionBoundary,
+  executionBoundaryContains,
+  sameExecutionBoundaryAuthority,
+} from '@maka/core/sandbox-boundary';
 import { failureClassFromCompleteStopReason } from '@maka/core/events';
 import { isActiveShellRunStatus } from '@maka/core/shell-run';
 import {
@@ -647,6 +651,12 @@ export interface SessionStore {
       permissionMode: SessionHeader['permissionMode'];
       labels?: readonly string[];
     },
+  ): Promise<ExecutionBoundary>;
+  /** A linked child's boundary, derived from its parent's. */
+  syncExecutionBoundary(
+    sessionId: string,
+    boundary: ExecutionBoundary,
+    projection: { permissionMode: SessionHeader['permissionMode'] },
   ): Promise<ExecutionBoundary>;
   createAgentGraphOperator?(
     input: CreateSessionInput,
@@ -1911,6 +1921,19 @@ export class SessionManager {
         throw error;
       }
 
+      // The lineage is fenced, idle and its backends are gone: give each
+      // descendant the boundary its parent now has, nearest first, so what
+      // resumes below resumes under it.
+      for (const descendantSessionId of descendantSessionIds) {
+        await this.#syncLinkedChildBoundary(await this.deps.store.readHeader(descendantSessionId), {
+          refreshBackend: false,
+        });
+        descendantBoundaries.set(
+          descendantSessionId,
+          await this.deps.store.readExecutionBoundary(descendantSessionId),
+        );
+      }
+
       for (const close of shellRunCloses) await this.deps.shellRuns?.commitSessionClose(close);
       if (shellRunCloses.length > 0) {
         const committedBoundary = await this.deps.store.readExecutionBoundary(sessionId);
@@ -2795,6 +2818,9 @@ export class SessionManager {
       runtimeExecution.release();
     });
     try {
+      // The child is idle and claimed: bring its boundary up to its parent's
+      // before this Turn, not after.
+      const synced = await this.#syncLinkedChildBoundary(child);
       const startedAt = this.deps.now();
       const summary = new ChildAgentSummaryAccumulator();
       let announceStarted!: () => void;
@@ -2838,7 +2864,7 @@ export class SessionManager {
       execution.then(() => announceStarted()).catch((error) => failStart(error));
       this.#trackChildExecution({
         parentSessionId: input.parentSessionId,
-        child,
+        child: synced,
         identity,
         snapshot,
         toolCallId: parent.spawnedBy.toolCallId,
@@ -2856,7 +2882,7 @@ export class SessionManager {
         profile: snapshot.profile,
         turnId,
         runId,
-        permissionMode: child.permissionMode,
+        permissionMode: synced.permissionMode,
         ...(child.subagentSpawn?.description !== undefined
           ? { description: child.subagentSpawn.description }
           : {}),
@@ -2872,6 +2898,43 @@ export class SessionManager {
    * result says so, and the child is still announced the way it would have
    * been, carrying whatever it had reached (reference behaviour).
    */
+  /**
+   * A linked child runs under the boundary derived from its parent's current
+   * one, not the copy it was created with: the parent's grants and narrowing
+   * reach it at its next Turn. Returns the child's header as it now stands.
+   */
+  async #syncLinkedChildBoundary(
+    child: SessionHeader,
+    options: { refreshBackend?: boolean } = {},
+  ): Promise<SessionHeader> {
+    const parent = child.subagentParent;
+    const snapshot = child.subagentRuntime;
+    if (!parent || !snapshot) return child;
+    const [parentHeader, parentBoundary, current] = await Promise.all([
+      this.deps.store.readHeader(parent.parentSessionId),
+      this.deps.store.readExecutionBoundary(parent.parentSessionId),
+      this.deps.store.readExecutionBoundary(child.id),
+    ]);
+    const definitionMode = requireBuiltinAgentDefinitionByProfile(snapshot.profile).permissionMode;
+    const derived = deriveLinkedChildExecutionBoundary(
+      parentBoundary,
+      definitionMode,
+      current.revision + 1,
+    );
+    const permissionMode = linkedChildPermissionMode(parentHeader, definitionMode);
+    if (
+      sameExecutionBoundaryAuthority(current, derived) &&
+      child.permissionMode === permissionMode
+    ) {
+      return child;
+    }
+    await this.deps.store.syncExecutionBoundary(child.id, derived, { permissionMode });
+    if (options.refreshBackend !== false) await this.runtimeKernel.invalidateBackend(child.id);
+    const next = await this.deps.store.readHeader(child.id);
+    this.runtimeKernel.updateCachedHeader(child.id, next);
+    return next;
+  }
+
   /**
    * The child Session a handle names.
    *
@@ -3177,8 +3240,12 @@ export class SessionManager {
     const resolvedToolNames = buildToolsForAgentDefinition(availableChildTools, definition).map(
       (tool) => tool.name,
     );
-    const childPermissionMode =
-      parentHeader.permissionMode === 'bypass' ? 'bypass' : definition.permissionMode;
+    const childBoundary = deriveLinkedChildExecutionBoundary(
+      parentBoundary,
+      definition.permissionMode,
+      0,
+    );
+    const childPermissionMode = linkedChildPermissionMode(parentHeader, definition.permissionMode);
 
     const initialTurnId = this.deps.newId();
     const initialRunId = this.deps.newId();
@@ -3292,7 +3359,7 @@ export class SessionManager {
       },
       request,
       input.expectedScheduleRevision,
-      parentBoundary,
+      childBoundary,
     );
     const relation = result.header.subagentParent?.graph;
     if (
@@ -3440,10 +3507,7 @@ export class SessionManager {
     ) {
       throw new Error('Claimed graph execution target must be a linked child session');
     }
-    await this.assertLinkedChildBoundaryMatchesParent(
-      child.subagentParent.parentSessionId,
-      child.id,
-    );
+    await this.#syncLinkedChildBoundary(child);
     const rootExecution: RootExecutionDescriptor = {
       kind: 'claimed_agent_graph_intent',
       claim,
@@ -3810,6 +3874,14 @@ export class SessionManager {
       definition,
       requestFingerprint,
     );
+    // The child's authority is its parent's, capped by its definition; the
+    // header mode is the parent's selection under the same cap.
+    const childBoundary = deriveLinkedChildExecutionBoundary(
+      parentBoundary,
+      definition.permissionMode,
+      0,
+    );
+    const childPermissionMode = linkedChildPermissionMode(parentHeader, definition.permissionMode);
     const creation = await this.deps.store.createSubagent(
       {
         cwd: workspace?.worktreePath ?? parentHeader.cwd,
@@ -3829,7 +3901,7 @@ export class SessionManager {
           : parentHeader.thinkingLevel !== undefined
             ? { thinkingLevel: parentHeader.thinkingLevel }
             : {}),
-        permissionMode: definition.permissionMode,
+        permissionMode: childPermissionMode,
         collaborationMode: 'agent',
         orchestrationMode: 'default',
         toolMode: parentHeader.toolMode ?? DEFAULT_TOOL_MODE,
@@ -3859,7 +3931,7 @@ export class SessionManager {
         },
         ...(workspace ? { subagentWorkspace: workspace } : {}),
       },
-      parentBoundary,
+      childBoundary,
     );
     const child = creation.header;
     const snapshot = child.subagentRuntime;
@@ -4153,19 +4225,6 @@ export class SessionManager {
       );
     }
     return target;
-  }
-
-  private async assertLinkedChildBoundaryMatchesParent(
-    parentSessionId: string,
-    childSessionId: string,
-  ): Promise<void> {
-    const [parentBoundary, childBoundary] = await Promise.all([
-      this.deps.store.readExecutionBoundary(parentSessionId),
-      this.deps.store.readExecutionBoundary(childSessionId),
-    ]);
-    if (!executionBoundaryContains(parentBoundary, childBoundary)) {
-      throw new Error('Linked child execution boundary no longer matches its parent');
-    }
   }
 
   async listChildAgents(sessionId: string): Promise<AgentListResult> {
@@ -5876,6 +5935,14 @@ function sessionConfigurationMatches(
     header.permissionMode === configuration.permissionMode &&
     sessionConfigurationMatchesExceptPermissionMode(header, configuration)
   );
+}
+
+/** The mode a linked child's header shows: its parent's selection, capped by its definition. */
+function linkedChildPermissionMode(
+  parent: Pick<SessionHeader, 'permissionMode'>,
+  definitionMode: PermissionMode,
+): PermissionMode {
+  return definitionMode === 'explore' ? 'explore' : parent.permissionMode;
 }
 
 function executionBoundaryMatchesPermissionMode(

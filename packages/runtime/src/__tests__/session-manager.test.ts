@@ -49,6 +49,7 @@ import {
   applySandboxBoundaryExpansion,
   createGenesisExecutionBoundary,
   isSandboxBoundaryRestartClosure,
+  sameExecutionBoundaryAuthority,
 } from '@maka/core/sandbox-boundary';
 import {
   canWritePath,
@@ -677,7 +678,13 @@ describe('SessionManager graph operator provisioning', () => {
     assert.ok(transitionResult.error instanceof SessionConfigurationTransitionError);
     assert.strictEqual(transitionResult.error.code, 'operation_conflict');
     assert.strictEqual((await store.readHeader(parent.id)).permissionMode, 'bypass');
-    assert.strictEqual(provisioned.header.permissionMode, 'bypass');
+    // A Read only definition stays read-only under a Full access parent.
+    assert.strictEqual(provisioned.header.permissionMode, 'explore');
+    assert.deepStrictEqual(await store.readExecutionBoundary(provisioned.header.id), {
+      kind: 'managed',
+      profile: createReadOnlyPermissionProfile(),
+      revision: 0,
+    });
   });
 
   test('snapshots a catalog agent into a metadata-only child with reserved activation ids', async () => {
@@ -2329,10 +2336,13 @@ describe('SessionManager child-session runtime primitive', () => {
     });
 
     const childHeader = await store.readHeader(result.childSessionId);
-    assert.deepStrictEqual(
-      await store.readExecutionBoundary(result.childSessionId),
-      await store.readExecutionBoundary(parent.id),
-    );
+    // A Read only definition under a Manual parent: the child's authority is
+    // capped by its definition, not copied from the parent.
+    assert.deepStrictEqual(await store.readExecutionBoundary(result.childSessionId), {
+      kind: 'managed',
+      profile: createReadOnlyPermissionProfile(),
+      revision: 0,
+    });
     assert.strictEqual(childHeader.cwd, '/tmp/project');
     assert.strictEqual(childHeader.projectId, 'project-1');
     assert.strictEqual(
@@ -5338,6 +5348,8 @@ describe('SessionManager permission mode updates', () => {
 
     await manager.setExecutionBoundaryKind(session.id, 'managed');
 
+    // The descendants come down with the parent: Read only definitions land
+    // on read-only, which the narrowed parent contains, so they resume.
     assert.deepStrictEqual(calls, [
       `terminate:${session.id}`,
       `terminate:${child.id}`,
@@ -5346,8 +5358,138 @@ describe('SessionManager permission mode updates', () => {
       'commit',
       'commit',
       `resume:${session.id}`,
+      `resume:${child.id}`,
+      `resume:${grandchild.id}`,
     ]);
     assert.strictEqual(store.disposeCount, 3);
+    for (const descendant of [child, grandchild]) {
+      assert.deepStrictEqual(await store.readExecutionBoundary(descendant.id), {
+        kind: 'managed',
+        profile: createReadOnlyPermissionProfile(),
+        revision: 1,
+      });
+      assert.strictEqual((await store.readHeader(descendant.id)).permissionMode, 'explore');
+    }
+  });
+
+  test('a linked child runs under the boundary its parent has now, not the one it was created with', async () => {
+    const store = new AtomicBoundaryMemorySessionStore();
+    const runStore = new MemoryAgentRunStore();
+    const calls: string[] = [];
+    const backends = new BackendRegistry();
+    backends.register('ai-sdk', (ctx) => new TestBackend(ctx));
+    const manager = new SessionManager({
+      store,
+      runStore,
+      runtimeEventStore: runStore,
+      backends,
+      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
+      newId: nextId(),
+      now: nextNow(991),
+      shellRuns: {
+        async terminateSession(sessionId: string) {
+          calls.push(`terminate:${sessionId}`);
+          return { sessionId, token: Symbol('test') };
+        },
+        async commitSessionClose() {
+          calls.push('commit');
+        },
+        rollbackSessionClose() {
+          calls.push('rollback');
+        },
+        resumeSession(sessionId: string) {
+          calls.push(`resume:${sessionId}`);
+        },
+      } as never,
+    });
+    const linkedChild = (
+      permissionMode: PermissionMode,
+      definition: typeof IMPLEMENTATION_AGENT_DEFINITION,
+      toolCallId: string,
+    ) =>
+      makeInput({
+        permissionMode,
+        subagentParent: {
+          kind: 'subagent',
+          parentSessionId: session.id,
+          spawnedBy: { parentRunId: 'parent-run', parentTurnId: 'parent-turn', toolCallId },
+          lifecycle: 'foreground',
+        },
+        subagentRuntime: {
+          schemaVersion: 1,
+          definitionVersion: definition.definitionVersion,
+          agentId: definition.id,
+          agentName: definition.name,
+          profile: definition.profile,
+          systemPrompt: definition.systemPrompt,
+          toolNames: ['Read', 'Glob', 'Grep'],
+        },
+        subagentSpawn: {
+          schemaVersion: 1,
+          requestFingerprint: toolCallId.charAt(0).repeat(64),
+          initialTurnId: `${toolCallId}-turn`,
+          initialRunId: `${toolCallId}-run`,
+        },
+      });
+    const session = await manager.createSession(makeInput({ permissionMode: 'ask' }));
+    const implementer = await manager.createSession(
+      linkedChild('ask', IMPLEMENTATION_AGENT_DEFINITION, 'a-implementer'),
+    );
+    const reader = await manager.createSession(
+      linkedChild('explore', LOCAL_READ_AGENT_DEFINITION, 'b-reader'),
+    );
+
+    // The parent widens to Full access while its children sit idle with the
+    // Manual copy they were created under. A follow-up message brings each
+    // child to what its definition allows of the parent's new authority.
+    await manager.setExecutionBoundaryKind(session.id, 'bypass');
+    assert.strictEqual((await store.readExecutionBoundary(implementer.id)).kind, 'managed');
+
+    const implementerRun = await manager.sendChildAgentMessage({
+      parentSessionId: session.id,
+      childSessionId: implementer.id,
+      text: 'carry on',
+    });
+    assert.strictEqual(implementerRun.permissionMode, 'bypass');
+    assert.deepStrictEqual(await store.readExecutionBoundary(implementer.id), {
+      kind: 'bypass',
+      revision: 1,
+    });
+    assert.strictEqual((await store.readHeader(implementer.id)).permissionMode, 'bypass');
+    assert.strictEqual((await manager.waitForChildAgent(implementer.id))?.status, 'completed');
+
+    const readerRun = await manager.sendChildAgentMessage({
+      parentSessionId: session.id,
+      childSessionId: reader.id,
+      text: 'look again',
+    });
+    assert.strictEqual(readerRun.permissionMode, 'explore');
+    assert.deepStrictEqual(await store.readExecutionBoundary(reader.id), {
+      kind: 'managed',
+      profile: createReadOnlyPermissionProfile(),
+      revision: 0,
+    });
+    assert.strictEqual((await manager.waitForChildAgent(reader.id))?.status, 'completed');
+
+    // Narrowing does not wait for a message: the transition itself brings
+    // the fenced descendants down with the parent.
+    calls.length = 0;
+    await manager.setExecutionBoundaryKind(session.id, 'managed');
+    assert.deepStrictEqual(await store.readExecutionBoundary(implementer.id), {
+      kind: 'managed',
+      profile: createWorkspaceWritePermissionProfile(),
+      revision: 2,
+    });
+    assert.strictEqual((await store.readHeader(implementer.id)).permissionMode, 'ask');
+    assert.deepStrictEqual(await store.readExecutionBoundary(reader.id), {
+      kind: 'managed',
+      profile: createReadOnlyPermissionProfile(),
+      revision: 0,
+    });
+    assert.deepStrictEqual(
+      calls.filter((call) => call.startsWith('resume:')),
+      [`resume:${session.id}`, `resume:${implementer.id}`, `resume:${reader.id}`],
+    );
   });
 
   test('keeps narrowing blocked until all overlapping turns finish', async () => {
@@ -13491,6 +13633,20 @@ class MemorySessionStore implements SessionStore {
     return boundary;
   }
 
+  async syncExecutionBoundary(
+    sessionId: string,
+    boundary: ExecutionBoundary,
+    projection: { permissionMode: SessionHeader['permissionMode'] },
+  ): Promise<ExecutionBoundary> {
+    const current = await this.readExecutionBoundary(sessionId);
+    const next = sameExecutionBoundaryAuthority(current, boundary)
+      ? current
+      : { ...boundary, revision: current.revision + 1 };
+    this.executionBoundaries.set(sessionId, next);
+    await this.updateHeader(sessionId, { permissionMode: projection.permissionMode });
+    return next;
+  }
+
   async readExecutionBoundary(sessionId: string): Promise<ExecutionBoundary> {
     const boundary = this.executionBoundaries.get(sessionId);
     if (!boundary) throw new Error(`Unknown session ${sessionId}`);
@@ -13788,6 +13944,25 @@ class AtomicBoundaryMemorySessionStore extends MemorySessionStore {
     };
     this.boundaries.set(sessionId, boundary);
     return boundary;
+  }
+
+  override async syncExecutionBoundary(
+    sessionId: string,
+    boundary: ExecutionBoundary,
+    projection: { permissionMode: SessionHeader['permissionMode'] },
+  ): Promise<ExecutionBoundary> {
+    const current = await this.readExecutionBoundary(sessionId);
+    const next = sameExecutionBoundaryAuthority(current, boundary)
+      ? current
+      : { ...boundary, revision: current.revision + 1 };
+    this.boundaries.set(sessionId, next);
+    this.projectingBoundary = true;
+    try {
+      await super.updateHeader(sessionId, { permissionMode: projection.permissionMode });
+    } finally {
+      this.projectingBoundary = false;
+    }
+    return next;
   }
 
   override async updateHeader(

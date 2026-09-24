@@ -431,6 +431,8 @@ async function createExecutionStoresForWrite<K extends StorageRootKind, E extend
         run(() => sessionStore.settleSandboxBoundaryRequest(input)),
       setExecutionBoundaryKind: (sessionId, boundaryKind, projection) =>
         run(() => sessionStore.setExecutionBoundaryKind(sessionId, boundaryKind, projection)),
+      syncExecutionBoundary: (sessionId, boundary, projection) =>
+        run(() => sessionStore.syncExecutionBoundary(sessionId, boundary, projection)),
       list: (filter) => run(() => sessionStore.list(filter)),
       listCatalogPage: (filter, cursor, limit, expectedRevision) =>
         run(() => sessionStore.listCatalogPage(filter, cursor, limit, expectedRevision)),

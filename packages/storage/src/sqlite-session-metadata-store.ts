@@ -49,6 +49,7 @@ import {
   type SandboxBoundaryRequest,
   type SandboxBoundarySettlement,
   type SettleSandboxBoundaryRequest,
+  sameExecutionBoundaryAuthority,
 } from '@maka/core/sandbox-boundary';
 import {
   AGENT_GRAPH_EPOCH_SCHEMA_VERSION,
@@ -863,6 +864,62 @@ export class SqliteSessionMetadataStore {
     return this.transaction(
       () => this.setExecutionBoundaryKindSync(sessionId, kind, projection).boundary,
     );
+  }
+
+  /**
+   * Give a linked child the boundary derived from its parent. A revision is
+   * appended only when the authority differs; the header's permission mode
+   * follows either way. Logged as a user change: the parent's is what moved it.
+   */
+  async syncExecutionBoundary(
+    sessionId: string,
+    boundary: ExecutionBoundary,
+    projection: { permissionMode: SessionHeader['permissionMode'] },
+  ): Promise<ExecutionBoundary> {
+    this.assertOpen();
+    assertSafeSessionId(sessionId);
+    return this.transaction(() => {
+      const record = this.readRecordSync(sessionId);
+      if (!record) throw new SessionNotFoundError(sessionId);
+      this.ensureGenesisExecutionBoundary(record.header);
+      const current = this.readCurrentExecutionBoundarySync(sessionId);
+      let next = current;
+      if (!sameExecutionBoundaryAuthority(current, boundary)) {
+        const revision = current.revision + 1;
+        next = { ...decodeExecutionBoundary(boundary), revision };
+        const committedAt = this.now();
+        this.db
+          .prepare(
+            `
+            INSERT INTO sandbox_boundary_log(
+              session_id,
+              entry_id,
+              entry_kind,
+              status,
+              applied_revision,
+              boundary_json,
+              created_at,
+              settled_at
+            ) VALUES (?, ?, 'user_change', 'applied', ?, ?, ?, ?)
+          `,
+          )
+          .run(
+            sessionId,
+            `lineage:${revision}`,
+            revision,
+            JSON.stringify(next),
+            committedAt,
+            committedAt,
+          );
+        this.options.failpoint?.('after_sandbox_boundary_write');
+      }
+      this.updateHeaderSync(
+        sessionId,
+        { permissionMode: projection.permissionMode },
+        { skipNoop: true },
+      );
+      return next;
+    });
   }
 
   async updateSessionConfiguration(

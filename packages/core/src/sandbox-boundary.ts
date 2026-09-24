@@ -253,6 +253,57 @@ export function createExternalExecutionBoundary(revision = 0): ExecutionBoundary
   return { kind: 'external', revision };
 }
 
+/**
+ * The boundary a linked child Session runs under: its parent's current one,
+ * capped by its agent definition. A Read only definition stays read-only under
+ * any parent; every other definition follows the parent, Full access included.
+ * The revision is the child's own.
+ */
+export function deriveLinkedChildExecutionBoundary(
+  parent: ExecutionBoundary,
+  definitionMode: PermissionMode,
+  revision: number,
+): ExecutionBoundary {
+  if (parent.kind === 'external') return { kind: 'external', revision };
+  if (definitionMode === 'explore') {
+    return { kind: 'managed', profile: createReadOnlyPermissionProfile(), revision };
+  }
+  return parent.kind === 'bypass'
+    ? { kind: 'bypass', revision }
+    : { kind: 'managed', profile: parent.profile, revision };
+}
+
+/** The same authority, whatever the revision. */
+export function sameExecutionBoundaryAuthority(
+  a: ExecutionBoundary,
+  b: ExecutionBoundary,
+): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind !== 'managed' || b.kind !== 'managed') return true;
+  return sameJsonValue(a.profile, b.profile);
+}
+
+// Profiles are plain JSON; this module is also bundled for the renderer, so
+// no node:util here.
+function sameJsonValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((item, index) => sameJsonValue(item, b[index]))
+    );
+  }
+  if (!isRecord(a) || !isRecord(b)) return false;
+  const keys = Object.keys(a).filter((key) => a[key] !== undefined);
+  const otherKeys = Object.keys(b).filter((key) => b[key] !== undefined);
+  return (
+    keys.length === otherKeys.length &&
+    keys.every((key) => key in b && sameJsonValue(a[key], b[key]))
+  );
+}
+
 export function decodeExecutionBoundary(input: unknown): ExecutionBoundary {
   if (!isRecord(input) || !isBoundaryRevision(input.revision)) {
     throw new Error('Invalid execution boundary');

@@ -3654,9 +3654,9 @@ test('production Host publishes and retires an implementation child patch', asyn
 
     assert.equal(child?.subagentParent?.parentSessionId, parent.id);
     if (!child) return;
-    // The persisted header is a configuration projection, not execution
-    // authority, and may be narrower than the inherited live boundary.
-    assert.notEqual(child.permissionMode, 'bypass');
+    // An implementation child follows its parent, Full access included, and
+    // its header says so: the mode shown is the authority it runs under.
+    assert.equal(child.permissionMode, 'bypass');
     const childBoundary = await execution.sessionStore.readExecutionBoundary(child.id);
     assert.equal(childBoundary.kind, 'bypass');
     assert.ok(child.subagentWorkspace);

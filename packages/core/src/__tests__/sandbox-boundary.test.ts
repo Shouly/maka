@@ -24,9 +24,12 @@ import {
   assessSandboxBoundaryExpansion,
   createGenesisExecutionBoundary,
   decodeExecutionBoundary,
+  deriveLinkedChildExecutionBoundary,
+  sameExecutionBoundaryAuthority,
   executionBoundaryContains,
   executionBoundaryDisplayMode,
   validateSandboxBoundaryExpansion,
+  type ExecutionBoundary,
 } from '../sandbox-boundary.js';
 import {
   canReadPath,
@@ -473,5 +476,68 @@ describe('ExecutionBoundary', () => {
     assert.strictEqual(executionBoundaryContains(external, external), true);
     assert.strictEqual(executionBoundaryContains(external, auto), false);
     assert.strictEqual(executionBoundaryContains(auto, external), false);
+  });
+});
+
+describe('deriveLinkedChildExecutionBoundary', () => {
+  const manualWithGrant: ExecutionBoundary = {
+    kind: 'managed',
+    profile: applySandboxBoundaryExpansion(createWorkspaceWritePermissionProfile(), {
+      filesystem: { entries: [{ path: '/approved/output', access: 'write', scope: 'subtree' }] },
+    }),
+    revision: 3,
+  };
+
+  test('a Read only definition is read-only under any parent', () => {
+    const readOnly = { kind: 'managed', profile: createReadOnlyPermissionProfile(), revision: 1 };
+    assert.deepStrictEqual(
+      deriveLinkedChildExecutionBoundary(manualWithGrant, 'explore', 1),
+      readOnly,
+    );
+    assert.deepStrictEqual(
+      deriveLinkedChildExecutionBoundary({ kind: 'bypass', revision: 2 }, 'explore', 1),
+      readOnly,
+    );
+  });
+
+  test('any other definition follows the parent, grants and Full access included', () => {
+    assert.deepStrictEqual(deriveLinkedChildExecutionBoundary(manualWithGrant, 'ask', 4), {
+      ...manualWithGrant,
+      revision: 4,
+    });
+    assert.deepStrictEqual(
+      deriveLinkedChildExecutionBoundary({ kind: 'bypass', revision: 2 }, 'ask', 0),
+      { kind: 'bypass', revision: 0 },
+    );
+    assert.deepStrictEqual(
+      deriveLinkedChildExecutionBoundary(createGenesisExecutionBoundary('explore'), 'ask', 0),
+      createGenesisExecutionBoundary('explore'),
+    );
+  });
+
+  test('an externally isolated parent keeps its children external', () => {
+    assert.deepStrictEqual(
+      deriveLinkedChildExecutionBoundary({ kind: 'external', revision: 0 }, 'ask', 5),
+      { kind: 'external', revision: 5 },
+    );
+  });
+});
+
+describe('sameExecutionBoundaryAuthority', () => {
+  test('ignores the revision and compares managed profiles structurally', () => {
+    const a = createGenesisExecutionBoundary('ask');
+    assert.strictEqual(sameExecutionBoundaryAuthority(a, { ...a, revision: 7 }), true);
+    assert.strictEqual(
+      sameExecutionBoundaryAuthority(a, createGenesisExecutionBoundary('explore')),
+      false,
+    );
+    assert.strictEqual(
+      sameExecutionBoundaryAuthority(
+        { kind: 'bypass', revision: 0 },
+        { kind: 'bypass', revision: 9 },
+      ),
+      true,
+    );
+    assert.strictEqual(sameExecutionBoundaryAuthority(a, { kind: 'bypass', revision: 0 }), false);
   });
 });
