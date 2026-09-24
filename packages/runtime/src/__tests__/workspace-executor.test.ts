@@ -235,8 +235,7 @@ describe('LocalWorkspaceExecutor file operations', () => {
     await utimes(join(cwd, 'src', 'c.js'), new Date(2000), new Date(2000));
     const executor = new LocalWorkspaceExecutor();
 
-    // Claude's Glob keeps the oldest when it caps, so the newest is what a
-    // capped list leaves out.
+    // A capped Glob keeps the oldest, so the newest is what it leaves out.
     const capped = await executor.globFiles({ cwd, pattern: 'src/*.*', limit: 2 });
     assert.deepStrictEqual(capped, { files: [join('src', 'b.ts'), join('src', 'c.js')], total: 3 });
 

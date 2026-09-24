@@ -221,10 +221,9 @@ export class FilesystemWorkerClient {
     if (!parsedOperation.success) throw clientError('invalid_operation', 'validation', requestId);
 
     // The subtree normalisation below fails every unusable search root with
-    // one undifferentiated error; name the actual problem first, as Claude's
-    // Glob and Grep do: their own sentence for a missing root, Glob's for a
-    // file, and the filesystem's own message for anything else (EACCES,
-    // ELOOP, ...).
+    // one undifferentiated error; name the actual problem first: a sentence of
+    // its own for a missing root, another for a Glob root that is a file, and
+    // the filesystem's own message for anything else (EACCES, ELOOP, ...).
     const searchKind = parsedOperation.data.kind;
     if (searchKind === 'glob' || searchKind === 'grep') {
       const shown = resolve(input.cwd, parsedOperation.data.path);
@@ -367,9 +366,9 @@ export class FilesystemWorkerClient {
       ...(platform === 'win32' ? {} : { slashTmp: await canonicalPath('/tmp') }),
       ...(runtimeWritableRoots ? { runtimeWritableRoots } : {}),
     };
-    // Claude's Edit checks that the file exists before anything asks for
-    // access: a grant for a file that is not there would unblock nothing.
-    // Only where the session may read, so the answer tells it nothing new.
+    // Edit checks that the file exists before anything asks for access: a
+    // grant for a file that is not there would unblock nothing. Only where the
+    // session may read, so the answer tells it nothing new.
     if (
       parsedOperation.data.kind === 'edit' &&
       target.targetType === 'missing' &&

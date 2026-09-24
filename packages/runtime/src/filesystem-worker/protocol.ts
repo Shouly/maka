@@ -20,9 +20,9 @@
 import { z } from 'zod';
 import { validateSandboxBoundaryExpansion } from '@maka/core/sandbox-boundary';
 
-// v10 moves Glob to ripgrep, as Claude's Glob is: an empty pattern lists
-// every file, and the answer is root-relative paths, oldest first, with the
-// full match count in `total` in place of the `truncated` marker.
+// v10 moves Glob to ripgrep: an empty pattern lists every file, and the
+// answer is root-relative paths, oldest first, with the full match count in
+// `total` in place of the `truncated` marker.
 //
 // v9 widened Grep again, to the ripgrep switches the tool now exposes: a
 // `--type` filter, asymmetric context (`-A`/`-B`), an explicit line-number
@@ -198,7 +198,7 @@ export const FilesystemWorkerOperationSchema = z.union([
       kind: z.literal('glob'),
       cwd,
       path,
-      // Empty lists every file, as Claude's Glob does.
+      // Empty lists every file.
       pattern: z.string(),
       limit: z.number().int().positive().optional(),
     })

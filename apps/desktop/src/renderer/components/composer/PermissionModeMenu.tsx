@@ -18,12 +18,12 @@
  */
 
 // The composer's permission control (upstream `PermissionModeSelect`) as a
-// meta-row chip under the surface — the mode's label as text, opening the
-// menu of Claude's permission picker: a "Permission mode" heading, then each
-// selectable mode as its name over a sentence saying when Maka asks, the
-// chosen one checked. Read-only (`explore`) is a real boundary a Session can
-// be running under, so the chip names it in its own words, but the menu never
-// offers it — the picker lists Manual and Full access.
+// meta-row chip under the surface — the mode's label as text, opening a menu
+// with a "Permission mode" heading, then each selectable mode as its name over
+// a sentence saying when Maka asks, the chosen one checked. Read-only
+// (`explore`) is a real boundary a Session can be running under, so the chip
+// names it in its own words, but the menu never offers it — the picker lists
+// Manual and Full access.
 
 import type { PermissionMode } from '@maka/core/permission';
 import type { ChatDefaultPermissionMode } from '@maka/core/settings';

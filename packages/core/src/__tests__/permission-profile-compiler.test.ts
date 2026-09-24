@@ -42,7 +42,7 @@ describe('compilePermissionProfile', () => {
     assert.equal(ask.profileName, 'workspace-write');
     assert.equal(ask.profile.type, 'managed');
     assert.equal(ask.profile.name, 'workspace-write');
-    // Codex's workspace-write: the network is open.
+    // Manual opens the network.
     assert.deepEqual(ask.network, { kind: 'enabled' });
   });
 

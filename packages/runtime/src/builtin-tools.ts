@@ -157,10 +157,9 @@ function canonicalFilePath(cwd: string, path: string): string {
 }
 
 /**
- * A path argument as Claude's file tools read it (`expandPath`): a leading `~`
- * is the user's home. Models write `~/notes.md` the way people do, and taken
- * literally it names a directory called `~` under the cwd — where a Write
- * would quietly land.
+ * A leading `~` in a path argument is the user's home. Models write
+ * `~/notes.md` the way people do, and taken literally it names a directory
+ * called `~` under the cwd — where a Write would quietly land.
  */
 function expandHomePath(path: string): string {
   if (path === '~') return homedir();

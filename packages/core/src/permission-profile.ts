@@ -119,9 +119,10 @@ export interface PermissionProfileMatchContext {
 }
 
 /**
- * Read-only, as Codex's is: anything on the machine may be read (the OS's own
- * privacy protections still apply), nothing may be written, and the network
- * stays closed.
+ * Read only: anything on the machine may be read (the OS's own privacy
+ * protections still apply), nothing may be written, and the network stays
+ * closed. Reads are not held to the workspace: toolchains, git config and the
+ * files a user points at live outside it, and confining them broke tools.
  */
 export function createReadOnlyPermissionProfile(): PermissionProfileManaged {
   return {
@@ -196,10 +197,10 @@ export function isCanonicalReadOnlyPermissionProfile(profile: PermissionProfileM
 }
 
 /**
- * The Manual mode, as Codex's workspace-write is: reads reach the whole machine
- * (the OS's privacy protections still apply), writes are held to the
- * workspace and the temporary directories, and the network is open. Writing
- * anywhere else is the one thing that needs the user's approval.
+ * Manual: reads reach the whole machine (the OS's privacy protections still
+ * apply), writes are held to the workspace and the temporary directories, and
+ * the network is open. Writing anywhere else is the one thing that needs the
+ * user's approval.
  */
 export function createWorkspaceWritePermissionProfile(): PermissionProfileManaged {
   return {

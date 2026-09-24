@@ -218,7 +218,7 @@ function isEditResult(output: unknown): output is { path: string; replacements: 
 export function grepToolResultToModelOutput(output: unknown): ToolResultOutput {
   const result = asGrepResult(output);
   if (!result) return toolResultOutput(output, false);
-  // Paths inside the session cwd read relative to it, as Glob's and Claude's do.
+  // Paths inside the session cwd read relative to it, as Glob's do.
   const cwd = result.cwd;
   const matches =
     cwd === undefined
@@ -266,9 +266,9 @@ function countSummary(lines: readonly string[]): string {
 }
 
 /**
- * Glob answers as Claude's does: one path per line, oldest first, relative to
- * the session cwd when the file is inside it and absolute when it is not. A
- * capped list says how many it left out.
+ * Glob answers one path per line, oldest first, relative to the session cwd
+ * when the file is inside it and absolute when it is not. A capped list says
+ * how many it left out.
  */
 export function globToolResultToModelOutput(output: unknown): ToolResultOutput {
   const result = asGlobResult(output);

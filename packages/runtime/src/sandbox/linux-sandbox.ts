@@ -241,7 +241,7 @@ function buildBubblewrapArgvWithRoots(
   roots: ResolvedLinuxRoots,
 ): readonly string[] {
   const { command } = input;
-  // A full-disk read is the host root bound read-only FIRST, as Codex does:
+  // A full-disk read is the host root bound read-only FIRST:
   // bubblewrap mounts in order and a later mount covers an earlier one, so
   // `/proc`, `/dev`, the temp tmpfs and every writable bind must land on top
   // of it. Bound last, it would cover them all with the host's read-only view.

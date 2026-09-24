@@ -569,7 +569,7 @@ function createWorkspaceFilesystemExecutor(
               scope,
             }));
           } catch (error) {
-            // Claude's Edit wording, as Read's and the worker client's.
+            // The same sentence as Read's and the worker client's.
             const code = (error as NodeJS.ErrnoException).code;
             if (code === 'ENOENT' || code === 'ENOTDIR') {
               throw new Error(
@@ -639,9 +639,9 @@ function createWorkspaceFilesystemExecutor(
         }
         case 'glob': {
           // A missing root and a root that is a file each get their own
-          // sentence, in Claude's Glob wording, on every backend; the worker
-          // client makes the same check. Node's glob would otherwise answer a
-          // file root with an empty list, indistinguishable from no match.
+          // sentence, the same on every backend; the worker client makes the
+          // same check. Node's glob would otherwise answer a file root with an
+          // empty list, indistinguishable from no match.
           const shown = resolve(cwd, operation.path);
           let base: string;
           try {
@@ -684,7 +684,7 @@ function createWorkspaceFilesystemExecutor(
               scope,
             }));
           } catch (error) {
-            // Claude's Grep wording, as the worker client gives it too.
+            // The same sentence the worker client gives.
             const code = (error as NodeJS.ErrnoException).code;
             if (code === 'ENOENT' || code === 'ENOTDIR') {
               throw new Error(

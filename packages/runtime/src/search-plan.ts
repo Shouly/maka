@@ -41,7 +41,7 @@ export const GREP_HARD_LINE_CAP = 2_000;
 /** How many Glob paths are listed; the rest are counted, not listed. */
 export const GLOB_RESULT_LIMIT = 100;
 
-/** Claude's Glob gives ripgrep 20 seconds. */
+/** How long one Glob lets ripgrep run. */
 export const GLOB_TIMEOUT_MS = 20_000;
 
 export interface RipgrepPlanInput {
@@ -131,9 +131,9 @@ export function applyGrepHeadLimit(stdout: string, limit: number, offset = 0): G
 }
 
 /**
- * Claude's Grep lists matching files newest first, ties by name, and only then
- * applies the head limit, so a capped list keeps the most recently touched
- * files. ripgrep itself prints them in whatever order its threads finish.
+ * Grep lists matching files newest first, ties by name, and only then applies
+ * the head limit, so a capped list keeps the most recently touched files.
+ * ripgrep itself prints them in whatever order its threads finish.
  * A file that cannot be stat'd sorts oldest rather than failing the search.
  */
 export async function orderGrepFilesNewestFirst(stdout: string): Promise<string> {
@@ -177,11 +177,11 @@ const RIPGREP_INPUT_ERROR =
   /^rg: (?:regex parse error|error parsing glob|unrecognized file type|error parsing flag|compiled regex exceeds size limit)/m;
 
 /**
- * Whether a ripgrep run answered the search, read the way Claude's Grep reads
- * it. Exit 2 means some path failed, not the search: an unreadable directory
- * under the root still leaves every other match in stdout, and those are the
- * answer. It is a failure only when nothing was printed and ripgrep refused
- * the input itself — the pattern, a glob, a type name.
+ * Whether a ripgrep run answered the search. Exit 2 means some path failed,
+ * not the search: an unreadable directory under the root still leaves every
+ * other match in stdout, and those are the answer. It is a failure only when
+ * nothing was printed and ripgrep refused the input itself — the pattern, a
+ * glob, a type name.
  */
 export function ripgrepAnswered(exitCode: number, printed: boolean, stderr: string): boolean {
   if (exitCode === 0 || exitCode === 1) return true;
@@ -268,8 +268,8 @@ export const GLOB_TIMEOUT_MESSAGE = `Ripgrep search timed out after ${GLOB_TIMEO
 const MAX_GLOB_STDERR_BYTES = 16 * 1024;
 
 /**
- * Claude's Glob, which is ripgrep listing files: every file under the root,
- * dotfiles and ignored files included, symlinks neither listed nor followed,
+ * Glob is ripgrep listing files: every file under the root, dotfiles and
+ * ignored files included, symlinks neither listed nor followed,
  * case-sensitive, ascending by modification time. A pattern without a `/`
  * matches a file name at any depth; one with a `/` is anchored at the root.
  *
@@ -360,8 +360,8 @@ function rootRelative(path: string): string {
 /**
  * Glob where ripgrep cannot run — the Windows sandbox preview, which cannot
  * start a grandchild process, or a runtime without ripgrep. Node's walk
- * cannot match Claude's Glob exactly (it follows the platform's case rule and
- * skips dotfiles), so this keeps what it can: slash-less patterns recurse,
+ * cannot match ripgrep's answer exactly (it follows the platform's case rule
+ * and skips dotfiles), so this keeps what it can: slash-less patterns recurse,
  * only regular files answer, and the order and count are the same.
  */
 export async function nodeGlob(input: {

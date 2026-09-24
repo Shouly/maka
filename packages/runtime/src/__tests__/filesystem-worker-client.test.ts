@@ -643,7 +643,7 @@ describe('filesystem worker client search roots', () => {
     });
   }
 
-  test('names a missing root and a file root in the wording of Claude Glob', async () => {
+  test('names a missing Glob root and a file root', async () => {
     const cwd = await temporaryDirectory('maka-worker-glob-root-');
     await writeFile(join(cwd, 'a.txt'), 'a\n', 'utf8');
     const client = clientThatMustNotLaunch();
@@ -664,7 +664,7 @@ describe('filesystem worker client search roots', () => {
     );
   });
 
-  test('names a missing Grep root in the wording of Claude Grep', async () => {
+  test('names a missing Grep root', async () => {
     const cwd = await temporaryDirectory('maka-worker-grep-root-');
     await assert.rejects(
       clientThatMustNotLaunch().execute({

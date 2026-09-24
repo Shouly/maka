@@ -204,8 +204,8 @@ describe('ahead of the turn: recorded once, again only on change', () => {
       bypass[0]!.text,
       /Permission mode: bypass, full access[\s\S]*Sandbox boundary: bypass/u,
     );
-    // Codex's wording: nothing to ask for, and a destructive command waits
-    // only when the user did not clearly ask for it — not a blanket confirm.
+    // Nothing to ask for, and a destructive command waits only when the user
+    // did not clearly ask for it — not a blanket confirm.
     assert.match(bypass[0]!.text, /Nothing needs the user's approval\./u);
     assert.match(bypass[0]!.text, /unless the user has clearly asked for that operation/u);
     assert.doesNotMatch(bypass[0]!.text, /confirm before anything irreversible/u);

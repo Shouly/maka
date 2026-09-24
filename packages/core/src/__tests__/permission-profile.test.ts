@@ -78,7 +78,7 @@ describe('PermissionProfile factories', () => {
       canWritePath(profile, '/workspace/project2/src/index.ts', WORKSPACE_CONTEXT),
       false,
     );
-    // Codex's workspace-write: reads reach the whole machine, the network is open.
+    // Manual reads the whole machine and opens the network.
     assert.strictEqual(
       canReadPath(profile, '/workspace/project2/src/index.ts', WORKSPACE_CONTEXT),
       true,

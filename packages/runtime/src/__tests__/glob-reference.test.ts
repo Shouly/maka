@@ -17,7 +17,7 @@
  * under the License.
  */
 
-// Glob against the measured capture of Claude's Glob (2026-09-22, T01–T43).
+// Glob against a measured reference capture (2026-09-22, cases T01–T43).
 // The lab below is the capture's `glob-lab`, the cases keep its numbers, and
 // every expected answer is the capture's own. Files get distinct times in
 // creation order so the capture's time-ordered answers are deterministic.
@@ -65,7 +65,7 @@ const MTIME_FILES: ReadonlyArray<readonly [string, number]> = [
 const TRUNCATION = (shown: number, total: number) =>
   `(Showing ${shown} of ${total} matching files; ${total - shown} more are not listed. Narrow the pattern or path to see the rest.)`;
 
-describe('Glob matches the measured Claude Glob', { skip: !(await resolveRipgrepPath()) }, () => {
+describe('Glob matches the reference capture', { skip: !(await resolveRipgrepPath()) }, () => {
   let parent: string;
   let lab: string;
   const glob = buildBuiltinTools().find((tool) => tool.name === 'Glob');
@@ -80,7 +80,7 @@ describe('Glob matches the measured Claude Glob', { skip: !(await resolveRipgrep
       toolCallId: 'tool-1',
       abortSignal: new AbortController().signal,
       emitOutput: () => {},
-      // Host scope, as Claude's Glob has: T14 and T16 search above the cwd.
+      // Host scope, as in the capture: T14 and T16 search above the cwd.
       executionBoundary: { kind: 'bypass', revision: 1 },
     });
     const text = glob!.toModelOutput?.({ toolCallId: 'tool-1', input: args, output });

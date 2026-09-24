@@ -280,7 +280,7 @@ describe('filesystem worker operations', () => {
     });
   });
 
-  test('reads Grep exit codes the way Claude does and surfaces bounded stderr for failures', async () => {
+  test('reads Grep exit 1 as no match, exit 2 with output as partial, and bounds stderr', async () => {
     const root = await temporaryDirectory('maka-worker-grep-result-');
     const target = join(root, 'file.ts');
     await writeFile(target, 'const value = 1;', 'utf8');

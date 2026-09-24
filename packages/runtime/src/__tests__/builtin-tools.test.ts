@@ -2971,7 +2971,7 @@ describe('builtin file tools speak the reference argument names', () => {
     );
   });
 
-  test('Glob treats an empty path as the default and names a bad root the way Claude does', async () => {
+  test('Glob treats an empty path as the default and names a bad root', async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), 'maka-glob-root-')));
     await writeFile(join(root, 'a.ts'), '// file\n', 'utf8');
     const glob = tool('Glob');
@@ -3024,7 +3024,7 @@ describe('builtin file tools speak the reference argument names', () => {
     }
   });
 
-  test('Edit names a missing file the way Claude does', async () => {
+  test('Edit says a missing file does not exist', async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), 'maka-edit-missing-')));
     await assert.rejects(
       runTool(tool('Edit'), { file_path: 'absent.txt', old_string: 'a', new_string: 'b' }, root),
@@ -3032,7 +3032,7 @@ describe('builtin file tools speak the reference argument names', () => {
     );
   });
 
-  test('Grep names a missing search root the way Claude does', async () => {
+  test('Grep says a missing search root does not exist', async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), 'maka-grep-root-')));
     await assert.rejects(runTool(tool('Grep'), { pattern: 'x', path: 'nope' }, root), {
       message: `Path does not exist: ${join(root, 'nope')}. Note: your current working directory is ${root}.`,

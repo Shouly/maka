@@ -482,8 +482,8 @@ export async function executeFilesystemOperation(
         stderr: detail,
         sandboxed: true,
       });
-      // A denial with nothing printed stays an error, unlike Claude's Grep:
-      // the model can only ask for a wider boundary if it learns of one.
+      // A denial with nothing printed stays an error, not "no matches": the
+      // model can only ask for a wider boundary if it learns of one.
       const deniedOutright = sandboxDenied && result.stdout.trim() === '';
       if (
         deniedOutright ||

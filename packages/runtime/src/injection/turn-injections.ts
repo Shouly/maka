@@ -70,8 +70,10 @@ const PERMISSION_MODE_COPY: Readonly<Record<PermissionMode, string>> = {
   explore:
     'read-only. Files anywhere on this machine can be read, but tools that write files or run commands with side effects are refused; describe what you would change instead of attempting it.',
   ask: 'reads anywhere on this machine, writes inside the workspace and the temporary directories, and the network is open. Writing anywhere else needs a boundary expansion the user approves; request the smallest one that unblocks the call, once.',
-  // Codex's danger-full-access and never-approve lines, with the destructive
-  // command rule its base prompt carries (Maka's prompt has no equivalent).
+  // No sandbox and nothing to approve, so the one rule left is on destructive
+  // commands. It lives here because the system prompt carries none, and it
+  // spares what the user asked for: a blanket "confirm first" made the model
+  // stop before an `rm` the user had typed out.
   bypass:
     "full access. No filesystem sandboxing - all commands are permitted. Network access is enabled. Nothing needs the user's approval. Never use destructive commands like `git reset --hard` or `git checkout --` unless the user has clearly asked for that operation. If the request is ambiguous, ask the user first.",
 };
