@@ -348,36 +348,39 @@ describe('SandboxBoundaryExpansion', () => {
     );
   });
 
-  test('keeps protected metadata deny-write authoritative over exact write expansions', () => {
-    const base: PermissionProfileManaged = {
-      type: 'managed',
-      name: 'custom',
-      fileSystem: {
-        kind: 'restricted',
-        entries: [{ kind: 'path', access: 'write', path: '/workspace', match: 'subtree' }],
-        protectedMetadata: {
-          access: 'deny_write',
-          names: ['.git'],
-        },
-      },
-      network: { kind: 'restricted' },
-    };
+  test('an exact grant for a protected path is approvable; a subtree over the workspace is not', () => {
+    const manual = createWorkspaceWritePermissionProfile();
+    const context = { workspaceRoots: ['/ws/project'] };
 
-    assert.deepStrictEqual(
+    // The workspace's own write entry does not cover its protected entries,
+    // so the request is applied rather than answered as already granted.
+    assert.strictEqual(
       assessSandboxBoundaryExpansion(
-        base,
+        manual,
         {
           filesystem: {
-            entries: [
-              {
-                path: '/workspace/.git/config',
-                access: 'write',
-                scope: 'exact',
-              },
-            ],
+            entries: [{ path: '/ws/project/.git/config', access: 'write', scope: 'exact' }],
           },
         },
-        { workspaceRoots: ['/workspace'] },
+        context,
+      ).outcome,
+      'apply',
+    );
+    // The workspace itself, as Bash declares it, is already granted: a noop.
+    assert.strictEqual(
+      assessSandboxBoundaryExpansion(
+        manual,
+        { filesystem: { entries: [{ path: '/ws/project', access: 'write', scope: 'subtree' }] } },
+        context,
+      ).outcome,
+      'noop',
+    );
+    // A subtree above the workspace would lift the protection without naming it.
+    assert.deepStrictEqual(
+      assessSandboxBoundaryExpansion(
+        manual,
+        { filesystem: { entries: [{ path: '/ws', access: 'write', scope: 'subtree' }] } },
+        context,
       ),
       { outcome: 'conflict', reason: 'explicit_deny' },
     );

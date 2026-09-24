@@ -34,7 +34,6 @@ import {
   LinuxBubblewrapBackend,
   buildBubblewrapArgv,
   buildNetworkSeccompFilter,
-  discoverNestedProtectedMetadataPaths,
   linuxExecutableRoots,
 } from '../sandbox/linux-sandbox.js';
 import { detectLinuxSandboxCapability } from '../sandbox/linux-capability.js';
@@ -447,43 +446,7 @@ describe('buildNetworkSeccompFilter', () => {
   });
 });
 
-describe('discoverNestedProtectedMetadataPaths', () => {
-  it('finds protected metadata at any existing nested path segment', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'maka-protected-scan-'));
-    await mkdir(join(root, 'packages', 'pkg', '.git'), { recursive: true });
-    await mkdir(join(root, '.git'), { recursive: true });
-
-    const paths = discoverNestedProtectedMetadataPaths({
-      writableRoots: [root],
-      names: ['.git', '.agents', '.codex'],
-    });
-
-    assert.equal(paths.length, 1);
-    assert.match(paths[0] ?? '', /packages[/\\]pkg[/\\]\.git$/);
-  });
-});
-
 describe('LinuxBubblewrapBackend', () => {
-  it('fails when protected-metadata discovery fails during transform', () => {
-    let scans = 0;
-    const backend = new LinuxBubblewrapBackend({
-      capability: { available: true, bwrapPath: '/usr/bin/bwrap' },
-      discoverProtectedMetadataPaths: () => {
-        scans += 1;
-        throw new Error('workspace changed during enumeration');
-      },
-    });
-    const request = workspaceRequest(protectedMetadataProfile());
-
-    const transformed = backend.transform(request);
-    assert.equal(scans, 1);
-    assert.equal(transformed.ok, false);
-    if (!transformed.ok) {
-      assert.equal(transformed.reason, 'backend_not_available');
-      assert.match(transformed.message ?? '', /enumerate protected metadata/i);
-    }
-  });
-
   it('wraps a managed restricted command when bwrap is available', () => {
     const backend = new LinuxBubblewrapBackend({
       capability: { available: true, bwrapPath: '/usr/bin/bwrap' },
@@ -501,17 +464,24 @@ describe('LinuxBubblewrapBackend', () => {
     }
   });
 
-  it('re-applies discovered nested protected metadata as read-only', () => {
-    const nested = '/repo/project/packages/pkg/.git';
+  it('mounts the protected git entries of the workspace read-only when they exist', () => {
+    // `-try`: a workspace without a repository binds nothing, so `git init`
+    // works; once `.git/config` exists nothing inside can change it.
     const backend = new LinuxBubblewrapBackend({
       capability: { available: true, bwrapPath: '/usr/bin/bwrap' },
-      discoverProtectedMetadataPaths: () => [nested],
     });
-    const result = backend.transform(workspaceRequest(protectedMetadataProfile()));
+    const result = backend.transform(workspaceRequest(createWorkspaceWritePermissionProfile()));
 
     assert.equal(result.ok, true);
     if (result.ok) {
-      assert.ok(hasTriple(result.exec.argv, '--ro-bind', nested, nested));
+      for (const entry of ['.git/config', '.git/hooks']) {
+        const path = `/repo/project/${entry}`;
+        assert.ok(hasTriple(result.exec.argv, '--ro-bind-try', path, path), entry);
+      }
+      // `.git` itself is a mount point, so it cannot be renamed or removed.
+      assert.ok(
+        hasTriple(result.exec.argv, '--bind-try', '/repo/project/.git', '/repo/project/.git'),
+      );
     }
   });
 

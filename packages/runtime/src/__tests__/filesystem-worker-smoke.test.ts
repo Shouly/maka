@@ -284,6 +284,62 @@ describe('macOS filesystem worker smoke', { skip: process.platform !== 'darwin' 
     );
   });
 
+  test('a Write to .git/config asks for a grant, and an exact grant is enough', async () => {
+    const repo = join(workspace, 'repo');
+    await mkdir(join(repo, '.git', 'hooks'), { recursive: true });
+    await writeFile(join(repo, '.git', 'config'), '[core]\n', 'utf8');
+    const configPath = join(repo, '.git', 'config');
+    const manual = {
+      kind: 'managed' as const,
+      revision: 0,
+      profile: createWorkspaceWritePermissionProfile(),
+    };
+    await assert.rejects(
+      client.execute({
+        operation: { kind: 'write', path: configPath, content: '[core]\n\tfsmonitor = evil\n' },
+        cwd: repo,
+        mode: 'ask',
+        executionBoundary: manual,
+        expectedIdentity: 'unchecked',
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof FilesystemWorkerClientError);
+        assert.equal(error.reason, 'sandbox_boundary_required');
+        assert.deepEqual(error.requiredExpansion, {
+          filesystem: { entries: [{ path: configPath, access: 'write', scope: 'exact' }] },
+        });
+        return true;
+      },
+    );
+    // Other files in .git are the session's to write.
+    await client.execute({
+      operation: {
+        kind: 'write',
+        path: join(repo, '.git', 'HEAD'),
+        content: 'ref: refs/heads/main\n',
+      },
+      cwd: repo,
+      mode: 'ask',
+      executionBoundary: manual,
+      expectedIdentity: 'unchecked',
+    });
+    const granted = {
+      ...manual,
+      revision: 1,
+      profile: applySandboxBoundaryExpansion(manual.profile, {
+        filesystem: { entries: [{ path: configPath, access: 'write', scope: 'exact' }] },
+      }),
+    };
+    await client.execute({
+      operation: { kind: 'write', path: configPath, content: '[user]\n\tname = t\n' },
+      cwd: repo,
+      mode: 'ask',
+      executionBoundary: granted,
+      expectedIdentity: 'unchecked',
+    });
+    assert.equal(await readFile(configPath, 'utf8'), '[user]\n\tname = t\n');
+  });
+
   test('Edit of a missing file says so instead of asking for access', async () => {
     // A grant for a file that is not there unblocks nothing; the model
     // approved one and hit the same wall again.

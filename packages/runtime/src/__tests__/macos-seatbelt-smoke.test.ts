@@ -22,7 +22,7 @@ import { after, describe, it } from 'node:test';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
 
 import { applySandboxBoundaryExpansion } from '@maka/core/sandbox-boundary';
@@ -280,6 +280,36 @@ describe('macOS Seatbelt smoke', { skip: !canRunSeatbelt }, () => {
 
     assert.equal(child.status, 0, child.stderr);
     assert.equal(existsSync(join(workspaceRoot, '.codex')), true);
+  });
+
+  it('keeps .git/config and .git/hooks read-only while git itself still works', async () => {
+    const workspaceRoot = await makeWorkspace();
+    cleanup.push(workspaceRoot);
+    execFileSync('git', ['init', '-q', '.'], { cwd: workspaceRoot });
+    const before = await readFile(join(workspaceRoot, '.git', 'config'), 'utf8');
+
+    const commit = runSeatbeltCommand(
+      workspaceRoot,
+      'git -c user.name=t -c user.email=t@t commit -q --allow-empty -m first && git log --oneline | wc -l',
+    );
+    assert.equal(commit.status, 0, commit.stderr);
+    assert.match(commit.stdout, /1/);
+
+    const config = runSeatbeltCommand(
+      workspaceRoot,
+      'printf "[core]\n\tfsmonitor = evil\n" >> .git/config',
+    );
+    assert.notEqual(config.status, 0);
+    assert.equal(await readFile(join(workspaceRoot, '.git', 'config'), 'utf8'), before);
+
+    const hook = runSeatbeltCommand(workspaceRoot, 'printf "#!/bin/sh\n" > .git/hooks/pre-commit');
+    assert.notEqual(hook.status, 0);
+    assert.equal(existsSync(join(workspaceRoot, '.git', 'hooks', 'pre-commit')), false);
+
+    // Nor can the repository be moved aside for a fresh one to take its place.
+    const moved = runSeatbeltCommand(workspaceRoot, 'mv .git .git.old');
+    assert.notEqual(moved.status, 0);
+    assert.equal(existsSync(join(workspaceRoot, '.git', 'config')), true);
   });
 
   it('denies writes to explicit denied children under a writable workspace root', async () => {

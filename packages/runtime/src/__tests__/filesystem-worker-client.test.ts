@@ -344,12 +344,14 @@ describe('filesystem worker operation-scoped Seatbelt profile', () => {
       canWritePath(transform.command.profile, sibling, transform.command.pathContext),
       false,
     );
-    assert.equal(
+    // The session's protection rides along; it constrains nothing here, since
+    // the worker's one root is the target and not a workspace root.
+    assert.deepEqual(
       transform.command.profile.type === 'managed' &&
         transform.command.profile.fileSystem.kind === 'restricted'
         ? transform.command.profile.fileSystem.protectedMetadata?.names
         : undefined,
-      undefined,
+      ['.git/config', '.git/hooks'],
     );
   });
 

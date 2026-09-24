@@ -458,11 +458,19 @@ function profileContainsExpansion(
   if (expansion.network?.enabled && profile.network.kind !== 'enabled') return false;
   if (profile.fileSystem.kind === 'unrestricted') return true;
 
-  return (expansion.filesystem?.entries ?? []).every((requested) =>
-    profile.fileSystem.entries.some(
+  const protectedNames = profile.fileSystem.protectedMetadata?.names ?? [];
+  return (expansion.filesystem?.entries ?? []).every((requested) => {
+    // A protected path is written only under an explicit grant for it; the
+    // workspace's own write entry does not cover it, so asking is not a noop.
+    const protectedWrite =
+      requested.access === 'write' &&
+      protectedNames.length > 0 &&
+      isProtectedMetadataPath(requested.path, context.workspaceRoots ?? [], protectedNames);
+    return profile.fileSystem.entries.some(
       (existing) =>
         existing.access !== 'deny' &&
         accessCovers(existing.access, requested.access) &&
+        (!protectedWrite || existing.kind === 'path') &&
         (coversWholeFilesystem(existing, context)
           ? isNormalizedAbsolutePath(requested.path)
           : resolvedEntryRoots(existing, context).some((root) =>
@@ -470,8 +478,8 @@ function profileContainsExpansion(
                 ? pathCoveredByRoot(requested.path, root)
                 : root.scope === 'subtree' && pathWithinRoot(requested.path, root.path),
             )),
-    ),
-  );
+    );
+  });
 }
 
 /**
@@ -517,6 +525,14 @@ function sandboxProfileContains(parent: SandboxProfile, child: SandboxProfile): 
   ) {
     return false;
   }
+  // Protection restricts workspace writes, so it only counts against a child
+  // that writes the workspace at all: Read only, with no writes, is inside
+  // Manual whether or not it names the protected entries.
+  const childWritesWorkspace = child.fileSystem.entries.some(
+    (entry) =>
+      entry.access === 'write' && entry.kind === 'special' && entry.special === ':workspace_roots',
+  );
+  if (!childWritesWorkspace) return true;
   const parentProtected = parent.fileSystem.protectedMetadata?.names ?? [];
   const childProtected = new Set(child.fileSystem.protectedMetadata?.names ?? []);
   return parentProtected.every((name) => childProtected.has(name));
@@ -565,7 +581,11 @@ function expansionConflictsWithExplicitDeny(
           ? pathCoveredByRoot(requested.path, denied)
           : pathWithinRoot(denied.path, requested.path) ||
             pathCoveredByRoot(requested.path, denied),
-      ) || expansionWeakensProtectedMetadata(profile, requested, context),
+      ) ||
+      // A subtree that the profile already writes (the workspace itself, as
+      // Bash declares it) lifts nothing: it is a noop, not a conflict.
+      (expansionWeakensProtectedMetadata(profile, requested, context) &&
+        !profileContainsExpansion(profile, { filesystem: { entries: [requested] } }, context)),
   );
 }
 
@@ -576,10 +596,11 @@ function expansionWeakensProtectedMetadata(
 ): boolean {
   const policy = profile.fileSystem.protectedMetadata;
   if (policy?.access !== 'deny_write' || requested.access !== 'write') return false;
+  // An exact grant names the protected path itself, which the user then sees
+  // and decides on. A subtree over the workspace would lift the protection
+  // without naming it, so that one is a conflict.
+  if (requested.scope === 'exact') return false;
   const workspaceRoots = context.workspaceRoots ?? [];
-  if (requested.scope === 'exact') {
-    return isProtectedMetadataPath(requested.path, workspaceRoots, policy.names);
-  }
   return workspaceRoots.some(
     (workspaceRoot) =>
       pathWithinRoot(requested.path, workspaceRoot) ||

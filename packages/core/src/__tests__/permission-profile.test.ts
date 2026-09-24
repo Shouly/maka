@@ -115,18 +115,52 @@ describe('PermissionProfile factories', () => {
     assert.strictEqual(canWritePath(profile, '/tmp2/maka-out.txt', WORKSPACE_CONTEXT), false);
   });
 
-  test('workspace-write profile allows protected metadata writes inside the workspace', () => {
+  test('workspace-write keeps .git/config and .git/hooks read-only, and nothing else in .git', () => {
     const profile = createWorkspaceWritePermissionProfile();
 
+    // The two places a write can name a program for git to run, at the top
+    // level of the workspace root.
     for (const path of [
       '/workspace/project/.git/config',
-      '/workspace/project/.agents/state.json',
-      '/workspace/project/packages/demo/.codex/settings.json',
+      '/workspace/project/.git/hooks',
+      '/workspace/project/.git/hooks/pre-commit',
     ]) {
       assert.strictEqual(isProtectedMetadataPath(path, WORKSPACE_CONTEXT.workspaceRoots), true);
       assert.strictEqual(canReadPath(profile, path, WORKSPACE_CONTEXT), true);
+      assert.strictEqual(canWritePath(profile, path, WORKSPACE_CONTEXT), false);
+    }
+    // What commits, checkouts and nested repositories write stays writable.
+    for (const path of [
+      '/workspace/project/.git/index',
+      '/workspace/project/.git/refs/heads/main',
+      '/workspace/project/.git/HEAD',
+      '/workspace/project/.gitconfig',
+      '/workspace/project/packages/demo/.git/config',
+      '/workspace/project/.agents/state.json',
+    ]) {
+      assert.strictEqual(isProtectedMetadataPath(path, WORKSPACE_CONTEXT.workspaceRoots), false);
       assert.strictEqual(canWritePath(profile, path, WORKSPACE_CONTEXT), true);
     }
+    // An exact grant for the protected path is the user's to give.
+    const granted = {
+      ...profile,
+      fileSystem: {
+        ...profile.fileSystem,
+        entries: [
+          ...profile.fileSystem.entries,
+          {
+            kind: 'path' as const,
+            access: 'write' as const,
+            path: '/workspace/project/.git/config',
+            match: 'exact' as const,
+          },
+        ],
+      },
+    };
+    assert.strictEqual(
+      canWritePath(granted, '/workspace/project/.git/config', WORKSPACE_CONTEXT),
+      true,
+    );
 
     assert.strictEqual(
       isProtectedMetadataPath('/workspace/project/.gitignore', WORKSPACE_CONTEXT.workspaceRoots),
@@ -145,14 +179,17 @@ describe('PermissionProfile factories', () => {
       isProtectedMetadataPath('C:\\workspace\\.git\\config', ['C:\\workspace']),
       true,
     );
+    // Top level of the root only: a nested repository is not the host's.
     assert.strictEqual(
-      isProtectedMetadataPath('C:\\workspace\\packages\\demo\\.agents\\state.json', [
-        'C:\\workspace',
-      ]),
-      true,
+      isProtectedMetadataPath('C:\\workspace\\packages\\demo\\.git\\config', ['C:\\workspace']),
+      false,
     );
     assert.strictEqual(
       isProtectedMetadataPath('C:\\workspace\\.gitignore', ['C:\\workspace']),
+      false,
+    );
+    assert.strictEqual(
+      isProtectedMetadataPath('C:\\workspace\\.git\\HEAD', ['C:\\workspace']),
       false,
     );
     // Windows containment is case-insensitive, so metadata names must be too:
@@ -162,7 +199,7 @@ describe('PermissionProfile factories', () => {
       true,
     );
     assert.strictEqual(
-      isProtectedMetadataPath('C:\\WORKSPACE\\.Git\\HEAD', ['C:\\workspace']),
+      isProtectedMetadataPath('C:\\WORKSPACE\\.Git\\hooks\\pre-commit', ['C:\\workspace']),
       true,
     );
     // POSIX filesystems are case-sensitive; `.GIT` is a distinct directory.

@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { readlinkSync, realpathSync } from 'node:fs';
+import { existsSync, readlinkSync, realpathSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 
 import type { PermissionProfile } from '@maka/core/permission-profile';
@@ -546,9 +546,23 @@ function writableRootClause(root: ResolvedRoot, index: number, roots: ResolvedRo
   const requirements = [...deniedRootRequirements(roots.deniedRoots)];
 
   if (roots.protectedWritableRoots.includes(root.path)) {
-    requirements.push(
-      ...roots.protectedMetadataNames.map((name) => protectedMetadataRequirement(root.path, name)),
-    );
+    // Only an entry that exists is protected, so `git init` in a fresh
+    // workspace still works; once it exists nothing in the sandbox can
+    // change or remove it (removal is a write to the path too).
+    // The directories above a protected entry (`.git` for `.git/config`) may
+    // not be renamed or removed either, or a fresh one would take their place
+    // with anything in it; `literal` guards the entry itself and leaves what
+    // is created inside it alone.
+    const base = trimTrailingSlash(root.path);
+    for (const name of roots.protectedMetadataNames) {
+      const parts = name.split('/');
+      for (let depth = 1; depth <= parts.length; depth++) {
+        const path = `${base}/${parts.slice(0, depth).join('/')}`;
+        if (!existsSync(path)) break;
+        const clause = depth === parts.length ? 'subpath' : 'literal';
+        requirements.push(`(require-not (${clause} "${escapeSeatbeltString(path)}"))`);
+      }
+    }
   }
 
   return accessRootClause(rootParam, requirements);
@@ -580,12 +594,6 @@ function seatbeltPathClause(root: ResolvedRoot, parameter: string): string {
 
 function escapeSeatbeltString(value: string): string {
   return value.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
-}
-
-function protectedMetadataRequirement(root: string, name: string): string {
-  const escapedRoot = escapeSeatbeltRegex(trimTrailingSlash(root));
-  const escapedName = escapeSeatbeltRegex(name);
-  return `(require-not (regex #"^${escapedRoot}/(.*/)?${escapedName}(/.*)?$"))`;
 }
 
 function trimTrailingSlash(path: string): string {

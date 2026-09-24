@@ -38,7 +38,6 @@ export {
   LinuxBubblewrapBackend,
   buildBubblewrapArgv,
   buildNetworkSeccompFilter,
-  discoverNestedProtectedMetadataPaths,
 } from './linux-sandbox.js';
 export type {
   BuildBubblewrapArgvInput,

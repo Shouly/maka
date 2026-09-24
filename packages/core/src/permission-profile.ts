@@ -55,7 +55,15 @@ export type FileSystemSandboxEntry =
       special: FileSystemSpecialPath;
     };
 
-export const PROTECTED_METADATA_NAMES = ['.git', '.agents', '.codex'] as const;
+/**
+ * What Manual keeps read-only under each workspace root, as paths relative to
+ * the root. `.git/config` and `.git/hooks` are the two places a write can name
+ * a program for git to run — and the host runs git in the workspace outside
+ * the sandbox. The rest of `.git` stays writable, so commits, checkouts and
+ * `git init` need no approval; a grant for one of these two paths is asked
+ * for like any other.
+ */
+export const PROTECTED_METADATA_NAMES = ['.git/config', '.git/hooks'] as const;
 export type ProtectedMetadataName = (typeof PROTECTED_METADATA_NAMES)[number];
 
 export interface FileSystemProtectedMetadataPolicy {
@@ -229,6 +237,7 @@ export function createWorkspaceWritePermissionProfile(): PermissionProfileManage
           special: ':slash_tmp',
         },
       ],
+      protectedMetadata: { access: 'deny_write', names: [...PROTECTED_METADATA_NAMES] },
     },
     network: { kind: 'enabled' },
   };
@@ -307,10 +316,15 @@ export function isProtectedMetadataPath(
     // write to `.GIT\config` bypasses a `.git` deny and still lands in the
     // real metadata directory.
     const foldCase = isWindowsDrivePathRoot(workspaceRoot);
-    const matchesName = foldCase
-      ? (segment: string) => names.some((name) => name.toLowerCase() === segment.toLowerCase())
-      : (segment: string) => names.includes(segment);
-    if (segments.some(matchesName)) return true;
+    const same = foldCase
+      ? (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+      : (a: string, b: string) => a === b;
+    // Top level of the root only: the path is the protected entry or under it.
+    const protectedHere = names.some((name) => {
+      const parts = name.split('/');
+      return parts.length <= segments.length && parts.every((part, i) => same(part, segments[i]!));
+    });
+    if (protectedHere) return true;
   }
   return false;
 }

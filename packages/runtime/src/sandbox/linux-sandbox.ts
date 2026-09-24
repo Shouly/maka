@@ -18,7 +18,6 @@
  */
 
 import { posix } from 'node:path';
-import { readdirSync } from 'node:fs';
 
 import type { PermissionProfile } from '@maka/core/permission-profile';
 
@@ -41,16 +40,11 @@ export interface LinuxBubblewrapBackendOptions {
   capability?: LinuxSandboxCapability;
   bwrapPath?: string;
   arch?: NodeJS.Architecture;
-  discoverProtectedMetadataPaths?: (input: {
-    writableRoots: readonly string[];
-    names: readonly string[];
-  }) => readonly string[];
 }
 
 export interface BuildBubblewrapArgvInput {
   bwrapPath: string;
   command: SandboxCommand;
-  protectedMetadataPaths?: readonly string[];
 }
 
 interface ResolvedLinuxRoots {
@@ -109,23 +103,6 @@ export class LinuxBubblewrapBackend implements SandboxBackend {
       ? buildNetworkSeccompFilterFromSyscalls(plan.networkSyscalls)
       : undefined;
 
-    let nestedProtectedPaths: readonly string[];
-    try {
-      nestedProtectedPaths = (
-        this.options.discoverProtectedMetadataPaths ?? discoverNestedProtectedMetadataPaths
-      )({
-        writableRoots: plan.roots.protectedWritableRoots,
-        names: plan.roots.protectedMetadataNames,
-      });
-    } catch (error) {
-      return failure(
-        'backend_not_available',
-        `Unable to enumerate protected metadata: ${error instanceof Error ? error.message : String(error)}`,
-        plan.platform,
-        plan.preference,
-      );
-    }
-
     const pinnedFdInputs = command.pathContext.pinnedProfilePaths?.map(
       ({ fd, sourceFd, releaseSource }) => ({
         fd,
@@ -152,7 +129,6 @@ export class LinuxBubblewrapBackend implements SandboxBackend {
           {
             bwrapPath: plan.bwrapPath,
             command,
-            protectedMetadataPaths: nestedProtectedPaths,
           },
           plan.roots,
         ),
@@ -377,14 +353,23 @@ function buildBubblewrapArgvWithRoots(
     argv.push('--bind', pinned ? `/proc/self/fd/${pinned.fd}` : root, root);
   }
 
+  // Only an entry that exists is protected (`-try`), so `git init` in a fresh
+  // workspace still works; a read-only mount over a bind cannot be removed
+  // or replaced from inside.
+  // The directories above a protected entry (`.git` for `.git/config`) are
+  // bound onto themselves first: a mount point cannot be renamed or removed,
+  // so a fresh one cannot take their place, while what is created inside
+  // them is untouched.
   for (const root of roots.protectedWritableRoots) {
     for (const name of roots.protectedMetadataNames) {
+      const parts = name.split('/');
+      for (let depth = 1; depth < parts.length; depth++) {
+        const ancestor = posix.join(root, ...parts.slice(0, depth));
+        argv.push('--bind-try', ancestor, ancestor);
+      }
       const protectedPath = posix.join(root, name);
       argv.push('--ro-bind-try', protectedPath, protectedPath);
     }
-  }
-  for (const path of input.protectedMetadataPaths ?? []) {
-    argv.push('--ro-bind', path, path);
   }
 
   argv.push('--chdir', command.cwd, '--', command.program, ...command.args);
@@ -643,46 +628,4 @@ function requiredParentDirectories(roots: readonly string[]): readonly string[] 
     }
   }
   return [...parents].sort((left, right) => left.length - right.length);
-}
-
-const MAX_PROTECTED_SCAN_ENTRIES = 100_000;
-const MAX_PROTECTED_SCAN_DEPTH = 64;
-
-export function discoverNestedProtectedMetadataPaths(input: {
-  writableRoots: readonly string[];
-  names: readonly string[];
-}): readonly string[] {
-  const found: string[] = [];
-  let visited = 0;
-
-  for (const root of input.writableRoots) {
-    walk(root, 0, true);
-  }
-  return found;
-
-  function walk(directory: string, depth: number, isRoot: boolean): void {
-    if (depth > MAX_PROTECTED_SCAN_DEPTH) {
-      throw new Error(`protected metadata scan exceeded depth ${MAX_PROTECTED_SCAN_DEPTH}`);
-    }
-    let entries;
-    try {
-      entries = readdirSync(directory, { withFileTypes: true });
-    } catch (error) {
-      if (isRoot && (error as NodeJS.ErrnoException).code === 'ENOENT') return;
-      throw error;
-    }
-
-    for (const entry of entries) {
-      visited += 1;
-      if (visited > MAX_PROTECTED_SCAN_ENTRIES) {
-        throw new Error(`protected metadata scan exceeded ${MAX_PROTECTED_SCAN_ENTRIES} entries`);
-      }
-      const path = posix.join(directory, entry.name);
-      if (input.names.includes(entry.name)) {
-        if (!isRoot) found.push(path);
-        continue;
-      }
-      if (entry.isDirectory()) walk(path, depth + 1, false);
-    }
-  }
 }

@@ -18,7 +18,15 @@
  */
 
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
@@ -166,6 +174,37 @@ describe('escapeSeatbeltRegex', () => {
 });
 
 describe('buildSeatbeltPolicy', () => {
+  it('keeps the protected git entries of the workspace read-only once they exist', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'maka-seatbelt-git-')));
+    try {
+      const context = {
+        workspaceRoots: [root],
+        tmpdir: '/private/tmp/maka-test',
+        slashTmp: '/tmp',
+      };
+      // No repository yet: nothing to protect, so `git init` can create it.
+      const fresh = buildSeatbeltPolicy({
+        profile: createWorkspaceWritePermissionProfile(),
+        pathContext: context,
+      }).policy;
+      assert.doesNotMatch(fresh, /\.git\/config/);
+
+      mkdirSync(join(root, '.git', 'hooks'), { recursive: true });
+      writeFileSync(join(root, '.git', 'config'), '[core]\n', 'utf8');
+      const withRepo = buildSeatbeltPolicy({
+        profile: createWorkspaceWritePermissionProfile(),
+        pathContext: context,
+      }).policy;
+      assert.match(withRepo, new RegExp(`\\(require-not \\(subpath "${root}/\\.git/config"\\)\\)`));
+      assert.match(withRepo, new RegExp(`\\(require-not \\(subpath "${root}/\\.git/hooks"\\)\\)`));
+      // The repository directory itself stays where it is, but is not read-only.
+      assert.match(withRepo, new RegExp(`\\(require-not \\(literal "${root}/\\.git"\\)\\)`));
+      assert.doesNotMatch(withRepo, new RegExp(`\\(require-not \\(subpath "${root}/\\.git"\\)\\)`));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('builds read-only policy with readable workspace roots and no writable workspace roots', () => {
     const result = buildSeatbeltPolicy({
       profile: workspaceReadProfile(),
@@ -331,13 +370,24 @@ describe('buildSeatbeltPolicy', () => {
     assert.doesNotMatch(policy, /require-not.*\\\.(?:git|agents|codex)/);
   });
 
-  it('uses protected metadata names from the active profile', () => {
-    const policy = policyText(workspaceWriteProfileWithCustomProtectedMetadata());
+  it('uses protected metadata names from the active profile, for the entries that exist', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'maka-seatbelt-protected-')));
+    try {
+      mkdirSync(join(root, '.git'));
+      mkdirSync(join(root, '.agents'));
+      const policy = buildSeatbeltPolicy({
+        profile: workspaceWriteProfileWithCustomProtectedMetadata(),
+        pathContext: { workspaceRoots: [root], tmpdir: '/private/tmp/maka-test', slashTmp: '/tmp' },
+      }).policy;
 
-    assert.ok(policy.includes(String.raw`(require-not (regex #"^/repo/(.*/)?\.git(/.*)?$"))`));
-    assert.ok(policy.includes(String.raw`(require-not (regex #"^/repo/(.*/)?\.maka(/.*)?$"))`));
-    assert.ok(!policy.includes(String.raw`(require-not (regex #"^/repo/(.*/)?\.agents(/.*)?$"))`));
-    assert.ok(!policy.includes(String.raw`(require-not (regex #"^/repo/(.*/)?\.codex(/.*)?$"))`));
+      assert.ok(policy.includes(`(require-not (subpath "${root}/.git"))`));
+      // Named but absent: nothing to protect yet.
+      assert.ok(!policy.includes(`(require-not (subpath "${root}/.maka"))`));
+      // Present but not named by this profile.
+      assert.ok(!policy.includes(`(require-not (subpath "${root}/.agents"))`));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('excludes explicit deny roots from readable and writable root allow clauses', () => {
@@ -358,15 +408,22 @@ describe('buildSeatbeltPolicy', () => {
     );
   });
 
-  it('escapes workspace root before building protected metadata regex requirements', () => {
-    // The workspace does not exist, so only its `/tmp` ancestor is canonicalized.
-    const workspaceRoot = join(realpathSync('/tmp'), 'repo.(test)+[x]');
-    const result = buildSeatbeltPolicy({
-      profile: workspaceWriteProfileWithCustomProtectedMetadata(),
-      pathContext: { workspaceRoots: ['/tmp/repo.(test)+[x]'] },
-    });
+  it('escapes the workspace root inside a protected metadata clause', () => {
+    const parent = realpathSync(mkdtempSync(join(tmpdir(), 'maka-seatbelt-escape-')));
+    const root = join(parent, 'repo "quoted" (test)');
+    try {
+      mkdirSync(join(root, '.git'), { recursive: true });
+      const result = buildSeatbeltPolicy({
+        profile: workspaceWriteProfileWithCustomProtectedMetadata(),
+        pathContext: { workspaceRoots: [root] },
+      });
 
-    assert.ok(result.policy.includes(`#"^${escapeSeatbeltRegex(workspaceRoot)}/(.*/)?\\.git`));
+      assert.ok(
+        result.policy.includes(`(require-not (subpath "${parent}/repo \\"quoted\\" (test)/.git"))`),
+      );
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
   });
 
   it('emits network restricted and enabled policy sections', () => {

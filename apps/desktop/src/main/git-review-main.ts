@@ -420,7 +420,23 @@ async function runGitCommand(
   root: string,
   args: readonly string[],
 ): Promise<string> {
-  const { stdout } = await execFileAsync('git', ['-C', root, ...args], {
+  // The workspace's `.git/config` is the sandboxed session's to write (the
+  // sandbox keeps it read-only once it exists, but not before). Nothing in it
+  // may pick a program for this unsandboxed git to run.
+  const { stdout } = await execFileAsync(
+    'git',
+    [
+      '-C',
+      root,
+      '-c',
+      'core.fsmonitor=false',
+      '-c',
+      'core.hooksPath=/dev/null',
+      '-c',
+      'diff.external=',
+      ...args,
+    ],
+    {
     encoding: 'utf8',
     timeout: GIT_TIMEOUT_MS,
     maxBuffer: GIT_MAX_BUFFER_BYTES,
