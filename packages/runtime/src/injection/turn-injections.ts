@@ -52,6 +52,12 @@ export interface TurnInjectionFacts {
   readonly permissionMode?: PermissionMode;
   readonly collaborationMode?: CollaborationMode;
   readonly executionBoundary?: ExecutionBoundaryReadModel;
+  /**
+   * Whether this turn can ask the user to widen the boundary — RequestSandboxBoundary
+   * is among its tools. Linked children, Plan mode and Deep Research have no way to
+   * ask, and are told so instead of being sent to a tool they do not have.
+   */
+  readonly canRequestBoundary?: boolean;
 }
 
 /** What the ledger already says under a name: the last `injection` event's data. */
@@ -69,7 +75,7 @@ export const DATE_INJECTION = 'date';
 const PERMISSION_MODE_COPY: Readonly<Record<PermissionMode, string>> = {
   explore:
     'read-only. Files anywhere on this machine can be read, but tools that write files or run commands with side effects are refused; describe what you would change instead of attempting it.',
-  ask: 'reads anywhere on this machine, writes inside the workspace and the temporary directories, and the network is open. Writing anywhere else needs a boundary expansion the user approves; request the smallest one that unblocks the call, once.',
+  ask: 'reads anywhere on this machine, writes inside the workspace and the temporary directories, and the network is open.',
   // No sandbox and nothing to approve, so the one rule left is on destructive
   // commands. It lives here because the system prompt carries none, and it
   // spares what the user asked for: a blanket "confirm first" made the model
@@ -78,7 +84,23 @@ const PERMISSION_MODE_COPY: Readonly<Record<PermissionMode, string>> = {
     "full access. No filesystem sandboxing - all commands are permitted. Network access is enabled. Nothing needs the user's approval. Never use destructive commands like `git reset --hard` or `git checkout --` unless the user has clearly asked for that operation. If the request is ambiguous, ask the user first.",
 };
 
-function boundaryCopy(boundary: ExecutionBoundaryReadModel | undefined): string | undefined {
+// What Manual says about writing elsewhere depends on whether this turn can ask.
+const ASK_WIDENING_COPY: Readonly<Record<'request' | 'refused', string>> = {
+  request:
+    'Writing anywhere else needs a boundary expansion the user approves; request the smallest one that unblocks the call, once.',
+  refused:
+    'Writing anywhere else is refused, and this session has no way to ask for more: work within that and say what you could not do.',
+};
+
+function permissionModeCopy(mode: PermissionMode, canRequest: boolean): string {
+  if (mode !== 'ask') return PERMISSION_MODE_COPY[mode];
+  return `${PERMISSION_MODE_COPY.ask} ${ASK_WIDENING_COPY[canRequest ? 'request' : 'refused']}`;
+}
+
+function boundaryCopy(
+  boundary: ExecutionBoundaryReadModel | undefined,
+  canRequest: boolean,
+): string | undefined {
   if (!boundary) return undefined;
   switch (boundary.kind) {
     case 'bypass':
@@ -86,7 +108,11 @@ function boundaryCopy(boundary: ExecutionBoundaryReadModel | undefined): string 
     case 'external':
       return 'Sandbox boundary: external (isolation is supplied by the environment the tools run in).';
     case 'managed':
-      return `Sandbox boundary: managed, revision ${boundary.revision}. A tool that needs more answers sandbox_boundary_required with the expansion to request.`;
+      return `Sandbox boundary: managed, revision ${boundary.revision}.${
+        canRequest
+          ? ' A file tool that needs more answers sandbox_boundary_required with the expansion to request. A Bash command the sandbox stopped comes back with a sandbox_denial marker instead; declaring what it needs through boundary_intent: expand and required_boundary turns that into the same sandbox_boundary_required answer.'
+          : ''
+      }`;
     default:
       return undefined;
   }
@@ -113,10 +139,11 @@ export function renderTodayLine(date: string): string {
 export function renderSessionFacts(
   facts: Pick<
     TurnInjectionFacts,
-    'modelId' | 'permissionMode' | 'collaborationMode' | 'executionBoundary'
+    'modelId' | 'permissionMode' | 'collaborationMode' | 'executionBoundary' | 'canRequestBoundary'
   >,
 ): string | undefined {
   const lines: string[] = [];
+  const canRequest = facts.canRequestBoundary !== false;
   if (facts.modelId) {
     lines.push(
       `The model serving this session is ${facts.modelId}. Say so only if asked; it can change mid-session.`,
@@ -125,14 +152,14 @@ export function renderSessionFacts(
   if (facts.permissionMode) {
     const plan = facts.collaborationMode === 'plan';
     lines.push(
-      `Permission mode: ${facts.permissionMode}, ${PERMISSION_MODE_COPY[facts.permissionMode]}${
+      `Permission mode: ${facts.permissionMode}, ${permissionModeCopy(facts.permissionMode, canRequest)}${
         plan
           ? ' Plan mode is active on top of it: inspect and propose, do not modify files until the plan is approved.'
           : ''
       }`,
     );
   }
-  const boundary = boundaryCopy(facts.executionBoundary);
+  const boundary = boundaryCopy(facts.executionBoundary, canRequest);
   if (boundary) lines.push(boundary);
   return lines.length > 0 ? lines.join('\n') : undefined;
 }
@@ -142,6 +169,7 @@ function sessionFactsData(facts: TurnInjectionFacts): Record<string, unknown> {
     ...(facts.modelId ? { modelId: facts.modelId } : {}),
     ...(facts.permissionMode ? { permissionMode: facts.permissionMode } : {}),
     ...(facts.collaborationMode ? { collaborationMode: facts.collaborationMode } : {}),
+    ...(facts.canRequestBoundary === false ? { canRequestBoundary: false } : {}),
     ...(facts.executionBoundary
       ? { boundary: `${facts.executionBoundary.kind}:${facts.executionBoundary.revision}` }
       : {}),

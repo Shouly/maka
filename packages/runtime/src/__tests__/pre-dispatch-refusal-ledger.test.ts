@@ -316,7 +316,7 @@ const REFUSAL_PATHS: Array<{
   },
   {
     name: 'client-capability blocked by the execution boundary',
-    expect: /require the Bypass execution boundary/,
+    expect: /run outside the sandbox, so a Read only session refuses them/,
     drive: (h) => {
       // The default test boundary is `external`, not `bypass`.
       return settle(h, clientCapabilityTool(), {}, { toolCallId: 'call_boundary_blocked' });

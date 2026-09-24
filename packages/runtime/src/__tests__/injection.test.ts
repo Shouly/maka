@@ -141,6 +141,20 @@ describe('ahead of the turn: recorded once, again only on change', () => {
     );
   });
 
+  test('a turn that cannot ask for more is told so instead of being sent to a tool it lacks', () => {
+    const planned = session.planTurn([], facts({ canRequestBoundary: false }));
+    const sessionFacts = planned.find((injection) => injection.name === 'session_facts');
+    assert.ok(sessionFacts);
+    assert.match(sessionFacts.text, /no way to ask for more/u);
+    assert.doesNotMatch(sessionFacts.text, /request the smallest|sandbox_boundary_required/u);
+    assert.equal(sessionFacts.data?.canRequestBoundary, false);
+
+    const asking = session
+      .planTurn([], facts())
+      .find((injection) => injection.name === 'session_facts');
+    assert.match(asking!.text, /request the smallest one[\s\S]*sandbox_denial marker/u);
+  });
+
   test('a turn where nothing moved says nothing', () => {
     const ledger = session.planTurn([], facts()).map((p) => event('turn-1', p));
     assert.deepEqual(session.planTurn(ledger, facts()), []);

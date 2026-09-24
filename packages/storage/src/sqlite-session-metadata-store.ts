@@ -4621,7 +4621,7 @@ export class SqliteSessionMetadataStore {
     return decodeExecutionBoundary(JSON.parse(row.boundaryJson) as unknown);
   }
 
-  private readLatestAutoSandboxProfileSync(
+  private readLatestManualSandboxProfileSync(
     sessionId: string,
   ): Extract<ExecutionBoundary, { kind: 'managed' }>['profile'] {
     const rows = this.db
@@ -4916,7 +4916,7 @@ export class SqliteSessionMetadataStore {
           ? requireManagedProfile(createGenesisExecutionBoundary('explore'))
           : current.kind === 'managed' && !isReadOnlyDerivedPermissionProfile(current.profile)
             ? current.profile
-            : this.readLatestAutoSandboxProfileSync(sessionId)
+            : this.readLatestManualSandboxProfileSync(sessionId)
         : undefined;
     const boundaryChanged =
       current.kind !== kind ||

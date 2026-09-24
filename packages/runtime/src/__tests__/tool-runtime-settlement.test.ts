@@ -133,7 +133,10 @@ describe('ToolRuntime settlement', () => {
 
     assert.equal(preparationCalls, 0);
     assert.equal(implementationCalls, 0);
-    assert.match(String((settlement.result as { error?: unknown }).error), /require the Bypass/u);
+    assert.match(
+      String((settlement.result as { error?: unknown }).error),
+      /Read only session refuses them/u,
+    );
   });
 
   it('prepares Bypass Client Capability work before T1 and admits only after T1', async () => {

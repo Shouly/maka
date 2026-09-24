@@ -417,7 +417,7 @@ type SandboxBoundaryFailureDetails = Extract<ToolResultContent, { kind: 'text' }
 const SUBAGENT_TOOL_LIMIT_MESSAGE =
   '子代理并发过多：同一轮最多 5 个子代理。请等待已有任务完成后再继续。';
 const CLIENT_CAPABILITY_BOUNDARY_MESSAGE =
-  'Client Capability tools require the Bypass execution boundary because their client-side effects cannot be sandboxed by the Host. Switch this Session to Bypass and retry.';
+  'Client Capability tools run outside the sandbox, so a Read only session refuses them. Switch this Session to Manual or Full access and retry.';
 const CLIENT_CAPABILITY_PREPARATION_MESSAGE =
   'Client Capability tool is missing its Host admission preparation contract.';
 
@@ -4143,7 +4143,7 @@ function buildTerminalFailureMessage(
     // Naming only the marker left the model knowing a boundary could be widened
     // and not by what: the tool that widens it is `RequestSandboxBoundary`.
     parts.push(
-      `该失败很可能来自 Maka sandbox。请先尝试不扩大边界的替代方案；只有工具明确返回 sandbox_boundary_required 和具体 expansion 时，才能调用 ${TOOL_NAMES.requestSandboxBoundary} 请求会话边界扩张，并在 expansion 里只写那一条路径。不要从命令文本猜测权限，也不要静默绕过 sandbox。`,
+      `该失败很可能来自 Maka sandbox。请先尝试不扩大边界的替代方案。Bash 的沙箱拒绝本身不会成为申请：若命令确实需要某个路径或网络，用 boundary_intent: expand 加 required_boundary 重发同一条命令，它会返回 sandbox_boundary_required 和具体 expansion；只有拿到这个结果后，才能调用 ${TOOL_NAMES.requestSandboxBoundary} 请求会话边界扩张，并在 expansion 里只写那一条路径。不要从命令文本猜测权限，也不要静默绕过 sandbox。`,
     );
   }
   return parts.join('\n\n');

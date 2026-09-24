@@ -708,13 +708,19 @@ export class AiSdkTurn {
     } catch {
       boundary = undefined;
     }
-    let permissionMode = boundary ? executionBoundaryDisplayMode(boundary) : undefined;
-    if (!permissionMode) {
+    // The mode the user selected, as the tools see it: a Bypass boundary is
+    // Full access outright, and a managed one keeps the header's selection —
+    // an approved expansion changes the boundary's shape, not the mode.
+    let permissionMode: PermissionMode | undefined;
+    if (boundary?.kind === 'bypass') {
+      permissionMode = 'bypass';
+    } else {
       try {
         permissionMode = await backend.readPermissionMode?.();
       } catch {
         permissionMode = undefined;
       }
+      if (!permissionMode && boundary) permissionMode = executionBoundaryDisplayMode(boundary);
     }
     return {
       ...(permissionMode ? { permissionMode } : {}),
@@ -746,6 +752,7 @@ export class AiSdkTurn {
       now: new Date(this.deps.now()),
       contexts: resolved.contexts ?? [],
       deferredToolNames: held,
+      canRequestBoundary: active.has(REQUEST_SANDBOX_BOUNDARY_TOOL_NAME),
       ...(this.deps.backend.modelId ? { modelId: this.deps.backend.modelId } : {}),
       ...(this.deps.backend.header.collaborationMode
         ? { collaborationMode: this.deps.backend.header.collaborationMode }
