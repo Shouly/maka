@@ -96,6 +96,7 @@ import type { MakaTool, MakaToolContext } from './tool-runtime.js';
 export type { MakaTool, MakaToolContext };
 import { profileRequiresSandbox, type SandboxManager } from './sandbox/sandbox-manager.js';
 import { SandboxCommandError } from './sandbox/errors.js';
+import { sandboxedEnvironment } from './sandbox/sandbox-environment.js';
 import { isLikelySandboxDenial } from './sandbox/detect.js';
 import { linuxExecutableRoots } from './sandbox/linux-sandbox.js';
 import { materializeApprovedWriteDirectories } from './sandbox-boundary-path.js';
@@ -441,11 +442,12 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
                     'background_command',
                   );
                   if (!options.shellEnvironment) return transformed;
+                  // A sandboxed command keeps the environment the sandbox
+                  // chose for it; only an unsandboxed one inherits the host's.
                   return {
                     ...(transformed ?? { cwd: ctx.cwd }),
                     env: {
-                      ...process.env,
-                      ...transformed?.env,
+                      ...(transformed?.env ?? process.env),
                       ...options.shellEnvironment,
                     },
                   };
@@ -1284,7 +1286,7 @@ function sandboxCommand(
     boundary?.kind === 'managed'
       ? { profile: boundary.profile, workspaceRoots: [cwd] }
       : effectivePermissionProfile(explicitProfile, ctx.permissionMode ?? 'ask', cwd);
-  const env = { ...process.env };
+  const env = sandboxedEnvironment(process.env);
   if (pty) {
     if (profileRequiresSandbox(effective.profile)) {
       throw new SandboxCommandError({

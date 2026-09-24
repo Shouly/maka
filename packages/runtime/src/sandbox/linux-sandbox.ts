@@ -219,8 +219,9 @@ function buildBubblewrapArgvWithRoots(
   const { command } = input;
   // A full-disk read is the host root bound read-only FIRST:
   // bubblewrap mounts in order and a later mount covers an earlier one, so
-  // `/proc`, `/dev`, the temp tmpfs and every writable bind must land on top
-  // of it. Bound last, it would cover them all with the host's read-only view.
+  // `/proc`, `/dev`, the temp directories and every writable bind must land
+  // on top of it. Bound last, it would cover them all with the host's
+  // read-only view.
   const fullDiskRead = roots.readableRoots.some((root) => posix.normalize(root) === '/');
   const argv: string[] = [
     input.bwrapPath,
@@ -334,7 +335,11 @@ function buildBubblewrapArgvWithRoots(
     const pinned = pinnedRuntimeWritableRoots.get(root);
     argv.push('--bind', pinned ? `/proc/self/fd/${pinned.fd}` : root, root);
   }
-  for (const root of roots.tempRoots) argv.push('--tmpfs', root);
+  // The host's own temp directories, writable, as on macOS: a file Write puts
+  // in /tmp is there for the next Bash, and the user's /tmp is not hidden
+  // behind a private one that vanishes with the command. `-try`: a $TMPDIR
+  // that does not exist is simply absent.
+  for (const root of roots.tempRoots) argv.push('--bind-try', root, root);
   if (needsSyntheticCwd) {
     for (const directory of requiredParentDirectories([command.cwd])) {
       argv.push('--dir', directory);

@@ -60,7 +60,7 @@ describe('Linux sandbox smoke', () => {
         program: '/bin/sh',
         args: [
           '-lc',
-          `echo ok > inside.txt && echo temp-ok > /tmp/maka-sandbox-temp.txt && ! echo nope > ${shellQuote(join(outside, 'outside.txt'))}`,
+          `echo ok > inside.txt && echo temp-ok > /tmp/maka-sandbox-temp.txt && rm /tmp/maka-sandbox-temp.txt && ! echo nope > ${shellQuote(join(outside, 'outside.txt'))}`,
         ],
         cwd: workspace,
         profile: createWorkspaceWritePermissionProfile(),

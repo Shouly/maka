@@ -2802,6 +2802,50 @@ function closedNetworkWorkspaceProfile(): PermissionProfileManaged {
   return { ...createWorkspaceWritePermissionProfile(), network: { kind: 'restricted' } };
 }
 
+describe('a sandboxed Bash command does not inherit credentials', () => {
+  test('drops KEY/SECRET/TOKEN variables under Manual and keeps the rest', async () => {
+    const workspace = await realpath(await mkdtemp(join(tmpdir(), 'maka-bash-env-')));
+    process.env.MAKA_TEST_PLAIN_VALUE = 'kept';
+    process.env.MAKA_TEST_API_KEY = 'dropped';
+    let execInput: Parameters<WorkspaceExecutor['exec']>[0] | undefined;
+    try {
+      const executor = fakeExecutor({
+        exec: async (input) => {
+          execInput = input;
+          return { exitCode: 0, stdout: '', stderr: '', timedOut: false, aborted: false };
+        },
+      });
+      const bash = buildBuiltinTools({
+        executor,
+        sandboxManager: new SandboxManager([new MacosSeatbeltBackend()]),
+        sandboxPlatform: 'darwin',
+      }).find((candidate) => candidate.name === 'Bash');
+      if (!bash) throw new Error('Bash tool missing');
+      await bash.impl({ command: 'echo ok', boundary_intent: 'current' as const }, {
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        toolCallId: 'tool-1',
+        cwd: workspace,
+        permissionMode: 'ask',
+        abortSignal: new AbortController().signal,
+        emitOutput: () => {},
+        executionBoundary: {
+          kind: 'managed',
+          revision: 0,
+          profile: createWorkspaceWritePermissionProfile(),
+        },
+      } as never);
+      assert.ok(execInput);
+      assert.equal(execInput.env?.MAKA_TEST_PLAIN_VALUE, 'kept');
+      assert.equal(execInput.env?.MAKA_TEST_API_KEY, undefined);
+    } finally {
+      delete process.env.MAKA_TEST_PLAIN_VALUE;
+      delete process.env.MAKA_TEST_API_KEY;
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+});
+
 function availableLinuxManager(): SandboxManager {
   return new SandboxManager([
     new LinuxBubblewrapBackend({

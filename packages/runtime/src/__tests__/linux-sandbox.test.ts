@@ -195,15 +195,16 @@ describe('buildBubblewrapArgv', () => {
       hasTriple(argv, '--ro-bind-try', '/repo/project/.git', '/repo/project/.git'),
       false,
     );
-    assert.ok(hasPair(argv, '--tmpfs', '/tmp'));
-    assert.ok(hasPair(argv, '--tmpfs', '/var/tmp/maka'));
+    assert.ok(hasTriple(argv, '--bind-try', '/tmp', '/tmp'));
+    assert.ok(hasTriple(argv, '--bind-try', '/var/tmp/maka', '/var/tmp/maka'));
+    assert.equal(argv.includes('--tmpfs'), false);
     assert.ok(hasPair(argv, '--chdir', '/repo/project'));
     assert.deepEqual(argv.slice(-4), ['--', '/bin/sh', '-lc', 'echo hi']);
   });
 
   it('binds the host root read-only first for the built-in full-disk read', () => {
     // bubblewrap mounts in order and a later mount covers an earlier one, so
-    // `/` must come before `/proc`, `/dev`, the temp tmpfs and every writable
+    // `/` must come before `/proc`, `/dev`, the temp directories and every writable
     // bind; bound last it would cover them with the host's read-only view.
     const argv = buildBubblewrapArgv({
       bwrapPath: '/usr/bin/bwrap',
@@ -217,7 +218,7 @@ describe('buildBubblewrapArgv', () => {
     for (const later of [
       at('--proc', '/proc'),
       at('--dev', '/dev'),
-      at('--tmpfs', '/tmp'),
+      at('--bind-try', '/tmp', '/tmp'),
       at('--bind', '/repo/project', '/repo/project'),
     ]) {
       assert.ok(later > root, argv.join(' '));
