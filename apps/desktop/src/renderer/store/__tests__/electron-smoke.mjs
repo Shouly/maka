@@ -761,23 +761,19 @@ try {
   await page.getByRole('button', { name: 'Design system', exact: true }).click();
   const preview = page.locator('[data-maka-contract="transcript-preview"]');
   await preview.scrollIntoViewIfNeeded();
-  await preview.locator('[data-maka-tool-group] button[aria-expanded]').first().click();
-  const previewRows = preview.locator('[data-maka-tool-row] button[aria-expanded]');
+  await preview.locator('[data-maka-turn-status] button[aria-expanded]').first().click();
+  const previewRows = preview.locator('[data-maka-turn-status-step] button[aria-expanded]');
   await previewRows.first().waitFor();
-  // Reasoning is a STEP INSIDE the group, not a heading standing beside it:
-  // the fixture turn is thinking then three calls, and that is one run of work
-  // under one summary line. Drawn flat (which it was), the same turn showed a
-  // reasoning block that could not be put away and a separate tool summary.
-  assert.equal(await preview.locator('[data-maka-tool-group]').count(), 1);
+  // One run, one status row: the fixture turn is thinking then three calls,
+  // and all four are rows of the same card under one summary line.
+  assert.equal(await preview.locator('[data-maka-turn-status]').count(), 1);
   assert.equal(await preview.locator('[data-maka-thinking]').count(), 1);
-  assert.equal(await preview.locator('[data-maka-tool-group] [data-maka-thinking]').count(), 1);
-  // Two columns, and only two: the group's summary stands in the same column
-  // as the answer's prose (`.standard-markdown` pads its paragraphs 8px, and
-  // the group carries the same inset), and every STEP — reasoning and tool
-  // alike — stands 30px further in, behind the 20px glyph column and the 10px
-  // a step body carries. Measured from the ink, not the boxes: the 8px that
-  // was missing here is padding, so every box already lined up while the
-  // sentences did not.
+  assert.equal(await preview.locator('[data-maka-turn-status] [data-maka-thinking]').count(), 1);
+  // Two columns, and only two: the status row stands in the same column as
+  // the answer's prose (`.standard-markdown` pads its paragraphs 8px, and the
+  // row carries the same inset), and every STEP — reasoning and tool alike —
+  // stands 5px further in: the card's 1px border plus its 12px padding. Measured
+  // from the ink, not the boxes.
   const columns = await preview.evaluate((root) => {
     const ink = (selector) => {
       const element = root.querySelector(selector);
@@ -788,14 +784,14 @@ try {
     };
     return {
       answer: ink('.chat-assistant-response p'),
-      summary: ink('[data-maka-tool-group] button span'),
-      reasoning: ink('[data-maka-thinking] p'),
-      tool: ink('[data-maka-tool-row] button span span'),
+      summary: ink('[data-maka-turn-status] > button > span'),
+      reasoning: ink('[data-maka-thinking] button span'),
+      tool: ink('[data-maka-turn-status-step] button span span'),
     };
   });
   assert.equal(columns.summary, columns.answer);
-  assert.equal(columns.reasoning, columns.answer + 30);
-  assert.equal(columns.tool, columns.answer + 30);
+  assert.equal(columns.reasoning, columns.answer + 5);
+  assert.equal(columns.tool, columns.answer + 5);
   await previewRows.nth(0).click();
   await previewRows.nth(1).click();
   await preview.locator('.custom-code-highlight').first().waitFor();

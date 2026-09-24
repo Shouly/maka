@@ -42,8 +42,9 @@ import {
   resolveToolRendererId,
   summarizeToolGroup,
   toolRowTitle,
+  toolStepLabel,
 } from '../../components/session/tools/tool-presentation.js';
-import { deliveryPlacement, groupTurnTimeline } from '../../lib/turn-timeline-groups.js';
+import { groupTurnTimeline } from '../../lib/turn-timeline-groups.js';
 import {
   parseGrepRow,
   readGlobResult,
@@ -199,7 +200,8 @@ test('a file delivery routes to its own renderer and never opens as a tool row',
   // The card strip is the block; a row that opened to the same cards would be
   // the same sentence twice.
   assert.equal(canExpandTool(item), false);
-  assert.equal(deliveryPlacement(item), 'block');
+  // Its step names what was shared.
+  assert.equal(toolStepLabel(item, 'en').text, 'Shared 2 files');
 });
 
 test('a delivery draws one row card per file: a sentence, a kind line, and nothing else', () => {
@@ -276,190 +278,40 @@ test('a delivery with no way into the Files face draws labels, not dead buttons'
   assert.ok(text.includes('Plan') && text.includes('Document · MD'), text);
 });
 
-const note = (message: string) =>
-  call({
-    toolUseId: `note-${message.length}`,
-    toolName: 'SendUserMessage',
-    result: { kind: 'user_message', message } as never,
-  });
-
-test('a note a row can hold stays in the timeline, as its own words', () => {
-  // One paragraph of inline markdown: a row carries it without losing
-  // anything, so it is a step — and the step IS the message, not a label
-  // saying one was sent.
-  const item = note('The preview is at **https://example.test** — `token-8f3a`.');
-  assert.equal(deliveryPlacement(item), 'inline');
-  assert.equal(canExpandTool(item), false);
-  assert.equal(
-    toolRowTitle(item, 'en'),
-    'The preview is at **https://example.test** — `token-8f3a`.',
-  );
-
-  // Length is not the question; a line can be long.
-  assert.equal(deliveryPlacement(note('word '.repeat(200).trim())), 'inline');
-});
-
-test('a note a row would flatten is promoted to full width, with nothing above it', () => {
-  for (const [why, message] of [
-    ['a heading', '# Heads up\n\nThe build is green.'],
-    ['a list', 'Two things:\n- first\n- second'],
-    ['an ordered list', 'Steps:\n1. first\n2. second'],
-    ['a fenced block', 'Run this:\n```sh\nnpm test\n```'],
-    ['a table', '| col | col |\n|---|---|\n| a | b |'],
-    ['a quote', '> the build is green'],
-    ['a rule', 'before\n\n---\n\nafter'],
-    ['two paragraphs', 'First paragraph.\n\nSecond paragraph.'],
-  ] as const) {
-    assert.equal(deliveryPlacement(note(message)), 'block', why);
-  }
-
-  const item = note('# Heads up\n\nThe build is **green**.');
-  assert.equal(resolveToolRendererId(item), 'user_message');
-  const document = renderTree(createElement(Fragment, null, renderToolContent(item, CONTEXT)));
-  assert.ok(document.querySelector('[data-maka-contract="markdown"]'), 'the answer’s renderer');
-  assert.equal(document.querySelector('h1')?.textContent, 'Heads up');
-  assert.equal(document.querySelector('strong')?.textContent, 'green');
-  // Typographically indistinguishable from the turn's own answer: the tally in
-  // the group header is the only mark left on it.
-  assert.equal(
-    (document.documentElement.textContent ?? '').includes('Message'),
-    false,
-    'no label above a promoted note',
-  );
-});
-
-test('a note renders while it is still arriving, and does not change shape on settle', () => {
-  // Live, the message is in the args preview the Host lets through for this
-  // tool; settled, the result owns it. Both must answer the same, or the row
-  // reshapes under the reader the moment the call returns.
-  const streaming = call({
-    toolUseId: 'note-live',
-    toolName: 'SendUserMessage',
-    status: 'running',
-    args: { message: 'The preview is at **https://example.test**' },
-    result: undefined,
-  });
-  assert.equal(resolveToolRendererId(streaming), 'user_message', 'never a generic pending row');
-  assert.equal(canExpandTool(streaming), false);
-  assert.equal(deliveryPlacement(streaming), 'inline');
-  assert.equal(toolRowTitle(streaming, 'en'), 'The preview is at **https://example.test**');
-
-  const settled = call({
-    toolUseId: 'note-live',
-    toolName: 'SendUserMessage',
-    result: {
-      kind: 'user_message',
-      message: 'The preview is at **https://example.test**',
-    } as never,
-  });
-  assert.equal(deliveryPlacement(settled), deliveryPlacement(streaming));
-  assert.equal(toolRowTitle(settled, 'en'), toolRowTitle(streaming, 'en'));
-
-  // The Host's bounded preview reaches the row under the same accessor.
-  const viaPreview = call({
-    toolUseId: 'note-preview',
-    toolName: 'SendUserMessage',
-    status: 'running',
-    args: undefined,
-    argsPreview: { message: 'Heads up.' },
-    result: undefined,
-  });
-  assert.equal(toolRowTitle(viaPreview, 'en'), 'Heads up.');
-
-  // A note whose first token has not landed is a row, not a full-width block:
-  // the tier only ever moves one way, so starting inline is never undone.
-  const empty = call({
-    toolUseId: 'note-empty',
-    toolName: 'SendUserMessage',
-    status: 'running',
-    args: undefined,
-    result: undefined,
-  });
-  assert.equal(deliveryPlacement(empty), 'inline');
-
-  // A promoted note draws its markdown live, too.
-  const promoted = call({
-    toolUseId: 'note-promoted',
-    toolName: 'SendUserMessage',
-    status: 'running',
-    args: { message: 'Two things:\n- first\n- second' },
-    result: undefined,
-  });
-  assert.equal(deliveryPlacement(promoted), 'block');
-  const document = renderTree(createElement(Fragment, null, renderToolContent(promoted, CONTEXT)));
-  assert.equal(document.querySelectorAll('li').length, 2, 'the list renders before settle');
-});
-
-test('notes are counted apart from the work, and consecutive ones do not merge', () => {
-  const work = call({ toolUseId: 'bash-1', activityKind: 'command' });
-  const first = note('First note, one line.');
-  const second = note('Second note, also one line.');
-  const grouped = groupTurnTimeline([{ kind: 'tools', items: [work, first, second] }], () => false);
-  assert.deepEqual(
-    grouped.map((entry) => entry.kind),
-    ['work'],
-    'inline notes do not close the run',
-  );
-  const run = grouped[0] as { children: readonly { items: ToolActivityItem[] }[]; notes: number };
-  assert.equal(run.notes, 2);
-  assert.deepEqual(
-    run.children.flatMap((child) => child.items.map((item) => item.toolUseId)),
-    [work.toolUseId, first.toolUseId, second.toolUseId],
-    'two separate rows, not one merged entry',
-  );
-
-  // A promoted note closes the run and is still counted against it.
-  const promoted = groupTurnTimeline(
-    [{ kind: 'tools', items: [work, note('Two things:\n- a\n- b')] }],
-    () => false,
-  );
-  assert.deepEqual(
-    promoted.map((entry) => entry.kind),
-    ['work', 'delivery'],
-  );
-  assert.equal((promoted[0] as { notes: number }).notes, 1);
-
-  // And a note never lands in the tool phrases.
-  assert.equal(summarizeToolGroup([work, first, second], 'en'), 'Ran a command');
-});
-
-test('delivered files gather at the foot of the turn; notes stay where they were said', () => {
+test('delivered files gather at the foot of the turn and stay a step of their run; a message is prose where it was said', () => {
   const work = call({ toolUseId: 'read-1', activityKind: 'read' });
   const files = call({
     toolUseId: 'send-files',
     toolName: 'SendUserFile',
     result: DELIVERY as never,
   });
-  const inline = note('Done.');
-  const promoted = note('Two things:\n- a\n- b');
+  const message = call({
+    toolUseId: 'message-1',
+    toolName: 'SendUserMessage',
+    result: { kind: 'user_message', message: 'Two things:\n- a\n- b' } as never,
+  });
   const grouped = groupTurnTimeline(
-    [{ kind: 'tools', items: [work, files, inline, promoted] }],
+    [{ kind: 'tools', items: [work, files, message] }],
     () => false,
   );
   // The files were sent FIRST and come LAST: the reader meets the turn as a
   // finished thing, and cards wedged between two paragraphs read as an
-  // interruption of the answer rather than as what it hands over. The note
-  // with a list still breaks its run where it was said.
+  // interruption of the answer rather than as what it hands over. The message
+  // is words addressed to the reader, where they were said.
   assert.deepEqual(
     grouped.map((entry) => entry.kind),
-    ['work', 'delivery', 'delivery'],
+    ['status', 'text', 'delivery'],
   );
-  assert.equal((grouped[2] as { item: ToolActivityItem }).item.toolUseId, 'send-files');
-  assert.equal((grouped[1] as { item: ToolActivityItem }).item.toolUseId, promoted.toolUseId);
-
-  // Taking the files out does NOT split the run they came from: the work
-  // carries on, and the one-line note is still part of it.
-  const run = grouped[0] as {
-    children: readonly { items: ToolActivityItem[] }[];
-    notes: number;
-  };
+  const run = grouped[0]!;
+  assert.ok(run.kind === 'status');
   assert.deepEqual(
-    run.children.flatMap((child) => child.items.map((item) => item.toolUseId)),
-    ['read-1', inline.toolUseId],
-    'a file delivery gives up its step entirely, and closes nothing',
+    run.steps.map((step) => (step.kind === 'tool' ? step.item.toolUseId : step.kind)),
+    ['read-1', 'send-files'],
+    'the delivery is still a step of the work ("Shared a file"), and the message is not',
   );
-  // Both notes are counted against the run they came out of.
-  assert.equal(run.notes, 2);
+  const prose = grouped[1]!;
+  assert.ok(prose.kind === 'text' && prose.fromSendUserMessage === true);
+  assert.equal((grouped[2] as { item: ToolActivityItem }).item.toolUseId, 'send-files');
 });
 
 test('a turn lays a delivery out beside its prose, the way a text entry stands', () => {
@@ -493,7 +345,7 @@ test('a turn lays a delivery out beside its prose, the way a text entry stands',
   const block = document.querySelector('[data-maka-delivery="send-files"]');
   assert.ok(block, 'the delivery is a block of the turn');
   assert.equal(
-    document.querySelector('[data-maka-tool-group] [data-maka-delivery]'),
+    document.querySelector('[data-maka-turn-status] [data-maka-delivery]'),
     null,
     'and never inside the collapsed step list',
   );

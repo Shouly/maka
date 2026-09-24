@@ -404,9 +404,17 @@ try {
   // a finished tool call — while the Turn itself stays open.
   await page.getByRole('button', { name: 'New task', exact: true }).first().click();
   await startTask('__e2e_hold_open_after_steps__');
-  await transcript().getByText('Step one settled before the wait.', { exact: false }).waitFor();
   await transcript().getByText('Fake backend waiting', { exact: false }).waitFor();
   await sleep(1500);
+  // The settled line scores as narration once the call after it lands, so it
+  // lives in the run's card: open the run to read it.
+  const openRun = async () => {
+    const closed = transcript().locator('[data-maka-turn-status] > button[aria-expanded="false"]');
+    if ((await closed.count()) > 0) await closed.first().click();
+    await sleep(400);
+  };
+  await openRun();
+  await transcript().getByText('Step one settled before the wait.', { exact: false }).waitFor();
   const textBeforeD = await transcriptText();
   await ensureSidebarExpanded();
   await rowNamed('Session A anchor').click();
@@ -415,6 +423,7 @@ try {
   await rowNamed('__e2e_hold_open_after_steps__').click();
   await transcript().waitFor();
   await sleep(2500);
+  await openRun();
   const textAfterD = await transcriptText();
   await page.screenshot({ path: SHOT('streaming-switch-steps.png') });
   findings.push({
@@ -434,20 +443,22 @@ try {
   // the bare tool name.
   await page.getByRole('button', { name: 'New task', exact: true }).first().click();
   await startTask('__e2e_stream_tool_input__');
-  const toolRow = transcript().locator('[data-maka-tool-row]').first();
-  await toolRow.waitFor();
+  // The run's status row names the running step, so that is where the
+  // distance is measured: the card is closed while the turn works.
+  const statusRow = transcript().locator('[data-maka-turn-status]').first();
+  await statusRow.waitFor();
   const appearedAt = Date.now();
-  await toolRow.getByText('fake-backend-demo.ts', { exact: false }).waitFor();
+  await statusRow.getByText('fake-backend-demo.ts', { exact: false }).waitFor();
   const namedAt = Date.now();
-  // And it still says it once the arguments land whole, from `args` rather than
-  // from the partial reading. A finished group collapses to its summary line, so
-  // the row has to be opened to be asked — reading it before the collapse is
-  // racing the thing under test.
+  // And its step still says it once the arguments land whole, from `args`
+  // rather than from the partial reading. The card is closed by default, so the
+  // row is opened to be asked.
   await page
     .getByRole('button', { name: 'Stop', exact: true })
     .first()
     .waitFor({ state: 'detached', timeout: 15000 });
-  await transcript().locator('[data-maka-tool-group] button[aria-expanded]').first().click();
+  await statusRow.locator('button[aria-expanded]').first().click();
+  const toolRow = transcript().locator('[data-maka-turn-status-step]').first();
   await toolRow.waitFor();
   findings.push({
     inputStream: true,

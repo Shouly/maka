@@ -50,15 +50,14 @@ import {
   type ToolFailurePresentation,
 } from '@maka/ui';
 import type { AnthropiconName } from '../../icons/Anthropicon.js';
-import { getTranscriptCopy } from '../../../locales/transcript-copy.js';
+import { getTranscriptCopy, type ToolStepVerbKey } from '../../../locales/transcript-copy.js';
 import { isAskUserQuestionTool } from '../../../lib/ask-user-question.js';
 import {
   durableResultOf,
-  isNoteItem,
   isScheduledTaskWriteItem,
-  readNoteMessage,
   readGlobResult,
   readGrepResult,
+  readUserFileDelivery,
   type DurableToolResultKind,
 } from '../../../lib/tool-delivery-results.js';
 import { toolRowDescription } from '../../../lib/tool-row-description.js';
@@ -92,7 +91,6 @@ export type ToolRendererId =
   | 'workflow'
   | 'text'
   | 'user_file_delivery'
-  | 'user_message'
   | 'scheduled_task'
   | 'grep'
   | 'glob'
@@ -137,8 +135,10 @@ export function rendererForResultKind(kind: DurableToolResultKind): ToolRenderer
       return 'text';
     case 'user_file_delivery':
       return 'user_file_delivery';
+    // A delivered message is prose of the turn, never a row's body
+    // (`groupTurnTimeline`), so the kind has nothing to open.
     case 'user_message':
-      return 'user_message';
+      return 'none';
   }
 }
 
@@ -147,11 +147,6 @@ export function rendererForResultKind(kind: DurableToolResultKind): ToolRenderer
  * for (`pending`) rather than an empty version of what will come back.
  */
 export function resolveToolRendererId(item: ToolActivityItem): ToolRendererId {
-  // A note is decided by which tool it is, not by whether its result has
-  // landed: live, the message is already in the args preview, and falling
-  // back to `pending` here is what used to draw a generic tool row over the
-  // one thing the call exists to show.
-  if (isNoteItem(item)) return 'user_message';
   // A scheduled task the turn just created or changed is a THING the person now
   // owns, not a step of the work — it gets a card that names it and opens it,
   // the way the reference does, rather than a row whose result they must read.
@@ -451,12 +446,6 @@ export function toolRowTitle(item: ToolActivityItem, locale: UiLocale): string {
   if (isComputerTool(item)) {
     return computerActionLabel(item, locale) ?? resolveToolDisplayName(item, locale);
   }
-  // A note that stayed in the timeline is drawn as its own words: the row is
-  // the whole of it, so a label saying one was sent would be a line of chrome
-  // in place of the thing it describes. A note too big for a row never gets
-  // here — it is a block of the turn (`groupTurnTimeline`).
-  const note = readNoteMessage(item);
-  if (note) return note.replace(/\s+/gu, ' ').trim();
   // A search reads as the question it asked, not as the generic invocation
   // line: `select:X` is an identifier, and a row that printed it raw would
   // make the reader parse a wire form.
@@ -532,10 +521,9 @@ export function canExpandTool(item: ToolActivityItem): boolean {
   const renderer = resolveToolRendererId(item);
   if (renderer === 'none') return false;
   if (renderer === 'file_write') return false;
-  // A delivery is drawn as a block of the turn, not inside the step list
-  // (`groupTurnTimeline`). The step that survives — SendUserMessage's — is one
-  // line saying it happened; opening it would show the message a second time.
-  if (renderer === 'user_file_delivery' || renderer === 'user_message') return false;
+  // A delivered file is a card at the foot of the turn (`groupTurnTimeline`);
+  // its step says it was shared, and opening it would draw the card twice.
+  if (renderer === 'user_file_delivery') return false;
   if (renderer === 'scheduled_task') return false;
   // A search has no body: the row names what was asked, and what it found is
   // already usable. Opening it would show a list of names twice.
@@ -567,6 +555,7 @@ export type ToolSummaryKey =
   | 'ask'
   | 'taskRead'
   | 'toolSearch'
+  | 'share'
   | 'memorySearch'
   | 'memoryRead'
   | 'memorySave'
@@ -593,6 +582,9 @@ export function toolSummaryKeyOf(item: ToolActivityItem): ToolSummaryKey {
   // "called a tool". It gets a phrase of its own for the same reason the task
   // readers do: the summary has to say what the turn actually did.
   if (isConnectorTool(item.toolName)) return 'toolSearch';
+  // A delivered file is handed over, not worked on — "Created a file, shared a
+  // file" is how the reference's summary says it.
+  if (item.toolName === TOOL_NAMES.sendUserFile) return 'share';
   // Not an activity kind: only the request registry recognises a question while
   // it is still being asked, because the live row has no tool name.
   if (isAskUserQuestionTool(item)) return 'ask';
@@ -627,10 +619,9 @@ export function summarizeToolGroup(items: readonly ToolActivityItem[], locale: U
   const copy = getTranscriptCopy(locale).tools;
   const buckets = new Map<ToolSummaryKey, SummaryBucket>();
   for (const item of items) {
-    // A note is not work, and the header counts it on its own — see
-    // `TurnWorkGroup.notes`. Left in here it would land in the `tool` bucket
-    // and report "Called a tool" for something that ran nothing.
-    if (isNoteItem(item)) continue;
+    // A delivered message is prose and never reaches a run; one still here
+    // failed, and is counted like any other call — skipping it left a run of
+    // nothing else summarised as "Working on it…" for good.
     const key = toolSummaryKeyOf(item);
     const existing = buckets.get(key);
     if (existing) existing.count += 1;
@@ -651,25 +642,28 @@ export function summarizeToolGroup(items: readonly ToolActivityItem[], locale: U
   }
   const steps = (group: (typeof groups)[number]) =>
     group.entries.reduce((total, entry) => total + entry.count, 0);
-  const phrases = groups
-    .sort((left, right) => steps(right) - steps(left) || left.index - right.index)
-    .slice(0, TOOL_SUMMARY_MAX_PHRASES)
-    .map((group) => {
-      if (group.object && group.entries.length > 1) {
-        const verbs = [
-          ...new Set(group.entries.map((entry) => copy.summary[entry.key].merge!.verb)),
-        ];
-        return copy.joinMerged(verbs, group.object);
-      }
-      const bucket = group.entries[0]!;
-      const label = copy.summary[bucket.key];
-      // The count is still what ORDERS the phrases; whether it is spoken is
-      // the label's own business. `other` exists for the kinds that count an
-      // object — "Read 16 files" — and the task labels deliberately read the
-      // same at any count, as the reference's do.
-      return bucket.count > 1 ? label.other(bucket.count) : label.one;
-    });
-  return copy.join(phrases);
+  const ordered = groups.sort(
+    (left, right) => steps(right) - steps(left) || left.index - right.index,
+  );
+  const phrases = ordered.slice(0, TOOL_SUMMARY_MAX_PHRASES).map((group) => {
+    if (group.object && group.entries.length > 1) {
+      const verbs = [...new Set(group.entries.map((entry) => copy.summary[entry.key].merge!.verb))];
+      return copy.joinMerged(verbs, group.object);
+    }
+    const bucket = group.entries[0]!;
+    const label = copy.summary[bucket.key];
+    // The count is still what ORDERS the phrases; whether it is spoken is
+    // the label's own business. `other` exists for the kinds that count an
+    // object — "Read 16 files" — and the task labels deliberately read the
+    // same at any count, as the reference's do.
+    return bucket.count > 1 ? label.other(bucket.count) : label.one;
+  });
+  // What the named phrases leave out is counted in steps, the reference's
+  // "Used 13 tools, updated tasks, and 3 more steps".
+  const rest = ordered
+    .slice(TOOL_SUMMARY_MAX_PHRASES)
+    .reduce((sum, group) => sum + steps(group), 0);
+  return rest > 0 ? copy.moreSteps(copy.join(phrases), rest) : copy.join(phrases);
 }
 
 /**
@@ -691,4 +685,224 @@ export function activeToolLabel(items: readonly ToolActivityItem[], locale: UiLo
   const running = [...items].reverse().find((item) => item.status === 'running');
   if (!running) return copy.working;
   return toolRowDescription(running) ?? copy.active[toolSummaryKeyOf(running)];
+}
+
+// ── Step labels ─────────────────────────────────────────────────────────────
+
+/**
+ * A step row's words, the reference's `{ verb, meta }`: a muted lead, then the
+ * object it acted on in primary ink. A row has no icon, so the verb is its
+ * identity; a call that names itself (a Bash or Agent `description`) is its
+ * own lead and has no object.
+ */
+export interface ToolStepLabel {
+  readonly lead: string;
+  readonly object?: string;
+  /** A command, a pattern or a skill name: drawn as code. */
+  readonly objectIsCode?: boolean;
+  /** Muted detail after the object — where in memory, how many files. */
+  readonly detail?: string;
+  /** The whole line as one string, for the tooltip and the live status row. */
+  readonly text: string;
+}
+
+type StepTense = 'running' | 'done' | 'failed';
+
+function stepTense(item: ToolActivityItem): StepTense {
+  // A soft memory conflict is the model merging before it writes: nothing has
+  // landed, so it keeps the running form.
+  if (isMemorySoftConflict(item)) return 'running';
+  if (toolRowFailure(item)) return 'failed';
+  // An interrupted call keeps the form of what it was doing; the row's status
+  // word says it stopped.
+  return toolRowStatus(item) === 'completed' ? 'done' : 'running';
+}
+
+function argsRecordOf(item: ToolActivityItem): Record<string, unknown> | undefined {
+  const args = item.args ?? item.argsPreview;
+  return typeof args === 'object' && args !== null && !Array.isArray(args)
+    ? (args as Record<string, unknown>)
+    : undefined;
+}
+
+function stringArgOf(item: ToolActivityItem, key: string): string | undefined {
+  const value = argsRecordOf(item)?.[key];
+  if (typeof value !== 'string') return undefined;
+  const flattened = value.replace(/\s+/gu, ' ').trim();
+  return flattened || undefined;
+}
+
+function basenameOf(path: string): string {
+  return path.split(/[/\\]/u).filter(Boolean).pop() ?? path;
+}
+
+/** The file a file tool acted on, by name; several become a count. */
+function fileObjectOf(
+  item: ToolActivityItem,
+  files: (count: number) => string,
+): string | undefined {
+  const named =
+    stringArgOf(item, 'file_path') ??
+    stringArgOf(item, 'notebook_path') ??
+    stringArgOf(item, 'path');
+  if (named) return basenameOf(named);
+  const result = durableResultOf(item);
+  const paths =
+    result?.kind === 'file_diff'
+      ? result.paths
+      : result?.kind === 'file_write'
+        ? [result.path]
+        : [];
+  if (paths.length > 1) return files(paths.length);
+  return paths[0] ? basenameOf(paths[0]) : undefined;
+}
+
+/** TaskUpdate's verb follows the status it set, as the reference's does. */
+function taskUpdateVerbOf(item: ToolActivityItem): ToolStepVerbKey {
+  switch (stringArgOf(item, 'status')) {
+    case 'completed':
+      return 'taskComplete';
+    case 'in_progress':
+      return 'taskStart';
+    case 'pending':
+      return 'taskReset';
+    case 'deleted':
+      return 'taskRemove';
+    default:
+      return 'taskUpdate';
+  }
+}
+
+function taskRefOf(item: ToolActivityItem): string | undefined {
+  const id = stringArgOf(item, 'taskId');
+  return id ? `#${id}` : undefined;
+}
+
+/** One question is named; several are counted. */
+function askObjectOf(
+  item: ToolActivityItem,
+  questions: (count: number) => string,
+): string | undefined {
+  const list = argsRecordOf(item)?.questions;
+  if (!Array.isArray(list) || list.length === 0) return undefined;
+  if (list.length > 1) return questions(list.length);
+  const first = list[0];
+  const text =
+    typeof first === 'object' && first !== null
+      ? (first as Record<string, unknown>).question
+      : undefined;
+  return typeof text === 'string' && text.trim() ? text.replace(/\s+/gu, ' ').trim() : undefined;
+}
+
+function sharedFilesObjectOf(
+  item: ToolActivityItem,
+  files: (count: number) => string,
+): string | undefined {
+  const delivered = readUserFileDelivery(durableResultOf(item))?.files;
+  if (delivered && delivered.length > 0) {
+    return delivered.length > 1 ? files(delivered.length) : delivered[0]!.name;
+  }
+  const asked = argsRecordOf(item)?.files;
+  if (!Array.isArray(asked) || asked.length === 0) return undefined;
+  if (asked.length > 1) return files(asked.length);
+  return typeof asked[0] === 'string' ? basenameOf(asked[0]) : undefined;
+}
+
+const MEMORY_STEP_VERBS = {
+  search: 'memorySearch',
+  read: 'read',
+  save: 'memorySave',
+  update: 'memoryUpdate',
+  delete: 'memoryDelete',
+} as const satisfies Record<NonNullable<ReturnType<typeof memoryToolVerb>>, ToolStepVerbKey>;
+
+export function toolStepLabel(item: ToolActivityItem, locale: UiLocale): ToolStepLabel {
+  const copy = getTranscriptCopy(locale).tools;
+  const tense = stepTense(item);
+  const verb = (key: ToolStepVerbKey): string => copy.step.verbs[key][tense];
+  const label = (
+    lead: string,
+    object?: string,
+    options: { code?: boolean; detail?: string } = {},
+  ): ToolStepLabel => ({
+    lead,
+    ...(object ? { object } : {}),
+    ...(object && options.code ? { objectIsCode: true } : {}),
+    ...(options.detail ? { detail: options.detail } : {}),
+    text: [lead, object, options.detail].filter(Boolean).join(' '),
+  });
+
+  switch (item.toolName) {
+    case TOOL_NAMES.bash: {
+      const described = toolRowDescription(item);
+      if (described) return label(described);
+      const command = stringArgOf(item, 'command');
+      return command
+        ? label(verb('command'), command, { code: true })
+        : label(verb('command'), copy.step.aCommand);
+    }
+    case TOOL_NAMES.agent:
+      return label(toolRowDescription(item) ?? verb('agent'));
+    case TOOL_NAMES.read:
+      return label(verb('read'), fileObjectOf(item, copy.step.files));
+    case TOOL_NAMES.write: {
+      const result = durableResultOf(item);
+      const updated = result?.kind === 'file_write' && result.created === false;
+      return label(verb(updated ? 'update' : 'create'), fileObjectOf(item, copy.step.files));
+    }
+    case TOOL_NAMES.edit:
+    case TOOL_NAMES.notebookEdit:
+    case TOOL_NAMES.applyPatch:
+      return label(verb('edit'), fileObjectOf(item, copy.step.files));
+    case TOOL_NAMES.grep:
+    case TOOL_NAMES.glob:
+      return label(verb('search'), stringArgOf(item, 'pattern'), { code: true });
+    case TOOL_NAMES.webFetch:
+      return label(verb('fetch'), stringArgOf(item, 'url'));
+    case TOOL_NAMES.webSearch:
+      return label(verb('webSearch'), stringArgOf(item, 'query'));
+    case TOOL_NAMES.skill: {
+      const skill = stringArgOf(item, 'skill');
+      return label(verb('skill'), skill ? `/${skill}` : undefined, { code: true });
+    }
+    case TOOL_NAMES.taskCreate:
+      return label(verb('taskAdd'), stringArgOf(item, 'subject'));
+    case TOOL_NAMES.taskUpdate:
+      return label(verb(taskUpdateVerbOf(item)), stringArgOf(item, 'subject') ?? taskRefOf(item));
+    case TOOL_NAMES.taskGet:
+      return label(verb('taskGet'), taskRefOf(item));
+    case TOOL_NAMES.taskList:
+      return label(verb('taskList'));
+    case TOOL_NAMES.taskStop:
+      return label(verb('taskStop'), stringArgOf(item, 'task_id') ?? stringArgOf(item, 'taskId'));
+    case TOOL_NAMES.sendUserFile:
+      return label(verb('share'), sharedFilesObjectOf(item, copy.step.files));
+    case TOOL_NAMES.sendUserMessage:
+      return label(verb('message'));
+  }
+  if (isComputerTool(item)) {
+    return label(computerActionLabel(item, locale) ?? resolveToolDisplayName(item, locale));
+  }
+  // Asked by the request registry as well as by name: a live question's row has
+  // no tool name yet.
+  if (isAskUserQuestionTool(item))
+    return label(verb('ask'), askObjectOf(item, copy.step.questions));
+  if (isConnectorTool(item.toolName)) return label(verb('toolSearch'));
+  const memory = memoryToolVerb(item.toolName);
+  if (memory) {
+    const paths = memoryPathsOf(item);
+    const name =
+      memory === 'search'
+        ? undefined
+        : paths.length > 1
+          ? copy.memory.files(paths.length)
+          : paths[0]
+            ? memoryBasename(paths[0])
+            : undefined;
+    const detail = toolRowMeta(item, locale);
+    return label(verb(MEMORY_STEP_VERBS[memory]), name, detail ? { detail } : {});
+  }
+  // Everything else — MCP and plugin tools, goals, scheduled-task reads,
+  // research steps — names itself through the invocation line.
+  return label(toolRowTitle(item, locale));
 }

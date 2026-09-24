@@ -96,8 +96,12 @@ import { MessageQueue } from './MessageQueue.js';
 import { SelectionQuote } from './SelectionQuote.js';
 import { UserMessageRow } from './UserMessageRow.js';
 import { TranscriptTurn } from './TranscriptTurn.js';
+import {
+  TurnStatusPending,
+  type TurnStatusBlocked,
+  type TurnStatusLive,
+} from './tools/TurnStatus.js';
 import { useQuestionPin } from './use-question-pin.js';
-import { TurnRunningStatus } from './TurnRunningStatus.js';
 import { deriveWorkingMarkActivity } from '../../lib/turn-activity.js';
 import { NoticeCard } from './notices/NoticeCard.js';
 import { RevisionBanner } from './notices/RevisionBanner.js';
@@ -105,6 +109,12 @@ import { GoalBanner } from './notices/GoalBanner.js';
 import { PlanExecutionBanner } from './notices/PlanExecutionBanner.js';
 import { PlanProposalCard } from './PlanProposalCard.js';
 import { SessionNotices } from './notices/SessionNotices.js';
+
+/** The status-row wording for a pending interaction's type. */
+function blockedOnOf(type: string | undefined): TurnStatusBlocked | undefined {
+  if (type === undefined) return undefined;
+  return type === 'user_question_request' ? 'question' : 'input';
+}
 
 export interface SessionViewProps {
   sessionId: string;
@@ -152,8 +162,11 @@ function SessionTranscript(props: SessionViewProps) {
       // The composer yields to a turn-scoped prompt: an answer typed beside
       // it would race the one the prompt is waiting for.
       interactionPending: (state.interactions[sessionId]?.length ?? 0) > 0,
+      // What the live turn's status row says while it waits: a question, or
+      // anything else the user has to decide.
+      blockedOn: blockedOnOf(state.interactions[sessionId]?.[0]?.type),
       // The event stream has gone quiet for long enough that what is on screen
-      // may be behind. The status line says so (`TurnRunningStatus`); the
+      // may be behind. The live status row says so (`TurnStatus`); the
       // health probe only runs while a turn is active, so the line is always up
       // to carry it.
       streamStale: state.health?.sessionId === sessionId && state.health.status === 'stale',
@@ -401,19 +414,25 @@ function SessionTranscript(props: SessionViewProps) {
   // something on screen explains the silence (a tool in flight, an open
   // question). See `evaluateHealth`.
   const streamUnsteady = feed.streamStale;
-  // One keyed sibling survives promotion from a local send into a durable turn.
-  const waitingStatus = (
-    <TurnRunningStatus
-      key={`running:${sessionId}`}
-      turnId={live.turnId}
-      startedAt={
-        (live.turnId ? transientPlacement.before.get(live.turnId)?.[0]?.ts : undefined) ??
-        activeTurn?.startedAt ??
-        feed.transientMessages[0]?.ts
-      }
-      streamUnsteady={streamUnsteady}
-      {...(activeTurn ? { turn: activeTurn } : {})}
-    />
+  // The live turn's clock and working mark. They ride on the turn's own status
+  // row (`TranscriptTurn`); before a committed turn exists, a pending row with
+  // the same parts stands where the turn will appear.
+  const liveStartedAt =
+    (live.turnId ? transientPlacement.before.get(live.turnId)?.[0]?.ts : undefined) ??
+    activeTurn?.startedAt ??
+    feed.transientMessages[0]?.ts;
+  const liveMark = deriveWorkingMarkActivity(activeTurn);
+  // Held by value, so the memoized live turn does not re-render for every
+  // render of this view — only when the clock's start, the mark or the stream
+  // health actually change.
+  const liveStatus = useMemo<TurnStatusLive>(
+    () => ({
+      ...(live.turnId ? { turnId: live.turnId } : {}),
+      ...(liveStartedAt !== undefined ? { startedAt: liveStartedAt } : {}),
+      unsteady: streamUnsteady,
+      mark: liveMark,
+    }),
+    [live.turnId, liveStartedAt, streamUnsteady, liveMark],
   );
   const shellCopy = getShellCopy(locale).app;
   const historyPending =
@@ -530,6 +549,12 @@ function SessionTranscript(props: SessionViewProps) {
                     onSwitchToFullAccessAndRetry={switchToFullAccessAndRetry(turn.turnId)}
                     {...(switchingToolUseId ? { switchingToolUseId } : {})}
                     onOpenExternal={toolContext.onOpenExternal}
+                    {...(feed.blockedOn && live.turnId === turn.turnId
+                      ? { blocked: feed.blockedOn }
+                      : {})}
+                    {...(shellLive.showRunningStatus && turn.turnId === live.turnId
+                      ? { liveStatus }
+                      : {})}
                   />,
                   ...(proposalsByTurn.get(turn.turnId) ?? []).map((proposal) => (
                     <PlanProposalCard
@@ -539,9 +564,6 @@ function SessionTranscript(props: SessionViewProps) {
                       reviewable={proposal.proposalId === reviewable?.proposalId}
                     />
                   )),
-                  ...(shellLive.showRunningStatus && turn.turnId === live.turnId
-                    ? [waitingStatus]
-                    : []),
                 ];
               }),
               ...transientPlacement.tail.map((message) => (
@@ -557,7 +579,9 @@ function SessionTranscript(props: SessionViewProps) {
                     />,
                   ]
                 : []),
-              ...(orphanRunningStatus ? [waitingStatus] : []),
+              ...(orphanRunningStatus
+                ? [<TurnStatusPending key={`running:${sessionId}`} live={liveStatus} />]
+                : []),
             ]}
             {/* The end of content, as opposed to the end of the scroll height
                 the pinned question's floor extends. */}

@@ -48,7 +48,7 @@ import {
   WorkflowResult,
 } from './renderers/SimpleResults.js';
 import { GlobResult, GrepResult } from './renderers/SearchResults.js';
-import { UserFileDeliveryResult, UserMessageResult } from './renderers/DeliveryResults.js';
+import { UserFileDeliveryResult } from './renderers/DeliveryResults.js';
 import { ScheduledTaskResult } from './renderers/ScheduledTaskResult.js';
 import { MemoryResult } from './renderers/MemoryResult.js';
 import { resolveToolRendererId, type ToolRendererId } from './tool-presentation.js';
@@ -57,7 +57,6 @@ import {
   readGlobResult,
   readGrepResult,
   readUserFileDelivery,
-  readNoteMessage,
 } from '../../../lib/tool-delivery-results.js';
 
 export interface ToolContentContext {
@@ -184,12 +183,11 @@ export function renderToolContent(item: ToolActivityItem, context: ToolContentCo
         />
       ) : null;
     }
-    // The two deliveries. They are drawn as blocks of the turn rather than
-    // inside a row (`groupTurnTimeline`), so in practice this switch is
-    // reached for them from `TranscriptTurn`'s delivery block and never from
-    // an opened `ToolRow` — `canExpandTool` says they do not open. Routing
-    // them here anyway keeps one place that decides what a result kind looks
-    // like, which is the whole reason this file exists.
+    // A delivered file is drawn as a card at the foot of the turn
+    // (`groupTurnTimeline`), so this is reached from `TranscriptTurn`'s
+    // delivery block and never from an opened step — `canExpandTool` says the
+    // step does not open. Routing it here keeps one place that decides what a
+    // result kind looks like, which is the whole reason this file exists.
     case 'user_file_delivery': {
       const delivery = readUserFileDelivery(result);
       return delivery ? (
@@ -212,19 +210,5 @@ export function renderToolContent(item: ToolActivityItem, context: ToolContentCo
             : {})}
         />
       );
-    case 'user_message': {
-      // Live or settled, from one accessor: a promoted note renders its text
-      // as it arrives rather than appearing only once the call returns.
-      const message = readNoteMessage(item);
-      return message ? (
-        <UserMessageResult
-          message={message}
-          onOpenExternal={context.onOpenExternal}
-          {...(context.onOpenFile
-            ? { onOpenFile: (path: string) => context.onOpenFile?.(path) }
-            : {})}
-        />
-      ) : null;
-    }
   }
 }

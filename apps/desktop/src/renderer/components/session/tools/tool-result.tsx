@@ -17,75 +17,15 @@
  * under the License.
  */
 
-// The shape of an opened tool result, and the timeline geometry the rows sit
-// on. Ported from the reference design system's `tools/tool-result.tsx`.
+// The shape of an opened tool result. Ported from the reference design
+// system's `tools/tool-result.tsx`.
 //
 // One place owns these because a dozen renderers would otherwise each write
 // their own padding, and a change would have to be made a dozen times and
 // would be made eleven.
-//
-// The step is FOUR segments, not "a row plus two absolutely positioned lines":
-//
-//   8px line segment
-//   row (4px padding + 20px icon = 28px)
-//   in-row line segment   ← the line continues beside opened content
-//   8px line segment
-//
-// The third segment is the reason: with absolute positioning the line stops
-// under the header the moment a row opens.
 
 import type { ReactNode } from 'react';
 import { cn } from '../../../lib/cn.js';
-
-/** The icon column. 20px wide; the timeline runs down its centre. */
-export const stepIconColClass = 'flex w-5 shrink-0 justify-center';
-
-/** The row: 4px above and below a 20px icon, the same height as the summary row. */
-export const stepRowClass = 'group/step flex flex-row items-center py-1';
-
-/** The row's content area. */
-export const stepBodyClass =
-  'group/row flex w-full flex-row items-center justify-between gap-2 rounded-lg px-2.5 text-left';
-
-/**
- * An openable row. The text and icon brighten through their own
- * `group-hover/row` rules; this only owns the pointer and the focus ring —
- * this tier of the reference design has no hover fill.
- */
-export const stepBodyInteractiveClass =
-  'cursor-pointer outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)]';
-
-/**
- * The mark a note carries in place of a tool's glyph.
- *
- * A note is not an activity, so it takes no activity icon — it marks its place
- * on the same timeline with a plain dot, as the reference design does. Its
- * colour is the border token rather than `currentColor`: the dot is a rule of
- * the timeline, not text, and it must not brighten with the row's hover states
- * the way a glyph does. `mt-0.5` is the optical nudge that sits it on the
- * text's centre rather than the line box's.
- */
-export function StepDot() {
-  return <span className="mt-0.5 size-2 shrink-0 rounded-full bg-border-strong" />;
-}
-
-/** The vertical line. `on=false` keeps the segment's space but paints nothing. */
-export function StepLine({ on = true, className }: { on?: boolean; className?: string }) {
-  return (
-    <div className={cn(stepIconColClass, className)} aria-hidden="true">
-      <div className={cn('h-full w-px transition-colors duration-150', on && 'bg-hairline')} />
-    </div>
-  );
-}
-
-/** The 8px segment above or below a row. */
-export function StepGap({ on = true }: { on?: boolean }) {
-  return (
-    <div className="flex h-2 flex-row" aria-hidden="true">
-      <StepLine on={on} />
-    </div>
-  );
-}
 
 /**
  * The opened result panel. Everything a renderer shows goes inside one.
@@ -111,7 +51,7 @@ export function ToolResultPanel({
   return (
     <div
       className={cn(
-        'mx-2.5 mb-2 mt-1 rounded-lg border-[0.5px] border-hairline',
+        'mx-2.5 mb-2 mt-1 rounded-lg border-[1px] border-hairline',
         list ? 'bg-surface-2/50' : 'bg-surface-2',
         className,
       )}

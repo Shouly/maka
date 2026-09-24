@@ -17,9 +17,10 @@
  * under the License.
  */
 
-// What the turn HANDS OVER: SendUserFile's cards and SendUserMessage's words.
+// What the turn HANDS OVER: SendUserFile's cards. (SendUserMessage's words are
+// prose of the turn — `groupTurnTimeline` — and need no renderer of their own.)
 //
-// Neither is drawn inside a tool result panel, and that is the whole point.
+// It is not drawn inside a tool result panel, and that is the whole point.
 // Every other renderer in this folder is evidence about work that was done —
 // it belongs behind a fold, at 13px, in a bordered box the reader opens when
 // they want it. A delivery is not evidence; it is the deliverable. It stands
@@ -32,7 +33,6 @@
 
 import { memo, useEffect } from 'react';
 import { useUiLocale } from '@maka/ui';
-import Markdown from '../../../ui/Markdown.js';
 import { DeliveryFileCard } from './DeliveryFileCard.js';
 import { getTranscriptCopy } from '../../../../locales/transcript-copy.js';
 import {
@@ -40,7 +40,6 @@ import {
   type DurableToolResultContent,
   type UserFileDeliveryContent,
   type UserFileDeliveryFile,
-  type UserMessageContent,
 } from '../../../../lib/tool-delivery-results.js';
 
 /**
@@ -125,37 +124,6 @@ export const UserFileDeliveryResult = memo(function UserFileDeliveryResult(props
           {...(onShowDeliveredFile ? { onShowInFolder: () => onShowDeliveredFile(file.path) } : {})}
         />
       ))}
-    </div>
-  );
-});
-
-/**
- * A note too big for a row, addressed to the reader.
- *
- * The same `Markdown` the final answer uses, in the same column, at the same
- * size — and with NOTHING above it. In the reference a promoted note is
- * typographically indistinguishable from the turn's own answer; the only mark
- * left on it is the tally in the header of the group it came out of. A label
- * here would re-file it as tool output, which is the one thing it is not.
- */
-export const UserMessageResult = memo(function UserMessageResult(props: {
-  message: string;
-  onOpenExternal?: (url: string) => void;
-  onOpenFile?: (path: string) => void;
-}) {
-  return (
-    <div
-      className="chat-assistant-response standard-markdown my-3 min-w-0"
-      data-maka-user-message=""
-      data-maka-contract="markdown"
-    >
-      <Markdown
-        noPadding
-        {...(props.onOpenExternal ? { onOpenExternal: props.onOpenExternal } : {})}
-        {...(props.onOpenFile ? { onOpenFile: props.onOpenFile } : {})}
-      >
-        {props.message}
-      </Markdown>
     </div>
   );
 });

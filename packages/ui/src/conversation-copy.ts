@@ -205,23 +205,32 @@ export interface ConversationCopy {
     mode: Record<PermissionMode, { label: string; hint: string }>;
     modeAriaLabel: (label: string) => string;
   };
-  sandboxBoundary: {
-    title: string;
-    access: Record<'read' | 'write', string>;
-    scope: Record<'exact' | 'subtree', string>;
-    network: string;
-    enabled: string;
-    reject: string;
+  /** The permission card's shared chrome: the tool's own words, and the two answers. */
+  permissionCard: {
+    fromTool: string;
+    decline: string;
     allowSession: string;
+    /** The heading's caret, which folds the tool's words away. */
+    details: string;
+  };
+  sandboxBoundary: {
+    /** The heading names what the request reaches for. */
+    title: { folder: string; file: string; network: string; mixed: string };
+    /** What granting means, under the listed targets in the tool's words. */
+    consequence: { read: string; write: string; network: string };
+    label: { folder: string; file: string; network: string; why: string };
+    access: Record<'read' | 'write', string>;
+    networkValue: string;
   };
   clientCapability: {
-    title: string;
-    browser: (origin: string) => string;
-    computerUse: string;
-    desktopMcp: (serverId: string, toolName: string) => string;
+    title: {
+      browser: (origin: string) => string;
+      computerUse: string;
+      desktopMcp: (serverId: string, toolName: string) => string;
+    };
+    consequence: { browser: string; computerUse: string; desktopMcp: string };
+    label: { site: string; server: string; tool: string };
     sessionNotice: string;
-    reject: string;
-    allowSession: string;
   };
   questions: {
     keyboardHint: string;
@@ -531,23 +540,41 @@ const CONVERSATION_COPY = {
       },
       modeAriaLabel: (label) => `权限模式：${label}`,
     },
-    sandboxBoundary: {
-      title: '允许访问工作区以外的内容？',
-      access: { read: '读取', write: '写入' },
-      scope: { exact: '仅此路径', subtree: '目录及子目录' },
-      network: '网络访问',
-      enabled: '已启用',
-      reject: '拒绝',
+    permissionCard: {
+      fromTool: '来自工具：',
+      decline: '拒绝',
       allowSession: '本任务允许',
+      details: '详情',
+    },
+    sandboxBoundary: {
+      title: {
+        folder: 'Maka 想要使用你电脑上的文件夹',
+        file: 'Maka 想要使用你电脑上的文件',
+        network: 'Maka 想要访问网络',
+        mixed: 'Maka 想要访问工作区以外的内容',
+      },
+      consequence: {
+        read: 'Maka 将能在本任务中读取这里的文件。',
+        write: 'Maka 将能在本任务中读取和修改这里的文件。',
+        network: 'Maka 将能在本任务中访问网络。',
+      },
+      label: { folder: '文件夹', file: '文件', network: '网络', why: '原因' },
+      access: { read: '只读', write: '读写' },
+      networkValue: '允许访问',
     },
     clientCapability: {
-      title: '允许使用客户端能力？',
-      browser: (origin) => `允许 Browser 操作 ${origin}`,
-      computerUse: '允许 Computer Use 操作这台 Mac',
-      desktopMcp: (serverId, toolName) => `允许调用 ${serverId} 的 ${toolName} 工具`,
+      title: {
+        browser: (origin) => `Maka 想要在浏览器中操作 ${origin}`,
+        computerUse: 'Maka 想要控制这台 Mac',
+        desktopMcp: (serverId, toolName) => `Maka 想要使用 ${serverId} 的 ${toolName} 工具`,
+      },
+      consequence: {
+        browser: 'Maka 将能在本任务中读取并操作这个网站。',
+        computerUse: 'Maka 将能在本任务中查看屏幕，并操作这台 Mac 上的应用。',
+        desktopMcp: 'Maka 将能在本任务中调用这个工具。',
+      },
+      label: { site: '网站', server: '服务器', tool: '工具' },
       sessionNotice: '允许后，本任务中相同范围的后续操作将不再询问。',
-      reject: '拒绝',
-      allowSession: '本任务允许',
     },
     questions: { keyboardHint: '1–9 选择 · ↑↓ 切换 · Enter 确认 · Esc 继续说明', other: '其他', otherDescription: '输入一个不同的答案。', otherAriaLabel: '其他答案', otherPlaceholder: '输入你的答案', stop: '停止', stopping: '停止中…', previous: '上一题', submitting: '正在提交…', submit: '提交答案', next: '下一题' },
     forms: { keyboardHint: '1–9 选择 · ↑↓ 切换 · Enter 确认 · Esc 取消', requester: (name) => `由 ${name} 请求`, requesterWithSource: (name, source) => `由 ${name} 请求 · ${source}`, required: '必填', optional: '选填', include: (label) => `提供：${label}`, enabled: (label) => `启用：${label}`, enterValue: '输入内容', enterNumber: '输入数字', constraintSeparator: '；', lengthConstraint: (minimum, maximum) => minimum === undefined ? `最多 ${maximum} 个字符` : maximum === undefined ? `至少 ${minimum} 个字符` : `长度 ${minimum}–${maximum} 个字符`, numberConstraint: (minimum, maximum) => minimum === undefined ? `最大值 ${maximum}` : maximum === undefined ? `最小值 ${minimum}` : `范围 ${minimum}–${maximum}`, itemConstraint: (minimum, maximum) => minimum === undefined ? `最多选择 ${maximum} 项` : maximum === undefined ? `至少选择 ${minimum} 项` : `选择 ${minimum}–${maximum} 项`, formatConstraint: { email: '格式：email', uri: '格式：URI', date: '格式：date（YYYY-MM-DD）', 'date-time': '格式：date-time（RFC 3339）' }, invalid: '请提供符合要求的值。', cancel: '取消', decline: '拒绝', accept: '提交', submitting: '正在提交…' },
@@ -695,23 +722,41 @@ const CONVERSATION_COPY = {
       },
       modeAriaLabel: (label) => `權限模式：${label}`,
     },
-    sandboxBoundary: {
-      title: '允許存取工作區以外的內容？',
-      access: { read: '讀取', write: '寫入' },
-      scope: { exact: '僅此路徑', subtree: '目錄及子目錄' },
-      network: '網路存取',
-      enabled: '已啟用',
-      reject: '拒絕',
+    permissionCard: {
+      fromTool: '來自工具：',
+      decline: '拒絕',
       allowSession: '本任務允許',
+      details: '詳情',
+    },
+    sandboxBoundary: {
+      title: {
+        folder: 'Maka 想要使用你電腦上的資料夾',
+        file: 'Maka 想要使用你電腦上的檔案',
+        network: 'Maka 想要存取網路',
+        mixed: 'Maka 想要存取工作區以外的內容',
+      },
+      consequence: {
+        read: 'Maka 將能在本任務中讀取這裡的檔案。',
+        write: 'Maka 將能在本任務中讀取和修改這裡的檔案。',
+        network: 'Maka 將能在本任務中存取網路。',
+      },
+      label: { folder: '資料夾', file: '檔案', network: '網路', why: '原因' },
+      access: { read: '唯讀', write: '讀寫' },
+      networkValue: '允許存取',
     },
     clientCapability: {
-      title: '允許使用用戶端能力？',
-      browser: (origin) => `允許 Browser 操作 ${origin}`,
-      computerUse: '允許 Computer Use 操作這台 Mac',
-      desktopMcp: (serverId, toolName) => `允許呼叫 ${serverId} 的 ${toolName} 工具`,
+      title: {
+        browser: (origin) => `Maka 想要在瀏覽器中操作 ${origin}`,
+        computerUse: 'Maka 想要控制這台 Mac',
+        desktopMcp: (serverId, toolName) => `Maka 想要使用 ${serverId} 的 ${toolName} 工具`,
+      },
+      consequence: {
+        browser: 'Maka 將能在本任務中讀取並操作這個網站。',
+        computerUse: 'Maka 將能在本任務中查看螢幕，並操作這台 Mac 上的應用程式。',
+        desktopMcp: 'Maka 將能在本任務中呼叫這個工具。',
+      },
+      label: { site: '網站', server: '伺服器', tool: '工具' },
       sessionNotice: '允許後，本任務中相同範圍的後續操作將不再詢問。',
-      reject: '拒絕',
-      allowSession: '本任務允許',
     },
     questions: { keyboardHint: '1–9 選擇 · ↑↓ 切換 · Enter 確認 · Esc 繼續說明', other: '其他', otherDescription: '輸入一個不同的答案。', otherAriaLabel: '其他答案', otherPlaceholder: '輸入你的答案', stop: '停止', stopping: '停止中…', previous: '上一題', submitting: '正在提交…', submit: '提交答案', next: '下一題' },
     forms: { keyboardHint: '1–9 選擇 · ↑↓ 切換 · Enter 確認 · Esc 取消', requester: (name) => `由 ${name} 請求`, requesterWithSource: (name, source) => `由 ${name} 請求 · ${source}`, required: '必填', optional: '選填', include: (label) => `提供：${label}`, enabled: (label) => `啟用：${label}`, enterValue: '輸入內容', enterNumber: '輸入數字', constraintSeparator: '；', lengthConstraint: (minimum, maximum) => minimum === undefined ? `最多 ${maximum} 個字元` : maximum === undefined ? `至少 ${minimum} 個字元` : `長度 ${minimum}–${maximum} 個字元`, numberConstraint: (minimum, maximum) => minimum === undefined ? `最大值 ${maximum}` : maximum === undefined ? `最小值 ${minimum}` : `範圍 ${minimum}–${maximum}`, itemConstraint: (minimum, maximum) => minimum === undefined ? `最多選取 ${maximum} 項` : maximum === undefined ? `至少選取 ${minimum} 項` : `選取 ${minimum}–${maximum} 項`, formatConstraint: { email: '格式：email', uri: '格式：URI', date: '格式：date（YYYY-MM-DD）', 'date-time': '格式：date-time（RFC 3339）' }, invalid: '請提供符合要求的值。', cancel: '取消', decline: '拒絕', accept: '提交', submitting: '正在提交…' },
@@ -885,23 +930,41 @@ const CONVERSATION_COPY = {
       },
       modeAriaLabel: (label) => `Permission mode: ${label}`,
     },
-    sandboxBoundary: {
-      title: 'Allow access outside the workspace?',
-      access: { read: 'Read', write: 'Write' },
-      scope: { exact: 'Exact path', subtree: 'Directory subtree' },
-      network: 'Network access',
-      enabled: 'Enabled',
-      reject: 'Reject',
+    permissionCard: {
+      fromTool: 'From the tool:',
+      decline: 'Decline',
       allowSession: 'Allow for this task',
+      details: 'Details',
+    },
+    sandboxBoundary: {
+      title: {
+        folder: 'Maka wants to use a folder on your computer',
+        file: 'Maka wants to use a file on your computer',
+        network: 'Maka wants to use the network',
+        mixed: 'Maka wants to reach outside the workspace',
+      },
+      consequence: {
+        read: 'Maka will be able to read files here for this task.',
+        write: 'Maka will be able to read and change files here for this task.',
+        network: 'Maka will be able to reach the network for this task.',
+      },
+      label: { folder: 'Folder', file: 'File', network: 'Network', why: 'Why' },
+      access: { read: 'read only', write: 'read and write' },
+      networkValue: 'Allowed',
     },
     clientCapability: {
-      title: 'Allow this client capability?',
-      browser: (origin) => `Allow Browser to operate ${origin}`,
-      computerUse: 'Allow Computer Use to operate this Mac',
-      desktopMcp: (serverId, toolName) => `Allow ${toolName} from ${serverId}`,
+      title: {
+        browser: (origin) => `Maka wants to operate ${origin} in the browser`,
+        computerUse: 'Maka wants to control this Mac',
+        desktopMcp: (serverId, toolName) => `Maka wants to use ${toolName} from ${serverId}`,
+      },
+      consequence: {
+        browser: 'Maka will be able to read and operate this site for this task.',
+        computerUse: 'Maka will be able to see the screen and use apps on this Mac for this task.',
+        desktopMcp: 'Maka will be able to call this tool for this task.',
+      },
+      label: { site: 'Site', server: 'Server', tool: 'Tool' },
       sessionNotice: 'Matching operations will be allowed for the rest of this task.',
-      reject: 'Reject',
-      allowSession: 'Allow for this task',
     },
     questions: { keyboardHint: '1–9 select · ↑↓ navigate · Enter confirm · Esc explain', other: 'Other', otherDescription: 'Enter a different answer.', otherAriaLabel: 'Other answer', otherPlaceholder: 'Enter your answer', stop: 'Stop', stopping: 'Stopping…', previous: 'Previous', submitting: 'Submitting…', submit: 'Submit answers', next: 'Next' },
     forms: { keyboardHint: '1–9 select · ↑↓ navigate · Enter confirm · Esc cancel', requester: (name) => `Requested by ${name}`, requesterWithSource: (name, source) => `Requested by ${name} · ${source}`, required: 'Required', optional: 'Optional', include: (label) => `Provide ${label}`, enabled: (label) => `Enable ${label}`, enterValue: 'Enter a value', enterNumber: 'Enter a number', constraintSeparator: ' · ', lengthConstraint: (minimum, maximum) => minimum === undefined ? `At most ${maximum} characters` : maximum === undefined ? `At least ${minimum} characters` : `${minimum}–${maximum} characters`, numberConstraint: (minimum, maximum) => minimum === undefined ? `Maximum ${maximum}` : maximum === undefined ? `Minimum ${minimum}` : `Range ${minimum}–${maximum}`, itemConstraint: (minimum, maximum) => minimum === undefined ? `Select at most ${maximum}` : maximum === undefined ? `Select at least ${minimum}` : `Select ${minimum}–${maximum}`, formatConstraint: { email: 'Format: email', uri: 'Format: URI', date: 'Format: date (YYYY-MM-DD)', 'date-time': 'Format: date-time (RFC 3339)' }, invalid: 'Provide a value that meets the requirements.', cancel: 'Cancel', decline: 'Decline', accept: 'Submit', submitting: 'Submitting…' },

@@ -25,6 +25,7 @@ import {
 import { isToolFailure } from '@maka/core/events';
 import type { ToolFailure, ToolResultPreviewContent } from '@maka/core/events';
 import { decodeToolResultPreviewContent } from '@maka/core/tool-result-preview';
+import { isRecord } from '@maka/core/record-schema';
 import type { ToolActivityKind } from '@maka/core/events';
 import type { SessionStatus } from '@maka/core/session';
 import { decodeTurnOrigin } from '@maka/core/turn-origin';
@@ -88,6 +89,16 @@ export const SESSION_TOOL_INTENT_MAX_BYTES = 512;
  * `projectToolArgsPreview`'s 2,048-char JSON cap with UTF-8 headroom.
  */
 export const SESSION_TOOL_ARGS_PREVIEW_MAX_BYTES = 8 * 1024;
+/**
+ * A live `tool_result` omits its body — except SendUserMessage's. That body IS
+ * what the tool exists to put in front of the reader, and without it the
+ * settled row has nothing to show until the transcript lands, a gap the client
+ * could only paper over with the args preview (cut at 1,500 chars, redacted).
+ * The tool caps its message at 20,000 chars, so almost every message fits this
+ * bound with room for the frame around it; one that does not is omitted as
+ * before and arrives with the transcript.
+ */
+export const SESSION_TOOL_RESULT_MESSAGE_MAX_BYTES = 32 * 1024;
 /**
  * The ceiling on one live subscription frame, delimiter included: the transport
  * writes each frame followed by a newline (`transport/local-ipc-framing.ts`),
@@ -280,6 +291,12 @@ export type SessionToolEvent =
        */
       failure?: ToolFailure;
       durationMs?: number;
+      /**
+       * SendUserMessage's delivered body, on a completed call whose message
+       * fits `SESSION_TOOL_RESULT_MESSAGE_MAX_BYTES`. Every other result kind
+       * stays omitted from the live frame.
+       */
+      content?: { kind: 'user_message'; message: string };
     })
   | (SessionToolEventIdentity & {
       type: 'tool_result_preview';
@@ -1101,6 +1118,7 @@ function decodeSessionToolEvent(value: unknown): SessionToolEvent {
       'status',
       'failure',
       'durationMs',
+      'content',
     ];
     assertAllowedKeys(record, 'Session tool result event', allowed);
     assertRequiredKeys(record, 'Session tool result event', [
@@ -1120,6 +1138,26 @@ function decodeSessionToolEvent(value: unknown): SessionToolEvent {
     if (record.failure !== undefined && !isToolFailure(record.failure)) {
       throw invalidProtocolFrame('Invalid Session tool result failure');
     }
+    if (record.content !== undefined) {
+      if (record.status !== 'completed') {
+        throw invalidProtocolFrame('Only a completed Session tool result carries content');
+      }
+      const content = record.content;
+      if (
+        !isRecord(content) ||
+        content.kind !== 'user_message' ||
+        typeof content.message !== 'string' ||
+        content.message.trim() === '' ||
+        Object.keys(content).length !== 2
+      ) {
+        throw invalidProtocolFrame('Invalid Session tool result content');
+      }
+      requireEncodedByteLimit(
+        content.message,
+        'Session tool result message',
+        SESSION_TOOL_RESULT_MESSAGE_MAX_BYTES,
+      );
+    }
     return {
       type: record.type,
       ...identity,
@@ -1128,6 +1166,14 @@ function decodeSessionToolEvent(value: unknown): SessionToolEvent {
         : { operationId: requireEntityId(record.operationId, 'operationId') }),
       status: record.status,
       ...(record.failure === undefined ? {} : { failure: record.failure as ToolFailure }),
+      ...(record.content === undefined
+        ? {}
+        : {
+            content: {
+              kind: 'user_message' as const,
+              message: (record.content as { message: string }).message,
+            },
+          }),
       ...(record.durationMs === undefined
         ? {}
         : {

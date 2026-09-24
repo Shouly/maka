@@ -174,6 +174,25 @@ describe('projectToolArgsPreview', () => {
     assert.ok(JSON.stringify(preview).length <= 2048);
   });
 
+  it('lets Bash and Agent say what they are for, and no other tool', () => {
+    assert.deepEqual(
+      projectToolArgsPreview('Bash', { command: 'npm test', description: 'Run the unit tests' }),
+      { command: 'npm test', description: 'Run the unit tests' },
+    );
+    assert.deepEqual(
+      projectToolArgsPreview('Agent', { prompt: 'long brief', description: 'Survey the tests' }),
+      { description: 'Survey the tests' },
+    );
+    assert.equal(
+      (
+        projectToolArgsPreview('mcp__notes__save', { title: 't', description: 'private body' }) as
+          | Record<string, unknown>
+          | undefined
+      )?.description,
+      undefined,
+    );
+  });
+
   it('never previews an uncommitted task write as current state', () => {
     assert.equal(
       projectToolArgsPreview('TaskCreate', { subject: 'one', description: 'the first task' }),

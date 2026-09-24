@@ -96,7 +96,39 @@ try {
       filesystem: { entries: [{ path: '/tmp/read-only', access: 'read', scope: 'subtree' }] },
     },
   });
-  await panel.getByRole('button', { name: 'Reject', exact: true }).click();
+  await panel.getByRole('button', { name: 'Decline', exact: true }).click();
+  await panel.waitFor({ state: 'detached' });
+  // Only the Host's own home becomes `~`; another account's folder or
+  // /Users/Shared is a different target and keeps its whole path. And Esc
+  // declines even though the shell's hotkeys claim every Escape first.
+  await show({
+    type: 'sandbox_boundary_request',
+    requestId: 'sandbox-esc',
+    justification: 'Compare the folders',
+    expansion: {
+      filesystem: {
+        entries: [
+          { path: '/Users/tester/Desktop', access: 'read', scope: 'subtree' },
+          { path: '/Users/Shared/project', access: 'write', scope: 'subtree' },
+          { path: '/Users/another/project', access: 'read', scope: 'subtree' },
+        ],
+      },
+    },
+  });
+  await panel.getByText('~/Desktop', { exact: false }).first().waitFor();
+  const shownPaths = (await panel.textContent()) ?? '';
+  assert.ok(shownPaths.includes('/Users/Shared/project'), shownPaths);
+  assert.ok(shownPaths.includes('/Users/another/project'), shownPaths);
+  assert.ok(!shownPaths.includes('~/project'), shownPaths);
+  // Typed in a text field, neither key answers the card: ⌘↵ there belongs to
+  // what is being written, and a grant must never be its side effect.
+  await page.getByLabel('Fixture field').focus();
+  await page.keyboard.press('ControlOrMeta+Enter');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+  assert.equal(await panel.count(), 1, 'the card is still waiting for an answer');
+  await panel.getByRole('button', { name: 'Decline', exact: true }).focus();
+  await page.keyboard.press('Escape');
   await panel.waitFor({ state: 'detached' });
   await show({
     type: 'form_request',
@@ -121,13 +153,14 @@ try {
   assert.deepEqual(responses, [
     { kind: 'capability', response: { requestId: 'cap', decision: 'allow' } },
     { kind: 'sandbox', response: { requestId: 'sandbox', decision: 'deny' } },
+    { kind: 'sandbox', response: { requestId: 'sandbox-esc', decision: 'deny' } },
     {
       kind: 'form',
       response: { requestId: 'form', action: 'accept', values: { count: 2, enabled: false } },
     },
   ]);
   console.log(
-    'Prompt UI smoke passed: capability, sandbox, typed form, absent optionals, failure and retry.',
+    'Prompt UI smoke passed: capability, sandbox, home-path display, Esc under shell hotkeys, typed form, absent optionals, failure and retry.',
   );
 } finally {
   if (app) await closeElectronApplication(app, 3000);

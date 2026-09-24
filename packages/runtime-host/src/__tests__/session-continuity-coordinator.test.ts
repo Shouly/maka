@@ -2465,6 +2465,67 @@ test('publishes the failure grade and none of the result body', async () => {
   coordinator.close();
 });
 
+test('publishes a delivered message whole, and omits one too big for a frame', async () => {
+  const coordinator = new SessionContinuityCoordinator(
+    HOST_EPOCH,
+    async () => canonical(),
+    new SessionAdmissionGate(),
+  );
+  const sink = new RecordingSink();
+  const connection = coordinator.attachConnection('connection-1', sink);
+  const opened = await open(coordinator, 'connection-1');
+  connection.activate(opened.subscriptionId);
+
+  await coordinator.acceptRuntimeEvent(SESSION_ID, 'run-1', {
+    type: 'tool_result',
+    id: 'result-1',
+    turnId: 'turn-1',
+    ts: 2,
+    toolUseId: 'tool-1',
+    isError: false,
+    content: { kind: 'user_message', message: '预览地址是 https://example.test' },
+  });
+  await coordinator.acceptRuntimeEvent(SESSION_ID, 'run-1', {
+    type: 'tool_result',
+    id: 'result-2',
+    turnId: 'turn-1',
+    ts: 3,
+    toolUseId: 'tool-2',
+    isError: false,
+    content: { kind: 'user_message', message: '长'.repeat(20_000) },
+  });
+  await waitFor(() => sink.frames.length === 2);
+
+  const events = sink.frames.map((frame) =>
+    frame.kind === 'subscription.session_event' ? frame.event : undefined,
+  );
+  assert.deepEqual(events[0], {
+    type: 'tool_result',
+    id: 'result-1',
+    turnId: 'turn-1',
+    ts: 2,
+    toolUseId: 'tool-1',
+    status: 'completed',
+    content: { kind: 'user_message', message: '预览地址是 https://example.test' },
+  });
+  // And the frame survives the wire: the client's decoder accepts the body.
+  const [first] = sink.frames;
+  assert.deepEqual(decodeSubscriptionFrame(JSON.parse(JSON.stringify(first))), first);
+  // 20,000 CJK characters are 60 KB: over the bound, so the body waits for the
+  // transcript rather than pushing the frame toward the ceiling.
+  assert.deepEqual(events[1], {
+    type: 'tool_result',
+    id: 'result-2',
+    turnId: 'turn-1',
+    ts: 3,
+    toolUseId: 'tool-2',
+    status: 'completed',
+  });
+
+  connection.abort(opened.subscriptionId);
+  coordinator.close();
+});
+
 test('publishes only the bounded shell-run correlation from poll args', async () => {
   const coordinator = new SessionContinuityCoordinator(
     HOST_EPOCH,

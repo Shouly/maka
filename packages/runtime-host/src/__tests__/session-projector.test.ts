@@ -721,6 +721,36 @@ test('marks Runtime Host tool results whose durable content is omitted', () => {
   );
 });
 
+test('carries a delivered message whole instead of omitting it', () => {
+  const projector = new RuntimeHostSessionProjector(
+    snapshot(),
+    createRuntimeHostSessionProjectionSeed([], snapshot()),
+    () => 10,
+  );
+  const projected = projector.accept({
+    kind: 'subscription.session_event',
+    hostEpoch: 'host-1',
+    subscriptionId: 'subscription-1',
+    sequence: 1,
+    sessionId: 'session-1',
+    runId: 'run-1',
+    event: {
+      type: 'tool_result',
+      id: 'result-1',
+      turnId: 'turn-1',
+      ts: 10,
+      toolUseId: 'tool-1',
+      status: 'completed',
+      content: { kind: 'user_message', message: 'The preview is up.' },
+    },
+  }).events[0];
+
+  assert.equal(projected?.type, 'tool_result');
+  if (projected?.type !== 'tool_result') return;
+  assert.equal('contentOmitted' in projected, false, 'the body is the real one');
+  assert.deepEqual(projected.content, { kind: 'user_message', message: 'The preview is up.' });
+});
+
 test('preserves the bounded shell-run correlation on a tool start', () => {
   const projector = new RuntimeHostSessionProjector(
     snapshot(),

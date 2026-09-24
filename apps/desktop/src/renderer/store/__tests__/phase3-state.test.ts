@@ -511,7 +511,7 @@ test('a running call the model labelled says what it is doing', () => {
       ],
       'en',
     ),
-    'Calling a tool',
+    'Using a tool',
   );
 });
 
@@ -613,7 +613,7 @@ test('memory verbs merge onto one object in the group summary', () => {
   // Beside other work the merged phrase is one phrase, ordered by its steps.
   assert.equal(
     summarizeToolGroup([...items, tool({ toolUseId: 'h' })], 'en'),
-    'Searched, read, and updated memory and ran a command',
+    'Searched, read, and updated memory, ran a command',
   );
   assert.equal(
     activeToolLabel([{ ...memoryTool('i', 'MemoryWrite'), status: 'running' }], 'en'),

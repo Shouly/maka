@@ -24,16 +24,13 @@
 // then more thinking, then an answer, and flattening that into "reasoning,
 // tools, answer" reorders work the reader watched happen.
 //
-// `groupTurnTimeline` collapses each run of reasoning and tool calls between
-// two answers into one work group. It runs HERE, at render time, rather than
-// in the projection, so every pass that rewrites a timeline (the live overlay,
-// tool projection, shell-run folding) stays flat and never has to maintain a
+// `groupTurnTimeline` turns the timeline into the reference's TurnStatus
+// layout: prose addressed to the reader, and between it one status row per run
+// of work, whose card holds the calls, the reasoning and the narration folded
+// out of the answer. It runs HERE, at render time, rather than in the
+// projection, so every pass that rewrites a timeline (the live overlay, tool
+// projection, shell-run folding) stays flat and never has to maintain a
 // nesting invariant.
-//
-// A run goes to ONE `ToolGroup`, children and all — the reasoning between
-// two calls is a step on that group's timeline, not a heading of its own
-// beside it, and a run that is only reasoning is a group too, so the turn does
-// not change shape when its first call lands (`groupTurnTimeline`).
 //
 // `data-turn-id` is load-bearing beyond styling: the scroll authority finds
 // turns by it, and `resolveQuoteTarget` walks up to it to decide which turn a
@@ -56,7 +53,12 @@ import { getTranscriptCopy } from '../../locales/transcript-copy.js';
 import { TurnFooter } from './TurnFooter.js';
 import { UserMessageRow } from './UserMessageRow.js';
 import { SystemNoticeRow } from './SystemNoticeRow.js';
-import { ToolGroup } from './tools/ToolGroup.js';
+import {
+  TurnStatus,
+  TurnStatusPending,
+  type TurnStatusBlocked,
+  type TurnStatusLive,
+} from './tools/TurnStatus.js';
 import { renderToolContent } from './tools/registry.js';
 import { useStore } from 'zustand';
 import { AskUserQuestionRecord } from './AskUserQuestionRecord.js';
@@ -102,6 +104,14 @@ export interface TranscriptTurnProps {
   onSwitchToFullAccessAndRetry?: (toolUseId: string) => void;
   switchingToolUseId?: string;
   onOpenExternal: (url: string) => void;
+  /** What the live turn is parked on, drawn on its last run's status row. */
+  blocked?: TurnStatusBlocked;
+  /**
+   * Present while this turn is running: its clock and working mark. They ride
+   * on the turn's newest run, or on a pending row when there is no run to
+   * carry them — the turn has no second status line under it.
+   */
+  liveStatus?: TurnStatusLive;
 }
 
 export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurnProps) {
@@ -123,6 +133,144 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
         onOpenFile(attachment.ref.kind === 'session_file' ? attachment.ref.relativePath : undefined)
     : undefined;
   const hasAnswer = finalAssistantReplyText(turn).trim().length > 0;
+  const lastStatusIndex = grouped.findLastIndex((entry) => entry.kind === 'status');
+  // The turn's newest block. Files laid out at the foot come after it without
+  // ending it: a run is still being worked in while the files it sent wait below.
+  const tailIndex = grouped.findLastIndex((entry) => !(entry.kind === 'delivery' && entry.atFoot));
+  const tail = grouped[tailIndex];
+  const running = turn.status === 'running';
+  // A text in a live turn carries `live: true` for its whole life; only
+  // `complete` says whether it is still being written.
+  const tailWriting = tail?.kind === 'text' && tail.live === true && tail.complete !== true;
+  // The run the turn is working in. The line being written right after a run
+  // stands under it WITHOUT ending it — the reference's `contentAfter` — so the
+  // run keeps its mark and clock while the text streams, and the next call
+  // joins the same run instead of opening a second one below the text. A
+  // SendUserMessage is words for the reader, decided the moment it arrives, so
+  // it does end the run.
+  const narratingAfterRun =
+    running &&
+    props.live &&
+    tail?.kind === 'text' &&
+    tail.fromSendUserMessage !== true &&
+    grouped[tailIndex - 1]?.kind === 'status';
+  const liveRunIndex = !running
+    ? -1
+    : tail?.kind === 'status'
+      ? tailIndex
+      : narratingAfterRun
+        ? tailIndex - 1
+        : -1;
+  // The turn always shows that it is working. When no run is live — the turn
+  // has said nothing yet, a SendUserMessage just went out, the first line is
+  // being written with no run before it, the user or a card spoke last — a
+  // pending row stands at the end with the same mark and clock. The reference
+  // covers the same gaps with the spark at the foot of the transcript.
+  const pendingStatus =
+    props.liveStatus && liveRunIndex < 0 ? (
+      <TurnStatusPending
+        key="pending-status"
+        live={props.liveStatus}
+        {...(tailWriting ? { writing: true } : {})}
+      />
+    ) : null;
+
+  const drawEntry = (entry: (typeof grouped)[number], index: number) => {
+    if (entry.kind === 'status') {
+      return (
+        <TurnStatus
+          key={`status-${entry.id}`}
+          group={entry}
+          // A run is over once anything follows it — the answer's prose,
+          // a steering message, the next run — not only when the turn
+          // ends. Files at the foot do not count: they follow everything,
+          // and neither does the line being written right under it.
+          complete={!running || (index < tailIndex && index !== liveRunIndex)}
+          {...(index === liveRunIndex && narratingAfterRun && tailWriting
+            ? { narrating: true }
+            : {})}
+          {...(props.live && props.blocked && index === lastStatusIndex
+            ? { blocked: props.blocked }
+            : {})}
+          {...(props.liveStatus && index === liveRunIndex ? { live: props.liveStatus } : {})}
+          context={props.toolContext}
+          {...(props.onSwitchToFullAccessAndRetry
+            ? { onSwitchToFullAccessAndRetry: props.onSwitchToFullAccessAndRetry }
+            : {})}
+          {...(props.switchingToolUseId ? { switchingToolUseId: props.switchingToolUseId } : {})}
+        />
+      );
+    }
+    if (entry.kind === 'ask') {
+      return <AskUserQuestionRecord key={`ask-${entry.id}`} item={entry.item} />;
+    }
+    if (entry.kind === 'delivery') {
+      // A handover — delivered files at the foot of the turn, or a
+      // scheduled task where it was made — stands in the turn as a card
+      // at the answer's width. The renderer is the registry's, so the
+      // shape of a `user_file_delivery` is decided in exactly one place.
+      return (
+        <div key={`delivery-${entry.id}`} data-maka-delivery={entry.id}>
+          {/* Draws nothing: it is `display: 'render'` moving the pane
+              onto the file, which only happens while the turn is live. */}
+          <DeliveryAutoOpen
+            result={durableResultOf(entry.item)}
+            live={props.live}
+            onOpenArtifact={props.toolContext.onOpenArtifact}
+          />
+          {renderToolContent(entry.item, props.toolContext)}
+        </div>
+      );
+    }
+    if (entry.kind === 'user') {
+      if (entry.message.hostOrigin?.kind === 'background_task') {
+        return (
+          <SystemNoticeRow
+            key={`inserted-${entry.messageId}`}
+            messageId={entry.message.id}
+            text={entry.message.text}
+          />
+        );
+      }
+      return (
+        <UserMessageRow
+          key={`inserted-${entry.messageId}`}
+          messageId={entry.message.id}
+          text={entry.message.text}
+          {...(entry.message.ts !== undefined ? { ts: entry.message.ts } : {})}
+          {...(entry.message.quotes ? { quotes: entry.message.quotes } : {})}
+          attachments={entry.message.attachments}
+          directoryReferences={entry.message.directoryReferences}
+          inlineReferences={entry.message.inlineReferences}
+          {...(openAttachment ? { onOpenAttachment: openAttachment } : {})}
+        />
+      );
+    }
+    const Renderer = entry.live && !entry.complete ? StreamPopMarkdown : Markdown;
+    return (
+      <div
+        key={`text-${entry.messageId}-${index}`}
+        className={cn(
+          'chat-assistant-response standard-markdown',
+          // Two prose blocks in a row — a line and the message after it —
+          // stand a paragraph apart, as the reference's blocks do.
+          grouped[index - 1]?.kind === 'text' && 'mt-5',
+        )}
+        data-maka-contract="markdown"
+      >
+        <Renderer
+          noPadding
+          onOpenExternal={props.onOpenExternal}
+          {...(onOpenFile ? { onOpenFile: (path: string) => onOpenFile(path) } : {})}
+        >
+          {entry.text}
+        </Renderer>
+        {entry.truncated && (
+          <p className="mt-1 text-xs leading-4 text-text-muted">{copy.thinking.truncated}</p>
+        )}
+      </div>
+    );
+  };
 
   return (
     <article
@@ -161,97 +309,10 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
       )}
 
       <div className="flex flex-col">
-        {grouped.map((entry, index) => {
-          if (entry.kind === 'work') {
-            return (
-              <ToolGroup
-                key={`work-${entry.id}`}
-                entries={entry.children}
-                notes={entry.notes}
-                // A run is over once anything follows it — the answer's prose,
-                // a steering message, the next run — not only when the turn
-                // ends. An earlier run in a live turn folds to its summary the
-                // moment the next block starts; only the newest keeps its
-                // window of steps (reference behaviour).
-                complete={turn.status !== 'running' || index < grouped.length - 1}
-                context={props.toolContext}
-                {...(props.onSwitchToFullAccessAndRetry
-                  ? {
-                      onSwitchToFullAccessAndRetry: (item: (typeof turn.tools)[number]) =>
-                        props.onSwitchToFullAccessAndRetry?.(item.toolUseId),
-                    }
-                  : {})}
-                {...(props.switchingToolUseId
-                  ? { switchingToolUseId: props.switchingToolUseId }
-                  : {})}
-              />
-            );
-          }
-          if (entry.kind === 'ask') {
-            return <AskUserQuestionRecord key={`ask-${entry.id}`} item={entry.item} />;
-          }
-          if (entry.kind === 'delivery') {
-            // A handover — files, or a message addressed to the reader —
-            // stands in the turn the way prose does: its own block, at the
-            // answer's width, never folded into the run that produced it.
-            // The renderer is the registry's, so the shape of a
-            // `user_file_delivery` is decided in exactly one place.
-            return (
-              <div key={`delivery-${entry.id}`} data-maka-delivery={entry.id}>
-                {/* Draws nothing: it is `display: 'render'` moving the pane
-                    onto the file, which only happens while the turn is live. */}
-                <DeliveryAutoOpen
-                  result={durableResultOf(entry.item)}
-                  live={props.live}
-                  onOpenArtifact={props.toolContext.onOpenArtifact}
-                />
-                {renderToolContent(entry.item, props.toolContext)}
-              </div>
-            );
-          }
-          if (entry.kind === 'user') {
-            if (entry.message.hostOrigin?.kind === 'background_task') {
-              return (
-                <SystemNoticeRow
-                  key={`inserted-${entry.messageId}`}
-                  messageId={entry.message.id}
-                  text={entry.message.text}
-                />
-              );
-            }
-            return (
-              <UserMessageRow
-                key={`inserted-${entry.messageId}`}
-                messageId={entry.message.id}
-                text={entry.message.text}
-                {...(entry.message.ts !== undefined ? { ts: entry.message.ts } : {})}
-                {...(entry.message.quotes ? { quotes: entry.message.quotes } : {})}
-                attachments={entry.message.attachments}
-                directoryReferences={entry.message.directoryReferences}
-                inlineReferences={entry.message.inlineReferences}
-                {...(openAttachment ? { onOpenAttachment: openAttachment } : {})}
-              />
-            );
-          }
-          const Renderer = entry.live && !entry.complete ? StreamPopMarkdown : Markdown;
-          return (
-            <div
-              key={`text-${entry.messageId}-${index}`}
-              className="chat-assistant-response standard-markdown"
-              data-maka-contract="markdown"
-            >
-              <Renderer
-                noPadding
-                onOpenExternal={props.onOpenExternal}
-                {...(onOpenFile ? { onOpenFile: (path: string) => onOpenFile(path) } : {})}
-              >
-                {entry.text}
-              </Renderer>
-              {entry.truncated && (
-                <p className="mt-1 text-xs leading-4 text-text-muted">{copy.thinking.truncated}</p>
-              )}
-            </div>
-          );
+        {tailIndex < 0 && pendingStatus}
+        {grouped.flatMap((entry, index) => {
+          const drawn = drawEntry(entry, index);
+          return index === tailIndex && pendingStatus ? [drawn, pendingStatus] : [drawn];
         })}
       </div>
 

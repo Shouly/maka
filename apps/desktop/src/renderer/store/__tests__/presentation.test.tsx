@@ -35,7 +35,7 @@ import { getShellCopy } from '../../locales/shell-copy.js';
 import { buildPaletteCommands } from '../../components/palette/commands.js';
 import { TranscriptTurn } from '../../components/session/TranscriptTurn.js';
 import { renderToolContent } from '../../components/session/tools/registry.js';
-import { ToolRow } from '../../components/session/tools/ToolRow.js';
+import { TurnStatusToolStep } from '../../components/session/tools/TurnStatusStep.js';
 import { ToolFailureBlock } from '../../components/session/tools/ToolFailureBlock.js';
 import { TOOL_NAMES } from '@maka/core/tool-names';
 import {
@@ -43,6 +43,8 @@ import {
   resolveToolRendererId,
   toolRowIcon,
   toolRowTitle,
+  summarizeToolGroup,
+  toolStepLabel,
   toolSummaryKeyOf,
 } from '../../components/session/tools/tool-presentation.js';
 import {
@@ -53,8 +55,8 @@ import {
 } from '../../components/session/tools/tool-presentation.js';
 import { deriveTurnPresentation } from '../../hooks/use-turn-presentation.js';
 import { groupTurnTimeline } from '../../lib/turn-timeline-groups.js';
+import { NARRATION_SHOW_THRESHOLD, scoreNarration } from '../../lib/narration-fold.js';
 import { deriveTurnActivity, deriveWorkingMarkActivity } from '../../lib/turn-activity.js';
-import { TurnRunningStatus } from '../../components/session/TurnRunningStatus.js';
 import { JumpToLatest } from '../../components/session/HistoryControls.js';
 import { getTranscriptCopy } from '../../locales/transcript-copy.js';
 
@@ -351,20 +353,16 @@ function transcriptFixture(): TurnViewModel {
   };
 }
 
-test('a turn renders its ask, its reasoning, its answer and every tool row', () => {
+test('a turn renders its ask, its answer, and one closed status row for its work', () => {
   const turn = transcriptFixture();
   const presentation = deriveTurnPresentation([turn], {
     activeId: 'session-1',
     pendingTurnActions: new Set(),
     uiLocale: 'en',
   });
-  // The run under test must be the turn's NEWEST block: an earlier run in a
-  // live turn folds to its summary once the next block starts. So the fixture's
-  // prose goes first here, and the reasoning + three calls stand last.
-  const newestRun = (timeline: TurnViewModel['timeline']) => [turn.timeline[2]!, ...timeline];
   const document = renderTree(
     createElement(TranscriptTurn, {
-      turn: { ...turn, timeline: newestRun([turn.timeline[0]!, turn.timeline[1]!]) },
+      turn,
       live: false,
       footerActions: presentation.footerActionsByTurn[turn.turnId] ?? [],
       toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
@@ -381,49 +379,23 @@ test('a turn renders its ask, its reasoning, its answer and every tool row', () 
   assert.ok(text.includes('Fix the constant'), 'the ask is verbatim');
   assert.ok(text.includes('Done.'), 'the answer is on screen');
   assert.ok(text.includes('Earlier history compacted'), 'the system note is a row of its own');
-
-  // Markdown carries the contract attribute the main process and e2e probe.
   assert.ok(document.querySelector('[data-maka-contract="markdown"]'));
 
-  // Three rows, one per tool, each with its own identity.
-  const rows = [...document.querySelectorAll('[data-maka-tool-row]')].map((row) =>
-    row.getAttribute('data-maka-tool-row'),
-  );
-  assert.deepEqual(rows, ['tool-diff', 'tool-terminal', 'tool-agent']);
+  // The reasoning and the three calls are ONE run: one status row, closed,
+  // saying what the run did. Nothing of the card is drawn until it is opened.
+  const rows = [...document.querySelectorAll('[data-maka-turn-status]')];
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.getAttribute('data-state'), 'done');
+  const toggle = rows[0]!.querySelector('button[aria-expanded="false"]');
+  assert.equal(toggle?.querySelector('span')?.textContent, summarizeToolGroup(turn.tools, 'en'));
+  assert.equal(document.querySelectorAll('[data-maka-turn-status-step]').length, 0);
+  assert.ok(!text.includes('Weighing two options.'), 'the reasoning is in the closed card');
 
-  // Reasoning is a STEP of the tool group, so where it shows is the group's
-  // rule: while the turn runs, the group is a window onto its last three steps,
-  // and this fixture has four — the reasoning, then three calls.
-  assert.ok(
-    !text.includes('Weighing two options.'),
-    'the running window has folded the reasoning above it',
+  // The status row comes before the answer it led to.
+  const order = [...document.querySelectorAll('[data-maka-turn-status], [data-maka-contract]')].map(
+    (node) => (node.hasAttribute('data-maka-turn-status') ? 'status' : 'prose'),
   );
-  // The same reasoning on a run short enough to hold it.
-  const oneCall = turn.tools[0]!;
-  const short = renderTree(
-    createElement(TranscriptTurn, {
-      turn: {
-        ...turn,
-        tools: [oneCall],
-        timeline: newestRun([turn.timeline[0]!, { kind: 'tools', items: [oneCall] }]),
-      },
-      live: false,
-      footerActions: [],
-      toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
-      onFooterAction: () => {},
-      onOpenLineage: () => {},
-      onOpenExternal: () => {},
-    }),
-  );
-  assert.ok(
-    (short.documentElement.textContent ?? '').includes('Weighing two options.'),
-    'reasoning is on screen',
-  );
-  assert.ok(
-    short.querySelector('[data-maka-tool-group] [data-maka-thinking]'),
-    'and it is a step inside the group, not a block standing beside it',
-  );
-  assert.equal(short.querySelectorAll('[data-maka-thinking]').length, 1);
+  assert.deepEqual(order, ['status', 'prose']);
 
   // Every actionable control has an accessible name (ax-tree-audit rule).
   for (const button of document.querySelectorAll('button')) {
@@ -432,13 +404,13 @@ test('a turn renders its ask, its reasoning, its answer and every tool row', () 
   }
 });
 
-test('a run of reasoning with no call is a group of its own, so the turn keeps its shape when a call lands', () => {
+test('a run of reasoning with no call is a run too, so the turn keeps its shape when a call lands', () => {
   const base = transcriptFixture();
   const renderTurn = (turn: TurnViewModel) =>
     renderTree(
       createElement(TranscriptTurn, {
         turn,
-        live: false,
+        live: true,
         footerActions: [],
         toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
         onFooterAction: () => {},
@@ -446,8 +418,10 @@ test('a run of reasoning with no call is a group of its own, so the turn keeps i
         onOpenExternal: () => {},
       }),
     );
+  const statusText = (document: Document) =>
+    document.querySelector('[data-maka-turn-status] button')?.textContent ?? '';
 
-  // Still thinking, nothing called yet.
+  // Still thinking, nothing called yet: one run, saying so.
   const running = renderTurn({
     ...base,
     tools: [],
@@ -455,19 +429,15 @@ test('a run of reasoning with no call is a group of its own, so the turn keeps i
       { kind: 'thinking', text: 'Weighing two options.', messageId: 'step-1', live: true },
     ],
   });
-  const group = running.querySelector('[data-maka-tool-group]');
-  assert.ok(group, 'the reasoning is a group, not a block standing on its own');
-  assert.equal(group.getAttribute('data-maka-tool-group-kind'), 'thinking');
+  assert.equal(running.querySelectorAll('[data-maka-turn-status]').length, 1);
   assert.equal(
-    group.querySelector('[data-maka-tool-group-summary]'),
-    null,
-    'no summary line while it runs — the step is the whole story, the status line says Thinking…',
+    running.querySelector('[data-maka-turn-status]')?.getAttribute('data-state'),
+    'busy',
   );
-  assert.ok(group.querySelector('[data-maka-thinking]'), 'the text is a step inside it');
-  assert.equal(running.querySelectorAll('[data-maka-thinking]').length, 1);
+  assert.ok(statusText(running).includes('Thinking'), statusText(running));
 
-  // The first call lands: same group, now with two steps and a tool summary.
-  const oneCall = base.tools[1]!;
+  // The first call lands and is running: the same run, now naming the call.
+  const oneCall: ToolActivityItem = { ...base.tools[1]!, status: 'running' };
   const called = renderTurn({
     ...base,
     tools: [oneCall],
@@ -476,20 +446,15 @@ test('a run of reasoning with no call is a group of its own, so the turn keeps i
       { kind: 'tools', items: [oneCall] },
     ],
   });
-  assert.equal(called.querySelectorAll('[data-maka-tool-group]').length, 1);
+  assert.equal(called.querySelectorAll('[data-maka-turn-status]').length, 1);
   assert.equal(
-    called.querySelector('[data-maka-tool-group]')?.getAttribute('data-maka-tool-group-kind'),
-    'tools',
+    called.querySelector('[data-maka-turn-status]')?.getAttribute('data-maka-turn-status'),
+    'start',
+    'the run keeps its identity as it grows',
   );
-  assert.ok(called.querySelector('[data-maka-tool-group] [data-maka-thinking]'));
-  assert.ok(called.querySelector('[data-maka-tool-group] [data-maka-tool-row]'));
-  // The summary is the same aggregate sentence it will settle on, not the
-  // current action: that belongs to the status line under the transcript.
-  const liveSummary = called.querySelector('[data-maka-tool-group-summary]')?.textContent ?? '';
-  assert.ok(liveSummary.startsWith('Ran'), liveSummary);
-  assert.ok(!liveSummary.includes('…'), 'never a present-tense phrase');
+  assert.ok(statusText(called).includes(toolStepLabel(oneCall, 'en').text), statusText(called));
 
-  // Done: the group folds to "Thought process", the one way back into the text.
+  // Done with no call: the run says "Thought process", the one way back in.
   const done = renderTurn({
     ...base,
     status: 'completed',
@@ -499,13 +464,10 @@ test('a run of reasoning with no call is a group of its own, so the turn keeps i
       { kind: 'text', text: 'Done.', messageId: 'step-2', complete: true },
     ],
   });
-  const toggle = done.querySelector('[data-maka-tool-group] button[aria-expanded="false"]');
-  // The span, not the button: the caret beside it is an icon-font glyph.
-  assert.equal(toggle?.querySelector('span')?.textContent, 'Thought process');
-  assert.equal(done.querySelectorAll('[data-maka-thinking]').length, 0, 'put away until opened');
+  assert.ok(statusText(done).includes('Thought process'), statusText(done));
 });
 
-test('an answered question stands on its own between runs; an open one is not drawn at all', () => {
+test('an answered question stands on its own between runs; an open one is a step of its run', () => {
   const ask = (status: ToolActivityItem['status']): ToolActivityItem => ({
     toolUseId: 'ask-1',
     toolName: 'AskUserQuestion',
@@ -518,55 +480,275 @@ test('an answered question stands on its own between runs; an open one is not dr
     status: 'completed',
     args: {},
   };
-  const shape = (items: Parameters<typeof groupTurnTimeline>[0]) =>
-    groupTurnTimeline(items).map((entry) =>
-      entry.kind === 'work'
-        ? `work:${entry.id}:${entry.children.length}`
-        : entry.kind === 'ask'
-          ? `ask:${entry.id}`
-          : entry.kind,
-    );
-  // Open: the run is the read alone, the question is nowhere in the timeline.
-  assert.deepEqual(shape([{ kind: 'tools', items: [read, ask('running')] }]), ['work:start:1']);
+  // Open: the question is the run's last step — the run is what says the turn
+  // is waiting ("Asking a question"), and the prompt sits in the composer's place.
+  assert.deepEqual(shapeOf([{ kind: 'tools', items: [read, ask('running')] }]), ['status:start:2']);
   // Answered: the run before it keeps its key, the record follows, and a later
   // run keys off the record.
-  assert.deepEqual(shape([{ kind: 'tools', items: [read, ask('completed'), read] }]), [
-    'work:start:1',
+  assert.deepEqual(shapeOf([{ kind: 'tools', items: [read, ask('completed'), read] }]), [
+    'status:start:1',
     'ask:ask-1',
-    'work:ask:ask-1:1',
+    'status:ask:ask-1:1',
   ]);
 });
 
-test('groupTurnTimeline keys a run by the boundary before it, so a run keeps its key as it grows', () => {
-  const thinking = { kind: 'thinking', text: 't', messageId: 'm-1' } as const;
-  const tools = { kind: 'tools' as const, items: [] as ToolActivityItem[] };
-  const text = { kind: 'text', text: 'p', messageId: 'm-2', complete: true } as const;
+test('narration folds into the run; the tail and the words before a question stay shown', () => {
+  const read = (id: string): ToolActivityItem => ({
+    toolUseId: id,
+    toolName: 'Read',
+    status: 'completed',
+    args: {},
+  });
+  const ask: ToolActivityItem = {
+    toolUseId: 'ask-1',
+    toolName: 'AskUserQuestion',
+    status: 'running',
+    args: { questions: [{ question: 'Which one?', options: [] }] },
+  };
+  const said = (messageId: string, text: string, live = false) =>
+    ({ kind: 'text', text, messageId, ...(live ? { live: true } : { complete: true }) }) as const;
   const user = {
     kind: 'user',
     message: { id: 'u-1', role: 'user', text: 'again' },
     messageId: 'u-1',
   } as const;
 
+  // The model talking to itself before more work: narration, a step of the run.
   assert.deepEqual(
-    groupTurnTimeline([thinking]).map((entry) => entry.kind === 'work' && entry.id),
-    ['start'],
+    shapeOf([said('a', 'Let me check the files.'), { kind: 'tools', items: [read('r-1')] }]),
+    ['status:start:2'],
   );
-  // The same run once a call has landed: same id, one more child.
+  // Deep into a run of calls, "now reading…" folds too.
   assert.deepEqual(
-    groupTurnTimeline([thinking, tools]).map((entry) => entry.kind === 'work' && entry.id),
-    ['start'],
+    shapeOf([
+      { kind: 'tools', items: [read('r-1'), read('r-2'), read('r-3')] },
+      said('b', 'Now reading the entry file.'),
+      { kind: 'tools', items: [read('r-4')] },
+    ]),
+    ['status:start:5'],
   );
+  // A first reply that says something stays prose, and the work after it is a
+  // run of its own.
+  const explained =
+    'The build fails because the config file points at a missing path; I will fix the path and rerun.';
+  assert.deepEqual(shapeOf([said('c', explained), { kind: 'tools', items: [read('r-1')] }]), [
+    'text',
+    'status:c:1',
+  ]);
+  // The tail, still streaming or settled: shown, after the run.
   assert.deepEqual(
-    groupTurnTimeline([thinking, tools, text, thinking, user, tools]).map((entry) =>
-      entry.kind === 'work' ? `work:${entry.id}:${entry.children.length}` : entry.kind,
-    ),
-    ['work:start:2', 'text', 'work:m-2:1', 'user', 'work:u-1:1'],
+    shapeOf([{ kind: 'tools', items: [read('r-1')] }, said('d', 'Half an answer', true)]),
+    ['status:start:1', 'text'],
   );
+  // Followed by a question the user must answer: the context stays readable,
+  // however narration-like it reads — reasoning in between included.
+  assert.deepEqual(shapeOf([said('e', 'Let me ask.'), { kind: 'tools', items: [ask] }]), [
+    'text',
+    'status:e:1',
+  ]);
   assert.deepEqual(
-    groupTurnTimeline([text]).map((entry) => entry.kind),
-    ['text'],
+    shapeOf([
+      said('e', 'Let me ask.'),
+      { kind: 'thinking', text: 'Which way?', messageId: 'th-q' },
+      { kind: 'tools', items: [ask] },
+    ]),
+    ['text', 'status:e:2'],
+  );
+  // The user speaks after it: it ended a reply, and is shown.
+  assert.deepEqual(
+    shapeOf([said('f', 'Let me check.'), user, { kind: 'tools', items: [read('r-1')] }]),
+    ['text', 'user', 'status:u-1:1'],
   );
 });
+
+test('the narration classifier scores texts the way the reference does', () => {
+  const text = (value: string) => ({ kind: 'text', text: value }) as const;
+  const call = { kind: 'tool_use' } as const;
+  const thought = { kind: 'thinking' } as const;
+  const score = (events: Parameters<typeof scoreNarration>[0], at: number) =>
+    scoreNarration(events).decided.get(at)!;
+  assert.ok(
+    score([text('Let me look at the project structure.'), call], 0) < NARRATION_SHOW_THRESHOLD,
+  );
+  assert.ok(
+    score(
+      [
+        text(
+          'The build fails because the config file points at a missing path; I will fix the path and rerun.',
+        ),
+        call,
+      ],
+      0,
+    ) >= NARRATION_SHOW_THRESHOLD,
+  );
+  // Reasoning leading into the first text tips a short one into view.
+  assert.ok(score([text('我先看看项目结构。'), call], 0) < NARRATION_SHOW_THRESHOLD);
+  assert.ok(score([thought, text('我先看看项目结构。'), call], 1) >= NARRATION_SHOW_THRESHOLD);
+  // Only texts with a later call or text are decided; the tail is not.
+  assert.equal(scoreNarration([call, text('Done.')]).decided.size, 0);
+});
+
+test('a SendUserMessage is prose, never a step, unless it did not deliver', () => {
+  const read: ToolActivityItem = {
+    toolUseId: 'r-1',
+    toolName: 'Read',
+    status: 'completed',
+    args: {},
+  };
+  const sent = (overrides: Partial<ToolActivityItem>): ToolActivityItem => ({
+    toolUseId: 'sum-1',
+    toolName: TOOL_NAMES.sendUserMessage,
+    status: 'completed',
+    args: { message: 'The preview is at **https://example.test**.' },
+    result: { kind: 'user_message', message: 'The preview is at **https://example.test**.' },
+    ...overrides,
+  });
+
+  const delivered = groupTurnTimeline([{ kind: 'tools', items: [read, sent({})] }]);
+  assert.deepEqual(delivered.map(shapeOfEntry), ['status:start:1', 'text']);
+  const prose = delivered[1]!;
+  assert.ok(prose.kind === 'text' && prose.fromSendUserMessage === true);
+  assert.equal(prose.kind === 'text' && prose.text, 'The preview is at **https://example.test**.');
+
+  // Arriving: the prose grows from the args preview the Host lets through.
+  const arriving = groupTurnTimeline([
+    {
+      kind: 'tools',
+      items: [
+        sent({
+          status: 'running',
+          args: undefined,
+          argsPreview: { message: 'The prev' },
+          result: undefined,
+        }),
+      ],
+    },
+  ]);
+  assert.deepEqual(arriving.map(shapeOfEntry), ['text']);
+  assert.ok(arriving[0]!.kind === 'text' && arriving[0]!.live === true);
+  // Not a word yet: nothing at all, not an empty row.
+  assert.deepEqual(
+    shapeOf([{ kind: 'tools', items: [sent({ status: 'running', args: {}, result: undefined })] }]),
+    [],
+  );
+  // The handover: arguments streaming, then the call completes before its body
+  // arrives (the Host's live frame omits it), then the transcript brings the
+  // body. The words are prose at every step — never folded into the run and
+  // brought back.
+  const handover = [
+    sent({ status: 'running', args: undefined, argsPreview: { message: 'Hi' }, result: undefined }),
+    sent({
+      status: 'completed',
+      args: undefined,
+      argsPreview: { message: 'Hi' },
+      result: undefined,
+    }),
+    sent({ status: 'completed', result: { kind: 'user_message', message: 'Hi' } }),
+  ];
+  for (const item of handover) {
+    assert.deepEqual(shapeOf([{ kind: 'tools', items: [read, item] }]), ['status:start:1', 'text']);
+  }
+  // Cut short or failed with no body: it did not arrive, so it is a step.
+  assert.deepEqual(
+    shapeOf([{ kind: 'tools', items: [sent({ status: 'interrupted', result: undefined })] }]),
+    ['status:start:1'],
+  );
+  assert.deepEqual(
+    shapeOf([
+      {
+        kind: 'tools',
+        items: [
+          sent({
+            status: 'completed',
+            result: undefined,
+            failure: { kind: 'denied', message: 'blocked' },
+          }),
+        ],
+      },
+    ]),
+    ['status:start:1'],
+  );
+  // A run whose only call is a message that did not arrive still says what it
+  // did once it is over, rather than "Working on it…" for good.
+  const refusedAlone = sent({
+    status: 'errored',
+    result: { kind: 'text', text: 'too long' },
+    failure: { kind: 'failed', message: 'too long' },
+  });
+  assert.notEqual(summarizeToolGroup([refusedAlone], 'en'), 'Working on it…');
+  // Settled without delivering: a step, where its failure can be read — never
+  // its arguments drawn as if they had arrived.
+  const refused = sent({
+    status: 'errored',
+    result: { kind: 'text', text: 'message too long' },
+    failure: { kind: 'failed', message: 'message too long' },
+  });
+  assert.deepEqual(shapeOf([{ kind: 'tools', items: [refused] }]), ['status:start:1']);
+
+  // Words before a message and more work after it: the words fold into the run
+  // before, the message splits the work, and the next run keys off it.
+  assert.deepEqual(
+    shapeOf([
+      { kind: 'text', text: 'Checking.', messageId: 'a', complete: true },
+      { kind: 'tools', items: [sent({}), read] },
+    ]),
+    ['status:start:1', 'text', 'status:send-user-message:sum-1:1'],
+  );
+});
+
+test('groupTurnTimeline keys a run by the boundary before it, so a run keeps its key as it grows', () => {
+  const thinking = { kind: 'thinking', text: 't', messageId: 'm-1' } as const;
+  const tools = { kind: 'tools' as const, items: [] as ToolActivityItem[] };
+  const read: ToolActivityItem = {
+    toolUseId: 'r-1',
+    toolName: 'Read',
+    status: 'completed',
+    args: {},
+  };
+  const text = (messageId: string, value: string) =>
+    ({ kind: 'text', text: value, messageId, complete: true }) as const;
+  const user = {
+    kind: 'user',
+    message: { id: 'u-1', role: 'user', text: 'again' },
+    messageId: 'u-1',
+  } as const;
+
+  assert.deepEqual(shapeOf([thinking]), ['status:start:1']);
+  // The same run once a call has landed: same id.
+  assert.deepEqual(shapeOf([thinking, tools]), ['status:start:1']);
+  // Narration folds INTO the run, which keeps the id it started with.
+  assert.deepEqual(
+    shapeOf([
+      thinking,
+      { kind: 'tools', items: [read] },
+      text('m-2', 'Now the next one.'),
+      thinking,
+      { kind: 'tools', items: [{ ...read, toolUseId: 'r-2' }] },
+    ]),
+    ['status:start:5'],
+  );
+  // A text with nothing after it in its reply is the tail and stays shown; the
+  // run after it keys off it.
+  assert.deepEqual(shapeOf([thinking, tools, text('m-2', 'p'), thinking, user, tools]), [
+    'status:start:1',
+    'text',
+    'status:m-2:1',
+    'user',
+  ]);
+  assert.deepEqual(shapeOf([text('m-2', 'p')]), ['text']);
+});
+
+function shapeOfEntry(entry: ReturnType<typeof groupTurnTimeline>[number]): string {
+  return entry.kind === 'status'
+    ? `status:${entry.id}:${entry.steps.length}`
+    : entry.kind === 'ask'
+      ? `ask:${entry.id}`
+      : entry.kind;
+}
+
+function shapeOf(items: Parameters<typeof groupTurnTimeline>[0]): string[] {
+  return groupTurnTimeline(items).map(shapeOfEntry);
+}
 
 test('the running status reads the newest block: thinking, the tool in flight, writing, or a gap', () => {
   const base = transcriptFixture();
@@ -592,122 +774,275 @@ test('the running status reads the newest block: thinking, the tool in flight, w
   });
 });
 
-test('the status line shows the mark and the activity, and holds its label across a gap', () => {
+test('the live turn carries its status on its newest run: the call in flight, the mark, the clock', () => {
   const base = transcriptFixture();
-  const renderStatus = (turn: TurnViewModel | undefined) =>
+  const renderLive = (timeline: TurnViewModel['timeline'], unsteady = false) =>
     renderTree(
-      createElement(TurnRunningStatus, {
-        turnId: base.turnId,
-        startedAt: NOW,
-        ...(turn ? { turn } : {}),
+      createElement(TranscriptTurn, {
+        turn: { ...base, status: 'running', timeline },
+        live: true,
+        liveStatus: { turnId: base.turnId, startedAt: NOW, unsteady, mark: 'default' },
+        footerActions: [],
+        toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
+        onFooterAction: () => {},
+        onOpenLineage: () => {},
+        onOpenExternal: () => {},
       }),
     );
 
-  const waiting = renderStatus(undefined);
-  const line = waiting.querySelector('[data-maka-contract="turn-running-status"]');
-  assert.ok(line);
-  assert.equal(line.getAttribute('aria-label'), 'Working on it…', 'nothing has landed yet');
+  // A command in flight, as the live frame carries it: the description is in
+  // the preview, and it is what the row says.
+  const running: ToolActivityItem = {
+    toolUseId: 'bash-live',
+    toolName: 'Bash',
+    activityKind: 'command',
+    status: 'running',
+    args: undefined,
+    argsPreview: { command: 'npm test', description: 'Run the unit tests' },
+  };
+  const busy = renderLive([{ kind: 'tools', items: [running] }]);
+  const row = busy.querySelector('[data-maka-turn-status]');
+  assert.equal(row?.getAttribute('data-state'), 'busy');
+  assert.ok((row?.textContent ?? '').includes('Run the unit tests'), row?.textContent ?? '');
+  assert.ok(row?.querySelector('[data-maka-working-mark]'), 'the working mark hangs beside it');
   assert.equal(
-    line.querySelector('[data-maka-working-mark]')?.getAttribute('data-maka-working-mark'),
-    'default',
-  );
-  assert.equal(
-    line.querySelector('[data-maka-contract="turn-elapsed"]')?.textContent,
+    row?.querySelector('[data-maka-contract="turn-elapsed"]')?.textContent,
     '',
     'no clock on first paint',
   );
+  assert.equal(busy.querySelector('[data-maka-turn-pending]'), null, 'one status, not two');
 
-  const thinking = renderStatus({
-    ...base,
-    timeline: [{ kind: 'thinking', text: 't', messageId: 'm', live: true }],
-  });
-  assert.equal(
-    thinking
-      .querySelector('[data-maka-contract="turn-running-status"]')
-      ?.getAttribute('aria-label'),
-    'Thinking…',
-  );
+  // Nothing has arrived yet: a pending row stands in the run's place.
+  const waiting = renderLive([]).querySelector('[data-maka-turn-pending]');
+  assert.equal(waiting?.getAttribute('aria-label'), 'Working on it…');
+  assert.ok(waiting?.querySelector('[data-maka-working-mark]'));
 
-  // A gap right after a result: a fresh render has nothing to hold, so it says
-  // the generic phrase — the HOLD is instance state, exercised in the app by
-  // the same element living across the gap.
-  const gap = renderStatus({
-    ...base,
-    timeline: [{ kind: 'tools', items: [{ ...base.tools[1]!, status: 'completed' }] }],
-  });
-  assert.equal(
-    gap
-      .querySelector('[data-maka-contract="turn-running-status"]')
-      ?.getAttribute('data-maka-activity'),
-    'gap',
-  );
+  // A line being written right under the run: it stands below the run without
+  // ending it, so the run keeps the mark and the clock and says it is writing.
+  const writing = renderLive([
+    { kind: 'tools', items: [{ ...running, status: 'completed' }] },
+    { kind: 'text', text: 'Half an answer', messageId: 'a', live: true },
+  ]);
+  const writingRow = writing.querySelector('[data-maka-turn-status]');
+  assert.equal(writingRow?.getAttribute('data-state'), 'busy');
+  assert.ok((writingRow?.textContent ?? '').includes('Writing…'), writingRow?.textContent ?? '');
+  assert.ok(writingRow?.querySelector('[data-maka-working-mark]'));
+  assert.equal(writing.querySelector('[data-maka-turn-pending]'), null);
+  assert.ok((writing.documentElement.textContent ?? '').includes('Half an answer'));
 });
 
-test('a turn that goes quiet says it is still working, and leaves the activity underneath', () => {
+test('a turn that goes quiet says it is still working, on the row that is live', () => {
   const base = transcriptFixture();
-  const thinking: TurnViewModel = {
-    ...base,
-    timeline: [{ kind: 'thinking', text: 't', messageId: 'm', live: true }],
-  };
-  const renderStatus = (streamUnsteady: boolean) =>
+  const renderLive = (timeline: TurnViewModel['timeline'], unsteady: boolean) =>
     renderTree(
-      createElement(TurnRunningStatus, {
-        turnId: base.turnId,
-        startedAt: NOW,
-        turn: thinking,
-        streamUnsteady,
+      createElement(TranscriptTurn, {
+        turn: { ...base, status: 'running', timeline },
+        live: true,
+        liveStatus: { turnId: base.turnId, startedAt: NOW, unsteady },
+        footerActions: [],
+        toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
+        onFooterAction: () => {},
+        onOpenLineage: () => {},
+        onOpenExternal: () => {},
       }),
-    ).querySelector('[data-maka-contract="turn-running-status"]');
-
-  const unsteady = renderStatus(true);
-  assert.equal(
-    unsteady?.getAttribute('aria-label'),
-    'Still working — taking longer than usual…',
+    );
+  const thinking: TurnViewModel['timeline'] = [
+    { kind: 'thinking', text: 't', messageId: 'm', live: true },
+  ];
+  const quiet = renderLive(thinking, true).querySelector('[data-maka-turn-status]');
+  assert.ok(
+    (quiet?.textContent ?? '').includes('Still working — taking longer than usual…'),
     'it reassures rather than diagnoses: a long tool call is silent too',
   );
-  assert.equal(unsteady?.getAttribute('data-maka-stream'), 'unsteady');
-  // The activity is still derived underneath, so recovery has it to go back to.
-  assert.equal(unsteady?.getAttribute('data-maka-activity'), 'thinking');
-
-  const recovered = renderStatus(false);
-  assert.equal(recovered?.getAttribute('aria-label'), 'Thinking…');
+  assert.equal(quiet?.getAttribute('data-maka-stream'), 'unsteady');
+  const recovered = renderLive(thinking, false).querySelector('[data-maka-turn-status]');
+  assert.ok((recovered?.textContent ?? '').includes('Thinking…'));
   assert.equal(recovered?.getAttribute('data-maka-stream'), null);
+
+  // Quiet in the middle of the answer: there is no live run, so the pending row
+  // says it, after the prose.
+  const stalled = renderLive(
+    [{ kind: 'text', text: 'Half an answer', messageId: 'a', live: true }],
+    true,
+  ).querySelector('[data-maka-turn-pending]');
+  assert.equal(stalled?.getAttribute('data-maka-stream'), 'unsteady');
 });
 
-test('in a live turn only the newest run keeps its steps; an earlier one folds when the next block starts', () => {
+test('a live turn is one run: the line being written stands under it and folds in when the next call lands', () => {
   const base = transcriptFixture();
   const call = base.tools[1]!;
-  const document = renderTree(
-    createElement(TranscriptTurn, {
-      turn: {
-        ...base,
-        tools: [call],
-        timeline: [
-          { kind: 'tools', items: [call] },
-          {
-            kind: 'text',
-            text: 'Half an answer',
-            messageId: 'step-2',
-            live: true,
-            complete: false,
-          },
-          { kind: 'thinking', text: 'And then.', messageId: 'step-3', live: true },
-        ],
-      },
-      live: false,
-      footerActions: [],
-      toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
-      onFooterAction: () => {},
-      onOpenLineage: () => {},
-      onOpenExternal: () => {},
-    }),
+  const next: ToolActivityItem = { ...call, toolUseId: 'tool-next', status: 'running' };
+  const renderLive = (timeline: TurnViewModel['timeline']) =>
+    renderTree(
+      createElement(TranscriptTurn, {
+        turn: { ...base, status: 'running', tools: [call, next], timeline },
+        live: true,
+        footerActions: [],
+        toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
+        onFooterAction: () => {},
+        onOpenLineage: () => {},
+        onOpenExternal: () => {},
+      }),
+    );
+  // Being written: the line stands under the run, and the run stays live.
+  const writing = renderLive([
+    { kind: 'tools', items: [call] },
+    { kind: 'text', text: 'Now checking the rest.', messageId: 'step-2', live: true },
+  ]);
+  assert.ok((writing.documentElement.textContent ?? '').includes('Now checking the rest.'));
+  const rows = [...writing.querySelectorAll('[data-maka-turn-status]')];
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.getAttribute('data-state'), 'busy');
+  // The next call lands: the line scores as narration and is tucked into the
+  // SAME run — no second run below it, nothing to merge later.
+  const folded = renderLive([
+    { kind: 'tools', items: [call] },
+    { kind: 'text', text: 'Now checking the rest.', messageId: 'step-2', complete: true },
+    { kind: 'thinking', text: 'And then.', messageId: 'step-3' },
+    { kind: 'tools', items: [next] },
+  ]);
+  const after = [...folded.querySelectorAll('[data-maka-turn-status]')];
+  assert.equal(after.length, 1, 'one run: the call, the narration, the reasoning, the next call');
+  assert.equal(
+    after[0]!.getAttribute('data-maka-turn-status'),
+    rows[0]!.getAttribute('data-maka-turn-status'),
   );
-  const groups = [...document.querySelectorAll('[data-maka-tool-group]')];
-  assert.equal(groups.length, 2);
-  const [earlier, newest] = groups as [Element, Element];
-  assert.ok(earlier.querySelector('[data-maka-tool-group-summary] button[aria-expanded="false"]'));
-  assert.equal(earlier.querySelector('[data-maka-tool-row]'), null, 'folded to its summary');
-  assert.ok(newest.querySelector('[data-maka-thinking]'), 'the live run still shows its step');
+  assert.equal(after[0]!.getAttribute('data-state'), 'busy');
+  assert.ok(!(folded.documentElement.textContent ?? '').includes('Now checking the rest.'));
+});
+
+test('a running turn always shows exactly one live status, whatever its newest block is', () => {
+  const base = transcriptFixture();
+  const done: ToolActivityItem = { ...base.tools[1]!, status: 'completed' };
+  const busy: ToolActivityItem = { ...base.tools[1]!, toolUseId: 'tool-busy', status: 'running' };
+  const message: ToolActivityItem = {
+    toolUseId: 'sum-1',
+    toolName: TOOL_NAMES.sendUserMessage,
+    status: 'completed',
+    args: { message: 'Midway report.' },
+    result: { kind: 'user_message', message: 'Midway report.' },
+  };
+  const answered: ToolActivityItem = {
+    toolUseId: 'ask-1',
+    toolName: 'AskUserQuestion',
+    status: 'completed',
+    args: { questions: [{ question: 'Which?', options: [] }] },
+  };
+  const text = (value: string, live = false) =>
+    ({
+      kind: 'text',
+      text: value,
+      messageId: `t-${value}`,
+      ...(live ? { live: true } : { complete: true }),
+    }) as const;
+  const user = {
+    kind: 'user',
+    message: { id: 'u-1', role: 'user', text: 'also this' },
+    messageId: 'u-1',
+  } as const;
+  const shapes: Record<
+    string,
+    { timeline: TurnViewModel['timeline']; where: 'run' | 'pending'; label?: string }
+  > = {
+    'nothing yet': { timeline: [], where: 'pending', label: 'Working on it…' },
+    thinking: {
+      timeline: [{ kind: 'thinking', text: 't', messageId: 'th', live: true }],
+      where: 'run',
+    },
+    'first line being written': {
+      timeline: [text('I will start', true)],
+      where: 'pending',
+      label: 'Writing…',
+    },
+    // A finished text in a live turn still carries `live: true`; only
+    // `complete` says the writing stopped, and the label follows that.
+    'first line finished, nothing yet after it': {
+      timeline: [
+        { kind: 'text', text: 'I will start', messageId: 't-done', live: true, complete: true },
+      ],
+      where: 'pending',
+      label: 'Working on it…',
+    },
+    'a call running': { timeline: [{ kind: 'tools', items: [busy] }], where: 'run' },
+    'a line under a run': {
+      timeline: [{ kind: 'tools', items: [done] }, text('Now the rest', true)],
+      where: 'run',
+    },
+    'a line finished under a run': {
+      timeline: [{ kind: 'tools', items: [done] }, text('Now the rest')],
+      where: 'run',
+    },
+    'a message just sent': {
+      timeline: [{ kind: 'tools', items: [done, message] }],
+      where: 'pending',
+    },
+    'a line then a message': {
+      timeline: [text('Sending it'), { kind: 'tools', items: [message] }],
+      where: 'pending',
+    },
+    'a question just answered': {
+      timeline: [{ kind: 'tools', items: [done, answered] }],
+      where: 'pending',
+    },
+    'the user just spoke': { timeline: [{ kind: 'tools', items: [done] }, user], where: 'pending' },
+  };
+  for (const [name, shape] of Object.entries(shapes)) {
+    const document = renderTree(
+      createElement(TranscriptTurn, {
+        turn: { ...base, status: 'running', timeline: shape.timeline },
+        live: true,
+        liveStatus: { turnId: base.turnId, startedAt: NOW },
+        footerActions: [],
+        toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
+        onFooterAction: () => {},
+        onOpenLineage: () => {},
+        onOpenExternal: () => {},
+      }),
+    );
+    assert.equal(
+      document.querySelectorAll('[data-maka-working-mark]').length,
+      1,
+      `${name}: one mark`,
+    );
+    const busyRuns = document.querySelectorAll('[data-maka-turn-status][data-state="busy"]').length;
+    const pending = document.querySelector('[data-maka-turn-pending]');
+    if (shape.where === 'run') {
+      assert.equal(busyRuns, 1, `${name}: the run carries it`);
+      assert.equal(pending, null, `${name}: no second status`);
+    } else {
+      assert.equal(busyRuns, 0, `${name}: no run is live`);
+      assert.ok(pending, `${name}: the pending row carries it`);
+      if (shape.label) assert.equal(pending?.getAttribute('aria-label'), shape.label, name);
+    }
+  }
+});
+
+test('a run the turn is parked on says what it waits for', () => {
+  const base = transcriptFixture();
+  const ask: ToolActivityItem = {
+    toolUseId: 'ask-1',
+    toolName: 'AskUserQuestion',
+    status: 'running',
+    args: { questions: [{ question: 'Which one?', options: [] }] },
+  };
+  const renderTurn = (blocked: 'question' | 'input') =>
+    renderTree(
+      createElement(TranscriptTurn, {
+        turn: { ...base, tools: [ask], timeline: [{ kind: 'tools', items: [ask] }] },
+        live: true,
+        blocked,
+        footerActions: [],
+        toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
+        onFooterAction: () => {},
+        onOpenLineage: () => {},
+        onOpenExternal: () => {},
+      }),
+    );
+  const question = renderTurn('question').querySelector('[data-maka-turn-status]');
+  assert.equal(question?.getAttribute('data-state'), 'blocked');
+  assert.ok((question?.textContent ?? '').includes('Asking a question'));
+  const input = renderTurn('input').querySelector('[data-maka-turn-status]');
+  assert.ok((input?.textContent ?? '').includes('Needs your input'));
 });
 
 test('working marks retain the last action between blocks and use semantic tool kinds', () => {
@@ -875,7 +1210,7 @@ test('a web search result is text, never markup from the page it found', () => {
 // right in the data and wrong on screen — the glyph was wedged between the
 // title and the caret that opens the row, and the reason was a bare coloured
 // paragraph under panels that all share one shape.
-test('a failed row marks its outcome in the trailing slot and reasons in a panel', () => {
+test('a failed step keeps its words, says Failed after them, and reasons in a panel', () => {
   const failed: ToolActivityItem = {
     toolUseId: 'tool-failed',
     toolName: 'Bash',
@@ -889,10 +1224,8 @@ test('a failed row marks its outcome in the trailing slot and reasons in a panel
     createElement(LocaleProvider, {
       locale: 'en',
       children: createElement(TooltipProvider, {
-        children: createElement(ToolRow, {
+        children: createElement(TurnStatusToolStep, {
           item: failed,
-          isFirst: true,
-          isLast: true,
           context: { onOpenSession: () => {}, onOpenExternal: () => {} },
         }),
       }),
@@ -900,24 +1233,19 @@ test('a failed row marks its outcome in the trailing slot and reasons in a panel
   );
   const { document } = parseHTML(`<main>${markup}</main>`);
 
-  // The title is the row's readable line and is never recoloured.
-  const title = document.querySelector('button span span');
-  assert.ok(title, 'the row has a title');
-  assert.doesNotMatch(title?.getAttribute('class') ?? '', /text-danger/);
-
-  // The mark is the LAST thing in the header, after the caret, in the slot the
-  // word "Error" used to occupy.
+  // The words are never recoloured; the outcome is the red "Failed" after them,
+  // before the chevron that opens onto the reason.
   const header = document.querySelector('button');
-  const mark = header?.querySelector('[aria-label="Failed"]');
-  assert.ok(mark, 'the row carries a mark for a reader who cannot see the colour');
-  const caret = header?.querySelector('[class*="rotate-90"], [class*="caretRight"]');
-  void caret;
-  const marks = [...(header?.querySelectorAll('[aria-label="Failed"]') ?? [])];
-  const trailing = header?.lastElementChild;
-  assert.ok(
-    trailing?.contains(marks[0] ?? null),
-    'the mark sits in the trailing group, not between the title and the caret',
+  const words = header?.querySelector('span[title]');
+  assert.ok(words, 'the row has its words');
+  assert.doesNotMatch(words?.outerHTML ?? '', /text-danger/);
+  assert.equal(words?.getAttribute('title'), 'Failed to run cp big.iso /vol');
+  const tag = [...(header?.querySelectorAll('span') ?? [])].find(
+    (span) => span.textContent === 'Failed',
   );
+  assert.ok(tag, 'the row says Failed');
+  assert.match(tag?.getAttribute('class') ?? '', /text-danger/);
+  assert.equal(header?.getAttribute('aria-expanded'), 'false', 'and opens onto the reason');
 
   // What opening it shows. The row keeps its expansion in component state, so
   // the body is asserted on the block itself.
@@ -1120,10 +1448,8 @@ test('a call still being written keeps its icon, its box and its sweep at dispat
       createElement(LocaleProvider, {
         locale: 'en',
         children: createElement(TooltipProvider, {
-          children: createElement(ToolRow, {
+          children: createElement(TurnStatusToolStep, {
             item,
-            isFirst: true,
-            isLast: true,
             context: { onOpenSession: () => {}, onOpenExternal: () => {} },
           }),
         }),
@@ -1198,10 +1524,8 @@ test('a running row that cannot be opened shimmers too', () => {
     createElement(LocaleProvider, {
       locale: 'en',
       children: createElement(TooltipProvider, {
-        children: createElement(ToolRow, {
+        children: createElement(TurnStatusToolStep, {
           item: searching,
-          isFirst: true,
-          isLast: true,
           context: { onOpenSession: () => {}, onOpenExternal: () => {} },
         }),
       }),
@@ -1211,34 +1535,73 @@ test('a running row that cannot be opened shimmers too', () => {
   assert.ok(markup.includes('--base-color:var(--text-muted)'));
 });
 
-// A note settles one shade brighter than a tool row, so a sweep resting at the
-// tool row's colour hops on exactly the row the colour rule was written for.
-test('a live note sweeps to the colour a note settles at', () => {
-  const note: ToolActivityItem = {
-    toolUseId: 'tool-note',
-    toolName: TOOL_NAMES.sendUserMessage,
-    status: 'running',
-    args: { message: 'Heads up.' },
-  };
-  const markup = renderToStaticMarkup(
-    createElement(LocaleProvider, {
-      locale: 'en',
-      children: createElement(TooltipProvider, {
-        children: createElement(ToolRow, {
-          item: note,
-          isFirst: true,
-          isLast: true,
-          context: { onOpenSession: () => {}, onOpenExternal: () => {} },
-        }),
-      }),
-    }),
+test('a step names its verb and the object it acted on, in the tense of its outcome', () => {
+  const step = (overrides: Partial<ToolActivityItem>) =>
+    toolStepLabel(
+      { toolUseId: 't', toolName: 'Read', status: 'completed', args: {}, ...overrides },
+      'en',
+    );
+  // A call that names itself is its own line.
+  assert.deepEqual(
+    step({ toolName: 'Bash', args: { command: 'ls', description: 'Locate skill directories' } }),
+    { lead: 'Locate skill directories', text: 'Locate skill directories' },
   );
-
-  assert.ok(markup.includes('animate'), 'it sweeps while it is live');
+  assert.deepEqual(step({ toolName: 'Bash', args: { command: 'npm test' } }), {
+    lead: 'Ran',
+    object: 'npm test',
+    objectIsCode: true,
+    text: 'Ran npm test',
+  });
+  // A file by its name; the tense follows the outcome.
+  assert.equal(step({ args: { file_path: '/repo/src/app.tsx' } }).text, 'Read app.tsx');
   assert.equal(
-    markup.includes('--base-color:var(--text-muted)'),
-    false,
-    'but not towards the tool row colour',
+    step({ status: 'running', args: undefined, argsPreview: { file_path: '/repo/src/app.tsx' } })
+      .text,
+    'Reading app.tsx',
+  );
+  assert.equal(
+    step({
+      status: 'errored',
+      args: { file_path: '/repo/missing.md' },
+      failure: { kind: 'failed', message: 'ENOENT' },
+    }).text,
+    'Failed to read missing.md',
+  );
+  assert.equal(
+    step({
+      toolName: 'Write',
+      args: { file_path: '/repo/a.md' },
+      result: { kind: 'file_write', path: '/repo/a.md', bytes: 3, created: false },
+    }).text,
+    'Updated a.md',
+  );
+  assert.equal(step({ toolName: 'Write', args: { file_path: '/repo/a.md' } }).text, 'Created a.md');
+  assert.equal(step({ toolName: 'Grep', args: { pattern: 'useStore' } }).object, 'useStore');
+  assert.equal(
+    step({ toolName: 'WebSearch', args: { query: 'tailwind v4' } }).text,
+    'Searched web tailwind v4',
+  );
+  assert.equal(step({ toolName: 'Skill', args: { skill: 'pdf' } }).text, 'Ran skill /pdf');
+  // The task family reads like the reference: the verb follows what was set.
+  assert.equal(
+    step({ toolName: 'TaskCreate', args: { subject: 'Ship it' } }).text,
+    'Added task Ship it',
+  );
+  assert.equal(
+    step({ toolName: 'TaskUpdate', args: { taskId: '3', status: 'completed' } }).text,
+    'Completed task #3',
+  );
+  assert.equal(step({ toolName: 'ToolSearch', args: { query: 'browser' } }).text, 'Loaded tools');
+  assert.equal(
+    step({ toolName: 'AskUserQuestion', args: { questions: [{ question: 'Which one?' }] } }).text,
+    'Asked Which one?',
+  );
+  assert.equal(
+    step({
+      toolName: 'AskUserQuestion',
+      args: { questions: [{ question: 'a' }, { question: 'b' }] },
+    }).text,
+    'Asked 2 questions',
   );
 });
 

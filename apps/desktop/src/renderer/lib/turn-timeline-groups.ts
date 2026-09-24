@@ -17,36 +17,88 @@
  * under the License.
  */
 
-// The shape a turn's timeline is drawn in: prose and inserted user messages as
-// they are, and every run of reasoning and tool calls between them as ONE work
-// group.
+// The shape a turn is drawn in: the reference's TurnStatus layout.
 //
-// `@maka/ui`'s `foldTimeline` leaves a run with no tool call standing as bare
-// thinking entries. Drawn that way, the commonest live path changes shape in
-// front of the reader: the turn thinks (a block of its own), then the first
-// call lands and the same text becomes a step inside a group. Grouping every
-// run, tool calls or not, keeps one element with one identity from the first
-// token to the last step. The reference design system does the same.
+// A turn is prose the reader reads, and between the prose, ONE status row per
+// run of work — a line of muted text ("Ran 2 commands, read a file") that opens
+// onto a flat card of steps. Reasoning, tool calls and the model's narration
+// between them all live in that card; only words addressed to the reader stand
+// outside it.
 //
-// A group's id is the messageId of the prose or user message before it (or
-// `'start'`), which is what `foldTimeline` would have given the block once a
-// call arrived — so nothing about the key changes as the run grows.
+// Which words those are is decided per text block, the reference's way
+// (`narration-fold.ts`): a text with more work after it is scored by the
+// reference's classifier and folds into the run as NARRATION when it reads
+// like the model talking to itself — short, "let me…", deep into a run of
+// calls. A first reply, a long explanation, a question stays shown. A text
+// right before a call that waits on the user is always shown (it is the
+// context for the question), and so is the tail: the final answer, or the line
+// being written right now.
+//
+// A text is decided the moment the next call or text lands, live or settled —
+// the reference's way. Holding every decision until the turn settled drew a
+// live turn as runs cut apart by its own narration, all merging into one at
+// the end. Deciding early instead does not work either: the classifier judges
+// a finished text, and an answer's first few hundred characters score like
+// narration, so the answer would stream hidden. So the line being written
+// stands under its run while the run stays live (`TranscriptTurn`), and at
+// most that one line is tucked into the run when the next call arrives.
+//
+// SendUserMessage is not a step at all. The reference rewrites the call into a
+// text block the moment it reads the message, drops the call and its result,
+// and never folds that text — so here a delivered (or still-arriving) message
+// is prose, and only a call that settled WITHOUT delivering stays a step, where
+// its failure can be read.
+//
+// A run's id is the boundary before it (`'start'`, a prose block's messageId,
+// an answered question, a card) so it keeps its identity while it grows and
+// while the text after it folds into it.
 
-import type { FoldedTimelineChild, ToolActivityItem, TurnTimelineItem } from '@maka/ui';
+import type { ToolActivityItem, TurnTimelineItem } from '@maka/ui';
 import { isAskUserQuestionTool } from './ask-user-question.js';
+import { NARRATION_SHOW_THRESHOLD, scoreNarration, type NarrationEvent } from './narration-fold.js';
 import {
   durableResultOf,
-  isNoteItem,
   isScheduledTaskWriteItem,
-  readNoteMessage,
-  userMessageFitsOneRow,
+  isSendUserMessageItem,
+  readSendUserMessageText,
 } from './tool-delivery-results.js';
+
+/** One line in a run's card. */
+export type TurnStatusStep =
+  | { readonly kind: 'tool'; readonly key: string; readonly item: ToolActivityItem }
+  | {
+      readonly kind: 'thinking';
+      readonly key: string;
+      readonly text: string;
+      readonly live: boolean;
+      readonly truncated: boolean;
+    }
+  | {
+      /** Text the model wrote between two steps, folded out of the answer. */
+      readonly kind: 'narration';
+      readonly key: string;
+      readonly text: string;
+      readonly live: boolean;
+    };
+
+/** A run of work, drawn as one status row. */
+export interface TurnStatusGroup {
+  readonly kind: 'status';
+  /** Stable identity: `'start'` or the boundary before the run. */
+  readonly id: string;
+  readonly steps: readonly TurnStatusStep[];
+}
+
+/** Words addressed to the reader: the answer, or a SendUserMessage. */
+export type TurnProseEntry = Extract<TurnTimelineItem, { kind: 'text' }> & {
+  readonly fromSendUserMessage?: true;
+};
 
 /**
  * An answered AskUserQuestion, standing on its own between runs. While the
- * question is open it is drawn in the composer's place and nowhere here; once
- * answered it is the user's own words, and a run that folds must not take
- * them with it.
+ * question is open it is a step of its run (the run shows "Asking a question")
+ * and the question itself is drawn in the composer's place; once answered it is
+ * the user's own words, and a run that folds must not take them with it.
  */
 export interface TurnAskRecord {
   readonly kind: 'ask';
@@ -55,170 +107,224 @@ export interface TurnAskRecord {
 }
 
 /**
- * A file delivery, or a note too big for a row, standing on its own after the
- * run that produced it.
- *
- * SendUserFile and SendUserMessage do not report on work; they ARE the thing
- * handed over, and a collapsed step list is where a handover goes to be lost.
- * So the result is drawn as a block of the turn, beside the prose, exactly as
- * a text entry is — and at that size it is indistinguishable from the turn's
- * own answer, which is the point: the person reads it as words addressed to
- * them, not as a tool's output.
+ * Something the turn handed over, drawn as a card of the turn: a delivered
+ * file (at the foot of the turn, after all prose) or a scheduled task the turn
+ * created (where it was made).
  */
 export interface TurnDeliveryEntry {
   readonly kind: 'delivery';
   readonly id: string;
   readonly item: ToolActivityItem;
-}
-
-export interface TurnWorkGroup {
-  readonly kind: 'work';
-  /** Stable identity: `'start'` or the preceding prose/user boundary's messageId. */
-  readonly id: string;
-  readonly children: readonly FoldedTimelineChild[];
   /**
-   * How many notes this run carries, counted separately from the tool calls
-   * because a note is not work — the header reads "Ran a command · 1 note".
-   *
-   * A note that was promoted to full width is counted here too, even though it
-   * is drawn outside the group: it came out of THIS run, and the count is the
-   * only mark left on it once it is rendered as plain prose.
+   * Laid out at the foot of the turn rather than where it was made. Such an
+   * entry follows the turn's work without ending it: a run is still the turn's
+   * newest block while the files it sent wait below.
    */
-  readonly notes: number;
+  readonly atFoot?: true;
 }
 
 export type TurnTimelineGroup =
-  | Exclude<TurnTimelineItem, { kind: 'thinking' | 'tools' }>
-  | TurnWorkGroup
+  | Extract<TurnTimelineItem, { kind: 'user' }>
+  | TurnProseEntry
+  | TurnStatusGroup
   | TurnAskRecord
   | TurnDeliveryEntry;
 
-/**
- * Whether a settled call is a delivery, and whether its step survives.
- *
- * `'block'` — the result is the whole of it, and the step would only repeat
- * the cards below it (SendUserFile).
- * `'step+block'` — the step is worth keeping as one line of the work, and the
- * message stands below the group as well (SendUserMessage).
- */
-/**
- * A settled SendUserFile. Asked twice — once to place the call, once to hold
- * it back — so it is named once.
- */
+/** A settled SendUserFile. */
 function isFileDeliveryItem(item: ToolActivityItem): boolean {
   return durableResultOf(item)?.kind === 'user_file_delivery';
 }
 
-export function deliveryPlacement(item: ToolActivityItem): 'block' | 'inline' | undefined {
-  if (isFileDeliveryItem(item)) return 'block';
-  // A scheduled task the turn created is something the person now owns, like a
-  // delivered file — it stands in the turn rather than folding into the run
-  // that made it, and the card is how they open it.
-  if (isScheduledTaskWriteItem(item)) return 'block';
-  if (!isNoteItem(item)) return undefined;
-  // A note stays in the timeline when a row can hold it, and breaks out when
-  // it cannot. Nothing is drawn twice either way: the inline note IS its row,
-  // and the promoted note IS its block. Answered from the live message while
-  // the call is still arriving, which the predicate's monotonicity makes safe.
-  return userMessageFitsOneRow(readNoteMessage(item) ?? '') ? 'inline' : 'block';
+/**
+ * The words a SendUserMessage call puts in front of the reader, or undefined
+ * when the call is a step instead: one whose message has not started arriving
+ * (nothing to show yet, and no step either — it would be an empty line), or
+ * one that settled without delivering.
+ */
+function sendUserMessageProse(item: ToolActivityItem): string | undefined {
+  return isSendUserMessageItem(item) ? readSendUserMessageText(item) : undefined;
+}
+
+type Block =
+  | { readonly kind: 'user'; readonly entry: Extract<TurnTimelineItem, { kind: 'user' }> }
+  | { readonly kind: 'thinking'; readonly entry: Extract<TurnTimelineItem, { kind: 'thinking' }> }
+  | { readonly kind: 'text'; readonly entry: TurnProseEntry }
+  | { readonly kind: 'tool'; readonly item: ToolActivityItem };
+
+function flatten(items: readonly TurnTimelineItem[]): Block[] {
+  const blocks: Block[] = [];
+  for (const item of items) {
+    if (item.kind === 'user') blocks.push({ kind: 'user', entry: item });
+    else if (item.kind === 'thinking') {
+      if (item.text.trim()) blocks.push({ kind: 'thinking', entry: item });
+    } else if (item.kind === 'text') {
+      if (item.text.trim()) blocks.push({ kind: 'text', entry: item });
+    } else {
+      for (const tool of item.items) {
+        if (!isSendUserMessageItem(tool)) {
+          blocks.push({ kind: 'tool', item: tool });
+          continue;
+        }
+        const text = sendUserMessageProse(tool);
+        if (text !== undefined) {
+          const live = tool.status === 'running';
+          blocks.push({
+            kind: 'text',
+            entry: {
+              kind: 'text',
+              text,
+              messageId: `send-user-message:${tool.toolUseId}`,
+              ...(live ? { live: true } : { complete: true }),
+              fromSendUserMessage: true,
+            },
+          });
+        } else if (tool.status !== 'running') {
+          // Settled without delivering: a step, so its failure is readable.
+          blocks.push({ kind: 'tool', item: tool });
+        }
+      }
+    }
+  }
+  return blocks;
+}
+
+/**
+ * The text blocks that fold into their run, by block index.
+ *
+ * Scored per reply: a steering message from the user starts a new one, as a
+ * user message does in the reference. A text whose next call waits on the user
+ * (a question, a scheduled-task card) is never narration — it is the context
+ * for what the user is about to be asked. The reasoning between the two is
+ * looked past: the reference stops at it and can fold the explanation of an
+ * open question into the run, which leaves the question without its reason.
+ */
+function narrationIndexes(
+  blocks: readonly Block[],
+  isAsk: (tool: ToolActivityItem) => boolean,
+): Set<number> {
+  const folded = new Set<number>();
+  // For each block, the next block that is neither text nor reasoning — one
+  // backward pass, so no text scans ahead on its own.
+  const nextWork: (Block | undefined)[] = new Array(blocks.length);
+  let ahead: Block | undefined;
+  for (let index = blocks.length - 1; index >= 0; index--) {
+    nextWork[index] = ahead;
+    const block = blocks[index]!;
+    if (block.kind !== 'text' && block.kind !== 'thinking') ahead = block;
+  }
+  let start = 0;
+  const scoreReply = (end: number): void => {
+    const events: NarrationEvent[] = [];
+    const blockOf: number[] = [];
+    for (let index = start; index < end; index++) {
+      const block = blocks[index]!;
+      if (block.kind === 'user') continue;
+      blockOf.push(index);
+      events.push(
+        block.kind === 'text'
+          ? { kind: 'text', text: block.entry.text }
+          : block.kind === 'thinking'
+            ? { kind: 'thinking' }
+            : { kind: 'tool_use' },
+      );
+    }
+    for (const [event, score] of scoreNarration(events).decided) {
+      const index = blockOf[event]!;
+      const block = blocks[index]!;
+      if (block.kind !== 'text' || block.entry.fromSendUserMessage) continue;
+      if (score >= NARRATION_SHOW_THRESHOLD) continue;
+      const next = nextWork[index];
+      if (next?.kind === 'tool' && (isAsk(next.item) || isScheduledTaskWriteItem(next.item))) {
+        continue;
+      }
+      folded.add(index);
+    }
+  };
+  blocks.forEach((block, index) => {
+    if (block.kind !== 'user') return;
+    scoreReply(index);
+    start = index + 1;
+  });
+  scoreReply(blocks.length);
+  return folded;
 }
 
 export function groupTurnTimeline(
   items: readonly TurnTimelineItem[],
   isAsk: (tool: ToolActivityItem) => boolean = (tool) => isAskUserQuestionTool(tool),
 ): TurnTimelineGroup[] {
+  const blocks = flatten(items);
+  const narration = narrationIndexes(blocks, isAsk);
   const out: TurnTimelineGroup[] = [];
-  // Delivered FILES are held back and laid out at the foot of the turn, in the
-  // order they were sent.
-  //
-  // The tool tells the model to send each file as it is produced rather than
-  // batching them, so the calls land mid-work — but the reader meets the turn
-  // as a finished thing, and a stack of cards wedged between two paragraphs
-  // reads as an interruption of the answer rather than as what the answer
-  // hands over. The reference does the same: its card stack is the next
-  // sibling AFTER the whole prose block, however early the call was made.
-  //
-  // Only files. A note (SendUserMessage) is addressed to the reader at the
-  // moment it is said, and a scheduled-task card belongs where the task was
-  // made; moving either would change what it means.
+  // Delivered files are laid out at the foot of the turn, after all prose, in
+  // the order they were sent — the reference's card stack is the sibling after
+  // the whole answer, however early the call was made. The call itself stays a
+  // step of its run ("Shared a file").
   const files: TurnDeliveryEntry[] = [];
   let anchor = 'start';
-  let run: FoldedTimelineChild[] | null = null;
-  // Notes belonging to the run being built — the inline ones drawn in it, plus
-  // any promoted one that closes it. A promoted note is counted before `flush`
-  // so the header it lands under is the run it came out of.
-  let notes = 0;
+  let run: TurnStatusStep[] | null = null;
   const flush = (): void => {
-    if (run && run.length > 0) out.push({ kind: 'work', id: anchor, children: run, notes });
+    if (run && run.length > 0) out.push({ kind: 'status', id: anchor, steps: run });
     run = null;
-    notes = 0;
   };
-  for (const item of items) {
-    if (item.kind === 'thinking') {
-      (run ??= []).push(item);
-      continue;
-    }
-    if (item.kind === 'tools') {
-      // The common case, untouched: an entry with no question and no delivery
-      // in it (an empty one included) joins the run as it is.
-      if (!item.items.some((tool) => isAsk(tool) || deliveryPlacement(tool) !== undefined)) {
-        (run ??= []).push(item);
-        continue;
-      }
-      let rest: ToolActivityItem[] = [];
-      const flushRest = (): void => {
-        if (rest.length > 0) (run ??= []).push({ ...item, items: rest });
-        rest = [];
-      };
-      for (const tool of item.items) {
-        if (!isAsk(tool)) {
-          const placement = deliveryPlacement(tool);
-          if (placement === undefined) {
-            rest.push(tool);
-            continue;
-          }
-          // A note a row can hold stays in the run, as its own step. It does
-          // not close the group: it is one more line of the same activity.
-          if (placement === 'inline') {
-            notes += 1;
-            rest.push(tool);
-            continue;
-          }
-          // A file leaves the timeline here and comes back at the foot of the
-          // turn. It does NOT close the run: the work it came out of carries
-          // on, and breaking the group around a card that is no longer there
-          // would split one run into two for no visible reason.
-          if (isFileDeliveryItem(tool)) {
-            files.push({ kind: 'delivery', id: tool.toolUseId, item: tool });
-            continue;
-          }
-          // Everything else closes the run it came out of, so its block lands
-          // AFTER that group rather than inside or before it. A promoted note
-          // still counts toward that group's header on the way out.
-          if (isNoteItem(tool)) notes += 1;
-          flushRest();
+  blocks.forEach((block, index) => {
+    switch (block.kind) {
+      case 'thinking':
+        (run ??= []).push({
+          kind: 'thinking',
+          key: `thinking:${block.entry.messageId}:${index}`,
+          text: block.entry.text,
+          live: block.entry.live === true,
+          truncated: block.entry.truncated === true,
+        });
+        return;
+      case 'text':
+        if (narration.has(index)) {
+          (run ??= []).push({
+            kind: 'narration',
+            key: `narration:${block.entry.messageId}:${index}`,
+            text: block.entry.text,
+            live: block.entry.live === true,
+          });
+          return;
+        }
+        flush();
+        out.push(block.entry);
+        anchor = block.entry.messageId;
+        return;
+      case 'user':
+        flush();
+        out.push(block.entry);
+        anchor = block.entry.messageId;
+        return;
+      case 'tool': {
+        const tool = block.item;
+        if (isAsk(tool) && tool.status !== 'running') {
+          flush();
+          out.push({ kind: 'ask', id: tool.toolUseId, item: tool });
+          anchor = `ask:${tool.toolUseId}`;
+          return;
+        }
+        if (isScheduledTaskWriteItem(tool)) {
           flush();
           out.push({ kind: 'delivery', id: tool.toolUseId, item: tool });
           anchor = `delivery:${tool.toolUseId}`;
-          continue;
+          return;
         }
-        // Open: drawn in the composer's place. Answered: its own entry, and
-        // the run after it keys off it, so neither side changes identity when
-        // the answer lands.
-        if (tool.status === 'running') continue;
-        flushRest();
-        flush();
-        out.push({ kind: 'ask', id: tool.toolUseId, item: tool });
-        anchor = `ask:${tool.toolUseId}`;
+        if (isFileDeliveryItem(tool)) {
+          files.push({ kind: 'delivery', id: tool.toolUseId, item: tool, atFoot: true });
+        }
+        (run ??= []).push({ kind: 'tool', key: tool.toolUseId, item: tool });
+        return;
       }
-      flushRest();
-      continue;
     }
-    flush();
-    out.push(item);
-    anchor = item.messageId;
-  }
+  });
   flush();
   out.push(...files);
   return out;
+}
+
+/** The tool calls of a run, in order. */
+export function statusGroupTools(group: TurnStatusGroup): ToolActivityItem[] {
+  return group.steps.flatMap((step) => (step.kind === 'tool' ? [step.item] : []));
 }

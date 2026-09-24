@@ -22,8 +22,10 @@ import { createRoot } from 'react-dom/client';
 import { LocaleProvider } from '@maka/ui';
 import type { ActiveInteractionRequestEvent } from '@maka/core/events';
 import type { MakaBridge } from '../../../preload/bridge-contract.js';
-import { activeSessionStore } from '../../store/index.js';
+import { activeSessionStore, sessionsStore } from '../../store/index.js';
+import { useShellHotkeys } from '../../hooks/use-hotkeys.js';
 import { InteractionPrompts } from '../../components/composer/InteractionPrompts.js';
+const FIXTURE_SESSION = { id: 'fixture', runtimeHostId: 'local', profileId: 'default' };
 const submissions: { kind: string; response: unknown }[] = [];
 let failNext = false;
 const respond = async (kind: string, response: unknown) => {
@@ -35,8 +37,12 @@ const respond = async (kind: string, response: unknown) => {
   activeSessionStore.setState({ interactions: {} });
 };
 window.maka = {
+  // The Host the fixture session runs on, for the permission card's `~`.
+  app: { info: async () => ({ homePath: '/Users/tester' }) },
   sessions: {
-    listWithCoverage: async () => ({ sessions: [], completeHostIds: [] }),
+    // The fixture session and the Host it runs on, which the permission card
+    // asks for its home directory. A store reload keeps it.
+    listWithCoverage: async () => ({ sessions: [FIXTURE_SESSION], completeHostIds: ['local'] }),
     respondToSandboxBoundary: (_id: string, response: unknown) => respond('sandbox', response),
     respondToClientCapability: (_id: string, response: unknown) => respond('capability', response),
     respondToUserQuestion: (_id: string, response: unknown) => respond('question', response),
@@ -54,14 +60,31 @@ Object.assign(window, {
     },
   },
 });
+sessionsStore.setState({ sessions: [FIXTURE_SESSION] } as never);
+
+// The shell's hotkeys, as `AppShell` registers them: Escape is claimed at the
+// document whether or not anything closes. The permission card must still
+// hear it.
+function ShellHotkeys() {
+  useShellHotkeys({ escape: () => {} });
+  return null;
+}
+
 createRoot(document.getElementById('root')!).render(
   createElement(LocaleProvider, {
     locale: 'en',
-    children: createElement(InteractionPrompts, {
-      sessionId: 'fixture',
-      // The shell's toast is not mounted here; this harness drives the
-      // answer paths, and a stop failure has no surface to land on.
-      onError: () => {},
-    }),
+    children: [
+      createElement(ShellHotkeys, { key: 'hotkeys' }),
+      // A text field outside the card, standing in for the composer: keys typed
+      // there must never answer the card.
+      createElement('input', { key: 'field', 'aria-label': 'Fixture field' }),
+      createElement(InteractionPrompts, {
+        key: 'prompts',
+        sessionId: 'fixture',
+        // The shell's toast is not mounted here; this harness drives the
+        // answer paths, and a stop failure has no surface to land on.
+        onError: () => {},
+      }),
+    ],
   }),
 );

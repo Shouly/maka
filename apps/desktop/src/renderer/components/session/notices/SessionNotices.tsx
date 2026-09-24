@@ -23,7 +23,7 @@
 //
 // Event-stream health is NOT here. It only ever means something while a turn
 // is running, and the running turn already has a line of its own that the
-// reader is watching — so it speaks there (`TurnRunningStatus`) instead of
+// reader is watching — so it speaks there (the live `TurnStatus` row) instead of
 // pushing a banner into the composer's stack.
 //
 // One region rather than one banner per source, and it renders in a fixed

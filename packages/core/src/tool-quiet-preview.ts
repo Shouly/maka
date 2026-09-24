@@ -417,6 +417,15 @@ const ARGS_PREVIEW_SCALAR_KEYS = [
 // such as `input`: non-TaskInput tools otherwise retain arbitrary payloads.
 const DEEP_RESEARCH_START_PREVIEW_SCALAR_KEYS = ['objective', 'scope_level'] as const;
 
+// Bash and Agent carry a `description` written FOR the reader — "Run the
+// renderer typecheck" — and it is what their row and the live status line say
+// while the call runs. Held back, the live window could only name the raw
+// command, and the one sentence meant for the person arrived with the durable
+// transcript after the turn. Kept to these two tools: elsewhere `description`
+// is ordinary content (a task's body, an MCP tool's free-text field).
+const DESCRIBED_TOOL_PREVIEW_SCALAR_KEYS = ['description'] as const;
+const DESCRIBED_TOOL_NAMES: ReadonlySet<string> = new Set([TOOL_NAMES.bash, TOOL_NAMES.agent]);
+
 const ARGS_PREVIEW_NUMBER_KEYS = ['offset', 'limit'] as const;
 
 function boundPreviewString(value: string): string {
@@ -511,7 +520,9 @@ export function projectToolArgsPreview(
   const scalarKeys =
     name === TOOL_NAMES.deepResearchStart
       ? [...ARGS_PREVIEW_SCALAR_KEYS, ...DEEP_RESEARCH_START_PREVIEW_SCALAR_KEYS]
-      : ARGS_PREVIEW_SCALAR_KEYS;
+      : DESCRIBED_TOOL_NAMES.has(name)
+        ? [...ARGS_PREVIEW_SCALAR_KEYS, ...DESCRIBED_TOOL_PREVIEW_SCALAR_KEYS]
+        : ARGS_PREVIEW_SCALAR_KEYS;
 
   const picked = new Map<string, unknown>();
   for (const key of scalarKeys) {

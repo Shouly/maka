@@ -134,18 +134,27 @@ export function readUserMessage(
 }
 
 /**
- * A note's text, live or settled.
+ * The words a SendUserMessage call puts in front of the reader.
  *
- * Before the call settles the message is in the args preview the Host let
- * through for this tool alone; after it settles the result owns it. Reading
- * both from one place is what keeps the row from changing shape underneath the
- * reader when the result lands — the tier, the dot and the text are decided
- * from the same string throughout.
+ * While the call is live the message is in the args preview the Host lets
+ * through for this tool alone, so the prose grows as the model writes it.
+ *
+ * A call that COMPLETED keeps reading the preview until its body arrives. The
+ * Host's live `tool_result` frame omits the body (`contentOmitted`), so between
+ * that frame and the durable transcript the row is settled with no result at
+ * all — and dropping the words there would fold a delivered message into the
+ * run for a moment and bring it back when the transcript lands.
+ *
+ * A call that did NOT complete — refused, failed, cut short — delivered
+ * nothing, and neither did one whose body is something other than a message.
+ * Its arguments are never drawn as if they had arrived: the model was told
+ * they did not.
  */
-export function readNoteMessage(item: ToolActivityItem): string | undefined {
-  const settled = readUserMessage(durableResultOf(item));
-  if (settled) return settled.message;
-  if (item.toolName !== TOOL_NAMES.sendUserMessage) return undefined;
+export function readSendUserMessageText(item: ToolActivityItem): string | undefined {
+  const result = durableResultOf(item);
+  if (result !== undefined) return readUserMessage(result)?.message;
+  const awaitingBody = item.status === 'completed' && item.failure === undefined;
+  if (item.status !== 'running' && !awaitingBody) return undefined;
   const args = asRecord(item.args) ?? asRecord(item.argsPreview);
   const message = args ? stringOf(args, 'message') : undefined;
   return message && message.trim() ? message : undefined;
@@ -170,57 +179,9 @@ export function isScheduledTaskWriteItem(item: ToolActivityItem): boolean {
 }
 
 /** Whether a row belongs to SendUserMessage at all, settled or not. */
-export function isNoteItem(item: ToolActivityItem): boolean {
+export function isSendUserMessageItem(item: ToolActivityItem): boolean {
   return (
     item.toolName === TOOL_NAMES.sendUserMessage || durableResultOf(item)?.kind === 'user_message'
-  );
-}
-
-/**
- * Whether a note can be carried by ONE row of the activity timeline.
- *
- * SendUserMessage takes a single `message` and nothing else — no status, no
- * display mode — so how prominently a note is drawn cannot be something the
- * model declares. It has to follow from the message, and the question that
- * decides it is not "is this important" (a row cannot tell, and the one-time
- * password that most deserves the reader's eye is a single sentence) but
- * "does this SURVIVE being a row".
- *
- * A row is one line of small muted text. It can hold a paragraph of inline
- * markdown — bold, a link, some code — at any length, because a line can be
- * long. It cannot hold a list, a table, a fenced block, a quote, a rule or a
- * heading: those would be flattened into the line, losing the structure the
- * author chose. A blank line is the same loss in miniature, so more than one
- * paragraph promotes too.
- *
- * Everything this refuses is drawn full width instead, where it renders as
- * what it is.
- *
- * MONOTONIC, which is what makes it safe to answer while the note is still
- * arriving: appending text can introduce a list, a fence or a blank line, but
- * it can never remove one. So a note starts in a row and may be promoted once,
- * and is never demoted — the reader sees at most one change of shape, early,
- * rather than a layout that flips as tokens land.
- */
-export function userMessageFitsOneRow(message: string): boolean {
-  const text = message.replace(/\r\n?/gu, '\n').trim();
-  // Nothing yet — a note whose first token has not arrived. A row holds it,
-  // and the answer only ever moves one way from here (see the note on
-  // monotonicity below), so starting inline never has to be undone.
-  if (text.length === 0) return true;
-  // More than one paragraph: the break is content, and a row cannot keep it.
-  if (/\n[^\S\n]*\n/u.test(text)) return false;
-  const lines = text.split('\n');
-  // An opening fence anywhere, even unclosed — the row cannot show code as code.
-  if (lines.some((line) => /^\s{0,3}(?:```|~~~)/u.test(line))) return false;
-  return !lines.some(
-    (line) =>
-      /^\s{0,3}#{1,6}\s/u.test(line) || // heading
-      /^\s{0,3}(?:[-*+]|\d{1,9}[.)])\s/u.test(line) || // list item
-      /^\s{0,3}>/u.test(line) || // block quote
-      /^\s{0,3}(?:(?:-[^\S\n]*){3,}|(?:\*[^\S\n]*){3,}|(?:_[^\S\n]*){3,})$/u.test(line) || // thematic break
-      /^\s{0,3}\|/u.test(line) || // table row
-      /^\s{0,3}:?-{3,}:?(?:\s*\|\s*:?-{3,}:?)+\s*\|?\s*$/u.test(line), // table delimiter
   );
 }
 

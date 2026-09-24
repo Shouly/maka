@@ -704,12 +704,14 @@ function projectSessionEvent(
   return {
     type: 'tool_result',
     ...base,
-    contentOmitted: true,
+    // A delivered message rides the frame whole; every other body is omitted
+    // and arrives with the transcript.
+    ...(event.content ? {} : { contentOmitted: true as const }),
     isError: event.status === 'errored',
     // The failure rides the event, so it survives the omitted content instead
     // of being smuggled through a placeholder body the client then discards.
     ...(event.failure ? { failure: event.failure } : {}),
-    content: { kind: 'text', text: '' },
+    content: event.content ?? { kind: 'text', text: '' },
     ...(event.operationId ? { operationId: event.operationId } : {}),
     ...(event.durationMs === undefined ? {} : { durationMs: event.durationMs }),
   };

@@ -33,6 +33,7 @@ import {
   SESSION_SUBSCRIPTION_FRAME_MAX_BYTES,
   SUBSCRIPTION_OPEN_RESULT_MAX_BYTES,
   SESSION_TOOL_ARGS_PREVIEW_MAX_BYTES,
+  SESSION_TOOL_RESULT_MESSAGE_MAX_BYTES,
   SESSION_TOOL_INTENT_MAX_BYTES,
   SESSION_TOOL_NAME_MAX_BYTES,
   type AgentGraphChangedFrame,
@@ -2245,6 +2246,15 @@ function projectSessionEvent(
         // content is exactly what this frame omits.
         ...(event.isError && event.failure ? { failure: event.failure } : {}),
         ...(event.durationMs === undefined ? {} : { durationMs: event.durationMs }),
+        // With one exception: a delivered message IS the deliverable, and it
+        // travels whole when it fits (`SESSION_TOOL_RESULT_MESSAGE_MAX_BYTES`).
+        ...(!event.isError &&
+        event.content.kind === 'user_message' &&
+        event.content.message.trim() !== '' &&
+        Buffer.byteLength(JSON.stringify(event.content.message), 'utf8') <=
+          SESSION_TOOL_RESULT_MESSAGE_MAX_BYTES
+          ? { content: { kind: 'user_message' as const, message: event.content.message } }
+          : {}),
       };
     case 'tool_result_preview':
       return {

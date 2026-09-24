@@ -28,6 +28,11 @@
 //   user_question_request      the ask-user wizard, one question at a time
 //   form_request               a typed form from a tool
 //
+// The two permission kinds share the reference's permission card: a heading
+// naming what is asked for, the tool's own words ("From the tool:") in a mono
+// block, what it reaches for and why in a key/value block, then Decline (Esc)
+// and the grant (⌘↵).
+//
 // Every answer goes through `turnActionsStore` so the pending-action lock and
 // the error path are the same as any other turn action. The card stays
 // mounted, with what the user typed, when the response fails; it goes away
@@ -40,8 +45,10 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
 } from 'react';
 import { useStore } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   getConversationCopy,
@@ -53,10 +60,16 @@ import {
 } from '@maka/ui';
 import type {
   ActiveInteractionRequestEvent,
+  ClientCapabilityRequestEvent,
   FormRequestEvent,
+  SandboxBoundaryRequestEvent,
   UserQuestionRequestEvent,
 } from '@maka/core/events';
-import { activeSessionStore, turnActionsStore } from '../../store/index.js';
+import { activeSessionStore, sessionsStore, turnActionsStore } from '../../store/index.js';
+import { getAppInfo } from '../../bridge/app.js';
+import { useAsync } from '../../hooks/use-async.js';
+import { isTextEntryTarget } from '../../hooks/use-hotkeys.js';
+import { collapseHomePath } from '../../lib/ported/project-path-display.js';
 import { Anthropicon } from '../icons/Anthropicon.js';
 import Markdown from '../ui/Markdown.js';
 import { Button } from '../ui/button.js';
@@ -64,6 +77,7 @@ import { Input } from '../ui/input.js';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.js';
 import { checkboxBoxClass, CHECKBOX_TICK_SIZE } from '../ui/checkbox-box.js';
 import { cn } from '../../lib/cn.js';
+import { detectPlatform } from '../../lib/platform.js';
 import { getComposerCopy } from '../../locales/composer-copy.js';
 import { userQuestionPanelStore } from '../../store/user-question-panel-store.js';
 import { answerUserQuestion, rememberUserQuestionRequest } from '../../lib/ask-user-question.js';
@@ -116,6 +130,7 @@ function InteractionPrompt({
   const locale = useUiLocale();
   const copy = getConversationCopy(locale);
   const local = getComposerCopy(locale);
+  const homePath = useSessionHomePath(sessionId);
   const [pending, setPending] = useState(false);
   const [answered, setAnswered] = useState(false);
   const [error, setError] = useState('');
@@ -156,12 +171,30 @@ function InteractionPrompt({
     );
   }
 
-  const title =
-    request.type === 'sandbox_boundary_request'
-      ? copy.sandboxBoundary.title
-      : request.type === 'client_capability_request'
-        ? copy.clientCapability.title
-        : copy.forms.requester(request.requester.name);
+  if (request.type === 'sandbox_boundary_request' || request.type === 'client_capability_request') {
+    const respond = (decision: 'allow' | 'deny') =>
+      void run(() =>
+        request.type === 'sandbox_boundary_request'
+          ? turnActionsStore.respondSandbox(sessionId, { requestId: request.requestId, decision })
+          : turnActionsStore.respondCapability(sessionId, {
+              requestId: request.requestId,
+              decision,
+            }),
+      );
+    return (
+      <PermissionPrompt
+        request={request}
+        homePath={homePath}
+        busy={busy}
+        pending={pending}
+        error={error}
+        onDecline={() => respond('deny')}
+        onAllow={() => respond('allow')}
+      />
+    );
+  }
+
+  const title = copy.forms.requester(request.requester.name);
 
   return (
     <section
@@ -172,103 +205,247 @@ function InteractionPrompt({
     >
       <h2 className="mb-3 text-sm font-medium leading-5 text-text-primary">{title}</h2>
       <fieldset disabled={busy} className="min-w-0 space-y-3">
-        {request.type === 'sandbox_boundary_request' && (
-          <>
-            <p className="whitespace-pre-wrap text-sm text-text-secondary">
-              {request.justification}
-            </p>
-            <ul className="space-y-1 text-sm text-text-secondary">
-              {request.expansion.filesystem?.entries.map((entry, i) => (
-                <li key={i} className="flex flex-wrap items-baseline gap-x-1.5">
-                  <span>{copy.sandboxBoundary.access[entry.access]}</span>
-                  <span className="text-text-muted">·</span>
-                  <span>{copy.sandboxBoundary.scope[entry.scope]}</span>
-                  <code className="break-all font-mono text-[0.8125rem] text-text-primary">
-                    {entry.path}
-                  </code>
-                </li>
-              ))}
-              {request.expansion.network?.enabled && (
-                <li>
-                  {copy.sandboxBoundary.network}
-                  <span className="text-text-muted"> · </span>
-                  {copy.sandboxBoundary.enabled}
-                </li>
-              )}
-            </ul>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="secondary"
-                onClick={() =>
-                  void run(() =>
-                    turnActionsStore.respondSandbox(sessionId, {
-                      requestId: request.requestId,
-                      decision: 'deny',
-                    }),
-                  )
-                }
-              >
-                {copy.sandboxBoundary.reject}
-              </Button>
-              <Button
-                onClick={() =>
-                  void run(() =>
-                    turnActionsStore.respondSandbox(sessionId, {
-                      requestId: request.requestId,
-                      decision: 'allow',
-                    }),
-                  )
-                }
-              >
-                {copy.sandboxBoundary.allowSession}
-              </Button>
-            </div>
-          </>
-        )}
-        {request.type === 'client_capability_request' && (
-          <>
-            <p className="break-words text-sm text-text-secondary">
-              {request.scope.kind === 'browser_origin'
-                ? copy.clientCapability.browser(request.scope.origin)
-                : request.scope.kind === 'mcp_tool'
-                  ? copy.clientCapability.desktopMcp(request.scope.serverId, request.scope.toolName)
-                  : copy.clientCapability.computerUse}
-            </p>
-            <p className="text-xs text-text-muted">{copy.clientCapability.sessionNotice}</p>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="secondary"
-                onClick={() =>
-                  void run(() =>
-                    turnActionsStore.respondCapability(sessionId, {
-                      requestId: request.requestId,
-                      decision: 'deny',
-                    }),
-                  )
-                }
-              >
-                {copy.clientCapability.reject}
-              </Button>
-              <Button
-                onClick={() =>
-                  void run(() =>
-                    turnActionsStore.respondCapability(sessionId, {
-                      requestId: request.requestId,
-                      decision: 'allow',
-                    }),
-                  )
-                }
-              >
-                {copy.clientCapability.allowSession}
-              </Button>
-            </div>
-          </>
-        )}
-        {request.type === 'form_request' && (
-          <FormPrompt sessionId={sessionId} request={request} run={run} />
-        )}
+        <FormPrompt sessionId={sessionId} request={request} run={run} />
       </fieldset>
       <PromptStatus pending={pending} error={error} />
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Permission card
+
+/**
+ * The home directory of the Host this session runs on, or undefined until it
+ * is known. A path is shortened to `~` against THIS prefix only: any other
+ * `/Users/<name>` — `/Users/Shared`, another account — is a different target,
+ * and the card is where the user decides what to grant.
+ */
+function useSessionHomePath(sessionId: string): string | undefined {
+  const host = useStore(
+    sessionsStore,
+    useShallow((state) => {
+      const row = state.sessions.find((session) => session.id === sessionId);
+      return row ? { hostId: row.runtimeHostId, profileId: row.profileId } : undefined;
+    }),
+  );
+  const info = useAsync(host ? () => getAppInfo(host) : undefined, [host?.profileId, host?.hostId]);
+  return info.data?.homePath;
+}
+
+interface PermissionView {
+  readonly title: string;
+  /** What the tool is asking for and what granting it means, in its own words. */
+  readonly toolText: string;
+  readonly rows: readonly { readonly label: string; readonly value: ReactNode }[];
+}
+
+function sandboxPermissionView(
+  request: SandboxBoundaryRequestEvent,
+  copy: ReturnType<typeof getConversationCopy>,
+  homePath: string | undefined,
+): PermissionView {
+  const shown = (path: string) => collapseHomePath(path, homePath);
+  const text = copy.sandboxBoundary;
+  const entries = request.expansion.filesystem?.entries ?? [];
+  const network = request.expansion.network?.enabled === true;
+  const folders = entries.every((entry) => entry.scope === 'subtree');
+  const title =
+    entries.length === 0
+      ? text.title.network
+      : network
+        ? text.title.mixed
+        : folders
+          ? text.title.folder
+          : entries.every((entry) => entry.scope === 'exact')
+            ? text.title.file
+            : text.title.mixed;
+  const targets = [
+    ...entries.map((entry) => `- ${shown(entry.path)}`),
+    ...(network ? [`- ${text.label.network}`] : []),
+  ];
+  const consequences = [
+    ...(entries.length > 0
+      ? [
+          entries.some((entry) => entry.access === 'write')
+            ? text.consequence.write
+            : text.consequence.read,
+        ]
+      : []),
+    ...(network ? [text.consequence.network] : []),
+  ];
+  const rows = [
+    ...entries.map((entry) => ({
+      label: entry.scope === 'subtree' ? text.label.folder : text.label.file,
+      value: (
+        <>
+          <span className="break-all">{shown(entry.path)}</span>
+          <span className="text-text-muted"> · {text.access[entry.access]}</span>
+        </>
+      ),
+    })),
+    ...(network ? [{ label: text.label.network, value: text.networkValue }] : []),
+    ...(request.justification.trim()
+      ? [{ label: text.label.why, value: request.justification.trim() }]
+      : []),
+  ];
+  return { title, toolText: `${targets.join('\n')}\n\n${consequences.join(' ')}`, rows };
+}
+
+function capabilityPermissionView(
+  request: ClientCapabilityRequestEvent,
+  copy: ReturnType<typeof getConversationCopy>,
+): PermissionView {
+  const text = copy.clientCapability;
+  const scope = request.scope;
+  if (scope.kind === 'browser_origin') {
+    return {
+      title: text.title.browser(scope.origin),
+      toolText: `- ${scope.origin}\n\n${text.consequence.browser} ${text.sessionNotice}`,
+      rows: [{ label: text.label.site, value: scope.origin }],
+    };
+  }
+  if (scope.kind === 'mcp_tool') {
+    return {
+      title: text.title.desktopMcp(scope.serverId, scope.toolName),
+      toolText: `- ${scope.serverId} · ${scope.toolName}\n\n${text.consequence.desktopMcp} ${text.sessionNotice}`,
+      rows: [
+        { label: text.label.server, value: scope.serverId },
+        { label: text.label.tool, value: scope.toolName },
+      ],
+    };
+  }
+  return {
+    title: text.title.computerUse,
+    toolText: `${text.consequence.computerUse} ${text.sessionNotice}`,
+    rows: [],
+  };
+}
+
+/** A key the answer is bound to, drawn inside its button. */
+function KeyHint(props: { children: ReactNode }) {
+  return (
+    <kbd
+      aria-hidden="true"
+      className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-md border-[0.5px] border-current/25 px-1 font-sans text-[0.6875rem] leading-none opacity-70"
+    >
+      {props.children}
+    </kbd>
+  );
+}
+
+/**
+ * A request to reach past the task's boundary — a folder, the network, a site,
+ * the screen, a desktop tool.
+ *
+ * Esc declines and ⌘↵ grants, as the buttons say. Both are heard in the
+ * capture phase: the shell's hotkeys claim every Escape at the document
+ * (`useShellHotkeys` prevents the default whether or not anything closes), so
+ * a listener waiting for the bubble would never hear one. Neither is heard in
+ * a text field or while a menu or dialog is open.
+ */
+function PermissionPrompt(props: {
+  request: SandboxBoundaryRequestEvent | ClientCapabilityRequestEvent;
+  homePath: string | undefined;
+  busy: boolean;
+  pending: boolean;
+  error: string;
+  onDecline: () => void;
+  onAllow: () => void;
+}) {
+  const locale = useUiLocale();
+  const copy = getConversationCopy(locale);
+  const card = copy.permissionCard;
+  const [open, setOpen] = useState(true);
+  const view =
+    props.request.type === 'sandbox_boundary_request'
+      ? sandboxPermissionView(props.request, copy, props.homePath)
+      : capabilityPermissionView(props.request, copy);
+  const mac = detectPlatform() === 'darwin';
+  const { busy, onDecline, onAllow } = props;
+  // The listeners read the latest answer through a ref, so they are registered
+  // once for the card rather than again on every render.
+  const answers = useRef({ busy, onDecline, onAllow });
+  answers.current = { busy, onDecline, onAllow };
+
+  useEffect(() => {
+    const overlayOpen = () =>
+      document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]') !== null;
+    // Neither key is heard in a text field: there Esc stops the turn and ⌘↵
+    // belongs to what the user is typing — a grant must never be the side
+    // effect of a keystroke meant for the composer.
+    const heard = (event: KeyboardEvent) =>
+      !event.isComposing &&
+      !answers.current.busy &&
+      !overlayOpen() &&
+      !isTextEntryTarget(event.target);
+    const onKeyDown = (event: KeyboardEvent) => {
+      const decline = event.key === 'Escape';
+      const allow = event.key === 'Enter' && (event.metaKey || event.ctrlKey);
+      if ((!decline && !allow) || !heard(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (decline) answers.current.onDecline();
+      else answers.current.onAllow();
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, []);
+
+  return (
+    <section
+      className={cn(PANEL_CLASS, 'mb-2 p-4')}
+      aria-label={view.title}
+      data-maka-contract="interaction-prompt"
+      data-interaction-kind={props.request.type}
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={`${view.title} · ${card.details}`}
+        onClick={() => setOpen((value) => !value)}
+        className="flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-md text-left text-base leading-6 text-text-primary outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)]"
+      >
+        <h2 className="min-w-0 font-normal">{view.title}</h2>
+        <Anthropicon
+          name="caretDown"
+          size={16}
+          className={cn(
+            'shrink-0 text-text-muted transition-transform duration-150',
+            !open && '-rotate-90',
+          )}
+        />
+      </button>
+      {open && (
+        <>
+          <p className="mt-2 text-sm italic leading-5 text-text-muted">{card.fromTool}</p>
+          <div className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap break-words rounded-xl bg-alpha-1 px-3 py-2.5 font-mono text-[0.8125rem] leading-6 text-text-muted">
+            {view.toolText}
+          </div>
+        </>
+      )}
+      {view.rows.length > 0 && (
+        <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 rounded-xl bg-alpha-1 px-3 py-2.5 text-sm leading-5">
+          {view.rows.map((row, index) => (
+            <div key={index} className="contents">
+              <dt className="text-text-muted">{row.label}</dt>
+              <dd className="min-w-0 break-words text-text-primary">{row.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      <fieldset disabled={busy} className="mt-3 flex min-w-0 items-center justify-between gap-2">
+        <Button variant="secondary" onClick={onDecline}>
+          {card.decline}
+          <KeyHint>Esc</KeyHint>
+        </Button>
+        <Button onClick={onAllow}>
+          {card.allowSession}
+          <KeyHint>{mac ? '⌘' : 'Ctrl'}</KeyHint>
+          <KeyHint>↵</KeyHint>
+        </Button>
+      </fieldset>
+      <PromptStatus pending={props.pending} error={props.error} />
     </section>
   );
 }

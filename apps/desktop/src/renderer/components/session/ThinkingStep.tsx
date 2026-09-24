@@ -17,37 +17,29 @@
  * under the License.
  */
 
-// One run of reasoning, as a step on a work group's timeline.
+// Reasoning and narration text, as the opened body of a TurnStatus step.
 //
-// Look ported from the reference design system's `ThinkingRenderer`: a clock
-// glyph, the text at secondary weight, a 200px clip with a mask instead of a
-// gradient overlay, and one Show more/less control that keeps `aria-expanded`
-// on the same element across both states.
-//
-// A step has no title of its own. The group's summary line already says the
-// turn is (or was) thinking, and a step that repeats it makes the reader read
-// the same sentence twice. There is no standalone shape any more: every run of
-// reasoning is a group (`groupTurnTimeline`), so a turn that thinks and then
-// calls a tool does not change shape when the call lands.
+// Look ported from the reference design system's `ThinkingRenderer`: the text
+// at secondary weight, a 200px clip with a mask instead of a gradient overlay,
+// and one Show more/less control that keeps `aria-expanded` on the same element
+// across both states. The step row that opens it lives in `TurnStatusStep`.
 //
 // A mask rather than a gradient plate for the fade: a plate has to be painted
 // the same colour as whatever is behind it (so changing the ground means
 // changing two places), and the text under it is still selectable, so dragging
 // across the fade highlights words nobody can read. A mask removes the pixels.
 
-import { memo, useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useUiLocale } from '@maka/ui';
 import Markdown from '../ui/Markdown.js';
 import StreamPopMarkdown from '../ui/StreamPopMarkdown.js';
-import { Anthropicon } from '../icons/Anthropicon.js';
 import { cn } from '../../lib/cn.js';
 import { getTranscriptCopy } from '../../locales/transcript-copy.js';
-import { StepGap } from './tools/tool-result.js';
 
 const CLIP_HEIGHT_PX = 200;
 
 /** The reasoning text itself: clipped past 200px, with the one control that opens it. */
-function ThinkingText(props: {
+export function ThinkingText(props: {
   text: string;
   live?: boolean;
   onOpenExternal?: (url: string) => void;
@@ -121,50 +113,3 @@ function ThinkingText(props: {
     </>
   );
 }
-
-/**
- * A reasoning step on a group's timeline. `isFirst` / `isLast` draw the same
- * gaps and connector a `ToolRow` draws, so the two kinds of step share one
- * line.
- */
-export const ThinkingStep = memo(function ThinkingStep(props: {
-  text: string;
-  live?: boolean;
-  truncated?: boolean;
-  isFirst: boolean;
-  isLast: boolean;
-  onOpenExternal?: (url: string) => void;
-}) {
-  const copy = getTranscriptCopy(useUiLocale());
-  if (!props.text.trim()) return null;
-
-  return (
-    <div className="flex shrink-0 flex-col" data-maka-thinking="">
-      <StepGap on={!props.isFirst} />
-      <div className="flex flex-row">
-        {/* Written out rather than composed from `stepIconColClass`: this
-            column stacks a glyph over a line, so it centres across the axis
-            that class centres along. */}
-        <div className="flex w-5 shrink-0 flex-col items-center text-text-muted" aria-hidden="true">
-          <div className="py-1">
-            <Anthropicon name="thinking" size={20} />
-          </div>
-          <div className={cn('w-px flex-1', !props.isLast && 'bg-hairline')} />
-        </div>
-        {/* `px-2.5` is what puts the text in the same column as every row's
-            title — the tool rows get theirs from `stepBodyClass`. */}
-        <div className="min-w-0 flex-1 px-2.5 py-1">
-          <ThinkingText
-            text={props.text}
-            {...(props.live ? { live: true } : {})}
-            {...(props.onOpenExternal ? { onOpenExternal: props.onOpenExternal } : {})}
-          />
-          {props.truncated && (
-            <p className="mt-1 text-xs leading-4 text-text-muted">{copy.thinking.truncated}</p>
-          )}
-        </div>
-      </div>
-      <StepGap on={!props.isLast} />
-    </div>
-  );
-});

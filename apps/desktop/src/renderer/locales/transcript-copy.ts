@@ -53,6 +53,46 @@ export interface ToolSummaryLabel {
   readonly merge?: { readonly verb: string; readonly object: string };
 }
 
+/**
+ * The families a step row's verb comes from. Each has three tenses, because a
+ * row says what it is doing, then what it did — or that it did not.
+ */
+export type ToolStepVerbKey =
+  | 'command'
+  | 'read'
+  | 'create'
+  | 'update'
+  | 'edit'
+  | 'search'
+  | 'fetch'
+  | 'webSearch'
+  | 'agent'
+  | 'skill'
+  | 'taskAdd'
+  | 'taskUpdate'
+  | 'taskComplete'
+  | 'taskStart'
+  | 'taskReset'
+  | 'taskRemove'
+  | 'taskGet'
+  | 'taskList'
+  | 'taskStop'
+  | 'ask'
+  | 'share'
+  | 'message'
+  | 'toolSearch'
+  | 'tool'
+  | 'memorySearch'
+  | 'memorySave'
+  | 'memoryUpdate'
+  | 'memoryDelete';
+
+export interface ToolStepVerb {
+  readonly done: string;
+  readonly running: string;
+  readonly failed: string;
+}
+
 export interface TranscriptCopy {
   readonly feed: {
     readonly ariaLabel: string;
@@ -116,8 +156,6 @@ export interface TranscriptCopy {
     /** The status line while an AskUserQuestion waits for the user. */
     /** Under a question the user skipped or never reached. */
     readonly noAnswer: string;
-    /** The header's note tally: "1 note", "2 notes". */
-    readonly noteCount: (count: number) => string;
     readonly thinkingOnly: string;
     readonly thinkingActive: string;
     /** The status line while the answer's prose is still streaming. */
@@ -151,6 +189,23 @@ export interface TranscriptCopy {
     readonly joinMerged: (verbs: readonly string[], object: string) => string;
     readonly expand: (name: string) => string;
     readonly collapse: (name: string) => string;
+    /** A summary that names only its first phrases: "…, and 3 more steps". */
+    readonly moreSteps: (phrases: string, count: number) => string;
+    /** A run's status row while the turn waits on the user. */
+    readonly blocked: { readonly question: string; readonly input: string };
+    /**
+     * A step row: a muted verb, then the object it acted on. The verb is the
+     * row's identity — there is no icon — so each family has its own.
+     */
+    readonly step: {
+      readonly verbs: Readonly<Record<ToolStepVerbKey, ToolStepVerb>>;
+      /** Bash's object when the call carries neither description nor command. */
+      readonly aCommand: string;
+      readonly questions: (count: number) => string;
+      readonly files: (count: number) => string;
+      /** The tag after a failed step. */
+      readonly failed: string;
+    };
     /**
      * A task row says what it is doing, then what it did. The tool's own name
      * ("Task Create") is not the useful half: four tools share one icon, so
@@ -230,11 +285,10 @@ export interface TranscriptCopy {
     readonly failureClass: (value: string) => string;
     readonly pending: string;
   };
-  /** SendUserFile's card strip and SendUserMessage's block. */
+  /** SendUserFile's card strip. */
   readonly delivery: {
     readonly filesLabel: string;
     readonly openFile: (name: string) => string;
-    readonly messageLabel: string;
     readonly empty: string;
     /** The word before the extension on a card: `Document · MD`, `Code · PY`. */
     readonly kind: Readonly<Record<DeliveryFileKind, string>>;
@@ -344,7 +398,8 @@ const ZH_CN_ACTIVITY_SUMMARY: Record<ToolSummaryKey, ToolSummaryLabel> = {
   ask: { one: '提出了一个问题', other: (n) => `提出 ${n} 个问题` },
   taskRead: { one: '查看了任务进度', other: () => '查看了任务进度' },
   toolSearch: { one: '加载了工具', other: () => '加载了工具' },
-  tool: { one: '调用了工具', other: (n) => `调用 ${n} 次工具` },
+  share: { one: '分享了文件', other: (n) => `分享了 ${n} 个文件` },
+  tool: { one: '使用了工具', other: (n) => `使用了 ${n} 个工具` },
   memorySearch: {
     one: '搜索了记忆',
     other: () => '搜索了记忆',
@@ -388,7 +443,8 @@ const ZH_CN_ACTIVITY_ACTIVE: Record<ToolSummaryKey, string> = {
   ask: '正在向你提问…',
   taskRead: '正在查看任务进度',
   toolSearch: '正在加载工具',
-  tool: '正在调用工具',
+  share: '正在分享文件',
+  tool: '正在使用工具',
   memorySearch: '正在搜索记忆',
   memoryRead: '正在读取记忆',
   memorySave: '正在保存记忆',
@@ -412,7 +468,8 @@ const ZH_TW_ACTIVITY_SUMMARY: Record<ToolSummaryKey, ToolSummaryLabel> = {
   ask: { one: '提出了一個問題', other: (n) => `提出 ${n} 個問題` },
   taskRead: { one: '查看了任務進度', other: () => '查看了任務進度' },
   toolSearch: { one: '載入了工具', other: () => '載入了工具' },
-  tool: { one: '呼叫了工具', other: (n) => `呼叫 ${n} 次工具` },
+  share: { one: '分享了檔案', other: (n) => `分享了 ${n} 個檔案` },
+  tool: { one: '使用了工具', other: (n) => `使用了 ${n} 個工具` },
   memorySearch: {
     one: '搜尋了記憶',
     other: () => '搜尋了記憶',
@@ -456,7 +513,8 @@ const ZH_TW_ACTIVITY_ACTIVE: Record<ToolSummaryKey, string> = {
   ask: '正在向你提問…',
   taskRead: '正在查看任務進度',
   toolSearch: '正在載入工具',
-  tool: '正在呼叫工具',
+  share: '正在分享檔案',
+  tool: '正在使用工具',
   memorySearch: '正在搜尋記憶',
   memoryRead: '正在讀取記憶',
   memorySave: '正在儲存記憶',
@@ -480,7 +538,8 @@ const EN_ACTIVITY_SUMMARY: Record<ToolSummaryKey, ToolSummaryLabel> = {
   ask: { one: 'Asked a question', other: (n) => `Asked ${n} questions` },
   taskRead: { one: 'Checked tasks', other: () => 'Checked tasks' },
   toolSearch: { one: 'Loaded tools', other: () => 'Loaded tools' },
-  tool: { one: 'Called a tool', other: (n) => `Called ${n} tools` },
+  share: { one: 'Shared a file', other: (n) => `Shared ${n} files` },
+  tool: { one: 'Used a tool', other: (n) => `Used ${n} tools` },
   memorySearch: {
     one: 'Searched memory',
     other: () => 'Searched memory',
@@ -524,7 +583,8 @@ const EN_ACTIVITY_ACTIVE: Record<ToolSummaryKey, string> = {
   ask: 'Asking you a question…',
   taskRead: 'Checking progress',
   toolSearch: 'Loading tools',
-  tool: 'Calling a tool',
+  share: 'Sharing files',
+  tool: 'Using a tool',
   memorySearch: 'Searching memory',
   memoryRead: 'Reading memory',
   memorySave: 'Saving memory',
@@ -557,13 +617,16 @@ function joinEnglishVerbs(verbs: readonly string[], object: string): string {
   return `${[head, ...rest.slice(0, -1)].join(', ')}, and ${rest[rest.length - 1]} ${object}`;
 }
 
+/**
+ * "Used 24 tools, updated tasks, ran 2 commands": commas only, every phrase
+ * after the first lower-cased — the reference's summary line, which keeps
+ * "and" for the "…, and 3 more steps" tail.
+ */
 function joinEnglishPhrases(phrases: readonly string[]): string {
   const lowered = phrases.map((phrase, index) =>
     index === 0 ? phrase : `${phrase.charAt(0).toLowerCase()}${phrase.slice(1)}`,
   );
-  if (lowered.length <= 1) return lowered[0] ?? '';
-  if (lowered.length === 2) return `${lowered[0]} and ${lowered[1]}`;
-  return `${lowered.slice(0, -1).join(', ')}, and ${lowered[lowered.length - 1]}`;
+  return lowered.join(', ');
 }
 
 const TRANSCRIPT_COPY = {
@@ -623,7 +686,6 @@ const TRANSCRIPT_COPY = {
       stepsLabel: '步骤',
       working: '正在处理…',
       noAnswer: '未回答',
-      noteCount: (n) => `${n} 条留言`,
       thinkingOnly: '思考过程',
       thinkingActive: '正在思考…',
       writing: '正在撰写…',
@@ -640,6 +702,44 @@ const TRANSCRIPT_COPY = {
       joinMerged: (verbs, object) => joinChineseVerbs(verbs, object, '并'),
       expand: (name) => `展开 ${name}`,
       collapse: (name) => `收起 ${name}`,
+      moreSteps: (phrases, n) => `${phrases}，以及另外 ${n} 个步骤`,
+      blocked: { question: '正在提问', input: '需要你的确认' },
+      step: {
+        verbs: {
+          command: { done: '执行了', running: '正在执行', failed: '未能执行' },
+          read: { done: '读取了', running: '正在读取', failed: '未能读取' },
+          create: { done: '创建了', running: '正在创建', failed: '未能写入' },
+          update: { done: '更新了', running: '正在更新', failed: '未能写入' },
+          edit: { done: '修改了', running: '正在修改', failed: '未能修改' },
+          search: { done: '搜索了', running: '正在搜索', failed: '未能搜索' },
+          fetch: { done: '抓取了', running: '正在抓取', failed: '未能抓取' },
+          webSearch: { done: '搜索了网页', running: '正在搜索网页', failed: '未能搜索网页' },
+          agent: { done: '运行了子任务', running: '正在运行子任务', failed: '未能运行子任务' },
+          skill: { done: '运行了技能', running: '正在运行技能', failed: '未能运行技能' },
+          taskAdd: { done: '添加了任务', running: '正在添加任务', failed: '未能添加任务' },
+          taskUpdate: { done: '更新了任务', running: '正在更新任务', failed: '未能更新任务' },
+          taskComplete: { done: '完成了任务', running: '正在更新任务', failed: '未能更新任务' },
+          taskStart: { done: '开始了任务', running: '正在更新任务', failed: '未能更新任务' },
+          taskReset: { done: '重置了任务', running: '正在更新任务', failed: '未能更新任务' },
+          taskRemove: { done: '删除了任务', running: '正在删除任务', failed: '未能删除任务' },
+          taskGet: { done: '读取了任务', running: '正在读取任务', failed: '未能读取任务' },
+          taskList: { done: '列出了任务', running: '正在列出任务', failed: '未能列出任务' },
+          taskStop: { done: '停止了任务', running: '正在停止任务', failed: '未能停止任务' },
+          ask: { done: '提问了', running: '正在提问', failed: '未能提问' },
+          share: { done: '分享了', running: '正在分享', failed: '未能分享' },
+          message: { done: '发送了消息', running: '正在发送消息', failed: '未能发送消息' },
+          toolSearch: { done: '加载了工具', running: '正在加载工具', failed: '未能加载工具' },
+          tool: { done: '使用了', running: '正在使用', failed: '未能使用' },
+          memorySearch: { done: '搜索了记忆', running: '正在搜索记忆', failed: '未能搜索记忆' },
+          memorySave: { done: '保存了', running: '正在保存', failed: '未能保存' },
+          memoryUpdate: { done: '更新了', running: '正在更新', failed: '未能更新' },
+          memoryDelete: { done: '删除了', running: '正在删除', failed: '未能删除' },
+        },
+        aCommand: '命令',
+        questions: (n) => `${n} 个问题`,
+        files: (n) => `${n} 个文件`,
+        failed: '失败',
+      },
       task: {
         creating: '正在创建任务',
         created: '已创建任务',
@@ -700,7 +800,6 @@ const TRANSCRIPT_COPY = {
     delivery: {
       filesLabel: '发来的文件',
       openFile: (name) => `在文件面板中打开 ${name}`,
-      messageLabel: '留言',
       empty: '这次没有发来文件。',
       kind: {
         skill: '技能',
@@ -843,7 +942,6 @@ const TRANSCRIPT_COPY = {
       stepsLabel: '步驟',
       working: '正在處理…',
       noAnswer: '未回答',
-      noteCount: (n) => `${n} 則留言`,
       thinkingOnly: '思考過程',
       thinkingActive: '正在思考…',
       writing: '正在撰寫…',
@@ -860,6 +958,44 @@ const TRANSCRIPT_COPY = {
       joinMerged: (verbs, object) => joinChineseVerbs(verbs, object, '並'),
       expand: (name) => `展開 ${name}`,
       collapse: (name) => `收合 ${name}`,
+      moreSteps: (phrases, n) => `${phrases}，以及另外 ${n} 個步驟`,
+      blocked: { question: '正在提問', input: '需要你的確認' },
+      step: {
+        verbs: {
+          command: { done: '執行了', running: '正在執行', failed: '未能執行' },
+          read: { done: '讀取了', running: '正在讀取', failed: '未能讀取' },
+          create: { done: '建立了', running: '正在建立', failed: '未能寫入' },
+          update: { done: '更新了', running: '正在更新', failed: '未能寫入' },
+          edit: { done: '修改了', running: '正在修改', failed: '未能修改' },
+          search: { done: '搜尋了', running: '正在搜尋', failed: '未能搜尋' },
+          fetch: { done: '擷取了', running: '正在擷取', failed: '未能擷取' },
+          webSearch: { done: '搜尋了網頁', running: '正在搜尋網頁', failed: '未能搜尋網頁' },
+          agent: { done: '執行了子任務', running: '正在執行子任務', failed: '未能執行子任務' },
+          skill: { done: '執行了技能', running: '正在執行技能', failed: '未能執行技能' },
+          taskAdd: { done: '新增了任務', running: '正在新增任務', failed: '未能新增任務' },
+          taskUpdate: { done: '更新了任務', running: '正在更新任務', failed: '未能更新任務' },
+          taskComplete: { done: '完成了任務', running: '正在更新任務', failed: '未能更新任務' },
+          taskStart: { done: '開始了任務', running: '正在更新任務', failed: '未能更新任務' },
+          taskReset: { done: '重設了任務', running: '正在更新任務', failed: '未能更新任務' },
+          taskRemove: { done: '刪除了任務', running: '正在刪除任務', failed: '未能刪除任務' },
+          taskGet: { done: '讀取了任務', running: '正在讀取任務', failed: '未能讀取任務' },
+          taskList: { done: '列出了任務', running: '正在列出任務', failed: '未能列出任務' },
+          taskStop: { done: '停止了任務', running: '正在停止任務', failed: '未能停止任務' },
+          ask: { done: '提問了', running: '正在提問', failed: '未能提問' },
+          share: { done: '分享了', running: '正在分享', failed: '未能分享' },
+          message: { done: '傳送了訊息', running: '正在傳送訊息', failed: '未能傳送訊息' },
+          toolSearch: { done: '載入了工具', running: '正在載入工具', failed: '未能載入工具' },
+          tool: { done: '使用了', running: '正在使用', failed: '未能使用' },
+          memorySearch: { done: '搜尋了記憶', running: '正在搜尋記憶', failed: '未能搜尋記憶' },
+          memorySave: { done: '儲存了', running: '正在儲存', failed: '未能儲存' },
+          memoryUpdate: { done: '更新了', running: '正在更新', failed: '未能更新' },
+          memoryDelete: { done: '刪除了', running: '正在刪除', failed: '未能刪除' },
+        },
+        aCommand: '指令',
+        questions: (n) => `${n} 個問題`,
+        files: (n) => `${n} 個檔案`,
+        failed: '失敗',
+      },
       task: {
         creating: '正在建立任務',
         created: '已建立任務',
@@ -920,7 +1056,6 @@ const TRANSCRIPT_COPY = {
     delivery: {
       filesLabel: '傳來的檔案',
       openFile: (name) => `在檔案面板中開啟 ${name}`,
-      messageLabel: '留言',
       empty: '這次沒有傳來檔案。',
       kind: {
         skill: '技能',
@@ -1064,7 +1199,6 @@ const TRANSCRIPT_COPY = {
       stepsLabel: 'Steps',
       working: 'Working on it…',
       noAnswer: 'No answer',
-      noteCount: (n) => (n === 1 ? '1 note' : `${n} notes`),
       thinkingOnly: 'Thought process',
       thinkingActive: 'Thinking…',
       writing: 'Writing…',
@@ -1081,6 +1215,88 @@ const TRANSCRIPT_COPY = {
       joinMerged: joinEnglishVerbs,
       expand: (name) => `Expand ${name}`,
       collapse: (name) => `Collapse ${name}`,
+      moreSteps: (phrases, n) => `${phrases}, and ${n} more ${n === 1 ? 'step' : 'steps'}`,
+      blocked: { question: 'Asking a question', input: 'Needs your input' },
+      step: {
+        verbs: {
+          command: { done: 'Ran', running: 'Running', failed: 'Failed to run' },
+          read: { done: 'Read', running: 'Reading', failed: 'Failed to read' },
+          create: { done: 'Created', running: 'Creating', failed: 'Failed to write' },
+          update: { done: 'Updated', running: 'Updating', failed: 'Failed to write' },
+          edit: { done: 'Edited', running: 'Editing', failed: 'Failed to edit' },
+          search: { done: 'Searched', running: 'Searching', failed: 'Failed to search' },
+          fetch: { done: 'Fetched', running: 'Fetching', failed: 'Failed to fetch' },
+          webSearch: {
+            done: 'Searched web',
+            running: 'Searching web',
+            failed: 'Failed to search web',
+          },
+          agent: { done: 'Ran agent', running: 'Running agent', failed: 'Failed to run agent' },
+          skill: { done: 'Ran skill', running: 'Running skill', failed: 'Failed to run skill' },
+          taskAdd: { done: 'Added task', running: 'Adding task', failed: 'Failed to add task' },
+          taskUpdate: {
+            done: 'Updated task',
+            running: 'Updating task',
+            failed: 'Failed to update task',
+          },
+          taskComplete: {
+            done: 'Completed task',
+            running: 'Updating task',
+            failed: 'Failed to update task',
+          },
+          taskStart: {
+            done: 'Started task',
+            running: 'Updating task',
+            failed: 'Failed to update task',
+          },
+          taskReset: {
+            done: 'Reset task',
+            running: 'Updating task',
+            failed: 'Failed to update task',
+          },
+          taskRemove: {
+            done: 'Removed task',
+            running: 'Removing task',
+            failed: 'Failed to remove task',
+          },
+          taskGet: { done: 'Read task', running: 'Reading task', failed: 'Failed to read task' },
+          taskList: {
+            done: 'Listed tasks',
+            running: 'Listing tasks',
+            failed: 'Failed to list tasks',
+          },
+          taskStop: {
+            done: 'Stopped task',
+            running: 'Stopping task',
+            failed: 'Failed to stop task',
+          },
+          ask: { done: 'Asked', running: 'Asking', failed: 'Failed to ask' },
+          share: { done: 'Shared', running: 'Sharing', failed: 'Failed to share' },
+          message: {
+            done: 'Sent message',
+            running: 'Sending message',
+            failed: 'Failed to send message',
+          },
+          toolSearch: {
+            done: 'Loaded tools',
+            running: 'Loading tools',
+            failed: 'Failed to load tools',
+          },
+          tool: { done: 'Used', running: 'Using', failed: 'Failed to use' },
+          memorySearch: {
+            done: 'Searched memory',
+            running: 'Searching memory',
+            failed: 'Failed to search memory',
+          },
+          memorySave: { done: 'Saved', running: 'Saving', failed: 'Failed to save' },
+          memoryUpdate: { done: 'Updated', running: 'Updating', failed: 'Failed to update' },
+          memoryDelete: { done: 'Deleted', running: 'Deleting', failed: 'Failed to delete' },
+        },
+        aCommand: 'a command',
+        questions: (n) => `${n} questions`,
+        files: (n) => `${n} files`,
+        failed: 'Failed',
+      },
       task: {
         creating: 'Creating task',
         created: 'Task created',
@@ -1141,7 +1357,6 @@ const TRANSCRIPT_COPY = {
     delivery: {
       filesLabel: 'Files sent to you',
       openFile: (name) => `Open ${name} in Files`,
-      messageLabel: 'Message',
       empty: 'No files came with this.',
       kind: {
         skill: 'Skill',
