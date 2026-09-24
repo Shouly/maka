@@ -23,7 +23,9 @@ test('settings closes with Escape and restores the selected session and workbar'
   window: page,
 }) => {
   await sendPrompt(page, 'settings return target');
-  await page.getByRole('button', { name: '展开任务工作栏' }).click();
+  // A viewer is what puts the pane in the right column (see
+  // session-workbar.spec.ts); the titlebar button now opens the session panel.
+  await page.keyboard.press('Control+Shift+g');
   await expect(page.locator('#maka-workbar-pane')).toBeVisible();
   await ensureSidebarExpanded(page);
   await page.getByRole('button', { name: '设置', exact: true }).click();
