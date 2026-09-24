@@ -2442,6 +2442,14 @@ describe('SessionManager child-session runtime primitive', () => {
     });
     assert.strictEqual(output.invocation.sessionId, result.childSessionId);
     assert.strictEqual(output.invocation.runId, result.runId);
+    // The id Agent returned, sent as a run id, is answered with the field it
+    // belongs in rather than a bare miss.
+    await expectRejects(
+      manager.readChildAgentOutput(parent.id, {
+        execution: { kind: 'legacy_child_run', sessionId: parent.id, runId: result.childSessionId },
+      }),
+      /that is a child agent id\. Pass it as child_session_id with locator child_session_latest/,
+    );
     const unrelatedParent = await manager.createSession(makeInput({ name: 'Unrelated parent' }));
     await expectRejects(
       manager.readChildAgentOutput(unrelatedParent.id, {

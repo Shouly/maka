@@ -4945,7 +4945,26 @@ export class SessionManager {
             ? run.turnId === input.turnId
             : false,
     );
-    if (!invocation) throw new Error('AgentOutput could not find the requested child agent run');
+    if (!invocation) {
+      // Agent hands the model a child agent id, and the model reaches for
+      // run_id with it; name the field that id belongs in.
+      const runId = legacyExecution?.runId ?? input.runId;
+      const child = runId
+        ? await this.deps.store.readHeader(runId).catch((error) => {
+            if (isNotFoundError(error)) return undefined;
+            throw error;
+          })
+        : undefined;
+      if (
+        child?.subagentParent?.kind === 'subagent' &&
+        child.subagentParent.parentSessionId === sessionId
+      ) {
+        throw new Error(
+          `AgentOutput found no run ${runId}: that is a child agent id. Pass it as child_session_id with locator child_session_latest.`,
+        );
+      }
+      throw new Error('AgentOutput could not find the requested child agent run');
+    }
     if (!invocation.opening.lineage?.parentRunId || isSessionInlineInvocation(invocation.opening)) {
       throw new Error('AgentOutput only reads child agent runs');
     }

@@ -697,6 +697,7 @@ export function buildSubagentOutputTool(): MakaTool<
     description: [
       'Read what one child agent produced, bounded. Use it after Agent returns, or once SwarmStatus or ViewAgentGraph shows a graph item completed, to get the answer itself rather than the trace that produced it.',
       '',
+      '- The agentId Agent returned is a child_session_id: read that child with locator child_session_latest and child_session_id set to it.',
       '- Always set `locator`: the runtime reads only the id fields that locator names. child_session_run takes child_session_id and run_id, child_session_latest takes child_session_id and reads that session latest run, legacy_run takes run_id, legacy_turn takes turn_id. A locator missing its ids is rejected naming the field.',
       '- view=result is what you normally want: the final committed child text with its graph result record id. runtime_events is the default only for compatibility with older callers, and view=all is for diagnosing a child that failed.',
       '- Do not read the logs, tool calls or reasoning of a child that is still running to follow its progress. Partial output is not a result, and progress is what SwarmStatus and ViewAgentGraph report.',
@@ -717,7 +718,9 @@ export function buildSubagentOutputTool(): MakaTool<
             .string()
             .min(1)
             .optional()
-            .describe('Linked child Session id. Without run_id, inspects its latest AgentRun.'),
+            .describe(
+              'The child agent: the agentId Agent returned, or a graph item child session id. Without run_id, inspects its latest AgentRun.',
+            ),
           run_id: z
             .string()
             .min(1)
