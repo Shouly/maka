@@ -51,7 +51,6 @@ export type PluginFilesystemOperation =
       readonly path?: string;
       readonly pattern: string;
       readonly glob?: string;
-      readonly maxCountPerFile?: number;
       readonly limit?: number;
       readonly timeoutMs?: number;
     }

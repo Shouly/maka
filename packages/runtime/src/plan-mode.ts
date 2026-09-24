@@ -56,7 +56,6 @@ export function selectCollaborationTools(input: {
       if (PLAN_CONTROL_TOOLS.has(tool.name)) return false;
       const category = classifyToolUse({
         toolName: tool.name,
-        args: {},
         ...(tool.categoryHint ? { categoryHint: tool.categoryHint } : {}),
       });
       if (input.fullAccess) {

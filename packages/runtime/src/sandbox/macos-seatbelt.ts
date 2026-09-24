@@ -420,11 +420,6 @@ function rootsForEntry(
         : [];
     case ':slash_tmp':
       return [{ path: resolveRootPath(pathContext.slashTmp ?? '/tmp'), match: 'subtree' }];
-    case ':minimal':
-      return (pathContext.minimalRoots ?? []).map((path) => ({
-        path: resolveRootPath(path),
-        match: 'subtree' as const,
-      }));
   }
 }
 

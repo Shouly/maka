@@ -144,9 +144,9 @@ export class SessionFileChangeTracker {
 
   /**
    * Refuse a write from a stale shape. Only a file the session has a baseline
-   * for can be stale; a file it never looked at is the read-before-overwrite
-   * guard's business, and a file that has since vanished is the write's own
-   * business (it may be recreating it).
+   * for can be stale; a file it never looked at is written as it is, and a
+   * file that has since vanished is the write's own business (it may be
+   * recreating it).
    */
   async assertUnchanged(path: string | undefined): Promise<void> {
     if (!path) return;

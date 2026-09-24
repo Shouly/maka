@@ -398,7 +398,6 @@ export interface ToolGating {
 export const TOOL_ERROR_RESULT_MAX_CHARS = 4000;
 export const MAX_ACTIVE_SUBAGENT_TOOLS_PER_TURN = 5;
 export const MAX_ACTIVE_CHILD_AGENT_RUNS_PER_TURN = 32;
-export const DEFAULT_PERMISSION_TIMEOUT_MS = 300_000;
 
 /**
  * Loop-gate: block a tool call once this many byte-identical calls (same tool +
@@ -659,7 +658,6 @@ export class ToolRuntime {
   private lastFailedToolCallBoundaryKind: SandboxBoundaryFailureKind | undefined;
   private lastFailedToolCallBoundaryDetails: SandboxBoundaryFailureDetails;
   private lastAmbiguousComputerSignature: string | undefined;
-  private readonly recentSandboxDenials = new Set<string>();
   private sandboxBoundaryDenied = false;
   private sandboxBoundaryDecisionGeneration = 0;
   private sandboxBoundaryInvalidRounds = 0;
@@ -1041,7 +1039,6 @@ export class ToolRuntime {
     this.lastFailedToolCallBoundaryKind = undefined;
     this.lastFailedToolCallBoundaryDetails = undefined;
     this.lastAmbiguousComputerSignature = undefined;
-    this.recentSandboxDenials.clear();
     this.sandboxBoundaryDenied = false;
     this.sandboxBoundaryDecisionGeneration = 0;
     this.sandboxBoundaryInvalidRounds = 0;
@@ -2073,14 +2070,6 @@ export class ToolRuntime {
         }
         if (hasSandboxDenial(content)) {
           const denialKey = sandboxDenialKey(tool.name, this.input.header.cwd, executionArgs);
-          this.recentSandboxDenials.add(denialKey);
-          if (content.kind === 'terminal' || content.kind === 'shell_run') {
-            this.recentSandboxDenials.add(
-              sandboxDenialKey('Bash', this.input.header.cwd, {
-                command: content.cmd,
-              }),
-            );
-          }
           trace?.emit(
             'sandbox',
             'sandbox_denial_detected',
@@ -2208,7 +2197,6 @@ export class ToolRuntime {
       if (terminalFailure) {
         if (terminalFailure.sandboxDenied) {
           const denialKey = sandboxDenialKey(tool.name, this.input.header.cwd, executionArgs);
-          this.recentSandboxDenials.add(denialKey);
           trace?.emit(
             'sandbox',
             'sandbox_denial_detected',

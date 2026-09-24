@@ -82,7 +82,6 @@ import { routeApplyPatchTools } from './apply-patch-profile.js';
 import { bindToolResultArchiveDecoder } from './tool-result-archive-capability.js';
 import { resolveSelectedModelContextWindow } from './context-budget-policy.js';
 export {
-  DEFAULT_PERMISSION_TIMEOUT_MS,
   MAX_ACTIVE_CHILD_AGENT_RUNS_PER_TURN,
   MAX_ACTIVE_SUBAGENT_TOOLS_PER_TURN,
   TOOL_ERROR_RESULT_MAX_CHARS,

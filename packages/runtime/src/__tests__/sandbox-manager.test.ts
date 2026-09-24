@@ -80,7 +80,6 @@ describe('SandboxManager.shouldSandbox', () => {
     assert.equal(manager.shouldSandbox(createWorkspaceWritePermissionProfile(), 'auto'), true);
     assert.equal(manager.shouldSandbox(createDangerFullAccessPermissionProfile(), 'auto'), false);
     assert.equal(manager.shouldSandbox(createExternalPermissionProfile(), 'auto'), false);
-    assert.equal(manager.shouldSandbox({ type: 'disabled', name: 'disabled' }, 'auto'), false);
   });
 
   it('requires a sandbox when only process network remains restricted', () => {
@@ -211,7 +210,7 @@ describe('SandboxManager.selectInitial', () => {
     if (!result.ok) assert.equal(result.reason, 'backend_not_available');
   });
 
-  it('selects none for danger-full-access, external, disabled, and forbid', () => {
+  it('selects none for danger-full-access, external, and forbid', () => {
     const manager = new SandboxManager();
 
     const danger = manager.selectInitial({
@@ -222,10 +221,6 @@ describe('SandboxManager.selectInitial', () => {
       profile: createExternalPermissionProfile(),
       platform: 'darwin',
     });
-    const disabled = manager.selectInitial({
-      profile: { type: 'disabled', name: 'disabled' },
-      platform: 'darwin',
-    });
     const forbid = manager.selectInitial({
       profile: createWorkspaceWritePermissionProfile(),
       preference: 'forbid',
@@ -234,7 +229,6 @@ describe('SandboxManager.selectInitial', () => {
 
     assert.equal(danger.ok && danger.sandboxType, 'none');
     assert.equal(external.ok && external.sandboxType, 'none');
-    assert.equal(disabled.ok && disabled.sandboxType, 'none');
     assert.equal(forbid.ok && forbid.sandboxType, 'none');
   });
 });

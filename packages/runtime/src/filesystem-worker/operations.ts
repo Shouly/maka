@@ -249,7 +249,7 @@ export async function executeFilesystemOperation(
     }
     case 'write': {
       // Write creates missing parent directories, like `mkdir -p`, but only
-      // inside the boundary the write itself is allowed into.
+      // inside the session cwd or the boundary the write itself is allowed into.
       await ensureParentDirectories(operation.cwd, operation.path, 'Write', operationBoundary);
       const path = await resolveWritableAllowed(
         operation.cwd,
@@ -542,18 +542,6 @@ function operationError(
   return new FilesystemOperationError(code, message);
 }
 
-function sortKeysDeep(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortKeysDeep);
-  if (value !== null && typeof value === 'object' && !(value instanceof Date)) {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, sortKeysDeep((value as Record<string, unknown>)[key])]),
-    );
-  }
-  return value;
-}
-
 function normalizeOperationError(error: unknown): FilesystemOperationError {
   if (error instanceof FilesystemOperationError) return error;
   if (error instanceof StableWriteFailure) {
@@ -627,8 +615,9 @@ async function assertTargetUnchanged(
 
 /**
  * Create the missing directories above a write target. The nearest existing
- * ancestor has to be inside the boundary the write is allowed into; nothing
- * is created outside it, and an existing parent is left alone.
+ * ancestor has to be inside the session cwd or the boundary the write is
+ * allowed into; nothing is created outside them, and an existing parent is
+ * left alone.
  */
 async function ensureParentDirectories(
   cwd: string,

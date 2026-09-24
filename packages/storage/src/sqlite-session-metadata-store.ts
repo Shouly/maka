@@ -4836,7 +4836,7 @@ export class SqliteSessionMetadataStore {
     const current = this.readCurrentExecutionBoundarySync(sessionId);
     if (current.kind === 'external') {
       throw new SessionMetadataConflictError(
-        'An externally isolated session cannot enter Auto or Bypass',
+        'An externally isolated session cannot enter Manual or Full access',
       );
     }
     const projectedMode =

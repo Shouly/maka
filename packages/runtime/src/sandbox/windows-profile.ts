@@ -122,8 +122,6 @@ function rootsForEntry(
       return context.tmpdir ? [context.tmpdir] : [];
     case ':slash_tmp':
       return context.slashTmp ? [context.slashTmp] : [];
-    case ':minimal':
-      return context.minimalRoots ?? [];
   }
 }
 

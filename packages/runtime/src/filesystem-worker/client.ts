@@ -719,8 +719,9 @@ export function filesystemWorkerRuntimeWritableRoots(input: {
 }): readonly string[] | undefined {
   // Linux mounts and Windows ACL grants can only target existing paths, so a
   // write whose target does not exist yet is enforced through its existing
-  // writable ancestor. macOS seatbelt policies may reference missing paths
-  // directly and need no ancestor root.
+  // writable ancestor. macOS seatbelt policies may reference a missing target
+  // directly; they get an ancestor only through `writableAncestor`, when
+  // directories have to be created on the way.
   if ((input.platform !== 'linux' && input.platform !== 'win32') || input.access !== 'write') {
     return undefined;
   }

@@ -528,8 +528,6 @@ function rootsForEntry(entry: ProfileEntry, context: SandboxPathContext): readon
       return context.tmpdir ? [context.tmpdir] : [];
     case ':slash_tmp':
       return [context.slashTmp ?? '/tmp'];
-    case ':minimal':
-      return context.minimalRoots ?? [];
   }
 }
 

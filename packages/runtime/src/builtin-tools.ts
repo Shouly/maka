@@ -285,7 +285,7 @@ export interface BuildBuiltinToolsOptions {
    * set's own.
    */
   fileChanges?: FileChangeTrackerRegistry;
-  /** Sandboxed worker used for all local filesystem tools. */
+  /** Sandboxed worker the file tools run through under a managed boundary. */
   filesystemWorker?: Pick<FilesystemWorkerClient, 'execute'>;
   /** Test/embedding override. Production callers use the current process platform. */
   sandboxPlatform?: SandboxPlatform;
@@ -1331,7 +1331,8 @@ function sandboxCommand(
     return undefined;
   }
 
-  // An approved directory may not exist yet; the Linux mount below needs it to.
+  // An approved directory may not exist yet: the Linux mount below needs it to,
+  // and the command is about to write into it on every platform.
   materializeApprovedWriteDirectories(effective.profile);
   let preparedProfile: PreparedLinuxProfilePaths = {
     paths: [],

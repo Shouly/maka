@@ -27,11 +27,10 @@
 // key on the resolved absolute path. A failed task never wedges its key, and keys are reclaimed
 // once their chain drains, so the map stays bounded.
 //
-// Keying is lexical, so one file reached under two names — via a symlinked parent
-// dir, a hard link, or a case-insensitive filesystem ("a.txt" vs "A.txt") — takes
-// two keys and is not merged. This matches opencode's lexical (path.resolve)
-// per-file Semaphore. (Bash is not serialized either — a per-file lock cannot key
-// arbitrary shell.)
+// Keys are the canonical path (see `writeLockTarget` in filesystem-executor.ts),
+// so a symlinked parent directory no longer splits a file across two keys. A
+// hard link or a case-insensitive filesystem ("a.txt" vs "A.txt") still does.
+// (Bash is not serialized either — a per-file lock cannot key arbitrary shell.)
 
 const tails = new Map<string, Promise<void>>();
 

@@ -25,11 +25,7 @@
  * path preprocessing before calling these helpers.
  */
 
-export const FILE_SYSTEM_SANDBOX_KINDS = [
-  'restricted',
-  'unrestricted',
-  'external_sandbox',
-] as const;
+export const FILE_SYSTEM_SANDBOX_KINDS = ['restricted', 'unrestricted'] as const;
 export type FileSystemSandboxKind = (typeof FILE_SYSTEM_SANDBOX_KINDS)[number];
 
 export const FILE_SYSTEM_ACCESS_MODES = ['read', 'write', 'deny'] as const;
@@ -42,7 +38,6 @@ export const FILE_SYSTEM_SPECIAL_PATHS = [
   ':workspace_roots',
   ':tmpdir',
   ':slash_tmp',
-  ':minimal',
 ] as const;
 export type FileSystemSpecialPath = (typeof FILE_SYSTEM_SPECIAL_PATHS)[number];
 
@@ -94,28 +89,19 @@ export interface PermissionProfileManaged {
   network: NetworkSandboxPolicy;
 }
 
-export interface PermissionProfileDisabled {
-  type: 'disabled';
-  name?: 'disabled' | (string & {});
-}
-
 export interface PermissionProfileExternal {
   type: 'external';
   name?: 'external' | (string & {});
   network: NetworkSandboxPolicy;
 }
 
-export type PermissionProfile =
-  | PermissionProfileManaged
-  | PermissionProfileDisabled
-  | PermissionProfileExternal;
+export type PermissionProfile = PermissionProfileManaged | PermissionProfileExternal;
 
 export interface PermissionProfileMatchContext {
   root?: string;
   workspaceRoots?: readonly string[];
   tmpdir?: string;
   slashTmp?: string;
-  minimalRoots?: readonly string[];
 }
 
 /**
@@ -265,7 +251,7 @@ export function canReadPath(
   const policy = fileSystemPolicy(profile);
   if (!policy) return true;
   if (isDeniedPath(profile, path, context)) return false;
-  if (policy.kind === 'unrestricted' || policy.kind === 'external_sandbox') return true;
+  if (policy.kind === 'unrestricted') return true;
   return hasMatchingAccess(policy, path, context, ['read', 'write']);
 }
 
@@ -279,7 +265,7 @@ export function canWritePath(
   if (isDeniedPath(profile, path, context)) return false;
   if (isProtectedWriteDenied(policy, path, context) && !hasExplicitPathWrite(policy, path, context))
     return false;
-  if (policy.kind === 'unrestricted' || policy.kind === 'external_sandbox') return true;
+  if (policy.kind === 'unrestricted') return true;
   return hasMatchingAccess(policy, path, context, ['write']);
 }
 
@@ -376,8 +362,6 @@ function entryRoots(
       return context.tmpdir ? [context.tmpdir] : [];
     case ':slash_tmp':
       return [context.slashTmp ?? '/tmp'];
-    case ':minimal':
-      return context.minimalRoots ?? [];
   }
 }
 

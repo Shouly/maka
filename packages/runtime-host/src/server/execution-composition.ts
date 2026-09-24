@@ -462,9 +462,9 @@ export async function createExecutionRuntimeHostComposition(
       onTaskFinished: (record) => taskNotifications?.taskFinished(record),
       // Where a background command's output is written for the model to Read.
       // The temp directory, not the Host's own state: what the model is told
-      // to read it must be allowed to read, and the default permission
-      // profile grants the temp directory but only the Session's workspace
-      // otherwise. Session ids are unique, so one root serves every Session.
+      // to read it must be allowed to read, and every managed profile reads
+      // the temp directory. Session ids are unique, so one root serves every
+      // Session.
       taskOutputRoot: join(tmpdir(), 'maka', 'tasks'),
     });
     const sandboxManager = createBuiltinSandboxManager();

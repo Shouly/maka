@@ -211,8 +211,8 @@ export type ExecutionBoundaryReadModel = ExecutionBoundary | ExecutionBoundarySu
  * Everything managed that is not read-only maps to `ask`. That is a
  * deliberate under-statement, not a description: a workspace-write profile,
  * a profile widened by approved expansions, and `danger-full-access` all
- * present as Auto. Auto's copy is therefore written to stay true for any of
- * them — it never claims a specific boundary.
+ * present as Manual. Manual's copy is therefore written to stay true for any
+ * of them — it never claims a specific boundary.
  */
 export function executionBoundaryDisplayMode(
   boundary: ExecutionBoundaryReadModel,
@@ -605,8 +605,6 @@ function resolvedEntryRoots(
       return context.tmpdir ? [{ path: context.tmpdir, scope: 'subtree' }] : [];
     case ':slash_tmp':
       return [{ path: context.slashTmp ?? '/tmp', scope: 'subtree' }];
-    case ':minimal':
-      return (context.minimalRoots ?? []).map((path) => ({ path, scope: 'subtree' }));
   }
 }
 

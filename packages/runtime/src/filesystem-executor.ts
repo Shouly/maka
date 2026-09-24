@@ -21,12 +21,13 @@
 // The single authority for where the built-in file tools may reach.
 //
 // One decision — the active ExecutionBoundary — picks the backend and the path
-// scope; the tools carry no policy branch and no executor carries a containment
-// rule of its own. Before this seam existed each file tool repeated the same
-// worker-versus-executor branch, and the fallback executor hard-coded a session-cwd
-// containment that no permission profile actually declares. A bypass boundary
-// skipped the worker, so that undeclared rule became the only arbiter and made
-// "full access" stricter than ask mode, which grants :slash_tmp outright (#2083).
+// scope; the tools carry no policy branch. A managed boundary goes to the
+// sandboxed worker, which judges paths by the boundary's profile (and admits
+// the session cwd); a bypass boundary goes to the local executor at host
+// scope. Before this seam existed each file tool repeated the same
+// worker-versus-executor branch, and the fallback executor hard-coded a
+// session-cwd containment that made "full access" stricter than ask mode
+// (#2083).
 
 import { Buffer } from 'node:buffer';
 import { lstat, realpath, stat } from 'node:fs/promises';
@@ -147,12 +148,6 @@ function pathScopeForBoundary(boundary: ExecutionBoundary | undefined): Workspac
 }
 
 /**
- * Operations that read, modify and write back, and so must hold the target's lock.
- * The single authority on which kinds are writes is `operationAccess` in the
- * worker protocol; `mutates` was a second, narrower list that drifted.
- */
-
-/**
  * Capture the target's stable identity at lock acquisition (T0) — *before*
  * waiting for the write lock. This is the inode the worker compare-and-swaps
  * against, so a path replaced while the call is queued for the lock is detected
@@ -239,13 +234,11 @@ export function createBoundaryFilesystemExecutor(
       mode: call.permissionMode ?? 'ask',
       ...(input.permissionProfile ? { permissionProfile: input.permissionProfile } : {}),
       ...(call.abortSignal ? { abortSignal: call.abortSignal } : {}),
-      // The worker client now requires an explicit T0 marker (#3484): a
-      // mutation carries its captured identity, or 'missing' when T0 saw no
-      // target; a read never participates in CAS and says so. `operationAccess`
-      // is the single authority on which kinds are writes (write | apply_patch
-      // | edit) — `mutates` is narrower and would silently drop
-      // the apply_patch identity onto 'unchecked', disabling the queue-window
-      // CAS on the main editing channel.
+      // The worker client requires an explicit T0 marker (#3484): a mutation
+      // carries its captured identity, or 'missing' when T0 saw no target; a
+      // read never participates in CAS and says so. `operationAccess` is the
+      // single authority on which kinds are writes (write | apply_patch |
+      // edit).
       expectedIdentity:
         operationAccess(call.operation.kind) === 'write'
           ? (expectedIdentity ?? 'missing')
@@ -730,18 +723,4 @@ function createWorkspaceFilesystemExecutor(
 /** The canonical spelling of an existing directory, or the input when it is not resolvable here. */
 async function canonicalExistingPath(path: string): Promise<string> {
   return await realpath(path).catch(() => path);
-}
-
-// Object.fromEntries creates own data properties, so special keys like
-// "__proto__" are preserved instead of triggering the inherited setter.
-function sortKeysDeep(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortKeysDeep);
-  if (value !== null && typeof value === 'object' && !(value instanceof Date)) {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, sortKeysDeep((value as Record<string, unknown>)[key])]),
-    );
-  }
-  return value;
 }

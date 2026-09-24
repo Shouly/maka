@@ -30,7 +30,7 @@ Code and focused tests are the final authority. Windows enforcement work is trac
 
 `@maka/core` owns the platform-neutral boundary language:
 
-- `execution-boundary.ts` defines the session boundary, its revision, and monotonic expansion.
+- `sandbox-boundary.ts` defines the session boundary, its revision, and monotonic expansion.
 - `permission-profile.ts` defines managed, disabled, and external profiles; file-system entries; network policy; standard profiles; and pure path matchers.
 - `permission-profile-compiler.ts` preserves compatibility when a legacy product mode must be mapped to a profile.
 
