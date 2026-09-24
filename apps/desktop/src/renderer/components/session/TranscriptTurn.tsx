@@ -186,9 +186,6 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
           // ends. Files at the foot do not count: they follow everything,
           // and neither does the line being written right under it.
           complete={!running || (index < tailIndex && index !== liveRunIndex)}
-          {...(index === liveRunIndex && narratingAfterRun && tailWriting
-            ? { narrating: true }
-            : {})}
           {...(props.live && props.blocked && index === lastStatusIndex
             ? { blocked: props.blocked }
             : {})}

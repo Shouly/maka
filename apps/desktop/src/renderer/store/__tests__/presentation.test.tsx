@@ -818,14 +818,38 @@ test('the live turn carries its status on its newest run: the call in flight, th
   assert.ok(waiting?.querySelector('[data-maka-working-mark]'));
 
   // A line being written right under the run: it stands below the run without
-  // ending it, so the run keeps the mark and the clock and says it is writing.
+  // ending it, so the run keeps the mark and the clock — and keeps its last
+  // step's words, now in their settled form, the way the reference does.
   const writing = renderLive([
     { kind: 'tools', items: [{ ...running, status: 'completed' }] },
     { kind: 'text', text: 'Half an answer', messageId: 'a', live: true },
   ]);
   const writingRow = writing.querySelector('[data-maka-turn-status]');
   assert.equal(writingRow?.getAttribute('data-state'), 'busy');
-  assert.ok((writingRow?.textContent ?? '').includes('Writing…'), writingRow?.textContent ?? '');
+  assert.ok(
+    (writingRow?.textContent ?? '').includes('Run the unit tests'),
+    writingRow?.textContent ?? '',
+  );
+  // The same after the call settles with nothing after it yet: the settled
+  // words, not the running ones and not "Thinking…".
+  const settledGap = renderLive([
+    {
+      kind: 'tools',
+      items: [
+        {
+          ...running,
+          args: { file_path: '/repo/a.ts' },
+          argsPreview: undefined,
+          toolName: 'Read',
+          activityKind: 'read',
+          status: 'completed',
+        },
+      ],
+    },
+  ]);
+  const gapRow = settledGap.querySelector('[data-maka-turn-status]');
+  assert.ok((gapRow?.textContent ?? '').includes('Read a.ts'), gapRow?.textContent ?? '');
+  assert.ok(!(gapRow?.textContent ?? '').includes('Reading'), 'not the running form');
   assert.ok(writingRow?.querySelector('[data-maka-working-mark]'));
   assert.equal(writing.querySelector('[data-maka-turn-pending]'), null);
   assert.ok((writing.documentElement.textContent ?? '').includes('Half an answer'));

@@ -51,7 +51,7 @@ import { cn } from '../../../lib/cn.js';
 import { getTranscriptCopy } from '../../../locales/transcript-copy.js';
 import { statusGroupTools, type TurnStatusGroup } from '../../../lib/turn-timeline-groups.js';
 import type { ToolContentContext } from './registry.js';
-import { summarizeToolGroup, toolRowStatus, toolStepLabel } from './tool-presentation.js';
+import { summarizeToolGroup, toolStepLabel } from './tool-presentation.js';
 import { ThinkingText } from '../ThinkingStep.js';
 import {
   TurnStatusNarrationStep,
@@ -78,8 +78,6 @@ export interface TurnStatusProps {
   complete: boolean;
   /** Present on the run the turn is working in right now. */
   live?: TurnStatusLive;
-  /** The model is writing a line right under this run, which stays live. */
-  narrating?: boolean;
   /** Set while the turn is parked on this run's call. */
   blocked?: TurnStatusBlocked;
   context: ToolContentContext;
@@ -88,17 +86,19 @@ export interface TurnStatusProps {
 }
 
 /**
- * The amber ring beside a run that waits on the user. Hung left of the text
- * column, where the reference hangs it; a waiting turn is a running turn, so
- * the settled turn's paint containment never clips it.
+ * The clay ring beside a run that waits on the user: the reference's 20px
+ * mark — a 2px ring around an 8px dot, in the brand's clay (#d97757, which is
+ * `--fill-brand-hover` here) — hung 18px left of the text column, where the
+ * working mark hangs. A waiting turn is a running turn, so the settled turn's
+ * paint containment never clips it.
  */
 function BlockedMark() {
   return (
     <span
       aria-hidden="true"
-      className="absolute -left-6 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center rounded-full border-[1.5px] border-warning-fill"
+      className="absolute -left-7 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-full border-2 border-[var(--fill-brand-hover)]"
     >
-      <span className="size-2 rounded-full bg-warning-fill" />
+      <span className="size-2 rounded-full bg-[var(--fill-brand-hover)]" />
     </span>
   );
 }
@@ -237,22 +237,26 @@ export const TurnStatus = memo(function TurnStatus(props: TurnStatusProps) {
   const [open, setOpen] = useState(false);
   const steps = props.group.steps;
   const tools = useMemo(() => statusGroupTools(props.group), [props.group]);
-  // Between two steps the row keeps the last call's words. A gap follows every
-  // tool result for a few hundred milliseconds; flipping to "Thinking…" and back
-  // on each one made the line flicker step by step. Reasoning clears it.
-  const held = useRef<string | undefined>(undefined);
   const textOnly = tools.length === 0;
 
+  // The live row reads the run's LAST call, in whatever tense it is in now —
+  // "Checking the current time" while it runs, "Checked the current time" once
+  // it has, and still that while the model reasons or writes under the run
+  // (the reference keeps the step's words up until the next step). Live
+  // reasoning with no call after it is the one moment that says "Thinking…".
   let label: string;
   if (props.blocked) {
     label = copy.blocked[props.blocked];
   } else if (!props.complete) {
-    const running = [...tools].reverse().find((tool) => toolRowStatus(tool) === 'running');
-    if (running) held.current = toolStepLabel(running, locale).text;
-    else if (props.narrating || steps.at(-1)?.kind !== 'tool') held.current = undefined;
+    const last = steps.at(-1);
+    const lastTool = tools.at(-1);
     label = props.live?.unsteady
       ? copy.streamUnsteady
-      : (held.current ?? (props.narrating ? copy.writing : copy.thinkingActive));
+      : last?.kind === 'thinking' && last.live
+        ? copy.thinkingActive
+        : lastTool
+          ? toolStepLabel(lastTool, locale).text
+          : copy.thinkingOnly;
   } else {
     label = tools.length > 0 ? summarizeToolGroup(tools, locale) : copy.thinkingOnly;
   }
@@ -261,7 +265,9 @@ export const TurnStatus = memo(function TurnStatus(props: TurnStatusProps) {
   const text = props.blocked ? (
     <span className="relative flex min-w-0 items-center">
       <BlockedMark />
-      <span className="min-w-0 truncate rounded-md bg-warning-subtle px-2 py-0.5 text-warning">
+      {/* The reference's pill: 12px medium on a 15px line, 8px sides, 22px
+          tall, amber at 35% behind the warning ink. */}
+      <span className="min-w-0 truncate rounded-[5.5px] bg-warning-fill/35 px-2 py-[3.5px] text-xs font-medium leading-[15px] text-warning">
         {label}
       </span>
     </span>
