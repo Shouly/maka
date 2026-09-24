@@ -172,11 +172,11 @@
   },
   {
     "name": "Edit",
-    "description": "Performs exact string replacement in a file.\n\n- You must Read the file in this conversation before editing, or the call will fail.\n- `old_string` must match the file exactly, including indentation, and be unique — the edit fails otherwise. Strip the Read line prefix (line number + tab) before matching.\n- If the exact text is not found, a limited whitespace/indentation-tolerant match is tried; when that is ambiguous the edit fails — Read again and copy the exact text.\n- `replace_all: true` replaces every occurrence instead.",
+    "description": "Performs exact string replacement in a file.\n\n- You must Read the file in this conversation before editing, or the call will fail.\n- `old_string` must match the file exactly, including indentation, and be unique — the edit fails otherwise. Strip the Read line prefix (line number + tab) before matching.\n- `replace_all: true` replaces every occurrence instead.",
     "inputSchema": {
       "properties": {
         "file_path": {
-          "description": "The absolute path to the file to modify; a path relative to the session cwd is also accepted.",
+          "description": "The absolute path to the file to modify",
           "type": "string"
         },
         "new_string": {
@@ -223,17 +223,17 @@
   },
   {
     "name": "Grep",
-    "description": "Content search built on ripgrep. Prefer this over `grep`/`rg` via Bash — results integrate with the permission UI and file links.\n\n- Full regex syntax (e.g. \"log.*Error\", \"function\\s+\\w+\"). Ripgrep, not grep — escape literal braces (`interface\\{\\}`).\n- Filter with `glob` (e.g. \"**/*.tsx\") or `type` (e.g. \"js\", \"py\", \"rust\").\n- `output_mode`: \"content\" (matching lines), \"files_with_matches\" (paths only, default), or \"count\".\n- `multiline: true` for patterns that span lines.\n- Results are capped: `head_limit` lines (default 250), and an internal ceiling of 2000 lines that `head_limit: 0` does not lift. A capped result says how many lines were dropped; `offset` pages past them.\n- Returns plain text, or \"No files found\". A missing path, or one the session permissions do not cover, fails with the reason.",
+    "description": "Content search built on ripgrep. Prefer this over `grep`/`rg` via Bash — results integrate with the permission UI and file links.\n\n- Full regex syntax (e.g. \"log.*Error\", \"function\\s+\\w+\"). Ripgrep, not grep — escape literal braces (`interface\\{\\}`).\n- Filter with `glob` (e.g. \"**/*.tsx\") or `type` (e.g. \"js\", \"py\", \"rust\").\n- `output_mode`: \"content\" (matching lines), \"files_with_matches\" (paths only, default), or \"count\".\n- `multiline: true` for patterns that span lines.",
     "inputSchema": {
       "properties": {
         "-A": {
-          "description": "Number of lines to show after each match (rg -A)",
+          "description": "Number of lines to show after each match (rg -A). Requires output_mode: \"content\", ignored otherwise.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
         },
         "-B": {
-          "description": "Number of lines to show before each match (rg -B)",
+          "description": "Number of lines to show before each match (rg -B). Requires output_mode: \"content\", ignored otherwise.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -257,33 +257,33 @@
           "type": "boolean"
         },
         "context": {
-          "description": "Number of lines to show before and after each match (rg -C)",
+          "description": "Number of lines to show before and after each match (rg -C). Requires output_mode: \"content\", ignored otherwise.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
         },
         "glob": {
-          "description": "Glob pattern to filter files (e.g. \"*.js\", \"*.{ts,tsx}\"); maps to rg --glob",
+          "description": "Glob pattern to filter files (e.g. \"*.js\", \"*.{ts,tsx}\") - maps to rg --glob",
           "type": "string"
         },
         "head_limit": {
-          "description": "Limit output to the first N lines/entries (default 250). Pass 0 for unlimited (use sparingly — large result sets waste context); an internal ceiling of 2000 lines still applies.",
+          "description": "Limit output to first N lines/entries, equivalent to \"| head -N\". Works across all output modes: content (limits output lines), files_with_matches (limits file paths), count (limits count entries). Defaults to 250 when unspecified. Pass 0 for unlimited (use sparingly — large result sets waste context).",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
         },
         "multiline": {
-          "description": "Enable multiline mode where . matches newlines (rg -U --multiline-dotall). Default: false.",
+          "description": "Enable multiline mode where . matches newlines and patterns can span lines (rg -U --multiline-dotall). Default: false.",
           "type": "boolean"
         },
         "offset": {
-          "description": "Skip first N lines/entries before applying head_limit. Defaults to 0.",
+          "description": "Skip first N lines/entries before applying head_limit, equivalent to \"| tail -n +N | head -N\". Works across all output modes. Defaults to 0.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
         },
         "output_mode": {
-          "description": "Output mode: \"content\" shows matching lines as path:line:text, \"files_with_matches\" shows only file paths (default), \"count\" shows per-file occurrence counts.",
+          "description": "Output mode: \"content\" shows matching lines (supports -A/-B/-C context, -n line numbers, head_limit), \"files_with_matches\" shows file paths (supports head_limit), \"count\" shows match counts (supports head_limit). Defaults to \"files_with_matches\".",
           "enum": [
             "content",
             "count",
@@ -292,7 +292,7 @@
           "type": "string"
         },
         "path": {
-          "description": "File or directory to search in; absolute or relative. Defaults to the session cwd.",
+          "description": "File or directory to search in (rg PATH). Defaults to current working directory.",
           "type": "string"
         },
         "pattern": {
@@ -300,7 +300,7 @@
           "type": "string"
         },
         "type": {
-          "description": "File type to search (e.g. \"js\", \"py\", \"rust\", \"go\"); maps to rg --type. More efficient than glob for standard file types.",
+          "description": "File type to search (rg --type). Common types: js, py, rust, go, java, etc. More efficient than include for standard file types.",
           "type": "string"
         }
       },
@@ -311,23 +311,65 @@
     }
   },
   {
+    "name": "NotebookEdit",
+    "description": "Replaces, inserts, or deletes a single cell in a Jupyter notebook (.ipynb file).\n\nUsage:\n- You must use the Read tool on the notebook in this conversation before editing — this tool will fail otherwise.\n- `notebook_path` must be an absolute path.\n- `cell_id` is the `id` attribute shown in the Read tool's `<cell id=\"...\">` output. It is required for `replace` and `delete`.\n- `edit_mode` defaults to `replace`. Use `insert` to add a new cell after the cell with the given `cell_id` (or at the beginning of the notebook if `cell_id` is omitted) — `cell_type` is required when inserting. Use `delete` to remove the cell.",
+    "inputSchema": {
+      "properties": {
+        "cell_id": {
+          "description": "The ID of the cell to edit. When inserting a new cell, the new cell will be inserted after the cell with this ID, or at the beginning if not specified.",
+          "type": "string"
+        },
+        "cell_type": {
+          "description": "The type of the cell (code or markdown). If not specified, it defaults to the current cell type. If using edit_mode=insert, this is required.",
+          "enum": [
+            "code",
+            "markdown"
+          ],
+          "type": "string"
+        },
+        "edit_mode": {
+          "description": "The type of edit to make (replace, insert, delete). Defaults to replace.",
+          "enum": [
+            "delete",
+            "insert",
+            "replace"
+          ],
+          "type": "string"
+        },
+        "new_source": {
+          "description": "The new source for the cell",
+          "type": "string"
+        },
+        "notebook_path": {
+          "description": "The absolute path to the Jupyter notebook file to edit (must be absolute, not relative)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "new_source",
+        "notebook_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
     "name": "Read",
-    "description": "Reads a file from the local filesystem.\n\n- `file_path` must be an absolute path, or a path relative to the session cwd; how far outside the cwd it may reach is decided by the session permissions.\n- Reads up to 2000 lines by default; a capped read says how many lines follow, and `offset` reaches them.\n- When you already know which part of the file you need, only read that part with `offset` and `limit`. This can be important for larger files.\n- Results are returned using cat -n format, with line numbers starting at 1\n- Reading a directory, a missing file, or a path the session permissions do not cover returns an error rather than content; an empty file returns a system reminder. Use Bash `ls` for a listing.\n- Do NOT re-read a file you just edited to verify — Edit/Write would have errored if the change failed, and the harness tracks file state for you.",
+    "description": "Reads a file from the local filesystem.\n\n- `file_path` must be an absolute path.\n- Reads up to 2000 lines by default.\n- When you already know which part of the file you need, only read that part. This can be important for larger files.\n- Results are returned using cat -n format, with line numbers starting at 1\n- Reads images (PNG, JPG, …) and presents them visually. Reads Jupyter notebooks (.ipynb) as cells with outputs.\n- Reading a directory, a missing file, or an empty file returns an error or system reminder rather than content.\n- Do NOT re-read a file you just edited to verify — Edit/Write would have errored if the change failed, and the harness tracks file state for you.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "file_path": {
-          "description": "The absolute path to the file to read; a path relative to the session cwd is also accepted",
+          "description": "The absolute path to the file to read",
           "type": "string"
         },
         "limit": {
-          "description": "The number of lines to read (default 2000). Only provide if the file is too large to read at once",
+          "description": "The number of lines to read. Only provide if the file is too large to read at once.",
           "exclusiveMinimum": 0,
           "maximum": 9007199254740991,
           "type": "integer"
         },
         "offset": {
-          "description": "Zero-based line offset to start from: 0 is the first line. Only provide if the file is too large to read at once",
+          "description": "The line number to start reading from. Only provide if the file is too large to read at once",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -667,7 +709,7 @@
           "type": "string"
         },
         "file_path": {
-          "description": "The absolute path to the file to write; a path relative to the session cwd is also accepted. Missing parent directories are created.",
+          "description": "The absolute path to the file to write (must be absolute, not relative)",
           "type": "string"
         }
       },

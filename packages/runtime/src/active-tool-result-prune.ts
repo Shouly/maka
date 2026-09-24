@@ -35,6 +35,7 @@
  */
 
 import type { JSONValue, ModelMessage } from './model-protocol.js';
+import { isReadUnchangedResult } from './file-tool-model-output.js';
 import type { DurableToolResultProjection } from '@maka/core/durable-tool-result-projection';
 
 import {
@@ -170,6 +171,7 @@ function collectSupersessionDecisions(
           (payload.outputKind === 'error-text' || payload.outputKind === 'error-json'),
         eligible:
           input.eligibleToolCallIds === undefined || input.eligibleToolCallIds.has(call.toolCallId),
+        ...(isReadUnchangedResult(payload.value) ? { refersBack: true } : {}),
       });
     }
   }

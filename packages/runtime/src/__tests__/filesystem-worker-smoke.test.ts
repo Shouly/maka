@@ -261,6 +261,29 @@ describe('macOS filesystem worker smoke', { skip: process.platform !== 'darwin' 
     assert.equal(await readFile(outsideTarget, 'utf8'), 'outside');
   });
 
+  test('a Write whose target is a directory names it as one', async () => {
+    const folder = join(workspace, 'a-folder');
+    await mkdir(folder);
+    await assert.rejects(
+      client.execute({
+        operation: { kind: 'write', path: folder, content: 'x' },
+        cwd: workspace,
+        mode: 'ask',
+        executionBoundary: {
+          kind: 'managed',
+          revision: 0,
+          profile: createWorkspaceWritePermissionProfile(),
+        },
+        expectedIdentity: 'unchecked',
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /EISDIR/);
+        return true;
+      },
+    );
+  });
+
   test('Edit of a missing file says so instead of asking for access', async () => {
     // A grant for a file that is not there unblocks nothing; the model
     // approved one and hit the same wall again.
@@ -271,7 +294,6 @@ describe('macOS filesystem worker smoke', { skip: process.platform !== 'darwin' 
           path: join(outside, 'absent', 'edit-me.txt'),
           oldString: 'a',
           newString: 'b',
-          allowEdit: true,
         },
         cwd: workspace,
         mode: 'ask',
@@ -328,7 +350,6 @@ function grepOperation(path: string, pattern: string) {
     kind: 'grep' as const,
     path,
     pattern,
-    maxCountPerFile: 50,
     limit: 200,
     timeoutMs: 10_000,
   };

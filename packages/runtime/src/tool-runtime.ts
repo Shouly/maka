@@ -286,6 +286,13 @@ export interface MakaTool<P = any, R = unknown> {
     input: unknown;
     output: unknown;
   }) => ToolResultOutput | undefined;
+  /**
+   * How a failure reads to the model. Without it the message is prefixed
+   * `Error: `; the file tools answer in the reference's forms instead —
+   * wrapped in `<tool_use_error>` for Write and Edit, bare for most of Read.
+   * The reader's view of the failure is the message either way.
+   */
+  errorToModelText?: (message: string) => string;
 }
 
 export interface MakaToolContext {
@@ -970,7 +977,12 @@ export class ToolRuntime {
                 type: 'json' as const,
                 value: { status: 'failed' as const, output: providerError },
               }
-            : { type: 'error-text' as const, value: new Error(providerError).toString() },
+            : {
+                type: 'error-text' as const,
+                value: tool.errorToModelText
+                  ? tool.errorToModelText(providerError)
+                  : new Error(providerError).toString(),
+              },
           this.input.sessionId,
         );
       }
@@ -1146,6 +1158,7 @@ export class ToolRuntime {
       parentOperationId?: string;
     } = {},
     attempt?: DurableToolAttempt,
+    errorToModelText?: MakaTool['errorToModelText'],
   ): Promise<void> {
     const content: ToolResultContent = {
       kind: 'text',
@@ -1164,17 +1177,23 @@ export class ToolRuntime {
     // guards, where no attempt exists and no identity is owed.
     const durableAttempt =
       attempt ?? this.durableToolAttempts.get(durableAttemptKey(turnId, toolUseId));
-    const modelProjection =
-      compatibilityToolResultProjection(
-        {
-          kind: 'function_response',
-          id: toolUseId,
-          name: toolName,
-          result: content,
-          isError: true,
-        },
-        this.input.sessionId,
-      ) ?? DURABLE_TOOL_RESULT_PROJECTION_FAILURE;
+    // The reader keeps the bare message; the model reads it the way the
+    // tool says, or as `Error: …` when the tool does not say.
+    const modelProjection = errorToModelText
+      ? encodeDurableToolResultOutput(
+          { type: 'error-text', value: errorToModelText(content.text) },
+          this.input.sessionId,
+        )
+      : (compatibilityToolResultProjection(
+          {
+            kind: 'function_response',
+            id: toolUseId,
+            name: toolName,
+            result: content,
+            isError: true,
+          },
+          this.input.sessionId,
+        ) ?? DURABLE_TOOL_RESULT_PROJECTION_FAILURE);
     const durableOutcome = await durableAttempt?.commitOutcome(
       content,
       true,
@@ -1423,6 +1442,8 @@ export class ToolRuntime {
         sandboxFailure,
         undefined,
         activityIdentity,
+        undefined,
+        tool.errorToModelText,
       );
     };
     if (admissionFailure) {
@@ -2303,6 +2324,7 @@ export class ToolRuntime {
         uncertainOutcome,
         activityIdentity,
         durableAttempt,
+        tool.errorToModelText,
       );
       this.input.recordToolInvocation?.({
         sessionId: this.input.sessionId,

@@ -1102,8 +1102,24 @@ export type ToolResultContent =
       uncertainOutcome?: ToolUncertainOutcomeSignal;
     }
   | { kind: 'json'; value: unknown }
-  | { kind: 'file_diff'; paths: string[]; diff: string }
-  | { kind: 'file_write'; path: string; bytes: number }
+  | {
+      kind: 'file_diff';
+      paths: string[];
+      diff: string;
+      /** The path as the call wrote it, which is how the model is answered. */
+      shownPath?: string;
+      /** An Edit applied to a file that had changed on disk since the session read it. */
+      modifiedSinceRead?: boolean;
+    }
+  | {
+      kind: 'file_write';
+      path: string;
+      bytes: number;
+      /** The file did not exist before the write. */
+      created?: boolean;
+      /** The path as the call wrote it, which is how the model is answered. */
+      shownPath?: string;
+    }
   | {
       kind: 'archived_tool_result';
       status: 'not_loaded' | 'missing' | 'corrupt';

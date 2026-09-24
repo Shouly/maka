@@ -2207,8 +2207,9 @@ describe('builtin read tools path containment', () => {
       /Read path must stay inside/,
     );
 
+    // The same file, read again in the turn, is the earlier result.
     const result = await runTool(read, { file_path: 'inside.txt' }, root);
-    assert.partialDeepStrictEqual(result, { content: 'inside' });
+    assert.deepStrictEqual(result, { unchanged: true });
   });
 
   test('Glob and Grep constrain search roots to session cwd', async () => {
@@ -2835,31 +2836,63 @@ describe('builtin file tools speak the reference argument names', () => {
     const read = tool('Read');
 
     const whole = await runTool(read, { file_path: 'lines.txt' }, root);
-    assert.deepStrictEqual(whole, { content: 'alpha\nbeta\ngamma\n' });
+    assert.deepStrictEqual(whole, { content: 'alpha\nbeta\ngamma\n', startLine: 1, totalLines: 4 });
+    // A final newline ends line 3 and starts an empty line 4, which is numbered.
     assert.strictEqual(
       modelText(read, { file_path: 'lines.txt' }, whole),
-      '1\talpha\n2\tbeta\n3\tgamma',
+      '1\talpha\n2\tbeta\n3\tgamma\n4\t',
     );
 
-    const windowed = await runTool(read, { file_path: 'lines.txt', offset: 1, limit: 2 }, root);
+    // `offset` is the number of the first line shown.
+    const windowed = await runTool(read, { file_path: 'lines.txt', offset: 2, limit: 2 }, root);
     assert.strictEqual(
-      modelText(read, { file_path: 'lines.txt', offset: 1, limit: 2 }, windowed),
+      modelText(read, { file_path: 'lines.txt', offset: 2, limit: 2 }, windowed),
       '2\tbeta\n3\tgamma',
+    );
+    // 0 reads as 1, numbered from 1.
+    const fromZero = await runTool(read, { file_path: 'lines.txt', offset: 0, limit: 1 }, root);
+    assert.strictEqual(
+      modelText(read, { file_path: 'lines.txt', offset: 0 }, fromZero),
+      '1\talpha',
     );
   });
 
-  test('Read caps an unbounded read at the default line window', async () => {
+  test('Read has no line cap; the cap is 256KB of text', async () => {
     const root = await mkdtemp(join(tmpdir(), 'maka-read-default-limit-'));
     const lines = Array.from({ length: 2_100 }, (_, index) => `line ${index + 1}`);
     await writeFile(join(root, 'big.txt'), `${lines.join('\n')}\n`, 'utf8');
+    await writeFile(join(root, 'huge.txt'), `${'y'.repeat(99)}\n`.repeat(5_296), 'utf8');
+    const read = tool('Read');
 
-    const result = (await runTool(tool('Read'), { file_path: 'big.txt' }, root)) as {
-      content: string;
-    };
+    const result = (await runTool(read, { file_path: 'big.txt' }, root)) as { content: string };
+    assert.strictEqual(result.content.split('\n').length, 2_101);
 
-    assert.strictEqual(result.content.split('\n').length, 2_000);
-    assert.strictEqual(result.content.startsWith('line 1\n'), true);
-    assert.strictEqual(result.content.endsWith('line 2000'), true);
+    await expectRejects(
+      runTool(read, { file_path: 'huge.txt' }, root),
+      /^File content \(517\.2KB\) exceeds maximum allowed size \(256KB\)\. Use offset and limit parameters/,
+    );
+    // A window under the cap is fine; one over it is refused by its own size.
+    await runTool(read, { file_path: 'huge.txt', offset: 1, limit: 10 }, root);
+    await expectRejects(
+      runTool(read, { file_path: 'huge.txt', offset: 1, limit: 4_000 }, root),
+      /^File content \(390\.6KB\) exceeds maximum allowed size \(256KB\)/,
+    );
+  });
+
+  test('Read says when the offset is past the end, and refuses a binary file', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'maka-read-beyond-'));
+    await writeFile(join(root, 'three.txt'), 'a\nb\nc\n', 'utf8');
+    await writeFile(join(root, 'blob.bin'), Buffer.from([0, 1, 2]));
+    const read = tool('Read');
+    const beyond = await runTool(read, { file_path: 'three.txt', offset: 50 }, root);
+    assert.strictEqual(
+      modelText(read, { file_path: 'three.txt', offset: 50 }, beyond),
+      '<system-reminder>Warning: the file exists but is shorter than the provided offset (50). The file has 4 lines.</system-reminder>',
+    );
+    await expectRejects(
+      runTool(read, { file_path: 'blob.bin' }, root),
+      /^This tool cannot read binary files\. The file appears to be a binary \.bin file\./,
+    );
   });
 
   test('Read names a directory, a missing file and an empty file', async () => {
@@ -2877,7 +2910,7 @@ describe('builtin file tools speak the reference argument names', () => {
       /^File does not exist\. Note: your current working directory is .*\.$/,
     );
     const empty = await runTool(read, { file_path: 'empty.txt' }, root);
-    assert.deepStrictEqual(empty, { content: '' });
+    assert.deepStrictEqual(empty, { content: '', startLine: 1, totalLines: 0 });
     assert.match(
       modelText(read, { file_path: 'empty.txt' }, empty),
       /Warning: the file exists but the contents are empty/,
@@ -2902,29 +2935,84 @@ describe('builtin file tools speak the reference argument names', () => {
     );
   });
 
-  test('Edit refuses a file the session has not read, and reports success once it has', async () => {
+  test('Edit and Write need no Read first; a Write after an outside change does', async () => {
     const root = await mkdtemp(join(tmpdir(), 'maka-edit-guard-'));
     await writeFile(join(root, 'data.txt'), 'hello world\n', 'utf8');
+    await writeFile(join(root, 'over.txt'), 'made elsewhere\n', 'utf8');
+    const built = toolset();
 
-    await expectRejects(
-      runTool(
-        tool('Edit'),
-        { file_path: 'data.txt', old_string: 'world', new_string: 'Maka' },
-        root,
-      ),
-      /^File has not been read yet\. Read it first before writing to it\.$/,
-    );
-    assert.strictEqual(await readFile(join(root, 'data.txt'), 'utf8'), 'hello world\n');
-
-    const edit = await sightedEditTool('data.txt', root);
     const result = await runTool(
-      edit,
+      built.Edit!,
       { file_path: 'data.txt', old_string: 'world', new_string: 'Maka' },
       root,
     );
+    assert.strictEqual(
+      modelText(built.Edit!, { file_path: 'data.txt' }, result),
+      'The file data.txt has been updated successfully. (file state is current in your context — no need to Read it back)',
+    );
+    assert.strictEqual(await readFile(join(root, 'data.txt'), 'utf8'), 'hello Maka\n');
+
+    const over = await runTool(built.Write!, { file_path: 'over.txt', content: 'mine\n' }, root);
+    assert.strictEqual(
+      modelText(built.Write!, { file_path: 'over.txt' }, over),
+      'The file over.txt has been updated successfully. (file state is current in your context — no need to Read it back)',
+    );
+
+    // Read, then changed outside: Write refuses, Edit applies and says so.
+    await runTool(built.Read!, { file_path: 'data.txt' }, root);
+    await writeFile(join(root, 'data.txt'), 'hello Maka\nappended\n', 'utf8');
+    await expectRejects(
+      runTool(built.Write!, { file_path: 'data.txt', content: 'x' }, root),
+      /^File has been modified since read, either by the user or by a linter\. Read it again before attempting to write it\.$/,
+    );
+    const edited = await runTool(
+      built.Edit!,
+      { file_path: 'data.txt', old_string: 'Maka', new_string: 'MAKA' },
+      root,
+    );
+    assert.strictEqual(
+      modelText(built.Edit!, { file_path: 'data.txt' }, edited),
+      'The file data.txt has been updated successfully. (note: the file had been modified on disk since you last read it — the edit applied cleanly, but the file contains other changes not in your context. Read it before edits that depend on surrounding content.)',
+    );
+    assert.strictEqual(await readFile(join(root, 'data.txt'), 'utf8'), 'hello MAKA\nappended\n');
+  });
+
+  test('Edit creates a file from an empty old_string and refuses a notebook', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'maka-edit-create-'));
+    await writeFile(join(root, 'nb.ipynb'), '{"cells":[]}', 'utf8');
+    const edit = tool('Edit');
+    const created = await runTool(
+      edit,
+      { file_path: 'fresh.txt', old_string: '', new_string: 'born\n' },
+      root,
+    );
     assert.match(
-      modelText(edit, { file_path: 'data.txt' }, result),
-      /^The file .*data\.txt has been updated successfully\. \(file state is current in your context/,
+      modelText(edit, { file_path: 'fresh.txt' }, created),
+      /^The file fresh\.txt has been updated successfully\./,
+    );
+    assert.strictEqual(await readFile(join(root, 'fresh.txt'), 'utf8'), 'born\n');
+    await expectRejects(
+      runTool(edit, { file_path: 'fresh.txt', old_string: '', new_string: 'again' }, root),
+      /^Cannot create new file - file already exists\.$/,
+    );
+    await expectRejects(
+      runTool(edit, { file_path: 'nb.ipynb', old_string: '[]', new_string: '[1]' }, root),
+      /^File is a Jupyter Notebook\. Use the NotebookEdit to edit this file\.$/,
+    );
+  });
+
+  test('Write names a directory target and echoes the path as written', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'maka-write-dir-'));
+    await mkdir(join(root, 'folder'));
+    const write = tool('Write');
+    await expectRejects(
+      runTool(write, { file_path: 'folder', content: 'x' }, root),
+      /^folder is a directory, not a file\. To create a file inside it, include the file name in file_path\.$/,
+    );
+    const empty = await runTool(write, { file_path: 'rel/empty.txt', content: '' }, root);
+    assert.strictEqual(
+      modelText(write, { file_path: 'rel/empty.txt' }, empty),
+      'File created successfully at: rel/empty.txt (file state is current in your context — no need to Read it back)',
     );
   });
 
@@ -3002,6 +3090,8 @@ describe('builtin file tools speak the reference argument names', () => {
 
       assert.deepStrictEqual(await runTool(built.Read!, { file_path: '~/notes/a.txt' }, home), {
         content: 'hi\n',
+        startLine: 1,
+        totalLines: 2,
       });
       await runTool(
         built.Edit!,
@@ -3049,22 +3139,36 @@ describe('builtin file tools speak the reference argument names', () => {
     const windowed = await runTool(read, { file_path: 'big.txt', limit: 10 }, root);
     assert.deepStrictEqual(windowed, {
       content: '1\n2\n3\n4\n5\n6\n7\n8\n9\n10',
-      truncated: true,
-      totalLines: 30,
+      startLine: 1,
+      totalLines: 31,
     });
     const text = modelText(read, { file_path: 'big.txt', limit: 10 }, windowed);
-    assert.match(text, /^1\t1\n2\t2\n/u);
-    assert.match(text, /\n\n\[Showing lines 1-10 of 30\. Pass offset: 10 to read on\.\]$/u);
-    const tail = await runTool(read, { file_path: 'big.txt', offset: 20, limit: 10 }, root);
-    assert.deepStrictEqual(tail, { content: '21\n22\n23\n24\n25\n26\n27\n28\n29\n30' });
-    assert.doesNotMatch(
-      modelText(read, { file_path: 'big.txt', offset: 20, limit: 10 }, tail),
-      /Showing lines/u,
+    assert.strictEqual(text, Array.from({ length: 10 }, (_, i) => `${i + 1}\t${i + 1}`).join('\n'));
+    const tail = await runTool(read, { file_path: 'big.txt', offset: 21, limit: 10 }, root);
+    assert.deepStrictEqual(tail, {
+      content: '21\n22\n23\n24\n25\n26\n27\n28\n29\n30',
+      startLine: 21,
+      totalLines: 31,
+    });
+    assert.match(
+      modelText(read, { file_path: 'big.txt', offset: 21, limit: 10 }, tail),
+      /^21\t21\n/u,
     );
     const whole = await runTool(read, { file_path: 'big.txt' }, root);
     assert.deepStrictEqual(whole, {
       content: `${Array.from({ length: 30 }, (_, i) => i + 1).join('\n')}\n`,
+      startLine: 1,
+      totalLines: 31,
     });
+    // The same read again is answered by pointing at the first.
+    assert.strictEqual(
+      modelText(
+        read,
+        { file_path: 'big.txt' },
+        await runTool(read, { file_path: 'big.txt' }, root),
+      ),
+      'Wasted call — file unchanged since your last Read. Refer to that earlier tool_result instead.',
+    );
   });
 
   test('Write creates the missing directories above its target', async () => {
@@ -3138,9 +3242,19 @@ describe('builtin file tools speak the reference argument names', () => {
       { pattern: 'return', output_mode: 'content', head_limit: 1 },
       root,
     );
-    assert.match(
+    assert.strictEqual(
       modelText(grep, { pattern: 'return', output_mode: 'content', head_limit: 1 }, paged),
-      /\n\n\[Showing results with pagination = limit: 1 — 1 more matching line not shown; narrow the search or page with offset\]$/u,
+      's.py:2:    return 1\n\n[Showing results with pagination = limit: 1]',
+    );
+    const pagedFiles = await runTool(grep, { pattern: 'def', head_limit: 5, offset: 1 }, root);
+    assert.strictEqual(
+      modelText(grep, { pattern: 'def', head_limit: 5, offset: 1 }, pagedFiles),
+      'No files found',
+    );
+    const none = await runTool(grep, { pattern: 'absent', output_mode: 'content' }, root);
+    assert.strictEqual(
+      modelText(grep, { pattern: 'absent', output_mode: 'content' }, none),
+      'No matches found',
     );
   });
 
@@ -3254,10 +3368,11 @@ describe('builtin file tools speak the reference argument names', () => {
       { pattern: 'TODO first', path: 'first.md', output_mode: 'content' },
       root,
     )) as { matches: string[] };
-    assert.deepStrictEqual(lines.matches, [`${join(root, 'first.md')}:1:TODO first`]);
+    // A search of one file names no path, as ripgrep prints it.
+    assert.deepStrictEqual(lines.matches, ['1:TODO first']);
     assert.strictEqual(
       modelText(grep, { pattern: 'TODO first', output_mode: 'content' }, lines),
-      'first.md:1:TODO first',
+      '1:TODO first',
     );
 
     // Only the path is respelled; the matched text is left exactly as found.
@@ -3284,6 +3399,167 @@ describe('builtin file tools speak the reference argument names', () => {
     assert.strictEqual(
       modelText(grep, { pattern: 'absent' }, await runTool(grep, { pattern: 'absent' }, root)),
       'No files found',
+    );
+  });
+
+  test('Grep counts every file past the limit, lifts the limit for 0, and searches dotfiles', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'maka-grep-limits-')));
+    for (let index = 1; index <= 5; index++) {
+      await writeFile(join(root, `m${index}.log`), 'MATCH\n', 'utf8');
+    }
+    await mkdir(join(root, '.hidden'), { recursive: true });
+    await mkdir(join(root, '.git'), { recursive: true });
+    await writeFile(join(root, '.hidden', 'secret.txt'), 'MATCH hidden\n', 'utf8');
+    await writeFile(join(root, '.git', 'config'), 'MATCH vcs\n', 'utf8');
+    const grep = tool('Grep');
+
+    const counted = await runTool(
+      grep,
+      { pattern: 'MATCH', output_mode: 'count', head_limit: 2 },
+      root,
+    );
+    const text = modelText(
+      grep,
+      { pattern: 'MATCH', output_mode: 'count', head_limit: 2 },
+      counted,
+    );
+    assert.strictEqual(text.split('\n').length, 4);
+    assert.match(
+      text,
+      /\n\nFound 6 total occurrences across 6 files\. with pagination = limit: 2$/,
+    );
+
+    const all = (await runTool(grep, { pattern: 'MATCH', head_limit: 0 }, root)) as {
+      matches: string[];
+    };
+    assert.strictEqual(all.matches.length, 6);
+    assert.ok(all.matches.includes(join(root, '.hidden', 'secret.txt')));
+    assert.ok(!all.matches.some((file) => file.includes('.git')));
+    assert.match(modelText(grep, { pattern: 'MATCH', head_limit: 0 }, all), /^Found 6 files\n/);
+
+    await expectRejects(
+      runTool(grep, { pattern: '(unclosed' }, root),
+      /^Search failed — ripgrep rejected the pattern, glob, or file type without searching:\nrg: regex parse error:/,
+    );
+    await expectRejects(
+      runTool(grep, { pattern: 'x', type: 'foobar' }, root),
+      /^Search failed — ripgrep rejected the pattern, glob, or file type without searching:\nrg: unrecognized file type: foobar/,
+    );
+  });
+
+  test('NotebookEdit needs a Read first, then edits cells and reports each change', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'maka-notebook-edit-')));
+    await writeFile(
+      join(root, 'demo.ipynb'),
+      JSON.stringify({
+        cells: [
+          { cell_type: 'markdown', id: 'md1', metadata: {}, source: '# Title' },
+          {
+            cell_type: 'code',
+            id: 'code1',
+            metadata: {},
+            execution_count: 1,
+            outputs: [{ output_type: 'stream', name: 'stdout', text: '3\n' }],
+            source: 'x = 1 + 2\nprint(x)',
+          },
+        ],
+        metadata: {},
+        nbformat: 4,
+        nbformat_minor: 5,
+      }),
+      'utf8',
+    );
+    await writeFile(join(root, 'plain.txt'), 'x', 'utf8');
+    const built = toolset();
+    const notebookEdit = built.NotebookEdit!;
+
+    await expectRejects(
+      runTool(
+        notebookEdit,
+        { notebook_path: 'demo.ipynb', cell_id: 'code1', new_source: 'x' },
+        root,
+      ),
+      /^File has not been read yet\. Read it first before writing to it\.$/,
+    );
+    const read = await runTool(built.Read!, { file_path: 'demo.ipynb' }, root);
+    assert.strictEqual(
+      modelText(built.Read!, { file_path: 'demo.ipynb' }, read),
+      '<cell id="md1"><cell_type>markdown</cell_type># Title</cell id="md1">\n<cell id="code1">x = 1 + 2\nprint(x)</cell id="code1">\n\n3\n',
+    );
+
+    const updated = await runTool(
+      notebookEdit,
+      { notebook_path: 'demo.ipynb', cell_id: 'code1', new_source: 'x = 42' },
+      root,
+    );
+    assert.strictEqual(modelText(notebookEdit, {}, updated), 'Updated cell code1 with x = 42');
+    const inserted = await runTool(
+      notebookEdit,
+      {
+        notebook_path: 'demo.ipynb',
+        new_source: 'import math',
+        cell_type: 'code',
+        edit_mode: 'insert',
+      },
+      root,
+    );
+    assert.match(
+      modelText(notebookEdit, {}, inserted),
+      /^Inserted cell [0-9a-f]{8} with import math$/,
+    );
+    const deleted = await runTool(
+      notebookEdit,
+      { notebook_path: 'demo.ipynb', cell_id: 'md1', new_source: '', edit_mode: 'delete' },
+      root,
+    );
+    assert.strictEqual(modelText(notebookEdit, {}, deleted), 'Deleted cell md1');
+
+    const saved = JSON.parse(await readFile(join(root, 'demo.ipynb'), 'utf8')) as {
+      cells: { id: string; source: string; outputs?: unknown[] }[];
+    };
+    assert.deepStrictEqual(
+      saved.cells.map((cell) => cell.source),
+      ['import math', 'x = 42'],
+    );
+    assert.deepStrictEqual(saved.cells[1]!.outputs, []);
+
+    await expectRejects(
+      runTool(notebookEdit, { notebook_path: 'plain.txt', cell_id: 'x', new_source: 'x' }, root),
+      /^File must be a Jupyter notebook \(\.ipynb file\)\. For editing other file types, use the Edit tool\.$/,
+    );
+  });
+
+  test("failures reach the model in the reference's forms", () => {
+    const built = toolset();
+    const wrap = (name: string, message: string) => built[name]!.errorToModelText!(message);
+    assert.strictEqual(
+      wrap('Write', 'File has been modified since read'),
+      '<tool_use_error>File has been modified since read</tool_use_error>',
+    );
+    assert.strictEqual(
+      wrap('Edit', 'String to replace not found in file.'),
+      '<tool_use_error>String to replace not found in file.</tool_use_error>',
+    );
+    assert.strictEqual(
+      wrap('NotebookEdit', 'Deleted?'),
+      '<tool_use_error>Deleted?</tool_use_error>',
+    );
+    // Read wraps only its binary and page-range refusals.
+    assert.strictEqual(
+      wrap(
+        'Read',
+        'This tool cannot read binary files. The file appears to be a binary .bin file.',
+      ),
+      '<tool_use_error>This tool cannot read binary files. The file appears to be a binary .bin file.</tool_use_error>',
+    );
+    assert.strictEqual(
+      wrap('Read', 'File does not exist. Note: your current working directory is /x.'),
+      'File does not exist. Note: your current working directory is /x.',
+    );
+    assert.strictEqual(wrap('Grep', 'Path does not exist: /x.'), 'Path does not exist: /x.');
+    assert.strictEqual(
+      wrap('Glob', 'Directory does not exist: /x.'),
+      'Directory does not exist: /x.',
     );
   });
 });

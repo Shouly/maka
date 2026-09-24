@@ -131,7 +131,6 @@ describe('Linux filesystem worker smoke', { skip }, () => {
         kind: 'grep',
         path: sourceDirectory,
         pattern: 'healthy',
-        maxCountPerFile: 50,
         limit: 200,
         timeoutMs: 10_000,
       },

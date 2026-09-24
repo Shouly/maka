@@ -17,61 +17,75 @@
  * under the License.
  */
 
-// Match split('\n').slice(offset, end).join('\n'), without creating entries
-// for lines outside the requested window. Empty and trailing lines count too.
-// A missing or zero limit is unbounded: end is the total line count.
-export function readTextLineWindow(content: string, offset?: number, limit?: number): string {
-  return readTextLineWindowFacts(content, offset, limit).content;
-}
+// The lines a Read returns, counted the way the Read tool numbers them: a
+// file is its text split on '\n', so a file that ends in a newline has an
+// empty last line, and a CRLF file keeps its '\r' here for the caller to drop
+// when it prints. `offset` is the number of the first line shown — 0 reads as
+// 1 — and a missing or zero `limit` runs to the end.
+
+/** The most text one Read may return: 256KB. */
+export const READ_MAX_CONTENT_BYTES = 256 * 1024;
 
 export interface TextLineWindow {
+  /** The lines shown, joined with '\n', exactly as they are in the file. */
   readonly content: string;
-  /** Lines in the file, the way `cat -n` counts them: a final newline ends the last line rather than starting one. */
+  /** Number of the first line shown, from 1. */
+  readonly startLine: number;
+  /** Lines in the file; 0 for an empty file. */
   readonly totalLines: number;
-  /** Zero-based index of the first line shown. */
-  readonly from: number;
-  /** Zero-based index one past the last line shown. */
-  readonly to: number;
-  /** Lines of the file follow the window. */
-  readonly truncated: boolean;
+  /** `offset` named a line past the end, so nothing is shown. */
+  readonly beyondEnd: boolean;
 }
 
-/** The window plus where it sits in the file, so a capped read can say so. */
 export function readTextLineWindowFacts(
   content: string,
   offset?: number,
   limit?: number,
 ): TextLineWindow {
-  let lineCount = 1;
-  for (
-    let cursor = content.indexOf('\n');
-    cursor !== -1;
-    cursor = content.indexOf('\n', cursor + 1)
-  ) {
-    lineCount++;
+  if (content === '') return { content: '', startLine: 1, totalLines: 0, beyondEnd: false };
+  let totalLines = 1;
+  for (let at = content.indexOf('\n'); at !== -1; at = content.indexOf('\n', at + 1)) {
+    totalLines++;
   }
-  const totalLines = content.endsWith('\n') ? lineCount - 1 : lineCount;
-  if (offset === undefined && limit === undefined) {
-    return { content, totalLines, from: 0, to: lineCount, truncated: false };
+  const startLine = Math.max(1, Math.trunc(offset ?? 1) || 1);
+  if (startLine > totalLines) return { content: '', startLine, totalLines, beyondEnd: true };
+  const count = limit && limit > 0 ? Math.trunc(limit) : totalLines;
+  const endLine = Math.min(totalLines, startLine + count - 1);
+  if (startLine === 1 && endLine === totalLines) {
+    return { content, startLine, totalLines, beyondEnd: false };
   }
-  const start = offset ?? 0;
-  const end = limit ? start + limit : lineCount;
-  const from = sliceIndex(start, lineCount);
-  const to = sliceIndex(end, lineCount);
-  if (from >= to) return { content: '', totalLines, from, to: from, truncated: from < totalLines };
-
-  const selected: string[] = [];
-  let cursor = 0;
-  for (let line = 0; line < to; line++) {
-    const newline = content.indexOf('\n', cursor);
-    const lineEnd = newline === -1 ? content.length : newline;
-    if (line >= from) selected.push(content.slice(cursor, lineEnd));
-    cursor = lineEnd + 1;
+  let from = 0;
+  for (let line = 1; line < startLine; line++) from = content.indexOf('\n', from) + 1;
+  let to = from;
+  for (let line = startLine; line <= endLine; line++) {
+    const newline = content.indexOf('\n', to);
+    to = newline === -1 ? content.length : newline + 1;
   }
-  return { content: selected.join('\n'), totalLines, from, to, truncated: to < totalLines };
+  // The window's last newline ends its last line; it is not part of the text.
+  const text = content.slice(from, to);
+  return {
+    content: endLine < totalLines && text.endsWith('\n') ? text.slice(0, -1) : text,
+    startLine,
+    totalLines,
+    beyondEnd: false,
+  };
 }
 
-function sliceIndex(value: number, length: number): number {
-  const integer = Math.trunc(value) || 0;
-  return integer < 0 ? Math.max(length + integer, 0) : Math.min(integer, length);
+/**
+ * The size refusal, in the reference's words: `File content (517.2KB) exceeds
+ * maximum allowed size (256KB). …`.
+ */
+export function readTooLargeMessage(bytes: number): string {
+  return `File content (${formatFileSize(bytes)}) exceeds maximum allowed size (${formatFileSize(READ_MAX_CONTENT_BYTES)}). Use offset and limit parameters to read specific portions of the file, or search for specific content instead of reading the whole file.`;
+}
+
+/** `517.2KB`, `256KB`, `1.5MB` — one decimal, a trailing `.0` dropped. */
+export function formatFileSize(bytes: number): string {
+  const kb = bytes / 1024;
+  if (kb < 1) return `${bytes} bytes`;
+  const fixed = (value: number) => value.toFixed(1).replace(/\.0$/, '');
+  if (kb < 1024) return `${fixed(kb)}KB`;
+  const mb = kb / 1024;
+  if (mb < 1024) return `${fixed(mb)}MB`;
+  return `${fixed(mb / 1024)}GB`;
 }

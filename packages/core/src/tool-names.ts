@@ -35,6 +35,7 @@ export const TOOL_NAMES = {
   read: 'Read',
   write: 'Write',
   edit: 'Edit',
+  notebookEdit: 'NotebookEdit',
   glob: 'Glob',
   grep: 'Grep',
   applyPatch: 'apply_patch',

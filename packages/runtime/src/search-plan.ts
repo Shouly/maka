@@ -31,13 +31,6 @@ import { promises as fs } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import type { GrepOutputMode } from './filesystem-worker/protocol.js';
 
-/**
- * The ceiling on Grep result lines regardless of what the caller asked for.
- * `head_limit: 0` means "no limit of mine", not "no limit at all": a single
- * unbounded search must not be able to spend a whole context window.
- */
-export const GREP_HARD_LINE_CAP = 2_000;
-
 /** How many Glob paths are listed; the rest are counted, not listed. */
 export const GLOB_RESULT_LIMIT = 100;
 
@@ -61,17 +54,22 @@ export interface RipgrepPlanInput {
   /** Print only the matched parts of each line (`-o`); content mode only. */
   readonly onlyMatching?: boolean | undefined;
   readonly multiline?: boolean | undefined;
-  readonly maxCountPerFile: number;
 }
+
+/** Version-control metadata Grep never searches, hidden files or not. */
+const VCS_DIRECTORIES = ['.git', '.svn', '.hg', '.bzr', '.jj', '.sl'];
 
 /**
  * The ripgrep argv for one search. `--` is always the last flag so an
  * option-like pattern ("-webkit-box", "--flag") is a pattern and not a
- * misparsed switch, and `--with-filename` is forced so a single-file search
- * prints the same `path:...` shape a directory search does.
+ * misparsed switch. Hidden files are searched, version-control directories
+ * are not; `.gitignore` is ripgrep's to apply, which it does inside a git
+ * repository only. A search of one file prints its lines without the path, as
+ * ripgrep does by default.
  */
 export function buildRipgrepArgs(input: RipgrepPlanInput): string[] {
-  const args: string[] = [];
+  const args: string[] = ['--hidden'];
+  for (const directory of VCS_DIRECTORIES) args.push('--glob', `!${directory}`);
   if (input.ignoreCase) args.push('-i');
   if (input.multiline) args.push('-U', '--multiline-dotall');
   if (input.glob) args.push('--glob', input.glob);
@@ -87,7 +85,7 @@ export function buildRipgrepArgs(input: RipgrepPlanInput): string[] {
     // shape the tool advertises — and only an explicit `-n: false` drops them.
     if (input.lineNumbers !== false) args.push('-n');
     if (input.onlyMatching) args.push('-o');
-    args.push('--no-heading', '--with-filename', `--max-count=${input.maxCountPerFile}`);
+    args.push('--no-heading');
     args.push(...contextArgs(input.before, input.after));
   }
   args.push('--', input.pattern, input.path);
@@ -112,22 +110,45 @@ export interface GrepHeadLimitResult {
   readonly matches: string[];
   readonly truncated: boolean;
   readonly omitted: number;
+  /** Count mode: occurrences and files over every line, before the limit. */
+  readonly countTotal?: { readonly occurrences: number; readonly files: number };
 }
 
 /**
- * Split ripgrep's stdout into lines and apply the head limit.
+ * Split ripgrep's stdout into lines and apply the head limit; a missing limit
+ * returns them all.
  *
  * `offset` pages past a window the caller has already seen, so `omitted` counts
  * only what lies BEYOND the returned window: lines the caller deliberately
  * skipped are not news, and reporting them as dropped would make every paged
  * call look truncated.
  */
-export function applyGrepHeadLimit(stdout: string, limit: number, offset = 0): GrepHeadLimitResult {
+export function applyGrepHeadLimit(
+  stdout: string,
+  limit: number | undefined,
+  offset = 0,
+  mode?: GrepOutputMode,
+): GrepHeadLimitResult {
   const lines = stdout.split('\n').filter(Boolean);
   const start = Math.min(Math.max(Math.trunc(offset) || 0, 0), lines.length);
-  const matches = lines.slice(start, start + limit);
+  const matches = lines.slice(start, limit === undefined ? undefined : start + limit);
   const omitted = lines.length - start - matches.length;
-  return { matches, truncated: omitted > 0, omitted };
+  return {
+    matches,
+    truncated: omitted > 0,
+    omitted,
+    ...(mode === 'count' ? { countTotal: countTotals(lines) } : {}),
+  };
+}
+
+/** `path:count` lines summed: the totals the count answer states. */
+function countTotals(lines: readonly string[]): { occurrences: number; files: number } {
+  let occurrences = 0;
+  for (const line of lines) {
+    const count = Number(line.slice(line.lastIndexOf(':') + 1));
+    if (Number.isFinite(count)) occurrences += count;
+  }
+  return { occurrences, files: lines.length };
 }
 
 /**
@@ -187,6 +208,20 @@ export function ripgrepAnswered(exitCode: number, printed: boolean, stderr: stri
   if (exitCode === 0 || exitCode === 1) return true;
   if (exitCode !== 2) return false;
   return printed || !RIPGREP_INPUT_ERROR.test(stderr);
+}
+
+/**
+ * Grep's failure sentence. ripgrep refusing the pattern, a glob or a type
+ * name is named as such; anything else is a search that failed.
+ */
+export function grepFailureMessage(stderr: string): string {
+  const detail = stderr.trim();
+  if (RIPGREP_INPUT_ERROR.test(detail)) {
+    return `Search failed — ripgrep rejected the pattern, glob, or file type without searching:\n${detail}`;
+  }
+  return detail
+    ? `Grep failed while searching files.\n${detail}`
+    : 'Grep failed while searching files.';
 }
 
 /**

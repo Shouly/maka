@@ -35,7 +35,7 @@ test('executes read-only operations in the attached checkout', async () => {
       async execute(input) {
         calls.push(`${input.cwd}:${input.operation.kind}`);
         boundary = input.executionBoundary;
-        return { kind: 'read', content: 'attached' };
+        return { kind: 'read', content: 'attached', startLine: 1, totalLines: 1 };
       },
     },
   });
@@ -43,7 +43,7 @@ test('executes read-only operations in the attached checkout', async () => {
   const profile = createAttachedWorkspaceExecutionProfile('/attached');
   assert.deepEqual(
     await composition.executeReadOnly(profile, { kind: 'read', path: 'README.md' }),
-    { kind: 'read', content: 'attached' },
+    { kind: 'read', content: 'attached', startLine: 1, totalLines: 1 },
   );
   assert.deepEqual(calls, ['/attached:read']);
   // A remote client reads the checkout and nothing else: not the whole disk
@@ -64,7 +64,7 @@ test('rejects malformed profiles and mutating operations before worker dispatch'
     filesystemWorker: {
       async execute() {
         workerCalls += 1;
-        return { kind: 'read', content: 'unsafe' };
+        return { kind: 'read', content: 'unsafe', startLine: 1, totalLines: 1 };
       },
     },
   });
@@ -103,7 +103,7 @@ test('drains active attached operations before closing', async () => {
     filesystemWorker: {
       async execute() {
         await workerBlocked;
-        return { kind: 'read', content: 'attached' };
+        return { kind: 'read', content: 'attached', startLine: 1, totalLines: 1 };
       },
     },
   });

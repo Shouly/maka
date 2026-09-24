@@ -20,7 +20,16 @@
 import { z } from 'zod';
 import { validateSandboxBoundaryExpansion } from '@maka/core/sandbox-boundary';
 
-// v10 moves Glob to ripgrep: an empty pattern lists every file, and the
+// v11 numbers Read from 1: `offset` is the first line's number, a file that
+// ends in a newline has an empty last line, and the answer carries
+// `startLine`, `totalLines` and `beyondEnd` in place of `truncated`. A read
+// larger than 256KB is refused. Grep searches hidden files, drops the
+// per-file match cap and a required `limit`, and counts every file in count
+// mode. Write and Edit drop `allowOverwrite` and
+// `allowEdit`: a file the session never read may be written and edited, and
+// Write reports whether it created the file.
+//
+// v10 moved Glob to ripgrep: an empty pattern lists every file, and the
 // answer is root-relative paths, oldest first, with the full match count in
 // `total` in place of the `truncated` marker.
 //
@@ -44,7 +53,7 @@ import { validateSandboxBoundaryExpansion } from '@maka/core/sandbox-boundary';
 // inode that was authorised at lock acquisition instead of only the path
 // string. The identity is carried as strings because bigint cannot cross the
 // JSON protocol boundary.
-export const FILESYSTEM_WORKER_PROTOCOL_VERSION = 10 as const;
+export const FILESYSTEM_WORKER_PROTOCOL_VERSION = 11 as const;
 
 /** Ripgrep output shapes the Grep tool can ask the worker for. */
 export const GREP_OUTPUT_MODES = ['content', 'files_with_matches', 'count'] as const;
@@ -155,14 +164,6 @@ export const FilesystemWorkerOperationSchema = z.union([
       cwd,
       path,
       content: z.string(),
-      /**
-       * Whether this call is allowed to replace an EXISTING file. The host
-       * decides it (the session has seen the file through a file tool);
-       * the worker only enforces it, so the guard cannot be skipped by a
-       * caller that forgets to ask. Absent means "not allowed" — a stale
-       * host that never learned about the flag cannot clobber unread files.
-       */
-      allowOverwrite: z.boolean().optional(),
     })
     .strict(),
   z
@@ -184,13 +185,6 @@ export const FilesystemWorkerOperationSchema = z.union([
       newString: z.string(),
       /** Replace every exact occurrence instead of requiring a unique one. */
       replaceAll: z.boolean().optional(),
-      /**
-       * Whether this session has already seen the file through a file tool.
-       * The host decides it, the worker only enforces it, and absent means
-       * "not allowed" — a stale host that never learned about the flag cannot
-       * edit blind.
-       */
-      allowEdit: z.boolean().optional(),
     })
     .strict(),
   z
@@ -226,8 +220,8 @@ export const FilesystemWorkerOperationSchema = z.union([
       onlyMatching: z.boolean().optional(),
       /** Let the pattern span lines (`-U --multiline-dotall`). */
       multiline: z.boolean().optional(),
-      maxCountPerFile: z.number().int().positive(),
-      limit: z.number().int().positive(),
+      /** Result lines to return; absent returns them all. */
+      limit: z.number().int().positive().optional(),
       /** Result lines to skip before `limit` applies, for paging. */
       offset: z.number().int().nonnegative().optional(),
       timeoutMs: z.number().int().positive(),
@@ -254,10 +248,12 @@ export const FilesystemWorkerResultSchema = z.discriminatedUnion('kind', [
     .object({
       kind: z.literal('read'),
       content: z.string(),
-      /** Lines in the whole file, when the read was windowed. */
-      totalLines: z.number().int().nonnegative().optional(),
-      /** Lines of the file follow the returned window. */
-      truncated: z.boolean().optional(),
+      /** Number of the first line returned, from 1. */
+      startLine: z.number().int().positive(),
+      /** Lines in the file; 0 for an empty file. */
+      totalLines: z.number().int().nonnegative(),
+      /** `offset` named a line past the end, so nothing was returned. */
+      beyondEnd: z.boolean().optional(),
     })
     .strict(),
   z
@@ -273,6 +269,8 @@ export const FilesystemWorkerResultSchema = z.discriminatedUnion('kind', [
       ok: z.literal(true),
       path: z.string(),
       bytes: z.number().int().nonnegative(),
+      /** The file did not exist before this write. */
+      created: z.boolean(),
       diff: z.string().optional(),
     })
     .strict(),
@@ -312,6 +310,14 @@ export const FilesystemWorkerResultSchema = z.discriminatedUnion('kind', [
       truncated: z.boolean().optional(),
       /** How many matching lines were dropped by `limit`. */
       omitted: z.number().int().nonnegative().optional(),
+      /** Count mode: occurrences and files over every line, before `limit`. */
+      countTotal: z
+        .object({
+          occurrences: z.number().int().nonnegative(),
+          files: z.number().int().nonnegative(),
+        })
+        .strict()
+        .optional(),
     })
     .strict(),
 ]);
@@ -323,12 +329,6 @@ export const FilesystemWorkerErrorCodeSchema = z.enum([
   'not_found',
   'edit_conflict',
   'grep_unavailable',
-  // Write refused to replace a file this session has never read (#tool-6):
-  // the model has to look before it overwrites.
-  'write_unread_target',
-  // Edit refused to change a file this session has never read: an edit written
-  // from a remembered shape lands on text that is no longer there.
-  'edit_unread_target',
   'sandbox_denied',
   'filesystem_denied',
   'filesystem_error',
@@ -341,27 +341,6 @@ export const FilesystemWorkerErrorCodeSchema = z.enum([
   // cannot be unlinked, only recursively removed — a different operation.
   'is_directory',
 ]);
-
-/**
- * The refusal a Write gets when it would replace a file the session has never
- * looked at (`write_unread_target`). It lives beside the code rather than in
- * either backend: the worker and the host-local executor both raise it, and a
- * guard that reads differently depending on which one ran is a guard the model
- * cannot learn.
- */
-export function unreadOverwriteMessage(_path: string): string {
-  return 'File has not been read yet. Read it first before writing to it.';
-}
-
-/**
- * The refusal an Edit gets when the session has never read the file
- * (`edit_unread_target`). Same reasoning as {@link unreadOverwriteMessage}, and
- * the same placement: both backends raise it, after the path has been resolved,
- * so a boundary violation is still reported as one.
- */
-export function unreadEditMessage(_path: string): string {
-  return 'File has not been read yet. Read it first before writing to it.';
-}
 
 export const FilesystemWorkerResponseSchema = z.discriminatedUnion('ok', [
   z

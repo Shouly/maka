@@ -21,11 +21,13 @@
 // still is as the model last saw it.
 //
 // One fact per file: the BASELINE (mtime, size) from the last time a file
-// tool read or wrote it. A Write or Edit against a file whose baseline no
-// longer matches is refused until a Read refreshes it — the model would be
-// writing from a shape that is no longer there. The seen set the old ledger
-// kept ("has the session read this file at all", which gates overwriting a
-// file the model has never looked at) is the existence of a baseline.
+// tool read or wrote it. A Write against a file whose baseline no longer
+// matches is refused until a Read refreshes it — it would replace changes the
+// model never saw. An Edit there still applies, since its old_string has to be
+// in the file as it is now, and says the file changed. A file with no baseline
+// — never read — may be written and edited; only NotebookEdit insists on a
+// Read first. The last Read's range is kept too, so the same Read repeated in
+// a turn is answered by pointing back at the first.
 //
 // Bounded like the ledger it replaces: least-recently-used eviction on both
 // the sessions and the paths within one, because a long-lived host must not
@@ -61,6 +63,8 @@ export const NODE_FILE_CHANGE_TRACKER_FS: FileChangeTrackerFs = {
 
 interface TrackedFile {
   baseline: FileStatSnapshot | undefined;
+  /** The range the last Read showed, and in which turn; cleared by a write. */
+  lastRead?: { readonly turnId: string; readonly range: string };
 }
 
 const MAX_TRACKED_SESSIONS = 256;
@@ -92,16 +96,50 @@ export class SessionFileChangeTracker {
     return path !== undefined && this.#files.has(path);
   }
 
-  /** A Read: refresh the baseline. */
-  async noteRead(path: string | undefined): Promise<void> {
+  /**
+   * A Read: refresh the baseline. `read` names the range it showed and the
+   * turn it ran in, for {@link isRepeatRead}.
+   */
+  async noteRead(
+    path: string | undefined,
+    read?: { readonly turnId: string; readonly range: string },
+  ): Promise<void> {
     if (!path) return;
-    this.#touch(path).baseline = await this.#fs.stat(path);
+    const entry = this.#touch(path);
+    entry.baseline = await this.#fs.stat(path);
+    if (read) entry.lastRead = read;
+    else delete entry.lastRead;
   }
 
   /** A Write, Edit or patch landed: refresh the baseline. */
   async noteWritten(path: string | undefined): Promise<void> {
     if (!path) return;
-    this.#touch(path).baseline = await this.#fs.stat(path);
+    const entry = this.#touch(path);
+    entry.baseline = await this.#fs.stat(path);
+    delete entry.lastRead;
+  }
+
+  /**
+   * Whether a Read would show exactly what the last one did: the same range,
+   * of a file unchanged since, in the same turn. Only within a turn — an
+   * earlier turn's result may have been compacted out of the conversation,
+   * and "refer to that earlier result" must never point at nothing.
+   */
+  async isRepeatRead(path: string | undefined, turnId: string, range: string): Promise<boolean> {
+    if (!path) return false;
+    const entry = this.#files.get(path);
+    if (!entry?.lastRead || !entry.baseline) return false;
+    if (entry.lastRead.turnId !== turnId || entry.lastRead.range !== range) return false;
+    return sameSnapshot(entry.baseline, await this.#fs.stat(path));
+  }
+
+  /** Whether the file changed on disk since the session last read or wrote it. */
+  async isChangedSince(path: string | undefined): Promise<boolean> {
+    if (!path) return false;
+    const entry = this.#files.get(path);
+    if (!entry?.baseline) return false;
+    const current = await this.#fs.stat(path);
+    return current !== undefined && !sameSnapshot(entry.baseline, current);
   }
 
   /**

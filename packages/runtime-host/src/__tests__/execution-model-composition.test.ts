@@ -155,8 +155,9 @@ const HEADLESS_CODING_V1_TOOLS_HASH =
   // refactor (purpose, failure modes, guardrails, result shape), then the file,
   // shell and search tools were aligned with the reference parameter names
   // (`file_path`, `timeout`, the ripgrep-shaped Grep switches). Glob's
-  // description and parameters are verbatim from a measured reference capture.
-  'sha256:6ed6ca4bc12cafbbf88da2f0971fd0d6d009f4021eacfac10e0248e5bda1209d';
+  // description and parameters are verbatim from a measured reference capture,
+  // and since 2026-09-24 so are Read's, Write's, Edit's and Grep's.
+  'sha256:f03f8043aab53ccc25f55bf5170a07fec0feb425c566613976f59a80ab6ea58d';
 const execFileAsync = promisify(execFile);
 test('backend creation resolves a bound Session by immutable Connection identity', async () => {
   let observedRef: unknown;

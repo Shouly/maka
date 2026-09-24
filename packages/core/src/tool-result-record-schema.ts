@@ -52,8 +52,14 @@ const UNCERTAIN_OUTCOME_SHAPE = defineObjectShape<
   NonNullable<Result<'text'>['uncertainOutcome']>
 >()(['code', 'retrySafe'], []);
 const JSON_SHAPE = defineObjectShape<Result<'json'>>()(['kind', 'value'], []);
-const FILE_DIFF_SHAPE = defineObjectShape<Result<'file_diff'>>()(['kind', 'paths', 'diff'], []);
-const FILE_WRITE_SHAPE = defineObjectShape<Result<'file_write'>>()(['kind', 'path', 'bytes'], []);
+const FILE_DIFF_SHAPE = defineObjectShape<Result<'file_diff'>>()(
+  ['kind', 'paths', 'diff'],
+  ['shownPath', 'modifiedSinceRead'],
+);
+const FILE_WRITE_SHAPE = defineObjectShape<Result<'file_write'>>()(
+  ['kind', 'path', 'bytes'],
+  ['created', 'shownPath'],
+);
 const ARCHIVED_SHAPE = defineObjectShape<Result<'archived_tool_result'>>()(
   [
     'kind',
@@ -237,13 +243,17 @@ function isNonShellToolResultContent(value: unknown): value is ToolResultContent
       return (
         hasExactShape(value, FILE_DIFF_SHAPE) &&
         isStringArray(value.paths) &&
-        typeof value.diff === 'string'
+        typeof value.diff === 'string' &&
+        (value.shownPath === undefined || typeof value.shownPath === 'string') &&
+        (value.modifiedSinceRead === undefined || typeof value.modifiedSinceRead === 'boolean')
       );
     case 'file_write':
       return (
         hasExactShape(value, FILE_WRITE_SHAPE) &&
         typeof value.path === 'string' &&
-        isFiniteNumber(value.bytes)
+        isFiniteNumber(value.bytes) &&
+        (value.created === undefined || typeof value.created === 'boolean') &&
+        (value.shownPath === undefined || typeof value.shownPath === 'string')
       );
     case 'archived_tool_result':
       return (

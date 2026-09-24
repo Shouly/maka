@@ -131,6 +131,7 @@ export const BUILTIN_TOOL_CATEGORY: Record<string, ToolCategory> = {
   // file write
   [TOOL_NAMES.write]: 'file_write',
   [TOOL_NAMES.edit]: 'file_write',
+  [TOOL_NAMES.notebookEdit]: 'file_write',
   [TOOL_NAMES.applyPatch]: 'file_write',
   patch: 'file_write',
   // shell — default unsafe; categorizeBash() may downgrade or upgrade

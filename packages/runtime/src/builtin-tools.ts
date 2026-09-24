@@ -38,6 +38,15 @@ import {
 import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve as resolvePath } from 'node:path';
 import { FileChangeTrackerRegistry, type SessionFileChangeTracker } from './file-change-tracker.js';
+import { binaryExtensionOf, readBinaryFileMessage } from './binary-extensions.js';
+import { isSupportedImagePath } from './image-file.js';
+import {
+  applyNotebookEdit,
+  isNotebookPath,
+  parseNotebook,
+  renderNotebookForRead,
+  serializeNotebook,
+} from './notebook.js';
 import { compilePermissionProfile } from '@maka/core/permission-profile-compiler';
 import { parseAttachmentResourceRef } from '@maka/core/attachments';
 import { type SandboxBoundaryExpansion } from '@maka/core/sandbox-boundary';
@@ -50,12 +59,7 @@ import {
   grepToolResultToModelOutput,
   readToolResultToModelOutput,
 } from './file-tool-model-output.js';
-import {
-  GLOB_RESULT_LIMIT,
-  GREP_HARD_LINE_CAP,
-  respellSearchLine,
-  splitAbsoluteGlobPattern,
-} from './search-plan.js';
+import { GLOB_RESULT_LIMIT, respellSearchLine, splitAbsoluteGlobPattern } from './search-plan.js';
 import { GREP_OUTPUT_MODES, type GrepOutputMode } from './filesystem-worker/protocol.js';
 import { openAiApplyPatchInputSchema } from './openai-apply-patch.js';
 import { parseCodexV4aPatch } from './codex-v4a-patch.js';
@@ -114,12 +118,8 @@ import {
 // watchdog is paused during tool execution.
 const GREP_TIMEOUT_MS = 120_000;
 
-/** Text file lines one Read returns when the caller does not ask for a limit. */
-const DEFAULT_READ_LINE_LIMIT = 2_000;
 /** Grep result lines returned when the caller does not ask for a limit. */
 const DEFAULT_GREP_HEAD_LIMIT = 250;
-/** Matching lines ripgrep may report per file in `content` mode. */
-const GREP_MAX_COUNT_PER_FILE = 50;
 
 /**
  * The validated Grep arguments.
@@ -154,6 +154,36 @@ interface GrepToolInput {
  */
 function canonicalFilePath(cwd: string, path: string): string {
   return canonicalExistingPath(isAbsolute(path) ? path : resolvePath(cwd, path));
+}
+
+/**
+ * Failures as the file tools answer them. A refusal before anything ran is
+ * wrapped in `<tool_use_error>` — every Write and Edit failure, and Read's
+ * binary-file refusal; everything else is the bare message.
+ */
+function wrappedToolError(message: string): string {
+  return `<tool_use_error>${message}</tool_use_error>`;
+}
+
+function bareToolError(message: string): string {
+  return message;
+}
+
+function readErrorToModelText(message: string): string {
+  return message.startsWith('This tool cannot read binary files.')
+    ? wrappedToolError(message)
+    : message;
+}
+
+/** Edit's answer for a path with no file, from either backend. */
+function isMissingFileError(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith('File does not exist.');
+}
+
+/** A write that landed on a directory, from either backend. */
+function isDirectoryTargetError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (error as NodeJS.ErrnoException).code === 'EISDIR' || /\bEISDIR\b/.test(error.message);
 }
 
 /**
@@ -283,43 +313,36 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
   const readDescription = [
     'Reads a file from the local filesystem.',
     '',
-    '- `file_path` must be an absolute path, or a path relative to the session cwd; how far outside the cwd it may reach is decided by the session permissions.',
-    `- Reads up to ${DEFAULT_READ_LINE_LIMIT} lines by default; a capped read says how many lines follow, and \`offset\` reaches them.`,
-    '- When you already know which part of the file you need, only read that part with `offset` and `limit`. This can be important for larger files.',
+    '- `file_path` must be an absolute path.',
+    '- Reads up to 2000 lines by default.',
+    '- When you already know which part of the file you need, only read that part. This can be important for larger files.',
     '- Results are returned using cat -n format, with line numbers starting at 1',
-    ...(options.snapshotImage
-      ? [
-          '- Reads images (PNG, JPEG, GIF, WebP) and presents them visually rather than as text; line offsets do not apply to them.',
-        ]
-      : []),
+    // The reference also reads PDFs by page; Maka has no PDF renderer, so a
+    // PDF is refused as a binary file and `pages` does not exist.
+    '- Reads images (PNG, JPG, …) and presents them visually. Reads Jupyter notebooks (.ipynb) as cells with outputs.',
+    // Maka's own: attachments are runtime resources, read by ref.
     ...(acceptsResourceRefs
       ? [
           '- Pass `ref` instead of `file_path` to read a whole runtime resource — an attachment named in the conversation. A background command is read by its output file path, like any other file. Provide exactly one of `file_path` and `ref`.',
         ]
       : []),
-    '- Reading a directory, a missing file, or a path the session permissions do not cover returns an error rather than content; an empty file returns a system reminder. Use Bash `ls` for a listing.',
+    '- Reading a directory, a missing file, or an empty file returns an error or system reminder rather than content.',
     '- Do NOT re-read a file you just edited to verify — Edit/Write would have errored if the change failed, and the harness tracks file state for you.',
   ].join('\n');
-  const filePathField = z
-    .string()
-    .describe(
-      'The absolute path to the file to read; a path relative to the session cwd is also accepted',
-    );
+  const filePathField = z.string().describe('The absolute path to the file to read');
   const offsetField = z
     .number()
     .int()
     .nonnegative()
     .describe(
-      'Zero-based line offset to start from: 0 is the first line. Only provide if the file is too large to read at once',
+      'The line number to start reading from. Only provide if the file is too large to read at once',
     )
     .optional();
   const limitField = z
     .number()
     .int()
     .positive()
-    .describe(
-      `The number of lines to read (default ${DEFAULT_READ_LINE_LIMIT}). Only provide if the file is too large to read at once`,
-    )
+    .describe('The number of lines to read. Only provide if the file is too large to read at once.')
     .optional();
   const refField = z
     .string()
@@ -372,7 +395,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
     .object({
       file_path: filePathField
         .describe(
-          'The absolute path to the file to read; a path relative to the session cwd is also accepted. Provide either file_path (optionally with offset/limit) or ref, never both.',
+          'The absolute path to the file to read. Provide either file_path (optionally with offset/limit) or ref, never both.',
         )
         .optional(),
       offset: offsetField,
@@ -561,15 +584,26 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
         if (runtimeRef === 'runtime') {
           throw new Error('Runtime resources must be read with the ref parameter, not file_path');
         }
+        // A binary format is refused by its name, before the file is looked at.
+        const binary = binaryExtensionOf(path);
+        if (binary && !isSupportedImagePath(path)) {
+          throw new Error(readBinaryFileMessage(binary));
+        }
+        const notebook = isNotebookPath(path);
+        const tracker = trackerFor(sessionId);
+        const canonical = canonicalFilePath(cwd, path);
+        // The range as the call asked for it, to recognise the same Read again.
+        const range = notebook ? 'notebook' : `${offset ?? ''}:${limit ?? ''}`;
+        if (await tracker?.isRepeatRead(canonical, ctx.turnId, range)) {
+          return { unchanged: true as const };
+        }
         const result = await filesystem.execute({
           operation: {
             kind: 'read',
             path,
-            ...(offset !== undefined ? { offset } : {}),
-            // An unbounded Read of an unknown file can spend a whole context
-            // window on content the caller never asked for, so the default is a
-            // window and `offset` is how the rest is reached.
-            limit: limit ?? DEFAULT_READ_LINE_LIMIT,
+            // A notebook is shown whole, as its cells.
+            ...(!notebook && offset !== undefined ? { offset } : {}),
+            ...(!notebook && limit ? { limit } : {}),
           },
           ...filesystemCall(ctx),
         });
@@ -585,7 +619,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
             bytes: result.bytes,
             mimeType: result.mimeType,
           });
-          await trackerFor(sessionId)?.noteRead(canonicalFilePath(cwd, path));
+          await tracker?.noteRead(canonical);
           return { kind: 'image' as const, mimeType: result.mimeType, ref };
         }
         if (result.kind !== 'read')
@@ -594,16 +628,22 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
             'no file content came back',
             'the file is empty or missing',
           );
-        // The session has now seen this file, so a later Write may replace it.
         // The read result carries no path, so the request is canonicalised the
         // same way the backends canonicalise their targets.
-        await trackerFor(sessionId)?.noteRead(canonicalFilePath(cwd, path));
+        await tracker?.noteRead(canonical, { turnId: ctx.turnId, range });
+        if (notebook) {
+          const parsed = parseNotebook(result.content);
+          if (parsed) return { content: renderNotebookForRead(parsed), notebook: true as const };
+        }
         return {
           content: result.content,
-          ...(result.truncated ? { truncated: true, totalLines: result.totalLines } : {}),
+          startLine: result.startLine,
+          totalLines: result.totalLines,
+          ...(result.beyondEnd ? { beyondEnd: true as const } : {}),
         };
       },
       toModelOutput: ({ input, output }) => readToolResultToModelOutput(input, output),
+      errorToModelText: readErrorToModelText,
     },
     ...(executor.applyPatch ? [applyPatchTool] : []),
     {
@@ -617,9 +657,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
       parameters: z.object({
         file_path: z
           .string()
-          .describe(
-            'The absolute path to the file to write; a path relative to the session cwd is also accepted. Missing parent directories are created.',
-          ),
+          .describe('The absolute path to the file to write (must be absolute, not relative)'),
         content: z.string().describe('The content to write to the file'),
       }),
       executionFacts,
@@ -632,28 +670,43 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
         const tracker = trackerFor(ctx.sessionId);
         const canonical = canonicalFilePath(ctx.cwd, path);
         // A file that changed since the session last read it is written from a
-        // shape that is no longer there: refuse until a Read refreshes it.
+        // shape that is no longer there: refuse until a Read refreshes it. A
+        // file the session never read is written without asking.
         await tracker?.assertUnchanged(canonical);
-        const result = await filesystem.execute({
-          operation: {
-            kind: 'write',
-            path,
-            content,
-            // Whether this call may replace an existing file is a fact about
-            // the session, which only this layer knows; the backends enforce
-            // it at the point where "new vs existing" is established.
-            allowOverwrite: tracker?.has(canonical) === true,
-          },
-          ...filesystemCall(ctx),
-        });
+        let result: Awaited<ReturnType<typeof filesystem.execute>>;
+        try {
+          result = await filesystem.execute({
+            operation: { kind: 'write', path, content },
+            ...filesystemCall(ctx),
+          });
+        } catch (error) {
+          if (!isDirectoryTargetError(error)) throw error;
+          throw new Error(
+            `${requestedPath} is a directory, not a file. To create a file inside it, include the file name in file_path.`,
+          );
+        }
         if (result.kind !== 'write')
           throw internalFilesystemWriteFailure('Write', 'the file was written');
         await tracker?.noteWritten(result.path);
-        if (result.diff !== undefined)
-          return { kind: 'file_diff' as const, paths: [result.path], diff: result.diff };
-        return { kind: 'file_write' as const, path: result.path, bytes: result.bytes };
+        // The model is answered with the path as it wrote it.
+        if (result.diff !== undefined) {
+          return {
+            kind: 'file_diff' as const,
+            paths: [result.path],
+            diff: result.diff,
+            shownPath: requestedPath,
+          };
+        }
+        return {
+          kind: 'file_write' as const,
+          path: result.path,
+          bytes: result.bytes,
+          created: result.created,
+          shownPath: requestedPath,
+        };
       },
       toModelOutput: ({ output }) => fileWriteToolResultToModelOutput('Write', output),
+      errorToModelText: wrappedToolError,
     },
     {
       name: TOOL_NAMES.edit,
@@ -663,15 +716,10 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
         '',
         '- You must Read the file in this conversation before editing, or the call will fail.',
         '- `old_string` must match the file exactly, including indentation, and be unique — the edit fails otherwise. Strip the Read line prefix (line number + tab) before matching.',
-        '- If the exact text is not found, a limited whitespace/indentation-tolerant match is tried; when that is ambiguous the edit fails — Read again and copy the exact text.',
         '- `replace_all: true` replaces every occurrence instead.',
       ].join('\n'),
       parameters: z.object({
-        file_path: z
-          .string()
-          .describe(
-            'The absolute path to the file to modify; a path relative to the session cwd is also accepted.',
-          ),
+        file_path: z.string().describe('The absolute path to the file to modify'),
         old_string: z.string().describe('The text to replace'),
         new_string: z
           .string()
@@ -693,25 +741,52 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
           new_string: string;
           replace_all?: boolean;
         };
+        if (isNotebookPath(path)) {
+          throw new Error('File is a Jupyter Notebook. Use the NotebookEdit to edit this file.');
+        }
         const tracker = trackerFor(ctx.sessionId);
         const canonical = canonicalFilePath(ctx.cwd, path);
-        await tracker?.assertUnchanged(canonical);
-        const result = await filesystem.execute({
-          operation: {
-            kind: 'edit',
-            path,
-            oldString: old_string,
-            newString: new_string,
-            ...(replace_all ? { replaceAll: true } : {}),
-            // Same ledger, and the same reason, as Write's read-before-overwrite
-            // guard: an edit written from a remembered shape rather than the
-            // file's current text lands on text that is no longer there. Only
-            // this layer knows what the session has seen; the backends enforce
-            // it once the path has been resolved.
-            allowEdit: tracker?.has(canonical) === true,
-          },
-          ...filesystemCall(ctx),
-        });
+        // Read or not, the edit applies: old_string has to be in the file as
+        // it is now. A file that changed since the session read it is edited
+        // all the same, and the receipt says the rest of it may be news.
+        const modifiedSinceRead = (await tracker?.isChangedSince(canonical)) === true;
+        let result: Awaited<ReturnType<typeof filesystem.execute>>;
+        try {
+          result = await filesystem.execute({
+            operation: {
+              kind: 'edit',
+              path,
+              oldString: old_string,
+              newString: new_string,
+              ...(replace_all ? { replaceAll: true } : {}),
+            },
+            ...filesystemCall(ctx),
+          });
+        } catch (error) {
+          // An empty old_string creates the file it names.
+          if (old_string !== '' || !isMissingFileError(error)) throw error;
+          const written = await filesystem.execute({
+            operation: { kind: 'write', path, content: new_string },
+            ...filesystemCall(ctx),
+          });
+          if (written.kind !== 'write')
+            throw internalFilesystemWriteFailure('Edit', 'the file was created');
+          await tracker?.noteWritten(written.path);
+          return written.diff !== undefined
+            ? {
+                kind: 'file_diff' as const,
+                paths: [written.path],
+                diff: written.diff,
+                shownPath: requestedPath,
+              }
+            : {
+                kind: 'file_write' as const,
+                path: written.path,
+                bytes: written.bytes,
+                created: true,
+                shownPath: requestedPath,
+              };
+        }
         if (result.kind !== 'edit')
           throw internalFilesystemWriteFailure(
             'Edit',
@@ -719,8 +794,17 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
             'a different old_string will not help',
           );
         await tracker?.noteWritten(result.path);
+        const receipt = {
+          shownPath: requestedPath,
+          ...(modifiedSinceRead ? { modifiedSinceRead: true as const } : {}),
+        };
         if (result.diff !== undefined)
-          return { kind: 'file_diff' as const, paths: [result.path], diff: result.diff };
+          return {
+            kind: 'file_diff' as const,
+            paths: [result.path],
+            diff: result.diff,
+            ...receipt,
+          };
         return {
           ok: result.ok,
           path: result.path,
@@ -728,9 +812,102 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
           matchedVia: result.matchedVia,
           startLine: result.startLine,
           endLine: result.endLine,
+          ...receipt,
         };
       },
       toModelOutput: ({ input, output }) => fileWriteToolResultToModelOutput('Edit', output, input),
+      errorToModelText: wrappedToolError,
+    },
+    {
+      name: TOOL_NAMES.notebookEdit,
+      activityKind: 'edit',
+      categoryHint: 'file_write',
+      description: [
+        'Replaces, inserts, or deletes a single cell in a Jupyter notebook (.ipynb file).',
+        '',
+        'Usage:',
+        '- You must use the Read tool on the notebook in this conversation before editing — this tool will fail otherwise.',
+        '- `notebook_path` must be an absolute path.',
+        '- `cell_id` is the `id` attribute shown in the Read tool\'s `<cell id="...">` output. It is required for `replace` and `delete`.',
+        '- `edit_mode` defaults to `replace`. Use `insert` to add a new cell after the cell with the given `cell_id` (or at the beginning of the notebook if `cell_id` is omitted) — `cell_type` is required when inserting. Use `delete` to remove the cell.',
+      ].join('\n'),
+      parameters: z.object({
+        notebook_path: z
+          .string()
+          .describe(
+            'The absolute path to the Jupyter notebook file to edit (must be absolute, not relative)',
+          ),
+        new_source: z.string().describe('The new source for the cell'),
+        cell_id: z
+          .string()
+          .optional()
+          .describe(
+            'The ID of the cell to edit. When inserting a new cell, the new cell will be inserted after the cell with this ID, or at the beginning if not specified.',
+          ),
+        cell_type: z
+          .enum(['code', 'markdown'])
+          .optional()
+          .describe(
+            'The type of the cell (code or markdown). If not specified, it defaults to the current cell type. If using edit_mode=insert, this is required.',
+          ),
+        edit_mode: z
+          .enum(['replace', 'insert', 'delete'])
+          .optional()
+          .describe('The type of edit to make (replace, insert, delete). Defaults to replace.'),
+      }),
+      executionFacts,
+      impl: async (input, ctx) => {
+        const { notebook_path, new_source, cell_id, cell_type, edit_mode } = input as {
+          notebook_path: string;
+          new_source: string;
+          cell_id?: string;
+          cell_type?: 'code' | 'markdown';
+          edit_mode?: 'replace' | 'insert' | 'delete';
+        };
+        const path = expandHomePath(notebook_path);
+        if (!isNotebookPath(path)) {
+          throw new Error(
+            'File must be a Jupyter notebook (.ipynb file). For editing other file types, use the Edit tool.',
+          );
+        }
+        const tracker = trackerFor(ctx.sessionId);
+        const canonical = canonicalFilePath(ctx.cwd, path);
+        // The one file tool that insists on a Read first: a cell id is only
+        // ever known from the Read's rendering of the notebook.
+        if (tracker && !tracker.has(canonical)) {
+          throw new Error('File has not been read yet. Read it first before writing to it.');
+        }
+        await tracker?.assertUnchanged(canonical);
+        const read = await filesystem.execute({
+          operation: { kind: 'read', path },
+          ...filesystemCall(ctx),
+        });
+        if (read.kind !== 'read')
+          throw internalFilesystemReadFailure(
+            'NotebookEdit',
+            'no notebook came back',
+            'the notebook is missing',
+          );
+        const notebook = parseNotebook(read.content);
+        if (!notebook) throw new Error('File is not a valid Jupyter notebook.');
+        const edited = applyNotebookEdit(notebook, {
+          cellId: cell_id,
+          newSource: new_source,
+          cellType: cell_type,
+          editMode: edit_mode,
+        });
+        const written = await filesystem.execute({
+          operation: { kind: 'write', path, content: serializeNotebook(edited.notebook) },
+          ...filesystemCall(ctx),
+        });
+        if (written.kind !== 'write')
+          throw internalFilesystemWriteFailure('NotebookEdit', 'the notebook was written');
+        await tracker?.noteWritten(written.path);
+        return edited.message;
+      },
+      toModelOutput: ({ output }) =>
+        typeof output === 'string' ? { type: 'text', value: output } : undefined,
+      errorToModelText: wrappedToolError,
     },
     {
       name: TOOL_NAMES.glob,
@@ -780,6 +957,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
         };
       },
       toModelOutput: ({ output }) => globToolResultToModelOutput(output),
+      errorToModelText: bareToolError,
     },
     {
       name: TOOL_NAMES.grep,
@@ -791,8 +969,6 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
         '- Filter with `glob` (e.g. "**/*.tsx") or `type` (e.g. "js", "py", "rust").',
         '- `output_mode`: "content" (matching lines), "files_with_matches" (paths only, default), or "count".',
         '- `multiline: true` for patterns that span lines.',
-        `- Results are capped: \`head_limit\` lines (default ${DEFAULT_GREP_HEAD_LIMIT}), and an internal ceiling of ${GREP_HARD_LINE_CAP} lines that \`head_limit: 0\` does not lift. A capped result says how many lines were dropped; \`offset\` pages past them.`,
-        '- Returns plain text, or "No files found". A missing path, or one the session permissions do not cover, fails with the reason.',
       ].join('\n'),
       parameters: z.object({
         pattern: z
@@ -802,23 +978,23 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
           .string()
           .optional()
           .describe(
-            'File or directory to search in; absolute or relative. Defaults to the session cwd.',
+            'File or directory to search in (rg PATH). Defaults to current working directory.',
           ),
         glob: z
           .string()
           .optional()
-          .describe('Glob pattern to filter files (e.g. "*.js", "*.{ts,tsx}"); maps to rg --glob'),
+          .describe('Glob pattern to filter files (e.g. "*.js", "*.{ts,tsx}") - maps to rg --glob'),
         type: z
           .string()
           .optional()
           .describe(
-            'File type to search (e.g. "js", "py", "rust", "go"); maps to rg --type. More efficient than glob for standard file types.',
+            'File type to search (rg --type). Common types: js, py, rust, go, java, etc. More efficient than include for standard file types.',
           ),
         output_mode: z
           .enum(GREP_OUTPUT_MODES)
           .optional()
           .describe(
-            'Output mode: "content" shows matching lines as path:line:text, "files_with_matches" shows only file paths (default), "count" shows per-file occurrence counts.',
+            'Output mode: "content" shows matching lines (supports -A/-B/-C context, -n line numbers, head_limit), "files_with_matches" shows file paths (supports head_limit), "count" shows match counts (supports head_limit). Defaults to "files_with_matches".',
           ),
         '-i': z.boolean().optional().describe('Case insensitive search (rg -i)'),
         '-n': z
@@ -838,39 +1014,47 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
           .int()
           .nonnegative()
           .optional()
-          .describe('Number of lines to show after each match (rg -A)'),
+          .describe(
+            'Number of lines to show after each match (rg -A). Requires output_mode: "content", ignored otherwise.',
+          ),
         '-B': z
           .number()
           .int()
           .nonnegative()
           .optional()
-          .describe('Number of lines to show before each match (rg -B)'),
+          .describe(
+            'Number of lines to show before each match (rg -B). Requires output_mode: "content", ignored otherwise.',
+          ),
+        '-C': z.number().int().nonnegative().optional().describe('Alias for context.'),
         context: z
           .number()
           .int()
           .nonnegative()
           .optional()
-          .describe('Number of lines to show before and after each match (rg -C)'),
-        '-C': z.number().int().nonnegative().optional().describe('Alias for context.'),
+          .describe(
+            'Number of lines to show before and after each match (rg -C). Requires output_mode: "content", ignored otherwise.',
+          ),
+        multiline: z
+          .boolean()
+          .optional()
+          .describe(
+            'Enable multiline mode where . matches newlines and patterns can span lines (rg -U --multiline-dotall). Default: false.',
+          ),
         head_limit: z
           .number()
           .int()
           .nonnegative()
           .optional()
           .describe(
-            `Limit output to the first N lines/entries (default ${DEFAULT_GREP_HEAD_LIMIT}). Pass 0 for unlimited (use sparingly — large result sets waste context); an internal ceiling of ${GREP_HARD_LINE_CAP} lines still applies.`,
+            'Limit output to first N lines/entries, equivalent to "| head -N". Works across all output modes: content (limits output lines), files_with_matches (limits file paths), count (limits count entries). Defaults to 250 when unspecified. Pass 0 for unlimited (use sparingly — large result sets waste context).',
           ),
         offset: z
           .number()
           .int()
           .nonnegative()
           .optional()
-          .describe('Skip first N lines/entries before applying head_limit. Defaults to 0.'),
-        multiline: z
-          .boolean()
-          .optional()
           .describe(
-            'Enable multiline mode where . matches newlines (rg -U --multiline-dotall). Default: false.',
+            'Skip first N lines/entries before applying head_limit, equivalent to "| tail -n +N | head -N". Works across all output modes. Defaults to 0.',
           ),
       }),
       executionFacts,
@@ -884,11 +1068,8 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
         const after = input['-A'] ?? bothWays;
         const before = input['-B'] ?? bothWays;
         const mode = output_mode ?? 'files_with_matches';
-        // `head_limit: 0` is "no limit of mine", not "no limit at all": one
-        // search must not be able to spend a whole context window.
-        const requested = head_limit ?? DEFAULT_GREP_HEAD_LIMIT;
-        const limit =
-          requested === 0 ? GREP_HARD_LINE_CAP : Math.min(requested, GREP_HARD_LINE_CAP);
+        // `head_limit: 0` is no limit at all.
+        const limit = head_limit === 0 ? undefined : (head_limit ?? DEFAULT_GREP_HEAD_LIMIT);
         const searchRoot = path === undefined ? '.' : expandHomePath(path);
         // Self-bound: ripgrep finishes in well under a second normally, but a
         // pathological tree (network mount, /proc, a FIFO) could hang it. The
@@ -914,8 +1095,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
                 }
               : {}),
             ...(multiline !== undefined ? { multiline } : {}),
-            maxCountPerFile: GREP_MAX_COUNT_PER_FILE,
-            limit,
+            ...(limit !== undefined ? { limit } : {}),
             ...(offset !== undefined ? { offset } : {}),
             timeoutMs: GREP_TIMEOUT_MS,
           },
@@ -935,13 +1115,15 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
           cwd: ctx.cwd,
           mode: result.mode ?? mode,
           ...(result.truncated ? { truncated: true, omitted: result.omitted ?? 0 } : {}),
-          // The caller's paging, echoed on the result so the model's view can
-          // say which slice it is looking at.
-          ...(head_limit !== undefined ? { limit: head_limit } : {}),
-          ...(offset !== undefined ? { offset } : {}),
+          // The paging the answer states: the limit when it cut the list, and
+          // the offset it started from.
+          ...(result.truncated && limit !== undefined ? { limit } : {}),
+          ...(offset ? { offset } : {}),
+          ...(result.countTotal ? { countTotal: result.countTotal } : {}),
         };
       },
       toModelOutput: ({ output }) => grepToolResultToModelOutput(output),
+      errorToModelText: bareToolError,
     },
   ];
   return tools;

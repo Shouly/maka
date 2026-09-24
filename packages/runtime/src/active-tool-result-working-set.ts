@@ -40,6 +40,8 @@ export interface ActiveToolResultObservation {
   bodySha256: string;
   isError: boolean;
   eligible: boolean;
+  /** A Read answered by pointing at an earlier result; it replaces nothing. */
+  refersBack?: boolean;
 }
 
 export interface ActiveToolResultSupersession {
@@ -107,7 +109,7 @@ export function planActiveToolResultSupersession(
     }
 
     if (!newestExact.has(exactKey)) newestExact.set(exactKey, observation);
-    if (observation.isError || !descriptor) continue;
+    if (observation.isError || observation.refersBack || !descriptor) continue;
     if (descriptor.kind === 'read') {
       const reads = newerReads.get(descriptor.path) ?? [];
       if (reads.length < MAX_NEWER_READ_CANDIDATES_PER_PATH) reads.push(observation);
@@ -166,7 +168,9 @@ function describeRead(input: unknown): ReadDescriptor | undefined {
   if (!record || typeof record.file_path !== 'string' || record.file_path.length === 0) {
     return undefined;
   }
-  const start = nonNegativeInteger(record.offset) ?? 0;
+  // `offset` is the first line's number, from 1 (0 reads as 1); `start` and
+  // `end` are zero-based line indexes.
+  const start = Math.max(1, nonNegativeInteger(record.offset) ?? 1) - 1;
   const limit = positiveInteger(record.limit);
   return {
     kind: 'read',

@@ -182,7 +182,6 @@ describe('filesystem worker operations', () => {
           cwd: root,
           path: target,
           pattern: 'healthSignal',
-          maxCountPerFile: 50,
           limit: 200,
           timeoutMs: 1_000,
         },
@@ -219,7 +218,6 @@ describe('filesystem worker operations', () => {
           cwd: root,
           path: target,
           pattern: 'healthSignal',
-          maxCountPerFile: 50,
           limit: 200,
           timeoutMs: 1_000,
         },
@@ -256,7 +254,6 @@ describe('filesystem worker operations', () => {
           cwd: root,
           path: target,
           pattern: '-webkit-box',
-          maxCountPerFile: 50,
           limit: 200,
           timeoutMs: 1_000,
         },
@@ -289,7 +286,6 @@ describe('filesystem worker operations', () => {
       cwd: root,
       path: target,
       pattern: 'missing',
-      maxCountPerFile: 50,
       limit: 200,
       timeoutMs: 1_000,
     };
@@ -413,7 +409,13 @@ describe('filesystem worker operations', () => {
       ),
     );
     assert.equal(textResponse.ok, true);
-    if (textResponse.ok) assert.deepEqual(textResponse.result, { kind: 'read', content: 'notes' });
+    if (textResponse.ok)
+      assert.deepEqual(textResponse.result, {
+        kind: 'read',
+        content: 'notes',
+        startLine: 1,
+        totalLines: 1,
+      });
   });
 
   test('reads and writes only the canonical path capability in the request', async () => {
@@ -430,7 +432,13 @@ describe('filesystem worker operations', () => {
       ),
     );
     assert.equal(readResponse.ok, true);
-    if (readResponse.ok) assert.deepEqual(readResponse.result, { kind: 'read', content: 'inside' });
+    if (readResponse.ok)
+      assert.deepEqual(readResponse.result, {
+        kind: 'read',
+        content: 'inside',
+        startLine: 1,
+        totalLines: 1,
+      });
 
     const denied = await executeFilesystemWorkerRequest(
       await requestFor(
@@ -511,7 +519,7 @@ describe('filesystem worker operations', () => {
 
     const response = await executeFilesystemWorkerRequest(
       await requestFor(
-        { kind: 'write', cwd: root, path: target, content: 'new', allowOverwrite: true },
+        { kind: 'write', cwd: root, path: target, content: 'new' },
         { enforcementPath: target, access: 'write', scope: 'exact', targetType: 'file' },
         target,
         'unchecked',
@@ -557,7 +565,6 @@ describe('filesystem worker operations', () => {
           path: target,
           oldString: 'const v0 = 0;',
           newString: 'const v0 = -1;',
-          allowEdit: true,
         },
         { enforcementPath: target, access: 'write', scope: 'exact', targetType: 'file' },
       ),
@@ -584,7 +591,6 @@ describe('filesystem worker operations', () => {
           path: target,
           oldString: 'const value = 1;',
           newString: replacement,
-          allowEdit: true,
         },
         { enforcementPath: target, access: 'write', scope: 'exact', targetType: 'file' },
       ),
@@ -604,7 +610,7 @@ describe('filesystem worker operations', () => {
 
     const response = await executeFilesystemWorkerRequest(
       await requestFor(
-        { kind: 'write', cwd: root, path: target, content: 'replacement\n', allowOverwrite: true },
+        { kind: 'write', cwd: root, path: target, content: 'replacement\n' },
         { enforcementPath: target, access: 'write', scope: 'exact', targetType: 'file' },
       ),
     );
@@ -629,7 +635,6 @@ describe('filesystem worker operations', () => {
           cwd: root,
           path: target,
           content: 'not an image anymore\n',
-          allowOverwrite: true,
         },
         { enforcementPath: target, access: 'write', scope: 'exact', targetType: 'file' },
       ),

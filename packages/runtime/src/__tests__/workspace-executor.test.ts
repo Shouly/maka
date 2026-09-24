@@ -217,9 +217,10 @@ describe('LocalWorkspaceExecutor file operations', () => {
     const file = join(cwd, 'data.txt');
     await writeFile(file, 'line1\nline2\nline3\nline4', 'utf8');
 
-    const readResult = await executor.readFile({ cwd, path: file, offset: 1, limit: 2 });
+    // `offset` is the first line's number, from 1.
+    const readResult = await executor.readFile({ cwd, path: file, offset: 2, limit: 2 });
 
-    assert.partialDeepStrictEqual(readResult, { content: 'line2\nline3' });
+    assert.deepStrictEqual(readResult, { content: 'line2\nline3', startLine: 2, totalLines: 4 });
   });
 
   test('lists the oldest matches first, relative to the root, and counts the rest', async () => {
@@ -256,7 +257,6 @@ describe('LocalWorkspaceExecutor file operations', () => {
       cwd,
       pattern: 'token',
       path: join(cwd, 'src'),
-      maxCountPerFile: 50,
       limit: 200,
       timeoutMs: 5_000,
     });
@@ -264,7 +264,6 @@ describe('LocalWorkspaceExecutor file operations', () => {
       cwd,
       pattern: 'absent',
       path: join(cwd, 'src'),
-      maxCountPerFile: 50,
       limit: 200,
       timeoutMs: 5_000,
     });
@@ -272,7 +271,6 @@ describe('LocalWorkspaceExecutor file operations', () => {
       cwd,
       pattern: '--flag',
       path: join(cwd, 'src'),
-      maxCountPerFile: 50,
       limit: 200,
       timeoutMs: 5_000,
     });
@@ -298,7 +296,6 @@ describe('LocalWorkspaceExecutor file operations', () => {
         cwd,
         pattern,
         path: cwd,
-        maxCountPerFile: 50,
         limit: 200,
         timeoutMs: 5_000,
       });

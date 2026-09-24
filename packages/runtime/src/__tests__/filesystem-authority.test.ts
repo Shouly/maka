@@ -115,7 +115,7 @@ describe('file tools follow the execution boundary', () => {
       assert.strictEqual(await readFile(target, 'utf8'), 'hello');
 
       const read = await runTool(toolNamed(tools, 'Read'), { file_path: target }, cwd, BYPASS);
-      assert.deepStrictEqual(read, { content: 'hello' });
+      assert.deepStrictEqual(read, { content: 'hello', startLine: 1, totalLines: 1 });
 
       const edited = await runTool(
         toolNamed(tools, 'Edit'),
@@ -192,9 +192,7 @@ describe('file tools follow the execution boundary', () => {
       // Under bypass the same link resolves, because nothing is being escaped.
       assert.deepStrictEqual(
         await runTool(toolNamed(tools, 'Read'), { file_path: 'link.txt' }, cwd, BYPASS),
-        {
-          content: 'secret',
-        },
+        { content: 'secret', startLine: 1, totalLines: 1 },
       );
     } finally {
       await cleanup();
@@ -234,7 +232,7 @@ describe('file tools follow the execution boundary', () => {
         filesystemWorker: {
           execute: async (input) => {
             calls.push(input);
-            return { kind: 'write', ok: true, path: target, bytes: 1 };
+            return { kind: 'write', ok: true, path: target, bytes: 1, created: false };
           },
         },
       });
@@ -458,7 +456,7 @@ describe('file tools follow the execution boundary', () => {
         filesystemWorker: {
           execute: async (input) => {
             calls.push(input);
-            return { kind: 'write', ok: true, path: 'unused', bytes: 0 };
+            return { kind: 'write', ok: true, path: 'unused', bytes: 0, created: false };
           },
         },
       });

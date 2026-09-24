@@ -261,7 +261,12 @@ describe('filesystem worker client permission snapshots', () => {
       expectedIdentity: 'unchecked',
     });
 
-    assert.deepEqual(result, { kind: 'read', content: 'worker-content' });
+    assert.deepEqual(result, {
+      kind: 'read',
+      content: 'worker-content',
+      startLine: 1,
+      totalLines: 1,
+    });
     assert.equal(requests.length, 1);
     assert.deepEqual(requests[0]?.operationBoundary.filesystem?.entries, [
       {
@@ -587,13 +592,14 @@ function fakeResult(request: FilesystemWorkerRequest): FilesystemWorkerResult {
     case 'read':
       return request.operation.path.endsWith('.png')
         ? { kind: 'read_image', base64: 'iVBORw==', mimeType: 'image/png' }
-        : { kind: 'read', content: 'worker-content' };
+        : { kind: 'read', content: 'worker-content', startLine: 1, totalLines: 1 };
     case 'write':
       return {
         kind: 'write',
         ok: true,
         path: request.operation.path,
         bytes: Buffer.byteLength(request.operation.content, 'utf8'),
+        created: true,
       };
     case 'apply_patch':
       return { kind: 'apply_patch', ok: true, path: request.operation.path };
@@ -611,7 +617,6 @@ function grepOperation(path: string) {
     kind: 'grep' as const,
     path,
     pattern: 'value',
-    maxCountPerFile: 50,
     limit: 200,
     timeoutMs: 1_000,
   };
@@ -673,7 +678,6 @@ describe('filesystem worker client search roots', () => {
           path: 'nope',
           pattern: 'x',
           outputMode: 'files_with_matches',
-          maxCountPerFile: 1,
           limit: 10,
           timeoutMs: 1_000,
         },
@@ -834,7 +838,13 @@ describe('filesystem worker client dispatch classification', () => {
             version: FILESYSTEM_WORKER_PROTOCOL_VERSION,
             requestId: request.requestId,
             ok: true,
-            result: { kind: 'write', ok: true, path: request.operation.path, bytes: 3 },
+            result: {
+              kind: 'write',
+              ok: true,
+              path: request.operation.path,
+              bytes: 3,
+              created: true,
+            },
           }),
           stderrTail: '',
           timedOut: false,

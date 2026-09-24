@@ -244,11 +244,11 @@ describe('filesystem mutation T0 identity capture (queue-window closure)', () =>
         calls += 1;
         if (calls === 1) {
           await firstGate; // hold the path's lock until the swap has happened
-          return { kind: 'write', ok: true, path: target, bytes: 5 };
+          return { kind: 'write', ok: true, path: target, bytes: 5, created: false };
         }
         // The queued (second) call: record the identity it was handed.
         queuedIdentity = input.expectedIdentity;
-        return { kind: 'write', ok: true, path: target, bytes: 6 };
+        return { kind: 'write', ok: true, path: target, bytes: 6, created: false };
       },
     };
     const fs = executorWith(gatedWorker);

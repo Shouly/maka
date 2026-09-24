@@ -175,7 +175,6 @@ describe('Windows filesystem worker smoke', { skip: !enabled }, () => {
           kind: 'grep',
           path: sourceDirectory,
           pattern: 'healthSignal',
-          maxCountPerFile: 50,
           limit: 200,
           timeoutMs: 10_000,
         },

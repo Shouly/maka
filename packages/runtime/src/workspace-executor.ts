@@ -40,13 +40,14 @@ import type { ChildFdInput } from './child-fd-input.js';
 import type { ShellPlan } from './shell-detect.js';
 import { isSupportedImagePath, readWorkspaceImage } from './image-file.js';
 import type { ImageMimeType } from './image-file.js';
-import { readTextLineWindowFacts } from './text-line-window.js';
+import { readTextLineWindowFacts, readTooLargeMessage } from './text-line-window.js';
 import {
   applyGrepHeadLimit,
   buildRipgrepArgs,
   GLOB_RESULT_LIMIT,
   GLOB_TIMEOUT_MESSAGE,
   type GlobSearchOutcome,
+  grepFailureMessage,
   type GlobSearchResult,
   nodeGlob,
   orderGrepFilesNewestFirst,
@@ -95,16 +96,22 @@ export interface WorkspaceExecResult {
 export interface WorkspaceReadFileInput {
   cwd: string;
   path: string;
+  /** Number of the first line to return, from 1. */
   offset?: number;
+  /** Lines to return; missing or 0 runs to the end. */
   limit?: number;
+  /** Refuse, in the Read tool's words, when the text returned would be larger. */
+  maxBytes?: number;
 }
 
 export interface WorkspaceReadTextResult {
   content: string;
-  /** Lines in the whole file, when the read was windowed and more follow. */
+  /** Number of the first line returned, from 1. */
+  startLine?: number;
+  /** Lines in the file; 0 for an empty file. */
   totalLines?: number;
-  /** Lines of the file follow the returned window. */
-  truncated?: boolean;
+  /** `offset` named a line past the end. */
+  beyondEnd?: boolean;
 }
 
 export interface WorkspaceReadImageResult {
@@ -235,8 +242,8 @@ export interface WorkspaceGrepInput {
   /** Print only the matched parts of each line (`-o`); content mode only. */
   onlyMatching?: boolean;
   multiline?: boolean;
-  maxCountPerFile: number;
-  limit: number;
+  /** Result lines to return; absent returns them all. */
+  limit?: number;
   /** Result lines to skip before `limit` applies, for paging. */
   offset?: number;
   timeoutMs: number;
@@ -250,6 +257,8 @@ export interface WorkspaceGrepResult {
   truncated?: boolean;
   /** How many matching lines `limit` dropped. */
   omitted?: number;
+  /** Count mode: occurrences and files over every line, before `limit`. */
+  countTotal?: { occurrences: number; files: number };
 }
 
 export interface WorkspaceExecutorFactsProvider {
@@ -392,11 +401,22 @@ export class LocalWorkspaceExecutor implements WorkspaceExecutor {
     if (isSupportedImagePath(input.path)) {
       return await readWorkspaceImage(input.path);
     }
+    if (input.maxBytes !== undefined && !input.limit && (input.offset ?? 1) <= 1) {
+      // The whole file is the answer, so its size decides before it is read.
+      const size = (await fs.stat(input.path)).size;
+      if (size > input.maxBytes) throw new Error(readTooLargeMessage(size));
+    }
     const content = await fs.readFile(input.path, 'utf8');
     const window = readTextLineWindowFacts(content, input.offset, input.limit);
+    if (input.maxBytes !== undefined) {
+      const bytes = Buffer.byteLength(window.content, 'utf8');
+      if (bytes > input.maxBytes) throw new Error(readTooLargeMessage(bytes));
+    }
     return {
       content: window.content,
-      ...(window.truncated ? { totalLines: window.totalLines, truncated: true } : {}),
+      startLine: window.startLine,
+      totalLines: window.totalLines,
+      ...(window.beyondEnd ? { beyondEnd: true } : {}),
     };
   }
 
@@ -566,7 +586,6 @@ export class LocalWorkspaceExecutor implements WorkspaceExecutor {
       lineNumbers: input.lineNumbers,
       onlyMatching: input.onlyMatching,
       multiline: input.multiline,
-      maxCountPerFile: input.maxCountPerFile,
     });
     let stdout: string;
     try {
@@ -579,19 +598,18 @@ export class LocalWorkspaceExecutor implements WorkspaceExecutor {
     } catch (error: any) {
       stdout = typeof error?.stdout === 'string' ? error.stdout : '';
       const stderr = typeof error?.stderr === 'string' ? error.stderr : '';
-      if (
-        typeof error?.code !== 'number' ||
-        !ripgrepAnswered(error.code, stdout.trim() !== '', stderr)
-      )
-        throw error;
+      if (typeof error?.code !== 'number') throw error;
+      if (!ripgrepAnswered(error.code, stdout.trim() !== '', stderr))
+        throw new Error(grepFailureMessage(stderr));
     }
     const ordered =
       mode === 'files_with_matches' ? await orderGrepFilesNewestFirst(stdout) : stdout;
-    const limited = applyGrepHeadLimit(ordered, input.limit, input.offset);
+    const limited = applyGrepHeadLimit(ordered, input.limit, input.offset, mode);
     return {
       matches: limited.matches,
       mode,
       ...(limited.truncated ? { truncated: true, omitted: limited.omitted } : {}),
+      ...(limited.countTotal ? { countTotal: limited.countTotal } : {}),
     };
   }
 }

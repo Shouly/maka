@@ -96,9 +96,15 @@ describe('builtin file tools use the sandboxed worker', () => {
             case 'metadata':
               return { kind: 'metadata', targetType: 'file' };
             case 'read':
-              return { kind: 'read', content: 'worker-content' };
+              return { kind: 'read', content: 'worker-content', startLine: 1, totalLines: 1 };
             case 'write':
-              return { kind: 'write', ok: true, path: input.operation.path, bytes: 7 };
+              return {
+                kind: 'write',
+                ok: true,
+                path: input.operation.path,
+                bytes: 7,
+                created: true,
+              };
             case 'apply_patch':
               return { kind: 'apply_patch', ok: true, path: input.operation.path };
             case 'edit':
@@ -342,7 +348,7 @@ describe('file tools surface a file_diff result', () => {
       cwd,
     );
 
-    assert.deepEqual(result, { kind: 'file_diff', paths: ['a.ts'], diff: DIFF });
+    assert.deepEqual(result, { kind: 'file_diff', paths: ['a.ts'], diff: DIFF, shownPath: 'a.ts' });
   });
 
   test('Edit keeps the fact summary when the worker reports no diff', async () => {
@@ -371,6 +377,7 @@ describe('file tools surface a file_diff result', () => {
       matchedVia: 'exact',
       startLine: 1,
       endLine: 2,
+      shownPath: 'a.ts',
     });
   });
 
@@ -381,6 +388,7 @@ describe('file tools surface a file_diff result', () => {
       ok: true,
       path: 'new.md',
       bytes: 12,
+      created: true,
       diff: ['--- /dev/null', '+++ b/new.md', '@@ -0,0 +1,2 @@', '+alpha', '+beta'].join('\n'),
     });
 
@@ -395,6 +403,7 @@ describe('file tools surface a file_diff result', () => {
       kind: 'file_diff',
       paths: ['new.md'],
       diff: ['--- /dev/null', '+++ b/new.md', '@@ -0,0 +1,2 @@', '+alpha', '+beta'].join('\n'),
+      shownPath: 'new.md',
     });
   });
 
@@ -405,11 +414,18 @@ describe('file tools surface a file_diff result', () => {
       ok: true,
       path: 'huge.bin',
       bytes: 70000,
+      created: true,
     });
 
     const result = await runTool(tools, 'Write', { file_path: 'huge.bin', content: 'x' }, cwd);
 
-    assert.deepEqual(result, { kind: 'file_write', path: 'huge.bin', bytes: 70000 });
+    assert.deepEqual(result, {
+      kind: 'file_write',
+      path: 'huge.bin',
+      bytes: 70000,
+      created: true,
+      shownPath: 'huge.bin',
+    });
   });
 
   test('the model output for an edit is a bounded summary, not the diff', async () => {

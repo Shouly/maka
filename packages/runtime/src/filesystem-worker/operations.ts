@@ -30,7 +30,11 @@ import {
 } from '../apply-patch-file.js';
 
 import { computeEditedSource } from '../edit-replace.js';
-import { readTextLineWindowFacts } from '../text-line-window.js';
+import {
+  READ_MAX_CONTENT_BYTES,
+  readTextLineWindowFacts,
+  readTooLargeMessage,
+} from '../text-line-window.js';
 import { createEditUnifiedDiff, createUnifiedDiff } from '../unified-diff.js';
 import {
   compareAndDeleteEntry,
@@ -47,6 +51,7 @@ import {
   GLOB_RESULT_LIMIT,
   GLOB_TIMEOUT_MESSAGE,
   nodeGlob,
+  grepFailureMessage,
   orderGrepFilesNewestFirst,
   ripgrepAnswered,
   ripgrepGlob,
@@ -61,8 +66,6 @@ import {
   type FilesystemWorkerResponse,
   type FilesystemWorkerResult,
   type FilesystemWorkerTarget,
-  unreadEditMessage,
-  unreadOverwriteMessage,
 } from './protocol.js';
 import { isLikelySandboxDenial } from '../sandbox/detect.js';
 
@@ -223,12 +226,25 @@ export async function executeFilesystemOperation(
           );
         }
       }
+      if (!operation.limit && (operation.offset ?? 1) <= 1) {
+        // The whole file is the answer, so its size decides before it is read.
+        const size = (await fs.stat(path)).size;
+        if (size > READ_MAX_CONTENT_BYTES) {
+          throw operationError('filesystem_error', readTooLargeMessage(size));
+        }
+      }
       const content = await fs.readFile(path, 'utf8');
       const window = readTextLineWindowFacts(content, operation.offset, operation.limit);
+      const bytes = Buffer.byteLength(window.content, 'utf8');
+      if (bytes > READ_MAX_CONTENT_BYTES) {
+        throw operationError('filesystem_error', readTooLargeMessage(bytes));
+      }
       return {
         kind: 'read',
         content: window.content,
-        ...(window.truncated ? { totalLines: window.totalLines, truncated: true } : {}),
+        startLine: window.startLine,
+        totalLines: window.totalLines,
+        ...(window.beyondEnd ? { beyondEnd: true } : {}),
       };
     }
     case 'write': {
@@ -241,6 +257,14 @@ export async function executeFilesystemOperation(
         'Write',
         operationBoundary,
       );
+      // A directory target is named as one, as the local executor names it;
+      // the generic mapping below would call it "Filesystem operation failed".
+      if ((await fs.stat(path).catch(() => undefined))?.isDirectory()) {
+        throw operationError(
+          'filesystem_error',
+          `EISDIR: illegal operation on a directory, open '${path}'`,
+        );
+      }
       // Pin the approved object (#2600): open once, validate the identity on
       // the descriptor, and write through that descriptor — a path swap between
       // validation and the write cannot divert the bytes onto the replacement.
@@ -262,12 +286,6 @@ export async function executeFilesystemOperation(
         if (expectedTarget?.targetType === 'missing') {
           previous = 'new';
         } else {
-          // Read-before-overwrite: the target already existed, so replacing it
-          // destroys content this session may never have seen. The host
-          // decides whether it has been seen; the guard lives here, where the
-          // "new vs existing" fact is established and BEFORE any byte is
-          // written, so a refusal leaves the file exactly as it was.
-          if (operation.allowOverwrite !== true) throw unreadOverwriteError(path);
           try {
             previous = await handle.readFile('utf8');
           } catch {
@@ -288,6 +306,7 @@ export async function executeFilesystemOperation(
           ok: true,
           path,
           bytes: Buffer.byteLength(operation.content, 'utf8'),
+          created: previous === 'new',
           ...(diff !== undefined ? { diff } : {}),
         };
       } finally {
@@ -349,9 +368,6 @@ export async function executeFilesystemOperation(
         'write',
         operationBoundary,
       );
-      // After resolution, so a path the boundary rejects is still reported as a
-      // boundary violation rather than as an unread file.
-      if (operation.allowEdit !== true) throw unreadEditError(path);
       const handle = await openStableTarget({
         path,
         approvedIdentity:
@@ -466,7 +482,6 @@ export async function executeFilesystemOperation(
         lineNumbers: operation.lineNumbers,
         onlyMatching: operation.onlyMatching,
         multiline: operation.multiline,
-        maxCountPerFile: operation.maxCountPerFile,
       });
       const result = await (dependencies.runGrep ?? runRipgrep)({
         executable: dependencies.grepExecutable,
@@ -491,21 +506,20 @@ export async function executeFilesystemOperation(
       ) {
         throw operationError(
           sandboxDenied ? 'sandbox_denied' : 'filesystem_error',
-          detail
-            ? `Grep failed while searching files.\n${detail}`
-            : 'Grep failed while searching files.',
+          grepFailureMessage(detail),
         );
       }
       const stdout =
         mode === 'files_with_matches'
           ? await orderGrepFilesNewestFirst(result.stdout)
           : result.stdout;
-      const limited = applyGrepHeadLimit(stdout, operation.limit, operation.offset);
+      const limited = applyGrepHeadLimit(stdout, operation.limit, operation.offset, mode);
       return {
         kind: 'grep',
         matches: limited.matches,
         mode,
         ...(limited.truncated ? { truncated: true, omitted: limited.omitted } : {}),
+        ...(limited.countTotal ? { countTotal: limited.countTotal } : {}),
       };
     }
   }
@@ -526,14 +540,6 @@ function operationError(
   message: string,
 ): FilesystemOperationError {
   return new FilesystemOperationError(code, message);
-}
-
-function unreadOverwriteError(path: string): FilesystemOperationError {
-  return operationError('write_unread_target', unreadOverwriteMessage(path));
-}
-
-function unreadEditError(path: string): FilesystemOperationError {
-  return operationError('edit_unread_target', unreadEditMessage(path));
 }
 
 function sortKeysDeep(value: unknown): unknown {

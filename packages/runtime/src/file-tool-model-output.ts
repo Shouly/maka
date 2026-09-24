@@ -40,9 +40,11 @@ const STATE_IS_CURRENT_NOTE = ' (file state is current in your context — no ne
  * The numbers are not decoration. Every later Edit has to name text the model
  * can only have got from a Read, and a numbered transcript is what lets it say
  * *where* — to itself while reasoning, and to a person reading the transcript.
- * They are also what makes a windowed read legible: line 4 of a read that
- * started at `offset: 200` is line 204 of the file, and nothing else in the
- * result says so.
+ * They are also what makes a windowed read legible: the first line of a read
+ * that started at `offset: 200` is numbered 200.
+ *
+ * The file is its text split on '\n', so a file that ends in a newline shows
+ * a numbered empty last line, and a CRLF file's '\r' is not shown.
  *
  * The durable result keeps the raw content, because the UI renders the file and
  * not a listing of it; this is the model's view of the same bytes.
@@ -50,65 +52,96 @@ const STATE_IS_CURRENT_NOTE = ' (file state is current in your context — no ne
 const READ_EMPTY_FILE_NOTE =
   '<system-reminder>Warning: the file exists but the contents are empty.</system-reminder>';
 
+/** Same range, same file, same turn: the earlier result already says it. */
+export const READ_UNCHANGED_NOTE =
+  'Wasted call — file unchanged since your last Read. Refer to that earlier tool_result instead.';
+
+/**
+ * Whether a tool result is that pointer, in any of the shapes a result takes
+ * on its way to the model. The pruner must never take it for a newer read of
+ * the file: the result it points at would be archived, and the pointer would
+ * point at nothing.
+ */
+export function isReadUnchangedResult(value: unknown): boolean {
+  if (value === READ_UNCHANGED_NOTE) return true;
+  if (!value || typeof value !== 'object') return false;
+  const record = value as { unchanged?: unknown; text?: unknown; value?: unknown };
+  return (
+    record.unchanged === true ||
+    record.text === READ_UNCHANGED_NOTE ||
+    record.value === READ_UNCHANGED_NOTE
+  );
+}
+
 export function readToolResultToModelOutput(
-  input: unknown,
+  _input: unknown,
   output: unknown,
 ): ToolResultOutput | undefined {
   // A Read on a background-task ref answers with that task's output and status.
   if (isShellRunResult(output)) return { type: 'text', value: shellRunResultText(output) };
+  if (isRecord(output) && output.unchanged === true) {
+    return { type: 'text', value: READ_UNCHANGED_NOTE };
+  }
+  if (isRecord(output) && output.notebook === true && typeof output.content === 'string') {
+    return { type: 'text', value: output.content };
+  }
   const result = readResult(output);
   // Images, runtime resources and attachments answer in their own shapes; they
   // have no lines to number, so they keep the default projection.
   if (result === undefined) return undefined;
-  if (result.content === '') return { type: 'text', value: READ_EMPTY_FILE_NOTE };
-  const offset = readOffset(input);
-  const numbered = numberReadLines(result.content, offset);
-  if (!result.truncated || result.totalLines === undefined)
-    return { type: 'text', value: numbered };
-  // A capped read says so, or the model takes the window for the whole file.
-  const shown = numbered.split('\n').length;
-  const last = offset + shown;
-  return {
-    type: 'text',
-    value: `${numbered}\n\n[Showing lines ${offset + 1}-${last} of ${result.totalLines}. Pass offset: ${last} to read on.]`,
-  };
+  if (result.totalLines === 0) return { type: 'text', value: READ_EMPTY_FILE_NOTE };
+  if (result.beyondEnd) {
+    return {
+      type: 'text',
+      value: `<system-reminder>Warning: the file exists but is shorter than the provided offset (${result.startLine}). The file has ${result.totalLines} lines.</system-reminder>`,
+    };
+  }
+  return { type: 'text', value: numberFileLines(result.content, result.startLine) };
 }
 
 function readResult(
   output: unknown,
-): { content: string; truncated?: boolean; totalLines?: number } | undefined {
-  if (!output || typeof output !== 'object' || Array.isArray(output)) return undefined;
+): { content: string; startLine: number; totalLines: number; beyondEnd: boolean } | undefined {
+  if (!isRecord(output)) return undefined;
   const keys = Object.keys(output);
   if (!keys.includes('content') || keys.some((key) => !READ_RESULT_KEYS.has(key))) {
     return undefined;
   }
-  const { content, truncated, totalLines } = output as {
-    content: unknown;
-    truncated?: unknown;
-    totalLines?: unknown;
-  };
+  const { content, startLine, totalLines, beyondEnd } = output;
   if (typeof content !== 'string') return undefined;
   return {
     content,
-    ...(truncated === true ? { truncated: true } : {}),
-    ...(typeof totalLines === 'number' ? { totalLines } : {}),
+    startLine: typeof startLine === 'number' && startLine >= 1 ? startLine : 1,
+    // A result without the count is whole-file text; count it the same way.
+    totalLines: typeof totalLines === 'number' ? totalLines : content === '' ? 0 : 1,
+    beyondEnd: beyondEnd === true,
   };
 }
 
-const READ_RESULT_KEYS = new Set(['content', 'truncated', 'totalLines']);
+const READ_RESULT_KEYS = new Set(['content', 'startLine', 'totalLines', 'beyondEnd']);
 
-/** `offset` is a zero-based line offset, so the first line shown is `offset + 1`. */
-function readOffset(input: unknown): number {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return 0;
-  const offset = (input as { offset?: unknown }).offset;
-  return typeof offset === 'number' && Number.isFinite(offset) && offset > 0
-    ? Math.trunc(offset)
-    : 0;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
+/** A file's lines as `<number>\t<line>`, the first numbered `startLine`. */
+function numberFileLines(content: string, startLine: number): string {
+  const lines = content.split('\n');
+  let numbered = '';
+  for (let index = 0; index < lines.length; index++) {
+    if (index > 0) numbered += '\n';
+    const line = lines[index]!;
+    numbered += `${startLine + index}\t${line.endsWith('\r') ? line.slice(0, -1) : line}`;
+  }
+  return numbered;
+}
+
+/**
+ * A background command's output as `cat -n` numbers it: a final newline ends
+ * the last line rather than starting an empty one. File reads are numbered by
+ * `numberFileLines`, which counts that empty line the way Read does.
+ */
 export function numberReadLines(content: string, offset: number): string {
-  // A file that ends in a newline has no final empty line; `cat -n` does not
-  // number one, and neither may this.
   const body = content.endsWith('\n') ? content.slice(0, -1) : content;
   const lines = body.split('\n');
   let numbered = '';
@@ -162,10 +195,25 @@ function editReplacedAll(input: unknown): boolean {
   );
 }
 
-function editReceipt(path: string, replacedAll: boolean): string {
-  return replacedAll
-    ? `The file ${path} has been updated. All occurrences were successfully replaced.${STATE_IS_CURRENT_NOTE}`
+function writeReceipt(path: string, created: boolean | undefined): string {
+  return created
+    ? `File created successfully at: ${path}${STATE_IS_CURRENT_NOTE}`
     : `The file ${path} has been updated successfully.${STATE_IS_CURRENT_NOTE}`;
+}
+
+/**
+ * An Edit that landed in a file changed on disk since the session read it:
+ * the replacement is right, the text around it may not be what the model
+ * remembers.
+ */
+const MODIFIED_SINCE_READ_NOTE =
+  ' (note: the file had been modified on disk since you last read it — the edit applied cleanly, but the file contains other changes not in your context. Read it before edits that depend on surrounding content.)';
+
+function editReceipt(path: string, replacedAll: boolean, modifiedSinceRead = false): string {
+  const tail = modifiedSinceRead ? MODIFIED_SINCE_READ_NOTE : STATE_IS_CURRENT_NOTE;
+  return replacedAll
+    ? `The file ${path} has been updated. All occurrences were successfully replaced.${tail}`
+    : `The file ${path} has been updated successfully.${tail}`;
 }
 
 function fileWriteToolResultSummary(
@@ -174,25 +222,35 @@ function fileWriteToolResultSummary(
   replacedAll = false,
 ): string | undefined {
   if (isFileDiff(output)) {
-    const path = output.paths[0] ?? 'file';
+    const path = output.shownPath ?? output.paths[0] ?? 'file';
     if (toolName === TOOL_NAMES.write) {
       // `--- /dev/null` is how the diff says the file did not exist before, and
       // "created" versus "updated" is the one fact a writer checks next.
-      return output.diff.startsWith('--- /dev/null')
-        ? `File created successfully at: ${path}${STATE_IS_CURRENT_NOTE}`
-        : `The file ${path} has been updated successfully.${STATE_IS_CURRENT_NOTE}`;
+      return writeReceipt(path, output.diff.startsWith('--- /dev/null'));
     }
-    if (toolName === TOOL_NAMES.edit) return editReceipt(path, replacedAll);
+    if (toolName === TOOL_NAMES.edit)
+      return editReceipt(path, replacedAll, output.modifiedSinceRead === true);
     const { additions, deletions } = countDiffLineStats(output.diff);
     return `Formatted ${path} (+${additions} -${deletions})${STATE_IS_CURRENT_NOTE}`;
   }
-  if (isFileWrite(output))
-    return `File written successfully at: ${output.path} (${output.bytes} bytes)${STATE_IS_CURRENT_NOTE}`;
-  if (isEditResult(output)) return editReceipt(output.path, replacedAll);
+  // No diff to tell from: an empty file, or content that is not text.
+  if (isFileWrite(output)) return writeReceipt(output.shownPath ?? output.path, output.created);
+  if (isEditResult(output)) {
+    return editReceipt(
+      output.shownPath ?? output.path,
+      replacedAll,
+      output.modifiedSinceRead === true,
+    );
+  }
   return undefined;
 }
 
-function isEditResult(output: unknown): output is { path: string; replacements: number } {
+function isEditResult(output: unknown): output is {
+  path: string;
+  replacements: number;
+  shownPath?: string;
+  modifiedSinceRead?: boolean;
+} {
   return (
     typeof output === 'object' &&
     output !== null &&
@@ -230,39 +288,37 @@ export function grepToolResultToModelOutput(output: unknown): ToolResultOutput {
 }
 
 function grepResultText(result: GrepLikeResult): string {
-  if (result.matches.length === 0) return 'No files found';
-  const body =
-    result.mode === 'count'
-      ? [result.matches.join('\n'), '', countSummary(result.matches)].join('\n')
-      : result.mode === 'files_with_matches' || result.mode === undefined
-        ? [
-            `Found ${result.matches.length} ${result.matches.length === 1 ? 'file' : 'files'}`,
-            ...result.matches,
-          ].join('\n')
-        : result.matches.join('\n');
-  // The paging state is echoed whenever the caller set it or the cap bit, so
-  // a partial list is never mistaken for the whole.
-  if (!result.truncated && result.limit === undefined && !result.offset) return body;
+  // The paging an answer states: the limit when it cut the list short, and
+  // the offset it started from.
   const paging = [
     ...(result.limit !== undefined ? [`limit: ${result.limit}`] : []),
     ...(result.offset ? [`offset: ${result.offset}`] : []),
   ].join(', ');
-  const omitted = result.omitted ?? 0;
-  const more = result.truncated
-    ? ` — ${omitted} more matching ${omitted === 1 ? 'line' : 'lines'} not shown; narrow the search or page with offset`
-    : '';
-  return `${body}\n\n[Showing results with pagination = ${paging || 'default'}${more}]`;
+  if (result.mode === 'content') {
+    const content = result.matches.join('\n') || 'No matches found';
+    return paging ? `${content}\n\n[Showing results with pagination = ${paging}]` : content;
+  }
+  if (result.mode === 'count') {
+    // The totals cover every file, the ones past the limit included.
+    const total = result.countTotal ?? countTotals(result.matches);
+    const occurrences = total.occurrences === 1 ? 'occurrence' : 'occurrences';
+    const files = total.files === 1 ? 'file' : 'files';
+    return `${result.matches.join('\n') || 'No matches found'}\n\nFound ${total.occurrences} total ${occurrences} across ${total.files} ${files}.${paging ? ` with pagination = ${paging}` : ''}`;
+  }
+  if (result.matches.length === 0) return 'No files found';
+  const found = `Found ${result.matches.length} ${result.matches.length === 1 ? 'file' : 'files'}`;
+  return [paging ? `${found} ${paging}` : found, ...result.matches].join('\n');
 }
 
-/** `path:count` lines rolled up, so the model does not have to add them itself. */
-function countSummary(lines: readonly string[]): string {
-  let total = 0;
+/** `path:count` lines summed, for a result that did not carry its totals. */
+function countTotals(lines: readonly string[]): { occurrences: number; files: number } {
+  let occurrences = 0;
   for (const line of lines) {
     const separator = line.lastIndexOf(':');
     const count = separator === -1 ? Number.NaN : Number(line.slice(separator + 1));
-    if (Number.isFinite(count)) total += count;
+    if (Number.isFinite(count)) occurrences += count;
   }
-  return `Found ${total} total ${total === 1 ? 'occurrence' : 'occurrences'} across ${lines.length} ${lines.length === 1 ? 'file' : 'files'}.`;
+  return { occurrences, files: lines.length };
 }
 
 /**
@@ -298,10 +354,12 @@ interface GrepLikeResult {
   readonly mode?: GrepOutputMode;
   readonly truncated?: boolean;
   readonly omitted?: number;
-  /** The caller's `head_limit`, when it set one. */
+  /** The head limit, when it cut the list short. */
   readonly limit?: number;
   /** The caller's `offset`, when it set one. */
   readonly offset?: number;
+  /** Count mode: occurrences and files over every line, before the limit. */
+  readonly countTotal?: { readonly occurrences: number; readonly files: number };
 }
 
 function asGrepResult(output: unknown): GrepLikeResult | undefined {
@@ -322,9 +380,13 @@ function asGlobResult(
   return output as { files: string[]; cwd?: string; omitted?: number };
 }
 
-function isFileDiff(
-  output: unknown,
-): output is { kind: 'file_diff'; paths: string[]; diff: string } {
+function isFileDiff(output: unknown): output is {
+  kind: 'file_diff';
+  paths: string[];
+  diff: string;
+  shownPath?: string;
+  modifiedSinceRead?: boolean;
+} {
   return (
     typeof output === 'object' &&
     output !== null &&
@@ -334,9 +396,13 @@ function isFileDiff(
   );
 }
 
-function isFileWrite(
-  output: unknown,
-): output is { kind: 'file_write'; path: string; bytes: number } {
+function isFileWrite(output: unknown): output is {
+  kind: 'file_write';
+  path: string;
+  bytes: number;
+  created?: boolean;
+  shownPath?: string;
+} {
   return (
     typeof output === 'object' &&
     output !== null &&

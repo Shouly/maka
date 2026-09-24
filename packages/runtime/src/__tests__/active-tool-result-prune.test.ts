@@ -31,6 +31,7 @@ import {
 import type { DurableToolResultProjection } from '@maka/core/durable-tool-result-projection';
 import type { ModelProjectionTransition } from '@maka/core/model-projection-transition';
 import { planActiveToolResultSupersession } from '../active-tool-result-working-set.js';
+import { READ_UNCHANGED_NOTE } from '../file-tool-model-output.js';
 import { composeRequestProjection } from '../request-projection.js';
 import { ToolAvailabilityRuntime, TOOL_SEARCH_NAME } from '../tool-availability.js';
 import { toolActivationKey } from '../tool-activation-identity.js';
@@ -447,6 +448,35 @@ describe('active current-turn tool-result pruning', () => {
     assert.match(JSON.stringify(rewritten.messages), /newer_read_covers_range/);
     assert.doesNotMatch(JSON.stringify(rewritten.messages), /OLD_FILE_CONTENT/);
     assert.match(JSON.stringify(rewritten.messages), /NEW_FILE_CONTENT/);
+  });
+
+  test('a Read answered by pointing at the earlier result never supersedes it', async () => {
+    // The pointer says "refer to that earlier tool_result"; archiving the
+    // earlier result on its account would leave the pointer pointing at nothing.
+    const body = 'FILE_CONTENT'.repeat(100);
+    const rewritten = await rewriteActiveToolResultsInMessages({
+      messages: [
+        largeTextToolMessage('Read', 'read-first', body),
+        largeTextToolMessage('Read', 'read-again', READ_UNCHANGED_NOTE),
+      ],
+      policy: {
+        enabled: true,
+        maxCurrentResultEstimatedTokens: 10_000,
+        minSupersededResultEstimatedTokens: 1,
+      },
+      stepNumber: 2,
+      turnId: 'turn-1',
+      charsPerToken: 1,
+      completedToolCalls: [
+        completedCall('Read', 'read-first', { file_path: 'src/a.ts' }, 0),
+        completedCall('Read', 'read-again', { file_path: 'src/a.ts' }, 1),
+      ],
+      eligibleToolCallIds: new Set(['read-first']),
+      archiveToolResult: () => ({ artifactId: 'artifact-read-first' }),
+    });
+
+    assert.equal(rewritten.rewritten, 0);
+    assert.match(JSON.stringify(rewritten.messages), /FILE_CONTENT/);
   });
 
   test('keeps platform-dependent filesystem path spellings as distinct subjects', () => {

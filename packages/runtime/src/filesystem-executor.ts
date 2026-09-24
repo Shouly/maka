@@ -49,12 +49,9 @@ import type {
   FilesystemWorkerClientOperation,
 } from './filesystem-worker/client.js';
 import { isSupportedImagePath, type ImageMimeType } from './image-file.js';
+import { READ_MAX_CONTENT_BYTES, readTextLineWindowFacts } from './text-line-window.js';
 import type { FilesystemWorkerResult } from './filesystem-worker/protocol.js';
-import {
-  operationAccess,
-  unreadEditMessage,
-  unreadOverwriteMessage,
-} from './filesystem-worker/protocol.js';
+import { operationAccess } from './filesystem-worker/protocol.js';
 import { resolveCanonicalDirectoryEntryTarget } from './path-containment.js';
 import { normalizeSandboxBoundaryPath } from './sandbox-boundary-path.js';
 import { SandboxCommandError } from './sandbox/errors.js';
@@ -440,14 +437,25 @@ function createWorkspaceFilesystemExecutor(
             path,
             ...(operation.offset !== undefined ? { offset: operation.offset } : {}),
             ...(operation.limit !== undefined ? { limit: operation.limit } : {}),
+            maxBytes: READ_MAX_CONTENT_BYTES,
           });
           if ('bytes' in result) {
             return { kind: 'read_image', bytes: result.bytes, mimeType: result.mimeType };
           }
+          const window =
+            result.totalLines === undefined
+              ? readTextLineWindowFacts(result.content)
+              : {
+                  startLine: result.startLine ?? 1,
+                  totalLines: result.totalLines,
+                  beyondEnd: result.beyondEnd === true,
+                };
           return {
             kind: 'read',
             content: result.content,
-            ...(result.truncated ? { totalLines: result.totalLines, truncated: true } : {}),
+            startLine: window.startLine,
+            totalLines: window.totalLines,
+            ...(window.beyondEnd ? { beyondEnd: true } : {}),
           };
         }
         case 'write': {
@@ -476,12 +484,7 @@ function createWorkspaceFilesystemExecutor(
               label: 'Write',
               scope,
               approvedIdentity: expectedIdentity,
-              // Read-before-overwrite, raised from inside the transform so it
-              // lands before any byte is written and the file is left intact.
-              transform: ({ existed }) => {
-                assertOverwriteAllowed(existed, operation.allowOverwrite, path);
-                return operation.content;
-              },
+              transform: () => operation.content,
             });
             const diff =
               result.previous === 'unknown'
@@ -496,6 +499,7 @@ function createWorkspaceFilesystemExecutor(
               ok: true,
               path,
               bytes: Buffer.byteLength(operation.content, 'utf8'),
+              created: result.previous === 'new',
               ...(diff !== undefined ? { diff } : {}),
             };
           }
@@ -509,7 +513,6 @@ function createWorkspaceFilesystemExecutor(
             const code = (error as NodeJS.ErrnoException).code;
             previous = code === 'ENOENT' || code === 'ENOTDIR' ? 'new' : 'unknown';
           }
-          assertOverwriteAllowed(previous !== 'new', operation.allowOverwrite, path);
           const written = await workspace.writeFile({ cwd, path, content: operation.content });
           const diff =
             previous === 'unknown'
@@ -524,6 +527,7 @@ function createWorkspaceFilesystemExecutor(
             ok: true,
             path: written.path,
             bytes: written.bytes,
+            created: previous === 'new',
             ...(diff !== undefined ? { diff } : {}),
           };
         }
@@ -579,9 +583,6 @@ function createWorkspaceFilesystemExecutor(
             throw error;
           }
           if (isSupportedImagePath(path)) throw new Error('Edit does not support image files.');
-          // After resolution, so a path the boundary rejects is still reported
-          // as a boundary violation rather than as an unread file.
-          if (operation.allowEdit !== true) throw new Error(unreadEditMessage(path));
           if (workspace.readModifyWrite) {
             let edited!: ReturnType<typeof computeEditedSource>;
             let originalContent = '';
@@ -708,8 +709,7 @@ function createWorkspaceFilesystemExecutor(
               ? { onlyMatching: operation.onlyMatching }
               : {}),
             ...(operation.multiline !== undefined ? { multiline: operation.multiline } : {}),
-            maxCountPerFile: operation.maxCountPerFile,
-            limit: operation.limit,
+            ...(operation.limit !== undefined ? { limit: operation.limit } : {}),
             ...(operation.offset !== undefined ? { offset: operation.offset } : {}),
             timeoutMs: operation.timeoutMs,
             ...(abortSignal ? { abortSignal } : {}),
@@ -719,28 +719,12 @@ function createWorkspaceFilesystemExecutor(
             matches: grepped.matches,
             mode: grepped.mode ?? operation.outputMode ?? 'content',
             ...(grepped.truncated ? { truncated: true, omitted: grepped.omitted ?? 0 } : {}),
+            ...(grepped.countTotal ? { countTotal: grepped.countTotal } : {}),
           };
         }
       }
     },
   };
-}
-
-/**
- * Refuse a Write that would replace an existing file the session has not read.
- *
- * Creating a file is never gated — there is nothing to lose. The decision
- * itself (has this session seen the file?) belongs to the tool layer, which
- * knows what the session has read; this is only where it is enforced, at the
- * one point that knows whether the target already existed.
- */
-function assertOverwriteAllowed(
-  existed: boolean,
-  allowOverwrite: boolean | undefined,
-  path: string,
-): void {
-  if (!existed || allowOverwrite === true) return;
-  throw new Error(unreadOverwriteMessage(path));
 }
 
 /** The canonical spelling of an existing directory, or the input when it is not resolvable here. */

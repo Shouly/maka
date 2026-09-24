@@ -226,6 +226,34 @@ describe('ToolRuntime durable boundary', () => {
     );
   });
 
+  it('projects a failure the way the tool says it reads, not always as `Error: …`', async () => {
+    const outcomes: ToolOutcomeCommit[] = [];
+    const harness = makeHarness({
+      commitToolPrepared: async () => ({ created: true, runtimeEventSeq: 1 }),
+      commitToolOutcome: async (input) => {
+        outcomes.push(input);
+        return { created: true, runtimeEventSeq: 2 };
+      },
+    });
+    const wrappedTool = tool(() => {
+      throw new Error('String to replace not found in file.');
+    });
+    wrappedTool.errorToModelText = (message) => `<tool_use_error>${message}</tool_use_error>`;
+
+    await harness.execute(wrappedTool);
+
+    const response = outcomes[0]?.runtimeEvent.content;
+    assert.deepEqual(
+      response?.kind === 'function_response' ? response.modelProjection : undefined,
+      {
+        version: 1,
+        kind: 'text',
+        text: '<tool_use_error>String to replace not found in file.</tool_use_error>',
+        isError: true,
+      },
+    );
+  });
+
   it('commits one deterministic fallback when projection fails', async () => {
     let implementationCalls = 0;
     const outcomes: ToolOutcomeCommit[] = [];

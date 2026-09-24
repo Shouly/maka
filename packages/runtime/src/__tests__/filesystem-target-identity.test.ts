@@ -110,7 +110,7 @@ describe('filesystem worker target identity CAS', () => {
 
     const response = await executeFilesystemWorkerRequest(
       requestFor(
-        { kind: 'write', cwd, path: target, content: 'updated', allowOverwrite: true },
+        { kind: 'write', cwd, path: target, content: 'updated' },
         { enforcementPath: target, access: 'write', scope: 'exact', targetType: 'file' },
         identity,
       ),
