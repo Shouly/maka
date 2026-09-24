@@ -892,8 +892,14 @@ export function toolStepLabel(item: ToolActivityItem, locale: UiLocale): ToolSte
   }
   // Asked by the request registry as well as by name: a live question's row has
   // no tool name yet.
-  if (isAskUserQuestionTool(item))
-    return label(verb('ask'), askObjectOf(item, copy.step.questions));
+  // A question names itself only once it is asked: while its arguments are
+  // still arriving the row is the reference's "Asking a question", never a
+  // count read off a half-written call.
+  if (isAskUserQuestionTool(item)) {
+    return tense === 'running'
+      ? label(copy.blocked.question)
+      : label(verb('ask'), askObjectOf(item, copy.step.questions));
+  }
   if (isConnectorTool(item.toolName)) return label(verb('toolSearch'));
   const memory = memoryToolVerb(item.toolName);
   if (memory) {

@@ -1627,6 +1627,49 @@ test('a step names its verb and the object it acted on, in the tense of its outc
     }).text,
     'Asked 2 questions',
   );
+  // Still being asked: the reference's words, never a count read off the
+  // half-written arguments.
+  assert.equal(
+    step({
+      toolName: 'AskUserQuestion',
+      status: 'running',
+      args: undefined,
+      argsPreview: { questions: [{ question: 'a' }, { question: 'b' }] },
+    }).text,
+    'Asking a question',
+  );
+});
+
+test('a run whose last call is a running question wears the waiting pill before the request lands', () => {
+  const base = transcriptFixture();
+  const asking: ToolActivityItem = {
+    toolUseId: 'ask-live',
+    toolName: 'AskUserQuestion',
+    status: 'running',
+    args: undefined,
+    argsPreview: { questions: [{ question: 'Which one?' }] },
+  };
+  const document = renderTree(
+    createElement(TranscriptTurn, {
+      turn: {
+        ...base,
+        status: 'running',
+        tools: [asking],
+        timeline: [{ kind: 'tools', items: [asking] }],
+      },
+      live: true,
+      liveStatus: { turnId: base.turnId, startedAt: NOW },
+      footerActions: [],
+      toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
+      onFooterAction: () => {},
+      onOpenLineage: () => {},
+      onOpenExternal: () => {},
+    }),
+  );
+  const row = document.querySelector('[data-maka-turn-status]');
+  assert.equal(row?.getAttribute('data-state'), 'blocked');
+  assert.ok((row?.textContent ?? '').includes('Asking a question'));
+  assert.ok(!(row?.textContent ?? '').includes('questions'));
 });
 
 test('untrusted Markdown keeps HTML and redaction markers as text', () => {

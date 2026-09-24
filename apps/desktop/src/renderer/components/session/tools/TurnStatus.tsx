@@ -51,7 +51,8 @@ import { cn } from '../../../lib/cn.js';
 import { getTranscriptCopy } from '../../../locales/transcript-copy.js';
 import { statusGroupTools, type TurnStatusGroup } from '../../../lib/turn-timeline-groups.js';
 import type { ToolContentContext } from './registry.js';
-import { summarizeToolGroup, toolStepLabel } from './tool-presentation.js';
+import { summarizeToolGroup, toolRowStatus, toolStepLabel } from './tool-presentation.js';
+import { isAskUserQuestionTool } from '../../../lib/ask-user-question.js';
 import { ThinkingText } from '../ThinkingStep.js';
 import {
   TurnStatusNarrationStep,
@@ -246,9 +247,21 @@ export const TurnStatus = memo(function TurnStatus(props: TurnStatusProps) {
   // it has, and still that while the model reasons or writes under the run
   // (the reference keeps the step's words up until the next step). Live
   // reasoning with no call after it is the one moment that says "Thinking…".
+  // A question is waiting on the user from the moment its call starts, before
+  // the Host's request reaches the composer — so the row wears the waiting
+  // pill as soon as the run's last call is a running question.
+  const blocked =
+    props.blocked ??
+    (!props.complete &&
+    tools.at(-1) !== undefined &&
+    toolRowStatus(tools.at(-1)!) === 'running' &&
+    isAskUserQuestionTool(tools.at(-1)!)
+      ? 'question'
+      : undefined);
+
   let label: string;
-  if (props.blocked) {
-    label = copy.blocked[props.blocked];
+  if (blocked) {
+    label = copy.blocked[blocked];
   } else if (!props.complete) {
     const last = steps.at(-1);
     const lastTool = tools.at(-1);
@@ -263,8 +276,8 @@ export const TurnStatus = memo(function TurnStatus(props: TurnStatusProps) {
     label = tools.length > 0 ? summarizeToolGroup(tools, locale) : copy.thinkingOnly;
   }
 
-  const state = props.blocked ? 'blocked' : props.complete ? 'done' : 'busy';
-  const text = props.blocked ? (
+  const state = blocked ? 'blocked' : props.complete ? 'done' : 'busy';
+  const text = blocked ? (
     <span className="relative flex min-w-0 items-center">
       <BlockedMark />
       {/* The reference's pill: 12px medium on a 15px line, 8px sides, 22px
