@@ -518,6 +518,13 @@ export function canExpandTool(item: ToolActivityItem): boolean {
   // stopped being watchable also stopped being openable — with the streamed
   // output still sitting on the item, unreachable until the turn ended.
   if (toolRowFailure(item)) return true;
+  // A question and a permission request are answered in the composer's
+  // place, and the answer stands in the turn afterwards (the Q&A card, the
+  // granted boundary): the row is one line saying it was asked, and opening
+  // it would only show the wire form of what the reader already answered.
+  if (isAskUserQuestionTool(item) || item.toolName === TOOL_NAMES.requestSandboxBoundary) {
+    return false;
+  }
   const renderer = resolveToolRendererId(item);
   if (renderer === 'none') return false;
   if (renderer === 'file_write') return false;

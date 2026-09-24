@@ -1720,6 +1720,32 @@ test('a plain user turn renders no stray 0 where its chips would be', () => {
   );
 });
 
+test('a question and a permission request are one-line steps: answered elsewhere, nothing to open', () => {
+  const asked: ToolActivityItem = {
+    toolUseId: 'ask-1',
+    toolName: 'AskUserQuestion',
+    status: 'completed',
+    args: { questions: [{ question: 'Which one?', options: [] }] },
+    result: { kind: 'json', value: { answers: [{ answer: 'A' }] } },
+  };
+  const asking: ToolActivityItem = { ...asked, status: 'running', result: undefined };
+  const boundary: ToolActivityItem = {
+    toolUseId: 'sb-1',
+    toolName: 'RequestSandboxBoundary',
+    status: 'completed',
+    args: { justification: 'read the folder' },
+    result: { kind: 'text', text: 'approved' },
+  };
+  assert.equal(canExpandTool(asked), false);
+  assert.equal(canExpandTool(asking), false);
+  assert.equal(canExpandTool(boundary), false);
+  // A refused one still opens: the reason is the one thing it has to show.
+  assert.equal(
+    canExpandTool({ ...boundary, status: 'errored', failure: { kind: 'denied', message: 'no' } }),
+    true,
+  );
+});
+
 test('a tool search is its own row: what was asked, no body, nothing to open', () => {
   const searchItem = (args: unknown): ToolActivityItem =>
     ({
