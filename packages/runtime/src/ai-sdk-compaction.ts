@@ -981,10 +981,11 @@ export class AiSdkCompaction {
         state.capacity !== undefined &&
         state.baselineTokens !== undefined &&
         state.baselineTokens + state.replyReserveTokens >= state.capacity;
-      if (!overWindow || state.compactionAttemptedThisSend) {
+      if (!overWindow || state.proactiveFoldAttemptedThisSend || state.foldAttemptedSinceAccepted) {
         return keepProjection();
       }
-      state.compactionAttemptedThisSend = true;
+      state.proactiveFoldAttemptedThisSend = true;
+      state.foldAttemptedSinceAccepted = true;
       const activeToolsForStep = options.resolveDispatch(options.activeTools).activeTools;
       // Fold a safe completed prefix of the durable turn ledger into a
       // replacement projection (validate → persist), shared with the reactive
@@ -1281,9 +1282,9 @@ export class AiSdkCompaction {
     }
 
     const phase = state.compactionPhase(input.stepNumber);
-    // Entering the module spends the send's one attempt whether or not a fold
-    // comes out of it; only a selected projection sets `applied`.
-    state.compactionAttemptedThisSend = true;
+    // Entering the module spends the stretch's one attempt whether or not a
+    // fold comes out of it; only a selected projection sets `applied`.
+    state.foldAttemptedSinceAccepted = true;
     const outcome = await this.compactActiveRequestHistory({
       turnId: input.turnId,
       phase,
@@ -1496,13 +1497,27 @@ export class MidTurnCapacityCompactState {
   /** Malformed summaries spend one bounded repair budget for this whole Turn. */
   summarizerFailure: string | undefined;
   /**
-   * The compaction module has been entered in this send.
+   * The compaction module has been entered since the provider last accepted a
+   * request, by either path.
    *
-   * One attempt per send, whatever its outcome: the summarizer's own failure
-   * circuit already latches for the rest of the send, so a second entry would
-   * dispatch nothing new. This is the budget, and only the budget (#4559).
+   * One attempt per stretch, whatever its outcome: a fold the provider still
+   * rejects reports the oversized request instead of folding again (#4559).
+   * An accepted request is progress and re-arms it, so a long turn whose
+   * request is rejected a second time, with new history behind it, folds
+   * again instead of failing. The summarizer's own failure circuit still
+   * latches for the rest of the send, so a re-armed entry after a failed
+   * summary dispatches nothing new.
    */
-  compactionAttemptedThisSend = false;
+  foldAttemptedSinceAccepted = false;
+  /**
+   * The proactive fold has been tried in this send.
+   *
+   * Once per send, unlike the reactive fold: after it the request is mostly
+   * the live head, and folding that before every later step would spend a
+   * summary call to shed the most recent context. A request that later
+   * outgrows the window is recovered when the provider rejects it.
+   */
+  proactiveFoldAttemptedThisSend = false;
   /**
    * A folded projection was actually selected in this send.
    *

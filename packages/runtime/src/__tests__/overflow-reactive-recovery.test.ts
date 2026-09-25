@@ -1193,6 +1193,29 @@ describe('reactive overflow recovery in the streaming backend', () => {
     assert.equal(lastCall?.totalTokens, 250);
   });
 
+  test('a later overflow folds again once the provider has accepted progress', async () => {
+    // The first overflow folds and its retry succeeds; two more tool steps are
+    // accepted, and the overflow after them has new history behind it. One
+    // fold per send used to fail the turn here, which is exactly where a long
+    // agentic turn fills the window a second time.
+    const fixture = buildReactiveFixture({
+      script: ['tool', 'overflow', 'tool', 'tool', 'overflow', 'done'],
+      bigPriors: true,
+    });
+    await runTurn(fixture);
+
+    assert.equal(fixture.model.doStreamCalls.length, 6);
+    assert.equal(complete(fixture)?.stopReason, 'end_turn');
+    assert.equal(
+      fixture.events.some((event) => event.type === 'error'),
+      false,
+    );
+    assert.equal(fixture.recorded.length, 2);
+    assert.equal(fixture.summarizerCalls(), 2);
+    // No completed tool step ran again on either retry.
+    assert.equal(fixture.toolExecutions.length, 3);
+  });
+
   test('drops hydrated images before the single overflow retry without rerunning tools', async () => {
     const fixture = buildReactiveFixture({
       script: ['tool', 'overflow', 'done'],

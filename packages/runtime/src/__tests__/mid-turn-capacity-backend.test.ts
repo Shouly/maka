@@ -1113,10 +1113,11 @@ function defineMidTurnSuite(consumer: ConsumerMode): void {
     assert.match(thirdPrompt, /active_current_turn_tool_result_pruned_before_next_step/);
   });
 
-  test('compacts at most once per send', async () => {
+  test('folds proactively at most once per send', async () => {
     // The proactive fold already covers everything except the live head. A
     // second fold in the same send would buy the small verbatim tail and cost
-    // the most recent context, so the send spends one call and no more.
+    // the most recent context, so the send spends one call and no more. (A
+    // request the provider then rejects is still folded, reactively.)
     const fixture = buildFixture({ priorChars: 2_000, rollingOverflow: true });
     await runFixtureTurn(fixture, consumer);
 

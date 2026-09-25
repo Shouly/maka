@@ -1424,10 +1424,12 @@ export class AiSdkTurn {
 
         const completedProviderSteps: RequestProjectionContext['completedSteps'][number][] = [];
         let requestMessages: ModelMessage[] = messages;
-        // The compaction module runs at most once per send. This tracks the
-        // reactive entry; the proactive one sets the same flag on the mid-turn
-        // state, and each consults the other, so a send that already folded
-        // reports the oversized message instead of folding again (#4559).
+        // The compaction module runs at most once between two requests the
+        // provider accepted. This tracks the reactive entry; the proactive one
+        // sets `foldAttemptedSinceAccepted` on the mid-turn state, and each
+        // consults the other, so a request still rejected after a fold reports
+        // the oversized message instead of folding again (#4559). Both re-arm
+        // at the next accepted request: a long turn may fill the window again.
         let overflowRetryUsed = false;
         let result: ModelStreamResult;
         let providerOutcome: ModelStepOutcome;
@@ -1681,6 +1683,10 @@ export class AiSdkTurn {
                   runtimeSteps += 1;
                   const stepUsage = event.usage;
                   providerStepUsage = stepUsage;
+                  // The provider accepted this request. That is progress, so
+                  // the next overflow may fold again.
+                  overflowRetryUsed = false;
+                  if (midTurnState) midTurnState.foldAttemptedSinceAccepted = false;
                   if (!stepUsage) sawUnusableStepUsage = true;
                   // Silent eviction / rewrite check (#4559): this step only
                   // appended (no fold, no prune, no image omission) yet the
@@ -2113,7 +2119,7 @@ export class AiSdkTurn {
                   ? await this.deps.compaction.recoverFromOverflowError({
                       error: attemptFailure,
                       retryAlreadyUsed:
-                        overflowRetryUsed || (midTurnState?.compactionAttemptedThisSend ?? false),
+                        overflowRetryUsed || (midTurnState?.foldAttemptedSinceAccepted ?? false),
                       midTurnState,
                       turnId,
                       stepNumber: runtimeSteps,
