@@ -251,6 +251,14 @@ export interface MakaTool<P = any, R = unknown> {
   managedMutationTransform?: (args: P) => Promise<R> | R;
   /** Step-level admission contract. Exclusive tools cannot share an assistant step. */
   executionSemantics?: 'parallel' | 'exclusive_step';
+  /**
+   * Calls of tools that name the same lane settle one after another, in the
+   * order the model issued them; every other call still runs concurrently.
+   * For tools whose effects the model reads back in call order — three
+   * `TaskCreate`s in one message are tasks #1, #2 and #3 in the order written,
+   * not in whichever order their writes happened to land.
+   */
+  orderedLane?: string;
   /** Nested CodeMode admission. Ordinary tools are nestable by default. */
   nesting?: 'nestable' | 'direct_only';
   /** Optional permission/persistence projection derived from isolated execution args. */
@@ -670,6 +678,8 @@ export class ToolRuntime {
   private sandboxBoundaryFinalizationRequested = false;
   private readonly durableToolAttempts = new Map<string, DurableToolAttempt>();
   private readonly activeToolSettlements = new Set<Promise<unknown>>();
+  /** The last call admitted to each ordered lane, settled or not (never rejects). */
+  private readonly orderedLaneTails = new Map<string, Promise<void>>();
   private readonly readExecutionBoundary: NonNullable<ToolRuntimeInput['readExecutionBoundary']>;
   private readonly readPermissionMode: NonNullable<ToolRuntimeInput['readPermissionMode']>;
   private readonly stepAdmissions = new Map<
@@ -928,7 +938,9 @@ export class ToolRuntime {
    * provider-facing error output; durable runtime commit failures still reject.
    */
   async settleToolCall(call: ResolvedMakaToolCall): Promise<ToolSettlement> {
-    const settlement = this.performToolSettlement(call);
+    const lane = call.tool.orderedLane;
+    const settlement =
+      lane === undefined ? this.performToolSettlement(call) : this.settleInLane(lane, call);
     // Tracked so endTurn can wait out unwinds already in flight (#2253):
     // their T2 outcomes must land before the stop path settles the run's
     // terminal fact, and nested Code Mode calls route through here too.
@@ -937,6 +949,33 @@ export class ToolRuntime {
     this.activeToolSettlements.add(settlement);
     const untrack = () => this.activeToolSettlements.delete(settlement);
     void settlement.then(untrack, untrack);
+    return settlement;
+  }
+
+  /**
+   * Queue a call behind the last call admitted to its lane. The tail is taken
+   * synchronously, and callers dispatch a step's calls synchronously in the
+   * order the model issued them, so the queue is that order. A call runs once
+   * the one before it has settled, whether that one succeeded or not.
+   *
+   * An idle lane starts the call at once rather than a microtask later, so its
+   * step admission still happens in issue order: an exclusive tool issued after
+   * it in the same step is the one refused, as it would be without the lane.
+   */
+  private settleInLane(lane: string, call: ResolvedMakaToolCall): Promise<ToolSettlement> {
+    const previous = this.orderedLaneTails.get(lane);
+    const settlement =
+      previous === undefined
+        ? this.performToolSettlement(call)
+        : previous.then(() => this.performToolSettlement(call));
+    const tail = settlement.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.orderedLaneTails.set(lane, tail);
+    void tail.then(() => {
+      if (this.orderedLaneTails.get(lane) === tail) this.orderedLaneTails.delete(lane);
+    });
     return settlement;
   }
 

@@ -53,6 +53,14 @@ export const TASK_LIST_TOOL_NAME = TOOL_NAMES.taskList;
 export const TASK_GET_TOOL_NAME = TOOL_NAMES.taskGet;
 export const TASK_UPDATE_TOOL_NAME = TOOL_NAMES.taskUpdate;
 
+/**
+ * All four task tools share one ordered lane. Ids are handed out when a write
+ * lands, so parallel `TaskCreate`s used to number tasks in whatever order
+ * their writes finished — "task three" could come out #5 — and a `TaskList`
+ * beside them could miss tasks created earlier in the same message.
+ */
+export const SESSION_TASK_TOOL_LANE = 'session_tasks';
+
 /** Everything the tools need from the Host; the Host owns admission and durability. */
 export interface SessionTaskToolStore {
   list(sessionId: string): Promise<SessionTaskDocument>;
@@ -83,6 +91,7 @@ function buildTaskCreateTool(store: SessionTaskToolStore): MakaTool {
   return {
     name: TASK_CREATE_TOOL_NAME,
     activityKind: 'tasks',
+    orderedLane: SESSION_TASK_TOOL_LANE,
     displayName: 'Task Create',
     description:
       'Use this tool to create a structured task list for your current coding session. This helps you track progress, organize complex tasks, and demonstrate thoroughness to the user.\nIt also helps the user understand the progress of the task and overall progress of their requests.\n\n## When to Use This Tool\n\nUse this tool proactively in these scenarios:\n\n- Complex multi-step tasks - When a task requires 3 or more distinct steps or actions\n- Non-trivial and complex tasks - Tasks that require careful planning or multiple operations\n- Plan mode - When using plan mode, create a task list to track the work\n- User explicitly requests todo list - When the user directly asks you to use the todo list\n- User provides multiple tasks - When users provide a list of things to be done (numbered or comma-separated)\n- After receiving new instructions - Immediately capture user requirements as tasks\n- When you start working on a task - Mark it as in_progress BEFORE beginning work\n- After completing a task - Mark it as completed and add any new follow-up tasks discovered during implementation\n\n## When NOT to Use This Tool\n\nSkip using this tool when:\n- There is only a single, straightforward task\n- The task is trivial and tracking it provides no organizational benefit\n- The task can be completed in less than 3 trivial steps\n- The task is purely conversational or informational\n\nNOTE that you should not use this tool if there is only one trivial task to do. In this case you are better off just doing the task directly.\n\n## Task Fields\n\n- **subject**: A brief, actionable title in imperative form (e.g., "Fix authentication bug in login flow")\n- **description**: What needs to be done\n- **activeForm** (optional): Present continuous form shown in the spinner when the task is in_progress (e.g., "Fixing authentication bug"). If omitted, the spinner shows the subject instead.\n\nAll tasks are created with status `pending`.\n\n## Tips\n\n- Create tasks with clear, specific subjects that describe the outcome\n- After creating tasks, use TaskUpdate to set up dependencies (blocks/blockedBy) if needed\n- Check TaskList first to avoid creating duplicate tasks',
@@ -118,6 +127,7 @@ function buildTaskListTool(store: SessionTaskToolStore): MakaTool {
   return {
     name: TASK_LIST_TOOL_NAME,
     activityKind: 'tasks',
+    orderedLane: SESSION_TASK_TOOL_LANE,
     displayName: 'Task List',
     description:
       "Use this tool to list all tasks in the task list.\n\n## When to Use This Tool\n\n- To see what tasks are available to work on (status: 'pending', no owner, not blocked)\n- To check overall progress on the project\n- To find tasks that are blocked and need dependencies resolved\n- After completing a task, to check for newly unblocked work or claim the next available task\n- **Prefer working on tasks in ID order** (lowest ID first) when multiple tasks are available, as earlier tasks often set up context for later ones\n\n## Output\n\nReturns a summary of each task:\n- **id**: Task identifier (use with TaskGet, TaskUpdate)\n- **subject**: Brief description of the task\n- **status**: 'pending', 'in_progress', or 'completed'\n- **owner**: Agent ID if assigned, empty if available\n- **blockedBy**: List of open task IDs that must be resolved first (tasks with blockedBy cannot be claimed until dependencies resolve)\n\nUse TaskGet with a specific task ID to view full details including description and comments.",
@@ -130,6 +140,7 @@ function buildTaskGetTool(store: SessionTaskToolStore): MakaTool {
   return {
     name: TASK_GET_TOOL_NAME,
     activityKind: 'tasks',
+    orderedLane: SESSION_TASK_TOOL_LANE,
     displayName: 'Task Get',
     description:
       "Use this tool to retrieve a task by its ID from the task list.\n\n## When to Use This Tool\n\n- When you need the full description and context before starting work on a task\n- To understand task dependencies (what it blocks, what blocks it)\n- After being assigned a task, to get complete requirements\n\n## Output\n\nReturns full task details:\n- **subject**: Task title\n- **description**: Detailed requirements and context\n- **status**: 'pending', 'in_progress', or 'completed'\n- **owner**: Agent ID if assigned, empty if available\n- **blocks**: Tasks waiting on this one to complete\n- **blockedBy**: Open tasks that must complete before this one can start\n\n## Tips\n\n- After fetching a task, verify its blockedBy list is empty before beginning work.\n- Use TaskList to see all tasks in summary form.",
@@ -148,6 +159,7 @@ function buildTaskUpdateTool(store: SessionTaskToolStore): MakaTool {
   return {
     name: TASK_UPDATE_TOOL_NAME,
     activityKind: 'tasks',
+    orderedLane: SESSION_TASK_TOOL_LANE,
     displayName: 'Task Update',
     description:
       'Use this tool to update a task in the task list.\n\n## When to Use This Tool\n\n**Mark tasks as resolved:**\n- When you have completed the work described in a task\n- When a task is no longer needed or has been superseded\n- IMPORTANT: Always mark your assigned tasks as resolved when you finish them\n- After resolving, call TaskList to find your next task\n\n- ONLY mark a task as completed when you have FULLY accomplished it\n- If you encounter errors, blockers, or cannot finish, keep the task as in_progress\n- When blocked, create a new task describing what needs to be resolved\n- Never mark a task as completed if:\n  - Tests are failing\n  - Implementation is partial\n  - You encountered unresolved errors\n  - You couldn\'t find necessary files or dependencies\n\n**Delete tasks:**\n- When a task is no longer relevant or was created in error\n- Setting status to `deleted` permanently removes the task\n\n**Update task details:**\n- When requirements change or become clearer\n- When establishing dependencies between tasks\n\n## Fields You Can Update\n\n- **status**: The task status (see Status Workflow below)\n- **subject**: Change the task title (imperative form, e.g., "Run tests")\n- **description**: Change the task description\n- **activeForm**: Present continuous form shown in spinner when in_progress (e.g., "Running tests")\n- **owner**: Change the task owner (agent name)\n- **metadata**: Merge metadata keys into the task (set a key to null to delete it)\n- **addBlocks**: Mark tasks that cannot start until this one completes\n- **addBlockedBy**: Mark tasks that must complete before this one can start\n\nAn edge onto an unknown task id is refused, and so is one that would close a dependency cycle; both report what was wrong rather than reporting success and doing nothing. An update that names no field to change is refused for the same reason.\n\n## Status Workflow\n\nStatus progresses: `pending` -> `in_progress` -> `completed`\n\nUse `deleted` to permanently remove a task.\n\n## Staleness\n\nMake sure to read a task\'s latest state using `TaskGet` before updating it.\n\n## Examples\n\nMark task as in progress when starting work:\n{"taskId": "1", "status": "in_progress"}\n\nMark task as completed after finishing work:\n{"taskId": "1", "status": "completed"}\n\nDelete a task:\n{"taskId": "1", "status": "deleted"}\n\nClaim a task by setting owner:\n{"taskId": "1", "owner": "my-name"}\n\nSet up task dependencies:\n{"taskId": "2", "addBlockedBy": ["1"]}',

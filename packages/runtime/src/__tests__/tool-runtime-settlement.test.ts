@@ -34,6 +34,91 @@ import { buildForegroundBashTool, buildManagedBashTool } from '../shell-tools.js
 import { ToolRuntime, type MakaTool, type ToolRuntimeInput } from '../tool-runtime.js';
 
 describe('ToolRuntime settlement', () => {
+  it('runs calls that share an ordered lane one after another, in the order they were issued', async () => {
+    // The first call's work is the slowest: left to race, the calls would
+    // finish in reverse, and a store that numbers on write would number them so.
+    const delays: Record<string, number> = { 'call-1': 30, 'call-2': 10, 'call-3': 0 };
+    const run = async (laned: boolean) => {
+      const log: string[] = [];
+      const runtime = makeRuntime();
+      const recording: MakaTool = {
+        ...tool(async (_input, ctx) => {
+          log.push(`start ${ctx.toolCallId}`);
+          await new Promise((resolve) => setTimeout(resolve, delays[ctx.toolCallId]));
+          log.push(`end ${ctx.toolCallId}`);
+          return 'ok';
+        }),
+        ...(laned ? { orderedLane: 'session_tasks' } : {}),
+      };
+      await Promise.all(
+        ['call-1', 'call-2', 'call-3'].map((toolCallId) =>
+          runtime.settleToolCall({
+            tool: recording,
+            turnId: 'turn-1',
+            stepId: 'step-1',
+            toolCallId,
+            input: {},
+            abortSignal: new AbortController().signal,
+            eventSink: { push: () => {}, pushAndWaitUntilConsumed: async () => {} },
+          }),
+        ),
+      );
+      return log;
+    };
+
+    assert.deepEqual(await run(true), [
+      'start call-1',
+      'end call-1',
+      'start call-2',
+      'end call-2',
+      'start call-3',
+      'end call-3',
+    ]);
+    // Without a lane the same calls overlap, so the order above is the lane's doing.
+    const unordered = await run(false);
+    assert.ok(
+      unordered.indexOf('start call-3') < unordered.indexOf('end call-1'),
+      String(unordered),
+    );
+  });
+
+  it('keeps step admission in issue order when a laned call shares a step with an exclusive tool', async () => {
+    const runtime = makeRuntime();
+    const ran: string[] = [];
+    const laned: MakaTool = {
+      ...tool(async (_input, ctx) => {
+        ran.push(ctx.toolCallId);
+        return 'ok';
+      }),
+      orderedLane: 'session_tasks',
+    };
+    const exclusive: MakaTool = {
+      ...tool(async (_input, ctx) => {
+        ran.push(ctx.toolCallId);
+        return 'ok';
+      }),
+      executionSemantics: 'exclusive_step',
+    };
+    const settle = (target: MakaTool, toolCallId: string) =>
+      runtime.settleToolCall({
+        tool: target,
+        turnId: 'turn-1',
+        stepId: 'step-1',
+        toolCallId,
+        input: {},
+        abortSignal: new AbortController().signal,
+        eventSink: { push: () => {}, pushAndWaitUntilConsumed: async () => {} },
+      });
+    const [first, second] = await Promise.all([
+      settle(laned, 'call-laned'),
+      settle(exclusive, 'call-exclusive'),
+    ]);
+    // Issued first, the laned call is admitted first; the exclusive one is refused.
+    assert.deepEqual(ran, ['call-laned']);
+    assert.equal(first.providerError, undefined);
+    assert.match(String(second.providerError ?? ''), /cannot share an assistant step/u);
+  });
+
   it('rejects Client Capability Host admission without preparation in every boundary', async () => {
     let calls = 0;
     const clientTool: MakaTool = {
