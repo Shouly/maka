@@ -138,6 +138,40 @@ Watermark after this batch: `99cfeb7e9`. Rows are proposed unless a
   on the user event now put it on the opening, as production does. Not taken:
   upstream's export-time repair of legacy ledgers (no backward compatibility).
 
+- `412dc0390` #5658, follow-up: two desktop main tests
+  (`assistant-stream.test.ts`) still assumed the 4 KB text delta cap. One now
+  sets the cap explicitly to test redaction before a cut (tool output still
+  uses that mechanism); the other checks a full reply within the total cap.
+- `2d9843fef` #5325: **taken as is** (clean cherry-pick). The Host publishes
+  admission before it imports execution composition, whose cold import took
+  667 ms here. A connect that misses the startup deadline now reports the last
+  connection failure.
+- `891d0988f` #5536: **bug confirmed, reproduced** (the test never settled).
+  A message dispatched to a Host that has since restarted was replayed with its
+  old epoch forever: the new Host answers `outcome_unknown` for anything it
+  cannot prove, and every later message of the Session waited behind it. The
+  outbox now asks the Host what became of it (`turn.message.execution.query`):
+  - Owned by a Turn: accepted, bound to that Turn.
+  - Still in the Host queue: accepted as a follow-up.
+  - Cancelled, or `not_admitted`: failed, and the user can remove it.
+  - Left out, or the query failed: stays unknown and is asked again.
+  `not_admitted` is a new positive answer (epoch 160): nothing durable names
+  the identity and no submit of it is in flight. The query runs under the
+  Session admission gate so it cannot race an admission write. Steering
+  consumption writes its proof before deleting the admission row, so no
+  window exists where neither names the message. The observer maps
+  `not_admitted` to a retraction by name. Upstream's side-chat and WorkHub
+  delegation changes have no counterpart here.
+
+#### Deferred
+
+- `c557cc41e` #5211: **bug exists, narrow**. A crash between a steering
+  admission on one Turn and its handoff into a successor Root leaves the row
+  naming the old Turn, and the handoff refuses it ("Message admission Turn
+  conflict"). The fix needs the successor to prove the complete submitted
+  payload, which touches storage contracts in four places. Deferred to after
+  the rest of P2.
+
 #### Moved to Consider after reading
 
 - `f109ccde9` #5270: not a defect. It raises the EOF and idle-timeout
@@ -146,6 +180,9 @@ Watermark after this batch: `99cfeb7e9`. Rows are proposed unless a
   Ours is a deliberate one-retry policy; worth deciding as a product change.
 - `4a42aaeab` #5287: a refactor of request settlement (−2,400 lines). No
   concrete failure is named.
+- `837133a29` #4864: not a defect here. After a restart `recoverActiveGoal`
+  already re-drives an active Goal. Upstream persists the successor intent so
+  the exact evaluator verdict survives; ours re-evaluates instead.
 
 ### Port
 
