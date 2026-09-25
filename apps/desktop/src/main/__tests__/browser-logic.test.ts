@@ -27,6 +27,7 @@ import {
   parseNavigable,
   safeExternalUrl,
   viewportBounds,
+  viewportBoundsAtZoom,
 } from '../browser/logic.js';
 
 describe('browser logic', () => {
@@ -65,6 +66,22 @@ describe('browser logic', () => {
     assert.equal(viewportBounds({ x: 0, y: 0, width: Infinity, height: 100 }), null);
     assert.equal(viewportBounds({ x: NaN, y: 0, width: 100, height: 100 }), null);
     assert.equal(viewportBounds({ x: 0, y: 0, width: '100' as unknown as number, height: 100 }), null);
+  });
+
+  it('viewportBoundsAtZoom places a CSS-px strip in window DIP at any zoom', () => {
+    const rect = { x: 10, y: 20, width: 300, height: 200 };
+    assert.deepEqual(viewportBoundsAtZoom(rect, 1), rect);
+    assert.deepEqual(viewportBoundsAtZoom(rect, 1.25), { x: 13, y: 25, width: 375, height: 250 });
+    assert.deepEqual(viewportBoundsAtZoom(rect, 0.9), { x: 9, y: 18, width: 270, height: 180 });
+    // Edges are scaled, so the right edge lands where the DOM's right edge does
+    // instead of drifting a DIP from rounding the width on its own.
+    const odd = viewportBoundsAtZoom({ x: 1, y: 1, width: 3, height: 3 }, 1.5)!;
+    assert.equal(odd.x + odd.width, Math.round((1 + 3) * 1.5));
+    assert.equal(odd.y + odd.height, Math.round((1 + 3) * 1.5));
+    // Whatever viewportBounds hides stays hidden, and so does a nonsense zoom.
+    assert.equal(viewportBoundsAtZoom(null, 1.25), null);
+    assert.equal(viewportBoundsAtZoom({ x: 0, y: 0, width: 0, height: 10 }, 1.25), null);
+    for (const zoom of [0, -1, NaN, Infinity]) assert.equal(viewportBoundsAtZoom(rect, zoom), null);
   });
 
   it('browserActionAllowed enforces the visible lease', () => {

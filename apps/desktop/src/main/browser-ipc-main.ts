@@ -21,7 +21,7 @@ import { ipcMain } from 'electron';
 import { createBrowserViewHost } from './browser/automation-host.js';
 import { provideBrowserViewHost } from './browser/browser-host.js';
 import { releaseBrowserSession, revokeHiddenBrowserActions } from './browser/session.js';
-import type { BrowserViewRect } from './browser/logic.js';
+import { type BrowserViewRect, viewportBoundsAtZoom } from './browser/logic.js';
 import type { createMainWindowController } from './main-window.js';
 import {
   desktopSessionResourceKey,
@@ -121,7 +121,11 @@ export function registerBrowserIpc(deps: BrowserIpcDeps): BrowserIpcController {
       return;
     }
     if (!target || target !== shownBrowserSessionId) return;
-    deps.mainWindowController.getBrowserViews().setViewport(target, input.rect ?? null);
+    // The strip is measured in the renderer's CSS px; the view is placed in
+    // window DIP. The renderer re-reports when its zoom changes.
+    deps.mainWindowController
+      .getBrowserViews()
+      .setViewport(target, viewportBoundsAtZoom(input.rect ?? null, event.sender.getZoomFactor()));
   });
 
   ipcMain.handle('browser:navigate', async (_event, scope: unknown, target: unknown, url: unknown) => {

@@ -143,7 +143,12 @@ export function BrowserTab(props: { sessionId: string; visible: boolean }) {
             width: Math.round(box.width),
             height: Math.round(box.height),
           };
-      const key = rect ? `${rect.x},${rect.y},${rect.width},${rect.height}` : 'hidden';
+      // Main places the view in window DIP from these CSS px and the zoom it
+      // reads on arrival, so a zoom change must publish again even when the
+      // CSS rect happens to stay the same. devicePixelRatio moves with zoom.
+      const key = rect
+        ? `${rect.x},${rect.y},${rect.width},${rect.height}@${window.devicePixelRatio}`
+        : 'hidden';
       if (key !== last) {
         last = key;
         setBrowserViewport({ sessionId, rect });
