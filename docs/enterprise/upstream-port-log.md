@@ -162,6 +162,50 @@ Watermark after this batch: `99cfeb7e9`. Rows are proposed unless a
   window exists where neither names the message. The observer maps
   `not_admitted` to a retraction by name. Upstream's side-chat and WorkHub
   delegation changes have no counterpart here.
+- `feb9cf22f` #5471: **bug confirmed, reproduced** (51 reads before the
+  test's guard stopped it). A transcript catch-up re-armed itself after a
+  failure too. A read of a dead subscription rejects at once, so the retry
+  chain ran on microtasks alone: main pinned the CPU, and the subscription's
+  close acknowledgement, which starts recovery, never arrived. A catch-up now
+  re-arms only after it succeeds; a failure waits for the next announced
+  watermark or the owner's recovery. Not taken: latching the error, moving
+  pump failures ahead of the close handshake (both follow from the storm,
+  which is gone), and reseeding evicted replicas on the live subscription (a
+  refactor).
+- `e06cf84ef` #5351: **bug confirmed, reproduced** over a real socket
+  ("provider disconnected before admission"). A capability call carried its
+  tool call id through an entity-id check (`[A-Za-z0-9_-]`, 128 chars). A Code
+  Mode cell's nested call (`<id>:nested:<uuid>`) failed it, and so does a
+  provider's own id such as Moonshot's `functions.x:0`. The client rejected
+  the frame and the connection dropped. The id is now carried verbatim
+  through the shared opaque-identity check (epoch 161). Both halves are
+  taken, although triage said to skip WorkHub: WorkHub names its action after
+  the tool call id and the Host requires an entity id there, so the id is now
+  normalized once (stable on replay), and the model is told that id.
+- `5a1252c79` #5534: **upstream's problem does not exist here**. Upstream
+  has two selectors (`profile`, `subagent_id`) plus `executor_id`, and models
+  filled the wrong one, for example a built-in profile as `subagent_id`. Our
+  Agent tool has one `subagent_type` that resolves built-in profiles first and
+  presets second, names the runnable profiles in its schema, and has no
+  executor selector. What we took is the actionable error: an unknown
+  selector used to say `Unknown subagent_id`, a field the model never sees.
+  The Agent tool's own error now names `subagent_type`, says no child was
+  started, and lists the built-in profiles. The preset catalog's error is
+  shared with the agent graph, whose field is `subagent_id`, so it names the
+  preset rather than either field.
+- `17fa03647` #5682, Host half: **bug confirmed, reproduced** (the catalog
+  never announced a Session parked on a sandbox boundary). A Session's status
+  follows the Run's own events: a request makes it `waiting_for_user`, its
+  ack makes it `running` again. Those events land after the Host's refresh
+  at admission, so the root Turn loop refreshes once more, but it did so only
+  for question and form requests and their answers. It now refreshes on every
+  hosted interaction request and settlement ack, a sandbox boundary included,
+  through the predicates the interaction authority already exports. The ack
+  side is needed too: without it an approved boundary would stay "waiting".
+  It has no dedicated test, because with the fake backend the Run completes
+  right after the answer and that terminal refresh hides it. Client capability
+  requests are not Run events and set no status; the Host refreshes them at
+  admission. The notification and dock bounce half stays under Consider.
 
 #### Deferred
 
@@ -212,7 +256,7 @@ Priority 2: Host robustness.
 | `c557cc41e` | #5211 | Interrupted root handoffs are reconciled. | conflict / 3 | re-implement |
 | `891d0988f` | #5536 | A message dispatched in a dead Host epoch never leaves the outbox. | conflict / 2 | re-implement |
 | `feb9cf22f` | #5471 | A failed transcript replica read re-arms forever, pinning main at about 75% CPU. | conflict / 1 | check our main transcript path |
-| `e06cf84ef` | #5351 | Nested Code Mode call ids drop the connection at the capability boundary. Host half only; skip the WorkHub half. | conflict / 3 | re-implement (epoch bump) |
+| `e06cf84ef` | #5351 | Nested Code Mode call ids drop the connection at the capability boundary. | conflict / 3 | re-implement (epoch bump) |
 | `5a1252c79` | #5534 | Subagent spawn selection is explicit, with actionable errors. | conflict / 2 | re-implement |
 | `17fa03647` | #5682 | Host half only: the Session is re-projected after a sandbox-boundary request, so the catalog no longer shows a parked Turn as running. | conflict / 4 | re-implement (notification half under Consider) |
 
