@@ -113,6 +113,39 @@ Watermark after this batch: `99cfeb7e9`. Rows are proposed unless a
   cap was added. What we kept: the earlier models' refusal ("input length and
   `max_tokens` exceed context limit") classified as a context overflow, so it
   folds instead of failing as a rejected request.
+- `c6e3eb0cd` #5586, follow-up: a Host test (`execution-model-composition`)
+  still pinned the old Chat wire shape (the image as JSON text in the tool
+  message). It now checks that the bytes stay out of the tool message and
+  arrive as a user `image_url`.
+- `f02ac9433` #5406: **bug confirmed, reproduced**. Twenty thousand 15-byte
+  PTY chunks held a keystroke for 23.3 s: every chunk was its own paced parser
+  write, and a control cut queued behind all of them. Unstarted chunks now
+  merge into the tail entry, up to the byte budget; the keystroke waited
+  12 ms. Unlike upstream, a cut seals the tail, so output that arrives after
+  a cut is never parsed ahead of it. The finalization test now holds one
+  parse deterministically instead of relying on a flood. Upstream's other
+  changes (no snapshot per client keystroke, slimmer replies, epoch 162) are
+  performance work, not taken.
+- `b62ca805e` #5610: **bug confirmed, different symptom**. Replay already
+  dropped an unanswered call, so the next request was never refused. But
+  recovery only answered Code Mode's `exec`. Any other tool interrupted by a
+  crash stayed `prepared` forever once its run was sealed, so the Session
+  could never be exported ("unsettled tool operation"), continuation replay
+  refused it, and the model never learned the call may have run. Recovery now
+  answers every dispatched, unanswered tool with an outcome-unknown result
+  before sealing, including nested Code Mode calls. Sealed invocations and
+  corrupt ledgers are left alone. Test fixtures that put the protocol marker
+  on the user event now put it on the opening, as production does. Not taken:
+  upstream's export-time repair of legacy ledgers (no backward compatibility).
+
+#### Moved to Consider after reading
+
+- `f109ccde9` #5270: not a defect. It raises the EOF and idle-timeout
+  recovery budget from one per step to ten, and keeps a failed response's
+  fragment as interrupted output (persistence, projection and UI, 27 files).
+  Ours is a deliberate one-retry policy; worth deciding as a product change.
+- `4a42aaeab` #5287: a refactor of request settlement (−2,400 lines). No
+  concrete failure is named.
 
 ### Port
 
