@@ -116,17 +116,20 @@ describe('assistant stream state boundary', () => {
   });
 
   it('redacts secrets before oversized deltas are truncated', () => {
+    // Assistant text sets no delta cap of its own; a caller that sets one
+    // still gets redaction before the cut.
+    const maxDeltaChars = 4 * 1024;
     for (const [secret, raw] of [
       [
         'sk-abcdef1234567890abcdef1234567890',
-        `leaked sk-abcdef1234567890abcdef1234567890 ${'word '.repeat(ASSISTANT_MAX_DELTA_CHARS)}`,
+        `leaked sk-abcdef1234567890abcdef1234567890 ${'word '.repeat(maxDeltaChars)}`,
       ],
       [
         'sk-deadbeef00000000deadbeef00000000',
         `${'lorem ipsum dolor sit amet '.repeat(200)} sk-deadbeef00000000deadbeef00000000`,
       ],
     ] as const) {
-      const result = applyAssistantDelta('', raw);
+      const result = applyAssistantDelta('', raw, { maxDeltaChars });
       assert.equal(result.text.includes(secret), false);
       assert.equal(result.redacted, true);
       assert.equal(result.truncated, true);
@@ -176,8 +179,8 @@ describe('assistant stream state boundary', () => {
       truncated: false,
     });
 
-    const underTotal = 'word '.repeat(Math.ceil(ASSISTANT_MAX_DELTA_CHARS / 5) + 20);
-    assert.ok(underTotal.length > ASSISTANT_MAX_DELTA_CHARS);
+    const underTotal = 'word '.repeat(Math.floor(ASSISTANT_MAX_TOTAL_CHARS / 5));
+    assert.ok(underTotal.length <= ASSISTANT_MAX_TOTAL_CHARS);
     assert.deepEqual(applyAssistantComplete(underTotal), {
       text: underTotal,
       redacted: false,
