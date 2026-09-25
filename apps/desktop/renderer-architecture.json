@@ -4867,7 +4867,8 @@
       "environmentCapabilities": {
         "cancelAnimationFrame": 1,
         "document.querySelector": 1,
-        "requestAnimationFrame": 2
+        "requestAnimationFrame": 2,
+        "window.devicePixelRatio": 1
       },
       "hookCalls": {
         "useEffect": 3,
