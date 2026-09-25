@@ -58,6 +58,8 @@ import {
   type RuntimeMessageRunIdentity,
 } from '@maka/runtime/message-authority';
 import {
+  isHostedInteractionRequestEvent,
+  isHostedInteractionSettlementAckEvent,
   isShutdownCancelledInteractionAdmission,
   RuntimeInteractionAdmissionRejectedError,
   RuntimeInteractionFailStopError,
@@ -2968,9 +2970,13 @@ export class RootTurnCoordinator implements HostedExecutionAuthority {
           }
           if (isRuntimeSessionForwardedEvent(event)) {
             await this.continuity.acceptRuntimeEvent(input.sessionId, active.runId, event);
-          } else if (isInteractionAnswerAck(event)) {
+          } else if (isHostedInteractionSettlementAckEvent(event)) {
             await this.continuity.refreshCanonical(input.sessionId);
-          } else if (event.type === 'user_question_request' || event.type === 'form_request') {
+          } else if (isHostedInteractionRequestEvent(event)) {
+            // The Session's status follows this event (waiting_for_user), which
+            // lands after the Host's own refresh at admission. Every kind the
+            // run parks on, a sandbox boundary included; its ack above flips
+            // the status back.
             this.continuity.enqueueCanonicalRefresh(input.sessionId);
           }
         }
@@ -3759,10 +3765,6 @@ function isRuntimeSessionForwardedEvent(
     event.type === 'steering_message' ||
     event.type === 'provider_retry'
   );
-}
-
-function isInteractionAnswerAck(event: SessionEvent): boolean {
-  return event.type === 'user_question_answer_ack' || event.type === 'form_answer_ack';
 }
 
 function completedStart(outcome: RootMessageStartOutcome): TurnStartDisposition {
