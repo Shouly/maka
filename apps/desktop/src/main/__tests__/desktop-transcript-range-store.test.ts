@@ -945,6 +945,59 @@ test('does not drive a discarded replica terminal when a contiguous catch-up is 
   assert.equal(replica.residentBytes, 0);
 });
 
+test('a failed catch-up read is not retried until the next watermark', async () => {
+  // A read of a dead subscription rejects at once. Re-arming after it chained
+  // microtasks that never yielded to the event loop and pinned main.
+  const messages = [0, 1, 2, 3, 4].map((sequence) => ({
+    identity: sequence,
+    message: assistantMessage(String(sequence), `assistant-${sequence}`),
+  }));
+  const bootstrapPage = {
+    kind: 'page' as const,
+    sessionId: 'session-1',
+    source: 'durable' as const,
+    direction: 'newer' as const,
+    throughSequence: 4,
+    rawBytes: 1,
+    fragments: [],
+    rangeBoundarySequence: null,
+    protectedTurnSequence: null,
+    nextCursor: null,
+  };
+  let reads = 0;
+  let replica: DesktopTranscriptReplica | undefined;
+  const handle = runtimeHostSessionFixture({
+    snapshot: continuitySnapshot(),
+    transcript: Promise.resolve([]),
+    events: { async *[Symbol.asyncIterator]() {} },
+    transcriptBootstrap: {
+      throughSequence: 4,
+      overlayMessageCount: 0,
+      durable: bootstrapPage,
+      overlay: { ...bootstrapPage, source: 'overlay' },
+    },
+    loadTranscriptOverlay: async () => [],
+    decodeTranscriptPage: async () => ({ messages, nextCursor: null }),
+    loadTranscriptPage: async () => {
+      // Bound a regression so it fails the assertion instead of the run.
+      if (++reads > 50) replica?.close();
+      throw new Error('Session subscription is closed');
+    },
+    async close() {},
+  });
+  replica = await DesktopTranscriptReplica.prepare(handle, { maxResidentBytes: 1024 * 1024 });
+
+  await assert.rejects(replica.advance(5), /subscription is closed/);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(reads, 1);
+
+  // The next announced watermark reads again, once.
+  await assert.rejects(replica.advance(6), /subscription is closed/);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(reads, 2);
+  replica.close();
+});
+
 test('a window opened between catch-up pages can join the change that follows', async () => {
   const bootstrap = [0, 1, 2].map((sequence) => ({
     identity: sequence,

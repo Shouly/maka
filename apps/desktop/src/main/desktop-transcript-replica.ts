@@ -403,16 +403,28 @@ export class DesktopTranscriptReplica {
       this.#durableThrough = this.#targetThrough;
       return Promise.resolve();
     }
-    this.#catchUpTask ??= this.#enqueue(() => this.#catchUp()).finally(() => {
-      this.#catchUpTask = undefined;
-      if (
-        !this.#closed &&
-        this.#targetThrough !== null &&
-        (this.#durableThrough === null || this.#targetThrough > this.#durableThrough)
-      ) {
-        void this.advance(this.#targetThrough).catch(() => undefined);
-      }
-    });
+    this.#catchUpTask ??= this.#enqueue(() => this.#catchUp()).then(
+      () => {
+        this.#catchUpTask = undefined;
+        // Cover a watermark announced while this catch-up ran.
+        if (
+          !this.#closed &&
+          this.#targetThrough !== null &&
+          (this.#durableThrough === null || this.#targetThrough > this.#durableThrough)
+        ) {
+          void this.advance(this.#targetThrough).catch(() => undefined);
+        }
+      },
+      (error: unknown) => {
+        // Not re-armed. A read of a dead subscription rejects at once, so
+        // retrying here chains microtasks that never yield to the event loop:
+        // main pinned the CPU, and the subscription's close acknowledgement
+        // that would start recovery could never arrive. The next announced
+        // watermark, or the owner's recovery, tries again.
+        this.#catchUpTask = undefined;
+        throw error;
+      },
+    );
     return this.#catchUpTask;
   }
 
