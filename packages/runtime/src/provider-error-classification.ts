@@ -581,6 +581,11 @@ function boundedProviderMessage(value: unknown, parseJson = true): string | unde
  */
 const CONTEXT_OVERFLOW_PATTERNS: readonly RegExp[] = [
   /prompt is too long/i, // Anthropic token overflow
+  // Anthropic before Claude 4.5: input plus `max_tokens` past the window is
+  // refused before generation (4.5 and later accept it and stop at the window
+  // with `model_context_window_exceeded`). Folding the input makes room, so it
+  // is an overflow like the one above.
+  /input length and `?max_tokens`? exceed context limit/i,
   /request_too_large/i, // Anthropic request byte-size overflow (HTTP 413)
   /input is too long for requested model/i, // Amazon Bedrock
   /exceeds the context window/i, // OpenAI (Completions & Responses)

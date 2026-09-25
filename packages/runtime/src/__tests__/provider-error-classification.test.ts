@@ -403,6 +403,22 @@ describe('Provider error classification', () => {
     }
   });
 
+  // Claude models before 4.5 refuse input + max_tokens past the window; the
+  // input is what compaction can shrink.
+  test("Anthropic's input-plus-output limit is an overflow compaction can fix", () => {
+    const failure = Object.assign(
+      new Error(
+        'input length and `max_tokens` exceed context limit: 180000 + 64000 > 200000, decrease input length or `max_tokens` and try again',
+      ),
+      {
+        name: 'AI_APICallError',
+        statusCode: 400,
+        data: { type: 'error', error: { type: 'invalid_request_error' } },
+      },
+    );
+    assert.equal(classifyError(failure), 'context_overflow');
+  });
+
   test('the failure kind alone decides whether to retry', () => {
     const timeout = Object.assign(new Error('Request timeout'), { name: 'AI_APICallError' });
     assert.equal(classifyError(timeout), 'timeout');
