@@ -473,7 +473,6 @@ test('the onboarding snapshot arrives on its own budget and exposes send outcome
       reads += 1;
       return { sessionSendOutcomes: { a: { kind: 'ready' } } };
     },
-    setOnboardingMilestone: async () => ({ sessionSendOutcomes: {} }),
   } as never);
   assert.deepEqual(sendOutcomesOf(store.getState()), {});
   const cancel = store.prefetch(0);

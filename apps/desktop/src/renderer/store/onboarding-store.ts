@@ -20,16 +20,14 @@
 // The onboarding snapshot, and the prefetch budget it is read under.
 //
 // `onboarding.getSnapshot()` is one composite read (sessions + connections +
-// model choices + per-session send readiness). Two surfaces need it: the
-// welcome hero, which asks "what is the single next thing this user must do",
-// and the sidebar, which reads `sessionSendOutcomes` to mark rows the Host has
-// already decided cannot send. Neither is on the first-paint path, so the
-// bootstrap arms the read on a timer instead of racing the reveal handshake —
-// the same 2500 ms budget the previous shell used.
+// model choices + per-session send readiness). What reads it is
+// `sessionSendOutcomes`: the sidebar marks rows the Host has already decided
+// cannot send, and a Session's notices explain why. Neither is on the
+// first-paint path, so the bootstrap arms the read on a timer instead of
+// racing the reveal handshake — the same 2500 ms budget the previous shell used.
 
 import { createStore } from 'zustand/vanilla';
 import type { SessionSendProjection } from '@maka/core/session-send-projection';
-import type { OnboardingMilestoneId } from '@maka/core/onboarding';
 import * as api from '../bridge/onboarding.js';
 import { errorMessage } from './resource-store.js';
 
@@ -40,8 +38,6 @@ export interface OnboardingStoreState {
   snapshot: api.OnboardingSnapshot | undefined;
   loading: boolean;
   error: string | undefined;
-  /** Set once the user closed the hero; it does not come back this session. */
-  dismissed: boolean;
 }
 
 export function createOnboardingStore(bridge = api) {
@@ -49,7 +45,6 @@ export function createOnboardingStore(bridge = api) {
     snapshot: undefined,
     loading: false,
     error: undefined,
-    dismissed: false,
   }));
   let generation = 0;
   const refresh = async (): Promise<void> => {
@@ -67,19 +62,10 @@ export function createOnboardingStore(bridge = api) {
   return {
     ...store,
     refresh,
-    dismiss() {
-      store.setState({ dismissed: true });
-    },
     /** Arm the deferred read. Returns the canceller; safe to call more than once. */
     prefetch(delayMs: number = ONBOARDING_PREFETCH_DELAY_MS): () => void {
       const timer = setTimeout(() => void refresh(), delayMs);
       return () => clearTimeout(timer);
-    },
-    async completeMilestone(id: OnboardingMilestoneId, status: 'completed' | 'skipped') {
-      const request = ++generation;
-      const snapshot = await bridge.setOnboardingMilestone(id, status);
-      if (request === generation) store.setState({ snapshot, loading: false });
-      return snapshot;
     },
   };
 }

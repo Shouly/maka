@@ -24,20 +24,11 @@
 // prefetch it 2.5s after mount rather than on the critical path — see
 // `store/onboarding-store.ts`.
 
-import type { OnboardingMilestoneId } from '@maka/core/onboarding';
-import type { DesktopRuntimeHostRef, OnboardingSnapshot } from '../../preload/bridge-contract.js';
+import type { OnboardingSnapshot } from '../../preload/bridge-contract.js';
 import { requireNamespace } from './bridge.js';
 
 export type { OnboardingSnapshot };
 
 export function getOnboardingSnapshot(): Promise<OnboardingSnapshot> {
   return requireNamespace('onboarding').getSnapshot();
-}
-
-export function setOnboardingMilestone(
-  id: OnboardingMilestoneId,
-  status: 'completed' | 'skipped',
-  host?: DesktopRuntimeHostRef,
-): Promise<OnboardingSnapshot> {
-  return requireNamespace('onboarding').setMilestone(id, status, host);
 }

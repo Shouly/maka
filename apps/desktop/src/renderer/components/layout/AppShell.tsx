@@ -684,7 +684,6 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
               <TaskWelcomeContent
                 onOpenSettings={() => openSettings('projects')}
                 onOpenModels={() => openSettings('models')}
-                onOpenConnection={() => openSettings('models')}
                 onError={reportError}
               />
             )}

@@ -23,7 +23,6 @@ import { settingsStore } from '../../store/settings-store.js';
 import { useWelcomeMessage } from '../../hooks/use-welcome-message.js';
 import { ChatInput } from '../composer/ChatInput.js';
 import { getWelcomeCopy } from '../../locales/welcome-copy.js';
-import { OnboardingHero } from './OnboardingHero.js';
 import { ReadinessNotice } from './ReadinessNotice.js';
 
 const brandSymbol = new URL('../../../../assets/brand/relx-symbol.svg', import.meta.url).href;
@@ -31,7 +30,6 @@ const brandSymbol = new URL('../../../../assets/brand/relx-symbol.svg', import.m
 export function TaskWelcomeContent(props: {
   onOpenSettings: () => void;
   onOpenModels: () => void;
-  onOpenConnection: (connectionSlug: string) => void;
   onError: (title: string, error: unknown) => void;
 }) {
   const locale = useUiLocale();
@@ -71,10 +69,6 @@ export function TaskWelcomeContent(props: {
             </div>
 
             <div className="flex w-full max-w-2xl flex-col gap-3 pb-10">
-              <OnboardingHero
-                onOpenModels={props.onOpenModels}
-                onOpenConnection={props.onOpenConnection}
-              />
               <ReadinessNotice onOpenWorkspacePicker={props.onOpenSettings} />
 
               <ChatInput

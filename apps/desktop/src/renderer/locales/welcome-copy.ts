@@ -17,13 +17,12 @@
  * under the License.
  */
 
-// The welcome surface: greeting chrome, the placeholder composer, the
-// workspace and model pickers, and the onboarding recovery hero's frame.
+// The welcome surface: greeting chrome, the placeholder composer, and the
+// workspace and model pickers.
 //
 // The greeting itself and the prompt-suggestion chips are NOT here — those
 // already exist as `@maka/ui`'s `conversation-copy` (`empty.greeting`) and
-// `locale-helpers` (`getPromptSuggestions`), and the onboarding hero's own
-// sentences stay in `onboarding-copy.ts`.
+// `locale-helpers` (`getPromptSuggestions`).
 
 import type { UiCatalog, UiLocale } from '@maka/core/ui-locale';
 
@@ -57,10 +56,6 @@ export interface WelcomeCopy {
     readonly none: string;
     readonly empty: string;
     readonly openSettings: string;
-  };
-  readonly onboarding: {
-    readonly surfaceLabel: string;
-    readonly dismiss: string;
   };
 }
 
@@ -96,7 +91,6 @@ const WELCOME_COPY = {
       empty: '还没有可用模型。',
       openSettings: '前往模型设置',
     },
-    onboarding: { surfaceLabel: '开始配置', dismiss: '稍后再说' },
   },
   'zh-TW': {
     surfaceLabel: '開始新任務',
@@ -129,7 +123,6 @@ const WELCOME_COPY = {
       empty: '還沒有可用模型。',
       openSettings: '前往模型設定',
     },
-    onboarding: { surfaceLabel: '開始設定', dismiss: '稍後再說' },
   },
   en: {
     surfaceLabel: 'Start a task',
@@ -162,7 +155,6 @@ const WELCOME_COPY = {
       empty: 'No models available yet.',
       openSettings: 'Open model settings',
     },
-    onboarding: { surfaceLabel: 'Get set up', dismiss: 'Not now' },
   },
 } satisfies UiCatalog<WelcomeCopy>;
 

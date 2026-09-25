@@ -51,7 +51,6 @@ import {
 } from '../../../store/index.js';
 import { pendingActionsOf } from '../../../store/turn-actions-store.js';
 import { deriveSessionHealthNotice } from '../../../lib/ported/session-health-notice.js';
-import { deriveWorkspaceReadinessRecovery } from '../../../lib/ported/workspace-readiness-recovery.js';
 import { deriveTaskReadinessNotice } from '../../../lib/ported/task-readiness-notice.js';
 import { getTranscriptCopy } from '../../../locales/transcript-copy.js';
 import { NoticeCard } from './NoticeCard.js';
@@ -186,19 +185,6 @@ export function SessionNotices(props: {
     lastTestStatus: undefined,
   });
 
-  // The ported rule refuses to fire when a session is active, because the
-  // session's own send projection is more specific. Here that projection is
-  // `healthNotice`, and it is present or it is not — so the suppression is
-  // expressed as "a more specific notice already speaks" rather than as "a
-  // session is open", which in this surface is always true and would make the
-  // recovery unreachable. Deviation recorded in the phase report.
-  const workspace = deriveWorkspaceReadinessRecovery({
-    state: onboarding?.state,
-    locale,
-    activeSessionId: undefined,
-    showOnboardingHero: healthNotice !== undefined,
-  });
-
   const readinessNotice = deriveTaskReadinessNotice(readiness.snapshot, locale);
   const resumableTurnId = useResumableTurnId(
     props.sessionId,
@@ -214,7 +200,6 @@ export function SessionNotices(props: {
   const anything =
     transcriptError !== undefined ||
     healthNotice ||
-    workspace ||
     readinessNotice ||
     resumableTurnId ||
     compactionNotice;
@@ -263,19 +248,6 @@ export function SessionNotices(props: {
                     label: copy.notices.openSettings,
                     onClick: () => props.onOpenSettings('models'),
                   },
-          ]}
-        />
-      )}
-
-      {workspace && (
-        <NoticeCard
-          tone={workspace.tone}
-          title={workspace.title}
-          description={workspace.description}
-          actions={[
-            // Every onboarding recovery target — the provider catalog, the
-            // models page, one connection — lives on the same Settings page.
-            { label: workspace.actionLabel, onClick: () => props.onOpenSettings('models') },
           ]}
         />
       )}

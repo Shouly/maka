@@ -212,7 +212,6 @@
     "src/renderer/components/ui/toaster.tsx",
     "src/renderer/components/ui/tooltip.tsx",
     "src/renderer/components/ui/user-avatar.tsx",
-    "src/renderer/components/welcome/OnboardingHero.tsx",
     "src/renderer/components/welcome/ReadinessNotice.tsx",
     "src/renderer/components/welcome/TaskWelcomeContent.tsx",
     "src/renderer/components/welcome/WorkspacePicker.tsx",
@@ -300,7 +299,6 @@
     "src/renderer/lib/ported/nav-selection.ts",
     "src/renderer/lib/ported/new-task-reload-intent.ts",
     "src/renderer/lib/ported/observable-state.ts",
-    "src/renderer/lib/ported/onboarding-hero-copy.ts",
     "src/renderer/lib/ported/optimistic-settings-draft.ts",
     "src/renderer/lib/ported/project-path-display.ts",
     "src/renderer/lib/ported/provider-add-submission.ts",
@@ -347,7 +345,6 @@
     "src/renderer/lib/ported/workbar-layout.ts",
     "src/renderer/lib/ported/workbar-tabs.ts",
     "src/renderer/lib/ported/workbar-tool-definitions.ts",
-    "src/renderer/lib/ported/workspace-readiness-recovery.ts",
     "src/renderer/lib/reasoning-label.ts",
     "src/renderer/lib/theme.ts",
     "src/renderer/lib/tool-delivery-results.ts",
@@ -371,7 +368,6 @@
     "src/renderer/locales/greeting-copy.ts",
     "src/renderer/locales/mcp-copy.ts",
     "src/renderer/locales/modules-copy.ts",
-    "src/renderer/locales/onboarding-copy.ts",
     "src/renderer/locales/palette-copy.ts",
     "src/renderer/locales/peer-mesh-copy.ts",
     "src/renderer/locales/permission-center-copy.ts",
@@ -2820,7 +2816,6 @@
         "../../../bridge/task-readiness.js": 1,
         "../../../lib/ported/session-health-notice.js": 1,
         "../../../lib/ported/task-readiness-notice.js": 1,
-        "../../../lib/ported/workspace-readiness-recovery.js": 1,
         "../../../locales/shell-copy.js": 1,
         "../../../locales/transcript-copy.js": 1,
         "../../../store/index.js": 1,
@@ -4766,27 +4761,6 @@
         "avvvatars-react": 1
       }
     },
-    "src/renderer/components/welcome/OnboardingHero.tsx": {
-      "bridgePaths": {},
-      "environmentCapabilities": {},
-      "hookCalls": {
-        "useStore": 2,
-        "useUiLocale": 1
-      },
-      "lifecycleMethods": {},
-      "unresolvedDependencies": 0,
-      "actionFactories": [],
-      "dependencyPaths": {
-        "../../lib/cn.js": 1,
-        "../../lib/ported/onboarding-hero-copy.js": 1,
-        "../../locales/welcome-copy.js": 1,
-        "../../store/index.js": 1,
-        "../icons/Anthropicon.js": 1,
-        "../ui/button.js": 1,
-        "@maka/ui": 1,
-        "zustand": 1
-      }
-    },
     "src/renderer/components/welcome/ReadinessNotice.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -4823,7 +4797,6 @@
         "../../locales/welcome-copy.js": 1,
         "../../store/settings-store.js": 1,
         "../composer/ChatInput.js": 1,
-        "./OnboardingHero.js": 1,
         "./ReadinessNotice.js": 1,
         "@maka/ui": 1,
         "zustand": 1
@@ -6095,17 +6068,6 @@
       "actionFactories": [],
       "dependencyPaths": {}
     },
-    "src/renderer/lib/ported/onboarding-hero-copy.ts": {
-      "bridgePaths": {},
-      "environmentCapabilities": {},
-      "hookCalls": {},
-      "lifecycleMethods": {},
-      "unresolvedDependencies": 0,
-      "actionFactories": [],
-      "dependencyPaths": {
-        "../../locales/onboarding-copy.js": 1
-      }
-    },
     "src/renderer/lib/ported/optimistic-settings-draft.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -6592,17 +6554,6 @@
       "actionFactories": [],
       "dependencyPaths": {}
     },
-    "src/renderer/lib/ported/workspace-readiness-recovery.ts": {
-      "bridgePaths": {},
-      "environmentCapabilities": {},
-      "hookCalls": {},
-      "lifecycleMethods": {},
-      "unresolvedDependencies": 0,
-      "actionFactories": [],
-      "dependencyPaths": {
-        "./onboarding-hero-copy.js": 1
-      }
-    },
     "src/renderer/lib/reasoning-label.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -6819,15 +6770,6 @@
       "dependencyPaths": {}
     },
     "src/renderer/locales/modules-copy.ts": {
-      "bridgePaths": {},
-      "environmentCapabilities": {},
-      "hookCalls": {},
-      "lifecycleMethods": {},
-      "unresolvedDependencies": 0,
-      "actionFactories": [],
-      "dependencyPaths": {}
-    },
-    "src/renderer/locales/onboarding-copy.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {},
