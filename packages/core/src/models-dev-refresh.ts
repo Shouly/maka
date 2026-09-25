@@ -24,6 +24,7 @@ import {
   MODELS_DEV_SOURCE_URL,
   collectProjectionRemovals,
   projectModelsDevMetadata,
+  projectModelsDevMetadataPerProvider,
   selectModelsDevCatalog,
 } from './models-dev-projection.js';
 
@@ -44,6 +45,12 @@ export interface FetchModelsDevProjectionInput {
    */
   readonly previous?: ModelsDevMetadataProjection;
   readonly onRemovals?: (paths: readonly string[]) => void;
+  /**
+   * Given, each provider stands alone: one upstream broke is reported here
+   * and keeps its projection from `previous`, and the rest are accepted.
+   * Omitted, any broken provider rejects the whole response.
+   */
+  readonly onProviderRejected?: (providerType: ProviderType, reason: string) => void;
 }
 
 /**
@@ -74,7 +81,10 @@ export async function fetchModelsDevProjection(
     MODELS_DEV_RESPONSE_MAX_BYTES,
     () => new Error('models.dev response exceeded the accepted size'),
   );
-  const metadata = projectModelsDevMetadata(selectModelsDevCatalog(JSON.parse(body)));
+  const parsed: unknown = JSON.parse(body);
+  const metadata = input.onProviderRejected
+    ? projectModelsDevMetadataPerProvider(parsed, input.previous ?? {}, input.onProviderRejected)
+    : projectModelsDevMetadata(selectModelsDevCatalog(parsed));
   if (input.previous && input.onRemovals) {
     // Compared under the `metadata` key the generator uses, so both callers
     // report a removal by the same path.

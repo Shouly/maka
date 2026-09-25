@@ -86,14 +86,27 @@ export interface ComposerCopy {
     readonly manageSkills: string;
     /** The model menu's effort (thinking level) submenu and the chip's readout. */
     readonly effort: string;
-    /** The effort readout when the level is the model's own default. */
+    /**
+     * The level row meaning "Maka names no level": the model or service uses
+     * its own default. Menu only: the chip shows the level in force, if known.
+     */
     readonly effortDefault: string;
     /** The model menu's last row: the other connections' models, in a submenu. */
     readonly moreModels: string;
     /** The effort submenu's one-line explanation, above the levels. */
     readonly effortHelp: string;
-    /** Tooltip on the Auto level: what leaving the choice to the model means. */
-    readonly effortAutoHelp: string;
+    /** Tooltip on the model-default row: what naming no level means. */
+    readonly effortDefaultHelp: string;
+    /** The model-default row's subline when the provider said which level that is. */
+    readonly effortDefaultIs: (level: string) => string;
+    /** The model-default row's subline when nobody said which level that is. */
+    readonly effortDefaultUnknown: string;
+    /** The effort row's value for a model no source describes. */
+    readonly effortUndeclared: string;
+    /** The undeclared submenu's explanation. */
+    readonly effortUndeclaredHelp: string;
+    /** The undeclared submenu's action: open Settings where levels are declared. */
+    readonly effortDeclare: string;
     /** The Skills submenu while the catalog is still being read. */
     readonly loadingSkills: string;
   };
@@ -199,10 +212,16 @@ const COMPOSER_COPY = {
       addFolder: '添加文件夹',
       skills: '技能',
       effort: 'Effort',
-      effortDefault: '自动',
+      effortDefault: '模型默认',
       moreModels: '更多模型',
       effortHelp: '档位越高，回答越周全，但更慢、也更快用掉额度。',
-      effortAutoHelp: '不指定档位，由模型按问题难度决定思考深度。',
+      effortDefaultHelp: '不指定档位，按模型自己的默认深度思考。',
+      effortDefaultIs: (level) => `当前为：${level}`,
+      effortDefaultUnknown: '由服务端决定',
+      effortUndeclared: '未声明',
+      effortUndeclaredHelp:
+        '没有任何来源说明这个模型的思考档位。如果它支持，可以在设置里为它声明。',
+      effortDeclare: '去设置里声明',
       orchestrationSwarm: '群体',
       orchestrationGraph: '图',
       manageSkills: '管理技能',
@@ -309,10 +328,16 @@ const COMPOSER_COPY = {
       addFolder: '新增資料夾',
       skills: '技能',
       effort: 'Effort',
-      effortDefault: '自動',
+      effortDefault: '模型預設',
       moreModels: '更多模型',
       effortHelp: '檔位越高，回答越周全，但更慢、也更快用掉額度。',
-      effortAutoHelp: '不指定檔位，由模型按問題難度決定思考深度。',
+      effortDefaultHelp: '不指定檔位，按模型自己的預設深度思考。',
+      effortDefaultIs: (level) => `目前為：${level}`,
+      effortDefaultUnknown: '由服務端決定',
+      effortUndeclared: '未宣告',
+      effortUndeclaredHelp:
+        '沒有任何來源說明這個模型的思考檔位。如果它支援，可以在設定裡為它宣告。',
+      effortDeclare: '到設定裡宣告',
       orchestrationSwarm: '群體',
       orchestrationGraph: '圖',
       manageSkills: '管理技能',
@@ -419,12 +444,17 @@ const COMPOSER_COPY = {
       addFolder: 'Add folder',
       skills: 'Skills',
       effort: 'Effort',
-      effortDefault: 'Auto',
+      effortDefault: 'Model default',
       moreModels: 'More models',
       effortHelp:
         'Higher effort means more thorough responses, but takes longer and uses your limits faster.',
-      effortAutoHelp:
-        'No level is set; the model decides how deeply to think from the task at hand.',
+      effortDefaultHelp: 'No level is set; the model thinks as deeply as its own default.',
+      effortDefaultIs: (level) => `Currently ${level}`,
+      effortDefaultUnknown: 'Decided by the service',
+      effortUndeclared: 'Not declared',
+      effortUndeclaredHelp:
+        "Nothing describes this model's thinking levels. If it supports them, declare them in Settings.",
+      effortDeclare: 'Declare in Settings',
       orchestrationSwarm: 'Swarm',
       orchestrationGraph: 'Graph',
       manageSkills: 'Manage skills',

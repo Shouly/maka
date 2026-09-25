@@ -27,6 +27,7 @@ import {
   type ModelInfo,
   type ModelModality,
 } from '@maka/core/llm-connections';
+import { inDisplayOrder, isThinkingLevel, type ThinkingLevel } from '@maka/core/model-thinking';
 import { generalizedErrorMessage } from '@maka/core/redaction';
 import {
   CONNECTION_CATALOG_MAX_MODELS_PER_CONNECTION,
@@ -450,6 +451,9 @@ type RawOpenAiCodexModel = {
   visibility?: unknown;
   priority?: unknown;
   context_window?: unknown;
+  /** `[{ effort, description }]`, the levels Codex's own picker offers. */
+  supported_reasoning_levels?: unknown;
+  default_reasoning_level?: unknown;
 };
 
 /**
@@ -519,8 +523,48 @@ export async function fetchOpenAiCodexModels(
     const entry: ModelInfo = { id: (model.slug as string).trim() };
     const contextWindow = contextWindowOfOpenAiCodexModel(model);
     if (contextWindow !== undefined) entry.contextWindow = contextWindow;
+    Object.assign(
+      entry,
+      advertisedThinking(
+        Array.isArray(model.supported_reasoning_levels)
+          ? model.supported_reasoning_levels.map((level: unknown) =>
+              level && typeof level === 'object' ? (level as { effort?: unknown }).effort : level,
+            )
+          : undefined,
+        model.default_reasoning_level,
+      ),
+    );
     return entry;
   });
+}
+
+/**
+ * A provider's own statement of a model's reasoning levels, in the stored
+ * row's shape. Provider effort words map onto Maka's levels by name, with
+ * OpenAI's `none` as `off`; a word Maka has no level for is dropped rather
+ * than guessed at. A default the list does not contain is dropped with it.
+ */
+export function advertisedThinking(
+  efforts: readonly unknown[] | undefined,
+  defaultEffort: unknown,
+): Pick<ModelInfo, 'thinkingLevels' | 'defaultThinkingLevel'> {
+  const toLevel = (effort: unknown): ThinkingLevel | undefined => {
+    if (typeof effort !== 'string') return undefined;
+    const word = effort.trim().toLowerCase();
+    const level = word === 'none' ? 'off' : word;
+    return isThinkingLevel(level) ? level : undefined;
+  };
+  const levels = inDisplayOrder(
+    (efforts ?? []).flatMap((effort) => {
+      const level = toLevel(effort);
+      return level === undefined ? [] : [level];
+    }),
+  );
+  if (levels.length === 0) return {};
+  const defaultLevel = toLevel(defaultEffort);
+  return defaultLevel !== undefined && levels.includes(defaultLevel)
+    ? { thinkingLevels: levels, defaultThinkingLevel: defaultLevel }
+    : { thinkingLevels: levels };
 }
 
 function priorityOfOpenAiCodexModel(model: RawOpenAiCodexModel): number {
@@ -592,6 +636,7 @@ function toGitHubCopilotModelInfo(model: RawGitHubCopilotModel): ModelInfo[] {
         : {}),
       apiProtocol,
       capabilities: { vision, reasoning, functionCalling: true },
+      ...advertisedThinking(supports.reasoning_effort, undefined),
     },
   ];
 }

@@ -185,11 +185,12 @@ describe('buildProviderOptions: thinking level', () => {
     assert.deepEqual(buildProviderOptions(conn('openai'), 'gpt-4o', 'high'), {
       openai: { store: false, parallelToolCalls: true },
     });
+    // Model default names no level: the API's own default applies. Maka no
+    // longer substitutes medium on the model's behalf.
     assert.deepEqual(buildProviderOptions(conn('openai'), 'gpt-5.5'), {
       openai: {
         store: false,
         reasoningSummary: 'auto',
-        reasoningEffort: 'medium',
         parallelToolCalls: true,
       },
     });
@@ -220,10 +221,35 @@ describe('buildProviderOptions: thinking level', () => {
         store: false,
         textVerbosity: 'medium',
         reasoningSummary: 'auto',
-        reasoningEffort: 'medium',
         parallelToolCalls: true,
       },
     });
+    // The Codex backend's own default rides on the stored row and is sent
+    // explicitly for model default; a level outside the catalog but in the
+    // provider's list passes too.
+    const advertised: LlmConnection = {
+      ...conn('openai-codex'),
+      models: [
+        { id: 'gpt-6-astra', thinkingLevels: ['low', 'high', 'max'], defaultThinkingLevel: 'high' },
+      ],
+    };
+    assert.deepEqual(buildProviderOptions(advertised, 'gpt-6-astra'), {
+      openai: {
+        store: false,
+        textVerbosity: 'medium',
+        reasoningSummary: 'auto',
+        reasoningEffort: 'high',
+        parallelToolCalls: true,
+      },
+    });
+    assert.equal(
+      (
+        buildProviderOptions(advertised, 'gpt-6-astra', 'max').openai as {
+          reasoningEffort?: string;
+        }
+      ).reasoningEffort,
+      'max',
+    );
     assert.deepEqual(buildProviderOptions(conn('openai-codex'), 'gpt-5.5', 'high'), {
       openai: {
         store: false,
@@ -252,7 +278,6 @@ describe('buildProviderOptions: thinking level', () => {
       openai: {
         store: false,
         reasoningSummary: 'auto',
-        reasoningEffort: 'medium',
         parallelToolCalls: false,
       },
     });
@@ -385,9 +410,8 @@ describe('buildProviderOptions: thinking level', () => {
     assert.deepEqual(buildProviderOptions(conn('openrouter'), 'openai/gpt-5.6-sol', 'off'), {
       openrouter: { reasoningEffort: 'none' },
     });
-    assert.deepEqual(buildProviderOptions(conn('openrouter'), 'openai/gpt-5.6-sol'), {
-      openrouter: { reasoningEffort: 'medium' },
-    });
+    // Model default: no level is named, so none is sent.
+    assert.deepEqual(buildProviderOptions(conn('openrouter'), 'openai/gpt-5.6-sol'), {});
     // claude-sonnet-5 exposes no off switch (no `none` effort); only effort tiers.
     assert.deepEqual(
       [...thinkingVariantsForModel('openrouter', 'anthropic/claude-sonnet-5')],
@@ -503,7 +527,7 @@ describe('buildProviderOptions: thinking level', () => {
       }
     }
 
-    assert.equal(activeClaudeModels.length, 16);
+    assert.equal(activeClaudeModels.length, 18);
     assert.ok(
       activeClaudeModels.some(
         ({ connection, modelId }) =>
@@ -576,16 +600,16 @@ describe('buildProviderOptions: thinking level', () => {
         store: false,
         forceReasoning: true,
         reasoningSummary: 'auto',
-        reasoningEffort: 'medium',
       },
     });
   });
 
-  test('custom relays apply family defaults only when no explicit level was supplied', () => {
+  test('custom relays invent no level of their own for model default', () => {
+    // A relay model named like an OpenAI model is still a model nothing
+    // describes: without a declaration, model default sends no effort rather
+    // than guessing medium from the name.
     const openaiRelay = conn('openai-compatible', 'my-relay');
-    assert.deepEqual(buildProviderOptions(openaiRelay, 'gpt-5.6-sol'), {
-      myRelay: { reasoningEffort: 'medium' },
-    });
+    assert.deepEqual(buildProviderOptions(openaiRelay, 'gpt-5.6-sol'), {});
     assert.deepEqual(buildProviderOptions(openaiRelay, 'gpt-5.6-sol', 'minimal'), {});
     assert.deepEqual(buildProviderOptions(openaiRelay, 'gpt-5.6-sol', 'off'), {});
     assert.deepEqual(buildProviderOptions(openaiRelay, 'gpt-5.6-sol', 'high'), {});
@@ -698,7 +722,7 @@ describe('buildProviderOptions: thinking level', () => {
   test('Vercel Gateway sends reasoning effort under its stable namespace and exact model id', () => {
     assert.deepEqual(
       [...thinkingVariantsForModel('vercel', 'openai/gpt-5.1-thinking')],
-      ['off', 'low', 'medium', 'high'],
+      ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'],
     );
     assert.deepEqual(buildProviderOptions(conn('vercel'), 'openai/gpt-5.1-thinking', 'high'), {
       vercel: { reasoningEffort: 'high' },
@@ -877,10 +901,12 @@ describe('buildProviderOptions: openai-compatible namespace', () => {
         'custom-reasoner': { thinkingLevels: ['minimal', 'low', 'medium', 'high', 'max'] },
       },
     };
+    // The declaration says the model reasons, so its summary is asked for.
     assert.deepEqual(buildProviderOptions(declared, 'custom-reasoner', 'high'), {
       openai: {
         store: false,
         forceReasoning: true,
+        reasoningSummary: 'auto',
         reasoningEffort: 'high',
         parallelToolCalls: true,
       },
@@ -889,12 +915,18 @@ describe('buildProviderOptions: openai-compatible namespace', () => {
       openai: {
         store: false,
         forceReasoning: true,
+        reasoningSummary: 'auto',
         reasoningEffort: 'max',
         parallelToolCalls: true,
       },
     });
     assert.deepEqual(buildProviderOptions(declared, 'custom-reasoner', 'xhigh'), {
-      openai: { store: false, forceReasoning: true, parallelToolCalls: true },
+      openai: {
+        store: false,
+        forceReasoning: true,
+        reasoningSummary: 'auto',
+        parallelToolCalls: true,
+      },
     });
   });
 
@@ -951,9 +983,7 @@ describe('buildProviderOptions: openai-compatible namespace', () => {
         openai: {
           store: false,
           forceReasoning: true,
-          ...(supportsReasoningSummary
-            ? { reasoningSummary: 'auto', reasoningEffort: 'medium' }
-            : {}),
+          ...(supportsReasoningSummary ? { reasoningSummary: 'auto' } : {}),
           ...(supportsFast ? { serviceTier: 'fast' } : {}),
           parallelToolCalls: true,
         },

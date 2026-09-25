@@ -110,7 +110,13 @@ export const RUNTIME_HOST_PROTOCOL_VERSION = 0 as const;
 // 158: a session catalog projection may carry `revisionTurnId`, the turn a
 // revision put in place of the edited one. An old client rejects the unknown
 // key.
-export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 158 as const;
+// 159: a connection catalog entry carries `thinkingSource`, `reasoningSupport`
+// and optionally `defaultThinkingLevel`, and a model row may carry the
+// provider's `thinkingLevels` / `defaultThinkingLevel`; the new
+// `model-catalog.status.query` and `model-catalog.refresh` operations exist.
+// An old client rejects the unknown keys, and a new client requires the entry
+// fields an old Host does not send.
+export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 159 as const;
 // 155: A tool call is on the wire while the model is still writing it.
 // `subscription.session_event` carries `tool_input_start` and
 // `tool_input_delta`, which a Client that does not know them decodes as an

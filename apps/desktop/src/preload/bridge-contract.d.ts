@@ -1468,6 +1468,8 @@ export interface MakaBridge {
     test(connection: import('../shared/desktop-connection-snapshot').DesktopConnectionIdentity | string, opts?: { model?: string }, host?: DesktopRuntimeHostRef): Promise<ConnectionTestResult>;
     fetchModels(connection: import('../shared/desktop-connection-snapshot').DesktopConnectionIdentity, host?: DesktopRuntimeHostRef): Promise<Pick<ModelDiscoveryResult, 'models' | 'source'>>;
     hasSecret(connection: import('../shared/desktop-connection-snapshot').DesktopConnectionIdentity, host?: DesktopRuntimeHostRef): Promise<boolean>;
+    catalogStatus(host?: DesktopRuntimeHostRef): Promise<import('../shared/desktop-connection-snapshot').DesktopModelCatalogStatus>;
+    refreshCatalog(host?: DesktopRuntimeHostRef): Promise<import('../shared/desktop-connection-snapshot').DesktopModelCatalogStatus>;
     getRequestHeaders(connection: import('../shared/desktop-connection-snapshot').DesktopConnectionIdentity, host?: DesktopRuntimeHostRef): Promise<import('@maka/core/llm-connections').SavedRequestHeaders>;
     setRequestHeaders(
       connection: import('../shared/desktop-connection-snapshot').DesktopConnectionIdentity,

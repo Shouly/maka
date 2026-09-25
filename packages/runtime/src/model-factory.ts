@@ -38,10 +38,10 @@ import { type RuntimeExecutionConnection } from '@maka/core/llm-connections';
 import { lookupModelMetadata } from '@maka/core/model-metadata';
 import type { ThinkingLevel } from '@maka/core/model-thinking';
 import {
+  resolveModelThinking,
   resolveThinkingLevel,
   supportsRelayFastServiceTier,
   thinkingOptionsForModel,
-  thinkingVariantsForConnection,
   type ThinkingOptions,
 } from '@maka/core/model-thinking';
 import {
@@ -379,17 +379,39 @@ function claudeFamilyId(modelId: string): string {
   );
 }
 
-function defaultOpenAiReasoningEffort(modelId: string): ThinkingLevel | undefined {
-  const familyModelId = modelFamilyId(modelId);
-  return thinkingOptionsForModel('openai', familyModelId)?.efforts?.includes('medium')
-    ? 'medium'
-    : undefined;
+/**
+ * The effort a request carries when the Session names no level ("model
+ * default"): the provider's own declared default, sent explicitly so the
+ * request and its log say what was asked for. When the provider declared none
+ * the field is omitted and the server decides; Maka never substitutes a level
+ * of its own, which is what made "Auto" mean medium on one model and nothing
+ * on its neighbour.
+ */
+function modelDefaultReasoningEffort(
+  connection: RuntimeExecutionConnection,
+  modelId: string,
+): string | undefined {
+  const level = resolveModelThinking(connection, modelId).defaultLevel;
+  return level === undefined ? undefined : level === 'off' ? 'none' : level;
 }
 
-function openAiResponsesSummary(modelId: string, reasoningEffort: string | undefined) {
-  return reasoningEffort !== 'none' && defaultOpenAiReasoningEffort(modelId) !== undefined
-    ? { reasoningSummary: 'auto' as const }
-    : {};
+/**
+ * Ask for a visible reasoning summary when reasoning is on and the endpoint
+ * will accept one: the model is known to reason, or its id names an OpenAI
+ * reasoning family (a relay's `gpt-5.x` takes the parameter even though no
+ * catalog describes the relay). This is a wire-compatibility question, which
+ * is why it may read the family by name where the level list may not.
+ */
+function openAiResponsesSummary(
+  connection: RuntimeExecutionConnection,
+  modelId: string,
+  reasoningEffort: string | undefined,
+) {
+  if (reasoningEffort === 'none') return {};
+  const reasons =
+    resolveModelThinking(connection, modelId).reasoning === 'yes' ||
+    (thinkingOptionsForModel('openai', modelFamilyId(modelId))?.efforts?.length ?? 0) > 0;
+  return reasons ? { reasoningSummary: 'auto' as const } : {};
 }
 
 function visibleClaudeThinking(
@@ -542,12 +564,14 @@ function buildThinkingProviderOptions(
         level === 'off'
           ? 'none'
           : (level ??
-            (thinkingLevel === undefined ? defaultOpenAiReasoningEffort(modelId) : undefined));
+            (thinkingLevel === undefined
+              ? modelDefaultReasoningEffort(connection, modelId)
+              : undefined));
       return {
         openai: {
           store: false,
           textVerbosity: 'medium',
-          ...openAiResponsesSummary(modelId, reasoningEffort),
+          ...openAiResponsesSummary(connection, modelId, reasoningEffort),
           ...(reasoningEffort ? { reasoningEffort } : {}),
         },
       };
@@ -558,11 +582,13 @@ function buildThinkingProviderOptions(
         level === 'off'
           ? 'none'
           : (level ??
-            (thinkingLevel === undefined ? defaultOpenAiReasoningEffort(modelId) : undefined));
+            (thinkingLevel === undefined
+              ? modelDefaultReasoningEffort(connection, modelId)
+              : undefined));
       return {
         openai: {
           store: false,
-          ...(usesResponses ? openAiResponsesSummary(modelId, reasoningEffort) : {}),
+          ...(usesResponses ? openAiResponsesSummary(connection, modelId, reasoningEffort) : {}),
           ...(reasoningEffort ? { reasoningEffort } : {}),
         },
       };
@@ -697,7 +723,7 @@ function buildFamilyWire(
   // keyed by the provider name getAIModel passes to createOpenResponses.
   if (wire === 'openai-responses') {
     // Connection-aware: a relay model's declared variants count too.
-    const reasons = thinkingVariantsForConnection(connection, modelId).length > 0;
+    const reasons = resolveModelThinking(connection, modelId).levels.length > 0;
     if (reasoningReplay.contract.adapter === 'open-responses') {
       // @ai-sdk/open-responses@2.0.34 passes a provider-native reasoningEffort
       // through verbatim, ahead of the cross-provider top-level `reasoning`
@@ -716,14 +742,14 @@ function buildFamilyWire(
     }
     const reasoningEffort =
       explicitReasoningEffort ??
-      (requestedLevel === undefined ? defaultOpenAiReasoningEffort(modelId) : undefined);
+      (requestedLevel === undefined ? modelDefaultReasoningEffort(connection, modelId) : undefined);
     return {
       openai: {
         store: false,
         ...(reasons || reasoningReplay.contract.reasoningReplay === 'encrypted-content'
           ? { forceReasoning: true }
           : {}),
-        ...openAiResponsesSummary(modelId, reasoningEffort),
+        ...openAiResponsesSummary(connection, modelId, reasoningEffort),
         ...(reasoningEffort ? { reasoningEffort } : {}),
         ...(serviceTier ? { serviceTier } : {}),
       },
@@ -741,7 +767,7 @@ function buildFamilyWire(
   if (wire === 'openai-chat' && adapter.kind === 'openai-compatible') {
     const reasoningEffort =
       explicitReasoningEffort ??
-      (requestedLevel === undefined ? defaultOpenAiReasoningEffort(modelId) : undefined);
+      (requestedLevel === undefined ? modelDefaultReasoningEffort(connection, modelId) : undefined);
     if (reasoningEffort) {
       return {
         [openAiCompatibleProviderOptionsKey(adapter, connection)]: { reasoningEffort },

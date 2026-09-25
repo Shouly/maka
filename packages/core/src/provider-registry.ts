@@ -323,8 +323,8 @@ if (!fireworks.api) throw new Error('models.dev Fireworks AI provider facts are 
 const fireworksModelIds = toolCallingModelIds(
   'Fireworks AI',
   GENERATED_MODELS_DEV_METADATA['fireworks-ai'],
-  ['accounts/fireworks/models/kimi-k2p6'],
-);
+  ['accounts/fireworks/models/kimi-k3'],
+).filter((id) => GENERATED_MODELS_DEV_METADATA['fireworks-ai'][id]?.lifecycle !== 'deprecated');
 const tencentTokenHub = GENERATED_MODELS_DEV_PROVIDER_FACTS['tencent-tokenhub'];
 if (tencentTokenHub.id !== 'tencent-tokenhub') {
   throw new Error(
@@ -787,9 +787,10 @@ const providerRegistry = {
     menuLabel: 'Kimi',
     baseUrl: 'https://api.kimi.com/coding/v1',
     authKind: 'api_key',
-    // kimi-for-coding / -highspeed intentionally have no thinking knob:
-    // models.dev declares no reasoning_options for them, so the effort
-    // control only appears for k3 / k3-256k. Not a sync gap.
+    // Which of these models get an effort control is models.dev's call
+    // (`reasoning_options` in the snapshot), not a registry decision: the
+    // 2026-09 snapshot declares low/high/max for kimi-for-coding as well as
+    // k3, where the 2026-08 one declared none for kimi-for-coding.
     fallbackModels: [...kimiCodingPlanModelIds],
     status: 'ready',
     runtimeAdapter: { kind: 'anthropic', auth: 'api-key', normalizeBaseUrl: true },
@@ -912,13 +913,11 @@ const providerRegistry = {
     label: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com',
     authKind: 'api_key',
-    fallbackModels: [
-      'deepseek-v4-flash',
-      'deepseek-v4-flash-vision-exp',
-      'deepseek-v4-pro',
-      'deepseek-reasoner',
-      'deepseek-chat',
-    ],
+    // deepseek-flash (2026-09-10, family deepseek-flash) is what upstream now
+    // lists in place of deepseek-v4-flash and the vision preview, both marked
+    // deprecated. It stays on the chat wire: the Responses/hosted-search
+    // contract (deepSeekModelSupportsResponses) is only known for the V4 ids.
+    fallbackModels: ['deepseek-flash', 'deepseek-v4-pro', 'deepseek-reasoner', 'deepseek-chat'],
     status: 'ready',
     runtimeAdapter: {
       kind: 'openai-compatible',

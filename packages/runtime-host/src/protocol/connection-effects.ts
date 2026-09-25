@@ -208,6 +208,80 @@ export type ConnectionTestRunResult =
   | ConnectionEffectRejected
   | ConnectionEffectSuperseded;
 
+/** Where this Host's model metadata came from, and how its models.dev refresh is going. */
+export interface ModelCatalogStatus {
+  readonly active: 'bundled' | 'cache' | 'refreshed';
+  /** When models.dev served the active table (unix ms); null for the build's snapshot. */
+  readonly fetchedAt: number | null;
+  readonly lastAttempt: {
+    readonly at: number;
+    readonly outcome: 'changed' | 'unchanged' | 'failed' | 'skipped';
+    /** The failure's message; for a skipped attempt, `privacy_mode` or `proxy_credential_not_configured`. */
+    readonly error?: string;
+  } | null;
+  readonly nextAttemptAt: number | null;
+}
+
+export type ModelCatalogStatusQueryInput = Record<string, never>;
+export type ModelCatalogRefreshInput = Record<string, never>;
+
+const MODEL_CATALOG_ERROR_MAX_LENGTH = 2_048;
+
+export function decodeModelCatalogEmptyInput(value: unknown): Record<string, never> {
+  requireExactRecord(value, 'model catalog input', []);
+  return {};
+}
+
+export function decodeModelCatalogStatus(value: unknown): ModelCatalogStatus {
+  const record = requireExactRecord(value, 'model catalog status', [
+    'active',
+    'fetchedAt',
+    'lastAttempt',
+    'nextAttemptAt',
+  ]);
+  if (record.active !== 'bundled' && record.active !== 'cache' && record.active !== 'refreshed') {
+    throw invalidProtocolFrame('Invalid model catalog source');
+  }
+  const optionalCount = (field: unknown, label: string) =>
+    field === null ? null : requireCount(field, label);
+  let lastAttempt: ModelCatalogStatus['lastAttempt'] = null;
+  if (record.lastAttempt !== null) {
+    const attempt = requireShapedRecord(
+      record.lastAttempt,
+      'model catalog attempt',
+      ['at', 'outcome'],
+      ['error'],
+    );
+    if (
+      attempt.outcome !== 'changed' &&
+      attempt.outcome !== 'unchanged' &&
+      attempt.outcome !== 'failed' &&
+      attempt.outcome !== 'skipped'
+    ) {
+      throw invalidProtocolFrame('Invalid model catalog attempt outcome');
+    }
+    lastAttempt = {
+      at: requireCount(attempt.at, 'model catalog attempt time'),
+      outcome: attempt.outcome,
+      ...(attempt.error === undefined
+        ? {}
+        : {
+            error: requireString(
+              attempt.error,
+              'model catalog attempt error',
+              MODEL_CATALOG_ERROR_MAX_LENGTH,
+            ),
+          }),
+    };
+  }
+  return {
+    active: record.active,
+    fetchedAt: optionalCount(record.fetchedAt, 'model catalog fetch time'),
+    lastAttempt,
+    nextAttemptAt: optionalCount(record.nextAttemptAt, 'model catalog next attempt'),
+  };
+}
+
 export const CONNECTION_EFFECT_OPERATION_SPECS = {
   'connection.onboarding.save': defineOperation<
     ConnectionOnboardingSaveInput,
@@ -252,6 +326,28 @@ export const CONNECTION_EFFECT_OPERATION_SPECS = {
     errors: EFFECT_ERRORS,
     decodeInput: decodeConnectionTestRunInput,
     decodeOutput: decodeConnectionTestRunResult,
+  }),
+  'model-catalog.status.query': defineOperation<
+    ModelCatalogStatusQueryInput,
+    ModelCatalogStatus,
+    (typeof EFFECT_ERRORS)[number]
+  >({
+    mode: 'query',
+    availability: 'ready',
+    errors: EFFECT_ERRORS,
+    decodeInput: decodeModelCatalogEmptyInput,
+    decodeOutput: decodeModelCatalogStatus,
+  }),
+  'model-catalog.refresh': defineOperation<
+    ModelCatalogRefreshInput,
+    ModelCatalogStatus,
+    (typeof EFFECT_ERRORS)[number]
+  >({
+    mode: 'command',
+    availability: 'ready',
+    errors: EFFECT_ERRORS,
+    decodeInput: decodeModelCatalogEmptyInput,
+    decodeOutput: decodeModelCatalogStatus,
   }),
 } as const;
 

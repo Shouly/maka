@@ -216,7 +216,8 @@ import { RootTurnCoordinator } from './root-turn-coordinator.js';
 import { RuntimePolicyActivationGate } from './runtime-policy-activation-gate.js';
 import { notifySandboxBoundaryGraphWake } from './sandbox-boundary-graph-wake.js';
 import { HostRuntimePolicyCoordinator } from './runtime-policy-coordinator.js';
-import { startHostModelMetadataRefresh } from './model-metadata-refresh.js';
+import { loadModelMetadataCache, startHostModelMetadataRefresh } from './model-metadata-refresh.js';
+import { startHostModelInventoryRefresh } from './model-inventory-refresh.js';
 import { HostRuntimeResourceCoordinator } from './runtime-resource-coordinator.js';
 import { SessionAdmissionGate } from './session-admission-gate.js';
 import { HostSessionCatalogCoordinator } from './session-catalog-coordinator.js';
@@ -338,6 +339,7 @@ export async function createExecutionRuntimeHostComposition(
   let pluginPlatform: HostPluginPlatform | undefined;
   let manager: SessionManager | undefined;
   let modelMetadataRefresh: ReturnType<typeof startHostModelMetadataRefresh> | undefined;
+  let modelInventoryRefresh: ReturnType<typeof startHostModelInventoryRefresh> | undefined;
   let archiveEvidence: Awaited<ReturnType<typeof openToolResultArchiveEvidenceReader>> | undefined;
   try {
     const pluginRoot = new Context();
@@ -726,13 +728,21 @@ export async function createExecutionRuntimeHostComposition(
         ) => Promise<string[]>)
       | undefined;
     const hostChanges = new HostChangeFeed();
-    // Startup, once, in the background: the Host owns the model catalog, so it
-    // is the one process that gets to ask models.dev what is true today. On any
-    // failure the build's committed snapshot stands.
-    modelMetadataRefresh = startHostModelMetadataRefresh({
-      policy: runtimePolicyStores.operations,
-      publish: () => hostChanges.publishConnectionCatalog(),
-    });
+    // The Host owns the model catalog, so it is the one process that asks
+    // models.dev what is true today. The last table it took is installed
+    // first, before any client reads a catalog entry, so a restart without
+    // the network describes models exactly as the previous run did; the
+    // refresh then runs in the background (retried, then daily).
+    const modelMetadataCacheRoot = context.owner.capability.canonicalPath;
+    const cachedModelMetadata = await loadModelMetadataCache(modelMetadataCacheRoot);
+    modelMetadataRefresh = startHostModelMetadataRefresh(
+      {
+        policy: runtimePolicyStores.operations,
+        publish: () => hostChanges.publishConnectionCatalog(),
+        cacheRoot: modelMetadataCacheRoot,
+      },
+      cachedModelMetadata,
+    );
     const projectMembership = new HostProjectMembershipGate();
     const workspaceResolver = new HostWorkspaceResolver(
       openedProjectCatalog,
@@ -1956,6 +1966,21 @@ export async function createExecutionRuntimeHostComposition(
       activation: runtimePolicyActivation,
       oauthCredentials,
       onCommittedMutation: registerConfigurationMutation,
+      modelCatalog: () => modelMetadataRefresh,
+    });
+    // Discovered model lists follow the provider without a manual refresh:
+    // the same effect the Settings button runs, for lists older than a day.
+    modelInventoryRefresh = startHostModelInventoryRefresh({
+      readCatalog: () => runtimePolicyStores.connectionCatalog.getSnapshot(),
+      fetchModels: async (connectionId) => {
+        const outcome = await connectionEffects.fetchModelsInBackground(connectionId);
+        if (!outcome.ok) return { kind: 'error', detail: outcome.error.code };
+        const result = outcome.result as { readonly kind: string; readonly errorClass?: string };
+        return {
+          kind: result.kind,
+          ...(result.errorClass === undefined ? {} : { detail: result.errorClass }),
+        };
+      },
     });
     const sessionCatalog = new HostSessionCatalogCoordinator({
       stores: stores.sessionStore,
@@ -2547,6 +2572,7 @@ export async function createExecutionRuntimeHostComposition(
         close: [
           () => archiveEvidence?.close(),
           () => modelMetadataRefresh?.close(),
+          () => modelInventoryRefresh?.close(),
           () => connectionEffects.close(),
           () =>
             backendInvalidationPoisoned
@@ -2851,6 +2877,7 @@ export async function createExecutionRuntimeHostComposition(
     archiveEvidence?.close();
     try {
       await modelMetadataRefresh?.close();
+      await modelInventoryRefresh?.close();
     } catch (closeError) {
       errors.push(closeError);
     }

@@ -35,9 +35,11 @@ import {
 import { lookupModelMetadata, resolveModelVisionSupport } from './model-metadata.js';
 import {
   modelOverride,
-  thinkingVariantsForConnection,
   type ModelOverrides,
+  type ReasoningSupport,
+  resolveModelThinking,
   type ThinkingLevel,
+  type ThinkingSource,
 } from './model-thinking.js';
 
 /**
@@ -81,6 +83,12 @@ export interface ModelCatalogEntry {
    * thinking projection honoured.
    */
   thinkingLevels: readonly ThinkingLevel[];
+  /** The level the provider applies when a request names none, when it says. */
+  defaultThinkingLevel?: ThinkingLevel;
+  /** Which source `thinkingLevels` came from. */
+  thinkingSource: ThinkingSource;
+  /** Whether any source says this model reasons; separates "no levels" from "unknown". */
+  reasoningSupport: ReasoningSupport;
   contextWindow?: number;
   inputLimit?: number;
   defaultContextWindow?: number;
@@ -364,10 +372,14 @@ function makeEntry(
   // The user's per-model declaration outranks every catalog source, so both
   // capability reads that honour it — vision and thinking — resolve here
   // rather than being recomputed by whoever renders the entry.
-  const thinkingContext = {
-    providerType: input.providerType,
-    ...(input.modelOverrides ? { modelOverrides: input.modelOverrides } : {}),
-  };
+  const thinking = resolveModelThinking(
+    {
+      providerType: input.providerType,
+      models: [sourceModel],
+      ...(input.modelOverrides ? { modelOverrides: input.modelOverrides } : {}),
+    },
+    normalizedModel.id,
+  );
   const defaultSupportsVision = resolveModelVisionSupport(
     input.providerType,
     [model],
@@ -407,7 +419,10 @@ function makeEntry(
     ...(input.modelOverrides?.[normalizedModel.id]?.compactionThreshold === undefined
       ? {}
       : { compactionThreshold: input.modelOverrides[normalizedModel.id]!.compactionThreshold }),
-    thinkingLevels: thinkingVariantsForConnection(thinkingContext, normalizedModel.id),
+    thinkingLevels: thinking.levels,
+    ...(thinking.defaultLevel === undefined ? {} : { defaultThinkingLevel: thinking.defaultLevel }),
+    thinkingSource: thinking.source,
+    reasoningSupport: thinking.reasoning,
     ...limits,
     ...(defaults.contextWindow === undefined
       ? {}

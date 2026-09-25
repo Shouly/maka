@@ -28,6 +28,36 @@ const EXPECTED = {
 };
 
 describe('Runtime Host connection effects protocol', () => {
+  test('carries the model catalog status and rejects an unknown source', () => {
+    const status = {
+      active: 'cache',
+      fetchedAt: 1_790_000_000_000,
+      lastAttempt: { at: 1_790_000_100_000, outcome: 'failed', error: 'timeout' },
+      nextAttemptAt: 1_790_000_105_000,
+    };
+    assert.deepEqual(
+      decodeClientFrame(request('model-catalog.status.query', {})),
+      request('model-catalog.status.query', {}),
+    );
+    assert.deepEqual(
+      decodeHostFrame(response('model-catalog.status.query', status)),
+      response('model-catalog.status.query', status),
+    );
+    const never = { active: 'bundled', fetchedAt: null, lastAttempt: null, nextAttemptAt: null };
+    assert.deepEqual(
+      decodeHostFrame(response('model-catalog.refresh', never)),
+      response('model-catalog.refresh', never),
+    );
+    assert.throws(
+      () => decodeHostFrame(response('model-catalog.status.query', { ...status, active: 'guess' })),
+      RuntimeHostProtocolError,
+    );
+    assert.throws(
+      () => decodeClientFrame(request('model-catalog.refresh', { force: true })),
+      RuntimeHostProtocolError,
+    );
+  });
+
   test('bounds transient onboarding secrets, models, and save selections', () => {
     const verify = request('connection.onboarding.verify', {
       target: { kind: 'create', providerType: 'openrouter' },

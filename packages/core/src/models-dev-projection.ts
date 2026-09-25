@@ -55,7 +55,7 @@ export const MODELS_DEV_PROVIDERS = {
   google: 'google',
   groq: 'groq',
   huggingface: 'huggingface',
-  'kimi-coding-plan': 'kimi-for-coding',
+  'kimi-coding-plan': 'kimi-code-plan-cn',
   MiniMax: 'minimax',
   'MiniMax-cn': 'minimax-cn',
   'minimax-coding-plan': 'minimax-coding-plan',
@@ -197,11 +197,57 @@ export function projectModelsDevMetadata(
   for (const [providerType, sourceId] of Object.entries(MODELS_DEV_PROVIDERS)) {
     const provider = catalog[sourceId];
     if (!provider) throw new Error(`models.dev provider ${sourceId} is missing`);
-    metadata[providerType as ProviderType] = Object.fromEntries(
-      Object.entries(provider.models)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([id, model]) => [id, projectModelsDevModel(sourceId, id, provider, model)]),
-    );
+    metadata[providerType as ProviderType] = projectModelsDevProvider(sourceId, provider);
+  }
+  return metadata;
+}
+
+function projectModelsDevProvider(
+  sourceId: string,
+  provider: ModelsDevProvider,
+): Record<string, ModelMetadata> {
+  return Object.fromEntries(
+    Object.entries(provider.models)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([id, model]) => [id, projectModelsDevModel(sourceId, id, provider, model)]),
+  );
+}
+
+/**
+ * The Runtime Host's projection of a live response: each provider stands or
+ * falls alone. A provider upstream renamed, emptied or reshaped keeps the
+ * projection `previous` held for it and is reported through `onRejected`;
+ * every other provider takes the response. Only a response that is not a
+ * catalog at all is refused whole.
+ *
+ * The build-time generator does not use this: it rejects the whole response
+ * so a human fixes the mapping before a snapshot is committed. The Host
+ * cannot wait for a human, and one provider's rename used to discard the
+ * other forty-odd providers' facts along with it (models.dev renamed
+ * `kimi-for-coding` on 2026-09-18, and every Host refresh after that fell
+ * back to the build's snapshot).
+ */
+export function projectModelsDevMetadataPerProvider(
+  catalog: unknown,
+  previous: Partial<Record<ProviderType, Record<string, ModelMetadata>>>,
+  onRejected: (providerType: ProviderType, reason: string) => void,
+): Partial<Record<ProviderType, Record<string, ModelMetadata>>> {
+  if (!catalog || typeof catalog !== 'object' || Array.isArray(catalog)) {
+    throw new Error('models.dev response is not an object');
+  }
+  const source = catalog as Record<string, unknown>;
+  const metadata: Partial<Record<ProviderType, Record<string, ModelMetadata>>> = {};
+  for (const [key, sourceId] of Object.entries(MODELS_DEV_PROVIDERS)) {
+    const providerType = key as ProviderType;
+    try {
+      const provider = source[sourceId];
+      assertModelsDevProvider(sourceId, provider);
+      metadata[providerType] = projectModelsDevProvider(sourceId, provider);
+    } catch (error) {
+      onRejected(providerType, error instanceof Error ? error.message : String(error));
+      const kept = previous[providerType];
+      if (kept !== undefined) metadata[providerType] = kept;
+    }
   }
   return metadata;
 }

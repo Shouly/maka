@@ -170,10 +170,10 @@ test('bootstrap preserves DeepSeek provider semantics for a DeepSeek environment
     const deepseek = catalog.connections.find(({ slug }) => slug === 'env-deepseek');
     assert.equal(deepseek?.providerType, 'deepseek');
     assert.equal(deepseek?.baseUrl, 'https://deepseek.example/v1');
-    assert.deepEqual(deepseek?.enabledModelIds, ['deepseek-v4-flash']);
+    assert.deepEqual(deepseek?.enabledModelIds, ['deepseek-flash']);
     assert.deepEqual(catalog.defaultTarget, {
       connectionId: deepseek?.connectionId,
-      modelId: 'deepseek-v4-flash',
+      modelId: 'deepseek-flash',
     });
   });
 });
@@ -324,12 +324,43 @@ test('a historical seed with a user-cleared default migrates without inventing o
   });
 });
 
+test('the seed a 2026-09-02 build planted follows the current seed', async () => {
+  await withFixture(async ({ stores, root }) => {
+    const planted = [
+      'nemotron-3-ultra-free',
+      'big-pickle',
+      'ling-3.0-flash-fin-free',
+      'mimo-v2.5-free',
+      'nemotron-3.5-lightning-free',
+    ];
+    const created = await stores.connectionCatalog.create({
+      expectedCatalogRevision: 0,
+      connection: {
+        slug: 'opencode-free',
+        name: 'OpenCode Free',
+        providerType: 'opencode-free',
+        enabled: true,
+        enabledModelIds: planted,
+      },
+    });
+    assert.equal(created.kind, 'committed');
+
+    await ensureBootstrapRuntimePolicy({ workspaceRoot: root, stores, environment: {} });
+
+    const migrated = (await stores.connectionCatalog.getSnapshot()).connections.find(
+      ({ slug }) => slug === 'opencode-free',
+    );
+    assert.deepEqual(migrated?.enabledModelIds, [...OPENCODE_FREE_ENABLED_MODEL_IDS]);
+    assert.ok(!migrated?.enabledModelIds.includes('mimo-v2.5-free'));
+  });
+});
+
 test('a user-modified opencode-free inventory is never migrated', async () => {
   // A reordered seed counts as user-modified too: exact sequence equality is
   // the (documented, lossy) proof a row is still system-owned.
   for (const enabledModelIds of [
     ['nemotron-3-ultra-free', 'big-pickle'],
-    ['mimo-v2.5-free', 'nemotron-3-ultra-free', 'user-model'],
+    ['big-pickle', 'nemotron-3-ultra-free', 'user-model'],
   ]) {
     await withFixture(async ({ root, stores }) => {
       const created = await stores.connectionCatalog.create({

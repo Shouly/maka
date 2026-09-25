@@ -17,8 +17,9 @@
  * under the License.
  */
 
-import { type ThinkingLevel } from './model-thinking.js';
+import type { ReasoningSupport, ThinkingLevel, ThinkingSource } from './model-thinking.js';
 import {
+  isRelayProviderType,
   offerableCatalogEntries,
   providerDefaultsOf,
   providerMenuLabel,
@@ -38,6 +39,16 @@ export interface ChatModelChoice {
   connectionName?: string;
   isDefault: boolean;
   thinkingLevels: readonly ThinkingLevel[];
+  /** What the provider applies when the Session names no level, when it says. */
+  defaultThinkingLevel?: ThinkingLevel;
+  thinkingSource: ThinkingSource;
+  reasoningSupport: ReasoningSupport;
+  /**
+   * Whether the user can declare this model's levels in Settings (a relay
+   * connection, whose models no catalog describes). The picker only offers
+   * "declare levels" where Settings has somewhere to send the user.
+   */
+  thinkingDeclarable: boolean;
   /** Exact capability projection used by model-facing attachment composition. */
   supportsVision?: boolean;
   /** Provider/model metadata shown beside the user-declared context setting. */
@@ -67,6 +78,12 @@ export function buildChatModelChoices(
         ...(provider.authKind === 'oauth_token' ? {} : { connectionName: connection.name }),
         isDefault: entry.isDefault,
         thinkingLevels: entry.thinkingLevels,
+        ...(entry.defaultThinkingLevel === undefined
+          ? {}
+          : { defaultThinkingLevel: entry.defaultThinkingLevel }),
+        thinkingSource: entry.thinkingSource,
+        reasoningSupport: entry.reasoningSupport,
+        thinkingDeclarable: isRelayProviderType(connection.providerType),
         supportsVision: entry.supportsVision,
         ...(entry.contextWindow !== undefined ? { contextWindow: entry.contextWindow } : {}),
         ...(declaredWindow !== undefined ? { declaredContextWindow: declaredWindow } : {}),

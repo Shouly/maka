@@ -3024,6 +3024,12 @@ const makaBridge = {
     hasSecret(connection: import('../shared/desktop-connection-snapshot.js').DesktopConnectionIdentity, host?: DesktopRuntimeHostRef): Promise<boolean> {
       return invokeSelectedRuntimeHost(host, 'connections:hasSecret', connection);
     },
+    catalogStatus(host?: DesktopRuntimeHostRef): Promise<import('../shared/desktop-connection-snapshot.js').DesktopModelCatalogStatus> {
+      return invokeSelectedRuntimeHost(host, 'connections:catalogStatus');
+    },
+    refreshCatalog(host?: DesktopRuntimeHostRef): Promise<import('../shared/desktop-connection-snapshot.js').DesktopModelCatalogStatus> {
+      return invokeSelectedRuntimeHost(host, 'connections:refreshCatalog');
+    },
     getRequestHeaders(connection: import('../shared/desktop-connection-snapshot.js').DesktopConnectionIdentity, host?: DesktopRuntimeHostRef): Promise<import('@maka/core/llm-connections').SavedRequestHeaders> {
       return invokeSelectedRuntimeHost(host, 'connections:getRequestHeaders', connection);
     },

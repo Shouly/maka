@@ -25,7 +25,7 @@
  * `thinkingVariantsForModel`), and switching models clears the choice so a
  * level is never sent to a model that does not understand it. `undefined`
  * means "no override" (the model's default behaviour) and is the only value
- * persisted-absent — the UI shows it as "默认". `'off'` explicitly disables
+ * persisted-absent — the UI shows it as "模型默认" (model default). `'off'` explicitly disables
  * reasoning for providers that expose a true off switch (`reasoningEffort:
  * 'none'` for OpenAI gpt-5 / codex, `thinking: { type: 'disabled' }` for
  * Anthropic-protocol); providers without a clean off switch do not list it.
@@ -290,21 +290,86 @@ export function supportsRelayFastServiceTier(providerType: ProviderType, modelId
   );
 }
 
+/** Which source a model's reasoning levels came from, highest authority first. */
+export type ThinkingSource = 'user' | 'provider' | 'catalog' | 'none';
+
 /**
- * OpenAI-compatible relay connections declare thinking support **per model** via
- * `modelOverrides[modelId].thinkingLevels` — a relay may front a
- * DeepSeek-family reasoner and a plain instruct model side by side, so the
- * declaration granularity is the model, not the connection. Without a usable
- * declaration for that model every provider (including relays) falls through
- * to the metadata-derived variants.
+ * Whether any source says the model reasons. An empty level list cannot tell
+ * "this model does not reason" from "nothing Maka reads describes it", and
+ * the picker treats those two differently.
  */
-export function thinkingVariantsForConnection(
-  connection: ConnectionThinkingContext,
+export type ReasoningSupport = 'yes' | 'no' | 'unknown';
+
+/** Everything Maka knows about one model's reasoning knob, resolved once. */
+export interface ModelThinkingFacts {
+  /** Levels a request may carry, in display order; empty when none is known. */
+  readonly levels: readonly ThinkingLevel[];
+  /** What the provider applies when a request names no level, when it says. */
+  readonly defaultLevel?: ThinkingLevel;
+  readonly source: ThinkingSource;
+  readonly reasoning: ReasoningSupport;
+}
+
+/** The connection facts a thinking resolution reads. */
+export interface ThinkingSubject extends ConnectionThinkingContext {
+  /** Model rows as discovery stored them; a row may carry the provider's own levels. */
+  readonly models?: readonly ModelInfo[];
+}
+
+/**
+ * The one resolution of a model's reasoning levels. Sources, highest first:
+ *
+ * 1. the user's declaration (`modelOverrides[id].thinkingLevels`) — explicit,
+ *    and allowed to narrow what the provider offers;
+ * 2. what the provider's own model list advertised (`ModelInfo.thinkingLevels`,
+ *    stored by discovery) — the provider knows its models;
+ * 3. the catalog (models.dev metadata, refreshed or bundled);
+ * 4. nothing.
+ *
+ * Each layer speaks only when the one above said nothing. The catalog entry,
+ * the Session gate and the wire all read this, so a level the picker offers is
+ * exactly a level the request may carry.
+ */
+export function resolveModelThinking(
+  connection: ThinkingSubject,
   modelId: string,
-): readonly ThinkingLevel[] {
-  const declared = modelOverride(connection, modelId)?.thinkingLevels;
-  if (declared) return declared;
-  return thinkingVariantsForModel(connection.providerType, modelId);
+): ModelThinkingFacts {
+  const id = modelId.trim();
+  const row = connection.models?.find((model) => model.id.trim() === id);
+  const metadata = lookupModelMetadata(connection.providerType, id);
+  const override = modelOverride(connection, id);
+  const declared = override?.thinkingLevels ?? [];
+  const advertised = inDisplayOrder(row?.thinkingLevels ?? []);
+  const catalog = deriveThinkingChoices(metadata.thinkingOptions);
+  const [levels, source]: [readonly ThinkingLevel[], ThinkingSource] =
+    declared.length > 0
+      ? [declared, 'user']
+      : advertised.length > 0
+        ? [advertised, 'provider']
+        : catalog.length > 0
+          ? [catalog, 'catalog']
+          : [[], 'none'];
+  const defaultLevel =
+    row?.defaultThinkingLevel !== undefined && levels.includes(row.defaultThinkingLevel)
+      ? row.defaultThinkingLevel
+      : undefined;
+  const capability =
+    override?.capabilities?.reasoning ??
+    row?.capabilities?.reasoning ??
+    metadata.capabilities?.reasoning;
+  return {
+    levels: [...levels],
+    ...(defaultLevel === undefined ? {} : { defaultLevel }),
+    source,
+    reasoning:
+      levels.length > 0 || capability === true ? 'yes' : capability === false ? 'no' : 'unknown',
+  };
+}
+
+/** A provider's level list in Maka's display order, unknown and repeated values dropped. */
+export function inDisplayOrder(levels: readonly string[]): ThinkingLevel[] {
+  const present = new Set(levels);
+  return THINKING_LEVELS.filter((level) => present.has(level));
 }
 
 /**
@@ -315,11 +380,11 @@ export function thinkingVariantsForConnection(
  * the call site, not of this helper.
  */
 export function resolveThinkingLevel(
-  connection: ConnectionThinkingContext,
+  connection: ThinkingSubject,
   modelId: string,
   level: ThinkingLevel | undefined,
 ): ThinkingLevel | undefined {
-  return level !== undefined && thinkingVariantsForConnection(connection, modelId).includes(level)
+  return level !== undefined && resolveModelThinking(connection, modelId).levels.includes(level)
     ? level
     : undefined;
 }

@@ -567,13 +567,17 @@ function toModelProviderOverride(providerId, modelId, override) {
   if (
     !override ||
     typeof override !== 'object' ||
-    typeof override.npm !== 'string' ||
+    (override.npm !== undefined && typeof override.npm !== 'string') ||
     (override.api !== undefined && typeof override.api !== 'string')
   ) {
     throw new Error(
       `models.dev model ${providerId}/${modelId} has an unsupported provider override`,
     );
   }
+  // An override that names no SDK (`{ body: {...} }`, a request-body overlay
+  // upstream added 2026-09) selects no adapter, so there is nothing for the
+  // runtime table to carry; Maka does not apply body overlays from the catalog.
+  if (override.npm === undefined) return undefined;
   return { npm: override.npm, ...(override.api ? { api: override.api } : {}) };
 }
 

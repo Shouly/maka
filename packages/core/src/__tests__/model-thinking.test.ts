@@ -23,9 +23,9 @@ import {
   type ConnectionThinkingContext,
   normalizeModelOverrides,
   modelOverride,
+  resolveModelThinking,
   resolveThinkingLevel,
   thinkingOptionsForModel,
-  thinkingVariantsForConnection,
   thinkingVariantsForModel,
   supportsRelayFastServiceTier,
 } from '../model-thinking.js';
@@ -42,7 +42,78 @@ test('declarable relay levels are every intensity tier but off', () => {
     providerType: 'openai-compatible',
     modelOverrides: { m: { thinkingLevels: ['off', 'low'] } },
   } as const;
-  assert.deepEqual([...thinkingVariantsForConnection(declaredOff, 'm')], ['low']);
+  assert.deepEqual([...resolveModelThinking(declaredOff, 'm').levels], ['low']);
+});
+
+test('resolveModelThinking takes the highest source that speaks', () => {
+  // gpt-6-sol is in the catalog (models.dev) with none..max.
+  const catalogOnly = resolveModelThinking({ providerType: 'openai-codex' }, 'gpt-6-sol');
+  assert.equal(catalogOnly.source, 'catalog');
+  assert.deepEqual(catalogOnly.levels, ['off', 'low', 'medium', 'high', 'xhigh', 'max']);
+  assert.equal(catalogOnly.defaultLevel, undefined);
+
+  // The provider's own list outranks the catalog and brings its default.
+  const advertised = resolveModelThinking(
+    {
+      providerType: 'openai-codex',
+      models: [
+        { id: 'gpt-6-sol', thinkingLevels: ['low', 'high', 'max'], defaultThinkingLevel: 'high' },
+      ],
+    },
+    'gpt-6-sol',
+  );
+  assert.equal(advertised.source, 'provider');
+  assert.deepEqual(advertised.levels, ['low', 'high', 'max']);
+  assert.equal(advertised.defaultLevel, 'high');
+  assert.equal(advertised.reasoning, 'yes');
+
+  // The user's declaration outranks both; a provider default outside it is dropped.
+  const declared = resolveModelThinking(
+    {
+      providerType: 'openai-compatible',
+      models: [{ id: 'm', thinkingLevels: ['low', 'high'], defaultThinkingLevel: 'high' }],
+      modelOverrides: { m: { thinkingLevels: ['low'] } },
+    },
+    'm',
+  );
+  assert.equal(declared.source, 'user');
+  assert.deepEqual(declared.levels, ['low']);
+  assert.equal(declared.defaultLevel, undefined);
+});
+
+test('resolveModelThinking tells an unknown model from a non-reasoning one', () => {
+  const unknown = resolveModelThinking({ providerType: 'openai-compatible' }, 'mystery-model');
+  assert.deepEqual(unknown, { levels: [], source: 'none', reasoning: 'unknown' });
+
+  const plain = resolveModelThinking(
+    {
+      providerType: 'openai-compatible',
+      models: [{ id: 'instruct', capabilities: { reasoning: false } }],
+    },
+    'instruct',
+  );
+  assert.equal(plain.reasoning, 'no');
+
+  const reasonsWithoutKnob = resolveModelThinking(
+    {
+      providerType: 'openai-compatible',
+      models: [{ id: 'reasoner', capabilities: { reasoning: true } }],
+    },
+    'reasoner',
+  );
+  assert.deepEqual(reasonsWithoutKnob.levels, []);
+  assert.equal(reasonsWithoutKnob.reasoning, 'yes');
+
+  // The user's own capability declaration outranks the provider row.
+  const declaredReasoner = resolveModelThinking(
+    {
+      providerType: 'openai-compatible',
+      models: [{ id: 'm', capabilities: { reasoning: false } }],
+      modelOverrides: { m: { capabilities: { reasoning: true } } },
+    },
+    'm',
+  );
+  assert.equal(declaredReasoner.reasoning, 'yes');
 });
 
 test('relay profiles preserve the fast service tier declaration', () => {
@@ -195,6 +266,13 @@ test('resolveThinkingLevel discards levels the model does not offer', () => {
   assert.equal(resolveThinkingLevel(relay, 'm', 'max'), undefined);
   assert.equal(resolveThinkingLevel(relay, 'm', undefined), undefined);
   assert.equal(resolveThinkingLevel({ providerType: 'openai' }, 'gpt-5.5', 'xhigh'), 'xhigh');
+  // A level only the provider advertised passes the gate too.
+  const codex = {
+    providerType: 'openai-codex',
+    models: [{ id: 'future-model', thinkingLevels: ['low', 'max'] as ['low', 'max'] }],
+  } as const;
+  assert.equal(resolveThinkingLevel(codex, 'future-model', 'max'), 'max');
+  assert.equal(resolveThinkingLevel(codex, 'future-model', 'medium'), undefined);
 });
 
 test('Alibaba Token Plan exposes the formal Qwen3.8 effort and disable contract', () => {

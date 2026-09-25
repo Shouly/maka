@@ -71,6 +71,8 @@ type HostConnectionsClient = Pick<
   | 'deleteCredential'
   | 'fetchConnectionModels'
   | 'getConnectionRequestHeaders'
+  | 'queryModelCatalogStatus'
+  | 'refreshModelCatalog'
   | 'loadConnectionCatalog'
   | 'queryCredential'
   | 'removeConnection'
@@ -342,6 +344,14 @@ export function registerRuntimeHostConnectionsIpc(
     deps.emitConnectionListChanged();
     const latest = requireConnectionIdentity(await snapshot(), connectionIdentity(current));
     return { models: [...latest.models], source: result.source };
+  });
+  deps.ipcMain.handle('connections:catalogStatus', () => deps.client.queryModelCatalogStatus());
+  deps.ipcMain.handle('connections:refreshCatalog', async () => {
+    const status = await deps.client.refreshModelCatalog();
+    // A changed table re-resolves every catalog entry; the Host also announces
+    // it, and the list is re-read either way.
+    if (status.lastAttempt?.outcome === 'changed') deps.emitConnectionListChanged();
+    return status;
   });
   deps.ipcMain.handle(
     'connections:test',

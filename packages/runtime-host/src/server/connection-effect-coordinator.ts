@@ -64,6 +64,7 @@ import type {
   ConnectionTestProjection,
   ConnectionTestRunInput,
   ConnectionTestRunResult,
+  ModelCatalogStatus,
   OperationOutcome,
 } from '../protocol/index.js';
 import type { ConnectionEffectOperationHandlerMap } from './operation-dispatcher.js';
@@ -95,7 +96,22 @@ export interface HostConnectionEffectCoordinatorOptions {
   readonly createTransport?: (
     proxy: ConnectionEffectProxySnapshot | null,
   ) => ConnectionEffectFetchTransport;
+  /** The Host's models.dev refresh; absent, the build's snapshot is all there is. */
+  readonly modelCatalog?: () =>
+    | {
+        status(): ModelCatalogStatus;
+        refreshNow(): Promise<ModelCatalogStatus>;
+      }
+    | undefined;
 }
+
+/** What a Host without a models.dev refresh reports: the snapshot, never refreshed. */
+const SNAPSHOT_ONLY_MODEL_CATALOG: ModelCatalogStatus = {
+  active: 'bundled',
+  fetchedAt: null,
+  lastAttempt: null,
+  nextAttemptAt: null,
+};
 
 /** Runs provider I/O outside Storage lanes and conditionally commits canonical results. */
 export class HostConnectionEffectCoordinator {
@@ -104,12 +120,27 @@ export class HostConnectionEffectCoordinator {
     'connection.onboarding.verify': (input) => this.#verifyOnboarding(input),
     'connection.models.fetch': (input) => this.#fetchModels(input),
     'connection.test.run': (input) => this.#testConnection(input),
+    'model-catalog.status.query': async () => ({
+      ok: true,
+      result: this.#modelCatalog?.()?.status() ?? SNAPSHOT_ONLY_MODEL_CATALOG,
+    }),
+    'model-catalog.refresh': async () => {
+      if (!this.#accepting) {
+        return { ok: false, error: { code: 'host_draining', message: 'Runtime Host is draining' } };
+      }
+      const catalog = this.#modelCatalog?.();
+      return {
+        ok: true,
+        result: catalog ? await catalog.refreshNow() : SNAPSHOT_ONLY_MODEL_CATALOG,
+      };
+    },
   };
 
   readonly #stores: RuntimePolicyStoresWriter;
   readonly #activation: RuntimePolicyActivationGate;
   readonly #oauthCredentials: Pick<HostOAuthExecutionAuthority, 'bind'>;
   readonly #onCommittedMutation: () => void;
+  readonly #modelCatalog: HostConnectionEffectCoordinatorOptions['modelCatalog'];
   readonly #now: () => number;
   readonly #runModelDiscovery: ModelDiscoveryRunner;
   readonly #runConnectionTest: ConnectionTestRunner;
@@ -129,10 +160,18 @@ export class HostConnectionEffectCoordinator {
     this.#runModelDiscovery = options.runModelDiscovery ?? runConnectionModelDiscoveryEffect;
     this.#runConnectionTest = options.runConnectionTest ?? runConnectionTestEffect;
     this.#createTransport = options.createTransport ?? createConnectionEffectFetchTransport;
+    this.#modelCatalog = options.modelCatalog;
   }
 
   beginDrain(): void {
     this.#accepting = false;
+  }
+
+  /** The Settings "refresh models" effect, run by the Host itself for a list gone stale. */
+  fetchModelsInBackground(
+    connectionId: string,
+  ): Promise<OperationOutcome<'connection.models.fetch'>> {
+    return this.#fetchModels({ connectionId });
   }
 
   close(): Promise<void> {

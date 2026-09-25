@@ -133,10 +133,14 @@ describe('deepseek v4 flash vision exp metadata regression', () => {
     );
   });
 
-  it('keeps the model present in the deepseek shipped baseline', () => {
-    assert.ok(
-      providerFallbackModelIds(PROVIDER_REGISTRY.deepseek).includes('deepseek-v4-flash-vision-exp'),
-    );
+  // Upstream folded the vision preview into deepseek-flash (2026-09-10) and
+  // marked the preview deprecated, so the baseline ships the successor: the
+  // vision-capable model a fresh DeepSeek connection offers by default.
+  it('ships the vision successor in the deepseek baseline instead of the preview', () => {
+    const baseline = providerFallbackModelIds(PROVIDER_REGISTRY.deepseek);
+    assert.ok(baseline.includes('deepseek-flash'));
+    assert.ok(!baseline.includes('deepseek-v4-flash-vision-exp'));
+    assert.equal(resolveModelVisionSupport('deepseek', undefined, 'deepseek-flash'), true);
   });
 
   it('returns expected metadata from lookupModelMetadata', () => {
@@ -169,7 +173,7 @@ describe('deepseek v4 flash vision exp metadata regression', () => {
     assert.equal(metadata.capabilities?.vision, true);
     assert.equal(resolveModelVisionSupport('deepseek', discovered, modelId), true);
     assert.equal(
-      resolveModelVisionSupport('deepseek', [{ id: 'deepseek-v4-flash' }], 'deepseek-v4-flash'),
+      resolveModelVisionSupport('deepseek', [{ id: 'deepseek-v4-pro' }], 'deepseek-v4-pro'),
       false,
     );
   });

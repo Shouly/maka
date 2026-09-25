@@ -175,8 +175,8 @@ export function ConnectionModelsSection(props: {
                   <span>{copy.detail.contextToken(String(entry.contextWindow))}</span>
                 )}
                 {entry?.supportsVision && <span>{copy.detail.visionToken}</span>}
-                {entry !== undefined && entry.thinkingLevels.length > 0 && (
-                  <span>{copy.detail.thinkingToken}</span>
+                {entry !== undefined && entry.thinkingSource !== 'none' && (
+                  <span>{copy.detail.thinkingSourceToken[entry.thinkingSource]}</span>
                 )}
               </span>
             }

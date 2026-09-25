@@ -133,7 +133,7 @@ function bootstrapSeeds(environment: BootstrapEnvironment): readonly BootstrapSe
       slug: 'env-deepseek',
       name: 'DeepSeek (env)',
       providerType: 'deepseek',
-      enabledModelIds: ['deepseek-v4-flash'],
+      enabledModelIds: ['deepseek-flash'],
       baseUrl: environment.DEEPSEEK_BASE_URL?.trim() || 'https://api.deepseek.com',
       secret: deepseek,
     });
@@ -203,6 +203,15 @@ const LEGACY_OPENCODE_FREE_SEEDS: readonly (readonly string[])[] = [
   ['big-pickle'],
   ['nemotron-3-ultra-free'],
   ['nemotron-3-ultra-free', 'mimo-v2.5-free', 'deepseek-v4-flash-free'],
+  // Derived from the 2026-09-02 models.dev snapshot; the 2026-09-24 refresh
+  // deprecated mimo-v2.5-free and added three free models.
+  [
+    'nemotron-3-ultra-free',
+    'big-pickle',
+    'ling-3.0-flash-fin-free',
+    'mimo-v2.5-free',
+    'nemotron-3.5-lightning-free',
+  ],
 ];
 
 function retiredOpencodeFreeModelIds(): readonly string[] {

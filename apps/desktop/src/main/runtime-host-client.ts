@@ -532,6 +532,14 @@ export class DesktopRuntimeHostClient {
     return this.request("connection.models.fetch", { connectionId });
   }
 
+  queryModelCatalogStatus(): Promise<OperationOutput<"model-catalog.status.query">> {
+    return this.request("model-catalog.status.query", {});
+  }
+
+  refreshModelCatalog(): Promise<OperationOutput<"model-catalog.refresh">> {
+    return this.request("model-catalog.refresh", {});
+  }
+
   testConnection(
     connectionId: string,
     modelId?: string,

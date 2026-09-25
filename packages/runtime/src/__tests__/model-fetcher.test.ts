@@ -22,6 +22,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { after, describe, test } from 'node:test';
 import type { LlmConnection } from '@maka/core/llm-connections';
 import {
+  advertisedThinking,
+  fetchOpenAiCodexModels,
   fetchProviderModels,
   ProviderModelDiscoveryHttpError,
   runConnectionModelDiscoveryEffect,
@@ -31,6 +33,71 @@ const servers: Array<{ close(): Promise<void> }> = [];
 
 after(async () => {
   await Promise.all(servers.map((server) => server.close()));
+});
+
+describe('provider-advertised reasoning levels', () => {
+  test("the Codex model list keeps each model's levels and default", async () => {
+    // The shape of a recorded chatgpt.com/backend-api/codex/models response
+    // (packages/eval/harbor/deepseek-codex-models.json), trimmed to the fields
+    // discovery reads.
+    const server = await startJsonServer((request, response) => {
+      assert.equal(request.url, '/models?client_version=1.0.0');
+      respondJson(response, 200, {
+        models: [
+          {
+            slug: 'gpt-6-astra',
+            visibility: 'list',
+            priority: 1,
+            context_window: 272_000,
+            default_reasoning_level: 'high',
+            supported_reasoning_levels: [
+              { effort: 'max', description: 'Maximum' },
+              { effort: 'low', description: 'Fast' },
+              { effort: 'high', description: 'Deep' },
+              { effort: 'ultra', description: 'A word Maka has no level for' },
+            ],
+          },
+          {
+            slug: 'gpt-6-sol',
+            visibility: 'list',
+            priority: 2,
+            default_reasoning_level: 'none',
+            supported_reasoning_levels: [{ effort: 'none' }, { effort: 'medium' }],
+          },
+          { slug: 'plain', visibility: 'list', priority: 3 },
+          {
+            slug: 'bad-default',
+            visibility: 'list',
+            priority: 4,
+            default_reasoning_level: 'xhigh',
+            supported_reasoning_levels: [{ effort: 'low' }],
+          },
+        ],
+      });
+    });
+
+    const models = await fetchOpenAiCodexModels(server.url, 'codex-token');
+    assert.deepEqual(models, [
+      {
+        id: 'gpt-6-astra',
+        contextWindow: 272_000,
+        thinkingLevels: ['low', 'high', 'max'],
+        defaultThinkingLevel: 'high',
+      },
+      { id: 'gpt-6-sol', thinkingLevels: ['off', 'medium'], defaultThinkingLevel: 'off' },
+      { id: 'plain' },
+      { id: 'bad-default', thinkingLevels: ['low'] },
+    ]);
+  });
+
+  test('advertisedThinking drops unknown words and says nothing for an empty list', () => {
+    assert.deepEqual(advertisedThinking(['HIGH', 'none', 'turbo', 7], 'High'), {
+      thinkingLevels: ['off', 'high'],
+      defaultThinkingLevel: 'high',
+    });
+    assert.deepEqual(advertisedThinking([], 'low'), {});
+    assert.deepEqual(advertisedThinking(undefined, undefined), {});
+  });
 });
 
 describe('fetchProviderModels', () => {

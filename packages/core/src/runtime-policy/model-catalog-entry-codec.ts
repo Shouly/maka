@@ -17,7 +17,12 @@
  * under the License.
  */
 
-import { isThinkingLevel, type ThinkingLevel } from '../model-thinking.js';
+import {
+  isThinkingLevel,
+  type ReasoningSupport,
+  type ThinkingLevel,
+  type ThinkingSource,
+} from '../model-thinking.js';
 import type { ModelCatalogEntry } from '../model-catalog.js';
 import { decodeConnectionModel } from './connection-catalog-codec.js';
 import { booleanValue, domainError, exactRecord, integerValue } from './domain-codec.js';
@@ -42,13 +47,24 @@ export function decodeModelCatalogEntry(value: unknown): ModelCatalogEntry {
       'defaultSupportsVision',
       'compactionThreshold',
       'thinkingLevels',
+      'defaultThinkingLevel',
+      'thinkingSource',
+      'reasoningSupport',
       'contextWindow',
       'inputLimit',
       'defaultContextWindow',
       'defaultInputLimit',
       'knowledgeCutoff',
     ],
-    ['id', 'canUseAsChatDefault', 'isDefault', 'supportsVision', 'thinkingLevels'],
+    [
+      'id',
+      'canUseAsChatDefault',
+      'isDefault',
+      'supportsVision',
+      'thinkingLevels',
+      'thinkingSource',
+      'reasoningSupport',
+    ],
   );
   // The fields an entry shares with a stored model row keep one decoder, so a
   // bound that moves moves for both. `decodeConnectionModel` rejects unknown
@@ -87,7 +103,42 @@ export function decodeModelCatalogEntry(value: unknown): ModelCatalogEntry {
           ),
         }
       : {}),
-    thinkingLevels: decodeThinkingLevels(item.thinkingLevels),
+    ...decodeThinkingFacts(item),
+  };
+}
+
+const THINKING_SOURCES: readonly ThinkingSource[] = ['user', 'provider', 'catalog', 'none'];
+const REASONING_SUPPORT: readonly ReasoningSupport[] = ['yes', 'no', 'unknown'];
+
+function decodeThinkingFacts(
+  item: Record<string, unknown>,
+): Pick<
+  ModelCatalogEntry,
+  'thinkingLevels' | 'defaultThinkingLevel' | 'thinkingSource' | 'reasoningSupport'
+> {
+  const thinkingLevels = decodeThinkingLevels(item.thinkingLevels);
+  if (!THINKING_SOURCES.includes(item.thinkingSource as ThinkingSource)) {
+    throw domainError('entry thinking source is invalid');
+  }
+  if (!REASONING_SUPPORT.includes(item.reasoningSupport as ReasoningSupport)) {
+    throw domainError('entry reasoning support is invalid');
+  }
+  const thinkingSource = item.thinkingSource as ThinkingSource;
+  if ((thinkingSource === 'none') !== (thinkingLevels.length === 0)) {
+    throw domainError('entry thinking source disagrees with its levels');
+  }
+  const defaultLevel = item.defaultThinkingLevel;
+  if (
+    defaultLevel !== undefined &&
+    (!isThinkingLevel(defaultLevel) || !thinkingLevels.includes(defaultLevel))
+  ) {
+    throw domainError('entry default thinking level must be one of its levels');
+  }
+  return {
+    thinkingLevels,
+    ...(defaultLevel === undefined ? {} : { defaultThinkingLevel: defaultLevel as ThinkingLevel }),
+    thinkingSource,
+    reasoningSupport: item.reasoningSupport as ReasoningSupport,
   };
 }
 

@@ -23,6 +23,7 @@ import {
   createDefaultRuntimePolicy,
   decodeCanonicalConnectionCatalogEntry,
   decodeCanonicalRuntimePolicy,
+  decodeModelCatalogEntry,
   decodeModelOverridesTable,
   normalizeCreateCatalogConnectionInput,
   normalizeConnectionCatalogEntryUpdate,
@@ -546,6 +547,60 @@ test('normalizes extended model facts used by the runtime host catalog', () => {
     lastUpdated: '2026-01-01',
     modalities: { input: ['text', 'image'], output: ['text'] },
   });
+});
+
+test("keeps a provider's advertised reasoning levels and default on a model row", () => {
+  const discovery = (model: Record<string, unknown>) =>
+    normalizeConnectionModelDiscoveryResult({ models: [model], source: 'fetched', fetchedAt: 42 });
+  assert.deepEqual(
+    discovery({
+      id: 'gpt-6-sol',
+      thinkingLevels: ['off', 'medium', 'max'],
+      defaultThinkingLevel: 'medium',
+    }).models[0],
+    { id: 'gpt-6-sol', thinkingLevels: ['off', 'medium', 'max'], defaultThinkingLevel: 'medium' },
+  );
+  for (const invalid of [
+    // A default names one of the advertised levels, so it cannot come alone.
+    { id: 'm', defaultThinkingLevel: 'high' },
+    { id: 'm', thinkingLevels: ['low'], defaultThinkingLevel: 'high' },
+    { id: 'm', thinkingLevels: [] },
+    { id: 'm', thinkingLevels: ['low', 'low'] },
+    { id: 'm', thinkingLevels: ['turbo'] },
+  ]) {
+    assert.throws(
+      () => discovery(invalid),
+      RuntimePolicyDomainDecodeError,
+      JSON.stringify(invalid),
+    );
+  }
+});
+
+test("a catalog entry's thinking source agrees with its levels", () => {
+  const entry = {
+    id: 'm',
+    canUseAsChatDefault: true,
+    isDefault: true,
+    supportsVision: false,
+    thinkingLevels: ['low', 'high'],
+    defaultThinkingLevel: 'high',
+    thinkingSource: 'provider',
+    reasoningSupport: 'yes',
+  };
+  assert.deepEqual(decodeModelCatalogEntry(entry), entry);
+  for (const invalid of [
+    { ...entry, thinkingSource: 'none' },
+    { ...entry, thinkingLevels: [], defaultThinkingLevel: undefined },
+    { ...entry, defaultThinkingLevel: 'max' },
+    { ...entry, thinkingSource: 'guess' },
+    { ...entry, reasoningSupport: 'maybe' },
+  ]) {
+    assert.throws(
+      () => decodeModelCatalogEntry(JSON.parse(JSON.stringify(invalid))),
+      RuntimePolicyDomainDecodeError,
+      JSON.stringify(invalid),
+    );
+  }
 });
 
 test('carries the video and pdf modalities models.dev declares', () => {

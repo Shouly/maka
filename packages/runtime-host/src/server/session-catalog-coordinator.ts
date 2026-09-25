@@ -23,7 +23,7 @@ import { RuntimeHostProtocolError } from '../protocol/errors.js';
 import { createHash } from 'node:crypto';
 import { authorizeConnectionModel, connectionEnabledModelIds } from '@maka/core/llm-connections';
 import { isModelExplicitlyUnsupportedForChat } from '@maka/core/model-catalog';
-import { thinkingVariantsForConnection } from '@maka/core/model-thinking';
+import { resolveModelThinking } from '@maka/core/model-thinking';
 import {
   executionBoundaryDisplayMode,
   type ExecutionBoundary,
@@ -1139,21 +1139,22 @@ export class HostSessionCatalogCoordinator {
         'Session model identifier exceeds the wire limit',
       );
     }
-    // Fail-closed for undeclared levels only: the catalog entry carries the
-    // typed `modelOverrides` table, so a relay's user-declared levels DO
-    // reach this gate. A level outside the resolved variants is still
-    // rejected — execution-model-authority rebuilds the runtime connection
-    // from the same table, so whatever passes here is exactly what the wire
-    // can send.
+    // Fail-closed for undeclared levels only: the gate resolves from the same
+    // stored rows and `modelOverrides` table the catalog entry and the wire
+    // do, so a user's declaration and a provider's advertised levels both
+    // reach it. A level outside the resolution is still rejected —
+    // execution-model-authority rebuilds the runtime connection from the same
+    // catalog, so whatever passes here is exactly what the wire can send.
     if (
       thinkingLevel !== undefined &&
-      !thinkingVariantsForConnection(
+      !resolveModelThinking(
         {
           providerType: connection.providerType,
+          models: connection.models,
           modelOverrides: connection.modelOverrides,
         },
         selected.modelId,
-      ).includes(thinkingLevel)
+      ).levels.includes(thinkingLevel)
     ) {
       throw new SessionOperationFailure(
         'invalid_request',

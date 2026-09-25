@@ -33,6 +33,7 @@ import type {
 import type {
   DesktopConnectionIdentity,
   DesktopConnectionSnapshot,
+  DesktopModelCatalogStatus,
 } from '../../shared/desktop-connection-snapshot.js';
 import type { DesktopRuntimeHostRef, MakaBridge } from '../../preload/bridge-contract.js';
 import { requireNamespace, toUnsubscribe, tryNamespace } from './bridge.js';
@@ -99,6 +100,18 @@ export function fetchConnectionModels(
   host?: DesktopRuntimeHostRef,
 ): Promise<Pick<ModelDiscoveryResult, 'models' | 'source'>> {
   return connections().fetchModels(connection, host);
+}
+
+export function getModelCatalogStatus(
+  host?: DesktopRuntimeHostRef,
+): Promise<DesktopModelCatalogStatus> {
+  return connections().catalogStatus(host);
+}
+
+export function refreshModelCatalog(
+  host?: DesktopRuntimeHostRef,
+): Promise<DesktopModelCatalogStatus> {
+  return connections().refreshCatalog(host);
 }
 
 export function connectionHasSecret(

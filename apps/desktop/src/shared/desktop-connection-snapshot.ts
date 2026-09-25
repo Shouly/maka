@@ -31,3 +31,20 @@ export interface DesktopConnectionSnapshot {
   readonly defaultConnection: string | null;
   readonly chatModelChoices: ChatModelChoice[];
 }
+
+/**
+ * Where the Host's model metadata (models.dev) came from and how its refresh
+ * is going; the Models settings page shows it so a stale or failing catalog
+ * is visible instead of silently narrowing what the pickers offer.
+ */
+export interface DesktopModelCatalogStatus {
+  readonly active: 'bundled' | 'cache' | 'refreshed';
+  readonly fetchedAt: number | null;
+  readonly lastAttempt: {
+    readonly at: number;
+    readonly outcome: 'changed' | 'unchanged' | 'failed' | 'skipped';
+    /** The failure's message; for a skipped attempt, `privacy_mode` or `proxy_credential_not_configured`. */
+    readonly error?: string;
+  } | null;
+  readonly nextAttemptAt: number | null;
+}

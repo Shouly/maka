@@ -37,6 +37,7 @@ import {
   DECLARABLE_RELAY_THINKING_LEVELS,
   isThinkingLevel,
   type ModelOverride,
+  THINKING_LEVELS,
   type ThinkingLevel,
 } from '../model-thinking.js';
 import type {
@@ -572,6 +573,8 @@ export function decodeConnectionModel(value: unknown): ConnectionModel {
       'lastUpdated',
       'capabilities',
       'modalities',
+      'thinkingLevels',
+      'defaultThinkingLevel',
     ],
     ['id'],
   );
@@ -671,7 +674,41 @@ export function decodeConnectionModel(value: unknown): ConnectionModel {
       : { lastUpdated: stringValue(item.lastUpdated, 'model last updated', 2048) }),
     ...(capabilities === undefined ? {} : { capabilities }),
     ...(modalities === undefined ? {} : { modalities }),
+    ...decodeAdvertisedThinking(item.thinkingLevels, item.defaultThinkingLevel),
   };
+}
+
+/**
+ * What a provider's model list said about reasoning levels. Unlike a user
+ * declaration, `off` is admissible: the provider advertising `none` is the
+ * provider saying its wire has a disabled encoding. A default names one of the
+ * advertised levels, so it cannot arrive without them.
+ */
+function decodeAdvertisedThinking(
+  levels: unknown,
+  defaultLevel: unknown,
+): Pick<ConnectionModel, 'thinkingLevels' | 'defaultThinkingLevel'> {
+  if (levels === undefined) {
+    if (defaultLevel !== undefined) {
+      throw domainError('model default thinking level requires advertised levels');
+    }
+    return {};
+  }
+  if (!Array.isArray(levels) || levels.length === 0 || levels.length > THINKING_LEVELS.length) {
+    throw domainError('model thinking levels must be a non-empty array');
+  }
+  if (new Set(levels).size !== levels.length) {
+    throw domainError('model thinking levels must not repeat');
+  }
+  for (const level of levels) {
+    if (!isThinkingLevel(level)) throw domainError('model thinking level is invalid');
+  }
+  const decoded = levels as ThinkingLevel[];
+  if (defaultLevel === undefined) return { thinkingLevels: [...decoded] };
+  if (!isThinkingLevel(defaultLevel) || !decoded.includes(defaultLevel)) {
+    throw domainError('model default thinking level must be one of its levels');
+  }
+  return { thinkingLevels: [...decoded], defaultThinkingLevel: defaultLevel };
 }
 
 function decodeModelModalities(value: unknown): NonNullable<ConnectionModel['modalities']> {

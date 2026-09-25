@@ -28,7 +28,7 @@
 // a catalog, so the projected-connection shape belongs here beside the stored
 // one rather than in the module that computes entries.
 import type { ModelCatalogEntry } from './model-catalog.js';
-import type { ModelOverride, ModelOverrides } from './model-thinking.js';
+import type { ModelOverride, ModelOverrides, ThinkingLevel } from './model-thinking.js';
 import type {
   JsonObject,
   RequestHeaderUpdate,
@@ -133,6 +133,16 @@ export interface ModelInfo {
     input: ModelModality[];
     output: ModelModality[];
   };
+  /**
+   * Reasoning levels the provider's own model list advertises for this model,
+   * in display order. Present only when discovery reported them (the Codex
+   * backend's `supported_reasoning_levels`, Copilot's
+   * `supports.reasoning_effort`); absent means the provider said nothing, not
+   * that the model cannot reason.
+   */
+  thinkingLevels?: ThinkingLevel[];
+  /** The level the provider applies when a request names none; one of `thinkingLevels`. */
+  defaultThinkingLevel?: ThinkingLevel;
 }
 
 export type ModelDiscoverySource = 'fetched' | 'fallback';

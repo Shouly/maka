@@ -45,6 +45,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Skeleton } from '../../ui/skeleton.js';
 import { statusChipClass, statusChipToneClass } from '../../ui/status-chip.js';
 import { SettingsRow, SettingsSection } from '../settings-row.js';
+import { ModelCatalogStatusRow } from './ModelCatalogStatusRow.js';
 import { cn } from '../../../lib/cn.js';
 import { ProviderBrandMark } from '../../../lib/ported/provider-brand-marks.js';
 import { providerDisplay } from '../../../lib/ported/provider-display-copy.js';
@@ -120,6 +121,7 @@ export function ConnectionsList(props: {
             )
           }
         />
+        <ModelCatalogStatusRow host={host} onError={props.onError} />
       </SettingsSection>
 
       <SettingsSection

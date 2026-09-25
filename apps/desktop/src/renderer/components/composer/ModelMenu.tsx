@@ -33,6 +33,13 @@
 // second control beside the chip; a model change resets it, the way the Host
 // does.
 //
+// "Model default" is the row for naming no level: the model or service uses
+// its own default, and when the provider said which level that is the row
+// and the chip name it. A relay model nothing describes gets an "undeclared"
+// effort row pointing at Settings, where its levels can be declared, instead
+// of no row at all — hiding it made "Maka doesn't know" look like "the model
+// can't".
+//
 // Presentational: the welcome composer feeds it the new-task draft, the
 // session composer the Session's own configuration.
 
@@ -115,6 +122,31 @@ export function ModelMenu(props: {
 
   const label = current?.label ?? props.fallbackLabel ?? props.current?.model ?? copy.none;
   const levels = current?.thinkingLevels ?? [];
+  const defaultLevel = current?.defaultThinkingLevel;
+  const undeclared =
+    current !== undefined &&
+    levels.length === 0 &&
+    current.thinkingDeclarable &&
+    current.reasoningSupport !== 'no';
+  // The chip carries the level in force and nothing more: the chosen one, or
+  // the provider's default when it said which. "Model default" is explained
+  // in the menu; on the chip it crowded the model name out ("GP… Model
+  // default · Medium"). Nothing chosen and no known default: no readout.
+  //
+  // A stored level the model no longer offers (its levels narrowed since it
+  // was chosen) is dropped on the wire, so it is not shown either: the chip
+  // and the radio group say what the request will actually carry.
+  const chosenLevel =
+    props.thinking.current !== undefined && levels.includes(props.thinking.current)
+      ? props.thinking.current
+      : undefined;
+  const effectiveLevel = chosenLevel ?? defaultLevel;
+  const chipReadout = effectiveLevel ? modelCopy.level[effectiveLevel] : undefined;
+  const menuReadout = chosenLevel
+    ? modelCopy.level[chosenLevel]
+    : defaultLevel
+      ? `${menuCopy.effortDefault} · ${modelCopy.level[defaultLevel]}`
+      : menuCopy.effortDefault;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -132,12 +164,8 @@ export function ModelMenu(props: {
           )}
           <span className="min-w-0 truncate text-text-primary">{label}</span>
           {/* The effort readout, whenever the model has levels to choose from. */}
-          {levels.length > 0 && (
-            <span className="shrink-0 text-text-muted">
-              {props.thinking.current
-                ? modelCopy.level[props.thinking.current]
-                : menuCopy.effortDefault}
-            </span>
+          {levels.length > 0 && chipReadout && (
+            <span className="shrink-0 text-text-muted">{chipReadout}</span>
           )}
         </button>
       </DropdownMenuTrigger>
@@ -149,11 +177,7 @@ export function ModelMenu(props: {
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <span className="min-w-0 flex-1 truncate">{menuCopy.effort}</span>
-                <span className="ml-2 shrink-0 text-menu-text-muted">
-                  {props.thinking.current
-                    ? modelCopy.level[props.thinking.current]
-                    : menuCopy.effortDefault}
-                </span>
+                <span className="ml-2 shrink-0 text-menu-text-muted">{menuReadout}</span>
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="max-w-[240px]">
                 <p className="px-2.5 pb-1.5 pt-1 text-xs leading-4 text-menu-text-muted">
@@ -161,24 +185,32 @@ export function ModelMenu(props: {
                 </p>
                 <DropdownMenuRadioGroup
                   aria-label={menuCopy.effort}
-                  value={props.thinking.current ?? DEFAULT_LEVEL}
+                  value={chosenLevel ?? DEFAULT_LEVEL}
                   onValueChange={(value) =>
                     props.thinking.onChange(
                       value === DEFAULT_LEVEL ? undefined : (value as ThinkingLevel),
                     )
                   }
                 >
-                  {/* Auto is the one level that needs a word: it is not a
-                      tier but the absence of one, and the tooltip says what
-                      the model does with that. */}
+                  {/* Model default is the one row that needs a word: it is
+                      not a tier but the absence of one. The subline says
+                      which level that turns out to be, when the provider
+                      said; the tooltip says what naming no level means. */}
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <DropdownMenuRadioItem value={DEFAULT_LEVEL}>
-                        <span className="truncate">{menuCopy.effortDefault}</span>
+                        <span className="flex min-w-0 flex-col">
+                          <span className="truncate">{menuCopy.effortDefault}</span>
+                          <span className="truncate text-xs text-menu-text-muted">
+                            {defaultLevel
+                              ? menuCopy.effortDefaultIs(modelCopy.level[defaultLevel])
+                              : menuCopy.effortDefaultUnknown}
+                          </span>
+                        </span>
                       </DropdownMenuRadioItem>
                     </TooltipTrigger>
                     <TooltipContent side="right" className="max-w-[240px]">
-                      {menuCopy.effortAutoHelp}
+                      {menuCopy.effortDefaultHelp}
                     </TooltipContent>
                   </Tooltip>
                   {levels.map((level) => (
@@ -187,6 +219,27 @@ export function ModelMenu(props: {
                     </DropdownMenuRadioItem>
                   ))}
                 </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          </>
+        )}
+        {undeclared && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <span className="min-w-0 flex-1 truncate">{menuCopy.effort}</span>
+                <span className="ml-2 shrink-0 text-menu-text-muted">
+                  {menuCopy.effortUndeclared}
+                </span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="max-w-[240px]">
+                <p className="px-2.5 pb-1.5 pt-1 text-xs leading-4 text-menu-text-muted">
+                  {menuCopy.effortUndeclaredHelp}
+                </p>
+                <DropdownMenuItem className="cursor-pointer" onSelect={props.onOpenSettings}>
+                  <span className="truncate">{menuCopy.effortDeclare}</span>
+                </DropdownMenuItem>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
           </>
