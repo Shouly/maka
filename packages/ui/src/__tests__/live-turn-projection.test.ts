@@ -171,6 +171,36 @@ describe('applyLiveTurnEvent', () => {
     );
   });
 
+  // Switching back to a running task resubscribes, and the Host seeds all it
+  // has so far as ONE delta from offset 0. A long reply is far past 4 KB there
+  // with nothing wrong, so no part of it may be cut as an "oversize delta".
+  it('shows a resubscription seed longer than 4 KB whole', () => {
+    const answer = 'The answer goes on. '.repeat(600);
+    const reasoning = 'Weighing the options. '.repeat(600);
+    const seeded = [
+      { type: 'thinking_delta' as const, text: reasoning },
+      { type: 'text_delta' as const, text: answer },
+    ].reduce<LiveTurnProjection | undefined>(
+      (projection, delta, index) =>
+        applyLiveTurnEvent(projection, {
+          ...delta,
+          id: `seed-${index}`,
+          turnId: 'turn-1',
+          messageId: 'step-1',
+          ts: 100,
+          startOffset: 0,
+        }),
+      undefined,
+    );
+
+    const step = seeded?.steps[0];
+    assert.ok(answer.length > 4 * 1024 && reasoning.length > 4 * 1024);
+    assert.equal(step?.text?.text, answer);
+    assert.equal(step?.text?.truncated, false);
+    assert.equal(step?.thinking?.text, reasoning);
+    assert.equal(step?.thinking?.truncated, false);
+  });
+
 
   it('projects transient provider retry progress until the next model output', () => {
     const scheduled = applyLiveTurnEvent(armLiveTurn('turn-1'), {

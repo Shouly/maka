@@ -53,15 +53,16 @@ import {
 
 /**
  * Default caps. Tuned to:
- *   - 4 KB per single delta: matches A3 tool-output's per-chunk
- *     cap and the runtime's `TOOL_OUTPUT_DELTA_MAX_CHARS`.
+ *   - No cap of its own per delta, for the reason `assistant-stream.ts`
+ *     gives: a delta is a Host transport slice, and a resubscribe seeds all
+ *     reasoning so far as one. The total cap bounds it.
  *   - 32 KB total per session: thinking can run longer than tool
  *     stream (multiple paragraphs of reasoning before the answer),
  *     so 2× A3's per-tool cap. Above this we tail-keep so the
  *     "most recent" reasoning is what the user sees scrolling.
  */
-export const THINKING_MAX_DELTA_CHARS = 4 * 1024;
 export const THINKING_MAX_TOTAL_CHARS = 32 * 1024;
+export const THINKING_MAX_DELTA_CHARS = THINKING_MAX_TOTAL_CHARS;
 
 export interface ApplyThinkingOptions extends ApplyStreamOptions {
   /** Resolved UI locale for user-visible truncation markers. */

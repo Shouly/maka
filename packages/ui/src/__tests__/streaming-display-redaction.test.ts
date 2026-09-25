@@ -218,7 +218,10 @@ describe('streaming display redaction', () => {
     assert.equal(projection.steps[0]?.text?.text, redactedPrefix);
   });
 
-  it('preserves an unfinished opener when production truncates a reseed delta', () => {
+  // A resubscribe reseeds everything so far as one long delta; it is no
+  // longer cut as oversize, and a secret after its unfinished opener must
+  // still be hidden when it arrives in the next delta.
+  it('preserves an unfinished opener across a long reseed delta', () => {
     for (const opener of [
       'Authorization: Bearer ',
       'x-api-key: ',
@@ -228,7 +231,7 @@ describe('streaming display redaction', () => {
         type: 'text_delta', id: 'text-1', turnId: 'turn-1', messageId: 'message-1', ts: 1,
         text: `${'safe '.repeat(1_000)}${opener}`,
       });
-      assert.equal(projection.steps[0]?.text?.truncated, true);
+      assert.equal(projection.steps[0]?.text?.truncated, false);
 
       const secret = 'secret-value-arriving-after-reseed';
       projection = applyLiveTurnEvent(projection, {

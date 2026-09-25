@@ -39,10 +39,12 @@ import {
 
 /**
  * Default caps. Tuned to:
- *   - 4 KB per single delta: matches A3 tool-output's per-chunk
- *     cap and the runtime's `TOOL_OUTPUT_DELTA_MAX_CHARS`. Streaming
- *     models normally emit ≤ a few hundred chars per delta; a single
- *     4KB+ delta is misbehavior and gets tail-kept.
+ *   - No cap of its own per delta: a delta here is a Runtime Host transport
+ *     slice, not one model token run. A resubscribe (switching back to a
+ *     running task) seeds everything written so far as one delta from
+ *     offset 0, far past 4 KB for a long reply with nothing wrong. Cutting it
+ *     left "[…single delta truncated]" in the middle of the reply until the
+ *     reply completed. The total cap below still bounds it.
  *   - 256 KB total per session: a generous bound for ONE assistant
  *     turn. A typical model reply runs 200B-30KB; long-form code +
  *     prose can hit ~80KB; 256KB caps a runaway stream while
@@ -51,8 +53,8 @@ import {
  *     trailing marker; the user sees the head of the answer plus
  *     "[…后续已截断]" — not a silently-truncated mess).
  */
-export const ASSISTANT_MAX_DELTA_CHARS = 4 * 1024;
 export const ASSISTANT_MAX_TOTAL_CHARS = 256 * 1024;
+export const ASSISTANT_MAX_DELTA_CHARS = ASSISTANT_MAX_TOTAL_CHARS;
 
 export interface ApplyAssistantOptions extends ApplyStreamOptions {
   /** Resolved UI locale for user-visible truncation markers. */
