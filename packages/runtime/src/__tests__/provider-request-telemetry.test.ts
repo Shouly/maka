@@ -810,7 +810,8 @@ describe('canonical model-call accounting', () => {
     assert.equal(attempt.httpStatus, 429);
     assert.equal(attempt.providerCode, 'rate_limit_exceeded');
     assert.equal(attempt.providerRequestId, 'req-compact-1');
-    assert.equal(attempt.retryable, false);
+    // A throttle is retryable by kind; a missing Retry-After only means local backoff.
+    assert.equal(attempt.retryable, true);
     assert.doesNotMatch(
       JSON.stringify(attempt),
       /private request body|private response body|private prompt/i,

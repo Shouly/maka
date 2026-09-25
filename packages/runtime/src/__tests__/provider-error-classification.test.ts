@@ -25,6 +25,7 @@ import { z } from 'zod/v4';
 
 import {
   classifyError,
+  MODEL_FAILURE_RETRY,
   providerFailureDiagnostic,
   providerModelFailure,
 } from '../provider-error-classification.js';
@@ -55,7 +56,7 @@ describe('Provider error classification', () => {
       httpStatus: 429,
       providerCode: 'rate_limit_exceeded',
       providerRequestId: 'req-123',
-      retryable: false,
+      retryable: true,
     });
     const serialized = JSON.stringify(diagnostic);
     assert.doesNotMatch(serialized, /secret|private|authorization|request body/i);
@@ -285,6 +286,7 @@ describe('Provider error classification', () => {
     });
 
     assert.equal(classifyError(websocketFailure), 'network');
+    assert.equal(classifyError(missingContinuation), 'network');
     assert.partialDeepStrictEqual(providerModelFailure(websocketFailure), { retryable: true });
     assert.partialDeepStrictEqual(providerModelFailure(missingContinuation), { retryable: true });
   });
@@ -338,35 +340,91 @@ describe('Provider error classification', () => {
     assert.partialDeepStrictEqual(providerModelFailure(failure), { retryable: true });
   });
 
-  test('does not retry a bare rate limit marked retryable by the AI SDK', () => {
+  test('retries a bare rate limit on local backoff', () => {
+    // A throttle often ships no Retry-After (gateways especially); ending the
+    // Turn on it leaves the user nothing to do but send again.
     const rateLimit = Object.assign(new Error('Rate limit exceeded'), {
       name: 'AI_APICallError',
-      isRetryable: true,
       statusCode: 429,
     });
+    const gatewayThrottle = Object.assign(
+      new Error('Upstream model provider is temporarily unavailable. Please try again.'),
+      {
+        name: 'AI_APICallError',
+        statusCode: 429,
+        data: { error: { code: 'rate_limit_error' } },
+      },
+    );
 
-    assert.partialDeepStrictEqual(providerModelFailure(rateLimit), { retryable: false });
+    for (const failure of [rateLimit, gatewayThrottle]) {
+      const model = providerModelFailure(failure);
+      assert.equal(model.kind, 'rate_limit');
+      assert.equal(model.retryable, true);
+      assert.equal(model.retryAfterMs, undefined);
+    }
   });
 
-  test('retries a rate limit only when the provider names a retry delay', () => {
-    const bareRateLimit = Object.assign(new Error('Rate limit exceeded'), {
-      name: 'AI_APICallError',
-      statusCode: 429,
-      data: { error: { code: 'FreeUsageLimitError', message: 'Rate limit exceeded' } },
-    });
+  test('paces a rate limit by the delay the provider names', () => {
     const delayedRateLimit = Object.assign(new Error('Too many requests'), {
       name: 'AI_APICallError',
       statusCode: 429,
       responseHeaders: { 'retry-after': '40' },
     });
 
-    assert.partialDeepStrictEqual(providerModelFailure(bareRateLimit), { retryable: false });
     assert.partialDeepStrictEqual(providerModelFailure(delayedRateLimit), {
       retryable: true,
       retryAfterMs: 40_000,
     });
-    assert.equal(providerFailureDiagnostic(bareRateLimit).retryable, false);
     assert.equal(providerFailureDiagnostic(delayedRateLimit).retryable, true);
+  });
+
+  test('fails fast on an exhausted free tier, named by its code', () => {
+    const freeTier = Object.assign(new Error('Rate limit exceeded'), {
+      name: 'AI_APICallError',
+      statusCode: 429,
+      data: { error: { code: 'FreeUsageLimitError', message: 'Rate limit exceeded' } },
+    });
+
+    assert.equal(classifyError(freeTier), 'provider_billing');
+    assert.partialDeepStrictEqual(providerModelFailure(freeTier), { retryable: false });
+    assert.equal(providerFailureDiagnostic(freeTier).retryable, false);
+  });
+
+  test('a malformed Retry-After never makes a transient failure fatal', () => {
+    for (const statusCode of [429, 503]) {
+      const failure = Object.assign(new Error('try later'), {
+        name: 'AI_APICallError',
+        statusCode,
+        responseHeaders: { 'retry-after': 'soon' },
+      });
+      const model = providerModelFailure(failure);
+      assert.equal(model.retryable, true, `status ${statusCode}`);
+      assert.equal(model.retryAfterMs, undefined, `status ${statusCode}`);
+    }
+  });
+
+  test('the failure kind alone decides whether to retry', () => {
+    const timeout = Object.assign(new Error('Request timeout'), { name: 'AI_APICallError' });
+    assert.equal(classifyError(timeout), 'timeout');
+    assert.equal(providerModelFailure(timeout).retryable, true);
+
+    // A 409 is a rejected request like any other 4xx, not a transient one.
+    const conflict = Object.assign(new Error('conflict'), {
+      name: 'AI_APICallError',
+      statusCode: 409,
+    });
+    assert.equal(classifyError(conflict), 'request_rejected');
+    assert.equal(providerModelFailure(conflict).retryable, false);
+
+    // A truncated stream is retried only by the bounded incomplete-stream
+    // recovery, which knows whether any output was already observed.
+    const truncated = new Error('model stream ended without a finish chunk');
+    assert.equal(classifyError(truncated), 'stream_truncated');
+    assert.equal(providerModelFailure(truncated).retryable, false);
+
+    for (const [kind, reason] of Object.entries(MODEL_FAILURE_RETRY)) {
+      if (reason !== null) assert.equal(reason, kind, `${kind} retries under its own name`);
+    }
   });
 
   test('classifies provider capacity errors and retries with backoff', () => {

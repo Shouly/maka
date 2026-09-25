@@ -21,6 +21,7 @@ import { RetryError } from 'ai';
 import { MODEL_FAILURE_MESSAGE_MAX_BYTES } from '@maka/core/model-failure';
 import { truncateUtf8 } from '@maka/core/diagnostic-log';
 import { isAuthenticationErrorText } from '@maka/core/redaction';
+import type { ProviderRetryReason } from '@maka/core/events';
 import type { ModelFailure, ModelFailureKind } from './model-protocol.js';
 
 /**
@@ -72,6 +73,10 @@ const PROVIDER_BILLING_PROVIDER_CODES: ReadonlySet<string> = new Set([
   'insufficient_balance', // DeepSeek: error.code
   'quota_exceeded', // OpenAI-compatible variants: error.code
   'usage_limit_reached', // OpenAI Codex subscription: error.type on a 429 plan window
+  // OpenCode Zen: an exhausted free tier, on a 429 with no Retry-After (#3115).
+  // It is named here, not inferred from the missing header: a throttle ships
+  // no Retry-After either, and that one must be retried.
+  'freeusagelimiterror',
 ]);
 
 /**
@@ -142,10 +147,37 @@ const PROVIDER_FAILURE_FIELD_MAX_BYTES = 256;
 
 const MAX_SAFE_TIMER_DELAY_MS = 2_147_483_647;
 const OPENAI_RESPONSES_WEBSOCKET_TRANSPORT_ERROR = 'OPENAI_RESPONSES_WEBSOCKET_TRANSPORT_ERROR';
-const RUNTIME_RETRYABLE_ERROR_CODES: ReadonlySet<string> = new Set([
-  OPENAI_RESPONSES_WEBSOCKET_TRANSPORT_ERROR,
-  'OPENAI_RESPONSES_CONTINUATION_UNAVAILABLE',
-]);
+/** The socket lost its continuation state; the request goes again over HTTP. */
+const OPENAI_RESPONSES_CONTINUATION_UNAVAILABLE = 'OPENAI_RESPONSES_CONTINUATION_UNAVAILABLE';
+
+/**
+ * The reason a retry of each failure kind is shown under, or null for a kind
+ * that is never retried. Exhaustive: a new kind without a row does not
+ * compile. The kind is the decision; a status code or a Retry-After header
+ * never re-decides it (Retry-After only paces a retry the kind allows).
+ */
+export const MODEL_FAILURE_RETRY: Readonly<Record<ModelFailureKind, ProviderRetryReason | null>> = {
+  abort: null,
+  auth: null,
+  context_overflow: null,
+  network: 'network',
+  provider_billing: null,
+  provider_capacity: 'provider_capacity',
+  provider_unavailable: 'provider_unavailable',
+  rate_limit: 'rate_limit',
+  request_rejected: null,
+  stream_truncated: 'stream_truncated',
+  timeout: 'timeout',
+  unknown: null,
+};
+
+/**
+ * Kinds only a bounded recovery in `ai-sdk-turn.ts` retries, never the plain
+ * provider budget: a truncated stream goes through incomplete-stream recovery,
+ * which retries it once per step and only while nothing was observed. (The
+ * watchdog's own timeout is held back there too, where its origin is known.)
+ */
+const RECOVERY_ONLY_KINDS: ReadonlySet<ModelFailureKind> = new Set(['stream_truncated']);
 
 function providerErrorTarget(error: unknown): unknown {
   return RetryError.isInstance(error) && error.lastError !== undefined && error.lastError !== error
@@ -218,42 +250,16 @@ function retryMetadataFromFacts(
   errorClass = classifyProviderFacts(facts),
 ): Pick<ModelFailure, 'retryable' | 'retryAfterMs'> {
   if (facts.aborted) return { retryable: false };
-  const { evidence } = facts;
-
-  if (RUNTIME_RETRYABLE_ERROR_CODES.has(evidence.code)) return { retryable: true };
   // The Codex transport already spent its complete 2/10/30-second budget.
   // Do not let the outer model loop restart that same transport budget.
   if (isTrustedCodexEdgeRejection(facts)) return { retryable: false };
-
-  const status = Number(evidence.statusCode || evidence.code);
+  if (MODEL_FAILURE_RETRY[errorClass] === null || RECOVERY_ONLY_KINDS.has(errorClass)) {
+    return { retryable: false };
+  }
+  // A throttle with no delay, or a malformed one, is still a throttle: the
+  // adapter's bounded local backoff paces it instead.
   const retryAfterMs = parseRetryAfterMs(facts.responseHeaders ?? {});
-  if (errorClass === 'provider_capacity') {
-    // Capacity is transient even when the provider sends a malformed delay;
-    // fall back to the adapter's bounded local backoff in that case.
-    return {
-      retryable: true,
-      ...(retryAfterMs !== undefined && retryAfterMs !== null ? { retryAfterMs } : {}),
-    };
-  }
-  // An exhausted account will not recover inside this turn: a Retry-After on
-  // the 429 names the plan reset, hours or days out.
-  if (errorClass === 'provider_billing') return { retryable: false };
-  if (errorClass === 'rate_limit' || status === 429) {
-    if (retryAfterMs === undefined || retryAfterMs === null) return { retryable: false };
-    return { retryable: true, retryAfterMs };
-  }
-  const retryable =
-    errorClass === 'network' ||
-    errorClass === 'provider_unavailable' ||
-    status === 408 ||
-    status === 409 ||
-    (status >= 500 && status <= 599);
-  if (!retryable) return { retryable: false };
-  if (retryAfterMs === null) return { retryable: false };
-  return {
-    retryable: true,
-    ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
-  };
+  return { retryable: true, ...(typeof retryAfterMs === 'number' ? { retryAfterMs } : {}) };
 }
 
 /** Collects `code`/`type` strings from a payload and from its `error` wrapper. */
@@ -685,7 +691,12 @@ function classifyProviderFacts(facts: ProviderErrorFacts): ModelFailureKind {
   const { evidence } = facts;
   const { text, statusCode, code, structuredCodes } = evidence;
   const normalizedCode = code.toLowerCase();
-  if (code === OPENAI_RESPONSES_WEBSOCKET_TRANSPORT_ERROR) return 'network';
+  if (
+    code === OPENAI_RESPONSES_WEBSOCKET_TRANSPORT_ERROR ||
+    code === OPENAI_RESPONSES_CONTINUATION_UNAVAILABLE
+  ) {
+    return 'network';
+  }
   if (
     PROVIDER_CAPACITY_CODES.has(normalizedCode) ||
     structuredCodes.some((c) => PROVIDER_CAPACITY_CODES.has(c))

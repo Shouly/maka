@@ -78,6 +78,7 @@ import type {
   ModelFailureKind,
   ToolCallPart,
 } from './model-protocol.js';
+import { MODEL_FAILURE_RETRY } from './provider-error-classification.js';
 import Ajv, { type AnySchema, type ErrorObject, type ValidateFunction } from 'ajv';
 import Ajv2019 from 'ajv/dist/2019.js';
 import Ajv2020 from 'ajv/dist/2020.js';
@@ -606,19 +607,9 @@ function providerRetryDelayMs(failedAttempt: number, retryAfterMs?: number): num
   return Math.ceil(base + Math.random() * PROVIDER_RETRY_JITTER_FACTOR * base);
 }
 
+/** A watchdog or incomplete-stream recovery can retry a kind the table does not. */
 function providerRetryReason(kind: ModelFailureKind): ProviderRetryReason {
-  switch (kind) {
-    case 'stream_truncated':
-    case 'network':
-    case 'provider_unavailable':
-    case 'rate_limit':
-    case 'timeout':
-      return kind;
-    case 'provider_capacity':
-      return 'provider_capacity';
-    default:
-      return 'unknown';
-  }
+  return MODEL_FAILURE_RETRY[kind] ?? 'unknown';
 }
 
 function isIncompleteProviderFinishReason(reason: ModelFinishReason | undefined): boolean {
@@ -2079,10 +2070,16 @@ export class AiSdkTurn {
               (providerOutcome.kind === 'completed' ? undefined : providerOutcome.failure);
 
             if (attemptFailure && !this.aborted) {
-              const failure =
+              const normalizedFailure =
                 settledWatchdogTimeout || providerOutcome.kind === 'completed'
                   ? this.deps.modelAdapter.normalizeFailure(attemptFailure)
                   : providerOutcome.failure;
+              // The watchdog's own timeout classifies as `timeout`, which the
+              // kind table retries. Its retry belongs to the bounded idle
+              // recovery below, never to the plain provider budget.
+              const failure = settledWatchdogTimeout
+                ? { ...normalizedFailure, retryable: false }
+                : normalizedFailure;
               if (this.loopStopRequested) {
                 terminalProviderError = settledWatchdogTimeout?.error ?? failure;
                 terminalProviderErrorReason =
