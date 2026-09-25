@@ -118,7 +118,10 @@ export const RUNTIME_HOST_PROTOCOL_VERSION = 0 as const;
 // fields an old Host does not send.
 // 160: `turn.message.execution.query` may answer `not_admitted` for an
 // identity nothing durable names. An old client rejects the unknown state.
-export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 160 as const;
+// 161: `client.capability.call` carries its tool call id verbatim (a nested
+// Code Mode id, a provider's `functions.x:0`). An old client rejects it as an
+// invalid frame and drops the connection.
+export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 161 as const;
 // 155: A tool call is on the wire while the model is still writing it.
 // `subscription.session_event` carries `tool_input_start` and
 // `tool_input_delta`, which a Client that does not know them decodes as an

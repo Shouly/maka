@@ -126,6 +126,9 @@ test('unknown Client Capability loads, invokes, and rebinds after UDS reconnect'
     await client.status();
 
     const largeValue = 'x'.repeat(100_000);
+    // A Code Mode nested call id: past the entity-id alphabet and its
+    // 128-character limit. An entity-id check dropped the connection.
+    const toolCallId = `${'p'.repeat(128)}:nested:00000000-0000-4000-8000-000000000001`;
     let providerCloseCalls = 0;
     const provider: ClientCapabilityProvider = {
       offers: () => [
@@ -161,6 +164,7 @@ test('unknown Client Capability loads, invokes, and rebinds after UDS reconnect'
         },
       ],
       call: async (frame, { accept }) => {
+        assert.equal(frame.toolCallId, toolCallId);
         if (frame.toolName === 'reject_unknown') {
           throw new Error('Provider rejected before acceptance');
         }
@@ -201,7 +205,7 @@ test('unknown Client Capability loads, invokes, and rebinds after UDS reconnect'
       sessionId: 'session-uds',
       turnId: 'turn-uds',
       cwd: root,
-      toolCallId: 'tool-call-uds',
+      toolCallId,
       abortSignal: new AbortController().signal,
       emitOutput: () => undefined,
     };
@@ -238,6 +242,8 @@ test('unknown Client Capability loads, invokes, and rebinds after UDS reconnect'
     assert.deepEqual(result, {
       content: [{ type: 'text', text: `from-uds:${largeValue}` }],
     });
+    // The connection survived the call.
+    await client.status();
     await assert.rejects(
       async () => rejectedTool.impl({}, toolContext),
       (error: unknown) =>
@@ -269,6 +275,7 @@ test('unknown Client Capability loads, invokes, and rebinds after UDS reconnect'
     await client.replaceClientCapabilities({
       offers: provider.offers,
       call: async (frame, { accept }) => {
+        assert.equal(frame.toolCallId, toolCallId);
         await accept({ kind: 'none' });
         return {
           content: [{ type: 'text', text: `reconnected:${String(frame.arguments.prefix)}` }],

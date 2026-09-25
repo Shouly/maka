@@ -151,3 +151,21 @@ test('a changed turn identity cannot become the takeover target', async () => {
   await assert.rejects(f.runtime.interrupt(scope, 'turn'), /turn identity changed/);
   assert.deepEqual(f.stops, []);
 });
+
+test('a tool call id the Host cannot name an action by becomes a stable action id', async () => {
+  const f = fixture();
+  const input = { operation: 'create_new', title: 'Work', text: 'Do work' } as const;
+  // A Code Mode cell's nested calls; the first is replayed.
+  const first = await f.runtime.actTasks(scope, 'turn', 'toolu_01A:nested:one', input);
+  const replay = await f.runtime.actTasks(scope, 'turn', 'toolu_01A:nested:one', input);
+  const second = await f.runtime.actTasks(scope, 'turn', 'toolu_01A:nested:two', input);
+
+  const actionIds = f.requests.map((request) => (request as { actionId: string }).actionId);
+  for (const actionId of actionIds) assert.match(actionId, /^[A-Za-z0-9_-]{1,128}$/);
+  assert.equal(actionIds[0], actionIds[1]);
+  assert.notEqual(actionIds[0], actionIds[2]);
+  // The model is told the id the Host knows, so a later correct or resume names it.
+  assert.ok('actionId' in first && 'actionId' in replay && 'actionId' in second);
+  assert.equal(first.actionId, actionIds[0]);
+  assert.equal(second.actionId, actionIds[2]);
+});

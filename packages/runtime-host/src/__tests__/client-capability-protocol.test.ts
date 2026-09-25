@@ -195,6 +195,33 @@ describe('Client Capability protocol', () => {
     );
   });
 
+  test('carries a tool call id verbatim, whatever the provider or nesting made it', () => {
+    const call = {
+      kind: 'client.capability.call' as const,
+      invocationId: 'invocation',
+      registrationId: 'registration',
+      offerId: 'offer',
+      serverId: 'offer',
+      toolName: 'tool',
+      arguments: {},
+      sessionId: 'session',
+      turnId: 'turn',
+    };
+    // A Code Mode cell's nested call, and a provider's own id (Moonshot).
+    for (const toolCallId of ['toolu_01A:nested:5f0c2a1e', 'functions.browser_navigate:0']) {
+      assert.equal(
+        (decodeHostFrame({ ...call, toolCallId }) as { toolCallId: string }).toolCallId,
+        toolCallId,
+      );
+    }
+    for (const toolCallId of ['', ' padded', 'line\nbreak', 'x'.repeat(257)]) {
+      assert.throws(
+        () => decodeHostFrame({ ...call, toolCallId }),
+        (error: unknown) => error instanceof RuntimeHostProtocolError,
+      );
+    }
+  });
+
   test('rejects malformed nested Client Capability interactions at the codec', () => {
     assert.throws(
       () =>

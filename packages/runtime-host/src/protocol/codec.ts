@@ -84,6 +84,23 @@ export function requireEntityId(value: unknown, label: string): string {
   return id;
 }
 
+/**
+ * A correlation identity another party minted (a provider's tool call id, a
+ * Code Mode nested call id). Carried verbatim, never read as an entity path.
+ */
+export function requireOpaqueIdentity(value: unknown, label: string): string {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    value.length > 256 ||
+    value.trim() !== value ||
+    /[\u0000-\u001f\u007f]/.test(value)
+  ) {
+    throw invalidProtocolFrame(`Invalid ${label}`);
+  }
+  return value;
+}
+
 export function requireCount(value: unknown, label: string): number {
   if (!Number.isSafeInteger(value) || (value as number) < 0) {
     throw invalidProtocolFrame(`Invalid ${label}`);
