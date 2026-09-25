@@ -137,6 +137,8 @@ import {
 import {
   normalizeSandboxBoundaryExpansion,
   SandboxBoundaryDeclarationError,
+  READ_ONLY_WRITE_REFUSED_MESSAGE,
+  expansionRequestsWrite,
 } from './sandbox-boundary-path.js';
 import {
   REQUEST_SANDBOX_BOUNDARY_TOOL_NAME,
@@ -1885,6 +1887,7 @@ export class ToolRuntime {
               justification,
               ctx.abortSignal,
               queue,
+              permissionMode,
             ),
         };
         const invokeTool = () =>
@@ -3022,8 +3025,20 @@ export class ToolRuntime {
     justification: string,
     abortSignal: AbortSignal,
     queue: DurableSessionEventSink,
+    permissionMode: PermissionMode,
   ): Promise<SandboxBoundarySettlement> {
     throwIfAborted(abortSignal);
+    // Read only never widens into writing through a request; the network may
+    // still be asked for.
+    if (permissionMode === 'explore' && expansionRequestsWrite(expansion)) {
+      throw new SandboxCommandError({
+        domain: 'command',
+        stage: 'validation',
+        reason: 'requires_bypass',
+        recoverable: false,
+        message: READ_ONLY_WRITE_REFUSED_MESSAGE,
+      });
+    }
     if (this.sandboxBoundaryFinalizationRequested) {
       throw new SandboxCommandError({
         domain: 'command',
@@ -4143,7 +4158,7 @@ function buildTerminalFailureMessage(
     // Naming only the marker left the model knowing a boundary could be widened
     // and not by what: the tool that widens it is `RequestSandboxBoundary`.
     parts.push(
-      `该失败很可能来自 Maka sandbox。请先尝试不扩大边界的替代方案。Bash 的沙箱拒绝本身不会成为申请：若命令确实需要某个路径或网络，用 boundary_intent: expand 加 required_boundary 重发同一条命令，它会返回 sandbox_boundary_required 和具体 expansion；只有拿到这个结果后，才能调用 ${TOOL_NAMES.requestSandboxBoundary} 请求会话边界扩张，并在 expansion 里只写那一条路径。不要从命令文本猜测权限，也不要静默绕过 sandbox。`,
+      `该失败很可能来自 Maka sandbox。请先尝试不扩大边界的替代方案。Bash 的沙箱拒绝本身不会成为申请：若命令确实需要某个路径或网络，用 boundary_intent: expand 加 required_boundary 重发同一条命令，它会返回 sandbox_boundary_required 和具体 expansion；只有拿到这个结果后，才能调用 ${TOOL_NAMES.requestSandboxBoundary} 请求会话边界扩张，并在 expansion 里只写那一条路径。只读会话下写入不可申请，只能由用户切换到手动。不要从命令文本猜测权限，也不要静默绕过 sandbox。`,
     );
   }
   return parts.join('\n\n');

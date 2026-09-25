@@ -65,7 +65,7 @@ export function buildRequestSandboxBoundaryTool(): MakaTool<
     description: [
       'Ask the user to widen the session sandbox boundary so a local tool that answered sandbox_boundary_required can be retried.',
       '',
-      '- Pass exactly the expansion that failure named (a path to read or write, or network access) — the smallest one that unblocks the call — and a one-sentence justification the user can judge.',
+      '- Pass exactly the expansion that failure named (a path to read or write, or network access) — the smallest one that unblocks the call — and a one-sentence justification the user can judge. Under Read only a write cannot be requested at all; only the user switching the session to Manual allows it.',
       '- The turn pauses until the user decides. On approval the boundary revision advances and the original call is repeated — a Bash call with the same boundary_intent and required_boundary it declared; on denial, do not request another expansion in this turn — finish with what the boundary allows and say what you could not do.',
       '- It never grants anything by itself. A Bash denial does not become a request on its own: a command that needs a specific path or the network declares it through boundary_intent: expand and required_boundary, and answers sandbox_boundary_required when that is not yet approved.',
     ].join('\n'),

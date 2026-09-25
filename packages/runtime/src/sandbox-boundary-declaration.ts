@@ -27,6 +27,8 @@ import { z } from 'zod';
 
 import { SandboxCommandError } from './sandbox/errors.js';
 import {
+  READ_ONLY_WRITE_REFUSED_MESSAGE,
+  expansionRequestsWrite,
   normalizeSandboxBoundaryExpansion,
   SandboxBoundaryDeclarationError,
 } from './sandbox-boundary-path.js';
@@ -163,6 +165,16 @@ export async function preflightDeclaredSandboxBoundary(
   }
   const boundary = ctx.executionBoundary;
   if (!boundary || boundary.kind === 'bypass' || boundary.kind === 'external') return normalized;
+  if (ctx.permissionMode === 'explore' && expansionRequestsWrite(normalized)) {
+    throw new SandboxCommandError({
+      domain: 'command',
+      stage: 'validation',
+      reason: 'requires_bypass',
+      recoverable: false,
+      profileName: boundary.profile.name ?? boundary.profile.type,
+      message: READ_ONLY_WRITE_REFUSED_MESSAGE,
+    });
+  }
   // The declaration was canonicalised above, so the roots it is measured
   // against must be too: `/tmp` is `/private/tmp` on macOS, and a spelling
   // mismatch asked the user to approve what the profile already granted.

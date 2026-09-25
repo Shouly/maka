@@ -86,6 +86,41 @@ describe('ToolRuntime settlement', () => {
     );
   });
 
+  it('refuses a write request under Read only before anyone is asked', async () => {
+    const requester: MakaTool = {
+      name: 'write_task',
+      description: 'asks for a write',
+      parameters: {},
+      impl: async (_input, context) =>
+        await context.requestSandboxBoundary!(
+          {
+            filesystem: { entries: [{ path: '/outside/out', access: 'write', scope: 'subtree' }] },
+          },
+          'Write generated files.',
+        ),
+    };
+    const runtime = makeRuntime({
+      readPermissionMode: async () => 'explore',
+      readExecutionBoundary: async () => createGenesisExecutionBoundary('explore'),
+    });
+    const settlement = await runtime.settleToolCall({
+      tool: requester,
+      turnId: 'turn-1',
+      stepId: 'step-1',
+      toolCallId: 'call-read-only-write',
+      input: {},
+      abortSignal: new AbortController().signal,
+      eventSink: {
+        push: () => undefined,
+        pushAndWaitUntilConsumed: async () => undefined,
+      },
+    });
+    assert.match(
+      String((settlement.result as { error?: unknown }).error),
+      /Read only, so writing cannot be requested/u,
+    );
+  });
+
   it('does not promote an expanded Explore boundary into Client Capability admission', async () => {
     let preparationCalls = 0;
     let implementationCalls = 0;

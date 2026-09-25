@@ -33,6 +33,7 @@ import { type PermissionMode } from '@maka/core/permission';
 import {
   materializeApprovedWriteDirectories,
   normalizeSandboxBoundaryPath,
+  READ_ONLY_WRITE_REFUSED_MESSAGE,
 } from '../sandbox-boundary-path.js';
 import { resolveCanonicalDirectoryEntryTarget } from '../path-containment.js';
 import { pinExistingLinuxProfilePath } from '../sandbox/linux-profile-path.js';
@@ -412,7 +413,9 @@ export class FilesystemWorkerClient {
         managed ? 'sandbox_boundary_required' : 'path_denied',
         'validation',
         requestId,
-        managed ? boundaryRequiredMessage(target.enforcementPath, requested) : undefined,
+        managed
+          ? boundaryRequiredMessage(target.enforcementPath, requested, input.mode ?? 'ask')
+          : undefined,
         true,
         managed ? { requiredExpansion: { filesystem: { entries: [requested] } } } : {},
       );
@@ -857,7 +860,11 @@ async function normalizeDirectoryEntryTarget(input: {
 function boundaryRequiredMessage(
   path: string,
   requested: { path: string; access: 'read' | 'write'; scope: 'exact' | 'subtree' },
+  mode: PermissionMode,
 ): string {
+  if (mode === 'explore' && requested.access === 'write') {
+    return `Writing ${path} is refused. ${READ_ONLY_WRITE_REFUSED_MESSAGE}`;
+  }
   return (
     `${requested.access === 'write' ? 'Writing' : 'Reading'} ${path} is outside the session sandbox. ` +
     `Call ${TOOL_NAMES.requestSandboxBoundary} for ${requested.access} access to ${requested.path} ` +

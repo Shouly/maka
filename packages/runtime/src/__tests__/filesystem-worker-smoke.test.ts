@@ -25,7 +25,10 @@ import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { applySandboxBoundaryExpansion, type ExecutionBoundary } from '@maka/core/sandbox-boundary';
 
-import { createWorkspaceWritePermissionProfile } from '@maka/core/permission-profile';
+import {
+  createReadOnlyPermissionProfile,
+  createWorkspaceWritePermissionProfile,
+} from '@maka/core/permission-profile';
 
 import {
   FilesystemWorkerClient,
@@ -412,6 +415,31 @@ describe('macOS filesystem worker smoke', { skip: process.platform !== 'darwin' 
       },
     );
     assert.equal(existsSync(join(outside, 'gone')), false);
+  });
+
+  test('a Write under Read only is refused without pointing at the request tool', async () => {
+    const target = join(workspace, 'read-only.txt');
+    await assert.rejects(
+      client.execute({
+        operation: { kind: 'write', path: target, content: 'no' },
+        cwd: workspace,
+        mode: 'explore',
+        executionBoundary: {
+          kind: 'managed',
+          revision: 0,
+          profile: createReadOnlyPermissionProfile(),
+        },
+        expectedIdentity: 'missing',
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof FilesystemWorkerClientError);
+        assert.equal(error.reason, 'sandbox_boundary_required');
+        assert.match(error.message, /Read only, so writing cannot be requested/);
+        assert.doesNotMatch(error.message, /RequestSandboxBoundary/);
+        return true;
+      },
+    );
+    assert.equal(existsSync(target), false);
   });
 
   test('Edit of a missing file says so instead of asking for access', async () => {

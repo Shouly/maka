@@ -136,6 +136,19 @@ function isMissingPathError(error: unknown): boolean {
 }
 
 /**
+ * Read only is read-only: a write cannot be asked for, only the user switching
+ * the session to Manual allows one. The same sentence wherever a write is
+ * refused for that reason — the file tools, a Bash declaration, the request
+ * tool itself.
+ */
+export const READ_ONLY_WRITE_REFUSED_MESSAGE =
+  'This session is Read only, so writing cannot be requested; only the user can allow it, by switching the session to Manual. Work within read-only and say what you could not do.';
+
+export function expansionRequestsWrite(expansion: SandboxBoundaryExpansion): boolean {
+  return (expansion.filesystem?.entries ?? []).some((entry) => entry.access === 'write');
+}
+
+/**
  * Make every approved write directory exist before a sandbox that enforces it
  * starts. A grant can name a directory before it exists, and the sandbox can
  * only be as narrow as what is there: Linux mounts and Windows ACLs cannot
