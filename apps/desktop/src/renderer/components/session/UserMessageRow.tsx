@@ -387,6 +387,22 @@ export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRow
           <TooltipTrigger asChild>
             <button
               type="button"
+              aria-label={copy.turn.editTitle}
+              disabled={!props.onEdit}
+              onClick={() => props.onEdit?.()}
+              className={messageActionButtonClass}
+            >
+              <Anthropicon name="edit" size={16} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            {props.onEdit ? copy.turn.editTitle : (props.editDisabledReason ?? copy.turn.editTitle)}
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
               aria-label={copied ? messages.copied : messages.copy}
               onClick={() => {
                 void navigator.clipboard
@@ -403,22 +419,6 @@ export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRow
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">{copied ? messages.copied : messages.copy}</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              aria-label={copy.turn.editTitle}
-              disabled={!props.onEdit}
-              onClick={() => props.onEdit?.()}
-              className={messageActionButtonClass}
-            >
-              <Anthropicon name="edit" size={16} />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            {props.onEdit ? copy.turn.editTitle : (props.editDisabledReason ?? copy.turn.editTitle)}
-          </TooltipContent>
         </Tooltip>
         {props.versions && props.onSelectVersion && (
           <VersionSwitcher versions={props.versions} onSelect={props.onSelectVersion} />
