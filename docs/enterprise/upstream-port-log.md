@@ -235,6 +235,24 @@ Watermark after this batch: `99cfeb7e9`. Rows are proposed unless a
   update result and pending-login state), which is refactoring. A static
   client configured without `issuer` now fails with an error saying so; the
   editor has no OAuth fields, so it is set in the JSON config.
+- `8dfc68d23` #5544, OpenCode Free half: **retired, user decision**
+  (2026-09-25). `opencode-free` stays registered as a retired provider, like
+  Claude Subscription, so a stored connection still reads, cannot send, and
+  releases a default that named it. Nothing seeds it any more: a first start
+  imports a key from the environment or leaves the catalog empty. Removed
+  with it, since only it used them: the seed migration, the broken-model
+  quarantine, and "enable every shipped model on a new connection". Kept:
+  the `FreeUsageLimitError` billing classification, which paid OpenCode Zen
+  keys can still meet on its free models. The nightly-promotion half is
+  website work and not taken.
+- `777a2363c` #5532 / `fb9df6c3d` #5628, our way (**bug confirmed**): every
+  `sessions:changed` re-read the whole catalog, replaced every row object,
+  flipped `loading` twice and re-read the onboarding snapshot. Now one read is
+  in flight at a time with one queued behind it, rows whose content did not
+  change keep their object, an unchanged read publishes nothing, and the
+  onboarding snapshot is re-read only when the Sessions or their Connection
+  and model bindings change, or the Connections do. Upstream's per-row
+  `sessions.get` and granular shell subscriptions are not taken yet.
 
 #### Deferred
 
