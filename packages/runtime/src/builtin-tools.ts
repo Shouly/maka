@@ -490,17 +490,17 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
     providerTool: { kind: 'openai-apply-patch' },
     executionFacts,
     impl: async (input, ctx) => {
+      // A leading ~ is the home directory here as it is for Write and Edit.
       if (typeof input !== 'string') {
-        const applied = await filesystem.applyPatch({
-          operation: input.operation,
-          ...filesystemCall(ctx),
-        });
-        await trackerFor(ctx.sessionId)?.noteWritten(
-          canonicalFilePath(ctx.cwd, input.operation.path),
-        );
+        const operation = { ...input.operation, path: expandHomePath(input.operation.path) };
+        const applied = await filesystem.applyPatch({ operation, ...filesystemCall(ctx) });
+        await trackerFor(ctx.sessionId)?.noteWritten(canonicalFilePath(ctx.cwd, operation.path));
         return applied;
       }
-      const operations = parseCodexV4aPatch(input);
+      const operations = parseCodexV4aPatch(input).map((operation) => ({
+        ...operation,
+        path: expandHomePath(operation.path),
+      }));
       return await executeApplyPatchOperations(
         operations,
         async (operation) => {

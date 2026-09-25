@@ -276,7 +276,10 @@ test('Direct-mode MCP calls request managed network expansion before provider di
       requestSandboxBoundary: async (expansion, justification) => {
         sequence.push('boundary');
         assert.deepEqual(expansion, { network: { enabled: true } });
-        assert.equal(justification, 'Call MCP tool server/mutate.');
+        assert.equal(
+          justification,
+          'Call MCP tool server/mutate. Approving opens the network for this whole session, Bash commands included.',
+        );
         return {
           request: {
             sessionId: 'session',

@@ -3152,6 +3152,14 @@ describe('builtin file tools speak the reference argument names', () => {
         matches: string[];
       };
       assert.deepStrictEqual(grepped.matches, [join(home, 'notes/a.txt')]);
+
+      await runTool(
+        built.apply_patch!,
+        ['*** Begin Patch', '*** Add File: ~/notes/b.txt', '+created', '*** End Patch'].join('\n'),
+        home,
+      );
+      assert.match(await readFile(join(home, 'notes/b.txt'), 'utf8'), /^created\n?$/);
+      await assert.rejects(access(join(home, '~')), { code: 'ENOENT' });
     } finally {
       if (savedHome === undefined) delete process.env.HOME;
       else process.env.HOME = savedHome;

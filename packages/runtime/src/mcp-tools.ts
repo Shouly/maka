@@ -190,7 +190,7 @@ export function buildMcpToolsWithIdentities(
             }
             const settlement = await context.requestSandboxBoundary(
               { network: { enabled: true } },
-              `Call MCP tool ${descriptor.serverId}/${descriptor.name}.`,
+              `Call MCP tool ${descriptor.serverId}/${descriptor.name}. Approving opens the network for this whole session, Bash commands included.`,
             );
             if (settlement.request.status !== 'approved') {
               throw new Error('MCP network access denied');
