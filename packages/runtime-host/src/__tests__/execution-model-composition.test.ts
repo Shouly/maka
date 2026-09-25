@@ -984,13 +984,24 @@ test('Host reopens one projected image from its ArtifactStore authority', async 
   const assertProjectedImage = (body: Record<string, unknown> | undefined) => {
     assert.ok(body);
     assert.doesNotMatch(JSON.stringify(body), /raw execution fact/u);
-    // The image part is the whole projection.
-    const parts = JSON.parse(latestToolResultText(body) ?? 'null') as unknown[];
-    assert.deepEqual(parts, [
+    // The image part is the whole projection. Chat carries a tool result as
+    // text, so the image travels after the tool group as a user image, and
+    // its bytes never reach the tool message as base64 characters.
+    const toolText = latestToolResultText(body);
+    assert.ok(toolText);
+    assert.equal(toolText.includes(pngBytes.toString('base64')), false);
+    const images = (Array.isArray(body.messages) ? body.messages : [])
+      .filter(
+        (message): message is { role: string; content: Array<{ type?: string }> } =>
+          (message as { role?: unknown }).role === 'user' &&
+          Array.isArray((message as { content?: unknown }).content),
+      )
+      .flatMap((message) => message.content)
+      .filter((part) => part.type === 'image_url');
+    assert.deepEqual(images, [
       {
-        type: 'file',
-        mediaType: 'image/png',
-        data: { type: 'data', data: pngBytes.toString('base64') },
+        type: 'image_url',
+        image_url: { url: `data:image/png;base64,${pngBytes.toString('base64')}` },
       },
     ]);
   };
