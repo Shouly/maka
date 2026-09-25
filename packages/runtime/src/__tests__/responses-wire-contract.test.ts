@@ -193,7 +193,7 @@ describe('responses wire contract', () => {
     assert.deepEqual(sessionHeaders, ['session-opencode-go']);
   });
 
-  test('sends OpenCode Go and Free session identities through their model adapters', async () => {
+  test('sends OpenCode Go session identities through its model adapters', async () => {
     const requests: Array<{ url: string; sessionHeader: string | null }> = [];
     const fetch = (async (url: string | URL | Request, init?: RequestInit) => {
       const request = new Request(url, init);
@@ -232,8 +232,6 @@ describe('responses wire contract', () => {
     for (const [providerType, modelId] of [
       ['opencode-go', 'kimi-k2.7-code'],
       ['opencode-go', 'minimax-m3'],
-      ['opencode-free', 'nemotron-3-ultra-free'],
-      ['opencode-free', 'nemotron-3-ultra-free'],
     ] as const) {
       const model = getAIModel({
         connection: conn(providerType),
@@ -255,14 +253,6 @@ describe('responses wire contract', () => {
       {
         url: 'https://opencode.ai/zen/go/v1/messages',
         sessionHeader: 'session-opencode-go',
-      },
-      {
-        url: 'https://opencode.ai/zen/v1/chat/completions',
-        sessionHeader: 'session-opencode-free',
-      },
-      {
-        url: 'https://opencode.ai/zen/v1/chat/completions',
-        sessionHeader: 'session-opencode-free',
       },
     ]);
   });

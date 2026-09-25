@@ -19,7 +19,6 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { defaultEnabledModelIdsWhenOmitted } from '@maka/core/llm-connections';
 import type {
   RuntimeHostConnectionCatalogEntry as ConnectionCatalogEntry,
   RuntimeHostConnectionCatalogSnapshot as ConnectionCatalogSnapshot,
@@ -35,8 +34,6 @@ import {
 } from '../runtime-host-connections-ipc-main.js';
 import { normalizeCreateConnectionInputForIpc } from '../connections-ipc-validation.js';
 
-const OPENCODE_FREE_ENABLED_MODEL_IDS: readonly string[] =
-  defaultEnabledModelIdsWhenOmitted('opencode-free') ?? [];
 
 // `providerType in PROVIDER_REGISTRY` traverses the prototype chain, so an
 // inherited member named a provider the build does not register. The renderer
@@ -469,7 +466,7 @@ test('keeps saved custom header values out of the renderer and preserves them by
   ]);
 });
 
-test('preserves the provider default inventory beside the recommended model', async () => {
+test('a new Connection enables only the model it was created with', async () => {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
   let createdModels: readonly string[] = [];
   const emptyCatalog: ConnectionCatalogSnapshot = {
@@ -492,11 +489,11 @@ test('preserves the provider default inventory beside the recommended model', as
               defaultTarget: null,
               connections: [
                 {
-                  connectionId: 'connection-free',
+                  connectionId: 'connection-deepseek',
                   revision: 1,
-                  slug: 'opencode-free',
-                  name: 'OpenCode Free',
-                  providerType: 'opencode-free',
+                  slug: 'deepseek',
+                  name: 'DeepSeek',
+                  providerType: 'deepseek',
                   enabled: true,
                   enabledModelIds: createdModels,
                   catalogEntries: [],
@@ -511,7 +508,7 @@ test('preserves the provider default inventory beside the recommended model', as
         createdModels = draft.enabledModelIds;
         return {
           kind: 'committed',
-          connection: { connectionId: 'connection-free', revision: 1 },
+          connection: { connectionId: 'connection-deepseek', revision: 1 },
         };
       },
     } as never,
@@ -519,14 +516,13 @@ test('preserves the provider default inventory beside the recommended model', as
   });
 
   await handlers.get('connections:create')?.({}, {
-    slug: 'opencode-free',
-    name: 'OpenCode Free',
-    providerType: 'opencode-free',
-    defaultModel: 'nemotron-3-ultra-free',
+    slug: 'deepseek',
+    name: 'DeepSeek',
+    providerType: 'deepseek',
+    defaultModel: 'deepseek-flash',
   });
 
-  // Snapshot-derived set; assert the contract, not today's ids.
-  assert.deepEqual(createdModels, [...OPENCODE_FREE_ENABLED_MODEL_IDS]);
+  assert.deepEqual(createdModels, ['deepseek-flash']);
 });
 
 test('projects the Host default target without inventing a second Connection authority', () => {

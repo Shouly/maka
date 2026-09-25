@@ -77,7 +77,7 @@ describe('model catalog picker helpers', () => {
           {
             connectionId: 'connection-ready',
             connectionSlug: 'ready-second',
-            providerType: 'opencode-free',
+            providerType: 'opencode',
             providerLabel: 'OpenCode Zen',
             model: 'ready-model',
             label: 'Ready',

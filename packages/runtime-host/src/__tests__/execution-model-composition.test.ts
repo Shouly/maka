@@ -920,7 +920,7 @@ test('backend creation admits an enabled model a live list omits', async () => {
 });
 
 test('backend creation admits an enabled model a snapshot never listed', async () => {
-  // `opencode-free` has no model-list endpoint, so its discovery run replays
+  // `volcengine-ark` has no model-list endpoint, so its discovery run replays
   // the array this build shipped and records `modelSource: 'fallback'`. The
   // user enabled this id; a release snapshot cannot rule on what an account
   // serves (#1584). Until now the only id that could get through an absent
@@ -935,13 +935,13 @@ test('backend creation admits an enabled model a snapshot never listed', async (
         kind: 'ready',
         connection: {
           slug: 'backend-creation-connection',
-          providerType: 'opencode-free',
+          providerType: 'volcengine-ark',
           enabledModelIds: [modelId],
-          models: [{ id: 'grok-code' }],
+          models: [{ id: 'doubao-seed-2-0-pro-260215' }],
           modelSource: 'fetched' as const,
         },
         networkProxy: { enabled: false },
-        secretMaterial: {},
+        secretMaterial: { connection: { secret: API_KEY } },
       }),
       readPricing: async () => ({ revision: 0, overrides: [] }),
     }),

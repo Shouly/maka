@@ -58,8 +58,8 @@ test('a fetched list is due once it is a day old or predates the facts discovery
         connection('never', { modelsFetchedAt: undefined }),
         connection('fallback', { modelSource: 'fallback', modelsFetchedAt: 0 }),
         connection('disabled', { enabled: false, modelsFetchedAt: 0 }),
-        // opencode-free has no discovery of its own; nothing to fetch.
-        connection('no-discovery', { providerType: 'opencode-free', modelsFetchedAt: 0 }),
+        // volcengine-ark has no discovery of its own; nothing to fetch.
+        connection('no-discovery', { providerType: 'volcengine-ark', modelsFetchedAt: 0 }),
       ],
     },
     NOW,

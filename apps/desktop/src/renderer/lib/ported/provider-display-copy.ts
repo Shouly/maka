@@ -611,17 +611,14 @@ export const PROVIDER_DISPLAY_COPY = {
     'zh-CN': {
       name: 'OpenCode Free',
       description: '免费匿名 OpenCode Zen 模型，无需密钥，按 IP 限速',
-      badge: 'Free',
     },
     'zh-TW': {
       name: 'OpenCode Free',
       description: '免費匿名 OpenCode Zen 模型，無需金鑰，按 IP 限速',
-      badge: 'Free',
     },
     en: {
       name: 'OpenCode Free',
       description: 'Free anonymous OpenCode Zen models — no API key, IP-limited.',
-      badge: 'Free',
     },
   },
   commandcode: {
