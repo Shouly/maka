@@ -1881,3 +1881,105 @@ describe('models.dev provider conformance', () => {
     assert.equal(result.text, 'Echoed hello.');
   });
 });
+
+describe('OpenAI Chat tool-result images', () => {
+  test('an image a tool returned reaches Chat as a user image, not as base64 text', async () => {
+    // Chat carries a tool result as one string, and the SDK JSON-stringifies a
+    // content result into it: the image would arrive as its base64 characters.
+    const bodies: Array<Record<string, unknown>> = [];
+    const server = await startJsonServer(async (request, response) => {
+      bodies.push(JSON.parse(await readBody(request)) as Record<string, unknown>);
+      respondOpenAIStream(response, [
+        {
+          id: 'chatcmpl-image',
+          object: 'chat.completion.chunk',
+          created: 1,
+          model: 'relay-model',
+          choices: [
+            { index: 0, delta: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' },
+          ],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        },
+      ]);
+    });
+    const connection = {
+      slug: 'relay',
+      providerType: 'openai-compatible' as const,
+      baseUrl: `${server.url}/v1`,
+      defaultModel: 'relay-model',
+    };
+    const adapter = new ModelAdapter({
+      connection,
+      modelId: 'relay-model',
+      apiKey: 'test-key',
+      modelFactory: getAIModel,
+      newId: () => 'id',
+      now: Date.now,
+    });
+    const png = Buffer.from('not really a png').toString('base64');
+    const result = await adapter.startStream({
+      model: adapter.resolveModel(),
+      messages: [
+        { role: 'user', content: 'Look at the screenshot and the notes.' },
+        {
+          role: 'assistant',
+          content: [
+            { type: 'tool-call', toolCallId: 'call-image', toolName: 'Read', input: {} },
+            { type: 'tool-call', toolCallId: 'call-text', toolName: 'Read', input: {} },
+          ],
+        },
+        {
+          role: 'tool',
+          content: [
+            {
+              type: 'tool-result',
+              toolCallId: 'call-image',
+              toolName: 'Read',
+              output: {
+                type: 'content',
+                value: [
+                  { type: 'text', text: 'Image read successfully.' },
+                  { type: 'file', data: { type: 'data', data: png }, mediaType: 'image/png' },
+                ],
+              },
+            },
+            {
+              type: 'tool-result',
+              toolCallId: 'call-text',
+              toolName: 'Read',
+              output: { type: 'text', value: 'the notes' },
+            },
+          ],
+        },
+      ],
+      tools: {},
+      activeTools: [],
+      onStreamActivity: () => {},
+      abortSignal: new AbortController().signal,
+      repairToolCall: async () => null,
+    });
+    for await (const _event of result.events) void _event;
+
+    const messages = bodies[0]?.messages as Array<Record<string, unknown>>;
+    const tools = messages.filter((message) => message.role === 'tool');
+    assert.deepEqual(
+      tools.map((message) => message.tool_call_id),
+      ['call-image', 'call-text'],
+    );
+    assert.equal(typeof tools[0]!.content, 'string');
+    assert.equal((tools[0]!.content as string).includes(png), false);
+    assert.match(
+      tools[0]!.content as string,
+      /^Image read successfully\.\n\[The image is attached/,
+    );
+    assert.equal(tools[1]!.content, 'the notes');
+    // The image follows the whole tool group, so the calls stay paired.
+    const last = messages.at(-1)!;
+    assert.equal(messages.indexOf(last), messages.indexOf(tools[1]!) + 1);
+    assert.equal(last.role, 'user');
+    assert.deepEqual(last.content, [
+      { type: 'text', text: 'The image returned by Read (call call-image):' },
+      { type: 'image_url', image_url: { url: `data:image/png;base64,${png}` } },
+    ]);
+  });
+});

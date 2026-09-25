@@ -41,6 +41,9 @@ import type {
   ModelRequestMetadata,
   ModelToolSet,
   ToolCallPart,
+  TextPart,
+  FilePart,
+  ToolResultContentPart,
 } from './model-protocol.js';
 export type {
   NormalizedUsage,
@@ -296,7 +299,11 @@ export class ModelAdapter {
           this.openAiResponsesTransportState.semanticBaseline(responsesLane),
         )
       : { messages: fullMessages };
-    const providerMessages = remapModelMessageToolNames(continuation.messages, providerToolName);
+    const remappedMessages = remapModelMessageToolNames(continuation.messages, providerToolName);
+    const providerMessages =
+      this.runtime.wire === 'openai-chat'
+        ? lowerOpenAiChatToolResultImages(remappedMessages)
+        : remappedMessages;
     const providerSystem = input.system
       ? remapProviderToolNamesInText(input.system, providerToolName)
       : undefined;
@@ -1234,6 +1241,56 @@ function translateChunk(
     default:
       return [];
   }
+}
+
+/**
+ * OpenAI Chat carries a tool result as one string: the SDK lowers a `content`
+ * result with `JSON.stringify`, so an image in it reaches the model as its
+ * base64 text. A screenshot turns into a hundred thousand tokens of characters
+ * the model cannot see as an image. On that wire each tool result keeps its
+ * text, and its images follow as one user message labelled by call, the only
+ * place Chat accepts an image. Tool messages must sit right after the
+ * assistant turn that called them, so the images wait until the whole run of
+ * tool messages is written. Anthropic, Responses and Google carry tool-result
+ * images natively and are left alone.
+ */
+function lowerOpenAiChatToolResultImages(messages: readonly ModelMessage[]): ModelMessage[] {
+  const lowered: ModelMessage[] = [];
+  let pending: Array<TextPart | FilePart> = [];
+  const flush = (): void => {
+    if (pending.length === 0) return;
+    lowered.push({ role: 'user', content: pending });
+    pending = [];
+  };
+  for (const message of messages) {
+    if (message.role !== 'tool') {
+      flush();
+      lowered.push(message);
+      continue;
+    }
+    const content = message.content.map((part) => {
+      if (part.type !== 'tool-result' || part.output.type !== 'content') return part;
+      const images = part.output.value.filter(
+        (item): item is Extract<ToolResultContentPart, { type: 'file' }> =>
+          item.type === 'file' &&
+          (item.mediaType === 'image' || item.mediaType.startsWith('image/')),
+      );
+      if (images.length === 0) return part;
+      const count = images.length === 1 ? 'The image' : `${images.length} images`;
+      pending.push(
+        { type: 'text', text: `${count} returned by ${part.toolName} (call ${part.toolCallId}):` },
+        ...images.map(
+          (image): FilePart => ({ type: 'file', data: image.data, mediaType: image.mediaType }),
+        ),
+      );
+      const text = part.output.value.flatMap((item) => (item.type === 'text' ? [item.text] : []));
+      text.push(`[${count} ${images.length === 1 ? 'is' : 'are'} attached in the next message.]`);
+      return { ...part, output: { type: 'text' as const, value: text.join('\n') } };
+    });
+    lowered.push({ ...message, content });
+  }
+  flush();
+  return lowered;
 }
 
 /**
