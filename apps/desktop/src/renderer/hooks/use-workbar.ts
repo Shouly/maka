@@ -101,6 +101,8 @@ export interface WorkbarModel {
   setCollapsed(collapsed: boolean): void;
   toggle(): void;
   showActivity(): void;
+  /** The session panel has content for the first time: reveal the column once for that session. */
+  revealOnce(sessionId: string): void;
   setExpanded(expanded: boolean): void;
   resize(width: number): void;
 }
@@ -228,8 +230,8 @@ export function useWorkbar(sessionId: string | undefined): WorkbarModel {
   const columnViewerId = sessionWorkbarViewerId(layout);
   const activeTabId = tabs.some((tab) => tab.id === columnViewerId) ? columnViewerId : null;
   const activeFace = tabs.find((tab) => tab.id === activeTabId)?.kind as WorkbarFace | undefined;
-  // The column is hidden only when the reader hid it; what it holds when shown
-  // is the line above.
+  // Hidden until the session has something to show or the reader opens it
+  // (`isSessionWorkbarCollapsed`); what it holds when shown is the line above.
   const collapsed = isSessionWorkbarCollapsed(layout);
   const workbarHasColumn = activeTabId !== null;
 
@@ -279,6 +281,14 @@ export function useWorkbar(sessionId: string | undefined): WorkbarModel {
     setCollapsed(!collapsed);
   }, [collapsed, setCollapsed]);
 
+  // The session panel has something in it for the first time. The reference
+  // opens itself then, once per session, and only where there is room for a
+  // column beside the conversation (768px).
+  const revealOnce = useCallback((session: string) => {
+    if (window.innerWidth < 768) return;
+    uiStore.dispatchWorkbar({ type: 'reveal-once', sessionId: session });
+  }, []);
+
   const showActivity = useCallback(() => {
     uiStore.dispatchWorkbar({ type: 'show-session-panel' });
     workbarStore.setPaneExpanded(false);
@@ -327,6 +337,7 @@ export function useWorkbar(sessionId: string | undefined): WorkbarModel {
     setCollapsed,
     toggle,
     showActivity,
+    revealOnce,
     setExpanded,
     resize,
   };

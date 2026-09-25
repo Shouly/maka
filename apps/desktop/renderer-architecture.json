@@ -2431,10 +2431,12 @@
         "ResizeObserver": 1
       },
       "hookCalls": {
+        "useEffect": 2,
         "useLayoutEffect": 1,
-        "useRef": 2,
+        "useRef": 3,
         "useSessionArtifacts": 1,
-        "useState": 5,
+        "useShellLiveTurn": 1,
+        "useState": 8,
         "useTaskProgress": 1,
         "useUiLocale": 2
       },
@@ -2446,12 +2448,15 @@
         "../../hooks/use-session-artifacts.js": 1,
         "../../hooks/use-task-progress.js": 1,
         "../../hooks/use-workbar.js": 1,
+        "../../hooks/use-workspace.js": 1,
         "../../lib/cn.js": 1,
         "../../lib/ported/delivery-file-label.js": 1,
         "../../locales/session-panel-copy.js": 1,
         "../../store/toast-store.js": 1,
         "../icons/Anthropicon.js": 1,
         "../ui/button.js": 1,
+        "../ui/skeleton.js": 1,
+        "../ui/text-shimmer.js": 1,
         "./SessionUploadsDialog.js": 1,
         "@maka/ui": 1,
         "react": 1
@@ -5133,6 +5138,8 @@
       "environmentCapabilities": {},
       "hookCalls": {
         "useSessionArtifacts": 1,
+        "useShellLiveTurn": 1,
+        "useTaskProgress": 1,
         "useUiLocale": 1
       },
       "lifecycleMethods": {},
@@ -5140,10 +5147,13 @@
       "actionFactories": [],
       "dependencyPaths": {
         "../../hooks/use-session-artifacts.js": 1,
+        "../../hooks/use-task-progress.js": 1,
+        "../../hooks/use-workspace.js": 1,
         "../../lib/cn.js": 1,
         "../../locales/session-panel-copy.js": 1,
         "../icons/Anthropicon.js": 1,
         "../ui/button.js": 1,
+        "../ui/text-shimmer.js": 1,
         "@maka/ui": 1
       }
     },
@@ -5497,7 +5507,7 @@
       "bridgePaths": {},
       "environmentCapabilities": {
         "window.addEventListener": 1,
-        "window.innerWidth": 1,
+        "window.innerWidth": 2,
         "window.removeEventListener": 1
       },
       "hookCalls": {

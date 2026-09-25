@@ -26,16 +26,25 @@ export interface SessionPanelCopy {
   readonly label: string;
   readonly loading: string;
   readonly progress: string;
-  readonly empty: string;
   readonly unavailable: string;
   /** The reference's own word for the files a task produced. */
   readonly outputs: string;
-  readonly outputsEmpty: string;
   readonly outputsUnavailable: string;
+  /** The panel with nothing in any section: one empty state, not empty sections. */
+  readonly emptyTitle: string;
+  readonly emptyBody: string;
   readonly close: string;
   readonly outputCount: (count: number) => string;
+  /** The header switch while a task is under way: which step, of how many. */
+  readonly stepOf: (current: number, total: number) => string;
   readonly earlierSteps: (count: number) => string;
-  readonly completed: string;
+  /** Said after a task's name to a screen reader; `stopped` is a running task whose turn ended. */
+  readonly taskState: {
+    readonly completed: string;
+    readonly running: string;
+    readonly stopped: string;
+    readonly pending: string;
+  };
   readonly hideEarlier: string;
   readonly closePreview: string;
   readonly usedInSession: string;
@@ -51,16 +60,17 @@ const COPY = {
     label: '会话面板',
     loading: '正在载入…',
     progress: '任务进度',
-    empty: '这个会话还没有任务。',
     unavailable: '暂时读不到任务列表。',
     outputs: '产出文件',
-    outputsEmpty: '这个会话还没有产出文件。',
     outputsUnavailable: '暂时读不到文件列表。',
+    emptyTitle: '这里还没有内容',
+    emptyBody: '这个会话的任务和产出文件会显示在这里。',
     openFile: (name) => `打开 ${name}`,
     close: '关闭会话面板',
     outputCount: (count) => `${count} 份产出文件`,
+    stepOf: (current, total) => `第 ${current} 步，共 ${total} 步`,
     earlierSteps: (count) => `${count} 个较早步骤`,
-    completed: '已完成',
+    taskState: { completed: '已完成', running: '进行中', stopped: '已停止', pending: '未开始' },
     hideEarlier: '收起较早步骤',
     closePreview: '关闭预览',
     usedInSession: '本会话使用',
@@ -73,16 +83,17 @@ const COPY = {
     label: '工作階段面板',
     loading: '正在載入…',
     progress: '任務進度',
-    empty: '這個工作階段還沒有任務。',
     unavailable: '暫時讀不到任務清單。',
     outputs: '產出檔案',
-    outputsEmpty: '這個工作階段還沒有產出檔案。',
     outputsUnavailable: '暫時讀不到檔案清單。',
+    emptyTitle: '這裡還沒有內容',
+    emptyBody: '這個工作階段的任務和產出檔案會顯示在這裡。',
     openFile: (name) => `開啟 ${name}`,
     close: '關閉工作階段面板',
     outputCount: (count) => `${count} 份產出檔案`,
+    stepOf: (current, total) => `第 ${current} 步，共 ${total} 步`,
     earlierSteps: (count) => `${count} 個較早步驟`,
-    completed: '已完成',
+    taskState: { completed: '已完成', running: '進行中', stopped: '已停止', pending: '未開始' },
     hideEarlier: '收起較早步驟',
     closePreview: '關閉預覽',
     usedInSession: '本工作階段使用',
@@ -95,16 +106,22 @@ const COPY = {
     label: 'Session panel',
     loading: 'Loading…',
     progress: 'Progress',
-    empty: 'No tasks in this session yet.',
     unavailable: 'The task list is unavailable.',
     outputs: 'Outputs',
-    outputsEmpty: 'No files produced yet.',
     outputsUnavailable: 'The file list is unavailable.',
+    emptyTitle: 'Nothing here yet',
+    emptyBody: 'Tasks and files from this session will show up here.',
     openFile: (name) => `Open ${name}`,
     close: 'Close session panel',
     outputCount: (count) => `${count} outputs`,
+    stepOf: (current, total) => `Step ${current} of ${total}`,
     earlierSteps: (count) => `${count} earlier ${count === 1 ? 'step' : 'steps'}`,
-    completed: 'Done',
+    taskState: {
+      completed: 'Done',
+      running: 'In progress',
+      stopped: 'Stopped',
+      pending: 'Not started',
+    },
     hideEarlier: 'Hide earlier steps',
     closePreview: 'Close preview',
     usedInSession: 'Used in this session',

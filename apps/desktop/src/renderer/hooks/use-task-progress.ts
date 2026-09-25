@@ -35,6 +35,16 @@ export interface TaskProgress {
 
 const EMPTY: TaskProgress = { status: 'idle', sessionId: undefined, tasks: [] };
 
+/**
+ * The step the list is on: the running task, else the first one not done;
+ * -1 once every task is done (or there are none). The header switch counts
+ * from it ("Step 2 of 4"), as the reference's does.
+ */
+export function currentTaskIndex(tasks: readonly SessionTask[]): number {
+  const running = tasks.findIndex((task) => task.status === 'in_progress');
+  return running >= 0 ? running : tasks.findIndex((task) => task.status !== 'completed');
+}
+
 // `openBlockersOf` is re-exported from core rather than reimplemented here.
 // The two copies had drifted — core counted an id that names no task as a
 // standing blocker, this one did not — so TaskList could tell the model a task

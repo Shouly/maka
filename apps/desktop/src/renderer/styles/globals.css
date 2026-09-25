@@ -418,6 +418,9 @@
   /* 等待中的标记(提问 / 需要输入时 TurnStatus 左侧那圈):实测上游 sprite 帧的
      琥珀 #f0ac55,不在 warning 那组阶梯上。sprite 是图,明暗同色,深色块不重定义。 */
   --waiting-mark: #f0ac55;
+  /* 会话面板(实测上游 2026-09-24):进行中任务的文字浅色 primary、深色 secondary
+     (上游 `text-primary dark:text-secondary`)。 */
+  --progress-current-text: var(--text-primary);
 
   /* ── success(绿) ────────────────────────────────────────────────
      bg 是芯片淡底(green-100),别拿 text 档压透明度顶替:那是描边/图标用的
@@ -597,6 +600,7 @@
   --text-warning: #db9300;
   --border-warning: #512e00;
   --bg-warning: #311a00;
+  --progress-current-text: var(--text-secondary);
   --status-dot-strong: #f2f1ee;
   --status-dot-soft: #636361;
   --scrollbar: #6b6964;
@@ -681,6 +685,7 @@
     --text-warning: #db9300;
     --border-warning: #512e00;
     --bg-warning: #311a00;
+    --progress-current-text: var(--text-secondary);
     --status-dot-strong: #f2f1ee;
     --status-dot-soft: #636361;
     --scrollbar: #6b6964;
@@ -1511,6 +1516,66 @@ pre[class*="language-"] {
 @media (prefers-reduced-motion: reduce) {
   .animate-status-dot-breathe {
     animation: none;
+  }
+}
+
+/* 会话面板的任务进度(实测上游 2026-09-24):新任务的文字上浮淡入、轨道从上往下长出,
+   转入进行中的圆点缩放淡入;进行中圆点 3s 呼吸(上游 clay 点的节奏,圆点本身用品牌色)。
+   reduced-motion 下全停。 */
+@keyframes progress-step-in {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@keyframes progress-rail-grow {
+  0% {
+    transform: scaleY(0);
+  }
+}
+
+@keyframes progress-knob-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+@keyframes progress-dot-breathe {
+  0%,
+  100% {
+    filter: brightness(0.96);
+    transform: scale(0.86);
+  }
+  50% {
+    filter: brightness(1.06);
+    transform: scale(1);
+  }
+}
+
+/* 骨架屏晚 0.5s 才淡入:数据一般更快到,快的时候骨架屏根本不出现。 */
+@keyframes placeholder-reveal {
+  0% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .animate-progress-step-in {
+    animation: progress-step-in 0.22s ease-out;
+  }
+  .animate-progress-rail-grow {
+    animation: progress-rail-grow 0.22s ease-out;
+  }
+  .animate-progress-knob-in {
+    animation: progress-knob-in 0.18s ease-out;
+  }
+  .animate-progress-dot-breathe {
+    animation: progress-dot-breathe 3s ease-in-out infinite;
+  }
+  .animate-placeholder-reveal {
+    animation: placeholder-reveal 0.15s ease-out 0.5s backwards;
   }
 }
 

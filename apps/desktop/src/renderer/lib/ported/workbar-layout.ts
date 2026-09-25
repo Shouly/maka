@@ -115,6 +115,14 @@ export type WorkbarLayoutAction =
   | { type: 'show-session-panel' }
   | { type: 'activate-session'; sessionId: string | undefined }
   | { type: 'retain-sessions'; sessionIds: ReadonlySet<string> }
+  /**
+   * The session has something to show for the first time: reveal the column,
+   * unless this session already has a say of its own (the reader opened or
+   * closed it, or it was revealed before). Names its session rather than
+   * reading the active one, so a panel mounting ahead of the switch that
+   * activates its session cannot reveal the previous one.
+   */
+  | { type: 'reveal-once'; sessionId: string }
   | {
       type: 'collapse';
       placement: 'right' | 'bottom';
@@ -189,13 +197,13 @@ function readSessionBooleanMap(key: string): Record<string, boolean> {
 }
 
 /**
- * Whether the right column is hidden. It is shown by default: with the session
- * panel as its resting occupant the column always has something to say, so
- * starting hidden would hide the session's own state until a reader went
- * looking for a switch.
+ * Whether the right column is hidden. It is hidden until the session says
+ * otherwise — the reference's session panel starts closed and opens once, by
+ * itself, the first time there is something in it (`reveal-once`). After that
+ * the reader's own choice for the session stands.
  */
 export function isSessionWorkbarCollapsed(state: WorkbarLayoutState): boolean {
-  return sessionFlag(state.collapsedBySession, state.activeSessionId);
+  return collapsedFlag(state.collapsedBySession, state.activeSessionId);
 }
 
 /**
@@ -214,13 +222,19 @@ export function sessionWorkbarViewerId(state: WorkbarLayoutState): string | null
   return state.panels.right.tabs.some((tab) => tab.id === id) ? id : null;
 }
 
-function sessionFlag(map: Record<string, boolean>, id: string | undefined): boolean {
-  return id !== undefined && Object.hasOwn(map, id) ? map[id]! : false;
+/**
+ * A session's column visibility, hidden when it has no entry. Reading and
+ * writing share this default: compared against any other, an action that
+ * leaves the column as it was would still stamp an entry, and a stamped
+ * session is one `reveal-once` no longer opens.
+ */
+function collapsedFlag(map: Record<string, boolean>, id: string | undefined): boolean {
+  return id !== undefined && Object.hasOwn(map, id) ? map[id]! : true;
 }
 
 function withRightCollapsed(state: WorkbarLayoutState, collapsed: boolean): WorkbarLayoutState {
   const id = state.activeSessionId;
-  if (id === undefined || sessionFlag(state.collapsedBySession, id) === collapsed) return state;
+  if (id === undefined || collapsedFlag(state.collapsedBySession, id) === collapsed) return state;
   return { ...state, collapsedBySession: { ...state.collapsedBySession, [id]: collapsed } };
 }
 
@@ -312,6 +326,14 @@ export function reduceWorkbarLayout(
 ): WorkbarLayoutState {
   if (action.type === 'show-session-panel') {
     return withRightCollapsed(withColumnViewer(state, null), false);
+  }
+  if (action.type === 'reveal-once') {
+    return Object.hasOwn(state.collapsedBySession, action.sessionId)
+      ? state
+      : {
+          ...state,
+          collapsedBySession: { ...state.collapsedBySession, [action.sessionId]: false },
+        };
   }
   if (action.type === 'activate-session') {
     return state.activeSessionId === action.sessionId

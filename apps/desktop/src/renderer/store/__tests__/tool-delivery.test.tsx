@@ -64,9 +64,9 @@ import {
   type QuestionDraft,
 } from '../../lib/user-question-shape.js';
 
-import { TaskProgressRow, ProgressSteps } from '../../components/session/SessionPanel.js';
+import { ProgressSteps } from '../../components/session/SessionPanel.js';
 import { getSessionPanelCopy } from '../../locales/session-panel-copy.js';
-import { openBlockersOf } from '../../hooks/use-task-progress.js';
+import { currentTaskIndex, openBlockersOf } from '../../hooks/use-task-progress.js';
 
 function renderTree(node: Parameters<typeof renderToStaticMarkup>[0]) {
   const html = renderToStaticMarkup(
@@ -671,57 +671,108 @@ test('a completed blocker stops blocking, so only the open ones are named', () =
   assert.deepEqual(openBlockersOf(TASKS, TASKS[0]!), []);
 });
 
-test('a running task shows its active form, and a finished one keeps its subject', () => {
-  const document = renderTree(
-    createElement(
-      'div',
-      null,
-      TASKS.map((task) =>
-        createElement(TaskProgressRow, {
-          key: task.id,
-          task,
-          blockedBy: openBlockersOf(TASKS, task),
-        }),
-      ),
-    ),
-  );
+test('while work runs, finished steps go quiet and only the running step carries a mark', () => {
+  const steps = (live: boolean) =>
+    renderTree(
+      createElement(ProgressSteps, { tasks: TASKS, copy: getSessionPanelCopy('en'), live }),
+    );
+  const document = steps(true);
   const rows = [...document.querySelectorAll('[data-maka-task-id]')];
   assert.equal(rows.length, 3);
+  const text = (row: Element | undefined) => row?.querySelector('span.flex-1');
 
-  // Completed: a neutral check marks the finished step; the subject stays readable.
+  // Finished, while others are not: muted ink, no check, its rail fully walked.
   assert.equal(rows[0]?.getAttribute('data-maka-task-status'), 'completed');
-  assert.ok(rows[0]?.querySelector('[data-anthropicon="checkCircleFilled"]'));
-  assert.equal(rows[0]?.querySelector('.line-through'), null);
+  assert.ok(text(rows[0])?.className.includes('text-text-muted'));
+  assert.equal(rows[0]?.querySelector('[data-anthropicon="checkCircleFilled"]'), null);
+  assert.ok(rows[0]?.querySelector('[data-maka-progress-rail] > .inset-0.bg-alpha-3'));
+  // The first rail starts at the words, not above them.
+  assert.ok(rows[0]?.querySelector('[data-maka-progress-rail]')?.className.includes('top-0'));
 
-  // Running: the badge keeps the id, and the label is the active form.
+  // Running: the active form, the darkest ink, a breathing dot, the rail walked to it.
   const running = rows[1]?.textContent ?? '';
   assert.ok(running.includes('Writing the adapter'));
   assert.ok(!running.includes('Write the adapter'));
+  assert.ok(text(rows[1])?.className.includes('text-[var(--progress-current-text)]'));
+  assert.ok(rows[1]?.querySelector('[data-maka-progress-knob="live"]'));
+  assert.ok(rows[1]?.querySelector('[data-maka-progress-rail] > .h-4.bg-alpha-3'));
+  assert.ok(running.includes('In progress'));
 
-  // Pending and blocked: the note names only the blocker that still stands.
+  // Waiting: the middle ink, no mark, nothing walked; the note names only the
+  // blocker that still stands, and the last rail ends at the words.
   const blocked = rows[2]?.textContent ?? '';
+  assert.ok(text(rows[2])?.className.includes('text-text-secondary'));
+  assert.equal(rows[2]?.querySelector('[data-maka-progress-knob]'), null);
+  assert.equal(rows[2]?.querySelector('.bg-alpha-3'), null);
+  assert.ok(rows[2]?.querySelector('[data-maka-progress-rail]')?.className.includes('bottom-0'));
   assert.ok(blocked.includes('Run the suite'));
   assert.ok(blocked.includes('blocked by #2'), blocked);
   assert.ok(!blocked.includes('#1'), blocked);
+  assert.ok(blocked.includes('Not started'));
+
+  // No turn running: the running step has stopped, and says so.
+  const stopped = steps(false).querySelector('[data-maka-task-id="2"]');
+  assert.ok(stopped?.querySelector('[data-maka-progress-knob="stopped"]'));
+  assert.ok(stopped?.textContent?.includes('Stopped'));
 });
 
-test('activity folds earlier completed steps while keeping ongoing and blocked work visible', () => {
-  const tasks = [
-    { ...TASKS[0]!, id: '1' },
-    { ...TASKS[1]!, id: '2' },
-    { ...TASKS[2]!, id: '3' },
-    { ...TASKS[0]!, id: '4' },
-    { ...TASKS[0]!, id: '5' },
-  ];
+test('a finished list settles: the middle ink throughout and one check at the foot', () => {
+  const done = TASKS.map((task) => ({ ...task, status: 'completed' as const }));
   const document = renderTree(
-    createElement(ProgressSteps, { tasks, copy: getSessionPanelCopy('en') }),
+    createElement(ProgressSteps, { tasks: done, copy: getSessionPanelCopy('en'), live: false }),
   );
-  assert.ok(document.querySelector('[data-maka-task-id="1"]')?.closest('[inert]'));
-  for (const id of ['2', '3', '4', '5'])
-    assert.ok(document.querySelector(`[data-maka-task-id="${id}"]`));
+  const rows = [...document.querySelectorAll('[data-maka-task-id]')];
+  for (const row of rows) {
+    assert.ok(row.querySelector('span.flex-1')?.className.includes('text-text-secondary'));
+    assert.equal(row.querySelector('.bg-alpha-3'), null, 'nothing is walked once all is done');
+  }
+  assert.equal(document.querySelectorAll('[data-anthropicon="checkCircleFilled"]').length, 1);
+  assert.ok(rows.at(-1)?.querySelector('[data-anthropicon="checkCircleFilled"]'));
+  // The last rail stops at the check.
+  assert.ok(rows.at(-1)?.querySelector('[data-maka-progress-rail]')?.className.includes('h-4'));
+});
+
+test('the header switch counts from the running step, else the first unfinished one', () => {
+  const at = (status: 'completed' | 'in_progress' | 'pending') => ({ ...TASKS[0]!, status });
+  assert.equal(currentTaskIndex(TASKS), 1);
+  assert.equal(currentTaskIndex([at('completed'), at('pending'), at('pending')]), 1);
+  assert.equal(currentTaskIndex([at('pending'), at('in_progress')]), 1);
+  // All done, or nothing at all: no step, so the switch falls back to the count.
+  assert.equal(currentTaskIndex([at('completed'), at('completed')]), -1);
+  assert.equal(currentTaskIndex([]), -1);
+  assert.equal(getSessionPanelCopy('en').stepOf(2, 4), 'Step 2 of 4');
+  assert.equal(getSessionPanelCopy('zh-CN').stepOf(2, 4), '第 2 步，共 4 步');
+});
+
+test('finished steps at the head fold away, all but the last two', () => {
+  const at = (id: string, status: 'completed' | 'in_progress' | 'pending') => ({
+    ...TASKS[0]!,
+    id,
+    status,
+    blocks: [],
+  });
+  const render = (tasks: ReturnType<typeof at>[]) =>
+    renderTree(createElement(ProgressSteps, { tasks, copy: getSessionPanelCopy('en') }));
+
+  // Four done, then work: two fold, two stay in view above the running step.
+  const four = render([
+    at('1', 'completed'),
+    at('2', 'completed'),
+    at('3', 'completed'),
+    at('4', 'completed'),
+    at('5', 'in_progress'),
+    at('6', 'pending'),
+  ]);
+  for (const id of ['1', '2'])
+    assert.ok(four.querySelector(`[data-maka-task-id="${id}"]`)?.closest('[inert]'));
+  for (const id of ['3', '4', '5', '6'])
+    assert.equal(four.querySelector(`[data-maka-task-id="${id}"]`)?.closest('[inert]'), null);
   assert.ok(
-    document
-      .querySelector('button[aria-expanded="false"]')
-      ?.textContent?.startsWith('1 earlier step'),
+    four.querySelector('button[aria-expanded="false"]')?.textContent?.startsWith('2 earlier steps'),
   );
+
+  // Two done: nothing to fold.
+  const two = render([at('1', 'completed'), at('2', 'completed'), at('3', 'in_progress')]);
+  assert.equal(two.querySelector('button[aria-expanded]'), null);
+  assert.equal(two.querySelector('[inert]'), null);
 });

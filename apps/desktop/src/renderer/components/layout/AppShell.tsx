@@ -695,6 +695,7 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
               sessionId={activeId}
               hidden={(workbar.collapsed || workbar.workbarHasColumn) && !activityPeek}
               peek={activityPeek}
+              onFirstContent={workbar.revealOnce}
               onPointerEnter={holdActivityPeek}
               onPointerLeave={leaveActivityPeek}
               onClose={() => {

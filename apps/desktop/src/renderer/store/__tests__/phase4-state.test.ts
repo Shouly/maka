@@ -150,9 +150,8 @@ test('opening a face reveals the pane for that task and persists the topology', 
   try {
     const ui = createUiStore();
     ui.dispatchWorkbar({ type: 'activate-session', sessionId: 'task-a' });
-    // A task with no faces open still has an open column: the session panel is
-    // what it holds until a face takes it.
-    assert.equal(isSessionWorkbarCollapsed(ui.getState().workbar), false);
+    // A task starts with the column hidden, as the reference's panel does.
+    assert.equal(isSessionWorkbarCollapsed(ui.getState().workbar), true);
 
     ui.dispatchWorkbar({
       type: 'open',
@@ -186,8 +185,39 @@ test('opening a face reveals the pane for that task and persists the topology', 
     });
     assert.equal(localStorage.getItem('maka-session-workbar-collapsed-v1'), null);
 
-    // Another task does not inherit it: with no override of its own it gets
-    // the default, which is an open column showing the session panel.
+    // Another task does not inherit it: with no entry of its own it gets the
+    // default, a hidden column.
+    ui.dispatchWorkbar({ type: 'activate-session', sessionId: 'task-b' });
+    assert.equal(isSessionWorkbarCollapsed(ui.getState().workbar), true);
+  } finally {
+    restore();
+  }
+});
+
+test('the column opens by itself once, the first time a task has something to show', () => {
+  const restore = installMemoryLocalStorage();
+  try {
+    const ui = createUiStore();
+    ui.dispatchWorkbar({ type: 'activate-session', sessionId: 'task-a' });
+    // An action that leaves the column as it was writes no entry for the task,
+    // so it cannot pre-empt the first reveal.
+    ui.dispatchWorkbar({ type: 'collapse', placement: 'right', collapsed: true });
+    assert.deepEqual(ui.getState().workbar.collapsedBySession, {});
+
+    ui.dispatchWorkbar({ type: 'reveal-once', sessionId: 'task-a' });
+    assert.equal(isSessionWorkbarCollapsed(ui.getState().workbar), false);
+    assert.deepEqual(JSON.parse(localStorage.getItem('maka-session-workbar-collapsed-v2') ?? ''), {
+      'task-a': false,
+    });
+
+    // Closed by the reader afterwards, it stays closed however much arrives.
+    ui.dispatchWorkbar({ type: 'collapse', placement: 'right', collapsed: true });
+    ui.dispatchWorkbar({ type: 'reveal-once', sessionId: 'task-a' });
+    assert.equal(isSessionWorkbarCollapsed(ui.getState().workbar), true);
+
+    // It names its task: revealing another task leaves the active one alone.
+    ui.dispatchWorkbar({ type: 'reveal-once', sessionId: 'task-b' });
+    assert.equal(isSessionWorkbarCollapsed(ui.getState().workbar), true);
     ui.dispatchWorkbar({ type: 'activate-session', sessionId: 'task-b' });
     assert.equal(isSessionWorkbarCollapsed(ui.getState().workbar), false);
   } finally {

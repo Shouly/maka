@@ -379,9 +379,17 @@ try {
     'file and skill mention atoms, dropped attachment, transmission and successful draft cleanup',
   );
   const activityUpload = page.locator('#maka-session-panel');
-  const uploadActivityToggle = page.locator('[data-maka-contract="session-workbar-toggle"]');
-  if ((await uploadActivityToggle.getAttribute('aria-expanded')) !== 'true')
-    await uploadActivityToggle.click();
+  // An upload is the first thing this task has to show, so the panel opens by
+  // itself — once, as the reference's does.
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[data-maka-contract="session-workbar-toggle"]')
+        ?.getAttribute('aria-expanded') === 'true' &&
+      document
+        .querySelector('[data-maka-contract="session-activity-column"]')
+        ?.getAttribute('aria-hidden') === null,
+  );
 
   await activityUpload.getByRole('button', { name: 'Used in this session', exact: true }).waitFor();
   await activityUpload.getByRole('button', { name: /^Uploads:/ }).click();
@@ -491,12 +499,19 @@ try {
   // that is not a git repository, an artifact catalog with nothing user-visible
   // in it, and a Runtime Host that can start a real PTY.
 
-  // 4.1 The column is open from the start and the session panel holds it. The
-  //     switch reports the column, so it reads as open in both occupant states.
+  // 4.1 A task with nothing to show starts with the column hidden, as the
+  //     reference's panel does; the switch opens it onto the session panel.
+  //     The switch reports the column, so it reads as open in both occupant
+  //     states.
   const pane = page.locator('#maka-workbar-pane');
   const panel = page.locator('[data-maka-contract="session-panel"]');
   const toggle = page.locator('[data-maka-contract="session-workbar-toggle"]');
   await toggle.waitFor();
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+  assert.equal(await panel.isVisible(), false);
+  // The shortcut, not a click: a click would leave the pointer resting on the
+  // switch, and the hover-peek check below needs it to arrive there fresh.
+  await page.keyboard.press('ControlOrMeta+Alt+s');
   await panel.waitFor();
   assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
   const activityGeometry = await page.evaluate(() => {
@@ -511,10 +526,14 @@ try {
   });
   assert.ok(Math.abs(activityGeometry.headerRight - activityGeometry.windowWidth) < 1);
   assert.ok(Math.abs(activityGeometry.panelTop - (activityGeometry.headerBottom - 4)) < 1);
+  // A new session has no tasks and no outputs: the panel is one empty state,
+  // not two headed sections each saying it is empty (the reference's panel).
+  await panel.locator('[data-maka-session-panel-empty]').waitFor();
+  assert.equal(await panel.locator('section').count(), 0);
   const panelStyle = await page.evaluate(() => {
     const panel = document.querySelector('#maka-session-panel');
-    const title = panel.querySelector('section button');
-    const body = panel.querySelector('section p');
+    const title = panel.querySelector('[data-maka-session-panel-empty] h3');
+    const body = panel.querySelector('[data-maka-session-panel-empty] p');
     const toggle = document.querySelector('[data-maka-contract="session-workbar-toggle"]');
     const icon = toggle.querySelector('[data-anthropicon]');
     const close = panel.querySelector('[aria-label="Close session panel"] [data-anthropicon]');
@@ -530,9 +549,9 @@ try {
   });
   assert.deepEqual(panelStyle, {
     width: 320,
-    title: '13px',
-    titleLine: '17px',
-    body: '14px',
+    title: '14px',
+    titleLine: '20px',
+    body: '13px',
     icon: 'tasks',
     iconSize: '18px',
     closeSize: '18px',
@@ -576,12 +595,14 @@ try {
         ?.getAttribute('aria-hidden') === null,
   );
   assert.equal(await column.count(), 1);
-  checks.push('the right column opens on the session panel and its switch reports the column');
+  checks.push(
+    'the right column starts hidden, opens once by itself on first content, and its switch reports it',
+  );
 
   // 4.1b Files is now a viewer for a selected output, not an empty list face.
   //      Without a file, its shortcut leaves the session panel in place.
   await page.keyboard.press('ControlOrMeta+p');
-  await panel.getByText('No files produced yet.', { exact: true }).waitFor();
+  await panel.locator('[data-maka-session-panel-empty]').waitFor();
   assert.equal(await pane.count(), 0);
 
   // Changes can be opened independently. Closing it hands the column back
@@ -597,7 +618,7 @@ try {
 
   // 4.2 Outputs owns the artifact catalog. This backend produces no visible
   //     files, so the panel must report the empty state explicitly.
-  await panel.getByText('No files produced yet.', { exact: true }).waitFor();
+  await panel.locator('[data-maka-session-panel-empty]').waitFor();
   await page.screenshot({ path: SHOT('phase4-outputs-light.png') });
   checks.push('Outputs reads the artifact catalog and states that it is empty');
 
@@ -1479,9 +1500,9 @@ try {
   await expectComposerPlaceholder(page, 'Reply…');
   // Host admission must start the first artifact read. A held-open turn has
   // no completion event that could hide an earlier pending-session failure.
+  // The empty state stands only once both reads have settled.
   await page
-    .locator('[data-maka-contract="session-panel"]')
-    .getByText('No files produced yet.', { exact: true })
+    .locator('[data-maka-contract="session-panel"] [data-maka-session-panel-empty]')
     .waitFor({ state: 'attached' });
   assert.doesNotMatch(mainStderr, /Error occurred in handler for 'artifacts:list'/);
   checks.push('artifact reads wait for Host admission and load while the first turn is still open');
@@ -1504,7 +1525,15 @@ try {
   const modelBeforeRejection = await switcher.innerText();
   await switcher.click();
   await page.getByRole('menuitem', { name: /^Effort/ }).hover();
-  await page.getByRole('menuitemradio', { name: 'Off', exact: true }).click();
+  // Glide to the submenu as a hand would. A click jumps the pointer there in
+  // one move, and where the submenu opens to the LEFT of its menu (the column
+  // is hidden and the composer sits right) that jump reads to the menu as the
+  // pointer leaving, and the submenu closes under it.
+  const offItem = page.getByRole('menuitemradio', { name: 'Off', exact: true });
+  await offItem.waitFor();
+  const offBox = await offItem.boundingBox();
+  await page.mouse.move(offBox.x + offBox.width / 2, offBox.y + offBox.height / 2, { steps: 12 });
+  await offItem.click();
   const busyNotice = 'A task is running or waiting on you. Change this setting after it settles.';
   const busyToast = page.locator('.ui-toast').filter({ hasText: busyNotice });
   await busyToast.waitFor();
