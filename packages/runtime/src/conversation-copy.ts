@@ -37,6 +37,7 @@ import {
   MODEL_CALL_ATTEMPT_EVENT_TYPE,
 } from '@maka/core/model-call-attempt';
 import { TOOL_RECOVERY_DECISION_FACT_KIND } from '@maka/core/tool-recovery-fact';
+import { canonicalToolArgsHash } from '@maka/core/tool-args-identity';
 import {
   buildHistoryCompactCheckpoint,
   matchHistoryCompactCheckpointPrefix,
@@ -625,18 +626,42 @@ export async function cloneConversationRuntimeLedger(
     finished.add(sourceId);
   };
   for (const sourceId of clonedEventBySourceId.keys()) finishTarget(sourceId);
+  // An ArchiveRead names the result it reads, and the copy renames that result,
+  // so the call's args change. Its T1 dispatch recorded the hash of the source
+  // args, and the copy's own re-scan would refuse the ledger as corrupt
+  // (apache/maka#5466). Keep both identities per call to re-stamp it below.
+  const rewrittenCalls = new Map<string, { source?: string; copied?: string }>();
   for (const event of clonedEventBySourceId.values()) {
     if (event.content?.kind === 'text')
       event.content.text = rewriteLedgerArchiveText(event.content.text, references);
     if (event.content?.kind === 'function_call' && event.content.name === TOOL_NAMES.archiveRead) {
       const args = event.content.args;
       if (args && typeof args === 'object' && 'ref' in args && typeof args.ref === 'string') {
-        event.content = {
-          ...event.content,
-          args: { ...args, ref: rewriteLedgerArchiveText(args.ref, references) },
-        };
+        const copiedArgs = { ...args, ref: rewriteLedgerArchiveText(args.ref, references) };
+        if (copiedArgs.ref !== args.ref) {
+          const source = tryCanonicalToolArgsHash(event.content.name, args);
+          const copied = tryCanonicalToolArgsHash(event.content.name, copiedArgs);
+          rewrittenCalls.set(`${event.invocationId}:${event.content.id}`, {
+            ...(source === undefined ? {} : { source }),
+            ...(copied === undefined ? {} : { copied }),
+          });
+        }
+        event.content = { ...event.content, args: copiedArgs };
       }
     }
+  }
+  for (const event of clonedEventBySourceId.values()) {
+    const dispatch = event.actions?.toolDispatch;
+    if (!dispatch) continue;
+    const call = rewrittenCalls.get(`${event.invocationId}:${dispatch.providerToolCallId}`);
+    // Only a dispatch that authenticated the source call follows it. One that
+    // never matched stays as it was, so the re-scan still rejects a source
+    // ledger that was already corrupt instead of the copy laundering it.
+    if (call?.copied === undefined || dispatch.canonicalArgsHash !== call.source) continue;
+    event.actions = {
+      ...event.actions,
+      toolDispatch: { ...dispatch, canonicalArgsHash: call.copied },
+    };
   }
   const preparedPlans = flattenedPlans.map((plan) => {
     const runId = runIds.get(plan.run.runId)!;
@@ -748,6 +773,19 @@ export async function cloneConversationRuntimeLedger(
       targetRunId,
     })),
   };
+}
+
+/**
+ * A call's T1 identity as the ledger scanner derives it: args that are not
+ * strict JSON have none, which the re-scan reports as a conflict rather than
+ * an exception, so the copy must see `undefined` here, not a throw.
+ */
+function tryCanonicalToolArgsHash(toolName: string, args: unknown): string | undefined {
+  try {
+    return canonicalToolArgsHash(toolName, args);
+  } catch {
+    return undefined;
+  }
 }
 
 function rewriteLedgerArchiveText(

@@ -46,6 +46,7 @@ import {
   type RuntimeInvocationRecord,
 } from '@maka/core/runtime-invocation';
 import { canonicalToolArgsHash } from '@maka/core/tool-args-identity';
+import { scanToolLedger } from '@maka/core/tool-ledger-scanner';
 import { createSqliteAgentRunStore } from '@maka/storage/agent-run-store';
 import { createWorkspaceRuntimeStore } from '@maka/storage/runtime-event-persistence';
 import { sectionedSummary } from './history-compact-test-fixtures.js';
@@ -3806,6 +3807,218 @@ test('conversation copy gives a run whose opening the migration shelved its open
     await rm(root, { recursive: true, force: true });
   }
 });
+
+for (const sourceDispatch of ['authentic', 'corrupt'] as const) {
+  test(`a copied ArchiveRead re-stamps only an authentic dispatch (${sourceDispatch})`, async () => {
+    // Editing an earlier message copies the ledger before it. An ArchiveRead of
+    // an archived tool result names that result by ref, and the copy renames the
+    // result, so it rewrites the call's ref. The paired T1 dispatch recorded the
+    // hash of the SOURCE args; unless it follows, the copy fails its own re-scan
+    // with canonical_args_hash_conflict and the edit is refused as a corrupt
+    // ledger (apache/maka#5466). A source dispatch that never matched its call
+    // must stay mismatched, so the copy rejects it rather than laundering it.
+    const root = await mkdtemp(join(tmpdir(), 'maka-conversation-archive-read-copy-'));
+    try {
+      const runStore = createSqliteAgentRunStore(root);
+      const runtimeEventStore = createWorkspaceRuntimeStore(root);
+      await runStore.ready?.();
+      const projection: DurableToolResultProjection = {
+        version: 1,
+        kind: 'content',
+        parts: [{ kind: 'text', text: 'a long body' }],
+      };
+      const serialized = serializedToolResultProjection(projection);
+      const placeholder = buildLedgerArchivedToolResultPlaceholder({
+        storage: 'ledger',
+        runtimeEventId: 'event-read-result',
+        toolCallId: 'tool-read',
+        toolName: 'Read',
+        sourceProjectionDigest: durableToolResultProjectionDigest(projection),
+        bodySha256: sha256(serialized),
+        originalBytes: Buffer.byteLength(serialized),
+        originalEstimatedTokens: 100,
+        reason: 'stale_tool_result_pruned_before_compact',
+      });
+      const archiveArgs = { ref: placeholder.resourceRef!, operation: 'read' };
+      const dispatch = (
+        id: string,
+        ts: number,
+        toolCallId: string,
+        toolName: string,
+        args: unknown,
+      ): RuntimeEvent =>
+        runtimeEvent({
+          id,
+          ts,
+          actions: {
+            toolDispatch: {
+              protocol: 't1_after_preflight_v1',
+              operationId: `operation-${toolCallId}`,
+              providerToolCallId: toolCallId,
+              toolName,
+              canonicalArgsHash: canonicalToolArgsHash(toolName, args),
+              recoveryMode: 'reconcile',
+            },
+          },
+          refs: { operationId: `operation-${toolCallId}`, toolCallId },
+        });
+      const sourceEvents: RuntimeEvent[] = [
+        invocationOpenedEvent({
+          runId: 'run-source',
+          invocationId: 'invocation-source',
+          turnId: 'turn-1',
+          cwd: root,
+        }),
+        runtimeEvent({
+          id: 'event-user',
+          role: 'user',
+          author: 'user',
+          content: { kind: 'text', text: 'read the notes' },
+        }),
+        runtimeEvent({
+          id: 'event-read-call',
+          ts: 2,
+          role: 'model',
+          author: 'agent',
+          content: {
+            kind: 'function_call',
+            id: 'tool-read',
+            name: 'Read',
+            args: { path: 'notes.md' },
+          },
+        }),
+        dispatch('event-read-dispatch', 2.1, 'tool-read', 'Read', { path: 'notes.md' }),
+        runtimeEvent({
+          id: 'event-read-result',
+          ts: 2.2,
+          role: 'tool',
+          author: 'tool',
+          content: {
+            kind: 'function_response',
+            id: 'tool-read',
+            name: 'Read',
+            result: { kind: 'text', text: 'a long body' },
+            modelProjection: projection,
+          },
+          refs: { operationId: 'operation-tool-read', toolCallId: 'tool-read' },
+        }),
+        runtimeEvent({
+          id: 'event-archive-call',
+          ts: 3,
+          role: 'model',
+          author: 'agent',
+          content: {
+            kind: 'function_call',
+            id: 'tool-archive',
+            name: 'ArchiveRead',
+            args: archiveArgs,
+          },
+        }),
+        dispatch('event-archive-dispatch', 3.1, 'tool-archive', 'ArchiveRead', archiveArgs),
+        runtimeEvent({
+          id: 'event-archive-result',
+          ts: 3.2,
+          role: 'tool',
+          author: 'tool',
+          content: {
+            kind: 'function_response',
+            id: 'tool-archive',
+            name: 'ArchiveRead',
+            result: { kind: 'text', text: 'a long body' },
+          },
+          refs: { operationId: 'operation-tool-archive', toolCallId: 'tool-archive' },
+        }),
+        runtimeEvent({ id: 'event-terminal', ts: 4, status: 'completed' }),
+      ];
+      await runtimeEventStore.importConversationCopyRuntimeEvents('session-source', [
+        { runId: 'run-source', events: sourceEvents },
+      ]);
+      const transition = buildModelProjectionTransition({
+        sessionId: 'session-source',
+        target: {
+          runtimeEventId: 'event-read-result',
+          part: 'tool_result',
+          toolCallId: 'tool-read',
+          toolName: 'Read',
+        },
+        sourceProjection: projection,
+        replacement: archivedToolResultProjection(placeholder),
+        now: 2.5,
+      });
+      await runStore.appendEvent('session-source', 'run-source', {
+        type: MODEL_PROJECTION_TRANSITION_EVENT_TYPE,
+        id: transition.transitionId,
+        runId: 'run-source',
+        sessionId: 'session-source',
+        turnId: 'turn-1',
+        ts: 2.5,
+        data: { runtimeEventId: 'event-read-result', part: 'tool_result', transition },
+      });
+      await runStore.appendEvent('session-source', 'run-source', {
+        type: 'model_stream_completed',
+        id: 'completed-source',
+        runId: 'run-source',
+        sessionId: 'session-source',
+        turnId: 'turn-1',
+        ts: 5,
+      });
+      const source = await new RuntimeReadModel({ runtimeEventStore }).getSessionView(
+        'session-source',
+      );
+      const plan = await prepareTestCopyPlan(source, source.messages, runStore, runtimeEventStore);
+      if (sourceDispatch === 'corrupt') {
+        for (const event of plan.runs.flatMap(({ runtimeEvents }) => runtimeEvents)) {
+          const recorded = event.actions?.toolDispatch;
+          if (recorded?.providerToolCallId !== 'tool-archive') continue;
+          event.actions = {
+            ...event.actions,
+            toolDispatch: {
+              ...recorded,
+              canonicalArgsHash: canonicalToolArgsHash('ArchiveRead', { ref: 'another' }),
+            },
+          };
+        }
+      }
+      const copy = cloneConversationRuntimeLedger({
+        plan,
+        copiedMessages: source.messages,
+        referenceMap: {
+          mode: 'exact',
+          linkedChildren: { mode: 'reject' },
+          sourceSessionId: 'session-source',
+          targetSessionId: 'session-target',
+          artifactIds: new Map(),
+          relativePaths: new Map(),
+        },
+        runStore,
+        runtimeEventStore,
+        newId: () => crypto.randomUUID(),
+      });
+      if (sourceDispatch === 'corrupt') {
+        await assert.rejects(copy, /canonical_args_hash_conflict/);
+        return;
+      }
+      await copy;
+
+      const [targetRun] = await runtimeEventStore.listSessionInvocations('session-target');
+      assert.ok(targetRun);
+      const targetEvents = await runtimeEventStore.readRuntimeEvents(
+        'session-target',
+        targetRun.runId,
+      );
+      const copiedCall = targetEvents.find(
+        (event) => event.content?.kind === 'function_call' && event.content.name === 'ArchiveRead',
+      );
+      assert.ok(copiedCall?.content?.kind === 'function_call');
+      const copiedArgs = copiedCall.content.args as { ref: string };
+      assert.notEqual(copiedArgs.ref, archiveArgs.ref, 'the copy names the copied result');
+      const scan = scanToolLedger(targetEvents);
+      assert.equal(scan.hasCorruption, false, JSON.stringify(scan.issues));
+    } finally {
+      await rm(root, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+}
 
 function prepareTestCopyPlan(
   source: RuntimeReadModelSessionView,
