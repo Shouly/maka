@@ -81,6 +81,7 @@ import {
 } from '../../store/index.js';
 import { startWindowCommands } from '../../store/window-commands.js';
 import type { SessionListRow } from '../../store/session-list-model.js';
+import type { DesktopSessionSummary } from '../../bridge/sessions.js';
 import type { ProjectRowModel } from '../../hooks/use-session-list.js';
 import { toast } from '../../store/toast-store.js';
 import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
@@ -767,16 +768,39 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
   );
 }
 
-/** The onboarding snapshot has to be re-read after a task lands, or the hero
- *  keeps saying "no tasks yet" over a workspace that now has one. */
+/** The onboarding snapshot carries each Session's send readiness, which the
+ *  sidebar and a Session's notices read, so it is re-read when that can change:
+ *  which Sessions exist, the Connection and model each is bound to, and the
+ *  Connections. Not on a Session's activity, which changes at every step of a
+ *  running turn and used to re-read the whole snapshot each time. */
 function OnboardingRefresh() {
-  const revision = useStore(sessionsStore, (state) => state.revision);
+  const sessionBindings = useStore(sessionsStore, (state) =>
+    state.revision === 0 ? undefined : onboardingSessionBindings(state.sessions),
+  );
+  const connections = useStore(connectionsStore, (state) => state.data);
   useEffect(() => {
-    if (revision === 0) return;
+    if (sessionBindings === undefined) return;
     if (onboardingStore.getState().snapshot === undefined) return;
     void onboardingStore.refresh();
-  }, [revision]);
+  }, [sessionBindings, connections]);
   return null;
+}
+
+function onboardingSessionBindings(sessions: readonly DesktopSessionSummary[]): string {
+  // `localState` included: a task shown before its Host has it is read again
+  // once the Host's row replaces the local one.
+  return sessions
+    .map((row) =>
+      [
+        row.id,
+        row.localState ?? '',
+        row.backend,
+        row.llmConnectionId ?? '',
+        row.llmConnectionSlug,
+        row.model,
+      ].join('\u0000'),
+    )
+    .join('\n');
 }
 
 function hostRef(

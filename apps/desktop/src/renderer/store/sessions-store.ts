@@ -62,9 +62,11 @@ export function createSessionsStore(api = bridge) {
   let lifetime = 0;
   const changeListeners = new Set<(event: SessionChangedEvent) => void>();
   const catalogHooks = new Set<CatalogReadHook>();
-  const refresh = async () => {
+  const read = async () => {
     const request = ++generation;
-    store.setState({ loading: true, error: undefined });
+    // Only the first read shows as loading: a background refresh has rows to
+    // show, and flipping the flag twice per change re-rendered every reader.
+    if (store.getState().revision === 0) store.setState({ loading: true, error: undefined });
     const observed = [...catalogHooks].map((hook) => [hook, hook.before()] as const);
     try {
       const result = await api.listSessionsWithCoverage();
@@ -72,29 +74,70 @@ export function createSessionsStore(api = bridge) {
       // Preload already reconciles offline Hosts, removed profiles and Guest access.
       const rows = result.sessions;
       for (const [hook, capture] of observed) hook.after(rows, capture);
-      store.setState((s) => {
-        const selected = s.sessions.find((row) => row.id === s.activeId);
-        const removed = selected && !rows.some((row) => row.id === selected.id && !row.isArchived);
-        // Bootstrap only once. A late catalog refresh must never steal an explicit
-        // new-task selection or reopen an archived task.
-        const bootstrap = !selectionInitialized && !hasNewTaskReloadIntent();
-        selectionInitialized = true;
-        const initial = bootstrap
-          ? rows
-              .filter((row) => !row.isArchived)
-              .sort((a, b) => (b.lastMessageAt ?? 0) - (a.lastMessageAt ?? 0))[0]?.id
-          : undefined;
-        return {
-          sessions: rows,
-          activeId: removed ? undefined : (s.activeId ?? initial),
-          completeHostIds: result.completeHostIds,
-          revision: s.revision + 1,
-          loading: false,
-        };
+      const s = store.getState();
+      const sessions = reconcileRows(s.sessions, rows);
+      const completeHostIds = sameIds(s.completeHostIds, result.completeHostIds)
+        ? s.completeHostIds
+        : result.completeHostIds;
+      const selected = s.sessions.find((row) => row.id === s.activeId);
+      const removed = selected && !rows.some((row) => row.id === selected.id && !row.isArchived);
+      // Bootstrap only once. A late catalog refresh must never steal an explicit
+      // new-task selection or reopen an archived task.
+      const bootstrap = !selectionInitialized && !hasNewTaskReloadIntent();
+      selectionInitialized = true;
+      const initial = bootstrap
+        ? rows
+            .filter((row) => !row.isArchived)
+            .sort((a, b) => (b.lastMessageAt ?? 0) - (a.lastMessageAt ?? 0))[0]?.id
+        : undefined;
+      const activeId = removed ? undefined : (s.activeId ?? initial);
+      // A change event that left the catalog as it was publishes nothing: a
+      // running turn raises one per step, and each used to re-render the shell.
+      if (
+        s.revision > 0 &&
+        sessions === s.sessions &&
+        completeHostIds === s.completeHostIds &&
+        activeId === s.activeId &&
+        !s.loading &&
+        s.error === undefined
+      ) {
+        return;
+      }
+      store.setState({
+        sessions,
+        activeId,
+        completeHostIds,
+        revision: s.revision + 1,
+        loading: false,
+        error: undefined,
       });
     } catch (error) {
       if (request === generation) store.setState({ error: errorMessage(error), loading: false });
     }
+  };
+  // One read in flight at a time. A caller arriving while one runs may have
+  // just changed the catalog, which that read can predate, so it waits for a
+  // read that starts after it; every caller arriving meanwhile shares that one.
+  let running: Promise<void> | undefined;
+  let queued: Promise<void> | undefined;
+  const refresh = (): Promise<void> => {
+    if (!running) {
+      running = read().finally(() => {
+        running = undefined;
+      });
+      return running;
+    }
+    queued ??= running.then(
+      () => {
+        queued = undefined;
+        return refresh();
+      },
+      () => {
+        queued = undefined;
+        return refresh();
+      },
+    );
+    return queued;
   };
   const select = (activeId: string | undefined) => {
     selectionInitialized = true;
@@ -183,3 +226,39 @@ export function createSessionsStore(api = bridge) {
   };
 }
 export const sessionsStore = createSessionsStore();
+
+/**
+ * The catalog as read, keeping the previous object for every row whose content
+ * is unchanged, and the previous array when nothing changed at all, so a
+ * reader selecting one row or the list re-renders only when it differs.
+ */
+function reconcileRows(
+  previous: readonly DesktopSessionSummary[],
+  rows: readonly DesktopSessionSummary[],
+): readonly DesktopSessionSummary[] {
+  const byId = new Map(previous.map((row) => [row.id, row]));
+  let unchanged = previous.length === rows.length;
+  const next = rows.map((row, index) => {
+    const old = byId.get(row.id);
+    const kept = old && serialized(old) === serialized(row) ? old : row;
+    if (kept !== previous[index]) unchanged = false;
+    return kept;
+  });
+  return unchanged ? previous : next;
+}
+
+/** Rows are immutable once read; a kept row is compared again on every read. */
+const serializedRows = new WeakMap<DesktopSessionSummary, string>();
+
+function serialized(row: DesktopSessionSummary): string {
+  let value = serializedRows.get(row);
+  if (value === undefined) {
+    value = JSON.stringify(row);
+    serializedRows.set(row, value);
+  }
+  return value;
+}
+
+function sameIds(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
+}

@@ -537,6 +537,75 @@ test('catalog uses the preload snapshot including its retained offline hosts', a
   await store.refresh();
   assert.equal(store.getState().activeId, undefined);
 });
+test('catalog change events coalesce into one read after the read in flight', async () => {
+  const reads: Array<
+    ReturnType<
+      typeof deferred<{ sessions: sessions.DesktopSessionSummary[]; completeHostIds: string[] }>
+    >
+  > = [];
+  const store = createSessionsStore({
+    ...sessions,
+    listSessionsWithCoverage() {
+      const read = deferred<{
+        sessions: sessions.DesktopSessionSummary[];
+        completeHostIds: string[];
+      }>();
+      reads.push(read);
+      return read.promise;
+    },
+  });
+  const first = store.refresh();
+  // A running turn raises a change event per step; while one read is out they
+  // all wait for the same next one.
+  const second = store.refresh();
+  const third = store.refresh();
+  assert.equal(reads.length, 1);
+  assert.equal(second, third);
+  reads[0]!.resolve({ sessions: [row('a')], completeHostIds: ['host'] });
+  await first;
+  await tick();
+  assert.equal(reads.length, 2);
+  reads[1]!.resolve({ sessions: [row('a'), row('b')], completeHostIds: ['host'] });
+  await second;
+  assert.equal(reads.length, 2);
+  // The caller of `second` may have changed the catalog after `first` began;
+  // it resolves only once a read that started after it has landed.
+  assert.deepEqual(
+    store.getState().sessions.map((item) => item.id),
+    ['a', 'b'],
+  );
+});
+test('an unchanged catalog read publishes nothing and a changed row alone is replaced', async () => {
+  let rows = [row('a'), row('b')];
+  const store = createSessionsStore({
+    ...sessions,
+    async listSessionsWithCoverage() {
+      // Fresh objects every read, as IPC delivers them.
+      return { sessions: rows.map((item) => ({ ...item })), completeHostIds: ['host'] };
+    },
+  });
+  await store.refresh();
+  const settled = store.getState();
+  let published = 0;
+  const unsubscribe = store.subscribe(() => {
+    published += 1;
+  });
+  await store.refresh();
+  assert.equal(published, 0);
+  assert.equal(store.getState(), settled);
+
+  rows = [row('a'), { ...row('b'), name: 'renamed' }];
+  await store.refresh();
+  unsubscribe();
+  const next = store.getState();
+  assert.equal(published, 1);
+  assert.equal(next.revision, settled.revision + 1);
+  assert.equal(next.sessions[0], settled.sessions[0]);
+  assert.notEqual(next.sessions[1], settled.sessions[1]);
+  assert.equal(next.sessions[1]?.name, 'renamed');
+  // A background read never shows as loading once rows are there.
+  assert.equal(next.loading, false);
+});
 test('catalog failure is not an empty successful observation', async () => {
   const store = createSessionsStore({
     ...sessions,
