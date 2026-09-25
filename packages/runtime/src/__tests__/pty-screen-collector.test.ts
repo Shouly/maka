@@ -42,6 +42,48 @@ describe('PtyScreenCollector', () => {
     }
   });
 
+  test('merges a flood of tiny chunks so control at the cut does not wait behind it', async () => {
+    // node-pty delivers a flood as many small events. One paced parser write
+    // per event held a keystroke behind twenty thousand of them for over 20 s.
+    const stack = await loadPtyStack();
+    const originalWrite = stack.Terminal.prototype.write;
+    let writes = 0;
+    stack.Terminal.prototype.write = function (this: unknown, ...args: unknown[]) {
+      writes += 1;
+      return (originalWrite as (...inner: unknown[]) => void).apply(this, args);
+    } as typeof originalWrite;
+    const { collector, failures } = await createCollector();
+    try {
+      for (let index = 0; index < 20_000; index += 1) {
+        collector.accept(`line ${String(index).padStart(6, '0')}\r\n`);
+      }
+      await collector.mutateAtCut(() => {});
+      assert.ok(writes <= 2, `${writes} parser writes for one flood`);
+      const output = (await collector.snapshotAtCut()).output;
+      assert.match(output.screen, /line 019999/);
+      assert.deepEqual(failures, []);
+    } finally {
+      stack.Terminal.prototype.write = originalWrite;
+      collector.dispose();
+    }
+  });
+
+  test('output that arrives after a cut is queued is not seen by it', async () => {
+    const { collector, failures } = await createCollector();
+    try {
+      collector.accept('before-cut\r\n');
+      const atCut = collector.snapshotAtCut();
+      collector.accept('after-cut\r\n');
+      const seen = (await atCut).output;
+      assert.match(seen.screen, /before-cut/);
+      assert.doesNotMatch(seen.screen, /after-cut/);
+      assert.match((await collector.snapshotAtCut()).output.screen, /after-cut/);
+      assert.deepEqual(failures, []);
+    } finally {
+      collector.dispose();
+    }
+  });
+
   test('keeps the newest frame and evicts the oldest queued data when the parse queue exceeds its budget', async () => {
     const { collector, failures } = await createCollector();
     try {

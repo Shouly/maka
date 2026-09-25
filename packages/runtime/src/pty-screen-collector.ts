@@ -44,7 +44,14 @@ interface RawRow {
 interface PendingEntry {
   data: string;
   bytes: number;
+  /** The newest admission merged into this entry. */
+  generation: number;
   dropped: boolean;
+  /**
+   * No more data may join this entry: its write has started, or an operation
+   * was queued behind it and must not see output admitted after it.
+   */
+  sealed: boolean;
 }
 
 interface SanitizedBuffer {
@@ -117,23 +124,46 @@ export class PtyScreenCollector {
     }
     const generation = ++this.admittedGeneration;
     const bytes = Buffer.byteLength(data, 'utf8');
-    const entry: PendingEntry = { data, bytes, dropped: false };
+    // node-pty delivers a flood as many tiny events, and every queued write is
+    // paced by the headless terminal's scheduler, so the NUMBER of queued
+    // writes is what an operation at the cut waits behind: twenty thousand
+    // 15-byte lines held a keystroke for over 20 s. Data that has not started
+    // parsing joins the tail entry instead, in order, up to the byte budget.
+    const tail = this.pending.at(-1);
+    if (
+      tail &&
+      !tail.dropped &&
+      !tail.sealed &&
+      tail.bytes + bytes <= PTY_PARSER_HIGH_WATER_BYTES
+    ) {
+      tail.data += data;
+      tail.bytes += bytes;
+      tail.generation = generation;
+    } else {
+      this.enqueue({ data, bytes, generation, dropped: false, sealed: false });
+    }
     this.pendingBytes += bytes;
-    this.pending.push(entry);
     this.evictOldestIfOverBudget();
     this.options.onDirty(generation);
+  }
 
-    const parse = this.sequence.then(() => (entry.dropped ? undefined : this.write(entry.data)));
+  private enqueue(entry: PendingEntry): void {
+    this.pending.push(entry);
+    const parse = this.sequence.then(() => {
+      if (entry.dropped) return undefined;
+      entry.sealed = true;
+      return this.write(entry.data);
+    });
     this.sequence = parse.then(
       () => {
         if (entry.dropped) return;
-        this.parsedGeneration = generation;
-        this.pendingBytes -= bytes;
+        this.parsedGeneration = entry.generation;
+        this.pendingBytes -= entry.bytes;
         const index = this.pending.indexOf(entry);
         if (index >= 0) this.pending.splice(index, 1);
       },
       (error: unknown) => {
-        if (!entry.dropped) this.pendingBytes -= bytes;
+        if (!entry.dropped) this.pendingBytes -= entry.bytes;
         this.fail(asError(error, 'PTY parser failed'));
       },
     );
@@ -165,6 +195,10 @@ export class PtyScreenCollector {
   }
 
   mutateAtCut<T>(mutation: () => T | Promise<T>): Promise<T> {
+    // The cut sits behind the data admitted so far, and only that: output that
+    // arrives after it must queue after it, not join an entry ahead of it.
+    const tail = this.pending.at(-1);
+    if (tail) tail.sealed = true;
     const result = this.sequence.then(async () => {
       this.throwIfUnavailable();
       return await mutation();
