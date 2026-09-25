@@ -225,7 +225,7 @@ describe('background memory pass', () => {
     assert.match(fixture.prompts[0]!.system, /Filing is your job/);
     assert.match(
       fixture.prompts[0]!.system,
-      /"Read before writing" and <privacy_requirements> are your rulebook in full/,
+      /The rest of "Writing" and <privacy_requirements> are your rulebook in full/,
     );
     assert.match(fixture.prompts[0]!.system, /<rules>\nRULES_SENTINEL\n<\/rules>/);
     // Stage one sees the listing and the exchange, not file bodies.

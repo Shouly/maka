@@ -58,16 +58,10 @@ test('the static prompt layer matches its golden file', () => {
 test('a conditional section is present only when its capability is', () => {
   const withMemory = assembleMainSessionSystemPrompt([], {}, new Set(['memory']));
   const without = assembleMainSessionSystemPrompt([]);
-  assert.match(withMemory, /^<memory_filesystem>$/mu);
-  assert.doesNotMatch(without, /<memory_filesystem>/u);
+  assert.match(withMemory, /^<user_memory>$/mu);
+  assert.doesNotMatch(without, /<user_memory>/u);
   // Everything unconditional is in both, in the same order.
-  assert.equal(
-    without,
-    withMemory.replace(
-      /\n\n<memory_filesystem>[\s\S]*<\/memory_filesystem>\n\nMemory files are size-capped[^\n]*/u,
-      '',
-    ),
-  );
+  assert.equal(without, withMemory.replace(/\n\n<user_memory>[\s\S]*<\/user_memory>/u, ''));
 });
 
 test('static sections are ordered, unique and non-empty', () => {
