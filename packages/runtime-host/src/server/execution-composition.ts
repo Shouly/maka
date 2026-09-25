@@ -262,15 +262,8 @@ import {
 } from './web-fetch-tool.js';
 import { createHostExecutionArtifactServices } from './execution-artifacts.js';
 import { openToolResultArchiveEvidenceReader } from '@maka/storage/tool-result-archive-evidence';
-import {
-  createRuntimeHostWorkspaceExecutionComposition,
-  RuntimeHostWorkspaceExecutionError,
-  type RuntimeHostWorkspaceExecutionComposition,
-  type RuntimeHostWorkspaceFilesystemWorker,
-} from './workspace-execution-composition.js';
 
 export interface ExecutionRuntimeHostComposition extends RuntimeHostComposition {
-  readonly workspaceExecution: RuntimeHostWorkspaceExecutionComposition;
   readonly plugins: HostPluginPlatform;
 }
 
@@ -340,7 +333,6 @@ export async function createExecutionRuntimeHostComposition(
   let unsubscribeTranscriptChanges: (() => void) | undefined;
   let transcriptReader: SessionTranscriptReader | undefined;
   let unsubscribeUsageChanges: (() => void) | undefined;
-  let workspaceExecution: RuntimeHostWorkspaceExecutionComposition | undefined;
   let goalExecutions: HostGoalExecutionCoordinator | undefined;
   let taskNotifications: HostBackgroundTaskNotificationCoordinator | undefined;
   let pluginPlatform: HostPluginPlatform | undefined;
@@ -485,12 +477,6 @@ export async function createExecutionRuntimeHostComposition(
             getLaunchSpec: filesystemWorkerLaunchSpecProvider,
           })
         : undefined;
-    const workspaceFilesystemWorker = filesystemWorker
-      ? adaptWorkspaceFilesystemWorker(filesystemWorker)
-      : undefined;
-    workspaceExecution = createRuntimeHostWorkspaceExecutionComposition({
-      ...(workspaceFilesystemWorker ? { filesystemWorker: workspaceFilesystemWorker } : {}),
-    });
     const sessionTask = new HostSessionTaskCoordinator(
       sessionTaskStore,
       sessionAdmission,
@@ -2685,7 +2671,6 @@ export async function createExecutionRuntimeHostComposition(
         drain: [
           () => turnAccessRequests?.beginDrain(),
           () => rootCoordinator?.beginDrain(),
-          () => workspaceExecution?.beginDrain(),
           () => runtimeResources?.beginDrain(),
           () => messages.beginDrain(),
           () => interactions.beginDrain(),
@@ -2699,7 +2684,6 @@ export async function createExecutionRuntimeHostComposition(
             await rootCloseTask;
           },
           () => runtimeResources?.close(),
-          () => workspaceExecution?.close(),
           () => sessionEffects?.close(),
           () => messages.close(),
           () => interactions.close(),
@@ -2789,7 +2773,6 @@ export async function createExecutionRuntimeHostComposition(
     return {
       handlers,
       moduleIds: Object.freeze(domainModules.map(({ id }) => id)),
-      workspaceExecution: requireWorkspaceExecution(workspaceExecution),
       plugins: pluginPlatform,
       continuity: continuityCoordinator,
       clientCapabilities,
@@ -2878,11 +2861,6 @@ export async function createExecutionRuntimeHostComposition(
     }
     goalExecutions?.beginDrain();
     taskNotifications?.beginDrain();
-    try {
-      await workspaceExecution?.close();
-    } catch (closeError) {
-      errors.push(closeError);
-    }
     try {
       await sessionEffects?.close();
     } catch (closeError) {
@@ -3002,40 +2980,6 @@ function sessionExecutionConnectionRef(
 function requireRootCoordinator(coordinator: RootTurnCoordinator | undefined): RootTurnCoordinator {
   if (!coordinator) throw new Error('Runtime Host root coordinator is not composed');
   return coordinator;
-}
-
-function requireWorkspaceExecution(
-  composition: RuntimeHostWorkspaceExecutionComposition | undefined,
-): RuntimeHostWorkspaceExecutionComposition {
-  if (!composition) throw new Error('Runtime Host workspace execution is not composed');
-  return composition;
-}
-
-function adaptWorkspaceFilesystemWorker(
-  worker: Pick<FilesystemWorkerClient, 'execute'>,
-): RuntimeHostWorkspaceFilesystemWorker {
-  return {
-    async execute(input) {
-      // Read-only operations never participate in CAS; the adapter says so
-      // explicitly (#3484) instead of relying on an absent optional field.
-      const result = await worker.execute({
-        ...input,
-        expectedIdentity: 'unchecked',
-      });
-      switch (result.kind) {
-        case 'read':
-        case 'read_image':
-        case 'glob':
-        case 'grep':
-          return result;
-        default:
-          throw new RuntimeHostWorkspaceExecutionError(
-            'workspace_operation_denied',
-            `Read-only filesystem worker returned mutating result ${result.kind}`,
-          );
-      }
-    },
-  };
 }
 
 function requireContinuity(

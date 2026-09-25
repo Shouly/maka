@@ -137,23 +137,6 @@ export function createReadOnlyPermissionProfile(): PermissionProfileManaged {
 }
 
 /**
- * Read-only and held to the workspace roots, for a surface someone other than
- * the machine's owner drives — an attached checkout served to a remote client
- * — where the built-in whole-disk read would hand them the machine.
- */
-export function createWorkspaceReadOnlyPermissionProfile(): PermissionProfileManaged {
-  return {
-    type: 'managed',
-    name: 'workspace-read-only',
-    fileSystem: {
-      kind: 'restricted',
-      entries: [{ kind: 'special', access: 'read', special: ':workspace_roots' }],
-    },
-    network: { kind: 'restricted' },
-  };
-}
-
-/**
  * True when a managed profile grants nothing beyond reading: no filesystem
  * entry allows writing and the network stays restricted.
  *
