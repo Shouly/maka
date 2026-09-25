@@ -206,6 +206,35 @@ Watermark after this batch: `99cfeb7e9`. Rows are proposed unless a
   right after the answer and that terminal refresh hides it. Client capability
   requests are not Run events and set no status; the Host refreshes them at
   admission. The notification and dock bounce half stays under Consider.
+- `e92e4da21` #5086: **bug confirmed** (7 of the new tests fail on the old
+  bridge). The CDP bridge kept in-flight commands by id alone, so a repeated
+  id, in one session or across flattened sessions, overwrote the first entry:
+  one result was delivered and the other dropped, and the client waited out
+  its ~30s timeout. Taken as is: commands are keyed by session and id, and a
+  duplicate within one session is refused.
+- `8f3e80c59` #5483: **bug confirmed**. The embedded browser's rect is
+  measured in renderer CSS px and was handed to the native view, which is
+  placed in window DIP; they agree only at 100% zoom, so Cmd +/- misplaced
+  the page. Main now scales the rect by the sender's zoom factor (edges
+  scaled, then subtracted, so no rounding seam). Not taken: upstream reapplies
+  a cached rect on `zoom-changed`, which Electron emits only for mouse-wheel
+  zoom requests, not the menu's zoomIn/zoomOut we ship. Instead the renderer's
+  per-frame measurement includes `devicePixelRatio`, so a zoom republishes
+  even when the CSS rect stays the same.
+- `efeba2ee4` #5603, security parts: **bugs confirmed** (6 of the new tests
+  fail on the old code). The worst: a pre-registered client's id and secret
+  followed whatever authorization server the resource's metadata named, so a
+  malicious MCP server could collect the secret. Taken from upstream on an
+  identical base:
+  - A static client requires `oauth.issuer` and is refused when discovery
+    finds another issuer; its tokens are used only under that issuer.
+  - Stored credentials are bound to a hash of the static registration, and a
+    change of issuer, client id or secret retires them.
+  - An OAuth error callback is issuer-validated before its error is accepted.
+  Not taken: the rest of the commit (the MCP editor, Module Hub routing, the
+  update result and pending-login state), which is refactoring. A static
+  client configured without `issuer` now fails with an error saying so; the
+  editor has no OAuth fields, so it is set in the JSON config.
 
 #### Deferred
 
