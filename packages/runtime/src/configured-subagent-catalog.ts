@@ -105,7 +105,9 @@ export function createConfiguredSubagentCatalog(deps: {
       const preset = (await deps.getPresets()).find((candidate) => candidate.id === id);
       if (!preset)
         throw new Error(
-          `Unknown subagent_id "${id}". Call ListAgents with view=selection before spawning.`,
+          // Agent (subagent_type) and the agent graph (subagent_id) both land
+          // here, so the message names the preset, not either field.
+          `Unknown subagent preset "${id}"; no child agent was started. Call ListAgents with view=selection to resolve it.`,
         );
       const inspected = await inspect(preset);
       if (inspected.item.availability.status !== 'available') {

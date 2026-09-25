@@ -338,7 +338,10 @@ async function resolvePresetDefinition(
   );
   if (!preset)
     throw new Error(
-      `Unknown subagent_id "${subagentId}". Call ListAgents with view=selection first.`,
+      `Unknown subagent_type "${subagentId}"; no child agent was started. Pass one of the agent ` +
+        'types listed in your context (built-in profiles: ' +
+        `${agentProfilesForDefinitions(definitions).join(', ')}), or call ListAgents with ` +
+        'view=selection to resolve it.',
     );
   if (preset.availability?.status !== 'available') {
     throw new Error(`Subagent preset "${subagentId}" is unavailable.`);
