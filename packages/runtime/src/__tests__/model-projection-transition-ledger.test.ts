@@ -301,6 +301,23 @@ describe('effective model projection reduction', () => {
 
     assert.deepEqual(candidates, []);
   });
+
+  test('weighs a Chinese result by its bytes, not its characters', () => {
+    // As many characters as the ASCII result above, but each is about a token:
+    // the gate must see it as the larger result it is.
+    const event = toolResultEvent('rt-1', 'turn-1', { body: '读'.repeat(4_000) });
+
+    const candidates = collectStaleToolResultArchiveCandidates(
+      [event, toolResultEvent('rt-2', 'turn-2', { body: 'tail' })],
+      { enabled: true, maxResultEstimatedTokens: 2048, minRecentTurnsFull: 1 },
+      4,
+    );
+
+    assert.deepEqual(
+      candidates.map((candidate) => candidate.runtimeEventId),
+      ['rt-1'],
+    );
+  });
 });
 
 describe('durable transition writer', () => {

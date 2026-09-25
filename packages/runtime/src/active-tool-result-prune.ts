@@ -293,7 +293,10 @@ async function rewriteToolResultPart(input: {
   if (!address || address.toolName !== part.toolName) return { changed: false };
   const sourceProjection = address.projection;
   const serializedResult = serializedToolResultProjection(sourceProjection);
-  const originalEstimatedTokens = estimateTokens(serializedResult.length, input.charsPerToken);
+  const originalBytes = utf8ByteLength(serializedResult);
+  // UTF-8 bytes, not UTF-16 units, for the reason the stale-result gate gives
+  // (tool-result-archive-transition.ts): a CJK character costs about a token.
+  const originalEstimatedTokens = estimateTokens(originalBytes, input.charsPerToken);
   if (
     input.supersession
       ? originalEstimatedTokens < input.minSupersededResultEstimatedTokens
@@ -309,7 +312,7 @@ async function rewriteToolResultPart(input: {
     toolName: part.toolName,
     sourceProjection,
     serializedResult,
-    originalBytes: utf8ByteLength(serializedResult),
+    originalBytes,
     originalEstimatedTokens,
     reason: 'active_current_turn_tool_result_pruned_before_next_step',
     ...(address.previousTransitionId ? { previousTransitionId: address.previousTransitionId } : {}),
@@ -323,7 +326,10 @@ async function rewriteToolResultPart(input: {
     (payload.outputKind === 'text' || payload.outputKind === 'error-text')
       ? JSON.stringify(outcome.placeholder)
       : serializeToolResultForArchive(outcome.placeholder);
-  const placeholderEstimatedTokens = estimateTokens(placeholderText.length, input.charsPerToken);
+  const placeholderEstimatedTokens = estimateTokens(
+    utf8ByteLength(placeholderText),
+    input.charsPerToken,
+  );
 
   return {
     changed: true,

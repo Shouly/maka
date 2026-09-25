@@ -319,9 +319,11 @@ export function collectStaleToolResultArchiveCandidates(
     const media = projectionArtifactMedia(sourceProjection);
     // An artifact serializes to a short reference and materializes to real
     // image bytes, so the string alone would price a screenshot at nothing.
+    // Text is weighed in UTF-8 bytes, not UTF-16 units: a CJK character is
+    // one unit but about a token, so counting units priced Chinese results at
+    // a quarter of their cost and let them past the gate.
     const originalEstimatedTokens =
-      estimateTokens(serializedResult.length, charsPerToken) +
-      media.length * MATERIALIZED_IMAGE_TOKENS;
+      estimateTokens(originalBytes, charsPerToken) + media.length * MATERIALIZED_IMAGE_TOKENS;
     // A result that carries media is always a candidate: archiving it drops
     // whole images from the request, which is worth doing whatever the
     // reference text around them happens to weigh. The size gate is there to
