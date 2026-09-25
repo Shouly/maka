@@ -12107,6 +12107,7 @@ describe('SessionManager permission mode updates', () => {
         turnId: 'turn-1',
         status: 'running',
         toolMode: 'code_mode',
+        toolBoundary: 't1_after_preflight_v1',
       }),
       [
         makeRunEvent({
@@ -12128,7 +12129,6 @@ describe('SessionManager permission mode updates', () => {
         role: 'user',
         author: 'user',
         content: { kind: 'text', text: 'inspect' },
-        actions: { runtimeProtocol: { toolBoundary: 't1_after_preflight_v1' } },
       }),
     );
     await runStore.appendRuntimeEvent(
@@ -12196,6 +12196,117 @@ describe('SessionManager permission mode updates', () => {
         },
       },
     );
+    assert.equal(
+      runtimeInvocationOutcome(await readInvocation(runStore, session.id, 'run-1')),
+      'failed',
+    );
+  });
+
+  test('startup recovery settles an interrupted ordinary tool before sealing its run', async () => {
+    // The app died while a Bash call ran. Left unsettled, the operation stays
+    // prepared for good: the Session could never be exported, and the model
+    // would never learn the command may have run.
+    const store = new MemorySessionStore();
+    const runStore = new MemoryAgentRunStore();
+    const backends = new BackendRegistry();
+    backends.register('ai-sdk', (ctx) => new TestBackend(ctx));
+    let sessionId = '';
+    const runtimeCommitSink: RuntimeCommitSink = {
+      commitToolPrepared: async () => {
+        throw new Error('not used during recovery');
+      },
+      commitToolOutcome: async (input) => {
+        await runStore.appendRuntimeEvent(sessionId, 'run-1', input.runtimeEvent);
+        return { created: true, runtimeEventSeq: 4 };
+      },
+    };
+    const manager = new SessionManager({
+      store,
+      runStore,
+      runtimeEventStore: Object.assign(runStore, runtimeCommitSink),
+      backends,
+      newId: nextId(),
+      now: nextNow(12_900),
+    });
+    const session = await manager.createSession(makeInput({ status: 'running' }));
+    sessionId = session.id;
+    await seedRunningTurn(store, session.id, 'turn-1');
+    await seedRun(
+      runStore,
+      makeRunHeader({
+        sessionId: session.id,
+        runId: 'run-1',
+        turnId: 'turn-1',
+        status: 'running',
+        toolBoundary: 't1_after_preflight_v1',
+      }),
+      [
+        makeRunEvent({
+          sessionId: session.id,
+          runId: 'run-1',
+          turnId: 'turn-1',
+          type: 'tool_started',
+          ts: 12,
+        }),
+      ],
+    );
+    const args = { command: 'make build' };
+    for (const event of [
+      runtimeEvent({
+        id: 'initial',
+        sessionId: session.id,
+        role: 'user',
+        author: 'user',
+        content: { kind: 'text', text: 'build it' },
+      }),
+      runtimeEvent({
+        id: 'bash-call',
+        sessionId: session.id,
+        role: 'model',
+        author: 'agent',
+        origin: 'provider',
+        modelVisibility: 'visible',
+        content: { kind: 'function_call', id: 'bash-1', name: 'Bash', args },
+        refs: { operationId: 'bash-op', toolCallId: 'bash-1' },
+      }),
+      runtimeEvent({
+        id: 'bash-dispatch',
+        sessionId: session.id,
+        actions: {
+          toolDispatch: {
+            protocol: 't1_after_preflight_v1',
+            operationId: 'bash-op',
+            providerToolCallId: 'bash-1',
+            toolName: 'Bash',
+            canonicalArgsHash: canonicalToolArgsHash('Bash', args),
+            recoveryMode: 'never_auto_retry',
+          },
+        },
+        refs: { operationId: 'bash-op', toolCallId: 'bash-1' },
+      }),
+    ]) {
+      await runStore.appendRuntimeEvent(session.id, 'run-1', event);
+    }
+
+    await manager.recoverInterruptedSessions();
+
+    const events = await runStore.readRuntimeEvents(session.id, 'run-1');
+    const responseIndex = events.findIndex(
+      (event) => event.content?.kind === 'function_response' && event.content.id === 'bash-1',
+    );
+    assert.ok(responseIndex >= 0, 'the interrupted Bash call has a result');
+    const response = events[responseIndex]!;
+    assert.deepEqual(
+      response.content?.kind === 'function_response' ? response.content.result : undefined,
+      {
+        kind: 'text',
+        text: 'Bash was interrupted before its result was recorded. It may or may not have run, in part or in full: check the current state before running it again.',
+        uncertainOutcome: { code: 'outcome_unknown', retrySafe: false },
+      },
+    );
+    // Settled first, then sealed.
+    const terminalIndex = events.findIndex((event) => isTerminalRuntimeEvent(event));
+    assert.ok(terminalIndex > responseIndex);
     assert.equal(
       runtimeInvocationOutcome(await readInvocation(runStore, session.id, 'run-1')),
       'failed',
@@ -14866,6 +14977,8 @@ interface TestRunHeader {
   sessionId: string;
   turnId: string;
   invocationId?: string;
+  /** The invocation's tool-boundary marker, carried by its opening as in production. */
+  toolBoundary?: 't1_after_preflight_v1';
   status: 'created' | 'running' | 'waiting_for_user' | 'completed' | 'failed' | 'cancelled';
   backendKind: PersistedBackendKind;
   llmConnectionId?: string;
@@ -14999,15 +15112,21 @@ async function seedInvocationOpening(
   store: Pick<RuntimeEventStore, 'appendRuntimeEvent'>,
   header: TestRunHeader,
 ): Promise<void> {
+  const opened = buildInvocationOpenedEvent({
+    id: `${header.runId}-invocation-opened`,
+    run: runIdentityOf(header),
+    openedAt: header.createdAt,
+    opening: testInvocationOpening(header),
+  });
   await store.appendRuntimeEvent(
     header.sessionId,
     header.runId,
-    buildInvocationOpenedEvent({
-      id: `${header.runId}-invocation-opened`,
-      run: runIdentityOf(header),
-      openedAt: header.createdAt,
-      opening: testInvocationOpening(header),
-    }),
+    header.toolBoundary
+      ? {
+          ...opened,
+          actions: { ...opened.actions, runtimeProtocol: { toolBoundary: header.toolBoundary } },
+        }
+      : opened,
   );
 }
 

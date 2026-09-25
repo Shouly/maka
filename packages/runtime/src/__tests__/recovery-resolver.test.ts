@@ -26,7 +26,7 @@ import { canonicalToolArgsHash } from '@maka/core/tool-args-identity';
 import type { RuntimeEvent } from '@maka/core/runtime-event';
 import { createSqliteRuntimeStore } from '@maka/storage/sqlite-runtime-store';
 import {
-  buildInterruptedCodeModeOutcomeCommits,
+  buildInterruptedToolOutcomeCommits,
   resolveRuntimeRecovery,
 } from '../recovery-resolver.js';
 
@@ -115,13 +115,33 @@ describe('RecoveryResolver', () => {
       parentToolCallId: 'exec-1',
     });
 
-    const commits = buildInterruptedCodeModeOutcomeCommits(
+    const commits = buildInterruptedToolOutcomeCommits(
       [initialEvent('t1_after_preflight_v1'), outerCall, outerDispatch, nestedCall, nestedDispatch],
       50,
       'code_mode',
     );
 
-    assert.equal(commits.length, 1);
+    // The nested call is settled too, in its own place: hidden, under exec.
+    assert.equal(commits.length, 2);
+    const nested = commits.find((commit) => commit.operationId === 'nested-op');
+    assert.equal(nested?.runtimeEvent.origin, 'code_mode');
+    assert.equal(nested?.runtimeEvent.modelVisibility, 'hidden');
+    assert.deepEqual(nested?.runtimeEvent.refs, {
+      operationId: 'nested-op',
+      toolCallId: 'nested-1',
+      parentToolCallId: 'exec-1',
+      parentOperationId: 'outer-op',
+    });
+    assert.deepEqual(
+      nested?.runtimeEvent.content?.kind === 'function_response'
+        ? nested.runtimeEvent.content.result
+        : undefined,
+      {
+        kind: 'text',
+        text: 'Read was interrupted before its result was recorded. It may or may not have run, in part or in full: check the current state before running it again.',
+        uncertainOutcome: { code: 'outcome_unknown', retrySafe: false },
+      },
+    );
     assert.equal(commits[0]?.operationId, 'outer-op');
     assert.equal(commits[0]?.runtimeEvent.content?.kind, 'function_response');
     assert.equal(
@@ -196,7 +216,7 @@ describe('RecoveryResolver', () => {
         committedAt: 10,
       });
 
-      const [commit] = buildInterruptedCodeModeOutcomeCommits(
+      const [commit] = buildInterruptedToolOutcomeCommits(
         await store.readImmutableRuntimeEvents('session-1', 'run-1'),
         50,
         'code_mode',
@@ -219,8 +239,8 @@ describe('RecoveryResolver', () => {
     }
   });
 
-  it('does not infer Code Mode recovery from a custom direct exec name', () => {
-    const commits = buildInterruptedCodeModeOutcomeCommits(
+  it('settles a direct tool named exec as an ordinary tool, not Code Mode', () => {
+    const commits = buildInterruptedToolOutcomeCommits(
       [
         initialEvent('t1_after_preflight_v1'),
         event({
@@ -244,7 +264,63 @@ describe('RecoveryResolver', () => {
       'direct',
     );
 
-    assert.deepEqual(commits, []);
+    assert.equal(commits.length, 1);
+    assert.deepEqual(
+      commits[0]?.runtimeEvent.content?.kind === 'function_response'
+        ? commits[0].runtimeEvent.content.result
+        : undefined,
+      {
+        kind: 'text',
+        text: 'exec was interrupted before its result was recorded. It may or may not have run, in part or in full: check the current state before running it again.',
+        uncertainOutcome: { code: 'outcome_unknown', retrySafe: false },
+      },
+    );
+  });
+
+  it('leaves an already sealed invocation and a corrupt ledger untouched', () => {
+    const call = event({
+      id: 'bash-call',
+      role: 'model',
+      author: 'agent',
+      origin: 'provider',
+      modelVisibility: 'visible',
+      content: { kind: 'function_call', id: 'bash-1', name: 'Bash', args: {} },
+      refs: { operationId: 'bash-op', toolCallId: 'bash-1' },
+    });
+    const dispatch = dispatchFor({
+      id: 'bash-dispatch',
+      operationId: 'bash-op',
+      toolCallId: 'bash-1',
+      toolName: 'Bash',
+      args: {},
+    });
+    const open = [initialEvent('t1_after_preflight_v1'), call, dispatch];
+    assert.equal(buildInterruptedToolOutcomeCommits(open, 50, 'direct').length, 1);
+    // Sealed: a terminal event takes no events after it.
+    assert.deepEqual(
+      buildInterruptedToolOutcomeCommits(
+        [...open, event({ id: 'terminal', status: 'failed' })],
+        50,
+        'direct',
+      ),
+      [],
+    );
+    // Corrupt: the dispatch no longer authenticates its call.
+    const tampered = dispatchFor({
+      id: 'bash-dispatch',
+      operationId: 'bash-op',
+      toolCallId: 'bash-1',
+      toolName: 'Bash',
+      args: { other: true },
+    });
+    assert.deepEqual(
+      buildInterruptedToolOutcomeCommits(
+        [initialEvent('t1_after_preflight_v1'), call, tampered],
+        50,
+        'direct',
+      ),
+      [],
+    );
   });
 
   it('treats a matching response without dispatch as a completed pre-T1 result', () => {

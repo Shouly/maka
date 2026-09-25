@@ -196,7 +196,7 @@ import {
   classifyAgentRunRecovery,
   type AgentRunRecoveryDecision,
 } from './agent-run-recovery.js';
-import { buildInterruptedCodeModeOutcomeCommits } from './recovery-resolver.js';
+import { buildInterruptedToolOutcomeCommits } from './recovery-resolver.js';
 import {
   isRuntimeHostedRootAuthority,
   RuntimeMessageAuthorityInvariantError,
@@ -5420,7 +5420,7 @@ export class SessionManager {
         continue;
       }
       if (this.runtimeCommitSink) {
-        const interruptedOutcomes = buildInterruptedCodeModeOutcomeCommits(
+        const interruptedOutcomes = buildInterruptedToolOutcomeCommits(
           inspected.runtimeEvents,
           this.deps.now(),
           run.opening.configuration.toolMode,
