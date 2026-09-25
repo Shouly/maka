@@ -277,17 +277,18 @@ describe('Workbar topology', () => {
 
   it('persists per-Session collapse and retires the ownerless global preference', () => {
     cleanups.push(installMemoryLocalStorage({ 'maka-session-workbar-collapsed-v1': 'false' }));
-    // The column is shown unless a Session says otherwise: absent means open.
+    // The column is hidden unless a Session says otherwise: absent means
+    // hidden, and the retired global "shown" does not open it.
     let state = loadWorkbarLayout('a');
-    assert.equal(isSessionWorkbarCollapsed(state), false);
-    state = reduceWorkbarLayout(state, { type: 'collapse', placement: 'right', collapsed: true });
+    assert.equal(isSessionWorkbarCollapsed(state), true);
+    state = reduceWorkbarLayout(state, { type: 'collapse', placement: 'right', collapsed: false });
     state = reduceWorkbarLayout(state, { type: 'activate-session', sessionId: 'b' });
-    assert.equal(isSessionWorkbarCollapsed(state), false);
+    assert.equal(isSessionWorkbarCollapsed(state), true);
     persistWorkbarLayout(state, 'right-visibility');
     assert.equal(localStorage.getItem('maka-session-workbar-collapsed-v1'), null);
-    assert.equal(isSessionWorkbarCollapsed(loadWorkbarLayout('a')), true);
-    assert.equal(isSessionWorkbarCollapsed(loadWorkbarLayout('b')), false);
-    assert.equal(isSessionWorkbarCollapsed(loadWorkbarLayout()), false);
+    assert.equal(isSessionWorkbarCollapsed(loadWorkbarLayout('a')), false);
+    assert.equal(isSessionWorkbarCollapsed(loadWorkbarLayout('b')), true);
+    assert.equal(isSessionWorkbarCollapsed(loadWorkbarLayout()), true);
   });
 
   it('distinguishes an unhydrated catalog from an authoritative empty snapshot', () => {
@@ -318,13 +319,15 @@ describe('Workbar topology', () => {
 
   it('ignores malformed collapse entries and treats prototype names as Session keys', () => {
     cleanups.push(installMemoryLocalStorage({
-      'maka-session-workbar-collapsed-v2': '{"a":"false","b":true,"__proto__":true}',
+      'maka-session-workbar-collapsed-v2': '{"a":"false","c":0,"b":false,"__proto__":false}',
     }));
-    // "false" is a string, not a boolean, so `a` keeps the default.
-    assert.equal(isSessionWorkbarCollapsed(loadWorkbarLayout('a')), false);
-    assert.equal(isSessionWorkbarCollapsed(loadWorkbarLayout('b')), true);
-    assert.equal(isSessionWorkbarCollapsed(loadWorkbarLayout('__proto__')), true);
-    assert.equal(isSessionWorkbarCollapsed(loadWorkbarLayout('constructor')), false);
+    // "false" and 0 are not booleans, so `a` and `c` keep the default: hidden.
+    assert.equal(isSessionWorkbarCollapsed(loadWorkbarLayout('a')), true);
+    assert.equal(isSessionWorkbarCollapsed(loadWorkbarLayout('c')), true);
+    assert.equal(isSessionWorkbarCollapsed(loadWorkbarLayout('b')), false);
+    assert.equal(isSessionWorkbarCollapsed(loadWorkbarLayout('__proto__')), false);
+    // An inherited name is not an entry.
+    assert.equal(isSessionWorkbarCollapsed(loadWorkbarLayout('constructor')), true);
     localStorage.setItem('maka-session-workbar-collapsed-v2', '{broken');
     assert.deepEqual(loadWorkbarLayout().collapsedBySession, {});
   });
