@@ -35,7 +35,11 @@ import { getShellCopy } from '../../locales/shell-copy.js';
 import { buildPaletteCommands } from '../../components/palette/commands.js';
 import { TranscriptTurn } from '../../components/session/TranscriptTurn.js';
 import { renderToolContent } from '../../components/session/tools/registry.js';
-import { TurnStatusToolStep } from '../../components/session/tools/TurnStatusStep.js';
+import {
+  TurnStatusThinkingStep,
+  TurnStatusToolStep,
+} from '../../components/session/tools/TurnStatusStep.js';
+import { reasoningHeadline } from '../../lib/reasoning-label.js';
 import { ToolFailureBlock } from '../../components/session/tools/ToolFailureBlock.js';
 import { TOOL_NAMES } from '@maka/core/tool-names';
 import {
@@ -454,17 +458,59 @@ test('a run of reasoning with no call is a run too, so the turn keeps its shape 
   );
   assert.ok(statusText(called).includes(toolStepLabel(oneCall, 'en').text), statusText(called));
 
-  // Done with no call: the run says "Thought process", the one way back in.
+  // Done with no call: the run is named by its reasoning's first line, as the
+  // reference names it.
   const done = renderTurn({
     ...base,
     status: 'completed',
     tools: [],
     timeline: [
-      { kind: 'thinking', text: 'Weighing two options.', messageId: 'step-1' },
+      {
+        kind: 'thinking',
+        text: '## Weighing two options.\n\nThe first is cheaper.',
+        messageId: 'step-1',
+      },
       { kind: 'text', text: 'Done.', messageId: 'step-2', complete: true },
     ],
   });
-  assert.ok(statusText(done).includes('Thought process'), statusText(done));
+  assert.ok(statusText(done).includes('Weighing two options.'), statusText(done));
+  assert.ok(!statusText(done).includes('Thought process'), statusText(done));
+
+  // Two blocks of reasoning have no one line that speaks for the run.
+  const twice = renderTurn({
+    ...base,
+    status: 'completed',
+    tools: [],
+    timeline: [
+      { kind: 'thinking', text: 'Weighing two options.', messageId: 'step-1' },
+      { kind: 'thinking', text: 'Settling on the first.', messageId: 'step-2' },
+      { kind: 'text', text: 'Done.', messageId: 'step-3', complete: true },
+    ],
+  });
+  assert.ok(statusText(twice).includes('Thought process'), statusText(twice));
+});
+
+test('a reasoning step in the card is named by its first line', () => {
+  const step = (text: string, live: boolean) =>
+    renderTree(
+      createElement(TurnStatusThinkingStep, { text, live, truncated: false }),
+    ).querySelector('[data-maka-thinking] button')?.textContent ?? '';
+  assert.ok(step('Checking the config.\nThen the tests.', false).includes('Checking the config.'));
+  // Nothing with words yet: live says so, done falls back.
+  assert.ok(step('\n', true).includes('Thinking'));
+  assert.ok(step('---', false).includes('---'));
+  assert.ok(step('**', false).includes('Thought process'));
+});
+
+test('a reasoning headline is its first line with words, markdown off, cut at 200', () => {
+  assert.equal(reasoningHeadline('\n```ts\n# **Plan** the `fix`\nmore'), 'Plan the fix');
+  assert.equal(reasoningHeadline('- see [the docs](https://x.y)\n'), 'see the docs');
+  assert.equal(reasoningHeadline('> quoted'), 'quoted');
+  assert.equal(reasoningHeadline('\u200b\n  \n'), undefined);
+  const long = 'a'.repeat(250);
+  assert.equal(reasoningHeadline(long), `${'a'.repeat(200)}\u2026`);
+  // A cut never leaves half of a surrogate pair behind.
+  assert.equal(reasoningHeadline(`${'a'.repeat(199)}😀tail`), `${'a'.repeat(199)}\u2026`);
 });
 
 test('an answered question stands on its own between runs; an open one is a step of its run', () => {

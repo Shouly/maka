@@ -41,6 +41,7 @@ import { cn } from '../../../lib/cn.js';
 import { getMcpCatalog } from '../../../lib/ported/mcp-catalog.js';
 import { McpBrandMark, hasMcpBrandMark } from '../../../lib/ported/mcp-brand-marks.js';
 import { getTranscriptCopy } from '../../../locales/transcript-copy.js';
+import { reasoningHeadline } from '../../../lib/reasoning-label.js';
 import { ThinkingText } from '../ThinkingStep.js';
 import { renderToolContent, type ToolContentContext } from './registry.js';
 import {
@@ -211,8 +212,14 @@ export const TurnStatusToolStep = memo(function TurnStatusToolStep(props: TurnSt
 });
 
 /**
- * A run of reasoning, as a step: "Thought process", opening onto the text. Live,
- * it reads "Thinking…" and sweeps.
+ * A run of reasoning, as a step, named by its first line — the reference's
+ * label — and opening onto the whole text. Before any line has words it reads
+ * "Thinking…" while live and "Thought process" once done.
+ *
+ * Deviation: the reference drops the first line from the opened text, and does
+ * not open a one-line block at all, because its label is a short generated
+ * summary. Maka's label is the model's own first line, often a long paragraph
+ * cut by the row, so the opened text keeps it whole rather than lose the rest.
  */
 export const TurnStatusThinkingStep = memo(function TurnStatusThinkingStep(props: {
   text: string;
@@ -222,7 +229,9 @@ export const TurnStatusThinkingStep = memo(function TurnStatusThinkingStep(props
 }) {
   const copy = getTranscriptCopy(useUiLocale());
   const [open, setOpen] = useState(false);
-  const label = props.live ? copy.tools.thinkingActive : copy.tools.thinkingOnly;
+  const label =
+    reasoningHeadline(props.text) ??
+    (props.live ? copy.tools.thinkingActive : copy.tools.thinkingOnly);
   return (
     <div className="flex min-w-0 flex-col" data-maka-thinking="">
       <button

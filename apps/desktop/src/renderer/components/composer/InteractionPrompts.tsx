@@ -91,9 +91,14 @@ import {
   type QuestionDraft,
 } from '../../lib/user-question-shape.js';
 
-/** relx AskUserPanel card: surface-3, 16px radius, panel shadow + hairline ring. */
+/**
+ * The card above the composer. The reference docks it in the composer's own
+ * shell — same surface, same radius, same resting shadow — so the card and the
+ * composer under it read as one stack rather than a panel floating over an
+ * input.
+ */
 const PANEL_CLASS =
-  'relative z-10 overflow-hidden rounded-2xl bg-surface-3 shadow-[0_0.25rem_1.25rem_var(--panel-shadow-color),0_0_0_0.5px_var(--panel-ring-color)]';
+  'relative z-10 overflow-hidden rounded-[var(--chat-composer-radius)] bg-surface-3 shadow-[var(--composer-shadow)]';
 
 const ICON_BUTTON_CLASS =
   'inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-text-muted transition duration-300 hover:bg-alpha-1 hover:text-text-primary active:scale-95 disabled:pointer-events-none disabled:opacity-40';
@@ -198,7 +203,7 @@ function InteractionPrompt({
 
   return (
     <section
-      className={cn(PANEL_CLASS, 'mb-2 p-4')}
+      className={cn(PANEL_CLASS, 'p-4')}
       aria-label={title}
       data-maka-contract="interaction-prompt"
       data-interaction-kind={request.type}
@@ -394,7 +399,7 @@ function PermissionPrompt(props: {
 
   return (
     <section
-      className={cn(PANEL_CLASS, 'mb-2 p-4')}
+      className={cn(PANEL_CLASS, 'p-4')}
       aria-label={view.title}
       data-maka-contract="interaction-prompt"
       data-interaction-kind={props.request.type}
@@ -495,13 +500,13 @@ function PromptStatus({ pending, error }: { pending: boolean; error: string }) {
 // `group/cb` is not decoration: `checkboxBoxClass` writes its hover state as
 // `group-hover/cb:`, so a tick box in a row without it never lights up.
 const OPTION_ROW_CLASS =
-  'group/cb flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-left outline-none transition-transform duration-100 active:scale-[0.99]';
+  'group/cb flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-left outline-none transition-transform duration-100 active:scale-[0.99]';
 
 /**
- * The badge column, 28px wide in both modes so the labels stay on one line
- * whichever mode a question is in: a tick box for multi-select, the option's
- * ordinal for single-select. The ordinal is decoration — the option's name is
- * its label — which is why it is `aria-hidden` and the tick is not.
+ * The badge column: a tick box for multi-select in a 30px slot, the option's
+ * ordinal for single-select in a 28px one — the reference's two widths. The
+ * ordinal is decoration — the option's name is its label — which is why it is
+ * `aria-hidden` and the tick is not.
  */
 function OptionBadge(props: {
   multiSelect: boolean;
@@ -511,7 +516,7 @@ function OptionBadge(props: {
 }) {
   if (props.multiSelect) {
     return (
-      <span className="flex size-7 shrink-0 items-center justify-center" aria-hidden>
+      <span className="flex size-[30px] shrink-0 items-center justify-center" aria-hidden>
         <span className={checkboxBoxClass(props.selected, 'default')}>
           {props.selected && <Anthropicon name="check" size={CHECKBOX_TICK_SIZE.default} />}
         </span>
@@ -527,7 +532,7 @@ function OptionBadge(props: {
             ? 'bg-accent-fill text-on-accent'
             : props.active
               ? 'bg-alpha-2 text-text-primary'
-              : 'bg-alpha-1 text-text-secondary',
+              : 'bg-alpha-1 text-text-muted',
         )}
       >
         {props.ordinal}
@@ -680,7 +685,14 @@ function QuestionWizard({
     const clamped = Math.max(0, Math.min(next, options.length));
     focusRow(clamped);
     if (clamped === options.length) customInputRef.current?.focus();
-    else listboxRef.current?.focus();
+    else {
+      listboxRef.current?.focus();
+      // The list scrolls once it is taller than its cap, and the cursor is an
+      // `aria-activedescendant`, which moves nothing on screen. Keyboard moves
+      // only: scrolling on hover would pull the row out from under the pointer.
+      // The listbox's children are the option rows, in order.
+      listboxRef.current?.children[clamped]?.scrollIntoView({ block: 'nearest' });
+    }
   };
 
   const onListKeyDown = (event: ReactKeyboardEvent) => {
@@ -731,7 +743,7 @@ function QuestionWizard({
               : undefined
           }
           onKeyDown={onListKeyDown}
-          className="flex flex-col outline-none"
+          className="flex max-h-[min(45vh,420px)] flex-col overflow-y-auto outline-none"
         >
           {options.map((option, i) => {
             const selected = draftHasOption(draft, i);
@@ -756,10 +768,10 @@ function QuestionWizard({
                     active={active}
                     ordinal={i + 1}
                   />
-                  <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span
                       className={cn(
-                        'truncate text-sm',
+                        'break-words text-sm',
                         active ? 'text-text-primary' : 'text-text-secondary',
                       )}
                       title={option.label}
@@ -767,11 +779,22 @@ function QuestionWizard({
                       {option.label}
                     </span>
                     {option.description && (
-                      <span className="truncate text-xs text-text-muted">{option.description}</span>
+                      <span className="whitespace-pre-wrap break-words text-[13px] leading-[17px] text-text-muted">
+                        {option.description}
+                      </span>
                     )}
                   </span>
-                  {active && !multiSelect && (
-                    <span aria-hidden className="mr-2 shrink-0 text-sm text-text-muted">
+                  {/* Always laid out, shown only on the cursor row: labels wrap,
+                      so a key that took its room only when active would re-wrap
+                      the label under the pointer. The reference reserves it. */}
+                  {!multiSelect && (
+                    <span
+                      aria-hidden
+                      className={cn(
+                        'mr-2 shrink-0 text-sm text-text-muted',
+                        !active && 'invisible',
+                      )}
+                    >
                       ⏎
                     </span>
                   )}
@@ -795,14 +818,14 @@ function QuestionWizard({
 
   return (
     <section
-      className={cn(PANEL_CLASS, 'mb-2 pt-3')}
+      className={cn(PANEL_CLASS, 'pt-3')}
       aria-label={question.question}
       data-maka-contract="interaction-prompt"
       data-interaction-kind={request.type}
       data-maka-question-mode={multiSelect ? 'multi' : 'single'}
     >
       <div className="flex items-center gap-2 pb-1.5 pl-4 pr-3">
-        <span className="min-w-0 flex-1 text-sm leading-[1.4] text-text-primary">
+        <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm leading-[1.5] text-text-primary">
           {question.question}
         </span>
         {total > 1 && (
@@ -858,8 +881,8 @@ function QuestionWizard({
         {/* "Something else": the free answer, the last row of the cursor loop. */}
         <div
           className={cn(
-            'flex h-11 w-full cursor-text items-center gap-2.5 rounded-xl px-2.5',
-            custom.trim() ? 'bg-accent-subtle' : activeRow === options.length ? 'bg-alpha-1' : '',
+            'flex h-11 w-full cursor-text items-center gap-2.5 rounded-xl px-2.5 focus-within:bg-alpha-1',
+            activeRow === options.length && 'bg-alpha-1',
           )}
           onMouseEnter={() => setActiveRow(options.length)}
           onClick={() => customInputRef.current?.focus()}
@@ -899,32 +922,30 @@ function QuestionWizard({
             }}
             className="min-w-0 flex-1 border-0 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted focus:outline-none"
           />
-          {/* Single-select has no bottom bar, so Skip hangs off this row. It
-              abandons THIS question only — it lives inside the question, so
-              that is its scope; ✕ in the header abandons the batch. The final
-              question also gets a ↑: clicking an option advances on its own
-              until then, but the last question has no next to advance to. */}
-          {!multiSelect && (
-            <>
+          {/* Single-select has no bottom bar, so this row carries the one key
+              the question needs right now: Skip while nothing is typed —
+              picking an option sends on its own — and, once something is,
+              the arrow that sends it (↑ on the last question, → before). Skip
+              abandons THIS question only; ✕ in the header abandons the batch. */}
+          {!multiSelect &&
+            (custom.trim() ? (
+              <ConfirmButton
+                isLast={isLast}
+                label={isLast ? local.confirmSubmit : local.confirmNext}
+                disabled={busy || !canConfirm}
+                onClick={() => advance(drafts)}
+              />
+            ) : (
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 text-sm"
+                className="h-7 rounded-[7px] text-sm"
                 disabled={busy}
                 onClick={skip}
               >
                 {local.skip}
               </Button>
-              {isLast && (
-                <ConfirmButton
-                  isLast
-                  label={local.confirmSubmit}
-                  disabled={busy || !canConfirm}
-                  onClick={() => advance(drafts)}
-                />
-              )}
-            </>
-          )}
+            ))}
         </div>
       </div>
       {/* Multi-select needs a confirm — ticks alone do not send — so it gets a
@@ -937,7 +958,7 @@ function QuestionWizard({
             <Button
               variant="outline"
               size="sm"
-              className="h-7 text-sm"
+              className="h-7 rounded-[7px] text-sm"
               disabled={busy}
               onClick={skip}
             >

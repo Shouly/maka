@@ -53,6 +53,7 @@ import { statusGroupTools, type TurnStatusGroup } from '../../../lib/turn-timeli
 import type { ToolContentContext } from './registry.js';
 import { summarizeToolGroup, toolRowStatus, toolStepLabel } from './tool-presentation.js';
 import { isAskUserQuestionTool } from '../../../lib/ask-user-question.js';
+import { reasoningHeadline } from '../../../lib/reasoning-label.js';
 import { ThinkingText } from '../ThinkingStep.js';
 import {
   TurnStatusNarrationStep,
@@ -89,7 +90,7 @@ export interface TurnStatusProps {
 /**
  * The amber ring beside a run that waits on the user, measured off the
  * reference: a 14px ring with a 1px stroke around a 9px dot, in the pill's
- * amber (#f0ac55), centred in the 20px slot where the working mark sits, 18px
+ * amber (`--waiting-mark`), centred in the 20px slot where the working mark sits, 18px
  * left of the text column. A waiting turn is a running turn, so the settled
  * turn's paint containment never clips it.
  */
@@ -99,8 +100,8 @@ function BlockedMark() {
       aria-hidden="true"
       className="absolute -left-7 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center"
     >
-      <span className="flex size-[14px] items-center justify-center rounded-full border-[1px] border-[#f0ac55]">
-        <span className="size-[9px] rounded-full bg-[#f0ac55]" />
+      <span className="flex size-[14px] items-center justify-center rounded-full border-[1px] border-waiting-mark">
+        <span className="size-[9px] rounded-full bg-waiting-mark" />
       </span>
     </span>
   );
@@ -234,6 +235,18 @@ export function TurnStatusPending(props: { live: TurnStatusLive; writing?: boole
   );
 }
 
+/**
+ * What a run with no call is called: the first line of its reasoning, when the
+ * run is exactly one block of reasoning and nothing else — the reference's
+ * rule. Several blocks, or narration between them, have no one line that
+ * speaks for the run, so the caller falls back to "Thought process".
+ */
+function reasoningRunLabel(steps: TurnStatusGroup['steps']): string | undefined {
+  if (steps.length !== 1) return undefined;
+  const only = steps[0]!;
+  return only.kind === 'thinking' ? reasoningHeadline(only.text) : undefined;
+}
+
 export const TurnStatus = memo(function TurnStatus(props: TurnStatusProps) {
   const locale = useUiLocale();
   const copy = getTranscriptCopy(locale).tools;
@@ -271,9 +284,12 @@ export const TurnStatus = memo(function TurnStatus(props: TurnStatusProps) {
         ? copy.thinkingActive
         : lastTool
           ? toolStepLabel(lastTool, locale).text
-          : copy.thinkingOnly;
+          : (reasoningRunLabel(steps) ?? copy.thinkingOnly);
   } else {
-    label = tools.length > 0 ? summarizeToolGroup(tools, locale) : copy.thinkingOnly;
+    label =
+      tools.length > 0
+        ? summarizeToolGroup(tools, locale)
+        : (reasoningRunLabel(steps) ?? copy.thinkingOnly);
   }
 
   const state = blocked ? 'blocked' : props.complete ? 'done' : 'busy';

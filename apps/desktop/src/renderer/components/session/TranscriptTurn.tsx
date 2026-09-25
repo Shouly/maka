@@ -301,9 +301,11 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
 
       {/* The reference's block column: every block 20px from the next, and a
           status row pulls itself 6px into that on each side. Nothing here
-          carries its own vertical margin. The 10px on top puts the first
-          block's words 44px under the user's bubble, as the reference does. */}
-      <div className="flex flex-col gap-5 pt-2.5">
+          carries its own vertical margin. The 6px on top puts the first
+          block's line 40px under the user's bubble, as the reference does
+          (2026-09-24, measured): the bubble row's 4px gap, the action bar's
+          2px + 24px and its 4px margin come before it. */}
+      <div className="flex flex-col gap-5 pt-1.5">
         {tailIndex < 0 && pendingStatus}
         {grouped.flatMap((entry, index) => {
           const drawn = drawEntry(entry, index);

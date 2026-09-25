@@ -325,17 +325,19 @@
      必须是 token。写在 class 串里深色没机会翻 —— 原来四个 composer 各手抄一份
      浅色的 `0 0 0 .5px 黑15%`,深色下那圈落在 #0b0b0b 画布上算出 #090909,和底色
      差 2/255,描边等于消失(实测)。
-     上游深色不是换颜色而是**换结构**:外描边环 → inset 1px,并改挂 border token。
-     基色照抄上游的 hsl(60 2% 12%)。别写成 #20201f —— 那是 --surface-3 的深色底。 */
+     上游深色不是换颜色而是**换结构**:外描边环 → inset 1px,两者挂同一组 border token。
+     浅色(2026-09-24 实测上游 .shadow-composer):外环 1px,静止 --cds-border
+     (= alpha-2,#0b0b0b 10%),hover / focus 换 --cds-border-strong(alpha-3)。
+     原先抄的是旧版的 0.5px 15% / 30%。输入框上方的提问、权限卡片挂同一个壳。 */
   --composer-shadow:
     0 .25rem 1.25rem color-mix(in srgb, #000 3.5%, transparent),
-    0 0 0 .5px color-mix(in srgb, hsl(60 2% 12%) 15%, transparent);
+    0 0 0 1px var(--hairline);
   --composer-shadow-hover:
     0 .25rem 1.25rem color-mix(in srgb, #000 3.5%, transparent),
-    0 0 0 .5px color-mix(in srgb, hsl(60 2% 12%) 30%, transparent);
+    0 0 0 1px var(--border-strong);
   --composer-shadow-focus:
     0 .25rem 1.25rem color-mix(in srgb, #000 7.5%, transparent),
-    0 0 0 .5px color-mix(in srgb, hsl(60 2% 12%) 30%, transparent);
+    0 0 0 1px var(--border-strong);
   /* 拖拽悬停:明暗同色(--fill-accent 不翻),深色块里不重复定义。 */
   --composer-shadow-drag:
     0 .25rem 1.25rem color-mix(in srgb, #000 3.5%, transparent),
@@ -413,6 +415,9 @@
   --border-warning: #eda100;
   --bg-warning: #f9dca4;
   --on-warning: #0b0b0b;
+  /* 等待中的标记(提问 / 需要输入时 TurnStatus 左侧那圈):实测上游 sprite 帧的
+     琥珀 #f0ac55,不在 warning 那组阶梯上。sprite 是图,明暗同色,深色块不重定义。 */
+  --waiting-mark: #f0ac55;
 
   /* ── success(绿) ────────────────────────────────────────────────
      bg 是芯片淡底(green-100),别拿 text 档压透明度顶替:那是描边/图标用的
@@ -716,6 +721,7 @@
   --color-warning: var(--text-warning);
   --color-warning-fill: var(--fill-warning);
   --color-warning-fill-hover: var(--fill-warning-hover);
+  --color-waiting-mark: var(--waiting-mark);
   --color-warning-line: var(--border-warning);
   --color-warning-subtle: var(--bg-warning);
   --color-on-warning: var(--on-warning);

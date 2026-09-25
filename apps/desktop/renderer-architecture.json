@@ -348,6 +348,7 @@
     "src/renderer/lib/ported/workbar-tabs.ts",
     "src/renderer/lib/ported/workbar-tool-definitions.ts",
     "src/renderer/lib/ported/workspace-readiness-recovery.ts",
+    "src/renderer/lib/reasoning-label.ts",
     "src/renderer/lib/theme.ts",
     "src/renderer/lib/tool-delivery-results.ts",
     "src/renderer/lib/tool-row-description.ts",
@@ -2852,7 +2853,7 @@
       },
       "hookCalls": {
         "useLayoutEffect": 1,
-        "useRef": 2,
+        "useRef": 1,
         "useState": 2,
         "useUiLocale": 2
       },
@@ -2860,7 +2861,9 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../../../lib/ask-user-question.js": 1,
         "../../../lib/cn.js": 1,
+        "../../../lib/reasoning-label.js": 1,
         "../../../lib/turn-timeline-groups.js": 1,
         "../../../locales/transcript-copy.js": 1,
         "../../icons/Anthropicon.js": 1,
@@ -2887,6 +2890,7 @@
         "../../../lib/cn.js": 1,
         "../../../lib/ported/mcp-brand-marks.js": 1,
         "../../../lib/ported/mcp-catalog.js": 1,
+        "../../../lib/reasoning-label.js": 1,
         "../../../locales/transcript-copy.js": 1,
         "../../icons/Anthropicon.js": 1,
         "../../ui/shimmer-title.js": 1,
@@ -6590,6 +6594,15 @@
       "dependencyPaths": {
         "./onboarding-hero-copy.js": 1
       }
+    },
+    "src/renderer/lib/reasoning-label.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
     },
     "src/renderer/lib/theme.ts": {
       "bridgePaths": {},
