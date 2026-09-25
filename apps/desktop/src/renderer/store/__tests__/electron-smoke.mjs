@@ -475,13 +475,31 @@ try {
   await editor.waitFor();
   await editor.fill('Phase 3a transcript, revised');
   await transcript.getByRole('button', { name: 'Save', exact: true }).click();
-  await page.getByRole('group', { name: 'Task versions' }).waitFor();
   // The fork is a different Session with its own transcript, so the edited
-  // text landing there is what proves the resend went through rather than
-  // just the banner appearing.
+  // text landing there is what proves the resend went through.
   await transcript.getByText('Phase 3a transcript, revised', { exact: false }).waitFor();
-  await page.screenshot({ path: SHOT('phase3a-revision-banner.png') });
-  checks.push('edit and resend forks a revision and the version navigation appears');
+  // Which version is on screen is the edited message's business: its action
+  // bar ends in "‹ 2 / 2 ›", and nothing about versions sits over the composer.
+  const editedTurn = transcript.locator('[data-turn-id]', {
+    has: page.getByText('Phase 3a transcript, revised', { exact: false }),
+  });
+  const versions = editedTurn.getByRole('group', { name: 'Message versions', exact: true });
+  await versions.getByText('2 / 2', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('group', { name: 'Message versions' }).count(), 1);
+  await editedTurn.hover();
+  await page.screenshot({ path: SHOT('phase3a-revision-versions.png') });
+  await versions.getByRole('button', { name: 'Previous version', exact: true }).click();
+  const originalTurn = transcript.locator('[data-turn-id]').first();
+  await originalTurn
+    .getByRole('group', { name: 'Message versions', exact: true })
+    .getByText('1 / 2', { exact: true })
+    .waitFor();
+  await originalTurn.hover();
+  await originalTurn.getByRole('button', { name: 'Next version', exact: true }).click();
+  await versions.getByText('2 / 2', { exact: true }).waitFor();
+  checks.push(
+    'edit and resend forks a revision, and the edited message steps between its versions',
+  );
 
   // 3a.6 The same transcript in the dark theme.
   await runPaletteCommand(page, 'Theme · Dark');
@@ -1684,7 +1702,7 @@ try {
           'phase3a-transcript-light.png',
           'phase3a-transcript-dark.png',
           'phase3a-model-switcher.png',
-          'phase3a-revision-banner.png',
+          'phase3a-revision-versions.png',
           'phase3a-tool-row.png',
           'phase4-outputs-light.png',
           'phase4-review-light.png',

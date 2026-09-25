@@ -21,7 +21,7 @@ import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 import { collapseSessionRevisions, revisionFamilySessionIds } from '@maka/core/session-revisions';
 import { type SessionSummary } from '@maka/core/session';
-import { deriveSessionRevisionNavigation } from '../../renderer/lib/ported/session-revisions.js';
+import { deriveMessageVersions } from '../../renderer/lib/ported/session-revisions.js';
 
 function summary(id: string, overrides: Partial<SessionSummary> = {}): SessionSummary {
   return {
@@ -90,7 +90,7 @@ describe('edit-and-resend session revisions', () => {
     });
 
     assert.deepEqual(collapseSessionRevisions([draft, root]).map((session) => session.id), ['root']);
-    assert.equal(deriveSessionRevisionNavigation([draft, root], 'root'), undefined);
+    assert.equal(deriveMessageVersions([draft, root], 'root').size, 0);
   });
 
   it('keeps the selected old version in the same sidebar slot', () => {
@@ -124,30 +124,89 @@ describe('edit-and-resend session revisions', () => {
     assert.deepEqual(revisionFamilySessionIds([root, version2, branch], 'branch'), ['branch']);
   });
 
-  it('derives previous and next navigation across a revision chain', () => {
-    const root = summary('root', { lastMessageAt: 10 });
+  it('counts versions per message, whichever version is on screen', () => {
+    const root = summary('root');
+    // Edit message 2 of root, then edit that edit again.
     const version2 = summary('version-2', {
       revisionRootSessionId: 'root',
       revisionParentSessionId: 'root',
       revisionOfTurnId: 'turn-2',
+      revisionTurnId: 'turn-2b',
       revisionIndex: 2,
       revisionState: 'committed',
-      lastMessageAt: 20,
     });
     const version3 = summary('version-3', {
       revisionRootSessionId: 'root',
       revisionParentSessionId: 'version-2',
-      revisionOfTurnId: 'turn-3',
+      revisionOfTurnId: 'turn-2b',
+      revisionTurnId: 'turn-2c',
       revisionIndex: 3,
       revisionState: 'committed',
-      lastMessageAt: 30,
     });
+    const sessions = [version3, root, version2];
 
-    assert.deepEqual(deriveSessionRevisionNavigation([version3, root, version2], 'version-2'), {
+    assert.deepEqual(deriveMessageVersions(sessions, 'root').get('turn-2'), {
+      current: 1,
+      total: 3,
+      nextSessionId: 'version-2',
+    });
+    assert.deepEqual(deriveMessageVersions(sessions, 'version-2').get('turn-2b'), {
       current: 2,
       total: 3,
       previousSessionId: 'root',
       nextSessionId: 'version-3',
     });
+    assert.deepEqual(deriveMessageVersions(sessions, 'version-3').get('turn-2c'), {
+      current: 3,
+      total: 3,
+      previousSessionId: 'version-2',
+    });
+  });
+
+  it('keeps edits of different messages apart', () => {
+    const root = summary('root');
+    const version2 = summary('version-2', {
+      revisionRootSessionId: 'root',
+      revisionParentSessionId: 'root',
+      revisionOfTurnId: 'turn-2',
+      revisionTurnId: 'turn-2b',
+      revisionIndex: 2,
+      revisionState: 'committed',
+    });
+    // Message 3 of version 2 (which carries turn-1 and turn-2b over).
+    const version3 = summary('version-3', {
+      revisionRootSessionId: 'root',
+      revisionParentSessionId: 'version-2',
+      revisionOfTurnId: 'turn-3b',
+      revisionTurnId: 'turn-3c',
+      revisionIndex: 3,
+      revisionState: 'committed',
+    });
+    const versions = deriveMessageVersions([root, version2, version3], 'version-3');
+
+    assert.deepEqual(versions.get('turn-2b'), {
+      current: 2,
+      total: 2,
+      previousSessionId: 'root',
+    });
+    assert.deepEqual(versions.get('turn-3c'), {
+      current: 2,
+      total: 2,
+      previousSessionId: 'version-2',
+    });
+    assert.equal(versions.has('turn-1'), false);
+  });
+
+  it('shows no versions for an edit whose turn has not started', () => {
+    const root = summary('root');
+    const preparing = summary('version-2', {
+      revisionRootSessionId: 'root',
+      revisionParentSessionId: 'root',
+      revisionOfTurnId: 'turn-2',
+      revisionIndex: 2,
+      revisionState: 'preparing',
+    });
+
+    assert.equal(deriveMessageVersions([root, preparing], 'version-2').size, 0);
   });
 });

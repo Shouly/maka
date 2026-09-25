@@ -286,6 +286,11 @@ export interface SessionHeader {
   revisionParentSessionId?: string;
   /** User turn replaced when this revision was created. */
   revisionOfTurnId?: string;
+  /**
+   * The user turn this revision put in `revisionOfTurnId`'s place: its first
+   * turn, recorded when that turn starts and the revision commits.
+   */
+  revisionTurnId?: string;
   /** Stable display order inside the revision family; root is implicitly 1. */
   revisionIndex?: number;
   /** Preparing versions are hidden after restart until their first run starts. */
@@ -405,6 +410,7 @@ export interface SessionSummary {
   revisionRootSessionId?: string;
   revisionParentSessionId?: string;
   revisionOfTurnId?: string;
+  revisionTurnId?: string;
   revisionIndex?: number;
   revisionState?: 'preparing' | 'committed';
   backend: PersistedBackendKind;

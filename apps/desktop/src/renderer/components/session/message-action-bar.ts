@@ -36,9 +36,6 @@ export const messageActionBaseClass =
 
 export const messageActionButtonClass = cn(messageActionBaseClass, 'size-6');
 
-/** The revision stepper's two arrows: one notch narrower, so they read as one control. */
-export const versionStepButtonClass = cn(messageActionBaseClass, 'h-6 w-5');
-
 /**
  * The bar itself. Three gates, and every one of them is somebody's only way
  * in: hover for the mouse, focus-within for the keyboard (a focus ring drawn

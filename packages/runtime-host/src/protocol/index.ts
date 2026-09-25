@@ -107,7 +107,10 @@ export const RUNTIME_HOST_PROTOCOL_VERSION = 0 as const;
 // 157: a completed tool_result frame may carry `content` — a SendUserMessage's
 // delivered body — where every body used to be omitted. An old client rejects
 // the unknown key and drops the connection.
-export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 157 as const;
+// 158: a session catalog projection may carry `revisionTurnId`, the turn a
+// revision put in place of the edited one. An old client rejects the unknown
+// key.
+export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 158 as const;
 // 155: A tool call is on the wire while the model is still writing it.
 // `subscription.session_event` carries `tool_input_start` and
 // `tool_input_delta`, which a Client that does not know them decodes as an

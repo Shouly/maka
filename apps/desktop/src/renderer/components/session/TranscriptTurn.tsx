@@ -52,6 +52,7 @@ import type { TurnLineageBadge } from '@maka/ui';
 import { getTranscriptCopy } from '../../locales/transcript-copy.js';
 import { TurnFooter } from './TurnFooter.js';
 import { UserMessageRow } from './UserMessageRow.js';
+import type { MessageVersions } from '../../lib/ported/session-revisions.js';
 import { SystemNoticeRow } from './SystemNoticeRow.js';
 import {
   TurnStatus,
@@ -94,6 +95,9 @@ export interface TranscriptTurnProps {
   onOpenLineage: (turnId: string) => void;
   onEditUserMessage?: (turnId: string) => void;
   editDisabledReason?: string;
+  /** This message's versions, when it has been edited: the bar's "‹ 2 / 3 ›". */
+  versions?: MessageVersions;
+  onSelectVersion?: (sessionId: string) => void;
   editing?: boolean;
   editText?: string;
   onEditTextChange?: (text: string) => void;
@@ -289,6 +293,9 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
             ? { onEdit: () => props.onEditUserMessage?.(turn.turnId) }
             : {})}
           {...(props.editDisabledReason ? { editDisabledReason: props.editDisabledReason } : {})}
+          {...(props.versions && props.onSelectVersion
+            ? { versions: props.versions, onSelectVersion: props.onSelectVersion }
+            : {})}
           {...(props.editing ? { editing: true } : {})}
           {...(props.editText !== undefined ? { editText: props.editText } : {})}
           {...(props.onEditTextChange ? { onEditTextChange: props.onEditTextChange } : {})}

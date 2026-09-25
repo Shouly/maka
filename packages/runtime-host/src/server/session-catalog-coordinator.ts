@@ -1414,6 +1414,7 @@ export function projectSessionCatalogRecord(
       ? {}
       : { revisionParentSessionId: header.revisionParentSessionId }),
     ...(header.revisionOfTurnId === undefined ? {} : { revisionOfTurnId: header.revisionOfTurnId }),
+    ...(header.revisionTurnId === undefined ? {} : { revisionTurnId: header.revisionTurnId }),
     ...(header.revisionIndex === undefined ? {} : { revisionIndex: header.revisionIndex }),
     ...(header.revisionState === undefined ? {} : { revisionState: header.revisionState }),
     backend: header.backend,

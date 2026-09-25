@@ -159,13 +159,15 @@ export class HostSessionRevisionCoordinator {
         )
         .map((header) => header.id),
     );
+    const firstTurns = new Map<string, string>();
     for (const header of committed) {
-      if (
-        header.conversationCopy!.kind === 'revision' &&
-        header.revisionState === 'preparing' &&
-        (await this.#hasAdmittedRevisionTurn(header.id))
-      ) {
+      if (header.conversationCopy!.kind !== 'revision' || header.revisionState !== 'preparing') {
+        continue;
+      }
+      const first = await this.#firstAdmittedRevisionTurn(header.id);
+      if (first !== undefined) {
         retained.add(header.id);
+        firstTurns.set(header.id, first);
       }
     }
     for (let changed = true; changed; ) {
@@ -184,7 +186,7 @@ export class HostSessionRevisionCoordinator {
         continue;
       }
       if (retained.has(header.id)) {
-        await this.options.manager.commitRevisionVersion(header.id);
+        await this.options.manager.commitRevisionVersion(header.id, firstTurns.get(header.id));
       } else {
         await this.#discardDuringRecovery(header);
       }
@@ -892,9 +894,17 @@ export class HostSessionRevisionCoordinator {
    * admissions, so every row it holds was admitted on this session.
    */
   async #hasAdmittedRevisionTurn(sessionId: string): Promise<boolean> {
-    return (
-      (await this.#stores.agentRunStore.listRootTurnAdmissionsForRecovery(sessionId)).length > 0
-    );
+    return (await this.#firstAdmittedRevisionTurn(sessionId)) !== undefined;
+  }
+
+  /**
+   * The revision's first admitted turn: the one that replaced the edited
+   * message. A copy carries no admissions, and the store lists them in
+   * admission order.
+   */
+  async #firstAdmittedRevisionTurn(sessionId: string): Promise<string | undefined> {
+    return (await this.#stores.agentRunStore.listRootTurnAdmissionsForRecovery(sessionId))[0]
+      ?.turnId;
   }
 
   async #hasCommittedConversationCopyDependent(sessionId: string): Promise<boolean> {

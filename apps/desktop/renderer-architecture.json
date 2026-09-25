@@ -2501,7 +2501,7 @@
         "useShallow": 1,
         "useShellLiveTurn": 1,
         "useState": 1,
-        "useStore": 5,
+        "useStore": 6,
         "useTranscriptScrollAuthority": 1,
         "useTurnPresentation": 1,
         "useUiLocale": 1
@@ -2517,6 +2517,7 @@
         "../../hooks/use-workbar.js": 1,
         "../../hooks/use-workspace.js": 1,
         "../../lib/cn.js": 1,
+        "../../lib/ported/session-revisions.js": 1,
         "../../lib/ported/session-workspace-errors.js": 1,
         "../../lib/transient-message-placement.js": 1,
         "../../lib/turn-activity.js": 1,
@@ -2657,7 +2658,7 @@
         "useEffect": 2,
         "useRef": 2,
         "useState": 4,
-        "useUiLocale": 2
+        "useUiLocale": 3
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
@@ -2784,22 +2785,19 @@
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
-        "useStore": 2,
+        "useStore": 1,
         "useUiLocale": 1
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
-        "../../../lib/cn.js": 1,
-        "../../../lib/ported/session-revisions.js": 1,
         "../../../locales/composer-copy.js": 1,
         "../../../locales/conversation-copy.js": 1,
         "../../../locales/transcript-copy.js": 1,
         "../../../store/index.js": 1,
         "../../icons/Anthropicon.js": 1,
         "../../ui/button.js": 1,
-        "../message-action-bar.js": 1,
         "@maka/ui": 1,
         "react": 1,
         "zustand": 1

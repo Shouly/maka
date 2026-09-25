@@ -121,6 +121,7 @@ const PROJECTION_FIELDS = [
   'revisionRootSessionId',
   'revisionParentSessionId',
   'revisionOfTurnId',
+  'revisionTurnId',
   'revisionIndex',
   'revisionState',
   'thinkingLevel',
@@ -233,6 +234,7 @@ export interface SessionCatalogProjection {
   readonly revisionRootSessionId?: string;
   readonly revisionParentSessionId?: string;
   readonly revisionOfTurnId?: string;
+  readonly revisionTurnId?: string;
   readonly revisionIndex?: number;
   readonly revisionState?: 'preparing' | 'committed';
   readonly backend: PersistedBackendKind;
@@ -757,6 +759,7 @@ export function decodeSessionCatalogProjection(value: unknown): SessionCatalogPr
     ...optionalEntityId(record, 'revisionRootSessionId'),
     ...optionalEntityId(record, 'revisionParentSessionId'),
     ...optionalEntityId(record, 'revisionOfTurnId'),
+    ...optionalEntityId(record, 'revisionTurnId'),
     ...optionalRevisionIndex(record),
     ...optionalRevisionState(record),
     backend: backend(record.backend),
@@ -888,7 +891,8 @@ function optionalEntityId<
     | 'lastReadMessageId'
     | 'revisionRootSessionId'
     | 'revisionParentSessionId'
-    | 'revisionOfTurnId',
+    | 'revisionOfTurnId'
+    | 'revisionTurnId',
 >(
   record: Record<string, unknown>,
   field: Field,

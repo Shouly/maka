@@ -46,6 +46,7 @@ import { Dialog, DialogContent, DialogTitle } from '../ui/dialog.js';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.js';
 import { cn } from '../../lib/cn.js';
 import { getTranscriptCopy } from '../../locales/transcript-copy.js';
+import type { MessageVersions } from '../../lib/ported/session-revisions.js';
 import { messageActionBarClass, messageActionButtonClass } from './message-action-bar.js';
 
 /** Past this height the bubble clips and offers to open. */
@@ -101,6 +102,57 @@ function SentAttachmentCard(props: {
   );
 }
 
+/**
+ * The reference's version switcher, last in the bar: caret, "2 / 3", caret.
+ * Each caret opens the Session the neighbouring version was written in.
+ */
+function VersionSwitcher(props: {
+  versions: MessageVersions;
+  onSelect: (sessionId: string) => void;
+}) {
+  const chat = getConversationCopy(useUiLocale()).chat;
+  const { previousSessionId, nextSessionId } = props.versions;
+  return (
+    <div
+      className="inline-flex items-center gap-1"
+      role="group"
+      aria-label={chat.revisionVersionsAriaLabel}
+    >
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label={chat.previousRevision}
+            disabled={!previousSessionId}
+            onClick={() => previousSessionId && props.onSelect(previousSessionId)}
+            className={messageActionButtonClass}
+          >
+            <Anthropicon name="caretRight" size={16} className="rotate-180" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{chat.previousRevision}</TooltipContent>
+      </Tooltip>
+      <span className="shrink-0 select-none self-center text-xs tabular-nums text-text-muted">
+        {chat.revisionVersion(props.versions.current, props.versions.total)}
+      </span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label={chat.nextRevision}
+            disabled={!nextSessionId}
+            onClick={() => nextSessionId && props.onSelect(nextSessionId)}
+            className={messageActionButtonClass}
+          >
+            <Anthropicon name="caretRight" size={16} />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{chat.nextRevision}</TooltipContent>
+      </Tooltip>
+    </div>
+  );
+}
+
 export interface UserMessageRowProps {
   messageId: string;
   text: string;
@@ -115,6 +167,10 @@ export interface UserMessageRowProps {
   onEdit?: () => void;
   /** Why editing is unavailable, for the disabled button's tooltip. */
   editDisabledReason?: string;
+  /** Present when this message has been edited: which version is on screen. */
+  versions?: MessageVersions;
+  /** Opens the Session a version was written in. */
+  onSelectVersion?: (sessionId: string) => void;
   editing?: boolean;
   editText?: string;
   onEditTextChange?: (text: string) => void;
@@ -364,6 +420,9 @@ export const UserMessageRow = memo(function UserMessageRow(props: UserMessageRow
             {props.onEdit ? copy.turn.editTitle : (props.editDisabledReason ?? copy.turn.editTitle)}
           </TooltipContent>
         </Tooltip>
+        {props.versions && props.onSelectVersion && (
+          <VersionSwitcher versions={props.versions} onSelect={props.onSelectVersion} />
+        )}
       </div>
 
       <Dialog

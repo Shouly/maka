@@ -2920,7 +2920,7 @@ export class RootTurnCoordinator implements HostedExecutionAuthority {
     try {
       const messageOrigin = hostedExecutionMessageOrigin(active.descriptor);
       const onRunStarted = async (): Promise<void> => {
-        await this.manager.commitRevisionVersion(input.sessionId);
+        await this.manager.commitRevisionVersion(input.sessionId, active.turnId);
         await this.continuity.refreshCanonical(input.sessionId);
         startSettled.resolve();
       };

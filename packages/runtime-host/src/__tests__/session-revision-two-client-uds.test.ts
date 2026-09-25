@@ -469,6 +469,7 @@ async function verifyConcurrentRevisionAuthority(
     assert.equal(revision.revisionOfTurnId, 'turn-2');
     assert.equal(revision.revisionIndex, 2);
     assert.equal(revision.revisionState, 'preparing');
+    assert.equal(revision.revisionTurnId, undefined);
 
     const abandonedTargetId = 'abandoned-revision-target';
     const abandonedRevision = await desktop.request('session.revision.create', {
@@ -664,10 +665,11 @@ async function verifyRestartRecoveryAndAdmission(
       turnId: 'turn-3',
       content: { text: 'commit this revision' },
     });
-    assert.equal(
-      (await querySession(restarted, ADMITTED_REVISION_TARGET_ID)).revisionState,
-      'committed',
-    );
+    const committedRevision = await querySession(restarted, ADMITTED_REVISION_TARGET_ID);
+    assert.equal(committedRevision.revisionState, 'committed');
+    // The turn that stands in for the edited one is named with the commit.
+    assert.equal(committedRevision.revisionOfTurnId, 'turn-2');
+    assert.equal(committedRevision.revisionTurnId, 'turn-3');
     assert.deepEqual(
       await restarted.request('session.revision.abandon', {
         targetSessionId: ADMITTED_REVISION_TARGET_ID,

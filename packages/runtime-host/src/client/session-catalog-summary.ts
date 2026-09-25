@@ -57,6 +57,7 @@ export function projectSessionCatalogSummary(
     ...(session.revisionOfTurnId === undefined
       ? {}
       : { revisionOfTurnId: session.revisionOfTurnId }),
+    ...(session.revisionTurnId === undefined ? {} : { revisionTurnId: session.revisionTurnId }),
     ...(session.revisionIndex === undefined ? {} : { revisionIndex: session.revisionIndex }),
     ...(session.revisionState === undefined ? {} : { revisionState: session.revisionState }),
     backend: session.backend,

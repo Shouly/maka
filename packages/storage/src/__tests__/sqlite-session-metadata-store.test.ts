@@ -1844,6 +1844,49 @@ describe('SqliteSessionMetadataStore', () => {
     }
   });
 
+  test('a revision names the turn it put in place only once it commits', async () => {
+    const store = createSqliteSessionMetadataStore(':memory:', { now: () => 100 });
+    const root = fullHeader({
+      id: 'named-root',
+      parentSessionId: undefined,
+      branchOfTurnId: undefined,
+      revisionRootSessionId: undefined,
+      revisionParentSessionId: undefined,
+      revisionOfTurnId: undefined,
+      revisionIndex: undefined,
+      revisionState: undefined,
+    });
+    const revision = fullHeader({
+      id: 'named-revision',
+      parentSessionId: undefined,
+      branchOfTurnId: undefined,
+      revisionRootSessionId: root.id,
+      revisionParentSessionId: root.id,
+      revisionOfTurnId: 'turn-2',
+      revisionIndex: 2,
+      revisionState: 'preparing',
+    });
+    try {
+      await store.create(root);
+      await assert.rejects(
+        store.create({ ...revision, id: 'named-too-early', revisionTurnId: 'turn-3' }),
+      );
+      await store.create(revision);
+      await assert.rejects(
+        store.update(revision.id, { revisionState: 'committed', revisionTurnId: 'turn-2' }),
+      );
+
+      const committed = await store.update(revision.id, {
+        revisionState: 'committed',
+        revisionTurnId: 'turn-3',
+      });
+      assert.equal(committed.header.revisionTurnId, 'turn-3');
+      assert.equal((await store.read(revision.id)).header.revisionTurnId, 'turn-3');
+    } finally {
+      store.close();
+    }
+  });
+
   test('atomically retires a revision family with CAS and tombstone retries', async () => {
     const store = createSqliteSessionMetadataStore(':memory:', { now: () => 100 });
     const root = fullHeader({

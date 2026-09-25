@@ -1476,6 +1476,7 @@ function isValidRevisionLineage(header: SessionHeader): boolean {
     header.revisionRootSessionId,
     header.revisionParentSessionId,
     header.revisionOfTurnId,
+    header.revisionTurnId,
     header.revisionIndex,
     header.revisionState,
   ];
@@ -1490,7 +1491,14 @@ function isValidRevisionLineage(header: SessionHeader): boolean {
     header.revisionOfTurnId.length <= 128 &&
     Number.isSafeInteger(header.revisionIndex) &&
     header.revisionIndex! >= 2 &&
-    (header.revisionState === 'preparing' || header.revisionState === 'committed')
+    (header.revisionState === 'preparing' || header.revisionState === 'committed') &&
+    // Named when the revision's first turn starts, which is what commits it.
+    (header.revisionTurnId === undefined ||
+      (header.revisionState === 'committed' &&
+        typeof header.revisionTurnId === 'string' &&
+        header.revisionTurnId.length > 0 &&
+        header.revisionTurnId.length <= 128 &&
+        header.revisionTurnId !== header.revisionOfTurnId))
   );
 }
 
@@ -1522,6 +1530,7 @@ function isValidConversationCopyLineage(header: SessionHeader): boolean {
       header.revisionRootSessionId === undefined &&
       header.revisionParentSessionId === undefined &&
       header.revisionOfTurnId === undefined &&
+      header.revisionTurnId === undefined &&
       header.revisionIndex === undefined &&
       header.revisionState === undefined;
     if (!revisionClear || header.parentSessionId !== copy.sourceSessionId) {
@@ -1558,6 +1567,7 @@ function isValidSubagentSessionLineage(header: SessionHeader): boolean {
     header.revisionRootSessionId !== undefined ||
     header.revisionParentSessionId !== undefined ||
     header.revisionOfTurnId !== undefined ||
+    header.revisionTurnId !== undefined ||
     header.revisionIndex !== undefined ||
     header.revisionState !== undefined
   ) {
@@ -1652,6 +1662,7 @@ function toSummary(header: SessionHeader): SessionSummary {
       ? { revisionParentSessionId: header.revisionParentSessionId }
       : {}),
     ...(header.revisionOfTurnId ? { revisionOfTurnId: header.revisionOfTurnId } : {}),
+    ...(header.revisionTurnId ? { revisionTurnId: header.revisionTurnId } : {}),
     ...(header.revisionIndex !== undefined ? { revisionIndex: header.revisionIndex } : {}),
     ...(header.revisionState ? { revisionState: header.revisionState } : {}),
     backend: header.backend,

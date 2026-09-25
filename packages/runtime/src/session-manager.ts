@@ -1669,10 +1669,17 @@ export class SessionManager {
     return headerToSummary(next);
   }
 
-  async commitRevisionVersion(sessionId: string): Promise<SessionSummary> {
+  /**
+   * `turnId` is the revision's first turn, the one that stands in for the
+   * edited message; recovery may commit a revision it cannot name one for.
+   */
+  async commitRevisionVersion(sessionId: string, turnId?: string): Promise<SessionSummary> {
     const current = await this.deps.store.readHeader(sessionId);
     if (current.revisionState !== 'preparing') return headerToSummary(current);
-    const next = await this.deps.store.updateHeader(sessionId, { revisionState: 'committed' });
+    const next = await this.deps.store.updateHeader(sessionId, {
+      revisionState: 'committed',
+      ...(turnId === undefined ? {} : { revisionTurnId: turnId }),
+    });
     this.runtimeKernel.updateCachedHeader(sessionId, next);
     return headerToSummary(next);
   }
@@ -5725,6 +5732,7 @@ export function headerToSummary(h: SessionHeader): SessionSummary {
     ...(h.revisionRootSessionId ? { revisionRootSessionId: h.revisionRootSessionId } : {}),
     ...(h.revisionParentSessionId ? { revisionParentSessionId: h.revisionParentSessionId } : {}),
     ...(h.revisionOfTurnId ? { revisionOfTurnId: h.revisionOfTurnId } : {}),
+    ...(h.revisionTurnId ? { revisionTurnId: h.revisionTurnId } : {}),
     ...(h.revisionIndex !== undefined ? { revisionIndex: h.revisionIndex } : {}),
     ...(h.revisionState ? { revisionState: h.revisionState } : {}),
     backend: h.backend,

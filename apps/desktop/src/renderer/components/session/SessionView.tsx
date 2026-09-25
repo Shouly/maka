@@ -76,6 +76,7 @@ import {
 import { requestScheduledTaskFocus } from '../../store/scheduled-tasks-store.js';
 import { reviewableProposal } from '../../store/plan-store.js';
 import { revisionRefusalFor } from '../../store/revision-draft.js';
+import { deriveMessageVersions, type MessageVersions } from '../../lib/ported/session-revisions.js';
 import { pendingActionsOf } from '../../store/turn-actions-store.js';
 import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
 import { getShellCopy } from '../../locales/shell-copy.js';
@@ -131,6 +132,23 @@ export function SessionView(props: SessionViewProps) {
         <SessionTranscript {...props} />
       </SessionAttachmentProvider>
     </TranscriptScrollAuthorityProvider>
+  );
+}
+
+/**
+ * Every edited message's versions in this Session's family, by turn id.
+ *
+ * Selected as a string: a catalog refresh replaces every row, and a selector
+ * returning a fresh Map would re-render the transcript on every refresh of any
+ * Session. The string only changes when some message's versions do.
+ */
+function useMessageVersions(sessionId: string): ReadonlyMap<string, MessageVersions> {
+  const encoded = useStore(sessionsStore, (state) =>
+    JSON.stringify([...deriveMessageVersions(state.sessions, sessionId)]),
+  );
+  return useMemo(
+    () => new Map<string, MessageVersions>(JSON.parse(encoded) as [string, MessageVersions][]),
+    [encoded],
   );
 }
 
@@ -249,6 +267,8 @@ function SessionTranscript(props: SessionViewProps) {
     [turns, feed.transientMessages],
   );
   const turnIds = useMemo(() => turns.map((turn) => turn.turnId), [turns]);
+  const messageVersions = useMessageVersions(sessionId);
+  const selectVersion = useCallback((id: string) => sessionsStore.select(id), []);
   const pendingTurnActions = usePendingTurnActions(sessionId, pending, turnIds);
   const presentation = useTurnPresentation(turns, {
     activeId: sessionId,
@@ -523,6 +543,12 @@ function SessionTranscript(props: SessionViewProps) {
                     onFooterAction={onFooterAction}
                     onOpenLineage={onOpenLineage}
                     {...(message && !refusal && !draft ? { onEditUserMessage: beginEdit } : {})}
+                    {...(messageVersions.has(turn.turnId)
+                      ? {
+                          versions: messageVersions.get(turn.turnId),
+                          onSelectVersion: selectVersion,
+                        }
+                      : {})}
                     {...(refusal
                       ? {
                           editDisabledReason:
@@ -615,12 +641,7 @@ function SessionTranscript(props: SessionViewProps) {
             onOpenModelPicker={() => props.onOpenSettings?.('models')}
             onOpenSettings={(section) => props.onOpenSettings?.(section)}
           />
-          <RevisionBanner
-            onCancel={cancelEdit}
-            onSubmit={submitEdit}
-            sessionId={sessionId}
-            onSelectSession={(id) => sessionsStore.select(id)}
-          />
+          <RevisionBanner onCancel={cancelEdit} onSubmit={submitEdit} sessionId={sessionId} />
           <MessageQueue sessionId={sessionId} onError={reportError} />
           <InteractionPrompts sessionId={sessionId} onError={reportError} />
           {feed.boundaryUnreadable && !feed.interactionPending && (
