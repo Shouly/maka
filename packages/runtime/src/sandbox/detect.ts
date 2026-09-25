@@ -18,7 +18,9 @@
  */
 
 const SANDBOX_DENIAL_PATTERN =
-  /operation not permitted|sandbox-exec|file system sandbox blocked|sandbox(?:ed)?[^\n]*den(?:y|ied)/i;
+  // `read-only file system` is what a bubblewrap read-only bind answers a write
+  // with (EROFS); Seatbelt says `operation not permitted`.
+  /operation not permitted|read-only file system|sandbox-exec|file system sandbox blocked|sandbox(?:ed)?[^\n]*den(?:y|ied)/i;
 
 export function isLikelySandboxDenial(input: {
   stdout: string;

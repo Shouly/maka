@@ -366,8 +366,19 @@ function isFilesystemRoot(path: string): boolean {
   return path === '/' || /^[A-Za-z]:[\\/]?$/.test(path);
 }
 
+export interface SandboxBoundaryExpansionValidationOptions {
+  /**
+   * Accept `/` (or a drive root) as a read entry. Never for a grant — that
+   * would be the whole disk — but a filesystem worker's per-operation boundary
+   * is only ever as wide as the session already reads, and a search from the
+   * root is a search the session may run.
+   */
+  readonly allowReadRoot?: boolean;
+}
+
 export function validateSandboxBoundaryExpansion(
   input: unknown,
+  options: SandboxBoundaryExpansionValidationOptions = {},
 ): SandboxBoundaryExpansionValidationResult {
   if (!isRecord(input)) {
     return invalid('invalid_expansion', 'Sandbox boundary expansion must be an object.');
@@ -376,7 +387,7 @@ export function validateSandboxBoundaryExpansion(
     return invalid('invalid_expansion', 'Sandbox boundary expansion contains unsupported fields.');
   }
 
-  const entriesResult = validateFilesystem(input.filesystem);
+  const entriesResult = validateFilesystem(input.filesystem, options);
   if (!entriesResult.ok) return entriesResult;
   const networkResult = validateNetwork(input.network);
   if (!networkResult.ok) return networkResult;
@@ -694,6 +705,7 @@ function pathCoveredByRoot(
 
 function validateFilesystem(
   input: unknown,
+  options: SandboxBoundaryExpansionValidationOptions,
 ):
   | { ok: true; entries: SandboxBoundaryFilesystemEntry[] }
   | Extract<SandboxBoundaryExpansionValidationResult, { ok: false }> {
@@ -728,14 +740,18 @@ function validateFilesystem(
     }
     // `/` and a Windows drive root are normalized absolute paths, but not
     // expansions anyone can ask for: each would be the whole disk.
-    if (!isNormalizedAbsolutePath(candidate.path) || isFilesystemRoot(candidate.path)) {
+    const root = isFilesystemRoot(candidate.path);
+    if (
+      !isNormalizedAbsolutePath(candidate.path) ||
+      (root && !(options.allowReadRoot && candidate.access === 'read'))
+    ) {
       return invalid('invalid_path', 'Sandbox boundary path must be a normalized absolute path.');
     }
     if (candidate.path.length > MAX_SANDBOX_BOUNDARY_PATH_CHARS) {
       return invalid('path_too_long', 'Sandbox boundary path exceeds the length limit.');
     }
     entries.push({
-      path: trimTrailingSlashes(candidate.path),
+      path: root ? candidate.path : trimTrailingSlashes(candidate.path),
       access: candidate.access as SandboxBoundaryAccess,
       scope: candidate.scope as SandboxBoundaryScope,
     });

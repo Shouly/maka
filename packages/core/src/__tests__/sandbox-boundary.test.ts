@@ -203,6 +203,21 @@ describe('SandboxBoundaryExpansion', () => {
     }
   });
 
+  test('the filesystem root is a read entry only where the caller allows it, never a grant', () => {
+    const rootRead = { filesystem: { entries: [{ path: '/', access: 'read', scope: 'subtree' }] } };
+    assert.strictEqual(validateSandboxBoundaryExpansion(rootRead).ok, false);
+    const allowed = validateSandboxBoundaryExpansion(rootRead, { allowReadRoot: true });
+    assert.strictEqual(allowed.ok, true);
+    if (allowed.ok) assert.strictEqual(allowed.expansion.filesystem?.entries[0]?.path, '/');
+    assert.strictEqual(
+      validateSandboxBoundaryExpansion(
+        { filesystem: { entries: [{ path: '/', access: 'write', scope: 'subtree' }] } },
+        { allowReadRoot: true },
+      ).ok,
+      false,
+    );
+  });
+
   test('applies additive authority without weakening an explicit deny', () => {
     const base: PermissionProfileManaged = {
       type: 'managed',

@@ -101,7 +101,9 @@ const OperationBoundarySchema = z
   })
   .strict()
   .superRefine((profile, context) => {
-    const validation = validateSandboxBoundaryExpansion(profile);
+    // A read from `/` is a Glob or Grep over the whole disk, which the session
+    // may already do; only a grant may not name the root.
+    const validation = validateSandboxBoundaryExpansion(profile, { allowReadRoot: true });
     if (!validation.ok) context.addIssue({ code: 'custom', message: validation.message });
   });
 

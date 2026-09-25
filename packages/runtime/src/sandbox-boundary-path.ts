@@ -136,12 +136,16 @@ function isMissingPathError(error: unknown): boolean {
 }
 
 /**
- * Create the directories an approved write grant names but that do not exist
- * yet. A grant can name a directory before it exists, and Linux mounts and
- * Windows ACLs can only name existing paths, so each one is made real, empty,
- * before a sandbox that enforces it starts. Only write grants that the user
- * approved as whole directories are created; a failure is left for the
- * sandboxed operation to report.
+ * Make every approved write directory exist before a sandbox that enforces it
+ * starts. A grant can name a directory before it exists, and the sandbox can
+ * only be as narrow as what is there: Linux mounts and Windows ACLs cannot
+ * name a missing path at all, and on macOS a write into a missing directory is
+ * enforced through its nearest existing ancestor — which, with the grant
+ * itself absent, would be whatever lies above it. Runs before every sandboxed
+ * command and file operation, so a granted directory the user removed comes
+ * back, empty, the next time a tool runs; only write grants approved as whole
+ * directories are created, and a failure is left for the sandboxed operation
+ * to report.
  */
 export function materializeApprovedWriteDirectories(profile: PermissionProfile): void {
   if (profile.type !== 'managed' || profile.fileSystem.kind !== 'restricted') return;

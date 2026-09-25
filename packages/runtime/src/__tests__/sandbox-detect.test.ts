@@ -29,6 +29,7 @@ describe('isLikelySandboxDenial', () => {
       { stdout: '', stderr: 'launching sandbox-exec profile' },
       { stdout: '', stderr: 'dyld: file system sandbox blocked mmap()' },
       { stdout: 'The operation was sandboxed and denied by policy', stderr: '' },
+      { stdout: '', stderr: 'sh: 1: cannot create /etc/x: Read-only file system' },
     ]) {
       assert.equal(isLikelySandboxDenial({ ...input, sandboxed: true }), true);
     }
