@@ -88,6 +88,31 @@ Watermark after this batch: `99cfeb7e9`. Rows are proposed unless a
   re-arms at every accepted request. Unlike upstream, the proactive fold stays
   once per send: re-folding the live head before every step would spend a
   summary call to lose recent context.
+- `2002f648e` #5466: **bug confirmed, reproduced** (the copy threw
+  `canonical_args_hash_conflict`). Editing an earlier message failed once the
+  model had used ArchiveRead: the copy rewrites the call's `ref`, but its
+  dispatch kept the hash of the source args. The copy now re-stamps the
+  dispatch, but only when the source dispatch authenticated the source call; a
+  corrupt source is still refused. Our Read does not page tool results, so
+  only ArchiveRead is affected.
+- `8b0db8be1` #5676: **upstream's bug does not exist here**. Our Read caps in
+  bytes (256 KB, per the reference). The same mistake existed in tool-result
+  pruning, which estimated tokens from UTF-16 length: Chinese results were
+  priced at a quarter of their cost and escaped archiving. Pruning now
+  estimates from UTF-8 bytes. ASCII results are unchanged.
+- `c6e3eb0cd` #5586: **bug confirmed**. On the OpenAI Chat wire the SDK
+  JSON-stringifies a content tool result, so an image reached the model as
+  base64 text. The OpenAI SDK types allow only text in a tool message and
+  images in a user message. On that wire a tool result now keeps its text, and
+  its images follow the tool-result group as one labelled user message.
+  Known limit: a vision-capable thinking model on Chat sees a user message
+  inside its tool loop.
+- `30c406c9e` #5587: **premise does not hold for Claude 4.5+**. Anthropic's
+  docs say 4.5 and later accept `input + max_tokens` past the window and stop
+  with `model_context_window_exceeded`; only earlier models refuse. No output
+  cap was added. What we kept: the earlier models' refusal ("input length and
+  `max_tokens` exceed context limit") classified as a context overflow, so it
+  folds instead of failing as a rejected request.
 
 ### Port
 
