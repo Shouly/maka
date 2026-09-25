@@ -89,6 +89,27 @@ export function newTaskTargetAvailable(
       );
 }
 
+/**
+ * What replaces a remembered target the catalog proves is gone for good, as
+ * opposed to merely unreachable: its profile's Host answers, but as a
+ * different Host (its State Root was replaced), or that Host answers without
+ * the project at all. The replacement is that same Host's current target, never
+ * another machine. Undefined when the target stands, an outage included: an
+ * offline Host, or an unavailable or archived project.
+ */
+export function newTaskTargetReplacement(
+  catalog: DesktopNewTaskCatalog | undefined,
+  target: DesktopNewTaskTarget,
+): DesktopNewTaskTarget | undefined {
+  const host = catalog?.hosts.find((entry) => entry.profile.id === target.profileId);
+  if (host?.readiness !== 'ready' || host.state !== 'available') return undefined;
+  const gone =
+    host.hostId !== target.hostId ||
+    (target.projectId !== null &&
+      !host.projects.some((project) => project.id === target.projectId));
+  return gone ? currentTargetOn(host) : undefined;
+}
+
 export function addProjectHostOf(
   catalog: DesktopNewTaskCatalog | undefined,
   target: DesktopNewTaskTarget | undefined,
@@ -215,7 +236,14 @@ export function defaultTargetOf(
         entry.readiness === 'ready' &&
         entry.state === 'available',
     ) ?? hosts.find((entry) => entry.readiness === 'ready' && entry.state === 'available');
-  if (host?.readiness !== 'ready' || host.state !== 'available') return undefined;
+  return host ? currentTargetOn(host) : undefined;
+}
+
+/** One Host's current target: its selected project, else its default, else none. */
+function currentTargetOn(
+  host: DesktopNewTaskCatalog['hosts'][number],
+): DesktopNewTaskTarget | undefined {
+  if (host.readiness !== 'ready' || host.state !== 'available') return undefined;
   const projectId =
     host.selectedProjectId === null
       ? null
@@ -303,8 +331,12 @@ export function createNewTaskStore(
       if (request !== catalogGeneration) return;
       const state = store.getState();
       // Preserve explicit intent during outages; an unavailable target is blocked,
-      // never silently replaced by a different project or machine.
-      const target = state.target ?? defaultTargetOf(catalog);
+      // never silently replaced by a different project or machine. A target
+      // that can never come back is not an outage: it falls back to the
+      // current target on the same Host, and the stale choice is forgotten.
+      const replacement = state.target && newTaskTargetReplacement(catalog, state.target);
+      const target = replacement ?? state.target ?? defaultTargetOf(catalog);
+      if (replacement) selectionStorage.write(NEW_TASK_TARGET_KEY, JSON.stringify(replacement));
       targetGeneration++;
       store.setState({
         catalog,

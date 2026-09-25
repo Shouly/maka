@@ -1001,6 +1001,77 @@ test('selection persistence restores project and explicit deselection with Host 
     assert.equal(parseNewTaskTarget(input), undefined);
 });
 
+test('a remembered target whose Host or project is gone for good falls back on its own Host', async () => {
+  // Remembered before the State Root was replaced: the profile's Host now
+  // answers under another identity, and the project went with the old root.
+  let raw: string | null = JSON.stringify({
+    profileId: 'local',
+    hostId: 'old-host',
+    projectId: 'gone',
+  });
+  const storage = {
+    read: () => raw,
+    write: (_key: string, value: string) => {
+      raw = value;
+    },
+  };
+  const fallback = { profileId: 'local', hostId: 'host-1', projectId: 'p1' };
+  const { bridge } = fakeNewTaskBridge();
+  const replaced = createNewTaskStore(bridge as never, undefined, storage);
+  await replaced.refresh();
+  assert.deepEqual(replaced.getState().target, fallback);
+  assert.deepEqual(JSON.parse(raw), fallback);
+  // The fallback is usable, so the model list loads and a model can be chosen.
+  assert.equal(replaced.getState().model?.model, 'm1');
+
+  // Same Host, project no longer on it.
+  raw = JSON.stringify({ profileId: 'local', hostId: 'host-1', projectId: 'deleted' });
+  const deleted = createNewTaskStore(bridge as never, undefined, storage);
+  await deleted.refresh();
+  assert.deepEqual(deleted.getState().target, fallback);
+
+  // A gone target on another machine falls back on that machine, not this one.
+  raw = JSON.stringify({ profileId: 'far', hostId: 'old-far', projectId: 'gone' });
+  const far = {
+    ...readyHost([{ id: 'f1', name: 'Far One' }]),
+    profile: { id: 'far', name: 'Server' },
+    hostId: 'far-host',
+  };
+  const remote = createNewTaskStore(
+    fakeNewTaskBridge({
+      getNewTaskCatalog: async () => ({
+        defaultProfileId: 'local',
+        hosts: [readyHost([{ id: 'p1', name: 'One' }]), far],
+      }),
+    }).bridge as never,
+    undefined,
+    storage,
+  );
+  await remote.refresh();
+  assert.deepEqual(remote.getState().target, {
+    profileId: 'far',
+    hostId: 'far-host',
+    projectId: 'f1',
+  });
+
+  // An offline Host proves nothing: the remembered target stays, blocked.
+  const remembered = { profileId: 'local', hostId: 'old-host', projectId: 'gone' };
+  raw = JSON.stringify(remembered);
+  const offline = createNewTaskStore(
+    fakeNewTaskBridge({
+      getNewTaskCatalog: async () => ({
+        defaultProfileId: 'local',
+        hosts: [{ profile: { id: 'local', name: 'This Mac' }, readiness: 'unavailable' }],
+      }),
+    }).bridge as never,
+    undefined,
+    storage,
+  );
+  await offline.refresh();
+  assert.deepEqual(offline.getState().target, remembered);
+  assert.deepEqual(JSON.parse(raw), remembered);
+});
+
 test('an unavailable selection cannot send, switch Hosts or be revived by a late scoped read', async () => {
   const host = readyHost([{ id: 'p1', name: 'One' }]);
   let hosts: unknown[] = [host];
