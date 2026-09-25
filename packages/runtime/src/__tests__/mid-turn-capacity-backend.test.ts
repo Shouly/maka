@@ -121,6 +121,8 @@ interface MidTurnFixtureOptions {
     | undefined;
   /** Return and replay a Codex subscription V2 provider checkpoint. */
   providerNative?: boolean;
+  /** An Ollama connection: the one provider the dropping note watches. */
+  ollama?: boolean;
   branch?: string;
   /** Omit the prior turns so the compaction pool has no safe completed span. */
   withoutPriorTurns?: boolean;
@@ -475,6 +477,13 @@ function buildFixture(options: MidTurnFixtureOptions = {}): MidTurnFixture {
       ...connection(),
       ...(options.providerNative
         ? { slug: 'codex-subscription', providerType: 'openai-codex' as const }
+        : {}),
+      ...(options.ollama
+        ? {
+            slug: 'ollama-local',
+            providerType: 'ollama' as const,
+            baseUrl: 'http://localhost:11434',
+          }
         : {}),
       models: [
         {
@@ -1047,6 +1056,7 @@ function defineMidTurnSuite(consumer: ConsumerMode): void {
     // several thousand schema tokens with no fold, prune or image omission.
     // Maka shaped that request; the provider dropped nothing.
     const fixture = buildFixture({
+      ollama: true,
       contextWindow: 200,
       finalAtSecondCall: true,
       childFinalization: true,
@@ -1283,6 +1293,7 @@ function defineMidTurnSuite(consumer: ConsumerMode): void {
     // turns. A send of one or two steps never sees that from the inside
     // (#4623). One request here, so only the step-0 comparison can write it.
     const fixture = buildFixture({
+      ollama: true,
       withoutContextWindow: true,
       singleRequest: true,
       finalStepUsage: { input: 3_716, output: 10 },
@@ -1300,6 +1311,7 @@ function defineMidTurnSuite(consumer: ConsumerMode): void {
 
   test('does not report dropping across the boundary when the input grew', async () => {
     const fixture = buildFixture({
+      ollama: true,
       withoutContextWindow: true,
       singleRequest: true,
       finalStepUsage: { input: 4_000, output: 10 },
@@ -1322,6 +1334,7 @@ function defineMidTurnSuite(consumer: ConsumerMode): void {
     // three shrink the input legitimately, and none lands on exactly the same
     // count, so equality is what separates them from a truncating provider.
     const fixture = buildFixture({
+      ollama: true,
       withoutContextWindow: true,
       singleRequest: true,
       finalStepUsage: { input: 900, output: 10 },
@@ -1341,6 +1354,7 @@ function defineMidTurnSuite(consumer: ConsumerMode): void {
   test('does not report dropping across the boundary when this send folded first', async () => {
     // A fold before the first request explains a smaller input by itself.
     const fixture = buildFixture({
+      ollama: true,
       contextWindow: 3_000,
       singleRequest: true,
       finalStepUsage: { input: 3_716, output: 10 },
@@ -1363,6 +1377,7 @@ function defineMidTurnSuite(consumer: ConsumerMode): void {
     // stops growing rather than dropping while Maka keeps appending. A
     // plateau is the signal the copy promises ("usage did not grow").
     const fixture = buildFixture({
+      ollama: true,
       contextWindow: 200,
       finalAtSecondCall: true,
       firstStepUsage: { input: 100, output: 20 },
@@ -1379,6 +1394,7 @@ function defineMidTurnSuite(consumer: ConsumerMode): void {
 
   test('records provider context dropping only for an unshaped usage decrease', async () => {
     const fixture = buildFixture({
+      ollama: true,
       contextWindow: 200,
       finalAtSecondCall: true,
       finalStepUsage: { input: 50, output: 10 },
@@ -1392,8 +1408,34 @@ function defineMidTurnSuite(consumer: ConsumerMode): void {
     assert.equal(note?.kind, 'context_provider_dropping');
   });
 
+  test('never reports dropping for a provider that does not truncate silently', async () => {
+    // A relay reports whatever its current upstream counts, and a first-party
+    // API rejects an overflow instead of truncating, so a smaller or equal
+    // count proves nothing on either (apache/maka#5672).
+    for (const finalStepUsage of [
+      { input: 50, output: 10 },
+      { input: 100, output: 10 },
+    ]) {
+      const fixture = buildFixture({
+        contextWindow: 200,
+        finalAtSecondCall: true,
+        firstStepUsage: { input: 100, output: 20 },
+        finalStepUsage,
+      });
+      await runFixtureTurn(fixture, consumer);
+
+      assert.equal(
+        fixture.messages.some(
+          (message) => (message as { kind?: string }).kind === 'context_provider_dropping',
+        ),
+        false,
+      );
+    }
+  });
+
   test('does not call provider context dropping when active pruning explains the decrease', async () => {
     const fixture = buildFixture({
+      ollama: true,
       contextWindow: 200,
       finalAtSecondCall: true,
       hugeFirstResult: true,

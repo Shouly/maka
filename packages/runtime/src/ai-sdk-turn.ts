@@ -62,6 +62,7 @@ import {
   type EffectiveOrchestration,
 } from '@maka/core/orchestration';
 import type { ContextBudgetDiagnostic, LlmCallRecord } from '@maka/core/usage-stats/types';
+import type { ProviderType } from '@maka/core/llm-connections';
 import { stripUndefinedDeep } from '@maka/core/tool-args-identity';
 import type { RequestProjectionStage } from './request-projection.js';
 import type { PlanToolResult } from './plan-tools.js';
@@ -605,6 +606,20 @@ function providerRetryDelayMs(failedAttempt: number, retryAfterMs?: number): num
     PROVIDER_RETRY_MAX_DELAY_MS,
   );
   return Math.ceil(base + Math.random() * PROVIDER_RETRY_JITTER_FACTOR * base);
+}
+
+/**
+ * Whether a shrinking input count can mean the provider dropped context.
+ *
+ * Only Ollama: it truncates to `num_ctx` without an error and reports the
+ * truncated prompt's count, which is the evidence the dropping note was built
+ * on (#4559, #4623). A first-party API rejects an overflow instead. A relay or
+ * gateway reports whatever its current upstream counts, so the numbers move
+ * with routing, not with context: one fell from 134,460 to 99,398 input
+ * tokens with the whole history sent (apache/maka#5672).
+ */
+function providerMayTruncateSilently(providerType: ProviderType): boolean {
+  return providerType === 'ollama';
 }
 
 /** A watchdog or incomplete-stream recovery can retry a kind the table does not. */
@@ -1704,6 +1719,7 @@ export class AiSdkTurn {
                       : midTurnState?.priorAcceptedInputTokens
                     : lastStepInputTokens;
                   if (
+                    providerMayTruncateSilently(this.deps.backend.connection.providerType) &&
                     !this.deps.session.contextProviderDroppingReported &&
                     !toolSchemaShrank &&
                     midTurnState &&
