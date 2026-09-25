@@ -660,6 +660,9 @@ test('message execution query reports the Turn that durably owns each Message', 
           turnId: ROOT.turnId,
           runId: ROOT.runId,
         },
+        // Nothing durable names it and no submit of it is in flight: the Host
+        // says so rather than leaving it out.
+        { messageId: 'unknown-message', state: 'not_admitted' },
       ],
     },
   });

@@ -87,6 +87,9 @@ async function database(t: TestContext, now?: () => number) {
 function client(hostEpoch: string): NonNullable<DesktopSessionLocalTarget['client']> {
   return {
     hostEpoch,
+    async queryMessageExecutions() {
+      return { resolutions: [] };
+    },
     async getSession() {
       return null;
     },
@@ -494,27 +497,33 @@ test('lost ACK recovery never changes epoch or ID and does not block another Ses
   store.enqueue('authority', intent());
   service.wake();
   await waitFor(() => store.get('authority', 'message-1')?.state === 'unknown');
+  const queried: string[][] = [];
   target = {
     ...target,
-    client: client('epoch-2'),
+    client: {
+      ...client('epoch-2'),
+      async queryMessageExecutions(input) {
+        queried.push([...input.messageIds]);
+        // Still recovering: the Host leaves the identity out.
+        return { resolutions: [] };
+      },
+    },
     submit: async (input) => {
       calls.push(input);
-      if (input.messageId === 'message-1')
-        throw new RuntimeHostOperationError(
-          'turn.message.submit',
-          'outcome_unknown',
-          'no durable proof',
-        );
       return accepted;
     },
   };
   store.enqueue('authority', intent('message-2', 'session-2'));
   service.wake();
-  await waitFor(() => store.get('authority', 'message-2')?.state === 'accepted');
+  await waitFor(
+    () => store.get('authority', 'message-2')?.state === 'accepted' && queried.length === 1,
+  );
+  // The new Host is asked about the old dispatch; it is never replayed.
   assert.deepEqual(
     calls.filter((call) => call.messageId === 'message-1').map((call) => call.originHostEpoch),
-    ['epoch-1', 'epoch-1'],
+    ['epoch-1'],
   );
+  assert.deepEqual(queried, [['message-1']]);
   assert.equal(store.get('authority', 'message-1')?.state, 'unknown');
   assert.equal(calls.find((call) => call.messageId === 'message-2')?.originHostEpoch, 'epoch-2');
 });
@@ -785,4 +794,121 @@ test('local submit preserves picked-file approvals until durable admission succe
   assert.equal(resizeCalls, 0);
   assert.equal(store.get('authority', 'too-large'), undefined);
   for (const item of largePicked) assert.ok(approvals.peekApproval(7, item.approvalId));
+});
+
+test('a message dispatched in a Host epoch that is gone is settled, and the queue moves on', async (t) => {
+  // The Host restarted while message-1 was in flight. The new Host answers any
+  // replay of that epoch's submit with outcome_unknown, so replaying it loops
+  // forever and holds every later message of the Session behind it.
+  const { store, beforeClose } = await database(t);
+  const submissions: string[] = [];
+  const queried: string[][] = [];
+  const target: DesktopSessionLocalTarget = {
+    partition: 'authority',
+    profileId: 'profile',
+    scope: { hostId: 'root', targetEpoch: 'target-1' },
+    client: {
+      ...client('epoch-2'),
+      async queryMessageExecutions(input) {
+        queried.push([...input.messageIds]);
+        // No receipt, proof, tombstone or admission names it: never admitted.
+        return {
+          resolutions: input.messageIds.map((messageId) => ({
+            messageId,
+            state: 'not_admitted' as const,
+          })),
+        };
+      },
+    },
+    submit: async (input) => {
+      submissions.push(input.messageId);
+      if (input.originHostEpoch === 'epoch-1') {
+        throw new RuntimeHostOperationError('turn.message.submit', 'outcome_unknown', 'unproven');
+      }
+      return accepted;
+    },
+  };
+  const service = new DesktopSessionLocalService(store, {
+    targets: () => [target],
+    changed() {},
+    onError: (error) => assert.fail(String(error)),
+  });
+  beforeClose.push(() => service.close());
+  const dispatched = store.enqueue('authority', intent());
+  store.update({
+    ...dispatched,
+    state: 'unknown',
+    intent: { ...dispatched.intent, originHostEpoch: 'epoch-1' },
+  });
+  store.enqueue('authority', intent('message-2'));
+  service.wake();
+
+  await waitFor(() => store.get('authority', 'message-2')?.state === 'accepted');
+  assert.equal(store.get('authority', 'message-1')?.state, 'failed');
+  assert.deepEqual(queried, [['message-1']]);
+  // The gone epoch's submit is never replayed.
+  assert.deepEqual(submissions, ['message-2']);
+  // A settled non-delivery is the user's to remove.
+  const [message1] = service
+    .listMessages(target, 'session-1')
+    .filter((message) => message.messageId === 'message-1');
+  assert.equal(message1?.canCancel, true);
+});
+
+test('a message of a gone Host epoch that the Host owns or queues is accepted, not failed', async (t) => {
+  const { store, beforeClose } = await database(t);
+  const submissions: string[] = [];
+  const target: DesktopSessionLocalTarget = {
+    partition: 'authority',
+    profileId: 'profile',
+    scope: { hostId: 'root', targetEpoch: 'target-1' },
+    client: {
+      ...client('epoch-2'),
+      async queryMessageExecutions(input) {
+        return {
+          resolutions: input.messageIds.map((messageId) =>
+            messageId === 'owned'
+              ? { messageId, state: 'owned' as const, turnId: 'turn-1', runId: 'run-1' }
+              : { messageId, state: 'pending' as const },
+          ),
+        };
+      },
+    },
+    submit: async (input) => {
+      submissions.push(input.messageId);
+      return accepted;
+    },
+  };
+  const service = new DesktopSessionLocalService(store, {
+    targets: () => [target],
+    changed() {},
+    onError: (error) => assert.fail(String(error)),
+  });
+  beforeClose.push(() => service.close());
+  for (const [messageId, sessionId] of [
+    ['owned', 'session-1'],
+    ['queued', 'session-2'],
+  ] as const) {
+    const dispatched = store.enqueue('authority', intent(messageId, sessionId));
+    store.update({
+      ...dispatched,
+      state: 'unknown',
+      intent: { ...dispatched.intent, originHostEpoch: 'epoch-1' },
+    });
+  }
+  service.wake();
+
+  await waitFor(
+    () =>
+      store.get('authority', 'owned')?.state === 'accepted' &&
+      store.get('authority', 'queued')?.state === 'accepted',
+  );
+  assert.deepEqual(store.get('authority', 'owned')?.result, {
+    disposition: 'turn_started',
+    turnId: 'turn-1',
+    skillInvocation: { loaded: [], failed: [], receipts: [] },
+  });
+  assert.equal(store.get('authority', 'queued')?.result?.disposition, 'followup');
+  assert.deepEqual(submissions, []);
+  assert.equal(service.listMessages(target, 'session-1')[0]?.turnId, 'turn-1');
 });

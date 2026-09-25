@@ -27,6 +27,7 @@ import {
   RuntimeHostRequestInterruptedError,
 } from '@maka/runtime-host/client';
 import type {
+  TurnMessageExecutionResolution,
   TurnMessageSubmitInput,
   TurnMessageSubmitResult,
   WorkspaceTarget,
@@ -63,7 +64,12 @@ export interface DesktopSessionLocalTarget {
   readonly profileId: string;
   readonly client?: Pick<
     DesktopRuntimeHostClient,
-    'hostEpoch' | 'createSession' | 'getSession' | 'listSessions' | 'ingestAttachment'
+    | 'hostEpoch'
+    | 'createSession'
+    | 'getSession'
+    | 'listSessions'
+    | 'ingestAttachment'
+    | 'queryMessageExecutions'
   >;
   readonly submit?: (input: TurnMessageSubmitInput) => Promise<TurnMessageSubmitResult>;
 }
@@ -383,6 +389,18 @@ export class DesktopSessionLocalService {
     const stillOwned = () =>
       this.#current(target) && this.store.get(record.partition, record.messageId) !== undefined;
     try {
+      // A Message dispatched in a Host epoch that is gone cannot be replayed:
+      // the running Host holds no submit of that epoch and answers
+      // `outcome_unknown` for anything it cannot prove, so the replay loops
+      // forever and every later Message of the Session waits behind it. Ask
+      // the Host what became of it instead.
+      if (
+        record.intent.originHostEpoch !== undefined &&
+        record.intent.originHostEpoch !== client.hostEpoch
+      ) {
+        await this.#settleDispatchedEpoch(target, record);
+        return;
+      }
       const creation = this.store.creation(target.partition, record.sessionId);
       if (creation) {
         // session.create already has a durable request fingerprint. Replaying
@@ -474,6 +492,87 @@ export class DesktopSessionLocalService {
         this.#scheduleRetry(key);
       } else if (!uncertain && !retryable) this.#probed.delete(key);
     }
+    this.deps.changed(target.scope, record.sessionId);
+  }
+
+  /**
+   * Settles a Message whose dispatch epoch is no longer the running Host's,
+   * from what the Host holds durably about its identity.
+   */
+  async #settleDispatchedEpoch(
+    target: DesktopSessionLocalTarget,
+    record: LocalOutboxRecord,
+  ): Promise<void> {
+    const client = target.client!;
+    const key = `${target.partition}:${record.messageId}`;
+    const stillOwned = () =>
+      this.#current(target) && this.store.get(target.partition, record.messageId) !== undefined;
+    const unresolved = (): void => {
+      // Not a guess either way: a wrong "never delivered" would let the user
+      // send again a Message the Host may already own.
+      this.store.update({
+        ...this.store.get(target.partition, record.messageId)!,
+        state: 'unknown',
+        error: 'Host outcome is unknown; the running Host has not confirmed the original message.',
+      });
+      if (!this.#closed && !this.#retries.has(key)) this.#scheduleRetry(key);
+      this.deps.changed(target.scope, record.sessionId);
+    };
+    let resolution: TurnMessageExecutionResolution | undefined;
+    try {
+      const resolved = await client.queryMessageExecutions({
+        sessionId: record.sessionId,
+        messageIds: [record.messageId],
+      });
+      resolution = resolved.resolutions.find((entry) => entry.messageId === record.messageId);
+    } catch {
+      if (stillOwned()) unresolved();
+      return;
+    }
+    if (!stillOwned()) return;
+    // The original submit answer is lost, so there is no Skill outcome to report.
+    const skillInvocation = { loaded: [], failed: [], receipts: [] };
+    const current = this.store.get(target.partition, record.messageId)!;
+    if (resolution?.state === 'owned') {
+      // A receipt or steering proof names it: the Turn it opened settles it.
+      this.store.update({
+        ...current,
+        state: 'accepted',
+        result: { disposition: 'turn_started', turnId: resolution.turnId, skillInvocation },
+        error: undefined,
+      });
+    } else if (resolution?.state === 'pending') {
+      // The Host queue holds it and owns its order from here.
+      this.store.update({
+        ...current,
+        state: 'accepted',
+        result: { disposition: 'followup', skillInvocation },
+        error: undefined,
+      });
+    } else if (resolution?.state === 'cancelled' || resolution?.state === 'not_admitted') {
+      // It can never execute. An explicit non-delivery releases the Session's
+      // order and leaves a copy the user can remove.
+      this.store.update({
+        ...current,
+        state: 'failed',
+        error:
+          resolution.state === 'cancelled'
+            ? 'The Host cancelled this message. The local copy is kept.'
+            : 'The Host never accepted this message. The local copy is kept.',
+        result: undefined,
+      });
+    } else {
+      // Left out: the Host cannot say yet (still recovering).
+      unresolved();
+      return;
+    }
+    const timer = this.#retries.get(key);
+    if (timer) {
+      clearTimeout(timer);
+      this.#retries.delete(key);
+    }
+    this.#probed.delete(key);
+    this.#catalogFresh.delete(target.partition);
     this.deps.changed(target.scope, record.sessionId);
   }
 }

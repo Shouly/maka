@@ -958,7 +958,15 @@ export class RuntimeHostSessionObserver {
       });
       if (this.#closed || state.closing || state.projector !== projector) return;
       for (const resolution of resolutions) {
-        if (resolution.state === 'pending') continue;
+        // `owned` admits; `cancelled` and `not_admitted` (it can never execute)
+        // retract. Named, so a later state does not fall into either by default.
+        const outcome =
+          resolution.state === 'owned'
+            ? ('admitted' as const)
+            : resolution.state === 'cancelled' || resolution.state === 'not_admitted'
+              ? ('retracted' as const)
+              : undefined;
+        if (!outcome) continue;
         const turnId = resolution.state === 'owned'
           ? resolution.turnId : (next.rootTurn ?? previous.rootTurn)?.turnId;
         if (!turnId) continue;
@@ -968,7 +976,7 @@ export class RuntimeHostSessionObserver {
           turnId,
           ts: this.#now(),
           messageId: resolution.messageId,
-          outcome: resolution.state === 'owned' ? 'admitted' : 'retracted',
+          outcome,
         });
       }
     } catch {

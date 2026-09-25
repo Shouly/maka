@@ -463,50 +463,58 @@ export class HostMessageCoordinator implements RuntimeMessageAuthority {
     return success({ cancelledMessageIds });
   }
 
-  async queryMessageExecutions(input: {
+  /**
+   * What became of each Message identity. `not_admitted` is a positive answer:
+   * no durable receipt, steering proof, tombstone or pending admission names
+   * the identity and no submit of it is in flight, so nothing ever admitted it
+   * and nothing can. An identity left out means the Host cannot say yet.
+   *
+   * A client uses it to settle a Message dispatched in a Host epoch that is
+   * gone: replaying that submit only ever answers `outcome_unknown`.
+   */
+  queryMessageExecutions(input: {
     sessionId: string;
     messageIds: readonly string[];
-  }): Promise<
-    MessageOutcome<{
-      resolutions: Array<
-        | { messageId: string; state: 'pending' }
-        | { messageId: string; state: 'cancelled' }
-        | { messageId: string; state: 'owned'; turnId: string; runId: string }
-      >;
-    }>
-  > {
-    const resolutions: Array<
-      | { messageId: string; state: 'pending' }
-      | { messageId: string; state: 'cancelled' }
-      | { messageId: string; state: 'owned'; turnId: string; runId: string }
-    > = [];
-    for (const messageId of input.messageIds) {
-      const disposition = await this.#resolveMessageExecution(input.sessionId, messageId);
-      if (disposition.kind === 'owned_root' || disposition.kind === 'shared_turn') {
-        // This read projects current execution, including safe-boundary
-        // continuations. The Message's durable admission ownership is unchanged.
-        const latest = await this.#root.readLatestRootTurnLineage({
-          sessionId: input.sessionId,
-          turnId: disposition.turnId,
-          runId: disposition.runId,
-        });
-        resolutions.push({
-          messageId,
-          state: 'owned',
-          turnId: latest.turnId,
-          runId: latest.runId,
-        });
-        continue;
+  }): Promise<MessageOutcome<{ resolutions: MessageExecutionResolution[] }>> {
+    // Read under the Session's admission, like every admission reader: the
+    // silence behind `not_admitted` is only proof while no admission write can
+    // be in flight, and some writers (WorkHub) leave no in-memory submit.
+    return this.#sessionAdmission.runOrJoin(input.sessionId, async () => {
+      const resolutions: MessageExecutionResolution[] = [];
+      for (const messageId of input.messageIds) {
+        const disposition = await this.#resolveMessageExecution(input.sessionId, messageId);
+        if (disposition.kind === 'owned_root' || disposition.kind === 'shared_turn') {
+          // This read projects current execution, including safe-boundary
+          // continuations. The Message's durable admission ownership is unchanged.
+          const latest = await this.#root.readLatestRootTurnLineage({
+            sessionId: input.sessionId,
+            turnId: disposition.turnId,
+            runId: disposition.runId,
+          });
+          resolutions.push({
+            messageId,
+            state: 'owned',
+            turnId: latest.turnId,
+            runId: latest.runId,
+          });
+          continue;
+        }
+        if (disposition.kind === 'cancelled') {
+          resolutions.push({ messageId, state: 'cancelled' });
+          continue;
+        }
+        if (disposition.kind === 'pending') {
+          resolutions.push({ messageId, state: 'pending' });
+          continue;
+        }
+        // Nothing durable names it. A submit this epoch still holds may yet
+        // admit it; otherwise nothing ever did, since a gone epoch's submit
+        // can never commit here.
+        if (this.#pendingSubmits.has(operationKey(input.sessionId, messageId))) continue;
+        resolutions.push({ messageId, state: 'not_admitted' });
       }
-      if (disposition.kind === 'cancelled') {
-        resolutions.push({ messageId, state: 'cancelled' });
-        continue;
-      }
-      if (disposition.kind === 'pending') {
-        resolutions.push({ messageId, state: 'pending' });
-      }
-    }
-    return success({ resolutions });
+      return success({ resolutions });
+    });
   }
 
   /**
@@ -2584,6 +2592,13 @@ function failure(
 } {
   return { ok: false, error: { code, message } };
 }
+
+/** One identity's answer in `turn.message.execution.query`. */
+type MessageExecutionResolution =
+  | { messageId: string; state: 'pending' }
+  | { messageId: string; state: 'cancelled' }
+  | { messageId: string; state: 'not_admitted' }
+  | { messageId: string; state: 'owned'; turnId: string; runId: string };
 
 function operationKey(sessionId: string, operationId: string): string {
   return `${sessionId}\0${operationId}`;

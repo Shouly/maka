@@ -1513,7 +1513,7 @@ describe('Runtime Host bootstrap protocol', () => {
       operation: 'turn.message.query' as const,
       input: {
         sessionId: 'session-1',
-        messageIds: ['message-1', 'message-2', 'message-3'],
+        messageIds: ['message-1', 'message-2', 'message-3', 'message-4'],
       },
     };
     const executionQuery = {
@@ -1566,6 +1566,7 @@ describe('Runtime Host bootstrap protocol', () => {
             runId: 'run-2',
           },
           { messageId: 'message-3', state: 'cancelled' as const },
+          { messageId: 'message-4', state: 'not_admitted' as const },
         ],
       },
     };
@@ -1577,6 +1578,16 @@ describe('Runtime Host bootstrap protocol', () => {
           result: {
             ...queried.result,
             resolutions: [...queried.result.resolutions, ...queried.result.resolutions],
+          },
+        }),
+      isInvalidFrame,
+    );
+    assert.throws(
+      () =>
+        decodeHostFrame({
+          ...queried,
+          result: {
+            resolutions: [{ messageId: 'message-4', state: 'not_admitted', turnId: 'turn-4' }],
           },
         }),
       isInvalidFrame,
