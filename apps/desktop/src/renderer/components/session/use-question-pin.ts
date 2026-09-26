@@ -37,8 +37,9 @@
 // - The floor is released ratchet-wise as the reader scrolls: it only ever
 //   shrinks, to the height that still keeps the question pinned, so scrolling
 //   back into history cannot leave a blank block under the content. It goes
-//   entirely whenever the authority pins to the tail, so the tail it writes to
-//   is the content's real end.
+//   entirely when the reader jumps to the latest, so the tail that jump writes
+//   to is the content's real end. The pin re-engaging does not take it: see
+//   the departure below.
 // - The disc's visibility is the END OF CONTENT crossing a line 100px below
 //   the viewport, observed by an IntersectionObserver rather than polled: the
 //   floor would otherwise count as unread, and a timer would run for nothing.
@@ -48,7 +49,12 @@
 //
 // One departure from relx, deliberate: a reader who scrolls back down to the
 // tail re-engages the authority's pin, and the tail then follows the stream
-// again, the way claude.ai behaves.
+// again, the way claude.ai behaves. The floor stays under that pin. Right after
+// a send the viewport already sits at the floor's bottom, so any downward
+// input — a trackpad brush — re-engages the pin there; dropping the floor with
+// it shrank the page under the reader and let the question fall by up to a
+// viewport in one frame. The tail it follows is the floor's until the answer
+// outgrows it.
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import type { TranscriptScrollAuthority, TranscriptViewportNavigation } from '@maka/ui';
@@ -187,18 +193,12 @@ export function useQuestionPin(input: {
     return () => observer.disconnect();
   }, [endRef, publishDisc, scrollRef, sessionId]);
 
-  // The authority's pin means "follow the tail": whenever it engages — a send
-  // to a fresh Session, a reader scrolling back down to the bottom, a jump —
-  // the floor goes. The end of a hold re-judges the disc.
+  // The end of a hold, and the pin engaging, re-judge the disc. The pin leaves
+  // the floor where it is (see the departure above).
   useEffect(() => {
-    const follow = () => {
-      const feed = feedRef.current;
-      if (authority.getSnapshot().pinned && feed?.style.minHeight) feed.style.minHeight = '';
-      publishDisc();
-    };
-    follow();
-    return authority.subscribe(follow);
-  }, [authority, feedRef, publishDisc]);
+    publishDisc();
+    return authority.subscribe(publishDisc);
+  }, [authority, publishDisc]);
 
   // A new Session starts without a floor and without a stale verdict.
   useEffect(() => {
