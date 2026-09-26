@@ -53,7 +53,6 @@ import { statusGroupTools, type TurnStatusGroup } from '../../../lib/turn-timeli
 import type { ToolContentContext } from './registry.js';
 import { summarizeToolGroup, toolRowStatus, toolStepLabel } from './tool-presentation.js';
 import { isAskUserQuestionTool } from '../../../lib/ask-user-question.js';
-import { reasoningHeadline } from '../../../lib/reasoning-label.js';
 import { ThinkingText } from '../ThinkingStep.js';
 import {
   TurnStatusNarrationStep,
@@ -267,18 +266,6 @@ export function TurnStatusPending(props: { live: TurnStatusLive; writing?: boole
   );
 }
 
-/**
- * What a run with no call is called: the first line of its reasoning, when the
- * run is exactly one block of reasoning and nothing else — the reference's
- * rule. Several blocks, or narration between them, have no one line that
- * speaks for the run, so the caller falls back to "Thought process".
- */
-function reasoningRunLabel(steps: TurnStatusGroup['steps']): string | undefined {
-  if (steps.length !== 1) return undefined;
-  const only = steps[0]!;
-  return only.kind === 'thinking' ? reasoningHeadline(only.text) : undefined;
-}
-
 export const TurnStatus = memo(function TurnStatus(props: TurnStatusProps) {
   const locale = useUiLocale();
   const copy = getTranscriptCopy(locale).tools;
@@ -316,12 +303,12 @@ export const TurnStatus = memo(function TurnStatus(props: TurnStatusProps) {
         ? copy.thinkingActive
         : lastTool
           ? toolStepLabel(lastTool, locale).text
-          : (reasoningRunLabel(steps) ?? copy.thinkingOnly);
+          : copy.thinkingOnly;
   } else {
-    label =
-      tools.length > 0
-        ? summarizeToolGroup(tools, locale)
-        : (reasoningRunLabel(steps) ?? copy.thinkingOnly);
+    // A run with no call is "Thought process". Deviation: the reference names
+    // one block of reasoning by a summary it generates; the model gives none,
+    // and its own first line reads as half a sentence, not a title.
+    label = tools.length > 0 ? summarizeToolGroup(tools, locale) : copy.thinkingOnly;
   }
 
   const state = blocked ? 'blocked' : props.complete ? 'done' : 'busy';
