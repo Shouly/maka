@@ -18,8 +18,6 @@
  */
 
 import { isThinkingLevel, type ThinkingLevel } from './model-thinking.js';
-import type { OnboardingMilestone } from './onboarding.js';
-import { sanitizeOnboardingMilestones } from './onboarding.js';
 import type { WebSearchSettingsPatch, WebSearchSettings } from './web-search.js';
 import type { BotChatSettings, BotChatSettingsPatch } from './bot-chat-settings.js';
 import {
@@ -399,11 +397,6 @@ export interface PersonalizationSettings {
   selectedPetId: string | null;
 }
 
-/** Persisted onboarding milestones; derived onboarding state is not stored. */
-export interface OnboardingSettings {
-  milestones: OnboardingMilestone[];
-}
-
 export interface WorkspaceInstructionsSettings {
   enabled: boolean;
 }
@@ -509,7 +502,6 @@ export interface AppSettings {
   usage: UsageSettings;
   appearance: AppearanceSettings;
   personalization: PersonalizationSettings;
-  onboarding: OnboardingSettings;
   webSearch: WebSearchSettings;
   memory: MemorySettings;
   workspaceInstructions: WorkspaceInstructionsSettings;
@@ -724,9 +716,6 @@ export function createDefaultSettings(): AppSettings {
       uiLocale: 'auto',
       selectedPetId: null,
     },
-    onboarding: {
-      milestones: [],
-    },
     webSearch: defaultWebSearchSettings(),
     memory: defaultMemorySettings(),
     workspaceInstructions: {
@@ -792,12 +781,6 @@ export function mergeSettings(current: AppSettings, patch: UpdateAppSettingsInpu
           ? current.personalization.selectedPetId
           : patch.personalization.selectedPetId,
       ),
-    },
-    onboarding: {
-      ...current.onboarding,
-      // PR110b: milestones flow through a dedicated setMilestone IPC
-      // rather than the generic UpdateAppSettingsInput patch surface.
-      // Keep the existing list intact when callers patch other sections.
     },
     memory: patch.memory
       ? normalizeMemorySettings({ ...current.memory, ...patch.memory })
@@ -868,15 +851,6 @@ export function normalizeSettings(input: unknown): AppSettings {
     shell: value.shell,
     subagents: value.subagents,
   });
-  // PR110b: milestones bypass the generic patch surface so we can
-  // sanitize them with the closed-enum + at-most-one validator on
-  // every read. The settings → onboarding dependency is one-way; there
-  // is no cycle.
-  const rawOnboarding = (value as { onboarding?: unknown }).onboarding;
-  const rawMilestones =
-    rawOnboarding && typeof rawOnboarding === 'object'
-      ? (rawOnboarding as { milestones?: unknown }).milestones
-      : undefined;
   const {
     toastPosition: _legacyToastPosition,
     density: _legacyDensity,
@@ -938,9 +912,6 @@ export function normalizeSettings(input: unknown): AppSettings {
       selectedPetId: normalizeSelectedPetId(base.personalization.selectedPetId),
     },
     botChat: normalizeBotChatSettings(base.botChat, value.botChat),
-    onboarding: {
-      milestones: sanitizeOnboardingMilestones(rawMilestones),
-    },
     webSearch: normalizeWebSearchSettings(base.webSearch),
     memory: normalizeMemorySettings(base.memory),
     workspaceInstructions: normalizeWorkspaceInstructionsSettings(base.workspaceInstructions),

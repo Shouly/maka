@@ -97,7 +97,6 @@ export function projectClientOwnedSettings(
       uiLocale: client.personalization.uiLocale,
       selectedPetId: client.personalization.selectedPetId,
     },
-    onboarding: client.onboarding,
     projects: client.projects,
     notifications: client.notifications,
     workHub: client.workHub,

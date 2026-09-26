@@ -19,8 +19,8 @@
 
 // The onboarding snapshot, and the prefetch budget it is read under.
 //
-// `onboarding.getSnapshot()` is one composite read (sessions + connections +
-// model choices + per-session send readiness). What reads it is
+// `onboarding.getSnapshot()` is one composite read: the Sessions and whether
+// each one's next send can go out. What reads it is
 // `sessionSendOutcomes`: the sidebar marks rows the Host has already decided
 // cannot send, and a Session's notices explain why. Neither is on the
 // first-paint path, so the bootstrap arms the read on a timer instead of

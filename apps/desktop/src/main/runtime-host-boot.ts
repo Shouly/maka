@@ -1804,21 +1804,8 @@ function registerHostClientIpc(
   const onboardingService = createOnboardingService({
     listConnections: async () =>
       projectHostConnections(await client.loadConnectionCatalog()),
-    getDefaultSlug: async () => {
-      const catalog = await client.loadConnectionCatalog();
-      const target = catalog.defaultTarget;
-      return target === null
-        ? null
-        : (catalog.connections.find(
-            ({ connectionId }) => connectionId === target.connectionId,
-          )?.slug ?? null);
-    },
     listSessions: async () =>
       (await client.listSessions()).map(toDesktopHostSessionSummary),
-    getMilestones: async () =>
-      (await settingsStore.get()).onboarding.milestones,
-    upsertMilestone: (id, status) =>
-      settingsStore.upsertOnboardingMilestone(id, status),
     hasCredential: (connection) =>
       readWithFallback(async () => {
         if (!providerAuthRequiresSecret(connection.providerType)) return true;

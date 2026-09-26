@@ -256,19 +256,14 @@ import type { BotStatus, WechatBridgeQrCodeResult } from '@maka/runtime/bots';
 import type { ShellRunPtyDataEvent, ShellRunPtySnapshot } from '@maka/runtime/shell-run-contract';
 import type { BundledSkillCatalogEntry, ManagedSkillSourceEntry, ManagedSkillUpdatePreview, SkillEntry } from '@maka/ui';
 import type { ConfigCategory, MemoryImportSkipReason } from '@maka/storage/config-transfer';
-import type { OnboardingMilestone, OnboardingMilestoneId, OnboardingState } from '@maka/core/onboarding';
 import type {
   RemoteRuntimeHostProfile,
   RuntimeHostProfile,
   RuntimeHostProfileAccess,
 } from '@maka/runtime-host/client';
+/** The Sessions and whether each one's next send can go out. */
 export interface OnboardingSnapshot {
-  state: OnboardingState;
-  milestones: OnboardingMilestone[];
   sessions: DesktopSessionSummary[];
-  connections: import('@maka/core/llm-connections').ProjectedLlmConnection[];
-  defaultSlug: string | null;
-  chatModelChoices: import('@maka/core/chat-model-choice').ChatModelChoice[];
   sessionSendOutcomes: Record<string, import('@maka/core/session-send-projection').SessionSendProjection>;
 }
 
@@ -1527,11 +1522,6 @@ export interface MakaBridge {
   };
   onboarding: {
     getSnapshot(): Promise<OnboardingSnapshot>;
-    setMilestone(
-      id: OnboardingMilestoneId,
-      status: 'completed' | 'skipped',
-      host?: DesktopRuntimeHostRef,
-    ): Promise<OnboardingSnapshot>;
   };
   taskReadiness: {
     getSnapshot(

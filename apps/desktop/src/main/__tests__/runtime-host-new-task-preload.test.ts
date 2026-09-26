@@ -92,10 +92,7 @@ async function loadBridge(changeDuringRead: 'guest' | 'owner') {
           };
         case 'app:info': return { projectId: null, projectGit: {} };
         case 'settings:get': return { projects: {}, chatDefaults: {} };
-        case 'onboarding:getSnapshot': return {
-          state: { kind: 'ready_empty' }, milestones: [], sessions: [], connections: [],
-          defaultSlug: null, chatModelChoices: [], sessionSendOutcomes: {},
-        };
+        case 'onboarding:getSnapshot': return { sessions: [], sessionSendOutcomes: {} };
         case 'session-local:catalog': return [{ scope: owner, sessions: [], authoritative: true }];
         case 'session-collaboration:mount:list':
         case 'sessions:list': return [];
@@ -136,7 +133,8 @@ test('offline Guest notifications cannot starve the Local new-task catalog or re
     assert.equal(catalog.hosts[0]?.profile.id, 'local');
     assert.equal(catalog.hosts[0]?.readiness, 'ready');
     const snapshot = await bridge.onboarding.getSnapshot();
-    assert.equal(snapshot.state.kind, 'ready_empty');
+    assert.equal(snapshot.sessions.length, 0);
+    assert.deepEqual(Object.keys(snapshot.sessionSendOutcomes), []);
     assert.ok(scopedCalls.length > 0);
     assert.ok(scopedCalls.every(hostId => hostId === 'local-host'));
   } finally {

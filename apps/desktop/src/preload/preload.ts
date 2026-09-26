@@ -241,7 +241,6 @@ import type {
   McpTestResult,
 } from '@maka/core/mcp';
 import type { AttachmentRef, InlineReference, QuoteRef } from '@maka/core/events';
-import type { OnboardingMilestoneId } from '@maka/core/onboarding';
 import {
   decodeSharedSessionCatalogProjection,
   SCHEDULED_TASK_CATALOG_MAX_ITEMS,
@@ -833,17 +832,6 @@ function commitDesktopSessionCatalog(catalog: RuntimeHostSessionCatalogCoverage)
   lastDesktopSessionCatalog = catalog;
 }
 
-function projectOnboardingSnapshot(
-  scope: DesktopTargetScope,
-  snapshot: OnboardingSnapshot,
-): OnboardingSnapshot {
-  return {
-    ...snapshot,
-    sessions: snapshot.sessions.map((session) => projectSessionSummary(scope, session)),
-    sessionSendOutcomes: projectOnboardingSendOutcomes(scope, snapshot.sessionSendOutcomes),
-  };
-}
-
 function projectOnboardingSendOutcomes(
   scope: DesktopTargetScope,
   outcomes: OnboardingSnapshot['sessionSendOutcomes'],
@@ -902,7 +890,6 @@ async function loadDesktopOnboardingSnapshot(): Promise<OnboardingSnapshot> {
   });
   const sessions = await listDesktopSessions();
   return {
-    ...snapshots[0]!.snapshot,
     sessions,
     sessionSendOutcomes: Object.assign(
       {},
@@ -3094,25 +3081,12 @@ const makaBridge = {
       return subscribeActiveRuntimeHostEvent('mcp:changed', handler);
     },
   },
-  // PR110b: onboarding snapshot + milestone IPCs. Renderer polls
-  // `getSnapshot()` on app load and re-polls on existing invalidations.
-  // Onboarding state and connection setup belong to the default Host; bounded
-  // Owner send outcomes are merged from ready Owner Hosts; Guest summaries
-  // come from the separate, authorized mount catalog.
+  // The onboarding snapshot: the default Host's Sessions, and the bounded
+  // Owner send outcomes merged from ready Owner Hosts; Guest summaries come
+  // from the separate, authorized mount catalog.
   onboarding: {
     getSnapshot(): Promise<OnboardingSnapshot> {
       return loadDesktopOnboardingSnapshot();
-    },
-    async setMilestone(
-      id: OnboardingMilestoneId,
-      status: 'completed' | 'skipped',
-      host?: DesktopRuntimeHostRef,
-    ): Promise<OnboardingSnapshot> {
-      const scope = await selectedRuntimeHostScope(host);
-      const snapshot = await ipcRenderer.invoke(
-        'onboarding:setMilestone', scope, id, status,
-      ) as OnboardingSnapshot;
-      return projectOnboardingSnapshot(scope, snapshot);
     },
   },
   taskReadiness: {

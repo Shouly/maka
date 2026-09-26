@@ -20,9 +20,7 @@
 import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { AppSettings, UpdateAppSettingsInput } from '@maka/core/settings';
-import type { OnboardingMilestone, OnboardingMilestoneId } from '@maka/core/onboarding';
 import { createDefaultSettings, mergeSettings, normalizeSettings } from '@maka/core/settings';
-import { sanitizeOnboardingMilestones } from '@maka/core/onboarding';
 import { writeAtomicFile } from './atomic-file-write.js';
 
 /**
@@ -46,26 +44,6 @@ export interface SettingsStore {
     predicate: (current: AppSettings) => boolean,
     patch: ConditionalSettingsPatch,
   ): Promise<{ applied: boolean; settings: AppSettings }>;
-  /**
-   * PR110b: upsert a single onboarding milestone. Caller passes the
-   * desired terminal status; the store stamps `Date.now()` so the
-   * renderer cannot tamper with timestamps. Returns the freshly
-   * sanitized milestone list. Last-valid-entry-wins dedup applies.
-   *
-   * @throws if `id` is not in `OnboardingMilestoneId` or status is
-   *         not 'completed' | 'skipped'.
-   */
-  upsertOnboardingMilestone(
-    id: OnboardingMilestoneId,
-    status: 'completed' | 'skipped',
-  ): Promise<OnboardingMilestone[]>;
-  /**
-   * Remove one milestone entry without disturbing the rest. Used for
-   * reversible first-run suggestion dismissal; it still flows through
-   * the closed enum so arbitrary renderer strings cannot reshape the
-   * onboarding settings section.
-   */
-  clearOnboardingMilestone(id: OnboardingMilestoneId): Promise<OnboardingMilestone[]>;
 }
 
 export function createSettingsStore(workspaceRoot: string): SettingsStore {
@@ -133,59 +111,6 @@ class FileSettingsStore implements SettingsStore {
       result = { applied: true, settings: next };
     });
     if (!result) throw new Error('Failed to conditionally update settings');
-    return result;
-  }
-
-  async upsertOnboardingMilestone(
-    id: OnboardingMilestoneId,
-    status: 'completed' | 'skipped',
-  ): Promise<OnboardingMilestone[]> {
-    if (status !== 'completed' && status !== 'skipped') {
-      throw new Error(`invalid onboarding milestone status: ${String(status)}`);
-    }
-    const timestamp = Date.now();
-    const next: OnboardingMilestone =
-      status === 'completed' ? { id, completedAt: timestamp } : { id, skippedAt: timestamp };
-    let result: OnboardingMilestone[] | undefined;
-    await this.withQueue(async () => {
-      const current = await this.readOrCreate();
-      // Append the new entry; sanitize() applies last-valid-entry-wins
-      // dedup with stable first-seen position. ID validity is enforced
-      // by the sanitizer (closed enum).
-      const sanitized = sanitizeOnboardingMilestones([...current.onboarding.milestones, next]);
-      if (!sanitized.some((entry) => entry.id === id)) {
-        // ID was rejected by the validator — propagate so the IPC
-        // handler can reject the caller's input.
-        throw new Error(`invalid onboarding milestone id: ${String(id)}`);
-      }
-      const merged: AppSettings = {
-        ...current,
-        onboarding: { milestones: sanitized },
-      };
-      await this.write(merged);
-      result = sanitized;
-    });
-    if (!result) throw new Error('Failed to upsert onboarding milestone');
-    return result;
-  }
-
-  async clearOnboardingMilestone(id: OnboardingMilestoneId): Promise<OnboardingMilestone[]> {
-    let result: OnboardingMilestone[] | undefined;
-    await this.withQueue(async () => {
-      const current = await this.readOrCreate();
-      const knownId = sanitizeOnboardingMilestones([{ id }]).some((entry) => entry.id === id);
-      if (!knownId) {
-        throw new Error(`invalid onboarding milestone id: ${String(id)}`);
-      }
-      const milestones = current.onboarding.milestones.filter((entry) => entry.id !== id);
-      const merged: AppSettings = {
-        ...current,
-        onboarding: { milestones },
-      };
-      await this.write(merged);
-      result = milestones;
-    });
-    if (!result) throw new Error('Failed to clear onboarding milestone');
     return result;
   }
 

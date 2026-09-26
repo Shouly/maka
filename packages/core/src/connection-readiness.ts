@@ -19,8 +19,7 @@
 
 /**
  * Connection readiness — pure, sync judgment shared by task-submission
- * readiness, the onboarding state machine, and legacy-session health
- * projection.
+ * readiness and session health projection.
  *
  * Source of truth for "is this LlmConnection ready to send a message
  * right now?". Caller is responsible for resolving async inputs
@@ -54,10 +53,7 @@ import { isRetiredProvider } from './provider-registry.js';
 /**
  * Canonical reasons why an LlmConnection is not ready to send.
  *
- * Kept in core so the taxonomy stays stable across readiness and onboarding
- * surfaces.
- * Adding a new reason MUST update both this enum AND the matching
- * `OnboardingState` mapping in `onboarding.ts`.
+ * Kept in core so the taxonomy stays stable across every readiness surface.
  */
 export type ChatConfigurationReason =
   | 'missing_default_connection'
@@ -100,9 +96,8 @@ export interface IsConnectionReadyInput {
  * Pure, sync. Returns `{ ready: true, model }` with the effective
  * model id resolved, or `{ ready: false, reason }` for the first
  * failing criterion (in the order documented below). The order
- * matters: callers may use the returned reason to drive UI fix paths
- * (e.g. onboarding state derivation), so changing the order is a
- * contract change.
+ * matters: callers may use the returned reason to drive UI fix paths,
+ * so changing the order is a contract change.
  *
  * Order:
  *   1. `providerType` is not in the registry → `fake_backend`
