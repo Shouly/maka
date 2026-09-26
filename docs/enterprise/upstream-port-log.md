@@ -266,6 +266,9 @@ Watermark after this batch: `99cfeb7e9`. Rows are proposed unless a
   while staying in Explore, which dropped an approved expansion; a
   configuration change to the same mode is a no-op, so the revocation now
   happens only on a mode change.
+- `d05436cc0` #5295: **taken**. Archives are written to the Session ledger,
+  and an Artifact-backed archive ref (rewrite version 1) now reads as
+  `read_failed` instead of reading the Artifact store.
 
 #### Deferred
 
@@ -367,7 +370,7 @@ Cleanups that follow upstream (product decisions):
 | `b48ae6c21` | #5554 | Retire the Deep Research workflow. | We still carry about 30 files. |
 | `8dfc68d23` | #5544 | Retire the built-in OpenCode Free provider. This also makes #5185 moot. | 7 files; touches the model line. |
 | `730713131` | #5300 | Remove the obsolete permission-mode compatibility path. | Done, see above. |
-| `d05436cc0` | #5295 | Close the legacy archive read path. | Small. |
+| `d05436cc0` | #5295 | Close the legacy archive read path. | Done, see above. |
 
 ### Model line
 
