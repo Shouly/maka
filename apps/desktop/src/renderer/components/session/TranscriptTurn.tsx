@@ -36,7 +36,7 @@
 // turns by it, and `resolveQuoteTarget` walks up to it to decide which turn a
 // selection belongs to.
 
-import { memo, useMemo } from 'react';
+import { memo, useMemo, type ReactNode } from 'react';
 import { DeliveryAutoOpen } from './tools/renderers/DeliveryResults.js';
 import { durableResultOf } from '../../lib/tool-delivery-results.js';
 import { finalAssistantReplyText, useUiLocale, type TurnViewModel } from '@maka/ui';
@@ -116,6 +116,31 @@ export interface TranscriptTurnProps {
    * carry them — the turn has no second status line under it.
    */
   liveStatus?: TurnStatusLive;
+}
+
+/**
+ * The reference's block column: every block 20px from the next, and a status
+ * row pulls itself 6px into that on each side. Nothing in it carries its own
+ * vertical margin. The 6px on top puts the first block's line 40px under the
+ * user's bubble, as the reference does (2026-09-24, measured): the bubble
+ * row's 4px gap, the action bar's 2px + 24px and its 4px margin come before
+ * it.
+ */
+function TurnBlockColumn(props: { children: ReactNode }) {
+  return <div className="flex flex-col gap-5 pt-1.5">{props.children}</div>;
+}
+
+/**
+ * The live status before its turn reaches the transcript. It stands in the
+ * same column the turn will draw, so the turn's first block — reasoning, a
+ * call, or the answer's first line — takes the status's place without moving.
+ */
+export function TurnStatusBeforeTurn(props: { live: TurnStatusLive }) {
+  return (
+    <TurnBlockColumn>
+      <TurnStatusPending live={props.live} />
+    </TurnBlockColumn>
+  );
 }
 
 export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurnProps) {
@@ -306,19 +331,13 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
         />
       )}
 
-      {/* The reference's block column: every block 20px from the next, and a
-          status row pulls itself 6px into that on each side. Nothing here
-          carries its own vertical margin. The 6px on top puts the first
-          block's line 40px under the user's bubble, as the reference does
-          (2026-09-24, measured): the bubble row's 4px gap, the action bar's
-          2px + 24px and its 4px margin come before it. */}
-      <div className="flex flex-col gap-5 pt-1.5">
+      <TurnBlockColumn>
         {tailIndex < 0 && pendingStatus}
         {grouped.flatMap((entry, index) => {
           const drawn = drawEntry(entry, index);
           return index === tailIndex && pendingStatus ? [drawn, pendingStatus] : [drawn];
         })}
-      </div>
+      </TurnBlockColumn>
 
       {turn.notes.map((note) => (
         <SystemNote key={note.id} text={note.text} />

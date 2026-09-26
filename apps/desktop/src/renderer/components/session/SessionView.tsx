@@ -96,12 +96,8 @@ import { JumpToLatest, TranscriptGapRow } from './HistoryControls.js';
 import { MessageQueue } from './MessageQueue.js';
 import { SelectionQuote } from './SelectionQuote.js';
 import { UserMessageRow } from './UserMessageRow.js';
-import { TranscriptTurn } from './TranscriptTurn.js';
-import {
-  TurnStatusPending,
-  type TurnStatusBlocked,
-  type TurnStatusLive,
-} from './tools/TurnStatus.js';
+import { TranscriptTurn, TurnStatusBeforeTurn } from './TranscriptTurn.js';
+import type { TurnStatusBlocked, TurnStatusLive } from './tools/TurnStatus.js';
 import { useQuestionPin } from './use-question-pin.js';
 import { deriveWorkingMarkActivity } from '../../lib/turn-activity.js';
 import { NoticeCard } from './notices/NoticeCard.js';
@@ -606,7 +602,7 @@ function SessionTranscript(props: SessionViewProps) {
                   ]
                 : []),
               ...(orphanRunningStatus
-                ? [<TurnStatusPending key={`running:${sessionId}`} live={liveStatus} />]
+                ? [<TurnStatusBeforeTurn key={`running:${sessionId}`} live={liveStatus} />]
                 : []),
             ]}
             {/* The end of content, as opposed to the end of the scroll height

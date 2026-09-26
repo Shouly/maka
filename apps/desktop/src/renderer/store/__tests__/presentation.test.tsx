@@ -33,7 +33,7 @@ import { buildSessionListModel } from '../session-list-model.js';
 import { getSidebarCopy } from '../../locales/sidebar-copy.js';
 import { getShellCopy } from '../../locales/shell-copy.js';
 import { buildPaletteCommands } from '../../components/palette/commands.js';
-import { TranscriptTurn } from '../../components/session/TranscriptTurn.js';
+import { TranscriptTurn, TurnStatusBeforeTurn } from '../../components/session/TranscriptTurn.js';
 import { renderToolContent } from '../../components/session/tools/registry.js';
 import {
   TurnStatusThinkingStep,
@@ -818,6 +818,51 @@ test('the running status reads the newest block: thinking, the tool in flight, w
   assert.deepEqual(at([{ kind: 'text', text: 'p', messageId: 'm', complete: true }]), {
     kind: 'gap',
   });
+});
+
+test('the status shown before a turn arrives stands where the turn draws its first block', () => {
+  const base = transcriptFixture();
+  const live = { turnId: base.turnId, startedAt: NOW, unsteady: false, mark: 'default' } as const;
+  const waiting = renderTree(createElement(TurnStatusBeforeTurn, { live })).querySelector(
+    '[data-maka-turn-pending]',
+  );
+  const column = waiting?.parentElement;
+  assert.ok(column);
+  assert.equal(column.firstElementChild, waiting);
+
+  // Whatever the turn draws first takes that place: the same column, first in
+  // it. A status standing outside the column sat 6px higher and dropped when
+  // the turn replaced it.
+  const firsts: Array<[string, TurnViewModel['timeline'], string]> = [
+    ['nothing yet', [], '[data-maka-turn-pending]'],
+    [
+      'reasoning',
+      [{ kind: 'thinking', text: 't', messageId: 'th', live: true }],
+      '[data-maka-turn-status]',
+    ],
+    [
+      "the answer's first line",
+      [{ kind: 'text', text: 'I will start', messageId: 't-1', live: true, complete: false }],
+      '[data-maka-contract="markdown"]',
+    ],
+  ];
+  for (const [name, timeline, selector] of firsts) {
+    const first = renderTree(
+      createElement(TranscriptTurn, {
+        turn: { ...base, status: 'running', timeline },
+        live: true,
+        liveStatus: live,
+        footerActions: [],
+        toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
+        onFooterAction: () => {},
+        onOpenLineage: () => {},
+        onOpenExternal: () => {},
+      }),
+    ).querySelector(`[data-maka-transcript-turn] ${selector}`);
+    assert.ok(first, name);
+    assert.equal(first.parentElement?.className, column.className, name);
+    assert.equal(first.parentElement?.firstElementChild, first, name);
+  }
 });
 
 test('the live turn carries its status on its newest run: the call in flight, the mark, the clock', () => {
