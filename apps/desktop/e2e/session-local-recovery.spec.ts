@@ -132,7 +132,7 @@ test('a rejected first message restores the welcome draft and removes its empty 
     ipcMain.removeHandler('session-local:submit');
     ipcMain.handle('session-local:submit',(...args)=>{
       ipcMain.removeHandler('session-local:submit');ipcMain.handle('session-local:submit',original);
-      return {ok:false,reason:'skill_load_failed',messageId:args[4].messageId,skillInvocation:{loaded:[],failed:[],receipts:[]}};
+      return {ok:false,reason:'attachment_blocked',code:'items_invalid'};
     });
   });
   await page.locator(COMPOSER_INPUT).fill('keep refused welcome draft');await awaitSendReady(page);

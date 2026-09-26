@@ -18,11 +18,11 @@
  */
 
 import type { JSONContent } from '@tiptap/core';
+import { SKILL_INVOCATION_TOKEN_SOURCE } from '@maka/core/skill-invocation-token';
 import { composerWireText } from '@maka/ui';
 
 export interface ComposerDocument {
   text: string;
-  skillIds: string[];
   workspaceFileReferences: { value: string; start: number }[];
 }
 export function textDocument(text: string): JSONContent {
@@ -35,105 +35,121 @@ export function textDocument(text: string): JSONContent {
   };
 }
 /**
- * The same text, with every `/skill:<name>` the catalog recognizes turned back
+ * The same text, with every `/<name>` that names a catalog skill turned back
  * into a Skill atom.
  *
  * A draft that comes back as a string — history recall, a restored draft, a
- * revision rollback — has lost the atoms that carry Skill ids, and the wire
- * form of an atom is just text. Sending that runs no Skill while looking
- * exactly like the prompt that did. Upstream redraws the same tokens against
- * its live catalog; this is that, as a pure function.
+ * revision rollback — has lost its atoms, and the wire form of an atom is just
+ * text. Upstream redraws the same tokens against its live catalog; this is
+ * that, as a pure function.
  *
- * A token the catalog does not know STAYS TEXT: no chip may claim a Skill that
- * will not resolve. Longest name first, so `/skill:Review` cannot take the
- * front of `/skill:Review Code`. File mentions are not redrawn — `@word` in a
- * recalled prompt is not evidence the user ever picked that file.
+ * A token names a skill by id first, then by display name, as the Host reads
+ * it; one the catalog does not know STAYS TEXT, so no chip claims a Skill that
+ * is not there (`/tmp` is a path). File mentions are not redrawn — `@word` in
+ * a recalled prompt is not evidence the user ever picked that file.
  *
- * The text is never rewritten, only re-typed: serializing the result yields
- * the string that came in, byte for byte.
+ * The text is never rewritten, only re-typed: an atom keeps the token as it
+ * was written and serializes back through it, so the result yields the string
+ * that came in, byte for byte.
  */
 export function documentWithSkillTokens(
   text: string,
   skills: readonly { id: string; name: string }[],
 ): JSONContent {
-  if (!text.includes('/skill:') || skills.length === 0) return textDocument(text);
-  const ordered = [...skills].sort((left, right) => right.name.length - left.name.length);
-  const lower = text.toLowerCase();
-  const lineContent = (line: string, offset: number): JSONContent[] => {
+  if (skills.length === 0) return textDocument(text);
+  const byId = new Map(skills.map((skill) => [skill.id.toLowerCase(), skill]));
+  const byName = new Map(skills.map((skill) => [skill.name.toLowerCase(), skill]));
+  const lineContent = (line: string): JSONContent[] => {
     const content: JSONContent[] = [];
-    let plain = '';
     let at = 0;
-    while (at < line.length) {
-      const start = line.indexOf('/skill:', at);
-      if (start === -1) break;
-      const nameAt = offset + start + '/skill:'.length;
-      // By NAME only, which is the form the serializer writes. Matching an id
-      // as well would let a redraw rewrite `/skill:review` as `/skill:Review`:
-      // a recall must send the same bytes it sent before, with the ids back.
-      const match = ordered.find((skill) => lower.startsWith(skill.name.toLowerCase(), nameAt));
-      if (!match) {
-        plain += line.slice(at, start + '/skill:'.length);
-        at = start + '/skill:'.length;
-        continue;
-      }
-      plain += line.slice(at, start);
-      if (plain) content.push({ type: 'text', text: plain });
-      plain = '';
-      // The label is the text as written, not the catalog's casing: the atom
-      // serializes back through its label, and a redraw that "corrects" the
-      // case has edited the prompt. The id, which is what runs, is the
-      // catalog's.
-      const written = line.slice(
-        start + '/skill:'.length,
-        start + '/skill:'.length + match.name.length,
-      );
+    for (const match of line.matchAll(new RegExp(SKILL_INVOCATION_TOKEN_SOURCE, 'g'))) {
+      const written = match[1];
+      const skill = byId.get(written.toLowerCase()) ?? byName.get(written.toLowerCase());
+      if (!skill) continue;
+      if (match.index > at) content.push({ type: 'text', text: line.slice(at, match.index) });
       content.push({
         type: 'composerReference',
-        attrs: { kind: 'skill', value: match.id, label: written },
+        attrs: { kind: 'skill', value: written, label: skill.name },
       });
-      at = start + '/skill:'.length + match.name.length;
+      at = match.index + match[0].length;
     }
-    plain += line.slice(at);
-    if (plain) content.push({ type: 'text', text: plain });
+    if (at < line.length) content.push({ type: 'text', text: line.slice(at) });
     return content;
   };
-  let offset = 0;
-  const content: JSONContent[] = [];
-  for (const line of text.split('\n')) {
-    const nodes = lineContent(line, offset);
-    content.push({ type: 'paragraph', ...(nodes.length ? { content: nodes } : {}) });
-    offset += line.length + 1;
-  }
-  return { type: 'doc', content };
+  return {
+    type: 'doc',
+    content: text.split('\n').map((line) => {
+      const nodes = lineContent(line);
+      return { type: 'paragraph', ...(nodes.length ? { content: nodes } : {}) };
+    }),
+  };
 }
 
-/** One traversal produces text and reference offsets so tokens cannot drift away from their wire positions. */
+/**
+ * Whether the draft opens with a Skill atom. The atom's wire text is its
+ * `/<name>`, which reads the same as a typed command; the atom is how the user
+ * said they picked a skill, so a draft that opens with one is never a command.
+ */
+export function startsWithSkillReference(doc: JSONContent): boolean {
+  let found: boolean | undefined;
+  const visit = (node: JSONContent) => {
+    if (found !== undefined) return;
+    if (node.type === 'text') {
+      if ((node.text ?? '').trim()) found = false;
+    } else if (node.type === 'composerReference') {
+      found = node.attrs?.kind === 'skill';
+    } else {
+      for (const child of node.content ?? []) visit(child);
+    }
+  };
+  visit(doc);
+  return found === true;
+}
+
+/**
+ * One traversal produces text and reference offsets so tokens cannot drift away from their wire positions.
+ *
+ * A Skill atom's `/<name>` is a token only as a whole word, so an atom that
+ * touches other text — typed right after it, or a second atom — is kept apart
+ * by one space. Without it the model would read `use/writer` and no chip
+ * would come back. A document drawn from text never needs one, so a recalled
+ * prompt still serializes byte for byte.
+ */
 export function serializeComposer(doc: JSONContent): ComposerDocument {
   let text = '';
-  const skillIds: string[] = [];
+  let afterSkill = false;
   const refs: ComposerDocument['workspaceFileReferences'] = [];
+  const append = (piece: string) => {
+    if (!piece) return;
+    if (afterSkill && !/^\s/u.test(piece)) text += ' ';
+    afterSkill = false;
+    text += piece;
+  };
   const visit = (node: JSONContent) => {
-    if (node.type === 'text') text += node.text ?? '';
-    else if (node.type === 'hardBreak') text += '\n';
+    if (node.type === 'text') append(node.text ?? '');
+    else if (node.type === 'hardBreak') append('\n');
     else if (node.type === 'composerReference') {
       const value = String(node.attrs?.value ?? '');
-      const token =
-        node.attrs?.kind === 'file' ? `@${value}` : `/skill:${node.attrs?.label ?? value}`;
-      if (node.attrs?.kind === 'file') refs.push({ value: token, start: text.length });
-      else skillIds.push(value);
-      text += token;
+      if (node.attrs?.kind === 'file') {
+        const token = `@${value}`;
+        append(token);
+        refs.push({ value: token, start: text.length - token.length });
+        return;
+      }
+      if (text && !afterSkill && !/\s$/u.test(text)) text += ' ';
+      append(`/${value}`);
+      afterSkill = true;
     } else {
       for (const child of node.content ?? []) visit(child);
     }
   };
   for (const [i, node] of (doc.content ?? []).entries()) {
-    if (i) text += '\n';
+    if (i) append('\n');
     visit(node);
   }
   const leading = text.replace(/ /g, ' ').length - text.replace(/ /g, ' ').trimStart().length;
   return {
     text: composerWireText(text),
-    skillIds: [...new Set(skillIds)],
     workspaceFileReferences: refs.map((ref) => ({ ...ref, start: ref.start - leading })),
   };
 }

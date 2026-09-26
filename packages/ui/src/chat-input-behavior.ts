@@ -120,16 +120,11 @@ export function mentionQueryMatches(query: string, text: string): boolean {
     .every((token) => haystack.includes(token));
 }
 
-/** Normalize `/skill:<query>` and bare `/<query>` into the same Skill search query. */
-export function skillMentionQuery(query: string): string {
-  return query.toLowerCase().startsWith('skill:') ? query.slice('skill:'.length) : query;
-}
-
 /** Skills already in the draft, excluding the invocation currently being completed. */
 export function selectedSkillIds(draft: string, rawQuery: string): Set<string> {
-  // A full `/skill:id` query will be replaced by the chosen chip. Ignore that
+  // A full `/id` query will be replaced by the chosen chip. Ignore that
   // occurrence only; an earlier chip with the same id must still hide the row.
-  let queryId = /^skill:([A-Za-z0-9._-]+)$/.exec(rawQuery)?.[1]?.toLowerCase();
+  let queryId = /^([A-Za-z0-9._-]+)$/.exec(rawQuery)?.[1]?.toLowerCase();
   const selected = new Set<string>();
   for (const match of draft.matchAll(new RegExp(SKILL_INVOCATION_TOKEN_SOURCE, 'g'))) {
     const id = match[1].toLowerCase();
@@ -148,7 +143,6 @@ export function slashCommandQuery(
   textAfterCaret: string,
   rawQuery: string,
 ): string | null {
-  if (rawQuery.toLowerCase().startsWith('skill:')) return null;
   if (/^\S/.test(textAfterCaret)) return null;
   const triggerIndex = textBeforeCaret.length - rawQuery.length - 1;
   if (triggerIndex < 0 || textBeforeCaret[triggerIndex] !== '/') return null;

@@ -308,45 +308,6 @@ test('reply snapshot observers cannot interrupt the authoritative Host Turn', as
   );
 });
 
-test('returns blocked Skill feedback without waiting for a Turn that was not created', async () => {
-  const events = new AsyncFrameQueue();
-  let closeCount = 0;
-  const adapter = createRuntimeHostBotSessionAdapter({
-    client: botClient({
-      openSession: async () => runtimeHostSessionFixture({
-        snapshot: continuitySnapshot(null),
-        activeAssistantStreams: [],
-        transcript: Promise.resolve([]),
-        events,
-        async close() {
-          closeCount += 1;
-          events.end();
-        },
-      }),
-      startTurn: async () => ({
-        kind: 'blocked',
-        skillInvocation: {
-          loaded: [],
-          failed: [{ request: 'writer', reason: 'not_found' }],
-          receipts: [],
-        },
-      }),
-    }),
-    resolveCreateTarget: hostPathCreateTarget,
-    emitSessionsChanged() {},
-  });
-
-  assert.deepEqual(
-    await adapter.runTurn({
-      sessionId: 'bot-session-1',
-      turnId: 'turn-blocked',
-      text: '/skill:writer help',
-    }),
-    { kind: 'errored', reason: 'writer: not_found' },
-  );
-  assert.equal(closeCount, 1);
-});
-
 test('projects Host interaction and failure outcomes into the Bot reply contract', async () => {
   const suspended = await runProjectedTurn({
     ...runningTurn('bot-session-1', 'turn-1'),
@@ -449,7 +410,6 @@ function startedTurn(turn: TurnSnapshot) {
   return {
     kind: 'started' as const,
     turn,
-    skillInvocation: { loaded: [], failed: [], receipts: [] },
   };
 }
 

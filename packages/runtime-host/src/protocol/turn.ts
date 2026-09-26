@@ -32,10 +32,6 @@ import {
   isTurnOrchestrationSource,
   type TurnOrchestration,
 } from '@maka/core/orchestration';
-import {
-  decodeSkillInvocationResult,
-  type SkillInvocationResult,
-} from '@maka/core/skill-invocation';
 import { invalidProtocolFrame } from './errors.js';
 import {
   assertExactKeys,
@@ -55,21 +51,15 @@ export interface TurnStartInput {
   sessionId: string;
   turnId: string;
   content: MessageContent;
-  skillIds?: string[];
   turnOrchestration?: TurnOrchestration;
   maxSteps?: number;
 }
 
-export type TurnStartResult =
-  | {
-      kind: 'started';
-      turn: TurnSnapshot;
-      skillInvocation: SkillInvocationResult;
-    }
-  | {
-      kind: 'blocked';
-      skillInvocation: SkillInvocationResult;
-    };
+/** A sent `/<name>` reaches the model as written, so a start is never refused over a Skill. */
+export interface TurnStartResult {
+  kind: 'started';
+  turn: TurnSnapshot;
+}
 
 export type { MessageContent };
 
@@ -78,8 +68,6 @@ export const TURN_MESSAGE_CONTENT_MAX_BYTES = 52 * 1024;
 export const TURN_MESSAGE_QUOTE_MAX_COUNT = 16;
 export const TURN_MESSAGE_QUOTE_TEXT_MAX_LENGTH = 32_000;
 export const TURN_MESSAGE_QUOTE_LABEL_MAX_LENGTH = 200;
-export const TURN_SKILL_ID_MAX_COUNT = 50;
-export const TURN_SKILL_ID_MAX_LENGTH = 512;
 const ATTACHMENT_NAME_MAX_BYTES = 512;
 const ATTACHMENT_MIME_TYPE_MAX_BYTES = 256;
 const ATTACHMENT_PATH_MAX_BYTES = 4096;
@@ -356,14 +344,12 @@ export function decodeTurnStartInput(value: unknown): TurnStartInput {
     value,
     'turn.start input',
     ['sessionId', 'turnId', 'content'],
-    ['skillIds', 'turnOrchestration', 'maxSteps'],
+    ['turnOrchestration', 'maxSteps'],
   );
-  const skillIds = decodeSkillIds(record.skillIds);
   return {
     sessionId: requireEntityId(record.sessionId, 'sessionId'),
     turnId: requireEntityId(record.turnId, 'turnId'),
-    content: decodeMessageAdmissionContent(record.content, skillIds.length > 0),
-    ...(skillIds.length > 0 ? { skillIds } : {}),
+    content: decodeMessageAdmissionContent(record.content),
     ...(record.turnOrchestration !== undefined
       ? { turnOrchestration: decodeTurnOrchestration(record.turnOrchestration) }
       : {}),
@@ -377,24 +363,6 @@ function requirePositiveSafeInteger(value: unknown, label: string): number {
   const decoded = requireCount(value, label);
   if (decoded === 0) throw invalidProtocolFrame(`Invalid ${label}`);
   return decoded;
-}
-
-export function decodeSkillIds(value: unknown): string[] {
-  if (value === undefined) return [];
-  if (
-    !Array.isArray(value) ||
-    value.length > TURN_SKILL_ID_MAX_COUNT ||
-    value.some(
-      (id) =>
-        typeof id !== 'string' ||
-        id.length === 0 ||
-        id.length > TURN_SKILL_ID_MAX_LENGTH ||
-        !/^[A-Za-z0-9][A-Za-z0-9._-]*(?::[A-Za-z0-9][A-Za-z0-9._-]*)*$/.test(id),
-    )
-  ) {
-    throw invalidProtocolFrame('Invalid Turn skillIds');
-  }
-  return [...value];
 }
 
 export function decodeTurnOrchestration(value: unknown): TurnOrchestration {
@@ -469,17 +437,14 @@ export function decodeMessageContent(value: unknown, allowEmptyText = false): Me
 }
 
 /** Client-authored Messages cannot claim Host-owned Session context references. */
-export function decodeMessageAdmissionContent(
-  value: unknown,
-  allowEmptyText = false,
-): MessageContent {
+export function decodeMessageAdmissionContent(value: unknown): MessageContent {
   // Structure first with text emptiness unconstrained, then apply the
   // shared meaningful-content predicate: a quote or an attachment carries
   // the turn by itself, so empty inline text is admissible when either is
   // present (#4804). A truly contentless Message still throws, with the
   // same frame error the text-length rule produced.
   const content = decodeMessageContent(value, true);
-  if (!allowEmptyText && !hasMeaningfulMessageContent(content)) {
+  if (!hasMeaningfulMessageContent(content)) {
     throw invalidProtocolFrame('Invalid Message text');
   }
   if (content.attachments?.some((attachment) => attachment.ref.kind === 'session_context')) {
@@ -644,24 +609,9 @@ export function decodeTurnResumeStartResult(value: unknown): TurnResumeStartResu
 
 export function decodeTurnStartResult(value: unknown): TurnStartResult {
   const record = requireRecord(value, 'Turn start result');
-  let skillInvocation: SkillInvocationResult;
-  try {
-    skillInvocation = decodeSkillInvocationResult(record.skillInvocation);
-  } catch {
-    throw invalidProtocolFrame('Invalid Turn start Skill invocation result');
-  }
-  if (record.kind === 'started') {
-    assertExactKeys(record, 'started Turn result', ['kind', 'turn', 'skillInvocation']);
-    return { kind: 'started', turn: decodeTurnSnapshot(record.turn), skillInvocation };
-  }
-  if (record.kind === 'blocked') {
-    assertExactKeys(record, 'blocked Turn result', ['kind', 'skillInvocation']);
-    if (skillInvocation.loaded.length !== 0 || skillInvocation.failed.length === 0) {
-      throw invalidProtocolFrame('Blocked Turn requires only failed Skill invocations');
-    }
-    return { kind: 'blocked', skillInvocation };
-  }
-  throw invalidProtocolFrame('Invalid Turn start result');
+  if (record.kind !== 'started') throw invalidProtocolFrame('Invalid Turn start result');
+  assertExactKeys(record, 'started Turn result', ['kind', 'turn']);
+  return { kind: 'started', turn: decodeTurnSnapshot(record.turn) };
 }
 
 function requirePositiveCount(value: unknown, label: string): number {

@@ -2502,7 +2502,7 @@ describe('Runtime Host Maka Session driver', () => {
     assert.equal((await nextEvent(turn.events)).text, 'Recovered');
   });
 
-  test('starts explicit Skills through the Host command and preserves its typed feedback', async () => {
+  test('starts a /<name> Turn through the Host command with the text as written', async () => {
     const subscription = new FakeSubscription(
       continuitySnapshot({ rootTurn: null }),
       Promise.resolve([]),
@@ -2518,16 +2518,15 @@ describe('Runtime Host Maka Session driver', () => {
     });
     await driver.switchSession('session-1');
 
-    const turn = await driver.preparePrompt('/skill:alpha Help');
-    assert.deepEqual(turn.skillInvocation?.loaded, [{ id: 'alpha', name: 'Alpha' }]);
-    assert.equal(connection.requests.at(-1)?.operation, 'turn.start');
-
-    connection.skillStartBlocked = true;
-    // The failure names what could not be resolved: headless `maka run` reports
-    // this message and nothing reads a structured payload off it.
-    await assert.rejects(driver.preparePrompt('/skill:missing', { turnId: 'turn-blocked' }), {
-      message: /Could not resolve the Skill this Turn asked for: \/skill:missing \(not found\)/,
-    });
+    const turn = await driver.preparePrompt('/alpha Help');
+    assert.equal(turn.runId, 'run-1');
+    const start = connection.requests.at(-1);
+    assert.equal(start?.operation, 'turn.start');
+    const input = start?.input as { content: { text: string } };
+    // Nothing resolves the Skill on send: the model reads `/alpha` and calls
+    // the Skill tool itself.
+    assert.equal(input.content.text, '/alpha Help');
+    assert.equal('skillIds' in input, false);
   });
 
   test('retires a pending question when another client answers it', async () => {
@@ -2848,7 +2847,6 @@ class FakeConnection {
   taskQuery: OperationOutput<'session.task.query'> | undefined;
   onRuntimeResourceStart: (() => Promise<void>) | undefined;
   executionBoundary: unknown = { kind: 'managed', access: 'read_write', revision: 1 };
-  skillStartBlocked = false;
   /** When set, runtime.resource.stop rejects with this error (e.g. a draining Host). */
   runtimeResourceStopFailure: Error | undefined;
   /** Scripted outcomes for goal.control: return the result goal, or throw (e.g. operation_conflict). */
@@ -3067,31 +3065,15 @@ class FakeConnection {
                 : operation === 'interaction.query'
                   ? this.interactionQuery
                   : operation === 'turn.start'
-                    ? this.skillStartBlocked
-                      ? {
-                          kind: 'blocked',
-                          skillInvocation: {
-                            loaded: [],
-                            failed: [{ request: 'missing', reason: 'not_found' }],
-                            receipts: [],
-                          },
-                        }
-                      : {
-                          kind: 'started',
-                          turn: {
-                            sessionId: turnInput.sessionId,
-                            turnId: turnInput.turnId,
-                            runId: 'run-1',
-                            status: 'running',
-                          },
-                          skillInvocation: turnInput.content.text.includes('/skill:')
-                            ? {
-                                loaded: [{ id: 'alpha', name: 'Alpha' }],
-                                failed: [],
-                                receipts: [],
-                              }
-                            : { loaded: [], failed: [], receipts: [] },
-                        }
+                    ? {
+                        kind: 'started',
+                        turn: {
+                          sessionId: turnInput.sessionId,
+                          turnId: turnInput.turnId,
+                          runId: 'run-1',
+                          status: 'running',
+                        },
+                      }
                     : undefined;
     if (result === undefined) throw new Error(`Unexpected fake operation: ${operation}`);
     return result as OperationOutput<K>;

@@ -39,7 +39,7 @@ test('a selected skill survives draft navigation and reaches the Host', async ({
   await expect(editor).toHaveText('');
 });
 
-test('recalling a sent prompt invokes its skill again, not its wire text', async ({
+test('a selected skill reaches the model as its /<name> token, and recall keeps the chip', async ({
   invocableSkillsWindow: page,
 }) => {
   const editor = page.locator(COMPOSER_INPUT);
@@ -47,17 +47,20 @@ test('recalling a sent prompt invokes its skill again, not its wire text', async
   const option = page.getByRole('option').filter({ hasText: 'Project Only' });
   await expect(option).toBeVisible();
   await option.click();
+  // Choosing the skill already wrote the space after its chip.
   await editor.press('End');
-  await editor.pressSequentially(' first ask');
+  await editor.pressSequentially('first ask');
   await awaitSendReady(page);
   await editor.press('Enter');
-  // The Host echoes the loaded skill, so this is the invocation, not the text.
-  await expect(page.getByRole('log')).toContainText('<invoked-skill');
+  // Nothing is loaded on send: the model reads the token as written and
+  // invokes the skill itself (the fake backend echoes what it received).
+  await expect(page.getByRole('log')).toContainText(
+    'Fake backend received: /project-only first ask',
+  );
   await expect(editor).toHaveText('');
 
-  // ArrowUp hands the prompt back as a string. Its skill id lives in an atom
-  // the string does not carry, so without a redraw the resend would post the
-  // literal `/skill:` token and quietly run nothing.
+  // ArrowUp hands the prompt back as a string; the `/project-only` token in it
+  // names a catalog skill, so it is redrawn as the chip it was.
   await editor.click();
   await editor.press('ArrowUp');
   await expect(editor).toContainText('first ask');
@@ -70,6 +73,6 @@ test('recalling a sent prompt invokes its skill again, not its wire text', async
   await awaitSendReady(page);
   await editor.press('Enter');
   await expect(
-    page.getByRole('log').getByText(/<invoked-skill[\s\S]*second ask/u),
+    page.getByRole('log').getByText(/Fake backend received: \/project-only first ask second ask/u),
   ).toBeVisible();
 });

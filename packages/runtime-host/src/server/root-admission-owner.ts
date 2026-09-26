@@ -149,7 +149,6 @@ function sameRootAdmission(left: AdmissionIdentity, right: RootTurnAdmission): b
     left.userMessageId === right.userMessageId &&
     isDeepStrictEqual(left.execution, right.execution) &&
     isDeepStrictEqual(left.turnOrchestration, right.turnOrchestration) &&
-    isDeepStrictEqual(left.skillInvocation, right.skillInvocation) &&
     isDeepStrictEqual(left.authorization, right.authorization) &&
     left.previousRootTurnId === right.previousRootTurnId &&
     left.normalizedInputDigest ===
@@ -166,7 +165,6 @@ function sameRootAdmission(left: AdmissionIdentity, right: RootTurnAdmission): b
         (source.submittedPlacement ?? source.placement) ===
           (other.submittedPlacement ?? other.placement) &&
         submittedTurnIntentsEqual(source.submittedIntent, other.submittedIntent) &&
-        isDeepStrictEqual(source.skillInvocation, other.skillInvocation) &&
         source.contentDigest === messageContentDigest(other.content)
       );
     }) &&

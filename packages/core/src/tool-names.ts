@@ -50,7 +50,7 @@ export const TOOL_NAMES = {
   sendUserMessage: 'SendUserMessage',
   // Skills and deferred tools
   skill: 'Skill',
-  skillSearch: 'SkillSearch',
+  searchSkills: 'SearchSkills',
   toolSearch: 'ToolSearch',
   // Session bookkeeping
   taskCreate: 'TaskCreate',

@@ -330,13 +330,8 @@ export class AcpSessionRegistry {
         const result = await connection.request('turn.start', startInput);
         active.startRequestSettled = true;
         active.admissionSettled = true;
-        if (result.kind === 'started') active.startedTurn = result.turn;
+        active.startedTurn = result.turn;
         this.#wake(active);
-        if (result.kind === 'blocked') {
-          const error = new Error('Runtime Host blocked the requested Turn');
-          attachment.failTurn(turnId, error);
-          throw error;
-        }
       } catch (error) {
         // A lost dispatched response does not establish whether Host admitted
         // this Turn. Retain this attempt until subscription or query facts do.

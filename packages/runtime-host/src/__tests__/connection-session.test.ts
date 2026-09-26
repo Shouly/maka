@@ -1059,7 +1059,6 @@ test('an admitted command reports an unknown outcome when its connection closes'
           result: {
             kind: 'started',
             turn: runningSnapshot(input.sessionId, input.turnId),
-            skillInvocation: { loaded: [], failed: [], receipts: [] },
           },
         };
       },
@@ -1656,7 +1655,6 @@ function createHandlers(queryTurn: TurnQueryHandler): RuntimeHostComposition['ha
       result: {
         kind: 'started',
         turn: runningSnapshot(input.sessionId, input.turnId),
-        skillInvocation: { loaded: [], failed: [], receipts: [] },
       },
     }),
     'turn.query': queryTurn,

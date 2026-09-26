@@ -19,7 +19,7 @@
 
 import type { DatabaseSync } from 'node:sqlite';
 
-export const SQLITE_CORE_EXECUTION_SCHEMA_VERSION = 9;
+export const SQLITE_CORE_EXECUTION_SCHEMA_VERSION = 10;
 export const MODEL_PROJECTION_TARGET_SQL =
   "CASE WHEN json_valid(record_json) THEN CASE WHEN json_type(record_json, '$.data.transition.target.runtimeEventId') = 'text' THEN nullif(json_extract(record_json, '$.data.transition.target.runtimeEventId'), '') WHEN json_type(record_json, '$.data.runtimeEventId') = 'text' THEN nullif(json_extract(record_json, '$.data.runtimeEventId'), '') END END";
 
@@ -78,14 +78,6 @@ export function migrateSqliteCoreExecutionDatabase(db: DatabaseSync): void {
 
     CREATE INDEX IF NOT EXISTS core_root_turn_admissions_order
       ON core_root_turn_admissions(session_id, admitted_at, turn_id);
-
-    CREATE TABLE IF NOT EXISTS core_root_turn_start_rejections (
-      session_id TEXT NOT NULL,
-      turn_id TEXT NOT NULL,
-      rejected_at INTEGER NOT NULL,
-      record_json TEXT NOT NULL,
-      PRIMARY KEY (session_id, turn_id)
-    );
 
     CREATE TABLE IF NOT EXISTS core_root_source_message_proofs (
       session_id TEXT NOT NULL,
@@ -193,6 +185,9 @@ export function migrateSqliteCoreExecutionDatabase(db: DatabaseSync): void {
 
     DROP TABLE IF EXISTS core_message_receipts;
     DROP TABLE IF EXISTS core_message_host_epochs;
+    -- A Turn start is no longer refused over a Skill: a sent /<name> reaches
+    -- the model as written, so the rejection record has nothing left to hold.
+    DROP TABLE IF EXISTS core_root_turn_start_rejections;
   `);
 }
 

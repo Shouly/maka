@@ -785,7 +785,6 @@ test("sends canonical content and uploads owned Attachment bytes through the Hos
       return {
         disposition: "turn_started",
         turnId: "turn-1",
-        skillInvocation: { loaded: [], failed: [], receipts: [] },
       };
     },
   });
@@ -850,7 +849,6 @@ test("sends canonical content and uploads owned Attachment bytes through the Hos
         label: "notes.txt",
       },
     ],
-    skillInvocation: { loaded: [], failed: [], receipts: [] },
   });
   assert.deepEqual(changes, [
     { reason: "status-change", sessionId: "session-1", turnId: "turn-1" },
@@ -894,7 +892,6 @@ test("uploads a selected workspace file as a Host-owned Session Artifact", async
           return {
             disposition: "turn_started",
             turnId: "turn-1",
-            skillInvocation: { loaded: [], failed: [], receipts: [] },
           };
         },
       }),
@@ -926,7 +923,7 @@ test("uploads a selected workspace file as a Host-owned Session Artifact", async
   );
 });
 
-test("forwards explicit Skill invocation to the Host-owned Turn admission", async () => {
+test("forwards a /<name> send to the Host as written, without Skill ids", async () => {
   const starts: unknown[] = [];
   const ipc = ipcHarness();
   registerExecutionIpc(
@@ -935,15 +932,7 @@ test("forwards explicit Skill invocation to the Host-owned Turn admission", asyn
         getSession: async () => session(),
         submitMessage: async (input) => {
           starts.push(input);
-          return {
-            disposition: "turn_started",
-            turnId: "turn-skill",
-            skillInvocation: {
-              loaded: [{ id: "review", name: "Review" }],
-              failed: [],
-              receipts: [],
-            },
-          };
+          return { disposition: "turn_started", turnId: "turn-skill" };
         },
       }),
       observer: unusedObserver(),
@@ -957,10 +946,11 @@ test("forwards explicit Skill invocation to the Host-owned Turn admission", asyn
     ipc,
   );
 
+  // A stale caller's skillIds are not a send field: the model reads the
+  // `/review` token and calls the Skill tool itself.
   const result = await ipc.invoke("sessions:send", "session-1", {
     type: "send",
-    text: "",
-    displayText: "/skill:review",
+    text: "/review check this",
     skillIds: ["review"],
   });
 
@@ -969,8 +959,7 @@ test("forwards explicit Skill invocation to the Host-owned Turn admission", asyn
       sessionId: "session-1",
       messageId: "turn-skill",
       placement: "current_turn",
-      content: { text: "", displayText: "/skill:review", inlineReferences: [] },
-      skillIds: ["review"],
+      content: { text: "/review check this", inlineReferences: [] },
     },
   ]);
   assert.deepEqual(result, {
@@ -978,11 +967,6 @@ test("forwards explicit Skill invocation to the Host-owned Turn admission", asyn
     turnId: "turn-skill",
     attachments: [],
     inlineReferences: [],
-    skillInvocation: {
-      loaded: [{ id: "review", name: "Review" }],
-      failed: [],
-      receipts: [],
-    },
   });
 });
 
@@ -998,7 +982,6 @@ test("submits an ordinary composer message once under its stable message identit
           return {
             disposition: "turn_started",
             turnId: "host-turn",
-            skillInvocation: { loaded: [], failed: [], receipts: [] },
           };
         },
       }),
@@ -1035,7 +1018,6 @@ test("submits an ordinary composer message once under its stable message identit
     turnId: "host-turn",
     attachments: [],
     inlineReferences: [],
-    skillInvocation: { loaded: [], failed: [], receipts: [] },
   });
 });
 
@@ -1320,7 +1302,7 @@ test('rejects invalid or unbounded Desktop Message execution queries before disp
   assert.equal(queryCount, 0);
 });
 
-test('submits a slash Skill message and reports the Host Skill outcome', async () => {
+test('submits a /<name> Skill message as written, with nothing resolved on the Desktop', async () => {
   const submits: unknown[] = [];
   const ipc = ipcHarness();
   registerExecutionIpc(
@@ -1329,14 +1311,7 @@ test('submits a slash Skill message and reports the Host Skill outcome', async (
         getSession: async () => session(),
         submitMessage: async (input) => {
           submits.push(input);
-          return {
-            disposition: 'blocked',
-            skillInvocation: {
-              loaded: [],
-              failed: [{ request: 'missing', reason: 'not_found' }],
-              receipts: [],
-            },
-          };
+          return { disposition: 'turn_started', turnId: 'turn-host' };
         },
       }),
       newId: () => 'unexpected-generated-id',
@@ -1346,34 +1321,29 @@ test('submits a slash Skill message and reports the Host Skill outcome', async (
 
   const result = await ipc.invoke('sessions:submitMessage', 'session-1', 'current_turn', {
     messageId: 'message-skill',
-    text: '/skill:missing inspect this',
+    text: '/missing inspect this',
   });
 
+  // The model reads the token and invokes the skill itself; the Desktop sends
+  // the words and no Skill ids.
   assert.deepEqual(submits, [{
     sessionId: 'session-1',
     messageId: 'message-skill',
     placement: 'current_turn',
-    content: { text: '/skill:missing inspect this', inlineReferences: [] },
+    content: { text: '/missing inspect this', inlineReferences: [] },
   }]);
   assert.deepEqual(result, {
-    ok: false,
-    reason: 'skill_invocation_failed',
-    skillInvocation: {
-      loaded: [],
-      failed: [{ request: 'missing', reason: 'not_found' }],
-      receipts: [],
-    },
+    ok: true,
+    disposition: 'turn_started',
+    turnId: 'turn-host',
+    attachments: [],
+    inlineReferences: [],
   });
 });
 
 test("queues a mid-turn send as steering when the Host reports the session busy", async () => {
   const submits: unknown[] = [];
   const changes: unknown[] = [];
-  const skillInvocation = {
-    loaded: [{ id: 'review', name: 'Review' }],
-    failed: [{ request: 'typo', reason: 'not_found' as const }],
-    receipts: [],
-  };
   const ipc = ipcHarness();
   registerExecutionIpc(
     {
@@ -1381,7 +1351,7 @@ test("queues a mid-turn send as steering when the Host reports the session busy"
         getSession: async () => session(),
         submitMessage: async (input) => {
           submits.push(input);
-          return { disposition: "steering", queueRevision: 1, skillInvocation };
+          return { disposition: "steering", queueRevision: 1 };
         },
       }),
       observer: unusedObserver(),
@@ -1416,7 +1386,6 @@ test("queues a mid-turn send as steering when the Host reports the session busy"
     turnId: "turn-1",
     attachments: [],
     inlineReferences: [],
-    skillInvocation,
   });
   assert.deepEqual(changes, [
     { reason: "status-change", sessionId: "session-1" },
@@ -1460,7 +1429,6 @@ test("resolves a twice-interrupted send as an unknown outcome", async () => {
       ok: false,
       reason: "outcome_unknown",
       messageId: "turn-1",
-      skillInvocation: { loaded: [], failed: [], receipts: [] },
     },
   );
   assert.equal(submits, 2);
@@ -1503,7 +1471,6 @@ test("retries a dispatched send with its original message identity", async () =>
           return {
             disposition: "steering",
             queueRevision: 1,
-            skillInvocation: { loaded: [], failed: [], receipts: [] },
           };
         },
       }),
@@ -1540,7 +1507,6 @@ test("retries a dispatched send with its original message identity", async () =>
     messageId: "turn-1",
     attachments: [],
     inlineReferences: [],
-    skillInvocation: { loaded: [], failed: [], receipts: [] },
   });
   assert.deepEqual(
     await ipc.invoke("sessions:send", "session-1", {
@@ -1552,7 +1518,6 @@ test("retries a dispatched send with its original message identity", async () =>
       ok: false,
       reason: "outcome_unknown",
       messageId: "turn-unknown",
-      skillInvocation: { loaded: [], failed: [], receipts: [] },
     },
   );
   assert.deepEqual(
@@ -1565,7 +1530,6 @@ test("retries a dispatched send with its original message identity", async () =>
       ok: false,
       reason: "outcome_unknown",
       messageId: "turn-unknown",
-      skillInvocation: { loaded: [], failed: [], receipts: [] },
     },
   );
 });
@@ -1583,7 +1547,6 @@ test("answers a send with the Turn the Host started for it", async () => {
           return {
             disposition: "turn_started",
             turnId: "turn-9",
-            skillInvocation: { loaded: [], failed: [], receipts: [] },
           };
         },
       }),
@@ -1610,7 +1573,6 @@ test("answers a send with the Turn the Host started for it", async () => {
     turnId: "turn-9",
     attachments: [],
     inlineReferences: [],
-    skillInvocation: { loaded: [], failed: [], receipts: [] },
   });
   assert.deepEqual(submits, [{
     sessionId: "session-1",
@@ -1620,55 +1582,6 @@ test("answers a send with the Turn the Host started for it", async () => {
   }]);
   assert.deepEqual(changes, [
     { reason: "status-change", sessionId: "session-1", turnId: "turn-9" },
-  ]);
-});
-
-test("propagates a busy explicit Skill send instead of degrading it to steering", async () => {
-  const submits: unknown[] = [];
-  const ipc = ipcHarness();
-  registerExecutionIpc(
-    {
-      client: executionClient({
-        getSession: async () => session(),
-        submitMessage: async (input) => {
-          submits.push(input);
-          throw new RuntimeHostOperationError(
-            "turn.message.submit",
-            "session_busy",
-            "Session already has an active root Turn",
-          );
-        },
-      }),
-      newId: () => "id-1",
-    },
-    ipc,
-  );
-
-  // Explicit skillIds are exact-Turn intent, so the Host refuses on a busy
-  // Session. The Desktop no longer carves that case out — it just reports it.
-  await assert.rejects(
-    ipc.invoke("sessions:send", "session-1", {
-      type: "send",
-      turnId: "turn-1",
-      text: "",
-      displayText: "/skill:review",
-      skillIds: ["review"],
-    }),
-    (error: unknown) =>
-      error instanceof RuntimeHostOperationError && error.code === "session_busy",
-  );
-  assert.deepEqual(submits, [
-    {
-      sessionId: "session-1",
-      messageId: "turn-1",
-      placement: "current_turn",
-      content: {
-        text: "",
-        displayText: "/skill:review",
-        inlineReferences: [],
-      },
-      skillIds: ["review"],
-    },
   ]);
 });
 
@@ -1684,7 +1597,6 @@ test("lets the Host queue a textual Skill token as steering", async () => {
           return {
             disposition: "steering",
             queueRevision: 1,
-            skillInvocation: { loaded: [], failed: [], receipts: [] },
           };
         },
       }),
@@ -1693,15 +1605,14 @@ test("lets the Host queue a textual Skill token as steering", async () => {
     ipc,
   );
 
-  // A `/skill:` token in the text is not exact-Turn intent: Host message
-  // preparation expands it on the queued path too. The Desktop stopped
-  // sniffing content for it, so this send is reported as the steering the
-  // Host made of it.
+  // A `/<name>` token is ordinary text the model reads, so the Desktop does
+  // not sniff content for it: this send is reported as the steering the Host
+  // made of it.
   assert.deepEqual(
     await ipc.invoke("sessions:send", "session-1", {
       type: "send",
       turnId: "turn-1",
-      text: "/skill:review explain the tests",
+      text: "/review explain the tests",
     }),
     {
       ok: true,
@@ -1709,58 +1620,14 @@ test("lets the Host queue a textual Skill token as steering", async () => {
       turnId: "turn-1",
       attachments: [],
       inlineReferences: [],
-      skillInvocation: { loaded: [], failed: [], receipts: [] },
     },
   );
   assert.equal(submits.length, 1);
 });
 
-test("reports a Host-blocked Skill send as a Skill failure", async () => {
-  const ipc = ipcHarness();
-  registerExecutionIpc(
-    {
-      client: executionClient({
-        getSession: async () => session(),
-        submitMessage: async () => ({
-          disposition: "blocked",
-          skillInvocation: {
-            loaded: [],
-            failed: [{ request: "missing", reason: "not_found" }],
-            receipts: [],
-          },
-        }),
-      }),
-      newId: () => "id-1",
-    },
-    ipc,
-  );
-
-  assert.deepEqual(
-    await ipc.invoke("sessions:send", "session-1", {
-      type: "send",
-      turnId: "turn-1",
-      text: "/skill:missing inspect this",
-    }),
-    {
-      ok: false,
-      reason: "skill_invocation_failed",
-      skillInvocation: {
-        loaded: [],
-        failed: [{ request: "missing", reason: "not_found" }],
-        receipts: [],
-      },
-    },
-  );
-});
-
 test("queues explicit Desktop follow-ups", async () => {
   const submits: unknown[] = [];
   let sequence = 0;
-  const skillInvocation = {
-    loaded: [{ id: 'writer', name: 'Writer' }],
-    failed: [{ request: 'missing', reason: 'not_found' as const }],
-    receipts: [],
-  };
   const ipc = ipcHarness();
   registerExecutionIpc(
     {
@@ -1768,7 +1635,7 @@ test("queues explicit Desktop follow-ups", async () => {
         getSession: async () => session(),
         submitMessage: async (input) => {
           submits.push(input);
-          return { disposition: "followup", queueRevision: 4, skillInvocation };
+          return { disposition: "followup", queueRevision: 4 };
         },
       }),
       observer: unusedObserver(),
@@ -1818,7 +1685,6 @@ test("queues explicit Desktop follow-ups", async () => {
         },
       ],
       inlineReferences: [],
-      skillInvocation,
     },
   );
   assert.deepEqual(submits, [
@@ -1990,7 +1856,6 @@ test("binds steer and stop to Host-owned queue and active Turn identities", asyn
       return {
         disposition: "steering",
         queueRevision: 2,
-        skillInvocation: { loaded: [], failed: [], receipts: [] },
       };
     },
     interruptTurn: async (input) => {
@@ -2074,7 +1939,6 @@ test("binds steer and stop to Host-owned queue and active Turn identities", asyn
       disposition: "steering",
       attachments: [],
       inlineReferences: [],
-      skillInvocation: { loaded: [], failed: [], receipts: [] },
     },
   );
   assert.deepEqual(
@@ -2500,7 +2364,7 @@ test('steers WorkHub through Host admission even though the ordinary Session cat
       getSession: async () => null,
       submitMessage: async (input) => {
         submits.push(input);
-        return { disposition: 'steering', queueRevision: 1, skillInvocation: { loaded: [], failed: [], receipts: [] } };
+        return { disposition: 'steering', queueRevision: 1 };
       },
     }),
     observer: unusedObserver(), attachmentApprovals: createAttachmentApprovalRegistry(),

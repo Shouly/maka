@@ -39,10 +39,6 @@ import {
   type BoundedEvidenceReadResult,
   type EvidenceReadBudget,
 } from './bounded-evidence.js';
-import {
-  decodeSkillInvocationResult,
-  type SkillInvocationResult,
-} from '@maka/core/skill-invocation';
 import { DurableStoreWriteError, type RuntimeEventStore } from '@maka/core/runtime-event-store';
 import type {
   RuntimeInvocationPageInput,
@@ -110,14 +106,12 @@ export interface RootTurnSourceMessage {
   submittedContentDigest?: `sha256:${string}`;
   /** The original placement before queue promotion; absent legacy records use `placement`. */
   submittedPlacement?: 'current_turn' | 'next_turn';
-  /** The admission-time Skill outcome for this exact source Message. */
-  skillInvocation?: SkillInvocationResult;
   /**
-   * The exact-Turn intent this Message was submitted with — the Skill ids and
-   * the orchestration override. Content and placement do not describe it, so
-   * without this a retry that asks for a different execution mode under the
-   * same Message identity aliases the earlier success. Absent on a record
-   * written for a submit that carried no exact intent.
+   * The exact-Turn intent this Message was submitted with — the orchestration
+   * override. Content and placement do not describe it, so without this a
+   * retry that asks for a different execution mode under the same Message
+   * identity aliases the earlier success. Absent on a record written for a
+   * submit that carried no exact intent.
    */
   submittedIntent?: SubmittedTurnIntent;
   placement: 'current_turn' | 'next_turn';
@@ -134,7 +128,6 @@ export interface RootTurnAdmission {
   previousRootTurnId: string | null;
   normalizedInput: MessageContent | null;
   turnOrchestration?: TurnOrchestration;
-  skillInvocation?: SkillInvocationResult;
   authorization?: RootTurnAdmissionAuthorization;
   sourceMessages: readonly RootTurnSourceMessage[];
   admittedAt: number;
@@ -149,15 +142,6 @@ export interface RootTurnAdmissionAuthorization {
   readonly approvedBy: string;
 }
 
-export interface RootTurnStartRejection {
-  schemaVersion: 1;
-  sessionId: string;
-  turnId: string;
-  execution: RootExecutionDescriptor;
-  skillInvocation: SkillInvocationResult;
-  rejectedAt: number;
-}
-
 export interface AdmitRootTurnInput {
   sessionId: string;
   turnId: string;
@@ -167,24 +151,10 @@ export interface AdmitRootTurnInput {
   previousRootTurnId: string | null;
   normalizedInput: MessageContent | null;
   turnOrchestration?: TurnOrchestration;
-  skillInvocation?: SkillInvocationResult;
   authorization?: RootTurnAdmissionAuthorization;
   sourceMessages: readonly RootTurnSourceMessage[];
   admittedAt: number;
 }
-
-export interface CommitRootTurnStartRejectionInput {
-  sessionId: string;
-  turnId: string;
-  execution: RootExecutionDescriptor;
-  skillInvocation: SkillInvocationResult;
-  rejectedAt: number;
-}
-
-export type CommitRootTurnStartRejectionResult =
-  | { kind: 'committed'; rejection: RootTurnStartRejection }
-  | { kind: 'existing'; rejection: RootTurnStartRejection }
-  | { kind: 'conflict'; rejection: RootTurnStartRejection };
 
 export interface RootTurnSourceMessageReceipt {
   admission: RootTurnAdmission;
@@ -215,20 +185,7 @@ export interface RootTurnAdmissionStore {
   listRootTurnAdmissionsForRecovery(sessionId: string): Promise<RootTurnAdmission[]>;
 }
 
-export interface RootTurnStartRejectionStore {
-  readRootTurnStartRejection(
-    sessionId: string,
-    turnId: string,
-  ): Promise<RootTurnStartRejection | undefined>;
-  commitRootTurnStartRejection(
-    input: CommitRootTurnStartRejectionInput,
-  ): Promise<CommitRootTurnStartRejectionResult>;
-}
-
-export interface DurableAgentRunStore
-  extends AgentRunStore,
-    RootTurnAdmissionStore,
-    RootTurnStartRejectionStore {
+export interface DurableAgentRunStore extends AgentRunStore, RootTurnAdmissionStore {
   readEventsBounded(
     sessionId: string,
     runId: string,
@@ -585,15 +542,6 @@ class SqliteAgentRunStore implements DurableAgentRunStore {
           ? { kind: 'existing', admission: existing }
           : { kind: 'conflict', admission: existing };
       }
-      if (
-        readSqliteRootTurnStartRejection(
-          this.#lease.database,
-          admission.sessionId,
-          admission.turnId,
-        )
-      ) {
-        throw new Error('Root Turn identity is already rejected');
-      }
       if (admission.execution.kind === 'safe_boundary_continuation') {
         const sourceOwner = this.#lease.database
           .prepare(`
@@ -703,55 +651,6 @@ class SqliteAgentRunStore implements DurableAgentRunStore {
       row.turn_id,
     );
     return admission;
-  }
-
-  async readRootTurnStartRejection(
-    sessionId: string,
-    turnId: string,
-  ): Promise<RootTurnStartRejection | undefined> {
-    assertSafeId(sessionId, 'Invalid session id');
-    assertSafeId(turnId, 'Invalid turn id');
-    return readSqliteRootTurnStartRejection(this.#lease.database, sessionId, turnId);
-  }
-
-  async commitRootTurnStartRejection(
-    input: CommitRootTurnStartRejectionInput,
-  ): Promise<CommitRootTurnStartRejectionResult> {
-    const rejection = normalizeRootTurnStartRejection(input);
-    return this.#lease.transaction('write', () => {
-      const admission = readSqliteRootTurnAdmission(
-        this.#lease.database,
-        rejection.sessionId,
-        rejection.turnId,
-      );
-      if (admission) {
-        throw new Error('Root Turn identity is already admitted');
-      }
-      const existing = readSqliteRootTurnStartRejection(
-        this.#lease.database,
-        rejection.sessionId,
-        rejection.turnId,
-      );
-      if (existing) {
-        return isDeepStrictEqual(existing.execution, rejection.execution) &&
-          isDeepStrictEqual(existing.skillInvocation, rejection.skillInvocation)
-          ? { kind: 'existing', rejection: existing }
-          : { kind: 'conflict', rejection: existing };
-      }
-      this.#lease.database
-        .prepare(`
-          INSERT INTO core_root_turn_start_rejections(
-            session_id, turn_id, rejected_at, record_json
-          ) VALUES (?, ?, ?, ?)
-        `)
-        .run(
-          rejection.sessionId,
-          rejection.turnId,
-          rejection.rejectedAt,
-          JSON.stringify(rejection),
-        );
-      return { kind: 'committed', rejection };
-    });
   }
 
   async readRootTurnSourceMessageReceipt(
@@ -1181,88 +1080,6 @@ function readSqliteRootTurnAdmission(
   return normalizeRootTurnAdmission(JSON.parse(row.record_json), sessionId, turnId);
 }
 
-function readSqliteRootTurnStartRejection(
-  db: DatabaseSync,
-  sessionId: string,
-  turnId: string,
-): RootTurnStartRejection | undefined {
-  const row = db
-    .prepare(`
-      SELECT record_json
-      FROM core_root_turn_start_rejections
-      WHERE session_id = ? AND turn_id = ?
-    `)
-    .get(sessionId, turnId) as { record_json?: unknown } | undefined;
-  if (!row) return undefined;
-  if (typeof row.record_json !== 'string') {
-    throw new Error('Invalid root Turn start rejection row');
-  }
-  return normalizeStoredRootTurnStartRejection(JSON.parse(row.record_json), sessionId, turnId);
-}
-
-function normalizeRootTurnStartRejection(
-  input: CommitRootTurnStartRejectionInput,
-): RootTurnStartRejection {
-  return normalizeStoredRootTurnStartRejection(
-    {
-      schemaVersion: 1,
-      sessionId: input.sessionId,
-      turnId: input.turnId,
-      execution: input.execution,
-      skillInvocation: input.skillInvocation,
-      rejectedAt: input.rejectedAt,
-    },
-    input.sessionId,
-    input.turnId,
-  );
-}
-
-function normalizeStoredRootTurnStartRejection(
-  value: unknown,
-  sessionId: string,
-  turnId: string,
-): RootTurnStartRejection {
-  assertSafeId(sessionId, 'Invalid session id');
-  assertSafeId(turnId, 'Invalid turn id');
-  if (
-    !isPlainRecord(value) ||
-    !hasExactKeys(value, [
-      'schemaVersion',
-      'sessionId',
-      'turnId',
-      'execution',
-      'skillInvocation',
-      'rejectedAt',
-    ]) ||
-    value.schemaVersion !== 1 ||
-    value.sessionId !== sessionId ||
-    value.turnId !== turnId ||
-    !Number.isSafeInteger(value.rejectedAt) ||
-    (value.rejectedAt as number) < 0
-  ) {
-    throw new Error(`Invalid root Turn start rejection for turn ${turnId}`);
-  }
-  const execution = normalizeRootExecutionDescriptor(value.execution);
-  if (execution.kind !== 'external_message') {
-    throw new Error('Root Turn start rejection requires external message execution');
-  }
-  const skillInvocation = decodeSkillInvocationResult(value.skillInvocation);
-  if (skillInvocation.loaded.length !== 0 || skillInvocation.failed.length === 0) {
-    throw new Error('Root Turn start rejection requires only failed Skill invocations');
-  }
-  const rejection = {
-    schemaVersion: 1 as const,
-    sessionId,
-    turnId,
-    execution,
-    skillInvocation,
-    rejectedAt: value.rejectedAt as number,
-  };
-  assertRootTurnAdmissionSerializedSize(`${JSON.stringify(rejection)}\n`);
-  Object.freeze(rejection.execution);
-  return Object.freeze(rejection);
-}
-
 function normalizeAdmitRootTurnInput(input: AdmitRootTurnInput): RootTurnAdmission {
   assertSafeId(input.sessionId, 'Invalid session id');
   assertSafeId(input.turnId, 'Invalid turn id');
@@ -1284,10 +1101,6 @@ function normalizeAdmitRootTurnInput(input: AdmitRootTurnInput): RootTurnAdmissi
     input.sourceMessages,
   );
   const turnOrchestration = normalizeTurnOrchestration(input.turnOrchestration);
-  const skillInvocation =
-    input.skillInvocation === undefined
-      ? undefined
-      : decodeSkillInvocationResult(input.skillInvocation);
   const authorization = normalizeRootTurnAdmissionAuthorization(input.authorization);
   const execution = normalizeRootExecutionDescriptor(input.execution);
   if (execution.kind === 'legacy_automation') {
@@ -1303,7 +1116,6 @@ function normalizeAdmitRootTurnInput(input: AdmitRootTurnInput): RootTurnAdmissi
     previousRootTurnId: input.previousRootTurnId,
     normalizedInput,
     ...(turnOrchestration ? { turnOrchestration } : {}),
-    ...(skillInvocation ? { skillInvocation } : {}),
     ...(authorization ? { authorization } : {}),
     sourceMessages,
     admittedAt: input.admittedAt,
@@ -1505,10 +1317,6 @@ function normalizeRootTurnAdmission(
     record.sourceMessages,
   );
   const turnOrchestration = normalizeTurnOrchestration(record.turnOrchestration);
-  const skillInvocation =
-    record.skillInvocation === undefined
-      ? undefined
-      : decodeSkillInvocationResult(record.skillInvocation);
   const authorization = normalizeRootTurnAdmissionAuthorization(record.authorization);
   const admission: RootTurnAdmission = {
     schemaVersion: ROOT_TURN_ADMISSION_SCHEMA_VERSION,
@@ -1520,7 +1328,6 @@ function normalizeRootTurnAdmission(
     previousRootTurnId: record.previousRootTurnId as string | null,
     normalizedInput,
     ...(turnOrchestration ? { turnOrchestration } : {}),
-    ...(skillInvocation ? { skillInvocation } : {}),
     ...(authorization ? { authorization } : {}),
     sourceMessages,
     admittedAt: record.admittedAt as number,
@@ -1719,7 +1526,6 @@ function normalizeRootTurnSourceMessages(value: unknown): readonly RootTurnSourc
         ...(Object.hasOwn(item, 'submittedContentDigest') ? ['submittedContentDigest'] : []),
         ...(Object.hasOwn(item, 'submittedPlacement') ? ['submittedPlacement'] : []),
         ...(Object.hasOwn(item, 'submittedIntent') ? ['submittedIntent'] : []),
-        ...(Object.hasOwn(item, 'skillInvocation') ? ['skillInvocation'] : []),
       ])
     ) {
       throw new Error(`Invalid root turn source message at index ${index}`);
@@ -1730,7 +1536,6 @@ function normalizeRootTurnSourceMessages(value: unknown): readonly RootTurnSourc
       submittedContentDigest,
       submittedPlacement,
       submittedIntent,
-      skillInvocation,
       placement,
       disposition,
     } = item;
@@ -1766,9 +1571,6 @@ function normalizeRootTurnSourceMessages(value: unknown): readonly RootTurnSourc
       ...(submittedIntent !== undefined
         ? { submittedIntent: normalizeSubmittedTurnIntent(submittedIntent) }
         : {}),
-      ...(skillInvocation !== undefined
-        ? { skillInvocation: decodeSkillInvocationResult(skillInvocation) }
-        : {}),
       placement,
       disposition,
     });
@@ -1783,7 +1585,6 @@ function rootTurnAdmissionPayloadsEqual(
   return (
     isDeepStrictEqual(left.execution, right.execution) &&
     isDeepStrictEqual(left.turnOrchestration, right.turnOrchestration) &&
-    isDeepStrictEqual(left.skillInvocation, right.skillInvocation) &&
     isDeepStrictEqual(left.authorization, right.authorization) &&
     (left.normalizedInput === null || right.normalizedInput === null
       ? left.normalizedInput === right.normalizedInput
@@ -1800,7 +1601,6 @@ function rootTurnAdmissionPayloadsEqual(
         (source.submittedPlacement ?? source.placement) ===
           (other.submittedPlacement ?? other.placement) &&
         submittedTurnIntentsEqual(source.submittedIntent, other.submittedIntent) &&
-        isDeepStrictEqual(source.skillInvocation, other.skillInvocation) &&
         messageContentsEqual(source.content, other.content)
       );
     })
@@ -1854,11 +1654,6 @@ function assertRootTurnAdmissionContract(admission: RootTurnAdmission): void {
   if (!allowsQueueSources && admission.sourceMessages.length !== 0) {
     throw new Error(
       'Invalid root turn admission contract: host-authored execution cannot have source messages',
-    );
-  }
-  if (admission.skillInvocation && execution.kind !== 'external_message') {
-    throw new Error(
-      'Invalid root turn admission contract: Skill invocation requires external message execution',
     );
   }
   if (
@@ -1930,7 +1725,6 @@ function deepFreezeRootTurnAdmission(admission: RootTurnAdmission): RootTurnAdmi
   }
   Object.freeze(admission.execution);
   if (admission.turnOrchestration) Object.freeze(admission.turnOrchestration);
-  if (admission.skillInvocation) Object.freeze(admission.skillInvocation);
   if (admission.authorization) Object.freeze(admission.authorization);
   if (admission.normalizedInput) deepFreezeRootTurnMessageContent(admission.normalizedInput);
   for (const sourceMessage of admission.sourceMessages) {
@@ -2005,7 +1799,7 @@ function hasRootTurnAdmissionKeys(record: Record<string, unknown>): boolean {
     'sourceMessages',
     'admittedAt',
   ];
-  const optionalKeys = ['turnOrchestration', 'skillInvocation', 'authorization'].filter((key) =>
+  const optionalKeys = ['turnOrchestration', 'authorization'].filter((key) =>
     Object.hasOwn(record, key),
   );
   return hasExactKeys(record, [...keys, ...optionalKeys]);

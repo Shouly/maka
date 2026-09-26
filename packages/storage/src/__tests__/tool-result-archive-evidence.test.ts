@@ -30,6 +30,7 @@ import {
   trackControlDirectory,
   removeTrackedControlDirectories,
 } from './fixtures/control-directory-hygiene.js';
+import { SQLITE_CORE_EXECUTION_SCHEMA_VERSION } from '../sqlite-core-execution-schema.js';
 
 after(removeTrackedControlDirectories);
 async function fixture(t: TestContext) {
@@ -221,7 +222,7 @@ test('upgrades the target index without rewriting immutable transition records',
       f.db
         .prepare("SELECT version FROM operational_schema_migrations WHERE scope = 'core_execution'")
         .get()?.version,
-      9,
+      SQLITE_CORE_EXECUTION_SCHEMA_VERSION,
     );
   } finally {
     reader.close();

@@ -67,7 +67,6 @@ interface NormalizedSendSessionCommand {
   turnId?: string;
   text: string;
   displayText?: string;
-  skillIds?: string[];
   attachmentItems?: unknown;
   retainedAttachments?: AttachmentRef[];
   turnOrchestration?: TurnOrchestration;
@@ -220,7 +219,6 @@ export function normalizeSessionSendCommand(input: unknown): NormalizedSendSessi
   const text = normalizeSendText(value.text);
   const displayText =
     value.displayText === undefined ? undefined : normalizeSendText(value.displayText);
-  const skillIds = normalizeSessionSkillIds(value.skillIds);
   // A send may carry structured content instead of text (a pure quote or a
   // pure attachment, #4804). Only the presence is decided here: attachment
   // state, ownership, and size limits stay with the ingestion checks, and
@@ -239,7 +237,6 @@ export function normalizeSessionSendCommand(input: unknown): NormalizedSendSessi
   const hasAttachmentItems = (attachmentItems.attachmentItems?.length ?? 0) > 0;
   if (
     !text.trim() &&
-    skillIds.length === 0 &&
     (quotes?.length ?? 0) === 0 &&
     !hasAttachmentItems &&
     (retainedAttachments.retainedAttachments?.length ?? 0) === 0
@@ -252,7 +249,6 @@ export function normalizeSessionSendCommand(input: unknown): NormalizedSendSessi
     ...normalizeOptionalSendTurnId(value.turnId),
     text,
     ...(displayText !== undefined ? { displayText } : {}),
-    ...(skillIds.length > 0 ? { skillIds } : {}),
     ...attachmentItems,
     ...retainedAttachments,
     ...(value.turnOrchestration !== undefined
@@ -395,26 +391,6 @@ function normalizeSendText(input: unknown): string {
     throw new Error('Invalid send text');
   }
   return input;
-}
-
-export function normalizeSessionSkillIds(input: unknown): string[] {
-  if (input === undefined) return [];
-  if (
-    !Array.isArray(input) ||
-    input.length > 50 ||
-    input.some(
-      (id) =>
-        typeof id !== 'string' ||
-        id.length === 0 ||
-        id.length > 512 ||
-        // The field name is retained for wire compatibility. Values may be a
-        // legacy id or a stable scope-aware ref such as project:maka:writer.
-        !/^[A-Za-z0-9][A-Za-z0-9._-]*(?::[A-Za-z0-9][A-Za-z0-9._-]*)*$/.test(id),
-    )
-  ) {
-    throw new Error('Invalid send skillIds');
-  }
-  return [...input];
 }
 
 export function normalizeStopSessionInput(input: unknown): NormalizedStopSessionInput {

@@ -215,16 +215,16 @@ describe('RuntimeEvent content variants', () => {
 
   test('preserves sent inline references as message identity', () => {
     const inlineReferences = [
-      { kind: 'skill', value: '/skill:writer', label: 'Writer', start: 8 },
+      { kind: 'skill', value: '/writer', label: 'Writer', start: 8 },
       {
         kind: 'workspace_file',
         value: '@packages/ui/src/chat turn.tsx',
         label: 'chat turn.tsx',
-        start: 22,
+        start: 16,
       },
     ] as const;
     const decoded = decodeMessageContent({
-      text: 'Inspect /skill:writer @packages/ui/src/chat turn.tsx',
+      text: 'Inspect /writer @packages/ui/src/chat turn.tsx',
       inlineReferences: [...inlineReferences],
     });
 
@@ -233,14 +233,14 @@ describe('RuntimeEvent content variants', () => {
     assert.notEqual(decoded.inlineReferences?.[0], inlineReferences[0]);
     assert.equal(
       messageContentsEqual(decoded, {
-        text: 'Inspect /skill:writer @packages/ui/src/chat turn.tsx',
+        text: 'Inspect /writer @packages/ui/src/chat turn.tsx',
         inlineReferences: [...inlineReferences],
       }),
       true,
     );
     assert.equal(
       messageContentsEqual(decoded, {
-        text: 'Inspect /skill:writer @packages/ui/src/chat turn.tsx',
+        text: 'Inspect /writer @packages/ui/src/chat turn.tsx',
         inlineReferences: [
           { ...inlineReferences[0]!, label: 'Renamed Writer' },
           inlineReferences[1]!,
@@ -264,7 +264,9 @@ describe('RuntimeEvent content variants', () => {
   test('rejects sent inline references outside their bounded kind grammar', () => {
     const invalidReferences = [
       { kind: 'skill', value: 'writer', label: 'Writer' },
-      { kind: 'skill', value: `/skill:${'a'.repeat(4_090)}`, label: 'Writer' },
+      // The former `/skill:<name>` spelling is no longer a skill token.
+      { kind: 'skill', value: '/skill:writer', label: 'Writer' },
+      { kind: 'skill', value: `/${'a'.repeat(4_096)}`, label: 'Writer' },
       { kind: 'workspace_file', value: '@../secret', label: 'secret' },
       { kind: 'workspace_file', value: '@src/a.ts', label: '' },
       { kind: 'workspace_file', value: '@src/a.ts', label: 'a'.repeat(201) },
@@ -285,7 +287,7 @@ describe('RuntimeEvent content variants', () => {
           text: 'hello',
           inlineReferences: Array.from({ length: 33 }, () => ({
             kind: 'skill',
-            value: '/skill:writer',
+            value: '/writer',
             label: 'Writer',
             start: 0,
           })),
@@ -322,16 +324,16 @@ describe('RuntimeEvent content variants', () => {
 
   test('rejects missing, mismatched, or overlapping reference occurrences', () => {
     const invalid = [
-      [{ kind: 'skill', value: '/skill:writer', label: 'Writer' }],
-      [{ kind: 'skill', value: '/skill:writer', label: 'Writer', start: 1 }],
+      [{ kind: 'skill', value: '/writer', label: 'Writer' }],
+      [{ kind: 'skill', value: '/writer', label: 'Writer', start: 1 }],
       [
-        { kind: 'skill', value: '/skill:writer', label: 'Writer', start: 0 },
-        { kind: 'skill', value: '/skill:writer', label: 'Writer', start: 0 },
+        { kind: 'skill', value: '/writer', label: 'Writer', start: 0 },
+        { kind: 'skill', value: '/writer', label: 'Writer', start: 0 },
       ],
     ];
     for (const inlineReferences of invalid) {
       assert.throws(
-        () => decodeMessageContent({ text: '/skill:writer', inlineReferences }),
+        () => decodeMessageContent({ text: '/writer', inlineReferences }),
         /Invalid MessageContent/,
       );
     }

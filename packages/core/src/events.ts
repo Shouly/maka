@@ -233,7 +233,7 @@ const INLINE_REFERENCE_SHAPE = defineObjectShape<InlineReference>()(
   ['kind', 'value', 'label', 'start'],
   [],
 );
-const INLINE_SKILL_REFERENCE_VALUE = /^\/skill:[A-Za-z0-9._-]+$/;
+const INLINE_SKILL_REFERENCE_VALUE = /^\/[A-Za-z0-9._-]+$/;
 export const INLINE_REFERENCE_MAX_COUNT = 32;
 const MAX_INLINE_REFERENCE_VALUE_LENGTH = 4_096;
 export const INLINE_REFERENCE_LABEL_MAX_LENGTH = 200;

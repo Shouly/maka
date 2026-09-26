@@ -31,22 +31,22 @@ test('aggregates inline references against the combined display text', () => {
   assert.deepStrictEqual(
     aggregateMessageContents([
       {
-        text: '<skill>Alpha</skill>\n\nFirst',
-        displayText: '/skill:alpha First',
-        inlineReferences: [{ kind: 'skill', value: '/skill:alpha', label: 'Alpha', start: 0 }],
+        text: 'Alpha, expanded for the model\n\nFirst',
+        displayText: '/alpha First',
+        inlineReferences: [{ kind: 'skill', value: '/alpha', label: 'Alpha', start: 0 }],
       },
       {
-        text: '<skill>Beta</skill>\n\nSecond',
-        displayText: '/skill:beta Second',
-        inlineReferences: [{ kind: 'skill', value: '/skill:beta', label: 'Beta', start: 0 }],
+        text: 'Beta, expanded for the model\n\nSecond',
+        displayText: '/beta Second',
+        inlineReferences: [{ kind: 'skill', value: '/beta', label: 'Beta', start: 0 }],
       },
     ]),
     {
-      text: '<skill>Alpha</skill>\n\nFirst\n\n<skill>Beta</skill>\n\nSecond',
-      displayText: '/skill:alpha First\n\n/skill:beta Second',
+      text: 'Alpha, expanded for the model\n\nFirst\n\nBeta, expanded for the model\n\nSecond',
+      displayText: '/alpha First\n\n/beta Second',
       inlineReferences: [
-        { kind: 'skill', value: '/skill:alpha', label: 'Alpha', start: 0 },
-        { kind: 'skill', value: '/skill:beta', label: 'Beta', start: 20 },
+        { kind: 'skill', value: '/alpha', label: 'Alpha', start: 0 },
+        { kind: 'skill', value: '/beta', label: 'Beta', start: 14 },
       ],
     },
   );

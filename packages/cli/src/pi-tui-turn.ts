@@ -18,7 +18,6 @@
  */
 
 import type { SessionEvent } from '@maka/core/events';
-import type { SkillInvocationResult } from '@maka/core/skill-invocation';
 import {
   drainGoalTurn,
   type SessionActivityLease,
@@ -42,7 +41,6 @@ export interface RunMakaPiTuiTurnInput {
   shouldAbort: () => boolean;
   onStart?: () => void;
   onPrepared?: (turn: MakaPreparedSessionTurn) => void | Promise<void>;
-  onSkillInvocation?: (result: SkillInvocationResult) => void | Promise<void>;
   onEvent?: (event: SessionEvent) => void | Promise<void>;
   onFailure?: (error: unknown) => void | Promise<void>;
 }
@@ -76,11 +74,7 @@ export async function runMakaPiTuiTurn(input: RunMakaPiTuiTurnInput): Promise<Go
 
     const turn = request.turn;
     preparedTurnId = turn.turnId;
-    // Adoption first: onPrepared replaces the transcript with the attached
-    // Turn's canonical messages, so a Skill card projected before it would be
-    // wiped by the very adoption that follows.
     await input.onPrepared?.(turn);
-    if (turn.skillInvocation) await input.onSkillInvocation?.(turn.skillInvocation);
 
     if (!activity) activity = await input.turnActivity.activities.acquire(turn.sessionId);
     if (input.shouldAbort()) {

@@ -257,7 +257,7 @@ function handlers(
       await overrides.start?.();
       return {
         ok: true,
-        result: { kind: 'started', turn: runningTurn(), skillInvocation: emptySkillInvocation() },
+        result: { kind: 'started', turn: runningTurn() },
       };
     },
     'turn.query': async () => ({
@@ -332,10 +332,6 @@ function usageSummary() {
       pendingRepairs: 0,
     },
   };
-}
-
-function emptySkillInvocation() {
-  return { loaded: [], failed: [], receipts: [] };
 }
 
 function context() {

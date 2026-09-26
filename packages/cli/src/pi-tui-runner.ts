@@ -36,10 +36,6 @@ import { CurrentTaskStore, TaskOverlay, renderTaskIndicator } from './pi-tui-tas
 import { isThinkingLevel, type ThinkingLevel } from '@maka/core/model-thinking';
 import { deriveConnectionSlug, type ProviderType } from '@maka/core/llm-connections';
 import type { OrchestrationMode } from '@maka/core/orchestration';
-import type {
-  SkillInvocationFailureReason,
-  SkillInvocationResult,
-} from '@maka/core/skill-invocation';
 import { projectRevisionLinkedSessionTree } from '@maka/core/session-revisions';
 import {
   slashCommandsForSurface,
@@ -174,6 +170,7 @@ import {
   onboardingOAuthFailureMessage,
   permissionModePickerItems,
   skillPickerItems,
+  slashCommandSpellings,
   thinkingLevelPickerItems,
   type MakaSlashCommand,
   type SessionSearchChoice,
@@ -382,14 +379,6 @@ interface TuiSkillsCopy {
   readonly pickerTitle: string;
   readonly usage: string;
   readonly noneAvailable: string;
-  readonly loaded: string;
-  readonly loadFailed: string;
-  readonly outcomeNoRequest: string;
-  readonly outcomeMarkersNotSent: string;
-  readonly failedItem: string;
-  readonly tooManyRequestsItem: string;
-  readonly listSeparator: string;
-  readonly failureReasons: Readonly<Record<SkillInvocationFailureReason, string>>;
 }
 
 interface TuiConnectionIdentityCopy {
@@ -863,11 +852,11 @@ export async function runMakaPiTui(input: MakaPiTuiInput): Promise<void> {
       })
     : undefined;
 
-  // ── Explicit skill invocation (#1148) ────────────────────────────────────
+  // ── Naming a skill as `/<name>` (#1148) ──────────────────────────────────
   // One cached list feeds autocomplete, the `/skill` picker, and the editor's
   // sync highlight validator. The cache is keyed by cwd (project-level skill
-  // paths move with it) and short-lived; submit-time injection never uses it —
-  // it does an authoritative scan via prepareSkillInvocation.
+  // paths move with it) and short-lived. Nothing is resolved on send: the
+  // text reaches the model as written and the model invokes the skill.
   const SKILL_LIST_CACHE_MS = 5_000;
   let skillListCache: { cacheCwd: string; at: number; entries: InvocableSkillEntry[] } | undefined;
   const listSkillsCached = async (
@@ -898,7 +887,7 @@ export async function runMakaPiTui(input: MakaPiTuiInput): Promise<void> {
       return entries;
     } catch {
       // Listing is best-effort: autocomplete/picker/highlight degrade to
-      // nothing, and submit-time resolution does its own authoritative scan.
+      // nothing, and the message is sent as written either way.
       return skillListCache?.cacheCwd === cwd ? skillListCache.entries : [];
     }
   };
@@ -907,54 +896,6 @@ export async function runMakaPiTui(input: MakaPiTuiInput): Promise<void> {
   void listSkillsCached(true);
 
   const skillsCopy = TUI_SKILLS_COPY[locale];
-
-  const showSkillInvocation = (skillInvocation: SkillInvocationResult): void => {
-    const failed = skillInvocation.failed;
-    const failedLabels = failed.map((entry) =>
-      entry.reason === 'too_many_requests'
-        ? formatUiMessage(
-            skillsCopy.tooManyRequestsItem,
-            { limit: entry.requestLimit, reason: skillsCopy.failureReasons[entry.reason] },
-            locale,
-          )
-        : formatUiMessage(
-            skillsCopy.failedItem,
-            { request: entry.request, reason: skillsCopy.failureReasons[entry.reason] },
-            locale,
-          ),
-    );
-    if (failed.length > 0) {
-      state.entries.push({
-        kind: 'notice',
-        level: 'info',
-        text: formatUiMessage(
-          skillsCopy.loadFailed,
-          {
-            failures: failedLabels.join(skillsCopy.listSeparator),
-            outcome:
-              skillInvocation.loaded.length === 0
-                ? skillsCopy.outcomeNoRequest
-                : skillsCopy.outcomeMarkersNotSent,
-          },
-          locale,
-        ),
-      });
-    }
-    if (skillInvocation.loaded.length > 0) {
-      state.entries.push({
-        kind: 'notice',
-        level: 'info',
-        text: formatUiMessage(
-          skillsCopy.loaded,
-          {
-            names: skillInvocation.loaded.map((skill) => skill.name).join(skillsCopy.listSeparator),
-          },
-          locale,
-        ),
-      });
-    }
-    requestRender();
-  };
 
   // 1-second heartbeat that re-renders the activity strip's elapsed counter
   // while a turn runs. Stopped on turn end and disposed on teardown.
@@ -1273,23 +1214,7 @@ export async function runMakaPiTui(input: MakaPiTuiInput): Promise<void> {
     requestRender();
     const task = input.driver
       .submitMessage(text, { messageId, placement, ...options })
-      .then((result) => {
-        // Runtime Host resolved the Skills this Message named and refused it.
-        // Retire the row it belongs to and report the failure in its place.
-        if (result?.disposition === 'blocked') {
-          removeTransientUserMessage(messageId);
-          showSkillInvocation(result.skillInvocation);
-          return;
-        }
-        // It admitted them instead. The receipt says what was loaded and what
-        // was dropped, and the submit answer is the only place it appears: the
-        // Turn arrives through the started-Turn subscription, which carries
-        // Session state rather than this Message's admission.
-        if (result) {
-          const { loaded, failed } = result.skillInvocation;
-          if (loaded.length > 0 || failed.length > 0) showSkillInvocation(result.skillInvocation);
-        }
-      })
+      .then(() => undefined)
       .catch((error) => {
         // The Message never became anything, so its row goes with the failure
         // notice that replaces it. The text stays in editor history for a retry.
@@ -1467,8 +1392,8 @@ export async function runMakaPiTui(input: MakaPiTuiInput): Promise<void> {
       // gate. ('intercepted' commands — /exit, /swarm, /graph — were claimed
       // by their dedicated checks above and reaching the refusal here only
       // means an unrecognized form.) Unknown slash-prefixed text still
-      // steers: it may be intended prompt text (a skill invocation such as
-      // `/skill:<name>`, or a path).
+      // steers: it may be intended prompt text (a skill named as `/<name>`,
+      // or a path).
       const commandToken = prompt.trim().split(/\s+/, 1)[0] ?? '';
       const knownCommand = slashCommands.find(
         (candidate) =>
@@ -1564,13 +1489,6 @@ export async function runMakaPiTui(input: MakaPiTuiInput): Promise<void> {
           return;
         }
         if (turn.summary) adoptSessionMetadata(turn.summary);
-      },
-      onSkillInvocation: (skillInvocation) => {
-        // Same mid-turn detach fence as onPrepared/onEvent: a skill card
-        // belonging to the abandoned Session must not land on the adopted
-        // viewport (covers the blocked-invocation path too).
-        if (superseded()) return;
-        showSkillInvocation(skillInvocation);
       },
       onEvent: (event) => {
         // Orphaned by a mid-turn detach: the abandoned Session's stream must
@@ -3336,9 +3254,14 @@ export async function runMakaPiTui(input: MakaPiTuiInput): Promise<void> {
 
   // `/skill` with no arguments: pick from everything the host can invoke right
   // now. Picking only inserts the token into the draft — never sends — so the
-  // user keeps composing (and can add more tokens) before submitting.
+  // user keeps composing (and can add more tokens) before submitting. The
+  // draft is empty after `/skill`, so the token lands at the start of the
+  // message, where a skill named like a command would run the command.
   const showSkillList = async () => {
-    const entries = await listSkillsCached(true);
+    const commandSpellings = slashCommandSpellings(slashCommands);
+    const entries = (await listSkillsCached(true)).filter(
+      (entry) => !commandSpellings.has(entry.id),
+    );
     if (closed) return;
     if (entries.length === 0) {
       state.entries.push({
@@ -3354,7 +3277,7 @@ export async function runMakaPiTui(input: MakaPiTuiInput): Promise<void> {
       String(entries.length),
       skillPickerItems(entries),
       (item) => {
-        editor.insertTextAtCursor(`/skill:${item.value} `);
+        editor.insertTextAtCursor(`/${item.value} `);
         requestRender();
       },
       { minPrimaryColumnWidth: 16, maxPrimaryColumnWidth: 40 },

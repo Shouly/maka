@@ -17,43 +17,17 @@
  * under the License.
  */
 
-import { createHash } from 'node:crypto';
-import { isDeepStrictEqual } from 'node:util';
-import type { RootExecutionDescriptor } from '@maka/core/runtime-invocation';
-import { normalizeMessageContent, type MessageContent } from '@maka/core/events';
-import type { SkillInvocationResult } from '@maka/core/skill-invocation';
-import { RuntimeMessageAuthorityInvariantError } from '@maka/runtime/message-authority';
-import { parseSkillInvocationTokens } from '@maka/runtime/skill-invocation';
+import { messageContentDigest, normalizeMessageContent } from '@maka/core/events';
 import { type SessionManager } from '@maka/runtime/session-manager';
-import type { ExecutionStoresWriter } from '@maka/storage/execution-stores';
 import type { OperationOutcome, TurnRegenerateInput, TurnStartInput } from '../protocol/index.js';
 import type { ConnectionContext, TurnOperationHandlerMap } from './operation-dispatcher.js';
-import type {
-  RootMessageContentPreparation,
-  RootMessageStartRequest,
-  RootTurnCoordinator,
-  TurnStartOutcome,
-} from './root-turn-coordinator.js';
+import type { RootTurnCoordinator, TurnStartOutcome } from './root-turn-coordinator.js';
 
-const EMPTY_SKILL_INVOCATION: SkillInvocationResult = {
-  loaded: [],
-  failed: [],
-  receipts: [],
-};
-
-type InteractiveTurnExecutionPort = Pick<
-  RootTurnCoordinator,
-  'prepareHostedSkillInvocationContent' | 'startInteractiveRootMessage'
->;
-type InteractiveTurnStore = Pick<
-  ExecutionStoresWriter<'interactive'>['agentRunStore'],
-  'commitRootTurnStartRejection' | 'readRootTurnAdmission' | 'readRootTurnStartRejection'
->;
+type InteractiveTurnExecutionPort = Pick<RootTurnCoordinator, 'startInteractiveRootMessage'>;
 type InteractiveTurnRuntime = Pick<SessionManager, 'prepareRegenerateTurn'>;
 
 export interface HostInteractiveTurnCoordinatorOptions {
   readonly executions: InteractiveTurnExecutionPort;
-  readonly turns: InteractiveTurnStore;
   readonly runtime: InteractiveTurnRuntime;
 }
 
@@ -65,37 +39,28 @@ export class HostInteractiveTurnCoordinator {
   };
 
   readonly #executions: InteractiveTurnExecutionPort;
-  readonly #turns: InteractiveTurnStore;
   readonly #runtime: InteractiveTurnRuntime;
 
   constructor(options: HostInteractiveTurnCoordinatorOptions) {
     this.#executions = options.executions;
-    this.#turns = options.turns;
     this.#runtime = options.runtime;
   }
 
+  /**
+   * A `/<name>` in the text is not resolved here: it reaches the model as
+   * written, and the model loads the skill with the Skill tool. The Host does
+   * mark it as a transcript chip, so the admitted content can differ from the
+   * content sent; the digest of what was sent is what a retry must match.
+   */
   async #start(input: TurnStartInput, context: ConnectionContext): Promise<TurnStartOutcome> {
     const content = normalizeMessageContent(input.content);
-    const skillIds = input.skillIds ?? [];
-    if (skillIds.length > 0 || parseSkillInvocationTokens(content.text).length > 0) {
-      return this.#startSkillInvocation(
-        input,
-        content,
-        skillIds,
-        {
-          kind: 'external_message',
-          inputDigest: hostedExternalInputDigest(content, skillIds),
-          ...(input.maxSteps !== undefined ? { maxSteps: input.maxSteps } : {}),
-        },
-        context,
-      );
-    }
     const outcome = await this.#executions.startInteractiveRootMessage(
       {
         sessionId: input.sessionId,
         turnId: input.turnId,
         execution: {
           kind: 'external_message',
+          inputDigest: messageContentDigest(content),
           ...(input.maxSteps !== undefined ? { maxSteps: input.maxSteps } : {}),
         },
         ...(input.turnOrchestration ? { turnOrchestration: { ...input.turnOrchestration } } : {}),
@@ -104,88 +69,7 @@ export class HostInteractiveTurnCoordinator {
       },
       context,
     );
-    return outcome.ok
-      ? {
-          ok: true,
-          result: {
-            kind: 'started',
-            turn: outcome.result,
-            skillInvocation: EMPTY_SKILL_INVOCATION,
-          },
-        }
-      : outcome;
-  }
-
-  async #startSkillInvocation(
-    input: TurnStartInput,
-    content: MessageContent,
-    skillIds: readonly string[],
-    execution: Extract<RootExecutionDescriptor, { kind: 'external_message' }>,
-    context: ConnectionContext,
-  ): Promise<TurnStartOutcome> {
-    const request: RootMessageStartRequest = {
-      sessionId: input.sessionId,
-      turnId: input.turnId,
-      execution,
-      ...(input.turnOrchestration ? { turnOrchestration: { ...input.turnOrchestration } } : {}),
-      archivedMessage: 'Cannot start a new Turn in an archived Session',
-      prepareFreshContent: async () => {
-        const existing = await this.#turns.readRootTurnStartRejection(
-          input.sessionId,
-          input.turnId,
-        );
-        if (existing) {
-          if (!isDeepStrictEqual(existing.execution, execution)) {
-            return rejected('Turn identity belongs to a different rejected execution payload');
-          }
-          return {
-            ...rejected('Explicit Skill invocation was durably rejected'),
-            skillInvocation: existing.skillInvocation,
-          };
-        }
-        const prepared = await this.#executions.prepareHostedSkillInvocationContent(
-          input.sessionId,
-          input.turnId,
-          content,
-          skillIds,
-          context.connectionId,
-        );
-        if (prepared.kind === 'ready' || !prepared.skillInvocation) return prepared;
-        const committed = await this.#turns.commitRootTurnStartRejection({
-          sessionId: input.sessionId,
-          turnId: input.turnId,
-          execution,
-          skillInvocation: prepared.skillInvocation,
-          rejectedAt: Date.now(),
-        });
-        return committed.kind === 'conflict'
-          ? rejected('Turn identity belongs to a different rejected Skill invocation')
-          : prepared;
-      },
-    };
-    const outcome = await this.#executions.startInteractiveRootMessage(request, context);
-    const rejection = await this.#turns.readRootTurnStartRejection(input.sessionId, input.turnId);
-    if (rejection && isDeepStrictEqual(rejection.execution, execution)) {
-      return {
-        ok: true,
-        result: { kind: 'blocked', skillInvocation: rejection.skillInvocation },
-      };
-    }
-    if (!outcome.ok) return outcome;
-    const admission = await this.#turns.readRootTurnAdmission(input.sessionId, input.turnId);
-    if (!admission) {
-      throw new RuntimeMessageAuthorityInvariantError(
-        'Started Skill invocation is missing its durable root Turn admission',
-      );
-    }
-    return {
-      ok: true,
-      result: {
-        kind: 'started',
-        turn: outcome.result,
-        skillInvocation: admission.skillInvocation ?? EMPTY_SKILL_INVOCATION,
-      },
-    };
+    return outcome.ok ? { ok: true, result: { kind: 'started', turn: outcome.result } } : outcome;
   }
 
   #regenerate(
@@ -209,19 +93,6 @@ export class HostInteractiveTurnCoordinator {
       context,
     );
   }
-}
-
-function rejected(message: string): Extract<RootMessageContentPreparation, { kind: 'rejected' }> {
-  return { kind: 'rejected', outcome: operationConflict(message) };
-}
-
-function hostedExternalInputDigest(
-  content: MessageContent,
-  skillIds: readonly string[],
-): `sha256:${string}` {
-  return `sha256:${createHash('sha256')
-    .update(JSON.stringify({ content, skillIds: [...skillIds] }))
-    .digest('hex')}`;
 }
 
 function operationConflict(message: string) {

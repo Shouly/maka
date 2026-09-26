@@ -85,6 +85,30 @@ describe('active current-turn tool-result pruning', () => {
     assert.doesNotMatch(JSON.stringify(outcome.messages), /maka\.archived_tool_result/);
   });
 
+  // A Skill result is the loaded instructions the model follows for the rest of
+  // the task. The reference sends them as a message of their own, which nothing
+  // prunes; carried in the tool result, they are kept whole the same way.
+  test('never prunes a Skill result, whatever it weighs', async () => {
+    let archiveAttempts = 0;
+    const outcome = await rewriteActiveToolResultsInMessages({
+      messages: [
+        largeToolMessage('Skill', 'skill-1', 'Launching skill: pptx\n\n' + 'x'.repeat(2048 * 8)),
+      ],
+      policy: { enabled: true, maxCurrentResultEstimatedTokens: 1 },
+      stepNumber: 1,
+      turnId: 'turn-1',
+      charsPerToken: 1,
+      archiveToolResult: () => {
+        archiveAttempts += 1;
+        return { artifactId: 'must-not-happen' };
+      },
+    });
+
+    assert.equal(outcome.rewritten, 0);
+    assert.equal(archiveAttempts, 0);
+    assert.doesNotMatch(JSON.stringify(outcome.messages), /maka\.archived_tool_result/);
+  });
+
   test('request projection composes active tools with rewritten messages', async () => {
     const originalMessages = [largeToolMessage('Read', 'tool-1', 'SECRET'.repeat(20))];
     const activePrune = async () => {

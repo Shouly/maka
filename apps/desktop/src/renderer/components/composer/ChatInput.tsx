@@ -76,7 +76,11 @@ import { newTaskStore, newTaskTargetAvailable } from '../../store/new-task-store
 import { useComposerInlineRow } from '../../hooks/use-composer-inline-row.js';
 import { pendingActionsOf } from '../../store/turn-actions-store.js';
 import { parseDesktopSlashCommand } from '../../lib/ported/desktop-slash-command.js';
-import { documentWithSkillTokens, serializeComposer } from '../../lib/composer-document.js';
+import {
+  documentWithSkillTokens,
+  serializeComposer,
+  startsWithSkillReference,
+} from '../../lib/composer-document.js';
 import {
   COMPOSER_META_CHIP,
   COMPOSER_META_CHIP_ACTIVE,
@@ -116,11 +120,8 @@ import {
   chatModelChoiceLabel,
   chatModelWriteCommitted,
 } from '../../lib/ported/shell-chat-model-selection.js';
-import {
-  showSkillInvocationFeedback,
-  showSubmissionFeedback,
-  skillInvocationDisplayText,
-} from '../../lib/ported/skill-invocation-feedback.js';
+import { showSubmissionFeedback } from '../../lib/ported/submission-feedback.js';
+import { SKILL_INVOCATION_TOKEN_SOURCE } from '@maka/core/skill-invocation-token';
 import {
   isSessionWorkspaceUnavailableError,
   showSessionWorkspaceUnavailableToast,
@@ -417,13 +418,16 @@ function OwnedChatInput(props: {
 
       preflightAttachmentItems(sent.attachments);
 
-      if (parseDesktopSlashCommand(serialized.text)?.kind === 'compact') {
+      // A picked Skill chip reads `/<name>` on the wire just as a typed
+      // command does; only typed text runs a command.
+      const typedCommand = !startsWithSkillReference(sent.document);
+      if (typedCommand && parseDesktopSlashCommand(serialized.text)?.kind === 'compact') {
         if (!owner || props.running) throw new Error(copy.slash.notYet);
         await turnActionsStore.compact(owner);
         composerInputStore.acknowledge(scopeKey, sent);
         return;
       }
-      if (/^\/(?:side|graph|swarm)(?:\s|$)/.test(serialized.text)) {
+      if (typedCommand && /^\/(?:side|graph|swarm)(?:\s|$)/.test(serialized.text)) {
         throw new Error(copy.slash.notYet);
       }
 
@@ -490,7 +494,6 @@ function OwnedChatInput(props: {
       optimisticId = messageId;
       const result = await turnActionsStore.submit(owner, transientPlacement, {
         text: serialized.text,
-        skillIds: serialized.skillIds,
         workspaceFileReferences: serialized.workspaceFileReferences,
         attachmentItems: toComposerIngestItems(sent.attachments),
         retainedAttachments: retainedAttachmentRefs(sent.attachments),
@@ -520,9 +523,9 @@ function OwnedChatInput(props: {
           });
           return;
         }
-        // A refusal that admitted nothing: the Host blocked every `/skill:x`
-        // in the message, or the preload's ingest guard turned the attachments
-        // back (#4878). The toast names the reason; the draft stays for retry.
+        // A refusal that admitted nothing: the preload's ingest guard turned
+        // the attachments back (#4878). The toast names the reason; the draft
+        // stays for retry.
         activeSessionStore.removeTransientMessage(owner, messageId);
         optimisticId = undefined;
         showSubmissionFeedback(locale, toastApi, result, owner);
@@ -542,9 +545,6 @@ function OwnedChatInput(props: {
         }
         return;
       }
-      // A skill that loaded beside one that did not is a partial success the
-      // user should hear about, without the message being held back.
-      showSkillInvocationFeedback(locale, toastApi, result.skillInvocation, owner);
       optimisticId = undefined;
       // What the Host made of it: the Turn it landed in, the attachments it
       // resolved, the inline references it kept. `locally_saved` answered
@@ -553,7 +553,7 @@ function OwnedChatInput(props: {
         activeSessionStore.updateTransientMessage(owner, {
           id: messageId,
           ts: Date.now(),
-          text: skillInvocationDisplayText(serialized.text, result.skillInvocation),
+          text: serialized.text,
           attachments: result.attachments,
           directoryReferences: [...sent.directories],
           quotes: sentQuotes.map(({ id: _id, ...quote }) => quote),
@@ -859,9 +859,10 @@ function OwnedChatInput(props: {
   };
 
   /**
-   * A recalled prompt arrives as a string, and the Skill ids live in atoms the
-   * string does not carry. Put them back, so sending a recalled prompt runs
-   * what the original ran instead of sending its wire text as prose.
+   * A recalled prompt arrives as a string, and its Skill chips do not survive
+   * the trip. Draw them back from the `/<name>` tokens the string still
+   * carries: the text sent is the same either way, the chips are what the
+   * user sees.
    *
    * With a catalog already in hand this is one synchronous swap. Without one,
    * the text lands immediately — never make the arrow key wait on an IPC — and
@@ -874,7 +875,7 @@ function OwnedChatInput(props: {
       return;
     }
     composerInputStore.setText(scopeKey, value);
-    if (!value.includes('/skill:')) return;
+    if (!new RegExp(SKILL_INVOCATION_TOKEN_SOURCE).test(value)) return;
     void readSkills()
       .then((entries) => {
         if (!mounted.current || entries.length === 0) return;
@@ -884,20 +885,27 @@ function OwnedChatInput(props: {
       })
       .catch(() => {});
   };
+  // Appends at the end of the draft, spaced from the word before it the way
+  // `appendSkillReference` spaces it.
   const insertSkill = (skill: SkillMenuEntry) =>
-    focusEditor((instance) =>
-      instance
+    focusEditor((instance) => {
+      const tail = instance.state.doc.lastChild?.lastChild;
+      const open = tail?.isText
+        ? !/\s$/u.test(tail.text ?? '')
+        : tail?.type.name === 'composerReference';
+      return instance
         .chain()
         .focus('end')
         .insertContent([
+          ...(open ? [{ type: 'text', text: ' ' }] : []),
           {
             type: 'composerReference',
             attrs: { kind: 'skill', value: skill.id, label: skill.name },
           },
           { type: 'text', text: ' ' },
         ])
-        .run(),
-    );
+        .run();
+    });
   // The model chip: the Session's own configuration once it exists, the
   // new-task draft until then. Changing the model resets the level (the
   // Host does the same), so the readout never shows a level the new model

@@ -21,15 +21,26 @@ import { Editor } from '@earendil-works/pi-tui';
 import { SKILL_INVOCATION_TOKEN_SOURCE } from '@maka/core/skill-invocation-token';
 import { ansi } from './tui-ansi.js';
 
-// A `/`-token that begins mid-message (after whitespace). Only `/skill:` has
-// semantic value mid-message (a parseable invocation token); plain commands
-// only execute at line start, so the provider offers `/skill:xxx` (not plain
-// commands) for a mid-message `/`. Line-start `/` is left to pi-tui's own
-// slash trigger; this matches only mid-message tokens (after whitespace).
+// A `/`-token that begins mid-message (after whitespace). Mid-message, a `/`
+// can only name a skill — plain commands execute at line start — so the
+// provider offers skills (not plain commands) for a mid-message `/`.
+// Line-start `/` is left to pi-tui's own slash trigger; this matches only
+// mid-message tokens (after whitespace).
 const MID_MESSAGE_SLASH_TOKEN = /(?:\s)\/\S*$/;
 
+// The shared grammar ends a token at whitespace or the end of the text. In a
+// rendered line an escape sequence ends it too: the inline cursor's
+// reverse-video block sits right after a token the user just typed.
+const RENDERED_TOKEN_SOURCE = SKILL_INVOCATION_TOKEN_SOURCE.replace(
+  /\(\?=\\s\|\$\)$/,
+  '(?=\\s|$|\\x1b)',
+);
+if (RENDERED_TOKEN_SOURCE === SKILL_INVOCATION_TOKEN_SOURCE) {
+  throw new Error('The skill token grammar no longer ends in (?=\\s|$)');
+}
+
 /**
- * Editor with `/skill:<name>` invocation highlighting (issue #1148). Valid
+ * Editor with `/<name>` skill highlighting (issue #1148). Valid
  * tokens render in the CLI brand accent; anything else stays plain — the
  * absence of the affordance IS the inactive state, so there is deliberately
  * no "failed" style.
@@ -40,7 +51,8 @@ const MID_MESSAGE_SLASH_TOKEN = /(?:\s)\/\S*$/;
  * match inside the editor's own escape sequences (border colors, the inline
  * cursor's reverse-video marker). Two known, self-healing limits: a token
  * split across word-wrapped lines, and a token with the cursor inside it
- * (cursor escape codes break the plain-text match) render unhighlighted.
+ * (cursor escape codes break the plain-text match) render unhighlighted. A
+ * cursor right after a token does not: an escape sequence ends a token.
  */
 export class MakaSkillHighlightEditor extends Editor {
   private isInvocable: (name: string) => boolean = () => false;
@@ -56,7 +68,7 @@ export class MakaSkillHighlightEditor extends Editor {
   }
 
   override render(width: number): string[] {
-    const pattern = new RegExp(SKILL_INVOCATION_TOKEN_SOURCE, 'g');
+    const pattern = new RegExp(RENDERED_TOKEN_SOURCE, 'g');
     return super
       .render(width)
       .map((line) =>
@@ -79,10 +91,9 @@ export class MakaSkillHighlightEditor extends Editor {
     // pi-tui auto-triggers slash completion only at line start (its
     // isAtStartOfMessage/isInSlashCommandContext predicates require the `/` at
     // column 0). Also trigger when a `/`-token begins mid-message, so `see /`
-    // surfaces `/skill:xxx` completions immediately. Plain commands are
-    // intentionally NOT completed mid-message (they only execute at line start);
-    // the provider offers only `/skill:`. The provider shapes the prefix so
-    // selection inserts rather than auto-submits.
+    // surfaces skill completions immediately. Plain commands are intentionally
+    // NOT completed mid-message (they only execute at line start). The provider
+    // shapes the prefix so selection inserts rather than auto-submits.
     const { line, col } = this.getCursor();
     // Slash completion is first-line only, matching pi-tui's isSlashMenuAllowed.
     if (line !== 0) return;

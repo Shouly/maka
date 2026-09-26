@@ -51,7 +51,6 @@ import { isActiveShellRunStatus } from '@maka/core/shell-run';
 import { executionBoundaryDisplayMode } from '@maka/core/sandbox-boundary';
 import type { SandboxBoundaryResponse } from '@maka/core/sandbox-boundary';
 import type { ThinkingLevel } from '@maka/core/model-thinking';
-import type { SkillInvocationResult } from '@maka/core/skill-invocation';
 import type { UserQuestionResponse } from '@maka/core/user-question';
 import type { InteractionFormResponse } from '@maka/core/interaction';
 import type { ContextDiagnostics } from '@maka/runtime/context-diagnostics';
@@ -105,10 +104,7 @@ import type {
   RewindTarget,
   SessionResumeAvailability,
 } from './session-driver.js';
-import {
-  inspectSessionResumeAvailability,
-  skillInvocationBlockedMessage,
-} from './session-driver.js';
+import { inspectSessionResumeAvailability } from './session-driver.js';
 import {
   cwdRank,
   firstLine,
@@ -365,22 +361,13 @@ class RuntimeHostMakaSessionDriverImpl implements RuntimeHostMakaSessionDriver {
         ...(options.turnOrchestration ? { turnOrchestration: options.turnOrchestration } : {}),
         ...(options.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
       };
-      const result = await this.#connection.request('turn.start', startInput);
-      if (result.kind === 'blocked') {
-        throw new Error(skillInvocationBlockedMessage(result.skillInvocation));
-      }
-      const started = result.turn;
-      const skillInvocation =
-        result.skillInvocation.loaded.length > 0 || result.skillInvocation.failed.length > 0
-          ? result.skillInvocation
-          : undefined;
+      const started = (await this.#connection.request('turn.start', startInput)).turn;
       return {
         sessionId,
         turnId,
         runId: started.runId,
         events,
         summary: projectSessionCatalogSummary(configuration.session),
-        ...(skillInvocation ? { skillInvocation } : {}),
       };
     } catch (error) {
       channel.failTurn(turnId, error);

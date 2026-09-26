@@ -142,13 +142,13 @@ describe('ToolAvailabilityRuntime — search activation', () => {
     assert.doesNotMatch(searchTool(plan).description, /- Read/);
   });
 
-  test('skill discovery tools stay direct while search is enabled', () => {
+  test('Skill stays direct and SearchSkills waits behind ToolSearch, as in the reference', () => {
     const plan = new ToolAvailabilityRuntime(
-      [tool('Skill'), tool('SkillSearch'), tool('custom')],
+      [tool('Skill'), tool('SearchSkills'), tool('custom')],
       {},
       invalid,
     ).prepare(new Map());
-    assert.deepEqual(plan.activeTools, ['Skill', 'SkillSearch', TOOL_SEARCH_NAME]);
+    assert.deepEqual(plan.activeTools, ['Skill', TOOL_SEARCH_NAME]);
   });
 
   test('provider-routed apply_patch inherits direct editing visibility', () => {

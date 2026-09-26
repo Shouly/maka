@@ -28,7 +28,7 @@ import {
   buildSkillAgentTool,
   buildSkillAgentToolFromInventory,
   buildSkillSearchAgentTool,
-  buildSkillSearchAgentToolFromInventory,
+  buildSkillSearchAgentToolFromCatalog,
   buildSkillsPromptFragment,
   buildSkillsPromptFragmentFromInventoryWithReport,
   buildSkillsPromptFragmentWithReport,
@@ -42,6 +42,8 @@ import {
   scanWorkspaceSkills,
   searchSkills,
   selectSkillsForContext,
+  renderSkillToolResult,
+  SkillReinvocationTracker,
   SkillShadowSelectionTracker,
   validateSkillMetadata,
   writeSkillRuntimePreferences,
@@ -49,7 +51,7 @@ import {
   type HostCapabilities,
   type ScannedSkill,
 } from '../skills.js';
-import { resolveSkillInvocations } from '../skill-invocation.js';
+import { rankSkillSearchCandidates } from '../skills-context.js';
 import type { MakaToolContext } from '../tool-runtime.js';
 
 describe('runtime skills', () => {
@@ -292,7 +294,7 @@ Do not ask permission for shell commands.`,
       assert.equal(loaded.skill.id, 'browser-helper');
       assert.equal(loaded.skill.name, 'Browser Helper');
       assert.deepEqual(loaded.skill.declaredTools, ['Bash', 'Read']);
-      assert.match(loaded.skill.relativePath, /browser-helper\/SKILL\.md$/);
+      assert.equal(loaded.skill.baseDirectory, join(workspaceRoot, 'skills', 'browser-helper'));
       assert.match(loaded.skill.instructions, /Open local targets carefully\./);
       assert.match(loaded.skill.instructions, /Do not ask permission for shell commands\./);
     });
@@ -683,8 +685,6 @@ Make every slide carry one idea.`,
         },
       );
 
-      assert.equal(result.ok, true);
-      if (!result.ok) return;
       assert.equal(result.skill.id, 'deck-helper');
       assert.match(result.skill.instructions, /Make every slide carry one idea\./);
     });
@@ -728,8 +728,6 @@ description: Second project helper.
         },
       );
 
-      assert.equal(result.ok, true);
-      if (!result.ok) return;
       assert.match(result.skill.instructions, /# Second project/);
       assert.doesNotMatch(result.skill.instructions, /# First project/);
     });
@@ -788,10 +786,10 @@ Use host tools.`,
       );
 
       const tool = buildSkillAgentTool(workspaceRoot, { toolNames: new Set(['Read']) });
-      const result = await tool.impl({ skill: 'gated-helper' }, {} as unknown as MakaToolContext);
-      assert.equal(result.ok, false);
-      if (result.ok) return;
-      assert.equal(result.reason, 'host_incompatible');
+      await assert.rejects(
+        async () => tool.impl({ skill: 'gated-helper' }, {} as unknown as MakaToolContext),
+        /^Error: Unknown skill: gated-helper$/,
+      );
     });
   });
 
@@ -849,16 +847,18 @@ Use host tools.`,
         ({ sessionId }) => hosts.get(sessionId) ?? { toolNames: new Set<string>() },
       );
 
-      const hidden = await tool.impl({ skill: 'gated-helper' }, {
-        sessionId: 'text-session',
-      } as unknown as MakaToolContext);
-      assert.equal(hidden.ok, false);
-      if (!hidden.ok) assert.equal(hidden.reason, 'host_incompatible');
+      await assert.rejects(
+        async () =>
+          tool.impl({ skill: 'gated-helper' }, {
+            sessionId: 'text-session',
+          } as unknown as MakaToolContext),
+        /Unknown skill: gated-helper/,
+      );
 
       const loaded = await tool.impl({ skill: 'gated-helper' }, {
         sessionId: 'full-session',
       } as unknown as MakaToolContext);
-      assert.equal(loaded.ok, true);
+      assert.equal(loaded.skill.id, 'gated-helper');
     });
   });
 
@@ -1137,7 +1137,7 @@ Body.`,
       );
       assert.match(
         prompt,
-        /\d+ more skills are available but not listed here; find one with SkillSearch/,
+        /\d+ more skills are available but not listed here; find one with SearchSkills/,
       );
       const omitted = result.report.decisions.filter((decision) => decision.reason === 'budget');
       assert.ok(omitted.length > 0);
@@ -1190,7 +1190,7 @@ Body.`,
     });
   });
 
-  it('uses one canonical inventory for prompt, Skill, and SkillSearch without exposing shadowed duplicates', async () => {
+  it('uses one canonical inventory for prompt, Skill, and SearchSkills without exposing shadowed duplicates', async () => {
     await withWorkspace(async (workspaceRoot) => {
       const projectRoot = join(workspaceRoot, 'project');
       const homeDir = join(workspaceRoot, 'home');
@@ -1223,7 +1223,9 @@ Body.`,
 
       const resolveInventory = async () => scan.inventory;
       const skillTool = buildSkillAgentToolFromInventory(resolveInventory);
-      const searchTool = buildSkillSearchAgentToolFromInventory(resolveInventory);
+      const searchTool = buildSkillSearchAgentToolFromCatalog(async () => ({
+        inventory: await resolveInventory(),
+      }));
       const context = {
         sessionId: 'session-1',
         turnId: 'turn-1',
@@ -1231,20 +1233,18 @@ Body.`,
       } as MakaToolContext;
 
       const loaded = await skillTool.impl({ skill: 'writer' }, context);
-      assert.equal(loaded.ok, true);
-      if (!loaded.ok) return;
       assert.equal(loaded.skill.ref, 'project:maka:writer');
       assert.match(loaded.skill.instructions, /Project Writer/);
       assert.doesNotMatch(loaded.skill.instructions, /User Writer/);
 
-      const shadowed = await skillTool.impl({ skill: 'user:agents:writer' }, context);
-      assert.equal(shadowed.ok, false);
-      if (shadowed.ok) return;
-      assert.equal(shadowed.reason, 'not_found');
+      await assert.rejects(
+        async () => skillTool.impl({ skill: 'user:agents:writer' }, context),
+        /Unknown skill: user:agents:writer/,
+      );
 
-      const searched = await searchTool.impl({ query: 'obsidian lantern' }, context);
-      assert.equal(searched.totalEligible, 1);
-      assert.deepEqual(searched.matches, []);
+      // The shadowed copy is not offered: only the project writer could load.
+      const searched = await searchTool.impl({ keywords: ['obsidian lantern'] }, context);
+      assert.deepEqual(searched.results, []);
     });
   });
 
@@ -1332,7 +1332,90 @@ Body.`,
     });
   });
 
-  it('bounds SkillSearch results and records search-to-load ranking telemetry', async () => {
+  it('SearchSkills searches the whole catalog; disabled and installable skills are not enabled', async () => {
+    await withWorkspace(async (workspaceRoot) => {
+      await writeSkill(
+        workspaceRoot,
+        'deck-helper',
+        '---\nname: Deck Helper\ndescription: Build slide decks for talks.\n---\n# Deck',
+      );
+      await writeSkill(
+        workspaceRoot,
+        'sheet-helper',
+        '---\nname: Sheet Helper\ndescription: Build spreadsheets.\n---\n# Sheet',
+      );
+      await writeSkill(
+        workspaceRoot,
+        'pinned-helper',
+        '---\nname: Pinned Helper\ndescription: Unrelated work.\n---\n# Pinned',
+      );
+      await writeSkillRuntimePreferences(
+        workspaceRoot,
+        new Map([
+          ['workspace:legacy:sheet-helper', { enabled: false, pinned: false }],
+          ['workspace:legacy:pinned-helper', { enabled: true, pinned: true }],
+        ]),
+      );
+      const scan = await scanSkillsWithDiagnostics(workspaceRoot);
+      const catalog = {
+        inventory: scan.inventory,
+        installable: [
+          { id: 'pptx', name: 'pptx', description: 'Create slide decks as PowerPoint files.' },
+          { id: 'PPTX', name: 'pptx', description: 'A second source offers it again.' },
+          { id: 'deck-helper', name: 'Deck Helper', description: 'Installed, so not offered.' },
+        ],
+      };
+      const tool = buildSkillSearchAgentToolFromCatalog(async () => catalog);
+      assert.equal(tool.name, 'SearchSkills');
+      const context = { sessionId: 's', turnId: 't', cwd: workspaceRoot } as MakaToolContext;
+
+      const slides = await tool.impl({ keywords: ['slide', 'deck'] }, context);
+      assert.deepEqual(slides.results, [
+        {
+          id: 'deck-helper',
+          name: 'Deck Helper',
+          description: 'Build slide decks for talks.',
+          enabled: true,
+        },
+        {
+          id: 'pptx',
+          name: 'pptx',
+          description: 'Create slide decks as PowerPoint files.',
+          enabled: false,
+        },
+      ]);
+      const sheets = await tool.impl({ keywords: ['spreadsheets'] }, context);
+      assert.deepEqual(
+        sheets.results.map(({ id, enabled }) => [id, enabled]),
+        [['sheet-helper', false]],
+      );
+      // A pin orders matches; it never makes a skill match on its own.
+      assert.deepEqual(
+        (await tool.impl({ keywords: ['zzqq-nonexistent-xyz'] }, context)).results,
+        [],
+      );
+      // Nor does it add to relevance: every keyword a skill matches counts,
+      // and the pin is worth nothing on top of them.
+      const ranking = rankSkillSearchCandidates(catalog, ['build', 'unrelated', 'slide', 'deck']);
+      const scores = new Map(
+        ranking.ranked.map(({ candidate, score }) => [candidate.match.id, score]),
+      );
+      assert.deepEqual(
+        [...scores.keys()],
+        ['deck-helper', 'pptx', 'pinned-helper', 'sheet-helper'],
+      );
+      assert.equal(scores.get('pinned-helper'), scores.get('sheet-helper'));
+      assert.ok((scores.get('pptx') ?? 0) > (scores.get('pinned-helper') ?? 0));
+      // The reference's bounds: 1–8 keywords of 1–64 characters each.
+      const schema = tool.parameters as { safeParse(value: unknown): { success: boolean } };
+      assert.equal(schema.safeParse({ keywords: [] }).success, false);
+      assert.equal(schema.safeParse({ keywords: Array(9).fill('a') }).success, false);
+      assert.equal(schema.safeParse({ keywords: ['x'.repeat(65)] }).success, false);
+      assert.equal(schema.safeParse({ keywords: ['x'.repeat(64)] }).success, true);
+    });
+  });
+
+  it('bounds SearchSkills results and records search-to-load ranking telemetry', async () => {
     await withWorkspace(async (workspaceRoot) => {
       for (let index = 1; index <= 12; index += 1) {
         await writeSkill(
@@ -1342,16 +1425,15 @@ Body.`,
         );
       }
       const scan = await scanSkillsWithDiagnostics(workspaceRoot);
-      const bounded = searchSkills(scan.inventory, 'weekly report', undefined, 99);
-      assert.equal(bounded.matches.length, 8);
-      assert.equal(bounded.matchedCount, 12);
-      assert.equal(bounded.queryTruncated, false);
-      assert.equal(bounded.truncated, true);
+      const bounded = searchSkills({ inventory: scan.inventory }, ['weekly report']);
+      assert.equal(bounded.results.length, 8);
+      // The reference's shape and nothing else: no path, body or ref.
       assert.equal(
-        bounded.matches.every((match) => !('path' in match) && !('content' in match)),
+        bounded.results.every(
+          (match) => Object.keys(match).sort().join(',') === 'description,enabled,id,name',
+        ),
         true,
       );
-      assert.equal(searchSkills(scan.inventory, 'x'.repeat(600)).queryTruncated, true);
 
       const tracker = new SkillShadowSelectionTracker();
       const searchTool = buildSkillSearchAgentTool(workspaceRoot, undefined, {
@@ -1367,19 +1449,21 @@ Body.`,
           events.push({ type, data });
         },
       } as unknown as MakaToolContext;
-      const searched = await searchTool.impl({ query: 'weekly report', limit: 3 }, context);
-      assert.equal(searched.matches.length, 3);
-      const loaded = await loadTool.impl({ skill: searched.matches[1].ref }, context);
-      assert.equal(loaded.ok, true);
-      const missing = await loadTool.impl({ skill: 'private-looking-missing-name' }, context);
-      assert.equal(missing.ok, false);
+      const searched = await searchTool.impl({ keywords: ['weekly report'] }, context);
+      assert.equal(searched.results.length, 8);
+      const loaded = await loadTool.impl({ skill: searched.results[1].id }, context);
+      assert.equal(loaded.skill.id, searched.results[1].id);
+      await assert.rejects(
+        async () => loadTool.impl({ skill: 'private-looking-missing-name' }, context),
+        /Unknown skill: private-looking-missing-name/,
+      );
       assert.deepEqual(
         events.map((event) => event.type),
         ['skill_searched', 'skill_loaded', 'skill_load_failed'],
       );
-      assert.equal(events[0].data?.resultCount, 3);
-      assert.equal(events[0].data?.candidateReductionRatio, 0.75);
-      assert.equal(events[0].data?.query, undefined, 'raw search text must not enter telemetry');
+      assert.equal(events[0].data?.resultCount, 8);
+      assert.equal(events[0].data?.candidateReductionRatio, 4 / 12);
+      assert.equal(events[0].data?.keywords, undefined, 'raw search text must not enter telemetry');
       assert.equal(events[1].data?.shadowRank, 2);
       assert.equal(events[1].data?.shadowCandidateCount, 12);
       assert.equal(events[1].data?.shadowHitAt1, false);
@@ -1449,7 +1533,7 @@ describe('Skill — reference argument names', () => {
     });
   });
 
-  it('passes args through to the loaded instructions', async () => {
+  it('answers with the launch line, the base directory, the body and the arguments', async () => {
     await withWorkspace(async (workspaceRoot) => {
       await writeSkill(
         workspaceRoot,
@@ -1464,22 +1548,89 @@ describe('Skill — reference argument names', () => {
       );
       const tool = buildSkillAgentTool(workspaceRoot);
 
+      const modelText = (output: unknown) =>
+        tool.toModelOutput?.({ toolCallId: 'tool-1', input: {}, output });
+      const baseDirectory = join(workspaceRoot, 'skills', 'deck-helper');
+
       const withArgs = await tool.impl(
         { skill: 'Deck Helper', args: 'audience=execs' },
         { ...context, cwd: workspaceRoot },
       );
-      assert.equal(withArgs.ok, true);
-      if (!withArgs.ok) return;
-      assert.match(withArgs.skill.instructions, /Make every slide carry one idea\./);
-      assert.match(withArgs.skill.instructions, /\n\nArguments: audience=execs$/);
+      assert.deepEqual(modelText(withArgs), {
+        type: 'text',
+        value: [
+          'Launching skill: Deck Helper',
+          `Base directory for this skill: ${baseDirectory}`,
+          'Make every slide carry one idea.',
+          'ARGUMENTS: audience=execs',
+        ].join('\n\n'),
+      });
 
       const withoutArgs = await tool.impl(
-        { skill: 'Deck Helper' },
+        { skill: ' Deck Helper ', args: '  ' },
         { ...context, cwd: workspaceRoot },
       );
-      assert.equal(withoutArgs.ok, true);
-      if (!withoutArgs.ok) return;
-      assert.doesNotMatch(withoutArgs.skill.instructions, /Arguments:/);
+      assert.equal(
+        renderSkillToolResult(withoutArgs),
+        [
+          'Launching skill: Deck Helper',
+          `Base directory for this skill: ${baseDirectory}`,
+          'Make every slide carry one idea.',
+        ].join('\n\n'),
+      );
+      // A virtual (plugin) skill has no directory, so it names none.
+      const { baseDirectory: _, ...virtualSkill } = withoutArgs.skill;
+      assert.equal(
+        renderSkillToolResult({ request: 'Deck Helper', skill: virtualSkill, reinvocation: false }),
+        ['Launching skill: Deck Helper', 'Make every slide carry one idea.'].join('\n\n'),
+      );
+    });
+  });
+
+  it('says a skill this session loaded before is a re-invocation', async () => {
+    await withWorkspace(async (workspaceRoot) => {
+      await writeSkill(
+        workspaceRoot,
+        'deck-helper',
+        [
+          '---',
+          'name: Deck Helper',
+          'description: Build decks.',
+          '---',
+          'One idea per slide.',
+        ].join('\n'),
+      );
+      const tool = buildSkillAgentTool(workspaceRoot, undefined, {
+        reinvocationTracker: new SkillReinvocationTracker(),
+      });
+      const first = await tool.impl({ skill: 'deck-helper' }, { ...context, cwd: workspaceRoot });
+      assert.equal(first.reinvocation, false);
+      const again = await tool.impl({ skill: 'Deck Helper' }, { ...context, cwd: workspaceRoot });
+      assert.equal(again.reinvocation, true);
+      assert.match(
+        renderSkillToolResult(again),
+        /^Launching skill: Deck Helper\n\n\(Re-invocation of \/Deck Helper — the skill instructions were previously loaded; the arguments or dynamic output below are new\.\)\n\nBase directory for this skill: /,
+      );
+      const otherSession = await tool.impl(
+        { skill: 'deck-helper' },
+        { ...context, sessionId: 'another-session', cwd: workspaceRoot },
+      );
+      assert.equal(otherSession.reinvocation, false);
+    });
+  });
+
+  it('answers a miss the way the reference does', async () => {
+    await withWorkspace(async (workspaceRoot) => {
+      const tool = buildSkillAgentTool(workspaceRoot);
+      await assert.rejects(
+        async () =>
+          tool.impl({ skill: 'this-skill-does-not-exist' }, { ...context, cwd: workspaceRoot }),
+        /^Error: Unknown skill: this-skill-does-not-exist$/,
+      );
+      assert.equal(
+        tool.errorToModelText?.('Unknown skill: this-skill-does-not-exist'),
+        '<tool_use_error>Unknown skill: this-skill-does-not-exist</tool_use_error>',
+      );
     });
   });
 });

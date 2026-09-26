@@ -121,7 +121,7 @@ export class SessionTurnAccessRequestCoordinator {
   async #run(
     request: SessionTurnAccessRequest,
     context: ConnectionContext,
-  ): Promise<'started' | 'blocked' | 'failed' | undefined> {
+  ): Promise<'started' | 'failed' | undefined> {
     for (;;) {
       try {
         if ('content' in request.intent) {

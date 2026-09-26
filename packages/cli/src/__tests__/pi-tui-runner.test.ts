@@ -39,7 +39,6 @@ import { type ThinkingLevel } from '@maka/core/model-thinking';
 import type { RuntimeHostConnectionCatalogSnapshot as ConnectionCatalogSnapshot } from '@maka/runtime-host/client';
 import { type UserQuestionResponse } from '@maka/core/user-question';
 import type { InteractionFormResponse } from '@maka/core/interaction';
-import type { SkillInvocationResult } from '@maka/core/skill-invocation';
 import type {
   AgentGraphClientSnapshot,
   TurnMessageSubmitResult,
@@ -62,7 +61,6 @@ import type {
   RewindTarget,
   SessionResumeAvailability,
 } from '../session-driver.js';
-import { skillInvocationBlockedMessage } from '../session-driver.js';
 import { SafeBoundaryResumeParkedError } from '../runtime-host-session-driver.js';
 import { listApiKeyOnboardableProviders } from '../onboarding-catalog.js';
 import { projectRuntimeHostModelChoices } from '../runtime-host-onboarding.js';
@@ -7732,62 +7730,9 @@ Slug openai-work<cursor>
     ]);
   });
 
-  test('delegates explicit Skill invocation to the Host while showing the typed prompt', async () => {
-    {
-      const terminal = new FakeTerminal();
-      const driver = new HostSkillDriver({
-        loaded: [{ id: 'alpha', name: 'Alpha' }],
-        failed: [],
-        receipts: [],
-      });
-      const run = runMakaPiTui({
-        title: 'Maka',
-        driver,
-        cwd: '/repo',
-        model: 'claude-sonnet-4-5',
-        connectionSlug: 'claude-subscription',
-        permissionMode: 'ask',
-        terminal,
-        listSkills: async () => [
-          { ref: 'project:alpha', id: 'alpha', name: 'Alpha', description: 'Alpha skill' },
-        ],
-      });
-
-      terminal.input('/skill:alpha 帮我整理');
-      terminal.input('\r');
-      await waitFor(() => driver.prompts.length === 1);
-
-      assert.equal(
-        driver.displayPrompts[0],
-        '/skill:alpha 帮我整理',
-        'human-facing prompt keeps the typed tokens',
-      );
-      assert.equal(driver.prompts[0], '/skill:alpha 帮我整理');
-
-      // The transcript render trails the send by a tick — wait for it.
-      await waitFor(() => plainTerminalOutput(terminal.output()).includes('/skill:alpha 帮我整理'));
-      await waitFor(() => plainTerminalOutput(terminal.output()).includes('Skills loaded: Alpha'));
-
-      exitMaka(terminal);
-      await Promise.race([
-        run,
-        delay(CLOSE_BUDGET_MS).then(() => {
-          throw new Error('TUI did not close during test cleanup');
-        }),
-      ]);
-    }
-  });
-
-  test('shows partial Skill feedback when the Host queues the Message', async () => {
+  test('sends a /<name> message to the model as written', async () => {
     const terminal = new FakeTerminal();
-    const driver = new HostSkillDriver(
-      {
-        loaded: [{ id: 'alpha', name: 'Alpha' }],
-        failed: [{ request: 'typo', reason: 'not_found' }],
-        receipts: [],
-      },
-      'steering',
-    );
+    const driver = new SlashCommandDriver();
     const run = runMakaPiTui({
       title: 'Maka',
       driver,
@@ -7796,16 +7741,22 @@ Slug openai-work<cursor>
       connectionSlug: 'claude-subscription',
       permissionMode: 'ask',
       terminal,
-      listSkills: async () => [],
+      listSkills: async () => [
+        { ref: 'project:alpha', id: 'alpha', name: 'Alpha', description: 'Alpha skill' },
+      ],
     });
 
-    terminal.input('/skill:alpha /skill:typo 帮我整理');
+    terminal.input('/alpha 帮我整理');
     terminal.input('\r');
     await waitFor(() => driver.prompts.length === 1);
-    await waitFor(() => {
-      const output = plainTerminalOutput(terminal.output());
-      return output.includes('Skills loaded: Alpha') && output.includes('/skill:typo (not found)');
-    });
+
+    // Nothing resolves the Skill on send: the text reaches the model as typed
+    // and the model calls the Skill tool itself.
+    assert.equal(driver.displayPrompts[0], '/alpha 帮我整理');
+    assert.equal(driver.prompts[0], '/alpha 帮我整理');
+
+    // The transcript render trails the send by a tick — wait for it.
+    await waitFor(() => plainTerminalOutput(terminal.output()).includes('/alpha 帮我整理'));
 
     exitMaka(terminal);
     await Promise.race([
@@ -7818,11 +7769,7 @@ Slug openai-work<cursor>
 
   test('localizes runner notices in Chinese mode', async () => {
     const terminal = new FakeTerminal();
-    const driver = new HostSkillDriver({
-      loaded: [],
-      failed: [{ request: 'nope', reason: 'not_found' }],
-      receipts: [],
-    });
+    const driver = new SlashCommandDriver();
     const run = runMakaPiTui({
       title: 'Maka',
       driver,
@@ -7838,14 +7785,6 @@ Slug openai-work<cursor>
     terminal.input('/skill');
     terminal.input('\r');
     await waitFor(() => plainTerminalOutput(terminal.output()).includes('当前没有可调用的技能。'));
-
-    terminal.input('/skill:nope hi');
-    terminal.input('\r');
-    await waitFor(() =>
-      plainTerminalOutput(terminal.output())
-        .replace(/\s+/g, '')
-        .includes('未能加载技能/skill:nope（未找到）；未发起模型请求。'),
-    );
     assert.equal(driver.prompts.length, 0);
 
     exitMaka(terminal);
@@ -7855,93 +7794,6 @@ Slug openai-work<cursor>
         throw new Error('TUI did not close during test cleanup');
       }),
     ]);
-  });
-
-  test('does not create a turn when every skill token fails to resolve', async () => {
-    {
-      const terminal = new FakeTerminal();
-      const driver = new HostSkillDriver({
-        loaded: [],
-        failed: [{ request: 'nope', reason: 'not_found' }],
-        receipts: [],
-      });
-      const run = runMakaPiTui({
-        title: 'Maka',
-        driver,
-        cwd: '/repo',
-        model: 'claude-sonnet-4-5',
-        connectionSlug: 'claude-subscription',
-        permissionMode: 'ask',
-        terminal,
-        listSkills: async () => [],
-      });
-
-      terminal.input('/skill:nope hi');
-      terminal.input('\r');
-      // The notice wraps across screen lines at 80 columns, so match against a
-      // whitespace-collapsed copy instead of the raw output.
-      await waitFor(() =>
-        plainTerminalOutput(terminal.output())
-          .replace(/\s+/g, ' ')
-          .includes('Could not load skills /skill:nope (not found); no model request was made.'),
-      );
-      assert.equal(driver.prompts.length, 0);
-
-      exitMaka(terminal);
-      await Promise.race([
-        run,
-        delay(CLOSE_BUDGET_MS).then(() => {
-          throw new Error('TUI did not close during test cleanup');
-        }),
-      ]);
-    }
-  });
-
-  test('does not create a turn when distinct skill requests exceed the preparation limit', async () => {
-    {
-      const terminal = new FakeTerminal();
-      const driver = new HostSkillDriver({
-        loaded: [],
-        failed: [{ reason: 'too_many_requests', requestLimit: 50 }],
-        receipts: [],
-      });
-      const run = runMakaPiTui({
-        title: 'Maka',
-        driver,
-        cwd: '/repo',
-        model: 'claude-sonnet-4-5',
-        connectionSlug: 'claude-subscription',
-        permissionMode: 'ask',
-        terminal,
-        listSkills: async () => [],
-      });
-      const prompt = [
-        '/skill:alpha',
-        ...Array.from({ length: 50 }, (_, index) => `/skill:missing-${index}`),
-        '帮我整理',
-      ].join(' ');
-
-      terminal.input(prompt);
-      terminal.input('\r');
-      // The notice wraps across screen lines at 80 columns, so match against a
-      // whitespace-collapsed copy instead of the raw output.
-      await waitFor(() =>
-        plainTerminalOutput(terminal.output())
-          .replace(/\s+/g, ' ')
-          .includes(
-            'more than the 50-request limit (too many requests); no model request was made.',
-          ),
-      );
-      assert.equal(driver.prompts.length, 0);
-
-      exitMaka(terminal);
-      await Promise.race([
-        run,
-        delay(CLOSE_BUDGET_MS).then(() => {
-          throw new Error('TUI did not close during test cleanup');
-        }),
-      ]);
-    }
   });
 
   describe('/recap command', () => {
@@ -8728,14 +8580,14 @@ Slug openai-work<cursor>
       terminal.input('\r');
       await waitFor(() => terminal.progressStates.at(-1) === true);
 
-      // `/skill:<name>` is not a catalog command; mid-turn it stays prompt
-      // text for the running turn, exactly like any other steered message.
-      terminal.input('/skill:review');
+      // `/review` is not a catalog command; mid-turn it stays prompt text for
+      // the running turn, exactly like any other steered message.
+      terminal.input('/review');
       terminal.input('\r');
       await waitFor(() =>
-        plainTerminalOutput(terminal.screenOutput()).includes('Steering: /skill:review'),
+        plainTerminalOutput(terminal.screenOutput()).includes('Steering: /review'),
       );
-      assert.deepEqual(driver.steered, ['/skill:review']);
+      assert.deepEqual(driver.steered, ['/review']);
 
       terminal.input('\x1b');
       terminal.input('\x1b');
@@ -11284,50 +11136,6 @@ class RejectingUserCommandStopDriver extends RunningUserCommandDriver {
   }
 }
 
-class HostSkillDriver extends SlashCommandDriver {
-  constructor(
-    private readonly skillInvocation: SkillInvocationResult,
-    private readonly admittedDisposition: 'turn_started' | 'steering' = 'turn_started',
-  ) {
-    super();
-  }
-
-  /** Nothing the Host could resolve, so it opens no Turn for this Message. */
-  #refuses(): boolean {
-    return this.skillInvocation.loaded.length === 0 && this.skillInvocation.failed.length > 0;
-  }
-
-  // The Host answers a refused invocation with a `blocked` disposition rather
-  // than a Turn; the driver hands that back as the submit result.
-  override async submitMessage(
-    text: string,
-    options: MakaSubmitMessageOptions,
-  ): Promise<TurnMessageSubmitResult | undefined> {
-    if (this.#refuses()) {
-      return { disposition: 'blocked', skillInvocation: this.skillInvocation };
-    }
-    // Admitted: the receipt for what was resolved rides the answer, which is
-    // the client's only sight of it.
-    const admitted = await super.submitMessage(text, options);
-    if (this.admittedDisposition === 'steering') {
-      return { disposition: 'steering', queueRevision: 1, skillInvocation: this.skillInvocation };
-    }
-    return admitted?.disposition === 'turn_started'
-      ? { ...admitted, skillInvocation: this.skillInvocation }
-      : admitted;
-  }
-
-  override async preparePrompt(
-    prompt: string,
-    options: MakaPreparePromptOptions = {},
-  ): Promise<MakaPreparedSessionTurn> {
-    // `turn.start` still refuses outright; its only caller is headless
-    // `maka run`, which reports the refusal as an ordinary failure.
-    if (this.#refuses()) throw new Error(skillInvocationBlockedMessage(this.skillInvocation));
-    return super.preparePrompt(prompt, options);
-  }
-}
-
 class SideConversationDriver extends SlashCommandDriver {
   readonly openedFrom: string[] = [];
   readonly closedSides: Array<{ sideSessionId: string; parentSessionId: string }> = [];
@@ -12090,16 +11898,14 @@ interface HostAdmittingDriver {
 /**
  * The Host admitting a Message as a fresh Turn: it answers the submit with
  * `turn_started`, and the Turn itself arrives separately through the
- * started-Turn subscription. That push carries Session state, NOT this
- * Message's admission — anything the client learns about the admission has to
- * come back through the answer, which is why the receipt is stripped here.
+ * started-Turn subscription.
  */
 async function admitMessageAsTurn(
   driver: HostAdmittingDriver,
   text: string,
   options: MakaSubmitMessageOptions,
 ): Promise<TurnMessageSubmitResult> {
-  const { skillInvocation: _admissionReceipt, ...turn } = await driver.preparePrompt(text, {
+  const turn = await driver.preparePrompt(text, {
     turnId: options.messageId,
     ...(options.modelText !== undefined ? { modelText: options.modelText } : {}),
     ...(options.turnOrchestration ? { turnOrchestration: options.turnOrchestration } : {}),
@@ -12111,11 +11917,7 @@ async function admitMessageAsTurn(
       summary: { ...fakeSessionSummary(turn.sessionId), ...driver.hostSummary },
     }),
   );
-  return {
-    disposition: 'turn_started',
-    turnId: turn.turnId,
-    skillInvocation: { loaded: [], failed: [], receipts: [] },
-  };
+  return { disposition: 'turn_started', turnId: turn.turnId };
 }
 
 function fakeSessionSummary(

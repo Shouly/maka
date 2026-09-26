@@ -30,7 +30,7 @@
  * @see skills-metadata.js    – front-matter parsing, validation
  * @see skills-context.js     – gating, prompt rendering, search, instruction loading
  * @see skills-state.js       – per-workspace enablement state read/write
- * @see skills-agent-tools.js – Skill / SkillSearch tool builders
+ * @see skills-agent-tools.js – Skill / SearchSkills tool builders
  * @see skills-starter.js     – pure starter SKILL.md template
  */
 
@@ -173,6 +173,8 @@ export type {
   SkillSelectionReport,
   SkillContextSelection,
   SkillsPromptFragmentResult,
+  InstallableSkillEntry,
+  SkillSearchCatalog,
   SkillSearchMatch,
   SkillSearchResult,
   LoadedSkillInstructions,
@@ -184,14 +186,19 @@ export {
   buildSkillAgentTool,
   buildSkillAgentToolFromInventory,
   buildSkillSearchAgentTool,
-  buildSkillSearchAgentToolFromInventory,
+  buildSkillSearchAgentToolFromCatalog,
+  renderSkillToolResult,
+  SkillReinvocationTracker,
   SkillShadowSelectionTracker,
   SKILL_TOOL_NAME,
   SKILL_SEARCH_TOOL_NAME,
 } from './skills-agent-tools.js';
 export type {
   SkillInventoryResolver,
+  SkillSearchCatalogResolver,
+  SkillToolInput,
   SkillToolOptions,
+  SkillToolResult,
 } from './skills-agent-tools.js';
 
 // ── From skills-starter ───────────────────────────────────────────────────

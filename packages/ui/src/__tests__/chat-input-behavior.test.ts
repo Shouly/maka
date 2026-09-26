@@ -26,7 +26,6 @@ import {
   createTriggerSearchSource,
   isChatInputComposing,
   selectedSkillIds,
-  skillMentionQuery,
   slashCommandQuery,
 } from '../chat-input-behavior.js';
 
@@ -128,9 +127,6 @@ describe('shared chat input behavior', () => {
     // A slash later in the draft is prose or a path, never a command.
     assert.equal(slashCommandQuery('explain /', '', ''), null);
     assert.equal(slashCommandQuery('first line\n/', '', ''), null);
-    // `/skill:` is the explicit Skill grammar and addresses no command.
-    assert.equal(slashCommandQuery('/skill:compact', '', 'skill:compact'), null);
-    assert.equal(slashCommandQuery('/SKILL:compact', '', 'SKILL:compact'), null);
     // Text after the caret means the user is editing inside a word, not
     // starting a command — `/side` with the caret between `/` and `side`.
     assert.equal(slashCommandQuery('/', 'side', ''), null);
@@ -138,13 +134,6 @@ describe('shared chat input behavior', () => {
     assert.equal(slashCommandQuery('/comp', ' tail', 'comp'), 'comp');
     // The query must actually sit against the trigger the menu reports.
     assert.equal(slashCommandQuery('comp', '', 'comp'), null);
-  });
-
-  it('reads `/skill:<query>` and a bare `/<query>` as the same Skill search', () => {
-    assert.equal(skillMentionQuery('skill:comp'), 'comp');
-    assert.equal(skillMentionQuery('SKILL:Comp'), 'Comp');
-    assert.equal(skillMentionQuery('comp'), 'comp');
-    assert.equal(skillMentionQuery('skill:'), '');
   });
 
   it('does not let late completion clear state after reset', async () => {
@@ -159,22 +148,23 @@ describe('shared chat input behavior', () => {
   });
 
   it('recognizes selected Skill ids independently of labels, case and chip anchors', () => {
-    const draft = '/skill:Writer\u00a0/skill:writer-extra\n/skill:writer /';
+    const draft = '/Writer\u00a0/writer-extra\n/writer /';
     assert.deepEqual(selectedSkillIds(draft, ''), new Set(['writer', 'writer-extra']));
-    assert.deepEqual(selectedSkillIds('path/skill:writer https://example/skill:writer /', ''), new Set());
+    assert.deepEqual(selectedSkillIds('path/writer https://example/writer /', ''), new Set());
+    // A token ends at whitespace: `/writer,` or `/writer/x` names nothing.
+    assert.deepEqual(selectedSkillIds('/writer, /writer/x', ''), new Set());
   });
 
   it('excludes only the active explicit Skill query, not another occurrence of that Skill', () => {
-    assert.deepEqual(selectedSkillIds('/skill:writer', 'skill:writer'), new Set());
-    assert.deepEqual(selectedSkillIds('/skill:writer\u00a0 /skill:Writer', 'skill:Writer'), new Set(['writer']));
-    assert.deepEqual(selectedSkillIds('/skill:writer /skill:wri', 'skill:wri'), new Set(['writer']));
-    assert.deepEqual(selectedSkillIds('/skill:writer /SKILL:writer', 'SKILL:writer'), new Set(['writer']));
+    assert.deepEqual(selectedSkillIds('/writer', 'writer'), new Set());
+    assert.deepEqual(selectedSkillIds('/writer\u00a0 /Writer', 'Writer'), new Set(['writer']));
+    assert.deepEqual(selectedSkillIds('/writer /wri', 'wri'), new Set(['writer']));
   });
 
   it('derives selection from each draft without retaining deleted or previous-session Skills', () => {
-    assert.deepEqual(selectedSkillIds('/skill:writer /', ''), new Set(['writer']));
+    assert.deepEqual(selectedSkillIds('/writer /', ''), new Set(['writer']));
     assert.deepEqual(selectedSkillIds('/', ''), new Set());
-    assert.deepEqual(selectedSkillIds('/skill:reviewer /', ''), new Set(['reviewer']));
-    assert.deepEqual(selectedSkillIds('/skill:writer /', ''), new Set(['writer']));
+    assert.deepEqual(selectedSkillIds('/reviewer /', ''), new Set(['reviewer']));
+    assert.deepEqual(selectedSkillIds('/writer /', ''), new Set(['writer']));
   });
 });

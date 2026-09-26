@@ -152,10 +152,7 @@ export interface RuntimeHostAccessAuthority {
     principalId: string,
     input: CollaborationTurnRequestDecideInput,
   ): Promise<CollaborationTurnRequestDecideResult>;
-  completeTurnAccessRequest(
-    requestId: string,
-    admission: 'started' | 'blocked' | 'failed',
-  ): Promise<void>;
+  completeTurnAccessRequest(requestId: string, admission: 'started' | 'failed'): Promise<void>;
   approvedTurnAccessRequests(): readonly SessionTurnAccessRequest[];
   activeSessionGrant(
     principalId: string,
@@ -597,10 +594,7 @@ class FileRuntimeHostAccessAuthority implements RuntimeHostAccessAuthority {
     });
   }
 
-  completeTurnAccessRequest(
-    requestId: string,
-    admission: 'started' | 'blocked' | 'failed',
-  ): Promise<void> {
+  completeTurnAccessRequest(requestId: string, admission: 'started' | 'failed'): Promise<void> {
     return this.#mutate(async () => {
       const current = this.#file.turnAccessRequests.find(
         (request) => request.requestId === requestId,

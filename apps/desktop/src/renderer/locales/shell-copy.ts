@@ -228,19 +228,6 @@ type ShellCopy = {
     newConversation: string;
     sendFailedTitle: string;
     sendFailedFallback: string;
-    skillInvocationBlockedTitle: string;
-    skillInvocationBlockedDescription(items: readonly string[]): string;
-    skillInvocationFailedTitle: string;
-    skillInvocationFailedDescription(items: readonly string[]): string;
-    skillInvocationFailureReason: Record<
-      | 'invalid_name'
-      | 'not_found'
-      | 'disabled'
-      | 'host_incompatible'
-      | 'resolution_failed'
-      | 'too_many_requests',
-      string
-    >;
     responseFailedTitle: string;
     responseFailedFallback: string;
     refreshFailedTitle: string;
@@ -874,18 +861,6 @@ const SHELL_COPY_BY_LOCALE = {
       newConversation: '新建任务',
       sendFailedTitle: '发送失败',
       sendFailedFallback: '消息暂时无法发送，请稍后重试。',
-      skillInvocationBlockedTitle: 'Skill 调用失败，消息未发送',
-      skillInvocationBlockedDescription: (items) => `${items.join('、')}。请调整选择后重试。`,
-      skillInvocationFailedTitle: '部分 Skill 未能调用',
-      skillInvocationFailedDescription: (items) => `${items.join('、')}。其余 Skill 已正常调用。`,
-      skillInvocationFailureReason: {
-        invalid_name: '名称无效',
-        not_found: '未找到',
-        disabled: '已停用',
-        host_incompatible: '当前环境缺少依赖',
-        resolution_failed: '解析失败',
-        too_many_requests: 'Skill 调用请求超过 50 个上限',
-      },
       responseFailedTitle: '响应失败',
       responseFailedFallback: '任务操作失败，请稍后重试。',
       refreshFailedTitle: '刷新任务失败',
@@ -1409,18 +1384,6 @@ const SHELL_COPY_BY_LOCALE = {
       newConversation: '建立任務',
       sendFailedTitle: '傳送失敗',
       sendFailedFallback: '訊息暫時無法傳送，請稍後重試。',
-      skillInvocationBlockedTitle: 'Skill 呼叫失敗，訊息未傳送',
-      skillInvocationBlockedDescription: (items) => `${items.join('、')}。請調整選擇後重試。`,
-      skillInvocationFailedTitle: '部分 Skill 未能呼叫',
-      skillInvocationFailedDescription: (items) => `${items.join('、')}。其餘 Skill 已正常呼叫。`,
-      skillInvocationFailureReason: {
-        invalid_name: '名稱無效',
-        not_found: '未找到',
-        disabled: '已停用',
-        host_incompatible: '目前環境缺少依賴',
-        resolution_failed: '解析失敗',
-        too_many_requests: 'Skill 呼叫請求超過 50 個上限',
-      },
       responseFailedTitle: '響應失敗',
       responseFailedFallback: '任務操作失敗，請稍後重試。',
       refreshFailedTitle: '重新整理任務失敗',
@@ -1945,20 +1908,6 @@ const SHELL_COPY_BY_LOCALE = {
       newConversation: 'New task',
       sendFailedTitle: 'Message not sent',
       sendFailedFallback: 'The message could not be sent. Try again later.',
-      skillInvocationBlockedTitle: 'Skill invocation failed; message not sent',
-      skillInvocationBlockedDescription: (items) =>
-        `${items.join(', ')}. Adjust the selection and try again.`,
-      skillInvocationFailedTitle: 'Some Skills were not invoked',
-      skillInvocationFailedDescription: (items) =>
-        `${items.join(', ')}. The remaining Skills were invoked.`,
-      skillInvocationFailureReason: {
-        invalid_name: 'invalid name',
-        not_found: 'not found',
-        disabled: 'disabled',
-        host_incompatible: 'required tools unavailable',
-        resolution_failed: 'resolution failed',
-        too_many_requests: 'more than 50 distinct Skill invocation requests',
-      },
       responseFailedTitle: 'Response failed',
       responseFailedFallback: 'The task action failed. Try again later.',
       refreshFailedTitle: 'Could not refresh task',

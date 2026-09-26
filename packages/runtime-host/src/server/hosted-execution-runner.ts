@@ -77,7 +77,6 @@ export class HostHostedExecutionRunner {
           this.input.context,
         ),
       );
-      if (started.kind !== 'started') throw new Error('Hosted root Turn was not started');
       const terminal = await this.#waitForTerminal(started.turn, signal);
       await (signal.aborted
         ? this.input.waitForAllResidencies()

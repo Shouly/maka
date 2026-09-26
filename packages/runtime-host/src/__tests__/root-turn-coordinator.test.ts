@@ -65,13 +65,12 @@ import {
   type RuntimeInteractionAuthority,
   type RuntimeInteractionRunClosureReason,
 } from '@maka/runtime/interaction-authority';
-import { type PreparedSkillInvocationMessage } from '@maka/runtime/skill-invocation';
 import type {
   AgentBackend,
   BackendCompactHistoryInput,
   BackendSendInput,
 } from '@maka/core/backend-types';
-import { messageContentDigest, type SessionEvent } from '@maka/core/events';
+import { messageContentDigest, type InlineReference, type SessionEvent } from '@maka/core/events';
 import type { UserQuestionResponse } from '@maka/core/user-question';
 import {
   WORKHUB_COORDINATION_SESSION_ID,
@@ -87,6 +86,7 @@ import {
   type RootTurnAdmission,
   type RootTurnAdmissionStore,
 } from '@maka/storage/execution-stores';
+import { ROOT_TURN_ADMISSION_MAX_CONTENT_BYTES } from '@maka/storage/agent-run-store';
 import { openInteractiveArtifactStoreForWrite } from '@maka/storage/artifact-stores';
 import { OPERATIONAL_STATE_DATABASE_NAME } from '@maka/storage/operational-state-store';
 import { resolveStorageRoot, tryAcquireInteractiveRootOwner } from '@maka/storage/root-authority';
@@ -128,20 +128,11 @@ const NO_EXECUTION_OBSERVER: HostedExecutionObserver = {
   begin: () => undefined,
 };
 
-type StartedTurnOutcome = {
-  ok: true;
-  result: {
-    kind: 'started';
-    turn: TurnSnapshot;
-    skillInvocation: Extract<TurnStartOutcome, { ok: true }>['result']['skillInvocation'];
-  };
-};
+type StartedTurnOutcome = Extract<TurnStartOutcome, { ok: true }>;
 
 function assertStartedTurn(outcome: TurnStartOutcome): asserts outcome is StartedTurnOutcome {
   assert.equal(outcome.ok, true, JSON.stringify(outcome));
-  if (!outcome.ok || outcome.result.kind !== 'started') {
-    assert.fail('Expected a started Turn outcome');
-  }
+  if (!outcome.ok) assert.fail('Expected a started Turn outcome');
 }
 
 for (const cancel of [false, true]) {
@@ -1188,280 +1179,15 @@ test('turn.regenerate durably binds a Guest request approval to the admitted Tur
   }
 });
 
-test('turn.start resolves explicit Skills once before durable admission and replays the result', async () => {
-  let preparationCount = 0;
-  let blocked = false;
-  let observedCapabilityPreview = false;
-  const capabilities = new HostClientCapabilityCoordinator({
-    ...clientCapabilityCoordinatorTestAdmission(),
-    activation: new RuntimePolicyActivationGate(),
-    onModelToolsChanged: () => undefined,
-  });
-  const connection = capabilities.attachConnection(
-    clientCapabilityConnectionIdentity('skill-provider'),
-    { send: async () => {} },
-  );
+test('idle turn.message.submit admits a skill token as written with its resolved reference', async () => {
+  const resolved: { sessionId: string; text: string }[] = [];
+  const writer: InlineReference = { kind: 'skill', value: '/writer', label: 'Writer', start: 0 };
   const fixture = await createFailureFixture({
     registerBackend: (backends) =>
       backends.register('ai-sdk', (context) => new FakeBackend(context)),
-    clientCapabilities: capabilities,
-    prepareSkillInvocation: async ({ sessionId }): Promise<PreparedSkillInvocationMessage> => {
-      preparationCount += 1;
-      const snapshot = capabilities.snapshotForSession(sessionId);
-      observedCapabilityPreview = (snapshot?.tools.length ?? 0) > 0;
-      snapshot?.release();
-      if (blocked) {
-        return {
-          disposition: 'blocked',
-          skillInvocation: {
-            loaded: [],
-            failed: [{ request: 'writer', reason: 'not_found' }],
-            receipts: [
-              {
-                invocation: 'explicit',
-                request: 'writer',
-                success: false,
-                reason: 'not_found',
-              },
-            ],
-          },
-        };
-      }
-      return {
-        disposition: 'ready',
-        sendText: '<invoked-skill>Write clearly.</invoked-skill>\n\nDraft this.',
-        skillInvocation: {
-          loaded: [{ id: 'writer', name: 'Writer' }],
-          failed: [],
-          receipts: [
-            {
-              invocation: 'explicit',
-              request: 'writer',
-              success: true,
-              ref: 'project:maka:writer',
-              id: 'writer',
-              name: 'Writer',
-              scope: 'project',
-              source: 'maka',
-              truncated: false,
-            },
-          ],
-        },
-      };
-    },
-  });
-  const input = {
-    sessionId: fixture.sessionId,
-    turnId: 'turn-hosted-skill',
-    content: { text: '/skill:writer Draft this.' },
-    skillIds: ['writer'],
-  };
-  try {
-    await registerSessionCapability(fixture, capabilities, 'skill-provider', 'skill-registration', [
-      'inspect',
-    ]);
-    const context = operationContext(fixture.hostEpoch, fixture.acquireResidency, 'skill-provider');
-    const started = await fixture.interactiveTurns.handlers['turn.start'](input, context);
-    assert.equal(started.ok, true);
-    if (!started.ok) return;
-    assert.equal(started.result.kind, 'started');
-    if (started.result.kind !== 'started') return;
-    assert.deepEqual(started.result.skillInvocation.loaded, [{ id: 'writer', name: 'Writer' }]);
-    assert.equal(preparationCount, 1);
-    assert.equal(observedCapabilityPreview, true);
-    const admission = await fixture.stores.agentRunStore.readRootTurnAdmission(
-      fixture.sessionId,
-      input.turnId,
-    );
-    assert.equal(admission?.execution.kind, 'external_message');
-    assert.match(
-      admission?.execution.kind === 'external_message'
-        ? (admission.execution.inputDigest ?? '')
-        : '',
-      /^sha256:[a-f0-9]{64}$/,
-    );
-    assert.deepEqual(admission?.normalizedInput, {
-      text: '<invoked-skill>Write clearly.</invoked-skill>\n\nDraft this.',
-      displayText: '/skill:writer Draft this.',
-      inlineReferences: [{ kind: 'skill', value: '/skill:writer', label: 'Writer', start: 0 }],
-    });
-
-    blocked = true;
-    const exactRetry = await fixture.interactiveTurns.handlers['turn.start'](input, context);
-    assert.equal(exactRetry.ok, true);
-    if (exactRetry.ok) assert.deepEqual(exactRetry.result, started.result);
-    assert.equal(preparationCount, 1, 'durable replay must not resolve a mutable Skill catalog');
-
-    const conflictingRetry = await fixture.interactiveTurns.handlers['turn.start'](
-      { ...input, skillIds: ['writer', 'another'] },
-      context,
-    );
-    assert.equal(conflictingRetry.ok, false);
-    if (!conflictingRetry.ok) assert.equal(conflictingRetry.error.code, 'operation_conflict');
-  } finally {
-    await connection.close();
-    await capabilities.close();
-    await fixture.dispose();
-  }
-});
-
-test('queued Message preparation preserves partial and blocked Skill outcomes', async () => {
-  let blocked = false;
-  const readySkillInvocation = {
-    loaded: [{ id: 'writer', name: 'Writer' }],
-    failed: [{ request: 'typo', reason: 'not_found' as const }],
-    receipts: [
-      {
-        invocation: 'explicit' as const,
-        request: 'writer',
-        success: true as const,
-        ref: 'project:maka:writer',
-        id: 'writer',
-        name: 'Writer',
-        scope: 'project' as const,
-        source: 'maka' as const,
-        truncated: false,
-      },
-      {
-        invocation: 'explicit' as const,
-        request: 'typo',
-        success: false as const,
-        reason: 'not_found' as const,
-      },
-    ],
-  };
-  const blockedSkillInvocation = {
-    loaded: [],
-    failed: [{ request: 'missing', reason: 'not_found' as const }],
-    receipts: [],
-  };
-  const fixture = await createFailureFixture({
-    registerBackend: (backends) =>
-      backends.register('ai-sdk', (context) => new FakeBackend(context)),
-    prepareSkillInvocation: async () =>
-      blocked
-        ? { disposition: 'blocked', skillInvocation: blockedSkillInvocation }
-        : {
-            disposition: 'ready',
-            sendText: '<invoked-skill>Write clearly.</invoked-skill>\n\nDraft this.',
-            skillInvocation: readySkillInvocation,
-          },
-  });
-  try {
-    assert.deepEqual(
-      await fixture.coordinator.prepareMessage({
-        sessionId: fixture.sessionId,
-        turnId: 'turn-running',
-        content: { text: '/skill:writer /skill:typo Draft this.' },
-        placement: 'current_turn',
-      }),
-      {
-        kind: 'ready',
-        content: {
-          text: '<invoked-skill>Write clearly.</invoked-skill>\n\nDraft this.',
-          displayText: '/skill:writer /skill:typo Draft this.',
-          inlineReferences: [{ kind: 'skill', value: '/skill:writer', label: 'Writer', start: 0 }],
-        },
-        skillInvocation: readySkillInvocation,
-      },
-    );
-
-    blocked = true;
-    assert.deepEqual(
-      await fixture.coordinator.prepareMessage({
-        sessionId: fixture.sessionId,
-        turnId: 'turn-running',
-        content: { text: '/skill:missing Draft this.' },
-        placement: 'current_turn',
-      }),
-      {
-        kind: 'rejected',
-        error: 'Explicit Skill invocation could not be resolved',
-        skillInvocation: blockedSkillInvocation,
-      },
-    );
-  } finally {
-    await fixture.coordinator.close();
-    await fixture.messages.close();
-    await fixture.dispose();
-  }
-});
-
-test('turn.start durably replays an all-failed invocation without creating a Turn', async () => {
-  let preparationCount = 0;
-  const skillInvocation = {
-    loaded: [],
-    failed: [{ request: 'missing', reason: 'not_found' as const }],
-    receipts: [
-      {
-        invocation: 'explicit' as const,
-        request: 'missing',
-        success: false as const,
-        reason: 'not_found' as const,
-      },
-    ],
-  };
-  const fixture = await createFailureFixture({
-    registerBackend: (backends) =>
-      backends.register('ai-sdk', (context) => new FakeBackend(context)),
-    prepareSkillInvocation: async (): Promise<PreparedSkillInvocationMessage> => {
-      preparationCount += 1;
-      return { disposition: 'blocked', skillInvocation };
-    },
-  });
-  const input = {
-    sessionId: fixture.sessionId,
-    turnId: 'turn-blocked-skill',
-    content: { text: '/skill:missing' },
-  } as const;
-  try {
-    const context = operationContext(fixture.hostEpoch, fixture.acquireResidency);
-    const first = await fixture.interactiveTurns.handlers['turn.start'](input, context);
-    assert.deepEqual(first, {
-      ok: true,
-      result: { kind: 'blocked', skillInvocation },
-    });
-    assert.equal(
-      await fixture.stores.agentRunStore.readRootTurnAdmission(fixture.sessionId, input.turnId),
-      undefined,
-    );
-
-    const retry = await fixture.interactiveTurns.handlers['turn.start'](input, context);
-    assert.deepEqual(retry, first);
-    assert.equal(preparationCount, 1);
-  } finally {
-    await fixture.dispose();
-  }
-});
-
-test('idle turn.message.submit applies hosted Skill preparation before durable admission', async () => {
-  let preparationCount = 0;
-  const fixture = await createFailureFixture({
-    registerBackend: (backends) =>
-      backends.register('ai-sdk', (context) => new FakeBackend(context)),
-    prepareSkillInvocation: async (): Promise<PreparedSkillInvocationMessage> => {
-      preparationCount += 1;
-      return {
-        disposition: 'ready',
-        sendText: '<invoked-skill>Write clearly.</invoked-skill>\n\nDraft this.',
-        skillInvocation: {
-          loaded: [{ id: 'writer', name: 'Writer' }],
-          failed: [],
-          receipts: [
-            {
-              invocation: 'explicit',
-              request: 'writer',
-              success: true,
-              ref: 'project:maka:writer',
-              id: 'writer',
-              name: 'Writer',
-              scope: 'project',
-              source: 'maka',
-              truncated: false,
-            },
-          ],
-        },
-      };
+    resolveSkillReferences: async (input) => {
+      resolved.push(input);
+      return [writer];
     },
   });
   try {
@@ -1470,49 +1196,191 @@ test('idle turn.message.submit applies hosted Skill preparation before durable a
         originHostEpoch: fixture.hostEpoch,
         sessionId: fixture.sessionId,
         messageId: 'idle-skill-message',
-        content: { text: '/skill:writer Draft this.' },
+        content: { text: '/writer draft this' },
         placement: 'current_turn',
       },
       operationContext(fixture.hostEpoch, fixture.acquireResidency),
     );
-    assert.equal(outcome.ok, true, JSON.stringify(outcome));
-    assert.equal(preparationCount, 1);
+    assert.equal(outcome.ok && outcome.result.disposition, 'turn_started', JSON.stringify(outcome));
+    if (!outcome.ok || outcome.result.disposition !== 'turn_started') return;
+    assert.deepEqual(resolved, [{ sessionId: fixture.sessionId, text: '/writer draft this' }]);
+    const admission = await fixture.stores.agentRunStore.readRootTurnAdmission(
+      fixture.sessionId,
+      outcome.result.turnId,
+    );
+    assert.deepEqual(admission?.normalizedInput, {
+      text: '/writer draft this',
+      inlineReferences: [writer],
+    });
+    assert.deepEqual(admission?.sourceMessages[0]?.content, admission?.normalizedInput);
+  } finally {
+    await fixture.dispose();
+  }
+});
+
+test('turn.start admits a skill token with its chip and replays a retry of the same content', async () => {
+  const writer: InlineReference = { kind: 'skill', value: '/writer', label: 'Writer', start: 0 };
+  const fixture = await createFailureFixture({
+    registerBackend: (backends) =>
+      backends.register('ai-sdk', (context) => new FakeBackend(context)),
+    resolveSkillReferences: async () => [writer],
+  });
+  try {
+    const start = (text: string) =>
+      fixture.interactiveTurns.handlers['turn.start'](
+        { sessionId: fixture.sessionId, turnId: 'turn-skill-token', content: { text } },
+        operationContext(fixture.hostEpoch, fixture.acquireResidency),
+      );
+    const started = await start('/writer draft this');
+    assertStartedTurn(started);
+    await fixture.coordinator.whenIdle(fixture.sessionId);
+    const admission = await fixture.stores.agentRunStore.readRootTurnAdmission(
+      fixture.sessionId,
+      'turn-skill-token',
+    );
+    assert.deepEqual(admission?.normalizedInput, {
+      text: '/writer draft this',
+      inlineReferences: [writer],
+    });
+
+    // The admitted content carries a chip the client never sent; the retry
+    // matches on the digest of what was sent.
+    const retried = await start('/writer draft this');
+    assertStartedTurn(retried);
+    assert.equal(retried.result.turn.runId, started.result.turn.runId);
+    const changed = await start('/writer draft that');
+    assert.equal(changed.ok, false);
+    if (!changed.ok) assert.equal(changed.error.code, 'operation_conflict');
+  } finally {
+    await fixture.coordinator.close();
+    await fixture.messages.close();
+    await fixture.dispose();
+  }
+});
+
+test('skill chips never cost a Message: a failing catalog or chips past the limits leave it plain', async () => {
+  let failing = true;
+  const fixture = await createFailureFixture({
+    registerBackend: (backends) =>
+      backends.register('ai-sdk', (context) => new FakeBackend(context)),
+    resolveSkillReferences: async () => {
+      if (failing) throw new Error('skill catalog is unreadable');
+      return [{ kind: 'skill', value: '/writer', label: 'Writer', start: 0 }];
+    },
+  });
+  try {
+    const startPlain = async (turnId: string, text: string) => {
+      assertStartedTurn(
+        await fixture.interactiveTurns.handlers['turn.start'](
+          { sessionId: fixture.sessionId, turnId, content: { text } },
+          operationContext(fixture.hostEpoch, fixture.acquireResidency),
+        ),
+      );
+      await fixture.coordinator.whenIdle(fixture.sessionId);
+      const admission = await fixture.stores.agentRunStore.readRootTurnAdmission(
+        fixture.sessionId,
+        turnId,
+      );
+      assert.deepEqual(admission?.normalizedInput, { text });
+    };
+    await startPlain('turn-catalog-fails', '/writer draft this');
+
+    // `{"text":"…"}` fills the durable content limit to the byte; a chip on
+    // top would overflow it.
+    failing = false;
+    const text = `/writer ${'x'.repeat(ROOT_TURN_ADMISSION_MAX_CONTENT_BYTES - 11 - 8)}`;
+    await startPlain('turn-chip-overflows', text);
+  } finally {
+    await fixture.coordinator.close();
+    await fixture.messages.close();
+    await fixture.dispose();
+  }
+});
+
+test('a Message without a skill token never asks for skill references', async () => {
+  let resolverCalls = 0;
+  const fixture = await createFailureFixture({
+    registerBackend: (backends) =>
+      backends.register('ai-sdk', (context) => new FakeBackend(context)),
+    resolveSkillReferences: async () => {
+      resolverCalls += 1;
+      return [];
+    },
+  });
+  try {
+    // A path is not a token: `/` has to start the text or follow whitespace
+    // and run to whitespace or the end.
+    const content = { text: 'draft this from src/writer and a/b' };
+    assert.deepEqual(
+      await fixture.coordinator.prepareMessage({ sessionId: fixture.sessionId, content }),
+      { kind: 'ready', content },
+    );
+    const outcome = await fixture.messages.handlers['turn.message.submit'](
+      {
+        originHostEpoch: fixture.hostEpoch,
+        sessionId: fixture.sessionId,
+        messageId: 'idle-plain-message',
+        content,
+        placement: 'current_turn',
+      },
+      operationContext(fixture.hostEpoch, fixture.acquireResidency),
+    );
+    assert.equal(outcome.ok && outcome.result.disposition, 'turn_started', JSON.stringify(outcome));
+    assert.equal(resolverCalls, 0);
+  } finally {
+    await fixture.coordinator.close();
+    await fixture.messages.close();
+    await fixture.dispose();
+  }
+});
+
+test('a client skill reference the Host does not confirm is dropped, a file reference is kept', async () => {
+  const fixture = await createFailureFixture({
+    registerBackend: (backends) =>
+      backends.register('ai-sdk', (context) => new FakeBackend(context)),
+    resolveSkillReferences: async () => [],
+  });
+  const file: InlineReference = {
+    kind: 'workspace_file',
+    value: '@src/a.ts',
+    label: 'src/a.ts',
+    start: 13,
+  };
+  try {
+    const outcome = await fixture.messages.handlers['turn.message.submit'](
+      {
+        originHostEpoch: fixture.hostEpoch,
+        sessionId: fixture.sessionId,
+        messageId: 'idle-claimed-skill',
+        content: {
+          text: '/writer read @src/a.ts',
+          inlineReferences: [{ kind: 'skill', value: '/writer', label: 'Writer', start: 0 }, file],
+        },
+        placement: 'current_turn',
+      },
+      operationContext(fixture.hostEpoch, fixture.acquireResidency),
+    );
+    assert.equal(outcome.ok && outcome.result.disposition, 'turn_started', JSON.stringify(outcome));
     if (!outcome.ok || outcome.result.disposition !== 'turn_started') return;
     const admission = await fixture.stores.agentRunStore.readRootTurnAdmission(
       fixture.sessionId,
       outcome.result.turnId,
     );
     assert.deepEqual(admission?.normalizedInput, {
-      text: '<invoked-skill>Write clearly.</invoked-skill>\n\nDraft this.',
-      displayText: '/skill:writer Draft this.',
-      inlineReferences: [{ kind: 'skill', value: '/skill:writer', label: 'Writer', start: 0 }],
+      text: '/writer read @src/a.ts',
+      inlineReferences: [file],
     });
-    assert.deepEqual(admission?.sourceMessages[0]?.content, admission?.normalizedInput);
-    assert.match(
-      admission?.execution.kind === 'external_message'
-        ? (admission.execution.inputDigest ?? '')
-        : '',
-      /^sha256:[a-f0-9]{64}$/,
-    );
   } finally {
     await fixture.dispose();
   }
 });
 
-test('idle Skill admission persists a canonical draft without history before root handoff', async () => {
-  const canonicalText = '<invoked-skill>Write clearly.</invoked-skill>\n\nDraft this.';
+test('idle admission persists a canonical draft without history before root handoff', async () => {
+  const writer: InlineReference = { kind: 'skill', value: '/writer', label: 'Writer', start: 0 };
   const fixture = await createFailureFixture({
     registerBackend: (backends) =>
       backends.register('ai-sdk', (context) => new FakeBackend(context)),
-    prepareSkillInvocation: async (): Promise<PreparedSkillInvocationMessage> => ({
-      disposition: 'ready',
-      sendText: canonicalText,
-      skillInvocation: {
-        loaded: [{ id: 'writer', name: 'Writer' }],
-        failed: [],
-        receipts: [],
-      },
-    }),
+    resolveSkillReferences: async () => [writer],
     wrapAdmissionStore: (store) => ({
       admitRootTurn: async () => {
         throw new Error('injected root admission failure');
@@ -1533,7 +1401,7 @@ test('idle Skill admission persists a canonical draft without history before roo
           originHostEpoch: fixture.hostEpoch,
           sessionId: fixture.sessionId,
           messageId: 'idle-skill-before-handoff',
-          content: { text: '/skill:writer Draft this.' },
+          content: { text: '/writer Draft this.' },
           placement: 'current_turn',
         },
         operationContext(fixture.hostEpoch, fixture.acquireResidency),
@@ -1545,9 +1413,8 @@ test('idle Skill admission persists a canonical draft without history before roo
       'idle-skill-before-handoff',
     );
     assert.deepEqual(admission?.content, {
-      text: canonicalText,
-      displayText: '/skill:writer Draft this.',
-      inlineReferences: [],
+      text: '/writer Draft this.',
+      inlineReferences: [writer],
     });
     assert.deepEqual(
       await readLedgerMessages(fixture.stores.runtimeEventStore, fixture.sessionId),
@@ -1558,129 +1425,56 @@ test('idle Skill admission persists a canonical draft without history before roo
   }
 });
 
-test('turn.start rejects oversized preparation before admission and preserves not-found semantics', async () => {
-  let preparationCount = 0;
-  let preparation: 'blocked' | 'oversized_content' | 'oversized_feedback' = 'blocked';
+test('an idle retry admits its pending canonical content as is', async () => {
+  const writer: InlineReference = { kind: 'skill', value: '/writer', label: 'Writer', start: 0 };
+  let resolverCalls = 0;
   const fixture = await createFailureFixture({
     registerBackend: (backends) =>
       backends.register('ai-sdk', (context) => new FakeBackend(context)),
-    prepareSkillInvocation: async () => {
-      preparationCount += 1;
-      if (preparation === 'blocked') {
-        return {
-          disposition: 'blocked',
-          skillInvocation: {
-            loaded: [],
-            failed: [{ request: 'writer', reason: 'not_found' }],
-            receipts: [],
-          },
-        };
-      }
-      if (preparation === 'oversized_content')
-        return {
-          disposition: 'ready',
-          sendText: 'x'.repeat(70 * 1024),
-          skillInvocation: {
-            loaded: [{ id: 'writer', name: 'Writer' }],
-            failed: [],
-            receipts: [],
-          },
-        };
-      const request = 'r'.repeat(512);
-      const id = 'i'.repeat(81);
-      const name = '"'.repeat(256);
-      return {
-        disposition: 'ready',
-        sendText: 'Run the selected Skills.',
-        skillInvocation: {
-          loaded: Array.from({ length: 50 }, () => ({ id, name })),
-          failed: [],
-          receipts: Array.from({ length: 50 }, () => ({
-            invocation: 'explicit' as const,
-            request,
-            success: true as const,
-            ref: `workspace:legacy:${id}`,
-            id,
-            name,
-            scope: 'workspace' as const,
-            source: 'legacy' as const,
-            truncated: false,
-          })),
-        },
-      };
+    resolveSkillReferences: async () => {
+      resolverCalls += 1;
+      return [writer];
     },
   });
-  const context = operationContext(fixture.hostEpoch, fixture.acquireResidency);
+  const submitted = { text: '/writer Draft this.' };
+  const canonical = { ...submitted, inlineReferences: [writer] };
   try {
-    const blocked = await fixture.interactiveTurns.handlers['turn.start'](
+    // A Host stopped between the Message admission and the root admission:
+    // the draft holds the canonical content, which differs from the submit.
+    await fixture.stores.sessionStore.commitMessageAdmission({
+      sessionId: fixture.sessionId,
+      turnId: 'pending-turn',
+      runId: 'pending-run',
+      messageId: 'idle-retry',
+      content: canonical,
+      submittedContentDigest: messageContentDigest(submitted),
+      submittedPlacement: 'current_turn',
+      placement: 'current_turn',
+      disposition: 'steering',
+      admittedAt: 1,
+    });
+    const retried = await fixture.messages.handlers['turn.message.submit'](
       {
+        originHostEpoch: fixture.hostEpoch,
         sessionId: fixture.sessionId,
-        turnId: 'turn-hosted-skill-blocked',
-        content: { text: '/skill:writer' },
+        messageId: 'idle-retry',
+        content: submitted,
+        placement: 'current_turn',
       },
-      context,
+      operationContext(fixture.hostEpoch, fixture.acquireResidency),
     );
-    assert.equal(blocked.ok, true);
-    if (blocked.ok) assert.equal(blocked.result.kind, 'blocked');
-    assert.equal(
-      await fixture.stores.agentRunStore.readRootTurnAdmission(
-        fixture.sessionId,
-        'turn-hosted-skill-blocked',
-      ),
-      undefined,
-    );
-
-    preparation = 'oversized_content';
-    const oversized = await fixture.interactiveTurns.handlers['turn.start'](
-      {
-        sessionId: fixture.sessionId,
-        turnId: 'turn-hosted-skill-oversized',
-        content: { text: '/skill:writer Draft this.' },
-      },
-      context,
-    );
-    assert.equal(oversized.ok, false);
-    if (!oversized.ok) assert.equal(oversized.error.code, 'operation_conflict');
+    assert.deepEqual(retried, {
+      ok: true,
+      result: { disposition: 'turn_started', turnId: 'pending-turn' },
+    });
+    assert.equal(resolverCalls, 0);
     assert.equal(fixture.drainRequested(), false);
-    assert.equal(
-      await fixture.stores.agentRunStore.readRootTurnAdmission(
-        fixture.sessionId,
-        'turn-hosted-skill-oversized',
-      ),
-      undefined,
+    const admission = await fixture.stores.agentRunStore.readRootTurnAdmission(
+      fixture.sessionId,
+      'pending-turn',
     );
-
-    preparation = 'oversized_feedback';
-    const oversizedFeedback = await fixture.interactiveTurns.handlers['turn.start'](
-      {
-        sessionId: fixture.sessionId,
-        turnId: 'turn-hosted-skill-oversized-feedback',
-        content: { text: '/skill:writer Draft this.' },
-      },
-      context,
-    );
-    assert.equal(oversizedFeedback.ok, false);
-    if (!oversizedFeedback.ok) assert.equal(oversizedFeedback.error.code, 'operation_conflict');
-    assert.equal(fixture.drainRequested(), false);
-    assert.equal(
-      await fixture.stores.agentRunStore.readRootTurnAdmission(
-        fixture.sessionId,
-        'turn-hosted-skill-oversized-feedback',
-      ),
-      undefined,
-    );
-
-    const missingSession = await fixture.interactiveTurns.handlers['turn.start'](
-      {
-        sessionId: 'missing-session',
-        turnId: 'turn-hosted-skill-missing-session',
-        content: { text: '/skill:writer Draft this.' },
-      },
-      context,
-    );
-    assert.equal(missingSession.ok, false);
-    if (!missingSession.ok) assert.equal(missingSession.error.code, 'not_found');
-    assert.equal(preparationCount, 3, 'missing Sessions must not resolve Skills');
+    assert.deepEqual(admission?.normalizedInput, canonical);
+    assert.deepEqual(admission?.sourceMessages[0]?.content, canonical);
   } finally {
     await fixture.dispose();
   }
@@ -3042,7 +2836,6 @@ test('hosted linked child roots share admission, message, terminal, and stop aut
     );
     const interactiveTurns = new HostInteractiveTurnCoordinator({
       executions: coordinator,
-      turns: stores.agentRunStore,
       runtime: manager,
     });
 
@@ -4599,11 +4392,7 @@ test('an exact terminal retry does not require a live Client Capability binding'
     );
     assert.deepEqual(retried, {
       ok: true,
-      result: {
-        kind: 'started',
-        turn: terminal,
-        skillInvocation: { loaded: [], failed: [], receipts: [] },
-      },
+      result: { kind: 'started', turn: terminal },
     });
   } finally {
     provider.close();
@@ -6167,12 +5956,10 @@ async function createFailureFixture(options: {
     currentGraphId(rootSessionId: string): Promise<string>;
     beginNextGraphEpoch(rootSessionId: string): Promise<string>;
   };
-  prepareSkillInvocation?(input: {
+  resolveSkillReferences?(input: {
     sessionId: string;
-    turnId: string;
     text: string;
-    skillIds: readonly string[];
-  }): Promise<PreparedSkillInvocationMessage>;
+  }): Promise<readonly InlineReference[]>;
   assertScheduledTaskRecoveryAdmission?(
     admission: RootTurnAdmission,
     state: 'pending_fire_required' | 'run_recorded',
@@ -6379,7 +6166,7 @@ async function createFailureFixture(options: {
       () => NO_EXECUTION_OBSERVER,
       options.assertScheduledTaskRecoveryAdmission,
       artifactAuthority,
-      options.prepareSkillInvocation,
+      options.resolveSkillReferences,
       options.agentGraphEpochs,
       undefined,
       options.directoryHostId,
@@ -6398,7 +6185,6 @@ async function createFailureFixture(options: {
   });
   let interactiveTurns = new HostInteractiveTurnCoordinator({
     executions: coordinator,
-    turns: stores.agentRunStore,
     runtime: manager,
   });
 
@@ -6443,7 +6229,6 @@ async function createFailureFixture(options: {
       });
       interactiveTurns = new HostInteractiveTurnCoordinator({
         executions: coordinator,
-        turns: stores.agentRunStore,
         runtime: manager,
       });
       return coordinator;

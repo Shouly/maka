@@ -451,14 +451,7 @@ export class DesktopSessionLocalService {
         originHostEpoch: record.intent.originHostEpoch!,
       });
       if (!stillOwned()) return;
-      record = {
-        ...record,
-        state: result.disposition === 'blocked' ? 'failed' : 'accepted',
-        result,
-        ...(result.disposition === 'blocked'
-          ? { error: 'Host refused the requested skill invocation. Edit and send a new message.' }
-          : { error: undefined }),
-      };
+      record = { ...record, state: 'accepted', result, error: undefined };
       this.store.update(record);
       this.#probed.delete(key);
       this.#catalogFresh.delete(target.partition);
@@ -530,15 +523,13 @@ export class DesktopSessionLocalService {
       return;
     }
     if (!stillOwned()) return;
-    // The original submit answer is lost, so there is no Skill outcome to report.
-    const skillInvocation = { loaded: [], failed: [], receipts: [] };
     const current = this.store.get(target.partition, record.messageId)!;
     if (resolution?.state === 'owned') {
       // A receipt or steering proof names it: the Turn it opened settles it.
       this.store.update({
         ...current,
         state: 'accepted',
-        result: { disposition: 'turn_started', turnId: resolution.turnId, skillInvocation },
+        result: { disposition: 'turn_started', turnId: resolution.turnId },
         error: undefined,
       });
     } else if (resolution?.state === 'pending') {
@@ -546,7 +537,7 @@ export class DesktopSessionLocalService {
       this.store.update({
         ...current,
         state: 'accepted',
-        result: { disposition: 'followup', skillInvocation },
+        result: { disposition: 'followup' },
         error: undefined,
       });
     } else if (resolution?.state === 'cancelled' || resolution?.state === 'not_admitted') {
@@ -739,7 +730,6 @@ export function registerDesktopSessionLocalIpc(deps: {
                 quotes: command.quotes,
                 inlineReferences,
               },
-              ...(command.skillIds?.length ? { skillIds: command.skillIds } : {}),
               ...(command.turnOrchestration ? { turnOrchestration: command.turnOrchestration } : {}),
             },
           }),
@@ -757,7 +747,6 @@ export function registerDesktopSessionLocalIpc(deps: {
         disposition: 'locally_saved',
         attachments: retained,
         inlineReferences,
-        skillInvocation: { loaded: [], failed: [], receipts: [] },
       };
     },
   );

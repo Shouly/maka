@@ -33,7 +33,6 @@ import {
   createSqliteAgentRunStore,
   type AdmitRootTurnInput,
   type AdmitRootTurnResult,
-  type CommitRootTurnStartRejectionInput,
   type BoundedEvidenceReadResult,
   type DurableAgentRunStore,
   type DurableRuntimeEventStore,
@@ -93,18 +92,14 @@ export {
 export type {
   AdmitRootTurnInput,
   AdmitRootTurnResult,
-  CommitRootTurnStartRejectionInput,
-  CommitRootTurnStartRejectionResult,
   BoundedEvidenceReadResult,
   EvidenceReadBudget,
   ImmutableSteeringMessageProof,
   RootTurnAdmission,
   RootTurnAdmissionAuthorization,
   RootTurnAdmissionStore,
-  RootTurnStartRejectionStore,
   RootTurnSourceMessage,
   RootTurnSourceMessageReceipt,
-  RootTurnStartRejection,
   RuntimeEventScanBudget,
   RuntimeEventScanResult,
 } from './agent-run-store.js';
@@ -544,10 +539,6 @@ async function createExecutionStoresForWrite<K extends StorageRootKind, E extend
         run(() =>
           agentRunStore.readRootTurnContinuationAdmission(sessionId, sourceTurnId, sourceRunId),
         ),
-      readRootTurnStartRejection: (sessionId, turnId) =>
-        run(() => agentRunStore.readRootTurnStartRejection(sessionId, turnId)),
-      commitRootTurnStartRejection: (input: CommitRootTurnStartRejectionInput) =>
-        run(() => agentRunStore.commitRootTurnStartRejection(input)),
       readRootTurnSourceMessageReceipt: (sessionId, sourceMessageId) =>
         run(() => agentRunStore.readRootTurnSourceMessageReceipt(sessionId, sourceMessageId)),
       listRootTurnAdmissionsForRecovery: (sessionId) =>

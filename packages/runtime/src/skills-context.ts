@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { relative } from 'node:path';
+import { isAbsolute } from 'node:path';
 import { cleanPromptText, truncateCodepoints } from './skills-metadata.js';
 import { MAX_SKILL_TOOL_BODY_CHARS } from './skills-metadata.js';
 import {
@@ -53,7 +53,6 @@ export const MAX_SKILLS_PROMPT_TOKENS = 8_000;
 export const SKILLS_PROMPT_CONTEXT_RATIO = 0.02;
 const SKILLS_PROMPT_CHARS_PER_TOKEN = 4;
 export const SKILL_SEARCH_RESULT_LIMIT = 8;
-const SKILL_SEARCH_QUERY_MAX_CHARS = 512;
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -138,23 +137,30 @@ export interface SkillsPromptFragmentResult {
   report: SkillSelectionReport;
 }
 
-export interface SkillSearchMatch {
-  ref: string;
+/** A skill the catalog offers that is not installed here: a bundled one or an imported source. */
+export interface InstallableSkillEntry {
   id: string;
   name: string;
   description: string;
-  scope: SkillScope;
-  source: SkillDiscoverySource;
-  score: number;
 }
 
+/** What SearchSkills searches: every installed skill, and what could be installed. */
+export interface SkillSearchCatalog {
+  inventory: readonly ScannedSkill[];
+  installable?: readonly InstallableSkillEntry[];
+}
+
+/** One SearchSkills result, in the reference's shape. */
+export interface SkillSearchMatch {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+}
+
+/** The SearchSkills answer: at most {@link SKILL_SEARCH_RESULT_LIMIT} matches, best first. */
 export interface SkillSearchResult {
-  query: string;
-  queryTruncated: boolean;
-  matches: SkillSearchMatch[];
-  totalEligible: number;
-  matchedCount: number;
-  truncated: boolean;
+  results: SkillSearchMatch[];
 }
 
 export interface LoadedSkillInstructions {
@@ -165,7 +171,12 @@ export interface LoadedSkillInstructions {
   scope: SkillScope;
   source: SkillDiscoverySource;
   declaredTools: string[];
-  relativePath: string;
+  /**
+   * The skill's own directory, absolute: SKILL.md's relative paths (scripts,
+   * references) resolve against it. Absent for a skill with no directory on
+   * disk, such as one a plugin registers.
+   */
+  baseDirectory?: string;
   instructions: string;
   truncated: boolean;
 }
@@ -191,7 +202,7 @@ function renderSkillCatalogBlock(skill: ScannedSkill): string {
 
 function renderOmittedSkillsNotice(count: number): string {
   return count > 0
-    ? `\n\n${count} more ${count === 1 ? 'skill is' : 'skills are'} available but not listed here; find one with SkillSearch and load it with Skill.`
+    ? `\n\n${count} more ${count === 1 ? 'skill is' : 'skills are'} available but not listed here; find one with SearchSkills and load it with Skill.`
     : '';
 }
 
@@ -417,8 +428,7 @@ export async function loadSkillInstructions(
  * Resolve one skill's full instructions against an already-computed scan.
  * Identical semantics to {@link loadSkillInstructions} — enabled filter, host
  * gate, id-then-name match, body cleaning/truncation — but skips the
- * per-call rescan, so explicit-invocation paths (TUI `/skill:` tokens,
- * desktop chips) can resolve several skills against one scan.
+ * per-call rescan, so the Host's Skill tool loads from the Turn's inventory.
  */
 export function loadSkillInstructionsFromScan(
   skills: ScannedSkill[],
@@ -468,7 +478,7 @@ export function loadSkillInstructionsFromScan(
         scope: skill.scope,
         source: skill.source,
         declaredTools: skill.declaredTools,
-        relativePath: relative(skill.discoveryRoot, skill.path) + '/SKILL.md',
+        ...(isAbsolute(skill.path) ? { baseDirectory: skill.path } : {}),
         instructions,
         truncated: Array.from(cleaned || '(empty)').length > MAX_SKILL_TOOL_BODY_CHARS,
       },
@@ -499,88 +509,108 @@ export function loadSkillInstructionsFromScan(
 
 // ── Public API: search ────────────────────────────────────────────────────
 
-/** Deterministic, bounded lexical search over the eligible long-tail catalog. */
+/** Deterministic, bounded lexical search over the whole catalog: enabled, disabled and installable. */
 export function searchSkills(
-  inventory: readonly ScannedSkill[],
-  query: string,
+  catalog: SkillSearchCatalog,
+  keywords: readonly string[],
   host?: HostCapabilities,
-  requestedLimit = SKILL_SEARCH_RESULT_LIMIT,
 ): SkillSearchResult {
-  return skillSearchResult(rankSkillSearchCandidates(inventory, query, host), requestedLimit);
+  return skillSearchResult(rankSkillSearchCandidates(catalog, keywords, host));
 }
 
 // ── Internal: search ──────────────────────────────────────────────────────
 
-export interface RankedSkillSearchCandidates {
-  query: string;
-  queryTruncated: boolean;
-  totalEligible: number;
-  ranked: Array<{ skill: ScannedSkill; score: number }>;
+interface SkillSearchCandidate {
+  match: SkillSearchMatch;
+  /** The installed skill's ref; absent for one that is only installable. */
+  ref?: string;
+  pinned: boolean;
+  precedence: number;
 }
 
+export interface RankedSkillSearchCandidates {
+  keywords: string[];
+  totalCandidates: number;
+  ranked: Array<{ candidate: SkillSearchCandidate; score: number }>;
+}
+
+/**
+ * Rank the whole catalog against the keywords: installed skills, enabled or
+ * not, and the bundled and imported ones not installed yet (never enabled).
+ * A shadowed copy and a skill this host cannot run are not offered — neither
+ * can be used here. Every keyword adds to a candidate's score; a candidate no
+ * keyword touches is not a match.
+ */
 export function rankSkillSearchCandidates(
-  inventory: readonly ScannedSkill[],
-  query: string,
+  catalog: SkillSearchCatalog,
+  keywords: readonly string[],
   host?: HostCapabilities,
 ): RankedSkillSearchCandidates {
-  const normalizedInput = normalizeSkillSearchText(query);
-  const normalizedQuery = normalizedInput.slice(0, SKILL_SEARCH_QUERY_MAX_CHARS);
-  const candidates = (
+  const normalized = [
+    ...new Set(keywords.map(normalizeSkillSearchText).filter((keyword) => keyword.length > 0)),
+  ];
+  const installed = (
     host
-      ? gateSkillsByHostCapabilities([...inventory], host).filter((skill) => skill.eligible)
-      : inventory
-  ).filter((skill) => skill.enabled && !skill.shadowedBy);
-  if (!normalizedQuery) {
-    return {
-      query: '',
-      queryTruncated: normalizedInput.length > SKILL_SEARCH_QUERY_MAX_CHARS,
-      totalEligible: candidates.length,
-      ranked: [],
-    };
+      ? gateSkillsByHostCapabilities([...catalog.inventory], host).filter((skill) => skill.eligible)
+      : [...catalog.inventory]
+  ).filter((skill) => !skill.shadowedBy);
+  // Installed ids, every copy included: an installable entry with one of them
+  // is already here (or shadowed, or unusable here), so it is not offered.
+  const offeredIds = new Set(catalog.inventory.map((skill) => skill.id.toLowerCase()));
+  const candidates: SkillSearchCandidate[] = [
+    ...installed.map((skill) => ({
+      match: {
+        id: skill.id,
+        name: skill.name,
+        description: skill.description,
+        enabled: skill.enabled,
+      },
+      ref: skill.ref,
+      pinned: skill.pinned,
+      precedence: skill.precedence,
+    })),
+    ...(catalog.installable ?? [])
+      .filter((entry) => {
+        const id = entry.id.toLowerCase();
+        if (offeredIds.has(id)) return false;
+        offeredIds.add(id);
+        return true;
+      })
+      .map((entry) => ({
+        match: { id: entry.id, name: entry.name, description: entry.description, enabled: false },
+        pinned: false,
+        precedence: Number.MAX_SAFE_INTEGER,
+      })),
+  ];
+  if (normalized.length === 0) {
+    return { keywords: [], totalCandidates: candidates.length, ranked: [] };
   }
-
   const ranked = candidates
-    .map((skill) => ({
-      skill,
-      score: scoreSkillSearchMatch(skill, normalizedQuery),
+    .map((candidate) => ({
+      candidate,
+      score: normalized.reduce(
+        (sum, keyword) => sum + scoreSkillSearchMatch(candidate, keyword),
+        0,
+      ),
     }))
-    .filter((candidate) => candidate.score > 0)
+    .filter(({ score }) => score > 0)
     .sort(
       (a, b) =>
         b.score - a.score ||
-        Number(b.skill.pinned) - Number(a.skill.pinned) ||
-        a.skill.precedence - b.skill.precedence ||
-        a.skill.name.localeCompare(b.skill.name) ||
-        a.skill.ref.localeCompare(b.skill.ref),
+        Number(b.candidate.match.enabled) - Number(a.candidate.match.enabled) ||
+        Number(b.candidate.pinned) - Number(a.candidate.pinned) ||
+        a.candidate.precedence - b.candidate.precedence ||
+        a.candidate.match.name.localeCompare(b.candidate.match.name) ||
+        a.candidate.match.id.localeCompare(b.candidate.match.id),
     );
-  return {
-    query: normalizedQuery,
-    queryTruncated: normalizedInput.length > SKILL_SEARCH_QUERY_MAX_CHARS,
-    totalEligible: candidates.length,
-    ranked,
-  };
+  return { keywords: normalized, totalCandidates: candidates.length, ranked };
 }
 
-export function skillSearchResult(
-  ranking: RankedSkillSearchCandidates,
-  requestedLimit: number,
-): SkillSearchResult {
-  const limit = Math.max(1, Math.min(SKILL_SEARCH_RESULT_LIMIT, Math.floor(requestedLimit) || 1));
+export function skillSearchResult(ranking: RankedSkillSearchCandidates): SkillSearchResult {
   return {
-    query: ranking.query,
-    queryTruncated: ranking.queryTruncated,
-    matches: ranking.ranked.slice(0, limit).map(({ skill, score }) => ({
-      ref: skill.ref,
-      id: skill.id,
-      name: skill.name,
-      description: skill.description,
-      scope: skill.scope,
-      source: skill.source,
-      score,
-    })),
-    totalEligible: ranking.totalEligible,
-    matchedCount: ranking.ranked.length,
-    truncated: ranking.ranked.length > limit,
+    results: ranking.ranked
+      .slice(0, SKILL_SEARCH_RESULT_LIMIT)
+      .map(({ candidate }) => ({ ...candidate.match })),
   };
 }
 
@@ -588,16 +618,18 @@ function normalizeSkillSearchText(value: string): string {
   return typeof value === 'string' ? value.trim().toLocaleLowerCase().replace(/\s+/g, ' ') : '';
 }
 
-function scoreSkillSearchMatch(skill: ScannedSkill, query: string): number {
-  const name = normalizeSkillSearchText(skill.name);
-  const id = normalizeSkillSearchText(skill.id);
-  const description = normalizeSkillSearchText(skill.description);
+function scoreSkillSearchMatch(candidate: SkillSearchCandidate, keyword: string): number {
+  const name = normalizeSkillSearchText(candidate.match.name);
+  const id = normalizeSkillSearchText(candidate.match.id);
+  const description = normalizeSkillSearchText(candidate.match.description);
   let score = 0;
-  if (name === query || id === query || skill.ref.toLocaleLowerCase() === query) score += 1_000;
-  if (name.startsWith(query) || id.startsWith(query)) score += 240;
-  if (name.includes(query) || id.includes(query)) score += 160;
-  if (description.includes(query)) score += 80;
-  const terms = query
+  if (name === keyword || id === keyword || candidate.ref?.toLocaleLowerCase() === keyword) {
+    score += 1_000;
+  }
+  if (name.startsWith(keyword) || id.startsWith(keyword)) score += 240;
+  if (name.includes(keyword) || id.includes(keyword)) score += 160;
+  if (description.includes(keyword)) score += 80;
+  const terms = keyword
     .split(/[^\p{L}\p{N}]+/u)
     .filter((term) => term.length > 1)
     .slice(0, 24);
@@ -605,7 +637,7 @@ function scoreSkillSearchMatch(skill: ScannedSkill, query: string): number {
     if (name.includes(term) || id.includes(term)) score += 40;
     if (description.includes(term)) score += 12;
   }
-  if (skill.pinned) score += 4;
+  // A pin is not scored: the ranking's comparator uses it to break ties only.
   return score;
 }
 

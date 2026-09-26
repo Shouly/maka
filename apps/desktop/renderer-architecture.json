@@ -165,6 +165,7 @@
     "src/renderer/components/settings/models/ConnectionDetail.tsx",
     "src/renderer/components/settings/models/ConnectionModelsSection.tsx",
     "src/renderer/components/settings/models/ConnectionsList.tsx",
+    "src/renderer/components/settings/models/ModelCatalogStatusRow.tsx",
     "src/renderer/components/settings/models/ModelsSettings.tsx",
     "src/renderer/components/settings/models/OAuthPanel.tsx",
     "src/renderer/components/settings/models/ProviderCatalog.tsx",
@@ -330,9 +331,9 @@
     "src/renderer/lib/ported/shell-chat-model-selection.ts",
     "src/renderer/lib/ported/shell-run-update-state.ts",
     "src/renderer/lib/ported/side-chat-command.ts",
-    "src/renderer/lib/ported/skill-invocation-feedback.ts",
     "src/renderer/lib/ported/stale-sessions.ts",
     "src/renderer/lib/ported/subagent-preset-presentation.ts",
+    "src/renderer/lib/ported/submission-feedback.ts",
     "src/renderer/lib/ported/task-readiness-notice.ts",
     "src/renderer/lib/ported/titlebar-dim-color.ts",
     "src/renderer/lib/ported/titlebar-modal-sync.ts",
@@ -411,6 +412,7 @@
     "src/renderer/store/__tests__/core-dialogue.test.ts",
     "src/renderer/store/__tests__/electron-smoke.mjs",
     "src/renderer/store/__tests__/local-messages.test.ts",
+    "src/renderer/store/__tests__/model-effort.test.tsx",
     "src/renderer/store/__tests__/phase2-state.test.ts",
     "src/renderer/store/__tests__/phase3-state.test.ts",
     "src/renderer/store/__tests__/phase4-state.test.ts",
@@ -1128,7 +1130,7 @@
         "../../lib/ported/desktop-slash-command.js": 1,
         "../../lib/ported/session-workspace-errors.js": 1,
         "../../lib/ported/shell-chat-model-selection.js": 1,
-        "../../lib/ported/skill-invocation-feedback.js": 1,
+        "../../lib/ported/submission-feedback.js": 1,
         "../../lib/user-question-shape.js": 1,
         "../../locales/composer-copy.js": 1,
         "../../locales/conversation-copy.js": 1,
@@ -1158,6 +1160,8 @@
         "./SkillSubMenu.js": 1,
         "./TipTapEditor.js": 1,
         "@maka/core/attachments": 1,
+        "@maka/core/collaboration": 1,
+        "@maka/core/skill-invocation-token": 1,
         "@maka/ui": 1,
         "react": 1,
         "zustand": 1
@@ -1239,7 +1243,6 @@
       "dependencyPaths": {
         "../../lib/cn.js": 1,
         "../../lib/composer-surface.js": 1,
-        "../icons/Anthropicon.js": 1,
         "../ui/dropdown-menu.js": 1,
         "../ui/tooltip.js": 1,
         "@maka/core/settings": 1,
@@ -4003,10 +4006,34 @@
         "../../ui/skeleton.js": 1,
         "../../ui/status-chip.js": 1,
         "../settings-row.js": 1,
+        "./ModelCatalogStatusRow.js": 1,
         "@maka/core/llm-connections": 1,
         "@maka/core/provider-registry": 1,
         "@maka/ui": 1,
         "react": 1
+      }
+    },
+    "src/renderer/components/settings/models/ModelCatalogStatusRow.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 1,
+        "useState": 2,
+        "useStore": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../bridge/connections.js": 1,
+        "../../../locales/settings-models-copy.js": 1,
+        "../../../store/index.js": 1,
+        "../../ui/button.js": 1,
+        "../settings-row.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
       }
     },
     "src/renderer/components/settings/models/ModelsSettings.tsx": {
@@ -5589,6 +5616,7 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "@maka/core/skill-invocation-token": 1,
         "@maka/ui": 1
       }
     },
@@ -6394,17 +6422,6 @@
       "actionFactories": [],
       "dependencyPaths": {}
     },
-    "src/renderer/lib/ported/skill-invocation-feedback.ts": {
-      "bridgePaths": {},
-      "environmentCapabilities": {},
-      "hookCalls": {},
-      "lifecycleMethods": {},
-      "unresolvedDependencies": 0,
-      "actionFactories": [],
-      "dependencyPaths": {
-        "../../locales/shell-copy.js": 1
-      }
-    },
     "src/renderer/lib/ported/stale-sessions.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -6424,6 +6441,17 @@
       "dependencyPaths": {
         "@maka/core/llm-connections": 1,
         "@maka/core/provider-registry": 1
+      }
+    },
+    "src/renderer/lib/ported/submission-feedback.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../locales/shell-copy.js": 1
       }
     },
     "src/renderer/lib/ported/task-readiness-notice.ts": {

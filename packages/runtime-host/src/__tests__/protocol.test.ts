@@ -60,8 +60,6 @@ import {
   TURN_MESSAGE_QUOTE_TEXT_MAX_LENGTH,
   TURN_FAILURE_MESSAGE_MAX_BYTES,
   decodeMessageContent,
-  TURN_SKILL_ID_MAX_COUNT,
-  TURN_SKILL_ID_MAX_LENGTH,
 } from '../protocol/turn.js';
 
 describe('Runtime Host bootstrap protocol', () => {
@@ -134,10 +132,10 @@ describe('Runtime Host bootstrap protocol', () => {
     assert.ok(RUNTIME_HOST_COMPATIBILITY_EPOCH > 22);
   });
 
-  test('publishes a new compatibility epoch for mandatory submit Skill outcomes', () => {
-    // Submit Skill outcomes and explicit OAuth Connection targets independently
-    // claimed epoch 78, so their merge requires a distinct compatibility boundary.
-    assert.ok(RUNTIME_HOST_COMPATIBILITY_EPOCH > 78);
+  test('publishes a new compatibility epoch for skill tokens sent as plain text', () => {
+    // Epoch 161 still sent `skillIds` and expected `skillInvocation` results;
+    // a new Host rejects the one and never sends the other.
+    assert.ok(RUNTIME_HOST_COMPATIBILITY_EPOCH > 161);
   });
 
   test('publishes a new compatibility epoch for Read image Session context refs', () => {
@@ -1714,72 +1712,30 @@ describe('Runtime Host bootstrap protocol', () => {
     assert.throws(() => decodeHostFrame({ ...response, operation: 'turn.query' }), isInvalidFrame);
   });
 
-  test('accepts bounded explicit Skill identities on turn.start', () => {
-    const start = (skillIds: unknown, text = '') =>
+  test('turn.start carries a skill token as text and answers only started', () => {
+    const start = (input: Record<string, unknown>) =>
       decodeClientFrame({
         requestId: 'skill-start',
         operation: 'turn.start',
-        input: {
-          sessionId: 'session-1',
-          turnId: 'turn-skill-1',
-          content: { text },
-          skillIds,
-        },
+        input: { sessionId: 'session-1', turnId: 'turn-skill-1', ...input },
       });
-    assert.deepEqual(start(['writer', 'project:maka:reviewer']), {
+    assert.deepEqual(start({ content: { text: '/writer draft this' } }), {
       requestId: 'skill-start',
       operation: 'turn.start',
       input: {
         sessionId: 'session-1',
         turnId: 'turn-skill-1',
-        content: { text: '' },
-        skillIds: ['writer', 'project:maka:reviewer'],
+        content: { text: '/writer draft this' },
       },
     });
-    assert.doesNotThrow(() =>
-      start(Array.from({ length: TURN_SKILL_ID_MAX_COUNT }, (_, index) => `skill-${index}`)),
+    // A skill travels as its `/<name>` in the text and nowhere else: a
+    // `skillIds` field is an unknown key, and empty text is never enough.
+    assert.throws(
+      () => start({ content: { text: '/writer' }, skillIds: ['writer'] }),
+      isInvalidFrame,
     );
-    for (const skillIds of [
-      Array.from({ length: TURN_SKILL_ID_MAX_COUNT + 1 }, (_, index) => `skill-${index}`),
-      ['bad/id'],
-      ['bad id'],
-      ['x'.repeat(TURN_SKILL_ID_MAX_LENGTH + 1)],
-      [1],
-    ]) {
-      assert.throws(() => start(skillIds), isInvalidFrame);
-    }
-    assert.deepEqual(start(undefined, 'plain'), {
-      requestId: 'skill-start',
-      operation: 'turn.start',
-      input: {
-        sessionId: 'session-1',
-        turnId: 'turn-skill-1',
-        content: { text: 'plain' },
-      },
-    });
-    assert.deepEqual(start([], 'plain'), {
-      requestId: 'skill-start',
-      operation: 'turn.start',
-      input: {
-        sessionId: 'session-1',
-        turnId: 'turn-skill-1',
-        content: { text: 'plain' },
-      },
-    });
-  });
+    assert.throws(() => start({ content: { text: '' } }), isInvalidFrame);
 
-  test('bounds turn.start feedback as one transport-safe result', () => {
-    const receipt = {
-      invocation: 'explicit' as const,
-      request: 'writer',
-      success: true as const,
-      ref: 'workspace:legacy:writer',
-      id: 'writer',
-      name: 'Writer',
-      scope: 'workspace' as const,
-      source: 'legacy' as const,
-      truncated: false,
-    };
     const response = {
       requestId: 'skill-start-response',
       operation: 'turn.start' as const,
@@ -1792,37 +1748,16 @@ describe('Runtime Host bootstrap protocol', () => {
           runId: 'run-skill-1',
           status: 'running' as const,
         },
-        skillInvocation: {
-          loaded: [{ id: receipt.id, name: receipt.name }],
-          failed: [],
-          receipts: [receipt],
-        },
       },
     };
     assert.deepEqual(decodeHostFrame(response), response);
-    assert.ok(encodeProtocolMessage(response).byteLength < RUNTIME_HOST_MAX_MESSAGE_BYTES);
-
-    const request = 'r'.repeat(TURN_SKILL_ID_MAX_LENGTH);
-    const id = 'i'.repeat(81);
-    const name = '"'.repeat(256);
-    const oversized = {
-      ...response,
-      result: {
-        ...response.result,
-        skillInvocation: {
-          loaded: Array.from({ length: TURN_SKILL_ID_MAX_COUNT }, () => ({ id, name })),
-          failed: [],
-          receipts: Array.from({ length: TURN_SKILL_ID_MAX_COUNT }, () => ({
-            ...receipt,
-            request,
-            ref: `workspace:legacy:${id}`,
-            id,
-            name,
-          })),
-        },
-      },
-    };
-    assert.throws(() => decodeHostFrame(oversized), isInvalidFrame);
+    const skillInvocation = { loaded: [], failed: [], receipts: [] };
+    for (const result of [
+      { ...response.result, skillInvocation },
+      { kind: 'blocked', skillInvocation },
+    ]) {
+      assert.throws(() => decodeHostFrame({ ...response, result }), isInvalidFrame);
+    }
   });
 
   test('decodes a closed regenerate identity without accepting replacement content', () => {
@@ -2066,21 +2001,12 @@ describe('Runtime Host bootstrap protocol', () => {
   });
 
   test('decodes exact submit dispositions and bounded retract and interrupt results', () => {
-    const skillInvocation = { loaded: [], failed: [], receipts: [] };
     for (const result of [
-      { disposition: 'steering', queueRevision: 2, skillInvocation },
-      { disposition: 'followup', queueRevision: 3, skillInvocation },
-      { disposition: 'steering', skillInvocation },
-      { disposition: 'followup', skillInvocation },
-      { disposition: 'turn_started', turnId: 'turn-2', skillInvocation },
-      {
-        disposition: 'blocked',
-        skillInvocation: {
-          loaded: [],
-          failed: [{ request: 'missing', reason: 'not_found' }],
-          receipts: [],
-        },
-      },
+      { disposition: 'steering', queueRevision: 2 },
+      { disposition: 'followup', queueRevision: 3 },
+      { disposition: 'steering' },
+      { disposition: 'followup' },
+      { disposition: 'turn_started', turnId: 'turn-2' },
     ]) {
       assert.doesNotThrow(() =>
         decodeHostFrame({
@@ -2091,11 +2017,21 @@ describe('Runtime Host bootstrap protocol', () => {
         }),
       );
     }
+    // A Skill outcome is no longer part of any submit answer.
+    const skillInvocation = { loaded: [], failed: [], receipts: [] };
     for (const result of [
-      { disposition: 'steering', queueRevision: 2 },
-      { disposition: 'followup', queueRevision: 3 },
-      { disposition: 'turn_started', turnId: 'turn-2' },
+      { disposition: 'steering', queueRevision: 2, skillInvocation },
+      { disposition: 'followup', skillInvocation },
+      { disposition: 'turn_started', turnId: 'turn-2', skillInvocation },
       { disposition: 'blocked' },
+      {
+        disposition: 'blocked',
+        skillInvocation: {
+          loaded: [],
+          failed: [{ request: 'missing', reason: 'not_found' }],
+          receipts: [],
+        },
+      },
     ]) {
       assert.throws(
         () =>
@@ -2118,27 +2054,10 @@ describe('Runtime Host bootstrap protocol', () => {
             disposition: 'turn_started',
             turnId: 'turn-2',
             queueRevision: 4,
-            skillInvocation,
           },
         }),
       isInvalidFrame,
     );
-    for (const skillInvocation of [
-      { loaded: 'invalid', failed: [], receipts: [] },
-      { loaded: [{ id: 'writer', name: 'Writer' }], failed: [], receipts: [] },
-      { loaded: [], failed: [], receipts: [] },
-    ]) {
-      assert.throws(
-        () =>
-          decodeHostFrame({
-            requestId: 'submit-response',
-            operation: 'turn.message.submit',
-            ok: true,
-            result: { disposition: 'blocked', skillInvocation },
-          }),
-        isInvalidFrame,
-      );
-    }
     for (const [operation, requestId] of [
       ['queue.entry.retract', 'entry-retract-response'],
       ['queue.entry.promote', 'entry-promote-response'],

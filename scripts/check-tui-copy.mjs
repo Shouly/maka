@@ -169,7 +169,7 @@ export const ALLOWED_VISIBLE_LITERALS = {
     'expanded',
     'unchanged',
   ],
-  'packages/cli/src/pi-tui-pickers.ts': ['/skill:${…}', '/skill:${…}', 'Auto', 'Full access'],
+  'packages/cli/src/pi-tui-pickers.ts': ['Auto', 'Full access'],
   'packages/cli/src/runtime-host-tui-command.ts': ['Maka', 'Maka — ${…}', 'Maka'],
 };
 

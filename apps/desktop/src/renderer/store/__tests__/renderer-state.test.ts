@@ -1144,7 +1144,6 @@ test('a catalog answer about the turn releases a claim that outlived its IPC', a
     ok: false,
     reason: 'outcome_unknown',
     messageId: 'intent',
-    skillInvocation: { loaded: [], failed: [], receipts: [] },
   });
   await pending;
   await again;
@@ -1172,7 +1171,6 @@ test('send retains outcome_unknown and never retries the admission automatically
           ok: false,
           reason: 'outcome_unknown',
           messageId: 'intent',
-          skillInvocation: { loaded: [], failed: [], receipts: [] },
         };
       },
     },
@@ -1197,7 +1195,6 @@ test('send issues the follow-tail command and lets its IPC leave before the send
           ok: false,
           reason: 'outcome_unknown',
           messageId: 'intent',
-          skillInvocation: { loaded: [], failed: [], receipts: [] },
         };
       },
       async submitMessage() {
@@ -1244,7 +1241,6 @@ test('stop remains available while send is awaiting admission and commands retai
     ok: false,
     reason: 'outcome_unknown',
     messageId: 'intent',
-    skillInvocation: { loaded: [], failed: [], receipts: [] },
   });
   await pending;
   assert.deepEqual(store.getState().pending.a, []);

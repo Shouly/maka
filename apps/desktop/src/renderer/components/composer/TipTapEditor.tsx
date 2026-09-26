@@ -41,7 +41,7 @@ import { EditorContent, useEditor } from '@tiptap/react';
 import { Node, mergeAttributes, type JSONContent, type Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
-import { getConversationCopy, useUiLocale, mentionQueryMatches, skillMentionQuery } from '@maka/ui';
+import { getConversationCopy, useUiLocale, mentionQueryMatches } from '@maka/ui';
 import { desktopSlashCommandAvailability } from '../../lib/ported/desktop-slash-command.js';
 import { searchWorkspaceFiles } from '../../bridge/workspace.js';
 import {
@@ -58,7 +58,9 @@ import { getComposerCopy } from '../../locales/composer-copy.js';
 
 /**
  * The inline atom for a file or skill reference. `value` is what the wire
- * text carries (relative path, skill id); `label` is what the user sees.
+ * text carries after its `@` or `/`: a relative path, or a skill id — the
+ * token as written, when the atom was drawn back from recalled text. `label`
+ * is what the user sees.
  */
 const Reference = Node.create({
   name: 'composerReference',
@@ -86,7 +88,7 @@ const Reference = Node.create({
     ];
   },
   renderText({ node }) {
-    return node.attrs.kind === 'file' ? `@${node.attrs.value}` : `/skill:${node.attrs.label}`;
+    return node.attrs.kind === 'file' ? `@${node.attrs.value}` : `/${node.attrs.value}`;
   },
 });
 
@@ -109,6 +111,8 @@ interface SuggestionQuery {
 
 const SEARCH_DEBOUNCE_MS = 100;
 const SUGGESTION_LIMIT = 20;
+// What an atom reads as when the editor text is scanned for a `@`/`/` query.
+const ATOM_PLACEHOLDER = '\u{FFFC}';
 
 export function TipTapEditor(props: {
   scopeKey: string;
@@ -151,7 +155,14 @@ export function TipTapEditor(props: {
       setQuery(undefined);
       return;
     }
-    const prefix = selection.$from.parent.textBetween(0, selection.$from.parentOffset, '', ' ');
+    // An atom reads as a non-space placeholder here, so a `/` typed right
+    // after a chip is not a token of its own: it is glued to the chip.
+    const prefix = selection.$from.parent.textBetween(
+      0,
+      selection.$from.parentOffset,
+      '',
+      ATOM_PLACEHOLDER,
+    );
     const match = /(?:^|\s)([@/])([^\s]*)$/.exec(prefix);
     if (!match) {
       setQuery(undefined);
@@ -164,7 +175,7 @@ export function TipTapEditor(props: {
       text,
       from,
       to: selection.from,
-      atStart: editor.state.doc.textBetween(0, from, '\n', ' ').trim() === '',
+      atStart: editor.state.doc.textBetween(0, from, '\n', ATOM_PLACEHOLDER).trim() === '',
     });
   };
 
@@ -327,19 +338,22 @@ export function TipTapEditor(props: {
           : [];
       // A Skill already in the draft is not offered again (upstream #5249).
       // The chips are atoms here, so the set comes from the document rather
-      // than from the `/skill:x` text upstream's `selectedSkillIds` scans.
+      // than from the `/<name>` text upstream's `selectedSkillIds` scans. A
+      // chip drawn back from text keeps the token as written, which can be
+      // the skill's name, so either one marks the skill as taken.
       const selectedSkills = new Set<string>();
       editor?.state.doc.descendants((node) => {
         if (node.type.name === 'composerReference' && node.attrs.kind === 'skill')
           selectedSkills.add(String(node.attrs.value).toLowerCase());
       });
       const matches: Suggestion[] = skills
-        .filter((skill) => !selectedSkills.has(skill.id.toLowerCase()))
+        .filter(
+          (skill) =>
+            !selectedSkills.has(skill.id.toLowerCase()) &&
+            !selectedSkills.has(skill.name.toLowerCase()),
+        )
         .filter((skill) =>
-          mentionQueryMatches(
-            skillMentionQuery(query.text),
-            `${skill.name} ${skill.description ?? ''}`,
-          ),
+          mentionQueryMatches(query.text, `${skill.id} ${skill.name} ${skill.description ?? ''}`),
         )
         .slice(0, SUGGESTION_LIMIT)
         .map((skill) => ({
@@ -430,9 +444,12 @@ export function TipTapEditor(props: {
         return true;
       }
       if (event.key === ' ' && query.kind === '/') {
+        // The wire token is the id, so typing the id selects as the name does.
+        const typed = query.text.toLowerCase();
         const exact = items.find(
           (item) =>
-            item.kind !== 'command' && item.label.toLowerCase() === query.text.toLowerCase(),
+            item.kind !== 'command' &&
+            (item.value.toLowerCase() === typed || item.label.toLowerCase() === typed),
         );
         if (exact) {
           event.preventDefault();

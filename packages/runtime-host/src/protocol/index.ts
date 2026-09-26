@@ -121,7 +121,14 @@ export const RUNTIME_HOST_PROTOCOL_VERSION = 0 as const;
 // 161: `client.capability.call` carries its tool call id verbatim (a nested
 // Code Mode id, a provider's `functions.x:0`). An old client rejects it as an
 // invalid frame and drops the connection.
-export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 161 as const;
+// 162: a sent `/<name>` is not resolved at admission any more. `turn.start`
+// and `turn.message.submit` lose `skillIds` and every `skillInvocation`
+// result, and neither answers `blocked`; the text reaches the model as
+// written and the model loads the skill with the Skill tool. A Session Turn
+// access request's admission loses `blocked` for the same reason. An old
+// client sends keys a new Host rejects, and expects results a new Host no
+// longer sends.
+export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 162 as const;
 // 155: A tool call is on the wire while the model is still writing it.
 // `subscription.session_event` carries `tool_input_start` and
 // `tool_input_delta`, which a Client that does not know them decodes as an

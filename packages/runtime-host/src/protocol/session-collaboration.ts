@@ -123,7 +123,7 @@ export type SessionTurnAccessRequestState =
       readonly kind: 'approved';
       readonly decidedAt: string;
       readonly decidedBy: string;
-      readonly admission: 'pending' | 'started' | 'blocked' | 'failed';
+      readonly admission: 'pending' | 'started' | 'failed';
     };
 
 export interface SessionTurnStartRequestIntent {
@@ -685,7 +685,6 @@ function decodeSessionTurnAccessRequestState(value: unknown): SessionTurnAccessR
   if (
     candidate.admission !== 'pending' &&
     candidate.admission !== 'started' &&
-    candidate.admission !== 'blocked' &&
     candidate.admission !== 'failed'
   ) {
     throw invalidProtocolFrame('Invalid Session Turn access request admission');

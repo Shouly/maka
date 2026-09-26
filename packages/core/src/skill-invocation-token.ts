@@ -18,21 +18,22 @@
  */
 
 /**
- * The `/skill:<name>` invocation grammar (issue #1148) — one string, because
- * every client that reads or writes a draft has to agree on where a token
- * starts and ends: the TUI's highlighter and autocomplete, the Desktop
- * composer's chips, and Runtime's submit-time parser and stripper.
+ * The `/<name>` skill grammar — one string, because every client that reads
+ * or writes a draft has to agree on where a token starts and ends: the TUI's
+ * highlighter and autocomplete, the Desktop composer's chips, and the Host
+ * that turns a sent token into an inline reference for the transcript.
  *
- * It lives in core rather than in Runtime because the Desktop composer needs
- * it to render a draft, long before anything is sent, and the renderer has no
- * business depending on Runtime for that.
+ * A token is only syntax. Whether `/<name>` names a skill is decided against
+ * the invocable skills — `/tmp` is a path, not a skill, unless a skill is
+ * called `tmp` — and a built-in command with the same name wins. Nothing is
+ * loaded when a message is sent: the text reaches the model as written, and
+ * the model, reading `/<name>`, loads the skill with the Skill tool.
  *
- * A token is valid at the start of the text or after whitespace, so paths and
- * URLs (`a/skill:b`, `https://x/skill:y`) never produce false positives.
- * `<name>` uses the skill id charset; resolution downstream matches by id
- * first, then by display name.
+ * A token starts the text or follows whitespace and ends at whitespace or the
+ * end of the text, so paths and URLs (`/usr/bin`, `a/b`, `https://x/y`) never
+ * produce one. `<name>` uses the skill id charset.
  *
  * Always construct a fresh `RegExp` from this source at the point of use: a
  * shared instance with the `g` flag carries `lastIndex` between calls.
  */
-export const SKILL_INVOCATION_TOKEN_SOURCE = String.raw`(?:^|(?<=\s))\/skill:([A-Za-z0-9._-]+)`;
+export const SKILL_INVOCATION_TOKEN_SOURCE = String.raw`(?:^|(?<=\s))\/([A-Za-z0-9._-]+)(?=\s|$)`;

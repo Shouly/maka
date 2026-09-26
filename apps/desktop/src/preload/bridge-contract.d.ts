@@ -1082,7 +1082,6 @@ export interface MakaBridge {
         turnId: string;
         text: string;
         displayText?: string;
-        skillIds?: string[];
         attachmentItems?: RendererIngestInput[];
         retainedAttachments?: import('@maka/core/events').AttachmentRef[];
         turnOrchestration?: TurnOrchestration;
@@ -1105,7 +1104,6 @@ export interface MakaBridge {
           messageId?: never;
           attachments: import('@maka/core/events').AttachmentRef[];
           inlineReferences: import('@maka/core/events').InlineReference[];
-          skillInvocation: import('@maka/runtime/skill-invocation').SkillInvocationResult;
         }
       | {
           ok: true;
@@ -1119,12 +1117,6 @@ export interface MakaBridge {
           messageId: string;
           attachments: import('@maka/core/events').AttachmentRef[];
           inlineReferences: import('@maka/core/events').InlineReference[];
-          skillInvocation: import('@maka/runtime/skill-invocation').SkillInvocationResult;
-        }
-      | {
-          ok: false;
-          reason: 'skill_invocation_failed';
-          skillInvocation: import('@maka/runtime/skill-invocation').SkillInvocationResult;
         }
       | {
           ok: false;
@@ -1135,7 +1127,6 @@ export interface MakaBridge {
           ok: false;
           reason: 'outcome_unknown';
           messageId: string;
-          skillInvocation: import('@maka/runtime/skill-invocation').SkillInvocationResult;
         }
     >;
     stop(
@@ -1147,9 +1138,9 @@ export interface MakaBridge {
       },
     ): Promise<DesktopSessionStopResult>;
     /**
-     * The single Message admission path. Skill and orchestration intent travel
-     * with the Message; Runtime Host decides whether it opens its own Turn,
-     * steers the running one, or fails closed.
+     * The single Message admission path. Orchestration intent travels with the
+     * Message; Runtime Host decides whether it opens its own Turn, steers the
+     * running one, or fails closed. A `/<name>` skill token is text.
      */
     submitMessage(
       sessionId: string,
@@ -1158,7 +1149,6 @@ export interface MakaBridge {
         messageId: string;
         text: string;
         displayText?: string;
-        skillIds?: string[];
         turnOrchestration?: TurnOrchestration;
         attachmentItems?: RendererIngestInput[];
         retainedAttachments?: import('@maka/core/events').AttachmentRef[];
@@ -1177,12 +1167,6 @@ export interface MakaBridge {
           turnId?: string;
           attachments: import('@maka/core/events').AttachmentRef[];
           inlineReferences: import('@maka/core/events').InlineReference[];
-          skillInvocation: import('@maka/runtime/skill-invocation').SkillInvocationResult;
-        }
-      | {
-          ok: false;
-          reason: 'skill_invocation_failed';
-          skillInvocation: import('@maka/runtime/skill-invocation').SkillInvocationResult;
         }
       | {
           ok: false;

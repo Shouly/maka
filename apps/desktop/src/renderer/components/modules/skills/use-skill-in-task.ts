@@ -23,13 +23,14 @@
 // Upstream seeded the composer with the SENTENCE "Use the X skill: " and let
 // the user finish it. This renderer has the atom the sentence was standing in
 // for — `composerReference` with `kind: 'skill'`, the same node
-// `ChatInput.insertSkill` writes — so the draft carries the Skill ID that
-// actually runs rather than prose that merely mentions its name.
+// `ChatInput.insertSkill` writes — so the draft sends the skill's `/<id>`,
+// which the model reads as a request to invoke it, rather than prose that
+// merely mentions its name.
 //
 // Two rules survive from upstream, and both matter:
 //
 //   - it APPENDS. A half-written welcome draft is not the page's to discard,
-//     and `insertSkill` appends at the caret for the same reason.
+//     and `insertSkill` appends at the end of the draft for the same reason.
 //   - it never sends. The user finishes the sentence and presses Enter; a
 //     page action that started a turn would be a different, much louder
 //     feature than the one the row's menu advertises.

@@ -323,8 +323,8 @@ describe('projectRuntimeEventsToStoredMessages', () => {
   });
 
   test('projects user displayText from RuntimeEvent text content', () => {
-    const typed = '/skill:alpha 帮我整理';
-    const envelope = 'The user explicitly invoked…\n\n<user-message>\n帮我整理\n</user-message>';
+    const typed = '/alpha 帮我整理';
+    const envelope = '帮我整理\n\n(what the model was sent, expanded from what was typed)';
     const out = projectRuntimeEventsToStoredMessages(
       [
         ev({

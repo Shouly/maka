@@ -19,7 +19,7 @@
 
 import type { DatabaseSync } from 'node:sqlite';
 
-export const SQLITE_SESSION_METADATA_SCHEMA_VERSION = 39;
+export const SQLITE_SESSION_METADATA_SCHEMA_VERSION = 40;
 export const SQLITE_SESSION_MESSAGE_CHUNK_BYTES = 64 * 1024;
 export const SQLITE_SESSION_MESSAGE_CHUNK_MARKER = '{"$maka":"session-message-chunks-v1"}';
 
@@ -46,6 +46,16 @@ const MIGRATIONS: ReadonlyMap<number, string> = new Map([
       source_sequence INTEGER NOT NULL CHECK (source_sequence >= 0),
       UNIQUE (source, source_sequence)
     );
+  `,
+  ],
+  [
+    40,
+    `
+    -- A sent /<name> is not resolved at admission any more: the text reaches
+    -- the model as written, so an admission has no Skill outcome to keep.
+    -- Rows written before this carry a submitted intent with skill ids, which
+    -- the strict decoder rejects: old stores are not carried forward.
+    ALTER TABLE message_admissions DROP COLUMN skill_invocation_json;
   `,
   ],
   [
@@ -1336,15 +1346,16 @@ export function migrateSqliteSessionMetadataDatabase(
     ) {
       const sql = MIGRATIONS.get(version);
       if (!sql) throw new Error(`Missing SQLite session metadata migration ${version}`);
-      // Versions 32, 35, and 37 each add one column, and the post-merge convergence
-      // path can replay them onto a database that already carries the current
-      // table shape. SQLite has no `ADD COLUMN IF NOT EXISTS`, so the guards
-      // live here.
-      const columnAlreadyPresent =
+      // Versions 32, 35, and 37 each add one column and 40 drops one, and the
+      // post-merge convergence path can replay them onto a database that already
+      // carries the current table shape. SQLite has no `ADD COLUMN IF NOT
+      // EXISTS` or `DROP COLUMN IF EXISTS`, so the guards live here.
+      const alreadyApplied =
         (version === 32 && hasColumn(db, 'message_admissions', 'submitted_intent_json')) ||
         (version === 35 && hasColumn(db, 'message_admissions', 'skill_invocation_json')) ||
+        (version === 40 && !hasColumn(db, 'message_admissions', 'skill_invocation_json')) ||
         (version === 37 && hasColumn(db, 'cancelled_message_admissions', 'cancellation_claim_id'));
-      if (!columnAlreadyPresent) {
+      if (!alreadyApplied) {
         db.exec(sql);
       }
       if (version === 29 && hasColumn(db, 'session_metadata', 'last_used_at')) {

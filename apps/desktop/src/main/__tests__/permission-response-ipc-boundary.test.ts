@@ -209,7 +209,6 @@ describe('permission response IPC boundary', () => {
         turnId: 'turn-1',
         text: 'review @packages/ui/src/chat turn.tsx',
         displayText: 'review @packages/ui/src/chat turn.tsx',
-        skillIds: ['weekly-report', 'project:maka:writer'],
         attachmentItems: [{ approvalId: 'a', name: 'n' }],
         retainedAttachments: [
           {
@@ -235,11 +234,6 @@ describe('permission response IPC boundary', () => {
       },
     );
     assert.equal(normalizeSessionSendCommand({ type: 'stop' }), undefined);
-    assert.deepEqual(normalizeSessionSendCommand({ type: 'send', text: '', skillIds: ['writer'] }), {
-      type: 'send',
-      text: '',
-      skillIds: ['writer'],
-    });
   });
 
   it('rejects malformed or oversized send payloads', () => {
@@ -258,7 +252,6 @@ describe('permission response IPC boundary', () => {
       // base64 bytes before IPC, and main resolves only the encoded shapes.
       { type: 'send', text: 'hello', attachmentItems: [{ file: {} }] },
       { type: 'send', text: 'hello', turnId: 1 },
-      { type: 'send', text: 'hello', skillIds: ['/bad'] },
       { type: 'send', text: 'hello', turnOrchestration: { mode: 'swarm', source: 'prompt' } },
       { type: 'send', text: 'hello', quotes: {} },
       { type: 'send', text: 'hello', quotes: Array(17).fill({ text: 'x' }) },
@@ -286,13 +279,18 @@ describe('permission response IPC boundary', () => {
     }
   });
 
-  it('rejects empty send text without skills', () => {
+  it('rejects empty send text', () => {
     assert.throws(
       () => normalizeSessionSendCommand({ type: 'send', text: '' }),
       /Invalid send text/,
     );
     assert.throws(
       () => normalizeSessionSendCommand({ type: 'send', text: '   ' }),
+      /Invalid send text/,
+    );
+    // Skill ids are not a send field: a send that carries only them is empty.
+    assert.throws(
+      () => normalizeSessionSendCommand({ type: 'send', text: '', skillIds: ['writer'] }),
       /Invalid send text/,
     );
   });

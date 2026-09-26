@@ -24,24 +24,17 @@ import {
   type TurnOrchestration,
 } from '@maka/core/orchestration';
 
-// Mirrors the protocol's submit bounds. Storage sits below the protocol, so the
-// durable side re-states them rather than importing them.
-const SKILL_ID_MAX_COUNT = 50;
-const SKILL_ID_MAX_LENGTH = 512;
-const SKILL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*(?::[A-Za-z0-9][A-Za-z0-9._-]*)*$/;
-
 /**
- * What a submit asked of its Turn beyond the words: the exact Skills to load
- * and the orchestration to run under. Content and placement describe neither,
- * so this is the rest of what makes a submit the same submit.
+ * What a submit asked of its Turn beyond the words: the orchestration to run
+ * under. Content and placement do not describe it, so this is the rest of
+ * what makes a submit the same submit.
  *
  * It is one value and every durable record keeps it whole. A record that kept
- * only a part — or only a digest it could not rebuild — could not answer a
- * retry that arrives after the Host recovered the Message from that record.
+ * only a digest it could not rebuild could not answer a retry that arrives
+ * after the Host recovered the Message from that record.
  */
 export interface SubmittedTurnIntent {
-  readonly skillIds: readonly string[];
-  readonly turnOrchestration?: TurnOrchestration;
+  readonly turnOrchestration: TurnOrchestration;
 }
 
 /**
@@ -52,60 +45,37 @@ export function normalizeSubmittedTurnIntent(value: unknown): SubmittedTurnInten
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new Error('Invalid submitted Turn intent');
   }
-  const record = value as Record<string, unknown>;
-  for (const key of Object.keys(record)) {
-    if (key !== 'skillIds' && key !== 'turnOrchestration') {
-      throw new Error('Invalid submitted Turn intent');
-    }
+  // An intent that asks for nothing is not an intent: a submit without an
+  // orchestration override records no intent at all, so `{}` is not a second
+  // spelling of that. Every key is exact, so a record from an older shape (one
+  // that carried skill ids) is refused rather than read as something else.
+  if (!hasExactKeys(value, ['turnOrchestration'])) {
+    throw new Error('Invalid submitted Turn intent');
   }
-  const { skillIds, turnOrchestration } = record;
+  const { turnOrchestration } = value as { turnOrchestration: unknown };
   if (
-    !Array.isArray(skillIds) ||
-    skillIds.length > SKILL_ID_MAX_COUNT ||
-    skillIds.some(
-      (id) =>
-        typeof id !== 'string' ||
-        id.length === 0 ||
-        id.length > SKILL_ID_MAX_LENGTH ||
-        !SKILL_ID_PATTERN.test(id),
-    )
+    typeof turnOrchestration !== 'object' ||
+    turnOrchestration === null ||
+    Array.isArray(turnOrchestration) ||
+    !hasExactKeys(turnOrchestration, ['mode', 'source']) ||
+    !isOrchestrationMode((turnOrchestration as TurnOrchestration).mode) ||
+    !isTurnOrchestrationSource((turnOrchestration as TurnOrchestration).source)
   ) {
-    throw new Error('Invalid submitted Turn intent Skill ids');
+    throw new Error('Invalid submitted Turn intent orchestration');
   }
-  let orchestration: TurnOrchestration | undefined;
-  if (turnOrchestration !== undefined) {
-    if (
-      typeof turnOrchestration !== 'object' ||
-      turnOrchestration === null ||
-      !isOrchestrationMode((turnOrchestration as TurnOrchestration).mode) ||
-      !isTurnOrchestrationSource((turnOrchestration as TurnOrchestration).source)
-    ) {
-      throw new Error('Invalid submitted Turn intent orchestration');
-    }
-    const { mode, source } = turnOrchestration as TurnOrchestration;
-    orchestration = Object.freeze({ mode, source });
-  }
-  // An intent that asks for nothing is not an intent: the absent value already
-  // says that, and admitting a second spelling of it would make two records
-  // that mean the same thing compare unequal.
-  if (skillIds.length === 0 && orchestration === undefined) {
-    throw new Error('Invalid submitted Turn intent: it asks for nothing');
-  }
-  return Object.freeze({
-    skillIds: Object.freeze([...(skillIds as readonly string[])]),
-    ...(orchestration ? { turnOrchestration: orchestration } : {}),
-  });
+  const { mode, source } = turnOrchestration as TurnOrchestration;
+  return Object.freeze({ turnOrchestration: Object.freeze({ mode, source }) });
 }
 
-/** Skill order is part of the request, so it is compared in order. */
+function hasExactKeys(value: object, keys: readonly string[]): boolean {
+  const actual = Object.keys(value);
+  return actual.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+
 export function submittedTurnIntentsEqual(
   left: SubmittedTurnIntent | undefined,
   right: SubmittedTurnIntent | undefined,
 ): boolean {
   if (left === undefined || right === undefined) return left === right;
-  return (
-    left.skillIds.length === right.skillIds.length &&
-    left.skillIds.every((id, index) => id === right.skillIds[index]) &&
-    isDeepStrictEqual(left.turnOrchestration, right.turnOrchestration)
-  );
+  return isDeepStrictEqual(left.turnOrchestration, right.turnOrchestration);
 }

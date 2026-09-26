@@ -60,11 +60,13 @@ import { buildSendUserMessageTool } from '@maka/runtime/send-user-message-tool';
 import {
   buildHostCapabilitiesFromBinding,
   buildSkillAgentToolFromInventory,
-  buildSkillSearchAgentToolFromInventory,
+  buildSkillSearchAgentToolFromCatalog,
   buildSkillsPromptFragmentFromInventoryWithReport,
+  SkillReinvocationTracker,
   SkillShadowSelectionTracker,
   type SkillCatalogBudgetOptions,
   type SkillInventoryResolver,
+  type SkillSearchCatalogResolver,
 } from '@maka/runtime/skills';
 import { buildSessionTaskTools, type SessionTaskToolStore } from '@maka/runtime/session-task-tools';
 import { buildWorkspaceInstructionsPromptFragment } from '@maka/runtime/system-prompt/workspace-instructions';
@@ -175,6 +177,11 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
   );
   const inventoryFor: SkillInventoryResolver = async (context) =>
     (await inventorySnapshotFor(context)).inventory;
+  // SearchSkills also offers what the catalog could install here.
+  const searchCatalogFor: SkillSearchCatalogResolver = async (context) => {
+    const snapshot = await inventorySnapshotFor(context);
+    return { inventory: snapshot.inventory, installable: snapshot.installable };
+  };
   const hasToolCeiling = input.boundTools !== undefined || input.toolProfile !== undefined;
   const activeExecution = input.plan ? activePlanExecution(input.plan.state) : undefined;
   // The base Host binding is immutable for this backend. Only scoped plugin
@@ -184,6 +191,7 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
     : buildDefaultHostTools(
         input.sessionTask,
         inventoryFor,
+        searchCatalogFor,
         builtinTools,
         input.hostTools ?? [],
         input.scheduledTaskTools,
@@ -608,6 +616,7 @@ function assertUniqueToolNames(tools: readonly MakaTool[]): void {
 function buildDefaultHostTools(
   sessionTask: SessionTaskToolStore,
   inventoryFor: SkillInventoryResolver,
+  searchCatalogFor: SkillSearchCatalogResolver,
   builtinOptions?: BuildBuiltinToolsOptions,
   hostTools: readonly MakaTool[] = [],
   scheduledTaskTools?: readonly MakaTool[],
@@ -647,7 +656,7 @@ function buildDefaultHostTools(
     sendUserMessage.name,
     sandboxBoundary.name,
     TOOL_NAMES.skill,
-    TOOL_NAMES.skillSearch,
+    TOOL_NAMES.searchSkills,
     ...taskTools.map((tool) => tool.name),
     ...(scheduledTaskTools ?? []).map((tool) => tool.name),
     ...goalTools.map((tool) => tool.name),
@@ -657,6 +666,7 @@ function buildDefaultHostTools(
   ];
   const skillHost = buildHostCapabilitiesFromBinding(toolNames);
   const shadowTracker = new SkillShadowSelectionTracker();
+  const reinvocationTracker = new SkillReinvocationTracker();
   return [
     ...builtins,
     ...hostTools,
@@ -664,8 +674,11 @@ function buildDefaultHostTools(
     sendUserFile,
     sendUserMessage,
     sandboxBoundary,
-    buildSkillAgentToolFromInventory(inventoryFor, skillHost, { shadowTracker }),
-    buildSkillSearchAgentToolFromInventory(inventoryFor, skillHost, { shadowTracker }),
+    buildSkillAgentToolFromInventory(inventoryFor, skillHost, {
+      shadowTracker,
+      reinvocationTracker,
+    }),
+    buildSkillSearchAgentToolFromCatalog(searchCatalogFor, skillHost, { shadowTracker }),
     ...taskTools,
     ...(scheduledTaskTools ?? []),
     ...goalTools,

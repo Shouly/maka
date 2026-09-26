@@ -66,9 +66,10 @@ implicit provider lookup inside the skill scanner.
 
 When the budget omits entries, the prompt contains only a constant-size count,
 not an unbounded list of ids. Omission affects only catalog advertisement: an
-enabled, host-compatible omitted skill remains discoverable through the bounded
-metadata-only `SkillSearch` tool and loadable by exact ref, id, or name through
-the `Skill` tool. Skill instructions remain subject to their separate lazy-load
+enabled, host-compatible omitted skill remains discoverable through the deferred,
+metadata-only `SearchSkills` tool — which also reports disabled skills and the
+bundled or imported ones not installed, as `enabled: false` — and loadable by
+exact ref, id, or name through the `Skill` tool. Skill instructions remain subject to their separate lazy-load
 body limit.
 
 `selectSkillsForContext` returns a `SkillSelectionReport` alongside the selected
@@ -118,42 +119,34 @@ containment escape, or unreadable root produces a bounded
 Desktop inventory. It must not be collapsed into an indistinguishable empty
 catalog.
 
-## Explicit invocation contract
+## Naming a skill in a message
 
-New Desktop selections store and submit the stable `ref` returned by
-`listInvocableSkills`. The legacy `skillIds` wire-field name remains accepted
-and may contain either an exact ref or a legacy id; `/skill:<id>` remains
-supported for typed CLI/Desktop input. Send-time resolution is authoritative
-and deterministic: exact ref, then id, then name.
+A user names a skill as `/<name>` — the grammar is `SKILL_INVOCATION_TOKEN_SOURCE`
+in `@maka/core/skill-invocation-token`: a token starts the text or follows
+whitespace and ends at whitespace, so paths and URLs never form one. Desktop
+chips and TUI completion write `/<id>`, and Desktop keeps a chip one space
+apart from whatever touches it. A built-in command with the same name wins at
+the start of typed text: the TUI does not offer such a skill there, while a
+Desktop chip the user picked stays a skill.
 
-Desktop and CLI both use `prepareSkillInvocationMessage`:
+Nothing is resolved when the message is sent. The text reaches the model as
+written, and the model loads the skill with the `Skill` tool, whose description
+says a `/<name>` from the user is a request to invoke it — the one loading path,
+so the base directory, the re-invocation note and the archive exemption apply to
+every load. No message is refused over a skill. The Host only marks the tokens
+that name an enabled, non-shadowed skill (id first, then display name) as
+`skill` inline references, so the transcript draws them as chips; a
+token that names nothing — a path, a typo, a disabled skill — stays text, and a
+client-sent skill reference the Host does not confirm is dropped.
 
-- successful requests inject the bounded Skill body and remove invocation
-  markers before provider handoff;
-- partial failures keep the successful skills and report each failure;
-- if every explicit request fails, no provider turn is created;
-- if the combined structured and text inputs exceed 50 distinct requests,
-  preparation fails closed with one bounded `too_many_requests` diagnostic;
-  Runtime resolves no partial request set and creates no provider turn;
-- within the limit, each distinct request returns one bounded
-  `SkillInvocationReceipt` with
-  `invocation`, success/failure, exact ref/scope/source for successful loads,
-  truncation, and a failure reason. Receipts contain no user prompt, search
-  query, or Skill instructions.
-
-Model `Skill` tool loads use the same receipt projection for run-trace data with
+`Skill` tool loads produce a bounded receipt projected into run-trace data with
 `invocation: model_tool`; these projections are durable AgentRun trace events.
-Explicit client receipts use `invocation: explicit` and are intentionally
-client-local, ephemeral preparation diagnostics: they are returned to the
-submitting client, but are not restored with the session or correlated with a
-durable run. Failed trace projections retain only request length, not the
-requested text. This makes the outcome shapes comparable without creating a
-new content-collection channel or implying that pre-turn diagnostics are a
-durable audit trail.
+Failed trace projections retain only request length, not the requested text,
+and receipts contain no user prompt, search query, or Skill instructions.
 
-Prompt construction, `SkillSearch`, and `Skill` emit diagnostic run-trace
-events. Search telemetry stores counts and query length rather than raw query
-text. The shadow evaluator retains at most the top 20 refs for the current turn;
+Prompt construction, `SearchSkills`, and `Skill` emit diagnostic run-trace
+events. Search telemetry stores counts — keywords, results, matches and
+candidates — rather than the keywords themselves. The shadow evaluator retains at most the top 20 refs for the current turn;
 when a searched skill is subsequently loaded, the load event records its rank
 and Top-1/Top-5/Top-20 hit flags. This measures ranking quality without
 collecting skill instructions or user query content.
@@ -162,9 +155,8 @@ collecting skill instructions or user query content.
 
 This policy closes the local Skill governance work when Runtime, Desktop, and
 CLI contract tests cover duplicate/shadowed ids, invalid metadata, disabled and
-host-incompatible skills, prompt-budget omission, stable-ref explicit
-invocation, all-failed no-turn behavior, migration review, and discovery-source
-diagnostics.
+host-incompatible skills, prompt-budget omission, `/<name>` chips that name
+only a loadable skill, migration review, and discovery-source diagnostics.
 
 Remote marketplaces and automatic updates, self-modifying/evolving Skills, a
 full-screen TUI manager, embedding-based ranking, and analytics dashboards are

@@ -69,9 +69,9 @@ const DIRECT_TOOL_NAMES: ReadonlySet<string> = new Set([
   TOOL_NAMES.taskUpdate,
   TOOL_NAMES.taskList,
   TOOL_NAMES.taskGet,
-  // Existing carve-out pending the separate skill-discovery decision.
+  // Skill is loaded directly, as in the reference; SearchSkills is not listed
+  // here, so it waits behind ToolSearch the way the reference defers it.
   TOOL_NAMES.skill,
-  TOOL_NAMES.skillSearch,
   // Provider-routed equivalent of the direct Write/Edit surface.
   TOOL_NAMES.applyPatch,
   // Memory is read before the first reply and written on an explicit

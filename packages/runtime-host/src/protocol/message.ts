@@ -32,15 +32,12 @@ import { defineOperation } from './operation-spec.js';
 import {
   decodeMessageContent,
   decodeMessageAdmissionContent,
-  decodeSkillIds,
   decodeTurnOrchestration,
   decodeTurnSnapshot,
   type MessageContent,
   TURN_MESSAGE_TEXT_MAX_BYTES,
   type TurnSnapshot,
 } from './turn.js';
-import { decodeSkillInvocationResult } from '@maka/core/skill-invocation';
-import type { SkillInvocationResult } from '@maka/core/skill-invocation';
 import type { TurnOrchestration } from '@maka/core/runtime-inputs';
 
 export const MESSAGE_QUEUE_MAX_ENTRIES = 64;
@@ -86,9 +83,9 @@ export interface SessionMessageQueueProjection {
 }
 
 /**
- * The sole client admission input for a user Message. `skillIds` and
- * `turnOrchestration` carry exact-Turn intent: the Host, not the client,
- * decides that such a Message can only open its own Turn.
+ * The sole client admission input for a user Message. `turnOrchestration`
+ * carries exact-Turn intent: the Host, not the client, decides that such a
+ * Message can only open its own Turn.
  */
 export interface TurnMessageSubmitInput {
   readonly originHostEpoch: string;
@@ -96,21 +93,16 @@ export interface TurnMessageSubmitInput {
   readonly messageId: string;
   readonly content: MessageContent;
   readonly placement: MessagePlacement;
-  readonly skillIds?: readonly string[];
   readonly turnOrchestration?: TurnOrchestration;
 }
 
-export type TurnMessageSubmitResult = {
-  readonly skillInvocation: SkillInvocationResult;
-} & (
+export type TurnMessageSubmitResult =
   | {
       readonly disposition: 'steering' | 'followup';
       /** Absent when an older Host Epoch can prove admission but not its transient revision. */
       readonly queueRevision?: number;
     }
-  | { readonly disposition: 'turn_started'; readonly turnId: string }
-  | { readonly disposition: 'blocked' }
-);
+  | { readonly disposition: 'turn_started'; readonly turnId: string };
 
 export interface TurnMessageQueryInput {
   readonly sessionId: string;
@@ -316,26 +308,24 @@ function decodeTurnMessageSubmitInput(value: unknown): TurnMessageSubmitInput {
     value,
     'turn.message.submit input',
     ['originHostEpoch', 'sessionId', 'messageId', 'content', 'placement'],
-    ['skillIds', 'turnOrchestration'],
+    ['turnOrchestration'],
   );
-  const skillIds = decodeSkillIds(record.skillIds);
   const placement = requireMessagePlacement(record.placement);
   const turnOrchestration =
     record.turnOrchestration !== undefined
       ? decodeTurnOrchestration(record.turnOrchestration)
       : undefined;
-  // Exact-Turn intent has no queued form: a Skill or orchestration Message
-  // opens its own Turn or fails closed, so `next_turn` cannot describe it.
-  if ((skillIds.length > 0 || turnOrchestration !== undefined) && placement !== 'current_turn') {
+  // Exact-Turn intent has no queued form: an orchestration Message opens its
+  // own Turn or fails closed, so `next_turn` cannot describe it.
+  if (turnOrchestration !== undefined && placement !== 'current_turn') {
     throw invalidProtocolFrame('Invalid turn.message.submit placement for an exact Turn');
   }
   return {
     originHostEpoch: requireId(record.originHostEpoch, 'originHostEpoch'),
     sessionId: requireEntityId(record.sessionId, 'sessionId'),
     messageId: requireEntityId(record.messageId, 'messageId'),
-    content: decodeMessageAdmissionContent(record.content, skillIds.length > 0),
+    content: decodeMessageAdmissionContent(record.content),
     placement,
-    ...(skillIds.length > 0 ? { skillIds } : {}),
     ...(turnOrchestration !== undefined ? { turnOrchestration } : {}),
   };
 }
@@ -438,33 +428,14 @@ function decodeTurnMessageExecutionQueryResult(value: unknown): TurnMessageExecu
 function decodeTurnMessageSubmitResult(value: unknown): TurnMessageSubmitResult {
   const record = requireRecord(value, 'turn.message.submit result');
   if (record.disposition === 'turn_started') {
-    assertExactKeys(record, 'turn.message.submit turn_started result', [
-      'disposition',
-      'turnId',
-      'skillInvocation',
-    ]);
-    return {
-      disposition: 'turn_started',
-      turnId: requireEntityId(record.turnId, 'turnId'),
-      skillInvocation: decodeSubmitSkillInvocation(record.skillInvocation),
-    };
-  }
-  if (record.disposition === 'blocked') {
-    assertExactKeys(record, 'turn.message.submit blocked result', [
-      'disposition',
-      'skillInvocation',
-    ]);
-    const skillInvocation = decodeSubmitSkillInvocation(record.skillInvocation);
-    if (skillInvocation.loaded.length !== 0 || skillInvocation.failed.length === 0) {
-      throw invalidProtocolFrame('Invalid blocked turn.message.submit Skill invocation');
-    }
-    return { disposition: 'blocked', skillInvocation };
+    assertExactKeys(record, 'turn.message.submit turn_started result', ['disposition', 'turnId']);
+    return { disposition: 'turn_started', turnId: requireEntityId(record.turnId, 'turnId') };
   }
   if (record.disposition === 'steering' || record.disposition === 'followup') {
     const shaped = requireShapedRecord(
       record,
       'turn.message.submit queued result',
-      ['disposition', 'skillInvocation'],
+      ['disposition'],
       ['queueRevision'],
     );
     return {
@@ -472,18 +443,9 @@ function decodeTurnMessageSubmitResult(value: unknown): TurnMessageSubmitResult 
       ...(shaped.queueRevision !== undefined
         ? { queueRevision: requireCount(shaped.queueRevision, 'queueRevision') }
         : {}),
-      skillInvocation: decodeSubmitSkillInvocation(shaped.skillInvocation),
     };
   }
   throw invalidProtocolFrame('Invalid turn.message.submit disposition');
-}
-
-function decodeSubmitSkillInvocation(value: unknown): SkillInvocationResult {
-  try {
-    return decodeSkillInvocationResult(value);
-  } catch {
-    throw invalidProtocolFrame('Invalid turn.message.submit Skill invocation');
-  }
 }
 
 function decodeQueueRetractInput(value: unknown): QueueRetractInput {

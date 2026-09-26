@@ -40,11 +40,6 @@ const MESSAGE_VALUES = {
   hasDetail: true,
   bytes: 40_000,
   serverId: 'filesystem',
-  names: 'Alpha',
-  failures: '/skill:nope (not found)',
-  outcome: 'no model request was made.',
-  request: 'nope',
-  reason: 'not found',
   limit: 3,
   minimum: 1,
   maximum: 3,
@@ -128,22 +123,14 @@ describe('TUI copy resources', () => {
   test('localizes rewind and skill notices in both locales', () => {
     assert.equal(TUI_COPY_RESOURCES.rewind.en.noTargets, 'No turns to rewind to.');
     assert.equal(TUI_COPY_RESOURCES.rewind['zh-CN'].noTargets, '没有可回退的轮次。');
+    assert.equal(TUI_COPY_RESOURCES.skills.en.usage, 'Usage: /skill, or type /<name> in a message');
     assert.equal(
-      formatUiMessage(
-        TUI_COPY_RESOURCES.skills.en.failedItem,
-        { request: 'nope', reason: TUI_COPY_RESOURCES.skills.en.failureReasons.not_found },
-        'en',
-      ),
-      '/skill:nope (not found)',
+      TUI_COPY_RESOURCES.skills['zh-CN'].usage,
+      'Usage: /skill，或直接在消息中输入 /<name>',
     );
-    assert.equal(
-      formatUiMessage(
-        TUI_COPY_RESOURCES.skills['zh-CN'].failedItem,
-        { request: 'nope', reason: TUI_COPY_RESOURCES.skills['zh-CN'].failureReasons.not_found },
-        'zh-CN',
-      ),
-      '/skill:nope（未找到）',
-    );
+    for (const locale of UI_LOCALES) {
+      assert.doesNotMatch(TUI_COPY_RESOURCES.skills[locale].usage, /\/skill:/u, locale);
+    }
   });
 
   test('localizes current task list indicator and overlay copy', () => {

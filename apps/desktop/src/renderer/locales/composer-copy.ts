@@ -165,7 +165,6 @@ export interface ComposerCopy {
     readonly blockedReadiness: string;
     readonly failedTitle: string;
     readonly failedFallback: string;
-    readonly skillFailedTitle: string;
     readonly outcomeUnknownTitle: string;
     readonly outcomeUnknownDescription: string;
     readonly steeredTitle: string;
@@ -283,7 +282,6 @@ const COMPOSER_COPY = {
       blockedReadiness: '当前环境暂时无法接受新任务。',
       failedTitle: '消息发送失败',
       failedFallback: '未能发送这条消息。',
-      skillFailedTitle: '技能调用失败',
       outcomeUnknownTitle: '发送结果未知',
       outcomeUnknownDescription: '没有收到确认。消息可能已经送达，草稿已为你保留。',
       steeredTitle: '已作为补充说明送入当前回答',
@@ -399,7 +397,6 @@ const COMPOSER_COPY = {
       blockedReadiness: '目前環境暫時無法接受新任務。',
       failedTitle: '訊息傳送失敗',
       failedFallback: '未能傳送這條訊息。',
-      skillFailedTitle: '技能呼叫失敗',
       outcomeUnknownTitle: '傳送結果未知',
       outcomeUnknownDescription: '沒有收到確認。訊息可能已經送達，草稿已為你保留。',
       steeredTitle: '已作為補充說明送入目前回答',
@@ -520,7 +517,6 @@ const COMPOSER_COPY = {
       blockedReadiness: 'This environment cannot accept a new task right now.',
       failedTitle: 'The message could not be sent',
       failedFallback: 'The message was not sent.',
-      skillFailedTitle: 'A skill could not be invoked',
       outcomeUnknownTitle: 'The result is unknown',
       outcomeUnknownDescription:
         'No confirmation came back. The message may already have arrived; your draft has been kept.',

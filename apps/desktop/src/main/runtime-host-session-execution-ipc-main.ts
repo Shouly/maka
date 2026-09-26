@@ -128,8 +128,6 @@ type RuntimeHostSessionExecutionClient = Pick<
   | "updateSessionConfiguration"
 >;
 
-/** No Skill was named, so the Host resolved none. */
-const EMPTY_SKILL_INVOCATION = { loaded: [], failed: [], receipts: [] } as const;
 const DESKTOP_MESSAGE_QUERY_MAX_ENTRIES = 4_096;
 
 async function submitMessageWithReconnect(
@@ -430,19 +428,15 @@ export function registerRuntimeHostSessionExecutionIpc(
       });
       if (!attachmentResult.ok) return attachmentResult;
       const { attachments } = attachmentResult;
-      const displayText =
-        command.displayText ??
-        (command.text.trim().length > 0
-          ? command.text
-          : (command.skillIds ?? []).map((id) => `/skill:${id}`).join(" "));
+      const displayText = command.displayText ?? command.text;
       const inlineReferences = mergeWorkspaceFileInlineReferences({
         displayText,
         workspaceFileReferences: command.workspaceFileReferences,
       });
       // Runtime Host is the sole admission authority: one submit answers
       // whether the words opened a Turn or joined the running one, and the
-      // Desktop never routes on content — an explicit Skill or orchestration
-      // still fails closed on a busy Session, in the Host. The Message identity
+      // Desktop never routes on content — an orchestration still fails closed
+      // on a busy Session, in the Host. The Message identity
       // is the Turn id the caller reserved: one submit, one durable Message,
       // and a retry the Host recognizes as the same one.
       const messageId = turnId;
@@ -460,7 +454,6 @@ export function registerRuntimeHostSessionExecutionIpc(
           ...(command.quotes ? { quotes: command.quotes } : {}),
           inlineReferences,
         },
-        ...((command.skillIds?.length ?? 0) > 0 ? { skillIds: command.skillIds } : {}),
         ...(command.turnOrchestration
           ? { turnOrchestration: command.turnOrchestration }
           : {}),
@@ -470,14 +463,6 @@ export function registerRuntimeHostSessionExecutionIpc(
           ok: false as const,
           reason: 'outcome_unknown' as const,
           messageId,
-          skillInvocation: EMPTY_SKILL_INVOCATION,
-        };
-      }
-      if (submitted.disposition === "blocked") {
-        return {
-          ok: false as const,
-          reason: "skill_invocation_failed" as const,
-          skillInvocation: submitted.skillInvocation,
         };
       }
       if (submitted.disposition === "turn_started") {
@@ -489,7 +474,6 @@ export function registerRuntimeHostSessionExecutionIpc(
           turnId: submitted.turnId,
           attachments,
           inlineReferences,
-          skillInvocation: submitted.skillInvocation,
         };
       }
       // The sending surface believed this Session idle; nudge it to refresh so
@@ -502,7 +486,6 @@ export function registerRuntimeHostSessionExecutionIpc(
         ...(sideConversation ? { messageId } : {}),
         attachments,
         inlineReferences,
-        skillInvocation: submitted.skillInvocation,
       };
     },
   );
@@ -533,19 +516,15 @@ export function registerRuntimeHostSessionExecutionIpc(
       });
       if (!attachmentResult.ok) return attachmentResult;
       const { attachments } = attachmentResult;
-      const displayText =
-        command.displayText ??
-        (command.text.trim().length > 0
-          ? command.text
-          : (command.skillIds ?? []).map((id) => `/skill:${id}`).join(" "));
+      const displayText = command.displayText ?? command.text;
       const inlineReferences = mergeWorkspaceFileInlineReferences({
         displayText,
         workspaceFileReferences: command.workspaceFileReferences,
       });
       const messageId = command.messageId;
-      // Skill and orchestration intent travels with the Message. Runtime Host
-      // decides whether it opens its own Turn, steers the running one, or
-      // fails closed; the Desktop never routes on message content.
+      // Orchestration intent travels with the Message. Runtime Host decides
+      // whether it opens its own Turn, steers the running one, or fails
+      // closed; the Desktop never routes on message content.
       const result = await submitMessageWithReconnect(deps.client, {
         sessionId,
         messageId,
@@ -560,19 +539,11 @@ export function registerRuntimeHostSessionExecutionIpc(
           ...(command.quotes ? { quotes: command.quotes } : {}),
           inlineReferences,
         },
-        ...((command.skillIds?.length ?? 0) > 0 ? { skillIds: command.skillIds } : {}),
         ...(command.turnOrchestration
           ? { turnOrchestration: command.turnOrchestration }
           : {}),
       });
       if (!result) return { ok: false as const, reason: 'outcome_unknown' as const };
-      if (result.disposition === 'blocked') {
-        return {
-          ok: false as const,
-          reason: 'skill_invocation_failed' as const,
-          skillInvocation: result.skillInvocation,
-        };
-      }
       if (result.disposition === "turn_started") {
         deps.emitSessionsChanged("status-change", sessionId, {
           turnId: result.turnId,
@@ -583,7 +554,6 @@ export function registerRuntimeHostSessionExecutionIpc(
           turnId: result.turnId,
           attachments,
           inlineReferences,
-          skillInvocation: result.skillInvocation,
         };
       }
       // The submitting surface believed this Session idle when it steered;
@@ -594,7 +564,6 @@ export function registerRuntimeHostSessionExecutionIpc(
         disposition: result.disposition,
         attachments,
         inlineReferences,
-        skillInvocation: result.skillInvocation,
       };
     },
   );

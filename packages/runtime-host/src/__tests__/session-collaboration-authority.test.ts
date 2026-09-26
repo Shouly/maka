@@ -359,8 +359,13 @@ test('an approved exact Turn request survives restart and is admitted once', asy
         return {
           ok: true,
           result: {
-            kind: 'blocked',
-            skillInvocation: { loaded: [], failed: [], receipts: [] },
+            kind: 'started',
+            turn: {
+              sessionId: input.sessionId,
+              turnId: input.turnId,
+              runId: 'run-approved',
+              status: 'running',
+            },
           },
         };
       },
@@ -385,7 +390,7 @@ test('an approved exact Turn request survives restart and is admitted once', asy
     }).requests[0];
     assert.equal(
       completed?.state.kind === 'approved' ? completed.state.admission : undefined,
-      'blocked',
+      'started',
     );
   } finally {
     await authority.close();
@@ -655,7 +660,7 @@ test('recovery stays ready while an approved Turn request waits for the Session'
         drained = true;
       },
       whenIdle: () => idle,
-      startTurn: async () => {
+      startTurn: async (input) => {
         attempts += 1;
         if (attempts === 2) observeSecondAttempt();
         return attempts === 1
@@ -670,8 +675,13 @@ test('recovery stays ready while an approved Turn request waits for the Session'
           : {
               ok: true,
               result: {
-                kind: 'blocked',
-                skillInvocation: { loaded: [], failed: [], receipts: [] },
+                kind: 'started',
+                turn: {
+                  sessionId: input.sessionId,
+                  turnId: input.turnId,
+                  runId: 'run-after-active-root',
+                  status: 'running',
+                },
               },
             };
       },
@@ -690,7 +700,7 @@ test('recovery stays ready while an approved Turn request waits for the Session'
     }).requests[0];
     assert.equal(
       completed?.state.kind === 'approved' ? completed.state.admission : undefined,
-      'blocked',
+      'started',
     );
   } finally {
     await authority.close();

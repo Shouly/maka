@@ -82,9 +82,6 @@ class SqliteConversationOperationalStateStore implements ConversationOperational
         .prepare('DELETE FROM core_agent_run_projections WHERE session_id = ?')
         .run(sessionId);
       database.prepare('DELETE FROM core_root_turn_admissions WHERE session_id = ?').run(sessionId);
-      database
-        .prepare('DELETE FROM core_root_turn_start_rejections WHERE session_id = ?')
-        .run(sessionId);
       // Cascades this run's events and the Usage projection's checkpoints.
       // `usage_model_call_attempts` is deliberately absent from this list:
       // deleting a conversation must not erase its spend from all-time Usage

@@ -274,21 +274,7 @@ test('fails closed when a known durable admission identity drifts', async () => 
         sourceMessages: [
           {
             ...firstSource,
-            submittedIntent: { skillIds: ['writer'] },
-          },
-          ...first.admission.sourceMessages.slice(1),
-        ],
-      },
-      {
-        ...first.admission,
-        sourceMessages: [
-          {
-            ...firstSource,
-            skillInvocation: {
-              loaded: [{ id: 'writer', name: 'Writer' }],
-              failed: [],
-              receipts: [],
-            },
+            submittedIntent: { turnOrchestration: { mode: 'graph', source: 'slash_command' } },
           },
           ...first.admission.sourceMessages.slice(1),
         ],

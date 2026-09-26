@@ -50,6 +50,7 @@ import {
   type BundledSkillSource,
   type ManagedSkillSourceRecord,
   type HostCapabilities,
+  type InstallableSkillEntry,
   type ScannedSkill,
   type SkillDiscoveryDiagnostic,
   type SkillGovernanceStatus,
@@ -160,6 +161,8 @@ export interface CanonicalSkillInventorySnapshot {
   readonly revision: SkillCatalogRevision;
   readonly projectRoot: string;
   readonly inventory: readonly ScannedSkill[];
+  /** Bundled skills and imported sources not installed here; SearchSkills offers them. */
+  readonly installable: readonly InstallableSkillEntry[];
   readonly diagnostics: readonly SkillScanDiagnostic[];
   readonly discoveryDiagnostics: readonly SkillDiscoveryDiagnostic[];
 }
@@ -909,7 +912,16 @@ async function buildSnapshot(input: {
       effectiveMigration,
     }),
   );
-  const model = freezeModelSnapshot(revision, input.projectRoot, input.scan, effectiveMigration);
+  const installable = [...bundled, ...managedSourceItems]
+    .filter((item) => !item.installed)
+    .map((item) => Object.freeze({ id: item.id, name: item.name, description: item.description }));
+  const model = freezeModelSnapshot(
+    revision,
+    input.projectRoot,
+    input.scan,
+    effectiveMigration,
+    installable,
+  );
   return Object.freeze({
     revision,
     projectRoot: input.projectRoot,
@@ -1345,6 +1357,7 @@ function freezeModelSnapshot(
   projectRoot: string,
   scan: SkillScanResult,
   migration: SkillPreferenceMigration | null,
+  installable: readonly InstallableSkillEntry[],
 ): CanonicalSkillInventorySnapshot {
   const inventory: ScannedSkill[] = scan.inventory.filter(hasDurableSkillIdentity).map((skill) => {
     const preference = migration === null ? undefined : getSkillRuntimePreference(migration, skill);
@@ -1375,6 +1388,7 @@ function freezeModelSnapshot(
     revision,
     projectRoot,
     inventory: Object.freeze(inventory),
+    installable: Object.freeze([...installable]),
     diagnostics: Object.freeze(diagnostics),
     discoveryDiagnostics: Object.freeze(discoveryDiagnostics),
   });

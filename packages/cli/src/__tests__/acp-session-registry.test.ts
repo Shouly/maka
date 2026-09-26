@@ -420,7 +420,6 @@ describe('ACP Session registry', () => {
             return {
               kind: 'started',
               turn,
-              skillInvocation: { loaded: [], failed: [], receipts: [] },
             };
           },
           openSessionSubscriptionOnce: async () => {
@@ -557,7 +556,6 @@ describe('ACP Session registry', () => {
               return {
                 kind: 'started',
                 turn,
-                skillInvocation: { loaded: [], failed: [], receipts: [] },
               };
             }
             assert.fail(`Unexpected operation ${operation}`);
@@ -682,7 +680,6 @@ describe('ACP Session registry', () => {
     start.resolve({
       kind: 'started',
       turn,
-      skillInvocation: { loaded: [], failed: [], receipts: [] },
     });
     await cancel;
     await registry.cancel({ sessionId });
@@ -734,7 +731,6 @@ describe('ACP Session registry', () => {
     start.resolve({
       kind: 'started',
       turn,
-      skillInvocation: { loaded: [], failed: [], receipts: [] },
     });
     try {
       await waitFor(() => calls.includes('stop'));
@@ -1022,7 +1018,6 @@ describe('ACP Session registry', () => {
                 return {
                   kind: 'started',
                   turn,
-                  skillInvocation: { loaded: [], failed: [], receipts: [] },
                 };
               }
               if (operation === 'turn.stop') {
@@ -1099,7 +1094,6 @@ describe('ACP Session registry', () => {
             return {
               kind: 'started',
               turn,
-              skillInvocation: { loaded: [], failed: [], receipts: [] },
             };
           },
           openSessionSubscriptionOnce: async () => subscriptions[opens++]!,
@@ -1149,7 +1143,6 @@ describe('ACP Session registry', () => {
                 return {
                   kind: 'started',
                   turn: local,
-                  skillInvocation: { loaded: [], failed: [], receipts: [] },
                 };
               }
               if (operation === 'turn.stop') {
@@ -1207,7 +1200,6 @@ describe('ACP Session registry', () => {
                   return {
                     kind: 'started',
                     turn: local,
-                    skillInvocation: { loaded: [], failed: [], receipts: [] },
                   };
                 }
                 if (operation === 'turn.stop') {
@@ -1317,7 +1309,6 @@ describe('ACP Session registry', () => {
                 return {
                   kind: 'started',
                   turn,
-                  skillInvocation: { loaded: [], failed: [], receipts: [] },
                 };
               }
               throw new Error(`Unexpected operation ${operation}`);
@@ -1379,7 +1370,6 @@ describe('ACP Session registry', () => {
               return {
                 kind: 'started',
                 turn,
-                skillInvocation: { loaded: [], failed: [], receipts: [] },
               };
             }
             throw new Error(`Unexpected operation ${operation}`);
@@ -1433,7 +1423,6 @@ describe('ACP Session registry', () => {
               return {
                 kind: 'started',
                 turn,
-                skillInvocation: { loaded: [], failed: [], receipts: [] },
               };
             }
             throw new Error(`Unexpected operation ${operation}`);

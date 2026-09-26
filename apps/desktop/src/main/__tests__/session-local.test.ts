@@ -44,11 +44,7 @@ import { createAttachmentApprovalRegistry } from '../attachment-approval.js';
 import { createProjectlessWorkspaces } from '../projectless-workspace.js';
 import { resolveDesktopSessionWorkspace } from '../new-session-project.js';
 
-const accepted: TurnMessageSubmitResult = {
-  disposition: 'turn_started',
-  turnId: 'turn-1',
-  skillInvocation: { loaded: [], failed: [], receipts: [] },
-};
+const accepted: TurnMessageSubmitResult = { disposition: 'turn_started', turnId: 'turn-1' };
 const intent = (messageId = 'message-1', sessionId = 'session-1'): LocalMessageIntent => ({
   command: { sessionId, messageId, placement: 'current_turn', content: { text: 'hello' } },
   staged: [
@@ -375,51 +371,47 @@ test('offline intents are dispatched only after connectivity returns', async (t)
   assert.equal(calls[0]!.content.attachments?.length, 1);
 });
 
-for (const refusal of ['operation-error', 'blocked-skill'] as const) {
-  test(`a retained ${refusal} local message does not block later sends`, async (t) => {
-    const { store, beforeClose } = await database(t);
-    const calls: string[] = [];
-    const target: DesktopSessionLocalTarget = {
-      partition: 'authority',
-      profileId: 'profile',
-      scope: { hostId: 'root', targetEpoch: 'target' },
-      client: client('epoch'),
-      submit: async (input) => {
-        calls.push(input.messageId);
-        if (input.messageId === 'message-1') {
-          if (refusal === 'blocked-skill')
-            return { disposition: 'blocked', skillInvocation: accepted.skillInvocation };
-          throw new RuntimeHostOperationError('turn.message.submit', 'session_busy', 'busy');
-        }
-        return accepted;
-      },
-    };
-    const service = new DesktopSessionLocalService(store, {
-      targets: () => [target],
-      changed() {},
-      onError: (error) => assert.fail(String(error)),
-    });
-    beforeClose.push(() => service.close());
-    store.enqueue('authority', intent());
-    service.wake();
-    await waitFor(() => store.get('authority', 'message-1')?.state === 'failed');
-    const failed = store.get('authority', 'message-1');
-
-    store.enqueue('authority', intent('message-2'));
-    store.enqueue('authority', intent('message-3'));
-    service.wake();
-    await waitFor(() => store.get('authority', 'message-3')?.state === 'accepted');
-
-    assert.deepEqual(calls, ['message-1', 'message-2', 'message-3']);
-    assert.equal(store.get('authority', 'message-2')?.state, 'accepted');
-    assert.deepEqual(store.get('authority', 'message-1'), failed);
-    const retained = service.listMessages(target, 'session-1')[0]!;
-    assert.equal(retained.state, 'failed');
-    assert.equal(retained.text, 'hello');
-    assert.equal(retained.canCancel, true);
-    assert.ok(retained.error);
+test('a retained operation-error local message does not block later sends', async (t) => {
+  const { store, beforeClose } = await database(t);
+  const calls: string[] = [];
+  const target: DesktopSessionLocalTarget = {
+    partition: 'authority',
+    profileId: 'profile',
+    scope: { hostId: 'root', targetEpoch: 'target' },
+    client: client('epoch'),
+    submit: async (input) => {
+      calls.push(input.messageId);
+      if (input.messageId === 'message-1') {
+        throw new RuntimeHostOperationError('turn.message.submit', 'session_busy', 'busy');
+      }
+      return accepted;
+    },
+  };
+  const service = new DesktopSessionLocalService(store, {
+    targets: () => [target],
+    changed() {},
+    onError: (error) => assert.fail(String(error)),
   });
-}
+  beforeClose.push(() => service.close());
+  store.enqueue('authority', intent());
+  service.wake();
+  await waitFor(() => store.get('authority', 'message-1')?.state === 'failed');
+  const failed = store.get('authority', 'message-1');
+
+  store.enqueue('authority', intent('message-2'));
+  store.enqueue('authority', intent('message-3'));
+  service.wake();
+  await waitFor(() => store.get('authority', 'message-3')?.state === 'accepted');
+
+  assert.deepEqual(calls, ['message-1', 'message-2', 'message-3']);
+  assert.equal(store.get('authority', 'message-2')?.state, 'accepted');
+  assert.deepEqual(store.get('authority', 'message-1'), failed);
+  const retained = service.listMessages(target, 'session-1')[0]!;
+  assert.equal(retained.state, 'failed');
+  assert.equal(retained.text, 'hello');
+  assert.equal(retained.canCancel, true);
+  assert.ok(retained.error);
+});
 
 test('an unknown Host outcome blocks later local sends until the original message is reconciled', async (t) => {
   const { store, beforeClose } = await database(t);
@@ -906,7 +898,6 @@ test('a message of a gone Host epoch that the Host owns or queues is accepted, n
   assert.deepEqual(store.get('authority', 'owned')?.result, {
     disposition: 'turn_started',
     turnId: 'turn-1',
-    skillInvocation: { loaded: [], failed: [], receipts: [] },
   });
   assert.equal(store.get('authority', 'queued')?.result?.disposition, 'followup');
   assert.deepEqual(submissions, []);

@@ -72,7 +72,7 @@ import {
   loadHistoryCompactCheckpointsFromRunLedger,
   loadLatestHistoryCompactCheckpointFromRunLedger,
 } from '@maka/runtime/history-compact-ledger';
-import { prepareSkillInvocationMessageFromInventory } from '@maka/runtime/skill-invocation';
+import { skillInlineReferences } from '@maka/runtime/skill-invocation';
 import { RuntimeReadModel } from '@maka/runtime/runtime-read-model';
 import {
   renderAgentSwarmSupervisorWake,
@@ -1528,18 +1528,14 @@ export async function createExecutionRuntimeHostComposition(
       (admission, state) =>
         requireScheduledTasks(scheduledTasks).assertRecoveryAdmission(admission, state),
       artifacts,
-      async ({ sessionId, text, skillIds }) => {
+      // A chip marks an enabled skill; whether this Session's tools can run it
+      // is the Skill tool's answer when the model asks, not the transcript's.
+      async ({ sessionId, text }) => {
         const header = await stores.sessionStore.readHeaderSnapshot(sessionId);
-        const [inventory, toolNames] = await Promise.all([
-          skills.readCanonicalModelInventory({ projectRoot: header.cwd }),
-          resolveAvailableToolNames(sessionId),
-        ]);
-        return prepareSkillInvocationMessageFromInventory({
-          text,
-          skillIds,
-          inventory: inventory.inventory,
-          host: buildHostCapabilitiesFromBinding(toolNames),
+        const { inventory } = await skills.readCanonicalModelInventory({
+          projectRoot: header.cwd,
         });
+        return skillInlineReferences({ text, inventory });
       },
       {
         currentGraphId: (rootSessionId) =>
@@ -1820,7 +1816,6 @@ export async function createExecutionRuntimeHostComposition(
     });
     const interactiveTurns = new HostInteractiveTurnCoordinator({
       executions: coordinator,
-      turns: stores.agentRunStore,
       runtime: manager,
     });
     // Compile-time guarantee that the three Turn coordinators together cover
@@ -2302,7 +2297,6 @@ export async function createExecutionRuntimeHostComposition(
                     submittedPlacement: 'current_turn',
                     placement: 'current_turn',
                     disposition: 'steering',
-                    skillInvocation: { loaded: [], failed: [], receipts: [] },
                     admittedAt: assignedAt,
                   },
                   ...(create ? { create } : {}),

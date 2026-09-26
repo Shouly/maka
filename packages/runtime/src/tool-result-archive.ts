@@ -64,9 +64,14 @@ export type ArchivedToolResultReason =
  * rather than a size exemption, and it lives here rather than in either prune:
  * both reach the ledger through `archiveToolResultAsTransition`, and a rule a
  * third producer could bypass is not a rule.
+ *
+ * A Skill result is the same kind of thing: the loaded instructions the model
+ * follows for the rest of the task, not output it reads once. The reference
+ * delivers them as a message of their own, which nothing prunes; Maka carries
+ * them in the tool result, so the result is kept whole for the same reason.
  */
 export function isUnarchivableToolResult(toolName: string): boolean {
-  return toolName === TOOL_NAMES.toolSearch;
+  return toolName === TOOL_NAMES.toolSearch || toolName === TOOL_NAMES.skill;
 }
 
 export const ARCHIVED_TOOL_RESULT_PLACEHOLDER_KIND = 'maka.archived_tool_result';

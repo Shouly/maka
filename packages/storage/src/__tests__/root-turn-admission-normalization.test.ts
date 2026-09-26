@@ -18,8 +18,16 @@
  */
 
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
-import { normalizeRootTurnAdmissionPayload } from '../agent-run-store.js';
+import {
+  createSqliteAgentRunStore,
+  normalizeRootTurnAdmissionPayload,
+} from '../agent-run-store.js';
+import { normalizeSubmittedTurnIntent } from '../submitted-turn-intent.js';
 
 test('root admission preserves an explicit empty inline-reference marker from its sources', () => {
   const content = { text: 'plain', inlineReferences: [] } as const;
@@ -76,30 +84,89 @@ test('root admission preserves and validates each source submitted placement', (
   );
 });
 
-test('root admission preserves and validates each source Skill outcome', () => {
-  const content = { text: 'prepared', displayText: '/skill:writer draft' } as const;
-  const skillInvocation = {
-    loaded: [{ id: 'writer', name: 'Writer' }],
-    failed: [{ request: 'typo', reason: 'not_found' as const }],
-    receipts: [],
-  };
+test('root admission refuses a source Message that still carries a Skill outcome', () => {
+  // A sent /<name> is not resolved at admission any more, so a record that
+  // claims an outcome is not one this build wrote.
+  const content = { text: '/writer draft' } as const;
   const source = {
     messageId: 'message-skill',
     content,
-    skillInvocation,
     placement: 'next_turn' as const,
     disposition: 'followup' as const,
   };
-
-  assert.deepEqual(
-    normalizeRootTurnAdmissionPayload(content, [source]).sourceMessages[0]?.skillInvocation,
-    skillInvocation,
-  );
+  assert.equal(normalizeRootTurnAdmissionPayload(content, [source]).sourceMessages.length, 1);
   assert.throws(() =>
     normalizeRootTurnAdmissionPayload(content, [
-      { ...source, skillInvocation: { loaded: [], failed: [], receipts: 'invalid' } },
+      { ...source, skillInvocation: { loaded: [], failed: [], receipts: [] } } as typeof source,
     ]),
   );
+});
+
+test('a stored root admission that still carries a Skill outcome is refused', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'maka-root-admission-skill-'));
+  try {
+    const store = createSqliteAgentRunStore(root);
+    const admitted = await store.admitRootTurn({
+      sessionId: 'session',
+      turnId: 'turn-skill',
+      proposedRunId: 'run-skill',
+      proposedUserMessageId: 'message-skill',
+      execution: { kind: 'external_message' },
+      previousRootTurnId: null,
+      normalizedInput: { text: '/writer draft' },
+      sourceMessages: [],
+      admittedAt: 10,
+    });
+    store.close?.();
+
+    const database = new DatabaseSync(join(root, 'runtime.sqlite'));
+    try {
+      database
+        .prepare(
+          'UPDATE core_root_turn_admissions SET record_json = ? WHERE session_id = ? AND turn_id = ?',
+        )
+        .run(
+          JSON.stringify({
+            ...admitted.admission,
+            skillInvocation: { loaded: [], failed: [], receipts: [] },
+          }),
+          'session',
+          'turn-skill',
+        );
+    } finally {
+      database.close();
+    }
+
+    const reopened = createSqliteAgentRunStore(root);
+    try {
+      await assert.rejects(
+        reopened.readRootTurnAdmission('session', 'turn-skill'),
+        /malformed fields/,
+      );
+    } finally {
+      reopened.close?.();
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('a submitted intent is exactly one orchestration override', () => {
+  const orchestration = { mode: 'graph', source: 'host_api' } as const;
+  assert.deepEqual(normalizeSubmittedTurnIntent({ turnOrchestration: orchestration }), {
+    turnOrchestration: orchestration,
+  });
+  // Asking for nothing is no intent at all, and an older shape that carried
+  // skill ids is not read as something else.
+  for (const value of [
+    {},
+    { skillIds: ['writer'] },
+    { turnOrchestration: orchestration, skillIds: ['writer'] },
+    { turnOrchestration: { ...orchestration, extra: true } },
+    { turnOrchestration: { mode: 'graph' } },
+  ]) {
+    assert.throws(() => normalizeSubmittedTurnIntent(value), JSON.stringify(value));
+  }
 });
 
 test('admits a quote-only root Turn input (#4804)', () => {

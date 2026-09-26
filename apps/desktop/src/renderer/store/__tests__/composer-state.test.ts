@@ -22,6 +22,7 @@ import test from 'node:test';
 import {
   documentWithSkillTokens,
   serializeComposer,
+  startsWithSkillReference,
   textDocument,
 } from '../../lib/composer-document.js';
 import { createComposerInputStore } from '../composer-input-store.js';
@@ -69,10 +70,69 @@ test('composer serializes references with offsets after whitespace normalization
     ],
   };
   const result = serializeComposer(doc);
-  assert.equal(result.text, 'Read @src/a b.ts and /skill:review');
-  assert.deepEqual(result.workspaceFileReferences, [{ value: '@src/a b.ts', start: 5 }]);
-  assert.deepEqual(result.skillIds, ['immutable-skill']);
+  // A skill atom writes `/<value>`: the model reads the token and calls the
+  // Skill tool itself, so no Skill id travels beside the text.
+  assert.deepEqual(result, {
+    text: 'Read @src/a b.ts and /immutable-skill',
+    workspaceFileReferences: [{ value: '@src/a b.ts', start: 5 }],
+  });
 });
+const skillAtom = (value: string) => ({
+  type: 'composerReference',
+  attrs: { kind: 'skill', value, label: value },
+});
+const paragraphs = (...lines: object[][]) => ({
+  type: 'doc',
+  content: lines.map((content) => ({ type: 'paragraph', content })),
+});
+
+test('a skill atom that touches other text is kept one space apart', () => {
+  // `/<name>` is a token only as a whole word; glued to a neighbour the model
+  // would read `use/writer` and no chip would come back.
+  const text = (...nodes: object[]) => serializeComposer(paragraphs(nodes)).text;
+  assert.equal(text({ type: 'text', text: 'use' }, skillAtom('writer')), 'use /writer');
+  assert.equal(
+    text(skillAtom('writer'), { type: 'text', text: ', then stop' }),
+    '/writer , then stop',
+  );
+  assert.equal(text(skillAtom('pdf'), skillAtom('writer')), '/pdf /writer');
+  assert.equal(
+    text(skillAtom('pdf'), {
+      type: 'composerReference',
+      attrs: { kind: 'file', value: 'a.ts', label: 'a.ts' },
+    }),
+    '/pdf @a.ts',
+  );
+  // Whitespace already there is enough, and a line break is whitespace.
+  assert.equal(
+    serializeComposer(
+      paragraphs([{ type: 'text', text: 'use ' }, skillAtom('writer')], [skillAtom('pdf')]),
+    ).text,
+    'use /writer\n/pdf',
+  );
+  const withFile = serializeComposer(
+    paragraphs([
+      skillAtom('pdf'),
+      { type: 'composerReference', attrs: { kind: 'file', value: 'a.ts', label: 'a.ts' } },
+    ]),
+  );
+  assert.deepEqual(withFile.workspaceFileReferences, [{ value: '@a.ts', start: 5 }]);
+});
+
+test('only a draft that opens with a skill atom is a picked skill rather than a command', () => {
+  assert.equal(startsWithSkillReference(paragraphs([skillAtom('compact')])), true);
+  assert.equal(
+    startsWithSkillReference(paragraphs([], [{ type: 'text', text: '  ' }, skillAtom('compact')])),
+    true,
+  );
+  assert.equal(startsWithSkillReference(textDocument('/compact')), false);
+  assert.equal(
+    startsWithSkillReference(paragraphs([{ type: 'text', text: 'run' }, skillAtom('compact')])),
+    false,
+  );
+  assert.equal(startsWithSkillReference(textDocument('')), false);
+});
+
 test('paragraphs and hard breaks retain their wire newlines', () => {
   assert.equal(serializeComposer(textDocument('one\ntwo\n\nthree')).text, 'one\ntwo\n\nthree');
 });
@@ -234,28 +294,63 @@ test('a recalled prompt gets its Skill atoms back, and only the ones that resolv
   const skills = [
     { id: 'composer-review', name: 'Composer Review' },
     { id: 'review', name: 'Review' },
+    { id: 'pdf-tools', name: 'PDF' },
+    { id: 'alpha', name: 'beta' },
+    { id: 'beta', name: 'Beta Skill' },
   ];
-  const sent = serializeComposer(
-    documentWithSkillTokens('check /skill:Composer Review then stop', skills),
-  );
-  // The atom is what carries the id; the wire text is unchanged.
-  assert.deepEqual(sent.skillIds, ['composer-review']);
-  assert.equal(sent.text, 'check /skill:Composer Review then stop');
-  // Longest name first: the shorter Skill must not claim the front of the longer one.
-  assert.deepEqual(
-    serializeComposer(documentWithSkillTokens('/skill:Composer Review', skills)).skillIds,
-    ['composer-review'],
-  );
-  // A Skill the catalog does not know stays text rather than claiming an id.
-  const unknown = serializeComposer(documentWithSkillTokens('/skill:Gone away', skills));
-  assert.deepEqual(unknown.skillIds, []);
-  assert.equal(unknown.text, '/skill:Gone away');
-  // A line break does not break the offsets, and matching is case-insensitive
-  // over the name the serializer wrote.
-  const lines = serializeComposer(documentWithSkillTokens('one\n/skill:review two', skills));
-  assert.deepEqual(lines.skillIds, ['review']);
-  assert.equal(lines.text, 'one\n/skill:review two');
+  const skillAtom = (value: string, label: string) => ({
+    type: 'composerReference',
+    attrs: { kind: 'skill', value, label },
+  });
+  const roundTrip = (text: string) =>
+    assert.equal(serializeComposer(documentWithSkillTokens(text, skills)).text, text, text);
+
+  // The atom keeps the token as written and shows the catalog's name.
+  assert.deepEqual(documentWithSkillTokens('check /composer-review then stop', skills), {
+    type: 'doc',
+    content: [
+      {
+        type: 'paragraph',
+        content: [
+          { type: 'text', text: 'check ' },
+          skillAtom('composer-review', 'Composer Review'),
+          { type: 'text', text: ' then stop' },
+        ],
+      },
+    ],
+  });
+  roundTrip('check /composer-review then stop');
+  // Matching is case-insensitive, and the written case survives the redraw:
+  // a recall must send the same bytes it sent before.
+  assert.deepEqual(documentWithSkillTokens('/REVIEW', skills).content?.[0]?.content, [
+    skillAtom('REVIEW', 'Review'),
+  ]);
+  roundTrip('/REVIEW');
+  // A token names a skill by id first, then by display name.
+  assert.deepEqual(documentWithSkillTokens('/pdf', skills).content?.[0]?.content, [
+    skillAtom('pdf', 'PDF'),
+  ]);
+  assert.deepEqual(documentWithSkillTokens('/beta', skills).content?.[0]?.content, [
+    skillAtom('beta', 'Beta Skill'),
+  ]);
+  // A token the catalog does not know stays text rather than claiming a Skill,
+  // and so does anything that is not a token at all: a path, a mid-word
+  // slash, the retired `/skill:` form.
+  for (const text of ['/gone away', '/tmp/review', 'x/review', '/skill:review']) {
+    assert.deepEqual(documentWithSkillTokens(text, skills), textDocument(text), text);
+    roundTrip(text);
+  }
+  // A line break does not break the offsets.
+  assert.deepEqual(documentWithSkillTokens('one\n/review two', skills).content, [
+    { type: 'paragraph', content: [{ type: 'text', text: 'one' }] },
+    {
+      type: 'paragraph',
+      content: [skillAtom('review', 'Review'), { type: 'text', text: ' two' }],
+    },
+  ]);
+  roundTrip('one\n/review two');
+  roundTrip('/review /pdf and /beta\n\n  /unknown /composer-review');
   // Nothing to redraw is the plain document, untouched.
   assert.deepEqual(documentWithSkillTokens('plain text', skills), textDocument('plain text'));
-  assert.deepEqual(documentWithSkillTokens('/skill:Review', []), textDocument('/skill:Review'));
+  assert.deepEqual(documentWithSkillTokens('/review', []), textDocument('/review'));
 });

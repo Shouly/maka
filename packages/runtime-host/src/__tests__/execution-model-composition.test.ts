@@ -2340,7 +2340,6 @@ test('cold WorkHub recovery waits for Desktop tools across pending-message and a
         placement: 'next_turn',
         submittedPlacement: 'next_turn',
         disposition: 'followup',
-        skillInvocation: { loaded: [], failed: [], receipts: [] },
         admittedAt: Date.now(),
       });
       if (crashCut === 'admitted-root') {
@@ -2790,7 +2789,7 @@ test('production Host executes a canonical ai-sdk Session against a real provide
         index === 0
           ? `Reply with the hosted execution result.${' HISTORY_PRESSURE'.repeat(128)}`
           : index === 1
-            ? `/skill:hosted-skill Continue hosted execution turn ${index}.${' HISTORY_PRESSURE'.repeat(128)}`
+            ? `/hosted-skill Continue hosted execution turn ${index}.${' HISTORY_PRESSURE'.repeat(128)}`
             : `Continue hosted execution turn ${index}.${' HISTORY_PRESSURE'.repeat(128)}`,
         connectionContext,
       );
@@ -2864,7 +2863,10 @@ test('production Host executes a canonical ai-sdk Session against a real provide
       JSON.stringify(requestMessages.filter((message) => message.role === 'user')),
       /<user_memory_snapshot>[\s\S]*<preferences>[\s\S]*HOSTED_MEMORY_SENTINEL/,
     );
-    assert.match(JSON.stringify(mainRequests[1]?.body), /HOSTED_SKILL_BODY_MUST_STAY_LAZY/);
+    // A sent `/<name>` reaches the model as written: the Host loads nothing,
+    // the model calls the Skill tool itself.
+    assert.match(JSON.stringify(mainRequests[1]?.body), /\/hosted-skill Continue hosted execution/);
+    assert.doesNotMatch(JSON.stringify(mainRequests[1]?.body), /HOSTED_SKILL_BODY_MUST_STAY_LAZY/);
     // Tavily is selected but no web-search credential exists, so the provider
     // must never see WebSearch in the effective root tool surface. Non-direct
     // bound tools stay deferred behind ToolSearch until activated.
@@ -2885,8 +2887,9 @@ test('production Host executes a canonical ai-sdk Session against a real provide
       'Read',
       'SendUserFile',
       'SendUserMessage',
+      // Skill is loaded directly; SearchSkills waits behind ToolSearch, as in
+      // the reference.
       'Skill',
-      'SkillSearch',
       // The task list is default-loaded: `<keeping_the_person_informed>` asks
       // for one whenever the work has stages worth watching, and a ToolSearch
       // round trip before the first of them is a step between the request and
@@ -2913,12 +2916,12 @@ test('production Host executes a canonical ai-sdk Session against a real provide
     );
     assert.equal(skillMessage?.type, 'user');
     if (skillMessage?.type === 'user') {
-      assert.match(skillMessage.text, /HOSTED_SKILL_BODY_MUST_STAY_LAZY/);
-      assert.match(skillMessage.displayText ?? '', /^\/skill:hosted-skill /);
+      assert.match(skillMessage.text, /^\/hosted-skill Continue hosted execution turn 1\./);
+      assert.doesNotMatch(skillMessage.text, /HOSTED_SKILL_BODY_MUST_STAY_LAZY/);
       assert.deepEqual(skillMessage.inlineReferences, [
         {
           kind: 'skill',
-          value: '/skill:hosted-skill',
+          value: '/hosted-skill',
           label: 'Hosted Skill Sentinel',
           start: 0,
         },
@@ -4474,24 +4477,19 @@ test('one turn shares one canonical Skill inventory across prompt and lazy tools
     emitOutput: () => {},
   } satisfies MakaToolContext;
   const skillTool = composition.tools.find((tool) => tool.name === 'Skill') as
-    | MakaTool<
-        { skill: string },
-        { ok: true; skill: { instructions: string } } | { ok: false; reason: string }
-      >
+    | MakaTool<{ skill: string }, { skill: { instructions: string } }>
     | undefined;
-  const searchTool = composition.tools.find((tool) => tool.name === 'SkillSearch') as
-    | MakaTool<{ query: string }, { matches: Array<{ ref: string }> }>
+  const searchTool = composition.tools.find((tool) => tool.name === 'SearchSkills') as
+    | MakaTool<{ keywords: string[] }, { results: Array<{ id: string; enabled: boolean }> }>
     | undefined;
   assert.ok(skillTool);
   assert.ok(searchTool);
   const loaded = await skillTool.impl({ skill: 'old' }, toolContext);
-  assert.equal(loaded.ok, true);
-  if (!loaded.ok) return;
   assert.equal(loaded.skill.instructions, 'OLD_BODY');
-  const searched = await searchTool.impl({ query: 'OLD_DESCRIPTION' }, toolContext);
+  const searched = await searchTool.impl({ keywords: ['OLD_DESCRIPTION'] }, toolContext);
   assert.deepEqual(
-    searched.matches.map((match) => match.ref),
-    ['project:agents:old'],
+    searched.results.map((match) => [match.id, match.enabled]),
+    [['old', true]],
   );
   assert.equal(inventoryReads, 1);
 
@@ -4918,13 +4916,8 @@ async function startTurn(
       const input = { sessionId, turnId, content: { text } };
       const started = await composition.handlers['turn.start'](input, context);
       if (started.ok) {
-        if (started.result.kind === 'started') {
-          turn = started.result.turn;
-          return true;
-        }
-        throw new Error(
-          `Hosted real-model Skill invocation was blocked: ${JSON.stringify(started)}`,
-        );
+        turn = started.result.turn;
+        return true;
       }
       if (started.error.code !== 'session_busy') {
         throw new Error(`Hosted real-model Turn start failed: ${JSON.stringify(started.error)}`);

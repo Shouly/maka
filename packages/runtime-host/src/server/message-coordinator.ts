@@ -29,7 +29,6 @@ import {
 } from '@maka/core/events';
 import type { RuntimeEvent } from '@maka/core/runtime-event';
 import type { TurnOrchestration } from '@maka/core/runtime-inputs';
-import type { SkillInvocationResult } from '@maka/core/skill-invocation';
 import {
   RuntimeMessageAuthorityInvariantError,
   type RuntimeMessageAuthority,
@@ -96,12 +95,6 @@ type MessageOutcome<T> =
       readonly error: { readonly code: MessageOperationErrorCode; readonly message: string };
     };
 
-const EMPTY_SKILL_INVOCATION: SkillInvocationResult = {
-  loaded: [],
-  failed: [],
-  receipts: [],
-};
-
 export interface HostMessageSessionHeader {
   readonly isArchived: boolean;
   readonly unavailableReason?: string;
@@ -121,20 +114,18 @@ export interface HostMessageStartInput {
   readonly initiatingConnectionId: string;
   readonly turnId?: string;
   readonly runId?: string;
-  readonly skillIds?: readonly string[];
-  /** A durable preparation recovered before root admission committed. */
-  readonly preparedSkillInvocation?: SkillInvocationResult;
+  /**
+   * `content` is a pending admission's committed content, recovered for a
+   * retry: already canonical, so it is neither compared with the submitted
+   * source nor prepared again — a catalog that changed since would otherwise
+   * make the retry disagree with its own durable record.
+   */
+  readonly durableContent?: true;
   readonly turnOrchestration?: TurnOrchestration;
 }
 
-/**
- * Starting a Turn from a Message either admits it, reports Skill resolution
- * the client can act on, or fails with an opaque reason.
- */
-export type HostMessageStartOutcome =
-  | { readonly turnId: string; readonly skillInvocation: SkillInvocationResult }
-  | { readonly blocked: SkillInvocationResult }
-  | { readonly error: string };
+/** Starting a Turn from a Message either admits it or fails with an opaque reason. */
+export type HostMessageStartOutcome = { readonly turnId: string } | { readonly error: string };
 
 export interface HostMessageRecoveryBatch {
   readonly sessionId: string;
@@ -154,22 +145,14 @@ export interface HostMessageRecoveryBatch {
 
 export interface HostMessagePreparationInput {
   readonly sessionId: string;
-  readonly turnId: string;
   readonly content: MessageContent;
-  readonly placement: MessagePlacement;
 }
 
-export type HostMessagePreparationOutcome =
-  | {
-      readonly kind: 'ready';
-      readonly content: MessageContent;
-      readonly skillInvocation: SkillInvocationResult;
-    }
-  | {
-      readonly kind: 'rejected';
-      readonly error: string;
-      readonly skillInvocation?: SkillInvocationResult;
-    };
+/** A Message ready for admission: its `/<name>` skill tokens marked for the transcript. */
+export interface HostMessagePreparationOutcome {
+  readonly kind: 'ready';
+  readonly content: MessageContent;
+}
 
 export interface HostMessageStopClaim {
   readonly deliverStop: () => Promise<void>;
@@ -212,10 +195,7 @@ export interface HostMessageRootPort {
   startFromMessage(
     input: HostMessageStartInput,
     admission: SessionAdmissionLease,
-    commitAdmission: (
-      canonicalContent: MessageContent,
-      skillInvocation: SkillInvocationResult,
-    ) => Promise<void>,
+    commitAdmission: (canonicalContent: MessageContent) => Promise<void>,
   ): Promise<HostMessageStartOutcome>;
   startRecoveredMessages?(
     input: HostMessageRecoveryBatch,
@@ -277,7 +257,6 @@ interface LiveEntry {
   modelContent: MessageContent;
   submittedContentDigest: `sha256:${string}`;
   readonly submittedPlacement: MessagePlacement;
-  skillInvocation: SkillInvocationResult;
   readonly placement: MessagePlacement;
   readonly disposition: 'steering' | 'followup';
   generation: number;
@@ -1147,7 +1126,6 @@ export class HostMessageCoordinator implements RuntimeMessageAuthority {
         modelContent: admission.content,
         submittedContentDigest: admission.submittedContentDigest,
         submittedPlacement: admission.submittedPlacement,
-        skillInvocation: admission.skillInvocation,
         placement: admission.placement,
         disposition: admission.disposition,
         generation: state.generation,
@@ -1311,21 +1289,17 @@ export class HostMessageCoordinator implements RuntimeMessageAuthority {
             {
               sessionId: input.sessionId,
               content: pendingAdmission?.content ?? payload.content,
+              ...(pendingAdmission ? { durableContent: true as const } : {}),
               sourceMessage,
               initiatingConnectionId,
               turnId,
               runId,
-              ...(pendingAdmission
-                ? { preparedSkillInvocation: pendingAdmission.skillInvocation }
-                : payload.skillIds.length > 0
-                  ? { skillIds: payload.skillIds }
-                  : {}),
               ...(payload.turnOrchestration
                 ? { turnOrchestration: payload.turnOrchestration }
                 : {}),
             },
             admission,
-            async (canonicalContent, skillInvocation) => {
+            async (canonicalContent) => {
               await this.#admissions.commitMessageAdmission({
                 sessionId: input.sessionId,
                 turnId,
@@ -1337,22 +1311,12 @@ export class HostMessageCoordinator implements RuntimeMessageAuthority {
                 placement: 'current_turn',
                 disposition: 'steering',
                 ...(intent ? { submittedIntent: intent } : {}),
-                skillInvocation,
                 admittedAt: pendingAdmission?.admittedAt ?? Date.now(),
               });
             },
           );
           if ('error' in started) {
             return failure('operation_conflict', started.error);
-          }
-          // A blocked Skill invocation admitted nothing: it is not remembered as
-          // a completed submit, so the same identity can be submitted again once
-          // the Skill resolves.
-          if ('blocked' in started) {
-            return success({
-              disposition: 'blocked',
-              skillInvocation: started.blocked,
-            } as const);
           }
           if (!isEntityId(started.turnId)) {
             throw new RuntimeMessageAuthorityInvariantError(
@@ -1362,15 +1326,11 @@ export class HostMessageCoordinator implements RuntimeMessageAuthority {
           const result = {
             disposition: 'turn_started',
             turnId: started.turnId,
-            skillInvocation: started.skillInvocation ?? EMPTY_SKILL_INVOCATION,
           } as const;
           return success(result);
         }
         if (requiresExactTurn(payload)) {
-          return failure(
-            'session_busy',
-            'An explicit Skill or orchestrated Message needs an idle Session',
-          );
+          return failure('session_busy', 'An orchestrated Message needs an idle Session');
         }
         if (rootState.kind === 'reserved') {
           return failure('session_busy', 'A Goal continuation is reserving the next root Turn');
@@ -1402,7 +1362,6 @@ export class HostMessageCoordinator implements RuntimeMessageAuthority {
           const result = {
             disposition: existingEntry.disposition,
             queueRevision: state.revision,
-            skillInvocation: existingEntry.skillInvocation,
           } as const;
           this.#rememberCompletedOperation(
             'submit',
@@ -1414,25 +1373,19 @@ export class HostMessageCoordinator implements RuntimeMessageAuthority {
           return success(result);
         }
         const disposition = input.placement === 'current_turn' ? 'steering' : 'followup';
+        // Checked before preparing, so a full queue never reads the skill
+        // catalog, and again after it: the queue can fill while preparing.
+        if (allLiveEntries(state).length >= MESSAGE_QUEUE_MAX_ENTRIES) {
+          return failure('session_busy', 'Message queue capacity is full');
+        }
         const prepared =
           preparedForRoot && sameRun(preparedForRoot.identity, rootState)
             ? preparedForRoot.outcome
             : await this.#root.prepareMessage({
                 sessionId: input.sessionId,
-                turnId: rootState.turnId,
                 content: payload.content,
-                placement: input.placement,
               });
         preparedForRoot = { identity: rootState, outcome: prepared };
-        if (prepared.kind === 'rejected') {
-          if (prepared.skillInvocation) {
-            return success({
-              disposition: 'blocked',
-              skillInvocation: prepared.skillInvocation,
-            } as const);
-          }
-          return failure('operation_conflict', prepared.error);
-        }
         if (allLiveEntries(state).length >= MESSAGE_QUEUE_MAX_ENTRIES) {
           return failure('session_busy', 'Message queue capacity is full');
         }
@@ -1480,7 +1433,6 @@ export class HostMessageCoordinator implements RuntimeMessageAuthority {
           content: prepared.content,
           submittedContentDigest: messageContentDigest(payload.content),
           submittedPlacement: input.placement,
-          skillInvocation: prepared.skillInvocation,
           placement: input.placement,
           disposition,
         } satisfies RootTurnSourceMessage;
@@ -1515,7 +1467,6 @@ export class HostMessageCoordinator implements RuntimeMessageAuthority {
         const result = {
           disposition,
           queueRevision: candidateRevision + 1,
-          skillInvocation: prepared.skillInvocation,
         } as const;
         const messageAdmission: PendingMessageAdmission = {
           sessionId: input.sessionId,
@@ -1527,7 +1478,6 @@ export class HostMessageCoordinator implements RuntimeMessageAuthority {
           submittedPlacement: input.placement,
           placement: input.placement,
           disposition,
-          skillInvocation: prepared.skillInvocation,
           admittedAt: Date.now(),
         };
         await this.#admissions.commitMessageAdmission(messageAdmission);
@@ -1542,7 +1492,6 @@ export class HostMessageCoordinator implements RuntimeMessageAuthority {
           modelContent: prepared.content,
           submittedContentDigest: messageAdmission.submittedContentDigest,
           submittedPlacement: messageAdmission.submittedPlacement,
-          skillInvocation: messageAdmission.skillInvocation,
           placement: input.placement,
           disposition,
           generation: state.generation,
@@ -1861,7 +1810,6 @@ export class HostMessageCoordinator implements RuntimeMessageAuthority {
       submittedPlacement: entry.submittedPlacement,
       placement: 'current_turn',
       disposition: 'steering',
-      skillInvocation: entry.skillInvocation,
       admittedAt: entry.admittedAt,
     });
     state.followup.splice(index, 1);
@@ -1905,13 +1853,7 @@ export class HostMessageCoordinator implements RuntimeMessageAuthority {
       displayText: input.text,
       inlineReferences: relocateInlineReferences(queued.entry.content.inlineReferences, input.text),
     });
-    const prepared = await this.#root.prepareMessage({
-      sessionId: input.sessionId,
-      turnId: state.reservedRoot.turnId,
-      content,
-      placement: queued.entry.placement,
-    });
-    if (prepared.kind === 'rejected') return failure('operation_conflict', prepared.error);
+    const prepared = await this.#root.prepareMessage({ sessionId: input.sessionId, content });
     const modelContent = prepared.content;
     const candidate = this.#project(state);
     const updateSnapshot = <T extends SteeringMessageSnapshot | QueuedMessageSnapshot>(
@@ -1933,7 +1875,6 @@ export class HostMessageCoordinator implements RuntimeMessageAuthority {
             ...sourceFromEntry(entry),
             content: modelContent,
             submittedContentDigest: messageContentDigest(content),
-            skillInvocation: prepared.skillInvocation,
           }
         : sourceFromEntry(entry);
     const steeringSources = [...state.inFlight.values(), ...state.steering].map(updatedSource);
@@ -1971,13 +1912,11 @@ export class HostMessageCoordinator implements RuntimeMessageAuthority {
       submittedPlacement: admission?.submittedPlacement ?? queued.entry.placement,
       placement: queued.entry.placement,
       disposition: queued.entry.disposition,
-      skillInvocation: prepared.skillInvocation,
       admittedAt: queued.entry.admittedAt,
     });
     queued.entry.content = content;
     queued.entry.modelContent = modelContent;
     queued.entry.submittedContentDigest = messageContentDigest(content);
-    queued.entry.skillInvocation = prepared.skillInvocation;
     this.#mutated(state);
     const result = { queueRevision: state.revision };
     this.#rememberCompletedOperation(
@@ -2217,19 +2156,10 @@ export class HostMessageCoordinator implements RuntimeMessageAuthority {
       if (!sameSourcePayload(receipt, payload)) {
         return failure('operation_conflict', 'Durable message receipt has a different payload');
       }
-      const skillInvocation =
-        source.skillInvocation ?? receipt.admission.skillInvocation ?? EMPTY_SKILL_INVOCATION;
       if (source.disposition === 'turn_started') {
-        return success({
-          disposition: 'turn_started',
-          turnId: receipt.admission.turnId,
-          skillInvocation,
-        });
+        return success({ disposition: 'turn_started', turnId: receipt.admission.turnId });
       }
-      return success({
-        disposition: source.disposition,
-        skillInvocation,
-      });
+      return success({ disposition: source.disposition });
     }
     const steeringProof = await this.#durableProof.readImmutableSteeringMessageProof(
       input.sessionId,
@@ -2739,7 +2669,6 @@ function sourceFromEntry(entry: LiveEntry): RootFollowupSource {
     content: normalizeMessageContent(entry.modelContent),
     submittedContentDigest: entry.submittedContentDigest,
     submittedPlacement: entry.submittedPlacement,
-    skillInvocation: entry.skillInvocation,
     placement: entry.placement,
     disposition: entry.disposition,
   };
@@ -2752,7 +2681,6 @@ function pendingMessageSource(admission: PendingMessageAdmission): RootTurnSourc
     submittedContentDigest: admission.submittedContentDigest,
     submittedPlacement: admission.submittedPlacement,
     ...(admission.submittedIntent ? { submittedIntent: admission.submittedIntent } : {}),
-    skillInvocation: admission.skillInvocation,
     placement: admission.placement,
     disposition: admission.disposition,
   };
@@ -2881,7 +2809,6 @@ interface CanonicalSubmitPayload {
   readonly messageId: string;
   readonly content: MessageContent;
   readonly placement: MessagePlacement;
-  readonly skillIds: readonly string[];
   readonly turnOrchestration?: TurnOrchestration;
 }
 
@@ -2906,19 +2833,17 @@ function canonicalSubmitPayload(input: TurnMessageSubmitInput): CanonicalSubmitP
     messageId: input.messageId,
     content: normalizeMessageContent(input.content),
     placement: input.placement,
-    skillIds: [...(input.skillIds ?? [])],
     ...(input.turnOrchestration ? { turnOrchestration: input.turnOrchestration } : {}),
   };
 }
 
 /**
- * Exact-Turn intent. Explicit Skill ids and an orchestration override describe
- * how one Turn runs, so they have no queued form and need an idle Session.
- * A `/skill:` token in the text is not exact-Turn intent: message preparation
- * expands it on the queued path too.
+ * Exact-Turn intent. An orchestration override describes how one Turn runs, so
+ * it has no queued form and needs an idle Session. A `/<name>` skill token is
+ * text: it reaches the model as written, queued or not.
  */
 function requiresExactTurn(payload: CanonicalSubmitPayload): boolean {
-  return payload.skillIds.length > 0 || payload.turnOrchestration !== undefined;
+  return payload.turnOrchestration !== undefined;
 }
 
 /**
@@ -2929,11 +2854,7 @@ function requiresExactTurn(payload: CanonicalSubmitPayload): boolean {
  * and still be answered with the earlier Turn's success.
  */
 function submittedTurnIntent(payload: CanonicalSubmitPayload): SubmittedTurnIntent | undefined {
-  if (!requiresExactTurn(payload)) return undefined;
-  return {
-    skillIds: payload.skillIds,
-    ...(payload.turnOrchestration ? { turnOrchestration: payload.turnOrchestration } : {}),
-  };
+  return payload.turnOrchestration ? { turnOrchestration: payload.turnOrchestration } : undefined;
 }
 
 function aggregateMessageContent(contents: readonly MessageContent[]): MessageContent {

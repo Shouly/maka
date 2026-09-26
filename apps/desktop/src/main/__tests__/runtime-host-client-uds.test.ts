@@ -82,7 +82,6 @@ test('drives Desktop Session operations through a real Runtime Host connection',
               result: {
                 disposition: 'steering',
                 queueRevision: 1,
-                skillInvocation: { loaded: [], failed: [], receipts: [] },
               },
             };
           },
@@ -118,7 +117,6 @@ test('drives Desktop Session operations through a real Runtime Host connection',
       {
         disposition: 'steering',
         queueRevision: 1,
-        skillInvocation: { loaded: [], failed: [], receipts: [] },
       },
     );
 
@@ -390,7 +388,6 @@ test('drives the renderer Session execution facade through real UDS framing', as
               result: {
                 disposition: 'turn_started',
                 turnId: 'turn-host-1',
-                skillInvocation: { loaded: [], failed: [], receipts: [] },
               },
             };
           },
@@ -444,7 +441,6 @@ test('drives the renderer Session execution facade through real UDS framing', as
         turnId: 'turn-host-1',
         attachments: [],
         inlineReferences: [],
-        skillInvocation: { loaded: [], failed: [], receipts: [] },
       },
     );
 
