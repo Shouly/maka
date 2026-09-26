@@ -983,8 +983,7 @@ export class HostMessageCoordinator implements RuntimeMessageAuthority {
       );
     }
     return {
-      messageId,
-      content: proof.sourceMessage.content,
+      ...proof.sourceMessage,
       admittedAt: proof.admission.admittedAt,
     };
   }

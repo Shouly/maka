@@ -337,6 +337,81 @@ test('steering becomes durable and ordered followups automatically start the nex
   });
 });
 
+test('a steer its Turn never pulled starts the next Turn, and the Host stays up (#5211)', async () => {
+  await withExecutionRoot(async (fixture) => {
+    const host = await fixture.startHost();
+    const client = await connectClient(fixture.root);
+    const subscription = await client.openSessionSubscription({
+      sessionId: fixture.sessionId,
+      transcript: { kind: 'none' },
+    });
+    const probe = new SubscriptionProbe(subscription);
+    const turnId = randomUUID();
+    const started = requireStartedTurn(
+      await client.request('turn.start', {
+        sessionId: fixture.sessionId,
+        turnId,
+        content: { text: FAKE_ASK_USER_QUESTION_PROMPT },
+      }),
+    );
+    const pending = await waitForPendingInteraction(subscription, probe, started.runId);
+    assert.ok(pending.request.kind === 'question');
+    // The Turn only waits for the answer and then ends, so it never pulls this.
+    const steerId = randomUUID();
+    const submitted = await client.request('turn.message.submit', {
+      originHostEpoch: host.hostEpoch,
+      sessionId: fixture.sessionId,
+      messageId: steerId,
+      content: { text: 'use the other approach' },
+      placement: 'current_turn',
+    });
+    assert.equal(submitted.disposition, 'steering');
+    await client.request('interaction.answer', {
+      sessionId: fixture.sessionId,
+      interactionId: pending.interactionId,
+      answer: { kind: 'question', answers: pending.request.questions.map(() => null) },
+    });
+    assert.equal(
+      (await waitForTerminalTurn(client, fixture.sessionId, turnId)).status,
+      'completed',
+    );
+
+    const successor = await probe.waitFor(
+      (frame) =>
+        frame.kind === 'subscription.session_projection' &&
+        frame.snapshot.rootTurn !== null &&
+        frame.snapshot.rootTurn.turnId !== turnId,
+      'the unpulled steer did not start the next Turn',
+    );
+    assert.equal(successor.kind, 'subscription.session_projection');
+    if (successor.kind !== 'subscription.session_projection' || !successor.snapshot.rootTurn) {
+      return;
+    }
+    const successorTurnId = successor.snapshot.rootTurn.turnId;
+    assert.equal(
+      (await waitForTerminalTurn(client, fixture.sessionId, successorTurnId)).status,
+      'completed',
+    );
+    await subscription.close();
+    await probe.done;
+    await client.close();
+    await fixture.stopHost(host);
+    // The steer's row is retired, so startup recovery neither fails on it nor
+    // starts it a second time.
+    await fixture.stopHost(await fixture.startHost());
+
+    const chain = await fixture.readAdmissionChain();
+    assert.deepEqual(
+      chain.map((admission) => admission.turnId),
+      [turnId, successorTurnId],
+    );
+    assert.deepEqual(
+      chain[1]?.sourceMessages.map(({ messageId, disposition }) => ({ messageId, disposition })),
+      [{ messageId: steerId, disposition: 'steering' }],
+    );
+  });
+});
+
 test('explicit retract is durable across connections and prevents successor admission', async () => {
   await withExecutionRoot(async (fixture) => {
     const host = await fixture.startHost();

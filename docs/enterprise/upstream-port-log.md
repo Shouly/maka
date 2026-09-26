@@ -270,15 +270,23 @@ Watermark after this batch: `99cfeb7e9`. Rows are proposed unless a
 - `d05436cc0` #5295: **taken**. Archives are written to the Session ledger,
   and an Artifact-backed archive ref (rewrite version 1) now reads as
   `read_failed` instead of reading the Artifact store.
-
-#### Deferred
-
-- `c557cc41e` #5211: **bug exists, narrow**. A crash between a steering
-  admission on one Turn and its handoff into a successor Root leaves the row
-  naming the old Turn, and the handoff refuses it ("Message admission Turn
-  conflict"). The fix needs the successor to prove the complete submitted
-  payload, which touches storage contracts in four places. Deferred to after
-  the rest of P2.
+- `c557cc41e` #5211: **bug confirmed, and it needs no crash**. Upstream
+  describes a crash between the successor Root's admission and the retirement
+  of the steering row. Here the ordinary path reaches the same state: a
+  steering message the Turn never pulled is folded into the next Turn in
+  memory only, its row still names the old Turn, and `markMessagesHandedOff`
+  refused the handoff ("Message admission Turn conflict"). The Host then
+  fail-stopped, and every restart failed the same way in recovery, so it never
+  became ready again. Reproduced on a real Host with a steer sent while a
+  question waited for its answer, and with one sent just before a provider
+  failure; Desktop reaches it with Shift+Enter (a plain Enter queues a
+  follow-up, which was never refused). Taken from upstream: the successor's
+  proof now carries its complete source record, and a stale row is retired
+  when the two record the same submitted payload (id, content, digest,
+  submitted placement, intent); a different payload is still refused. Tests:
+  upstream's storage cases without `skillInvocation`, which our sources no
+  longer carry, and a real-Host test for the question case; the provider
+  failure case races a 250 ms fake error, so it is not a test.
 
 #### Moved to Consider after reading
 

@@ -119,6 +119,7 @@ import {
   type ProvenSteeringMessageHandoff,
 } from './message-admission-store.js';
 import { normalizeSubmittedTurnIntent } from './submitted-turn-intent.js';
+import { rootTurnSourceMessagePayloadsEqual } from './agent-run-store.js';
 import {
   messageContentDigest,
   messageContentsEqual,
@@ -2450,23 +2451,28 @@ export class SqliteSessionMetadataStore {
           admission.runId === steeringProof.admissionRunId &&
           admission.admittedAt === steeringProof.admittedAt &&
           messageContentsEqual(admission.content, steeringProof.content);
+        // A steering Message the old Turn never pulled keeps its row, naming that
+        // Turn, until the successor Root that folded it in retires the row here.
+        // The successor's admission proves it owns the Message when it recorded
+        // the same submitted payload.
+        const provenSuccessorRootHandoff =
+          admission !== undefined &&
+          fallback !== undefined &&
+          rootTurnSourceMessagePayloadsEqual(admission, fallback);
         if (admission !== undefined && steeringProof !== undefined && !provenCrossTurnSteering) {
           throw new SessionMetadataConflictError('Proven steering admission identity conflict');
+        }
+        if (admission !== undefined && fallback !== undefined && !provenSuccessorRootHandoff) {
+          throw new SessionMetadataConflictError('Message admission fallback payload conflict');
         }
         if (
           admission !== undefined &&
           admission.turnId !== input.turnId &&
           admission.disposition !== 'followup' &&
-          !provenCrossTurnSteering
+          !provenCrossTurnSteering &&
+          !provenSuccessorRootHandoff
         ) {
           throw new SessionMetadataConflictError('Message admission Turn conflict');
-        }
-        if (
-          admission !== undefined &&
-          fallback !== undefined &&
-          !messageContentsEqual(admission.content, fallback.content)
-        ) {
-          throw new SessionMetadataConflictError('Message admission fallback content conflict');
         }
         if (
           !admission &&

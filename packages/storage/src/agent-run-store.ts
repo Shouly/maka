@@ -1510,7 +1510,7 @@ export function normalizeRootTurnAdmissionPayload(
   return { normalizedInput, sourceMessages };
 }
 
-function normalizeRootTurnSourceMessages(value: unknown): readonly RootTurnSourceMessage[] {
+export function normalizeRootTurnSourceMessages(value: unknown): readonly RootTurnSourceMessage[] {
   if (!Array.isArray(value) || value.length > ROOT_TURN_ADMISSION_MAX_SOURCE_MESSAGES) {
     throw new Error('Invalid root turn source messages: expected a bounded array');
   }
@@ -1594,16 +1594,25 @@ function rootTurnAdmissionPayloadsEqual(
       const other = right.sourceMessages[index];
       return (
         other !== undefined &&
-        source.messageId === other.messageId &&
+        rootTurnSourceMessagePayloadsEqual(source, other) &&
         source.placement === other.placement &&
-        source.disposition === other.disposition &&
-        source.submittedContentDigest === other.submittedContentDigest &&
-        (source.submittedPlacement ?? source.placement) ===
-          (other.submittedPlacement ?? other.placement) &&
-        submittedTurnIntentsEqual(source.submittedIntent, other.submittedIntent) &&
-        messageContentsEqual(source.content, other.content)
+        source.disposition === other.disposition
       );
     })
+  );
+}
+
+/** Whether two durable source records prove the same submitted Message payload. */
+export function rootTurnSourceMessagePayloadsEqual(
+  left: RootTurnSourceMessage,
+  right: RootTurnSourceMessage,
+): boolean {
+  return (
+    left.messageId === right.messageId &&
+    left.submittedContentDigest === right.submittedContentDigest &&
+    (left.submittedPlacement ?? left.placement) === (right.submittedPlacement ?? right.placement) &&
+    submittedTurnIntentsEqual(left.submittedIntent, right.submittedIntent) &&
+    messageContentsEqual(left.content, right.content)
   );
 }
 
