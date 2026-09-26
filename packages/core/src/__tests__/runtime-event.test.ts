@@ -922,6 +922,19 @@ describe('runtimePartialStreamIdentity', () => {
       runtimePartialStreamIdentity({ ...base, refs: { toolCallId: 'call-1' } }),
       'tool:call:call-1',
     );
+    // A Code Mode cell's nested call also names the cell. Every heartbeat of the
+    // call names the same cell, so a merge loses nothing.
+    assert.equal(
+      runtimePartialStreamIdentity({
+        ...base,
+        refs: {
+          toolCallId: 'cell-1:nested:n-1',
+          parentToolCallId: 'cell-1',
+          parentOperationId: 'cell-op-1',
+        },
+      }),
+      'tool:call:cell-1:nested:n-1',
+    );
   });
 
   test('groups assistant text and reasoning by the provider item', () => {

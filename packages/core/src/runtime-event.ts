@@ -661,9 +661,12 @@ export function runtimePartialStreamIdentity(event: RuntimeEvent): string | unde
   const content = event.content;
   // A heartbeat that states nothing is named by the call it belongs to: the
   // live tool input, output and progress side-channels, whose canonical facts
-  // are the separate function_call / function_response events.
+  // are the separate function_call / function_response events. A Code Mode
+  // cell's nested call also names the cell it runs in; that does not make its
+  // heartbeat a fact.
   if (!content) {
-    return refs?.toolCallId !== undefined && hasOnlyRefKeys(refs, ['toolCallId'])
+    return refs?.toolCallId !== undefined &&
+      hasOnlyRefKeys(refs, ['toolCallId', 'parentToolCallId', 'parentOperationId'])
       ? `${RUNTIME_TOOL_CALL_STREAM_PREFIX}${refs.toolCallId}`
       : undefined;
   }

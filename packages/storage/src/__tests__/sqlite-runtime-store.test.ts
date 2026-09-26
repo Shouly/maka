@@ -2166,6 +2166,53 @@ describe('SqliteRuntimeStore', () => {
     });
   });
 
+  it('keeps a nested Code Mode heartbeat out of the immutable ledger', async () => {
+    await withStore(async (store) => {
+      // A call a Code Mode cell makes also names the cell; its heartbeat is
+      // still presentation state, which a durable ledger event would make a
+      // fact a conversation copy refuses to carry.
+      const refs = {
+        toolCallId: 'provider-call-1',
+        parentToolCallId: 'code-cell',
+        parentOperationId: 'code-cell-operation',
+      };
+      const heartbeat = (id: string, ts: number) =>
+        functionCallEvent({
+          id,
+          ts,
+          partial: true,
+          role: 'tool',
+          author: 'tool',
+          origin: 'code_mode',
+          modelVisibility: 'hidden',
+          content: undefined,
+          refs,
+        });
+      for (let index = 0; index < 3; index += 1) {
+        await store.appendRuntimeEvent('session-1', 'run-1', heartbeat(`progress-${index}`, index));
+      }
+      const live = (await store.readRuntimeEvents('session-1', 'run-1')).filter(
+        (event) => event.partial,
+      );
+      assert.equal(live.length, 1, 'nested progress coalesces into one snapshot');
+      assert.deepEqual(live[0]?.refs, refs);
+      assert.deepEqual(await store.readImmutableRuntimeEvents('session-1', 'run-1'), []);
+
+      await store.appendRuntimeEvent('session-1', 'run-1', functionCallEvent({ ts: 3 }));
+      await store.appendRuntimeEvent(
+        'session-1',
+        'run-1',
+        functionResponseEvent({ ts: 4, refs: { toolCallId: 'provider-call-1' } }),
+      );
+      await store.appendRuntimeEvent('session-1', 'run-1', heartbeat('late-progress', 5));
+      assert.deepEqual(
+        (await store.readRuntimeEvents('session-1', 'run-1')).map((event) => event.id),
+        ['call-event-1', 'response-event-1'],
+        'the durable result retires the snapshot and late progress cannot recreate it',
+      );
+    });
+  });
+
   it('uses the immutable SQLite event as the steering-message recovery proof', async () => {
     await withStore(async (store) => {
       const steering = functionCallEvent({

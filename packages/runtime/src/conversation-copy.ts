@@ -19,7 +19,11 @@
 
 import { TOOL_NAMES } from '@maka/core/tool-names';
 import type { AgentRunEvent, AgentRunStore, EmittedAgentRunEvent } from '@maka/core/agent-run';
-import type { RuntimeEvent, RuntimeEventInvocationOpenedContent } from '@maka/core/runtime-event';
+import {
+  isPartialRuntimeEvent,
+  type RuntimeEvent,
+  type RuntimeEventInvocationOpenedContent,
+} from '@maka/core/runtime-event';
 import {
   buildInvocationOpenedEvent,
   isSessionInlineInvocation,
@@ -367,6 +371,8 @@ export async function prepareConversationRuntimeLedgerCopy(input: {
     ),
   );
   const inlineRuntimeEvents = input.sourceEvents.flatMap((event) => {
+    // A copy carries settled facts; the importer refuses presentation state.
+    if (isPartialRuntimeEvent(event)) return [];
     const opening = restoredOpenings.get(event.runId);
     if (!opening) return [event];
     restoredOpenings.delete(event.runId);
@@ -852,7 +858,10 @@ async function loadConversationCopyRunEvents(
           projectedEvents.length > 0
             ? projectedEvents
             : runtimeEventStore.readRuntimeEvents(run.sessionId, run.runId),
-        ).then((events) => {
+        ).then((sourceRunEvents) => {
+          // A run read back includes its live presentation snapshots; the copy
+          // carries settled facts only.
+          const events = sourceRunEvents.filter((event) => !isPartialRuntimeEvent(event));
           if (events.some((event) => event.content?.kind === 'invocation_opened')) {
             return { run, events };
           }
