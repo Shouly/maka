@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": false,
+    "composite": false
+  },
+  "include": ["src"],
+  "references": [{ "path": "../../packages/platform-protocol" }]
+}

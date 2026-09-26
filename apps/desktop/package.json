@@ -58,6 +58,7 @@
     "@maka/computer-use": "0.1.0",
     "@maka/core": "0.1.0",
     "@maka/mcp": "0.1.0",
+    "@maka/platform-protocol": "0.1.0",
     "@maka/runtime": "0.1.0",
     "@maka/runtime-host": "0.1.0",
     "@maka/storage": "0.1.0",
