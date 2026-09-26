@@ -401,3 +401,43 @@ These go to the model-thinking catalog redesign:
 - **CLI and ACP**: `ec59d42f6` `672d82731` `852a9748d` `420c22186` `edb4a3ded`
 - **Plugins and executors**: `f32cf2b48` `de06760bb` `9a91e3655` `0cb4fc32b`
 - **CI, release, website, dependencies and tests**: `fcbaaac32` `76cccd599` `dc8e499b7` `87e1f71b2` `00c249831` `815caaf8b` `7baf8b053` `54542021a` `fef5b937a` `902c18e67` `19971f3f2` `a4700a789` `914242b34` `f874eeb9c` `bc9401d67` `879e0a4bc` `29f13bdb3`
+
+## Batch 2: `99cfeb7e9..87fc9f69c` (17 commits, 2026-09-25 → 2026-09-26)
+
+Watermark after this batch: `87fc9f69c`.
+
+#### Done
+
+- `66ef93ac7` #5700: **bug confirmed** (all three new tests fail on the old
+  code). A Code Mode cell's nested call reports progress with
+  `parentToolCallId`/`parentOperationId` on its heartbeats, and the partial
+  stream rule accepted a heartbeat only when `toolCallId` was its sole ref. So
+  nested heartbeats became partial ledger events, and forking the Session
+  failed: the copy importer refuses partial events. The rule now accepts the
+  parent refs (every heartbeat of one call names the same cell, so a merge
+  loses nothing), and the copy carries settled facts only. Upstream's
+  `runtime-partial-values` does not exist here; the rule lives in core's
+  `runtimePartialStreamIdentity`. Tests: upstream's copy test as is, our own
+  storage and core tests.
+
+#### Not applicable
+
+- `8d5a3cac3` #5721: the duplicate answer row came from upstream's
+  `form_interaction` projection (#5592), which we never took.
+- `9c96bb716` #5724: virtua scroll correction; our renderer does not use virtua.
+- `93cc6b875` #5705: our sidebar already orders by the catalog's `activityAt`.
+- `87fc9f69c` #5731, `cd9449852` #5718, `4592259fd` #5714, `69a0a63fd` #5717,
+  `0479fc761` #5716, `d74eef4f1` #5715: upstream renderer and `packages/ui`
+  styling. Our renderer imports none of those `packages/ui` components, and the
+  `relative-time` change is the sidebar's "just now" label, which we do not use.
+- `6a9e8ae0d` #5509, `b47fb74fe` #5505: upstream AppShell ownership refactors.
+- `37d3c1931` #5492: CI Storybook.
+
+#### Consider
+
+| Commit | PR | What | Note |
+|---|---|---|---|
+| `87217d370` | #5621 | ACP restores Sessions and interrupted Turns (Zed). | Large feature. |
+| `4d7a1961d` | #5514 | Bounded Usage page queries. | Our Usage store is different (no `usage-screen`), and it also decodes every record in the range; bound it if the Usage page gets slow. |
+| `f5aa3f080` | #5575 | A development profile per git worktree. | Does not help two sessions sharing one tree. |
+| `18be8d5b6` | #5022 | Deterministic E2E Session names. | Test infrastructure. |
