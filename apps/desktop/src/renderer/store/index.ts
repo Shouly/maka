@@ -89,6 +89,9 @@ export const goalStore = createGoalStore({ subscribeChanges: sessionsStore.onCha
 // beside the plan channel proper.
 export const planStore = createPlanStore({ subscribeChanges: sessionsStore.onChange });
 export { botsStore } from './bots-store.js';
+// Started by the login gate at the app root, not by `startRendererStores`:
+// whether the shell mounts at all depends on it.
+export { orgAccountStore } from './org-account-store.js';
 /**
  * Archive a project without leaving the default pointing at it.
  *
@@ -194,7 +197,8 @@ export function startRendererStores(): () => void {
     void sessionsStore.refresh();
   });
   const offSessions = sessionsStore.start();
-  const offSettings = settingsStore.startClient();
+  // Client settings are the App's (`app.tsx`): the sign-in screens that come
+  // before this shell need the language and theme too.
   const offLocal = projectsStore.connectLocal();
   const offNewTasks = newTaskStore.start();
   const offSchedules = scheduledTasksStore.start();
@@ -208,7 +212,6 @@ export function startRendererStores(): () => void {
     generation++;
     offHosts();
     offSessions();
-    offSettings();
     offLocal();
     offNewTasks();
     offSchedules();

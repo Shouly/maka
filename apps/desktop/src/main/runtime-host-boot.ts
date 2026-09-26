@@ -27,6 +27,7 @@ import {
   nativeTheme,
   powerMonitor,
   powerSaveBlocker,
+  safeStorage,
   shell,
   Tray,
   type MessageBoxOptions,
@@ -34,7 +35,8 @@ import {
 } from "electron";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { hostname } from "node:os";
 import { type ConnectionEvent } from '@maka/core/connections';
 import { type SessionChangedEvent, type SessionChangedReason } from '@maka/core/session';
 import { isBotDeliveryProvider } from '@maka/core/bot-chat-settings';
@@ -273,6 +275,12 @@ import {
   updateDesktopStartupProgress,
 } from './startup-presentation.js';
 import { registerWorkspaceSearchIpc } from "./workspace-search-ipc-main.js";
+import { registerOrgAccountIpc } from "./org-account/org-account-ipc-main.js";
+import { appOpenUrl, installAppUrlScheme } from "./app-url-scheme.js";
+import { wantsSignInWindow } from "./sign-in-window.js";
+import { resolveMainRendererEntry } from "./main-renderer-loader.js";
+import type { OrgAccountService } from "./org-account/org-account-service.js";
+import { osKeychain } from "./org-account/org-account-store.js";
 import { createProjectlessWorkspaces } from './projectless-workspace.js';
 import {
   parseDesktopSessionResourceKey,
@@ -537,6 +545,9 @@ const mainWindowController = createMainWindowController({
   onClose: () => onMainWindowClose(),
   onClosed: () => onMainWindowClosed(),
   onShow: closeDesktopStartupProgress,
+  // A deployment that requires a sign-in opens small until someone has signed in.
+  opensForSignIn: async () =>
+    wantsSignInWindow((await orgAccountService?.catch(() => undefined))?.state()),
   onRendererProcessGone: async (details) => {
     const diagnosticInput = createDesktopMainRendererDiagnosticInput({
       title: "Maka main Renderer process exited unexpectedly",
@@ -1087,6 +1098,8 @@ const desktopUpdateChannel = app.isPackaged
       JSON.parse(readFileSync(join(app.getAppPath(), "package.json"), "utf8")),
     )
   : "release";
+/** The company account; the Runtime Host asks it for access tokens (design §4.3). */
+let orgAccountService: Promise<OrgAccountService> | undefined;
 const updateService = createAppUpdateService({
   currentVersion: app.getVersion(),
   isPackaged: app.isPackaged,
@@ -1886,6 +1899,26 @@ function registerPersistentClientIpc(): void {
     e2eFixture,
     updateService,
   });
+  // The company account (design §4.2); its failure must not take the app down.
+  orgAccountService = registerOrgAccountIpc({
+    ipcMain,
+    send: (channel, state) => mainWindowController.send(channel, state),
+    openExternal: (url) => shell.openExternal(url),
+    keychain: osKeychain(safeStorage, process.platform),
+    userDataDir,
+    appVersion: app.getVersion(),
+    deviceName: hostname(),
+    // A deployment bound to a company server requires signing in (design §4.2).
+    ...(process.env.MAKA_ORG_SERVER_URL ? { managedServerUrl: process.env.MAKA_ORG_SERVER_URL } : {}),
+    uiLocale: () => desktopLocale.current(),
+    appUrl: appOpenUrl(app.isPackaged),
+    rendererAssetsDir: join(dirname(resolveMainRendererEntry(import.meta.dirname, undefined).filePath), "assets"),
+  });
+  orgAccountService.then(
+    (service) =>
+      service.subscribe((state) => mainWindowController.setSignInWindow(wantsSignInWindow(state))),
+    (error) => console.error("[org-account] failed to start", error),
+  );
   registerAppIconIpc({
     ipcMain,
     showOpenDialog: (options) => mainWindowController.showOpenDialog(options),
@@ -2109,6 +2142,10 @@ function wireLifecycle(): void {
   });
   app.on("second-instance", quitCoordinator.focusOrCreateWindow);
   app.on("activate", quitCoordinator.focusOrCreateWindow);
+  installAppUrlScheme(app, {
+    claim: revealMode === "active",
+    focus: () => void quitCoordinator.focusOrCreateWindow(),
+  });
   app.on("browser-window-focus", () => {
     void updateService.checkForUpdatesOnFocus();
   });

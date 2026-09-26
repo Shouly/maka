@@ -51,6 +51,7 @@ test('native accessibility names cover the shell, transcript, settings and modul
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: '设置', exact: true }).click();
   for (const section of [
+    'account',
     'general',
     'appearance',
     'projects',

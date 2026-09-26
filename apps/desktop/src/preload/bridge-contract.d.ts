@@ -1634,6 +1634,21 @@ export interface MakaBridge {
     refreshTokens(host: DesktopRuntimeHostRef | undefined, connectionId: string): Promise<SubscriptionActionResult>;
     logout(host: DesktopRuntimeHostRef | undefined, connectionId: string): Promise<SubscriptionActionResult>;
   };
+  /** The company account this desktop signs in with (design §4.2). App-level, not per Host. */
+  orgAccount: {
+    state(): Promise<import('../shared/org-account.js').OrgAccountState>;
+    setServerUrl(url: string): Promise<import('../shared/org-account.js').OrgAccountSetServerResult>;
+    /**
+     * Opens the browser at `provider` (an id from the state's `providers`) and
+     * resolves when the sign-in finishes, fails or is cancelled.
+     */
+    signIn(provider?: string): Promise<import('../shared/org-account.js').OrgAccountState>;
+    /** Load the server's sign-in options again, e.g. after it could not be reached. */
+    refresh(): Promise<import('../shared/org-account.js').OrgAccountState>;
+    cancelSignIn(): Promise<void>;
+    signOut(): Promise<import('../shared/org-account.js').OrgAccountState>;
+    subscribe(handler: (state: import('../shared/org-account.js').OrgAccountState) => void): () => void;
+  };
   githubCopilotSubscription: {
     connectExistingLogin(host?: DesktopRuntimeHostRef): Promise<SubscriptionActionResult>;
     getAuthUrl(

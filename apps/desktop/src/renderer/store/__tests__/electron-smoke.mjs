@@ -1031,6 +1031,7 @@ try {
     nodes.map((node) => node.getAttribute('data-settings-section')),
   );
   assert.deepEqual(navSections, [
+    'account',
     'general',
     'appearance',
     'projects',

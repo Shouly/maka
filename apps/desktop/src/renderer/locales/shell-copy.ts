@@ -802,6 +802,7 @@ const EN_STATIC_COMMANDS: Record<StaticCommandId, CommandCopy> = {
 };
 
 const ZH_SETTINGS_SECTIONS: Record<SettingsSection, string> = {
+  account: '账号',
   general: '通用',
   appearance: '外观',
   projects: '工作区',
@@ -822,6 +823,7 @@ const ZH_SETTINGS_SECTIONS: Record<SettingsSection, string> = {
 };
 
 const EN_SETTINGS_SECTIONS: Record<SettingsSection, string> = {
+  account: 'Account',
   general: 'General',
   appearance: 'Appearance',
   projects: 'Workspace',

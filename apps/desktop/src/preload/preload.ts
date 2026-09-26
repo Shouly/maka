@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import type { OrgAccountSetServerResult, OrgAccountState } from '../shared/org-account.js';
 import type {
   SessionBundleExportIpcResult,
   SessionBundleImportIpcResult,
@@ -3273,6 +3274,31 @@ const makaBridge = {
     },
     logout(host: DesktopRuntimeHostRef | undefined, connectionId: string): Promise<SubscriptionActionResult> {
       return invokeSelectedRuntimeHost(host, 'xai-oauth:logout', connectionId);
+    },
+  },
+  orgAccount: {
+    state(): Promise<OrgAccountState> {
+      return ipcRenderer.invoke('orgAccount:state');
+    },
+    setServerUrl(url: string): Promise<OrgAccountSetServerResult> {
+      return ipcRenderer.invoke('orgAccount:setServerUrl', url);
+    },
+    signIn(provider?: string): Promise<OrgAccountState> {
+      return ipcRenderer.invoke('orgAccount:signIn', provider);
+    },
+    refresh(): Promise<OrgAccountState> {
+      return ipcRenderer.invoke('orgAccount:refresh');
+    },
+    cancelSignIn(): Promise<void> {
+      return ipcRenderer.invoke('orgAccount:cancelSignIn');
+    },
+    signOut(): Promise<OrgAccountState> {
+      return ipcRenderer.invoke('orgAccount:signOut');
+    },
+    subscribe(handler: (state: OrgAccountState) => void): () => void {
+      const listener = (_event: Electron.IpcRendererEvent, state: OrgAccountState) => handler(state);
+      ipcRenderer.on('orgAccount:changed', listener);
+      return () => ipcRenderer.off('orgAccount:changed', listener);
     },
   },
   githubCopilotSubscription: {

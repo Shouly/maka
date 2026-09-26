@@ -39,6 +39,7 @@ import { isDarkAppearance, isThemePreference, toNativeThemeSource } from './them
 import { createWindowRevealGate, type WindowRevealMode } from './window-reveal.js';
 import { createWindowsMaximizeRendererSync } from './windows-maximize-renderer-sync.js';
 import { windowChrome } from './window-chrome.js';
+import { createSignInWindowMode } from './sign-in-window.js';
 import {
   parseDesktopSessionResourceKey,
 } from '../shared/runtime-host-identity.js';
@@ -94,6 +95,12 @@ export interface MainWindowController {
    * window is gone, minimized to the point of losing focus, or another
    * app is in front — used to gate "notify only while unfocused". */
   isFocused(): boolean;
+  /**
+   * Show the small sign-in window (a company sign-in is required and there is
+   * none) or give the window back its own size (`sign-in-window.ts`).
+   * Idempotent; follows the account state.
+   */
+  setSignInWindow(signIn: boolean): void;
 }
 
 interface MainWindowControllerDeps {
@@ -107,6 +114,8 @@ interface MainWindowControllerDeps {
   onClosed?: () => void;
   onShow?: () => void;
   onRendererProcessGone: (details: Electron.RenderProcessGoneDetails) => void | Promise<void>;
+  /** Whether a new window opens as the sign-in window; asked once per window. */
+  opensForSignIn?: () => Promise<boolean>;
 }
 
 let mainWindow: BrowserWindow | null = null;
@@ -196,6 +205,7 @@ export function createMainWindowController(deps: MainWindowControllerDeps): Main
   // clicking the dock icon during the pre-commit window would flash the
   // skeleton anyway. The gate defers those focus requests until markReady.
   const revealGate = createWindowRevealGate(revealMode);
+  const signInWindow = createSignInWindowMode();
   let showFallbackTimer: NodeJS.Timeout | undefined;
   let rendererRecoveryReadiness:
     | {
@@ -299,6 +309,7 @@ export function createMainWindowController(deps: MainWindowControllerDeps): Main
       ? defaults
       : await readSavedBounds(workspaceRoot, defaults);
     const bounds = clampBoundsToVisibleDisplay(savedBounds);
+    const opensForSignIn = !e2eFixture && (await deps.opensForSignIn?.()) === true;
 
     // @kenji PR103 follow-up: complete the FOUC fix at the window-chrome layer.
     // The renderer applies `.dark` synchronously before React mounts (PR103),
@@ -507,7 +518,16 @@ export function createMainWindowController(deps: MainWindowControllerDeps): Main
     // maximize() here reveals the still-hidden window (verified on macOS),
     // bypassing the reveal gate — defer it so markReady applies it right
     // before the reveal and the first visible frame is already maximized.
-    if (bounds.isMaximized) {
+    //
+    // A window opened for the sign-in starts small instead, still hidden, and
+    // keeps these bounds (maximized or not) for when someone has signed in.
+    if (opensForSignIn) {
+      signInWindow.enter(mainWindow, {
+        workArea: screen.getDisplayMatching(mainWindow.getBounds()).workArea,
+        animate: false,
+        restore: bounds,
+      });
+    } else if (bounds.isMaximized) {
       revealGate.requestMaximize(mainWindow);
     }
 
@@ -518,7 +538,7 @@ export function createMainWindowController(deps: MainWindowControllerDeps): Main
       if (!mainWindow) return;
       if (saveTimer) clearTimeout(saveTimer);
       saveTimer = setTimeout(() => {
-        if (!mainWindow) return;
+        if (!mainWindow || signInWindow.active) return;
         const next: SavedBounds = mainWindow.isMaximized()
           ? { ...mainWindow.getNormalBounds(), isMaximized: true }
           : { ...mainWindow.getBounds(), isMaximized: false };
@@ -541,13 +561,20 @@ export function createMainWindowController(deps: MainWindowControllerDeps): Main
       // The window owns the embedded-browser views (children of its contentView);
       // tear them down so their WebContents close with it instead of leaking.
       void browserViews?.disposeAll();
-      if (!mainWindow) return;
+      const signingIn = signInWindow.active;
+      signInWindow.reset();
+      if (!mainWindow || signingIn) return;
       const final: SavedBounds = mainWindow.isMaximized()
         ? { ...mainWindow.getNormalBounds(), isMaximized: true }
         : { ...mainWindow.getBounds(), isMaximized: false };
       void writeSavedBounds(workspaceRoot, final);
     });
-    mainWindow.once('closed', () => deps.onClosed?.());
+    mainWindow.once('closed', () => {
+      // Also here: an account push between 'close' and 'closed' can still
+      // have taken the closing window down.
+      signInWindow.reset();
+      deps.onClosed?.();
+    });
 
     // Dev-server cache hygiene (issue #4775) — see main-renderer-dev-cache.ts
     // for why a stale immutable dep-chunk graph must never survive into a new
@@ -730,6 +757,22 @@ export function createMainWindowController(deps: MainWindowControllerDeps): Main
     },
     isFocused() {
       return !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused();
+    },
+    setSignInWindow(signIn) {
+      const target = mainWindow;
+      if (!target || target.isDestroyed() || e2eFixture) return;
+      // Resizing a window on screen animates on macOS; a hidden one just takes the size.
+      const animate = process.platform === 'darwin' && target.isVisible();
+      if (signIn) {
+        signInWindow.enter(target, {
+          workArea: screen.getDisplayMatching(target.getBounds()).workArea,
+          animate,
+          // A quit while signed out still reopens at the user's size afterwards.
+          onTaken: (own) => void writeSavedBounds(workspaceRoot, own),
+        });
+      } else {
+        signInWindow.leave(target, { animate, place: clampBoundsToVisibleDisplay });
+      }
     },
   };
 }

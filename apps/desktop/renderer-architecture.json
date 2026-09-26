@@ -28,6 +28,7 @@
     "src/renderer/bridge/notifications.ts",
     "src/renderer/bridge/oauth.ts",
     "src/renderer/bridge/onboarding.ts",
+    "src/renderer/bridge/org-account.ts",
     "src/renderer/bridge/permissions.ts",
     "src/renderer/bridge/plan.ts",
     "src/renderer/bridge/projects.ts",
@@ -47,6 +48,8 @@
     "src/renderer/bridge/web-search.ts",
     "src/renderer/bridge/workspace.ts",
     "src/renderer/components/ErrorBoundary.tsx",
+    "src/renderer/components/account/LoginScreen.tsx",
+    "src/renderer/components/account/OrgAccountGate.tsx",
     "src/renderer/components/composer/ChatInput.tsx",
     "src/renderer/components/composer/InteractionPrompts.tsx",
     "src/renderer/components/composer/ModelMenu.tsx",
@@ -71,6 +74,7 @@
     "src/renderer/components/layout/sidebar-parts/ProjectRow.tsx",
     "src/renderer/components/layout/sidebar-parts/SessionActionMenuItems.tsx",
     "src/renderer/components/layout/sidebar-parts/SessionRow.tsx",
+    "src/renderer/components/layout/sidebar-parts/SidebarAccountEntry.tsx",
     "src/renderer/components/layout/sidebar-parts/SidebarAddProject.tsx",
     "src/renderer/components/layout/sidebar-parts/SidebarGroup.tsx",
     "src/renderer/components/layout/sidebar-parts/SidebarNavButton.tsx",
@@ -154,6 +158,7 @@
     "src/renderer/components/settings/UsageSettings.tsx",
     "src/renderer/components/settings/WebSearchSettings.tsx",
     "src/renderer/components/settings/WorkspaceSettings.tsx",
+    "src/renderer/components/settings/account/AccountSettings.tsx",
     "src/renderer/components/settings/bots/BotChannelDetail.tsx",
     "src/renderer/components/settings/bots/BotChatOverview.tsx",
     "src/renderer/components/settings/bots/BotChatSettings.tsx",
@@ -268,6 +273,7 @@
     "src/renderer/lib/memory-tool-results.ts",
     "src/renderer/lib/module-list-state.ts",
     "src/renderer/lib/narration-fold.ts",
+    "src/renderer/lib/org-account-view.ts",
     "src/renderer/lib/platform.ts",
     "src/renderer/lib/ported/about-update-status.ts",
     "src/renderer/lib/ported/artifact-preview-text.ts",
@@ -367,6 +373,7 @@
     "src/renderer/locales/greeting-copy.ts",
     "src/renderer/locales/mcp-copy.ts",
     "src/renderer/locales/modules-copy.ts",
+    "src/renderer/locales/org-account-copy.ts",
     "src/renderer/locales/palette-copy.ts",
     "src/renderer/locales/peer-mesh-copy.ts",
     "src/renderer/locales/permission-center-copy.ts",
@@ -402,6 +409,7 @@
     "src/renderer/locales/welcome-copy.ts",
     "src/renderer/locales/workbar-copy.ts",
     "src/renderer/main.tsx",
+    "src/renderer/store/__tests__/account-settings.test.tsx",
     "src/renderer/store/__tests__/bots-settings.test.tsx",
     "src/renderer/store/__tests__/composer-prompts-smoke.mjs",
     "src/renderer/store/__tests__/composer-state.test.ts",
@@ -437,6 +445,7 @@
     "src/renderer/store/mcp-store.ts",
     "src/renderer/store/new-task-store.ts",
     "src/renderer/store/onboarding-store.ts",
+    "src/renderer/store/org-account-store.ts",
     "src/renderer/store/page-history.ts",
     "src/renderer/store/plan-store.ts",
     "src/renderer/store/projects-store.ts",
@@ -612,7 +621,7 @@
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
-        "useEffect": 2,
+        "useEffect": 3,
         "useStore": 1,
         "useSystemUiLocale": 1
       },
@@ -620,6 +629,7 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "./components/account/OrgAccountGate.js": 1,
         "./components/ErrorBoundary.js": 1,
         "./components/layout/AppShell.js": 1,
         "./components/ui/toaster.js": 1,
@@ -880,6 +890,17 @@
         "./bridge.js": 1
       }
     },
+    "src/renderer/bridge/org-account.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
     "src/renderer/bridge/permissions.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -1088,6 +1109,58 @@
         "./ui/button.js": 1,
         "@maka/ui": 1,
         "react": 1
+      }
+    },
+    "src/renderer/components/account/LoginScreen.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "clearTimeout": 1,
+        "setTimeout": 1
+      },
+      "hookCalls": {
+        "useEffect": 2,
+        "useRef": 1,
+        "useState": 1,
+        "useUiLocale": 4
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/org-account-view.js": 1,
+        "../../lib/ported/provider-brand-marks.js": 1,
+        "../../locales/org-account-copy.js": 1,
+        "../icons/index.js": 1,
+        "../ui/button.js": 1,
+        "../ui/skeleton.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/account/OrgAccountGate.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 2,
+        "useSettingsErrorReporter": 1,
+        "useState": 1,
+        "useStore": 4,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../hooks/use-settings.js": 1,
+        "../../lib/org-account-view.js": 1,
+        "../../lib/platform.js": 1,
+        "../../locales/org-account-copy.js": 1,
+        "../../store/index.js": 1,
+        "../ui/button.js": 1,
+        "./LoginScreen.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
       }
     },
     "src/renderer/components/composer/ChatInput.tsx": {
@@ -1615,6 +1688,7 @@
         "../icons/Anthropicon.js": 1,
         "../ui/sidebar-tooltip.js": 2,
         "./sidebar-parts/index.js": 1,
+        "./sidebar-parts/SidebarAccountEntry.js": 1,
         "./sidebar-parts/SidebarAddProject.js": 1,
         "./sidebar-parts/SidebarGroup.js": 1,
         "@maka/ui": 1,
@@ -1740,6 +1814,30 @@
         "./SidebarRowActionTrigger.js": 1,
         "motion/react": 1,
         "react": 1
+      }
+    },
+    "src/renderer/components/layout/sidebar-parts/SidebarAccountEntry.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useSettingsErrorReporter": 1,
+        "useStore": 2,
+        "useUiLocale": 2
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../hooks/use-settings.js": 1,
+        "../../../lib/cn.js": 1,
+        "../../../locales/org-account-copy.js": 1,
+        "../../../store/index.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/dropdown-menu.js": 1,
+        "../../ui/user-avatar.js": 1,
+        "./SidebarNavButton.js": 1,
+        "@maka/ui": 1,
+        "zustand": 1
       }
     },
     "src/renderer/components/layout/sidebar-parts/SidebarAddProject.tsx": {
@@ -3554,6 +3652,7 @@
         "../../locales/settings-navigation-copy.js": 1,
         "../../store/index.js": 1,
         "./AboutSettings.js": 1,
+        "./account/AccountSettings.js": 1,
         "./AppearanceSettings.js": 1,
         "./ArchivedTasksSettings.js": 1,
         "./bots/BotChatSettings.js": 1,
@@ -3708,6 +3807,35 @@
         "./settings-row.js": 1,
         "@maka/ui": 1,
         "react": 1
+      }
+    },
+    "src/renderer/components/settings/account/AccountSettings.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useSettingsErrorReporter": 1,
+        "useState": 3,
+        "useStore": 3,
+        "useUiLocale": 5
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../hooks/use-settings.js": 1,
+        "../../../lib/org-account-view.js": 1,
+        "../../../locales/org-account-copy.js": 1,
+        "../../../locales/settings-shared-copy.js": 1,
+        "../../../store/index.js": 1,
+        "../../ui/button.js": 1,
+        "../../ui/input.js": 1,
+        "../../ui/skeleton.js": 1,
+        "../../ui/status-chip.js": 1,
+        "../settings-row.js": 1,
+        "@maka/core/relative-time": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
       }
     },
     "src/renderer/components/settings/bots/BotChannelDetail.tsx": {
@@ -5735,6 +5863,15 @@
       "actionFactories": [],
       "dependencyPaths": {}
     },
+    "src/renderer/lib/org-account-view.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
     "src/renderer/lib/platform.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {
@@ -6772,6 +6909,17 @@
       "actionFactories": [],
       "dependencyPaths": {}
     },
+    "src/renderer/locales/org-account-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/core/ui-locale": 1
+      }
+    },
     "src/renderer/locales/palette-copy.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -7213,6 +7361,7 @@
         "./mcp-store.js": 1,
         "./new-task-store.js": 1,
         "./onboarding-store.js": 1,
+        "./org-account-store.js": 1,
         "./plan-store.js": 1,
         "./projects-store.js": 1,
         "./resource-store.js": 1,
@@ -7283,6 +7432,18 @@
       "dependencyPaths": {
         "../bridge/onboarding.js": 1,
         "./resource-store.js": 1,
+        "zustand/vanilla": 1
+      }
+    },
+    "src/renderer/store/org-account-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/org-account.js": 1,
         "zustand/vanilla": 1
       }
     },

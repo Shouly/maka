@@ -27,6 +27,10 @@ import { cn } from '../../../lib/cn.js';
 /** Icons stay visually still; feedback comes from colour and surface. */
 export const navIconClass = 'shrink-0';
 
+/** The row itself: 28px tall, r8, secondary text that rises to primary on hover. */
+export const sidebarNavButtonClass =
+  'group/navbtn flex h-7 w-full cursor-pointer items-center rounded-lg px-[2px] text-sidebar-text-secondary transition-[color,background-color,box-shadow] hover:bg-sidebar-hover hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none';
+
 export function SidebarNavButton(props: {
   icon: ReactNode;
   label: string;
@@ -47,7 +51,7 @@ export function SidebarNavButton(props: {
       aria-description={props.unreadLabel}
       aria-current={props.isActive ? 'page' : undefined}
       className={cn(
-        'group/navbtn flex h-7 w-full cursor-pointer items-center rounded-lg px-[2px] text-sidebar-text-secondary transition-[color,background-color,box-shadow] hover:bg-sidebar-hover hover:text-sidebar-text-primary focus-visible:shadow-[var(--sidebar-focus-shadow)] focus-visible:outline-none',
+        sidebarNavButtonClass,
         props.isActive && 'bg-sidebar-selected text-sidebar-text-primary',
         props.className,
       )}

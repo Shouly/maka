@@ -44,6 +44,7 @@ try {
     'connectors-module.test.tsx',
     'scheduled-module.test.tsx',
     'model-effort.test.tsx',
+    'account-settings.test.tsx',
   ].map((name) => fileURLToPath(new URL(name, import.meta.url)));
   const files = [
     'renderer-state.test.mjs',
@@ -64,6 +65,7 @@ try {
     'connectors-module.test.mjs',
     'scheduled-module.test.mjs',
     'model-effort.test.mjs',
+    'account-settings.test.mjs',
   ].map((name) => join(output, name));
   await build({
     entryPoints: entries,

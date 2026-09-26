@@ -411,7 +411,7 @@ test('application broadcasts reach registered auxiliaries once and stop after re
   const module = { exports: {} as { createMainWindowController: typeof createMainWindowController } };
   runInNewContext(output.outputFiles[0]!.text, {
     module, exports: module.exports, process,
-    require: () => ({ createWindowRevealGate: () => ({}) }),
+    require: () => ({ createWindowRevealGate: () => ({}), createSignInWindowMode: () => ({}) }),
   });
   const controller = module.exports.createMainWindowController({
     workspaceRoot: '/workspace', e2eFixture: null, revealMode: 'hidden',

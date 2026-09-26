@@ -35,6 +35,7 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
       system: '系统',
     },
     sections: {
+      account: { label: '账号', description: '登录公司的 Maka 服务器。' },
       general: {
         label: '通用',
         description: '显示名称与界面语言、隐私与通知、任务默认与网络代理。',
@@ -83,6 +84,7 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
       system: '系統',
     },
     sections: {
+      account: { label: '帳號', description: '登入公司的 Maka 伺服器。' },
       general: {
         label: '通用',
         description: '顯示名稱與介面語言、隱私與通知、任務預設與網路代理。',
@@ -131,6 +133,7 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
       system: 'System',
     },
     sections: {
+      account: { label: 'Account', description: "Sign in to your company's Maka server." },
       general: {
         label: 'General',
         description:

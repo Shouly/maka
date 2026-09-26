@@ -87,6 +87,10 @@ const { runtimeHostSetupPackage } = resolveProductManifestIdentity({
 const baseDesktopBuilderConfig = {
   appId: 'com.maka.desktop',
   productName: 'Maka',
+  // The app's URL scheme (`src/main/app-url-scheme.ts`), declared to the OS so
+  // an "Open Maka" link can launch the app cold: Info.plist on macOS, the
+  // .desktop entry on Linux. The running app also claims it on Windows.
+  protocols: [{ name: 'Maka', schemes: ['maka'] }],
   artifactName: 'Maka-${version}-mac-${arch}.${ext}',
   asar: true,
   beforePack,

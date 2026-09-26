@@ -93,6 +93,10 @@ const DEV_ENV_SCHEMA_VERSION = 1;
  * ordinary `npm run dev` — and that is the cheaper side of the trade.
  */
 const DEV_BUNDLE_ID = `com.maka.dev.${WORKTREE_ID}`;
+// The development build's URL scheme (`appUrlScheme(false)` in
+// src/main/app-url-scheme.ts). macOS routes a scheme only to an app whose
+// Info.plist declares it, so the bundle has to carry it.
+const DEV_URL_SCHEME = 'maka-dev';
 const RUNTIME_SCHEMA_VERSION = 7;
 
 export const developmentAppPath = DEV_APP;
@@ -587,6 +591,11 @@ export async function prepareDevelopmentApp() {
         setPlistString(plist, 'CFBundleIdentifier', DEV_BUNDLE_ID);
         setPlistString(plist, 'CFBundleName', 'Maka Dev');
         setPlistString(plist, 'CFBundleDisplayName', 'Maka Dev');
+        run('plutil', [
+          '-insert', 'CFBundleURLTypes', '-json',
+          JSON.stringify([{ CFBundleURLName: 'Maka Dev', CFBundleURLSchemes: [DEV_URL_SCHEME] }]),
+          plist,
+        ]);
         // Stock Electron seals a SHA256 of its own default_app.asar here. We
         // replace that payload, so the record would describe a file that no
         // longer exists — inert today only because the integrity fuse is off.
@@ -640,6 +649,7 @@ export function createRuntimeMarker(electronVersion) {
     schemaVersion: RUNTIME_SCHEMA_VERSION,
     electronVersion,
     bundleId: DEV_BUNDLE_ID,
+    urlScheme: DEV_URL_SCHEME,
     desktopDir: DESKTOP_DIR,
     // Burned into the generated bootstrap, so a change here must invalidate
     // the cached bundle (isDevelopmentRuntimeCurrent compares every field).

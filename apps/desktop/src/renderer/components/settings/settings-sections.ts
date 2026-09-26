@@ -52,7 +52,7 @@ export interface SettingsNavGroupModel {
  * order inside a group is the order the pages are read in, not alphabetical.
  */
 export const SETTINGS_NAV_GROUPS: readonly SettingsNavGroupModel[] = [
-  { group: 'preferences', sections: ['general', 'appearance', 'projects'] },
+  { group: 'preferences', sections: ['account', 'general', 'appearance', 'projects'] },
   { group: 'capabilities', sections: ['models', 'subagents', 'memory', 'search', 'bot-chat'] },
   { group: 'activity', sections: ['usage', 'archived-tasks', 'data'] },
   { group: 'system', sections: ['permissions', 'health', 'about'] },
@@ -63,6 +63,7 @@ export const VISIBLE_SETTINGS_SECTIONS: readonly SettingsSection[] = SETTINGS_NA
 );
 
 export const SETTINGS_SECTION_ICONS: Record<SettingsSection, AnthropiconName> = {
+  account: 'user',
   general: 'settings',
   appearance: 'sun',
   projects: 'folder',

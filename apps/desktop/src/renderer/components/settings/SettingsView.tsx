@@ -37,6 +37,7 @@ import { useStore } from 'zustand';
 import { useUiLocale } from '@maka/ui';
 import type { SettingsSection } from '@maka/core/settings';
 import { AboutSettings } from './AboutSettings.js';
+import { AccountSettings } from './account/AccountSettings.js';
 import { AppearanceSettings } from './AppearanceSettings.js';
 import { BotChatSettings } from './bots/BotChatSettings.js';
 import { ArchivedTasksSettings } from './ArchivedTasksSettings.js';
@@ -92,7 +93,9 @@ export function SettingsView(props: { onOpenKeyboardHelp: () => void }) {
             data-maka-contract="settings-content"
             data-settings-section={section}
           >
-            {section === 'general' ? (
+            {section === 'account' ? (
+              <AccountSettings />
+            ) : section === 'general' ? (
               <GeneralSettings host={host} />
             ) : section === 'appearance' ? (
               <AppearanceSettings />

@@ -31,7 +31,8 @@
 // is found, and the list has one shape.
 //
 // The footer carries the update chip, which is the only place the app ever
-// asks for the user's attention about itself, and Settings.
+// asks for the user's attention about itself, Settings, and — while a company
+// account is signed in — who that is, with Sign out behind it.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react';
 import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'motion/react';
@@ -39,6 +40,7 @@ import { useStore } from 'zustand';
 import { useRovingRowFocus, useUiLocale } from '@maka/ui';
 import { Anthropicon } from '../icons/Anthropicon.js';
 import { SidebarAddProject } from './sidebar-parts/SidebarAddProject.js';
+import { SidebarAccountEntry } from './sidebar-parts/SidebarAccountEntry.js';
 import { SidebarTooltip } from '../ui/sidebar-tooltip.js';
 import { labelActionButtonClass } from './sidebar-parts/SidebarGroup.js';
 import { SidebarTooltipProvider } from '../ui/sidebar-tooltip.js';
@@ -455,6 +457,7 @@ export function Sidebar(props: SidebarProps) {
             label={copy.nav.settings}
             onSelect={props.onOpenSettings}
           />
+          <SidebarAccountEntry onOpenAccount={() => uiStore.openSettings('account')} />
         </div>
 
         {/* The handle doubles as a collapse button; a drag also dispatches a

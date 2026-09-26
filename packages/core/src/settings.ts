@@ -67,6 +67,7 @@ export {
 } from './bot-chat-settings.js';
 
 export const SETTINGS_SECTIONS = [
+  'account',
   'general',
   'appearance',
   'projects',

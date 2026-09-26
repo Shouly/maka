@@ -631,8 +631,8 @@ test('the palette offers a settings command per section and marks the current th
   const { input } = paletteInput();
   const commands = buildPaletteCommands(input as never);
   // Every section the Host knows, the deferred pages included (external
-  // agents joined the list with upstream #5164).
-  assert.equal(commands.filter((command) => command.id.startsWith('settings:')).length, 17);
+  // agents joined the list with upstream #5164, the company account after).
+  assert.equal(commands.filter((command) => command.id.startsWith('settings:')).length, 18);
   assert.ok(commands.find((command) => command.id === 'theme:dark')?.hint);
   assert.equal(commands.find((command) => command.id === 'theme:light')?.hint, undefined);
   assert.ok(commands.find((command) => command.id === 'diag:runtime-debug'));

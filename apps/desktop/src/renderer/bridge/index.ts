@@ -44,6 +44,7 @@ export * as newTasks from './new-tasks.js';
 export * as notifications from './notifications.js';
 export * as oauth from './oauth.js';
 export * as onboarding from './onboarding.js';
+export * as orgAccount from './org-account.js';
 export * as permissions from './permissions.js';
 export * as projects from './projects.js';
 export * as runtimeHost from './runtime-host.js';

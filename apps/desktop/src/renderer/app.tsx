@@ -34,6 +34,7 @@ import { LocaleProvider } from '@maka/ui';
 import type { UiLocale } from '@maka/core/ui-locale';
 import type { ThemePreference } from '@maka/core/settings';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
+import { OrgAccountGate } from './components/account/OrgAccountGate.js';
 import { AppShell } from './components/layout/AppShell.js';
 import { useStore } from 'zustand';
 import { settingsStore } from './store/index.js';
@@ -54,6 +55,9 @@ export interface AppProps {
 }
 
 export function App({ initialTheme, locale, localeOverride, fixture }: AppProps): ReactNode {
+  // For the app's whole life, not the shell's: the welcome and sign-in
+  // screens come before the shell and speak the chosen language too.
+  useEffect(() => settingsStore.startClient(), []);
   const client = useStore(settingsStore.client, (state) => state.data);
   const systemLocale = useSystemUiLocale();
   const preference = client?.personalization.uiLocale;
@@ -83,9 +87,13 @@ export function App({ initialTheme, locale, localeOverride, fixture }: AppProps)
       <TooltipProvider delayDuration={300}>
         <div className="appFrame">
           {/* The window titlebar strip (the one draggable surface) is rendered
-              by AppShell so its columns can align to the sidebar. */}
+              by AppShell so its columns can align to the sidebar — or by the
+              login screen, which takes the shell's place while a deployment
+              that requires a company sign-in has none. */}
           <ErrorBoundary>
-            <AppShell fixture={fixture} />
+            <OrgAccountGate>
+              <AppShell fixture={fixture} />
+            </OrgAccountGate>
           </ErrorBoundary>
         </div>
         <Toaster />
