@@ -539,6 +539,8 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
     clearActivityPeekTimer,
   ]);
   const activityPeek = peekSessionId === activeId && activeId !== undefined && workbar.collapsed;
+  // The session panel is on screen: opened in the column, or peeking over it.
+  const sessionPanelShowing = (!workbar.collapsed && !workbar.workbarHasColumn) || activityPeek;
 
   const historyLocation = useMemo<PageLocation>(() => {
     if (view === 'session' && activeId) return { view, sessionId: activeId };
@@ -637,6 +639,7 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
                 <WorkbarToggle
                   sessionId={activeId}
                   workbar={workbar}
+                  panelShowing={sessionPanelShowing}
                   onPointerEnter={peekActivity}
                   onPointerLeave={leaveActivityPeek}
                 />
@@ -693,7 +696,7 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
             <SessionPanel
               key={activeId}
               sessionId={activeId}
-              hidden={(workbar.collapsed || workbar.workbarHasColumn) && !activityPeek}
+              hidden={!sessionPanelShowing}
               peek={activityPeek}
               onFirstContent={workbar.revealOnce}
               onPointerEnter={holdActivityPeek}

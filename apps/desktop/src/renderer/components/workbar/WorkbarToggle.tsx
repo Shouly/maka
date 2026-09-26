@@ -31,10 +31,14 @@ import type { WorkbarModel } from '../../hooks/use-workbar.js';
 // The header switch for the session panel. Bare, it is an icon. While a task
 // is under way it says which step ("Step 2 of 4") — sweeping while a turn
 // works on it — and otherwise how many files the session has produced: the
-// reference's badge, read the same way whether the panel is open or not.
+// reference's badge, read the same way whether the panel is open or not. It
+// sweeps only while the panel is out of sight: showing, the panel's running
+// task sweeps the same step, and one sweep is enough.
 export function WorkbarToggle(props: {
   sessionId: string;
   workbar: WorkbarModel;
+  /** The session panel is on screen, opened or peeking. */
+  panelShowing: boolean;
   onPointerEnter?: () => void;
   onPointerLeave?: () => void;
 }) {
@@ -42,6 +46,7 @@ export function WorkbarToggle(props: {
   const outputs = useSessionArtifacts(props.sessionId);
   const progress = useTaskProgress(props.sessionId);
   const live = useShellLiveTurn(props.sessionId).turnActive;
+  const sweeping = live && !props.panelShowing;
   const { collapsed } = props.workbar;
   const label = copy.label;
   const current = currentTaskIndex(progress.tasks);
@@ -84,7 +89,7 @@ export function WorkbarToggle(props: {
           data-maka-activity-step={live ? 'live' : 'stopped'}
           className="min-w-0 truncate text-[var(--progress-current-text)]"
         >
-          {live ? (
+          {sweeping ? (
             <TextShimmer className="max-w-full truncate [--base-color:var(--progress-current-text)]">
               {step}
             </TextShimmer>
