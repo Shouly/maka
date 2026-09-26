@@ -41,7 +41,7 @@
 // folded out of the answer are rows of the same card, in the order they
 // happened.
 
-import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { formatTurnDuration, isTimeDrivenMotionEnabled, useUiLocale } from '@maka/ui';
 import { WorkingMark } from '../../icons/WorkingMark.js';
 import type { WorkingMarkActivity } from '../../../lib/working-mark-sheets.js';
@@ -187,34 +187,66 @@ function BusyMark(props: { activity?: WorkingMarkActivity }) {
   );
 }
 
-/** The live row's words while they change, then the clock after them. */
-function BusyText(props: { label: string; live?: TurnStatusLive }) {
+/**
+ * The live row's words while they change, then the clock after them. The words
+ * may fade in after the mark (`wordsStyle`); they hold their place meanwhile,
+ * so nothing moves when they show.
+ */
+function BusyText(props: { label: string; live?: TurnStatusLive; wordsStyle?: CSSProperties }) {
   return (
     <span className="relative flex min-w-0 items-center">
       {props.live && <BusyMark {...(props.live.mark ? { activity: props.live.mark } : {})} />}
-      <ShimmerTitle
-        title={props.label}
-        isLoading
-        className="min-w-0 truncate text-sm leading-5 [--base-color:var(--text-muted)]"
-      />
-      {props.live && (
-        <TurnElapsedTime
-          {...(props.live.startedAt !== undefined ? { startedAt: props.live.startedAt } : {})}
-          {...(props.live.turnId !== undefined ? { turnId: props.live.turnId } : {})}
+      <span className="flex min-w-0 items-center" style={props.wordsStyle} data-maka-turn-words="">
+        <ShimmerTitle
+          title={props.label}
+          isLoading
+          className="min-w-0 truncate text-sm leading-5 [--base-color:var(--text-muted)]"
         />
-      )}
+        {props.live && (
+          <TurnElapsedTime
+            {...(props.live.startedAt !== undefined ? { startedAt: props.live.startedAt } : {})}
+            {...(props.live.turnId !== undefined ? { turnId: props.live.turnId } : {})}
+          />
+        )}
+      </span>
     </span>
   );
+}
+
+/** How long after the send the waiting row shows its mark alone. */
+const WAITING_WORDS_DELAY_MS = 200;
+const WAITING_WORDS_FADE_MS = 150;
+
+/**
+ * The waiting row's words fade in `WAITING_WORDS_DELAY_MS` after the send, so a
+ * reply that starts at once never flashes them. Counted from the send, not from
+ * this row: the row is drawn again when its turn reaches the transcript, and
+ * words already showing must not fade out and back.
+ */
+function waitingWordsStyle(startedAt: number | undefined): CSSProperties | undefined {
+  const remaining =
+    startedAt === undefined
+      ? WAITING_WORDS_DELAY_MS
+      : WAITING_WORDS_DELAY_MS - (Date.now() - startedAt);
+  if (remaining <= 0) return undefined;
+  return { animation: `fadeIn ${WAITING_WORDS_FADE_MS}ms ease-out ${remaining}ms both` };
 }
 
 /**
  * The live turn's status when no run carries it: the send is on its way, the
  * model has not said anything yet, a message just went out, a first line is
  * being written, or a question was just answered. The same mark, words and
- * clock the live row has.
+ * clock the live row has; the mark shows at once and the words follow it.
+ *
+ * Deviation: the reference shows the mark alone until the model starts
+ * streaming (claude.ai, 2026-09-26, measured). We keep the words, shown
+ * `WAITING_WORDS_DELAY_MS` after the send (owner's choice).
  */
 export function TurnStatusPending(props: { live: TurnStatusLive; writing?: boolean }) {
   const copy = getTranscriptCopy(useUiLocale()).tools;
+  // Fixed when the row is drawn: a style that changed on a later render would
+  // restart the fade.
+  const [wordsStyle] = useState(() => waitingWordsStyle(props.live.startedAt));
   const label = props.live.unsteady
     ? copy.streamUnsteady
     : props.writing
@@ -229,7 +261,7 @@ export function TurnStatusPending(props: { live: TurnStatusLive; writing?: boole
       {...(props.live.unsteady ? { 'data-maka-stream': 'unsteady' } : {})}
     >
       <span className="flex min-w-0 items-center px-2 py-1.5 text-sm leading-5 text-text-muted">
-        <BusyText label={label} live={props.live} />
+        <BusyText label={label} live={props.live} {...(wordsStyle ? { wordsStyle } : {})} />
       </span>
     </div>
   );

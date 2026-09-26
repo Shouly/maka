@@ -29,11 +29,11 @@ import {
 } from '@maka/ui';
 import { deriveLiveTurnSnapshot } from '../lib/ported/live-turn-snapshot.js';
 import {
-  RUNNING_STATUS_DELAY_MS,
+  awaitingAcceptedTurn,
   deriveTurnActive,
+  rememberEndedTurn,
   retainRunningTurnIds,
 } from '../lib/ported/model-wait-state.js';
-import { useDelayedFlag } from './use-delayed-flag.js';
 import {
   activeSessionStore,
   sessionsStore,
@@ -229,6 +229,24 @@ export function useShellLiveTurn(sessionId: string | undefined): {
     sessionsStore,
     (s) => s.sessions.find((row) => row.id === sessionId)?.runningTurnIds,
   );
+
+  // Held across the uninformative reads that interleave with the authoritative
+  // ones; reset per Session so one task's turn never speaks for another's.
+  const retained = useRef<{ sessionId: string | undefined; ids: readonly string[] | undefined }>({
+    sessionId,
+    ids: undefined,
+  });
+  if (retained.current.sessionId !== sessionId) retained.current = { sessionId, ids: undefined };
+  retained.current.ids = retainRunningTurnIds(retained.current.ids, runningTurnIds);
+
+  // Reset per Session, like `retained`.
+  const ended = useRef<{ sessionId: string | undefined; turnId: string | undefined }>({
+    sessionId,
+    turnId: undefined,
+  });
+  if (ended.current.sessionId !== sessionId) ended.current = { sessionId, turnId: undefined };
+  ended.current.turnId = rememberEndedTurn(ended.current.turnId, live, retained.current.ids);
+  const endedTurnId = ended.current.turnId;
   const submitting = useStore(
     activeSessionStore,
     (s) =>
@@ -253,25 +271,32 @@ export function useShellLiveTurn(sessionId: string | undefined): {
           (message) => message.state === 'sending' || message.state === 'saved',
         )),
   );
+  const handedOff = useStore(
+    activeSessionStore,
+    (s) =>
+      s.sessionId === sessionId &&
+      awaitingAcceptedTurn({
+        localMessages: s.localMessages,
+        pendingTransientIds: s.transientMessages
+          .filter((message) => message.deliveryStatus === undefined)
+          .map((message) => message.id),
+        endedTurnId,
+      }),
+  );
   const activeStreamingLive = live.hasStreamingText && live.streamingMessageId === undefined;
-
-  // Held across the uninformative reads that interleave with the authoritative
-  // ones; reset per Session so one task's turn never speaks for another's.
-  const retained = useRef<{ sessionId: string | undefined; ids: readonly string[] | undefined }>({
-    sessionId,
-    ids: undefined,
-  });
-  if (retained.current.sessionId !== sessionId) retained.current = { sessionId, ids: undefined };
-  retained.current.ids = retainRunningTurnIds(retained.current.ids, runningTurnIds);
 
   const turnActive = deriveTurnActive({
     turnPhase: live.phase,
     armedTurnId: live.turnId,
     runningTurnIds,
     retainedRunningTurnIds: retained.current.ids,
+    endedTurnId,
   });
 
-  const showRunningStatus = useDelayedFlag(turnActive || submitting, RUNNING_STATUS_DELAY_MS);
+  // Shown on the frame the send goes out, the way the reference answers a send
+  // with its mark at once. What would flash is words, and the waiting row holds
+  // those back itself (`TurnStatusPending`).
+  const showRunningStatus = turnActive || submitting || handedOff;
   return {
     turnActive,
     activeStreamingLive,

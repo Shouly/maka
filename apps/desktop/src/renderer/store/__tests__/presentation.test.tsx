@@ -820,6 +820,26 @@ test('the running status reads the newest block: thinking, the tool in flight, w
   });
 });
 
+test('right after a send the waiting row shows its mark, and its words 200ms after the send', () => {
+  const wordsOf = (startedAt: number) => {
+    const row = renderTree(
+      createElement(TurnStatusBeforeTurn, { live: { turnId: 'turn-1', startedAt } }),
+    ).querySelector('[data-maka-turn-pending]');
+    assert.ok(row?.querySelector('[data-maka-working-mark]'), 'the mark shows at once');
+    const words = row?.querySelector('[data-maka-turn-words]');
+    assert.ok((words?.textContent ?? '').includes('Working on it…'), 'the words hold their place');
+    return words;
+  };
+  // Just sent: the words wait out the rest of the 200ms, then fade in.
+  const fresh = wordsOf(Date.now())?.getAttribute('style') ?? '';
+  const delay = Number(/ease-out (\d+(?:\.\d+)?)ms/.exec(fresh)?.[1]);
+  assert.match(fresh, /^animation:fadeIn 150ms ease-out \d+(\.\d+)?ms both$/, fresh);
+  assert.ok(delay > 150 && delay <= 200, `${delay}`);
+  // Drawn again later — its turn reached the transcript — the words are
+  // already showing and do not fade out and back.
+  assert.equal(wordsOf(Date.now() - 1_000)?.getAttribute('style'), null);
+});
+
 test('the status shown before a turn arrives stands where the turn draws its first block', () => {
   const base = transcriptFixture();
   const live = { turnId: base.turnId, startedAt: NOW, unsteady: false, mark: 'default' } as const;
@@ -907,6 +927,7 @@ test('the live turn carries its status on its newest run: the call in flight, th
   const waiting = renderLive([]).querySelector('[data-maka-turn-pending]');
   assert.equal(waiting?.getAttribute('aria-label'), 'Working on it…');
   assert.ok(waiting?.querySelector('[data-maka-working-mark]'));
+  assert.ok((waiting?.textContent ?? '').includes('Working on it…'), waiting?.textContent ?? '');
 
   // A line being written right under the run: it stands below the run without
   // ending it, so the run keeps the mark and the clock — and keeps its last
@@ -981,6 +1002,12 @@ test('a turn that goes quiet says it is still working, on the row that is live',
     true,
   ).querySelector('[data-maka-turn-pending]');
   assert.equal(stalled?.getAttribute('data-maka-stream'), 'unsteady');
+  // Quiet before anything arrived: the reassurance is words, so it shows.
+  const quietStart = renderLive([], true).querySelector('[data-maka-turn-pending]');
+  assert.ok(
+    (quietStart?.textContent ?? '').includes('Still working — taking longer than usual…'),
+    quietStart?.textContent ?? '',
+  );
 });
 
 test('a live turn is one run: the line being written stands under it and folds in when the next call lands', () => {

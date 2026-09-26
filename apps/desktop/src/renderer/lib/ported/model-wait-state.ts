@@ -18,8 +18,7 @@
  */
 
 /**
- * Pure model-wait derivation + rising-edge debounce for the two turn-wait cues
- * (#646).
+ * Pure model-wait derivation for the two turn-wait cues (#646).
  *
  * A turn has two kinds of "nothing is streaming right now" lulls, and they must
  * read differently:
@@ -34,20 +33,11 @@
  *     this split fixes).
  *
  * The single dimension that separates them is the turn PHASE: `'waiting'` until
- * the first content event, `'streamed'` after. Kept free of React so the timing
- * is unit-tested with an injected scheduler (fake timers).
+ * the first content event, `'streamed'` after. Kept free of React.
  */
 
 /** Rising-edge delay before the first-token processing indicator appears. Tunable. */
 export const MODEL_PROCESSING_DELAY_MS = 200;
-
-/**
- * Rising-edge delay before the transcript's running status line appears.
- *
- * Same no-flash rule as the cue above, but keyed off the turn being active
- * rather than off a lull, because that line stays up for the whole turn.
- */
-export const RUNNING_STATUS_DELAY_MS = 200;
 
 /**
  * Rising-edge delay before the mid-turn "继续中…" hint appears. Longer than the
@@ -89,10 +79,61 @@ export function deriveTurnActive(input: {
   runningTurnIds: readonly string[] | undefined;
   /** The most recent reading that DID carry a set; see `retainRunningTurnIds`. */
   retainedRunningTurnIds?: readonly string[] | undefined;
+  /** The turn the local projection saw end; see `rememberEndedTurn`. */
+  endedTurnId?: string | undefined;
 }): boolean {
   if (input.turnPhase !== undefined) return true;
   const running = input.runningTurnIds ?? input.retainedRunningTurnIds;
-  return running?.some((turnId) => turnId !== input.armedTurnId) === true;
+  return (
+    running?.some((turnId) => turnId !== input.armedTurnId && turnId !== input.endedTurnId) === true
+  );
+}
+
+/**
+ * The turn the local projection saw end, carried after the projection lets it
+ * go. The catalog keeps listing that turn as running for a few milliseconds
+ * more; with nothing armed left to set it apart, it read as another turn still
+ * running and lit the running status and Stop back up for a frame. Forgotten
+ * once the catalog stops listing it: there is no lag left to cover.
+ */
+export function rememberEndedTurn(
+  previous: string | undefined,
+  live: { readonly turnId: string | undefined; readonly phase: TurnPhase | undefined },
+  /** The catalog's last informative running set; see `retainRunningTurnIds`. */
+  running: readonly string[] | undefined,
+): string | undefined {
+  if (live.turnId !== undefined && live.phase === undefined) return live.turnId;
+  if (previous !== undefined && running !== undefined && !running.includes(previous)) {
+    return undefined;
+  }
+  return previous;
+}
+
+/**
+ * Whether a send the Host accepted by opening a turn is still waiting for that
+ * turn to be seen. The acceptance lands a few milliseconds before the turn is
+ * reported running, and between the two neither witness spoke for it: the
+ * running status blinked out for a frame. Only a message the Host names a turn
+ * for counts, so this ends when that turn does; a queued message is accepted
+ * into a turn already running, which speaks for itself.
+ */
+export function awaitingAcceptedTurn(input: {
+  readonly localMessages: readonly {
+    readonly messageId: string;
+    readonly state: string;
+    readonly turnId?: string;
+  }[];
+  /** The sent messages still on screen with no delivery trouble. */
+  readonly pendingTransientIds: readonly string[];
+  readonly endedTurnId: string | undefined;
+}): boolean {
+  return input.localMessages.some(
+    (message) =>
+      message.state === 'accepted' &&
+      message.turnId !== undefined &&
+      message.turnId !== input.endedTurnId &&
+      input.pendingTransientIds.includes(message.messageId),
+  );
 }
 
 /**
@@ -150,75 +191,4 @@ export function deriveModelWait(input: ModelWaitInputs): ModelWaitKind {
   const idle = !input.hasStreamingText && !input.hasThinkingText && !input.hasInFlightTools;
   if (!idle || input.turnPhase === undefined) return 'none';
   return input.turnPhase === 'waiting' ? 'processing' : 'continuing';
-}
-
-export interface DelayedFlagScheduler {
-  setTimeout(handler: () => void, ms: number): unknown;
-  clearTimeout(handle: unknown): void;
-}
-
-export interface DelayedFlag {
-  /** Feed the current condition; drives the flag through the delay. */
-  setCondition(active: boolean): void;
-  /** Current visible flag. */
-  get(): boolean;
-  /** Cancel any pending timer (unmount / teardown). */
-  dispose(): void;
-}
-
-/**
- * A rising-edge–delayed boolean. The flag turns true only after the condition
- * stays true for `delayMs`; if the condition drops before the delay elapses the
- * flag never turns true (the fast-response no-flash rule). Falling to false is
- * immediate. The scheduler is injected so the timing is testable with fake
- * timers instead of a real 200ms wall-clock wait.
- */
-export function createDelayedFlag(opts: {
-  delayMs: number;
-  scheduler: DelayedFlagScheduler;
-  onChange?: (visible: boolean) => void;
-}): DelayedFlag {
-  const { delayMs, scheduler, onChange } = opts;
-  let condition = false;
-  let visible = false;
-  let timer: unknown = null;
-
-  function clearTimer(): void {
-    if (timer !== null) {
-      scheduler.clearTimeout(timer);
-      timer = null;
-    }
-  }
-
-  function emit(next: boolean): void {
-    if (next === visible) return;
-    visible = next;
-    onChange?.(visible);
-  }
-
-  return {
-    setCondition(active: boolean): void {
-      if (active === condition) return;
-      condition = active;
-      if (active) {
-        // Rising edge: arm once. Already-visible (re-entrant true) keeps state.
-        if (!visible && timer === null) {
-          timer = scheduler.setTimeout(() => {
-            timer = null;
-            emit(true);
-          }, delayMs);
-        }
-      } else {
-        // Falling edge: cancel a pending reveal and hide immediately.
-        clearTimer();
-        emit(false);
-      }
-    },
-    get(): boolean {
-      return visible;
-    },
-    dispose(): void {
-      clearTimer();
-    },
-  };
 }

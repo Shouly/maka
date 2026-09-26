@@ -77,9 +77,8 @@ export function installFakeDom(): void {
     }),
     HTMLElement: FakeElement,
     HTMLIFrameElement: class HTMLIFrameElement {},
-    // `useDelayedFlag` schedules the turn-wait cues through the window. Timers
-    // are real here; the tests below assert only on the undelayed values, and
-    // the timers are unref'd so a pending reveal cannot hold the process open.
+    // Timers are real here, and unref'd so a pending one cannot hold the
+    // process open.
     setTimeout: (handler: () => void, ms: number) => setTimeout(handler, ms).unref(),
     clearTimeout: (handle: NodeJS.Timeout) => clearTimeout(handle),
   } as unknown as RendererWindow;

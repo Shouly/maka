@@ -232,7 +232,6 @@
     "src/renderer/hooks/use-async.ts",
     "src/renderer/hooks/use-composer-inline-row.ts",
     "src/renderer/hooks/use-connection-detail.ts",
-    "src/renderer/hooks/use-delayed-flag.ts",
     "src/renderer/hooks/use-hotkeys.ts",
     "src/renderer/hooks/use-memory-state.ts",
     "src/renderer/hooks/use-oauth-login-flow.ts",
@@ -2854,7 +2853,7 @@
       "hookCalls": {
         "useLayoutEffect": 1,
         "useRef": 1,
-        "useState": 2,
+        "useState": 3,
         "useUiLocale": 2
       },
       "lifecycleMethods": {},
@@ -5205,25 +5204,6 @@
         "react": 1
       }
     },
-    "src/renderer/hooks/use-delayed-flag.ts": {
-      "bridgePaths": {},
-      "environmentCapabilities": {
-        "window.clearTimeout": 1,
-        "window.setTimeout": 1
-      },
-      "hookCalls": {
-        "useEffect": 2,
-        "useRef": 1,
-        "useState": 1
-      },
-      "lifecycleMethods": {},
-      "unresolvedDependencies": 0,
-      "actionFactories": [],
-      "dependencyPaths": {
-        "../lib/ported/model-wait-state.js": 1,
-        "react": 1
-      }
-    },
     "src/renderer/hooks/use-hotkeys.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {
@@ -5530,12 +5510,11 @@
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
-        "useDelayedFlag": 1,
         "useEffect": 2,
         "useLayoutEffect": 4,
-        "useRef": 2,
+        "useRef": 3,
         "useShallow": 5,
-        "useStore": 20,
+        "useStore": 21,
         "useTranscriptProjection": 1,
         "useUiLocale": 2
       },
@@ -5546,7 +5525,6 @@
         "../lib/ported/live-turn-snapshot.js": 1,
         "../lib/ported/model-wait-state.js": 1,
         "../store/index.js": 1,
-        "./use-delayed-flag.js": 1,
         "@maka/ui": 1,
         "react": 1,
         "zustand": 1,

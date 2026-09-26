@@ -42,7 +42,12 @@ import {
   queueOrderAfterMove,
   reorderQueue,
 } from '../../components/session/MessageQueue.js';
-import { deriveTurnActive, retainRunningTurnIds } from '../../lib/ported/model-wait-state.js';
+import {
+  awaitingAcceptedTurn,
+  deriveTurnActive,
+  rememberEndedTurn,
+  retainRunningTurnIds,
+} from '../../lib/ported/model-wait-state.js';
 import {
   activeToolLabel,
   canExpandTool,
@@ -1175,6 +1180,83 @@ test('an uninformative catalog read cannot retract a running turn', () => {
       retainedRunningTurnIds: [],
     }),
     true,
+  );
+});
+
+test('a turn the projection saw end is not running again because the catalog lags', () => {
+  // The projection ends the turn, then lets it go; the catalog still lists it.
+  let ended = rememberEndedTurn(undefined, { turnId: 'turn-1', phase: 'streamed' }, ['turn-1']);
+  assert.equal(ended, undefined, 'a live turn has not ended');
+  ended = rememberEndedTurn(ended, { turnId: 'turn-1', phase: undefined }, ['turn-1']);
+  assert.equal(ended, 'turn-1');
+  ended = rememberEndedTurn(ended, { turnId: undefined, phase: undefined }, ['turn-1']);
+  assert.equal(ended, 'turn-1', 'kept once the projection lets the turn go');
+  // Forgotten once the catalog stops listing it — not before.
+  assert.equal(
+    rememberEndedTurn(ended, { turnId: undefined, phase: undefined }, undefined),
+    'turn-1',
+  );
+  assert.equal(rememberEndedTurn(ended, { turnId: undefined, phase: undefined }, []), undefined);
+  const active = (runningTurnIds: readonly string[], endedTurnId: string | undefined) =>
+    deriveTurnActive({
+      turnPhase: undefined,
+      armedTurnId: undefined,
+      runningTurnIds,
+      endedTurnId,
+    });
+  // The frame that lit the status and Stop back up.
+  assert.equal(active(['turn-1'], undefined), true);
+  assert.equal(active(['turn-1'], ended), false);
+  // Another turn the catalog lists still counts.
+  assert.equal(active(['turn-1', 'turn-2'], ended), true);
+});
+
+test('a send the Host accepted keeps the status up until its turn is seen', () => {
+  const accepted = { messageId: 'm-1', state: 'accepted', turnId: 'turn-1' } as const;
+  // Accepted, on screen, its turn not yet reported running: the gap that blinked.
+  assert.equal(
+    awaitingAcceptedTurn({
+      localMessages: [accepted],
+      pendingTransientIds: ['m-1'],
+      endedTurnId: undefined,
+    }),
+    true,
+  );
+  // A queued message is accepted into the turn already running, with no turn
+  // of its own: that turn speaks for it, and nothing here can outlive it.
+  assert.equal(
+    awaitingAcceptedTurn({
+      localMessages: [{ messageId: 'm-1', state: 'accepted' }],
+      pendingTransientIds: ['m-1'],
+      endedTurnId: undefined,
+    }),
+    false,
+  );
+  // Not once its turn has ended, nor once the message has left the screen.
+  assert.equal(
+    awaitingAcceptedTurn({
+      localMessages: [accepted],
+      pendingTransientIds: ['m-1'],
+      endedTurnId: 'turn-1',
+    }),
+    false,
+  );
+  assert.equal(
+    awaitingAcceptedTurn({
+      localMessages: [accepted],
+      pendingTransientIds: [],
+      endedTurnId: undefined,
+    }),
+    false,
+  );
+  // A message still sending is `submitting`'s, not this.
+  assert.equal(
+    awaitingAcceptedTurn({
+      localMessages: [{ messageId: 'm-1', state: 'sending' }],
+      pendingTransientIds: ['m-1'],
+      endedTurnId: undefined,
+    }),
+    false,
   );
 });
 
