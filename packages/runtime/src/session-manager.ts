@@ -70,10 +70,7 @@ import type {
 import type { SandboxBoundaryResponse } from '@maka/core/sandbox-boundary';
 import type { UserQuestionResponse } from '@maka/core/user-question';
 import type { PermissionMode } from '@maka/core/permission';
-import {
-  isCanonicalReadOnlyPermissionProfile,
-  isReadOnlyDerivedPermissionProfile,
-} from '@maka/core/permission-profile';
+import { isCanonicalReadOnlyPermissionProfile } from '@maka/core/permission-profile';
 import { DEFAULT_TOOL_MODE } from '@maka/core/tool-mode';
 import type {
   CreateSandboxBoundaryRequest,
@@ -644,14 +641,6 @@ export interface SessionStore {
   settleSandboxBoundaryRequest?(
     input: SettleSandboxBoundaryRequest,
   ): Promise<SandboxBoundarySettlement>;
-  setExecutionBoundaryKind(
-    sessionId: string,
-    kind: 'managed' | 'bypass',
-    projection?: {
-      permissionMode: SessionHeader['permissionMode'];
-      labels?: readonly string[];
-    },
-  ): Promise<ExecutionBoundary>;
   /** A linked child's boundary, derived from its parent's. */
   syncExecutionBoundary(
     sessionId: string,
@@ -685,6 +674,14 @@ export interface SessionStore {
     patch: SessionHeaderPatch,
     expectedRevision: number,
   ): Promise<VersionedSessionHeader>;
+  /**
+   * Configuration changes require both readHeaderRecordSnapshot and
+   * updateSessionConfiguration. Production SessionAuthorityStore requires both;
+   * Runtime keeps them optional for stores that do not mutate configuration,
+   * such as execution-only test fixtures. Missing either makes changes unavailable,
+   * without an unversioned fallback. Implementations must atomically check the
+   * expected revision and commit configuration, execution boundary and revision.
+   */
   readHeaderRecordSnapshot?(sessionId: string): Promise<VersionedSessionHeader>;
   updateSessionConfiguration?(
     sessionId: string,
@@ -1703,101 +1700,6 @@ export class SessionManager {
   async listActiveInteractions(sessionId: string): Promise<ActiveInteractionRequestEvent[]> {
     await this.deps.store.readHeader(sessionId);
     return this.runtimeKernel.listActiveInteractions?.(sessionId) ?? [];
-  }
-
-  async setPermissionMode(sessionId: string, mode: PermissionMode): Promise<SessionSummary> {
-    const readHeaderRecordSnapshot = this.deps.store.readHeaderRecordSnapshot?.bind(
-      this.deps.store,
-    );
-    if (!readHeaderRecordSnapshot || !this.deps.store.updateSessionConfiguration) {
-      // Temporary compatibility bridge for SessionStore embeddings that predate
-      // versioned configuration authority. A follow-up PR will shortly remove
-      // setPermissionMode and this redundant fallback after callers migrate.
-      return this.setPermissionModeWithLegacyStore(sessionId, mode);
-    }
-    const current = await readHeaderRecordSnapshot(sessionId);
-    const next = await this.transitionSessionConfiguration(sessionId, {
-      expectedRevision: current.revision,
-      clearConnectionBlock: false,
-      permissionModeOnly: true,
-      configuration: sessionConfigurationWithPermissionMode(current.header, mode),
-    });
-    return headerToSummary(next.header);
-  }
-
-  private async setPermissionModeWithLegacyStore(
-    sessionId: string,
-    mode: PermissionMode,
-  ): Promise<SessionSummary> {
-    const previous = await this.deps.store.readHeader(sessionId);
-    const boundary = await this.deps.store.readExecutionBoundary(sessionId);
-    const leavingDeepResearch = isDeepResearchSession(previous.labels) && mode !== 'explore';
-    if (
-      previous.permissionMode === mode &&
-      executionBoundaryMatchesPermissionMode(boundary, mode) &&
-      !leavingDeepResearch
-    ) {
-      return headerToSummary(previous);
-    }
-
-    const labels = leavingDeepResearch
-      ? previous.labels.filter((label) => label !== DEEP_RESEARCH_SESSION_LABEL)
-      : previous.labels;
-    const kind = mode === 'bypass' ? 'bypass' : 'managed';
-    await this.commitExecutionBoundaryTransition(sessionId, boundary, mode, async () => {
-      const current = await this.deps.store.readHeader(sessionId);
-      if (current.status === 'waiting_for_user') {
-        throw new SessionConfigurationTransitionError(
-          'session_busy',
-          'Session has a pending Interaction',
-        );
-      }
-      return () =>
-        this.deps.store.setExecutionBoundaryKind(sessionId, kind, {
-          permissionMode: mode,
-          labels,
-        });
-    });
-    const next = await this.deps.store.readHeader(sessionId);
-    this.runtimeKernel.updateCachedHeader(sessionId, next);
-    return headerToSummary(next);
-  }
-
-  async setExecutionBoundaryKind(
-    sessionId: string,
-    kind: 'managed' | 'bypass',
-  ): Promise<ExecutionBoundary> {
-    const current = await this.deps.store.readExecutionBoundary(sessionId);
-    const header = await this.deps.store.readHeader(sessionId);
-    // Managed includes Explore. Match Storage's default projection, then pass
-    // it explicitly so classification and commit describe the same transition.
-    const permissionMode =
-      kind === 'bypass'
-        ? 'bypass'
-        : header.permissionMode === 'bypass'
-          ? 'ask'
-          : header.permissionMode;
-    const narrows = narrowsExecutionAuthority(current, permissionMode);
-    if (narrows && this.runtimeKernel.hasActiveRuns(sessionId)) {
-      throw new SessionConfigurationTransitionError(
-        'session_busy',
-        'Execution boundary cannot change while a Turn is running',
-      );
-    }
-    if (header.status === 'waiting_for_user') {
-      throw new SessionConfigurationTransitionError(
-        'session_busy',
-        'Execution boundary cannot change while an Interaction is pending',
-      );
-    }
-    const boundary = await this.commitExecutionBoundaryTransition(
-      sessionId,
-      current,
-      permissionMode,
-      async () => () =>
-        this.deps.store.setExecutionBoundaryKind(sessionId, kind, { permissionMode }),
-    );
-    return boundary;
   }
 
   private async commitExecutionBoundaryTransition<T>(
@@ -5902,23 +5804,6 @@ function claimedAgentGraphIntentResult(
   };
 }
 
-function sessionConfigurationWithPermissionMode(
-  header: SessionHeader,
-  permissionMode: PermissionMode,
-): SessionConfigurationTransitionRequest['configuration'] {
-  return {
-    backend: header.backend,
-    ...(header.llmConnectionId === undefined ? {} : { llmConnectionId: header.llmConnectionId }),
-    llmConnectionSlug: header.llmConnectionSlug,
-    connectionLocked: header.connectionLocked,
-    model: header.model,
-    thinkingLevel: header.thinkingLevel,
-    permissionMode,
-    collaborationMode: header.collaborationMode ?? 'agent',
-    orchestrationMode: header.orchestrationMode ?? 'default',
-  };
-}
-
 function sessionConfigurationMatchesExceptPermissionMode(
   header: SessionHeader,
   configuration: SessionConfigurationTransitionRequest['configuration'],
@@ -5951,19 +5836,6 @@ function linkedChildPermissionMode(
   definitionMode: PermissionMode,
 ): PermissionMode {
   return definitionMode === 'explore' ? 'explore' : parent.permissionMode;
-}
-
-function executionBoundaryMatchesPermissionMode(
-  boundary: ExecutionBoundary,
-  mode: PermissionMode,
-): boolean {
-  if (mode === 'bypass') return boundary.kind === 'bypass';
-  if (boundary.kind !== 'managed') return false;
-  // By shape, not name: an expanded profile keeps its genesis name, and a
-  // custom one may have none.
-  return mode === 'explore'
-    ? isReadOnlyDerivedPermissionProfile(boundary.profile)
-    : !isReadOnlyDerivedPermissionProfile(boundary.profile);
 }
 
 function narrowsExecutionAuthority(

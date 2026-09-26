@@ -253,6 +253,19 @@ Watermark after this batch: `99cfeb7e9`. Rows are proposed unless a
   onboarding snapshot is re-read only when the Sessions or their Connection
   and model bindings change, or the Connections do. Upstream's per-row
   `sessions.get` and granular shell subscriptions are not taken yet.
+- `730713131` #5300: **taken, adapted**. No production caller reached
+  `SessionManager.setPermissionMode` or `setExecutionBoundaryKind`: Desktop
+  and the CLI change the mode through `session.configuration.update`. Removed
+  both, the legacy-store route, their helpers, and `setExecutionBoundaryKind`
+  from the runtime `SessionStore` (Storage keeps its own). The tests move onto
+  `transitionSessionConfiguration`, and the test store double that stood in
+  for the direct route is gone; its permission-mode guard now sits on the
+  versioned one. Not taken: `executorId` in the header helper, since we have
+  no plugin executor, and the unrelated WorkHub test timing change in the
+  same commit. One case has no replacement: re-committing a managed boundary
+  while staying in Explore, which dropped an approved expansion; a
+  configuration change to the same mode is a no-op, so the revocation now
+  happens only on a mode change.
 
 #### Deferred
 
@@ -353,7 +366,7 @@ Cleanups that follow upstream (product decisions):
 |---|---|---|---|
 | `b48ae6c21` | #5554 | Retire the Deep Research workflow. | We still carry about 30 files. |
 | `8dfc68d23` | #5544 | Retire the built-in OpenCode Free provider. This also makes #5185 moot. | 7 files; touches the model line. |
-| `730713131` | #5300 | Remove the obsolete permission-mode compatibility path. | Check against our Codex-style model. |
+| `730713131` | #5300 | Remove the obsolete permission-mode compatibility path. | Done, see above. |
 | `d05436cc0` | #5295 | Close the legacy archive read path. | Small. |
 
 ### Model line
