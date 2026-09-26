@@ -244,7 +244,8 @@ Watermark after this batch: `99cfeb7e9`. Rows are proposed unless a
   quarantine, and "enable every shipped model on a new connection". Kept:
   the `FreeUsageLimitError` billing classification, which paid OpenCode Zen
   keys can still meet on its free models. The nightly-promotion half is
-  website work and not taken.
+  website work and not taken. Later removed as well: the `isFree` model
+  metadata field, which only the Free badge read.
 - `777a2363c` #5532 / `fb9df6c3d` #5628, our way (**bug confirmed**): every
   `sessions:changed` re-read the whole catalog, replaced every row object,
   flipped `loading` twice and re-read the onboarding snapshot. Now one read is

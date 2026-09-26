@@ -7,7 +7,7 @@
     "etag": "W/\"03f3f604016bd48a73e15747cb1d2f69\"",
     "responseSha256": "03f3f604016bd48a73e15747cb1d2f692224814d25fce3640b034c0e408352e2"
   },
-  "projectionSha256": "6dbfa3e9a6105c885bc6a31fbeb075753cccc7baa0573b5a18ef413175debffe",
+  "projectionSha256": "975c095927f2aecded8d8e2ec097943e4fd0b24ae65b0487ed13201809ef012f",
   "projection": {
     "metadata": {
       "anthropic": {
@@ -1480,7 +1480,6 @@
           "contextWindow": 32768,
           "maxOutputTokens": 16384,
           "lastUpdated": "2025-01-01",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -1498,7 +1497,6 @@
           "contextWindow": 32768,
           "maxOutputTokens": 16384,
           "lastUpdated": "2025-01-01",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -3153,7 +3151,6 @@
           "maxOutputTokens": 16384,
           "knowledgeCutoff": "2025-04",
           "lastUpdated": "2025-12-22",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -3174,7 +3171,6 @@
           "contextWindow": 202752,
           "maxOutputTokens": 16384,
           "lastUpdated": "2026-02-11",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -3196,7 +3192,6 @@
           "maxOutputTokens": 32768,
           "knowledgeCutoff": "2025-01",
           "lastUpdated": "2026-01-27",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -3217,7 +3212,6 @@
           "contextWindow": 196608,
           "maxOutputTokens": 24576,
           "lastUpdated": "2026-02-12",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -3236,7 +3230,6 @@
           "maxOutputTokens": 65536,
           "structuredOutput": true,
           "lastUpdated": "2026-02-03",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -3255,7 +3248,6 @@
           "maxOutputTokens": 65536,
           "knowledgeCutoff": "2025-04",
           "lastUpdated": "2025-07-23",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -3274,7 +3266,6 @@
           "maxOutputTokens": 32768,
           "knowledgeCutoff": "2025-04",
           "lastUpdated": "2026-01-23",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -3293,7 +3284,6 @@
           "maxOutputTokens": 65536,
           "knowledgeCutoff": "2025-04",
           "lastUpdated": "2026-02-16",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -3336,7 +3326,6 @@
           "maxOutputTokens": 65536,
           "knowledgeCutoff": "2025-04",
           "lastUpdated": "2026-04-02",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -3378,7 +3367,6 @@
           "maxOutputTokens": 64000,
           "knowledgeCutoff": "2025-04",
           "lastUpdated": "2026-06-02",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -3402,7 +3390,6 @@
           "maxOutputTokens": 16384,
           "knowledgeCutoff": "2025-04",
           "lastUpdated": "2025-12-22",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -3423,7 +3410,6 @@
           "contextWindow": 202752,
           "maxOutputTokens": 16384,
           "lastUpdated": "2026-02-11",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -3445,7 +3431,6 @@
           "maxOutputTokens": 32768,
           "knowledgeCutoff": "2025-01",
           "lastUpdated": "2026-01-27",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -3467,7 +3452,6 @@
           "inputLimit": 196601,
           "maxOutputTokens": 24576,
           "lastUpdated": "2026-02-12",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -3486,7 +3470,6 @@
           "maxOutputTokens": 65536,
           "structuredOutput": true,
           "lastUpdated": "2026-02-03",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -3505,7 +3488,6 @@
           "maxOutputTokens": 65536,
           "knowledgeCutoff": "2025-04",
           "lastUpdated": "2025-07-23",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -3524,7 +3506,6 @@
           "maxOutputTokens": 32768,
           "knowledgeCutoff": "2025-04",
           "lastUpdated": "2026-01-23",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -3543,7 +3524,6 @@
           "maxOutputTokens": 65536,
           "knowledgeCutoff": "2025-04",
           "lastUpdated": "2026-02-16",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -3586,7 +3566,6 @@
           "maxOutputTokens": 65536,
           "knowledgeCutoff": "2025-04",
           "lastUpdated": "2026-04-02",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -3628,7 +3607,6 @@
           "maxOutputTokens": 64000,
           "knowledgeCutoff": "2025-04",
           "lastUpdated": "2026-06-02",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -3653,7 +3631,6 @@
           "knowledgeCutoff": "2025-01",
           "structuredOutput": true,
           "lastUpdated": "2025-12-05",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -3676,7 +3653,6 @@
           "knowledgeCutoff": "2025-05",
           "structuredOutput": true,
           "lastUpdated": "2026-04-24",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -3700,7 +3676,6 @@
           "knowledgeCutoff": "2025-05",
           "structuredOutput": true,
           "lastUpdated": "2026-07-31",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -3724,7 +3699,6 @@
           "knowledgeCutoff": "2025-05",
           "structuredOutput": true,
           "lastUpdated": "2026-04-24",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -3747,7 +3721,6 @@
           "maxOutputTokens": 384000,
           "structuredOutput": true,
           "lastUpdated": "2026-08-22",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -3771,7 +3744,6 @@
           "knowledgeCutoff": "2025-05",
           "structuredOutput": true,
           "lastUpdated": "2026-09-10",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -3794,7 +3766,6 @@
           "maxOutputTokens": 16384,
           "structuredOutput": true,
           "lastUpdated": "2026-02-12",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -3816,7 +3787,6 @@
           "maxOutputTokens": 128000,
           "structuredOutput": true,
           "lastUpdated": "2026-04-07",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -3838,7 +3808,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-06-13",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -3860,7 +3829,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-08-14",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -3881,7 +3849,6 @@
           "contextWindow": 0,
           "maxOutputTokens": 0,
           "lastUpdated": "2026-07-17",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -3899,7 +3866,6 @@
           "contextWindow": 0,
           "maxOutputTokens": 0,
           "lastUpdated": "2026-07-17",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -3917,7 +3883,6 @@
           "contextWindow": 0,
           "maxOutputTokens": 0,
           "lastUpdated": "2026-07-17",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -3937,7 +3902,6 @@
           "knowledgeCutoff": "2025-01",
           "structuredOutput": true,
           "lastUpdated": "2026-01",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -3960,7 +3924,6 @@
           "knowledgeCutoff": "2025-01",
           "structuredOutput": true,
           "lastUpdated": "2026-04-21",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -3983,7 +3946,6 @@
           "knowledgeCutoff": "2025-01",
           "structuredOutput": true,
           "lastUpdated": "2026-06-12",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -4005,7 +3967,6 @@
           "inputLimit": 196601,
           "maxOutputTokens": 32768,
           "lastUpdated": "2026-02-12",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -4023,7 +3984,6 @@
           "contextWindow": 8192,
           "maxOutputTokens": 0,
           "lastUpdated": "2026-03-03",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -4041,7 +4001,6 @@
           "contextWindow": 8192,
           "maxOutputTokens": 0,
           "lastUpdated": "2026-03-03",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -4060,7 +4019,6 @@
           "maxOutputTokens": 65536,
           "structuredOutput": true,
           "lastUpdated": "2026-04-27",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -4083,7 +4041,6 @@
           "knowledgeCutoff": "2025-04",
           "structuredOutput": true,
           "lastUpdated": "2026-04-02",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -4105,7 +4062,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-05-21",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -4128,7 +4084,6 @@
           "knowledgeCutoff": "2025-04",
           "structuredOutput": true,
           "lastUpdated": "2026-06-02",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -4150,7 +4105,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-08-26",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -4173,7 +4127,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-08-03",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -4196,7 +4149,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-07-19",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -4217,7 +4169,6 @@
           "contextWindow": 8192,
           "maxOutputTokens": 0,
           "lastUpdated": "2026-05-29",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -4235,7 +4186,6 @@
           "contextWindow": 8192,
           "maxOutputTokens": 0,
           "lastUpdated": "2026-05-29",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -4257,7 +4207,6 @@
           "knowledgeCutoff": "2025-01",
           "structuredOutput": true,
           "lastUpdated": "2025-12-05",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -4280,7 +4229,6 @@
           "knowledgeCutoff": "2025-05",
           "structuredOutput": true,
           "lastUpdated": "2026-04-24",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -4304,7 +4252,6 @@
           "knowledgeCutoff": "2025-05",
           "structuredOutput": true,
           "lastUpdated": "2026-07-31",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -4328,7 +4275,6 @@
           "knowledgeCutoff": "2025-05",
           "structuredOutput": true,
           "lastUpdated": "2026-04-24",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -4351,7 +4297,6 @@
           "maxOutputTokens": 384000,
           "structuredOutput": true,
           "lastUpdated": "2026-08-22",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -4375,7 +4320,6 @@
           "knowledgeCutoff": "2025-05",
           "structuredOutput": false,
           "lastUpdated": "2026-09-10",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -4398,7 +4342,6 @@
           "maxOutputTokens": 16384,
           "structuredOutput": true,
           "lastUpdated": "2026-02-12",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -4420,7 +4363,6 @@
           "maxOutputTokens": 128000,
           "structuredOutput": true,
           "lastUpdated": "2026-04-07",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -4442,7 +4384,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-06-13",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -4464,7 +4405,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-08-14",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -4485,7 +4425,6 @@
           "contextWindow": 0,
           "maxOutputTokens": 0,
           "lastUpdated": "2026-07-17",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -4503,7 +4442,6 @@
           "contextWindow": 0,
           "maxOutputTokens": 0,
           "lastUpdated": "2026-07-17",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -4521,7 +4459,6 @@
           "contextWindow": 0,
           "maxOutputTokens": 0,
           "lastUpdated": "2026-07-17",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -4541,7 +4478,6 @@
           "knowledgeCutoff": "2025-01",
           "structuredOutput": true,
           "lastUpdated": "2026-01",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -4564,7 +4500,6 @@
           "knowledgeCutoff": "2025-01",
           "structuredOutput": true,
           "lastUpdated": "2026-04-21",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -4587,7 +4522,6 @@
           "knowledgeCutoff": "2025-01",
           "structuredOutput": true,
           "lastUpdated": "2026-06-12",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -4609,7 +4543,6 @@
           "inputLimit": 196601,
           "maxOutputTokens": 32768,
           "lastUpdated": "2026-02-12",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -4627,7 +4560,6 @@
           "contextWindow": 8192,
           "maxOutputTokens": 0,
           "lastUpdated": "2026-03-03",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -4645,7 +4577,6 @@
           "contextWindow": 8192,
           "maxOutputTokens": 0,
           "lastUpdated": "2026-03-03",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -4664,7 +4595,6 @@
           "maxOutputTokens": 65536,
           "structuredOutput": true,
           "lastUpdated": "2026-04-27",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -4687,7 +4617,6 @@
           "knowledgeCutoff": "2025-04",
           "structuredOutput": true,
           "lastUpdated": "2026-04-02",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -4709,7 +4638,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-05-21",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -4732,7 +4660,6 @@
           "knowledgeCutoff": "2025-04",
           "structuredOutput": true,
           "lastUpdated": "2026-06-02",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -4754,7 +4681,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-08-26",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -4777,7 +4703,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-08-03",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -4800,7 +4725,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-07-19",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -4821,7 +4745,6 @@
           "contextWindow": 8192,
           "maxOutputTokens": 0,
           "lastUpdated": "2026-05-29",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -4839,7 +4762,6 @@
           "contextWindow": 8192,
           "maxOutputTokens": 0,
           "lastUpdated": "2026-05-29",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -5142,7 +5064,6 @@
           "knowledgeCutoff": "2025-09-23",
           "structuredOutput": true,
           "lastUpdated": "2026-06-09",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -9308,7 +9229,6 @@
           "maxOutputTokens": 65536,
           "structuredOutput": false,
           "lastUpdated": "2026-03-25",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -9327,7 +9247,6 @@
           "maxOutputTokens": 65536,
           "structuredOutput": false,
           "lastUpdated": "2026-03-25",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -9398,7 +9317,6 @@
           "contextWindow": 4096,
           "maxOutputTokens": 4096,
           "lastUpdated": "2025-01-23",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -11066,7 +10984,6 @@
           "maxOutputTokens": 128000,
           "knowledgeCutoff": "2025-04",
           "lastUpdated": "2025-08-08",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -11181,7 +11098,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-07-16",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -11204,7 +11120,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-07-16",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -11225,7 +11140,6 @@
           "contextWindow": 1048576,
           "maxOutputTokens": 32768,
           "lastUpdated": "2026-09-11",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -11249,7 +11163,6 @@
           "knowledgeCutoff": "2025-01",
           "structuredOutput": true,
           "lastUpdated": "2026-06-12",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -11517,7 +11430,6 @@
           "contextWindow": 204800,
           "maxOutputTokens": 131072,
           "lastUpdated": "2025-10-27",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -11535,7 +11447,6 @@
           "contextWindow": 204800,
           "maxOutputTokens": 131072,
           "lastUpdated": "2025-12-23",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -11553,7 +11464,6 @@
           "contextWindow": 204800,
           "maxOutputTokens": 131072,
           "lastUpdated": "2026-02-12",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -11571,7 +11481,6 @@
           "contextWindow": 204800,
           "maxOutputTokens": 131072,
           "lastUpdated": "2026-02-13",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -11589,7 +11498,6 @@
           "contextWindow": 204800,
           "maxOutputTokens": 131072,
           "lastUpdated": "2026-03-18",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -11607,7 +11515,6 @@
           "contextWindow": 204800,
           "maxOutputTokens": 131072,
           "lastUpdated": "2026-03-18",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -11625,7 +11532,6 @@
           "contextWindow": 1048576,
           "maxOutputTokens": 512000,
           "lastUpdated": "2026-06-25",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -11775,7 +11681,6 @@
           "maxOutputTokens": 256000,
           "knowledgeCutoff": "2025-12",
           "lastUpdated": "2025-12-09",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -12379,7 +12284,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 8192,
           "lastUpdated": "2025-05-22",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -12397,7 +12301,6 @@
           "contextWindow": 8192,
           "maxOutputTokens": 1024,
           "lastUpdated": "2026-04-30",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -12415,7 +12318,6 @@
           "contextWindow": 40960,
           "maxOutputTokens": 40960,
           "lastUpdated": "2025-08-12",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -12436,7 +12338,6 @@
           "knowledgeCutoff": "2024-07",
           "structuredOutput": false,
           "lastUpdated": "2026-02-04",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -12455,7 +12356,6 @@
           "maxOutputTokens": 40960,
           "knowledgeCutoff": "2025-06",
           "lastUpdated": "2026-01-31",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -12474,7 +12374,6 @@
           "maxOutputTokens": 0,
           "knowledgeCutoff": "2024-08",
           "lastUpdated": "2025-09-05",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -12493,7 +12392,6 @@
           "maxOutputTokens": 262000,
           "structuredOutput": true,
           "lastUpdated": "2025-11-25",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -12535,7 +12433,6 @@
           "knowledgeCutoff": "2025-05",
           "structuredOutput": true,
           "lastUpdated": "2026-07-31",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -12579,7 +12476,6 @@
           "maxOutputTokens": 384000,
           "structuredOutput": true,
           "lastUpdated": "2026-08-22",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -12601,7 +12497,6 @@
           "maxOutputTokens": 4096,
           "structuredOutput": true,
           "lastUpdated": "2024-07-16",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -12619,7 +12514,6 @@
           "contextWindow": 131072,
           "maxOutputTokens": 16384,
           "lastUpdated": "2025-03-12",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -12637,7 +12531,6 @@
           "contextWindow": 131072,
           "maxOutputTokens": 16384,
           "lastUpdated": "2025-03-12",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -12657,7 +12550,6 @@
           "knowledgeCutoff": "2024-06",
           "structuredOutput": true,
           "lastUpdated": "2025-06-12",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -12677,7 +12569,6 @@
           "knowledgeCutoff": "2024-06",
           "structuredOutput": true,
           "lastUpdated": "2025-06-03",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -12696,7 +12587,6 @@
           "maxOutputTokens": 16384,
           "knowledgeCutoff": "2025-01",
           "lastUpdated": "2026-04-02",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -12717,7 +12607,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 8192,
           "lastUpdated": "2024-08-26",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -12735,7 +12624,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 8192,
           "lastUpdated": "2025-03-10",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -12753,7 +12641,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 8192,
           "lastUpdated": "2025-06-12",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -12772,7 +12659,6 @@
           "maxOutputTokens": 4096,
           "structuredOutput": true,
           "lastUpdated": "2024-07-16",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -12791,7 +12677,6 @@
           "maxOutputTokens": 4096,
           "knowledgeCutoff": "2023-12",
           "lastUpdated": "2025-01-01",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -12811,7 +12696,6 @@
           "knowledgeCutoff": "2023-12",
           "structuredOutput": true,
           "lastUpdated": "2024-09-18",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -12831,7 +12715,6 @@
           "knowledgeCutoff": "2023-12",
           "structuredOutput": true,
           "lastUpdated": "2024-09-18",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -12850,7 +12733,6 @@
           "maxOutputTokens": 32000,
           "structuredOutput": true,
           "lastUpdated": "2024-09-18",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -12869,7 +12751,6 @@
           "maxOutputTokens": 8192,
           "knowledgeCutoff": "2023-12",
           "lastUpdated": "2024-09-25",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -12888,7 +12769,6 @@
           "maxOutputTokens": 4096,
           "structuredOutput": true,
           "lastUpdated": "2024-11-26",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -12908,7 +12788,6 @@
           "knowledgeCutoff": "2024-02",
           "structuredOutput": true,
           "lastUpdated": "2025-04-01",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -12926,7 +12805,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 16384,
           "lastUpdated": "2026-04-30",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -12946,7 +12824,6 @@
           "knowledgeCutoff": "2026-01-04",
           "structuredOutput": true,
           "lastUpdated": "2026-08-10",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -12968,7 +12845,6 @@
           "maxOutputTokens": 8192,
           "knowledgeCutoff": "2024-12",
           "lastUpdated": "2025-09-05",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -12988,7 +12864,6 @@
           "maxOutputTokens": 16384,
           "structuredOutput": false,
           "lastUpdated": "2025-07-26",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13006,7 +12881,6 @@
           "contextWindow": 204800,
           "maxOutputTokens": 131072,
           "lastUpdated": "2026-04-11",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -13024,7 +12898,6 @@
           "contextWindow": 1000000,
           "maxOutputTokens": 16384,
           "lastUpdated": "2026-06-01",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -13047,7 +12920,6 @@
           "maxOutputTokens": 32768,
           "structuredOutput": false,
           "lastUpdated": "2025-09-25",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13065,7 +12937,6 @@
           "contextWindow": 262144,
           "maxOutputTokens": 16384,
           "lastUpdated": "2025-12-02",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -13084,7 +12955,6 @@
           "maxOutputTokens": 65536,
           "structuredOutput": true,
           "lastUpdated": "2025-04-01",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13104,7 +12974,6 @@
           "knowledgeCutoff": "2025-01",
           "structuredOutput": true,
           "lastUpdated": "2025-12-02",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -13124,7 +12993,6 @@
           "maxOutputTokens": 32768,
           "structuredOutput": false,
           "lastUpdated": "2025-09-25",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -13143,7 +13011,6 @@
           "maxOutputTokens": 32768,
           "structuredOutput": true,
           "lastUpdated": "2026-04-29",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -13164,7 +13031,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 8192,
           "lastUpdated": "2025-06-12",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13183,7 +13049,6 @@
           "maxOutputTokens": 8192,
           "structuredOutput": true,
           "lastUpdated": "2026-03-16",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -13204,7 +13069,6 @@
           "contextWindow": 65536,
           "maxOutputTokens": 13108,
           "lastUpdated": "2024-04-17",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13222,7 +13086,6 @@
           "contextWindow": 32768,
           "maxOutputTokens": 16384,
           "lastUpdated": "2026-03-15",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13241,7 +13104,6 @@
           "maxOutputTokens": 262144,
           "knowledgeCutoff": "2024-10",
           "lastUpdated": "2025-09-05",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13261,7 +13123,6 @@
           "knowledgeCutoff": "2025-01",
           "structuredOutput": true,
           "lastUpdated": "2026-04-21",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -13283,7 +13144,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-07-16",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -13305,7 +13165,6 @@
           "contextWindow": 0,
           "maxOutputTokens": 4096,
           "lastUpdated": "2026-04-16",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13323,7 +13182,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 8192,
           "lastUpdated": "2025-07-20",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13341,7 +13199,6 @@
           "contextWindow": 0,
           "maxOutputTokens": 4096,
           "lastUpdated": "2025-03-18",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -13359,7 +13216,6 @@
           "contextWindow": 131072,
           "maxOutputTokens": 16384,
           "lastUpdated": "2025-12-01",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -13377,7 +13233,6 @@
           "contextWindow": 0,
           "maxOutputTokens": 4096,
           "lastUpdated": "2025-06-30",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -13395,7 +13250,6 @@
           "contextWindow": 0,
           "maxOutputTokens": 4096,
           "lastUpdated": "2026-02-26",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -13413,7 +13267,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 4096,
           "lastUpdated": "2026-03-03",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13431,7 +13284,6 @@
           "contextWindow": 32768,
           "maxOutputTokens": 2048,
           "lastUpdated": "2025-07-24",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13449,7 +13301,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 8192,
           "lastUpdated": "2025-04-15",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13467,7 +13318,6 @@
           "contextWindow": 131072,
           "maxOutputTokens": 16384,
           "lastUpdated": "2025-03-18",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -13488,7 +13338,6 @@
           "contextWindow": 32768,
           "maxOutputTokens": 16384,
           "lastUpdated": "2025-04-10",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -13506,7 +13355,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 4096,
           "lastUpdated": "2025-10-28",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13524,7 +13372,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 16384,
           "lastUpdated": "2025-04-07",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -13545,7 +13392,6 @@
           "contextWindow": 131072,
           "maxOutputTokens": 65536,
           "lastUpdated": "2025-04-07",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -13566,7 +13412,6 @@
           "contextWindow": 131072,
           "maxOutputTokens": 65536,
           "lastUpdated": "2025-07-25",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -13587,7 +13432,6 @@
           "contextWindow": 32768,
           "maxOutputTokens": 2048,
           "lastUpdated": "2026-02-10",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -13605,7 +13449,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 4096,
           "lastUpdated": "2026-03-31",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -13623,7 +13466,6 @@
           "contextWindow": 0,
           "maxOutputTokens": 4096,
           "lastUpdated": "2025-06-12",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13641,7 +13483,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 4096,
           "lastUpdated": "2026-04-16",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13660,7 +13501,6 @@
           "maxOutputTokens": 131072,
           "knowledgeCutoff": "2024-09",
           "lastUpdated": "2024-12",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -13682,7 +13522,6 @@
           "maxOutputTokens": 65536,
           "structuredOutput": true,
           "lastUpdated": "2026-04-28",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -13746,7 +13585,6 @@
           "maxOutputTokens": 262144,
           "structuredOutput": true,
           "lastUpdated": "2026-08-11",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -13767,7 +13605,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 4096,
           "lastUpdated": "2026-01-22",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -13785,7 +13622,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 8192,
           "lastUpdated": "2024-08-26",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13803,7 +13639,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 128000,
           "lastUpdated": "2025-10-28",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -13821,7 +13656,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 8192,
           "lastUpdated": "2026-03-16",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13839,7 +13673,6 @@
           "contextWindow": 32768,
           "maxOutputTokens": 2048,
           "lastUpdated": "2025-07-22",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13857,7 +13690,6 @@
           "contextWindow": 32768,
           "maxOutputTokens": 2048,
           "lastUpdated": "2025-05-29",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13876,7 +13708,6 @@
           "maxOutputTokens": 131072,
           "knowledgeCutoff": "2024-09",
           "lastUpdated": "2025-08-18",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -13897,7 +13728,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 4096,
           "lastUpdated": "2025-01-17",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13915,7 +13745,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 4096,
           "lastUpdated": "2025-12-12",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13933,7 +13762,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 8192,
           "lastUpdated": "2025-07-20",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13951,7 +13779,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 8192,
           "lastUpdated": "2025-11-13",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13969,7 +13796,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 8192,
           "lastUpdated": "2025-06-13",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -13987,7 +13813,6 @@
           "contextWindow": 0,
           "maxOutputTokens": 4096,
           "lastUpdated": "2026-04-16",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -14005,7 +13830,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 4096,
           "lastUpdated": "2026-01-01",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -14023,7 +13847,6 @@
           "contextWindow": 0,
           "maxOutputTokens": 4096,
           "lastUpdated": "2025-01-08",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -14043,7 +13866,6 @@
           "knowledgeCutoff": "2025-08",
           "structuredOutput": true,
           "lastUpdated": "2025-08-14",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -14065,7 +13887,6 @@
           "maxOutputTokens": 32768,
           "structuredOutput": true,
           "lastUpdated": "2025-08-05",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -14087,7 +13908,6 @@
           "maxOutputTokens": 4096,
           "knowledgeCutoff": "2023-09",
           "lastUpdated": "2025-09-05",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -14106,7 +13926,6 @@
           "maxOutputTokens": 16384,
           "structuredOutput": false,
           "lastUpdated": "2026-07-02",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -14125,7 +13944,6 @@
           "maxOutputTokens": 0,
           "structuredOutput": false,
           "lastUpdated": "2025-08-07",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -14144,7 +13962,6 @@
           "maxOutputTokens": 0,
           "structuredOutput": false,
           "lastUpdated": "2025-08-19",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -14163,7 +13980,6 @@
           "maxOutputTokens": 4096,
           "structuredOutput": true,
           "lastUpdated": "2024-11-06",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -14182,7 +13998,6 @@
           "maxOutputTokens": 66536,
           "knowledgeCutoff": "2025-04",
           "lastUpdated": "2025-07-23",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -14201,7 +14016,6 @@
           "maxOutputTokens": 16384,
           "knowledgeCutoff": "2024-12",
           "lastUpdated": "2025-09-05",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -14220,7 +14034,6 @@
           "maxOutputTokens": 65536,
           "structuredOutput": true,
           "lastUpdated": "2026-02-23",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -14243,7 +14056,6 @@
           "knowledgeCutoff": "2026-01",
           "structuredOutput": true,
           "lastUpdated": "2026-02-16",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -14264,7 +14076,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 8192,
           "lastUpdated": "2025-07-25",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -14282,7 +14093,6 @@
           "contextWindow": 256000,
           "maxOutputTokens": 16384,
           "lastUpdated": "2026-02-02",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -14303,7 +14113,6 @@
           "contextWindow": 256000,
           "maxOutputTokens": 16384,
           "lastUpdated": "2026-05-28",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -14324,7 +14133,6 @@
           "contextWindow": 1048576,
           "maxOutputTokens": 16384,
           "lastUpdated": "2026-07-15",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -14342,7 +14150,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 8192,
           "lastUpdated": "2025-04-10",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -14361,7 +14168,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-06-13",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -14383,7 +14189,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-08-14",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -14405,7 +14210,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-08-26",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -15985,7 +15789,6 @@
           "knowledgeCutoff": "2025-01",
           "structuredOutput": true,
           "lastUpdated": "2025-10-17",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -16328,7 +16131,6 @@
           "knowledgeCutoff": "2025-05",
           "structuredOutput": true,
           "lastUpdated": "2026-07-31",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -16634,7 +16436,6 @@
           "maxOutputTokens": 131072,
           "knowledgeCutoff": "2025-04",
           "lastUpdated": "2025-12-22",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -16677,7 +16478,6 @@
           "maxOutputTokens": 131072,
           "knowledgeCutoff": "2025-04",
           "lastUpdated": "2026-02-11",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -17394,7 +17194,6 @@
           "contextWindow": 256000,
           "maxOutputTokens": 256000,
           "lastUpdated": "2025-08-20",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -17414,7 +17213,6 @@
           "maxOutputTokens": 64000,
           "structuredOutput": true,
           "lastUpdated": "2026-07-06",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -17437,7 +17235,6 @@
           "maxOutputTokens": 64000,
           "knowledgeCutoff": "2025-06",
           "lastUpdated": "2026-04-20",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -17513,7 +17310,6 @@
           "maxOutputTokens": 262144,
           "knowledgeCutoff": "2024-10",
           "lastUpdated": "2026-01-27",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -17596,7 +17392,6 @@
           "maxOutputTokens": 32000,
           "structuredOutput": false,
           "lastUpdated": "2026-07-21",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -17618,7 +17413,6 @@
           "maxOutputTokens": 32800,
           "knowledgeCutoff": "2025-06",
           "lastUpdated": "2026-04-21",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -17637,7 +17431,6 @@
           "maxOutputTokens": 32768,
           "structuredOutput": false,
           "lastUpdated": "2026-08-27",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -17659,7 +17452,6 @@
           "maxOutputTokens": 32768,
           "structuredOutput": false,
           "lastUpdated": "2026-07-23",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -17681,7 +17473,6 @@
           "maxOutputTokens": 32768,
           "structuredOutput": false,
           "lastUpdated": "2026-08-06",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -17699,7 +17490,6 @@
           "contextWindow": 1000000,
           "maxOutputTokens": 131072,
           "lastUpdated": "2026-06-30",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -17721,7 +17511,6 @@
           "maxOutputTokens": 65536,
           "knowledgeCutoff": "2024-12",
           "lastUpdated": "2025-12-16",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -17740,7 +17529,6 @@
           "maxOutputTokens": 64000,
           "knowledgeCutoff": "2024-12",
           "lastUpdated": "2026-03-18",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -17759,7 +17547,6 @@
           "maxOutputTokens": 64000,
           "knowledgeCutoff": "2024-12",
           "lastUpdated": "2026-03-18",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -17778,7 +17565,6 @@
           "maxOutputTokens": 32000,
           "knowledgeCutoff": "2024-12",
           "lastUpdated": "2026-04-24",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -17796,7 +17582,6 @@
           "contextWindow": 200000,
           "maxOutputTokens": 32000,
           "lastUpdated": "2026-09-22",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -17833,7 +17618,6 @@
           "maxOutputTokens": 131072,
           "knowledgeCutoff": "2025-01",
           "lastUpdated": "2025-12-23",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -17870,7 +17654,6 @@
           "maxOutputTokens": 131072,
           "knowledgeCutoff": "2025-01",
           "lastUpdated": "2026-02-12",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -17924,7 +17707,6 @@
           "maxOutputTokens": 32000,
           "knowledgeCutoff": "2025-01",
           "lastUpdated": "2026-05-31",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -17967,7 +17749,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-08-05",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -18010,7 +17791,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-09-02",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -18032,7 +17812,6 @@
           "maxOutputTokens": 128000,
           "knowledgeCutoff": "2026-02",
           "lastUpdated": "2026-03-11",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -18051,7 +17830,6 @@
           "maxOutputTokens": 128000,
           "knowledgeCutoff": "2026-02",
           "lastUpdated": "2026-06-04",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -18070,7 +17848,6 @@
           "maxOutputTokens": 262144,
           "structuredOutput": true,
           "lastUpdated": "2026-08-11",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -18090,7 +17867,6 @@
           "knowledgeCutoff": "2025-09-23",
           "structuredOutput": true,
           "lastUpdated": "2026-06-09",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -18172,7 +17948,6 @@
           "maxOutputTokens": 65536,
           "knowledgeCutoff": "2025-04",
           "lastUpdated": "2026-04-02",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -18216,7 +17991,6 @@
           "maxOutputTokens": 66000,
           "knowledgeCutoff": "2025-06",
           "lastUpdated": "2026-05-08",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -18235,7 +18009,6 @@
           "inputLimit": 524288,
           "maxOutputTokens": 524288,
           "lastUpdated": "2026-09-23",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -18257,7 +18030,6 @@
           "maxOutputTokens": 131072,
           "knowledgeCutoff": "2025-06",
           "lastUpdated": "2026-01-28",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -18276,7 +18048,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-08-21",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -18961,7 +18732,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-08-21",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -19109,7 +18879,6 @@
           "inputLimit": 524288,
           "maxOutputTokens": 524288,
           "lastUpdated": "2026-09-23",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -20390,7 +20159,6 @@
           "maxOutputTokens": 64000,
           "structuredOutput": false,
           "lastUpdated": "2026-06-17",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -20734,7 +20502,6 @@
           "maxOutputTokens": 460800,
           "structuredOutput": true,
           "lastUpdated": "2026-08-14",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -21305,7 +21072,6 @@
           "maxOutputTokens": 32768,
           "structuredOutput": false,
           "lastUpdated": "2026-04-02",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -21348,7 +21114,6 @@
           "maxOutputTokens": 32768,
           "structuredOutput": false,
           "lastUpdated": "2026-04-02",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -21370,7 +21135,6 @@
           "maxOutputTokens": 65536,
           "structuredOutput": false,
           "lastUpdated": "2026-03-25",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -21389,7 +21153,6 @@
           "maxOutputTokens": 65536,
           "structuredOutput": false,
           "lastUpdated": "2026-03-25",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -21550,7 +21313,6 @@
           "maxOutputTokens": 32768,
           "structuredOutput": false,
           "lastUpdated": "2026-08-27",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -21572,7 +21334,6 @@
           "maxOutputTokens": 32768,
           "structuredOutput": false,
           "lastUpdated": "2026-09-04",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -21669,7 +21430,6 @@
           "maxOutputTokens": 8192,
           "structuredOutput": true,
           "lastUpdated": "2026-08-11",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -22737,7 +22497,6 @@
           "maxOutputTokens": 235929,
           "structuredOutput": true,
           "lastUpdated": "2026-09-08",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -22759,7 +22518,6 @@
           "maxOutputTokens": 235929,
           "structuredOutput": true,
           "lastUpdated": "2026-09-08",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -22862,7 +22620,6 @@
           "maxOutputTokens": 65536,
           "structuredOutput": false,
           "lastUpdated": "2026-04-28",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -22906,7 +22663,6 @@
           "maxOutputTokens": 235929,
           "structuredOutput": true,
           "lastUpdated": "2026-03-11",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -22951,7 +22707,6 @@
           "maxOutputTokens": 65536,
           "structuredOutput": false,
           "lastUpdated": "2026-06-04",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -22995,7 +22750,6 @@
           "maxOutputTokens": 8192,
           "structuredOutput": false,
           "lastUpdated": "2026-06-04",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -23038,7 +22792,6 @@
           "maxOutputTokens": 65536,
           "structuredOutput": false,
           "lastUpdated": "2026-08-11",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -24437,7 +24190,6 @@
           "maxOutputTokens": 8000,
           "structuredOutput": true,
           "lastUpdated": "2026-02-01",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -24630,7 +24382,6 @@
           "maxOutputTokens": 32768,
           "structuredOutput": false,
           "lastUpdated": "2026-07-21",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -24673,7 +24424,6 @@
           "maxOutputTokens": 32768,
           "structuredOutput": false,
           "lastUpdated": "2026-07-02",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -25703,7 +25453,6 @@
           "maxOutputTokens": 235929,
           "structuredOutput": true,
           "lastUpdated": "2026-08-14",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -26025,7 +25774,6 @@
           "maxOutputTokens": 524288,
           "structuredOutput": false,
           "lastUpdated": "2026-09-23",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -26328,7 +26076,6 @@
           "maxOutputTokens": 262144,
           "structuredOutput": false,
           "lastUpdated": "2026-07-30",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -26350,7 +26097,6 @@
           "maxOutputTokens": 262144,
           "structuredOutput": false,
           "lastUpdated": "2026-07-15",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -26984,7 +26730,6 @@
           "maxOutputTokens": 29491,
           "structuredOutput": false,
           "lastUpdated": "2026-06-13",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -29503,7 +29248,6 @@
           "contextWindow": 202752,
           "maxOutputTokens": 16384,
           "lastUpdated": "2026-02-11",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -29524,7 +29268,6 @@
           "contextWindow": 131072,
           "maxOutputTokens": 16384,
           "lastUpdated": "2026-03-08",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -29542,7 +29285,6 @@
           "contextWindow": 131072,
           "maxOutputTokens": 16384,
           "lastUpdated": "2026-03-08",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -29560,7 +29302,6 @@
           "contextWindow": 131072,
           "maxOutputTokens": 16384,
           "lastUpdated": "2026-03-08",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -29578,7 +29319,6 @@
           "contextWindow": 131072,
           "maxOutputTokens": 16384,
           "lastUpdated": "2026-03-08",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -29597,7 +29337,6 @@
           "maxOutputTokens": 32768,
           "knowledgeCutoff": "2025-01",
           "lastUpdated": "2026-01-27",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -29618,7 +29357,6 @@
           "contextWindow": 204800,
           "maxOutputTokens": 32768,
           "lastUpdated": "2026-02-12",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -29636,7 +29374,6 @@
           "contextWindow": 131072,
           "maxOutputTokens": 16384,
           "lastUpdated": "2026-03-08",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -29657,7 +29394,6 @@
           "inputLimit": 192000,
           "maxOutputTokens": 128000,
           "lastUpdated": "2026-07-06",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -29703,7 +29439,6 @@
           "inputLimit": 192000,
           "maxOutputTokens": 128000,
           "lastUpdated": "2026-07-06",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -29725,7 +29460,6 @@
           "contextWindow": 256000,
           "maxOutputTokens": 64000,
           "lastUpdated": "2026-04-20",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -32657,7 +32391,6 @@
           "contextWindow": 256000,
           "maxOutputTokens": 32000,
           "lastUpdated": "2026-08-27",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -32678,7 +32411,6 @@
           "contextWindow": 256000,
           "maxOutputTokens": 32000,
           "lastUpdated": "2026-08-27",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -32699,7 +32431,6 @@
           "contextWindow": 256000,
           "maxOutputTokens": 32000,
           "lastUpdated": "2026-09-04",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -32720,7 +32451,6 @@
           "contextWindow": 256000,
           "maxOutputTokens": 32000,
           "lastUpdated": "2026-09-04",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -32988,7 +32718,6 @@
           "maxOutputTokens": 4096,
           "knowledgeCutoff": "2023-12",
           "lastUpdated": "2024-12-06",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -33007,7 +32736,6 @@
           "maxOutputTokens": 4096,
           "knowledgeCutoff": "2024-08",
           "lastUpdated": "2025-04-05",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -33026,7 +32754,6 @@
           "maxOutputTokens": 4096,
           "knowledgeCutoff": "2024-08",
           "lastUpdated": "2025-04-05",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": false,
@@ -35710,7 +35437,6 @@
           "maxOutputTokens": 32768,
           "structuredOutput": false,
           "lastUpdated": "2026-07-21",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -37710,7 +37436,6 @@
           "maxOutputTokens": 131072,
           "knowledgeCutoff": "2024-12",
           "lastUpdated": "2026-03-18",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -37731,7 +37456,6 @@
           "contextWindow": 8192,
           "maxOutputTokens": 8192,
           "lastUpdated": "2026-03-18",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -37750,7 +37474,6 @@
           "maxOutputTokens": 131072,
           "knowledgeCutoff": "2024-12",
           "lastUpdated": "2026-04-22",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -37772,7 +37495,6 @@
           "maxOutputTokens": 131072,
           "knowledgeCutoff": "2024-12",
           "lastUpdated": "2026-04-22",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -37793,7 +37515,6 @@
           "contextWindow": 8192,
           "maxOutputTokens": 8192,
           "lastUpdated": "2026-04-22",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -37811,7 +37532,6 @@
           "contextWindow": 8192,
           "maxOutputTokens": 8192,
           "lastUpdated": "2026-04-22",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -37829,7 +37549,6 @@
           "contextWindow": 8192,
           "maxOutputTokens": 8192,
           "lastUpdated": "2026-04-22",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -37847,7 +37566,6 @@
           "contextWindow": 1048576,
           "maxOutputTokens": 131072,
           "lastUpdated": "2026-09-22",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -37868,7 +37586,6 @@
           "contextWindow": 1048576,
           "maxOutputTokens": 131072,
           "lastUpdated": "2026-09-22",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -37892,7 +37609,6 @@
           "maxOutputTokens": 131072,
           "knowledgeCutoff": "2024-12",
           "lastUpdated": "2026-03-18",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -37913,7 +37629,6 @@
           "contextWindow": 8192,
           "maxOutputTokens": 8192,
           "lastUpdated": "2026-03-18",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -37932,7 +37647,6 @@
           "maxOutputTokens": 131072,
           "knowledgeCutoff": "2024-12",
           "lastUpdated": "2026-04-22",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -37954,7 +37668,6 @@
           "maxOutputTokens": 131072,
           "knowledgeCutoff": "2024-12",
           "lastUpdated": "2026-04-22",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -37975,7 +37688,6 @@
           "contextWindow": 8192,
           "maxOutputTokens": 8192,
           "lastUpdated": "2026-04-22",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -37993,7 +37705,6 @@
           "contextWindow": 8192,
           "maxOutputTokens": 8192,
           "lastUpdated": "2026-04-22",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -38011,7 +37722,6 @@
           "contextWindow": 8192,
           "maxOutputTokens": 8192,
           "lastUpdated": "2026-04-22",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -38029,7 +37739,6 @@
           "contextWindow": 1048576,
           "maxOutputTokens": 131072,
           "lastUpdated": "2026-09-22",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -38050,7 +37759,6 @@
           "contextWindow": 1048576,
           "maxOutputTokens": 131072,
           "lastUpdated": "2026-09-22",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -38074,7 +37782,6 @@
           "maxOutputTokens": 131072,
           "knowledgeCutoff": "2024-12",
           "lastUpdated": "2026-03-18",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -38095,7 +37802,6 @@
           "contextWindow": 8192,
           "maxOutputTokens": 8192,
           "lastUpdated": "2026-03-18",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -38114,7 +37820,6 @@
           "maxOutputTokens": 131072,
           "knowledgeCutoff": "2024-12",
           "lastUpdated": "2026-04-22",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -38136,7 +37841,6 @@
           "maxOutputTokens": 131072,
           "knowledgeCutoff": "2024-12",
           "lastUpdated": "2026-04-22",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -38157,7 +37861,6 @@
           "contextWindow": 8192,
           "maxOutputTokens": 8192,
           "lastUpdated": "2026-04-22",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -38175,7 +37878,6 @@
           "contextWindow": 8192,
           "maxOutputTokens": 8192,
           "lastUpdated": "2026-04-22",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -38193,7 +37895,6 @@
           "contextWindow": 8192,
           "maxOutputTokens": 8192,
           "lastUpdated": "2026-04-22",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": false,
@@ -38211,7 +37912,6 @@
           "contextWindow": 1048576,
           "maxOutputTokens": 131072,
           "lastUpdated": "2026-09-22",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -38232,7 +37932,6 @@
           "contextWindow": 1048576,
           "maxOutputTokens": 131072,
           "lastUpdated": "2026-09-22",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -38298,7 +37997,6 @@
           "maxOutputTokens": 98304,
           "knowledgeCutoff": "2025-04",
           "lastUpdated": "2025-07-28",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -38382,7 +38080,6 @@
           "contextWindow": 128000,
           "maxOutputTokens": 32768,
           "lastUpdated": "2025-12-08",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -38425,7 +38122,6 @@
           "maxOutputTokens": 131072,
           "knowledgeCutoff": "2025-04",
           "lastUpdated": "2026-01-19",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -38636,7 +38332,6 @@
           "maxOutputTokens": 131072,
           "knowledgeCutoff": "2025-04",
           "lastUpdated": "2025-12-22",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -38658,7 +38353,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-03-16",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -38680,7 +38374,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-06-13",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -38702,7 +38395,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-06-13",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -38724,7 +38416,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-08-14",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -38746,7 +38437,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-08-26",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -38768,7 +38458,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-08-14",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
@@ -39080,7 +38769,6 @@
           "maxOutputTokens": 128000,
           "knowledgeCutoff": "2026-01-31",
           "lastUpdated": "2026-06-30",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -39704,7 +39392,6 @@
           "knowledgeCutoff": "2025-01",
           "structuredOutput": true,
           "lastUpdated": "2026-06-12",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -39745,7 +39432,6 @@
           "maxOutputTokens": 131072,
           "structuredOutput": true,
           "lastUpdated": "2026-07-16",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -40438,7 +40124,6 @@
           "maxOutputTokens": 256000,
           "knowledgeCutoff": "2026-03-01",
           "lastUpdated": "2026-05-29",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -40982,7 +40667,6 @@
           "contextWindow": 200000,
           "maxOutputTokens": 128000,
           "lastUpdated": "2025-12-08",
-          "isFree": true,
           "capabilities": {
             "vision": true,
             "reasoning": true,
@@ -41026,7 +40710,6 @@
           "maxOutputTokens": 128000,
           "knowledgeCutoff": "2025-04",
           "lastUpdated": "2026-01-19",
-          "isFree": true,
           "capabilities": {
             "vision": false,
             "reasoning": true,
