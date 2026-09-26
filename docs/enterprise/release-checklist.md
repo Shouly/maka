@@ -24,9 +24,9 @@ do it: an item is open until it lands. Each names where the problem lives and
 what would close it. When an item lands, delete it here; the phase reports
 under `phase-reports/` keep the record of what closed and when.
 
-Ordered by what it is, not by when it was found: release blockers, then
-defects, then unimplemented features, then the verification still owed. How the
-gap list was measured — and what that measure cannot see — is at the end.
+Ordered by what it is, not by when it was found: unimplemented features, then
+the verification still owed. How the gap list was measured — and what that
+measure cannot see — is at the end.
 
 **Baseline.** Measured 2026-09-12 against upstream `c08626bf2`, the head of the
 eleventh sync. The twelve commits from there to `ca4136a02` (the twelfth
@@ -36,37 +36,6 @@ surfaces already listed — WorkHub (#5198, #4878) and its Astryx choice panel �
 or ones re-implemented here in the same sync (the Generated Files menu of
 #5216, the skill-picker filter of #5249). Re-measure after the sync that
 follows.
-
-## Must fix before shipping to users
-
-- **Font licensing.** `apps/desktop/src/renderer/assets/fonts/` carries the
-  three Anthropic families scraped from claude.ai with no licence (owner
-  accepted the risk for internal builds). Replace before any external
-  release; `styles/globals.css` `--font-sans/serif/mono` are the only seams.
-- **Company model gateway — the endpoint is still nobody's to hand out.**
-  Landed in Phase 5b: `relx-gateway` is a registered provider
-  (`packages/core/src/provider-registry.ts`, OpenAI-compatible chat
-  completions, `category: 'custom'`, `catalogGroup: 'recommended'`,
-  `catalogOrder: -1` so it heads the add-connection catalog, API key required,
-  base URL required, `GET <baseUrl>/models` discovery), with display copy in
-  three locales and a drawn (non-trademark) mark under
-  `apps/desktop/src/renderer/lib/ported/provider-*`. What is NOT settled is
-  operational: the gateway host is deployment-specific, so every user has to be
-  told the URL out of band. Decide before the first internal release whether
-  the build ships a default `baseUrl` for the company deployment (one line in
-  the registry entry) or keeps asking each user for it.
-
-## Defects — wrong behaviour, lost data, crashes
-
-Ours does something upstream does not, and the difference costs the user. These
-come before any feature work.
-
-- **Archiving an edit-and-resend family is a silent no-op.** `sessions:archive`
-  resolves but the Host ignores the lifecycle change for a family member
-  (`apps/desktop/src/main/runtime-host-session-catalog-ipc-main.ts:130`), so a
-  task that was ever edited-and-resent cannot be archived from the rail or
-  from Settings › Archived tasks. Found in Phase 5a; needs a main/Host fix —
-  it is outside the renderer allow-list.
 
 ## Not implemented
 
