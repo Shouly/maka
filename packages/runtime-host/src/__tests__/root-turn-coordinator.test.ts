@@ -1261,8 +1261,10 @@ test('turn.start admits a skill token with its chip and replays a retry of the s
 test('skill chips never cost a Message: a failing catalog or chips past the limits leave it plain', async () => {
   let failing = true;
   const fixture = await createFailureFixture({
+    // Only the admission is asked about. The Fake backend echoes a prompt nine
+    // characters every 45 ms, over five minutes for the 64 KiB one below.
     registerBackend: (backends) =>
-      backends.register('ai-sdk', (context) => new FakeBackend(context)),
+      backends.register('ai-sdk', (context) => new ImmediateReplyBackend(context.sessionId)),
     resolveSkillReferences: async () => {
       if (failing) throw new Error('skill catalog is unreadable');
       return [{ kind: 'skill', value: '/writer', label: 'Writer', start: 0 }];
@@ -6606,6 +6608,27 @@ class LinkedChildAuthorityBackend implements AgentBackend {
   async dispose(): Promise<void> {
     this.releaseWait?.();
   }
+}
+
+/** Ends every Turn at once, whatever it was sent. */
+class ImmediateReplyBackend implements AgentBackend {
+  readonly kind = 'ai-sdk' as const;
+
+  constructor(readonly sessionId: string) {}
+
+  async *send(input: BackendSendInput): AsyncIterable<SessionEvent> {
+    yield {
+      type: 'complete',
+      id: randomUUID(),
+      turnId: input.turnId,
+      ts: Date.now(),
+      stopReason: 'end_turn',
+    };
+  }
+
+  async stop(): Promise<void> {}
+  async respondToSandboxBoundary(): Promise<void> {}
+  async dispose(): Promise<void> {}
 }
 
 class StepCapProbeBackend implements AgentBackend {
