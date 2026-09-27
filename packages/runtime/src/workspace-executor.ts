@@ -38,7 +38,7 @@ import { runProcessWithBoundedTail, runShellWithBoundedTail } from './shell-exec
 import { resolveRipgrepPath } from './ripgrep-locator.js';
 import type { ChildFdInput } from './child-fd-input.js';
 import type { ShellPlan } from './shell-detect.js';
-import { isSupportedImagePath, readWorkspaceImage } from './image-file.js';
+import { isSupportedImagePath, isWorkspaceImage, readWorkspaceImage } from './image-file.js';
 import type { ImageMimeType } from './image-file.js';
 import { readTextLineWindowFacts, readTooLargeMessage } from './text-line-window.js';
 import {
@@ -398,7 +398,7 @@ export class LocalWorkspaceExecutor implements WorkspaceExecutor {
     if ((await fs.stat(input.path).catch(() => undefined))?.isDirectory()) {
       throw new Error(`EISDIR: illegal operation on a directory, read '${input.path}'`);
     }
-    if (isSupportedImagePath(input.path)) {
+    if (await isWorkspaceImage(input.path)) {
       return await readWorkspaceImage(input.path);
     }
     if (input.maxBytes !== undefined && !input.limit && (input.offset ?? 1) <= 1) {

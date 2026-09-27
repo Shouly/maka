@@ -72,6 +72,25 @@ describe('computeEditedSource — exact match', () => {
     );
   });
 
+  test('overlapping occurrences are ambiguous, not a choice of the first', () => {
+    for (const [source, oldString, starts] of [
+      ['banana', 'ana', 2],
+      ['AAAA', 'AAA', 2],
+      ['retry();\nretry();\nretry();\n', 'retry();\nretry();', 2],
+    ] as const) {
+      assert.throws(
+        () => computeEditedSource(source, oldString, 'MARKER();', 'overlap.txt'),
+        new RegExp(`Found ${starts} matches of the string to replace, but replace_all is false\\.`),
+        `${JSON.stringify(oldString)} has more than one possible location`,
+      );
+    }
+    // replace_all still replaces the non-overlapping occurrences, left to right.
+    assert.equal(
+      computeEditedSource('banana', 'ana', 'X', 'overlap.txt', { replaceAll: true }).content,
+      'bXna',
+    );
+  });
+
   test('the reported old_string is truncated so a huge one cannot flood the turn', () => {
     const long = 'x'.repeat(500);
     assert.throws(

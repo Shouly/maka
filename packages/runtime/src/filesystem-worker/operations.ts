@@ -44,7 +44,7 @@ import {
   StableWriteFailure,
   writeThroughHandle,
 } from '../file-stable-write.js';
-import { isSupportedImagePath, readWorkspaceImage } from '../image-file.js';
+import { isWorkspaceImage, readWorkspaceImage } from '../image-file.js';
 import {
   applyGrepHeadLimit,
   buildRipgrepArgs,
@@ -211,7 +211,7 @@ export async function executeFilesystemOperation(
           `EISDIR: illegal operation on a directory, read '${path}'`,
         );
       }
-      if (isSupportedImagePath(path)) {
+      if (await isWorkspaceImage(path)) {
         try {
           const image = await readWorkspaceImage(path);
           return {

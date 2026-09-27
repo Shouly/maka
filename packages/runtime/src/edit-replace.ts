@@ -93,9 +93,14 @@ export function computeEditedSource(
   const replacement = preserveQuoteStyle(find, actual, toLf(newString));
   const matchedVia: EditMatchStrategy = actual === find ? 'exact' : 'quotes';
   const count = countOccurrences(text, actual);
-  if (count > 1 && !options.replaceAll) {
+  // A single edit needs one starting position, overlapping ones included: in
+  // "banana", "ana" starts twice, and replacing the first would be a guess.
+  // When the matches do not overlap there is exactly one, so any other start
+  // lies inside it and the recount is bounded by old_string's length.
+  const starts = count === 1 ? countMatchStarts(text, actual) : count;
+  if (starts > 1 && !options.replaceAll) {
     throw new Error(
-      `Found ${count} matches of the string to replace, but replace_all is false. ` +
+      `Found ${starts} matches of the string to replace, but replace_all is false. ` +
         'To replace all occurrences, set replace_all to true. To replace only one occurrence, ' +
         'please provide more context to uniquely identify the instance.\n' +
         `String: ${truncateForMessage(oldString)}`,
@@ -187,6 +192,19 @@ function curlySingleQuotes(text: string): string {
       return opensAt(chars, index) ? '‘' : '’';
     })
     .join('');
+}
+
+function countMatchStarts(haystack: string, needle: string): number {
+  if (needle === '') return 0;
+  let count = 0;
+  for (
+    let index = haystack.indexOf(needle);
+    index !== -1;
+    index = haystack.indexOf(needle, index + 1)
+  ) {
+    count += 1;
+  }
+  return count;
 }
 
 function countOccurrences(haystack: string, needle: string): number {
