@@ -546,3 +546,55 @@ Watermark after this batch: `bfb315acc`.
 - Upstream renderer and `packages/ui`: `014859f5c` #5276, `50f0d0ecb` #5726,
   `8362e1528` #5728, `fa9be2fa5` #5710.
 - Refactor: `4901fd660` #5362.
+
+## Batch 4: `bfb315acc..1e31d0a21` (11 commits, 2026-09-27)
+
+Watermark after this batch: `1e31d0a21`.
+
+#### Done
+
+- `d2f19f400` #5663: **bug confirmed** (the new tests fail on the old code).
+  A provider that answered 2xx and then dropped the connection while the body
+  streamed surfaced as an AI SDK error with status 200 and a socket cause; the
+  classifier gave up on any status code, so the turn was not retried. For 2xx
+  only it now walks the cause chain for one of six body-interruption codes.
+  The classifier applied as is; upstream's end-to-end retry tests pass on our
+  retry policy unchanged. Its "finalized thinking fails without retrying"
+  variants were not taken: our backend seals partial thinking and retries.
+- `a0ce9aa79` #5475: **bug confirmed**. After `element_sequence` returned its
+  closing observation the next bound action was refused as
+  `reobserve_required`, and a capture invalidated in flight could still reach
+  the model. Every fresh-observation path now validates the lease before it
+  registers the frame. Two hunks were rebased by hand onto our `Computer.`
+  tool naming.
+- `3f44315dd` #5293: **bug confirmed**. A folder pasted or dropped into the
+  composer staged as an attachment and failed only on send, with a generic
+  error. Main answers whether each dropped file's path is a directory, the
+  composer leaves folders out with one notice (pointing at the ＋ menu's "Add
+  folder" when the Session can reference one), and an unreadable File at send
+  now reports `item_unreadable`. Built on our composer: the check lives in
+  `renderer/lib/dropped-folders.ts`, not upstream's `use-composer-attachments`.
+- `920162a93` #5590: **bugs confirmed**, two of three. Edit counted matches
+  without overlap, so `ana` in `banana` looked unique and the first was
+  replaced; overlapping starts now make it ambiguous (the message keeps the
+  reference's "Found N matches" wording, N counting every start). Read decided
+  image vs. text by extension only, so an image without one was decoded as
+  text; both Read paths now also sniff the first 16 bytes. The reference report
+  measured neither case. FormatJson does not exist here.
+- `e3c25828a` #5356: applied as is. Fragmented Host frames no longer cost
+  quadratic copy and scan work.
+- `d89ccce01` #5426: applied as is. MiniMax-M2.7 joins both regional
+  fallback lists.
+
+#### Consider
+
+| Commit | PR | What | Note |
+|---|---|---|---|
+| `c9a176e10` | #5470 | A note on a quoted transcript excerpt. | Feature; protocol change. |
+| `c171eacd0` | #5096 | Faster Claude Code transcript listing. | No import page here yet. |
+
+#### Skip
+
+- Upstream renderer and `packages/ui`: `ab021efda` #5751 (pastes stay plain
+  text; our composer never folded them), `027d6afba` #5748.
+- Refactor: `1e31d0a21` #4692.
