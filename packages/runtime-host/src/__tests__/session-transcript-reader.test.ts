@@ -31,6 +31,7 @@ import {
   type StoredMessage,
 } from '@maka/core/session';
 import { projectRuntimeEventsToStoredMessages } from '@maka/runtime/runtime-event-read-model';
+import { RuntimeReadModelError } from '@maka/runtime/runtime-read-model';
 import { foldTurnContribution } from '@maka/storage/session-message-projection';
 import type { SessionTurnContribution } from '@maka/storage/execution-stores';
 import {
@@ -38,6 +39,7 @@ import {
   openInteractiveExecutionStoresForWrite,
 } from '@maka/storage/execution-stores';
 import { resolveStorageRoot, tryAcquireInteractiveRootOwner } from '@maka/storage/root-authority';
+import { boundedFailureDiagnostic } from '../server/failure-diagnostic.js';
 import { createSessionTranscriptReader } from '../server/session-transcript-reader.js';
 
 for (const coordination of [false, true])
@@ -737,6 +739,92 @@ test('pages a nested Turn the same way a single sweep reads it', async () => {
       assert.deepEqual(paged, swept, direction);
     }
   } finally {
+    await rm(base, { recursive: true, force: true });
+  }
+});
+
+test('a durable projection failure names its invocation and diagnostics, not the content', async () => {
+  const base = await mkdtemp(join(tmpdir(), 'maka-transcript-diagnostic-'));
+  const capability = await resolveStorageRoot({ path: join(base, 'root'), kind: 'interactive' });
+  const owner = await tryAcquireInteractiveRootOwner(capability);
+  assert.ok(owner);
+  let stores: Awaited<ReturnType<typeof openInteractiveExecutionStoresForWrite>> | undefined;
+  try {
+    stores = await openInteractiveExecutionStoresForWrite(owner.lease);
+    const session = await stores.sessionStore.create({
+      cwd: capability.canonicalPath,
+      llmConnectionId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      llmConnectionSlug: 'fake',
+      model: 'fake-model',
+      permissionMode: 'ask',
+    });
+    await seedInvocation(stores.runtimeEventStore, {
+      sessionId: session.id,
+      runId: 'run-1',
+      turnId: 'turn-1',
+      openedAt: 0,
+    });
+    // Reasoning with no assistant text of its own: the read model cannot place it.
+    const eventId = 'orphan-thinking-api_key=sk-secretvalue123';
+    await stores.runtimeEventStore.appendRuntimeEvent(
+      session.id,
+      'run-1',
+      runtimeEvent(session.id, {
+        id: eventId,
+        ts: 2,
+        role: 'model',
+        author: 'agent',
+        content: { kind: 'thinking', text: 'private reasoning' },
+        refs: { providerEventId: 'orphan-assistant' },
+      }),
+    );
+    await stores.runtimeEventStore.appendRuntimeEvent(
+      session.id,
+      'run-1',
+      runtimeEvent(session.id, {
+        id: 'end',
+        ts: 3,
+        status: 'completed',
+        actions: { endInvocation: true },
+      }),
+    );
+    const read = createSessionTranscriptReader({ stores });
+    await assert.rejects(
+      read.readDurablePage(session.id, {
+        direction: 'older',
+        maxBytes: 64 * 1024,
+        maxMessages: 64,
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof RuntimeReadModelError);
+        assert.deepEqual(
+          error.diagnostics.map(({ code, eventId: id, runId, turnId }) => ({
+            code,
+            id,
+            runId,
+            turnId,
+          })),
+          [{ code: 'unsupported_event', id: eventId, runId: 'run-1', turnId: 'turn-1' }],
+        );
+        const logged = boundedFailureDiagnostic(error);
+        for (const part of [
+          'unsupported_event',
+          'thinking content has no assistant text row with a matching message id',
+          `"sessionId":"${session.id}"`,
+          '"invocationId":"run-1"',
+          '"turnId":"turn-1"',
+          'orphan-thinking-',
+        ]) {
+          assert.ok(logged.includes(part), part);
+        }
+        assert.doesNotMatch(logged, /sk-secretvalue123/);
+        assert.doesNotMatch(error.message, /private reasoning/);
+        return true;
+      },
+    );
+  } finally {
+    await stores?.sessionStore.close?.();
+    await owner.close();
     await rm(base, { recursive: true, force: true });
   }
 });

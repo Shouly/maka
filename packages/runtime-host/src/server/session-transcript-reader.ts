@@ -29,7 +29,9 @@ import {
   isHardRuntimeEventReadModelDiagnostic,
   projectRuntimeEventsToStoredMessages,
   projectRuntimeEventUserMessage,
+  type RuntimeEventReadModelDiagnostic,
 } from '@maka/runtime/runtime-event-read-model';
+import { RuntimeReadModelError } from '@maka/runtime/runtime-read-model';
 import type {
   ExecutionStoresWriter,
   SessionTranscriptMessageLookupRequest,
@@ -151,8 +153,9 @@ export function createSessionTranscriptReader(input: {
         activePresentationRuntimeEvents(events),
         { invocations: runIds.map((runId) => invocations.get(runId)!) },
       );
-      if (projected.diagnostics.some(isHardRuntimeEventReadModelDiagnostic)) {
-        throw new Error('Active RuntimeEvent transcript projection is incomplete');
+      const hardDiagnostics = projected.diagnostics.filter(isHardRuntimeEventReadModelDiagnostic);
+      if (hardDiagnostics.length > 0) {
+        throw incompleteProjection('Active', root, hardDiagnostics);
       }
       assertActiveOverlayBounded(projected.messages);
       return projected.messages;
@@ -191,6 +194,35 @@ export interface SessionTranscriptReader {
 }
 
 /**
+ * A projection with hard diagnostics cannot be served, and the client is only
+ * told the transcript is unavailable. The Host's failure log is where the cause
+ * lands, so the error names the invocation and each diagnostic's code, event
+ * and reason — not its raw detail, which may carry payload.
+ */
+function incompleteProjection(
+  kind: 'Active' | 'Durable',
+  invocation: Pick<RuntimeInvocationRecord, 'sessionId' | 'invocationId' | 'runId' | 'turnId'>,
+  diagnostics: readonly RuntimeEventReadModelDiagnostic[],
+): RuntimeReadModelError {
+  return new RuntimeReadModelError(
+    `${kind} RuntimeEvent transcript projection is incomplete: ${JSON.stringify({
+      sessionId: invocation.sessionId,
+      invocationId: invocation.invocationId,
+      runId: invocation.runId,
+      turnId: invocation.turnId,
+      diagnostics: diagnostics.map(({ code, eventId, runId, turnId, message }) => ({
+        code,
+        eventId,
+        runId,
+        turnId,
+        message,
+      })),
+    })}`,
+    [...diagnostics],
+  );
+}
+
+/**
  * Pages seek immutable Session event ordinals before decoding payloads. One
  * Turn is projected at a time, so a page costs one Turn rather than the
  * Session. The low sequence bits distinguish the few rows one event emits.
@@ -215,8 +247,9 @@ function createDurableLedgerTranscriptReader(input: {
     const projected = projectRuntimeEventsToStoredMessages(events, {
       invocations: [turn.invocation],
     });
-    if (projected.diagnostics.some(isHardRuntimeEventReadModelDiagnostic)) {
-      throw new Error('Durable RuntimeEvent transcript projection is incomplete');
+    const hardDiagnostics = projected.diagnostics.filter(isHardRuntimeEventReadModelDiagnostic);
+    if (hardDiagnostics.length > 0) {
+      throw incompleteProjection('Durable', turn.invocation, hardDiagnostics);
     }
     const admission =
       turn.invocation.sessionId === WORKHUB_COORDINATION_SESSION_ID

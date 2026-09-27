@@ -2425,6 +2425,103 @@ test('tool_result clears retained tool_result_preview so a later open does not s
   coordinator.close();
 });
 
+test('a failed transcript page records its cause before the generic outcome', async (t) => {
+  const logs: string[] = [];
+  t.mock.method(console, 'error', (...values: unknown[]) => {
+    logs.push(values.map(String).join(' '));
+  });
+  const message = assistantMessage('界'.repeat(20_000));
+  const baseReader = transcriptReader([message]);
+  const reader: SessionTranscriptReader = {
+    ...baseReader,
+    // The bootstrap read carries no position; a page always does. Fail only the
+    // page, so the subscription still opens.
+    readDurablePage: async (sessionId, request) => {
+      if (request.position !== undefined) throw new Error('injected page failure');
+      return baseReader.readDurablePage(sessionId, request);
+    },
+  };
+  const coordinator = new SessionContinuityCoordinator(
+    HOST_EPOCH,
+    async () => canonical(),
+    new SessionAdmissionGate(),
+    undefined,
+    reader,
+  );
+  t.after(() => coordinator.close());
+  coordinator.attachConnection('connection-page-failure', new RecordingSink());
+  const opened = await open(coordinator, 'connection-page-failure', {
+    kind: 'tail',
+    maxBytes: SESSION_TRANSCRIPT_BOOTSTRAP_MAX_BYTES,
+  });
+  const transcript = opened.transcript;
+  const cursor = transcript?.durable.nextCursor;
+  assert.ok(transcript && cursor, 'the tail leaves an older page to read');
+  const outcome = await coordinator.handlers['session.transcript.page'](
+    {
+      subscriptionId: opened.subscriptionId,
+      source: 'durable',
+      direction: 'older',
+      throughSequence: transcript.durable.throughSequence,
+      cursor,
+      anchorSequence: null,
+      maxBytes: SESSION_TRANSCRIPT_PAGE_MAX_BYTES,
+    },
+    connectionContext('connection-page-failure'),
+  );
+  assert.deepEqual(outcome, {
+    ok: false,
+    error: { code: 'persistence_failed', message: 'Session transcript is unavailable' },
+  });
+  assert.equal(logs.length, 1);
+  assert.match(logs[0] ?? '', /session\.transcript\.page failed/);
+  assert.match(logs[0] ?? '', /injected page failure/);
+});
+
+test('a failed transcript bootstrap records its cause, redacted and bounded', async (t) => {
+  const logs: string[] = [];
+  t.mock.method(console, 'error', (...values: unknown[]) => {
+    logs.push(values.map(String).join(' '));
+  });
+  const reader: SessionTranscriptReader = {
+    ...transcriptReader([]),
+    readDurableHighWater: async () => 0,
+    readDurablePage: async () => {
+      throw new Error(
+        `injected bootstrap failure: api_key=sk-secretvalue123\n${'细'.repeat(4096)}`,
+      );
+    },
+  };
+  const coordinator = new SessionContinuityCoordinator(
+    HOST_EPOCH,
+    async () => canonical(),
+    new SessionAdmissionGate(),
+    undefined,
+    reader,
+  );
+  t.after(() => coordinator.close());
+  coordinator.attachConnection('connection-bootstrap-failure', new RecordingSink());
+  const outcome = await coordinator.handlers['subscription.open'](
+    {
+      sessionId: SESSION_ID,
+      transcript: { kind: 'tail', maxBytes: SESSION_TRANSCRIPT_BOOTSTRAP_MAX_BYTES },
+    },
+    connectionContext('connection-bootstrap-failure'),
+  );
+  assert.deepEqual(outcome, {
+    ok: false,
+    error: { code: 'persistence_failed', message: 'Session transcript is unavailable' },
+  });
+  assert.equal(logs.length, 1);
+  const prefix = '[runtime-host] subscription.open transcript bootstrap failed: ';
+  const logged = logs[0] ?? '';
+  assert.ok(logged.startsWith(prefix), logged.slice(0, 120));
+  assert.match(logged, /injected bootstrap failure/);
+  assert.doesNotMatch(logged, /sk-secretvalue123/);
+  assert.match(logged, /<diagnostic truncated>$/);
+  assert.ok(Buffer.byteLength(logged.slice(prefix.length), 'utf8') <= 8 * 1024);
+});
+
 test('publishes the failure grade and none of the result body', async () => {
   const coordinator = new SessionContinuityCoordinator(
     HOST_EPOCH,
