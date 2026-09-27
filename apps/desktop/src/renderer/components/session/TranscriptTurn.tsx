@@ -36,7 +36,7 @@
 // turns by it, and `resolveQuoteTarget` walks up to it to decide which turn a
 // selection belongs to.
 
-import { memo, useMemo, type ReactNode } from 'react';
+import { memo, useCallback, useMemo, type ReactNode } from 'react';
 import { DeliveryAutoOpen } from './tools/renderers/DeliveryResults.js';
 import { durableResultOf } from '../../lib/tool-delivery-results.js';
 import { finalAssistantReplyText, useUiLocale, type TurnViewModel } from '@maka/ui';
@@ -105,7 +105,7 @@ export interface TranscriptTurnProps {
   onEditCancel?: () => void;
   editPending?: boolean;
   editCancelDisabled?: boolean;
-  onSwitchToFullAccessAndRetry?: (toolUseId: string) => void;
+  onSwitchToFullAccessAndRetry?: (turnId: string, toolUseId: string) => void;
   switchingToolUseId?: string;
   onOpenExternal: (url: string) => void;
   /** What the live turn is parked on, drawn on its last run's status row. */
@@ -147,6 +147,11 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
   const locale = useUiLocale();
   const copy = getTranscriptCopy(locale);
   const turn = props.turn;
+  const onSwitchToFullAccess = props.onSwitchToFullAccessAndRetry;
+  const retryWithFullAccess = useCallback(
+    (toolUseId: string) => onSwitchToFullAccess?.(turn.turnId, toolUseId),
+    [onSwitchToFullAccess, turn.turnId],
+  );
   // The ask-user calls are told apart by id (their live copy has no name),
   // so the grouping follows the known set as well as the timeline.
   const knownAsks = useStore(knownUserQuestionCalls, (state) => state.byToolUseId);
@@ -220,9 +225,7 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
             : {})}
           {...(props.liveStatus && index === liveRunIndex ? { live: props.liveStatus } : {})}
           context={props.toolContext}
-          {...(props.onSwitchToFullAccessAndRetry
-            ? { onSwitchToFullAccessAndRetry: props.onSwitchToFullAccessAndRetry }
-            : {})}
+          {...(onSwitchToFullAccess ? { onSwitchToFullAccessAndRetry: retryWithFullAccess } : {})}
           {...(props.switchingToolUseId ? { switchingToolUseId: props.switchingToolUseId } : {})}
         />
       );

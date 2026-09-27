@@ -76,6 +76,7 @@ import {
 import { requestScheduledTaskFocus } from '../../store/scheduled-tasks-store.js';
 import { reviewableProposal } from '../../store/plan-store.js';
 import { revisionRefusalFor } from '../../store/revision-draft.js';
+import { pressTranscriptGap } from '../../lib/transcript-gap-press.js';
 import { deriveMessageVersions, type MessageVersions } from '../../lib/ported/session-revisions.js';
 import { pendingActionsOf } from '../../store/turn-actions-store.js';
 import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
@@ -222,6 +223,7 @@ function SessionTranscript(props: SessionViewProps) {
   const unanchoredReviewable =
     reviewable && !turns.some((turn) => turn.turnId === reviewable.turnId) ? reviewable : undefined;
 
+  const onError = props.onError;
   const reportError = useCallback(
     (title: string, error: unknown, fallback?: string) => {
       // Every Host action on a Session whose directory is gone fails with
@@ -230,9 +232,9 @@ function SessionTranscript(props: SessionViewProps) {
         showSessionWorkspaceUnavailableToast(toastApi, locale, { sessionId });
         return;
       }
-      props.onError?.(title, error, fallback);
+      onError?.(title, error, fallback);
     },
-    [locale, props, sessionId],
+    [locale, onError, sessionId],
   );
 
   // After a send the question goes to the top and the answer fills the space
@@ -285,6 +287,14 @@ function SessionTranscript(props: SessionViewProps) {
   const loadHistory = useCallback(
     (target: 'earlier' | 'later' | 'latest') => activeSessionStore.loadHistory({ target }),
     [],
+  );
+  const pressOlderGap = useCallback(
+    () => pressTranscriptGap(authority, loadHistory, 'older'),
+    [authority, loadHistory],
+  );
+  const pressNewerGap = useCallback(
+    () => pressTranscriptGap(authority, loadHistory, 'newer'),
+    [authority, loadHistory],
   );
 
   const restoreTarget = activeSessionStore.restoreTarget(sessionId);
@@ -350,12 +360,16 @@ function SessionTranscript(props: SessionViewProps) {
         uiStore.navigate({ section: 'automations', module: 'scheduled-tasks' });
       },
     }),
-    [sessionId],
+    [sessionId, locale],
   );
 
+  // Read through a ref, so the callback stays one function while the turns
+  // stream in: a new one per update would re-render every settled turn.
+  const turnsRef = useRef(turns);
+  turnsRef.current = turns;
   const onFooterAction = useCallback(
     (turnId: string, id: TurnFooterActionId) => {
-      const turn = turns.find((row) => row.turnId === turnId);
+      const turn = turnsRef.current.find((row) => row.turnId === turnId);
       if (!turn) return;
       if (id === 'copy') {
         return navigator.clipboard.writeText(finalAssistantReplyText(turn));
@@ -371,7 +385,7 @@ function SessionTranscript(props: SessionViewProps) {
         .branch(sessionId, { sourceTurnId: turnId, copyId: crypto.randomUUID() })
         .catch((error) => reportError(actions.operationFailedTitle, error));
     },
-    [actions, reportError, sessionId, turns],
+    [actions, reportError, sessionId],
   );
 
   const onOpenLineage = useCallback((turnId: string) => {
@@ -379,16 +393,20 @@ function SessionTranscript(props: SessionViewProps) {
     element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, []);
 
+  // Through a ref for the same reason as the turns: every page and every
+  // durable batch is a new message list, and the callback reaches every turn.
+  const messagesRef = useRef(feed.messages);
+  messagesRef.current = feed.messages;
   const beginEdit = useCallback(
     (turnId: string) => {
-      const message = feed.messages.find(
+      const message = messagesRef.current.find(
         (row): row is Extract<StoredMessage, { type: 'user' }> =>
           row.type === 'user' && row.turnId === turnId,
       );
       if (!message) return;
       revisionDraftStore.begin({ sessionId, turnId, text: userFacingText(message) });
     },
-    [feed.messages, sessionId],
+    [sessionId],
   );
 
   const submitEdit = useCallback(() => {
@@ -403,7 +421,7 @@ function SessionTranscript(props: SessionViewProps) {
   }, [actions, reportError]);
 
   const switchToFullAccessAndRetry = useCallback(
-    (turnId: string) => (toolUseId: string) => {
+    (turnId: string, toolUseId: string) => {
       setSwitchingToolUseId(toolUseId);
       void turnActionsStore
         .setPermission(sessionId, 'bypass')
@@ -491,9 +509,7 @@ function SessionTranscript(props: SessionViewProps) {
                       pending={
                         historyPending?.target === (row.direction === 'older' ? 'earlier' : 'later')
                       }
-                      onLoad={() =>
-                        void loadHistory(row.direction === 'older' ? 'earlier' : 'later')
-                      }
+                      onLoad={row.direction === 'older' ? pressOlderGap : pressNewerGap}
                     />,
                   ];
                 }
@@ -568,7 +584,7 @@ function SessionTranscript(props: SessionViewProps) {
                             draft.phase === 'sending' || draft.phase === 'uncertain',
                         }
                       : {})}
-                    onSwitchToFullAccessAndRetry={switchToFullAccessAndRetry(turn.turnId)}
+                    onSwitchToFullAccessAndRetry={switchToFullAccessAndRetry}
                     {...(switchingToolUseId ? { switchingToolUseId } : {})}
                     onOpenExternal={toolContext.onOpenExternal}
                     {...(feed.blockedOn && live.turnId === turn.turnId

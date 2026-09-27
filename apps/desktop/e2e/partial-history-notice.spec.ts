@@ -40,12 +40,39 @@ test('the first open is a bounded tail, older pages reach the whole history, and
   expect(await turns.count()).toBeLessThan(PARTIAL_HISTORY_TURN_COUNT);
   const earlier = page.locator('[data-maka-transcript-gap="older"] button');
   await expect(earlier).toBeVisible();
-  for (let pageIndex = 0; pageIndex < PARTIAL_HISTORY_TURN_COUNT; pageIndex += 1) {
-    if ((await earlier.count()) === 0) break;
-    const initial = await turns.first().getAttribute('data-turn-id');
-    await earlier.click();
-    await expect(turns.first()).not.toHaveAttribute('data-turn-id', initial!);
-  }
+  // Only a press marks the gap busy (`historyPending`); a prefetch never
+  // does. Seeing it busy is what says the press itself reached the loader.
+  await page.evaluate(() => {
+    const state = window as unknown as { __gapPressed?: boolean };
+    state.__gapPressed = false;
+    new MutationObserver((records) => {
+      const busy = records.some(
+        (record) =>
+          record.type === 'attributes' &&
+          record.oldValue === null &&
+          (record.target as Element).closest('[data-maka-transcript-gap="older"]') !== null,
+      );
+      if (busy || document.querySelector('[data-maka-transcript-gap="older"] button[disabled]'))
+        state.__gapPressed = true;
+    }).observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['disabled'],
+      attributeOldValue: true,
+    });
+  });
+  // The first press asks for its page and must land it.
+  const opened = await turns.first().getAttribute('data-turn-id');
+  await earlier.click();
+  await expect(turns.first()).not.toHaveAttribute('data-turn-id', opened!);
+  expect(
+    await page.evaluate(() => (window as unknown as { __gapPressed?: boolean }).__gapPressed),
+  ).toBe(true);
+  // A press releases the pin, so the reader keeps their place at the top
+  // (the page lands just above it) instead of being carried back to the tail;
+  // within two screens of the top the window fetches the rest on its own, and
+  // the gap finishes the history and goes without another press.
   await expect(turns.first()).toHaveAttribute('data-turn-id', 'turn-partial-history-1');
   await expect(earlier).toHaveCount(0);
   // Read up to the first Turn, as a reader would, then come back.

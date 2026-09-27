@@ -357,6 +357,7 @@
     "src/renderer/lib/theme.ts",
     "src/renderer/lib/tool-delivery-results.ts",
     "src/renderer/lib/tool-row-description.ts",
+    "src/renderer/lib/transcript-gap-press.ts",
     "src/renderer/lib/transient-message-placement.ts",
     "src/renderer/lib/turn-activity.ts",
     "src/renderer/lib/turn-timeline-groups.ts",
@@ -2599,7 +2600,7 @@
         "useEffect": 2,
         "useLiveTurnSnapshot": 1,
         "useQuestionPin": 1,
-        "useRef": 3,
+        "useRef": 5,
         "useShallow": 1,
         "useShellLiveTurn": 1,
         "useState": 1,
@@ -2621,6 +2622,7 @@
         "../../lib/cn.js": 1,
         "../../lib/ported/session-revisions.js": 1,
         "../../lib/ported/session-workspace-errors.js": 1,
+        "../../lib/transcript-gap-press.js": 1,
         "../../lib/transient-message-placement.js": 1,
         "../../lib/turn-activity.js": 1,
         "../../locales/conversation-copy.js": 1,
@@ -6807,6 +6809,15 @@
         "@maka/core/display-redaction": 1,
         "@maka/core/tool-names": 1
       }
+    },
+    "src/renderer/lib/transcript-gap-press.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
     },
     "src/renderer/lib/transient-message-placement.ts": {
       "bridgePaths": {},

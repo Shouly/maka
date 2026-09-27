@@ -35,6 +35,7 @@ import { getShellCopy } from '../../locales/shell-copy.js';
 import { buildPaletteCommands } from '../../components/palette/commands.js';
 import { TranscriptTurn, TurnStatusBeforeTurn } from '../../components/session/TranscriptTurn.js';
 import { latchedStart } from '../../components/session/tools/TurnStatus.js';
+import { pressTranscriptGap } from '../../lib/transcript-gap-press.js';
 import { renderToolContent } from '../../components/session/tools/registry.js';
 import {
   TurnStatusThinkingStep,
@@ -2017,4 +2018,16 @@ test('the rows of one turn share one clock, from the earliest start seen', () =>
   assert.equal(latchedStart(turn, 4_000), 4_000, 'an earlier start wins');
   assert.equal(latchedStart(undefined, 7_000), 7_000, 'a row before its turn has no latch');
   assert.equal(latchedStart(`${turn}-other`, 9_000), 9_000, 'turns do not share one');
+});
+
+// A gap press is a command: the pin goes first, or a reader who reached the
+// gap without scrolling (Tab, then Enter) is carried back to the tail when the
+// page lands. The e2e partial-history journey holds the same through Electron.
+test('pressing a transcript gap releases the tail pin before it asks for the page', () => {
+  const calls: string[] = [];
+  const authority = { releasePin: () => void calls.push('release') };
+  const loadHistory = (target: 'earlier' | 'later') => void calls.push(`load:${target}`);
+  pressTranscriptGap(authority, loadHistory, 'older');
+  pressTranscriptGap(authority, loadHistory, 'newer');
+  assert.deepEqual(calls, ['release', 'load:earlier', 'release', 'load:later']);
 });

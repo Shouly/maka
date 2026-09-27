@@ -177,7 +177,14 @@ async function sample(page: Page): Promise<CostSample> {
 }
 
 async function moveToTail(page: Page): Promise<void> {
-  await page.locator(TURN).last().scrollIntoViewIfNeeded();
+  // For a few hundred milliseconds after it opens, the window re-mounts its
+  // newest Turns several times while it settles (it loads newer pages and
+  // trims what lies far from the reader), so the Turn that was last can be
+  // replaced while it is being scrolled to. Aim again at whichever Turn is
+  // last when the scroll lands.
+  await expect(async () => {
+    await page.locator(TURN).last().scrollIntoViewIfNeeded({ timeout: 1_000 });
+  }).toPass({ timeout: 10_000 });
   await page.evaluate(
     () =>
       new Promise<void>((resolve) =>
