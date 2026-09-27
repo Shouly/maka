@@ -19,12 +19,75 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
+import type { LanguageModelV4StreamPart } from '@ai-sdk/provider';
 import { RetryError } from 'ai';
+import { convertArrayToReadableStream, MockLanguageModelV4 } from 'ai/test';
 
 import { ModelAdapter, normalizeAiSdkUsage } from '../model-adapter.js';
 import type { ModelStreamEvent } from '../model-protocol.js';
 
 describe('ModelAdapter stream and error normalization', () => {
+  // The ChatGPT Codex backend answers max_output_tokens with HTTP 400, so a
+  // turn carrying a configured limit failed on every request.
+  const limitedAdapter = (providerType: 'openai' | 'openai-codex', model: unknown = {}) =>
+    new ModelAdapter({
+      connection: {
+        slug: providerType,
+        providerType,
+        defaultModel: 'gpt-6-astra',
+        modelOverrides: { 'gpt-6-astra': { maxOutputTokens: 4_096 } },
+      },
+      apiKey: 'token',
+      modelId: 'gpt-6-astra',
+      modelFactory: () => model,
+      newId: idGenerator(),
+      now: monotonicClock(),
+    });
+
+  test('a Codex subscription has no output limit, even a configured one', () => {
+    const codex = limitedAdapter('openai-codex');
+    assert.equal(codex.acceptsOutputTokenLimit(), false);
+    assert.equal(codex.maxOutputTokens(), undefined);
+    const openai = limitedAdapter('openai');
+    assert.equal(openai.acceptsOutputTokenLimit(), true);
+    assert.equal(openai.maxOutputTokens(), 4_096);
+  });
+
+  test('startStream sends a Codex subscription request no output limit', async () => {
+    const sentLimit = async (providerType: 'openai' | 'openai-codex') => {
+      const model = new MockLanguageModelV4({
+        doStream: {
+          stream: convertArrayToReadableStream([
+            { type: 'stream-start', warnings: [] },
+            {
+              type: 'finish',
+              finishReason: { unified: 'stop', raw: 'stop' },
+              usage: {
+                inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                outputTokens: { total: 1, text: 1, reasoning: 0 },
+              },
+            },
+          ] satisfies LanguageModelV4StreamPart[]),
+        },
+      });
+      const result = await limitedAdapter(providerType, model).startStream({
+        model,
+        messages: [{ role: 'user', content: 'hi' }],
+        tools: {},
+        activeTools: [],
+        abortSignal: new AbortController().signal,
+        repairToolCall: async () => null,
+        onStreamActivity: () => {},
+      });
+      for await (const _event of result.events) {
+        // Drain so the provider call settles.
+      }
+      return model.doStreamCalls[0]?.maxOutputTokens;
+    };
+    assert.equal(await sentLimit('openai-codex'), undefined);
+    assert.equal(await sentLimit('openai'), 4_096);
+  });
+
   test('forwards the stable Session identity to the model factory', () => {
     let observedSessionId: string | undefined;
     const model = {};

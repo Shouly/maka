@@ -25,6 +25,7 @@ import {
   type RuntimeExecutionConnection,
 } from '@maka/core/llm-connections';
 import { lookupModelMetadata } from '@maka/core/model-metadata';
+import { providerAcceptsOutputTokenLimit } from '@maka/core/provider-registry';
 import { TOOL_SEARCH_PROVIDER_NAME } from '@maka/core/tool-names';
 import type { CacheMissInputSource } from '@maka/core/usage-stats/types';
 import { rawFinishReasonString } from './model-protocol.js';
@@ -223,7 +224,16 @@ export class ModelAdapter {
     });
   }
 
+  /**
+   * Whether a request to this connection may carry an output-token limit at
+   * all. When it may not, no limit is sent, configured or not.
+   */
+  acceptsOutputTokenLimit(): boolean {
+    return providerAcceptsOutputTokenLimit(this.input.connection.providerType);
+  }
+
   maxOutputTokens(): number | undefined {
+    if (!this.acceptsOutputTokenLimit()) return undefined;
     return selectedModelMaxOutputTokens(
       this.input.connection,
       this.input.modelId,
@@ -243,12 +253,9 @@ export class ModelAdapter {
       wrapLanguageModel: (input: Record<string, unknown>) => unknown;
     };
 
-    const maxOutputTokens = selectedModelMaxOutputTokens(
-      this.input.connection,
-      this.input.modelId,
-      this.input.providerOptions,
-      this.runtime,
-    );
+    // The one place a main-turn output limit reaches the wire. A provider that
+    // rejects any limit gets none, whatever the model is configured with.
+    const maxOutputTokens = this.maxOutputTokens();
     const trackedModel = input.providerRequestTracker
       ? withProviderStreamTracking({
           model: input.model,
