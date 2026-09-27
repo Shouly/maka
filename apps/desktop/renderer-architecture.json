@@ -263,6 +263,7 @@
     "src/renderer/lib/composer-document.ts",
     "src/renderer/lib/composer-surface.ts",
     "src/renderer/lib/connection-model-rows.ts",
+    "src/renderer/lib/dropped-folders.ts",
     "src/renderer/lib/fixture.ts",
     "src/renderer/lib/goal-readout.ts",
     "src/renderer/lib/markdown/color-utils.tsx",
@@ -1204,6 +1205,7 @@
         "../../lib/cn.js": 1,
         "../../lib/composer-document.js": 1,
         "../../lib/composer-surface.js": 1,
+        "../../lib/dropped-folders.js": 1,
         "../../lib/ported/attachment-preflight.js": 1,
         "../../lib/ported/composer-attachments.js": 1,
         "../../lib/ported/desktop-slash-command.js": 1,
@@ -5798,6 +5800,17 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {}
+    },
+    "src/renderer/lib/dropped-folders.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/core/attachments": 1
+      }
     },
     "src/renderer/lib/fixture.ts": {
       "bridgePaths": {},
