@@ -69,13 +69,9 @@ test('the first open is a bounded tail, older pages reach the whole history, and
   expect(
     await page.evaluate(() => (window as unknown as { __gapPressed?: boolean }).__gapPressed),
   ).toBe(true);
-  // A press releases the pin, so the reader keeps their place at the top
-  // (the page lands just above it) instead of being carried back to the tail;
-  // within two screens of the top the window fetches the rest on its own, and
-  // the gap finishes the history and goes without another press.
-  await expect(turns.first()).toHaveAttribute('data-turn-id', 'turn-partial-history-1');
-  await expect(earlier).toHaveCount(0);
-  // Read up to the first Turn, as a reader would, then come back.
+  // The page lands above the reader, who keeps their place; the window fetches
+  // more only as they near the top (within two screens), so the rest of the
+  // history comes in as they read up to the first Turn, and the gap goes.
   const scroller = page.locator('[data-maka-transcript-boundary]');
   const box = (await scroller.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -85,6 +81,8 @@ test('the first open is a bounded tail, older pages reach the whole history, and
       timeout: 500,
     });
   }).toPass({ timeout: 20_000 });
+  await expect(turns.first()).toHaveAttribute('data-turn-id', 'turn-partial-history-1');
+  await expect(earlier).toHaveCount(0);
   const latest = page.getByRole('button', { name: '回到最新', exact: true });
   await latest.click();
   await expect(

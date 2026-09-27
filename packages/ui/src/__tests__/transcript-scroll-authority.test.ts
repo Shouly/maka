@@ -72,6 +72,7 @@ function fakeRoot(options?: { scrollHeight?: number; clientHeight?: number }): F
     getBoundingClientRect: () => ({ top: 0 }) as DOMRect,
     querySelectorAll: () => root.turns.map((turn) => ({
       getAttribute: () => turn.turnId,
+      dataset: { turnId: turn.turnId },
       getBoundingClientRect: () => ({
         top: turn.top - root.scrollTop,
         bottom: turn.top + turn.height - root.scrollTop,
@@ -692,6 +693,34 @@ test('holdTurn carries a Turn to its offset, asks for room, and holds it against
     frame();
     assert.equal(root.scrollTop, 1_016);
   });
+});
+
+test('a range that lands during a hold keeps native scroll anchoring off', () => {
+  const globals = globalThis as { CSS?: unknown };
+  const originalCss = globals.CSS;
+  globals.CSS = { escape: (value: string) => value };
+  try {
+    withObservers(() => {
+      const root = fakeRoot({ scrollHeight: 3_000, clientHeight: 600 });
+      root.turns = [{ turnId: 'question', top: 1_000, height: 400 }];
+      // The commit's anchor lookup; the Turn it names is gone after the commit.
+      Object.assign(root, { querySelector: () => null });
+      const authority = createTranscriptScrollAuthority();
+      authority.attach(root as unknown as HTMLElement);
+      const question = {
+        isConnected: true,
+        getBoundingClientRect: () => ({ top: 1_000 - root.scrollTop }) as DOMRect,
+      } as unknown as HTMLElement;
+      authority.holdTurn(question, { offset: 24, durationMs: 0, holdMs: 1_000_000 });
+      assert.equal(root.style.overflowAnchor, 'none');
+      let landed = 0;
+      assert.equal(authority.commitIfIdle(() => landed++), true);
+      assert.equal(landed, 1);
+      assert.equal(root.style.overflowAnchor, 'none', 'the hold still owns the scroll');
+    });
+  } finally {
+    globals.CSS = originalCss;
+  }
 });
 
 test('pinning to the tail or releasing ends a hold', () => {

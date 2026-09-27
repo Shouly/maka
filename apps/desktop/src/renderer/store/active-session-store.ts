@@ -461,7 +461,13 @@ export function createActiveSessionStore(
           ? await rangeController.waitForDurableMessage(input.requiredAssistantMessageId, 480)
           : true;
         if (!current()) return false;
-        applyTranscript();
+        // Only the hand-over lands at once: it waited for the durable copy of
+        // the answer, and the live copy retires in the same publication, so a
+        // deferred one would blank the answer while the reader scrolls. Any
+        // other refresh is the range the subscription already publishes, and
+        // goes the same way, through the scroll authority.
+        if (input?.requiredAssistantMessageId) applyTranscript();
+        else publishTranscript();
         return settled;
       } catch (error) {
         failTranscript(error);
@@ -619,7 +625,27 @@ export function createActiveSessionStore(
         () => undefined,
       );
     }
-    const unsubscribeTranscript = transcript.subscribe(applyTranscript);
+    // A range lands through the scroll authority (upstream #5192), which
+    // commits it where the reader is: pinned, they stay on the tail; released,
+    // the Turn they are reading stays put; while they are scrolling, nothing
+    // lands under their hand. Committed straight, the page the first frame's
+    // prefetch brought in above them moved everything on screen — a long
+    // Session opened on its tail, jumped back some eighty Turns and walked
+    // forward again — and pages kept landing mid-gesture while the trim waited
+    // for idle. (The answer hand-over in `refresh` above is the one exception.)
+    function publishTranscript() {
+      viewportNavigation.commitRange(sessionId!, landTranscript);
+    }
+    // Run by the authority from a microtask or an idle signal, with no caller
+    // left to hear a failure: report it as the transcript's own.
+    function landTranscript() {
+      try {
+        applyTranscript();
+      } catch (error) {
+        failTranscript(error);
+      }
+    }
+    const unsubscribeTranscript = transcript.subscribe(publishTranscript);
     // Streaming-settle handoff, fallback path (upstream's
     // `SETTLE_FALLBACK_GRACE_MS`). The terminal event is the primary handoff;
     // a stuck live slot would otherwise hide the committed answer forever,

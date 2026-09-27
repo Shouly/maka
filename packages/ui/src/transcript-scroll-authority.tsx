@@ -168,7 +168,8 @@ export function createTranscriptScrollAuthority(): TranscriptScrollAuthority {
       const next = target.querySelector<HTMLElement>(`[data-turn-id="${CSS.escape(anchor.dataset.turnId!)}"]`);
       if (next) target.scrollTop += next.getBoundingClientRect().top - before;
     } finally {
-      target.style.overflowAnchor = pinned ? 'none' : 'auto';
+      // As `publish` has it: a hold owns the scroll as much as the pin does.
+      target.style.overflowAnchor = pinned || holding ? 'none' : 'auto';
     }
   };
   const notifyIdle = (): void => {

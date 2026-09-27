@@ -635,6 +635,9 @@ test('selection fences old stream callbacks, transcript batches, frames, and cle
     ]),
   );
   f.frames.forEach((frame) => frame());
+  // A range publishes a microtask later: wait for it, or a stale batch that
+  // got through would not have landed yet either.
+  await tick();
   assert.equal(f.store.getState().sessionId, sid('b'));
   assert.equal(f.store.getState().messages.length, 0);
   assert.deepEqual(f.store.getState().liveTurns, {});
@@ -685,6 +688,51 @@ test('display deltas batch, lifecycle events flush, and durable answer takes ove
   assert.equal(state.liveTurns[id], undefined);
   f.frames.forEach((frame) => frame());
   assert.equal(f.store.getState().liveTurns[id], undefined);
+  f.store.disconnect();
+});
+// The one publication that does not wait for the reader: the hand-over from
+// the live answer to its durable copy. Deferred, the live copy would retire
+// with nothing in its place while the reader scrolls.
+test('the durable answer takes over at once even while the reader is scrolling', async () => {
+  const f = fakeRuntime();
+  const id = sid('a');
+  f.store.viewportNavigation.attachCommitScheduler(id, {
+    commitIfIdle: () => false,
+    subscribeToIdle: () => () => {},
+  });
+  f.store.observe(id, 'en');
+  await tick();
+  const observer = f.observers[0]!;
+  observer.event(delta('Hello world'));
+  observer.event({
+    type: 'text_complete',
+    id: 'text-end',
+    turnId: 'turn',
+    messageId: 'answer',
+    ts: 2,
+    text: 'Hello world',
+  });
+  observer.event({ type: 'complete', id: 'done', turnId: 'turn', ts: 3, stopReason: 'end_turn' });
+  const message: StoredMessage = {
+    type: 'assistant',
+    id: 'answer',
+    turnId: 'turn',
+    ts: 2,
+    text: 'Hello world',
+    modelId: 'm',
+  };
+  f.readers[0]!.receive(batch(id, [message], false));
+  await tick();
+  const state = f.store.getState();
+  const turns = createTranscriptProjection().project({
+    sessionId: id,
+    locale: 'en',
+    messages: state.messages,
+    liveTurn: state.liveTurns[id],
+  });
+  assert.equal(turns.length, 1, 'no blank and no second copy');
+  assert.equal(state.messages[0]?.id, 'answer', 'the durable copy landed through the gesture');
+  assert.equal(state.liveTurns[id], undefined);
   f.store.disconnect();
 });
 test('late terminal handoff cannot settle a newly observed session with the same id', async () => {
@@ -891,6 +939,8 @@ test('an optimistic user message shows before its Session is observed and retire
   f.readers[0]!.receive(
     batch(id, [{ type: 'user', id: 'm-1', turnId: 't-1', ts: 5, text: 'hello' } as StoredMessage]),
   );
+  // A range publishes through the scroll authority, a microtask later.
+  await tick();
   assert.deepEqual(f.store.getState().transientMessages, [], 'the durable copy retires it');
   assert.equal(f.store.getState().messages[0]?.id, 'm-1');
   f.store.showTransientUserMessage(id, { ...sent, id: 'm-2' });
@@ -1098,8 +1148,10 @@ test('a message the Host cancelled is retired at the next seed; a scrolled-back 
   // A window with newer rows after it (a reset answering a jump into
   // history) hides the in-flight send; one at the tail shows it again.
   f.readers[0]!.receive({ ...batch(id), hasNewer: true });
+  await tick();
   assert.deepEqual(f.store.getState().transientMessages, []);
   f.readers[0]!.receive({ ...batch(id), hasNewer: false });
+  await tick();
   assert.deepEqual(
     f.store.getState().transientMessages.map((message) => message.id),
     ['kept'],
@@ -1148,6 +1200,45 @@ test('a catalog answer about the turn releases a claim that outlived its IPC', a
   await pending;
   await again;
 });
+// Upstream #5192: every range lands through the scroll authority, which
+// commits it where the reader is and never under an active gesture. Published
+// straight, a page that arrived above the reader moved everything on screen
+// (a long Session opened on its tail jumped back ~80 Turns and walked forward),
+// and pages kept mounting while a scroll went on.
+test('a transcript range lands through the scroll authority, never under an active gesture', async () => {
+  const f = fakeRuntime();
+  const id = sid('a');
+  let gesture = true;
+  let wakeOnIdle = () => {};
+  let commits = 0;
+  const detach = f.store.viewportNavigation.attachCommitScheduler(id, {
+    commitIfIdle(commit) {
+      if (gesture) return false;
+      commits += 1;
+      commit();
+      return true;
+    },
+    subscribeToIdle(listener) {
+      wakeOnIdle = listener;
+      return () => {};
+    },
+  });
+  f.store.observe(id, 'en');
+  await tick();
+  f.readers[0]!.receive(
+    batch(id, [{ type: 'user', id: 'm-1', turnId: 't-1', ts: 5, text: 'hello' } as StoredMessage]),
+  );
+  await tick();
+  assert.deepEqual(f.store.getState().messages, [], 'nothing lands while the reader scrolls');
+  assert.equal(commits, 0);
+  gesture = false;
+  wakeOnIdle();
+  assert.equal(f.store.getState().messages[0]?.id, 'm-1', 'it lands once the reader is idle');
+  assert.equal(commits, 1, 'through the authority, as one commit');
+  detach();
+  f.store.disconnect();
+});
+
 test('history controls use the existing bounded paging handle', async () => {
   const f = fakeRuntime();
   const id = sid('a');
@@ -1531,6 +1622,7 @@ test('Host queue and optimistic intent merge by message id and retire together',
   f.readers[0]!.receive(
     batch(id, [{ type: 'user', id: 'm-merge', turnId: 'host-turn', ts: 2, text: 'host text' }]),
   );
+  await tick();
   assert.deepEqual(f.store.getState().transientMessages, []);
   f.store.disconnect();
 });
