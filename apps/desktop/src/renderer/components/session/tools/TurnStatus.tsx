@@ -60,8 +60,7 @@ import { cn } from '../../../lib/cn.js';
 import { getTranscriptCopy } from '../../../locales/transcript-copy.js';
 import { statusGroupTools, type TurnStatusGroup } from '../../../lib/turn-timeline-groups.js';
 import type { ToolContentContext } from './registry.js';
-import { summarizeToolGroup, toolRowStatus, toolStepLabel } from './tool-presentation.js';
-import { isAskUserQuestionTool } from '../../../lib/ask-user-question.js';
+import { summarizeToolGroup, toolStepLabel } from './tool-presentation.js';
 import { ThinkingText } from '../ThinkingStep.js';
 import {
   TurnStatusNarrationStep,
@@ -335,17 +334,13 @@ export const TurnStatus = memo(function TurnStatus(props: TurnStatusProps) {
   // it has, and still that while the model reasons or writes under the run
   // (the reference keeps the step's words up until the next step). Live
   // reasoning with no call after it is the one moment that says "Thinking…".
-  // A question is waiting on the user from the moment its call starts, before
-  // the Host's request reaches the composer — so the row wears the waiting
-  // pill as soon as the run's last call is a running question.
-  const blocked =
-    props.blocked ??
-    (!props.complete &&
-    tools.at(-1) !== undefined &&
-    toolRowStatus(tools.at(-1)!) === 'running' &&
-    isAskUserQuestionTool(tools.at(-1)!)
-      ? 'question'
-      : undefined);
+  // The row waits on the user once the Host's request reaches the composer,
+  // with the prompt on screen. While a question's arguments still arrive it
+  // is an ordinary live row, "Asking a question" under the working mark.
+  // Deviation (owner's call, 2026-09-27): the reference wears the waiting
+  // pill from the call's first frame, and here that pill stood over a
+  // composer with nothing to answer until the arguments were complete.
+  const blocked = props.blocked;
 
   let label: string;
   if (blocked) {

@@ -1749,7 +1749,10 @@ test('a step names its verb and the object it acted on, in the tense of its outc
   );
 });
 
-test('a run whose last call is a running question wears the waiting pill before the request lands', () => {
+// The waiting pill stands with the prompt it waits on: until the Host's request
+// reaches the composer there is nothing to answer, so a question whose
+// arguments are still arriving is an ordinary live row.
+test('a running question is a live row until its request lands, then waits', () => {
   const base = transcriptFixture();
   const asking: ToolActivityItem = {
     toolUseId: 'ask-live',
@@ -1758,27 +1761,32 @@ test('a run whose last call is a running question wears the waiting pill before 
     args: undefined,
     argsPreview: { questions: [{ question: 'Which one?' }] },
   };
-  const document = renderTree(
-    createElement(TranscriptTurn, {
-      turn: {
-        ...base,
-        status: 'running',
-        tools: [asking],
-        timeline: [{ kind: 'tools', items: [asking] }],
-      },
-      live: true,
-      liveStatus: { turnId: base.turnId, startedAt: NOW },
-      footerActions: [],
-      toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
-      onFooterAction: () => {},
-      onOpenLineage: () => {},
-      onOpenExternal: () => {},
-    }),
-  );
-  const row = document.querySelector('[data-maka-turn-status]');
-  assert.equal(row?.getAttribute('data-state'), 'blocked');
-  assert.ok((row?.textContent ?? '').includes('Asking a question'));
-  assert.ok(!(row?.textContent ?? '').includes('questions'));
+  const renderTurn = (blocked?: 'question') =>
+    renderTree(
+      createElement(TranscriptTurn, {
+        turn: {
+          ...base,
+          status: 'running',
+          tools: [asking],
+          timeline: [{ kind: 'tools', items: [asking] }],
+        },
+        live: true,
+        liveStatus: { turnId: base.turnId, startedAt: NOW },
+        ...(blocked ? { blocked } : {}),
+        footerActions: [],
+        toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
+        onFooterAction: () => {},
+        onOpenLineage: () => {},
+        onOpenExternal: () => {},
+      }),
+    ).querySelector('[data-maka-turn-status]');
+  const arriving = renderTurn();
+  assert.equal(arriving?.getAttribute('data-state'), 'busy');
+  assert.ok((arriving?.textContent ?? '').includes('Asking a question'));
+  assert.ok(!(arriving?.textContent ?? '').includes('questions'));
+  const asked = renderTurn('question');
+  assert.equal(asked?.getAttribute('data-state'), 'blocked');
+  assert.ok((asked?.textContent ?? '').includes('Asking a question'));
 });
 
 test('untrusted Markdown keeps HTML and redaction markers as text', () => {
