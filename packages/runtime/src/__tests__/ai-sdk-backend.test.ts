@@ -106,6 +106,182 @@ import { MakaCompositionLoader } from '../plugin-composition-loader.js';
 import { PluginToolService } from '../plugin-tool-service.js';
 import { testInvocationOpening } from './invocation-fixture.js';
 
+describe('AiSdkBackend HTTP 2xx transport recovery', () => {
+  for (const outcome of ['recover', 'exhaust', 'stop', 'step-limit'] as const) {
+    test(`${outcome} after a durable tool result without repeating its effect`, async () => {
+      const durable = durableTurnHarness(`turn-5656-${outcome}`, 'write once and continue');
+      const attempts: ModelCallAttempt[] = [];
+      let calls = 0;
+      let effects = 0;
+      const model = new MockLanguageModelV4({
+        doStream: async () => {
+          calls += 1;
+          if (calls > 1 && (outcome !== 'recover' || calls === 2))
+            throw successfulResponseTransportFailure();
+          const chunks: LanguageModelV4StreamPart[] =
+            calls === 1
+              ? [
+                  { type: 'stream-start', warnings: [] },
+                  { type: 'tool-call', toolCallId: 'write-once', toolName: 'Write', input: '{}' },
+                  {
+                    type: 'finish',
+                    finishReason: { unified: 'tool-calls', raw: 'tool_calls' },
+                    usage: emptyUsage(),
+                  },
+                ]
+              : [
+                  { type: 'stream-start', warnings: [] },
+                  { type: 'text-start', id: 'answer' },
+                  { type: 'text-delta', id: 'answer', delta: 'Done' },
+                  { type: 'text-end', id: 'answer' },
+                  {
+                    type: 'finish',
+                    finishReason: { unified: 'stop', raw: 'stop' },
+                    usage: emptyUsage(),
+                  },
+                ];
+          return {
+            stream: simulateReadableStream({
+              chunks,
+              initialDelayInMs: null,
+              chunkDelayInMs: null,
+            }),
+          };
+        },
+      });
+      const backend = createBackend({
+        connection: connection(),
+        modelId: 'mock-model-id',
+        modelFactory: () => model,
+        tools: [
+          {
+            ...testTool('Write', z.object({})),
+            impl: async () => {
+              effects += 1;
+              return 'committed once';
+            },
+          },
+        ],
+        loadTurnRuntimeEvents: durable.loadTurnRuntimeEvents,
+        ...(outcome === 'step-limit' ? { maxSteps: 1 } : {}),
+        recordModelCallAttempt: ({ attempt }) => {
+          attempts.push(attempt);
+        },
+        providerRetrySleep: async (_delayMs, signal) => {
+          if (outcome !== 'stop') return;
+          await new Promise<void>((_resolve, reject) => {
+            const abort = () => reject(signal.reason ?? new Error('aborted'));
+            if (signal.aborted) abort();
+            else signal.addEventListener('abort', abort, { once: true });
+          });
+        },
+      });
+      const events: SessionEvent[] = [];
+      for await (const event of backend.send(durable.input({ runId: 'run-1' }))) {
+        durable.record(event);
+        events.push(event);
+        if (outcome === 'stop' && event.type === 'provider_retry' && event.phase === 'scheduled') {
+          await backend.stop('user_stop');
+        }
+      }
+      assert.equal(effects, 1);
+      assert.equal(events.filter((event) => event.type === 'tool_result').length, 1);
+      assert.equal(
+        durable.ledger.filter((event) => event.content?.kind === 'function_response').length,
+        1,
+      );
+      if (outcome === 'step-limit') {
+        assert.equal(calls, 1);
+        assert.equal(
+          events.some((event) => event.type === 'provider_retry'),
+          false,
+        );
+        assert.equal(events.find((event) => event.type === 'complete')?.stopReason, 'step_limit');
+        return;
+      }
+      assert.ok(
+        model.doStreamCalls
+          .slice(1)
+          .every((call) => JSON.stringify(call.prompt).includes('committed once')),
+      );
+      assert.equal(attempts[1]?.errorClass, 'network');
+      assert.equal(attempts[1]?.httpStatus, 200);
+      assert.equal(attempts[1]?.retryable, true);
+      const error = events.find((event) => event.type === 'error');
+      const retries = events.filter(
+        (event) => event.type === 'provider_retry' && event.phase === 'scheduled',
+      );
+      const completion = events.find((event) => event.type === 'complete');
+      if (outcome === 'recover') {
+        assert.equal(calls, 3);
+        assert.equal(retries.length, 1);
+        assert.equal(error, undefined);
+        assert.equal(completion?.stopReason, 'end_turn');
+        assert.deepEqual(
+          attempts.map(({ status }) => status),
+          ['completed', 'failed', 'completed'],
+        );
+      } else if (outcome === 'exhaust') {
+        assert.equal(calls, 11);
+        assert.equal(retries.length, 9);
+        assert.deepEqual(error?.retry, { decision: 'exhausted', attempts: 10 });
+        assert.equal(completion?.stopReason, 'error');
+      } else if (outcome === 'stop') {
+        assert.equal(calls, 2);
+        assert.equal(retries.length, 1);
+        assert.equal(
+          events.some((event) => event.type === 'provider_retry' && event.phase === 'started'),
+          false,
+        );
+        assert.equal(completion?.stopReason, 'user_stop');
+      }
+    });
+  }
+
+  test('does not replay provider tool activity after a 2xx transport failure', async () => {
+    let calls = 0;
+    const model = new MockLanguageModelV4({
+      doStream: async () => {
+        calls += 1;
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: 'stream-start', warnings: [] },
+              {
+                type: 'tool-input-start',
+                id: 'search-1',
+                toolName: 'web_search',
+                providerExecuted: true,
+              },
+              { type: 'error', error: successfulResponseTransportFailure() },
+            ] as LanguageModelV4StreamPart[],
+            initialDelayInMs: null,
+            chunkDelayInMs: null,
+          }),
+        };
+      },
+    });
+    const durable = durableTurnHarness('turn-5656-side-effects', 'search once');
+    const backend = createBackend({
+      connection: connection(),
+      modelId: 'mock-model-id',
+      modelFactory: () => model,
+      tools: [],
+      loadTurnRuntimeEvents: durable.loadTurnRuntimeEvents,
+      providerRetrySleep: async () => {},
+    });
+    const events = await drainDurably(backend.send(durable.input()), durable);
+    assert.equal(calls, 1);
+    assert.equal(
+      events.some((event) => event.type === 'provider_retry'),
+      false,
+    );
+    const error = events.find((event) => event.type === 'error');
+    assert.equal(error?.reason, 'network');
+    assert.deepEqual(error?.retry, { decision: 'declined', because: 'side_effects' });
+  });
+});
+
 describe('AiSdkBackend ApplyPatch routing', () => {
   test('advertises apply_patch only to supported native OpenAI models', async () => {
     for (const [providerType, modelId, expected] of [
@@ -16581,6 +16757,16 @@ function connectionResetFailure(): Error {
   // shape provider-error-classification tests classify as retryable Network.
   return Object.assign(new Error('Operation failed'), {
     cause: { code: 'ECONNRESET' },
+  });
+}
+
+function successfulResponseTransportFailure(): APICallError {
+  return new APICallError({
+    message: 'Failed to process successful response',
+    url: 'https://provider.invalid',
+    requestBodyValues: {},
+    statusCode: 200,
+    cause: Object.assign(new Error('connection closed'), { code: 'UND_ERR_SOCKET' }),
   });
 }
 
