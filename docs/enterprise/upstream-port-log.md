@@ -466,3 +466,83 @@ Watermark after this batch: `87fc9f69c`.
 | `4d7a1961d` | #5514 | Bounded Usage page queries. | Our Usage store is different (no `usage-screen`), and it also decodes every record in the range; bound it if the Usage page gets slow. |
 | `f5aa3f080` | #5575 | A development profile per git worktree. | Does not help two sessions sharing one tree. |
 | `18be8d5b6` | #5022 | Deterministic E2E Session names. | Test infrastructure. |
+
+## Batch 3: `87fc9f69c..bfb315acc` (24 commits, 2026-09-26 → 2026-09-27)
+
+Watermark after this batch: `bfb315acc`.
+
+#### Done
+
+- `22c2a8136` #5573, `f8976008a` #5600, `23b4d8a69` #5601: **gap confirmed**.
+  A failed transcript page and a failed subscription bootstrap answered with
+  a generic outcome and logged nothing, and an incomplete projection threw
+  without naming what was incomplete. The page and bootstrap failures now log
+  their bounded, redacted cause first; the incomplete-projection error names
+  the invocation (session, run, turn) and each diagnostic's code and ids, never
+  the event content.
+- `cc6dccaa1` #5521: **bug confirmed** (the new projector tests fail on the old
+  code). A queue change that landed while no root Turn was live projected
+  nothing, so a queued card a client still held was never retired. The
+  projector now emits `queue_update` for a rootless seed and for every queue
+  change. Upstream also gives a snapshot without a `queue` an empty fallback;
+  our protocol requires `queue`, so instead the Desktop candidate test harness's
+  default snapshot gained the queue it was missing.
+- `9cf31bc5e` #4875: **gap confirmed**. Artifact saves renamed the temp file
+  into place but never fsynced the directory, so the rename could be lost on a
+  crash. The directory is now synced after the rename (best-effort).
+- `146a69710` #5723: applied as is. The Codex subscription backend streams
+  only; non-streaming calls now stream and fold the result.
+- `7f25f27d4` #5738: **bug confirmed**. The Codex subscription backend rejects
+  `max_output_tokens`; the model adapter now omits the limit for providers
+  whose runtime adapter is `openai-codex` (`providerAcceptsOutputTokenLimit`).
+- `538c37cb6` #5742: **bug confirmed**. Desktop notified only for the Session
+  on screen (the renderer raised it from its own event stream), never when a
+  Session waited on the user, and the incognito gate read a local settings copy
+  that privacy changes never reach. Now the Host attaches `attention`
+  (completed / errored / waiting) to its Session catalog change after the
+  canonical cut and drops it while incognito is on; Desktop main observes every
+  connected Host's catalog feed, names the notification after the Session,
+  deduplicates by Host epoch + Session + event, and bounces the Dock. The
+  renderer's `notifications.runEnded` IPC is gone. Cancellation and a
+  successful compaction stay silent. Compatibility epoch 162 → 163.
+  Deviations: Desktop ignores attention from the WorkHub coordination Session,
+  which has no conversation to open here. Upstream moved the catalog change
+  after the canonical refresh, so a refresh that throws lost it; ours still
+  publishes the change then and drops only the attention. Upstream's real-Host
+  tests asserted the attention as soon as the Turn read terminal, which races
+  the terminal publication; ours wait for it, and prove its absence with the
+  next Turn, whose admission queues behind that publication. We never took
+  #5682 (waiting + Dock bounce); this batch brings both.
+
+#### Not applicable
+
+- `860ff50eb` #5737: our scheduled-task decoder already keeps `toolMode`, and
+  the scheduled-task tool was rewritten.
+- `242c509d3` #5593: our importer does not sanitize the workspace path.
+
+#### Deferred
+
+- `17d7fe6c6` #5730: auxiliary calls asking for `thinkingLevel: 'off'` on a
+  model that does not declare it. Only Daily Review does that here, and it has
+  no page yet; decide with the model-thinking catalog work.
+
+#### Consider
+
+| Commit | PR | What | Note |
+|---|---|---|---|
+| `714b0b687` | #5599 | Glob reports `truncated` past its 200-match cap. | Check against the file-tools reference report before adopting. |
+| `f362f1de7` | #5120 | Git changes panel picks its comparison base branch. | Feature. |
+| `1598c1168` | #5693 | Preview and normalize custom OpenAI request URLs. | Connection form feature. |
+
+#### Diverged
+
+- `2eb97eb04` #5740: per-turn execution context (cwd, platform, time) in the
+  prompt. Ours comes from the durable session injections and prompt sections.
+
+#### Skip
+
+- ACP: `86c61d420` #5734, `835112108` #5685.
+- WorkHub: `bfb315acc` #5733, `25ddafd5e` #5743.
+- Upstream renderer and `packages/ui`: `014859f5c` #5276, `50f0d0ecb` #5726,
+  `8362e1528` #5728, `fa9be2fa5` #5710.
+- Refactor: `4901fd660` #5362.
