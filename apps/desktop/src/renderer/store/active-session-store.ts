@@ -41,7 +41,6 @@ import {
   type ShellRunUpdatesBySession,
 } from '../lib/ported/shell-run-update-state.js';
 import * as shellRuns from '../bridge/shell-runs.js';
-import * as notifications from '../bridge/notifications.js';
 import {
   createRecoveringDesktopTranscriptRangeController,
   DesktopTranscriptRangeStore,
@@ -190,9 +189,6 @@ export function createActiveSessionStore(
     refreshSessions?: () => Promise<unknown>;
     toast?: Pick<ToastApi, 'error'>;
     scheduleFrame?: (callback: () => void) => void;
-    notifications?: Pick<typeof notifications, 'notifyRunEnded'>;
-    /** Session display name for the OS "run ended" notification title. */
-    sessionTitle?: (sessionId: string) => string | undefined;
     /** The catalog's status for a Session — the health probe's expectation input. */
     sessionStatus?: (sessionId: string) => SessionStatus | undefined;
     /** Injectable for tests: the boundary read's retry schedule. */
@@ -565,16 +561,6 @@ export function createActiveSessionStore(
             options.toast?.error(title, description, details, target);
           }
         },
-      },
-      // Main gates on the product toggle and window focus before raising
-      // anything, so this is unconditional here (as the old shell did).
-      notifyRunEnded: ({ kind, sessionId: endedId, body }) => {
-        if (!current()) return;
-        (options.notifications ?? notifications).notifyRunEnded({
-          kind,
-          title: options.sessionTitle?.(endedId),
-          body,
-        });
       },
       scheduleFrame: options.scheduleFrame,
     });

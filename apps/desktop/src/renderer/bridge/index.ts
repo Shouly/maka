@@ -41,7 +41,6 @@ export * as inspector from './inspector.js';
 export * as mcp from './mcp.js';
 export * as memory from './memory.js';
 export * as newTasks from './new-tasks.js';
-export * as notifications from './notifications.js';
 export * as oauth from './oauth.js';
 export * as onboarding from './onboarding.js';
 export * as orgAccount from './org-account.js';

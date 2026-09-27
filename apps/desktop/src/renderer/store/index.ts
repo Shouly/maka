@@ -68,8 +68,6 @@ export { revisionDraftStore };
 export const activeSessionStore = createActiveSessionStore({
   refreshSessions: sessionsStore.refresh,
   toast: toastApi,
-  sessionTitle: (sessionId) =>
-    sessionsStore.getState().sessions.find((row) => row.id === sessionId)?.name,
   sessionStatus: (sessionId) =>
     sessionsStore.getState().sessions.find((row) => row.id === sessionId)?.status,
 });

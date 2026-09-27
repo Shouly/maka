@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { withTimeout } from '@maka/core/test-only/async-primitives';
+import { waitFor, withTimeout } from '@maka/core/test-only/async-primitives';
 import assert from 'node:assert/strict';
 import { fork, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -473,31 +473,105 @@ test('explicit retract is durable across connections and prevents successor admi
   });
 });
 
-for (const [name, prompt] of [
-  ['question', FAKE_ASK_USER_QUESTION_PROMPT],
-  ['sandbox boundary', FAKE_ASK_SANDBOX_BOUNDARY_PROMPT],
+test('an unopened Session completion reaches the Host catalog feed once', async () => {
+  await withExecutionRoot(async (fixture) => {
+    const host = await fixture.startHost();
+    const client = await connectClient(fixture.root);
+    const events: unknown[] = [];
+    let observed!: () => void;
+    const attention = new Promise<void>((resolve) => {
+      observed = resolve;
+    });
+    const unsubscribe = client.subscribeSessionCatalogChanges((frame) => {
+      if (frame.sessionId !== fixture.sessionId || !frame.attention) return;
+      events.push(frame.attention);
+      observed();
+    });
+    const turnId = randomUUID();
+    requireStartedTurn(
+      await client.request('turn.start', {
+        sessionId: fixture.sessionId,
+        turnId,
+        content: { text: 'complete without opening the Session' },
+      }),
+    );
+
+    await withTimeout(attention, PROCESS_TIMEOUT_MS, 'no Host attention announced completion');
+    const terminal = await client.request('turn.query', { sessionId: fixture.sessionId, turnId });
+    assert.equal(terminal.status, 'completed');
+    if (terminal.status !== 'completed') throw new Error('Turn did not complete');
+    assert.deepEqual(events, [{ kind: 'completed', eventId: terminal.terminalEventId }]);
+    unsubscribe();
+    await client.close();
+    await fixture.stopHost(host);
+  });
+});
+
+test('incognito drops completion attention but keeps the catalog change', async () => {
+  await withExecutionRoot(async (fixture) => {
+    const host = await fixture.startHost();
+    const client = await connectClient(fixture.root);
+    const attention: unknown[] = [];
+    let catalogChanges = 0;
+    const unsubscribe = client.subscribeSessionCatalogChanges((frame) => {
+      if (frame.sessionId !== fixture.sessionId) return;
+      catalogChanges += 1;
+      if (frame.attention) attention.push(frame.attention);
+    });
+
+    const shown = await completeTurn(client, fixture.sessionId);
+    await waitFor(() => attention.length > 0, {
+      timeoutMs: PROCESS_TIMEOUT_MS,
+      message: 'no Host attention announced completion',
+    });
+    const announced = [{ kind: 'completed', eventId: shown.terminalEventId }];
+    assert.deepEqual(attention, announced);
+
+    await setIncognito(client, true);
+    const before = catalogChanges;
+    await completeTurn(client, fixture.sessionId);
+    // The next Turn is admitted only after the private Turn's terminal
+    // publication, and so after its catalog change reached this connection.
+    await completeTurn(client, fixture.sessionId);
+    assert.ok(catalogChanges > before);
+    assert.deepEqual(attention, announced);
+    unsubscribe();
+    await client.close();
+    await fixture.stopHost(host);
+  });
+});
+
+for (const [name, prompt, incognitoActive] of [
+  ['question', FAKE_ASK_USER_QUESTION_PROMPT, false],
+  ['sandbox boundary', FAKE_ASK_SANDBOX_BOUNDARY_PROMPT, false],
+  ['incognito question', FAKE_ASK_USER_QUESTION_PROMPT, true],
 ] as const) {
   test(`a pending ${name} reaches catalog subscribers as waiting_for_user`, async () => {
     await withExecutionRoot(async (fixture) => {
       const host = await fixture.startHost();
       const client = await connectClient(fixture.root);
+      if (incognitoActive) await setIncognito(client, true);
       let observedWaiting!: () => void;
       const waiting = new Promise<void>((resolve) => {
         observedWaiting = resolve;
       });
-      const unsubscribe = client.subscribeSessionCatalogChanges(({ sessionId }) => {
-        if (sessionId !== fixture.sessionId) return;
-        // A read still in flight when the Client closes is simply dropped.
-        void client
-          .request('session.catalog.query', { kind: 'get', sessionId })
-          .then((result) => {
-            const session = result.kind === 'session' ? result.session : null;
-            if (session && 'status' in session && session.status === 'waiting_for_user') {
-              observedWaiting();
-            }
-          })
-          .catch(() => undefined);
-      });
+      const attention: unknown[] = [];
+      const unsubscribe = client.subscribeSessionCatalogChanges(
+        ({ sessionId, attention: event }) => {
+          if (sessionId !== fixture.sessionId) return;
+          if (event) attention.push(event);
+          // A read still in flight when the Client closes is simply dropped.
+          void client
+            .request('session.catalog.query', { kind: 'get', sessionId })
+            .then((result) => {
+              const session = result.kind === 'session' ? result.session : null;
+              if (session && 'status' in session && session.status === 'waiting_for_user') {
+                observedWaiting();
+              }
+            })
+            .catch(() => undefined);
+        },
+      );
       const turnId = randomUUID();
       const started = requireStartedTurn(
         await client.request('turn.start', {
@@ -511,12 +585,28 @@ for (const [name, prompt] of [
         PROCESS_TIMEOUT_MS,
         'no catalog change announced the waiting Session',
       );
-      unsubscribe();
+      if (!incognitoActive) {
+        await waitFor(() => attention.length > 0, {
+          timeoutMs: PROCESS_TIMEOUT_MS,
+          message: 'no Host attention announced the waiting Session',
+        });
+      }
       await client.request('turn.stop', {
         sessionId: fixture.sessionId,
         turnId,
         runId: started.runId,
       });
+      if (incognitoActive) {
+        // Admitted only after the stopped Turn settles, which waits on the
+        // interaction's own admission and so on its catalog change.
+        await waitForTerminalTurn(client, fixture.sessionId, turnId);
+        await completeTurn(client, fixture.sessionId);
+      }
+      unsubscribe();
+      assert.deepEqual(
+        attention.map((event) => (event as { kind: string }).kind),
+        incognitoActive ? [] : ['waiting'],
+      );
       await client.close();
       await fixture.stopHost(host);
     });
@@ -663,3 +753,32 @@ test('old-Epoch Message submit returns only exact durable outcomes', async () =>
     await fixture.stopHost(successorHost);
   });
 });
+
+async function completeTurn(
+  client: RuntimeHostConnection,
+  sessionId: string,
+): Promise<Extract<TurnSnapshot, { status: 'completed' }>> {
+  const turnId = randomUUID();
+  requireStartedTurn(
+    await client.request('turn.start', {
+      sessionId,
+      turnId,
+      content: { text: 'complete this turn' },
+    }),
+  );
+  const terminal = await waitForTerminalTurn(client, sessionId, turnId);
+  if (terminal.status !== 'completed') throw new Error(`Turn ended ${terminal.status}`);
+  return terminal;
+}
+
+async function setIncognito(
+  client: RuntimeHostConnection,
+  incognitoActive: boolean,
+): Promise<void> {
+  const policy = await client.request('runtime.policy.query', {});
+  const result = await client.request('runtime.policy.mutate', {
+    expectedRevision: policy.revision,
+    operation: { kind: 'set_privacy', value: { incognitoActive } },
+  });
+  assert.equal(result.kind, 'committed');
+}

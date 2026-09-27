@@ -19,6 +19,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
+import { truncateUtf8 } from '@maka/core/diagnostic-log';
 import type {
   ClientCapabilityGrantTarget,
   ClientCapabilitySessionGrant,
@@ -68,7 +69,9 @@ import {
 } from '@maka/storage/interaction-store';
 import {
   INTERACTION_MAX_PENDING_PER_SESSION,
+  SESSION_ATTENTION_BODY_MAX_BYTES,
   type InteractionAnswerInput,
+  type SessionAttention,
   type SessionInteractionProjection,
 } from '../protocol/index.js';
 import {
@@ -108,6 +111,7 @@ export interface HostInteractionCoordinatorOptions {
   readonly refreshCanonicalContinuity: (
     sessionId: string,
     admission: SessionAdmissionLease,
+    attention?: SessionAttention,
   ) => Promise<void>;
   readonly onPoison: (error: RuntimeInteractionFailStopError) => void;
   readonly onSandboxBoundarySettled: (sessionId: string) => Promise<void> | void;
@@ -740,7 +744,11 @@ export class HostInteractionCoordinator implements RuntimeInteractionAuthority {
       );
     }
     entry.phase = 'live';
-    await this.#refreshCanonicalContinuity(entry.request.sessionId, admission);
+    await this.#refreshCanonicalContinuity(entry.request.sessionId, admission, {
+      kind: 'waiting',
+      eventId: entry.request.requestId,
+      ...waitingAttentionBody(entry.request),
+    });
     this.#throwIfPoisoned();
     return;
   }
@@ -845,7 +853,11 @@ export class HostInteractionCoordinator implements RuntimeInteractionAuthority {
       phase: 'live',
     };
     this.#live.set(boundaryRequest.requestId, entry);
-    await this.#refreshCanonicalContinuity(run.sessionId, admission);
+    await this.#refreshCanonicalContinuity(run.sessionId, admission, {
+      kind: 'waiting',
+      eventId: boundaryRequest.requestId,
+      body: truncateUtf8(boundaryRequest.justification, SESSION_ATTENTION_BODY_MAX_BYTES, '…'),
+    });
     this.#throwIfPoisoned();
   }
 
@@ -1853,6 +1865,24 @@ function isExpectedRuntimeError(error: unknown): boolean {
     error instanceof RuntimeInteractionAdmissionRejectedError ||
     error instanceof RuntimeInteractionFailStopError
   );
+}
+
+function waitingAttentionBody(request: StoredInteractionRequest): { readonly body?: string } {
+  let body: string | undefined;
+  switch (request.request.kind) {
+    case 'question':
+      body = request.request.questions[0]?.question;
+      break;
+    case 'form':
+      body = request.request.message;
+      break;
+    case 'sandbox_boundary':
+      body = request.request.justification;
+      break;
+    case 'client_capability':
+      break;
+  }
+  return body ? { body: truncateUtf8(body, SESSION_ATTENTION_BODY_MAX_BYTES, '…') } : {};
 }
 
 function rejected<T>(error: unknown): Promise<T> {

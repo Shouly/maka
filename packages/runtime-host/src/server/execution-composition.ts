@@ -890,7 +890,21 @@ export async function createExecutionRuntimeHostComposition(
       sessionAdmission,
       context.requestDrain,
       transcriptReader,
-      (sessionId) => hostChanges.publishSessionCatalog(sessionId),
+      async (sessionId, attention) => {
+        if (attention) {
+          try {
+            if (
+              (await runtimePolicyStores.runtimePolicy.getSnapshot()).policy.privacy.incognitoActive
+            ) {
+              attention = undefined;
+            }
+          } catch (error) {
+            attention = undefined;
+            console.warn('[runtime-host] Could not read notification privacy policy', error);
+          }
+        }
+        hostChanges.publishSessionCatalog(sessionId, attention);
+      },
       context.sessionAccessAuthority,
     );
     const continuityCoordinator = continuity;
@@ -946,8 +960,8 @@ export async function createExecutionRuntimeHostComposition(
         canonicalProjectionReader.fitsCandidate(sessionId, {
           interactions: interactionProjection,
         }),
-      refreshCanonicalContinuity: (sessionId, admission) =>
-        continuityCoordinator.refreshCanonical(sessionId, admission),
+      refreshCanonicalContinuity: (sessionId, admission, attention) =>
+        continuityCoordinator.refreshCanonical(sessionId, admission, attention),
       onPoison: (error) => {
         if (poisonFailure) return;
         poisonFailure = error;

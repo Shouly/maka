@@ -26,6 +26,7 @@ import {
   decodeSessionCatalogItem,
   decodeSessionCatalogQueryResult,
   HOST_OPERATION_SPECS,
+  SESSION_ATTENTION_BODY_MAX_BYTES,
   SESSION_CATALOG_PAGE_MAX_ITEMS,
   SESSION_CATALOG_RUNNING_TURN_MAX_ITEMS,
   type SessionCatalogProjection,
@@ -156,6 +157,26 @@ describe('Session catalog protocol', () => {
     assert.deepEqual(decodeHostFrame(frame), frame);
     assert.throws(() => decodeHostFrame({ ...frame, revision: -1 }), isProtocolError);
     assert.throws(() => decodeHostFrame({ ...frame, extra: true }), isProtocolError);
+  });
+
+  test('decodes a bounded Session attention on a catalog change', () => {
+    const frame = {
+      kind: 'session.catalog.changed' as const,
+      revision: 4,
+      sessionId: 'session-1',
+      attention: { kind: 'errored' as const, eventId: 'terminal-1', body: 'Provider failed' },
+    };
+    assert.deepEqual(decodeHostFrame(frame), frame);
+    const bodiless = { ...frame, attention: { kind: 'waiting' as const, eventId: 'question-1' } };
+    assert.deepEqual(decodeHostFrame(bodiless), bodiless);
+    for (const attention of [
+      { ...frame.attention, kind: 'cancelled' },
+      { ...frame.attention, extra: true },
+      { ...frame.attention, body: 'x'.repeat(SESSION_ATTENTION_BODY_MAX_BYTES + 1) },
+      { kind: 'completed' },
+    ]) {
+      assert.throws(() => decodeHostFrame({ ...frame, attention }), isProtocolError);
+    }
   });
 
   test('decodes only bounded execution boundary summaries', () => {

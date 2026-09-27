@@ -128,7 +128,10 @@ export const RUNTIME_HOST_PROTOCOL_VERSION = 0 as const;
 // access request's admission loses `blocked` for the same reason. An old
 // client sends keys a new Host rejects, and expects results a new Host no
 // longer sends.
-export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 162 as const;
+// 163: a `session.catalog.changed` frame may carry `attention` — a finished,
+// failed or waiting Session the client may notify about. An old client rejects
+// the unknown key.
+export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 163 as const;
 // 155: A tool call is on the wire while the model is still writing it.
 // `subscription.session_event` carries `tool_input_start` and
 // `tool_input_delta`, which a Client that does not know them decodes as an

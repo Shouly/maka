@@ -452,15 +452,17 @@ export interface ChatDefaultsSettings {
 }
 
 /**
- * Desktop OS notifications (Settings → 通用 → 通知). The runtime only
- * knows a turn ended from the renderer; the main process owns the focus
- * gate + native `Notification`, so this is a pure product on/off toggle.
+ * Desktop OS notifications (Settings → 通用 → 通知). The Runtime Host says
+ * when a Session finished, failed or waits on the user; the main process
+ * owns the focus gate + native `Notification`, so this is a pure product
+ * on/off toggle.
  */
 export interface NotificationSettings {
   /**
-   * When enabled, the desktop app raises a native notification once an
-   * agent turn finishes (completed or errored) **while its window is not
-   * focused**. Focus + OS-permission gating live in the main process.
+   * When enabled, the desktop app raises a native notification and bounces
+   * the Dock once any Session's turn finishes (completed or errored) or
+   * waits on the user **while its window is not focused**. Delivery still
+   * depends on OS permissions.
    */
   runComplete: boolean;
 }

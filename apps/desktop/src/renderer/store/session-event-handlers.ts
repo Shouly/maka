@@ -107,11 +107,6 @@ export function createAppShellSessionEventHandlers(options: {
     diagnosticTarget?: { sessionId: string },
   ) => void;
   toastApi: ToastApi;
-  notifyRunEnded?: (payload: {
-    kind: 'completed' | 'errored';
-    sessionId: string;
-    body?: string;
-  }) => void;
   scheduleFrame?: (callback: () => void) => void;
   displayBatch?: AppShellSessionDisplayBatch;
 }): AppShellSessionEventHandlers {
@@ -131,7 +126,6 @@ export function createAppShellSessionEventHandlers(options: {
     onContextCompactionOutcome,
     showModelSetupToast,
     toastApi,
-    notifyRunEnded,
   } = options;
   const scheduleFrame = options.scheduleFrame ?? createConversationDisplayFrameScheduler();
   const displayBatch = options.displayBatch ?? createAppShellSessionDisplayBatch();
@@ -403,11 +397,6 @@ export function createAppShellSessionEventHandlers(options: {
             );
           }
         }
-        notifyRunEnded?.({
-          kind: 'errored',
-          sessionId,
-          body: sessionEventErrorMessage(event, uiLocale),
-        });
         void refreshSessions();
         void refreshMessages(sessionId, terminalRefreshOptions(before));
         break;
@@ -422,11 +411,6 @@ export function createAppShellSessionEventHandlers(options: {
         setInteractionBySession((current) => clearInteractions(current, sessionId));
         if (event.contextCompactionOutcome)
           onContextCompactionOutcome?.(sessionId, event.turnId, event.contextCompactionOutcome);
-        if (event.stopReason === 'end_turn' || event.stopReason === 'max_tokens') {
-          const body = [...(before?.steps ?? [])].reverse().find((step) => step.text?.text)
-            ?.text?.text;
-          notifyRunEnded?.({ kind: 'completed', sessionId, body });
-        }
         void refreshSessions();
         const terminalMessageId = terminalRefreshOptions(before)?.requiredAssistantMessageId;
         if (terminalMessageId) {

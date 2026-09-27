@@ -25,7 +25,6 @@
     "src/renderer/bridge/mcp.ts",
     "src/renderer/bridge/memory.ts",
     "src/renderer/bridge/new-tasks.ts",
-    "src/renderer/bridge/notifications.ts",
     "src/renderer/bridge/oauth.ts",
     "src/renderer/bridge/onboarding.ts",
     "src/renderer/bridge/org-account.ts",
@@ -855,17 +854,6 @@
       }
     },
     "src/renderer/bridge/new-tasks.ts": {
-      "bridgePaths": {},
-      "environmentCapabilities": {},
-      "hookCalls": {},
-      "lifecycleMethods": {},
-      "unresolvedDependencies": 0,
-      "actionFactories": [],
-      "dependencyPaths": {
-        "./bridge.js": 1
-      }
-    },
-    "src/renderer/bridge/notifications.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {},
@@ -7329,7 +7317,6 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
-        "../bridge/notifications.js": 1,
         "../bridge/sessions.js": 1,
         "../bridge/shell-runs.js": 1,
         "../bridge/transcripts.js": 1,

@@ -39,6 +39,7 @@ import {
   type AgentGraphChangedFrame,
   type AgentGraphChangedReason,
   type SessionAssistantDelta,
+  type SessionAttention,
   type SessionContinuitySnapshot,
   type SessionDeltaFrame,
   type SessionDomainChange,
@@ -326,7 +327,10 @@ export class SessionContinuityCoordinator implements SessionContinuityService {
     private readonly sessionAdmission: SessionAdmissionGate,
     private readonly onPublicationFailure: (error: unknown) => void = () => undefined,
     transcriptReader?: SessionTranscriptReader,
-    private readonly onCatalogChanged: (sessionId: string) => void = () => undefined,
+    private readonly onCatalogChanged: (
+      sessionId: string,
+      attention?: SessionAttention,
+    ) => void | Promise<void> = () => undefined,
     sessionAccessAuthority?: Pick<
       RuntimeHostAccessAuthority,
       'activeSessionGrant' | 'subscribeGrantRevocations'
@@ -381,23 +385,35 @@ export class SessionContinuityCoordinator implements SessionContinuityService {
     };
   }
 
-  async refreshCanonical(sessionId: string, admission?: SessionAdmissionLease): Promise<void> {
-    this.onCatalogChanged(sessionId);
-    await this.#runInSessionLane(
-      sessionId,
-      async () => {
-        if (this.#closed) return;
-        const state = this.#sessions.get(sessionId);
-        if (!state || (state.subscribers.size === 0 && !state.terminalPublicationFence)) return;
-        this.#invalidateTranscriptOverlay(state);
-        const canonical = await this.#readCanonicalProjection(sessionId);
-        if (this.#closed || !canonical) return;
-        await this.#refreshTranscriptHighWater(sessionId, state);
-        const committed = this.#commitCanonical(sessionId, canonical);
-        if (committed.changed) this.#broadcastProjection(committed.state, committed.value);
-      },
-      admission,
-    );
+  async refreshCanonical(
+    sessionId: string,
+    admission?: SessionAdmissionLease,
+    attention?: SessionAttention,
+  ): Promise<void> {
+    // The catalog change follows the canonical cut, so a client that acts on
+    // its attention finds the projection already there. The change itself
+    // goes out even when the refresh fails; only the attention waits on it.
+    let refreshed = false;
+    try {
+      await this.#runInSessionLane(
+        sessionId,
+        async () => {
+          if (this.#closed) return;
+          const state = this.#sessions.get(sessionId);
+          if (!state || (state.subscribers.size === 0 && !state.terminalPublicationFence)) return;
+          this.#invalidateTranscriptOverlay(state);
+          const canonical = await this.#readCanonicalProjection(sessionId);
+          if (this.#closed || !canonical) return;
+          await this.#refreshTranscriptHighWater(sessionId, state);
+          const committed = this.#commitCanonical(sessionId, canonical);
+          if (committed.changed) this.#broadcastProjection(committed.state, committed.value);
+        },
+        admission,
+      );
+      refreshed = true;
+    } finally {
+      await this.onCatalogChanged(sessionId, refreshed ? attention : undefined);
+    }
   }
 
   /** Safe for synchronous commit hooks: this only schedules and coalesces lane work. */
@@ -645,6 +661,7 @@ export class SessionContinuityCoordinator implements SessionContinuityService {
     turnId: string,
     runId: string,
     admission?: SessionAdmissionLease,
+    publishCompletionAttention = true,
   ): Promise<void> {
     await this.#runInSessionLane(
       sessionId,
@@ -679,6 +696,18 @@ export class SessionContinuityCoordinator implements SessionContinuityService {
         state.assistantStreams.clear();
         state.toolResultPreviews.clear();
         this.#broadcastProjection(state, snapshot);
+        if (publishCompletionAttention && rootTurn.status === 'completed') {
+          await this.onCatalogChanged(sessionId, {
+            kind: 'completed',
+            eventId: rootTurn.terminalEventId,
+          });
+        } else if (rootTurn.status === 'failed') {
+          await this.onCatalogChanged(sessionId, {
+            kind: 'errored',
+            eventId: rootTurn.terminalEventId,
+            ...(rootTurn.failureMessage ? { body: rootTurn.failureMessage } : {}),
+          });
+        }
         if (state.subscribers.size === 0) {
           this.#invalidateTranscriptOverlay(state);
           this.#sessions.delete(sessionId);
