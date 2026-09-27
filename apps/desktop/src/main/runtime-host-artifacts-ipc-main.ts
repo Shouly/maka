@@ -22,6 +22,7 @@ import { randomUUID } from "node:crypto";
 import { open, mkdir, mkdtemp, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { syncDirectory } from "@maka/storage/stable-storage";
 import {
   ARTIFACT_IMAGE_PREVIEW_MAX_BYTES,
   isArtifactUserVisible,
@@ -307,6 +308,11 @@ async function materializeArtifact(
     } catch (error) {
       throw new ArtifactMaterializationError("replace_failed", error);
     }
+    // handle.sync() covered the staging file's content, not the rename's
+    // directory entry, so a crash here can still show the old destination
+    // next to a leftover staging file. Best-effort: the save has already
+    // succeeded, so a failed sync must not report a failed save.
+    await syncDirectory(dirname(targetPath)).catch(() => undefined);
   } catch (error) {
     await handle.close().catch(() => undefined);
     await rm(stagingPath, { force: true }).catch(() => undefined);
