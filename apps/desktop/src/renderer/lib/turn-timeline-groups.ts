@@ -284,7 +284,10 @@ export function groupTurnTimeline(
             kind: 'narration',
             key: `narration:${block.entry.messageId}:${index}`,
             text: block.entry.text,
-            live: block.entry.live === true,
+            // Still being written, not merely from the live stream (a live
+            // text keeps `live` for its whole life): a finished line changing
+            // renderer later would remount it under the reader's selection.
+            live: block.entry.live === true && block.entry.complete !== true,
           });
           return;
         }

@@ -515,7 +515,8 @@ async function run() {
       timeout: 30_000,
     });
     const page = await desktop.firstWindow();
-    await page.waitForFunction(() => Boolean(window.maka?.sessions));
+    // The window opens before the Runtime Host connects; the frame says when it has.
+    await page.locator('.appFrame[data-startup="ready"]').waitFor({ timeout: 45_000 });
 
     const runResult = await page.evaluate(
       async ({ prompt, timeout }) => {

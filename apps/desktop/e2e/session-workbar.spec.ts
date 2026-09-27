@@ -33,42 +33,34 @@ test('right workbar visibility belongs to each session and survives reload', asy
   await page.keyboard.press('Control+Shift+g');
   const panel = page.locator('#maka-workbar-pane');
   await expect(panel).toBeVisible();
+  // Put away is not unmounted: a collapsed column stays in the tree at zero
+  // width, hidden from the keyboard and the reader. A pane is SHOWN when its
+  // column is not put away.
+  const shownPane = page.locator(
+    '[data-maka-contract="session-workbar-column"]:not([aria-hidden="true"]) #maka-workbar-pane',
+  );
   const frame = await page.evaluate(() => ({
     width: window.innerWidth,
     height: window.innerHeight,
   }));
-  // The gutter is read rather than hardcoded: on Windows it widens to clear the
-  // caption buttons.
-  const gutter = await page.evaluate(() => {
-    const actions = document.querySelector('.maka-titlebar-actions');
-    return actions ? Number.parseFloat(getComputedStyle(actions).paddingRight) : Number.NaN;
-  });
   const paneFrame = async () => {
     const pane = await panel.boundingBox();
-    const toggle = await page
-      .locator('[data-maka-contract="session-workbar-toggle"]')
-      .boundingBox();
-    if (!pane || !toggle) return null;
+    if (!pane) return null;
     return {
       top: Math.round(pane.y),
       right: Math.round(frame.width - (pane.x + pane.width)),
       bottom: Math.round(frame.height - (pane.y + pane.height)),
-      seam: Math.round(pane.x - (toggle.x + toggle.width)),
     };
   };
-  // Polled, because the column animates open — and measured, because two
-  // separate claims about the layout ride on it. The pane is a full-height
+  // Polled, because the column animates open. The pane is a full-height
   // COLUMN of the window, so its frame is the same 8px eave on all four sides
   // (it used to hang 56px below the top, under a window-wide titlebar, with
-  // 8px on the other three). And the titlebar belongs to the column left of
-  // it, so the workbar toggle ends one gutter short of the seam rather than
-  // pinned above the pane it controls.
-  await expect.poll(paneFrame).toEqual({
-    top: 8,
-    right: 8,
-    bottom: 8,
-    seam: Math.round(gutter),
-  });
+  // 8px on the other three).
+  await expect.poll(paneFrame).toEqual({ top: 8, right: 8, bottom: 8 });
+  // While the pane stands in the column its own header holds its controls; the
+  // titlebar's workbar switch is there only while the column is empty or
+  // collapsed (since fede09599), so it never sits above the pane it controls.
+  await expect(page.locator('[data-maka-contract="session-workbar-toggle"]')).toHaveCount(0);
   // The column itself never clips — the window does. The pane's frame is a
   // box-shadow drawn outside its box, hairline ring included, so a clip here
   // would cut its left edge away, and it would do it for good on any pane that
@@ -150,12 +142,12 @@ test('right workbar visibility belongs to each session and survives reload', asy
   await expect(page.locator('.maka-window-titlebar')).toBeVisible();
   await page.getByRole('button', { name: '新建任务', exact: true }).click();
   await sendPrompt(page, 'second workbar owner');
-  await expect(panel).toHaveCount(0);
+  await expect(shownPane).toHaveCount(0);
   await page
     .getByRole('region', { name: '最近', exact: true })
     .getByRole('option', { name: 'first workbar owner' })
     .click();
-  await expect(panel).toBeVisible();
+  await expect(shownPane).toBeVisible();
   await page.reload();
   await expect(page.locator(COMPOSER_INPUT)).toBeVisible();
   await ensureSidebarExpanded(page);
@@ -163,12 +155,12 @@ test('right workbar visibility belongs to each session and survives reload', asy
     .getByRole('region', { name: '最近', exact: true })
     .getByRole('option', { name: 'first workbar owner' })
     .click();
-  await expect(panel).toBeVisible();
+  await expect(shownPane).toBeVisible();
   await page
     .getByRole('region', { name: '最近', exact: true })
     .getByRole('option', { name: 'second workbar owner' })
     .click();
-  await expect(panel).toHaveCount(0);
+  await expect(shownPane).toHaveCount(0);
 });
 
 test('Git changes re-read the workspace after focus returns', async ({

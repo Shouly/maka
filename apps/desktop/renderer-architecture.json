@@ -43,6 +43,7 @@
     "src/renderer/bridge/settings.ts",
     "src/renderer/bridge/shell-runs.ts",
     "src/renderer/bridge/skills.ts",
+    "src/renderer/bridge/startup.ts",
     "src/renderer/bridge/task-readiness.ts",
     "src/renderer/bridge/transcripts.ts",
     "src/renderer/bridge/web-search.ts",
@@ -180,6 +181,8 @@
     "src/renderer/components/settings/settings-row.tsx",
     "src/renderer/components/settings/settings-sections.ts",
     "src/renderer/components/settings/subagents/SubagentEditor.tsx",
+    "src/renderer/components/startup/StartupGate.tsx",
+    "src/renderer/components/startup/StartupScreens.tsx",
     "src/renderer/components/ui/CodeRenderer.tsx",
     "src/renderer/components/ui/DiffRenderer.tsx",
     "src/renderer/components/ui/LoadingSpinner.tsx",
@@ -351,6 +354,7 @@
     "src/renderer/lib/ported/workbar-layout.ts",
     "src/renderer/lib/ported/workbar-tabs.ts",
     "src/renderer/lib/ported/workbar-tool-definitions.ts",
+    "src/renderer/lib/startup-view.ts",
     "src/renderer/lib/theme.ts",
     "src/renderer/lib/tool-delivery-results.ts",
     "src/renderer/lib/tool-row-description.ts",
@@ -403,6 +407,7 @@
     "src/renderer/locales/shell-remaining-copy.ts",
     "src/renderer/locales/sidebar-copy.ts",
     "src/renderer/locales/skills-page-copy.ts",
+    "src/renderer/locales/startup-copy.ts",
     "src/renderer/locales/task-readiness-copy.ts",
     "src/renderer/locales/transcript-copy.ts",
     "src/renderer/locales/ui-copy.ts",
@@ -430,6 +435,7 @@
     "src/renderer/store/__tests__/run.mjs",
     "src/renderer/store/__tests__/scheduled-module.test.tsx",
     "src/renderer/store/__tests__/skills-module.test.tsx",
+    "src/renderer/store/__tests__/startup.test.tsx",
     "src/renderer/store/__tests__/streaming-switch-smoke.mjs",
     "src/renderer/store/__tests__/tool-delivery.test.tsx",
     "src/renderer/store/__tests__/working-mark.test.ts",
@@ -460,6 +466,7 @@
     "src/renderer/store/sessions-store.ts",
     "src/renderer/store/settings-store.ts",
     "src/renderer/store/sidebar-expansion.ts",
+    "src/renderer/store/startup-store.ts",
     "src/renderer/store/toast-api.ts",
     "src/renderer/store/toast-store.ts",
     "src/renderer/store/turn-actions-store.ts",
@@ -622,7 +629,7 @@
       "environmentCapabilities": {},
       "hookCalls": {
         "useEffect": 3,
-        "useStore": 1,
+        "useStore": 2,
         "useSystemUiLocale": 1
       },
       "lifecycleMethods": {},
@@ -632,6 +639,7 @@
         "./components/account/OrgAccountGate.js": 1,
         "./components/ErrorBoundary.js": 1,
         "./components/layout/AppShell.js": 1,
+        "./components/startup/StartupGate.js": 1,
         "./components/ui/toaster.js": 1,
         "./components/ui/tooltip.js": 1,
         "./lib/ported/titlebar-modal-sync.js": 1,
@@ -1045,6 +1053,17 @@
         "./bridge.js": 1
       }
     },
+    "src/renderer/bridge/startup.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "./bridge.js": 1
+      }
+    },
     "src/renderer/bridge/task-readiness.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -1207,7 +1226,6 @@
         "../../locales/conversation-copy.js": 1,
         "../../locales/session-local-copy.js": 1,
         "../../locales/shell-copy.js": 1,
-        "../../locales/transcript-copy.js": 1,
         "../../store/composer-draft-store.js": 1,
         "../../store/composer-input-store.js": 1,
         "../../store/index.js": 1,
@@ -1267,13 +1285,13 @@
         "../../lib/ported/project-path-display.js": 1,
         "../../lib/user-question-shape.js": 1,
         "../../locales/composer-copy.js": 1,
+        "../../locales/shell-copy.js": 1,
         "../../store/index.js": 1,
         "../../store/user-question-panel-store.js": 1,
         "../icons/Anthropicon.js": 1,
         "../ui/button.js": 1,
         "../ui/checkbox-box.js": 1,
         "../ui/input.js": 1,
-        "../ui/Markdown.js": 1,
         "../ui/select.js": 1,
         "@maka/ui": 1,
         "motion/react": 1,
@@ -1542,6 +1560,7 @@
         "../../hooks/use-workspace.js": 1,
         "../../lib/cn.js": 1,
         "../../locales/conversation-copy.js": 1,
+        "../../locales/settings-preferences-copy.js": 1,
         "../../locales/shell-copy.js": 1,
         "../../locales/sidebar-copy.js": 1,
         "../../store/composer-input-store.js": 1,
@@ -4343,6 +4362,56 @@
         "react": 1
       }
     },
+    "src/renderer/components/startup/StartupGate.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "clearInterval": 1,
+        "setInterval": 1
+      },
+      "hookCalls": {
+        "useEffect": 2,
+        "useRef": 1,
+        "useState": 2,
+        "useStore": 2
+      },
+      "lifecycleMethods": {
+        "componentDidCatch": 1,
+        "getDerivedStateFromError": 1,
+        "state": 2
+      },
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../bridge/startup.js": 1,
+        "../../lib/startup-view.js": 1,
+        "../../store/index.js": 1,
+        "./StartupScreens.js": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/startup/StartupScreens.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useRef": 1,
+        "useState": 1,
+        "useUiLocale": 3
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/startup-view.js": 1,
+        "../../locales/startup-copy.js": 1,
+        "../account/LoginScreen.js": 1,
+        "../icons/index.js": 1,
+        "../ui/button.js": 1,
+        "../ui/dialog.js": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
     "src/renderer/components/ui/CodeRenderer.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {
@@ -5490,7 +5559,7 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
-        "../locales/shell-copy.js": 2,
+        "../locales/shell-copy.js": 1,
         "../store/index.js": 1,
         "../store/toast-store.js": 1,
         "@maka/ui": 1,
@@ -6694,6 +6763,15 @@
       "actionFactories": [],
       "dependencyPaths": {}
     },
+    "src/renderer/lib/startup-view.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
     "src/renderer/lib/theme.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {
@@ -7177,6 +7255,15 @@
       "actionFactories": [],
       "dependencyPaths": {}
     },
+    "src/renderer/locales/startup-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
     "src/renderer/locales/task-readiness-copy.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -7370,6 +7457,7 @@
         "./scheduled-tasks-store.js": 1,
         "./sessions-store.js": 1,
         "./settings-store.js": 1,
+        "./startup-store.js": 1,
         "./toast-api.js": 1,
         "./turn-actions-store.js": 1,
         "./ui-store.js": 1,
@@ -7624,6 +7712,18 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {}
+    },
+    "src/renderer/store/startup-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/startup.js": 1,
+        "zustand/vanilla": 1
+      }
     },
     "src/renderer/store/toast-api.ts": {
       "bridgePaths": {},

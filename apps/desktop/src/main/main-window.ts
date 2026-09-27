@@ -112,7 +112,12 @@ interface MainWindowControllerDeps {
   revealMode: WindowRevealMode;
   onClose?: () => void;
   onClosed?: () => void;
-  onShow?: () => void;
+  /**
+   * Whether a close the person asks for is held right now: the window
+   * minimizes instead of closing (while the Runtime Host starts, on platforms
+   * where closing the last window quits).
+   */
+  holdsClose?: () => boolean;
   onRendererProcessGone: (details: Electron.RenderProcessGoneDetails) => void | Promise<void>;
   /** Whether a new window opens as the sign-in window; asked once per window. */
   opensForSignIn?: () => Promise<boolean>;
@@ -469,7 +474,6 @@ export function createMainWindowController(deps: MainWindowControllerDeps): Main
     //
     // Both are gated on the URL using `http(s):` or `mailto:` — everything else
     // (file://, electron internal, etc.) is allowed/denied per Electron defaults.
-    mainWindow.once('show', () => deps.onShow?.());
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
       if (isExternalUrl(url)) {
         void shell.openExternal(url);
@@ -554,7 +558,12 @@ export function createMainWindowController(deps: MainWindowControllerDeps): Main
     mainWindow.on('move', scheduleSave);
     mainWindow.on('maximize', handleWindowGeometryChange);
     mainWindow.on('unmaximize', scheduleSave);
-    mainWindow.on('close', () => {
+    mainWindow.on('close', (event) => {
+      if (deps.holdsClose?.() && mainWindow) {
+        event.preventDefault();
+        mainWindow.minimize();
+        return;
+      }
       clearShowFallbackTimer();
       deps.onClose?.();
       if (saveTimer) clearTimeout(saveTimer);
@@ -593,7 +602,21 @@ export function createMainWindowController(deps: MainWindowControllerDeps): Main
     armShowFallbackTimer(mainWindow);
     if (process.env.MAKA_REAL_WINDOW_SMOKE === '1') {
       emitRealWindowSmokeDiagnostic('after-load');
-      setTimeout(() => emitRealWindowSmokeDiagnostic('settled-1000ms'), 1000);
+      // The window loads before the Runtime Host connects: "settled" is a
+      // second after the app itself mounts, not after the page loads.
+      void mainWindow.webContents
+        .executeJavaScript(
+          `new Promise((resolve) => {
+            const deadline = Date.now() + 45000;
+            const check = () =>
+              document.querySelector('.appFrame[data-startup="ready"]') || Date.now() > deadline
+                ? resolve(undefined)
+                : setTimeout(check, 100);
+            check();
+          })`,
+        )
+        .catch(() => undefined)
+        .then(() => setTimeout(() => emitRealWindowSmokeDiagnostic('settled-1000ms'), 1000));
     }
   }
 
@@ -868,6 +891,7 @@ function emitRealWindowSmokeDiagnostic(stage: string): void {
         readyState: document.readyState,
         title: document.title,
         appFramePresent: Boolean(document.querySelector('.appFrame')),
+        frameReady: Boolean(document.querySelector('.appFrame[data-startup="ready"]')),
         searchModalPresent: Boolean(document.querySelector('[data-maka-contract="search-modal"]')),
         searchModalOpen: Boolean(document.querySelector('dialog[data-maka-contract="search-modal"][open]')),
         errorBoundaryPresent: Boolean(document.querySelector('.maka-error-surface')),

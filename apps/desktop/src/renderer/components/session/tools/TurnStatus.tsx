@@ -122,7 +122,8 @@ const ELAPSED_SHOW_AFTER_MS = 5_000;
  */
 const EARLIEST_START_BY_TURN = new Map<string, number>();
 
-function latchedStart(
+/** Exported for its test: the rows that take over from each other share one clock. */
+export function latchedStart(
   turnId: string | undefined,
   startedAt: number | undefined,
 ): number | undefined {

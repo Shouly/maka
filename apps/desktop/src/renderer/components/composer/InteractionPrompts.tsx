@@ -71,7 +71,7 @@ import { useAsync } from '../../hooks/use-async.js';
 import { isTextEntryTarget } from '../../hooks/use-hotkeys.js';
 import { collapseHomePath } from '../../lib/ported/project-path-display.js';
 import { Anthropicon } from '../icons/Anthropicon.js';
-import Markdown from '../ui/Markdown.js';
+import { localizedShellErrorMessage } from '../../locales/shell-copy.js';
 import { Button } from '../ui/button.js';
 import { Input } from '../ui/input.js';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.js';
@@ -156,7 +156,8 @@ function InteractionPrompt({
       await action();
       setAnswered(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : local.send.failedFallback);
+      // The shell's words for a failure, never the raw message (#4457).
+      setError(localizedShellErrorMessage(e, local.send.failedFallback, locale));
     } finally {
       setPending(false);
     }

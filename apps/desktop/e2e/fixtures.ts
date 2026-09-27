@@ -36,6 +36,9 @@ import {
 } from '../../../scripts/fixture-env.mjs';
 import { closeElectronApplication } from '../../../scripts/electron-lifecycle.mjs';
 
+/** From launch to a usable window: the Runtime Host's start plus the first paint. */
+const COLD_START_TIMEOUT_MS = 45_000;
+
 const DESKTOP_ROOT = process.cwd();
 const execFileAsync = promisify(execFile);
 
@@ -50,6 +53,8 @@ const execFileAsync = promisify(execFile);
  * backend echo and its display form on the sent message.
  */
 export const COMPOSER_INPUT = '[data-maka-contract="composer-input"][contenteditable="true"]';
+/** A running turn's one live status: the pending row, or the live run's busy row. */
+export const LIVE_STATUS = '[data-maka-turn-pending], [data-maka-turn-status][data-state="busy"]';
 export async function sendPrompt(page: Page, prompt: string): Promise<void> {
   await page.locator(COMPOSER_INPUT).fill(prompt);
   await awaitSendReady(page);
@@ -488,8 +493,10 @@ export async function withE2eWindow(
       traceStarted = true;
     }
     // Centralize the cold-start wait so test bodies are flake-free under retries:0.
+    // The window opens before the Runtime Host connects, so this wait now
+    // covers the Host's start as well as the renderer's first paint.
     try {
-      await page.waitForSelector(readinessSelector, { timeout: 20_000 });
+      await page.waitForSelector(readinessSelector, { timeout: COLD_START_TIMEOUT_MS });
       if (invocableSkills) {
         await waitForInvocableSkills(page, ['project-only', 'workspace-only']);
       }
@@ -517,7 +524,7 @@ export async function withE2eWindow(
           }),
         });
         const restored = await app.firstWindow();
-        await restored.waitForSelector(readinessSelector, { timeout: 20_000 });
+        await restored.waitForSelector(readinessSelector, { timeout: COLD_START_TIMEOUT_MS });
         return restored;
       },
     });
@@ -703,8 +710,8 @@ export const test = base.extend<E2eTestFixtures>({
       use,
     );
   },
-  // A transcript larger than the bounded Desktop range. Clicking an unloaded
-  // prompt exercises the real load-around path and its partial-history UI.
+  // A transcript longer than the tail the first open reads, so older pages
+  // come from Host storage through the renderer's own window.
   partialHistoryWindow: async ({}, use) => {
     await withE2eWindow(
       {

@@ -30,7 +30,7 @@ const brandSymbol = new URL('../../../../assets/brand/relx-symbol.svg', import.m
 export function TaskWelcomeContent(props: {
   onOpenSettings: () => void;
   onOpenModels: () => void;
-  onError: (title: string, error: unknown) => void;
+  onError: (title: string, error: unknown, fallback?: string) => void;
 }) {
   const locale = useUiLocale();
   const copy = getWelcomeCopy(locale);

@@ -21,13 +21,15 @@
 //
 // `.appFrame` is a contract, not a layout choice: `main-window.ts`'s
 // diagnostic probe and `scripts/desktop-real-window-smoke.mjs` both gate on
-// it. So is the single `-webkit-app-region: drag` strip below — the window is
+// it (and on its `data-startup`). So is the single `-webkit-app-region: drag` strip below — the window is
 // frameless with a 36px native overlay, and that strip is the only surface in
 // the whole tree allowed to be draggable (styles/globals.css).
 //
 // Everything the shell DOES lives in `components/layout/AppShell.tsx`. This
 // file is only the things that must wrap it: locale, tooltips, toasts, the
-// error boundary, and the theme/titlebar effects that talk to the main process.
+// launch (the handoff layer and the Host-ready gate), the company sign-in
+// gate, the error boundary, and the theme/titlebar effects that talk to the
+// main process.
 
 import { useEffect, type ReactNode } from 'react';
 import { LocaleProvider } from '@maka/ui';
@@ -35,9 +37,10 @@ import type { UiLocale } from '@maka/core/ui-locale';
 import type { ThemePreference } from '@maka/core/settings';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { OrgAccountGate } from './components/account/OrgAccountGate.js';
+import { HostReadyGate, StartupHandoffLayer } from './components/startup/StartupGate.js';
 import { AppShell } from './components/layout/AppShell.js';
 import { useStore } from 'zustand';
-import { settingsStore } from './store/index.js';
+import { settingsStore, startupStore } from './store/index.js';
 import { useSystemUiLocale } from './lib/ported/use-system-ui-locale.js';
 import { Toaster } from './components/ui/toaster.js';
 import { TooltipProvider } from './components/ui/tooltip.js';
@@ -59,6 +62,7 @@ export function App({ initialTheme, locale, localeOverride, fixture }: AppProps)
   // screens come before the shell and speak the chosen language too.
   useEffect(() => settingsStore.startClient(), []);
   const client = useStore(settingsStore.client, (state) => state.data);
+  const startupReady = useStore(startupStore, (state) => state.startup?.ready === true);
   const systemLocale = useSystemUiLocale();
   const preference = client?.personalization.uiLocale;
   const resolvedLocale =
@@ -85,16 +89,29 @@ export function App({ initialTheme, locale, localeOverride, fixture }: AppProps)
   return (
     <LocaleProvider locale={resolvedLocale} override={localeOverride}>
       <TooltipProvider delayDuration={300}>
-        <div className="appFrame">
+        {/* `data-startup` says whether the Runtime Host is ready — not that
+            AppShell has mounted (a required sign-in can still stand in front
+            of it). The frame itself is there from the first paint. */}
+        <div className="appFrame" data-startup={startupReady ? 'ready' : 'starting'}>
           {/* The window titlebar strip (the one draggable surface) is rendered
               by AppShell so its columns can align to the sidebar — or by the
-              login screen, which takes the shell's place while a deployment
-              that requires a company sign-in has none. */}
-          <ErrorBoundary>
-            <OrgAccountGate>
-              <AppShell fixture={fixture} />
-            </OrgAccountGate>
-          </ErrorBoundary>
+              login surface, which takes the shell's place while a deployment
+              that requires a company sign-in has none, and while the Runtime
+              Host starts. */}
+          {/* The window opens before the Runtime Host connects: sign-in needs
+              no Host, and the app mounts once the Host is ready. A handoff
+              (an update, a repair) opens as a dialog over all of it — outside
+              the error boundary, so a crashed screen cannot swallow a
+              decision main is waiting on. */}
+          <StartupHandoffLayer>
+            <ErrorBoundary>
+              <OrgAccountGate>
+                <HostReadyGate>
+                  <AppShell fixture={fixture} />
+                </HostReadyGate>
+              </OrgAccountGate>
+            </ErrorBoundary>
+          </StartupHandoffLayer>
         </div>
         <Toaster />
       </TooltipProvider>

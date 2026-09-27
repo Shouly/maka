@@ -19,9 +19,10 @@
 
 // apps/desktop/src/main/startup-step.ts
 //
-// Name slow boot steps in the diagnostic log. The independent startup window
-// provides visible progress; these lines retain evidence for copied reports
-// and automated runs where that window is intentionally suppressed.
+// Name slow boot steps in the diagnostic log. The main window shows the
+// launch once it is open; these lines retain evidence for copied reports, for
+// the steps before the window exists, and for automated runs whose window is
+// intentionally hidden.
 //
 // What it cannot report: a step that never settles and holds no ref'd handle
 // lets the process exit before the unref'd timer ever fires, so nothing is

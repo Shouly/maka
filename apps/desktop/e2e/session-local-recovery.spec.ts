@@ -20,6 +20,7 @@
 import { resolve } from 'node:path';
 import {
   COMPOSER_INPUT,
+  LIVE_STATUS,
   awaitSendReady,
   ensureSidebarExpanded,
   expect,
@@ -70,7 +71,7 @@ test('an admission failure keeps the draft and retry sends it once', async ({
   // Upstream #4457: an unexpected failure reaches the user as the operation's
   // own words, with the raw string routed to the diagnostic report instead.
   await expect(
-    page.getByRole('alert').filter({ hasText: '未能发送这条消息。' }).first(),
+    page.locator('.ui-toast[data-state="open"]').filter({ hasText: '未能发送这条消息。' }),
   ).toBeVisible();
   await expect(page.locator(COMPOSER_INPUT)).toHaveText('retry keeps this draft');
   await awaitSendReady(page);
@@ -249,10 +250,13 @@ test('welcome does not query a locally pending Host session and keeps the first 
   const probes=await app.evaluate(()=> (globalThis as any).__pendingProbes as [string,string][]);
   const rawId=JSON.parse(session.id)[1];
   expect(probes.filter(([,payload])=>payload.includes(rawId))).toEqual([]);
-  await expect(page.locator('[data-maka-contract="turn-running-status"]')).toBeVisible();
-  await page.evaluate((prompt)=>{
+  // The turn's one live status: the pending row until a run is live, then the
+  // run's busy row. The pending row before the turn and the one inside it are
+  // different elements that stand in the same place, so the invariant is that
+  // exactly one is up for every frame the turn runs, not that it is one node.
+  await expect(page.locator(LIVE_STATUS)).toBeVisible();
+  await page.evaluate(({prompt,liveStatus})=>{
     const state=window as any;state.__messageOrderFailures=[];
-    state.__initialWaitingNode = document.querySelector('[data-maka-contract="turn-running-status"]');
     state.__firstSendFrames=[];
     state.__recordingFirstSend=true;
     const record=()=>{
@@ -260,8 +264,7 @@ test('welcome does not query a locally pending Host session and keeps the first 
       const user=[...(log?.querySelectorAll('[data-role="user"]') ?? [])].find(node=>node.textContent?.includes(prompt));
       state.__firstSendFrames.push({ skeleton: Boolean(log?.querySelector('.chat-area[aria-hidden="true"]')), user: Boolean(user), y: user?.getBoundingClientRect().y,
         running: Boolean(document.querySelector('button[aria-label="停止"]')),
-        waiting: Boolean(document.querySelector('[data-maka-contract="turn-running-status"]')),
-        sameWaiting: state.__initialWaitingNode === document.querySelector('[data-maka-contract="turn-running-status"]'),
+        waiting: document.querySelectorAll(liveStatus).length === 1,
         title: document.querySelector('[data-maka-contract="titlebar-identity"]')?.textContent,
       });
       if(state.__recordingFirstSend) requestAnimationFrame(record);
@@ -275,7 +278,7 @@ test('welcome does not query a locally pending Host session and keeps the first 
       if(!user || !(user.compareDocumentPosition(answer)&Node.DOCUMENT_POSITION_FOLLOWING))state.__messageOrderFailures.push(log.textContent);
     };
     state.__orderObserver=new MutationObserver(inspect);state.__orderObserver.observe(document.body,{subtree:true,childList:true,characterData:true});
-  },prompt);
+  },{prompt,liveStatus:LIVE_STATUS});
   await app.evaluate((_electron,modulePath)=>{
     const require=process.getBuiltinModule('module').createRequire(`${process.cwd()}/`);
     const {DesktopSessionLocalService}=require(modulePath);DesktopSessionLocalService.prototype.wake=(globalThis as any).__originalWake;
@@ -283,11 +286,11 @@ test('welcome does not query a locally pending Host session and keeps the first 
   await page.evaluate(({id,messageId})=>window.maka.sessionLocal.reconcileMessage(id,messageId),{id:session.id,messageId:message.messageId});
   await expect(page.getByText(`Fake backend received: ${prompt}`)).toHaveCount(1);
   expect(await page.evaluate(()=>{const state=window as any;state.__orderObserver.disconnect();return state.__messageOrderFailures;})).toEqual([]);
-  const frames=await page.evaluate(()=>{const state=window as any;state.__recordingFirstSend=false;return state.__firstSendFrames as {skeleton:boolean;user:boolean;y:number|undefined;running:boolean;waiting:boolean;sameWaiting:boolean;title:string}[];});
+  const frames=await page.evaluate(()=>{const state=window as any;state.__recordingFirstSend=false;return state.__firstSendFrames as {skeleton:boolean;user:boolean;y:number|undefined;running:boolean;waiting:boolean;title:string}[];});
   await testInfo.attach('first-send-frames', {body:JSON.stringify(frames),contentType:'application/json'});
   expect(frames.length).toBeGreaterThan(0);
   expect(frames.filter(frame=>frame.skeleton && frame.user)).toEqual([]);
-  expect(frames.filter(frame=>frame.running && (!frame.waiting || !frame.sameWaiting))).toEqual([]);
+  expect(frames.filter(frame=>frame.running && !frame.waiting)).toEqual([]);
   const positions=frames.filter(frame=>frame.user && frame.y !== undefined).map(frame=>frame.y!);
   expect(positions.length).toBeGreaterThan(0);
   expect(Math.max(...positions)-Math.min(...positions)).toBeLessThan(1);

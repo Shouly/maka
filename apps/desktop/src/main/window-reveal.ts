@@ -91,8 +91,8 @@ export function showWindowOnceReady(win: RevealableWindow | null, mode: WindowRe
 
 /**
  * Reveal without activating, whatever the mode — for a window whose reveal is
- * deliberately quiet even in the product (WorkHub's progress card, the startup
- * progress window). `hidden` still shows nothing.
+ * deliberately quiet even in the product (WorkHub's progress card). `hidden`
+ * still shows nothing.
  */
 export function showWindowInactive(win: RevealableWindow | null, mode: WindowRevealMode): void {
   showWindowOnceReady(win, mode === 'hidden' ? 'hidden' : 'inactive');

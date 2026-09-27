@@ -65,7 +65,7 @@ test('header back and forward restore tasks, welcome drafts and settings without
   await back.hover();
   await expect(page.locator('#app-sidebar')).toHaveAttribute('aria-hidden', 'true');
   await ensureSidebarExpanded(page);
-  await page.getByRole('button', { name: '扩展', exact: true }).click();
+  await page.getByRole('button', { name: '自定义', exact: true }).click();
   await page.getByRole('button', { name: '设置', exact: true }).click();
   await expect(settings).toBeVisible();
   await page.getByRole('button', { name: '新建任务', exact: true }).click();

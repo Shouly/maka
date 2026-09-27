@@ -58,9 +58,14 @@ test('retains process lifetime before a standalone startup dialog can close', ()
     windowAllClosedStart,
     bootSource.indexOf('powerMonitor.on("resume"', windowAllClosedStart),
   );
+  // Registered only once the Host is ready, so the startup never reaches it:
+  // closing the window before then is held (`holdsClose`), not quit.
   assert.match(
     windowAllClosed,
-    /process\.platform !== "darwin" && !windowsAppTray\.hasTray\(\) && !isBrowserMessageBoxPresentationActive\(\) &&\s*!isDesktopStartupInProgress\(\)/u,
+    /process\.platform !== "darwin" && !windowsAppTray\.hasTray\(\) && !isBrowserMessageBoxPresentationActive\(\)\) app\.quit\(\);/u,
+  );
+  assert.ok(
+    bootSource.indexOf('app.on("window-all-closed"') > bootSource.indexOf('function wireLifecycle'),
   );
 });
 
@@ -91,13 +96,56 @@ test('drains startup resources before cancellation quit or fatal presentation', 
   assert.match(bootSource, /await runtimeHostPeerMeshComponent\?\.close\(\)[\s\S]*await runtimeHostPeerEndpointOwner\?\.close\(\)/u);
 });
 
-test('presents startup before Host boot and hands off only when the main window is shown', () => {
+test('opens the main window before the Host connects and mounts the app once it is ready', () => {
+  // No startup window: after ready, main only brands the Dock and menu, then boots.
   const ready = mainSource.indexOf("console.log('[startup] app ready')");
-  const presentation = mainSource.indexOf('showDesktopStartupProgress(', ready);
+  const begin = mainSource.indexOf('beginDesktopStartup(', ready);
   const hostBoot = mainSource.indexOf("import('./runtime-host-boot.js')", ready);
-  assert.ok(ready >= 0 && presentation > ready && hostBoot > presentation);
-  assert.match(bootSource, /onShow: closeDesktopStartupProgress/u);
-  assert.match(mainWindowSource, /mainWindow\.once\('show', \(\) => deps\.onShow\?\.\(\)\)/u);
+  assert.ok(ready >= 0 && begin > ready && hostBoot > begin);
+  assert.doesNotMatch(mainSource, /showDesktopStartupProgress|desktopStartupProgressWindow/u);
+
+  // The window is asked for before the Host start is awaited, and the Dock and
+  // a second launch can bring it forward from then on — registered once.
+  const hostStart = bootSource.indexOf('runtimeHostManager = await startLocalRuntimeHostManager');
+  const earlyWindow = bootSource.indexOf('void quitCoordinator.focusOrCreateWindow();');
+  const activate = bootSource.indexOf('app.on("activate", quitCoordinator.focusOrCreateWindow)');
+  const secondInstance = bootSource.indexOf('app.on("second-instance", quitCoordinator.focusOrCreateWindow)');
+  assert.ok(earlyWindow >= 0 && earlyWindow < hostStart);
+  assert.ok(activate >= 0 && activate < hostStart && secondInstance >= 0 && secondInstance < hostStart);
+  assert.equal(bootSource.match(/app\.on\("activate"/gu)?.length, 1);
+  assert.equal(bootSource.match(/app\.on\("second-instance"/gu)?.length, 1);
+  const coordinatorStart = bootSource.indexOf('createAppQuitCoordinator({');
+  const coordinator = bootSource.slice(
+    coordinatorStart,
+    bootSource.indexOf('app.on("before-quit"', coordinatorStart),
+  );
+  assert.doesNotMatch(coordinator, /if \(!runtimeHostManager\) return;/u, 'the window no longer waits for the Host');
+
+  // The app mounts in it once the Host is ready and the shell is wired.
+  const lifecycle = bootSource.indexOf('wireLifecycle();', hostStart);
+  const markReady = bootSource.indexOf('markDesktopStartupReady();', hostStart);
+  assert.ok(lifecycle > hostStart && markReady > lifecycle);
+
+  // An "Open Maka" link can arrive while the Host connects (a sign-in needs none).
+  const urlScheme = bootSource.indexOf('installAppUrlScheme(app, {');
+  assert.ok(urlScheme >= 0 && urlScheme < hostStart);
+  assert.equal(bootSource.match(/installAppUrlScheme\(app, \{/gu)?.length, 1);
+  // The Dock, a second launch and a handoff can all ask while the window is
+  // still being made: they share that one creation.
+  assert.match(bootSource, /windowCreation \?\?= Promise\.resolve\(mainWindowController\.createWindow\(signal\)\)/u);
+  // Closing the window minimizes it while that would strand something: during
+  // the start where closing the last window quits, and while a decision waits
+  // on any platform — but never against a quit that has begun.
+  assert.match(
+    bootSource,
+    /holdsClose: \(\) =>\s*!quitCoordinator\.isQuitting\(\) &&\s*\(\(process\.platform !== "darwin" && isDesktopStartupInProgress\(\)\) \|\|\s*isDesktopHandoffAwaitingDecision\(\)\)/u,
+  );
+  // With no window a startup handoff has nowhere to be answered: it is cancelled.
+  assert.match(bootSource, /onWindowCreationError: \(error\) => \{[\s\S]*?cancelDesktopStartupHandoffs\(\);/u);
+  assert.match(
+    mainWindowSource,
+    /mainWindow\.on\('close', \(event\) => \{\s*if \(deps\.holdsClose\?\.\(\) && mainWindow\) \{\s*event\.preventDefault\(\);\s*mainWindow\.minimize\(\);/u,
+  );
 });
 
 test('resolves persisted locale before first post-settings recovery prompt', () => {

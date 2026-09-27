@@ -81,10 +81,13 @@ test('native accessibility names cover the shell, transcript, settings and modul
       });
   }
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: '扩展', exact: true }).click();
+  // Customize (自定义): one entry, Skills and Connectors as its two tabs.
+  await page.getByRole('button', { name: '自定义', exact: true }).click();
   await expect(page.locator('[data-maka-contract="module-main"]')).toBeVisible();
   await audit('skills');
-  await page.getByRole('radio', { name: 'MCP', exact: true }).click();
+  const connectors = page.getByRole('tab', { name: '连接器', exact: true });
+  await connectors.click();
+  await expect(connectors).toHaveAttribute('aria-selected', 'true');
   await audit('mcp');
   await page.getByRole('button', { name: '定时任务', exact: true }).click();
   await audit('scheduled');

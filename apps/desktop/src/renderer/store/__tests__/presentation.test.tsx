@@ -34,6 +34,7 @@ import { getSidebarCopy } from '../../locales/sidebar-copy.js';
 import { getShellCopy } from '../../locales/shell-copy.js';
 import { buildPaletteCommands } from '../../components/palette/commands.js';
 import { TranscriptTurn, TurnStatusBeforeTurn } from '../../components/session/TranscriptTurn.js';
+import { latchedStart } from '../../components/session/tools/TurnStatus.js';
 import { renderToolContent } from '../../components/session/tools/registry.js';
 import {
   TurnStatusThinkingStep,
@@ -2001,4 +2002,19 @@ test('the permission chip names the boundary Plan holds the session to', () => {
   assert.equal(chip('explore', 'ask')?.textContent, 'Read only');
   assert.equal(chip('explore', 'ask')?.getAttribute('aria-label'), 'Permission mode: Read only');
   assert.equal(chip('ask', 'ask')?.textContent, 'Manual');
+});
+
+// The pending row, one run, the next: each is a new element with a new clock
+// instance, and they take over from each other as the turn goes on. The clock
+// keeps the earliest start it has seen for the turn, so a hand-over — or a
+// projection that re-stamps `startedAt: Date.now()` per delta — never
+// restarts it from 0s.
+test('the rows of one turn share one clock, from the earliest start seen', () => {
+  const turn = `turn-latch-${Math.random()}`;
+  assert.equal(latchedStart(turn, 5_000), 5_000);
+  assert.equal(latchedStart(turn, 9_000), 5_000, 'a later row does not restart it');
+  assert.equal(latchedStart(turn, undefined), 5_000, 'nor does one with no start of its own');
+  assert.equal(latchedStart(turn, 4_000), 4_000, 'an earlier start wins');
+  assert.equal(latchedStart(undefined, 7_000), 7_000, 'a row before its turn has no latch');
+  assert.equal(latchedStart(`${turn}-other`, 9_000), 9_000, 'turns do not share one');
 });

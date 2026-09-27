@@ -153,12 +153,15 @@ describe('app quit coordinator', () => {
       },
     });
 
+    assert.equal(coordinator.isQuitting(), false);
     coordinator.handleBeforeQuit({ preventDefault: () => {} });
+    assert.equal(coordinator.isQuitting(), true, 'nothing may hold a window against it now');
     await flushQuitCoordinator();
 
     assert.equal(cleanupCount, 0);
     assert.equal(resumeQuitCount, 0);
     assert.equal(focusOrCreateCount, 1);
+    assert.equal(coordinator.isQuitting(), false, 'a cancelled quit gives the app back');
   });
 
   it('reports window creation failure without leaking an unhandled rejection', async () => {

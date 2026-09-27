@@ -52,10 +52,10 @@ import { reportDevelopmentLaunchResult } from './dev-single-instance-result.js';
 import { registerPreviousMainProcessDiagnosticsIpc } from './desktop-diagnostics-ipc-main.js';
 import { showBrowserMessageBox } from './browser-message-box.js';
 import {
-  showDesktopStartupProgress,
+  beginDesktopStartup,
+  startupDialogParent,
   startupRevealMode,
   updateDesktopStartupProgress,
-  desktopStartupProgressWindow,
 } from './startup-presentation.js';
 
 let recoveryJournal: MainProcessRecoveryJournal | undefined;
@@ -218,7 +218,13 @@ if (!app.requestSingleInstanceLock()) {
       // call for the same scheme, and a Host that can serve a preview arrives
       // later and may be replaced (`serveArtifactPreviewsFor`).
       installArtifactPreviewProtocol();
-      showDesktopStartupProgress((phase) => {
+      beginDesktopStartup((phase, handoff) => {
+        // A handoff's own view says what it is waiting on; the launch report
+        // would only say the Runtime Host is not there yet.
+        if (handoff) {
+          clipboard.writeText(JSON.stringify(handoff, null, 2));
+          return;
+        }
         clipboard.writeText(formatDesktopDiagnosticReport(
           createDesktopStartupDiagnosticInput({
             title: 'Desktop startup', description: 'Startup phase: ' + phase,
@@ -262,8 +268,10 @@ if (!app.requestSingleInstanceLock()) {
               }),
             mainLogs: () => mainProcessLogBuffer.snapshot(),
             writeClipboard: (report) => clipboard.writeText(report),
+            // Over the main window when it is on screen (its loading screen
+            // waits on this); standalone when the boot failed before it.
             showMessageBox: (options) =>
-              showBrowserMessageBox(options, desktopStartupProgressWindow(), {
+              showBrowserMessageBox(options, startupDialogParent(), {
                 locale,
                 revealMode: startupRevealMode(),
               }),

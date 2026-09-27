@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { COMPOSER_INPUT, awaitSendReady, expect, test, sendPrompt } from './fixtures';
+import { COMPOSER_INPUT, LIVE_STATUS, awaitSendReady, expect, test, sendPrompt } from './fixtures';
 
 test('a title update during streaming preserves visible text and the answer keeps growing', async ({ sessionLocalWindow: { page, app } }) => {
   const nativeWindow = await app.browserWindow(page);
@@ -28,7 +28,7 @@ test('a title update during streaming preserves visible text and the answer keep
   const response = page.locator('[data-maka-contract="markdown"]').first();
   await expect(response.locator('.stream-pop').first()).toBeVisible();
   const existing = await response.locator('.stream-pop').first().elementHandle();
-  const waiting = page.locator('[data-maka-contract="turn-running-status"]');
+  const waiting = page.locator(LIVE_STATUS);
   await expect(waiting).toBeVisible();
   const waitingNode = await waiting.elementHandle();
   const before = (await response.textContent())!.length;
@@ -64,26 +64,39 @@ test('a title landing before the first token does not retract the wait', async (
   await page.locator(COMPOSER_INPUT).fill('__e2e_wait_for_steering__');
   await awaitSendReady(page);
   await page.locator(COMPOSER_INPUT).press('Enter');
-  const waiting = page.locator('[data-maka-contract="turn-running-status"]');
+  const waiting = page.locator(LIVE_STATUS);
   await expect(waiting).toBeVisible({ timeout: 20_000 });
+  // The pending row stands in from the send itself; Stop follows once the
+  // Host reports the turn running. The wait is whole only when both are up.
+  await expect(page.getByRole('button', { name: '停止', exact: true })).toBeVisible();
   // Per frame, because the retraction is shorter than any polled assertion:
-  // both that the line is there at all, and that it is the SAME element.
-  await page.evaluate(() => {
+  // that exactly one live status is up, and that it is not re-created. The
+  // one element change allowed is the designed hand-over from the row that
+  // stands in before the turn reaches the transcript to the turn's own row
+  // (TranscriptTurn's TurnStatusBeforeTurn → pendingStatus); a retraction is
+  // any other change.
+  await page.evaluate((liveStatus) => {
     const state = window as unknown as Record<string, unknown>;
-    state.__first = document.querySelector('[data-maka-contract="turn-running-status"]');
+    let previous: Element | null = document.querySelector(liveStatus);
     state.__frames = [];
     state.__recording = true;
     const record = () => {
-      const node = document.querySelector('[data-maka-contract="turn-running-status"]');
+      const nodes = document.querySelectorAll(liveStatus);
+      const node = nodes[0] ?? null;
+      const inTurn = Boolean(node?.closest('[data-maka-transcript-turn]'));
+      const changed = node !== previous;
+      const handedOver =
+        changed && inTurn && !previous?.closest('[data-maka-transcript-turn]');
+      previous = node;
       (state.__frames as unknown[]).push({
-        waiting: Boolean(node),
-        same: node === state.__first,
+        count: nodes.length,
+        replaced: changed && !handedOver,
         stop: Boolean(document.querySelector('button[aria-label="停止"]')),
       });
       if (state.__recording) requestAnimationFrame(record);
     };
     requestAnimationFrame(record);
-  });
+  }, LIVE_STATUS);
   const session = await page.evaluate(async () => (await window.maka.sessions.list())[0]!);
   await page.evaluate(
     (id) => window.maka.sessions.rename(id, 'Named from its first message'),
@@ -101,9 +114,9 @@ test('a title landing before the first token does not retract the wait', async (
   const frames = await page.evaluate(() => {
     const state = window as unknown as Record<string, unknown>;
     state.__recording = false;
-    return state.__frames as { waiting: boolean; same: boolean; stop: boolean }[];
+    return state.__frames as { count: number; replaced: boolean; stop: boolean }[];
   });
-  expect(frames.filter((frame) => !frame.waiting || !frame.same)).toEqual([]);
+  expect(frames.filter((frame) => frame.count !== 1 || frame.replaced)).toEqual([]);
   expect(frames.filter((frame) => !frame.stop)).toEqual([]);
   const stop = page.getByRole('button', { name: '停止', exact: true });
   if (await stop.isVisible()) await stop.click();

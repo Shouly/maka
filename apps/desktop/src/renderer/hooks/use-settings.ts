@@ -32,7 +32,6 @@ import { useUiLocale } from '@maka/ui';
 import { settingsStore } from '../store/index.js';
 import { toast } from '../store/toast-store.js';
 import { localizedShellErrorMessage } from '../locales/shell-copy.js';
-import { getShellCopy } from '../locales/shell-copy.js';
 
 export function useClientSettings() {
   return {
@@ -55,17 +54,22 @@ export function useHostSettings() {
  * is indistinguishable from one that worked, which is why every page routes
  * its failures through here rather than swallowing them.
  */
-export function useSettingsErrorReporter(): (title: string, error: unknown) => void {
+export function useSettingsErrorReporter(): (
+  title: string,
+  error: unknown,
+  fallback?: string,
+) => void {
   const locale = useUiLocale();
-  const retry = getShellCopy(locale).actions.retry;
   return useCallback(
-    (title: string, error: unknown) => {
+    // An unrecognized failure reads as the action's own words (its title
+    // unless it has a sentence of its own), never as a button's label.
+    (title: string, error: unknown, fallback = title) => {
       toast({
         title,
-        description: localizedShellErrorMessage(error, retry, locale),
+        description: localizedShellErrorMessage(error, fallback, locale),
         variant: 'destructive',
       });
     },
-    [locale, retry],
+    [locale],
   );
 }

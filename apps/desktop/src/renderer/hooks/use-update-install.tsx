@@ -104,7 +104,7 @@ export function useUpdateInstall(): UpdateInstall {
       .catch((error: unknown) =>
         toast({
           title: copy.updateInstallFailedTitle,
-          description: localizedShellErrorMessage(error, shell.actions.retry, locale),
+          description: localizedShellErrorMessage(error, copy.updateInstallFailedTitle, locale),
           variant: 'destructive',
         }),
       )

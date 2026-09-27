@@ -37,11 +37,18 @@
 
 import type { CDPSession, Page } from '@playwright/test';
 import { PROMPT_RAIL_PROMPT_COUNT } from '../src/main/e2e-fixture/seed-helpers';
-import { DESKTOP_TRANSCRIPT_ACTIVE_RANGE_MAX_TURNS } from '../src/preload/transcript-contract';
 import { expect, test } from './fixtures';
 
 const SCROLLER = '[data-maka-transcript-boundary]';
 const TURN = '[data-maka-transcript-turn]';
+
+/**
+ * Generous on purpose: the property worth guarding is that paging through the
+ * whole history stops adding Turns, and a range that kept everything it paged
+ * in would mount all of them. (The Renderer owns the window since #5170; it
+ * trims by what the reader can reach, not by a fixed count of Turns.)
+ */
+const MOUNTED_TURNS_MAX = 40;
 
 declare global {
   interface Window {
@@ -257,9 +264,10 @@ test('the browser skips the Turns the reader has scrolled past', async ({
 
 /**
  * The bound the Desktop transcript is built on: paging back through a history
- * far longer than the active range mounts a bounded number of Turns, not a
- * growing one. Sampled at every page rather than only at the end, because a
- * range that overshoots and is trimmed afterwards is the regression.
+ * far longer than a screenful mounts a bounded number of Turns, not a growing
+ * one — the Renderer trims what the reader can no longer reach. Sampled at
+ * every page rather than only at the end, because a window that overshoots
+ * and is trimmed afterwards is the regression.
  */
 test('paging back through the whole history keeps the mounted range bounded', async ({
   promptRailWindow: page,
@@ -293,15 +301,15 @@ test('paging back through the whole history keeps the mounted range bounded', as
 
   expect(pages).toBeGreaterThan(0);
   await expect(turns.first()).toHaveAttribute('data-turn-id', 'turn-prompt-rail-1');
-  expect(mountedMax).toBeLessThanOrEqual(DESKTOP_TRANSCRIPT_ACTIVE_RANGE_MAX_TURNS);
+  expect(mountedMax).toBeLessThanOrEqual(MOUNTED_TURNS_MAX);
 
-  // Coming back from the far end is a range reload, not a scroll: the Host
-  // resolves a new window around the tail and the renderer mounts it. The
+  // Coming back from the far end reads the tail page and rebuilds the window
+  // around it, not a scroll through everything between. The
   // suite's 10s expect timeout is sized for UI that is already on screen, and
   // this step measured past it on a loaded CI runner.
   await returnToLatest(page);
   await expect(
     page.locator(`[data-turn-id="turn-prompt-rail-${PROMPT_RAIL_PROMPT_COUNT}"]`),
   ).toHaveCount(1, { timeout: 30_000 });
-  expect(await turns.count()).toBeLessThanOrEqual(DESKTOP_TRANSCRIPT_ACTIVE_RANGE_MAX_TURNS);
+  expect(await turns.count()).toBeLessThanOrEqual(MOUNTED_TURNS_MAX);
 });

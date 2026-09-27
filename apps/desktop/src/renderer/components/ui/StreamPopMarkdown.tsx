@@ -50,12 +50,15 @@ export default function StreamPopMarkdown({
   noPadding = false,
   variant,
   onOpenExternal,
+  onOpenFile,
 }: {
   children: string;
   className?: string;
   noPadding?: boolean;
   variant?: 'default' | 'muted';
   onOpenExternal?: (url: string) => void;
+  /** A file link written mid-stream opens as it will once the answer settles. */
+  onOpenFile?: (path: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -118,11 +121,12 @@ export default function StreamPopMarkdown({
           className={className}
           variant={variant}
           onOpenExternal={onOpenExternal}
+          {...(onOpenFile ? { onOpenFile } : {})}
         >
           {display}
         </Markdown>
       </div>
     ),
-    [display, className, noPadding, variant, onOpenExternal],
+    [display, className, noPadding, variant, onOpenExternal, onOpenFile],
   );
 }

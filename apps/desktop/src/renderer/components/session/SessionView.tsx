@@ -118,7 +118,7 @@ export interface SessionViewProps {
   /** Phase 3b swaps the composer in here without touching the transcript. */
   composerSlot?: ReactNode;
   onOpenSettings?: (section?: 'models' | 'projects') => void;
-  onError?: (title: string, error: unknown) => void;
+  onError?: (title: string, error: unknown, fallback?: string) => void;
 }
 
 export function SessionView(props: SessionViewProps) {
@@ -223,14 +223,14 @@ function SessionTranscript(props: SessionViewProps) {
     reviewable && !turns.some((turn) => turn.turnId === reviewable.turnId) ? reviewable : undefined;
 
   const reportError = useCallback(
-    (title: string, error: unknown) => {
+    (title: string, error: unknown, fallback?: string) => {
       // Every Host action on a Session whose directory is gone fails with
       // one typed code; say that, not the raw string.
       if (isSessionWorkspaceUnavailableError(error)) {
         showSessionWorkspaceUnavailableToast(toastApi, locale, { sessionId });
         return;
       }
-      props.onError?.(title, error);
+      props.onError?.(title, error, fallback);
     },
     [locale, props, sessionId],
   );

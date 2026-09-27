@@ -114,8 +114,7 @@ import { getComposerCopy } from '../../locales/composer-copy.js';
 import { userQuestionPanelStore } from '../../store/user-question-panel-store.js';
 import { answerUserQuestion } from '../../lib/ask-user-question.js';
 import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
-import { localizedShellErrorMessage } from '../../locales/shell-copy.js';
-import { getTranscriptCopy } from '../../locales/transcript-copy.js';
+import { getShellCopy, localizedShellErrorMessage } from '../../locales/shell-copy.js';
 import {
   chatModelChoiceLabel,
   chatModelWriteCommitted,
@@ -174,11 +173,25 @@ const CHIP_REMOVE_CLASS =
 const CHIP_CLASS =
   'flex max-w-72 items-center gap-1.5 rounded-lg bg-alpha-1 py-1 pl-2 pr-1 text-xs text-text-secondary';
 
+/** A failed action's toast: its title, and its words when the cause is not one we recognise. */
+interface Failure {
+  readonly title: string;
+  readonly fallback: string;
+}
+
+/**
+ * A refusal the composer words itself — no workspace yet, an answer still
+ * running, a limit reached. It is already the sentence for the reader, so it
+ * is shown as is: the error localizer treats an Error it does not recognise as
+ * an incident and would show the operation's fallback in its place.
+ */
+class ComposerRefusal extends Error {}
+
 export function ChatInput(props: {
   label?: string;
   sessionId?: string;
   running?: boolean;
-  onError?: (title: string, error: unknown) => void;
+  onError?: (title: string, error: unknown, fallback?: string) => void;
   onOpenSettings?: () => void;
 }) {
   const target = useStore(newTaskStore, (s) => s.target);
@@ -193,7 +206,7 @@ function OwnedChatInput(props: {
   sessionId?: string;
   target?: DesktopNewTaskTarget;
   running?: boolean;
-  onError?: (title: string, error: unknown) => void;
+  onError?: (title: string, error: unknown, fallback?: string) => void;
   onOpenSettings?: () => void;
 }) {
   const { scopeKey, sessionId } = props;
@@ -290,22 +303,51 @@ function OwnedChatInput(props: {
   // shell's localizer rather than the raw `Error.message`.
   const errorText = (cause: unknown, fallback = copy.send.failedFallback) =>
     localizedShellErrorMessage(cause, fallback, locale);
-  const report = (cause: unknown, title = copy.send.failedTitle, targetSessionId = sessionId) => {
+  // Every action names its own failure; an unrecognized cause reads as the
+  // action's own words, never as another action's (a send says it was not
+  // sent, a mode switch that the mode was not switched).
+  const shellCopy = getShellCopy(locale);
+  const sendFailure: Failure = { title: copy.send.failedTitle, fallback: copy.send.failedFallback };
+  const failure = (title: string, fallback = title): Failure => ({ title, fallback });
+  const settingFailure = {
+    permission: failure(
+      shellCopy.sessionSettingsActions.permissionFailedTitle,
+      shellCopy.sessionSettingsActions.permissionFallback,
+    ),
+    model: failure(
+      shellCopy.sessionSettingsActions.modelFailedTitle,
+      shellCopy.sessionSettingsActions.modelFallback,
+    ),
+    thinking: failure(
+      shellCopy.sessionSettingsActions.thinkingFailedTitle,
+      shellCopy.sessionSettingsActions.thinkingFallback,
+    ),
+    plan: failure(shellCopy.app.planModeFailedTitle, shellCopy.app.planModeFallback),
+  };
+  const compactFailure = failure(
+    shellCopy.app.compactErrorTitle,
+    shellCopy.app.compactErrorFallback,
+  );
+  const report = (
+    cause: unknown,
+    { title, fallback }: Failure = sendFailure,
+    targetSessionId = sessionId,
+  ) => {
     // A busy session is an expected setting constraint, not a diagnostic incident.
     if (cause instanceof ExpectedOperationError && cause.code === 'session_busy') {
       toastApi.info(errorText(cause));
       return;
     }
+    const target = targetSessionId ? { sessionId: targetSessionId } : undefined;
+    // A refusal is the sentence to show, not an incident to diagnose.
+    if (cause instanceof ComposerRefusal) {
+      toastApi.error(title, cause.message, undefined, target);
+      return;
+    }
     // Toasts outlive the composer: a first send can unmount the welcome
     // surface before admission fails, and switching tasks must not hide it.
-    if (props.onError) props.onError(title, cause);
-    else
-      toastApi.error(
-        title,
-        errorText(cause),
-        undefined,
-        targetSessionId ? { sessionId: targetSessionId } : undefined,
-      );
+    if (props.onError) props.onError(title, cause, fallback);
+    else toastApi.error(title, errorText(cause, fallback), undefined, target);
   };
 
   // Settings shown in the control row: the Session's own once it exists,
@@ -348,7 +390,7 @@ function OwnedChatInput(props: {
     void turnActionsStore
       .stop(sessionId, { source: 'stop_button' })
       .catch((cause: unknown) =>
-        report(cause, getDesktopConversationCopy(locale).actions.stopFailedTitle),
+        report(cause, failure(getDesktopConversationCopy(locale).actions.stopFailedTitle)),
       );
   };
   const hasContent = Boolean(wire.text) || draft.attachments.length > 0;
@@ -422,13 +464,19 @@ function OwnedChatInput(props: {
       // command does; only typed text runs a command.
       const typedCommand = !startsWithSkillReference(sent.document);
       if (typedCommand && parseDesktopSlashCommand(serialized.text)?.kind === 'compact') {
-        if (!owner || props.running) throw new Error(copy.slash.notYet);
-        await turnActionsStore.compact(owner);
+        if (!owner || props.running) throw new ComposerRefusal(copy.slash.notYet);
+        // A compaction that fails says so; it was never a message to send.
+        try {
+          await turnActionsStore.compact(owner);
+        } catch (cause) {
+          report(cause, compactFailure, owner);
+          return;
+        }
         composerInputStore.acknowledge(scopeKey, sent);
         return;
       }
       if (typedCommand && /^\/(?:side|graph|swarm)(?:\s|$)/.test(serialized.text)) {
-        throw new Error(copy.slash.notYet);
+        throw new ComposerRefusal(copy.slash.notYet);
       }
 
       const readiness =
@@ -439,7 +487,7 @@ function OwnedChatInput(props: {
               model: session?.model ?? newTask.model?.model,
             });
       if (!mounted.current) return;
-      if (readiness.state !== 'ready') throw new Error(copy.send.blockedReadiness);
+      if (readiness.state !== 'ready') throw new ComposerRefusal(copy.send.blockedReadiness);
 
       const messageId = composerInputStore.reserveIntent(scopeKey, sent.revision);
 
@@ -595,7 +643,7 @@ function OwnedChatInput(props: {
         );
         return;
       }
-      report(cause, copy.send.failedTitle, owner);
+      report(cause, sendFailure, owner);
     } finally {
       lock.current = false;
       if (mounted.current) setBusy(false);
@@ -621,11 +669,17 @@ function OwnedChatInput(props: {
   /** Files from a drop or a paste. */
   const stageFiles = (files: readonly File[]) => {
     if (!canStageContext) {
-      report(new Error(copy.send.blockedNoWorkspace));
+      report(
+        new ComposerRefusal(copy.send.blockedNoWorkspace),
+        failure(copy.attachments.pickFailedTitle),
+      );
       return;
     }
     if (disabled || props.running) {
-      report(new Error(copy.drop.rejectedWhileRunning), copy.attachments.pickFailedTitle);
+      report(
+        new ComposerRefusal(copy.drop.rejectedWhileRunning),
+        failure(copy.attachments.pickFailedTitle),
+      );
       return;
     }
     try {
@@ -650,7 +704,7 @@ function OwnedChatInput(props: {
       // No "N files attached" line under the composer: the cards that just
       // appeared are the feedback (owner decision 2026-09-11).
     } catch (cause) {
-      report(cause, copy.attachments.pickFailedTitle);
+      report(cause, failure(copy.attachments.pickFailedTitle));
     }
   };
 
@@ -671,7 +725,7 @@ function OwnedChatInput(props: {
         })),
       );
     } catch (cause) {
-      report(cause, copy.attachments.pickFailedTitle);
+      report(cause, failure(copy.attachments.pickFailedTitle));
     }
   }
 
@@ -692,9 +746,9 @@ function OwnedChatInput(props: {
           return;
         }
       }
-      throw new Error(copy.attachments.previewUnavailable);
+      throw new ComposerRefusal(copy.attachments.previewUnavailable);
     } catch (cause) {
-      report(cause);
+      report(cause, failure(copy.attachments.previewUnavailable));
     }
   }
 
@@ -711,11 +765,11 @@ function OwnedChatInput(props: {
       );
       if (duplicate) return;
       if (current.length >= MAX_DIRECTORY_REFERENCES) {
-        throw new Error(copy.directories.limitReached);
+        throw new ComposerRefusal(copy.directories.limitReached);
       }
       patch({ directories: [...current, result.reference] });
     } catch (cause) {
-      report(cause, copy.directories.pickFailedTitle);
+      report(cause, failure(copy.directories.pickFailedTitle));
     }
   }
 
@@ -727,7 +781,7 @@ function OwnedChatInput(props: {
       if (sessionId) await turnActionsStore.setPermission(sessionId, permission);
       else patch({ permission, permissionChosen: true });
     } catch (cause) {
-      report(cause, copy.permission.changeFailedTitle);
+      report(cause, settingFailure.permission);
       throw cause;
     }
   };
@@ -737,15 +791,15 @@ function OwnedChatInput(props: {
       void turnActionsStore
         .setThinking(sessionId, level ?? null)
         .then((row) => sessionsStore.upsert(row))
-        .catch((cause: unknown) =>
-          report(cause, getTranscriptCopy(locale).model.changeFailedTitle),
-        );
+        .catch((cause: unknown) => report(cause, settingFailure.thinking));
     } else patch({ thinking: level });
   };
 
   const togglePlan = () => {
     if (sessionId) {
-      void turnActionsStore.setCollaboration(sessionId, plan ? 'agent' : 'plan').catch(report);
+      void turnActionsStore
+        .setCollaboration(sessionId, plan ? 'agent' : 'plan')
+        .catch((cause: unknown) => report(cause, settingFailure.plan));
     } else {
       patch({ plan: !plan });
     }
@@ -756,12 +810,12 @@ function OwnedChatInput(props: {
       if (sessionId) {
         const goal = await getGoal(sessionId);
         if (goal && ['active', 'waiting', 'paused'].includes(goal.status)) {
-          throw new Error(common.composer.goalAlreadySet);
+          throw new ComposerRefusal(common.composer.goalAlreadySet);
         }
       }
       if (mounted.current) setGoalOpen(true);
     } catch (cause) {
-      report(cause, copy.goal.failedTitle);
+      report(cause, failure(copy.goal.failedTitle));
     }
   }
 
@@ -932,9 +986,7 @@ function OwnedChatInput(props: {
           // every other open task keeps the model it was given.
           if (chatModelWriteCommitted(target, row)) newTaskStore.selectModel(target);
         })
-        .catch((cause: unknown) =>
-          report(cause, getTranscriptCopy(locale).model.changeFailedTitle),
-        );
+        .catch((cause: unknown) => report(cause, settingFailure.model));
       return;
     }
     newTaskStore.selectModel(target);
@@ -1268,7 +1320,9 @@ function OwnedChatInput(props: {
                   }}
                   onCommand={(command) => {
                     if (command === 'compact' && sessionId) {
-                      void turnActionsStore.compact(sessionId).catch(report);
+                      void turnActionsStore
+                        .compact(sessionId)
+                        .catch((cause: unknown) => report(cause, compactFailure));
                     }
                   }}
                   onArrow={(event) =>
@@ -1505,7 +1559,7 @@ function GoalDialog(props: {
   busy: boolean;
   onBusy: (busy: boolean) => void;
   onStatus: (status: string) => void;
-  onError: (cause: unknown, title?: string) => void;
+  onError: (cause: unknown, failure?: Failure) => void;
 }) {
   const locale = useUiLocale();
   const copy = getComposerCopy(locale).goal;
@@ -1560,12 +1614,12 @@ function GoalDialog(props: {
         result.kind === 'reconciliation_unavailable' ||
         (result.kind === 'reconciled' && !result.matchesRequestedState)
       ) {
-        throw new Error(getComposerCopy(locale).send.outcomeUnknownDescription);
+        throw new ComposerRefusal(getComposerCopy(locale).send.outcomeUnknownDescription);
       }
       props.onOpenChange(false);
       props.onStatus(copy.armedTitle);
     } catch (cause) {
-      props.onError(cause, copy.failedTitle);
+      props.onError(cause, { title: copy.failedTitle, fallback: copy.failedTitle });
     } finally {
       props.onBusy(false);
     }

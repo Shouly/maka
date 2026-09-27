@@ -281,7 +281,10 @@ export const TranscriptTurn = memo(function TranscriptTurn(props: TranscriptTurn
         <Renderer
           noPadding
           onOpenExternal={props.onOpenExternal}
-          {...(onOpenFile ? { onOpenFile: (path: string) => onOpenFile(path) } : {})}
+          // The context's own function, never a wrapper made here: Markdown
+          // memoizes its renderers on it, and a new one per render remounts
+          // the whole answer — dropping any selection the reader is holding.
+          {...(onOpenFile ? { onOpenFile } : {})}
         >
           {entry.text}
         </Renderer>

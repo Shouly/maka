@@ -47,7 +47,10 @@ const REPORT_DIR = join(DESKTOP_DIR, 'tests', 'real-window-smoke');
 const DEFAULT_SCENARIO = 'sidebar-search-modal-open';
 const DEFAULT_WINDOW_WIDTH = 1280;
 const DEFAULT_WINDOW_HEIGHT = 840;
-const DEFAULT_DIAGNOSTIC_WAIT_MS = 3500;
+// The window loads before the Runtime Host connects; the settled diagnostic
+// comes a second after the app mounts, and main's probe gives the mount up to
+// 45 s from the page load — so this wait, from the spawn, has to outlast that.
+const DEFAULT_DIAGNOSTIC_WAIT_MS = 60_000;
 
 export const PROGRAMMATIC_SMOKE_CHECKS = [
   {
@@ -476,8 +479,11 @@ function buildProgrammaticResults(args, diagnostics) {
     },
     {
       check: PROGRAMMATIC_SMOKE_CHECKS[2],
-      ok: renderer.readyState === 'complete' && renderer.appFramePresent === true,
-      note: `readyState=${renderer.readyState ?? 'unknown'} appFramePresent=${renderer.appFramePresent ?? 'unknown'}`,
+      ok:
+        renderer.readyState === 'complete' &&
+        renderer.appFramePresent === true &&
+        renderer.frameReady === true,
+      note: `readyState=${renderer.readyState ?? 'unknown'} appFramePresent=${renderer.appFramePresent ?? 'unknown'} frameReady=${renderer.frameReady ?? 'unknown'}`,
     },
     {
       check: PROGRAMMATIC_SMOKE_CHECKS[3],
@@ -532,6 +538,7 @@ function buildStartupResults(diagnostics) {
       diagnostic.isVisible === true &&
       renderer.readyState === 'complete' &&
       renderer.appFramePresent === true &&
+      renderer.frameReady === true &&
       renderer.errorBoundaryPresent === false,
   );
   return [
@@ -545,6 +552,7 @@ function buildStartupResults(diagnostics) {
         `visible=${diagnostic?.isVisible ?? false}`,
         `readyState=${renderer.readyState ?? 'missing'}`,
         `appFramePresent=${renderer.appFramePresent ?? false}`,
+        `frameReady=${renderer.frameReady ?? false}`,
         `errorBoundaryPresent=${renderer.errorBoundaryPresent ?? 'missing'}`,
       ].join(' '),
     },

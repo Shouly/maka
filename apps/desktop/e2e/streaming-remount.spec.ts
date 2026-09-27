@@ -123,7 +123,7 @@ test('remounting a live surface leaves accumulated output settled', async ({ win
 
   const sidebar = page.getByLabel('任务列表', { exact: true });
   await ensureSidebarExpanded(page);
-  await sidebar.getByRole('button', { name: '扩展' }).click();
+  await sidebar.getByRole('button', { name: '自定义', exact: true }).click();
   await expect(page.locator('[data-maka-contract="module-main"]')).toBeVisible();
   await expect(liveBubble).toHaveCount(0);
   // Return through the task row the product exposes. Module navigation can

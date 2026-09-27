@@ -17,24 +17,54 @@
  * under the License.
  */
 
-import { app, BrowserWindow, clipboard, nativeTheme } from 'electron';
-import { resolveSystemUiLocale, type UiLocale } from '@maka/core/ui-locale';
-import type { HostHandoffView, OpenHostHandoffSurface } from '@maka/runtime-host/client';
-import { readableAppIconPath } from './app-icon-surface.js';
+// Startup has no window of its own. From app ready until the main window
+// exists nothing is shown: the steps before it are local (a slow login shell
+// is the one that can stretch them — `resolveShellEnv`). The main
+// window then opens before the Runtime Host has connected, and its renderer
+// shows the state kept here (desktop-startup-state.ts): nothing for a moment,
+// a quiet spinner and the step if the wait grows, the elapsed time and
+// diagnostics if it grows long. A Runtime Host handoff — an upgrade, a
+// repair, a replacement that needs a decision — appears in the same window.
+
+import { app, type BrowserWindow, type IpcMain, type WebContents } from 'electron';
+import type { UiLocale } from '@maka/core/ui-locale';
+import {
+  formatHostHandoff,
+  type HostHandoffAction,
+  type HostHandoffView,
+  type OpenHostHandoffSurface,
+} from '@maka/runtime-host/client';
+import type { DesktopStartupPhase, DesktopStartupState } from '../shared/desktop-startup.js';
 import { installApplicationMenu } from './application-menu.js';
 import { installDesktopStartupBranding } from './desktop-shell-presentation.js';
+import { createDesktopStartupState } from './desktop-startup-state.js';
 import { isIsolatedE2e } from './startup-context.js';
 import { resolveWindowRevealMode, type WindowRevealMode } from './window-reveal.js';
-import {
-  createStartupProgressWindow,
-  type StartupPhase,
-  type StartupProgressWindow,
-} from './startup-progress-window.js';
 
-let progress: StartupProgressWindow | undefined;
-let handoffUsesStartup = false;
+export type StartupPhase = DesktopStartupPhase;
 
-const focus = () => progress?.focus();
+// The launch starts with this process; the elapsed time counts from here.
+const startup = createDesktopStartupState(Date.now());
+let copyStartupDiagnostics: (
+  phase: StartupPhase,
+  handoff?: HostHandoffView,
+) => void | Promise<void> = () => {};
+let focusMainWindow: () => void = () => {};
+let visibleMainWindow: () => BrowserWindow | undefined = () => undefined;
+/**
+ * Every open handoff surface, by the owner key the state knows it by: the view
+ * the Host published last, the one on screen (worded once the locale is
+ * known, so it can trail), and how to answer it.
+ */
+const handoffSurfaces = new Map<
+  string,
+  {
+    latest: HostHandoffView;
+    shown?: HostHandoffView;
+    readonly submit: (revision: string, action: HostHandoffAction) => void;
+  }
+>();
+let nextHandoffOwner = 0;
 
 /**
  * The run's reveal mode as it reads before the Runtime Host boot resolves its
@@ -49,102 +79,157 @@ export function startupRevealMode(): WindowRevealMode {
   );
 }
 
-/** Called after ready, before importing the asynchronous Runtime Host boot. */
-export function showDesktopStartupProgress(
-  copyDiagnostics: (phase: StartupPhase) => void | Promise<void>,
+/**
+ * Called after ready, before importing the Runtime Host boot: the Dock
+ * branding and, until the shell installs its own, an application menu (Quit,
+ * Edit) whose window commands bring the main window forward.
+ */
+export function beginDesktopStartup(
+  copyDiagnostics: (phase: StartupPhase, handoff?: HostHandoffView) => void | Promise<void>,
 ): void {
   const revealMode = startupRevealMode();
   installDesktopStartupBranding(revealMode);
+  copyStartupDiagnostics = copyDiagnostics;
   // Automated runs retain their one-main-window contract and never steal focus.
   if (revealMode !== 'active') return;
   try {
     installApplicationMenu({
-      platform: process.platform, isPackaged: app.isPackaged, dispatch: focus,
+      platform: process.platform,
+      isPackaged: app.isPackaged,
+      dispatch: () => focusMainWindow(),
     });
-    progress = createStartupProgressWindow({
-      locale: resolveSystemUiLocale(app.getPreferredSystemLanguages()),
-      dark: nativeTheme.shouldUseDarkColors,
-      icon: readableAppIconPath('default'),
-      revealMode,
-      createWindow: (options) => new BrowserWindow(options),
-      copyDiagnostics: (phase, handoff) => handoff
-        ? clipboard.writeText(JSON.stringify(handoff, null, 2)) : copyDiagnostics(phase),
-      onError: (error) => console.error('[startup] progress presentation failed:', error),
-    });
-    app.on('activate', focus);
-    app.on('second-instance', focus);
-    app.once('before-quit', closeDesktopStartupProgress);
   } catch (error) {
-    console.error('[startup] progress presentation failed:', error);
-    closeDesktopStartupProgress();
+    console.error('[startup] application menu failed:', error);
   }
 }
 
 export function updateDesktopStartupProgress(phase: StartupPhase): void {
-  progress?.update(phase);
+  startup.update(phase);
 }
 
-/** One presentation lifetime per attempt; startup reuses its already visible window. */
-export function createDesktopHostHandoffSurface(resolveLocale: () => Promise<UiLocale>): OpenHostHandoffSurface {
+/** The Runtime Host is connected and the shell wired: the app itself can mount. */
+export function markDesktopStartupReady(): void {
+  startup.markReady();
+}
+
+/**
+ * The Runtime Host is not ready yet. Where closing the last window quits, a
+ * close now must not: a start may be replacing or upgrading the Host.
+ */
+export function isDesktopStartupInProgress(): boolean {
+  return !startup.state().ready;
+}
+
+/** A handoff on screen waits on a decision: the window that shows it must stay. */
+export function isDesktopHandoffAwaitingDecision(): boolean {
+  return startup.state().handoff?.state === 'attention';
+}
+
+/** The main window, when it is on screen: a startup dialog stands over it. */
+export function startupDialogParent(): BrowserWindow | undefined {
+  return visibleMainWindow();
+}
+
+/**
+ * The main window could not be made while starting: nothing can show a
+ * handoff, so each one waiting is cancelled (as the startup window did when it
+ * could not load) rather than left to wait for an answer that cannot come.
+ */
+export function cancelDesktopStartupHandoffs(): void {
+  if (!isDesktopStartupInProgress()) return;
+  for (const surface of handoffSurfaces.values())
+    surface.submit(surface.latest.revision, 'cancel');
+}
+
+/**
+ * Tie the state to the main window: its pushes, its IPC, and how to bring it
+ * forward. Only the main window shows the launch and answers a handoff; any
+ * other view of the renderer (WorkHub's) reads the launch without one.
+ */
+export function connectDesktopStartup(input: {
+  readonly ipcMain: Pick<IpcMain, 'handle'>;
+  readonly send: (state: DesktopStartupState) => void;
+  readonly isMainWindow: (sender: WebContents) => boolean;
+  readonly focusMainWindow: () => void;
+  readonly visibleMainWindow: () => BrowserWindow | undefined;
+}): void {
+  focusMainWindow = input.focusMainWindow;
+  visibleMainWindow = input.visibleMainWindow;
+  startup.subscribe(input.send);
+  input.ipcMain.handle('startup:state', (event): DesktopStartupState => {
+    const state = startup.state();
+    if (input.isMainWindow(event.sender)) return state;
+    const { handoff: _handoff, ...withoutHandoff } = state;
+    return withoutHandoff;
+  });
+  input.ipcMain.handle('startup:handoff', (event, revision: unknown, action: unknown): boolean => {
+    if (!input.isMainWindow(event.sender)) return false;
+    if (typeof revision !== 'string' || typeof action !== 'string') return false;
+    const owner = startup.answerable(revision, action);
+    const surface = owner === undefined ? undefined : handoffSurfaces.get(owner);
+    // The Host takes an answer only to its newest view; one to a view still
+    // being worded would be dropped there, so it is refused here.
+    if (!surface || surface.latest.revision !== revision) return false;
+    surface.submit(revision, action as HostHandoffAction);
+    return true;
+  });
+  input.ipcMain.handle('startup:copyDiagnostics', async (event): Promise<void> => {
+    if (!input.isMainWindow(event.sender)) return;
+    const shown = startup.state().handoff;
+    const surface = shown === undefined ? undefined : handoffSurfaces.get(shown.owner);
+    await copyStartupDiagnostics(startup.state().phase, surface?.shown);
+  });
+}
+
+/**
+ * Runtime Host handoffs show in the main window, over whatever it shows. One
+ * that waits on a decision brings the window forward (opening it if it was
+ * closed); one under way does not. Each target's handoff is its own surface;
+ * the window shows one at a time and the next once it closes.
+ */
+export function createDesktopHostHandoffSurface(
+  resolveLocale: () => Promise<UiLocale>,
+): OpenHostHandoffSurface {
   return (submit) => {
-    let latest: HostHandoffView | undefined;
-    let window: StartupProgressWindow | undefined;
-    let locale: UiLocale | undefined;
-    let ownWindow = false;
+    const owner = String((nextHandoffOwner += 1));
     let closed = false;
-    void resolveLocale().then((resolved) => {
-      if (closed) return;
-      locale = resolved;
-      if (progress?.window() && !handoffUsesStartup) {
-        window = progress;
-        handoffUsesStartup = true;
-      } else {
-        ownWindow = true;
-        window = createStartupProgressWindow({
-          locale, dark: nativeTheme.shouldUseDarkColors, icon: readableAppIconPath('default'),
-          revealMode: startupRevealMode(),
-          createWindow: (options) => new BrowserWindow(options),
-          copyDiagnostics: () => clipboard.writeText(JSON.stringify(latest, null, 2)),
-          onError: (error) => console.error('[runtime-host] handoff presentation failed:', error),
-        });
-      }
-      if (latest) window.handoff(latest, submit, locale);
-      window.focus();
-    }).catch((error) => {
-      console.error('[runtime-host] handoff presentation failed:', error);
-      if (latest) submit(latest.revision, 'cancel');
-    });
     return {
       update(view) {
-        latest = view;
-        if (window && locale) window.handoff(view, submit, locale);
+        const surface = handoffSurfaces.get(owner);
+        if (surface) surface.latest = view;
+        else handoffSurfaces.set(owner, { latest: view, submit });
+        // Only a handoff that cannot be worded is cancelled: one that is not
+        // on screen cannot be answered, and waiting for it would hang the Host.
+        void resolveLocale()
+          .then((locale) => formatHostHandoff(view, locale))
+          .then(
+            (presentation) => {
+              const current = handoffSurfaces.get(owner);
+              if (closed || !current || current.latest !== view) return;
+              current.shown = view;
+              const { becameAttention } = startup.showHandoff(owner, {
+                revision: view.revision,
+                state: view.state,
+                title: presentation.title,
+                description: presentation.description,
+                detail: presentation.detail,
+                ...(view.diagnostic ? { diagnostic: view.diagnostic } : {}),
+                actions: presentation.actions,
+              });
+              if (becameAttention) focusMainWindow();
+            },
+            (error: unknown) => {
+              console.error('[runtime-host] handoff presentation failed:', error);
+              if (!closed) submit(view.revision, 'cancel');
+            },
+          );
       },
       close() {
         closed = true;
-        if (ownWindow) window?.close();
-        else if (window) {
-          window.clearHandoff();
-          handoffUsesStartup = false;
-        }
+        handoffSurfaces.delete(owner);
+        // The next one in line may be waiting on a decision of its own.
+        if (startup.clearHandoff(owner).becameAttention) focusMainWindow();
       },
     };
   };
-}
-
-export function desktopStartupProgressWindow(): BrowserWindow | undefined {
-  return progress?.window();
-}
-
-export function isDesktopStartupInProgress(): boolean {
-  return progress !== undefined;
-}
-
-export function closeDesktopStartupProgress(): void {
-  app.removeListener('activate', focus);
-  app.removeListener('second-instance', focus);
-  app.removeListener('before-quit', closeDesktopStartupProgress);
-  // Destroy can synchronously emit window-all-closed before the main window
-  // exists (quit or renderer failure). Keep the startup lifetime guard then.
-  progress?.close();
-  progress = undefined;
 }

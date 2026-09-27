@@ -125,7 +125,7 @@ test('an explicit new task survives a renderer reload without reopening history'
   });
   expect(Math.abs(await indicatorOffset(manual) - await indicatorOffset(full))).toBeLessThan(1);
   // Each row says when Maka asks, in the row itself rather than a tooltip.
-  await expect(manual.getByText('Maka 修改工作目录以外的文件前，会先询问你。', { exact: true })).toBeVisible();
+  await expect(manual.getByText('Maka 修改工作目录以外的文件前，会先询问你；联网不受限。', { exact: true })).toBeVisible();
   await expect(full.getByText('Maka 自主工作，直接使用任何文件或联网，不再询问。', { exact: true })).toBeVisible();
   await full.click();
   await page.getByRole('button', { name: '切换到完全权限', exact: true }).click();

@@ -92,6 +92,9 @@ export { botsStore } from './bots-store.js';
 // Started by the login gate at the app root, not by `startRendererStores`:
 // whether the shell mounts at all depends on it.
 export { orgAccountStore } from './org-account-store.js';
+// The launch: started by StartupHandoffLayer at the app root, read by the gates
+// that hold the app until the Host is ready.
+export { startupStore } from './startup-store.js';
 /**
  * Archive a project without leaving the default pointing at it.
  *

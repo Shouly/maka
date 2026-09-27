@@ -125,7 +125,7 @@ try {
   page.on('console', (message) => {
     if (message.type() === 'error') errors.push(`[console.error] ${message.text()}`);
   });
-  await page.locator('.appFrame').waitFor();
+  await page.locator('.appFrame[data-startup="ready"]').waitFor({ timeout: 45_000 });
   await ensureSidebarExpanded();
 
   // Task A: a short reply, finished before anything else happens.

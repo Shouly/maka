@@ -24,6 +24,8 @@ export interface AppQuitEvent {
 export interface AppQuitCoordinator {
   focusOrCreateWindow(): Promise<void>;
   handleBeforeQuit(event: AppQuitEvent): void;
+  /** A quit has begun and was not cancelled: nothing may hold a window open against it. */
+  isQuitting(): boolean;
 }
 
 export interface AppQuitCoordinatorDeps {
@@ -56,6 +58,7 @@ export function createAppQuitCoordinator(deps: AppQuitCoordinatorDeps): AppQuitC
 
   return {
     focusOrCreateWindow,
+    isQuitting: () => phase !== 'running',
     handleBeforeQuit(event): void {
       if (phase === 'ready-to-exit') return;
       event.preventDefault();

@@ -84,6 +84,7 @@ import type { SessionListRow } from '../../store/session-list-model.js';
 import type { DesktopSessionSummary } from '../../bridge/sessions.js';
 import type { ProjectRowModel } from '../../hooks/use-session-list.js';
 import { toast } from '../../store/toast-store.js';
+import { getSettingsPreferencesCopy } from '../../locales/settings-preferences-copy.js';
 import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
 import {
   copyDiagnosticReport,
@@ -191,8 +192,13 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
     : undefined;
 
   const reportError = useCallback(
-    (title: string, error: unknown) => {
-      const description = localizedShellErrorMessage(error, shell.actions.retry, locale);
+    (title: string, error: unknown, fallback = title) => {
+      // An unrecognized failure reads as the operation's own words (#4457);
+      // the raw error goes to the diagnostic report (main redacts it), not
+      // the toast.
+      const description = localizedShellErrorMessage(error, fallback, locale);
+      const details =
+        error instanceof Error ? (error.stack ?? `${error.name}: ${error.message}`) : String(error);
       toast({
         title,
         description,
@@ -207,6 +213,7 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
                 surface: 'toast',
                 title,
                 description,
+                details,
                 ...(activeId ? { target: { sessionId: activeId } } : {}),
               });
             }}
@@ -362,7 +369,13 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
       onRename: (row: SessionListRow, name: string) => {
         void sessionsStore
           .rename(row.id, name)
-          .catch((error) => reportError(shell.sessionRowActions.renameFailedTitle, error));
+          .catch((error) =>
+            reportError(
+              shell.sessionRowActions.renameFailedTitle,
+              error,
+              shell.sessionRowActions.actionFallback,
+            ),
+          );
       },
       onSetFlagged: (row: SessionListRow, flagged: boolean) => {
         void sessionsStore
@@ -373,6 +386,7 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
                 ? shell.sessionRowActions.flagFailedTitle
                 : shell.sessionRowActions.unflagFailedTitle,
               error,
+              shell.sessionRowActions.actionFallback,
             ),
           );
       },
@@ -386,6 +400,7 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
               ? shell.sessionRowActions.archiveFailedTitle
               : shell.sessionRowActions.unarchiveFailedTitle,
             error,
+            shell.sessionRowActions.actionFallback,
           ),
         );
       },
@@ -405,10 +420,12 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
       onNewTask: (project: ProjectRowModel) => {
         const target = projectTaskTarget(project, newTaskStore.getState().catalog, defaultHost);
         if (!target) {
-          reportError(
-            shell.projectActions.projectUpdateFailedTitle,
-            getSidebarCopy(locale).projectUnavailable,
-          );
+          // A refusal already in words, not an incident to diagnose.
+          toast({
+            title: shell.projectActions.projectUpdateFailedTitle,
+            description: getSidebarCopy(locale).projectUnavailable,
+            variant: 'destructive',
+          });
           return;
         }
         newTaskStore.selectTarget(target);
@@ -417,17 +434,35 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
       onRename: (project: ProjectRowModel, name: string) => {
         void renameProject(project.id, name, hostRef(project, defaultHost))
           .then(() => newTaskStore.refresh())
-          .catch((error) => reportError(shell.projectActions.projectUpdateFailedTitle, error));
+          .catch((error) =>
+            reportError(
+              shell.projectActions.projectUpdateFailedTitle,
+              error,
+              shell.projectActions.projectUpdateFailedFallback,
+            ),
+          );
       },
       onArchive: (project: ProjectRowModel) => {
         void archiveProjectAndClearDefault(project.id, hostRef(project, defaultHost))
           .then(() => newTaskStore.refresh())
-          .catch((error) => reportError(shell.projectActions.projectUpdateFailedTitle, error));
+          .catch((error) =>
+            reportError(
+              shell.projectActions.projectUpdateFailedTitle,
+              error,
+              shell.projectActions.projectUpdateFailedFallback,
+            ),
+          );
       },
       onRestore: (project: ProjectRowModel) => {
         void restoreProject(project.id, hostRef(project, defaultHost))
           .then(() => newTaskStore.refresh())
-          .catch((error) => reportError(shell.projectActions.projectUpdateFailedTitle, error));
+          .catch((error) =>
+            reportError(
+              shell.projectActions.projectUpdateFailedTitle,
+              error,
+              shell.projectActions.projectUpdateFailedFallback,
+            ),
+          );
       },
     }),
     [defaultHost, reportError, shell, locale, newTask],
@@ -445,18 +480,28 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
       onSetTheme: (next: ThemePreference) => {
         void settingsStore
           .updateClient({ appearance: { theme: next } })
-          .catch((error) => reportError(shell.app.appearanceLoadErrorTitle, error));
+          .catch((error) =>
+            reportError(getSettingsPreferencesCopy(locale).appearance.saveFailed, error),
+          );
       },
       onSelectModule: selectModule,
       onOpenWorkspaceFolder: () => {
         void openPath('workspace').catch((error) =>
-          reportError(shell.projectActions.readPathFailedTitle, error),
+          reportError(
+            shell.projectActions.readPathFailedTitle,
+            error,
+            shell.projectActions.readPathFailedFallback,
+          ),
         );
       },
       onOpenProjectFolder: activeId
         ? () => {
             void openPath('project', activeId).catch((error) =>
-              reportError(shell.projectActions.readPathFailedTitle, error),
+              reportError(
+                shell.projectActions.readPathFailedTitle,
+                error,
+                shell.projectActions.readPathFailedFallback,
+              ),
             );
           }
         : undefined,
@@ -483,7 +528,13 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
               variant: result.ok ? 'success' : 'destructive',
             }),
           )
-          .catch((error) => reportError(shell.commandActions.genericTestFailedTitle, error));
+          .catch((error) =>
+            reportError(
+              shell.commandActions.genericTestFailedTitle,
+              error,
+              shell.commandActions.networkTestFallback,
+            ),
+          );
       },
       onSetDefaultConnection: (slug: string) => {
         const connection = connections?.connections.find((row) => row.slug === slug);
@@ -496,7 +547,13 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
               variant: 'success',
             }),
           )
-          .catch((error) => reportError(shell.commandActions.setDefaultFailedTitle, error));
+          .catch((error) =>
+            reportError(
+              shell.commandActions.setDefaultFailedTitle,
+              error,
+              shell.commandActions.setDefaultFallback,
+            ),
+          );
       },
       onOpenRuntimeDebug: () => setDebugOpen(true),
     }),
@@ -509,6 +566,7 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
       selectModule,
       reportError,
       shell,
+      locale,
       activeId,
     ],
   );
@@ -760,7 +818,11 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
               variant: 'success',
             });
           } catch (error) {
-            reportError(shell.sessionRowActions.deleteFailedTitle, error);
+            reportError(
+              shell.sessionRowActions.deleteFailedTitle,
+              error,
+              shell.sessionRowActions.actionFallback,
+            );
           } finally {
             setPendingDelete(null);
           }

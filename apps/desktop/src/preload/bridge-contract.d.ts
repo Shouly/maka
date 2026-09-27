@@ -1634,6 +1634,14 @@ export interface MakaBridge {
     refreshTokens(host: DesktopRuntimeHostRef | undefined, connectionId: string): Promise<SubscriptionActionResult>;
     logout(host: DesktopRuntimeHostRef | undefined, connectionId: string): Promise<SubscriptionActionResult>;
   };
+  /** Where the launch is (the Runtime Host connecting, a handoff), shown inside the main window. */
+  startup: {
+    state(): Promise<import('../shared/desktop-startup.js').DesktopStartupState>;
+    subscribe(handler: (state: import('../shared/desktop-startup.js').DesktopStartupState) => void): () => void;
+    /** Answer the handoff on screen; false when `revision` or `action` is not the current one's. */
+    submitHandoff(revision: string, action: string): Promise<boolean>;
+    copyDiagnostics(): Promise<void>;
+  };
   /** The company account this desktop signs in with (design §4.2). App-level, not per Host. */
   orgAccount: {
     state(): Promise<import('../shared/org-account.js').OrgAccountState>;

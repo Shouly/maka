@@ -30,6 +30,7 @@ import {
   safeStorage,
   shell,
   Tray,
+  type BrowserWindow,
   type MessageBoxOptions,
   type MessageBoxReturnValue,
 } from "electron";
@@ -269,9 +270,11 @@ import {
 import { resolveDesktopStorageRoot } from "./storage-root-startup.js";
 import { startupStep } from "./startup-step.js";
 import {
-  closeDesktopStartupProgress,
-  desktopStartupProgressWindow,
+  connectDesktopStartup,
+  cancelDesktopStartupHandoffs,
+  isDesktopHandoffAwaitingDecision,
   isDesktopStartupInProgress,
+  markDesktopStartupReady,
   updateDesktopStartupProgress,
 } from './startup-presentation.js';
 import { registerWorkspaceSearchIpc } from "./workspace-search-ipc-main.js";
@@ -423,7 +426,8 @@ const desktopDiagnostics: DesktopDiagnosticsDeps = {
   resolveRuntimeHost: resolveRuntimeHostDiagnostics,
   writeClipboard: (report) => clipboard.writeText(report),
 };
-let resolveBrowserDialogParent = desktopStartupProgressWindow;
+// Until the main window has shown, a dialog stands on its own.
+let resolveBrowserDialogParent = (): BrowserWindow | undefined => undefined;
 let resolveBrowserDialogAppearance = async (): Promise<BrowserMessageBoxTheme> => ({
   locale: resolveSystemUiLocale(app.getPreferredSystemLanguages()),
   palette: "default",
@@ -544,7 +548,14 @@ const mainWindowController = createMainWindowController({
   revealMode,
   onClose: () => onMainWindowClose(),
   onClosed: () => onMainWindowClosed(),
-  onShow: closeDesktopStartupProgress,
+  // The window minimizes instead of closing while closing it would strand
+  // something: where closing the last window quits, while the Runtime Host
+  // starts (possibly mid-upgrade); everywhere, while a handoff it shows waits
+  // on a decision. A quit that has begun is never held.
+  holdsClose: () =>
+    !quitCoordinator.isQuitting() &&
+    ((process.platform !== "darwin" && isDesktopStartupInProgress()) ||
+      isDesktopHandoffAwaitingDecision()),
   // A deployment that requires a sign-in opens small until someone has signed in.
   opensForSignIn: async () =>
     wantsSignInWindow((await orgAccountService?.catch(() => undefined))?.state()),
@@ -573,7 +584,7 @@ const mainWindowController = createMainWindowController({
 });
 resolveBrowserDialogParent = () => {
   const main = mainWindowController.browserWindow();
-  return main?.isVisible() ? main : desktopStartupProgressWindow();
+  return main?.isVisible() ? main : undefined;
 };
 const runtimeHostSshTerminal = createDesktopRuntimeHostSshTerminal({
   ipcMain,
@@ -1143,6 +1154,21 @@ mcpManager.onChange(() => {
 });
 
 registerPersistentClientIpc();
+// Startup shows in the main window (startup-presentation.ts); its IPC is here
+// with the rest that works before the Runtime Host connects.
+connectDesktopStartup({
+  ipcMain,
+  // The main window's alone: another view of the renderer (WorkHub's) must
+  // not show a second copy of a decision.
+  send: (state) => {
+    const main = mainWindowController.browserWindow();
+    if (main && !main.isDestroyed() && !main.webContents.isDestroyed())
+      main.webContents.send("startup:changed", state);
+  },
+  isMainWindow: (sender) => mainWindowController.browserWindow()?.webContents === sender,
+  focusMainWindow: () => void quitCoordinator.focusOrCreateWindow(),
+  visibleMainWindow: () => resolveBrowserDialogParent(),
+});
 registerPetPackIpc({
   ipcMain,
   workspaceRoot,
@@ -1418,26 +1444,48 @@ const startLocalRuntimeHostManager = () => startRuntimeHostDesktopManager(
 );
 let workBoardIpc: ReturnType<typeof registerWorkBoardIpc> | undefined;
 let runtimeHostDesktopShutdown: Promise<void> | undefined;
-// The first Host handoff can be cancelled before the main window exists.
-// Install the same cleanup owner used by normal quit before that handoff.
+// The first Host handoff can be cancelled while the main window shows the
+// launch. Install the same cleanup owner used by normal quit before that handoff.
+let windowCreation: Promise<void> | undefined;
 const quitCoordinator = createAppQuitCoordinator({
   prepareToQuit: prepareRuntimeHostDesktopQuit,
   cleanup: closeRuntimeHostDesktop,
+  // The main window exists before the Runtime Host does: it shows the startup
+  // itself, and the sign-in screens need no Host at all.
+  // One window at a time: the Dock, a second launch and a handoff can all ask
+  // while the first one is still being made.
   focusOrCreateWindow: (signal) => {
-    if (!runtimeHostManager) return;
-    if (mainWindowController.hasOpenWindows()) mainWindowController.focus();
-    else return mainWindowController.createWindow(signal);
+    if (mainWindowController.hasOpenWindows()) {
+      mainWindowController.focus();
+      return;
+    }
+    windowCreation ??= Promise.resolve(mainWindowController.createWindow(signal)).finally(() => {
+      windowCreation = undefined;
+    });
+    return windowCreation;
   },
   onPreparationError: (error) => {
     console.error("[runtime-host] quit retirement failed:", error);
   },
   onCleanupError: (error) =>
     console.error("[runtime-host] shutdown failed:", error),
-  onWindowCreationError: (error) =>
-    console.error("[window] creation failed:", error),
+  onWindowCreationError: (error) => {
+    console.error("[window] creation failed:", error);
+    // With no window a handoff has nowhere to be answered: cancel, not hang.
+    cancelDesktopStartupHandoffs();
+  },
   resumeQuit: () => app.quit(),
 });
 app.on("before-quit", quitCoordinator.handleBeforeQuit);
+// The window opens now, while the Runtime Host connects below; the Dock, a
+// second launch and an "Open Maka" link bring it forward from here on.
+app.on("second-instance", quitCoordinator.focusOrCreateWindow);
+app.on("activate", quitCoordinator.focusOrCreateWindow);
+installAppUrlScheme(app, {
+  claim: revealMode === "active",
+  focus: () => void quitCoordinator.focusOrCreateWindow(),
+});
+void quitCoordinator.focusOrCreateWindow();
 updateDesktopStartupProgress('connect');
 runtimeHostManager = await startLocalRuntimeHostManager().catch(async (error: unknown) => {
   await closeRuntimeHostDesktop();
@@ -1458,6 +1506,8 @@ workBoardIpc = registerWorkBoardIpc({
 });
 updateDesktopStartupProgress('renderer');
 wireLifecycle();
+// The window has been open all along; now the app itself mounts in it.
+markDesktopStartupReady();
 runtimeHostManager.setDefaultProfile(runtimeHostStartup.preferences.defaultProfileId);
 sessionLocal.wake();
 windowsAppTray.start();
@@ -2140,23 +2190,15 @@ function wireLifecycle(): void {
     mainWindowController,
     focusOrCreateWindow: quitCoordinator.focusOrCreateWindow,
   });
-  app.on("second-instance", quitCoordinator.focusOrCreateWindow);
-  app.on("activate", quitCoordinator.focusOrCreateWindow);
-  installAppUrlScheme(app, {
-    claim: revealMode === "active",
-    focus: () => void quitCoordinator.focusOrCreateWindow(),
-  });
   app.on("browser-window-focus", () => {
     void updateService.checkForUpdatesOnFocus();
   });
   app.on("window-all-closed", () => {
     native.computerUseOverlay.destroyAll();
     native.computerUsePip.destroyAll();
-    if (process.platform !== "darwin" && !windowsAppTray.hasTray() && !isBrowserMessageBoxPresentationActive() &&
-      !isDesktopStartupInProgress()) app.quit();
+    if (process.platform !== "darwin" && !windowsAppTray.hasTray() && !isBrowserMessageBoxPresentationActive()) app.quit();
   });
   powerMonitor.on("resume", wakePeerRecoveryAfterResume);
-  quitCoordinator.focusOrCreateWindow();
 }
 
 async function prepareRuntimeHostDesktopQuit(): Promise<'ready' | 'cancelled'> {

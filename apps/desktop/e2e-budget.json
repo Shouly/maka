@@ -23,7 +23,7 @@
     },
     "partial-history-notice.spec.ts": {
       "tests": 1,
-      "electron": "bounded history paging and tail restoration cross renderer, preload and Host storage"
+      "electron": "the first open reads a bounded tail from Host storage; older pages and the return to the latest cross renderer, preload and Host storage"
     },
     "proxy-password-editing.spec.ts": {
       "tests": 1,

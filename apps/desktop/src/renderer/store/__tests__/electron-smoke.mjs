@@ -203,7 +203,7 @@ try {
   // A fresh profile starts with the rail COLLAPSED (`maka-chat-list-collapsed-v1`
   // defaults to true, as it did before the rewrite), so the first thing the
   // test does is what a first-run user does: open it.
-  await page.locator('.appFrame').waitFor();
+  await page.locator('.appFrame[data-startup="ready"]').waitFor({ timeout: 45_000 });
   await page.locator('[data-maka-contract="welcome-surface"]').waitFor();
   await page.waitForFunction(
     () => document.querySelector('.appFrame')?.getAttribute('data-sidebar-state') === 'collapsed',
@@ -1129,7 +1129,7 @@ try {
   // Prove it reached the Host, not just the DOM that wrote it: a reload throws
   // away every store and reads the settings back over IPC.
   await page.reload();
-  await page.locator('.appFrame').waitFor();
+  await page.locator('.appFrame[data-startup="ready"]').waitFor({ timeout: 45_000 });
   await page.keyboard.press('ControlOrMeta+,');
   await settings.waitFor();
   await page.waitForFunction(
@@ -1678,7 +1678,7 @@ try {
       page = await app.firstWindow();
       page.setDefaultTimeout(20000);
       page.on('pageerror', (error) => errors.push(error.message));
-      await page.locator('.appFrame').waitFor();
+      await page.locator('.appFrame[data-startup="ready"]').waitFor({ timeout: 45_000 });
       return page;
     },
   });

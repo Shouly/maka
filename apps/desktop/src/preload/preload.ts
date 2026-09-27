@@ -18,6 +18,8 @@
  */
 
 import type { OrgAccountSetServerResult, OrgAccountState } from '../shared/org-account.js';
+import type { DesktopStartupState } from '../shared/desktop-startup.js';
+
 import type {
   SessionBundleExportIpcResult,
   SessionBundleImportIpcResult,
@@ -277,6 +279,28 @@ import {
   type DesktopSessionUpdateResult,
 } from '../shared/desktop-session-projection.js';
 import { projectDesktopSharedSessionSummary } from '../shared/shared-session-catalog-projection.js';
+
+/** Resolves once the Runtime Host has connected (at once when it already has). */
+let startupReadyOnce: Promise<void> | undefined;
+function startupReady(): Promise<void> {
+  return (startupReadyOnce ??= new Promise((resolve) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: DesktopStartupState) => {
+      if (!state.ready) return;
+      ipcRenderer.off('startup:changed', listener);
+      resolve();
+    };
+    ipcRenderer.on('startup:changed', listener);
+    // An unreadable state leaves the push to settle it.
+    void (ipcRenderer.invoke('startup:state') as Promise<DesktopStartupState>).then(
+      (state) => {
+        if (!state.ready) return;
+        ipcRenderer.off('startup:changed', listener);
+        resolve();
+      },
+      () => undefined,
+    );
+  }));
+}
 
 let activeRuntimeHost: DesktopTargetScope | undefined;
 let activeRuntimeHostGeneration = 0;
@@ -3276,6 +3300,22 @@ const makaBridge = {
       return invokeSelectedRuntimeHost(host, 'xai-oauth:logout', connectionId);
     },
   },
+  startup: {
+    state(): Promise<DesktopStartupState> {
+      return ipcRenderer.invoke('startup:state');
+    },
+    subscribe(handler: (state: DesktopStartupState) => void): () => void {
+      const listener = (_event: Electron.IpcRendererEvent, state: DesktopStartupState) => handler(state);
+      ipcRenderer.on('startup:changed', listener);
+      return () => ipcRenderer.off('startup:changed', listener);
+    },
+    submitHandoff(revision: string, action: string): Promise<boolean> {
+      return ipcRenderer.invoke('startup:handoff', revision, action);
+    },
+    copyDiagnostics(): Promise<void> {
+      return ipcRenderer.invoke('startup:copyDiagnostics');
+    },
+  },
   orgAccount: {
     state(): Promise<OrgAccountState> {
       return ipcRenderer.invoke('orgAccount:state');
@@ -3839,6 +3879,9 @@ const makaBridge = {
     async getState(): Promise<E2eFixtureState | null> {
       const state = await ipcRenderer.invoke('e2eFixture:getState') as E2eFixtureState | null;
       if (!state?.activeSessionId) return state;
+      // The window opens before the Runtime Host connects; the session's
+      // scope is the Host's, so it is read once the Host is there.
+      await startupReady();
       const scope = await activeRuntimeHostRef();
       return {
         ...state,
