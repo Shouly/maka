@@ -62,6 +62,10 @@ export interface ComposerCopy {
     readonly removed: (name: string) => string;
     readonly pickFailedTitle: string;
     readonly previewUnavailable: string;
+    /** A dropped or pasted folder, which cannot be an attachment. */
+    readonly folderNotAttachable: string;
+    /** The same, where the ＋ menu can reference the folder instead. */
+    readonly folderNotAttachableUseAddFolder: string;
   };
   readonly directories: {
     readonly regionLabel: string;
@@ -197,6 +201,8 @@ const COMPOSER_COPY = {
       removed: (name) => `已移除附件 ${name}`,
       pickFailedTitle: '附件添加失败',
       previewUnavailable: '无法预览这个文件',
+      folderNotAttachable: '文件夹不能作为附件添加。',
+      folderNotAttachableUseAddFolder: '文件夹不能作为附件添加，请改用 ＋ 菜单里的“添加文件夹”。',
     },
     directories: {
       regionLabel: '引用的文件夹',
@@ -312,6 +318,8 @@ const COMPOSER_COPY = {
       removed: (name) => `已移除附件 ${name}`,
       pickFailedTitle: '附件加入失敗',
       previewUnavailable: '無法預覽這個檔案',
+      folderNotAttachable: '資料夾不能作為附件加入。',
+      folderNotAttachableUseAddFolder: '資料夾不能作為附件加入，請改用 ＋ 選單裡的「新增資料夾」。',
     },
     directories: {
       regionLabel: '引用的資料夾',
@@ -427,6 +435,9 @@ const COMPOSER_COPY = {
       removed: (name) => `Removed ${name}`,
       pickFailedTitle: 'The file could not be attached',
       previewUnavailable: 'This file cannot be previewed',
+      folderNotAttachable: 'Folders cannot be added as attachments.',
+      folderNotAttachableUseAddFolder:
+        'Folders cannot be added as attachments. Use Add folder in the + menu instead.',
     },
     directories: {
       regionLabel: 'Referenced folders',

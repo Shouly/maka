@@ -38,6 +38,11 @@ export function pickAttachmentDirectory(): Promise<AttachmentPickDirectoryResult
   return attachments().pickDirectory();
 }
 
+/** Whether each dropped or pasted file is a folder on disk, one answer per file. */
+export function detectAttachmentDirectories(files: readonly File[]): Promise<boolean[]> {
+  return attachments().detectDirectories(files);
+}
+
 export function pickAttachmentFiles(): Promise<AttachmentPickFilesResult> {
   return attachments().pickFiles();
 }

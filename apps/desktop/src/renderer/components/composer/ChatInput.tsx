@@ -51,7 +51,11 @@ import type { Editor } from '@tiptap/core';
 import type { PermissionMode } from '@maka/core/permission';
 import type { ThinkingLevel } from '@maka/core/model-thinking';
 import type { ChatModelChoice } from '@maka/core/chat-model-choice';
-import { attachmentKindFromMimeType, guessMimeFromName } from '@maka/core/attachments';
+import {
+  AttachmentIngestBlockedError,
+  attachmentKindFromMimeType,
+  guessMimeFromName,
+} from '@maka/core/attachments';
 import { getConversationCopy, useUiLocale, useComposerHistory } from '@maka/ui';
 import {
   buildUserQuestionResponse,
@@ -88,6 +92,7 @@ import {
   COMPOSER_SHADOW_CLASS,
 } from '../../lib/composer-surface.js';
 import { preflightAttachmentItems } from '../../lib/ported/attachment-preflight.js';
+import { withoutDroppedFolders } from '../../lib/dropped-folders.js';
 import {
   toComposerIngestItems,
   retainedAttachmentRefs,
@@ -95,6 +100,7 @@ import {
 } from '../../lib/ported/composer-attachments.js';
 import {
   pickAttachmentFiles,
+  detectAttachmentDirectories,
   pickAttachmentDirectory,
   previewAttachmentApproval,
 } from '../../bridge/attachments.js';
@@ -667,7 +673,7 @@ function OwnedChatInput(props: {
   };
 
   /** Files from a drop or a paste. */
-  const stageFiles = (files: readonly File[]) => {
+  const stageFiles = async (dropped: readonly File[]) => {
     if (!canStageContext) {
       report(
         new ComposerRefusal(copy.send.blockedNoWorkspace),
@@ -682,6 +688,8 @@ function OwnedChatInput(props: {
       );
       return;
     }
+    const files = await withoutDirectories(dropped);
+    if (!mounted.current || files.length === 0) return;
     try {
       const items = files.map((file) => {
         const mimeType = file.type || guessMimeFromName(file.name);
@@ -694,7 +702,8 @@ function OwnedChatInput(props: {
           source: { type: 'file' as const, file },
         };
       });
-      preflightAttachmentItems([...draft.attachments, ...items]);
+      // Read now, not from the render: the folder check above awaited.
+      preflightAttachmentItems([...composerInputStore.read(scopeKey).attachments, ...items]);
       appendAttachments(
         items.map((item) => ({
           ...item,
@@ -750,6 +759,30 @@ function OwnedChatInput(props: {
     } catch (cause) {
       report(cause, failure(copy.attachments.previewUnavailable));
     }
+  }
+
+  /** Leaves the folders out of one drop or paste, with one notice for them. */
+  async function withoutDirectories(files: readonly File[]): Promise<readonly File[]> {
+    const checked = await withoutDroppedFolders(files, detectAttachmentDirectories);
+    if (checked.kind === 'too_many') {
+      // Refused in the send limit's own words: a drop this large could never be sent.
+      report(
+        new AttachmentIngestBlockedError('count_limit'),
+        failure(copy.attachments.pickFailedTitle),
+      );
+      return [];
+    }
+    if (checked.folders > 0 && mounted.current) {
+      report(
+        new ComposerRefusal(
+          directoryHostId
+            ? copy.attachments.folderNotAttachableUseAddFolder
+            : copy.attachments.folderNotAttachable,
+        ),
+        failure(copy.attachments.pickFailedTitle),
+      );
+    }
+    return checked.accepted;
   }
 
   async function pickDirectory() {
@@ -1174,13 +1207,13 @@ function OwnedChatInput(props: {
         event.preventDefault();
         dragDepth.current = 0;
         setDragging(false);
-        stageFiles(Array.from(event.dataTransfer.files));
+        void stageFiles(Array.from(event.dataTransfer.files));
       }}
       onPasteCapture={(event) => {
         const files = Array.from(event.clipboardData.files);
         if (files.length === 0) return;
         event.preventDefault();
-        stageFiles(files);
+        void stageFiles(files);
       }}
     >
       <TooltipProvider delayDuration={300}>

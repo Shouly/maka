@@ -1547,6 +1547,8 @@ export interface MakaBridge {
   };
   attachments: {
     pickDirectory(): Promise<{ ok: true; reference: import('@maka/core/events').DirectoryReference } | { ok: false; reason: 'cancelled' }>;
+    /** Whether each dropped or pasted file is a folder on disk, one answer per file. */
+    detectDirectories(files: readonly File[]): Promise<boolean[]>;
     pickFiles(): Promise<
       | {
           ok: true;

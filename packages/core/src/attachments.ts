@@ -65,6 +65,14 @@ export function parseAttachmentResourceRef(value: string): { artifactId: string 
 /** Per-send cap on attachment count, shared by renderer preflight and main resolve. */
 export const MAX_ATTACHMENT_COUNT = 8;
 
+/**
+ * Per-drop cap on files the composer checks for folders before staging them.
+ * A larger drop or paste is refused whole rather than staging files nobody
+ * checked; it is far past MAX_ATTACHMENT_COUNT, so it could never be sent.
+ * Preload and main refuse a longer check outright.
+ */
+export const MAX_ATTACHMENT_DROP_COUNT = 1024;
+
 /** Per-file byte cap, shared by renderer preflight, preload encode, and main resolve. */
 export const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 
@@ -287,6 +295,7 @@ export function attachmentKindFromMimeType(
 
 export type AttachmentIngestBlockedCode =
   | 'item_too_large'
+  | 'item_unreadable'
   | 'items_invalid'
   | 'count_limit'
   | 'duplicate_source'
