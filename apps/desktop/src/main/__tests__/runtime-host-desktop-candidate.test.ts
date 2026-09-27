@@ -1464,6 +1464,7 @@ function connectionHarness(
         snapshot: options.subscriptionSnapshot ?? {
           projectionRevision: 1,
           session: { sessionId },
+          queue: { hostEpoch: `host-${label}`, queueRevision: 0, steering: [], followup: [] },
         },
         activeAssistantStreams: options.activeAssistantStreams ?? [],
         transcriptBootstrap: {

@@ -161,7 +161,10 @@ export class RuntimeHostSessionProjector {
 
   seedActive(includeAssistantText: boolean): SessionEvent[] {
     const root = this.#snapshot.rootTurn;
-    if (!root) return [];
+    // A Session whose root Turn is gone still owns an authoritative queue: a
+    // client resubscribing after the queue drained while it was away may hold a
+    // stale queued card that only this seed can retire.
+    if (!root) return [projectQueueUpdate(this.#snapshot.queue, '', this.#now())];
     const events: SessionEvent[] = [];
     const queueEvents =
       this.#projectMessageAdmissions || queueHasEntries(this.#snapshot.queue)
@@ -419,28 +422,32 @@ export class RuntimeHostSessionProjector {
     for (const interaction of newlyPendingInteractions(previousSnapshot, next)) {
       events.push(...projectRuntimeHostInteractionRequest(interaction, this.#now()));
     }
-    const enteredActiveTurn =
-      root && queueChanged(previousSnapshot.queue, next.queue)
-        ? newlyInFlight(previousSnapshot.queue, next.queue)
-        : [];
-    if (root && queueChanged(previousSnapshot.queue, next.queue)) {
-      for (const entry of enteredActiveTurn) {
-        if (
-          this.#durableTurnByMessage.has(entry.messageId) ||
-          this.#renderedSteeringMessageIds.has(entry.messageId)
-        )
-          continue;
-        this.#renderedSteeringMessageIds.add(entry.messageId);
-        events.push({
-          type: 'steering_message',
-          id: `host-queue:${next.queue.hostEpoch}:${next.queue.queueRevision}:${entry.entryId}`,
-          turnId: root.turnId,
-          messageId: entry.messageId,
-          ts: this.#now(),
-          content: structuredClone(entry.content),
-        });
+    if (queueChanged(previousSnapshot.queue, next.queue)) {
+      if (root) {
+        for (const entry of newlyInFlight(previousSnapshot.queue, next.queue)) {
+          if (
+            this.#durableTurnByMessage.has(entry.messageId) ||
+            this.#renderedSteeringMessageIds.has(entry.messageId)
+          )
+            continue;
+          this.#renderedSteeringMessageIds.add(entry.messageId);
+          events.push({
+            type: 'steering_message',
+            id: `host-queue:${next.queue.hostEpoch}:${next.queue.queueRevision}:${entry.entryId}`,
+            turnId: root.turnId,
+            messageId: entry.messageId,
+            ts: this.#now(),
+            content: structuredClone(entry.content),
+          });
+        }
       }
-      events.push(projectQueueUpdate(next.queue, root.turnId, this.#now()));
+      // The authoritative queue is projected with or without a live Turn: a
+      // drain that lands after the root Turn is gone must still reach
+      // observers, or a queued card survives as a phantom whose retract fails
+      // with not_found.
+      events.push(
+        projectQueueUpdate(next.queue, root?.turnId ?? previousRoot?.turnId ?? '', this.#now()),
+      );
     }
     if (startedTurn) this.#accumulators.clear();
     // Emit the presentation-only compaction-started event when the root Turn
