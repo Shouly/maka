@@ -1081,10 +1081,20 @@ test('a catalog read that says the turn is over retires the live projection, unl
   f.observers[0]!.event(delta(' more'));
   flush();
   f.store.reconcileSettledLiveTurns(settled, observedBefore);
-  assert.ok(f.store.getState().liveTurns[id], 'a projection that moved on survives');
-  // A read against the exact projection retires it.
+  // A read against the exact projection retires it, once the hand-over has
+  // waited for a durable answer this transcript never gets.
   f.store.reconcileSettledLiveTurns(settled, f.store.observeLiveTurns());
+  const moved = f.store.getState().liveTurns[id];
+  assert.ok(moved, 'the answer stays on screen while the hand-over waits');
+  await new Promise((resolve) => setTimeout(resolve, 600));
   assert.equal(f.store.getState().liveTurns[id], undefined);
+  // The older snapshot's clear ran too, and changed nothing of its own.
+  f.observers[0]!.event(delta('next'));
+  flush();
+  const armed = f.store.getState().liveTurns[id];
+  f.store.reconcileSettledLiveTurns(settled, observedBefore);
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  assert.equal(f.store.getState().liveTurns[id], armed, 'a projection that moved on survives');
   // The authority still running the turn keeps it.
   f.observers[0]!.event(delta('again'));
   flush();
@@ -1099,6 +1109,66 @@ test('a catalog read that says the turn is over retires the live projection, unl
     f.store.observeLiveTurns(),
   );
   assert.ok(f.store.getState().liveTurns[id]);
+  f.store.disconnect();
+});
+// The catalog can call the Turn over a few milliseconds before the transcript
+// batch that carries it. Cleared then, the answer left the screen for a frame
+// and came back when the batch landed.
+test('a catalog read that beats the transcript batch keeps the answer on screen', async () => {
+  const f = fakeRuntime();
+  const id = sid('a');
+  f.store.observe(id, 'en');
+  await tick();
+  const observer = f.observers[0]!;
+  observer.event(delta('Hello world'));
+  observer.event({
+    type: 'text_complete',
+    id: 'text-end',
+    turnId: 'turn',
+    messageId: 'answer',
+    ts: 2,
+    text: 'Hello world',
+  });
+  const onScreen = () => {
+    const state = f.store.getState();
+    return createTranscriptProjection()
+      .project({
+        sessionId: id,
+        locale: 'en',
+        messages: state.messages,
+        liveTurn: state.liveTurns[id],
+      })
+      .flatMap((turn) => turn.timeline)
+      .some((item) => item.kind === 'text' && item.text.includes('Hello world'));
+  };
+  assert.ok(onScreen(), 'the premise: the live answer is on screen');
+  f.store.reconcileSettledLiveTurns(
+    [{ id, status: 'active', runningTurnIds: [] } as unknown as sessions.DesktopSessionSummary],
+    f.store.observeLiveTurns(),
+  );
+  assert.ok(onScreen(), 'the catalog alone does not take the answer away');
+  await tick();
+  assert.ok(onScreen());
+  f.readers[0]!.receive(
+    batch(
+      id,
+      [
+        {
+          type: 'assistant',
+          id: 'answer',
+          turnId: 'turn',
+          ts: 2,
+          text: 'Hello world',
+          modelId: 'm',
+        },
+        { type: 'turn_state', id: 'state', turnId: 'turn', ts: 3, status: 'completed' },
+      ],
+      false,
+    ),
+  );
+  await tick();
+  assert.ok(onScreen(), 'the durable copy took over');
+  assert.equal(f.store.getState().messages[0]?.id, 'answer');
   f.store.disconnect();
 });
 test("the Host's answer to a send updates the optimistic row without losing its Turn", async () => {

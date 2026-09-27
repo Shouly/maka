@@ -723,6 +723,38 @@ test('a range that lands during a hold keeps native scroll anchoring off', () =>
   }
 });
 
+// The question stood as a transient row above its running Turn; the durable
+// copy lands with the question inside the Turn. The Turn's top rises by the
+// question's height, the answer the reader sees does not move, and neither
+// may the page: restored by the Turn's top, it dropped by the question.
+test('a range commit keeps the answer in place when its question joins the Turn', () => {
+  withObservers(() => {
+    const root = fakeRoot({ scrollHeight: 900, clientHeight: 684 });
+    const authority = createTranscriptScrollAuthority();
+    authority.attach(root as unknown as HTMLElement);
+    authority.releasePin();
+    root.scrollTop = 216;
+    let turnTop = 300;
+    const box = (top: number, bottom: number) =>
+      ({ top: top - root.scrollTop, bottom: bottom - root.scrollTop }) as DOMRect;
+    const answer = { isConnected: true, children: [], getBoundingClientRect: () => box(300, 700) };
+    const turn = {
+      isConnected: true,
+      dataset: { turnId: 'running' },
+      children: [answer],
+      getBoundingClientRect: () => box(turnTop, 700),
+    };
+    Object.assign(root, { querySelectorAll: () => [turn], querySelector: () => turn });
+    assert.equal(
+      authority.commitIfIdle(() => {
+        turnTop = 200;
+      }),
+      true,
+    );
+    assert.equal(root.scrollTop, 216, 'the answer stays where the reader sees it');
+  });
+});
+
 test('pinning to the tail or releasing ends a hold', () => {
   withObservers((_resize, frame) => {
     const root = fakeRoot({ scrollHeight: 3_000, clientHeight: 600 });

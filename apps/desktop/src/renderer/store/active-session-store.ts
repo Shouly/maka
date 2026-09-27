@@ -1028,11 +1028,32 @@ export function createActiveSessionStore(
         sessions,
         observedLiveTurnBySession: observed,
         clearTurnTransientStateIfCurrent: (sessionId, expected) => {
-          const live = store.getState().liveTurns;
-          if (expected === undefined || live[sessionId] !== expected) return;
-          const next = { ...live };
-          delete next[sessionId];
-          store.setState({ liveTurns: next });
+          const unchanged = () =>
+            expected !== undefined && store.getState().liveTurns[sessionId] === expected;
+          const clear = () => {
+            if (!unchanged()) return;
+            const next = { ...store.getState().liveTurns };
+            delete next[sessionId];
+            store.setState({ liveTurns: next });
+          };
+          if (!unchanged()) return;
+          // The catalog can call a Turn over a few milliseconds before the
+          // transcript carries it, and on screen the live Turn is the only
+          // copy of the answer until then: cleared at once, the answer left
+          // the screen and came back when the batch landed. Hand it over
+          // first, as the terminal event does. The durable copy is then in
+          // place, and the transcript has usually retired the Turn already
+          // (the projection moved on, so the clear below is a no-op); a Turn
+          // the transcript never closes is still cleared once the wait ends.
+          if (sessionId !== store.getState().sessionId || !currentRefresh) {
+            clear();
+            return;
+          }
+          const answer = expected?.steps.findLast((step) => step.text)?.stepId;
+          void currentRefresh(answer ? { requiredAssistantMessageId: answer } : undefined).then(
+            clear,
+            clear,
+          );
         },
       });
     },

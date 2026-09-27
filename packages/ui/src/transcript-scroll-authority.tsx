@@ -134,6 +134,27 @@ function reachesTranscript(event: Event, root: HTMLElement, direction: 'up' | 'd
   return false;
 }
 
+/** How far into a Turn the reader's place is followed. */
+const READING_PLACE_DEPTH = 6;
+
+/**
+ * The reader's place inside the first visible Turn: the Turn, then the first
+ * visible element at each level down, each with its top before a commit.
+ */
+function readingPlace(turn: HTMLElement, top: number): { element: Element; before: number }[] {
+  const place: { element: Element; before: number }[] = [
+    { element: turn, before: turn.getBoundingClientRect().top },
+  ];
+  for (let depth = 0; depth < READING_PLACE_DEPTH; depth += 1) {
+    const children = place.at(-1)!.element.children;
+    if (!children) break;
+    const next = [...children].find((child) => child.getBoundingClientRect().bottom > top);
+    if (!next) break;
+    place.push({ element: next, before: next.getBoundingClientRect().top });
+  }
+  return place;
+}
+
 export function createTranscriptScrollAuthority(): TranscriptScrollAuthority {
   let root: HTMLElement | null = null;
   let pinned = true;
@@ -158,15 +179,23 @@ export function createTranscriptScrollAuthority(): TranscriptScrollAuthority {
     const anchor = [...target.querySelectorAll<HTMLElement>('[data-turn-id]')]
       .find((turn) => turn.getBoundingClientRect().bottom > top);
     if (!anchor) { flushSync(commit); return; }
-    const before = anchor.getBoundingClientRect().top;
+    // The Turn's own top is not always the reader's place: the question that
+    // stood as a transient row above a running Turn joins it when the durable
+    // copy lands, and the Turn's top rises by the question's height while
+    // nothing on screen moves. Restored by that top, the page dropped by it.
+    // The finest element of the place that survives the commit holds it; a
+    // Turn that remounted is found again by its id.
+    const place = readingPlace(anchor, top);
     // A gap notice is a poor native anchor: it survives a range replacement
     // while the paragraph beneath it moves. Restore a content Turn once, with
     // native compensation disabled for the same synchronous publication.
     target.style.overflowAnchor = 'none';
     try {
       flushSync(commit);
-      const next = target.querySelector<HTMLElement>(`[data-turn-id="${CSS.escape(anchor.dataset.turnId!)}"]`);
-      if (next) target.scrollTop += next.getBoundingClientRect().top - before;
+      const kept = place.findLast(({ element }) => element.isConnected);
+      const next = kept?.element
+        ?? target.querySelector<HTMLElement>(`[data-turn-id="${CSS.escape(anchor.dataset.turnId!)}"]`);
+      if (next) target.scrollTop += next.getBoundingClientRect().top - (kept ?? place[0]!).before;
     } finally {
       // As `publish` has it: a hold owns the scroll as much as the pin does.
       target.style.overflowAnchor = pinned || holding ? 'none' : 'auto';
