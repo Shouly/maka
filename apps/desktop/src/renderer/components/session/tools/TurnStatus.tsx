@@ -28,7 +28,7 @@
 //   running               what is happening now — the running step's own words
 //                         ("Run the unit tests", "Reading app.tsx"), or
 //                         "Thinking…" while the model reasons; the working mark
-//                         hangs beside it and the turn's clock follows it
+//                         leads it and the turn's clock follows it
 //   finished              what the run did — "Used 4 tools, ran 3 commands"
 //
 // The live row is the turn's ONE status: there is no second line under the
@@ -41,7 +41,16 @@
 // folded out of the answer are rows of the same card, in the order they
 // happened.
 
-import { memo, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import {
+  memo,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { formatTurnDuration, isTimeDrivenMotionEnabled, useUiLocale } from '@maka/ui';
 import { WorkingMark } from '../../icons/WorkingMark.js';
 import type { WorkingMarkActivity } from '../../../lib/working-mark-sheets.js';
@@ -86,22 +95,71 @@ export interface TurnStatusProps {
   switchingToolUseId?: string;
 }
 
+/** What a row's mark shows: the working mark, or the waiting ring. */
+type RowMarkKind = 'busy' | 'blocked';
+
+/** How a leaving mark folds away: the reference's 400ms on its curve. */
+const MARK_LEAVE_MS = 400;
+const MARK_LEAVE_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
+
 /**
- * The amber ring beside a run that waits on the user, measured off the
- * reference: a 14px ring with a 1px stroke around a 9px dot, in the pill's
- * amber (`--waiting-mark`), centred in the 20px slot where the working mark sits, 18px
- * left of the text column. A waiting turn is a running turn, so the settled
- * turn's paint containment never clips it.
+ * The slot a row's mark sits in, as the reference's `data-cds-row-mark`: first
+ * in the row, on the prose column, 20px wide with the words 12px after it.
+ * (The reference can hang the mark in the gutter instead, `hangMark`, and
+ * nothing asks it to.) A mark that leaves — its run finished — folds away in
+ * place over `MARK_LEAVE_MS` and the words glide back onto the column with it,
+ * then `onLeft` drops it.
  */
-function BlockedMark() {
+function RowMark(props: { children: ReactNode; leaving?: boolean; onLeft?: () => void }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const { leaving, onLeft } = props;
+  useLayoutEffect(() => {
+    if (!leaving) return;
+    const element = ref.current;
+    if (
+      !element ||
+      typeof element.animate !== 'function' ||
+      !isTimeDrivenMotionEnabled(element) ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+      onLeft?.();
+      return;
+    }
+    const animation = element.animate(
+      [
+        { offset: 0, width: '20px', marginInlineEnd: '12px', opacity: 1, transform: 'scale(1)' },
+        { offset: 0.6, opacity: 1 },
+        { offset: 1, width: '0px', marginInlineEnd: '0px', opacity: 0, transform: 'scale(0)' },
+      ],
+      { duration: MARK_LEAVE_MS, easing: MARK_LEAVE_EASING, fill: 'forwards' },
+    );
+    animation.finished.then(
+      () => onLeft?.(),
+      () => undefined,
+    );
+    return () => animation.cancel();
+  }, [leaving, onLeft]);
   return (
     <span
+      ref={ref}
       aria-hidden="true"
-      className="absolute -left-7 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center"
+      data-maka-row-mark=""
+      className="me-3 flex size-5 shrink-0 items-center justify-center"
     >
-      <span className="flex size-[14px] items-center justify-center rounded-full border-[1px] border-waiting-mark">
-        <span className="size-[9px] rounded-full bg-waiting-mark" />
-      </span>
+      {props.children}
+    </span>
+  );
+}
+
+/**
+ * The amber ring of a run that waits on the user, measured off the reference:
+ * a 14px ring with a 1px stroke around a 9px dot, in the pill's amber
+ * (`--waiting-mark`), centred in the mark's 20px slot.
+ */
+function BlockedRing() {
+  return (
+    <span className="flex size-[14px] items-center justify-center rounded-full border-[1px] border-waiting-mark">
+      <span className="size-[9px] rounded-full bg-waiting-mark" />
     </span>
   );
 }
@@ -175,15 +233,12 @@ export function TurnElapsedTime(props: { startedAt?: number; turnId?: string }) 
   );
 }
 
-/** The working mark, hung in the gutter where the waiting ring hangs. */
+/** The working mark, in the slot the waiting ring takes. */
 function BusyMark(props: { activity?: WorkingMarkActivity }) {
   return (
-    <span
-      aria-hidden="true"
-      className="absolute -left-7 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center"
-    >
+    <RowMark>
       <WorkingMark size={20} {...(props.activity ? { activity: props.activity } : {})} />
-    </span>
+    </RowMark>
   );
 }
 
@@ -194,7 +249,7 @@ function BusyMark(props: { activity?: WorkingMarkActivity }) {
  */
 function BusyText(props: { label: string; live?: TurnStatusLive; wordsStyle?: CSSProperties }) {
   return (
-    <span className="relative flex min-w-0 items-center">
+    <span className="flex min-w-0 items-center">
       {props.live && <BusyMark {...(props.live.mark ? { activity: props.live.mark } : {})} />}
       <span className="flex min-w-0 items-center" style={props.wordsStyle} data-maka-turn-words="">
         <ShimmerTitle
@@ -313,19 +368,45 @@ export const TurnStatus = memo(function TurnStatus(props: TurnStatusProps) {
   }
 
   const state = blocked ? 'blocked' : props.complete ? 'done' : 'busy';
+  // The mark the row shows, and the one still leaving after the row stops
+  // showing it: the run finished, or the turn moved on to its next run.
+  const mark: RowMarkKind | undefined = blocked
+    ? 'blocked'
+    : state === 'busy' && props.live
+      ? 'busy'
+      : undefined;
+  const [shownMark, setShownMark] = useState(mark);
+  const [leavingMark, setLeavingMark] = useState<RowMarkKind>();
+  if (shownMark !== mark) {
+    setShownMark(mark);
+    setLeavingMark(mark === undefined ? shownMark : undefined);
+  }
+  const markLeft = useCallback(() => setLeavingMark(undefined), []);
+  const leaving = leavingMark && (
+    <RowMark leaving onLeft={markLeft}>
+      {leavingMark === 'blocked' ? <BlockedRing /> : <WorkingMark size={20} />}
+    </RowMark>
+  );
   const text = blocked ? (
-    <span className="relative flex min-w-0 items-center">
-      <BlockedMark />
+    <span className="flex min-w-0 items-center">
+      <RowMark>
+        <BlockedRing />
+      </RowMark>
       {/* The reference's pill: 12px medium on a 15px line, 8px sides, 22px
           tall, amber at 35% behind the warning ink. */}
       <span className="min-w-0 truncate rounded-[5.5px] bg-warning-fill/35 px-2 py-[3.5px] text-xs font-medium leading-[15px] text-warning">
         {label}
       </span>
     </span>
-  ) : state === 'busy' ? (
-    <BusyText label={label} {...(props.live ? { live: props.live } : {})} />
   ) : (
-    <span className="min-w-0 truncate">{label}</span>
+    <span className="flex min-w-0 items-center">
+      {leaving}
+      {state === 'busy' ? (
+        <BusyText label={label} {...(props.live ? { live: props.live } : {})} />
+      ) : (
+        <span className="min-w-0 truncate">{label}</span>
+      )}
+    </span>
   );
 
   return (
