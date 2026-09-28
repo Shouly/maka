@@ -21,7 +21,7 @@ import type { ReactNode } from 'react';
 
 import { cn } from '../../lib/cn';
 
-// [&>span]:min-w-0 —— 与 Claude 的 header 按钮一致。控件里包一层 span 再放
+// [&>span]:min-w-0 —— header 按钮的统一写法。控件里包一层 span 再放
 // truncate 文本是常见写法(要跟图标并排时尤其如此),而中间这层 span 若是
 // inline-flex 且没有 overflow:hidden,min-width:auto 会让它拒绝收窄到内容宽度
 // 以下,里层的 truncate 就永远轮不到生效,整个标题把 header 顶出去。
@@ -113,7 +113,7 @@ interface MainHeaderProps {
 }
 
 /**
- * Claude-style top-level application Header.
+ * The top-level application Header.
  *
  * This component owns geometry only. Routing, permissions, rename state and
  * menu callbacks stay in the caller and are passed through the slots above.

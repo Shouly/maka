@@ -24,7 +24,6 @@ import { redactSecrets } from '@maka/core/redaction';
 import type { AppSettings } from "@maka/core/settings";
 import { WORKHUB_COORDINATION_SESSION_ID } from "@maka/core/session";
 import type { MakaTool } from "@maka/runtime/tool-runtime";
-import type { DesktopRuntimeHostClient } from "./runtime-host-client.js";
 import type { DesktopCapabilityGroup } from "./runtime-host-native-capabilities.js";
 import { WorkHubUi } from "./workhub-ui.js";
 import {
@@ -55,7 +54,6 @@ interface WorkHubControlDeps {
   authorizedRenderer(contents: WebContents): boolean;
   send(channel: string, payload: unknown): void;
   readSettings(): Promise<AppSettings>;
-  client(scope: DesktopTargetScope): DesktopRuntimeHostClient;
   isCurrent(scope: DesktopTargetScope): boolean;
   assertTurn(scope: DesktopTargetScope, turnId: string): Promise<void>;
   interrupt(scope: DesktopTargetScope, turnId: string): Promise<void>;
@@ -108,12 +106,6 @@ export function createWorkHubControl(deps: WorkHubControlDeps) {
     },
     deps.readSettings,
     update,
-    async () => {
-      if (!uiScope) throw new Error("No WorkHub input owner");
-      requireCurrent(uiScope);
-      return (await deps.client(uiScope).queryRuntimePolicy()).policy
-        .personalization.displayName;
-    },
   );
   const claim = async (
     scope: DesktopTargetScope,
@@ -351,12 +343,9 @@ export function createWorkHubControl(deps: WorkHubControlDeps) {
         requireCurrent(previous.scope);
         const saved = await deps.readSettings();
         const value =
-          previous.action.target === "displayName"
-            ? (await deps.client(previous.scope).queryRuntimePolicy()).policy
-                .personalization.displayName
-            : previous.action.target === "language"
-              ? saved.personalization.uiLocale
-              : saved.appearance.theme;
+          previous.action.target === "language"
+            ? saved.personalization.uiLocale
+            : saved.appearance.theme;
         requireCurrent(previous.scope);
         if (value !== previous.expected) {
           undo = undefined;

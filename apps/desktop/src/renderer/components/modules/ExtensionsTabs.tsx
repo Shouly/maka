@@ -18,12 +18,12 @@
  */
 
 // The Customize page is one sidebar entry with two faces, Skills and
-// Connectors (Claude's word for MCP servers; the internal key stays `mcp`,
+// Connectors (the user-facing word for MCP servers; the internal key stays `mcp`,
 // and "Plugins" already means something in the runtime). The faces are the existing module pages; this strip is what
 // makes them one page. Selection is the same navigation call the sidebar row
 // makes, so the row's active state, the module memory and the palette all
 // agree. Internal keys (`section: 'extensions'`) are unchanged; only the
-// label moved to "Customize" (owner decision 2026-09-11, after Claude's page).
+// label moved to "Customize" (owner decision 2026-09-11).
 
 import { useUiLocale } from '@maka/ui';
 import { ListTabs } from '../ui/list-page.js';

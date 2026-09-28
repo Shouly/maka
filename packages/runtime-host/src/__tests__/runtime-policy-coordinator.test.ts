@@ -87,7 +87,6 @@ test('model settings tool confirms and atomically updates canonical Runtime Poli
 
     const result = await tool.impl(
       {
-        personalization: { assistantTone: 'Be direct.' },
         memory: { enabled: false },
         webSearch: { enabled: true },
       },
@@ -98,7 +97,6 @@ test('model settings tool confirms and atomically updates canonical Runtime Poli
     assert.equal(questions.length, 1);
     const snapshot = await stores.runtimePolicy.getSnapshot();
     assert.equal(snapshot.revision, 1);
-    assert.equal(snapshot.policy.personalization.assistantTone, 'Be direct.');
     assert.equal(snapshot.policy.memory.enabled, false);
     assert.equal(snapshot.policy.webSearch.enabled, true);
   });
@@ -454,8 +452,8 @@ test('projects runtime policy CAS results without returning the committed snapsh
       {
         expectedRevision: initial.result.revision,
         operation: {
-          kind: 'set_personalization',
-          value: { displayName: 'Runtime Host', assistantTone: 'precise' },
+          kind: 'set_workspace_instructions',
+          value: { enabled: false },
         },
       },
       context,
@@ -702,8 +700,8 @@ test('invalidates when a real published mutation loses its commit reply', {
           {
             expectedRevision: 0,
             operation: {
-              kind: 'set_personalization',
-              value: { displayName: 'Published', assistantTone: 'unknown-reply' },
+              kind: 'set_workspace_instructions',
+              value: { enabled: false },
             },
           },
           context,
@@ -724,10 +722,7 @@ test('invalidates when a real published mutation loses its commit reply', {
     assert.equal(invalidations, 1);
     const published = await stores.runtimePolicy.getSnapshot();
     assert.equal(published.revision, 1);
-    assert.deepEqual(published.policy.personalization, {
-      displayName: 'Published',
-      assistantTone: 'unknown-reply',
-    });
+    assert.deepEqual(published.policy.workspaceInstructions, { enabled: false });
   });
 });
 

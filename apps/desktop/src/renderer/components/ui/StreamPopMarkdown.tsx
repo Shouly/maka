@@ -29,7 +29,7 @@ const FLUSH_INTERVAL_MS = 180;
 const FADE_MS = 800;
 
 /**
- * 流式"尾部渐显"版 Markdown(claude.ai cowork 式),单聊/群聊 AI 流式期共用。
+ * 流式"尾部渐显"版 Markdown,单聊/群聊 AI 流式期共用。
  *
  * 与旧版单聊 smooth stream(流层切碎 delta + 逐块延迟的打字机)不同:这里
  * 不改流,只在渲染层攒批 —— children(store 里逐 delta 长大的全文)每

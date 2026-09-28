@@ -18,8 +18,8 @@
  */
 
 // The app's URL scheme. A browser page hands one of these links back to bring
-// Maka to the front — the sign-in completion page's "Open Maka", after the
-// Claude desktop's. The link carries nothing and opening it only focuses the
+// Maka to the front — the sign-in completion page's "Open Maka". The link
+// carries nothing and opening it only focuses the
 // window, so there is nothing in it to trust or parse.
 //
 // A development build answers to its own scheme so it never takes over the

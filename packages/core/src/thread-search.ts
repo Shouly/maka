@@ -56,7 +56,6 @@
  *   - No `maka://session` URI construction.
  */
 
-import { validateWorkspacePrivacyContext } from './incognito.js';
 import { redactSecrets } from './redaction.js';
 import { normalizeSearchLimit, normalizeSearchQuery } from './search.js';
 import type { SearchErrorReason, SearchResult, ThreadSearchMatchKind } from './search.js';
@@ -87,26 +86,10 @@ export const THREAD_SOURCE = 'thread' as const;
 /**
  * Pure dependency injection. Production wiring binds these to the real
  * runtime; tests pass in-memory fakes.
- *
- * PR-SEARCH-2.5 (@xuan msg `2c55b975`): `getPrivacyContext` returns the
- * Host-authority workspace privacy snapshot. Source is `unknown`
- * because even though production wiring controls it, the helper
- * itself MUST validate via `validateWorkspacePrivacyContext` — a
- * future swap to a real authority (settings IPC etc.) must not bypass
- * the validator. Renderer payloads MUST NOT reach this dep; production
- * wiring binds it to a main-side authority only.
  */
 export interface ThreadSearchDeps {
   listSessions(): Promise<SessionSummary[]>;
   readMessages(sessionId: string, abortSignal?: AbortSignal): Promise<StoredMessage[] | null>;
-  /**
-   * Host-authority workspace privacy snapshot. Returned as `unknown`
-   * deliberately — the helper validates the payload with
-   * `validateWorkspacePrivacyContext` before reading any field. Source
-   * MUST be Host-side (Runtime Host policy, Desktop settings authority,
-   * or workspace owner). Untrusted request payloads MUST NOT flow into this dep.
-   */
-  getPrivacyContext(): Promise<unknown>;
 }
 
 export interface ThreadSearchSuccess {
@@ -190,33 +173,6 @@ export async function runThreadSearch(
   const queryFolded = foldForMatch(redactedQuery);
   const cursorResult = decodeThreadSearchCursor(record.cursor, queryFolded);
   if (!cursorResult.ok) return cursorResult;
-
-  // L4: privacy gate (PR-SEARCH-2.5 @xuan `2c55b975`). Host-owned
-  // privacy authority. Two early-return paths share the same
-  // `reason:'incognito_active'` to avoid an extra UI state:
-  //   - active incognito (user toggled on): `incognitoActive === true`
-  //   - malformed authority payload (system fail-closed): validator
-  //     reject treated as if incognito were active
-  // Both paths MUST NOT touch `listSessions` / `readMessages`.
-  // Distinguishing message wording is kept for diagnostics; consumers
-  // can read `message` if they need to differentiate.
-  const privacyPayload = await deps.getPrivacyContext();
-  if (options.abortSignal?.aborted) return abortedSearch();
-  const privacyResult = validateWorkspacePrivacyContext(privacyPayload);
-  if (!privacyResult.ok) {
-    return {
-      ok: false,
-      reason: 'incognito_active',
-      message: 'Search is disabled because workspace privacy state could not be verified.',
-    };
-  }
-  if (privacyResult.value.incognitoActive) {
-    return {
-      ok: false,
-      reason: 'incognito_active',
-      message: 'Search is disabled while incognito is active.',
-    };
-  }
 
   const maxResults = limitResult.value;
 

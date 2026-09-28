@@ -119,7 +119,7 @@ async function waitFor(predicate: () => boolean): Promise<void> {
   assert.fail('Local state did not settle');
 }
 
-test('projectless creation persists its cwd before delivery and reuses it after a failed admission and restart', async (t) => {
+test('projectless creation persists its cwd and user context before delivery and reuses both after a failed admission and restart', async (t) => {
   const db = await database(t);
   const workspaces = createProjectlessWorkspaces({
     root: join(db.path, '..', 'Documents', 'Maka'),
@@ -150,6 +150,7 @@ test('projectless creation persists its cwd before delivery and reuses it after 
       { createProjectlessWorkspace: () => { allocations++; return workspaces.create(); } },
     ),
     changed() {},
+    userContext: async () => ({ name: 'Ada', email: 'ada@example.com', preferences: 'Be brief.' }),
   });
   await assert.rejects(
     create({} as IpcMainInvokeEvent, target.scope, { projectId: null, model: 'incomplete-model' }),
@@ -159,6 +160,11 @@ test('projectless creation persists its cwd before delivery and reuses it after 
   const summary = await create({} as IpcMainInvokeEvent, target.scope, { projectId: null }) as DesktopSessionSummaryInput;
   const original = db.store.creation(target.partition, summary.id)!;
   assert.equal(original.workspace.kind, 'host_path');
+  assert.deepEqual(original.userContext, {
+    name: 'Ada',
+    email: 'ada@example.com',
+    preferences: 'Be brief.',
+  });
   assert.equal(summary.cwd, original.workspace.kind === 'host_path' ? original.workspace.path : undefined);
   db.store.enqueue(target.partition, { ...intent('workspace-message', summary.id), staged: [] });
   first.close();
@@ -737,6 +743,7 @@ test('local submit preserves picked-file approvals until durable admission succe
       resizeCalls++;
       return bytes;
     },
+    userContext: async () => undefined,
     resolveWorkspace: async () => {
       throw new Error('Unexpected workspace request');
     },

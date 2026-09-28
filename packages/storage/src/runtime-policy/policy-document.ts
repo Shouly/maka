@@ -144,14 +144,10 @@ function applyMutation(policy: RuntimePolicy, operation: RuntimePolicyMutation):
   switch (operation.kind) {
     case 'set_network_proxy':
       return { ...policy, networkProxy: operation.value };
-    case 'set_personalization':
-      return { ...policy, personalization: operation.value };
     case 'set_memory':
       return { ...policy, memory: operation.value };
     case 'set_workspace_instructions':
       return { ...policy, workspaceInstructions: operation.value };
-    case 'set_privacy':
-      return { ...policy, privacy: operation.value };
     case 'set_chat_defaults':
       return { ...policy, chatDefaults: operation.value };
     case 'set_web_search':
@@ -165,9 +161,6 @@ function applyMutation(policy: RuntimePolicy, operation: RuntimePolicyMutation):
     case 'patch_agent_settings':
       return {
         ...policy,
-        ...(operation.value.personalization
-          ? { personalization: { ...policy.personalization, ...operation.value.personalization } }
-          : {}),
         ...(operation.value.memory
           ? { memory: { ...policy.memory, ...operation.value.memory } }
           : {}),
@@ -178,9 +171,6 @@ function applyMutation(policy: RuntimePolicy, operation: RuntimePolicyMutation):
                 ...operation.value.workspaceInstructions,
               },
             }
-          : {}),
-        ...(operation.value.privacy
-          ? { privacy: { ...policy.privacy, ...operation.value.privacy } }
           : {}),
         ...(operation.value.webSearch
           ? { webSearch: { ...policy.webSearch, ...operation.value.webSearch } }

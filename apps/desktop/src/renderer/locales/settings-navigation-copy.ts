@@ -38,14 +38,16 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
       account: { label: '账号', description: '登录公司的 Maka 服务器。' },
       general: {
         label: '通用',
-        description: '显示名称与界面语言、隐私与通知、任务默认与网络代理。',
+        description: '外观与通知。',
       },
-      appearance: { label: '外观', description: '主题、应用图标与字号。' },
       projects: {
         label: '工作区',
-        description: '管理 Runtime Host 连接，以及默认 Host 上的项目。',
+        description: '管理 Runtime Host 连接、默认 Host 上的项目，以及是否遵循项目指令。',
       },
-      models: { label: '模型', description: '模型连接、API key 与 OAuth 订阅管理。' },
+      models: {
+        label: '模型',
+        description: '默认模型与思考级别，模型连接、API key 与 OAuth 订阅管理。',
+      },
       subagents: {
         label: '子 Agent',
         description: '配置主 Agent 可以自动选择的子 Agent、能力边界与模型。',
@@ -71,7 +73,10 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
       },
       search: { label: '联网搜索', description: '联网搜索供应商（如 Tavily）凭据与隐私边界。' },
       data: { label: '数据', description: '本地工作区路径、备份与恢复。' },
-      permissions: { label: '权限与能力', description: '系统权限授予状态与 Maka 能力运行时检查。' },
+      permissions: {
+        label: '权限与能力',
+        description: '默认权限模式、命令行，系统权限授予状态与 Maka 能力运行时检查。',
+      },
       health: { label: '健康', description: '运行时连接、模型探针与本地健康状态。' },
       about: { label: '关于', description: '版本、更新与支持。' },
     },
@@ -87,14 +92,16 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
       account: { label: '帳號', description: '登入公司的 Maka 伺服器。' },
       general: {
         label: '通用',
-        description: '顯示名稱與介面語言、隱私與通知、任務預設與網路代理。',
+        description: '外觀與通知。',
       },
-      appearance: { label: '外觀', description: '主題、應用程式圖示與字級。' },
       projects: {
         label: '工作區',
-        description: '管理 Runtime Host 連線，以及預設 Host 上的專案。',
+        description: '管理 Runtime Host 連線、預設 Host 上的專案，以及是否遵循專案指令。',
       },
-      models: { label: '模型', description: '模型連線、API key 與 OAuth 訂閱管理。' },
+      models: {
+        label: '模型',
+        description: '預設模型與思考級別，模型連線、API key 與 OAuth 訂閱管理。',
+      },
       subagents: {
         label: '子 Agent',
         description: '設定主 Agent 可以自動選擇的子 Agent、能力邊界與模型。',
@@ -120,7 +127,10 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
       },
       search: { label: '聯網搜尋', description: '聯網搜尋供應商（如 Tavily）憑據與隱私邊界。' },
       data: { label: '資料', description: '本地工作區路徑、備份與恢復。' },
-      permissions: { label: '權限與能力', description: '系統權限授予狀態與 Maka 能力執行時檢查。' },
+      permissions: {
+        label: '權限與能力',
+        description: '預設權限模式、命令列，系統權限授予狀態與 Maka 能力執行時檢查。',
+      },
       health: { label: '健康', description: '執行時連線、模型探針與本地健康狀態。' },
       about: { label: '關於', description: '版本、更新與支援。' },
     },
@@ -136,17 +146,17 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
       account: { label: 'Account', description: "Sign in to your company's Maka server." },
       general: {
         label: 'General',
-        description:
-          'Display name and interface language, privacy and notifications, task defaults, and network proxy.',
+        description: 'Appearance and notifications.',
       },
-      appearance: { label: 'Appearance', description: 'Theme, app icon, and font sizes.' },
       projects: {
         label: 'Workspace',
-        description: 'Manage Runtime Host connections and projects on the default Host.',
+        description:
+          'Runtime Host connections, projects on the default Host, and project instructions.',
       },
       models: {
         label: 'Models',
-        description: 'Model connections, API keys, and OAuth subscriptions.',
+        description:
+          'Default model and thinking level, model connections, API keys, and OAuth subscriptions.',
       },
       subagents: {
         label: 'Subagents',
@@ -188,7 +198,8 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
       data: { label: 'Data', description: 'Local workspace paths, backup, and restore.' },
       permissions: {
         label: 'Permissions & Capabilities',
-        description: 'System grants and runtime checks for Maka capabilities.',
+        description:
+          'Default permission mode, command line, system grants, and runtime checks for Maka capabilities.',
       },
       health: {
         label: 'Health',

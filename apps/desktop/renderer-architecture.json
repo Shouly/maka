@@ -71,6 +71,7 @@
     "src/renderer/components/layout/SidebarControls.tsx",
     "src/renderer/components/layout/WindowTitlebar.tsx",
     "src/renderer/components/layout/sidebar-parts/InlineRename.tsx",
+    "src/renderer/components/layout/sidebar-parts/LanguageDialog.tsx",
     "src/renderer/components/layout/sidebar-parts/ProjectRow.tsx",
     "src/renderer/components/layout/sidebar-parts/SessionActionMenuItems.tsx",
     "src/renderer/components/layout/sidebar-parts/SessionRow.tsx",
@@ -148,10 +149,8 @@
     "src/renderer/components/settings/GeneralSettings.tsx",
     "src/renderer/components/settings/HealthSettings.tsx",
     "src/renderer/components/settings/MemorySettings.tsx",
-    "src/renderer/components/settings/NetworkProxySection.tsx",
     "src/renderer/components/settings/PermissionsSettings.tsx",
     "src/renderer/components/settings/RuntimeHostProfilesSection.tsx",
-    "src/renderer/components/settings/SettingsIdentity.tsx",
     "src/renderer/components/settings/SettingsNav.tsx",
     "src/renderer/components/settings/SettingsView.tsx",
     "src/renderer/components/settings/SubagentsSettings.tsx",
@@ -159,12 +158,14 @@
     "src/renderer/components/settings/WebSearchSettings.tsx",
     "src/renderer/components/settings/WorkspaceSettings.tsx",
     "src/renderer/components/settings/account/AccountSettings.tsx",
+    "src/renderer/components/settings/account/ProfileSection.tsx",
     "src/renderer/components/settings/bots/BotChannelDetail.tsx",
     "src/renderer/components/settings/bots/BotChatOverview.tsx",
     "src/renderer/components/settings/bots/BotChatSettings.tsx",
     "src/renderer/components/settings/bots/BotOnboardingDialog.tsx",
     "src/renderer/components/settings/bots/WechatQrDialog.tsx",
     "src/renderer/components/settings/bots/bot-shared.tsx",
+    "src/renderer/components/settings/host-default-settings.tsx",
     "src/renderer/components/settings/models/AddConnection.tsx",
     "src/renderer/components/settings/models/AddModelDialog.tsx",
     "src/renderer/components/settings/models/ConnectionDetail.tsx",
@@ -177,6 +178,9 @@
     "src/renderer/components/settings/models/ProviderSetupForm.tsx",
     "src/renderer/components/settings/models/RequestHeadersEditor.tsx",
     "src/renderer/components/settings/models/models-view.ts",
+    "src/renderer/components/settings/models/provider-tile.tsx",
+    "src/renderer/components/settings/settings-fields.tsx",
+    "src/renderer/components/settings/settings-kit.tsx",
     "src/renderer/components/settings/settings-row.tsx",
     "src/renderer/components/settings/settings-sections.ts",
     "src/renderer/components/settings/subagents/SubagentEditor.tsx",
@@ -188,6 +192,7 @@
     "src/renderer/components/ui/Markdown.tsx",
     "src/renderer/components/ui/MermaidDiagram.tsx",
     "src/renderer/components/ui/StreamPopMarkdown.tsx",
+    "src/renderer/components/ui/account-avatar.tsx",
     "src/renderer/components/ui/attachment-card.tsx",
     "src/renderer/components/ui/avatar.tsx",
     "src/renderer/components/ui/button.tsx",
@@ -246,7 +251,6 @@
     "src/renderer/hooks/use-session-artifacts.ts",
     "src/renderer/hooks/use-session-list.ts",
     "src/renderer/hooks/use-session-trace.ts",
-    "src/renderer/hooks/use-settings-draft.ts",
     "src/renderer/hooks/use-settings.ts",
     "src/renderer/hooks/use-sidebar-layout.ts",
     "src/renderer/hooks/use-task-progress.ts",
@@ -308,7 +312,6 @@
     "src/renderer/lib/ported/nav-selection.ts",
     "src/renderer/lib/ported/new-task-reload-intent.ts",
     "src/renderer/lib/ported/observable-state.ts",
-    "src/renderer/lib/ported/optimistic-settings-draft.ts",
     "src/renderer/lib/ported/project-path-display.ts",
     "src/renderer/lib/ported/provider-add-submission.ts",
     "src/renderer/lib/ported/provider-brand-marks.tsx",
@@ -348,7 +351,6 @@
     "src/renderer/lib/ported/transcript-reading-position.ts",
     "src/renderer/lib/ported/transient-message-projection.ts",
     "src/renderer/lib/ported/turn-footer-actions.ts",
-    "src/renderer/lib/ported/type-scale.ts",
     "src/renderer/lib/ported/use-stable-actions.ts",
     "src/renderer/lib/ported/use-system-ui-locale.ts",
     "src/renderer/lib/ported/workbar-layout.ts",
@@ -1529,7 +1531,7 @@
         "useShellHotkeys": 1,
         "useSidebarLayout": 1,
         "useState": 5,
-        "useStore": 14,
+        "useStore": 13,
         "useUiLocale": 1,
         "useWorkbar": 1
       },
@@ -1542,7 +1544,6 @@
         "../../bridge/projects.js": 1,
         "../../bridge/scheduled-tasks.js": 1,
         "../../bridge/sessions.js": 1,
-        "../../bridge/settings.js": 1,
         "../../hooks/use-hotkeys.js": 1,
         "../../hooks/use-page-history.js": 1,
         "../../hooks/use-session-list.js": 1,
@@ -1571,7 +1572,6 @@
         "../palette/SearchModal.js": 1,
         "../session/SessionPanel.js": 1,
         "../session/SessionView.js": 1,
-        "../settings/SettingsIdentity.js": 1,
         "../settings/SettingsView.js": 1,
         "../ui/confirm-dialog.js": 1,
         "../ui/toast.js": 1,
@@ -1758,6 +1758,25 @@
         "react": 1
       }
     },
+    "src/renderer/components/layout/sidebar-parts/LanguageDialog.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../../locales/org-account-copy.js": 1,
+        "../../../locales/ui-copy.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/dialog.js": 1,
+        "@maka/ui": 1,
+        "@radix-ui/react-dialog": 1
+      }
+    },
     "src/renderer/components/layout/sidebar-parts/ProjectRow.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {
@@ -1830,7 +1849,10 @@
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
+        "useClientSettings": 1,
+        "useScopedRuntimeHost": 1,
         "useSettingsErrorReporter": 1,
+        "useState": 1,
         "useStore": 2,
         "useUiLocale": 2
       },
@@ -1838,15 +1860,18 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../../../hooks/use-hotkeys.js": 1,
         "../../../hooks/use-settings.js": 1,
-        "../../../lib/cn.js": 1,
+        "../../../hooks/use-workspace.js": 1,
         "../../../locales/org-account-copy.js": 1,
+        "../../../locales/settings-preferences-copy.js": 1,
         "../../../store/index.js": 1,
         "../../icons/Anthropicon.js": 1,
+        "../../ui/account-avatar.js": 1,
         "../../ui/dropdown-menu.js": 1,
-        "../../ui/user-avatar.js": 1,
-        "./SidebarNavButton.js": 1,
+        "./LanguageDialog.js": 1,
         "@maka/ui": 1,
+        "react": 1,
         "zustand": 1
       }
     },
@@ -2956,19 +2981,19 @@
       "bridgePaths": {},
       "environmentCapabilities": {
         "window.clearInterval": 1,
+        "window.matchMedia": 1,
         "window.setInterval": 1
       },
       "hookCalls": {
-        "useLayoutEffect": 1,
-        "useRef": 1,
-        "useState": 3,
+        "useLayoutEffect": 2,
+        "useRef": 2,
+        "useState": 5,
         "useUiLocale": 2
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
-        "../../../lib/ask-user-question.js": 1,
         "../../../lib/cn.js": 1,
         "../../../lib/turn-timeline-groups.js": 1,
         "../../../locales/transcript-copy.js": 1,
@@ -3314,11 +3339,9 @@
         "../../hooks/use-settings.js": 1,
         "../../lib/cn.js": 1,
         "../../locales/settings-preferences-copy.js": 1,
-        "../../locales/settings-shared-copy.js": 1,
         "../../store/index.js": 1,
         "../../store/toast-store.js": 1,
         "../icons/Anthropicon.js": 1,
-        "../ui/button.js": 1,
         "../ui/input.js": 1,
         "../ui/segmented-control.js": 1,
         "../ui/skeleton.js": 1,
@@ -3351,10 +3374,10 @@
         "../../store/index.js": 1,
         "../../store/session-list-model.js": 1,
         "../../store/toast-store.js": 1,
-        "../icons/Anthropicon.js": 1,
         "../ui/button.js": 1,
         "../ui/confirm-dialog.js": 1,
         "../ui/input.js": 1,
+        "./settings-kit.js": 1,
         "./settings-row.js": 1,
         "@maka/core/relative-time": 1,
         "@maka/ui": 1,
@@ -3370,7 +3393,7 @@
       "hookCalls": {
         "useAsync": 1,
         "useSettingsErrorReporter": 1,
-        "useState": 3,
+        "useState": 4,
         "useUiLocale": 1
       },
       "lifecycleMethods": {},
@@ -3381,15 +3404,19 @@
         "../../bridge/config.js": 1,
         "../../hooks/use-async.js": 1,
         "../../hooks/use-settings.js": 1,
+        "../../lib/cn.js": 1,
         "../../locales/settings-copy.js": 1,
         "../../locales/settings-data-copy.js": 1,
         "../../locales/settings-shared-copy.js": 1,
         "../../locales/shell-copy.js": 1,
         "../../store/composer-input-store.js": 1,
         "../../store/toast-store.js": 1,
+        "../icons/Anthropicon.js": 1,
         "../ui/button.js": 1,
-        "../ui/select.js": 1,
-        "../ui/switch.js": 1,
+        "../ui/checkbox-box.js": 1,
+        "../ui/confirm-dialog.js": 1,
+        "../ui/segmented-control.js": 1,
+        "./settings-kit.js": 1,
         "./settings-row.js": 1,
         "@maka/storage/config-transfer": 1,
         "@maka/ui": 1,
@@ -3426,11 +3453,7 @@
       "environmentCapabilities": {},
       "hookCalls": {
         "useClientSettings": 1,
-        "useEffect": 1,
-        "useHostSettings": 1,
         "useSettingsErrorReporter": 1,
-        "useState": 2,
-        "useStore": 1,
         "useUiLocale": 1
       },
       "lifecycleMethods": {},
@@ -3439,22 +3462,11 @@
       "dependencyPaths": {
         "../../hooks/use-settings.js": 1,
         "../../locales/settings-preferences-copy.js": 1,
-        "../../locales/settings-shared-copy.js": 1,
-        "../../locales/shell-copy.js": 1,
         "../../store/index.js": 1,
-        "../ui/button.js": 1,
-        "../ui/confirm-dialog.js": 1,
-        "../ui/input.js": 1,
-        "../ui/select.js": 1,
-        "../ui/skeleton.js": 1,
         "../ui/switch.js": 1,
-        "./NetworkProxySection.js": 1,
+        "./AppearanceSettings.js": 1,
         "./settings-row.js": 1,
-        "@maka/core/model-thinking": 1,
-        "@maka/core/settings": 1,
-        "@maka/ui": 1,
-        "react": 1,
-        "zustand": 1
+        "@maka/ui": 1
       }
     },
     "src/renderer/components/settings/HealthSettings.tsx": {
@@ -3489,9 +3501,10 @@
       "hookCalls": {
         "useEffect": 1,
         "useMemoryList": 1,
-        "useSettingsErrorReporter": 2,
-        "useState": 7,
-        "useUiLocale": 2
+        "useSettingsBack": 1,
+        "useSettingsErrorReporter": 3,
+        "useState": 10,
+        "useUiLocale": 4
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
@@ -3502,6 +3515,7 @@
         "../../hooks/use-memory-state.js": 1,
         "../../hooks/use-settings.js": 1,
         "../../locales/settings-memory-copy.js": 1,
+        "../../locales/settings-navigation-copy.js": 1,
         "../../locales/settings-shared-copy.js": 1,
         "../../locales/shell-copy.js": 1,
         "../../store/toast-store.js": 1,
@@ -3513,37 +3527,7 @@
         "../ui/status-chip.js": 1,
         "../ui/switch.js": 1,
         "../ui/textarea.js": 1,
-        "./settings-row.js": 1,
-        "@maka/ui": 1,
-        "react": 1
-      }
-    },
-    "src/renderer/components/settings/NetworkProxySection.tsx": {
-      "bridgePaths": {},
-      "environmentCapabilities": {},
-      "hookCalls": {
-        "useHostSettings": 1,
-        "useSettingsDraft": 1,
-        "useSettingsErrorReporter": 1,
-        "useState": 2,
-        "useUiLocale": 1
-      },
-      "lifecycleMethods": {},
-      "unresolvedDependencies": 0,
-      "actionFactories": [],
-      "dependencyPaths": {
-        "../../bridge/settings.js": 1,
-        "../../hooks/use-settings-draft.js": 1,
-        "../../hooks/use-settings.js": 1,
-        "../../locales/settings-preferences-copy.js": 1,
-        "../../locales/settings-test-result-copy.js": 1,
-        "../../store/index.js": 1,
-        "../../store/toast-store.js": 1,
-        "../ui/button.js": 1,
-        "../ui/input.js": 1,
-        "../ui/select.js": 1,
-        "../ui/skeleton.js": 1,
-        "../ui/switch.js": 1,
+        "./settings-kit.js": 1,
         "./settings-row.js": 1,
         "@maka/ui": 1,
         "react": 1
@@ -3577,6 +3561,8 @@
         "../ui/button.js": 1,
         "../ui/skeleton.js": 1,
         "../ui/status-chip.js": 1,
+        "./host-default-settings.js": 1,
+        "./settings-kit.js": 1,
         "./settings-row.js": 1,
         "@maka/core/capabilities": 1,
         "@maka/ui": 1,
@@ -3608,49 +3594,35 @@
         "../ui/skeleton.js": 1,
         "../ui/status-chip.js": 1,
         "../ui/switch.js": 1,
+        "./settings-kit.js": 1,
         "./settings-row.js": 1,
         "@maka/ui": 1,
         "react": 1
       }
     },
-    "src/renderer/components/settings/SettingsIdentity.tsx": {
-      "bridgePaths": {},
-      "environmentCapabilities": {},
-      "hookCalls": {
-        "useStore": 1,
-        "useUiLocale": 1
-      },
-      "lifecycleMethods": {},
-      "unresolvedDependencies": 0,
-      "actionFactories": [],
-      "dependencyPaths": {
-        "../../locales/settings-copy.js": 1,
-        "../../locales/settings-navigation-copy.js": 1,
-        "../../store/index.js": 1,
-        "../icons/Anthropicon.js": 1,
-        "./settings-sections.js": 1,
-        "@maka/ui": 1,
-        "zustand": 1
-      }
-    },
     "src/renderer/components/settings/SettingsNav.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {},
-      "hookCalls": {},
+      "hookCalls": {
+        "useState": 1
+      },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
         "../../lib/cn.js": 1,
         "../icons/Anthropicon.js": 1,
-        "./settings-sections.js": 1
+        "./settings-sections.js": 1,
+        "react": 1
       }
     },
     "src/renderer/components/settings/SettingsView.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
+        "useRef": 1,
         "useScopedRuntimeHost": 1,
+        "useState": 2,
         "useStore": 1,
         "useUiLocale": 1
       },
@@ -3661,10 +3633,12 @@
         "../../hooks/use-workspace.js": 1,
         "../../locales/settings-copy.js": 1,
         "../../locales/settings-navigation-copy.js": 1,
+        "../../locales/ui-copy.js": 1,
         "../../store/index.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/dialog.js": 1,
         "./AboutSettings.js": 1,
         "./account/AccountSettings.js": 1,
-        "./AppearanceSettings.js": 1,
         "./ArchivedTasksSettings.js": 1,
         "./bots/BotChatSettings.js": 1,
         "./DataSettings.js": 1,
@@ -3673,6 +3647,7 @@
         "./MemorySettings.js": 1,
         "./models/ModelsSettings.js": 1,
         "./PermissionsSettings.js": 1,
+        "./settings-kit.js": 1,
         "./settings-sections.js": 1,
         "./SettingsNav.js": 1,
         "./SubagentsSettings.js": 1,
@@ -3680,6 +3655,8 @@
         "./WebSearchSettings.js": 1,
         "./WorkspaceSettings.js": 1,
         "@maka/ui": 1,
+        "@radix-ui/react-dialog": 1,
+        "react": 1,
         "zustand": 1
       }
     },
@@ -3702,12 +3679,12 @@
         "../../locales/settings-subagents-copy.js": 1,
         "../../store/index.js": 1,
         "../../store/toast-store.js": 1,
-        "../icons/Anthropicon.js": 1,
         "../ui/button.js": 1,
         "../ui/confirm-dialog.js": 1,
         "../ui/skeleton.js": 1,
         "../ui/status-chip.js": 1,
         "../ui/switch.js": 1,
+        "./settings-kit.js": 1,
         "./settings-row.js": 1,
         "./subagents/SubagentEditor.js": 1,
         "@maka/core/subagent-settings": 1,
@@ -3739,9 +3716,11 @@
         "../../locales/settings-shared-copy.js": 1,
         "../../locales/settings-usage-copy.js": 1,
         "../../store/index.js": 1,
+        "../icons/Anthropicon.js": 1,
         "../ui/button.js": 1,
         "../ui/segmented-control.js": 1,
         "../ui/skeleton.js": 1,
+        "./settings-kit.js": 1,
         "./settings-row.js": 1,
         "@maka/core/usage-ledger-merge": 1,
         "@maka/ui": 1,
@@ -3754,7 +3733,7 @@
       "hookCalls": {
         "useHostSettings": 1,
         "useSettingsErrorReporter": 1,
-        "useState": 6,
+        "useState": 7,
         "useUiLocale": 1
       },
       "lifecycleMethods": {},
@@ -3774,6 +3753,7 @@
         "../ui/skeleton.js": 1,
         "../ui/status-chip.js": 1,
         "../ui/switch.js": 1,
+        "./settings-kit.js": 1,
         "./settings-row.js": 1,
         "@maka/core/search": 1,
         "@maka/core/web-search": 1,
@@ -3814,7 +3794,9 @@
         "../ui/skeleton.js": 1,
         "../ui/status-chip.js": 1,
         "./DirectoryBrowserDialog.js": 1,
+        "./host-default-settings.js": 1,
         "./RuntimeHostProfilesSection.js": 1,
+        "./settings-kit.js": 1,
         "./settings-row.js": 1,
         "@maka/ui": 1,
         "react": 1
@@ -3841,9 +3823,35 @@
         "../../ui/button.js": 1,
         "../../ui/input.js": 1,
         "../../ui/skeleton.js": 1,
-        "../../ui/status-chip.js": 1,
         "../settings-row.js": 1,
-        "@maka/core/relative-time": 1,
+        "./ProfileSection.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/settings/account/ProfileSection.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useSettingsErrorReporter": 1,
+        "useState": 1,
+        "useStore": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../hooks/use-settings.js": 1,
+        "../../../locales/settings-preferences-copy.js": 1,
+        "../../../locales/settings-shared-copy.js": 1,
+        "../../../store/index.js": 1,
+        "../../../store/toast-store.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/account-avatar.js": 1,
+        "../settings-fields.js": 1,
+        "../settings-row.js": 1,
         "@maka/ui": 1,
         "react": 1,
         "zustand": 1
@@ -3866,13 +3874,13 @@
         "../../../lib/cn.js": 1,
         "../../../locales/settings-bot-copy.js": 1,
         "../../icons/Anthropicon.js": 1,
-        "../../session/notices/NoticeCard.js": 1,
         "../../ui/button.js": 1,
         "../../ui/input.js": 1,
         "../../ui/segmented-control.js": 1,
         "../../ui/select.js": 1,
         "../../ui/switch.js": 1,
         "../../ui/textarea.js": 1,
+        "../settings-kit.js": 1,
         "../settings-row.js": 1,
         "./bot-shared.js": 1,
         "./BotOnboardingDialog.js": 1,
@@ -3897,7 +3905,8 @@
         "../../../lib/cn.js": 1,
         "../../../locales/settings-bot-copy.js": 1,
         "../../icons/Anthropicon.js": 1,
-        "../../session/notices/NoticeCard.js": 1,
+        "../../ui/button.js": 1,
+        "../settings-kit.js": 1,
         "../settings-row.js": 1,
         "./bot-shared.js": 1,
         "@maka/core/bot-chat-settings": 1,
@@ -3910,6 +3919,7 @@
       "hookCalls": {
         "useClientSettings": 1,
         "useEffect": 2,
+        "useSettingsBack": 1,
         "useSettingsErrorReporter": 1,
         "useState": 4,
         "useStore": 3,
@@ -3923,11 +3933,13 @@
         "../../../hooks/use-settings.js": 1,
         "../../../lib/bot-channel-view.js": 1,
         "../../../locales/settings-bot-copy.js": 1,
+        "../../../locales/settings-navigation-copy.js": 1,
         "../../../locales/settings-test-result-copy.js": 1,
         "../../../store/index.js": 1,
         "../../../store/toast-store.js": 1,
         "../../ui/confirm-dialog.js": 1,
         "../../ui/skeleton.js": 1,
+        "../settings-kit.js": 1,
         "../settings-row.js": 1,
         "./BotChannelDetail.js": 1,
         "./BotChatOverview.js": 1,
@@ -4005,6 +4017,36 @@
         "@maka/ui": 1
       }
     },
+    "src/renderer/components/settings/host-default-settings.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useHostSettings": 4,
+        "useSettingsErrorReporter": 1,
+        "useState": 1,
+        "useUiLocale": 4
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../hooks/use-settings.js": 1,
+        "../../locales/settings-preferences-copy.js": 1,
+        "../../locales/settings-shared-copy.js": 1,
+        "../../locales/shell-copy.js": 1,
+        "../../store/index.js": 1,
+        "../ui/confirm-dialog.js": 1,
+        "../ui/select.js": 1,
+        "../ui/skeleton.js": 1,
+        "../ui/switch.js": 1,
+        "./settings-fields.js": 1,
+        "./settings-row.js": 1,
+        "@maka/core/model-thinking": 1,
+        "@maka/core/settings": 1,
+        "@maka/ui": 1,
+        "react": 1
+      }
+    },
     "src/renderer/components/settings/models/AddConnection.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -4017,8 +4059,6 @@
       "dependencyPaths": {
         "../../../locales/settings-models-copy.js": 1,
         "../../../store/index.js": 1,
-        "../../icons/Anthropicon.js": 1,
-        "../../ui/button.js": 1,
         "../settings-row.js": 1,
         "./OAuthPanel.js": 1,
         "./ProviderCatalog.js": 1,
@@ -4055,7 +4095,7 @@
         "useConnectionAction": 1,
         "useConnectionDetailReads": 1,
         "useEffect": 3,
-        "useState": 8,
+        "useState": 9,
         "useUiLocale": 2
       },
       "lifecycleMethods": {},
@@ -4065,22 +4105,21 @@
         "../../../bridge/connections.js": 1,
         "../../../hooks/use-connection-detail.js": 1,
         "../../../lib/cn.js": 1,
-        "../../../lib/ported/provider-brand-marks.js": 1,
         "../../../lib/ported/provider-connection-status.js": 1,
         "../../../lib/ported/provider-display-copy.js": 1,
         "../../../lib/ported/provider-endpoint-presentation.js": 1,
         "../../../locales/settings-models-copy.js": 1,
         "../../../store/index.js": 1,
         "../../../store/toast-store.js": 1,
-        "../../icons/Anthropicon.js": 1,
         "../../ui/button.js": 1,
         "../../ui/confirm-dialog.js": 1,
         "../../ui/input.js": 1,
-        "../../ui/skeleton.js": 1,
         "../../ui/status-chip.js": 1,
         "../../ui/switch.js": 1,
+        "../settings-kit.js": 1,
         "../settings-row.js": 1,
         "./ConnectionModelsSection.js": 1,
+        "./provider-tile.js": 1,
         "./RequestHeadersEditor.js": 1,
         "@maka/core/llm-connections": 1,
         "@maka/core/provider-registry": 1,
@@ -4106,6 +4145,7 @@
         "../../ui/checkbox-box.js": 1,
         "../../ui/input.js": 1,
         "../../ui/switch.js": 1,
+        "../settings-kit.js": 1,
         "../settings-row.js": 1,
         "./AddModelDialog.js": 1,
         "@maka/core/llm-connections": 1,
@@ -4126,21 +4166,20 @@
       "actionFactories": [],
       "dependencyPaths": {
         "../../../lib/cn.js": 1,
-        "../../../lib/ported/provider-brand-marks.js": 1,
         "../../../lib/ported/provider-connection-status.js": 1,
         "../../../lib/ported/provider-display-copy.js": 1,
         "../../../locales/settings-models-copy.js": 1,
         "../../../store/index.js": 1,
-        "../../icons/Anthropicon.js": 1,
         "../../ui/button.js": 1,
         "../../ui/confirm-dialog.js": 1,
-        "../../ui/dropdown-menu.js": 1,
-        "../../ui/menu-variants.js": 1,
         "../../ui/select.js": 1,
         "../../ui/skeleton.js": 1,
         "../../ui/status-chip.js": 1,
+        "../host-default-settings.js": 1,
+        "../settings-kit.js": 1,
         "../settings-row.js": 1,
         "./ModelCatalogStatusRow.js": 1,
+        "./provider-tile.js": 1,
         "@maka/core/llm-connections": 1,
         "@maka/core/provider-registry": 1,
         "@maka/ui": 1,
@@ -4175,8 +4214,9 @@
       "environmentCapabilities": {},
       "hookCalls": {
         "useEffect": 1,
+        "useSettingsBack": 1,
         "useSettingsErrorReporter": 1,
-        "useState": 1,
+        "useState": 2,
         "useStore": 3,
         "useUiLocale": 1
       },
@@ -4186,12 +4226,13 @@
       "dependencyPaths": {
         "../../../hooks/use-settings.js": 1,
         "../../../locales/settings-models-copy.js": 1,
+        "../../../locales/settings-navigation-copy.js": 1,
         "../../../store/index.js": 1,
         "../../../store/toast-store.js": 1,
+        "../settings-kit.js": 1,
         "./AddConnection.js": 1,
         "./ConnectionDetail.js": 1,
         "./ConnectionsList.js": 1,
-        "./models-view.js": 1,
         "./ProviderSetupForm.js": 1,
         "@maka/ui": 1,
         "react": 1,
@@ -4212,7 +4253,6 @@
         "../../../bridge/oauth.js": 1,
         "../../../hooks/use-oauth-login-flow.js": 1,
         "../../../lib/cn.js": 1,
-        "../../../lib/ported/provider-brand-marks.js": 1,
         "../../../lib/ported/provider-display-copy.js": 1,
         "../../../lib/ported/provider-oauth-message.js": 1,
         "../../../locales/settings-models-copy.js": 1,
@@ -4220,7 +4260,9 @@
         "../../ui/button.js": 1,
         "../../ui/skeleton.js": 1,
         "../../ui/status-chip.js": 1,
+        "../settings-kit.js": 1,
         "../settings-row.js": 1,
+        "./provider-tile.js": 1,
         "@maka/ui": 1
       }
     },
@@ -4236,12 +4278,11 @@
       "actionFactories": [],
       "dependencyPaths": {
         "../../../lib/cn.js": 1,
-        "../../../lib/ported/provider-brand-marks.js": 1,
         "../../../lib/ported/provider-display-copy.js": 1,
         "../../../locales/settings-models-copy.js": 1,
-        "../../ui/card-surface.js": 1,
         "../../ui/input.js": 1,
         "../../ui/status-chip.js": 1,
+        "./provider-tile.js": 1,
         "@maka/core/provider-registry": 1,
         "@maka/ui": 1,
         "react": 1
@@ -4261,7 +4302,6 @@
         "../../../bridge/connections.js": 1,
         "../../../lib/ported/model-catalog-choices.js": 1,
         "../../../lib/ported/provider-add-submission.js": 1,
-        "../../../lib/ported/provider-brand-marks.js": 1,
         "../../../lib/ported/provider-display-copy.js": 1,
         "../../../locales/settings-models-copy.js": 1,
         "../../../store/index.js": 1,
@@ -4271,7 +4311,7 @@
         "../../ui/checkbox-box.js": 1,
         "../../ui/input.js": 1,
         "../../ui/select.js": 1,
-        "../settings-row.js": 1,
+        "../settings-kit.js": 1,
         "@maka/core/llm-connections": 1,
         "@maka/ui": 1,
         "react": 1
@@ -4305,6 +4345,55 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {}
+    },
+    "src/renderer/components/settings/models/provider-tile.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../../lib/ported/provider-brand-marks.js": 1
+      }
+    },
+    "src/renderer/components/settings/settings-fields.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 1,
+        "useState": 3
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../ui/button.js": 1,
+        "../ui/input.js": 1,
+        "../ui/textarea.js": 1,
+        "./settings-row.js": 1,
+        "react": 1
+      }
+    },
+    "src/renderer/components/settings/settings-kit.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useEffect": 1,
+        "useRef": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "../icons/Anthropicon.js": 1,
+        "../ui/dialog.js": 1,
+        "../ui/dropdown-menu.js": 1,
+        "../ui/menu-variants.js": 1,
+        "react": 1
+      }
     },
     "src/renderer/components/settings/settings-row.tsx": {
       "bridgePaths": {},
@@ -4347,7 +4436,7 @@
         "../../ui/select.js": 1,
         "../../ui/switch.js": 1,
         "../../ui/textarea.js": 1,
-        "../settings-row.js": 1,
+        "../settings-kit.js": 1,
         "@maka/core/llm-connections": 1,
         "@maka/core/subagent-settings": 1,
         "@maka/ui": 1,
@@ -4539,6 +4628,21 @@
         "react": 1
       }
     },
+    "src/renderer/components/ui/account-avatar.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useState": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../lib/cn.js": 1,
+        "./user-avatar.js": 1,
+        "react": 1
+      }
+    },
     "src/renderer/components/ui/attachment-card.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -4636,6 +4740,7 @@
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
+        "useEffect": 1,
         "useUiLocale": 1
       },
       "lifecycleMethods": {},
@@ -5006,7 +5111,7 @@
       "dependencyPaths": {
         "../../hooks/use-welcome-message.js": 1,
         "../../locales/welcome-copy.js": 1,
-        "../../store/settings-store.js": 1,
+        "../../store/org-account-store.js": 1,
         "../composer/ChatInput.js": 1,
         "./ReadinessNotice.js": 1,
         "@maka/ui": 1,
@@ -5357,8 +5462,6 @@
     "src/renderer/hooks/use-composer-inline-row.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {
-        "document": 1,
-        "document.documentElement": 1,
         "ResizeObserver": 1
       },
       "hookCalls": {
@@ -5521,22 +5624,6 @@
         "../store/index.js": 1,
         "@maka/core/redaction": 1,
         "@maka/core/session-trace": 1,
-        "react": 1
-      }
-    },
-    "src/renderer/hooks/use-settings-draft.ts": {
-      "bridgePaths": {},
-      "environmentCapabilities": {},
-      "hookCalls": {
-        "useEffect": 2,
-        "useRef": 4,
-        "useState": 2
-      },
-      "lifecycleMethods": {},
-      "unresolvedDependencies": 0,
-      "actionFactories": [],
-      "dependencyPaths": {
-        "../lib/ported/optimistic-settings-draft.js": 1,
         "react": 1
       }
     },
@@ -6280,15 +6367,6 @@
       "actionFactories": [],
       "dependencyPaths": {}
     },
-    "src/renderer/lib/ported/optimistic-settings-draft.ts": {
-      "bridgePaths": {},
-      "environmentCapabilities": {},
-      "hookCalls": {},
-      "lifecycleMethods": {},
-      "unresolvedDependencies": 0,
-      "actionFactories": [],
-      "dependencyPaths": {}
-    },
     "src/renderer/lib/ported/project-path-display.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -6701,15 +6779,6 @@
         "../../locales/conversation-copy.js": 1
       }
     },
-    "src/renderer/lib/ported/type-scale.ts": {
-      "bridgePaths": {},
-      "environmentCapabilities": {},
-      "hookCalls": {},
-      "lifecycleMethods": {},
-      "unresolvedDependencies": 0,
-      "actionFactories": [],
-      "dependencyPaths": {}
-    },
     "src/renderer/lib/ported/use-system-ui-locale.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {
@@ -6783,8 +6852,8 @@
         "document.documentElement.classList.contains": 1,
         "document.documentElement.classList.toggle": 2,
         "document.documentElement.removeAttribute": 1,
+        "document.documentElement.setAttribute": 1,
         "document.documentElement.style.colorScheme": 1,
-        "document.documentElement.style.fontSize": 1,
         "document.querySelector": 1,
         "window.matchMedia": 2
       },
@@ -6796,7 +6865,6 @@
         "../bridge/app-window.js": 1,
         "./ported/browser-storage.js": 1,
         "./ported/titlebar-dim-color.js": 1,
-        "./ported/type-scale.js": 1,
         "@maka/core/settings": 1
       }
     },

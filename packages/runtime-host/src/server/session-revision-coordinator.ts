@@ -717,6 +717,9 @@ export class HostSessionRevisionCoordinator {
       llmConnectionSlug: source.llmConnectionSlug,
       model: source.model,
       ...(source.thinkingLevel !== undefined ? { thinkingLevel: source.thinkingLevel } : {}),
+      // A copy continues the same conversation, whose ledger already carries
+      // the user's preferences; it keeps the same snapshot of them.
+      ...(source.userContext !== undefined ? { userContext: source.userContext } : {}),
       permissionMode: source.permissionMode,
       toolMode: source.toolMode ?? 'direct',
       collaborationMode: source.collaborationMode ?? 'agent',

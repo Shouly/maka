@@ -19,7 +19,7 @@
 
 import { COMPOSER_INPUT, ensureSidebarExpanded, expect, test, sendPrompt } from './fixtures';
 
-test('header back and forward restore tasks, welcome drafts and settings without creating extra history', async ({ newTaskTargetWindow: page }) => {
+test('header back and forward restore tasks and welcome drafts; the settings dialog is not a stop in history', async ({ newTaskTargetWindow: page }) => {
   const controls = page.locator('[data-maka-contract="shell-topbar-rail"]');
   const back = controls.getByRole('button', { name: '后退', exact: true });
   const forward = controls.getByRole('button', { name: '前进', exact: true });
@@ -38,21 +38,14 @@ test('header back and forward restore tasks, welcome drafts and settings without
   const settings = page.locator('[data-maka-contract="settings-surface"]');
   const content = page.locator('[data-maka-contract="settings-content"]');
   await expect(content).toHaveAttribute('data-settings-section', 'general');
-  await page.locator('[data-maka-contract="settings-sidebar"] [data-settings-section="appearance"]').click();
-  await expect(content).toHaveAttribute('data-settings-section', 'appearance');
-  await back.click();
-  await expect(content).toHaveAttribute('data-settings-section', 'general');
-  await back.click();
+  await page.locator('[data-maka-contract="settings-sidebar"] [data-settings-section="account"]').click();
+  await expect(content).toHaveAttribute('data-settings-section', 'account');
+  // Settings is a dialog over task B, not a page: closing it leaves task B
+  // where it was, and neither opening it nor changing its page moved history.
+  await page.keyboard.press('Escape');
   await expect(settings).toHaveCount(0);
   await expect(page.getByText('Fake backend received: history task B', { exact: true })).toBeVisible();
-  await forward.click();
-  await expect(content).toHaveAttribute('data-settings-section', 'general');
-  await forward.click();
-  await expect(content).toHaveAttribute('data-settings-section', 'appearance');
-  await back.click();
-  await expect(content).toHaveAttribute('data-settings-section', 'general');
-  await back.click();
-  await expect(settings).toHaveCount(0);
+  await expect(forward).toBeDisabled();
   await back.click();
   await expect(page.locator('[data-maka-contract="welcome-surface"]')).toBeVisible();
   await page.locator('#app-sidebar').getByRole('option', { name: 'history task A', exact: true }).click();
@@ -67,10 +60,6 @@ test('header back and forward restore tasks, welcome drafts and settings without
   await ensureSidebarExpanded(page);
   await page.getByRole('button', { name: '自定义', exact: true }).click();
   await page.getByRole('button', { name: '设置', exact: true }).click();
-  await expect(settings).toBeVisible();
-  await page.getByRole('button', { name: '新建任务', exact: true }).click();
-  await expect(settings).toHaveCount(0);
-  await back.click();
   await expect(settings).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(settings).toHaveCount(0);

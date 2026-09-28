@@ -40,7 +40,6 @@ const WEB_SEARCH_RESULT_MAX_BYTES = 32 * 1024;
 const WEB_SEARCH_TEXT_MAX_BYTES = 4 * 1024;
 const WEB_SEARCH_ERROR_REASONS: readonly WebSearchErrorReason[] = [
   'invalid_query',
-  'incognito_active',
   'not_configured',
   'invalid_credentials',
   'rate_limited',

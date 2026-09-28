@@ -220,9 +220,8 @@ export function TipTapEditor(props: {
           'aria-controls': menuId,
           'aria-expanded': 'false',
           'data-maka-contract': 'composer-input',
-          // py-[0.3125rem] (5px at the default root): a 1.375rem line + 0.625rem
-          // = one 2rem control height (relx's 22 + 10 = 32). All rem, so the
-          // Appearance font-size setting scales the three together.
+          // py-[0.3125rem] (5px): a 1.375rem line + 0.625rem = one 2rem
+          // control height (relx's 22 + 10 = 32).
           class:
             'min-h-8 max-h-64 overflow-y-auto whitespace-pre-wrap break-words px-2 py-[0.3125rem] outline-none text-text-primary',
         },

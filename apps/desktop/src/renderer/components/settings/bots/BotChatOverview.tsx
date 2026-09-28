@@ -37,7 +37,8 @@ import {
 } from '../../../lib/bot-channel-view.js';
 import { getBotSettingsCopy } from '../../../locales/settings-bot-copy.js';
 import { Anthropicon } from '../../icons/Anthropicon.js';
-import { NoticeCard } from '../../session/notices/NoticeCard.js';
+import { Button } from '../../ui/button.js';
+import { SettingsCallout } from '../settings-kit.js';
 import { SettingsSection } from '../settings-row.js';
 import { BotBrandTile, ReadinessChip } from './bot-shared.js';
 
@@ -73,11 +74,15 @@ export function BotChatOverview(props: {
     <div data-maka-contract="bot-chat-overview">
       {props.statusLoadError && (
         <div className="mb-6">
-          <NoticeCard
-            tone="destructive"
+          <SettingsCallout
+            tone="danger"
             title={copy.loadFailed}
             description={props.statusLoadError}
-            actions={[{ label: copy.reload, onClick: props.onRefreshStatuses }]}
+            action={
+              <Button variant="secondary" onClick={props.onRefreshStatuses}>
+                {copy.reload}
+              </Button>
+            }
           />
         </div>
       )}

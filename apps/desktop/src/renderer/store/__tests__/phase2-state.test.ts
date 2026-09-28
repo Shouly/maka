@@ -619,7 +619,6 @@ function paletteInput(overrides: Record<string, unknown> = {}) {
       onSelectModule: noop('module'),
       onOpenWorkspaceFolder: noop('workspace'),
       onCopyDiagnostics: noop('diagnostics'),
-      onTestNetworkProxy: noop('proxy'),
       onSetDefaultConnection: noop('default'),
       onOpenRuntimeDebug: noop('debug'),
       ...overrides,
@@ -631,8 +630,9 @@ test('the palette offers a settings command per section and marks the current th
   const { input } = paletteInput();
   const commands = buildPaletteCommands(input as never);
   // Every section the Host knows, the deferred pages included (external
-  // agents joined the list with upstream #5164, the company account after).
-  assert.equal(commands.filter((command) => command.id.startsWith('settings:')).length, 18);
+  // agents joined the list with upstream #5164, the company account after;
+  // Privacy left with incognito).
+  assert.equal(commands.filter((command) => command.id.startsWith('settings:')).length, 17);
   assert.ok(commands.find((command) => command.id === 'theme:dark')?.hint);
   assert.equal(commands.find((command) => command.id === 'theme:light')?.hint, undefined);
   assert.ok(commands.find((command) => command.id === 'diag:runtime-debug'));
@@ -834,7 +834,7 @@ test('page history deduplicates visits, replays without appending, and truncates
   history.visit({ view: 'welcome' });
   history.visit({ view: 'session', sessionId: 'a' });
   history.visit({ view: 'session', sessionId: 'a' });
-  history.visit({ view: 'settings', section: 'general', sessionId: 'a' });
+  history.visit({ view: 'automations', sessionId: 'a' });
   assert.equal(history.getState().entries.length, 3);
   const back = history.go(-1, available)!;
   assert.deepEqual(back, { view: 'session', sessionId: 'a' });

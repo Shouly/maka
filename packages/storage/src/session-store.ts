@@ -74,6 +74,7 @@ import { DEFAULT_TOOL_MODE, isToolMode } from '@maka/core/tool-mode';
 
 import {
   isSessionToolProfile,
+  isSessionUserContext,
   type SessionHeader,
   type SessionHeaderPatch,
   type SessionConversationCopy,
@@ -1363,6 +1364,7 @@ function buildSessionHeader(
     connectionLocked: input.subagentParent !== undefined,
     model: input.model ?? 'default',
     ...(input.toolProfile !== undefined ? { toolProfile: input.toolProfile } : {}),
+    ...(input.userContext !== undefined ? { userContext: input.userContext } : {}),
     toolMode: input.toolMode ?? DEFAULT_TOOL_MODE,
     permissionMode: input.permissionMode,
     collaborationMode: input.collaborationMode ?? 'agent',
@@ -1425,6 +1427,7 @@ export function normalizeSessionHeader(
     typeof header.connectionLocked === 'boolean' &&
     typeof header.model === 'string' &&
     (header.toolProfile === undefined || isSessionToolProfile(header.toolProfile)) &&
+    (header.userContext === undefined || isSessionUserContext(header.userContext)) &&
     (header.toolMode === undefined || isToolMode(header.toolMode)) &&
     isPermissionMode(header.permissionMode) &&
     isCollaborationMode(header.collaborationMode) &&

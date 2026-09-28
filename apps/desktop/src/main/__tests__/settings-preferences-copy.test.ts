@@ -19,35 +19,37 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { TRANSCRIPT_TEXT_SIZES } from '@maka/core/settings';
 import { getSettingsPreferencesCopy } from '../../renderer/locales/settings-preferences-copy.js';
+import { getOrgAccountCopy } from '../../renderer/locales/org-account-copy.js';
 import { getMcpCatalog } from '../../renderer/lib/ported/mcp-catalog.js';
 import { providerDisplay } from '../../renderer/lib/ported/provider-display-copy.js';
 import { getBotSettingsCopy } from '../../renderer/locales/settings-bot-copy.js';
 
-test('language selector offers every preference with locale-appropriate labels', () => {
-  assert.deepEqual(getSettingsPreferencesCopy('zh-CN').personalization.localeOptions, [
-    ['auto', '跟随系统'],
-    ['zh-CN', '简体中文'],
-    ['zh-TW', '繁體中文'],
-    ['en', 'English'],
-  ]);
-  assert.deepEqual(getSettingsPreferencesCopy('zh-TW').personalization.localeOptions, [
-    ['auto', '自動（跟隨系統）'],
-    ['zh-CN', '简体中文'],
-    ['zh-TW', '繁體中文'],
-    ['en', 'English'],
-  ]);
-  assert.deepEqual(getSettingsPreferencesCopy('en').personalization.localeOptions, [
-    ['auto', 'Follow system'],
-    ['zh-CN', 'Simplified Chinese'],
-    ['zh-TW', 'Traditional Chinese'],
-    ['en', 'English'],
-  ]);
+test('the language dialog offers every preference, each by its own name', () => {
+  for (const locale of ['zh-CN', 'zh-TW', 'en'] as const) {
+    const options = getOrgAccountCopy(locale).language.options;
+    assert.deepEqual(Object.keys(options), ['auto', 'zh-CN', 'zh-TW', 'en']);
+    assert.equal(options['zh-CN'].name, '简体中文');
+    assert.equal(options['zh-TW'].name, '繁體中文');
+    assert.equal(options.en.name, 'English');
+  }
+  assert.equal(getOrgAccountCopy('en').language.options['zh-CN'].detail, 'Chinese (Simplified)');
+  assert.equal(getOrgAccountCopy('zh-CN').language.options.en.detail, '英语');
+});
+
+test('the transcript text size names each of its three steps', () => {
+  const en = getSettingsPreferencesCopy('en').appearance.fontSize;
+  assert.equal(en.transcriptLabel, 'Transcript text size');
+  assert.equal(en.transcriptHelp, 'Size of the conversation transcript text.');
+  for (const locale of ['zh-CN', 'zh-TW', 'en'] as const) {
+    const sizes = getSettingsPreferencesCopy(locale).appearance.fontSize.transcriptSizes;
+    assert.deepEqual(Object.keys(sizes), [...TRANSCRIPT_TEXT_SIZES]);
+  }
 });
 
 test('Traditional Chinese settings copy uses Taiwan terminology', () => {
   const copy = getSettingsPreferencesCopy('zh-TW');
-  assert.equal(copy.sections.network, '網路');
   assert.equal(copy.appearance.appIconDefault, '預設圖示');
   assert.equal(copy.appearance.appIconImport, '匯入圖示…');
   assert.equal(copy.about.clipboardUnavailable, '剪貼簿不可用或被系統拒絕。');

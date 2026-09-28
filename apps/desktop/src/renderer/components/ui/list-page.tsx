@@ -17,8 +17,8 @@
  * under the License.
  */
 
-// The grammar of a LIST page — Customize, Scheduled — as Claude draws it and
-// the reference design system ports it (`list-page-header.tsx`,
+// The grammar of a LIST page — Customize, Scheduled — as the reference
+// design system draws it (`list-page-header.tsx`,
 // `card-surface.ts`, `CustomizeCards.tsx`): a display title, a toolbar of
 // pill tabs with the actions on the right, then rows in labelled sections or
 // cards in a two-column grid. One file so the three pages read as one place.
@@ -43,7 +43,7 @@ import { cn } from '../../lib/cn.js';
  * ------------------------------------------------------------------ */
 
 /*
- * Toolbar rhythm, measured off Claude's: icon buttons sit 4px apart (the
+ * Toolbar rhythm, measured off the design: icon buttons sit 4px apart (the
  * actions container's gap), and any button with a label — the black primary
  * or a bordered secondary — stands 12px off whatever precedes it (`ml-2` on
  * top of the gap). A row of icons reads as one group, the button as its own.
@@ -55,8 +55,8 @@ export const listToolbarButtonClass =
 export const listToolbarPrimaryButtonClass =
   'ui-control-squish ui-control-squish-primary ml-2 inline-flex h-8 shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border-0 px-3 text-sm font-medium leading-5 text-on-primary outline-none transition-shadow focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none disabled:opacity-50';
 /**
- * Square icon control in the toolbar. Secondary text at rest, like Claude's
- * (one rung under the title); primary on hover, and primary while the
+ * Square icon control in the toolbar. Secondary text at rest (one rung under
+ * the title); primary on hover, and primary while the
  * control it opens is narrowing the list — `data-active` — so an applied
  * filter or a non-default sort reads from the toolbar without opening it.
  */
@@ -150,7 +150,7 @@ export function ListSearch(props: {
 
 /**
  * The toolbar's sort: the up-down arrows, opening a menu headed "Sort by"
- * with one radio row per order (Claude's list toolbars). The trigger stays an
+ * with one radio row per order. The trigger stays an
  * icon whatever is chosen; the chosen order is the checked row.
  */
 export function ListSortMenu<T extends string>(props: {
@@ -172,7 +172,7 @@ export function ListSortMenu<T extends string>(props: {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-44">
-        {/* Muted, like Claude's: a heading for the rows, not a row itself. */}
+        {/* Muted: a heading for the rows, not a row itself. */}
         <DropdownMenuLabel className="text-menu-text-muted">{props.label}</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           value={props.value}
@@ -205,8 +205,8 @@ export interface ListFilterGroup<T extends string> {
  * The filter icon beside the sort: a muted "Filter by" heading, then the
  * options. One dimension is a flat radio list with counts; several become one
  * submenu each, the narrowed ones showing their choice in muted text on the
- * trigger row. Claude's Customize page keeps its filters here rather than as
- * a pill row above the list; the list itself is grouped instead.
+ * trigger row. The Customize page keeps its filters here rather than as a
+ * pill row above the list; the list itself is grouped instead.
  */
 export function ListFilterMenu(props: {
   label: string;
@@ -309,7 +309,7 @@ export function ListTabs<T extends string>(props: {
 }
 
 /**
- * Filter pills under the toolbar (Claude's "All · Connected · Not connected"):
+ * Filter pills under the toolbar ("All · Connected · Not connected"):
  * the tab look, one row, the count optional on each.
  */
 export function ListFilterPills<T extends string>(props: {
@@ -401,7 +401,7 @@ export function ListPageHeader(props: {
 }
 
 /* ------------------------------------------------------------------ *
- * Sections and rows (Claude's "Yours" list).
+ * Sections and rows (the "Yours" list).
  * ------------------------------------------------------------------ */
 
 /** "Created by you · 1": a section label with its count, then its rows. */

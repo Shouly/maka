@@ -64,7 +64,6 @@ import {
   scheduledTaskScheduleFromFields,
   type ScheduledTaskFormFields,
 } from '../../lib/ported/scheduled-task-form-payload.js';
-import { modelsViewParent } from '../../components/settings/models/models-view.js';
 import { createMcpStore } from '../mcp-store.js';
 import { createScheduledTasksStore } from '../scheduled-tasks-store.js';
 
@@ -488,16 +487,4 @@ test('every scheduled-task mutation re-reads the list it just changed', async ()
   // promise; the re-read is what keeps the row from snapping back for a frame.
   assert.equal(store.getState().data?.length, 0);
   stop();
-});
-
-// ── the Models page's own navigation ───────────────────────────────────────
-
-test('every Models face knows the face Back returns to', () => {
-  assert.deepEqual(modelsViewParent({ kind: 'list' }), { kind: 'list' });
-  assert.deepEqual(modelsViewParent({ kind: 'catalog' }), { kind: 'list' });
-  assert.deepEqual(modelsViewParent({ kind: 'detail', connectionId: 'c1' }), { kind: 'list' });
-  // Setup came from the catalog, so Back is one step, not two.
-  assert.deepEqual(modelsViewParent({ kind: 'setup', providerType: 'relx-gateway' }), {
-    kind: 'catalog',
-  });
 });

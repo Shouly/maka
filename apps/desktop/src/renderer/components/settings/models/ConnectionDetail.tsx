@@ -39,11 +39,9 @@ import {
 import { providerDefaultsOf, type ProviderDefaults } from '@maka/core/provider-registry';
 import type { ModelOverrides } from '@maka/core/model-thinking';
 import { useUiLocale } from '@maka/ui';
-import { Anthropicon } from '../../icons/Anthropicon.js';
 import { Button } from '../../ui/button.js';
 import { ConfirmDialog } from '../../ui/confirm-dialog.js';
 import { Input } from '../../ui/input.js';
-import { Skeleton } from '../../ui/skeleton.js';
 import { statusChipClass, statusChipToneClass } from '../../ui/status-chip.js';
 import { Switch } from '../../ui/switch.js';
 import { ConnectionModelsSection } from './ConnectionModelsSection.js';
@@ -53,9 +51,10 @@ import {
   savedRequestHeaderDrafts,
   type RequestHeaderDraft,
 } from './RequestHeadersEditor.js';
+import { RowActionsMenu, SettingsModal } from '../settings-kit.js';
 import { SettingsRow, SettingsSection, settingsFieldWidthClass } from '../settings-row.js';
+import { ProviderTile } from './provider-tile.js';
 import { cn } from '../../../lib/cn.js';
-import { ProviderBrandMark } from '../../../lib/ported/provider-brand-marks.js';
 import { providerDisplay } from '../../../lib/ported/provider-display-copy.js';
 import { providerEndpointPresentation } from '../../../lib/ported/provider-endpoint-presentation.js';
 import { connectionChipStatus } from '../../../lib/ported/provider-connection-status.js';
@@ -96,26 +95,22 @@ function UnknownProviderDetail(props: ConnectionDetailProps) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   return (
     <div data-maka-contract="connection-detail">
-      <div className="mb-4 flex items-center gap-2">
-        <Button variant="ghost" size="sm" onClick={props.onBack}>
-          <Anthropicon name="arrowLeft" size={16} />
-          <span className="ml-1.5">{copy.panel.backToList}</span>
-        </Button>
-      </div>
-      <div className="mb-6 flex items-center gap-2">
-        <h2 className="min-w-0 truncate text-[0.9375rem] font-semibold leading-5 text-text-primary">
+      <div className="mb-6 flex items-center gap-3">
+        <h2 className="min-w-0 flex-1 truncate text-[0.9375rem] font-semibold leading-5 text-text-primary">
           {connection.name || connection.slug}
         </h2>
+        <RowActionsMenu
+          label={copy.detail.moreActions(connection.name || connection.slug)}
+          actions={[
+            { label: copy.detail.delete, danger: true, onSelect: () => setDeleteOpen(true) },
+          ]}
+        />
       </div>
       <SettingsSection>
         <SettingsRow
           title={copy.detail.unknownProvider(connection.providerType)}
           description={copy.detail.unknownProviderHelp}
-          control={
-            <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
-              {copy.detail.delete}
-            </Button>
-          }
+          control={null}
         />
       </SettingsSection>
       <ConfirmDialog
@@ -150,7 +145,6 @@ interface ConnectionDetailProps {
   connection: ProjectedLlmConnection;
   host: DesktopRuntimeHostRef | undefined;
   isDefault: boolean;
-  onBack: () => void;
   onDeleted: () => void;
   onError: (title: string, error: unknown) => void;
 }
@@ -176,6 +170,7 @@ function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: Provid
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
   const [fetching, setFetching] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [headersOpen, setHeadersOpen] = useState(false);
 
   // Follow the Host when the connection is renamed elsewhere, but never while
   // the field is mid-edit: the committed value is the one the store carries,
@@ -197,17 +192,8 @@ function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: Provid
 
   return (
     <div data-maka-contract="connection-detail">
-      <div className="mb-4 flex items-center gap-2">
-        <Button variant="ghost" size="sm" onClick={props.onBack}>
-          <Anthropicon name="arrowLeft" size={16} />
-          <span className="ml-1.5">{copy.panel.backToList}</span>
-        </Button>
-      </div>
-
-      <div className="mb-6 flex items-center gap-2">
-        <span className="flex size-6 shrink-0 items-center justify-center text-text-secondary [&>img]:size-full [&>svg]:size-full">
-          <ProviderBrandMark type={connection.providerType} />
-        </span>
+      <div className="mb-6 flex items-center gap-3">
+        <ProviderTile type={connection.providerType} />
         <h2 className="min-w-0 truncate text-[0.9375rem] font-semibold leading-5 text-text-primary">
           {connection.name}
         </h2>
@@ -224,6 +210,19 @@ function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: Provid
             {status.label}
           </span>
         )}
+        <span className="ml-auto">
+          <RowActionsMenu
+            label={copy.detail.moreActions(connection.name)}
+            actions={[
+              {
+                label: accountManaged ? copy.detail.disconnectAndDelete : copy.detail.delete,
+                danger: true,
+                disabled: action.busy,
+                onSelect: () => setDeleteOpen(true),
+              },
+            ]}
+          />
+        </span>
       </div>
 
       <SettingsSection title={copy.detail.credentials} description={copy.detail.credentialsHelp}>
@@ -315,7 +314,7 @@ function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: Provid
                   onChange={(event) => setApiKey(event.target.value)}
                 />
                 <Button
-                  size="sm"
+                  variant="secondary"
                   disabled={action.busy || accountManaged || apiKey.trim().length === 0}
                   onClick={() => {
                     if (!host) return;
@@ -368,7 +367,6 @@ function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: Provid
               )}
               <Button
                 variant="secondary"
-                size="sm"
                 disabled={action.busy || !connection.enabled}
                 onClick={() => {
                   setTestResult(null);
@@ -449,61 +447,85 @@ function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: Provid
         title={copy.detail.advancedRequest}
         description={copy.detail.advancedRequestHelp}
       >
-        <SettingsRow layout="stacked" title={copy.detail.requestHeaders}>
-          {headers === null ? (
-            <Skeleton className="h-10 w-full rounded-lg" />
-          ) : (
-            <div className="flex flex-col gap-3">
-              <RequestHeadersEditor
-                headers={headers}
-                disabled={action.busy || reads.headersLoading}
-                onChange={setHeaders}
-              />
-              <div>
-                <Button
-                  size="sm"
-                  disabled={action.busy}
-                  onClick={() => {
-                    let updates: ReturnType<typeof requestHeaderUpdates>;
-                    try {
-                      updates = requestHeaderUpdates(headers);
-                    } catch {
-                      toast({
-                        title: copy.detail.requestCustomizationInvalid,
-                        description: copy.detail.requestHeadersInvalidDetail,
-                        variant: 'destructive',
-                      });
-                      return;
-                    }
-                    void action
-                      .run(() => setConnectionRequestHeaders(identity, updates, host))
-                      .then(() => reads.reloadHeaders())
-                      .catch((error: unknown) => props.onError(copy.detail.saveFailed, error));
-                  }}
-                >
-                  {copy.detail.saveAdvancedRequest}
-                </Button>
-              </div>
-            </div>
-          )}
-        </SettingsRow>
-      </SettingsSection>
-
-      <SettingsSection title={copy.detail.dangerZone} description={copy.detail.deleteRowHelp}>
         <SettingsRow
-          title={copy.detail.deleteUnused}
+          title={copy.detail.requestHeaders}
+          description={
+            reads.savedHeaderNames
+              ? copy.detail.requestHeadersSummary(reads.savedHeaderNames.length)
+              : undefined
+          }
           control={
             <Button
-              variant="destructive"
-              size="sm"
-              disabled={action.busy}
-              onClick={() => setDeleteOpen(true)}
+              variant="secondary"
+              disabled={action.busy || headers === null}
+              onClick={() => setHeadersOpen(true)}
             >
-              {accountManaged ? copy.detail.disconnectAndDelete : copy.detail.delete}
+              {copy.detail.manage}
             </Button>
           }
         />
       </SettingsSection>
+
+      <SettingsModal
+        open={headersOpen && headers !== null}
+        onOpenChange={(open) => {
+          if (open) return;
+          // Closing without saving puts back what is stored.
+          if (reads.savedHeaderNames) setHeaders(savedRequestHeaderDrafts(reads.savedHeaderNames));
+          setHeadersOpen(false);
+        }}
+        title={copy.detail.requestHeaders}
+        description={copy.detail.advancedRequestHelp}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              disabled={action.busy}
+              onClick={() => {
+                if (reads.savedHeaderNames)
+                  setHeaders(savedRequestHeaderDrafts(reads.savedHeaderNames));
+                setHeadersOpen(false);
+              }}
+            >
+              {copy.detail.cancel}
+            </Button>
+            <Button
+              disabled={action.busy || headers === null}
+              onClick={() => {
+                if (headers === null) return;
+                let updates: ReturnType<typeof requestHeaderUpdates>;
+                try {
+                  updates = requestHeaderUpdates(headers);
+                } catch {
+                  toast({
+                    title: copy.detail.requestCustomizationInvalid,
+                    description: copy.detail.requestHeadersInvalidDetail,
+                    variant: 'destructive',
+                  });
+                  return;
+                }
+                void action
+                  .run(() => setConnectionRequestHeaders(identity, updates, host))
+                  .then(() => {
+                    reads.reloadHeaders();
+                    setHeadersOpen(false);
+                  })
+                  .catch((error: unknown) => props.onError(copy.detail.saveFailed, error));
+              }}
+            >
+              {copy.detail.save}
+            </Button>
+          </>
+        }
+      >
+        {headers !== null && (
+          <RequestHeadersEditor
+            headers={headers}
+            disabled={action.busy || reads.headersLoading}
+            onChange={setHeaders}
+          />
+        )}
+      </SettingsModal>
 
       <ConfirmDialog
         open={deleteOpen}

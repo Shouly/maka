@@ -126,7 +126,6 @@ export function RequestHeadersEditor(props: {
       <div>
         <Button
           variant="secondary"
-          size="sm"
           disabled={props.disabled}
           onClick={() => {
             props.onChange([

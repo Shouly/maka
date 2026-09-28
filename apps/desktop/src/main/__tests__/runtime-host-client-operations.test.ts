@@ -341,10 +341,7 @@ test('rebuilds a Runtime Policy mutation from each fresh CAS projection', async 
   const initial = createDefaultRuntimePolicy();
   const concurrent = {
     ...initial,
-    personalization: {
-      ...initial.personalization,
-      assistantTone: 'Changed by another Client',
-    },
+    workspaceInstructions: { enabled: false },
   };
   const { client, requests } = clientWithResponses([
     { revision: 1, policy: initial },
@@ -353,19 +350,13 @@ test('rebuilds a Runtime Policy mutation from each fresh CAS projection', async 
     { kind: 'committed', revision: 3 },
     {
       revision: 3,
-      policy: {
-        ...concurrent,
-        personalization: {
-          ...concurrent.personalization,
-          displayName: 'Alice',
-        },
-      },
+      policy: { ...concurrent, memory: { enabled: false } },
     },
   ]);
 
   await client.updateRuntimePolicy((policy) => ({
-    kind: 'set_personalization',
-    value: { ...policy.personalization, displayName: 'Alice' },
+    kind: 'set_memory',
+    value: { ...policy.memory, enabled: false },
   }));
 
   assert.deepEqual(
@@ -376,18 +367,15 @@ test('rebuilds a Runtime Policy mutation from each fresh CAS projection', async 
       {
         expectedRevision: 1,
         operation: {
-          kind: 'set_personalization',
-          value: { ...initial.personalization, displayName: 'Alice' },
+          kind: 'set_memory',
+          value: { ...initial.memory, enabled: false },
         },
       },
       {
         expectedRevision: 2,
         operation: {
-          kind: 'set_personalization',
-          value: {
-            ...concurrent.personalization,
-            displayName: 'Alice',
-          },
+          kind: 'set_memory',
+          value: { ...concurrent.memory, enabled: false },
         },
       },
     ],

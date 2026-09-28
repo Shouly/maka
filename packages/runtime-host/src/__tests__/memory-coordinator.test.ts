@@ -189,11 +189,8 @@ describe('Host memory coordinator', () => {
     });
   });
 
-  test('memory off or incognito: no prompt block, tools refuse, the page is told why', async () => {
-    for (const policy of [
-      { memory: { enabled: false } },
-      { privacy: { incognitoActive: true } },
-    ] satisfies Partial<RuntimePolicy>[]) {
+  test('memory off: no prompt block, tools refuse, the page is told why', async () => {
+    for (const policy of [{ memory: { enabled: false } }] satisfies Partial<RuntimePolicy>[]) {
       await withCoordinator(policy, async (coordinator) => {
         assert.deepEqual(
           await coordinator.readPromptProjection({
@@ -205,7 +202,7 @@ describe('Host memory coordinator', () => {
         const list = coordinator.tools.find((tool) => tool.name === TOOL_NAMES.memoryList)!;
         await assert.rejects(
           list.impl({}, toolContext()) as Promise<unknown>,
-          /MemoryList failed: memory is (off in incognito|turned off in Settings)/,
+          /MemoryList failed: memory is turned off in Settings/,
         );
         const write = await coordinator.handlers['memory.mutate'](
           { kind: 'write', path: '/profile.md', content: PROFILE, ifVersion: 'new' },
@@ -215,7 +212,7 @@ describe('Host memory coordinator', () => {
         if (!write.ok) return;
         assert.equal(write.result.kind, 'rejected');
         if (write.result.kind !== 'rejected') return;
-        assert.equal(write.result.reason, 'memory' in policy ? 'disabled' : 'incognito');
+        assert.equal(write.result.reason, 'disabled');
         // Listing still works so the page can show the files and the switch.
         const listed = await coordinator.handlers['memory.query']({ kind: 'list' }, CONTEXT);
         assert.equal(listed.ok, true);

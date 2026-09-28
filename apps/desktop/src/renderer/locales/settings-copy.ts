@@ -33,10 +33,16 @@
 import type { UiCatalog, UiLocale } from '@maka/core/ui-locale';
 
 export type SettingsCopy = {
-  /** The window titlebar's identity and the page heading. */
+  /** The dialog's accessible name. */
   title: string;
   navLabel: string;
   contentLabel: string;
+  /** The field at the top of the nav, which narrows the pages it lists. */
+  search: string;
+  searchLabel: string;
+  /** The top bar's back button, named for screen readers. */
+  backTo: (page: string) => string;
+  noResults: string;
   /** Page frames Phase 5b fills. */
   comingSoonTitle: string;
   /** Announced while a page is reading its first snapshot. */
@@ -48,6 +54,8 @@ export type SettingsCopy = {
     enableProfile: (name: string) => string;
     setDefaultProfile: string;
     removeProfile: string;
+    profileActions: (name: string) => string;
+    projectActions: (name: string) => string;
     /** Why the SSH / WSL entry points are missing from this build. */
     wizardsDeferred: string;
     addRemote: string;
@@ -65,12 +73,13 @@ export type SettingsCopy = {
     cost: string;
     calls: string;
     averageDuration: string;
+    model: string;
+    provider: string;
+    pricePerMTok: string;
   };
   data: {
     drafts: string;
     draftsDetail: string;
-    clearDrafts: string;
-    clearingDrafts: string;
     draftsCleared: string;
     draftsClearedDetail: (count: number) => string;
   };
@@ -96,6 +105,10 @@ const SETTINGS_COPY = {
     title: '设置',
     navLabel: '设置导航',
     contentLabel: '设置内容',
+    search: '搜索',
+    searchLabel: '搜索设置',
+    backTo: (page) => `返回${page}`,
+    noResults: '没有匹配的设置',
     comingSoonTitle: '尚未构建',
     loadingSection: '正在读取设置…',
     workspace: {
@@ -110,6 +123,8 @@ const SETTINGS_COPY = {
       enableProfile: (name: string) => `启用 ${name}`,
       setDefaultProfile: '设为默认',
       removeProfile: '移除',
+      profileActions: (name) => `${name} 的更多操作`,
+      projectActions: (name) => `${name} 的更多操作`,
       wizardsDeferred:
         'SSH 与 WSL 的引导式配置尚未在此版本提供；这里只能手动登记已经在运行的远程 Runtime Host。',
       addRemote: '添加远程 Runtime Host',
@@ -126,12 +141,13 @@ const SETTINGS_COPY = {
       cost: '费用',
       calls: '调用',
       averageDuration: '平均耗时',
+      model: '模型',
+      provider: '服务商',
+      pricePerMTok: '输入 / 输出（每百万 token）',
     },
     data: {
       drafts: '未发送的草稿',
       draftsDetail: '各个任务输入框里还没发出去的内容。清空后无法恢复。',
-      clearDrafts: '清空草稿',
-      clearingDrafts: '正在清空…',
       draftsCleared: '草稿已清空',
       draftsClearedDetail: (count: number) => `已丢弃 ${count} 份草稿。`,
     },
@@ -153,6 +169,10 @@ const SETTINGS_COPY = {
     title: '設定',
     navLabel: '設定導覽',
     contentLabel: '設定內容',
+    search: '搜尋',
+    searchLabel: '搜尋設定',
+    backTo: (page) => `返回${page}`,
+    noResults: '沒有符合的設定',
     comingSoonTitle: '尚未建置',
     loadingSection: '正在讀取設定…',
     workspace: {
@@ -167,6 +187,8 @@ const SETTINGS_COPY = {
       enableProfile: (name: string) => `啟用 ${name}`,
       setDefaultProfile: '設為預設',
       removeProfile: '移除',
+      profileActions: (name) => `${name} 的更多操作`,
+      projectActions: (name) => `${name} 的更多操作`,
       wizardsDeferred:
         'SSH 與 WSL 的引導式設定尚未在此版本提供；這裡只能手動登記已經在執行的遠端 Runtime Host。',
       addRemote: '新增遠端 Runtime Host',
@@ -183,12 +205,13 @@ const SETTINGS_COPY = {
       cost: '費用',
       calls: '呼叫',
       averageDuration: '平均耗時',
+      model: '模型',
+      provider: '服務商',
+      pricePerMTok: '輸入 / 輸出（每百萬 token）',
     },
     data: {
       drafts: '未送出的草稿',
       draftsDetail: '各個任務輸入框裡還沒送出的內容。清空後無法復原。',
-      clearDrafts: '清空草稿',
-      clearingDrafts: '正在清空…',
       draftsCleared: '草稿已清空',
       draftsClearedDetail: (count: number) => `已丟棄 ${count} 份草稿。`,
     },
@@ -210,6 +233,10 @@ const SETTINGS_COPY = {
     title: 'Settings',
     navLabel: 'Settings navigation',
     contentLabel: 'Settings content',
+    search: 'Search',
+    searchLabel: 'Search settings',
+    backTo: (page) => `Back to ${page}`,
+    noResults: 'No matching settings',
     comingSoonTitle: 'Not built yet',
     loadingSection: 'Reading settings…',
     workspace: {
@@ -224,6 +251,8 @@ const SETTINGS_COPY = {
       enableProfile: (name: string) => `Enable ${name}`,
       setDefaultProfile: 'Set as default',
       removeProfile: 'Remove',
+      profileActions: (name) => `More actions for ${name}`,
+      projectActions: (name) => `More actions for ${name}`,
       wizardsDeferred:
         'The guided SSH and WSL setups are not in this build; this form registers a remote Runtime Host that is already running.',
       addRemote: 'Add a remote Runtime Host',
@@ -240,12 +269,13 @@ const SETTINGS_COPY = {
       cost: 'Cost',
       calls: 'Calls',
       averageDuration: 'Average duration',
+      model: 'Model',
+      provider: 'Provider',
+      pricePerMTok: 'Input / output per MTok',
     },
     data: {
       drafts: 'Unsent drafts',
       draftsDetail: 'What is still typed into each task composer. Clearing cannot be undone.',
-      clearDrafts: 'Clear drafts',
-      clearingDrafts: 'Clearing…',
       draftsCleared: 'Drafts cleared',
       draftsClearedDetail: (count: number) => `Discarded ${count} drafts.`,
     },

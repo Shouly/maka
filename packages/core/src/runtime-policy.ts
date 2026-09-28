@@ -137,18 +137,11 @@ export interface RuntimePolicy {
     readonly bypassList: readonly string[];
     readonly autoBypassDomains: readonly string[];
   };
-  readonly personalization: {
-    readonly displayName: string;
-    readonly assistantTone: string;
-  };
   readonly memory: {
     readonly enabled: boolean;
   };
   readonly workspaceInstructions: {
     readonly enabled: boolean;
-  };
-  readonly privacy: {
-    readonly incognitoActive: boolean;
   };
   readonly chatDefaults: {
     readonly permissionMode: ChatDefaultPermissionMode;
@@ -170,22 +163,18 @@ export interface RuntimePolicySnapshot {
 }
 
 export interface AgentRuntimeSettingsPatch {
-  readonly personalization?: Partial<RuntimePolicy['personalization']>;
   readonly memory?: Partial<RuntimePolicy['memory']>;
   readonly workspaceInstructions?: Partial<RuntimePolicy['workspaceInstructions']>;
-  readonly privacy?: Partial<RuntimePolicy['privacy']>;
   readonly webSearch?: Pick<Partial<RuntimePolicy['webSearch']>, 'enabled'>;
 }
 
 export type RuntimePolicyMutation =
   | { readonly kind: 'set_network_proxy'; readonly value: RuntimePolicy['networkProxy'] }
-  | { readonly kind: 'set_personalization'; readonly value: RuntimePolicy['personalization'] }
   | { readonly kind: 'set_memory'; readonly value: RuntimePolicy['memory'] }
   | {
       readonly kind: 'set_workspace_instructions';
       readonly value: RuntimePolicy['workspaceInstructions'];
     }
-  | { readonly kind: 'set_privacy'; readonly value: RuntimePolicy['privacy'] }
   | { readonly kind: 'set_chat_defaults'; readonly value: RuntimePolicy['chatDefaults'] }
   | { readonly kind: 'set_web_search'; readonly value: RuntimePolicy['webSearch'] }
   | { readonly kind: 'set_subagents'; readonly value: RuntimePolicy['subagents'] }
@@ -252,10 +241,8 @@ export function createDefaultRuntimePolicy(): RuntimePolicy {
       bypassList: ['metaso.cn', 'baidu.com'],
       autoBypassDomains: ['localhost', '127.0.0.1', '::1', '192.168.*', '10.*', '*.local'],
     },
-    personalization: { displayName: '', assistantTone: '' },
     memory: { enabled: true },
     workspaceInstructions: { enabled: true },
-    privacy: { incognitoActive: false },
     chatDefaults: { permissionMode: 'ask' },
     webSearch: { enabled: false, defaultProvider: 'model' },
     subagents: { presets: [] },

@@ -21,6 +21,7 @@ import type { RunCompositionSourceRevision } from '@maka/core/run-composition';
 import type { RuntimeExecutionConnection } from '@maka/core/llm-connections';
 import type { RuntimePolicySnapshot } from '@maka/core/runtime-policy';
 import type { AiSdkBackendInput, SystemPromptContext } from '@maka/runtime/ai-sdk-backend';
+import type { InjectionContext } from '@maka/runtime/injection';
 
 import type { BackendFactoryContext } from '@maka/runtime/session-manager';
 
@@ -33,11 +34,7 @@ export type HostModelPromptContext = SystemPromptContext;
 export interface ResolvedRunPrompt {
   readonly text: string | undefined;
   /** System-delivered blocks, recorded ahead of a turn's user text once and again only when `revision` (or the text) moves. */
-  readonly contexts?: readonly {
-    readonly name: string;
-    readonly text: string;
-    readonly revision?: string;
-  }[];
+  readonly contexts?: readonly InjectionContext[];
   readonly sourceRevisions: readonly RunCompositionSourceRevision[];
 }
 

@@ -20,7 +20,7 @@
 /**
  * 状态芯片(schedule 的"每天 9:00"/"Paused" 这类)。
  *
- * 几何取自 Claude scheduled-task 列表实测:高 18 · 左右 6 · r4.5 · 11px/500 ·
+ * 几何取自设计稿 scheduled-task 列表实测:高 18 · 左右 6 · r4.5 · 11px/500 ·
  * 图文间距 4。**没有描边** —— 只有一层淡底,描边会让它在卡里显得比标题还重。
  */
 export const statusChipClass =
@@ -42,21 +42,21 @@ export const statusChipAccentClass = 'bg-accent-subtle text-accent';
 export const statusChipDangerClass = 'bg-danger-subtle text-danger';
 
 /**
- * 大一档的芯片。Claude 的 scheduled-task **详情页**用的是这一档,列表页才是
+ * 大一档的芯片。设计稿的 scheduled-task **详情页**用的是这一档,列表页才是
  * 上面那档 —— 实测两处确实不同:
  *
  *              高   圆角   字号   左右   图文距   描边
  *   列表(小)   18   4.5    11     6      4        无
  *   详情(大)   22   6      12     6      6        0.5px,取字色 40%
  *
- * 有意思的是它俩在 Claude 源码里用的是**同一个类名** `text-caption` —— 只是
+ * 有意思的是它俩在设计稿源码里用的是**同一个类名** `text-caption` —— 只是
  * 两个作用域把它分别解析成了 11 和 12。所以别拿类名反推像素。
  */
 export const statusChipLargeClass =
   'inline-flex h-[22px] shrink-0 items-center gap-1.5 rounded-md border-[0.5px] border-current/40 px-1.5 text-[12px] font-medium leading-[17px]';
 
 /**
- * 图标槽。Claude 实测:图标**画 16px、只占 12px** —— 靠 flex 居中往四周各溢出
+ * 图标槽。设计稿实测:图标**画 16px、只占 12px** —— 靠 flex 居中往四周各溢出
  * 2px,再用负外边距把它拽到贴近芯片左沿(它的算式是 (18-12)/2 - 6 + 1 = -2)。
  *
  * 12 是占位尺寸,不是视觉尺寸。直接塞一颗 12px 的图标会明显偏小,而放一颗

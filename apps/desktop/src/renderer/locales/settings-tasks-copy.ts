@@ -29,6 +29,9 @@ export type SettingsTasksCopy = {
   noProject: string;
   deletedParent: string;
   searchLabel: string;
+  count: (count: number) => string;
+  rowActions: (name: string) => string;
+  columns: { task: string; project: string; activity: string };
   purgeAll: string;
   purgeMatches(count: number): string;
   purgeAllConfirmTitle(count: number): string;
@@ -65,6 +68,9 @@ const SETTINGS_TASKS_COPY_BY_LOCALE = {
     noProject: '无项目',
     deletedParent: '原父任务已删除',
     searchLabel: '搜索已归档任务',
+    count: (count) => `共 ${count} 个`,
+    rowActions: (name) => `${name} 的更多操作`,
+    columns: { task: '任务', project: '项目', activity: '最近活动' },
     purgeAll: '清空全部',
     purgeMatches: (count: number) => `删除这 ${count} 条`,
     purgeAllConfirmTitle: (count: number) => `清空全部 ${count} 条已归档任务？`,
@@ -92,6 +98,9 @@ const SETTINGS_TASKS_COPY_BY_LOCALE = {
     noProject: '無專案',
     deletedParent: '原父任務已刪除',
     searchLabel: '搜尋已歸檔任務',
+    count: (count) => `共 ${count} 個`,
+    rowActions: (name) => `${name} 的更多操作`,
+    columns: { task: '任務', project: '專案', activity: '最近活動' },
     purgeAll: '清空全部',
     purgeMatches: (count: number) => `刪除這 ${count} 條`,
     purgeAllConfirmTitle: (count: number) => `清空全部 ${count} 條已歸檔任務？`,
@@ -119,6 +128,9 @@ const SETTINGS_TASKS_COPY_BY_LOCALE = {
     noProject: 'No project',
     deletedParent: 'Parent task deleted',
     searchLabel: 'Search archived tasks',
+    count: (count) => `${count} ${count === 1 ? 'task' : 'tasks'}`,
+    rowActions: (name) => `More actions for ${name}`,
+    columns: { task: 'Task', project: 'Project', activity: 'Last active' },
     purgeAll: 'Clear all',
     purgeMatches: (count: number) => (count === 1 ? 'Delete this 1' : `Delete these ${count}`),
     purgeAllConfirmTitle: (count: number) =>

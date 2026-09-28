@@ -18,7 +18,7 @@
  */
 
 // The window while a company sign-in is required and there is none: 600×600,
-// centred, not resizable — the Claude desktop's first-run window. Signing in
+// centred, not resizable — a first-run window. Signing in
 // gives the window back its own size (maximized if it was); signing out takes
 // it down to the sign-in window again. The small window is never written to
 // `window-state.json`, so the next launch after signing in opens at the size

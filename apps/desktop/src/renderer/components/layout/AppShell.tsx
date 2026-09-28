@@ -52,9 +52,8 @@ import { SearchModal } from '../palette/SearchModal.js';
 import { SkillsModule } from '../modules/skills/SkillsModule.js';
 import { McpModule } from '../modules/mcp/McpModule.js';
 import { ScheduledTasksModule } from '../modules/scheduled/ScheduledTasksModule.js';
-import { SettingsIdentity } from '../settings/SettingsIdentity.js';
 import { ScheduledTaskIdentity } from '../modules/scheduled/ScheduledTaskIdentity.js';
-import { SettingsView } from '../settings/SettingsView.js';
+import { SettingsDialog } from '../settings/SettingsView.js';
 import { RuntimeDebug } from '../dev/RuntimeDebug.js';
 import { cn } from '../../lib/cn.js';
 import { SessionPanel } from '../session/SessionPanel.js';
@@ -93,7 +92,6 @@ import {
 } from '../../bridge/diagnostics.js';
 import { openPath } from '../../bridge/app.js';
 import { previewSessionRemoval } from '../../bridge/sessions.js';
-import { testNetworkProxy } from '../../bridge/settings.js';
 import { restoreProject, renameProject } from '../../bridge/projects.js';
 import { subscribeScheduledTasksDue } from '../../bridge/scheduled-tasks.js';
 import { desktopSessionKeyForRun } from '../../store/scheduled-tasks-store.js';
@@ -101,7 +99,7 @@ import { getShellCopy, localizedShellErrorMessage } from '../../locales/shell-co
 import { getSidebarCopy } from '../../locales/sidebar-copy.js';
 import type { PendingE2eFixtureUiState } from '../../lib/fixture.js';
 
-type MainView = 'welcome' | 'session' | 'settings' | 'skills' | 'mcp' | 'automations' | 'debug';
+type MainView = 'welcome' | 'session' | 'skills' | 'mcp' | 'automations' | 'debug';
 
 export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
   useRendererStores();
@@ -152,7 +150,6 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
   );
   const navigation = useStore(uiStore, (state) => state.navigation);
   const settingsOpen = useStore(uiStore, (state) => state.settingsOpen);
-  const settingsSection = useStore(uiStore, (state) => state.settingsSection);
   const historyTarget = useStore(newTaskStore, (state) => state.target);
   const historySessions = useStore(sessionsStore, (state) => state.sessions);
   const historyReady = useStore(
@@ -272,7 +269,6 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
       if (paletteOpen) setPaletteOpen(false);
       else if (helpOpen) setHelpOpen(false);
       else if (searchOpen) uiStore.setSearchOpen(false);
-      else if (settingsOpen) uiStore.closeSettings();
     },
     toggleWorkbar: workbar.toggle,
     workbarFiles: () => workbar.toggleFace('files'),
@@ -518,24 +514,6 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
             });
         });
       },
-      onTestNetworkProxy: () => {
-        void testNetworkProxy()
-          .then((result) =>
-            toast({
-              title: result.ok
-                ? shell.commandActions.networkPassedTitle
-                : shell.commandActions.networkFailedTitle,
-              variant: result.ok ? 'success' : 'destructive',
-            }),
-          )
-          .catch((error) =>
-            reportError(
-              shell.commandActions.genericTestFailedTitle,
-              error,
-              shell.commandActions.networkTestFallback,
-            ),
-          );
-      },
       onSetDefaultConnection: (slug: string) => {
         const connection = connections?.connections.find((row) => row.slug === slug);
         if (!connection || !defaultHost) return;
@@ -573,17 +551,15 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
 
   const view: MainView = debugOpen
     ? 'debug'
-    : settingsOpen
-      ? 'settings'
-      : navigation.selection.section === 'extensions'
-        ? navigation.selection.module === 'mcp'
-          ? 'mcp'
-          : 'skills'
-        : navigation.selection.section === 'automations'
-          ? 'automations'
-          : activeId
-            ? 'session'
-            : 'welcome';
+    : navigation.selection.section === 'extensions'
+      ? navigation.selection.module === 'mcp'
+        ? 'mcp'
+        : 'skills'
+      : navigation.selection.section === 'automations'
+        ? 'automations'
+        : activeId
+          ? 'session'
+          : 'welcome';
 
   useEffect(() => {
     dismissActivityPeek();
@@ -602,16 +578,9 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
 
   const historyLocation = useMemo<PageLocation>(() => {
     if (view === 'session' && activeId) return { view, sessionId: activeId };
-    if (view === 'settings')
-      return {
-        view,
-        section: settingsSection as SettingsSection,
-        sessionId: activeId,
-        selection: navigation.selection,
-      };
     if (view === 'welcome' || view === 'session') return { view: 'welcome', target: historyTarget };
     return { view, sessionId: activeId };
-  }, [view, activeId, settingsSection, historyTarget, navigation.selection]);
+  }, [view, activeId, historyTarget]);
   const historyAvailable = useCallback(
     (page: PageLocation) =>
       !page.sessionId ||
@@ -628,10 +597,6 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
       else if (page.view === 'welcome') {
         if (page.target) newTaskStore.selectTarget(page.target);
         newTask();
-      } else if (page.view === 'settings') {
-        setDebugOpen(false);
-        if (page.selection) uiStore.navigate(page.selection);
-        uiStore.openSettings(page.section);
       } else if (page.view === 'debug') setDebugOpen(true);
       else selectModule(page.view === 'automations' ? 'scheduled-tasks' : page.view);
     },
@@ -672,11 +637,7 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
             // all point underneath it (see `concealed`).
             concealed={view === 'session' && workbar.expanded}
             identity={
-              // Settings owns the identity slot while it owns the content column;
-              // the actions slot stays empty there (plan §2.12).
-              view === 'settings' ? (
-                <SettingsIdentity />
-              ) : // One scheduled task's page puts its breadcrumb here, where the
+              // One scheduled task's page puts its breadcrumb here, where the
               // reference draws it: the window's top row, beside the window
               // controls rather than above the page's own title. It renders
               // nothing while the list is showing.
@@ -719,8 +680,6 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
           >
             {view === 'debug' ? (
               <RuntimeDebug />
-            ) : view === 'settings' ? (
-              <SettingsView onOpenKeyboardHelp={() => setHelpOpen(true)} />
             ) : view === 'skills' ? (
               <SkillsModule host={scopedHost} onSelectModule={selectModule} />
             ) : view === 'mcp' ? (
@@ -783,6 +742,7 @@ export function AppShell(props: { fixture: PendingE2eFixtureUiState | null }) {
         onOpenChange={setPaletteOpen}
         commandInput={commandInput}
       />
+      <SettingsDialog open={settingsOpen} onOpenKeyboardHelp={() => setHelpOpen(true)} />
       <KeyboardHelp open={helpOpen} onOpenChange={setHelpOpen} />
       <SearchModal
         open={searchOpen}

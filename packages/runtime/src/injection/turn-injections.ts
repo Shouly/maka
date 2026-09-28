@@ -33,6 +33,7 @@ import type { CollaborationMode } from '@maka/core/collaboration';
 import type { PermissionMode } from '@maka/core/permission';
 import type { RuntimeEvent, RuntimeEventInjectionContent } from '@maka/core/runtime-event';
 import type { ExecutionBoundaryReadModel } from '@maka/core/sandbox-boundary';
+import { wrapSystemReminder } from './system-reminder.js';
 import { formatLocalDate, resolveZone } from './user-message-injections.js';
 
 /** A block the host resolved for the session: the memory snapshot, the skills listing, a plugin's context. */
@@ -41,6 +42,12 @@ export interface InjectionContext {
   readonly text: string;
   /** Changes when the text does; without one the text itself is compared. */
   readonly revision?: string;
+  /**
+   * Delivered as written, outside the <system-reminder> envelope: the block
+   * carries its own tag (`<userPreferences>`). Recorded on the injection, so
+   * a replay renders it the way the live turn did.
+   */
+  readonly bare?: boolean;
 }
 
 export interface TurnInjectionFacts {
@@ -116,6 +123,13 @@ function boundaryCopy(
     default:
       return undefined;
   }
+}
+
+/** A recorded block as the model reads it — live and on every replay alike. */
+export function renderInjectionBlock(
+  injection: Pick<RuntimeEventInjectionContent, 'text' | 'data'>,
+): string {
+  return injection.data?.bare === true ? injection.text.trim() : wrapSystemReminder(injection.text);
 }
 
 /** The announcement of the tools held behind ToolSearch, one name per line. */
@@ -222,7 +236,11 @@ export function planTurnInjections(
     if (context.text.trim().length === 0) continue;
     const revision = context.revision ?? textRevision(context.text);
     if (prior.get(context.name)?.data?.revision === revision) continue;
-    planned.push({ name: context.name, text: context.text, data: { revision } });
+    planned.push({
+      name: context.name,
+      text: context.text,
+      data: { revision, ...(context.bare ? { bare: true } : {}) },
+    });
   }
 
   // A held tool is announced once, when it first appears. One that leaves the

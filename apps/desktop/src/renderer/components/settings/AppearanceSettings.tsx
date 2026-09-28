@@ -17,13 +17,16 @@
  * under the License.
  */
 
-// Theme, dock artwork, and how big the text is.
+// The Appearance section of General: the theme as three
+// icons, the transcript text size as three steps, then what is Maka's own —
+// the terminal's font size and the dock artwork.
 //
 // Nothing here applies the change itself. `app.tsx` already watches the client
-// settings and calls `applyTheme` / `applyUiFontSize` / `applyTerminalFontSize`
-// — the same path the command palette's theme commands take — so this page
-// only writes, and a write that fails leaves the UI showing what is actually
-// stored instead of a preference that only exists on this screen.
+// settings and calls `applyTheme` / `applyTranscriptTextSize` /
+// `applyTerminalFontSize` — the same path the command palette's theme commands
+// take — so this page only writes, and a write that fails leaves the UI showing
+// what is actually stored instead of a preference that only exists on this
+// screen.
 //
 // The app icon is the exception, and deliberately: `clientOwnedSettingsPatch`
 // strips `appIcon` out of a generic settings patch so the main process's icon
@@ -31,24 +34,24 @@
 // call (`app.selectIcon`) and no optimistic state — the tile follows the
 // settings snapshot main pushes back.
 //
-// The picker offers the current brand mark and imported artwork only.
+// The picker offers the current brand mark and imported artwork only, with
+// the import as its last tile.
 
 import { useState } from 'react';
 import {
   DEFAULT_TERMINAL_FONT_SIZE,
-  DEFAULT_UI_FONT_SIZE,
+  DEFAULT_TRANSCRIPT_TEXT_SIZE,
   DEFAULT_APP_ICON,
   isCustomAppIcon,
   TERMINAL_FONT_SIZE_MAX,
   TERMINAL_FONT_SIZE_MIN,
-  UI_FONT_SIZE_MAX,
-  UI_FONT_SIZE_MIN,
+  TRANSCRIPT_TEXT_SIZES,
   type AppIconChoice,
   type ThemePreference,
+  type TranscriptTextSize,
 } from '@maka/core/settings';
 import { useUiLocale } from '@maka/ui';
 import { Anthropicon, type AnthropiconName } from '../icons/Anthropicon.js';
-import { Button } from '../ui/button.js';
 import { Input } from '../ui/input.js';
 import { SegmentedControl } from '../ui/segmented-control.js';
 import { Skeleton } from '../ui/skeleton.js';
@@ -60,7 +63,13 @@ import { useClientSettings, useSettingsErrorReporter } from '../../hooks/use-set
 import { settingsStore } from '../../store/index.js';
 import { toast } from '../../store/toast-store.js';
 import { getSettingsPreferencesCopy } from '../../locales/settings-preferences-copy.js';
-import { getSettingsSharedCopy } from '../../locales/settings-shared-copy.js';
+
+const ICON_TILE_CLASS = cn(
+  'flex size-14 cursor-pointer items-center justify-center rounded-xl p-1 outline-none transition-shadow',
+  'shadow-[inset_0_0_0_1px_var(--hairline)] hover:shadow-[inset_0_0_0_1px_var(--border-strong)]',
+  'focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:cursor-not-allowed disabled:opacity-50',
+);
+const ICON_TILE_SELECTED_CLASS = 'shadow-[inset_0_0_0_2px_var(--fill-accent)]';
 
 const THEME_ICONS: Record<ThemePreference, AnthropiconName> = {
   light: 'sun',
@@ -68,17 +77,19 @@ const THEME_ICONS: Record<ThemePreference, AnthropiconName> = {
   auto: 'computer',
 };
 
-export function AppearanceSettings() {
+export function AppearanceSection() {
   const locale = useUiLocale();
   const preferences = getSettingsPreferencesCopy(locale);
   const copy = preferences.appearance;
   const sections = preferences.sections;
-  const shared = getSettingsSharedCopy(locale);
   const report = useSettingsErrorReporter();
   const client = useClientSettings();
   const appearance = client.data?.appearance;
   const icons = useAsync(() => listIconPreviews(), []);
   const [iconBusy, setIconBusy] = useState(false);
+  const iconChoices = (icons.data ?? []).filter(
+    (preview) => preview.id === DEFAULT_APP_ICON || isCustomAppIcon(preview.id),
+  );
 
   const write = (patch: Parameters<typeof settingsStore.updateClient>[0]) => {
     void settingsStore
@@ -97,102 +108,127 @@ export function AppearanceSettings() {
   };
 
   return (
-    <>
-      <SettingsSection title={sections.theme} description={sections.themeHelp}>
-        <SettingsRow
-          title={copy.theme}
-          description={appearance ? copy.themeOptions[appearance.theme].help : shared.loading}
-          control={
-            appearance ? (
-              <SegmentedControl
-                ariaLabel={copy.theme}
-                value={appearance.theme}
-                onChange={(theme: ThemePreference) => write({ appearance: { theme } })}
-                options={(['light', 'dark', 'auto'] as const).map((value) => ({
-                  value,
-                  label: copy.themeOptions[value].label,
-                  icon: THEME_ICONS[value],
-                  showLabel: true,
-                }))}
-              />
-            ) : (
-              <Skeleton className="h-8 w-56 rounded-lg" />
-            )
-          }
-        />
-      </SettingsSection>
-
-      <SettingsSection title={sections.appIcon} description={sections.appIconHelp}>
-        {icons.error !== undefined ? (
-          <SettingsRow title={copy.appIconUnavailable} control={null} />
-        ) : (
-          <SettingsRow layout="stacked" title={sections.appIcon}>
-            <div role="radiogroup" aria-label={sections.appIcon} className="flex flex-wrap gap-2">
-              {(icons.data ?? [])
-                .filter((preview) => preview.id === DEFAULT_APP_ICON || isCustomAppIcon(preview.id))
-                .map((preview) => {
-                  const selected = (appearance?.appIcon ?? DEFAULT_APP_ICON) === preview.id;
-                  const label =
-                    preview.id === DEFAULT_APP_ICON ? copy.appIconDefault : copy.appIconCustom;
-                  return (
-                    <div key={preview.id} className="group/icon relative">
+    <SettingsSection title={sections.appearance}>
+      <SettingsRow
+        title={copy.theme}
+        control={
+          appearance ? (
+            <SegmentedControl
+              ariaLabel={copy.theme}
+              value={appearance.theme}
+              onChange={(theme: ThemePreference) => write({ appearance: { theme } })}
+              // The theme picker: three icons, system first, the words
+              // only as each segment's accessible name.
+              options={(['auto', 'light', 'dark'] as const).map((value) => ({
+                value,
+                label: copy.themeOptions[value].label,
+                icon: THEME_ICONS[value],
+              }))}
+            />
+          ) : (
+            <Skeleton className="h-8 w-[5.75rem] rounded-lg" />
+          )
+        }
+      />
+      <SettingsRow
+        title={copy.fontSize.transcriptLabel}
+        description={copy.fontSize.transcriptHelp}
+        control={
+          appearance ? (
+            <SegmentedControl
+              ariaLabel={copy.fontSize.transcriptLabel}
+              value={appearance.transcriptTextSize ?? DEFAULT_TRANSCRIPT_TEXT_SIZE}
+              onChange={(transcriptTextSize: TranscriptTextSize) =>
+                write({ appearance: { transcriptTextSize } })
+              }
+              options={TRANSCRIPT_TEXT_SIZES.map((value) => ({
+                value,
+                label: copy.fontSize.transcriptSizes[value],
+              }))}
+            />
+          ) : (
+            <Skeleton className="h-8 w-48 rounded-lg" />
+          )
+        }
+      />
+      <SettingsRow
+        title={copy.fontSize.terminalLabel}
+        description={copy.fontSize.terminalHelp}
+        control={
+          <FontSizeInput
+            label={copy.fontSize.terminalLabel}
+            value={appearance?.terminalFontSize ?? DEFAULT_TERMINAL_FONT_SIZE}
+            min={TERMINAL_FONT_SIZE_MIN}
+            max={TERMINAL_FONT_SIZE_MAX}
+            onChange={(terminalFontSize) => write({ appearance: { terminalFontSize } })}
+          />
+        }
+      />
+      {icons.error !== undefined ? (
+        <SettingsRow title={copy.appIconUnavailable} control={null} />
+      ) : (
+        <SettingsRow layout="stacked" title={copy.appIcon} description={copy.appIconHelp}>
+          <div className="flex flex-wrap gap-2">
+            <div role="radiogroup" aria-label={copy.appIcon} className="contents">
+              {iconChoices.map((preview) => {
+                const selected = (appearance?.appIcon ?? DEFAULT_APP_ICON) === preview.id;
+                const label =
+                  preview.id === DEFAULT_APP_ICON ? copy.appIconDefault : copy.appIconCustom;
+                return (
+                  <div key={preview.id} className="group/icon relative">
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      aria-label={label}
+                      title={label}
+                      disabled={iconBusy}
+                      onClick={() => chooseIcon(preview.id)}
+                      className={cn(
+                        ICON_TILE_CLASS,
+                        // With one icon there is nothing to choose between,
+                        // so the ring would only frame it.
+                        selected && iconChoices.length > 1 && ICON_TILE_SELECTED_CLASS,
+                      )}
+                    >
+                      <img src={preview.dataUrl} alt="" className="size-full rounded-lg" />
+                    </button>
+                    {preview.removable === true && (
                       <button
                         type="button"
-                        role="radio"
-                        aria-checked={selected}
-                        aria-label={label}
-                        title={label}
+                        aria-label={`${copy.appIconRemove} ${label}`}
                         disabled={iconBusy}
-                        onClick={() => chooseIcon(preview.id)}
-                        className={cn(
-                          'flex size-14 cursor-pointer items-center justify-center rounded-xl p-1 outline-none transition-shadow',
-                          'shadow-[inset_0_0_0_1px_var(--hairline)] hover:shadow-[inset_0_0_0_1px_var(--border-strong)]',
-                          'focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:cursor-not-allowed disabled:opacity-50',
-                          selected && 'shadow-[inset_0_0_0_2px_var(--fill-accent)]',
-                        )}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setIconBusy(true);
+                          void removeAppIcon(preview.id)
+                            .then((result) => {
+                              if (!result.ok)
+                                toast({
+                                  title: copy.appIconRemoveFailed,
+                                  variant: 'destructive',
+                                });
+                              icons.reload();
+                            })
+                            .catch((error: unknown) => report(copy.appIconRemoveFailed, error))
+                            .finally(() => setIconBusy(false));
+                        }}
+                        className="absolute -right-1.5 -top-1.5 flex size-[18px] cursor-pointer items-center justify-center rounded-full bg-surface-3 opacity-0 shadow-[0_0_0_1px_var(--alpha-2)] transition-opacity group-hover/icon:opacity-100 focus-visible:opacity-100 focus-visible:shadow-[var(--sidebar-focus-shadow)]"
                       >
-                        <img src={preview.dataUrl} alt="" className="size-full rounded-lg" />
+                        <Anthropicon name="x" size={12} className="text-text-secondary" />
                       </button>
-                      {preview.removable === true && (
-                        <button
-                          type="button"
-                          aria-label={`${copy.appIconRemove} ${label}`}
-                          disabled={iconBusy}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setIconBusy(true);
-                            void removeAppIcon(preview.id)
-                              .then((result) => {
-                                if (!result.ok)
-                                  toast({
-                                    title: copy.appIconRemoveFailed,
-                                    variant: 'destructive',
-                                  });
-                                icons.reload();
-                              })
-                              .catch((error: unknown) => report(copy.appIconRemoveFailed, error))
-                              .finally(() => setIconBusy(false));
-                          }}
-                          className="absolute -right-1.5 -top-1.5 flex size-[18px] cursor-pointer items-center justify-center rounded-full bg-surface-3 opacity-0 shadow-[0_0_0_1px_var(--alpha-2)] transition-opacity group-hover/icon:opacity-100 focus-visible:opacity-100 focus-visible:shadow-[var(--sidebar-focus-shadow)]"
-                        >
-                          <Anthropicon name="x" size={12} className="text-text-secondary" />
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              {icons.loading &&
-                [0].map((index) => <Skeleton key={index} className="size-14 rounded-xl" />)}
+                    )}
+                  </div>
+                );
+              })}
+              {icons.loading && <Skeleton className="size-14 rounded-xl" />}
             </div>
-          </SettingsRow>
-        )}
-        <SettingsRow
-          title={copy.appIconImport}
-          description={copy.appIconImportHelp}
-          control={
-            <Button
-              variant="secondary"
-              size="sm"
+            {/* Importing is the picker's last tile rather than a row of its own:
+                what gets imported lands in this same row, selected. */}
+            <button
+              type="button"
+              aria-label={iconBusy ? copy.appIconImporting : copy.appIconImport}
+              title={copy.appIconImport}
               disabled={iconBusy}
               onClick={() => {
                 setIconBusy(true);
@@ -217,42 +253,14 @@ export function AppearanceSettings() {
                   .catch((error: unknown) => report(copy.appIconImportError, error))
                   .finally(() => setIconBusy(false));
               }}
+              className={cn(ICON_TILE_CLASS, 'text-text-secondary hover:bg-alpha-1')}
             >
-              {iconBusy ? copy.appIconImporting : copy.appIconImport}
-            </Button>
-          }
-        />
-      </SettingsSection>
-
-      <SettingsSection title={sections.fontSize} description={sections.fontSizeHelp}>
-        <SettingsRow
-          title={copy.fontSize.uiLabel}
-          description={copy.fontSize.uiHelp}
-          control={
-            <FontSizeInput
-              label={copy.fontSize.uiLabel}
-              value={appearance?.uiFontSize ?? DEFAULT_UI_FONT_SIZE}
-              min={UI_FONT_SIZE_MIN}
-              max={UI_FONT_SIZE_MAX}
-              onChange={(uiFontSize) => write({ appearance: { uiFontSize } })}
-            />
-          }
-        />
-        <SettingsRow
-          title={copy.fontSize.terminalLabel}
-          description={copy.fontSize.terminalHelp}
-          control={
-            <FontSizeInput
-              label={copy.fontSize.terminalLabel}
-              value={appearance?.terminalFontSize ?? DEFAULT_TERMINAL_FONT_SIZE}
-              min={TERMINAL_FONT_SIZE_MIN}
-              max={TERMINAL_FONT_SIZE_MAX}
-              onChange={(terminalFontSize) => write({ appearance: { terminalFontSize } })}
-            />
-          }
-        />
-      </SettingsSection>
-    </>
+              <Anthropicon name="add" size={16} />
+            </button>
+          </div>
+        </SettingsRow>
+      )}
+    </SettingsSection>
   );
 }
 

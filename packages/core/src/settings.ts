@@ -69,7 +69,6 @@ export {
 export const SETTINGS_SECTIONS = [
   'account',
   'general',
-  'appearance',
   'projects',
   'memory',
   'daily-review',
@@ -330,24 +329,26 @@ export function appIconForTheme(
 }
 
 /**
- * UI base font size in px, exposed as a numeric stepper like Codex's
- * "UI font size". The renderer's type scale is generated from base 14
- * (`makaTheme.ts`), and every `--font-size-*` token is `rem`, so the applied
- * document-root font-size scales proportionally as `16 * uiFontSize / 14`.
- * This scales what is rem-derived — text and Astryx's rem-based icon atoms —
- * while px-literal spacing and control widths stay fixed, which is why the
- * range is clamped tightly around the base rather than offered as a free
- * zoom. It is NOT the density hack removed in `makaTheme.ts`.
- *
- * Continuous within a clamped range: a wrong-typed value fails closed to the
- * default, an out-of-range number clamps to the nearest bound (a valid intent,
- * just bounded — so an extreme persisted value can't make the UI unusable).
+ * The conversation transcript's text size: three steps that reach the messages and nothing else — the sidebar,
+ * the composer and Settings keep the type scale as designed. The renderer
+ * turns the step into a `data-chat-text-size` attribute on the document root,
+ * which the transcript's typography reads.
  */
-export const UI_FONT_SIZE_MIN = 11;
-export const UI_FONT_SIZE_MAX = 22;
-export const DEFAULT_UI_FONT_SIZE = 14;
+export const TRANSCRIPT_TEXT_SIZES = ['small', 'medium', 'large'] as const;
+export type TranscriptTextSize = (typeof TRANSCRIPT_TEXT_SIZES)[number];
+export const DEFAULT_TRANSCRIPT_TEXT_SIZE: TranscriptTextSize = 'medium';
 
-/** Terminal (xterm) font size in px, same numeric-stepper treatment. */
+export function normalizeTranscriptTextSize(value: unknown): TranscriptTextSize {
+  return TRANSCRIPT_TEXT_SIZES.includes(value as TranscriptTextSize)
+    ? (value as TranscriptTextSize)
+    : DEFAULT_TRANSCRIPT_TEXT_SIZE;
+}
+
+/**
+ * Terminal (xterm) font size in px, as a numeric stepper. Continuous within a
+ * clamped range: a wrong-typed value fails closed to the default, an
+ * out-of-range number clamps to the nearest bound.
+ */
 export const TERMINAL_FONT_SIZE_MIN = 9;
 export const TERMINAL_FONT_SIZE_MAX = 24;
 export const DEFAULT_TERMINAL_FONT_SIZE = 12;
@@ -355,10 +356,6 @@ export const DEFAULT_TERMINAL_FONT_SIZE = 12;
 function clampFontSize(value: unknown, min: number, max: number, fallback: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
   return Math.min(max, Math.max(min, Math.round(value)));
-}
-
-export function normalizeUiFontSize(value: unknown): number {
-  return clampFontSize(value, UI_FONT_SIZE_MIN, UI_FONT_SIZE_MAX, DEFAULT_UI_FONT_SIZE);
 }
 
 export function normalizeTerminalFontSize(value: unknown): number {
@@ -381,17 +378,13 @@ export interface AppearanceSettings {
    * `appIcon` is used in both.
    */
   appIconDark?: AppIconChoice;
-  /** Optional UI base font size in px. Missing normalizes to the default. */
-  uiFontSize?: number;
+  /** Optional transcript text size. Missing normalizes to the default. */
+  transcriptTextSize?: TranscriptTextSize;
   /** Optional terminal font size in px. Missing normalizes to the default. */
   terminalFontSize?: number;
 }
 
 export interface PersonalizationSettings {
-  /** How the assistant addresses the user. Empty falls back to "你". */
-  displayName: string;
-  /** Inline tone preference shown to the model in its system prompt. */
-  assistantTone: string;
   /** UI locale preference; defaults to `auto`. */
   uiLocale: UiLocalePreference;
   /** User-selected custom PetPack. `null` keeps the pet surface disabled. */
@@ -405,10 +398,6 @@ export interface WorkspaceInstructionsSettings {
 /** Default project identity for new conversations. */
 export interface ProjectPreferencesSettings {
   defaultProjectId?: string;
-}
-
-export interface PrivacySettings {
-  incognitoActive: boolean;
 }
 
 /**
@@ -508,7 +497,6 @@ export interface AppSettings {
   webSearch: WebSearchSettings;
   memory: MemorySettings;
   workspaceInstructions: WorkspaceInstructionsSettings;
-  privacy: PrivacySettings;
   chatDefaults: ChatDefaultsSettings;
   projects: ProjectPreferencesSettings;
   notifications: NotificationSettings;
@@ -643,7 +631,6 @@ export type UpdateAppSettingsInput = Partial<{
   personalization: Partial<PersonalizationSettings>;
   memory: Partial<MemorySettings>;
   workspaceInstructions: Partial<WorkspaceInstructionsSettings>;
-  privacy: Partial<PrivacySettings>;
   chatDefaults: Partial<ChatDefaultsSettings>;
   projects: Partial<ProjectPreferencesSettings>;
   notifications: Partial<NotificationSettings>;
@@ -660,18 +647,8 @@ export interface RuntimeHostSettingsUpdateGuard {
   readonly expectedExternalAgentExecutable?: string;
 }
 
-export type PersonalizationSettingsWarning =
-  | 'override-attempt'
-  | 'sensitive-pattern'
-  | 'control-chars';
-
-export interface UpdateAppSettingsWarnings {
-  personalization?: PersonalizationSettingsWarning[];
-}
-
 export interface UpdateAppSettingsResult<TSettings extends AppSettings = AppSettings> {
   settings: TSettings;
-  warnings?: UpdateAppSettingsWarnings;
 }
 
 export const DEFAULT_PROXY_BYPASS_DOMAINS = [
@@ -710,12 +687,10 @@ export function createDefaultSettings(): AppSettings {
       theme: 'auto',
       palette: 'default',
       appIcon: DEFAULT_APP_ICON,
-      uiFontSize: DEFAULT_UI_FONT_SIZE,
+      transcriptTextSize: DEFAULT_TRANSCRIPT_TEXT_SIZE,
       terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
     },
     personalization: {
-      displayName: '',
-      assistantTone: '',
       uiLocale: 'auto',
       selectedPetId: null,
     },
@@ -724,7 +699,6 @@ export function createDefaultSettings(): AppSettings {
     workspaceInstructions: {
       enabled: true,
     },
-    privacy: defaultPrivacySettings(),
     projects: defaultProjectPreferencesSettings(),
     chatDefaults: defaultChatDefaultsSettings(),
     notifications: {
@@ -794,9 +768,6 @@ export function mergeSettings(current: AppSettings, patch: UpdateAppSettingsInpu
           ...patch.workspaceInstructions,
         })
       : current.workspaceInstructions,
-    privacy: patch.privacy
-      ? normalizePrivacySettings({ ...current.privacy, ...patch.privacy })
-      : current.privacy,
     projects: patch.projects
       ? normalizeProjectPreferencesSettings({ ...current.projects, ...patch.projects })
       : current.projects,
@@ -844,7 +815,6 @@ export function normalizeSettings(input: unknown): AppSettings {
     webSearch: value.webSearch,
     memory: value.memory,
     workspaceInstructions: value.workspaceInstructions,
-    privacy: value.privacy,
     chatDefaults: value.chatDefaults,
     projects: value.projects,
     notifications: value.notifications,
@@ -889,9 +859,9 @@ export function normalizeSettings(input: unknown): AppSettings {
       appIcon: isAppIconChoice(base.appearance.appIcon)
         ? base.appearance.appIcon
         : DEFAULT_APP_ICON,
+      transcriptTextSize: normalizeTranscriptTextSize(base.appearance.transcriptTextSize),
       // Wrong-typed → default; out-of-range number → clamped to bounds, so an
-      // extreme persisted value can't drive an unusable root/terminal size.
-      uiFontSize: normalizeUiFontSize(base.appearance.uiFontSize),
+      // extreme persisted value can't drive an unusable terminal size.
       terminalFontSize: normalizeTerminalFontSize(base.appearance.terminalFontSize),
       // Cleared first, then re-set from the RAW input rather than from `base`:
       // `base` has already been merged over the defaults, which carry a dark
@@ -910,7 +880,6 @@ export function normalizeSettings(input: unknown): AppSettings {
     // former generic `zh` preference as Simplified Chinese, then fall back to
     // 'auto' on any other miss.
     personalization: {
-      ...base.personalization,
       uiLocale: normalizeUiLocalePreference(base.personalization.uiLocale),
       selectedPetId: normalizeSelectedPetId(base.personalization.selectedPetId),
     },
@@ -918,7 +887,6 @@ export function normalizeSettings(input: unknown): AppSettings {
     webSearch: normalizeWebSearchSettings(base.webSearch),
     memory: normalizeMemorySettings(base.memory),
     workspaceInstructions: normalizeWorkspaceInstructionsSettings(base.workspaceInstructions),
-    privacy: normalizePrivacySettings(base.privacy),
     projects: normalizeProjectPreferencesSettings(base.projects),
     chatDefaults: normalizeChatDefaultsSettings(base.chatDefaults),
     // Fail-closed boolean coercion: mergeSettings spreads the raw user
@@ -978,10 +946,6 @@ function normalizeWorkspaceInstructionsSettings(
   };
 }
 
-function defaultPrivacySettings(): PrivacySettings {
-  return { incognitoActive: false };
-}
-
 function defaultProjectPreferencesSettings(): ProjectPreferencesSettings {
   return {};
 }
@@ -1010,12 +974,6 @@ function normalizeChatDefaultsSettings(settings: ChatDefaultsSettings): ChatDefa
       const mode = decodePersistedPermissionMode(settings.permissionMode);
       return mode !== undefined && isChatDefaultPermissionMode(mode) ? mode : 'ask';
     })(),
-  };
-}
-
-function normalizePrivacySettings(settings: PrivacySettings): PrivacySettings {
-  return {
-    incognitoActive: settings.incognitoActive === true,
   };
 }
 

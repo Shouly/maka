@@ -31,8 +31,9 @@
 // is found, and the list has one shape.
 //
 // The footer carries the update chip, which is the only place the app ever
-// asks for the user's attention about itself, Settings, and — while a company
-// account is signed in — who that is, with Sign out behind it.
+// asks for the user's attention about itself, and who is signed in:
+// Settings, Usage, Language, About and Log out are behind it. Only a build that runs without a company server shows a plain Settings
+// row there instead.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react';
 import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'motion/react';
@@ -420,7 +421,8 @@ export function Sidebar(props: SidebarProps) {
           </SidebarTabPanel>
         </div>
 
-        <div className="shrink-0 border-t border-hairline p-2">
+        {/* The footer tray: a hairline rule (ink 5%) across the whole rail. */}
+        <div className="shrink-0 border-t border-alpha-1 p-2">
           {chip && (
             <button
               type="button"
@@ -452,12 +454,18 @@ export function Sidebar(props: SidebarProps) {
             </button>
           )}
           {update.confirmation}
-          <SidebarNavButton
-            icon={<Anthropicon name="settings" size={16} className={navIconClass} />}
-            label={copy.nav.settings}
-            onSelect={props.onOpenSettings}
+          <SidebarAccountEntry
+            onOpenSettings={(section) =>
+              section ? uiStore.openSettings(section) : props.onOpenSettings()
+            }
+            fallback={
+              <SidebarNavButton
+                icon={<Anthropicon name="settings" size={16} className={navIconClass} />}
+                label={copy.nav.settings}
+                onSelect={props.onOpenSettings}
+              />
+            }
           />
-          <SidebarAccountEntry onOpenAccount={() => uiStore.openSettings('account')} />
         </div>
 
         {/* The handle doubles as a collapse button; a drag also dispatches a

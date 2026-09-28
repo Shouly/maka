@@ -63,12 +63,14 @@ export function decodeRuntimePolicyV2(value: unknown): RuntimePolicy {
     'webSearch',
     'subagents',
   ]);
+  // The retired personalization and privacy blocks are dropped, not decoded.
+  const { personalization: _personalization, privacy: _privacy, ...current } = policy;
   const decoded = normalizeRuntimePolicyFields(
-    policy,
-    normalizeSubagentSettings(policy.subagents),
+    current,
+    normalizeSubagentSettings(current.subagents),
     { preference: 'auto', executable: '' },
   );
-  assertCanonicalValue(value, withoutExternalAgents(withoutShell(decoded)), 'runtime policy v2');
+  assertCanonicalValue(current, withoutExternalAgents(withoutShell(decoded)), 'runtime policy v2');
   return decoded;
 }
 
@@ -177,10 +179,8 @@ export function normalizeNetworkProxyCredentialTarget(
 function normalizeRuntimePolicy(value: unknown): RuntimePolicy {
   const policy = exactRecord(value, 'runtime policy', [
     'networkProxy',
-    'personalization',
     'memory',
     'workspaceInstructions',
-    'privacy',
     'chatDefaults',
     'webSearch',
     'subagents',
@@ -203,10 +203,8 @@ function normalizeRuntimePolicyFields(
 ): RuntimePolicy {
   return {
     networkProxy: normalizeNetworkProxy(policy.networkProxy),
-    personalization: normalizePersonalization(policy.personalization),
     memory: normalizeMemory(policy.memory),
     workspaceInstructions: normalizeWorkspaceInstructions(policy.workspaceInstructions),
-    privacy: normalizePrivacy(policy.privacy),
     chatDefaults: normalizeChatDefaults(policy.chatDefaults),
     webSearch: normalizeWebSearch(policy.webSearch),
     subagents,
@@ -224,14 +222,10 @@ function normalizeMutationOperation(operation: Record<string, unknown>): Runtime
   switch (operation.kind) {
     case 'set_network_proxy':
       return { kind: operation.kind, value: normalizeNetworkProxy(operation.value) };
-    case 'set_personalization':
-      return { kind: operation.kind, value: normalizePersonalization(operation.value) };
     case 'set_memory':
       return { kind: operation.kind, value: normalizeMemory(operation.value) };
     case 'set_workspace_instructions':
       return { kind: operation.kind, value: normalizeWorkspaceInstructions(operation.value) };
-    case 'set_privacy':
-      return { kind: operation.kind, value: normalizePrivacy(operation.value) };
     case 'set_chat_defaults':
       return { kind: operation.kind, value: normalizeChatDefaults(operation.value) };
     case 'set_web_search':
@@ -268,13 +262,10 @@ function normalizeAgentRuntimeSettingsPatch(value: unknown): AgentRuntimeSetting
   const patch = exactRecord(
     value,
     'agent runtime settings patch',
-    ['personalization', 'memory', 'workspaceInstructions', 'privacy', 'webSearch'],
+    ['memory', 'workspaceInstructions', 'webSearch'],
     [],
   );
   return {
-    ...(patch.personalization === undefined
-      ? {}
-      : { personalization: normalizePersonalizationPatch(patch.personalization) }),
     ...(patch.memory === undefined ? {} : { memory: normalizeMemoryPatch(patch.memory) }),
     ...(patch.workspaceInstructions === undefined
       ? {}
@@ -284,26 +275,9 @@ function normalizeAgentRuntimeSettingsPatch(value: unknown): AgentRuntimeSetting
             'workspace instructions patch',
           ),
         }),
-    ...(patch.privacy === undefined ? {} : { privacy: normalizePrivacyPatch(patch.privacy) }),
     ...(patch.webSearch === undefined
       ? {}
       : { webSearch: normalizeEnabledPatch(patch.webSearch, 'web search patch') }),
-  };
-}
-
-function normalizePersonalizationPatch(
-  value: unknown,
-): AgentRuntimeSettingsPatch['personalization'] {
-  const patch = exactRecord(value, 'personalization patch', ['displayName', 'assistantTone'], []);
-  return {
-    ...(patch.displayName === undefined
-      ? {}
-      : { displayName: stringValue(patch.displayName, 'personalization displayName', 256) }),
-    ...(patch.assistantTone === undefined
-      ? {}
-      : {
-          assistantTone: stringValue(patch.assistantTone, 'personalization assistantTone', 4_096),
-        }),
   };
 }
 
@@ -313,15 +287,6 @@ function normalizeMemoryPatch(value: unknown): AgentRuntimeSettingsPatch['memory
     ...(patch.enabled === undefined
       ? {}
       : { enabled: booleanValue(patch.enabled, 'memory enabled') }),
-  };
-}
-
-function normalizePrivacyPatch(value: unknown): AgentRuntimeSettingsPatch['privacy'] {
-  const patch = exactRecord(value, 'privacy patch', ['incognitoActive'], []);
-  return {
-    ...(patch.incognitoActive === undefined
-      ? {}
-      : { incognitoActive: booleanValue(patch.incognitoActive, 'privacy incognitoActive') }),
   };
 }
 
@@ -373,14 +338,6 @@ function normalizeNetworkProxy(value: unknown): RuntimePolicy['networkProxy'] {
   };
 }
 
-function normalizePersonalization(value: unknown): RuntimePolicy['personalization'] {
-  const item = exactRecord(value, 'personalization', ['displayName', 'assistantTone']);
-  return {
-    displayName: stringValue(item.displayName, 'personalization displayName', 256),
-    assistantTone: stringValue(item.assistantTone, 'personalization assistantTone', 4_096),
-  };
-}
-
 function normalizeMemory(value: unknown): RuntimePolicy['memory'] {
   const item = exactRecord(value, 'memory policy', ['enabled']);
   return { enabled: booleanValue(item.enabled, 'memory enabled') };
@@ -389,11 +346,6 @@ function normalizeMemory(value: unknown): RuntimePolicy['memory'] {
 function normalizeWorkspaceInstructions(value: unknown): RuntimePolicy['workspaceInstructions'] {
   const item = exactRecord(value, 'workspace instructions policy', ['enabled']);
   return { enabled: booleanValue(item.enabled, 'workspace instructions enabled') };
-}
-
-function normalizePrivacy(value: unknown): RuntimePolicy['privacy'] {
-  const item = exactRecord(value, 'privacy policy', ['incognitoActive']);
-  return { incognitoActive: booleanValue(item.incognitoActive, 'privacy incognitoActive') };
 }
 
 function normalizeChatDefaults(value: unknown): RuntimePolicy['chatDefaults'] {
@@ -432,7 +384,12 @@ function normalizeWebSearch(value: unknown): RuntimePolicy['webSearch'] {
 
 /** Read the previous document without loosening the current wire decoder. */
 export function decodeRuntimePolicyV3(value: unknown): RuntimePolicy {
-  const old = exactRecord(value, 'runtime policy v3', [
+  // The retired personalization and privacy blocks are dropped, not decoded.
+  const {
+    personalization: _personalization,
+    privacy: _privacy,
+    ...old
+  } = exactRecord(value, 'runtime policy v3', [
     'networkProxy',
     'personalization',
     'memory',

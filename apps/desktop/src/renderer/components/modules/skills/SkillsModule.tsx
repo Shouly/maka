@@ -19,7 +19,7 @@
 
 // Skills: what the agent can invoke, where each one came from, which are on.
 //
-// Two views, after Claude's Customize page. YOURS is what is installed in this
+// Two views. YOURS is what is installed in this
 // workspace: one row per skill — icon tile, name, status, a line of meta, the
 // switch and the ⋯ menu. DISCOVER is what could be: the skills the app ships,
 // then what has been imported from this machine, each row ending in Install.

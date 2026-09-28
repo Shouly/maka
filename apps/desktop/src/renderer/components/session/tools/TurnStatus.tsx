@@ -293,7 +293,7 @@ function waitingWordsStyle(startedAt: number | undefined): CSSProperties | undef
  * clock the live row has; the mark shows at once and the words follow it.
  *
  * Deviation: the reference shows the mark alone until the model starts
- * streaming (claude.ai, 2026-09-26, measured). We keep the words, shown
+ * streaming (measured 2026-09-26). We keep the words, shown
  * `WAITING_WORDS_DELAY_MS` after the send (owner's choice).
  */
 export function TurnStatusPending(props: { live: TurnStatusLive; writing?: boolean }) {

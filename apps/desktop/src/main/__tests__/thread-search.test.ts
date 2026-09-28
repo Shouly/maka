@@ -96,16 +96,13 @@ function toolResult(content: unknown, isError = false): Extract<StoredMessage, {
   };
 }
 
-function makeDeps(entries: Record<string, Entry>, privacyPayload: unknown = { incognitoActive: false }) {
+function makeDeps(entries: Record<string, Entry>) {
   return {
     async listSessions() {
       return Object.values(entries).map((entry) => entry.session);
     },
     async readMessages(sessionId: string) {
       return entries[sessionId]?.messages ?? [];
-    },
-    async getPrivacyContext() {
-      return privacyPayload;
     },
   };
 }
@@ -464,48 +461,6 @@ describe('runThreadSearch', () => {
       ),
       [],
     );
-  });
-
-  it('blocks active or unverifiable privacy state before scanning', async () => {
-    for (const privacyPayload of [
-      { incognitoActive: true },
-      null,
-      {},
-      { incognitoActive: 'true' },
-      'invalid',
-      [],
-    ]) {
-      let listCalls = 0;
-      let readCalls = 0;
-      const base = makeDeps({}, privacyPayload);
-      const outcome = await runThreadSearch(
-        { source: 'thread', query: 'hello', limit: 5 },
-        {
-          ...base,
-          async listSessions() {
-            listCalls++;
-            return [];
-          },
-          async readMessages() {
-            readCalls++;
-            return [];
-          },
-        },
-      );
-      assert.equal(outcome.ok, false);
-      if (!outcome.ok) {
-        assert.equal(outcome.reason, 'incognito_active');
-        assert.match(
-          outcome.message,
-          privacyPayload && !Array.isArray(privacyPayload) &&
-            typeof privacyPayload === 'object' &&
-            (privacyPayload as { incognitoActive?: unknown }).incognitoActive === true
-            ? /incognito is active/
-            : /could not be verified/,
-        );
-      }
-      assert.deepEqual({ listCalls, readCalls }, { listCalls: 0, readCalls: 0 });
-    }
   });
 });
 

@@ -27,8 +27,8 @@ interface AnthropiconSpec {
 
 export type AnthropiconSize = 12 | 16 | 18 | 20 | 24 | 32;
 
-// Canonical names and codepoints come from the `er.icons` registry shipped in
-// Claude's current shared-frame bundle. Keep these names literal: call sites
+// Canonical names and codepoints come from the `er.icons` registry of the
+// icon font's shared-frame bundle. Keep these names literal: call sites
 // choose an icon for their product semantics instead of hiding mismatches
 // behind aliases such as "customize" or "viewAll".
 export const ANTHROPICON_SPECS = {
@@ -93,6 +93,8 @@ export const ANTHROPICON_SPECS = {
   eye: { glyph: '\uE069', size: 20, weight: 433.25 },
   /** Permission modes (upstream ShieldCheck / ShieldAlert): E102 and E10B. */
   shieldCheck: { glyph: '\uE102', size: 20, weight: 433.25 },
+  /** A shield with a padlock. */
+  shieldLock: { glyph: '\uE0A3', size: 20, weight: 433.25 },
   shieldAlert: { glyph: '\uE10B', size: 20, weight: 433.25 },
   expand: { glyph: '\uE067', size: 20, weight: 433.25 },
   eyeSlash: { glyph: '\uE06A', size: 20, weight: 433.25 },
@@ -107,6 +109,8 @@ export const ANTHROPICON_SPECS = {
   folder: { glyph: '\uE072', size: 20, weight: 433.25 },
   folderOpen: { glyph: '\uE073', size: 20, weight: 433.25 },
   folderAdd: { glyph: '\uE074', size: 20, weight: 433.25 },
+  /** The gauge beside Usage in the account menu. */
+  gauge: { glyph: '\uE130', size: 20, weight: 433.25 },
   globe: { glyph: '\uE082', size: 20, weight: 433.25 },
   hand: { glyph: '\uE085', size: 20, weight: 433.25 },
   image: { glyph: '\uE08C', size: 20, weight: 433.25 },
@@ -148,7 +152,7 @@ export const ANTHROPICON_SPECS = {
   shapes: { glyph: '\uE0D7', size: 20, weight: 433.25 },
   share: { glyph: '\uE0D8', size: 20, weight: 433.25 },
   sidebar: { glyph: '\uE0DD', size: 16, weight: 433.25 },
-  /** Two arrows, up and down: the sort control (Claude's list toolbars). */
+  /** Two arrows, up and down: the sort control in list toolbars. */
   sort: { glyph: '\uE0E3', size: 20, weight: 433.25 },
   /** 带声波的喇叭 —— 音频文件。字体里没有音符字形。 */
   sound: { glyph: '\uE0E4', size: 20, weight: 433.25 },
@@ -205,8 +209,8 @@ export interface AnthropiconProps {
 //
 // 24/32 取 400 是**轴的下限**,不是外推值:@font-face 声明 `font-weight: 400 700`,
 // 而线性外推到 32px 会得到 133,早已越界。所以 20px 以上无法再靠减字重补偿,
-// 大图标的描边会比小图标略粗 —— 这是字体本身的边界。Claude 自己的界面里
-// 图标只用到 12/16/20 三档,没有更大的。
+// 大图标的描边会比小图标略粗 —— 这是字体本身的边界。界面里图标只用
+// 12/16/20 三档,没有更大的。
 const REGULAR_WEIGHT_BY_SIZE: Record<AnthropiconSize, number> = {
   12: 577.75,
   16: 533.25,
@@ -217,7 +221,7 @@ const REGULAR_WEIGHT_BY_SIZE: Record<AnthropiconSize, number> = {
 };
 
 /**
- * Claude's variable icon-font glyph with its live size and weight locked to the
+ * A variable icon-font glyph with its live size and weight locked to the
  * semantic name. Icons are always decorative; the containing control owns the
  * accessible label.
  */

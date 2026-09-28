@@ -521,8 +521,8 @@ test('two UDS Clients share one Runtime Policy authority and CAS winner', async 
         first.request('runtime.policy.mutate', {
           expectedRevision: initial.revision,
           operation: {
-            kind: 'set_personalization',
-            value: { displayName: 'Desktop', assistantTone: 'precise' },
+            kind: 'set_workspace_instructions',
+            value: { enabled: false },
           },
         }),
         second.request('runtime.policy.mutate', {

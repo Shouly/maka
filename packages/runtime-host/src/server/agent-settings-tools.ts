@@ -27,22 +27,13 @@ import type {
 import type { MakaTool } from '@maka/runtime/tool-runtime';
 import { z } from 'zod';
 
-const personalizationPatchSchema = z
-  .object({
-    displayName: z.string().max(256).optional(),
-    assistantTone: z.string().max(4_096).optional(),
-  })
-  .strict();
 const memoryPatchSchema = z.object({ enabled: z.boolean().optional() }).strict();
 const enabledPatchSchema = z.object({ enabled: z.boolean().optional() }).strict();
-const privacyPatchSchema = z.object({ incognitoActive: z.boolean().optional() }).strict();
 
 const agentSettingsPatchSchema = z
   .object({
-    personalization: personalizationPatchSchema.optional(),
     memory: memoryPatchSchema.optional(),
     workspaceInstructions: enabledPatchSchema.optional(),
-    privacy: privacyPatchSchema.optional(),
     webSearch: enabledPatchSchema.optional(),
   })
   .strict();
@@ -62,10 +53,8 @@ export interface HostAgentSettingsToolAuthority {
 }
 
 export interface AgentSettingsSnapshot {
-  readonly personalization: RuntimePolicy['personalization'];
   readonly memory: RuntimePolicy['memory'];
   readonly workspaceInstructions: RuntimePolicy['workspaceInstructions'];
-  readonly privacy: RuntimePolicy['privacy'];
   readonly webSearch: Pick<RuntimePolicy['webSearch'], 'enabled'>;
 }
 
@@ -186,40 +175,20 @@ function unchanged(policy: RuntimePolicy): AgentSettingsUpdateResult {
 
 function projectSettings(policy: RuntimePolicy): AgentSettingsSnapshot {
   return {
-    personalization: { ...policy.personalization },
     memory: { ...policy.memory },
     workspaceInstructions: { ...policy.workspaceInstructions },
-    privacy: { ...policy.privacy },
     webSearch: { enabled: policy.webSearch.enabled },
   };
 }
 
 function describeChanges(policy: RuntimePolicy, patch: AgentRuntimeSettingsPatch): string[] {
   const changes: string[] = [];
-  compare(
-    changes,
-    'Display name',
-    policy.personalization.displayName,
-    patch.personalization?.displayName,
-  );
-  compare(
-    changes,
-    'Assistant tone',
-    policy.personalization.assistantTone,
-    patch.personalization?.assistantTone,
-  );
   compare(changes, 'Memory', policy.memory.enabled, patch.memory?.enabled);
   compare(
     changes,
     'Workspace instructions',
     policy.workspaceInstructions.enabled,
     patch.workspaceInstructions?.enabled,
-  );
-  compare(
-    changes,
-    'Incognito mode',
-    policy.privacy.incognitoActive,
-    patch.privacy?.incognitoActive,
   );
   compare(changes, 'Web search', policy.webSearch.enabled, patch.webSearch?.enabled);
   return changes;
@@ -228,8 +197,8 @@ function describeChanges(policy: RuntimePolicy, patch: AgentRuntimeSettingsPatch
 function compare(
   changes: string[],
   label: string,
-  current: string | boolean,
-  next: string | boolean | undefined,
+  current: boolean,
+  next: boolean | undefined,
 ): void {
   if (next !== undefined && next !== current)
     changes.push(`${label}: ${String(current)} → ${String(next)}`);

@@ -316,7 +316,7 @@
   --chat-text-primary: var(--text-primary);
   --chat-response-font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   --chat-composer-background: var(--surface-3);
-  /* 实测上游 --cds-radius-composer。配套的内节律(2026-09-06 CDP 复测 claude.ai
+  /* 实测上游 --cds-radius-composer。配套的内节律(2026-09-06 CDP 复测设计稿
      会话页:白面 48 高、内边距 8、文字起点 x=48):内边距 8、文本行 22 + 上下各 5 = 32
      (= --cds-h-control),文本行与底部 32px 按钮共用中线;单行形态整框 8+32+8 = 48。
      堆叠形态文字再内缩 8,图标按钮不缩 —— 两者本就不该对齐成同一条竖线。 */
@@ -468,12 +468,19 @@
     0 0 0 1px var(--alpha-2),
     0 4px 8px rgb(11 11 11 / 8%),
     0 12px 28px -2px var(--panel-shadow-color);
+  /* The Settings dialog (shadow-panel-sm): the same ring, and a
+     lighter pair of drops than --dialog-shadow — 0 1 2 at 6%, 0 2 8 at the
+     panel shadow colour (light 8% / dark 24%). */
+  --dialog-shadow-sm:
+    0 0 0 1px var(--alpha-2),
+    0 1px 2px rgb(11 11 11 / 6%),
+    0 2px 8px var(--panel-shadow-color);
 
 
 
   /* 代码高亮(Prism)。原来这 30 条规则写的是**写死的十六进制**、且只有浅色
      一份 —— 深色下正文与标点仍是 #393A43,实测对比度 1.74:1(WCAG 要 4.5),
-     代码的骨架糊在底色里。色值按 claude.ai CDP 实测抄,明暗两套都测过
+     代码的骨架糊在底色里。色值按设计稿 CDP 实测抄,明暗两套都测过
      (python/javascript/bash/json/diff 五种语言)。
      注意 number 与 boolean/null **同色**(青),不是红 —— 原来归到红色那档
      是色相就错了。参数与内建在上游是两个相邻值(#b84f05/#b34a00),肉眼不可
@@ -960,7 +967,7 @@
   --focus-ring-bg: var(--sidebar-selected);
 }
 
-/* 图标按钮按压回弹。数值抄 claude.ai 的 .cds-btn-squish;transition 必须整条声明,
+/* 图标按钮按压回弹。数值抄设计稿的 .cds-btn-squish;transition 必须整条声明,
    拆开写会盖掉按钮自己的 Tailwind 过渡。 */
 .sidebar-icon-btn {
   transition:
@@ -982,6 +989,30 @@
 @media (prefers-reduced-motion: reduce) {
   .sidebar-icon-btn:active {
     transform: none;
+  }
+}
+
+/* The Settings dialog enters from 98% and transparent,
+   over 0.2s on cubic-bezier(.165, .84, .44, 1). No exit animation: Radix
+   unmounts the content as soon as it closes. */
+@keyframes settings-dialog-enter {
+  from {
+    opacity: 0;
+    scale: .98;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+.settings-dialog[data-state="open"] {
+  animation: settings-dialog-enter .2s cubic-bezier(.165, .84, .44, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-dialog[data-state="open"] {
+    animation-name: none;
   }
 }
 
@@ -1210,7 +1241,7 @@ pre[class*="language-"] {
 }
 
 /* Prism 代码高亮。色值全部走 --code-* token(见 :root),明暗各一套。
-   分组按 claude.ai 实测的**语义**,不是照 Prism 的 token 名平铺:
+   分组按设计稿实测的**语义**,不是照 Prism 的 token 名平铺:
    number 与 boolean/null 同档(青,不是红)、operator 归标点、参数与内建同档。 */
 .custom-code-highlight code,
 .custom-json-highlight code {
@@ -1331,13 +1362,13 @@ pre[class*="language-"] {
 
 /* GFM 脚注(remark-gfm 产出的结构固定:正文 <sup><a data-footnote-ref>,文末
    <section data-footnotes> 内 sr-only <h3> + <ol> + <a data-footnote-backref>)。
-   数值全部按 claude.ai CDP 实测,明暗都验过。写在 CSS 而非组件里,是因为 hast
+   数值全部按设计稿 CDP 实测,明暗都验过。写在 CSS 而非组件里,是因为 hast
    节点没有 parent 引用,ol/li 渲染器拿不到"我在脚注区内"这个上下文。 */
 
 /* 角标:12px + line-height 0 + relative/top,不是 vertical-align:super ——
-   实测 claude.ai 带角标的段落高度仍是 24px,换原生 super 会把那行顶高。
+   实测设计稿带角标的段落高度仍是 24px,换原生 super 会把那行顶高。
    不用 :has(> a[data-footnote-ref]) 精确限定:本仓没有 :has 先例,而作者手写
-   的 <sup> 同样需要这套不撑行高的上标(claude.ai 的规则也是同范围)。 */
+   的 <sup> 同样需要这套不撑行高的上标(设计稿的规则也是同范围)。 */
 .markdown-body sup {
   font-size: 0.75rem;      /* 12px */
   line-height: 0;
@@ -1397,10 +1428,9 @@ pre[class*="language-"] {
 .chat-user-content,
 .chat-user-content p {
   color: var(--chat-text-primary);
-  /* rem, not px (the reference writes px): the Appearance font-size setting
-     scales the root, and the conversation must follow it. 15/20 at default. */
-  font-size: 0.9375rem;
-  line-height: 1.25rem;
+  /* 15/20 at the default transcript text size. */
+  font-size: calc(0.9375rem * var(--chat-text-scale, 1));
+  line-height: calc(1.25rem * var(--chat-text-scale, 1));
 }
 
 /* AI 回复正文。**不限定 .chat-area** —— 单聊(TaskAssistantMessage)和群聊
@@ -1409,10 +1439,24 @@ pre[class*="language-"] {
 .chat-assistant-response {
   color: var(--chat-text-primary);
   font-family: var(--chat-response-font);
-  /* 15/24 at the default root; rem so the font-size setting reaches it. */
-  font-size: 0.9375rem;
+  /* 15/24 at the default transcript text size. */
+  font-size: calc(0.9375rem * var(--chat-text-scale, 1));
   font-weight: 400;
-  line-height: 1.5rem;
+  line-height: calc(1.5rem * var(--chat-text-scale, 1));
+}
+
+/* Transcript text size (Settings › General),
+   `[data-chat-text-size]`: it reaches the messages and nothing else. The body
+   of both the user's messages and the replies is 14 / 15 / 16px, and
+   everything sized inside a reply — the Markdown headings and code
+   (`Markdown.tsx`, `color-utils.tsx`) — takes the same factor through
+   `--chat-text-scale`. */
+[data-chat-text-size='s'] :is(.chat-user-content, .chat-assistant-response) {
+  --chat-text-scale: calc(14 / 15);
+}
+
+[data-chat-text-size='l'] :is(.chat-user-content, .chat-assistant-response) {
+  --chat-text-scale: calc(16 / 15);
 }
 
 /* Assistant prose follows the response's 24px rhythm. Markdown headings,
@@ -1436,7 +1480,6 @@ pre[class*="language-"] {
 .chat-composer-surface .tiptap.ProseMirror {
   color: var(--text-primary);
   font-family: var(--font-sans);
-  /* 16/22 at the default root; rem so the font-size setting reaches it. */
   font-size: 1rem;
   line-height: 1.375rem;
 }

@@ -74,7 +74,6 @@ export type MemoryQueryResult =
   | {
       readonly kind: 'list';
       readonly enabled: boolean;
-      readonly incognitoActive: boolean;
       readonly directoryPath: string;
       readonly files: readonly MemoryFileProjection[];
     }
@@ -96,8 +95,7 @@ export type MemoryMutationRejectionReason =
   | 'oversize'
   | 'empty'
   | 'invalid_path'
-  | 'disabled'
-  | 'incognito';
+  | 'disabled';
 
 export type MemoryMutateResult =
   | { readonly kind: 'written'; readonly version: string; readonly byteLength: number }
@@ -203,17 +201,11 @@ export function decodeMemoryQueryResult(value: unknown): MemoryQueryResult {
     value,
     'memory query result',
     ['kind'],
-    ['enabled', 'incognitoActive', 'directoryPath', 'files', 'document'],
+    ['enabled', 'directoryPath', 'files', 'document'],
   );
   if (record.kind === 'list') {
-    requireExactRecord(value, 'memory list result', [
-      'kind',
-      'enabled',
-      'incognitoActive',
-      'directoryPath',
-      'files',
-    ]);
-    if (typeof record.enabled !== 'boolean' || typeof record.incognitoActive !== 'boolean') {
+    requireExactRecord(value, 'memory list result', ['kind', 'enabled', 'directoryPath', 'files']);
+    if (typeof record.enabled !== 'boolean') {
       throw invalidProtocolFrame('Invalid memory list flags');
     }
     if (!Array.isArray(record.files) || record.files.length > LIST_MAX_FILES) {
@@ -222,7 +214,6 @@ export function decodeMemoryQueryResult(value: unknown): MemoryQueryResult {
     return {
       kind: 'list',
       enabled: record.enabled,
-      incognitoActive: record.incognitoActive,
       directoryPath: requireString(record.directoryPath, 'memory directory', 4_096),
       files: record.files.map(decodeFileProjection),
     };
@@ -272,7 +263,6 @@ const REJECTION_REASONS: ReadonlySet<string> = new Set<MemoryMutationRejectionRe
   'empty',
   'invalid_path',
   'disabled',
-  'incognito',
 ]);
 
 export function decodeMemoryMutateResult(value: unknown): MemoryMutateResult {

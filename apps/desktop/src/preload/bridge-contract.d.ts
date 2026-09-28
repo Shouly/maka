@@ -1643,6 +1643,10 @@ export interface MakaBridge {
     signIn(provider?: string): Promise<import('../shared/org-account.js').OrgAccountState>;
     /** Load the server's sign-in options again, e.g. after it could not be reached. */
     refresh(): Promise<import('../shared/org-account.js').OrgAccountState>;
+    /** Change the person's own name or avatar on the company server. */
+    updateProfile(
+      update: import('../shared/org-account.js').OrgAccountProfileUpdate,
+    ): Promise<import('../shared/org-account.js').OrgAccountState>;
     cancelSignIn(): Promise<void>;
     signOut(): Promise<import('../shared/org-account.js').OrgAccountState>;
     subscribe(handler: (state: import('../shared/org-account.js').OrgAccountState) => void): () => void;

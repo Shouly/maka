@@ -314,11 +314,6 @@ describe('background memory pass', () => {
       { kind: 'skipped', sessionId: 'session-1', turnId: 'turn-1', reason: 'disabled' },
     ]);
 
-    const incognito = harness({ answers: [], policy: { privacy: { incognitoActive: true } } });
-    incognito.coordinator.turnCompleted(turn);
-    await incognito.settled();
-    assert.equal(incognito.prompts.length, 0);
-
     const child = harness({
       answers: [],
       header: { subagentParent: { sessionId: 'parent', subagentId: 'x' } as never },

@@ -85,23 +85,6 @@ test('Host WebFetch uses the resolved proxy snapshot and closes its transport', 
   assert.equal(closed, 1);
 });
 
-test('Host WebFetch fails closed before transport creation in privacy mode', async () => {
-  let transportCreated = false;
-  const tool = createHostWebFetchTool({
-    policy: resolver({ kind: 'privacy_mode' }),
-    createFetchTransport: () => {
-      transportCreated = true;
-      throw new Error('transport must not be created');
-    },
-  });
-
-  await assert.rejects(
-    async () => tool.impl({ url: 'https://example.com/page', prompt: 'summarise' }, context()),
-    /disabled while privacy mode is active/i,
-  );
-  assert.equal(transportCreated, false);
-});
-
 test('Host WebFetch fails closed before transport creation when proxy credentials are missing', async () => {
   let transportCreated = false;
   const tool = createHostWebFetchTool({

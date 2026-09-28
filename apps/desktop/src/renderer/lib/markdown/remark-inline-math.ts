@@ -20,7 +20,7 @@
 /**
  * 裸 `$x$` 行内公式:自己在 mdast 上切,不开 remark-math 的
  * singleDollarTextMath —— 那个没有启发式,"It costs $100 and $200" 会被切出
- * 一个内容为 "100 and " 的公式,而 claude.ai 上同一句是不渲染的(均实测)。
+ * 一个内容为 "100 and " 的公式,而参考实现里同一句是不渲染的(均实测)。
  *
  * 放在 mdast 层而非源字符串层:code / inlineCode / html 都是独立节点类型,
  * 只处理 text 节点就天然跳过它们,也不必给货币的 `$` 加转义。

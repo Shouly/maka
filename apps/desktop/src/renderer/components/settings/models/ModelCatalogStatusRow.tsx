@@ -72,7 +72,6 @@ export function ModelCatalogStatusRow(props: {
       description={status ? modelCatalogDescription(status, copy, locale) : undefined}
       control={
         <Button
-          size="sm"
           variant="secondary"
           disabled={!host || refreshing}
           onClick={() => {
@@ -110,11 +109,7 @@ export function modelCatalogDescription(
     return `${source}${join}${copy.page.catalogFailed(attempt.error)}`;
   }
   if (attempt?.outcome === 'skipped') {
-    return `${source}${join}${
-      attempt.error === 'privacy_mode'
-        ? copy.page.catalogSkippedPrivacy
-        : copy.page.catalogSkippedProxy
-    }`;
+    return `${source}${join}${copy.page.catalogSkippedProxy}`;
   }
   return source;
 }

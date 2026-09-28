@@ -43,7 +43,7 @@ const DropdownMenuSub = DropdownMenuPrimitive.Sub;
 const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
 
 /**
- * 所有 variant 共用同一套视觉(Claude 的菜单只有一种长相,全局最小宽度
+ * 所有 variant 共用同一套视觉(菜单只有一种长相,全局最小宽度
  * 128px,更宽的产品菜单在调用点自行 opt in)。`variant` 不参与样式,它只表达
  * **浮层归属**:`sidebar` 会在内容根节点打上 `data-sidebar-overlay`,让收起态
  * 悬停预览知道"这个菜单是我的,别在它开着的时候把面板收回去"。
@@ -244,7 +244,7 @@ const DropdownMenuLabel = React.forwardRef<
 DropdownMenuLabel.displayName = DropdownMenuPrimitive.Label.displayName;
 
 /**
- * 分隔符 - Claude menu 的 1px hairline
+ * 分隔符 - 菜单的 1px hairline
  */
 const DropdownMenuSeparator = React.forwardRef<
   React.ComponentRef<typeof DropdownMenuPrimitive.Separator>,
@@ -258,7 +258,7 @@ const DropdownMenuSeparator = React.forwardRef<
 ));
 DropdownMenuSeparator.displayName = DropdownMenuPrimitive.Separator.displayName;
 
-/** 快捷键提示：Claude 菜单中始终可见。 */
+/** 快捷键提示：菜单中始终可见。 */
 const DropdownMenuShortcut = ({ className, ...props }: React.HTMLAttributes<HTMLSpanElement>) => {
   return (
     <span

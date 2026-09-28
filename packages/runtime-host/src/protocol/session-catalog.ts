@@ -24,11 +24,13 @@ import { isSessionStartMode, type SessionStartMode } from '@maka/core/session-st
 import {
   isSessionBlockedReason,
   isSessionToolProfile,
+  isSessionUserContext,
   type PersistedBackendKind,
   type SessionBlockedReason,
   type SessionStatus,
   type SessionSubagentProjection,
   type SessionToolProfile,
+  type SessionUserContext,
 } from '@maka/core/session';
 import { isThinkingLevel, type ThinkingLevel } from '@maka/core/model-thinking';
 import type { ExecutionBoundarySummary } from '@maka/core/sandbox-boundary';
@@ -158,6 +160,8 @@ export interface SessionCreateInput {
   readonly modelTarget: SessionModelTarget;
   readonly thinkingLevel?: ThinkingLevel;
   readonly toolProfile?: SessionToolProfile;
+  /** Who the Session works for; only a signed-in person's own new Session carries one. */
+  readonly userContext?: SessionUserContext;
   readonly permissionMode?: PermissionMode;
   readonly collaborationMode?: CollaborationMode;
   readonly orchestrationMode?: OrchestrationMode;
@@ -522,6 +526,7 @@ export function decodeSessionCreateInput(value: unknown): SessionCreateInput {
       'labels',
       'thinkingLevel',
       'toolProfile',
+      'userContext',
       'permissionMode',
       'collaborationMode',
       'orchestrationMode',
@@ -540,6 +545,9 @@ export function decodeSessionCreateInput(value: unknown): SessionCreateInput {
     ...(Object.hasOwn(input, 'toolProfile')
       ? { toolProfile: sessionToolProfile(input.toolProfile) }
       : {}),
+    ...(Object.hasOwn(input, 'userContext')
+      ? { userContext: sessionUserContext(input.userContext) }
+      : {}),
     ...(Object.hasOwn(input, 'permissionMode')
       ? { permissionMode: permissionMode(input.permissionMode) }
       : {}),
@@ -550,6 +558,11 @@ export function decodeSessionCreateInput(value: unknown): SessionCreateInput {
       ? { orchestrationMode: orchestrationMode(input.orchestrationMode) }
       : {}),
   };
+}
+
+function sessionUserContext(value: unknown): SessionUserContext {
+  if (!isSessionUserContext(value)) throw invalidProtocolFrame('Invalid Session user context');
+  return value;
 }
 
 function sessionToolProfile(value: unknown): SessionToolProfile {

@@ -50,20 +50,6 @@ export const workHubActionSchema = z.union([
     ),
   z
     .object({
-      kind: z.literal("set"),
-      target: z.literal("displayName"),
-      value: z
-        .string()
-        .trim()
-        .max(60)
-        .refine((value) => !/[\u0000-\u001f\u007f]/.test(value)),
-    })
-    .strict()
-    .describe(
-      "Change the name Maka uses for you (称呼 / 稱呼) on the current Host. Empty string restores the default form of address. The executor opens the editor, types, saves, verifies, and supports guarded undo.",
-    ),
-  z
-    .object({
       kind: z.literal("open"),
       area: z.enum(["newTask", "extensions", "automations", "app"]),
     })

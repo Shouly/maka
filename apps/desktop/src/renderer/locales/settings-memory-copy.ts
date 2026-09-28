@@ -24,8 +24,6 @@ export type MemorySettingsCopy = {
   intlLocale: string;
   generate: string;
   generateHelp: string;
-  incognito: string;
-  incognitoHelp: string;
   files: string;
   filesHelp: string;
   folder: string;
@@ -38,8 +36,11 @@ export type MemorySettingsCopy = {
   noDescription: string;
   bytes(count: string): string;
   openFileAria(path: string): string;
+  fileActions(path: string): string;
+  columns: { file: string; size: string; updated: string };
   editor: {
-    back: string;
+    create: string;
+    revert: string;
     createTitle: string;
     path: string;
     pathHelp: string;
@@ -80,8 +81,6 @@ const SETTINGS_MEMORY_COPY = {
     generate: '从聊天生成记忆',
     generateHelp:
       '每次回复后，后台会复盘这轮对话，把持久的信息整理进记忆文件；你明确要求记住或忘掉的内容会当场处理。关闭后模型不再读取也不再写入记忆。',
-    incognito: '隐身中',
-    incognitoHelp: '隐身对话不使用记忆，也不会写入。',
     files: '记忆文件',
     filesHelp: '一个主题一个 Markdown 文件，保存在本机，可以直接编辑。',
     folder: '目录',
@@ -94,8 +93,11 @@ const SETTINGS_MEMORY_COPY = {
     noDescription: '没有描述',
     bytes: (count) => `${count} 字节`,
     openFileAria: (path) => `打开 ${path}`,
+    fileActions: (path) => `${path} 的更多操作`,
+    columns: { file: '文件', size: '大小', updated: '更新时间' },
     editor: {
-      back: '返回记忆文件列表',
+      create: '创建',
+      revert: '撤销修改',
       createTitle: '新建记忆文件',
       path: '路径',
       pathHelp: '以 / 开头、以 .md 结尾，例如 /topics/food.md、/people/sam.md。',
@@ -136,7 +138,6 @@ const SETTINGS_MEMORY_COPY = {
       empty: '内容不能为空。',
       invalid_path: '路径无效：需要以 / 开头、以 .md 结尾。',
       disabled: '记忆已关闭，无法写入。',
-      incognito: '隐身对话中无法写入记忆。',
     },
   },
   'zh-TW': {
@@ -144,8 +145,6 @@ const SETTINGS_MEMORY_COPY = {
     generate: '從聊天產生記憶',
     generateHelp:
       '每次回覆後，背景會複盤這輪對話，把持久的資訊整理進記憶檔案；你明確要求記住或忘掉的內容會當場處理。關閉後模型不再讀取也不再寫入記憶。',
-    incognito: '隱身中',
-    incognitoHelp: '隱身對話不使用記憶，也不會寫入。',
     files: '記憶檔案',
     filesHelp: '一個主題一個 Markdown 檔案，儲存在本機，可以直接編輯。',
     folder: '目錄',
@@ -158,8 +157,11 @@ const SETTINGS_MEMORY_COPY = {
     noDescription: '沒有描述',
     bytes: (count) => `${count} 位元組`,
     openFileAria: (path) => `開啟 ${path}`,
+    fileActions: (path) => `${path} 的更多操作`,
+    columns: { file: '檔案', size: '大小', updated: '更新時間' },
     editor: {
-      back: '返回記憶檔案列表',
+      create: '建立',
+      revert: '復原修改',
       createTitle: '新增記憶檔案',
       path: '路徑',
       pathHelp: '以 / 開頭、以 .md 結尾，例如 /topics/food.md、/people/sam.md。',
@@ -200,7 +202,6 @@ const SETTINGS_MEMORY_COPY = {
       empty: '內容不能為空。',
       invalid_path: '路徑無效：需要以 / 開頭、以 .md 結尾。',
       disabled: '記憶已關閉，無法寫入。',
-      incognito: '隱身對話中無法寫入記憶。',
     },
   },
   en: {
@@ -208,8 +209,6 @@ const SETTINGS_MEMORY_COPY = {
     generate: 'Generate memory from chats',
     generateHelp:
       'After each reply, a background pass reviews the exchange and files what is durable into memory; anything you explicitly ask to remember or forget is handled right away. Off, the model neither reads nor writes memory.',
-    incognito: 'Incognito',
-    incognitoHelp: 'Incognito conversations run without memory and never write to it.',
     files: 'Memory files',
     filesHelp: 'One Markdown file per subject, kept on this machine, editable in place.',
     folder: 'Folder',
@@ -222,8 +221,11 @@ const SETTINGS_MEMORY_COPY = {
     noDescription: 'No description',
     bytes: (count) => `${count} bytes`,
     openFileAria: (path) => `Open ${path}`,
+    fileActions: (path) => `More actions for ${path}`,
+    columns: { file: 'File', size: 'Size', updated: 'Updated' },
     editor: {
-      back: 'Back to memory files',
+      create: 'Create',
+      revert: 'Discard changes',
       createTitle: 'New memory file',
       path: 'Path',
       pathHelp: 'Starts with / and ends with .md — /topics/food.md, /people/sam.md.',
@@ -264,7 +266,6 @@ const SETTINGS_MEMORY_COPY = {
       empty: 'Content cannot be empty.',
       invalid_path: 'Invalid path: it must start with / and end with .md.',
       disabled: 'Memory is off; nothing can be written.',
-      incognito: 'Memory cannot be written during an incognito conversation.',
     },
   },
 } satisfies UiCatalog<MemorySettingsCopy>;

@@ -20,7 +20,7 @@
 import { cn } from '../../lib/cn';
 
 /**
- * Shared Claude-style menu primitives.
+ * Shared menu primitives.
  *
  * Keep these classes in one place so DropdownMenu, sidebar Popovers, and
  * bespoke menu surfaces do not drift apart as their Radix primitives differ.
@@ -98,7 +98,7 @@ export const menuDangerItemClass =
 export const menuSeparatorClass = 'mx-2.5 my-1 h-px bg-menu-hairline';
 
 /**
- * 行尾的"更多操作"触发按钮(⋮)。Cowork 实测:
+ * 行尾的"更多操作"触发按钮(⋮)。设计稿实测:
  *   - 图标默认就是**主色**,不是次要灰 —— 它是常驻操作入口,不该先压暗再靠
  *     hover 提亮
  *   - 32×32 **正方形**(aspect-square + w-control),不靠 padding 凑;放在 flex
@@ -117,7 +117,7 @@ export const menuTriggerOpenClass = 'bg-sidebar-menu-hover';
 /**
  * 上面那颗是 32×32 · r8 的「更多操作」档;这里是**另一档**:28×28 · r7 的
  * inline 上下文动作(项目页的收藏/成员/编辑说明、右栏面板里的加号……)。
- * Cowork 项目页实测就是这两档并存 —— Unpin/Edit instructions 是 28/r7,
+ * 设计稿项目页实测就是这两档并存 —— Unpin/Edit instructions 是 28/r7,
  * 只有 ⋯ 主菜单才 32/r8。
  *
  * 字色同样是 text-primary:常驻入口不先压暗;hover 只加底,不动字色。

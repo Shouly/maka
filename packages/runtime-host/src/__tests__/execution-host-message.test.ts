@@ -507,50 +507,14 @@ test('an unopened Session completion reaches the Host catalog feed once', async 
   });
 });
 
-test('incognito drops completion attention but keeps the catalog change', async () => {
-  await withExecutionRoot(async (fixture) => {
-    const host = await fixture.startHost();
-    const client = await connectClient(fixture.root);
-    const attention: unknown[] = [];
-    let catalogChanges = 0;
-    const unsubscribe = client.subscribeSessionCatalogChanges((frame) => {
-      if (frame.sessionId !== fixture.sessionId) return;
-      catalogChanges += 1;
-      if (frame.attention) attention.push(frame.attention);
-    });
-
-    const shown = await completeTurn(client, fixture.sessionId);
-    await waitFor(() => attention.length > 0, {
-      timeoutMs: PROCESS_TIMEOUT_MS,
-      message: 'no Host attention announced completion',
-    });
-    const announced = [{ kind: 'completed', eventId: shown.terminalEventId }];
-    assert.deepEqual(attention, announced);
-
-    await setIncognito(client, true);
-    const before = catalogChanges;
-    await completeTurn(client, fixture.sessionId);
-    // The next Turn is admitted only after the private Turn's terminal
-    // publication, and so after its catalog change reached this connection.
-    await completeTurn(client, fixture.sessionId);
-    assert.ok(catalogChanges > before);
-    assert.deepEqual(attention, announced);
-    unsubscribe();
-    await client.close();
-    await fixture.stopHost(host);
-  });
-});
-
-for (const [name, prompt, incognitoActive] of [
-  ['question', FAKE_ASK_USER_QUESTION_PROMPT, false],
-  ['sandbox boundary', FAKE_ASK_SANDBOX_BOUNDARY_PROMPT, false],
-  ['incognito question', FAKE_ASK_USER_QUESTION_PROMPT, true],
+for (const [name, prompt] of [
+  ['question', FAKE_ASK_USER_QUESTION_PROMPT],
+  ['sandbox boundary', FAKE_ASK_SANDBOX_BOUNDARY_PROMPT],
 ] as const) {
   test(`a pending ${name} reaches catalog subscribers as waiting_for_user`, async () => {
     await withExecutionRoot(async (fixture) => {
       const host = await fixture.startHost();
       const client = await connectClient(fixture.root);
-      if (incognitoActive) await setIncognito(client, true);
       let observedWaiting!: () => void;
       const waiting = new Promise<void>((resolve) => {
         observedWaiting = resolve;
@@ -585,27 +549,19 @@ for (const [name, prompt, incognitoActive] of [
         PROCESS_TIMEOUT_MS,
         'no catalog change announced the waiting Session',
       );
-      if (!incognitoActive) {
-        await waitFor(() => attention.length > 0, {
-          timeoutMs: PROCESS_TIMEOUT_MS,
-          message: 'no Host attention announced the waiting Session',
-        });
-      }
+      await waitFor(() => attention.length > 0, {
+        timeoutMs: PROCESS_TIMEOUT_MS,
+        message: 'no Host attention announced the waiting Session',
+      });
       await client.request('turn.stop', {
         sessionId: fixture.sessionId,
         turnId,
         runId: started.runId,
       });
-      if (incognitoActive) {
-        // Admitted only after the stopped Turn settles, which waits on the
-        // interaction's own admission and so on its catalog change.
-        await waitForTerminalTurn(client, fixture.sessionId, turnId);
-        await completeTurn(client, fixture.sessionId);
-      }
       unsubscribe();
       assert.deepEqual(
         attention.map((event) => (event as { kind: string }).kind),
-        incognitoActive ? [] : ['waiting'],
+        ['waiting'],
       );
       await client.close();
       await fixture.stopHost(host);
@@ -769,16 +725,4 @@ async function completeTurn(
   const terminal = await waitForTerminalTurn(client, sessionId, turnId);
   if (terminal.status !== 'completed') throw new Error(`Turn ended ${terminal.status}`);
   return terminal;
-}
-
-async function setIncognito(
-  client: RuntimeHostConnection,
-  incognitoActive: boolean,
-): Promise<void> {
-  const policy = await client.request('runtime.policy.query', {});
-  const result = await client.request('runtime.policy.mutate', {
-    expectedRevision: policy.revision,
-    operation: { kind: 'set_privacy', value: { incognitoActive } },
-  });
-  assert.equal(result.kind, 'committed');
 }

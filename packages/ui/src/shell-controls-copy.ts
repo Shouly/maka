@@ -22,7 +22,7 @@ import type { UiCatalog, UiLocale } from '@maka/core/ui-locale';
 
 export type ThreadSearchErrorReason = Extract<
   SearchErrorReason,
-  'incognito_active' | 'invalid_query' | 'aborted' | 'disabled' | 'provider_error'
+  'invalid_query' | 'aborted' | 'disabled' | 'provider_error'
 >;
 
 type ShellControlsCopy = {
@@ -71,7 +71,6 @@ const SHELL_CONTROLS_COPY_BY_LOCALE = {
       placeholder: '搜索任务标题和内容…',
       unavailable: '当前环境无法连接搜索后端，请稍后重试。',
       errorByReason: {
-        incognito_active: '关闭隐私模式后可以继续按关键词查找历史任务。',
         invalid_query: '搜索词无效，请缩短内容或移除凭据后重试。',
         aborted: '搜索已取消。',
         disabled: '搜索当前不可用。',
@@ -101,7 +100,6 @@ const SHELL_CONTROLS_COPY_BY_LOCALE = {
       placeholder: '搜尋任務標題和內容…',
       unavailable: '目前環境無法連線搜尋後端，請稍後重試。',
       errorByReason: {
-        incognito_active: '關閉隱私模式後可以繼續按關鍵詞查詢歷史任務。',
         invalid_query: '搜尋詞無效，請縮短內容或移除憑證後重試。',
         aborted: '搜尋已取消。',
         disabled: '搜尋目前無法使用。',
@@ -131,7 +129,6 @@ const SHELL_CONTROLS_COPY_BY_LOCALE = {
       placeholder: 'Search task titles and content…',
       unavailable: 'Search is unavailable in the current environment. Try again later.',
       errorByReason: {
-        incognito_active: 'Turn off privacy mode to search previous tasks by keyword.',
         invalid_query: 'Invalid search query. Shorten it or remove credential material and try again.',
         aborted: 'Search was canceled.',
         disabled: 'Search is unavailable right now.',

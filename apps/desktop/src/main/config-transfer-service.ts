@@ -225,7 +225,7 @@ function canonicalEndpoint(value: string): string | null {
 /** Why the memory part of an import did not land, from the write's refusal. */
 export function memoryImportSkipReason(error: unknown): MemoryImportSkipReason {
   const reason = error instanceof MemoryImportRefused ? error.reason : undefined;
-  return reason === 'disabled' || reason === 'incognito' ? reason : 'failed';
+  return reason === 'disabled' ? reason : 'failed';
 }
 
 /** A memory write the Runtime Host refused during an import, with its reason. */

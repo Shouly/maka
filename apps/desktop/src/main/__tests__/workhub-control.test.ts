@@ -25,7 +25,6 @@ import { WORKHUB_COORDINATION_SESSION_ID } from "@maka/core/session";
 import { createWorkHubControl } from "../workhub-control.js";
 import { WorkHubSurface } from "../workhub-surface.js";
 import { WorkHubUi } from "../workhub-ui.js";
-import type { DesktopRuntimeHostClient } from "../runtime-host-client.js";
 import { desktopSessionResourceKey } from "../../shared/runtime-host-identity.js";
 import type { MakaTool } from "@maka/runtime/tool-runtime";
 
@@ -52,7 +51,6 @@ function harness(prepareWindow: () => Promise<void> = async () => {}) {
     authorizedRenderer: (contents) => contents === window,
     send() {},
     readSettings: async () => createDefaultSettings(),
-    client: () => ({}) as DesktopRuntimeHostClient,
     isCurrent: () => current,
     assertTurn: async (_scope, turnId) => {
       if (turnId !== activeTurn) throw new Error("Inactive turn");
@@ -319,7 +317,6 @@ test("native input passes through only the assistant and restores hit testing af
     () => wc,
     async () => createDefaultSettings(),
     () => {},
-    async () => "",
   );
   await assert.rejects(
     ui.execute(
@@ -353,7 +350,6 @@ test("typed Settings navigation reveals clipped sidebar controls through native 
     () => wc,
     async () => createDefaultSettings(),
     () => {},
-    async () => "",
   );
   await assert.rejects(
     ui.execute(

@@ -285,6 +285,7 @@ import { wantsSignInWindow } from "./sign-in-window.js";
 import { resolveMainRendererEntry } from "./main-renderer-loader.js";
 import type { OrgAccountService } from "./org-account/org-account-service.js";
 import { osKeychain } from "./org-account/org-account-store.js";
+import { sessionUserContext } from "./org-account/session-user-context.js";
 import { createProjectlessWorkspaces } from './projectless-workspace.js';
 import {
   parseDesktopSessionResourceKey,
@@ -661,6 +662,8 @@ const sessionLocal = new DesktopSessionLocalService(sessionLocalStore, {
 registerDesktopSessionLocalIpc({
   ipcMain, service: sessionLocal, approvals: attachmentApprovals, resizeImage: resizeImageForAttachment,
   changed: localSessionChanged,
+  userContext: async () =>
+    sessionUserContext((await orgAccountService?.catch(() => undefined))?.state()),
   resolveWorkspace: async (target, input) => {
     const context = runtimePolicyTargetsByEpoch.get(target.scope.targetEpoch);
     if (!context?.isActive()) throw new Error('Select a cached project before creating an offline task');
@@ -972,7 +975,6 @@ const workHubControl = createWorkHubControl({
   authorizedRenderer: (contents) => mainWindowController.ownsRenderer(contents),
   send: (channel, payload) => mainWindowController.send(channel, payload),
   readSettings: () => settingsStore.get(),
-  client: (scope) => requireWorkHubTarget(scope).client,
   isCurrent: isCurrentWorkHubTarget,
   ...workHubRuntime,
 });
@@ -1966,8 +1968,11 @@ function registerPersistentClientIpc(): void {
     rendererAssetsDir: join(dirname(resolveMainRendererEntry(import.meta.dirname, undefined).filePath), "assets"),
   });
   orgAccountService.then(
-    (service) =>
-      service.subscribe((state) => mainWindowController.setSignInWindow(wantsSignInWindow(state))),
+    (service) => {
+      service.subscribe((state) => mainWindowController.setSignInWindow(wantsSignInWindow(state)));
+      // The profile may have changed on another computer while this one was away.
+      app.on("browser-window-focus", () => void service.reloadProfile());
+    },
     (error) => console.error("[org-account] failed to start", error),
   );
   registerAppIconIpc({

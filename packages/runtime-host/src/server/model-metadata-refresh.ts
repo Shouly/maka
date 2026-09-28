@@ -58,7 +58,7 @@ interface ModelMetadataCacheDocument {
 }
 
 /** Why an attempt did not go out; carried as `lastAttempt.error` of a skipped attempt. */
-export type ModelMetadataSkipCode = 'privacy_mode' | 'proxy_credential_not_configured';
+export type ModelMetadataSkipCode = 'proxy_credential_not_configured';
 
 /** Where the metadata this Host answers with came from, and how its refresh is going. */
 export interface ModelMetadataStatus {
@@ -288,16 +288,10 @@ async function run(
 > {
   const admission = await input.policy.resolveHostOutboundExecution();
   if (admission.kind !== 'ready') {
-    const code: ModelMetadataSkipCode =
-      admission.kind === 'privacy_mode' ? 'privacy_mode' : 'proxy_credential_not_configured';
     log(
-      `[runtime-host] models.dev catalog refresh skipped: ${
-        code === 'privacy_mode'
-          ? 'privacy mode is active'
-          : 'the network proxy credential is not configured'
-      }`,
+      '[runtime-host] models.dev catalog refresh skipped: the network proxy credential is not configured',
     );
-    return { kind: 'skipped', code };
+    return { kind: 'skipped', code: 'proxy_credential_not_configured' };
   }
   signal.throwIfAborted();
   const transport = (input.createFetchTransport ?? createProxiedFetchTransport)(

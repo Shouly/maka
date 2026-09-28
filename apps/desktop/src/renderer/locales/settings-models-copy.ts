@@ -115,9 +115,13 @@ const enCapabilitiesCopy = {
 
 const zhCopy = {
   detail: {
+    requestHeadersSummary: (count: number) =>
+      count === 0 ? '未设置自定义请求头。' : `已设置 ${count} 个自定义请求头。`,
+    manage: '管理',
+    done: '完成',
+    moreActions: (name: string) => `${name} 的更多操作`,
     delete: '删除',
     cancel: '取消',
-    deleteUnused: '不再需要，删除连接',
     deleteFailed: '删除模型连接失败',
     credentialReadFailed: '读取模型凭据状态失败',
     refreshFailed: '刷新模型连接失败',
@@ -142,7 +146,6 @@ const zhCopy = {
     requestCustomizationInvalid: '请求设置无效',
     requestHeadersInvalidDetail: '请检查请求头名称和值。',
     requestBodyInvalidDetail: '请输入符合要求的 JSON 对象。',
-    saveAdvancedRequest: '保存高级请求设置',
     configuredHeaders: (count: number) => `${count} 个请求头`,
     noAdvancedRequest: '未设置',
     oauthLoggedIn: 'OAuth 已登录',
@@ -176,8 +179,6 @@ const zhCopy = {
       '服务商模型页给出的最大 token 数。缺少它 Maka 只能按 32k 处理，长对话会被提前截断。',
     addModelContextWindowRequired: '请填写上下文窗口。',
     credentials: '连接',
-    dangerZone: '删除连接',
-    deleteRowHelp: '此操作不可撤销。',
     credentialsHelp: '密钥只保存在本机。',
     credentialsHelpAccount: '登录令牌只保存在本机。',
     modelManagementHelp: '这些模型会出现在任务的模型选择器里。',
@@ -288,6 +289,7 @@ const zhCopy = {
     },
   },
   panel: {
+    columns: { connection: '连接', provider: '服务商', models: '模型', actions: '操作' },
     groups: {
       recommended: '推荐',
       plans: '订阅计划',
@@ -326,8 +328,6 @@ const zhCopy = {
     chipAria: (name: string, provider: string, isDefault: boolean, status?: string) =>
       `模型连接：${name}，供应商：${provider}${isDefault ? '，默认连接' : ''}${status ? `，${status}` : ''}`,
     addConnection: '添加连接',
-    backToList: '返回模型连接',
-    backToCatalog: '返回服务商列表',
   },
   catalog: {
     unavailable: '未开放',
@@ -451,6 +451,8 @@ const zhCopy = {
   },
   oauthSection: {
     signedIn: '已登录',
+    signIn: '登录',
+    manageAccount: (name: string) => `管理 ${name}`,
     codexDescription: '使用 ChatGPT Plus / Pro 账号添加连接。',
     xaiDescription: '使用 SuperGrok / X Premium 账号添加连接。',
     configuredConnections: (count: number) => `已有 ${count} 个连接 · 添加另一个账号`,
@@ -504,7 +506,6 @@ const zhCopy = {
     catalogFetched: (when: string) => `models.dev · ${when} 更新`,
     catalogCached: (when: string) => `models.dev · ${when} 更新（本机缓存）`,
     catalogFailed: (error: string) => `最近一次刷新失败：${error}`,
-    catalogSkippedPrivacy: '隐私模式下不联网刷新',
     catalogSkippedProxy: '网络代理需要密码但尚未配置，未能刷新',
     catalogRefresh: '立即刷新',
     catalogRefreshing: '刷新中…',
@@ -527,10 +528,14 @@ const zhCopy = {
 } as const;
 const zhTwCopy = {
   detail: {
+    requestHeadersSummary: (count: number) =>
+      count === 0 ? '未設定自訂請求標頭。' : `已設定 ${count} 個自訂請求標頭。`,
+    manage: '管理',
+    done: '完成',
+    moreActions: (name: string) => `${name} 的更多操作`,
     deviceCode: '登入碼：',
     delete: '刪除',
     cancel: '取消',
-    deleteUnused: '不再需要，刪除連線',
     deleteFailed: '刪除模型連線失敗',
     credentialReadFailed: '讀取模型憑據狀態失敗',
     refreshFailed: '重新整理模型連線失敗',
@@ -555,7 +560,6 @@ const zhTwCopy = {
     requestCustomizationInvalid: '請求設定無效',
     requestHeadersInvalidDetail: '請檢查請求頭名稱和值。',
     requestBodyInvalidDetail: '請輸入符合要求的 JSON 物件。',
-    saveAdvancedRequest: '儲存高階請求設定',
     configuredHeaders: (count: number) => `${count} 個請求頭`,
     noAdvancedRequest: '未設定',
     oauthLoggedIn: 'OAuth 已登入',
@@ -590,8 +594,6 @@ const zhTwCopy = {
       '服務商模型頁給出的最大 token 數。缺少它 Maka 只能按 32k 處理，長對話會被提前截斷。',
     addModelContextWindowRequired: '請填寫上下文視窗。',
     credentials: '連線',
-    dangerZone: '刪除連線',
-    deleteRowHelp: '此操作不可撤銷。',
     credentialsHelp: '金鑰只儲存在本機。',
     credentialsHelpAccount: '登入權杖只儲存在本機。',
     modelManagementHelp: '這些模型會出現在任務的模型選擇器裡。',
@@ -697,6 +699,7 @@ const zhTwCopy = {
     },
   },
   panel: {
+    columns: { connection: '連線', provider: '服務商', models: '模型', actions: '操作' },
     groups: {
       recommended: '推薦',
       plans: '訂閱計劃',
@@ -735,8 +738,6 @@ const zhTwCopy = {
     chipAria: (name: string, provider: string, isDefault: boolean, status?: string) =>
       `模型連線：${name}，供應商：${provider}${isDefault ? '，預設連線' : ''}${status ? `，${status}` : ''}`,
     addConnection: '新增連線',
-    backToList: '返回模型連線',
-    backToCatalog: '返回服務商列表',
   },
   catalog: {
     unavailable: '未開放',
@@ -859,6 +860,8 @@ const zhTwCopy = {
     },
   },
   oauthSection: {
+    signIn: '登入',
+    manageAccount: (name: string) => `管理 ${name}`,
     signedIn: '已登入',
     codexDescription: 'ChatGPT Plus / Pro 訂閱帳號登入。',
     xaiDescription: 'SuperGrok / X Premium 帳號登入。',
@@ -914,7 +917,6 @@ const zhTwCopy = {
     catalogFetched: (when: string) => `models.dev · ${when} 更新`,
     catalogCached: (when: string) => `models.dev · ${when} 更新（本機快取）`,
     catalogFailed: (error: string) => `最近一次重新整理失敗：${error}`,
-    catalogSkippedPrivacy: '隱私模式下不連網重新整理',
     catalogSkippedProxy: '網路代理需要密碼但尚未設定，未能重新整理',
     catalogRefresh: '立即重新整理',
     catalogRefreshing: '重新整理中…',
@@ -940,9 +942,15 @@ export type SettingsModelsCopy = WidenCopy<typeof zhCopy>;
 
 const enCopy: SettingsModelsCopy = {
   detail: {
+    requestHeadersSummary: (count: number) =>
+      count === 0
+        ? 'No custom request headers.'
+        : `${count} custom request ${count === 1 ? 'header' : 'headers'}.`,
+    manage: 'Manage',
+    done: 'Done',
+    moreActions: (name: string) => `More actions for ${name}`,
     delete: 'Delete',
     cancel: 'Cancel',
-    deleteUnused: 'Delete unused connection',
     deleteFailed: 'Failed to delete model connection',
     credentialReadFailed: 'Failed to read model credential status',
     refreshFailed: 'Failed to refresh model connection',
@@ -968,7 +976,6 @@ const enCopy: SettingsModelsCopy = {
     requestCustomizationInvalid: 'Invalid request settings',
     requestHeadersInvalidDetail: 'Check the request header names and values.',
     requestBodyInvalidDetail: 'Enter a valid JSON object that meets the requirements.',
-    saveAdvancedRequest: 'Save advanced request settings',
     configuredHeaders: (count: number) => `${count} ${count === 1 ? 'header' : 'headers'}`,
     noAdvancedRequest: 'Not configured',
     oauthLoggedIn: 'OAuth signed in',
@@ -1007,8 +1014,6 @@ const enCopy: SettingsModelsCopy = {
       "The maximum token count from the provider's model page. Without it Maka can only assume 32k, and long conversations get truncated early.",
     addModelContextWindowRequired: 'Enter a context window.',
     credentials: 'Connection',
-    dangerZone: 'Delete connection',
-    deleteRowHelp: 'This cannot be undone.',
     credentialsHelp: 'The key stays on this machine.',
     credentialsHelpAccount: 'The sign-in token stays on this machine.',
     modelManagementHelp: 'These models appear in the chat model picker.',
@@ -1120,6 +1125,12 @@ const enCopy: SettingsModelsCopy = {
     },
   },
   panel: {
+    columns: {
+      connection: 'Connection',
+      provider: 'Provider',
+      models: 'Models',
+      actions: 'Actions',
+    },
     groups: {
       recommended: 'Recommended',
       plans: 'Subscription plans',
@@ -1160,8 +1171,6 @@ const enCopy: SettingsModelsCopy = {
     chipAria: (name: string, provider: string, isDefault: boolean, status?: string) =>
       `Model connection: ${name}; provider: ${provider}${isDefault ? '; default connection' : ''}${status ? `; ${status}` : ''}`,
     addConnection: 'Add connection',
-    backToList: 'Back to model connections',
-    backToCatalog: 'Back to the provider list',
   },
   catalog: {
     unavailable: 'Unavailable',
@@ -1298,6 +1307,8 @@ const enCopy: SettingsModelsCopy = {
     },
   },
   oauthSection: {
+    signIn: 'Sign in',
+    manageAccount: (name: string) => `Manage ${name}`,
     signedIn: 'Signed in',
     codexDescription: 'Use a ChatGPT Plus / Pro account to add a connection.',
     xaiDescription: 'Use a SuperGrok or X Premium account to add a connection.',
@@ -1358,7 +1369,6 @@ const enCopy: SettingsModelsCopy = {
     catalogFetched: (when) => `models.dev · updated ${when}`,
     catalogCached: (when) => `models.dev · updated ${when} (cached on this device)`,
     catalogFailed: (error) => `Last refresh failed: ${error}`,
-    catalogSkippedPrivacy: 'Not refreshed over the network in privacy mode',
     catalogSkippedProxy: 'Not refreshed: the network proxy needs a password that is not set',
     catalogRefresh: 'Refresh now',
     catalogRefreshing: 'Refreshing…',

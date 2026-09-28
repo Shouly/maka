@@ -19,9 +19,10 @@
 
 // The model routes the main agent is allowed to delegate to.
 //
-// Two levels in one column — list, then editor — because the whole page is one
-// array on the settings object: every write is `{ subagents: { presets } }`,
-// and the editor edits one element of it. Nothing here is modal.
+// A list of presets and, over it, the editor as a dialog — create and edit are
+// forms, and forms open over the settings rather than in them. The
+// whole page is one array on the settings object: every write is
+// `{ subagents: { presets } }`, and the editor edits one element of it.
 //
 // The failure mode this page is built around: `normalizeSubagentSettings`
 // DROPS a preset it dislikes rather than rejecting the write, so a resolved
@@ -34,13 +35,20 @@ import { useMemo, useState } from 'react';
 import { useStore } from 'zustand';
 import { MAX_SUBAGENT_PRESETS, type SubagentPreset } from '@maka/core/subagent-settings';
 import { useUiLocale } from '@maka/ui';
-import { Anthropicon } from '../icons/Anthropicon.js';
 import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../ui/confirm-dialog.js';
 import { Skeleton } from '../ui/skeleton.js';
 import { Switch } from '../ui/switch.js';
 import { statusChipClass, statusChipToneClass } from '../ui/status-chip.js';
 import { SubagentEditor } from './subagents/SubagentEditor.js';
+import {
+  RowActionsMenu,
+  SettingsEmpty,
+  SettingsTable,
+  SettingsTableActionsCell,
+  SettingsTableCell,
+  SettingsTableRow,
+} from './settings-kit.js';
 import { SettingsRow, SettingsSection } from './settings-row.js';
 import { useHostSettings, useSettingsErrorReporter } from '../../hooks/use-settings.js';
 import {
@@ -112,56 +120,32 @@ export function SubagentsSettings(props: { host: DesktopRuntimeHostRef | undefin
     );
   }
 
-  // Both faces render inside one tree because the removal confirm has to be
-  // mounted on both. It used to live only in the list branch, and the editor's
-  // own Remove therefore set the pending preset and opened nothing: a delete
-  // that resolves successfully and does nothing at all.
   return (
     <>
-      {level !== 'list' ? (
-        <SubagentEditor
-          key={editing?.id ?? '__new__'}
-          preset={editing}
-          presets={presets}
-          connections={rows}
-          saving={saving}
-          onBack={() => setRoute({ kind: 'list' })}
-          onDelete={editing ? () => setPendingRemove(editing) : undefined}
-          onSave={async (next) => {
-            const nextPresets = editing
-              ? presets.map((candidate) => (candidate.id === editing.id ? next : candidate))
-              : [...presets, next];
-            if (await persist(nextPresets, next.id)) setRoute({ kind: 'list' });
-          }}
-        />
-      ) : (
-        <SettingsSection
-          title={copy.section.title}
-          description={copy.section.count(presets.length)}
-          action={
-            presets.length > 0 ? (
-              <Button
-                size="sm"
-                disabled={saving || atLimit}
-                onClick={() => setRoute({ kind: 'create' })}
-              >
+      <SettingsSection
+        title={copy.section.title}
+        description={copy.section.count(presets.length)}
+        action={
+          presets.length > 0 ? (
+            <Button disabled={saving || atLimit} onClick={() => setRoute({ kind: 'create' })}>
+              {copy.section.add}
+            </Button>
+          ) : undefined
+        }
+      >
+        {presets.length === 0 ? (
+          <SettingsEmpty
+            title={copy.section.emptyTitle}
+            body={copy.section.emptyDescription}
+            action={
+              <Button disabled={saving} onClick={() => setRoute({ kind: 'create' })}>
                 {copy.section.add}
               </Button>
-            ) : undefined
-          }
-        >
-          {presets.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-8 text-center">
-              <p className="text-sm leading-5 text-text-primary">{copy.section.emptyTitle}</p>
-              <p className="max-w-md text-[0.8125rem] leading-[1.125rem] text-text-secondary">
-                {copy.section.emptyDescription}
-              </p>
-              <Button size="sm" disabled={saving} onClick={() => setRoute({ kind: 'create' })}>
-                {copy.section.add}
-              </Button>
-            </div>
-          ) : (
-            presets.map((preset) => {
+            }
+          />
+        ) : (
+          <SettingsTable label={copy.section.title}>
+            {presets.map((preset) => {
               const availability = subagentPresetAvailability(preset, rows);
               // Only a route the main agent cannot take earns a chip: "disabled"
               // is the switch beside it said twice, and "available" says nothing
@@ -174,24 +158,35 @@ export function SubagentsSettings(props: { host: DesktopRuntimeHostRef | undefin
                 connection_disabled: copy.status.connectionDisabled,
                 model_disabled: copy.status.modelDisabled,
               }[availability.kind];
+              const connection = rows.find((row) => row.slug === preset.connectionSlug);
               return (
-                <SettingsRow
+                <SettingsTableRow
                   key={preset.id}
-                  title={
-                    <span className="flex flex-wrap items-center gap-2">
-                      <span className="truncate">{preset.name}</span>
-                      {problem && (
-                        <span
-                          className={`${statusChipClass} ${statusChipToneClass(availability.tone)}`}
-                        >
-                          {problem}
-                        </span>
-                      )}
+                  onOpen={() => setRoute({ kind: 'edit', presetId: preset.id })}
+                  openLabel={copy.row.configure(preset.name)}
+                >
+                  <SettingsTableCell>
+                    <span className="flex min-w-0 flex-col">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="truncate font-medium">{preset.name}</span>
+                        {problem && (
+                          <span
+                            className={`${statusChipClass} ${statusChipToneClass(availability.tone)}`}
+                          >
+                            {problem}
+                          </span>
+                        )}
+                      </span>
+                      <span className="truncate text-[0.8125rem] leading-[1.0625rem] text-text-muted">
+                        {preset.description || copy.row.fallbackDescription}
+                      </span>
                     </span>
-                  }
-                  description={preset.description || copy.row.fallbackDescription}
-                  control={
-                    <span className="flex items-center gap-2">
+                  </SettingsTableCell>
+                  <SettingsTableCell className="w-[34%] truncate text-text-secondary">
+                    {`${connection?.name ?? preset.connectionSlug} · ${preset.model}`}
+                  </SettingsTableCell>
+                  <SettingsTableCell className="w-14">
+                    <span className="flex justify-end" onClick={(event) => event.stopPropagation()}>
                       <Switch
                         aria-label={`${copy.row.enabled}: ${preset.name}`}
                         checked={preset.enabled}
@@ -204,22 +199,48 @@ export function SubagentsSettings(props: { host: DesktopRuntimeHostRef | undefin
                           );
                         }}
                       />
-                      <Button
-                        variant="ghost"
-                        size="iconSm"
-                        aria-label={copy.row.configure(preset.name)}
-                        disabled={saving}
-                        onClick={() => setRoute({ kind: 'edit', presetId: preset.id })}
-                      >
-                        <Anthropicon name="caretRight" size={16} />
-                      </Button>
                     </span>
-                  }
-                />
+                  </SettingsTableCell>
+                  <SettingsTableActionsCell>
+                    <RowActionsMenu
+                      label={copy.row.actions(preset.name)}
+                      actions={[
+                        {
+                          label: copy.row.edit,
+                          disabled: saving,
+                          onSelect: () => setRoute({ kind: 'edit', presetId: preset.id }),
+                        },
+                        {
+                          label: copy.remove.confirm,
+                          danger: true,
+                          disabled: saving,
+                          onSelect: () => setPendingRemove(preset),
+                        },
+                      ]}
+                    />
+                  </SettingsTableActionsCell>
+                </SettingsTableRow>
               );
-            })
-          )}
-        </SettingsSection>
+            })}
+          </SettingsTable>
+        )}
+      </SettingsSection>
+
+      {level !== 'list' && (
+        <SubagentEditor
+          key={editing?.id ?? '__new__'}
+          preset={editing}
+          presets={presets}
+          connections={rows}
+          saving={saving}
+          onClose={() => setRoute({ kind: 'list' })}
+          onSave={async (next) => {
+            const nextPresets = editing
+              ? presets.map((candidate) => (candidate.id === editing.id ? next : candidate))
+              : [...presets, next];
+            if (await persist(nextPresets, next.id)) setRoute({ kind: 'list' });
+          }}
+        />
       )}
 
       <ConfirmDialog

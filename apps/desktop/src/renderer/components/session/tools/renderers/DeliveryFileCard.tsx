@@ -28,7 +28,7 @@
 // those fit in a square with a filename under it, and twelve of them (which
 // one call really can send) scrolled sideways out of the answer.
 //
-// The frame is still the Cowork reference's geometry — 520 wide, one click
+// The frame is still the reference geometry — 520 wide, one click
 // target, the name as a SENTENCE over a kind line, cards stacked at 8px. The
 // PAGE on the left is relx's and is a different idea entirely; `SheetIcon`
 // says how.

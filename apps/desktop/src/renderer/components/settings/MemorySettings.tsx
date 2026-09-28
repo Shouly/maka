@@ -19,9 +19,11 @@
 
 // The memory filesystem: one switch, a folder of Markdown files, an editor.
 //
-// Two levels in one column — list, then one file — the way the subagents page
-// does it. The page is a plain file editor on purpose: what the model reads is
-// the file, so what the user edits is the file, not a projection of it.
+// The list, and one file as a sub-view of it, with the dialog's top bar as
+// the way back. A new file
+// is a form, so it opens as a dialog over the list. The page is a plain file
+// editor on purpose: what the model reads is the file, so what the user edits
+// is the file, not a projection of it.
 //
 // Every save carries the version the page read. The model and the background
 // pass write the same files between reads, so a stale save comes back as a
@@ -38,7 +40,18 @@ import { Skeleton } from '../ui/skeleton.js';
 import { Switch } from '../ui/switch.js';
 import { Textarea } from '../ui/textarea.js';
 import { statusChipClass, statusChipToneClass } from '../ui/status-chip.js';
-import { SettingsRow, SettingsSection, settingsFieldWidthClass } from './settings-row.js';
+import {
+  RowActionsMenu,
+  SettingsEmpty,
+  SettingsModal,
+  SettingsModalField,
+  SettingsTable,
+  SettingsTableCell,
+  SettingsTableHeadCell,
+  SettingsTableRow,
+  useSettingsBack,
+} from './settings-kit.js';
+import { SettingsRow, SettingsSection } from './settings-row.js';
 import { useMemoryList } from '../../hooks/use-memory-state.js';
 import { useSettingsErrorReporter } from '../../hooks/use-settings.js';
 import { openPath } from '../../bridge/app.js';
@@ -55,10 +68,11 @@ import {
   memoryRejectionMessage,
 } from '../../locales/settings-memory-copy.js';
 import { getSettingsSharedCopy } from '../../locales/settings-shared-copy.js';
+import { getSettingsNavigationCopy } from '../../locales/settings-navigation-copy.js';
 import { getShellCopy } from '../../locales/shell-copy.js';
 import type { DesktopRuntimeHostRef } from '../../bridge/projects.js';
 
-type Route = { kind: 'list' } | { kind: 'create' } | { kind: 'file'; path: string };
+type Route = { kind: 'list' } | { kind: 'file'; path: string };
 
 export function MemorySettings(props: { host: DesktopRuntimeHostRef | undefined }) {
   const locale = useUiLocale();
@@ -68,7 +82,17 @@ export function MemorySettings(props: { host: DesktopRuntimeHostRef | undefined 
   const report = useSettingsErrorReporter();
   const memory = useMemoryList(props.host);
   const [route, setRoute] = useState<Route>({ kind: 'list' });
+  const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState<'toggle' | 'open' | null>(null);
+  const backToList = () => {
+    setRoute({ kind: 'list' });
+    memory.reload();
+  };
+  useSettingsBack(
+    route.kind === 'file'
+      ? { label: getSettingsNavigationCopy(locale).sections.memory.label, onBack: backToList }
+      : null,
+  );
 
   const state = memory.state;
 
@@ -99,17 +123,8 @@ export function MemorySettings(props: { host: DesktopRuntimeHostRef | undefined 
       .finally(() => setBusy(null));
   };
 
-  if (route.kind !== 'list') {
-    return (
-      <MemoryFileEditor
-        host={props.host}
-        path={route.kind === 'file' ? route.path : null}
-        onBack={() => {
-          setRoute({ kind: 'list' });
-          memory.reload();
-        }}
-      />
-    );
+  if (route.kind === 'file') {
+    return <MemoryFileView host={props.host} path={route.path} onDone={backToList} />;
   }
 
   return (
@@ -131,17 +146,6 @@ export function MemorySettings(props: { host: DesktopRuntimeHostRef | undefined 
             )
           }
         />
-        {state?.incognitoActive && (
-          <SettingsRow
-            title={copy.incognito}
-            description={copy.incognitoHelp}
-            control={
-              <span className={`${statusChipClass} ${statusChipToneClass('attention')}`}>
-                {copy.incognito}
-              </span>
-            }
-          />
-        )}
       </SettingsSection>
 
       <SettingsSection
@@ -150,7 +154,9 @@ export function MemorySettings(props: { host: DesktopRuntimeHostRef | undefined 
           state?.directoryPath ? (
             <span className="flex flex-col gap-0.5">
               <span>{copy.filesHelp}</span>
-              <span className="font-mono text-text-muted">{state.directoryPath}</span>
+              <span className="break-all font-mono text-[0.8125rem] text-text-muted">
+                {state.directoryPath}
+              </span>
             </span>
           ) : (
             copy.filesHelp
@@ -160,7 +166,7 @@ export function MemorySettings(props: { host: DesktopRuntimeHostRef | undefined 
           <span className="flex items-center gap-2">
             <Button
               variant="ghost"
-              size="iconSm"
+              size="icon"
               aria-label={copy.reload}
               disabled={memory.loading}
               onClick={memory.reload}
@@ -168,11 +174,11 @@ export function MemorySettings(props: { host: DesktopRuntimeHostRef | undefined 
               <Anthropicon name="arrowClockwise" size={16} />
             </Button>
             {state?.directoryPath && (
-              <Button variant="outline" size="sm" disabled={busy !== null} onClick={openFolder}>
+              <Button variant="secondary" disabled={busy !== null} onClick={openFolder}>
                 {busy === 'open' ? copy.opening : copy.openFolder}
               </Button>
             )}
-            <Button size="sm" disabled={!state} onClick={() => setRoute({ kind: 'create' })}>
+            <Button disabled={!state} onClick={() => setCreating(true)}>
               {copy.newFile}
             </Button>
           </span>
@@ -184,58 +190,163 @@ export function MemorySettings(props: { host: DesktopRuntimeHostRef | undefined 
             control={<Skeleton className="h-8 w-8 rounded-lg" />}
           />
         ) : state.files.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 py-8 text-center">
-            <p className="text-sm leading-5 text-text-primary">{copy.emptyTitle}</p>
-            <p className="max-w-md text-[0.8125rem] leading-[1.125rem] text-text-secondary">
-              {copy.emptyHelp}
-            </p>
-          </div>
+          <SettingsEmpty title={copy.emptyTitle} body={copy.emptyHelp} />
         ) : (
-          state.files.map((file) => (
-            <SettingsRow
-              key={file.path}
-              title={<span className="font-mono">{file.path}</span>}
-              description={
-                <span className="flex flex-col gap-0.5">
-                  <span>{file.description ?? copy.noDescription}</span>
-                  <span className="text-text-muted">
-                    {copy.bytes(file.byteLength.toLocaleString(copy.intlLocale))} ·{' '}
-                    <RelativeTime ts={file.updatedAt} />
+          <SettingsTable
+            label={copy.files}
+            head={
+              <>
+                <SettingsTableHeadCell>{copy.columns.file}</SettingsTableHeadCell>
+                <SettingsTableHeadCell className="w-28">{copy.columns.size}</SettingsTableHeadCell>
+                <SettingsTableHeadCell className="w-36">
+                  {copy.columns.updated}
+                </SettingsTableHeadCell>
+              </>
+            }
+          >
+            {state.files.map((file) => (
+              <SettingsTableRow
+                key={file.path}
+                onOpen={() => setRoute({ kind: 'file', path: file.path })}
+                openLabel={copy.openFileAria(file.path)}
+              >
+                <SettingsTableCell>
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate font-mono text-[0.8125rem]">{file.path}</span>
+                    <span className="truncate text-[0.8125rem] leading-[1.0625rem] text-text-muted">
+                      {file.description ?? copy.noDescription}
+                    </span>
                   </span>
-                </span>
-              }
-              control={
-                <Button
-                  variant="ghost"
-                  size="iconSm"
-                  aria-label={copy.openFileAria(file.path)}
-                  onClick={() => setRoute({ kind: 'file', path: file.path })}
-                >
-                  <Anthropicon name="caretRight" size={16} />
-                </Button>
-              }
-            />
-          ))
+                </SettingsTableCell>
+                <SettingsTableCell className="text-text-secondary">
+                  {copy.bytes(file.byteLength.toLocaleString(copy.intlLocale))}
+                </SettingsTableCell>
+                <SettingsTableCell className="text-text-secondary">
+                  <RelativeTime ts={file.updatedAt} />
+                </SettingsTableCell>
+              </SettingsTableRow>
+            ))}
+          </SettingsTable>
         )}
       </SettingsSection>
+
+      {creating && (
+        <MemoryCreateDialog
+          host={props.host}
+          onClose={() => setCreating(false)}
+          onCreated={() => {
+            setCreating(false);
+            memory.reload();
+          }}
+        />
+      )}
     </>
   );
 }
 
-/** One file. `path` is null for a new one. */
-function MemoryFileEditor(props: {
+/** Tell the user why a write or delete did not land, in the Host's words. */
+function useMemoryFailure() {
+  const copy = getMemorySettingsCopy(useUiLocale());
+  return (title: string, reason: string | undefined) =>
+    toast({
+      title,
+      description: memoryRejectionMessage(reason, copy, title),
+      variant: 'destructive',
+    });
+}
+
+/** A new file: a path and its content, as a dialog over the list. */
+function MemoryCreateDialog(props: {
   host: DesktopRuntimeHostRef | undefined;
-  path: string | null;
-  onBack: () => void;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const copy = getMemorySettingsCopy(useUiLocale());
+  const text = copy.editor;
+  const report = useSettingsErrorReporter();
+  const fail = useMemoryFailure();
+  const [path, setPath] = useState('');
+  const [content, setContent] = useState('');
+  const [busy, setBusy] = useState(false);
+  const ready = path.trim().length > 0 && content.trim().length > 0;
+
+  const create = async () => {
+    setBusy(true);
+    try {
+      const result = await writeMemoryFile(
+        { path: path.trim(), content, ifVersion: 'new' },
+        props.host,
+      );
+      if (result.kind === 'written') {
+        toast({ title: text.created, variant: 'success' });
+        props.onCreated();
+        return;
+      }
+      fail(copy.errors.saveFailed, result.kind === 'rejected' ? result.reason : undefined);
+    } catch (error) {
+      report(copy.errors.saveFailed, error);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <SettingsModal
+      open
+      onOpenChange={(open) => {
+        if (!open && !busy) props.onClose();
+      }}
+      size="lg"
+      title={text.createTitle}
+      data-maka-contract="memory-file-create"
+      footer={
+        <>
+          <Button variant="secondary" disabled={busy} onClick={props.onClose}>
+            {copy.remove.cancel}
+          </Button>
+          <Button disabled={busy || !ready} onClick={() => void create()}>
+            {busy ? text.saving : text.create}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <SettingsModalField label={text.path} htmlFor="memory-file-path" hint={text.pathHelp}>
+          <Input
+            id="memory-file-path"
+            className="font-mono"
+            placeholder={text.pathPlaceholder}
+            value={path}
+            onChange={(event) => setPath(event.target.value)}
+          />
+        </SettingsModalField>
+        <SettingsModalField label={text.content} htmlFor="memory-file-content">
+          <Textarea
+            id="memory-file-content"
+            className="min-h-56 font-mono text-[0.8125rem] leading-5"
+            placeholder={text.contentPlaceholder}
+            value={content}
+            spellCheck={false}
+            onChange={(event) => setContent(event.target.value)}
+          />
+        </SettingsModalField>
+      </div>
+    </SettingsModal>
+  );
+}
+
+/** One file, as a sub-view of the list: its content, editable in place. */
+function MemoryFileView(props: {
+  host: DesktopRuntimeHostRef | undefined;
+  path: string;
+  onDone: () => void;
 }) {
   const locale = useUiLocale();
   const copy = getMemorySettingsCopy(locale);
   const text = copy.editor;
   const report = useSettingsErrorReporter();
-  const [document, setDocument] = useState<MemoryDocumentProjection | null | undefined>(
-    props.path === null ? null : undefined,
-  );
-  const [path, setPath] = useState(props.path ?? '');
+  const fail = useMemoryFailure();
+  const [document, setDocument] = useState<MemoryDocumentProjection | null | undefined>(undefined);
   // `null` means "no local edits": the textarea follows the file until the
   // user types, which is what makes a reload land without a prompt.
   const [draft, setDraft] = useState<string | null>(null);
@@ -243,7 +354,6 @@ function MemoryFileEditor(props: {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
-    if (props.path === null) return;
     let cancelled = false;
     void readMemoryFile(props.path, props.host).then(
       (loaded) => {
@@ -262,25 +372,19 @@ function MemoryFileEditor(props: {
 
   const content = document?.content ?? '';
   const value = draft ?? content;
-  const creating = props.path === null;
-  const dirty = creating
-    ? value.trim().length > 0 && path.trim().length > 0
-    : draft !== null && draft !== content;
+  const dirty = draft !== null && draft !== content;
 
   const save = async () => {
+    if (!document) return;
     setBusy('save');
     try {
       const result = await writeMemoryFile(
-        {
-          path: creating ? path.trim() : props.path!,
-          content: value,
-          ifVersion: creating ? 'new' : (document?.version ?? 'new'),
-        },
+        { path: props.path, content: value, ifVersion: document.version },
         props.host,
       );
       if (result.kind === 'written') {
-        toast({ title: creating ? text.created : text.saved, variant: 'success' });
-        props.onBack();
+        toast({ title: text.saved, variant: 'success' });
+        props.onDone();
         return;
       }
       if (result.kind === 'rejected' && result.reason === 'version_conflict' && result.current) {
@@ -291,15 +395,7 @@ function MemoryFileEditor(props: {
         toast({ title: text.conflict, description: text.conflictHelp, variant: 'destructive' });
         return;
       }
-      toast({
-        title: copy.errors.saveFailed,
-        description: memoryRejectionMessage(
-          result.kind === 'rejected' ? result.reason : undefined,
-          copy,
-          copy.errors.saveFailed,
-        ),
-        variant: 'destructive',
-      });
+      fail(copy.errors.saveFailed, result.kind === 'rejected' ? result.reason : undefined);
     } catch (error) {
       report(copy.errors.saveFailed, error);
     } finally {
@@ -317,18 +413,10 @@ function MemoryFileEditor(props: {
       );
       if (result.kind === 'deleted') {
         toast({ title: text.deleted, variant: 'success' });
-        props.onBack();
+        props.onDone();
         return;
       }
-      toast({
-        title: copy.errors.deleteFailed,
-        description: memoryRejectionMessage(
-          result.kind === 'rejected' ? result.reason : undefined,
-          copy,
-          copy.errors.deleteFailed,
-        ),
-        variant: 'destructive',
-      });
+      fail(copy.errors.deleteFailed, result.kind === 'rejected' ? result.reason : undefined);
     } catch (error) {
       report(copy.errors.deleteFailed, error);
     } finally {
@@ -338,84 +426,60 @@ function MemoryFileEditor(props: {
   };
 
   return (
-    <>
-      <SettingsSection
-        title={creating ? text.createTitle : props.path!}
-        description={
-          !creating && document ? (
-            <span>
+    <div data-maka-contract="memory-file">
+      <div className="mb-4 flex items-start gap-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <h2 className="truncate font-mono text-[0.9375rem] font-semibold leading-5 text-text-primary">
+            {props.path}
+          </h2>
+          {document && (
+            <p className="text-[0.8125rem] leading-[1.0625rem] text-text-muted">
               {copy.bytes(document.byteLength.toLocaleString(copy.intlLocale))} ·{' '}
               <RelativeTime ts={document.updatedAt} />
-            </span>
-          ) : undefined
-        }
-        action={
-          <Button variant="ghost" size="sm" onClick={props.onBack} aria-label={text.back}>
-            <Anthropicon name="arrowLeft" size={16} />
-            {text.back}
-          </Button>
-        }
-      >
-        {creating && (
-          <SettingsRow
-            title={text.path}
-            description={text.pathHelp}
-            htmlFor="memory-file-path"
-            control={
-              <Input
-                id="memory-file-path"
-                className={`${settingsFieldWidthClass} font-mono`}
-                placeholder={text.pathPlaceholder}
-                value={path}
-                onChange={(event) => setPath(event.target.value)}
-              />
-            }
-          />
-        )}
-        <SettingsRow title={text.content} layout="stacked" htmlFor="memory-file-content">
-          {!creating && document === undefined ? (
-            <Skeleton className="h-64 w-full rounded-lg" />
-          ) : (
-            <Textarea
-              id="memory-file-content"
-              className="min-h-64 font-mono text-[0.8125rem] leading-5"
-              placeholder={text.contentPlaceholder}
-              value={value}
-              spellCheck={false}
-              onChange={(event) => setDraft(event.target.value)}
-            />
+            </p>
           )}
-        </SettingsRow>
-        <SettingsRow
-          title=""
-          control={
-            <span className="flex items-center gap-2">
-              {!creating && document && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={busy !== null}
-                  onClick={() => setConfirmDelete(true)}
-                >
-                  {busy === 'delete' ? text.deleting : text.delete}
-                </Button>
-              )}
-              <Button
-                size="sm"
-                disabled={busy !== null || !dirty || (!creating && !document)}
-                onClick={() => void save()}
-              >
-                {busy === 'save' ? text.saving : text.save}
-              </Button>
-            </span>
-          }
+        </div>
+        <RowActionsMenu
+          label={copy.fileActions(props.path)}
+          actions={[
+            {
+              label: busy === 'delete' ? text.deleting : text.delete,
+              danger: true,
+              disabled: busy !== null || !document,
+              onSelect: () => setConfirmDelete(true),
+            },
+          ]}
         />
-      </SettingsSection>
+      </div>
+
+      {document === undefined ? (
+        <Skeleton className="h-80 w-full rounded-lg" />
+      ) : (
+        <Textarea
+          aria-label={text.content}
+          className="min-h-80 font-mono text-[0.8125rem] leading-5"
+          value={value}
+          spellCheck={false}
+          disabled={document === null}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+      )}
+
+      <div className="mt-4 flex items-center justify-end gap-2">
+        {dirty && (
+          <Button variant="secondary" disabled={busy !== null} onClick={() => setDraft(null)}>
+            {text.revert}
+          </Button>
+        )}
+        <Button disabled={busy !== null || !dirty || !document} onClick={() => void save()}>
+          {busy === 'save' ? text.saving : text.save}
+        </Button>
+      </div>
 
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
-        title={copy.remove.title(props.path ?? '')}
+        title={copy.remove.title(props.path)}
         description={copy.remove.description}
         confirmText={copy.remove.confirm}
         cancelText={copy.remove.cancel}
@@ -423,6 +487,6 @@ function MemoryFileEditor(props: {
         waitForConfirm
         onConfirm={remove}
       />
-    </>
+    </div>
   );
 }

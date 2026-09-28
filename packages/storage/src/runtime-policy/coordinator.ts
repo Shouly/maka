@@ -1041,10 +1041,6 @@ export class RuntimePolicyCoordinator {
   ): Promise<ResolveWebSearchExecutionResult> {
     return this.inLane(async (root) => {
       const policy = (await this.policy.read(root)).policy;
-      if (!input.bypassFeatureGate && policy.privacy.incognitoActive) {
-        return deepFreeze({ kind: 'privacy_mode' as const });
-      }
-
       const provider = input.provider ?? policy.webSearch.defaultProvider;
       if (!input.bypassFeatureGate && !policy.webSearch.enabled) {
         return deepFreeze({ kind: 'disabled' as const, provider });
@@ -1150,9 +1146,6 @@ export class RuntimePolicyCoordinator {
   resolveHostOutboundExecution(): Promise<ResolveHostOutboundExecutionResult> {
     return this.inLane(async (root) => {
       const policy = (await this.policy.read(root)).policy;
-      if (policy.privacy.incognitoActive) {
-        return deepFreeze({ kind: 'privacy_mode' as const });
-      }
       const proxyLocator = requiresNetworkProxyCredential(policy.networkProxy)
         ? networkProxyCredentialLocator()
         : null;

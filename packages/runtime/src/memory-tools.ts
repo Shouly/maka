@@ -105,7 +105,7 @@ export interface MemoryToolStore {
 
 export type MemoryToolGate =
   | { readonly allowed: true }
-  | { readonly allowed: false; readonly reason: 'disabled' | 'incognito' | 'draining' };
+  | { readonly allowed: false; readonly reason: 'disabled' | 'draining' };
 
 export interface MemoryToolDeps {
   readonly store: MemoryToolStore;
@@ -411,11 +411,7 @@ async function admit(deps: MemoryToolDeps, toolName: string): Promise<void> {
   const gate = await deps.gate();
   if (gate.allowed) return;
   const why =
-    gate.reason === 'incognito'
-      ? 'off in incognito'
-      : gate.reason === 'draining'
-        ? 'unavailable while Copilot shuts down'
-        : 'turned off in Settings';
+    gate.reason === 'draining' ? 'unavailable while Copilot shuts down' : 'turned off in Settings';
   throw new Error(`${toolName} failed: memory is ${why}; nothing was read or saved.`);
 }
 

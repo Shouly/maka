@@ -37,7 +37,6 @@ import {
 
 export interface MemoryListState {
   readonly enabled: boolean;
-  readonly incognitoActive: boolean;
   /** Empty when the Runtime Host's files are not reachable from this machine. */
   readonly directoryPath: string;
   readonly files: readonly MemoryFileProjection[];
@@ -110,7 +109,6 @@ async function listMemory(
   }
   return {
     enabled: result.enabled,
-    incognitoActive: result.incognitoActive,
     directoryPath: deps.allowLocalPaths !== false ? result.directoryPath : "",
     files: result.files,
   };

@@ -26,6 +26,7 @@
 
 import type {
   OrgAccountError,
+  OrgAccountProfileUpdate,
   OrgAccountSetServerResult,
   OrgAccountState,
   OrgIdentityProvider,
@@ -35,7 +36,13 @@ import { requireNamespace, toUnsubscribe, tryNamespace } from './bridge.js';
 
 type OrgAccount = MakaBridge['orgAccount'];
 
-export type { OrgAccountError, OrgAccountSetServerResult, OrgAccountState, OrgIdentityProvider };
+export type {
+  OrgAccountError,
+  OrgAccountProfileUpdate,
+  OrgAccountSetServerResult,
+  OrgAccountState,
+  OrgIdentityProvider,
+};
 
 const orgAccount = (): OrgAccount => requireNamespace('orgAccount');
 
@@ -63,6 +70,11 @@ export function signInToOrgAccount(provider?: string): Promise<OrgAccountState> 
 /** Loads the server's sign-in options again: the "Try again" after it could not be reached. */
 export function refreshOrgAccount(): Promise<OrgAccountState> {
   return orgAccount().refresh();
+}
+
+/** Change the person's own name or avatar; the new profile also arrives through `subscribe`. */
+export function updateOrgAccountProfile(update: OrgAccountProfileUpdate): Promise<OrgAccountState> {
+  return orgAccount().updateProfile(update);
 }
 
 export function cancelOrgAccountSignIn(): Promise<void> {

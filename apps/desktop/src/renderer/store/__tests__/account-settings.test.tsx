@@ -28,7 +28,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { parseHTML } from 'linkedom';
 import { LocaleProvider } from '@maka/ui';
 import { UI_LOCALES } from '@maka/core/ui-locale';
-import { formatAbsoluteTimestamp } from '@maka/core/relative-time';
 import type {
   OrgAccountError,
   OrgAccountState,
@@ -405,6 +404,18 @@ function fakeBridge(overrides: Partial<OrgAccountBridge> = {}) {
       calls.push('cancel');
     },
     signOutOfOrgAccount: async () => signedOut({ providers: PROVIDERS }),
+    updateOrgAccountProfile: async (update) => {
+      calls.push(`updateProfile:${JSON.stringify(update)}`);
+      const account = signedIn();
+      return {
+        ...account,
+        profile: {
+          ...account.profile,
+          ...(update.name ? { name: update.name } : {}),
+          ...(update.avatarSeed ? { avatarSeed: update.avatarSeed } : {}),
+        },
+      };
+    },
     ...overrides,
   };
   return { bridge, calls, push: (account: OrgAccountState) => listener?.(account) };
@@ -452,6 +463,21 @@ test('the store: a failed first read keeps the gate shut, and a reload tries aga
   stop();
 });
 
+test('the store: a profile change applies the account the server answered with', async () => {
+  const { bridge, calls } = fakeBridge();
+  const store = createOrgAccountStore(bridge);
+  const stop = store.start();
+  await tick();
+  await store.updateProfile({ name: 'Ada Lovelace', avatarSeed: 'seed-1' });
+  assert.deepEqual(calls.slice(-1), [
+    'updateProfile:{"name":"Ada Lovelace","avatarSeed":"seed-1"}',
+  ]);
+  const account = store.getState().account;
+  assert.equal(account?.status === 'signed_in' && account.profile.name, 'Ada Lovelace');
+  assert.equal(account?.status === 'signed_in' && account.profile.avatarSeed, 'seed-1');
+  stop();
+});
+
 test('the store: an action holds the gate until it settles and rejects for its caller', async () => {
   const { bridge, calls } = fakeBridge({
     signOutOfOrgAccount: async () => {
@@ -481,7 +507,9 @@ test('the sidebar entry is there only while signed in, as the person’s initial
     createElement(SidebarAccountMenu, {
       account,
       pending: null,
-      onOpenAccount: noop,
+      uiLocale: 'en',
+      onOpenSettings: noop,
+      onChooseLanguage: noop,
       onSignOut: noop,
     });
   for (const account of [undefined, signedOut({ enforced: false }), signingIn()]) {
@@ -497,13 +525,27 @@ test('the sidebar entry is there only while signed in, as the person’s initial
   assert.equal(trigger?.getAttribute('aria-label'), en.menu.label('Ada Lovelace'));
   assert.ok(trigger?.textContent?.includes('AL'));
   assert.ok(trigger?.textContent?.includes('Ada Lovelace'));
+  // As wide as what it holds, not the whole rail.
+  assert.equal(trigger?.className.split(/\s+/).includes('w-full'), false);
+
+  // With a name to be called by, that is the name shown.
+  const called = render(
+    entry(signedIn({ profile: { ...signedIn().profile, nickname: 'Ada' } })),
+  ).querySelector('[data-maka-contract="sidebar-account"]');
+  assert.equal(called?.getAttribute('aria-label'), en.menu.label('Ada'));
+  assert.ok(called?.textContent?.includes('Ada'));
+  assert.equal(called?.textContent?.includes('Lovelace'), false);
 });
 
 // ── Settings › Account ──────────────────────────────────────────────────────
 
-test('Account leads the preferences group', () => {
+test('the preferences group runs General, Account, then Workspace', () => {
   assert.equal(SETTINGS_NAV_GROUPS[0]?.group, 'preferences');
-  assert.equal(SETTINGS_NAV_GROUPS[0]?.sections[0], 'account');
+  assert.deepEqual(SETTINGS_NAV_GROUPS[0]?.sections.slice(0, 3), [
+    'general',
+    'account',
+    'projects',
+  ]);
 });
 
 test('Settings, unenforced: the address stays a field and the providers are buttons', () => {
@@ -544,33 +586,17 @@ test('Settings, signing in: the provider by name, and Cancel', () => {
   assert.equal(button(document, en.cancel)?.hasAttribute('disabled'), false);
 });
 
-test('Settings, signed in: who, until when, and the address read-only', () => {
+test('Settings, signed in: the section holds only signing out', () => {
   const account = signedIn({ enforced: false });
   const document = settings(account);
   const page = text(document);
   assert.equal(document.querySelector('input'), null);
-  for (const expected of [
-    'Ada Lovelace',
-    'ada@example.com',
-    en.admin,
-    en.settings.signedInUntil(formatAbsoluteTimestamp(account.signInExpiresAt, 'en')),
-    SERVER,
-    en.settings.serverLockedHelp,
-  ]) {
-    assert.ok(page.includes(expected), expected);
-  }
-  assert.equal(page.includes(en.settings.notRemembered), false);
+  assert.ok(page.includes(en.settings.title));
+  assert.ok(page.includes(en.settings.signOutHere));
   assert.equal(button(document, en.signOut)?.hasAttribute('disabled'), false);
-
-  const member = text(
-    settings(
-      signedIn({
-        profile: { ...account.profile, orgRole: 'member' },
-        remembered: false,
-      }),
-    ),
-  );
-  assert.equal(member.includes(en.admin), false);
-  assert.ok(member.includes(en.settings.notRemembered));
-  assert.ok(member.includes(en.settings.serverManagedHelp), 'enforced: the build names it');
+  // Who is signed in is the Profile section's; the rest was only information.
+  for (const absent of ['Ada Lovelace', 'ada@example.com', SERVER]) {
+    assert.equal(page.includes(absent), false, absent);
+  }
+  assert.equal(document.querySelectorAll('button').length, 1);
 });

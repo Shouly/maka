@@ -39,8 +39,7 @@ export interface LoopbackListener {
 }
 
 /**
- * What the browser shows once the provider sends it back. Drawn after the
- * Claude desktop's "Finish sign-in in the Claude app" page: the wordmark, one
+ * What the browser shows once the provider sends it back: the wordmark, one
  * serif line, one sentence, and a solid button that opens the app. The success
  * page also follows that link by itself, so the browser offers to switch to
  * Maka straight away; the button is there for when it does not.

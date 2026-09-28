@@ -16,27 +16,31 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import type { ThemePreference } from '@maka/core/settings';
+import type { ThemePreference, TranscriptTextSize } from '@maka/core/settings';
 
-import type { UiCatalog, UiLocale, UiLocalePreference } from '@maka/core/ui-locale';
+import type { UiCatalog, UiLocale } from '@maka/core/ui-locale';
 
 type OptionCopy = { label: string; help: string };
 
 export type SettingsPreferencesCopy = {
+  /** Account › Profile. */
   personalization: {
     saveFailed: string;
-    displayName: string;
-    displayNameHelp: string;
-    displayNamePlaceholder: string;
-    displayNameUnset: string;
-    displayNameChange: string;
-    displayNameSet: string;
-    interfaceLanguage: string;
-    interfaceLanguageHelp: string;
-    localeOptions: ReadonlyArray<readonly [UiLocalePreference, string]>;
-    assistantTone: string;
-    assistantToneHelp: string;
-    assistantTonePlaceholder: string;
+    avatar: string;
+    avatarRandomize: string;
+    avatarReset: string;
+    avatarFailed: string;
+    fullName: string;
+    fullNameFailed: string;
+    signInToEdit: string;
+    nickname: string;
+    nicknamePlaceholder: string;
+    nicknameFailed: string;
+    preferences: string;
+    preferencesHelp: string;
+    preferencesPlaceholder: string;
+    preferencesSaved: string;
+    preferencesFailed: string;
   };
   /**
    * Group titles for the SettingsSection headers. They live in one block
@@ -45,22 +49,10 @@ export type SettingsPreferencesCopy = {
    * grouping visible when it is edited.
    */
   sections: {
-    identity: string;
-    identityHelp: string;
-    privacy: string;
-    privacyHelp: string;
-    chatDefaults: string;
-    chatDefaultsHelp: string;
+    profile: string;
+    appearance: string;
     shell: string;
-    shellHelp: string;
-    network: string;
-    networkHelp: string;
-    theme: string;
-    themeHelp: string;
-    appIcon: string;
-    appIconHelp: string;
-    fontSize: string;
-    fontSizeHelp: string;
+    notifications: string;
     pets: string;
     petsHelp: string;
   };
@@ -72,7 +64,6 @@ export type SettingsPreferencesCopy = {
     appIconCustom: string;
     appIconImport: string;
     appIconImporting: string;
-    appIconImportHelp: string;
     appIconRemove: string;
     appIconImportError: string;
     appIconRemoveFailed: string;
@@ -87,9 +78,13 @@ export type SettingsPreferencesCopy = {
       string
     >;
     appIconUnavailable: string;
+    appIcon: string;
+    appIconHelp: string;
     fontSize: {
-      uiLabel: string;
-      uiHelp: string;
+      transcriptLabel: string;
+      transcriptHelp: string;
+      /** The three steps of the transcript text size. */
+      transcriptSizes: Record<TranscriptTextSize, string>;
       terminalLabel: string;
       terminalHelp: string;
     };
@@ -137,10 +132,6 @@ export type SettingsPreferencesCopy = {
     };
   };
   general: {
-    incognito: string;
-    incognitoHelp: string;
-    enableIncognito: string;
-    incognitoFailed: string;
     notifications: string;
     notificationsHelp: string;
     notificationsFailed: string;
@@ -151,10 +142,6 @@ export type SettingsPreferencesCopy = {
     workHubHelp: string;
     workHubFailed: string;
     updateFailed: string;
-    defaultModel: string;
-    defaultModelHelp: string;
-    notSet: string;
-    saveDefaultModelFailed: string;
     defaultPermission: string;
     defaultPermissionHelp: string;
     defaultThinking: string;
@@ -173,27 +160,6 @@ export type SettingsPreferencesCopy = {
     shellSaved: string;
     saveShellFailed: string;
     shellExecutableRejected: string;
-    proxy: string;
-    proxyHelp: string;
-    enableProxy: string;
-    saveNetworkFailed: string;
-    proxyProtocol: string;
-    serverAddress: string;
-    port: string;
-    proxyAuth: string;
-    proxyAuthHelp: string;
-    enableProxyAuth: string;
-    username: string;
-    password: string;
-    passwordSavedPlaceholder: string;
-    bypassList: string;
-    bypassHelp: string;
-    autoBypass(count: number): string;
-    testing: string;
-    testCurrent: string;
-    proxyReachable: string;
-    proxyTestFailed: string;
-    proxyTestError: string;
   };
   about: {
     loadFailed: string;
@@ -241,58 +207,33 @@ export type SettingsPreferencesCopy = {
     sourceCode: string;
     releaseNotes: string;
   };
-  password: {
-    copyFailed: string;
-    clipboardUnavailable: string;
-    copying: string;
-    copied: string;
-    copy: string;
-    hide: string;
-    show: string;
-    value: string;
-  };
 };
 
 const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
   'zh-CN': {
     personalization: {
       saveFailed: '保存失败',
-      displayName: '显示名称',
-      displayNameHelp: 'Maka 在聊天里会以这个名字称呼你。留空就用默认的“你”。',
-      displayNamePlaceholder: '例如：JK',
-      displayNameUnset: '未设置，Maka 会称呼你“你”',
-      displayNameChange: '更改',
-      displayNameSet: '设置',
-      interfaceLanguage: '界面语言',
-      interfaceLanguageHelp: '选择 Maka 界面的显示语言。切换后立即生效，重启后保持。',
-      localeOptions: [
-        ['auto', '跟随系统'],
-        ['zh-CN', '简体中文'],
-        ['zh-TW', '繁體中文'],
-        ['en', 'English'],
-      ],
-      assistantTone: '助手语气偏好',
-      assistantToneHelp:
-        '最多 500 字，只影响回答的语气和风格。权限确认与安全规则不受影响；改动会自动保存。',
-      assistantTonePlaceholder: '例如：技术严谨、偏简洁、不要 emoji。',
+      avatar: '头像',
+      avatarRandomize: '换一个头像',
+      avatarReset: '恢复默认头像',
+      avatarFailed: '更新头像失败',
+      fullName: '全名',
+      fullNameFailed: '保存全名失败',
+      signInToEdit: '登录公司账号后可以修改。',
+      nickname: '希望怎么称呼你？',
+      nicknamePlaceholder: '例如：JK',
+      nicknameFailed: '保存称呼失败',
+      preferences: '给 Copilot 的指示',
+      preferencesHelp: 'Copilot 会在所有对话中记住这些指示，并在安全规则范围内遵循。',
+      preferencesPlaceholder: '例如：解释尽量简短，直击要点',
+      preferencesSaved: '指示已保存',
+      preferencesFailed: '保存指示失败',
     },
     sections: {
-      identity: '身份',
-      identityHelp: 'Maka 如何称呼你，以及界面语言和回答语气。',
-      privacy: '隐私与通知',
-      privacyHelp: '本地数据的读写范围，以及桌面通知时机。',
-      chatDefaults: '任务默认',
-      chatDefaultsHelp: '新任务的起始模型、权限模式与思考级别。',
-      shell: '命令行环境',
-      shellHelp: '选择 Runtime Host 执行 Bash 工具和终端命令时使用的 shell。',
-      network: '网络',
-      networkHelp: 'AI 模型请求走的网络通道。',
-      theme: '主题',
-      themeHelp: '界面跟随系统，还是固定浅色或深色。',
-      appIcon: '应用图标',
-      appIconHelp: 'Dock、任务栏和切换器里显示的 Maka 图标；切换会立即生效。',
-      fontSize: '字号',
-      fontSizeHelp: '界面与终端的文字大小；调整会立即生效并保存在本地。',
+      profile: '个人资料',
+      appearance: '外观',
+      shell: '命令行',
+      notifications: '通知',
       pets: '自定义宠物',
       petsHelp: '管理你自己导入的 PetPack。Maka 不预装、也不默认启用任何宠物。',
     },
@@ -308,7 +249,6 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
       appIconCustom: '导入的图标',
       appIconImport: '导入图标…',
       appIconImporting: '正在导入…',
-      appIconImportHelp: '方形 PNG 最好；四周留约 10% 透明边，Dock 里才会和其它应用一样大。',
       appIconRemove: '删除',
       appIconImportError: '导入图标失败',
       appIconRemoveFailed: '删除图标失败',
@@ -322,11 +262,15 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
         write_failed: '无法保存导入的图标',
       },
       appIconUnavailable: '无法载入应用图标',
+      appIcon: '应用图标',
+      appIconHelp:
+        '程序坞、任务栏和应用切换器里显示的图标，切换后立即生效。自己导入的图标用方形 PNG 最好，四周留约 10% 透明边。',
       fontSize: {
-        uiLabel: 'UI 字号',
-        uiHelp: '调整界面使用的基准字号',
+        transcriptLabel: '对话字号',
+        transcriptHelp: '对话里消息文字的大小。',
+        transcriptSizes: { small: '小', medium: '中', large: '大' },
         terminalLabel: '终端字号',
-        terminalHelp: '调整终端里命令输出与代码使用的字号',
+        terminalHelp: '终端里命令输出和代码的字号。',
       },
     },
     pets: {
@@ -369,12 +313,8 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
       removeErrors: { invalid_id: '宠物 ID 无效。', remove_failed: '无法删除本地宠物包。' },
     },
     general: {
-      incognito: '隐身模式',
-      incognitoHelp: '开启后暂停本地记忆读写、联网搜索和定时任务触发。',
-      enableIncognito: '启用隐身模式',
-      incognitoFailed: '隐身模式切换失败',
-      notifications: '完成时发送系统通知',
-      notificationsHelp: '窗口不在前台时，在回答完成或出错后发送桌面通知。',
+      notifications: '回复完成',
+      notificationsHelp: '任务跑完、出错或等你回答时，发系统通知提醒你，适合耗时较长的任务。',
       notificationsFailed: '通知设置切换失败',
       workspaceInstructions: '遵循项目指令',
       workspaceInstructionsHelp:
@@ -384,10 +324,6 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
       workHubHelp: 'WorkHub 目前仍不可用。此开关仅供开发测试，开启后也不能保证正常使用。',
       workHubFailed: 'WorkHub 设置切换失败',
       updateFailed: '设置未生效，请稍后重试。',
-      defaultModel: '默认模型',
-      defaultModelHelp: '新任务默认使用的模型。',
-      notSet: '未设置',
-      saveDefaultModelFailed: '保存默认模型失败',
       defaultPermission: '默认权限模式',
       defaultPermissionHelp: '新任务默认使用的权限模式；可在任务内随时切换。',
       saveDefaultPermissionFailed: '保存默认权限模式失败',
@@ -409,27 +345,6 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
       saveShellFailed: '保存 shell 设置失败',
       shellExecutableRejected:
         '当前 Runtime Host 无法把该路径作为 GNU Bash 运行。请检查 Host 是否为 Windows、路径是否存在，并确认文件名为 bash.exe。',
-      proxy: '代理服务器',
-      proxyHelp: '为 AI 模型请求配置网络代理',
-      enableProxy: '启用代理服务器',
-      saveNetworkFailed: '保存网络设置失败',
-      proxyProtocol: '代理协议',
-      serverAddress: '服务器地址',
-      port: '端口',
-      proxyAuth: '代理认证',
-      proxyAuthHelp: '需要用户名和密码时开启。',
-      enableProxyAuth: '启用代理认证',
-      username: '用户名',
-      password: '密码',
-      bypassList: '代理白名单',
-      bypassHelp: '这些域名将绕过代理直连，多个用逗号分隔。',
-      autoBypass: (count) => `已自动添加 ${count} 个域名。代理仅作用于 AI 模型请求。`,
-      testing: '测试中…',
-      testCurrent: '测试当前配置',
-      proxyReachable: '代理可达',
-      proxyTestFailed: '代理测试失败',
-      proxyTestError: '代理测试出错',
-      passwordSavedPlaceholder: '密码已保存；输入新密码以替换',
     },
     about: {
       loadFailed: '载入关于信息失败',
@@ -473,56 +388,31 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
       sourceCode: '源码',
       releaseNotes: '发行说明',
     },
-    password: {
-      copyFailed: '复制失败',
-      clipboardUnavailable: '剪贴板不可用或被系统拒绝。',
-      copying: '复制中',
-      copied: '已复制',
-      copy: '复制',
-      hide: '隐藏',
-      show: '显示',
-      value: '凭据值',
-    },
   },
   'zh-TW': {
     personalization: {
       saveFailed: '儲存失敗',
-      displayName: '顯示名稱',
-      displayNameHelp: 'Maka 在聊天裡會以這個名字稱呼你。留空就用預設的“你”。',
-      displayNamePlaceholder: '例如：JK',
-      displayNameUnset: '未設定，Maka 會稱呼你“你”',
-      displayNameChange: '更改',
-      displayNameSet: '設定',
-      interfaceLanguage: '介面語言',
-      interfaceLanguageHelp: '選擇 Maka 介面的顯示語言。切換後立即生效，重新啟動後仍會保留。',
-      localeOptions: [
-        ['auto', '自動（跟隨系統）'],
-        ['zh-CN', '简体中文'],
-        ['zh-TW', '繁體中文'],
-        ['en', 'English'],
-      ],
-      assistantTone: '助手語氣偏好',
-      assistantToneHelp:
-        '最多 500 字，只影響回答的語氣和風格。權限確認與安全規則不受影響；改動會自動儲存。',
-      assistantTonePlaceholder: '例如：技術嚴謹、偏簡潔、不要 emoji。',
+      avatar: '頭像',
+      avatarRandomize: '換一個頭像',
+      avatarReset: '恢復預設頭像',
+      avatarFailed: '更新頭像失敗',
+      fullName: '全名',
+      fullNameFailed: '儲存全名失敗',
+      signInToEdit: '登入公司帳號後可以修改。',
+      nickname: '希望怎麼稱呼你？',
+      nicknamePlaceholder: '例如：JK',
+      nicknameFailed: '儲存稱呼失敗',
+      preferences: '給 Copilot 的指示',
+      preferencesHelp: 'Copilot 會在所有對話中記住這些指示，並在安全規則範圍內遵循。',
+      preferencesPlaceholder: '例如：解釋盡量簡短，直擊重點',
+      preferencesSaved: '指示已儲存',
+      preferencesFailed: '儲存指示失敗',
     },
     sections: {
-      identity: '身份',
-      identityHelp: 'Maka 如何稱呼你，以及介面語言和回答語氣。',
-      privacy: '隱私與通知',
-      privacyHelp: '本地資料的讀寫範圍，以及桌面通知時機。',
-      chatDefaults: '任務預設',
-      chatDefaultsHelp: '新任務的起始模型、權限模式與思考級別。',
-      shell: '命令列環境',
-      shellHelp: '選擇 Runtime Host 執行 Bash 工具和終端命令時使用的 shell。',
-      network: '網路',
-      networkHelp: 'AI 模型請求走的網路通道。',
-      theme: '主題',
-      themeHelp: '介面跟隨系統，還是固定淺色或深色。',
-      appIcon: '應用圖示',
-      appIconHelp: 'Dock、工作列和切換器裡顯示的 Maka 圖示；切換會立即生效。',
-      fontSize: '字型大小',
-      fontSizeHelp: '介面與終端機的文字大小；調整會立即生效並儲存在本機。',
+      profile: '個人資料',
+      appearance: '外觀',
+      shell: '命令列',
+      notifications: '通知',
       pets: '自訂寵物',
       petsHelp: '管理你自己匯入的 PetPack。Maka 不預裝、也不預設啟用任何寵物。',
     },
@@ -538,7 +428,6 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
       appIconCustom: '匯入的圖示',
       appIconImport: '匯入圖示…',
       appIconImporting: '正在匯入…',
-      appIconImportHelp: '方形 PNG 最好；四周留約 10% 透明邊，Dock 裡才會和其它應用一樣大。',
       appIconRemove: '刪除',
       appIconImportError: '匯入圖示失敗',
       appIconRemoveFailed: '刪除圖示失敗',
@@ -552,11 +441,15 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
         write_failed: '無法儲存匯入的圖示',
       },
       appIconUnavailable: '無法載入應用圖示',
+      appIcon: '應用圖示',
+      appIconHelp:
+        'Dock、工作列和應用程式切換器裡顯示的圖示，切換後立即生效。自己匯入的圖示用方形 PNG 最好，四周留約 10% 透明邊。',
       fontSize: {
-        uiLabel: 'UI 字型大小',
-        uiHelp: '調整介面使用的基準字型大小',
+        transcriptLabel: '對話字型大小',
+        transcriptHelp: '對話中訊息文字的大小。',
+        transcriptSizes: { small: '小', medium: '中', large: '大' },
         terminalLabel: '終端機字型大小',
-        terminalHelp: '調整終端機命令輸出與程式碼使用的字型大小',
+        terminalHelp: '終端機裡命令輸出和程式碼的字型大小。',
       },
     },
     pets: {
@@ -599,12 +492,8 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
       removeErrors: { invalid_id: '寵物 ID 無效。', remove_failed: '無法刪除本機寵物包。' },
     },
     general: {
-      incognito: '隱身模式',
-      incognitoHelp: '開啟後暫停本地記憶讀寫、聯網搜尋和定時任務觸發。',
-      enableIncognito: '啟用隱身模式',
-      incognitoFailed: '隱身模式切換失敗',
-      notifications: '完成時傳送系統通知',
-      notificationsHelp: '視窗不在前臺時，在回答完成或出錯後傳送桌面通知。',
+      notifications: '回覆完成',
+      notificationsHelp: '任務跑完、出錯或等你回答時，傳送系統通知提醒你，適合耗時較長的任務。',
       notificationsFailed: '通知設定切換失敗',
       workspaceInstructions: '遵循專案指令',
       workspaceInstructionsHelp:
@@ -614,10 +503,6 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
       workHubHelp: '在一個入口檢視已有工作，並將新輸入保守地送往普通任務。',
       workHubFailed: 'WorkHub 設定切換失敗',
       updateFailed: '設定未生效，請稍後重試。',
-      defaultModel: '預設模型',
-      defaultModelHelp: '新任務預設使用的模型。',
-      notSet: '未設定',
-      saveDefaultModelFailed: '儲存預設模型失敗',
       defaultPermission: '預設權限模式',
       defaultPermissionHelp: '新任務預設使用的權限模式；可在任務內隨時切換。',
       saveDefaultPermissionFailed: '儲存預設權限模式失敗',
@@ -639,27 +524,6 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
       saveShellFailed: '儲存 shell 設定失敗',
       shellExecutableRejected:
         '目前 Runtime Host 無法把該路徑作為 GNU Bash 執行。請檢查 Host 是否為 Windows、路徑是否存在，並確認檔名為 bash.exe。',
-      proxy: '代理伺服器',
-      proxyHelp: '為 AI 模型請求設定網路代理',
-      enableProxy: '啟用代理伺服器',
-      saveNetworkFailed: '儲存網路設定失敗',
-      proxyProtocol: '代理協議',
-      serverAddress: '伺服器地址',
-      port: '埠',
-      proxyAuth: '代理認證',
-      proxyAuthHelp: '需要使用者名稱和密碼時開啟。',
-      enableProxyAuth: '啟用代理認證',
-      username: '使用者名稱',
-      password: '密碼',
-      bypassList: '代理白名單',
-      bypassHelp: '這些域名將繞過代理直連，多個用逗號分隔。',
-      autoBypass: (count) => `已自動新增 ${count} 個域名。代理僅作用於 AI 模型請求。`,
-      testing: '測試中…',
-      testCurrent: '測試目前設定',
-      proxyReachable: '代理可達',
-      proxyTestFailed: '代理測試失敗',
-      proxyTestError: '代理測試出錯',
-      passwordSavedPlaceholder: '密碼已儲存；輸入新密碼以替換',
     },
     about: {
       loadFailed: '載入關於資訊失敗',
@@ -704,59 +568,31 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
       sourceCode: '原始碼',
       releaseNotes: '發行說明',
     },
-    password: {
-      copyFailed: '複製失敗',
-      clipboardUnavailable: '剪貼簿不可用或被系統拒絕。',
-      copying: '複製中',
-      copied: '已複製',
-      copy: '複製',
-      hide: '隱藏',
-      show: '顯示',
-      value: '憑據值',
-    },
   },
   en: {
     personalization: {
       saveFailed: 'Could not save',
-      displayName: 'Display name',
-      displayNameHelp: 'Maka uses this name when addressing you. Leave it blank to use “you”.',
-      displayNamePlaceholder: 'For example: JK',
-      displayNameUnset: 'Not set — Maka will say “you”',
-      displayNameChange: 'Change',
-      displayNameSet: 'Set',
-      interfaceLanguage: 'Interface language',
-      interfaceLanguageHelp:
-        'Choose the language used by Maka. Changes apply immediately and persist after restart.',
-      localeOptions: [
-        ['auto', 'Follow system'],
-        ['zh-CN', 'Simplified Chinese'],
-        ['zh-TW', 'Traditional Chinese'],
-        ['en', 'English'],
-      ],
-      assistantTone: 'Assistant tone',
-      assistantToneHelp:
-        'Up to 500 characters. This changes response style only; permission and safety rules still apply. Changes save automatically.',
-      assistantTonePlaceholder: 'For example: technically rigorous, concise, and no emoji.',
+      avatar: 'Avatar',
+      avatarRandomize: 'Pick another avatar',
+      avatarReset: 'Reset to the default avatar',
+      avatarFailed: 'Could not update the avatar',
+      fullName: 'Full name',
+      fullNameFailed: 'Could not save your full name',
+      signInToEdit: 'Sign in to your company account to change this.',
+      nickname: 'What should we call you?',
+      nicknamePlaceholder: 'For example: JK',
+      nicknameFailed: 'Could not save what we call you',
+      preferences: 'Instructions for Copilot',
+      preferencesHelp: 'Copilot will keep these in mind across chats, within the safety rules.',
+      preferencesPlaceholder: 'e.g. keep explanations brief and to the point',
+      preferencesSaved: 'Instructions saved',
+      preferencesFailed: 'Could not save your instructions',
     },
     sections: {
-      identity: 'Identity',
-      identityHelp: 'How Maka addresses you, plus interface language and response tone.',
-      privacy: 'Privacy and notifications',
-      privacyHelp: 'What Maka may read and write locally, and when it notifies you.',
-      chatDefaults: 'Task defaults',
-      chatDefaultsHelp: 'The model, permission mode, and thinking level a new task starts on.',
-      shell: 'Command environment',
-      shellHelp: 'Choose the shell the Runtime Host uses for Bash tools and terminal commands.',
-      network: 'Network',
-      networkHelp: 'The network path AI model requests take.',
-      theme: 'Theme',
-      themeHelp: 'Follow the system appearance, or stay on light or dark.',
-      appIcon: 'App icon',
-      appIconHelp:
-        'The Maka icon shown in the dock, taskbar, and app switcher. Changes apply immediately.',
-      fontSize: 'Font size',
-      fontSizeHelp:
-        'Text size across the interface and terminal. Changes apply immediately and are saved locally.',
+      profile: 'Profile',
+      appearance: 'Appearance',
+      shell: 'Command line',
+      notifications: 'Notifications',
       pets: 'Custom pets',
       petsHelp:
         'Manage PetPacks you import yourself. Maka does not bundle or enable any pet by default.',
@@ -773,8 +609,6 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
       appIconCustom: 'Imported icon',
       appIconImport: 'Import icon…',
       appIconImporting: 'Importing…',
-      appIconImportHelp:
-        'A square PNG works best. Leave about 10% transparent margin so it sits the same size as other apps in the dock.',
       appIconRemove: 'Remove',
       appIconImportError: 'Could not import the icon',
       appIconRemoveFailed: 'Could not remove the icon',
@@ -788,11 +622,15 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
         write_failed: 'Could not store the imported icon',
       },
       appIconUnavailable: 'Could not load the app icons',
+      appIcon: 'App icon',
+      appIconHelp:
+        'The icon shown in the dock, taskbar, and app switcher. Changes apply right away. For an icon of your own, a square PNG with about 10% transparent margin works best.',
       fontSize: {
-        uiLabel: 'UI font size',
-        uiHelp: 'Base font size used across the interface',
+        transcriptLabel: 'Transcript text size',
+        transcriptHelp: 'Size of the conversation transcript text.',
+        transcriptSizes: { small: 'Small', medium: 'Medium', large: 'Large' },
         terminalLabel: 'Terminal font size',
-        terminalHelp: 'Font size used for terminal output and code',
+        terminalHelp: 'Font size of terminal output and code.',
       },
     },
     pets: {
@@ -839,13 +677,9 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
       },
     },
     general: {
-      incognito: 'Incognito mode',
-      incognitoHelp: 'Pause local memory, web search, and scheduled task triggers.',
-      enableIncognito: 'Enable incognito mode',
-      incognitoFailed: 'Could not change incognito mode',
-      notifications: 'Send a system notification when finished',
+      notifications: 'Response completions',
       notificationsHelp:
-        'Notify when a response finishes or fails while the window is in the background.',
+        'Get a system notification when a task finishes, fails, or is waiting on your answer. Most useful for long-running tasks.',
       notificationsFailed: 'Could not change notification settings',
       workspaceInstructions: 'Follow project instructions',
       workspaceInstructionsHelp:
@@ -856,10 +690,6 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
         'WorkHub is not available yet. This toggle is for development testing and does not enable a usable feature.',
       workHubFailed: 'Could not change WorkHub setting',
       updateFailed: 'The setting was not applied. Try again later.',
-      defaultModel: 'Default model',
-      defaultModelHelp: 'Model used by new tasks.',
-      notSet: 'Not set',
-      saveDefaultModelFailed: 'Could not save the default model',
       defaultPermission: 'Default permission mode',
       defaultPermissionHelp:
         'Initial permission mode for new tasks; it can be changed at any time.',
@@ -869,27 +699,6 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
         'Thinking level for new tasks; models that do not offer the chosen level use their own default.',
       followModelDefault: 'Follow model default',
       saveDefaultThinkingFailed: 'Could not save the default thinking level',
-      proxy: 'Proxy server',
-      proxyHelp: 'Configure a network proxy for AI model requests',
-      enableProxy: 'Enable proxy server',
-      saveNetworkFailed: 'Could not save network settings',
-      proxyProtocol: 'Proxy protocol',
-      serverAddress: 'Server address',
-      port: 'Port',
-      proxyAuth: 'Proxy authentication',
-      proxyAuthHelp: 'Enable this when a username and password are required.',
-      enableProxyAuth: 'Enable proxy authentication',
-      username: 'Username',
-      password: 'Password',
-      bypassList: 'Proxy bypass list',
-      bypassHelp: 'These domains connect directly. Separate multiple domains with commas.',
-      autoBypass: (count) =>
-        `${count} ${count === 1 ? 'domain was' : 'domains were'} added automatically. The proxy applies to AI model requests only.`,
-      testing: 'Testing…',
-      testCurrent: 'Test current configuration',
-      proxyReachable: 'Proxy is reachable',
-      proxyTestFailed: 'Proxy test failed',
-      proxyTestError: 'Could not test proxy',
       shellPreference: 'Bash tool shell',
       shellPreferenceHelp:
         'Automatic keeps the PowerShell-first Windows default. Git Bash is an explicit override for the current Runtime Host.',
@@ -904,7 +713,6 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
       saveShellFailed: 'Could not save shell setting',
       shellExecutableRejected:
         'The current Runtime Host could not run that path as GNU Bash. Check that the Host runs Windows, the path exists, and the file is named bash.exe.',
-      passwordSavedPlaceholder: 'Password saved; enter a new password to replace it',
     },
     about: {
       loadFailed: 'Could not load About information',
@@ -952,16 +760,6 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
       openSourceSummary: 'Apache Maka (incubating) · Apache License 2.0',
       sourceCode: 'Source code',
       releaseNotes: 'Release notes',
-    },
-    password: {
-      copyFailed: 'Copy failed',
-      clipboardUnavailable: 'The clipboard is unavailable or access was denied.',
-      copying: 'Copying',
-      copied: 'Copied',
-      copy: 'Copy',
-      hide: 'Hide',
-      show: 'Show',
-      value: 'credential value',
     },
   },
 } satisfies UiCatalog<SettingsPreferencesCopy>;

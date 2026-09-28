@@ -1010,20 +1010,24 @@ try {
 
   // ── Phase 5a: Settings ────────────────────────────────────────────────────
   //
-  // Settings replaces the CONTENT column only (plan §2.12), so every check
-  // below also asserts that the window titlebar still carries the sidebar
-  // toggle — a Settings surface that swallowed the way back to the tasks
-  // would pass every functional assertion and still be broken.
+  // Settings is a dialog over the window: the page
+  // under it — titlebar, sidebar toggle and all — stays mounted, and closing
+  // the dialog is the way back.
 
-  // 5a.1 ⌘, opens Settings, and the titlebar keeps its shape.
+  // 5a.1 ⌘, opens the Settings dialog over a window that keeps its shape.
   await page.keyboard.press('ControlOrMeta+,');
   const settings = page.locator('[data-maka-contract="settings-surface"]');
   await settings.waitFor();
   await page.locator('[data-maka-contract="settings-sidebar"]').waitFor();
-  await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).first().waitFor();
-  await page.locator('[data-maka-contract="shell-topbar-rail"]').waitFor();
-  await page.locator('[data-maka-contract="titlebar-identity"]').getByText('Settings').waitFor();
-  checks.push('⌘, opens Settings with the sidebar toggle still in the window titlebar');
+  assert.equal(await settings.getAttribute('role'), 'dialog');
+  // Modal: what is under it is hidden from assistive tech, so it is found by
+  // its contract rather than its role.
+  await page
+    .locator('[data-maka-contract="shell-topbar-rail"] button[aria-controls="app-sidebar"]')
+    .waitFor();
+  checks.push(
+    '⌘, opens the Settings dialog over the window, its titlebar and sidebar toggle intact',
+  );
 
   // 5a.2 The nav hides the deferred pages and shows the fourteen that ship.
   const navRows = page.locator('[data-maka-contract="settings-sidebar"] [data-settings-section]');
@@ -1031,9 +1035,8 @@ try {
     nodes.map((node) => node.getAttribute('data-settings-section')),
   );
   assert.deepEqual(navSections, [
-    'account',
     'general',
-    'appearance',
+    'account',
     'projects',
     'models',
     'subagents',
@@ -1097,8 +1100,9 @@ try {
   );
   checks.push('About shows the running build version and ⌘, reopens the section it left off on');
 
-  // 5a.4 Appearance flips the theme through the same settings IPC the palette uses.
-  await openSettingsSection('Appearance', 'appearance');
+  // 5a.4 General's Appearance section flips the theme through the same settings
+  //      IPC the palette uses.
+  await openSettingsSection('General', 'general');
   await page.getByRole('radio', { name: 'Dark', exact: true }).click();
   await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
   // The theme change animates; a frame captured mid-transition is a lie.
@@ -1111,8 +1115,7 @@ try {
   checks.push('the Appearance theme control flips .dark through the real settings IPC');
 
   // 5a.5 General writes a client-owned setting that reads back through the IPC.
-  await openSettingsSection('General', 'general');
-  const notificationsLabel = 'Send a system notification when finished';
+  const notificationsLabel = 'Response completions';
   const notifications = page.getByRole('switch', { name: notificationsLabel, exact: true });
   await notifications.waitFor();
   const notificationsBefore = await notifications.getAttribute('aria-checked');
@@ -1147,24 +1150,7 @@ try {
   );
   checks.push('a General switch round-trips through the settings IPC and survives a reload');
 
-  // 5a.6 The UI language re-renders the whole app, sidebar included.
-  await page.getByRole('combobox', { name: 'Interface language', exact: true }).click();
-  await page.getByRole('option', { name: 'Simplified Chinese', exact: true }).click();
-  await page.waitForFunction(
-    () => document.documentElement.getAttribute('data-maka-locale') === 'zh-CN',
-  );
-  await page.getByRole('button', { name: '新建任务', exact: true }).first().waitFor();
-  await page.locator('[data-maka-contract="settings-sidebar"]').getByText('通用').first().waitFor();
-  await page.screenshot({ path: SHOT('phase5a-general-zh.png') });
-  await page.getByRole('combobox', { name: '界面语言', exact: true }).click();
-  await page.getByRole('option', { name: 'English', exact: true }).click();
-  await page.waitForFunction(
-    () => document.documentElement.getAttribute('data-maka-locale') === 'en',
-  );
-  await page.getByRole('button', { name: 'New task', exact: true }).first().waitFor();
-  checks.push('switching the UI language re-renders the sidebar and the nav, and back again');
-
-  // 5a.7 Workspace, Usage, Data, Permissions and Health each render their own page.
+  // 5a.6 Workspace, Usage, Data, Permissions and Health each render their own page.
   for (const [name, section, shot] of [
     ['Workspace', 'projects', 'phase5a-workspace-light.png'],
     ['Usage', 'usage', 'phase5a-usage-light.png'],
@@ -1190,15 +1176,19 @@ try {
   await providers.getByText('E2E', { exact: true }).first().waitFor();
   await new Promise((settle) => setTimeout(settle, 400));
   await page.screenshot({ path: SHOT('phase5b-models-light.png') });
-  await page.getByRole('button', { name: 'Open connection E2E', exact: true }).click();
+  // A connection is a table row; the row itself opens it.
+  await page.getByRole('row', { name: 'Open connection E2E', exact: true }).click();
   const connectionDetail = page.locator('[data-maka-contract="connection-detail"]');
   await connectionDetail.waitFor();
-  // The detail face replaces the CONTENT column and nothing else: the window
-  // titlebar still carries the way back to the tasks (plan §2.12).
-  await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).first().waitFor();
+  // The detail face replaces the dialog's page and nothing else: the window
+  // under the dialog keeps its titlebar.
+  await page
+    .locator('[data-maka-contract="shell-topbar-rail"] button[aria-controls="app-sidebar"]')
+    .waitFor();
   await new Promise((settle) => setTimeout(settle, 400));
   await page.screenshot({ path: SHOT('phase5b-connection-detail-light.png') });
-  await page.getByRole('button', { name: 'Back to model connections', exact: true }).click();
+  // The way back is in the dialog's own top bar, not in the page.
+  await page.getByRole('button', { name: 'Back to Models', exact: true }).click();
   await connectionDetail.waitFor({ state: 'detached' });
   checks.push('Models lists the seeded connection and opens its detail');
 
@@ -1228,9 +1218,12 @@ try {
     .getByText('This provider requires a service URL', { exact: true })
     .waitFor();
   await page.screenshot({ path: SHOT('phase5b-provider-setup-light.png') });
-  await page.getByRole('button', { name: 'Back to the provider list', exact: true }).click();
+  // The setup form is a dialog over the catalog: Cancel closes it and leaves
+  // the catalog where it was.
+  await setup.getByRole('button', { name: 'Cancel', exact: true }).click();
   await setup.waitFor({ state: 'detached' });
-  await page.getByRole('button', { name: 'Back to model connections', exact: true }).click();
+  await page.locator('[data-maka-contract="provider-catalog"]').waitFor();
+  await page.getByRole('button', { name: 'Back to Models', exact: true }).click();
   await providers.waitFor();
   checks.push('the add-connection catalog offers RELX Gateway and blocks on its missing endpoint');
 
@@ -1248,13 +1241,20 @@ try {
   await settings.getByText(PRESET, { exact: true }).first().waitFor();
   await new Promise((settle) => setTimeout(settle, 300));
   await page.screenshot({ path: SHOT('phase5b-subagents-light.png') });
-  await page.getByRole('button', { name: `Configure “${PRESET}”`, exact: true }).click();
+  // The row opens the editor, a dialog over the list; Cancel leaves it be.
+  await settings.getByRole('row', { name: `Configure “${PRESET}”`, exact: true }).click();
   await subagentEditor.waitFor();
-  await subagentEditor.getByRole('button', { name: 'Remove', exact: true }).click();
-  const removeConfirm = page.locator('[data-app-dialog]');
+  await subagentEditor.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await subagentEditor.waitFor({ state: 'detached' });
+  // Removing is the row's ⋯, and it is confirmed.
+  await settings.getByRole('button', { name: `More actions for ${PRESET}`, exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Remove', exact: true }).click();
+  // The confirmation stacks on the Settings dialog, which is one too.
+  const removeConfirm = page.locator(
+    '[data-app-dialog]:not([data-maka-contract="settings-surface"])',
+  );
   await removeConfirm.waitFor();
   await removeConfirm.getByRole('button', { name: 'Remove', exact: true }).click();
-  await subagentEditor.waitFor({ state: 'detached' });
   await settings.getByText(PRESET, { exact: true }).waitFor({ state: 'detached' });
   checks.push('Subagents creates a preset through the settings IPC and deletes it again');
 
@@ -1301,8 +1301,15 @@ try {
   await settings.getByRole('switch', { name: 'Enable web search', exact: true }).waitFor();
   // The probe is on every source; it is the page's own test control, and it
   // says Beta rather than pretending otherwise.
-  await settings.getByLabel('Test search', { exact: true }).waitFor();
-  await settings.getByRole('button', { name: 'Search', exact: true }).waitFor();
+  // The test is an act with results of its own, so it opens as a dialog.
+  await settings.getByRole('button', { name: 'Test…', exact: true }).click();
+  const searchTest = page.locator('[data-maka-contract="web-search-test"]');
+  await searchTest.getByLabel('Test search', { exact: true }).waitFor();
+  await searchTest.getByRole('button', { name: 'Search', exact: true }).waitFor();
+  // Escape belongs to the dialog on top once Settings knows it is under one.
+  await page.locator('[data-maka-contract="settings-surface"][data-nested-dialog-open]').waitFor();
+  await page.keyboard.press('Escape');
+  await searchTest.waitFor({ state: 'detached' });
   // The credential test only exists for a source that HAS a credential: the
   // default source is the task's own model connection, which carries none.
   await settings.getByRole('combobox', { name: 'Search source', exact: true }).click();
@@ -1328,7 +1335,7 @@ try {
     'Memory persists every exposed switch through the Host across navigation; Web Search renders its test',
   );
 
-  // 5a.9 Archived tasks lists a task archived from the rail, and restores it.
+  // 5a.7 Archived tasks lists a task archived from the rail, and restores it.
   await page.keyboard.press('Escape');
   await settings.waitFor({ state: 'detached' });
   await ensureSidebarExpanded(page);
@@ -1361,7 +1368,7 @@ try {
   await settings.getByText(ARCHIVED_TASK, { exact: false }).waitFor({ state: 'detached' });
   checks.push('Archived tasks lists a task archived from the rail and restores it');
 
-  // 5a.10 Escape closes Settings and gives the content column back.
+  // 5a.8 Escape closes Settings and gives the content column back.
   await page.keyboard.press('Escape');
   await settings.waitFor({ state: 'detached' });
   await ensureSidebarExpanded(page);
@@ -1387,7 +1394,7 @@ try {
   await moduleMain.locator('[data-maka-contract="module-actions"]').waitFor();
   await moduleMain.getByRole('tab', { name: 'Skills', exact: true }).waitFor();
   // The fixture's own SKILL.md lands in the "Created by you" section; the
-  // Yours list is grouped by origin, the way Claude's Customize page is.
+  // Yours list is grouped by origin.
   await moduleMain.getByText('Created by you', { exact: true }).first().waitFor();
   await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).first().waitFor();
   await new Promise((settle) => setTimeout(settle, 700));

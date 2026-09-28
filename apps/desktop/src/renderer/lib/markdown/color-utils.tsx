@@ -33,18 +33,18 @@ export interface ColorRenderOptions {
   bare?: boolean;
 }
 
-/** 行内代码壳。claude.ai 实测:含色值时在同一个 <code> 上追加
+/** 行内代码壳。设计稿实测:含色值时在同一个 <code> 上追加
  *  inline-flex + items-center + h-5(20px 定高)—— 靠壳自己定高居中,
  *  不是在壳里再塞一个 flex 子容器(那样色点会偏上 2px/5px 不对称)。
  *  非色值的行内代码不带这三个类,保持原有 21px 行高。 */
 export const INLINE_CODE_CLASS =
-  'px-1 py-px rounded-[0.4rem] border border-hairline bg-alpha-1 text-[0.9rem] ' +
+  'px-1 py-px rounded-[0.4rem] border border-hairline bg-alpha-1 text-[length:calc(0.9rem*var(--chat-text-scale,1))] ' +
   'leading-[1.5] font-mono font-normal text-danger whitespace-pre-wrap';
 export const INLINE_CODE_COLOR_CLASS = 'inline-flex items-center h-5';
 
-/** 色点。claude.ai 实测值:12×12、圆角 4px、0.5px alpha-20% 描边、shadow-sm、
+/** 色点。设计稿实测值:12×12、圆角 4px、0.5px alpha-20% 描边、shadow-sm、
  *  右外边距 4px。rounded-sm 与 border-border-strong 在本仓实测就是 4px /
- *  alpha 20%(globals.css 重定义过),所以用仓内 token 而非 claude 的字面值。
+ *  alpha 20%(globals.css 重定义过),所以用仓内 token 而非设计稿的字面值。
  *  ! 投影不能写 shadow-sm:上游那个 shadow-sm 是 6%/8% 两层,本仓的
  *  shadow-sm 是 Tailwind 默认的 10% 两层,同名不同值。--card-shadow 才是
  *  上游那一组,而且深色下会正确翻到 12%/18%。 */
@@ -58,7 +58,7 @@ const ColorDot = ({ color }: { color: string }) => (
 // 颜色值检测和渲染组件
 export const ColorSwatch = ({ color, bare = false }: { color: string; bare?: boolean }) => {
   // 壳由调用方(Markdown.tsx 的行内代码分支)提供:只出色点 + 裸文本,
-  // 让色点成为 <code> 的直接子节点,与 claude.ai 的 DOM 结构一致。
+  // 让色点成为 <code> 的直接子节点,与设计稿的 DOM 结构一致。
   if (bare) {
     return (
       <>

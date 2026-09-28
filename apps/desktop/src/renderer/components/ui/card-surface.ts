@@ -22,7 +22,7 @@
  * 手抄,改一处就漂一处 —— 和 Input/Textarea 抄 field 样式是同一个毛病,
  * 处理方式也一样:抽成常量,谁用谁 import。
  *
- * 几何取自 Cowork 实测:r16 · 0.5px 描边 · 白底 · 两层浅投影 · 内边距 16 · 行距 12。
+ * 几何取自 设计稿实测:r16 · 0.5px 描边 · 白底 · 两层浅投影 · 内边距 16 · 行距 12。
  *
  * 内边距**不在 surface 上**:卡片整块可点时,可点区是里面那颗铺满的 button,
  * padding 得由它拿着,否则边上一圈 16px 点不动。所以 surface 和 body 分开。
@@ -51,7 +51,7 @@ export const cardBodyClass = 'flex h-full flex-col gap-3 p-4';
  *
  * 和上面那套**不是一种卡**,别混:上面是插件/市场卡(r16 · 白底 · 两层投影),
  * 这套没有投影也没有 border,轮廓是一圈内嵌 1px ring,hover 只换填充。
- * 几何取自 Cowork projects 列表实测:r12 · padding 16 · gap 8 · ring 10%。
+ * 几何取自 设计稿 projects 列表实测:r12 · padding 16 · gap 8 · ring 10%。
  * ------------------------------------------------------------------ */
 
 /**
@@ -59,16 +59,16 @@ export const cardBodyClass = 'flex h-full flex-col gap-3 p-4';
  * 多出的 2px 会挤掉内容;ring 不占位。focus-visible 直接**换掉**这层 ring,所以
  * 两者不会叠在一起。
  *
- * 底色和页面同为 surface-1 —— 这不是漏改,Cowork 的 body 与卡都是 surface-1,
+ * 底色和页面同为 surface-1 —— 这不是漏改,设计稿的 body 与卡都是 surface-1,
  * 卡靠 ring 立住,hover 才升到 surface-2。也没有过渡:实测就是瞬时切换。
  *
- * ! 深色下 hover 的方向和 Claude 相反:CDS 的深色 surface 阶梯是越往上越亮
+ * ! 深色下 hover 的方向和设计稿相反:CDS 的深色 surface 阶梯是越往上越亮
  * (850 #151515 → 830 #1a1a19),我们的是 surface-1 #262624 → surface-2 #201f1a,
  * 越往上越暗。这里仍然写 surface-2 而不是就地换个更亮的色:角色是对的,等深色
  * 阶梯整体校准后这张卡会自动跟上。
  */
 // 字号压在卡上(而不是只压在每个子元素上):否则卡内任何没显式带 text-sm 的
-// 文字都会继承页面的 16px。Cowork 的卡本身就带 text-body。
+// 文字都会继承页面的 16px。设计稿的卡本身就带 text-body。
 export const listCardSurfaceClass =
   'flex h-full w-full flex-col gap-2 rounded-xl bg-surface-1 p-4 text-sm leading-5 shadow-[inset_0_0_0_1px_var(--hairline)]';
 
@@ -99,7 +99,7 @@ export const listCardTitleRowClass = 'flex items-center gap-2 overflow-hidden pr
 
 export const listCardTitleClass = 'truncate text-sm font-medium leading-5 text-text-primary';
 
-/** 描述为空时**不要渲染这个元素**:Cowork 的无描述卡直接塌到 77px,不留空行。 */
+/** 描述为空时**不要渲染这个元素**:设计稿的无描述卡直接塌到 77px,不留空行。 */
 export const listCardDescClass = 'mb-4 line-clamp-3 text-sm leading-5 text-text-secondary';
 
 /**
@@ -113,7 +113,7 @@ export const listCardFooterClass =
   'mt-auto flex items-center justify-between text-[13px] leading-[17px] text-text-muted';
 
 /* ------------------------------------------------------------------ *
- * 带缩略图的列表卡(files)。几何取自 Claude artifacts 列表实测。
+ * 带缩略图的列表卡(files)。几何取自设计稿 artifacts 列表实测。
  *
  * 是上面那张纯文字列表卡的**另一档**,不是另一种卡:同样 r12、同样 1px ring、
  * 同样没有投影、按下同样回弹 0.98。差别只在它顶着一块缩略图,所以:

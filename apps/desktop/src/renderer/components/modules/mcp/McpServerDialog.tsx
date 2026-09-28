@@ -62,7 +62,7 @@ import { getMcpCopy, type McpCopy } from '../../../locales/mcp-copy.js';
 import { getConnectorsPageCopy } from '../../../locales/connectors-page-copy.js';
 import { getModulesCopy } from '../../../locales/modules-copy.js';
 
-/** A new connector starts on the remote transport, the first segment and Claude's only one. */
+/** A new connector starts on the remote transport, the first segment. */
 function newDraft(): McpServerDraft {
   return { ...createEmptyMcpDraft(), kind: 'remote' };
 }
@@ -176,7 +176,7 @@ export function McpServerDialog(props: {
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            {/* Claude's form: the field says what it is in its placeholder and
+            {/* The form: the field says what it is in its placeholder and
                 the line under it says what it is for; the label is for
                 assistive tech. */}
             <Field

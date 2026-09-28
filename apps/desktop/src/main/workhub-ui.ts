@@ -78,7 +78,6 @@ export class WorkHubUi {
     private readonly window: () => WebContents,
     private readonly readSettings: () => Promise<AppSettings>,
     private readonly update: (patch: Partial<WorkHubControlSnapshot>) => void,
-    private readonly readDisplayName: () => Promise<string>,
   ) {}
 
   async begin(signal: AbortSignal) {
@@ -232,33 +231,6 @@ export class WorkHubUi {
     );
     if (action.kind === "navigate") return { verified: true, section };
     const before = await this.readSettings();
-    if (action.target === "displayName") {
-      const previous = await this.readDisplayName();
-      if (previous === action.value)
-        return {
-          verified: true,
-          target: action.target,
-          value: action.value,
-          previous,
-        };
-      await this.click(selector("displayName.edit"), signal);
-      await this.type(
-        `${selector("displayName.input")} input`,
-        action.value,
-        signal,
-      );
-      await this.click(selector("displayName.save"), signal);
-      await this.waitFor(
-        async () => (await this.readDisplayName()) === action.value,
-        signal,
-      );
-      return {
-        verified: true,
-        target: action.target,
-        value: action.value,
-        previous,
-      };
-    }
     if (action.target === "theme")
       await this.click(selector(`theme.${action.value}`), signal);
     else {

@@ -30,7 +30,8 @@ test('settings closes with Escape and restores the selected session and workbar'
   await ensureSidebarExpanded(page);
   await page.getByRole('button', { name: '设置', exact: true }).click();
   await expect(page.locator('[data-maka-contract="settings-surface"]')).toBeVisible();
-  await expect(page.locator('#maka-workbar-pane')).toHaveCount(0);
+  // A dialog over the session: the task and its workbar stay mounted under it.
+  await expect(page.locator('#maka-workbar-pane')).toHaveCount(1);
   await page.keyboard.press('Escape');
   await expect(page.locator('[data-maka-contract="settings-surface"]')).toHaveCount(0);
   await expect(page.locator('#maka-workbar-pane')).toBeVisible();
@@ -42,20 +43,19 @@ test('settings writes persist through a renderer reload and restore the selected
 }) => {
   await ensureSidebarExpanded(page);
   await page.getByRole('button', { name: '设置', exact: true }).click();
+  // A Runtime Host setting: Memory's switch.
   await page
-    .locator('[data-maka-contract="settings-sidebar"] [data-settings-section="general"]')
+    .locator('[data-maka-contract="settings-sidebar"] [data-settings-section="memory"]')
     .click();
-  const tone = page.getByRole('textbox', { name: '助手语气偏好' });
-  await tone.fill('Concise and concrete');
-  await tone.press('Tab');
+  const generate = page.getByRole('switch', { name: '从聊天生成记忆' });
+  const before = (await generate.getAttribute('aria-checked')) === 'true';
+  await generate.click();
   await expect
-    .poll(() =>
-      page.evaluate(async () => (await window.maka.settings.get()).personalization.assistantTone),
-    )
-    .toBe('Concise and concrete');
+    .poll(() => page.evaluate(async () => (await window.maka.settings.get()).memory.enabled))
+    .toBe(!before);
   await page.reload();
   await expect(page.locator(COMPOSER_INPUT)).toBeVisible();
   await ensureSidebarExpanded(page);
   await page.getByRole('button', { name: '设置', exact: true }).click();
-  await expect(tone).toHaveValue('Concise and concrete');
+  await expect(generate).toHaveAttribute('aria-checked', String(!before));
 });

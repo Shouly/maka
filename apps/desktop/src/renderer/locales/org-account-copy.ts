@@ -36,7 +36,6 @@ export type OrgAccountCopy = {
   finishInBrowserHelp: string;
   cancel: string;
   tryAgain: string;
-  admin: string;
   signOut: string;
   signingOut: string;
   /** Why the last sign-in did not happen, or why a sign-in ended. */
@@ -63,16 +62,27 @@ export type OrgAccountCopy = {
     tagline: string;
     getStarted: string;
   };
+  /** The account menu at the foot of the rail. */
   menu: {
     label(name: string): string;
-    accountSettings: string;
+    settings: string;
+    usage: string;
+    language: string;
+    about: string;
+    logOut: string;
+  };
+  /** "Choose your language", opened from the account menu. */
+  language: {
+    title: string;
+    /** Each choice: its own name, then what it is in the current language. */
+    options: Record<'auto' | 'zh-CN' | 'zh-TW' | 'en', { name: string; detail: string }>;
   };
   settings: {
     title: string;
-    description: string;
+    /** The one row the section keeps while signed in. */
+    signOutHere: string;
     server: string;
     serverHelp: string;
-    serverLockedHelp: string;
     serverManagedHelp: string;
     serverPlaceholder: string;
     saving: string;
@@ -80,8 +90,6 @@ export type OrgAccountCopy = {
     signedOut: string;
     signInHelp: string;
     needsServer: string;
-    signedInUntil(date: string): string;
-    notRemembered: string;
     loadFailed: string;
   };
 };
@@ -96,7 +104,6 @@ const ORG_ACCOUNT_COPY = {
     finishInBrowserHelp: '登录页已在浏览器中打开，完成后回到 Maka。',
     cancel: '取消',
     tryAgain: '重试',
-    admin: '管理员',
     signOut: '退出登录',
     signingOut: '退出中…',
     lastErrors: {
@@ -133,14 +140,26 @@ const ORG_ACCOUNT_COPY = {
     },
     menu: {
       label: (name) => `账号：${name}`,
-      accountSettings: '账号设置',
+      settings: '设置',
+      usage: '用量',
+      language: '语言',
+      about: '关于 Maka',
+      logOut: '退出登录',
+    },
+    language: {
+      title: '选择语言',
+      options: {
+        auto: { name: '跟随系统', detail: '与系统语言一致' },
+        'zh-CN': { name: '简体中文', detail: '简体中文' },
+        'zh-TW': { name: '繁體中文', detail: '繁体中文' },
+        en: { name: 'English', detail: '英语' },
+      },
     },
     settings: {
-      title: '公司账号',
-      description: '登录公司的 Maka 服务器后，Maka 使用公司提供的模型和服务。',
+      title: '账号',
+      signOutHere: '在这台设备上退出登录',
       server: '公司服务器',
       serverHelp: '公司 Maka 服务器的地址，以 https:// 开头。不清楚可以问管理员。',
-      serverLockedHelp: '退出登录后才能更换服务器。',
       serverManagedHelp: '由这个版本的 Maka 指定，不能更改。',
       serverPlaceholder: 'https://maka.example.com',
       saving: '保存中…',
@@ -152,8 +171,6 @@ const ORG_ACCOUNT_COPY = {
       signedOut: '未登录',
       signInHelp: '在浏览器中用公司账号完成登录。',
       needsServer: '先填写并保存公司服务器地址。',
-      signedInUntil: (date) => `登录有效至 ${date}，之后需要重新登录`,
-      notRemembered: '系统钥匙串不可用，退出 Maka 后需要重新登录。',
       loadFailed: '无法读取账号状态',
     },
   },
@@ -166,7 +183,6 @@ const ORG_ACCOUNT_COPY = {
     finishInBrowserHelp: '登入頁已在瀏覽器中開啟，完成後回到 Maka。',
     cancel: '取消',
     tryAgain: '重試',
-    admin: '管理員',
     signOut: '登出',
     signingOut: '登出中…',
     lastErrors: {
@@ -203,14 +219,26 @@ const ORG_ACCOUNT_COPY = {
     },
     menu: {
       label: (name) => `帳號：${name}`,
-      accountSettings: '帳號設定',
+      settings: '設定',
+      usage: '用量',
+      language: '語言',
+      about: '關於 Maka',
+      logOut: '登出',
+    },
+    language: {
+      title: '選擇語言',
+      options: {
+        auto: { name: '跟隨系統', detail: '與系統語言一致' },
+        'zh-CN': { name: '简体中文', detail: '簡體中文' },
+        'zh-TW': { name: '繁體中文', detail: '繁體中文' },
+        en: { name: 'English', detail: '英語' },
+      },
     },
     settings: {
-      title: '公司帳號',
-      description: '登入公司的 Maka 伺服器後，Maka 使用公司提供的模型和服務。',
+      title: '帳號',
+      signOutHere: '在這台裝置上登出',
       server: '公司伺服器',
       serverHelp: '公司 Maka 伺服器的位址，以 https:// 開頭。不清楚可以問管理員。',
-      serverLockedHelp: '登出後才能更換伺服器。',
       serverManagedHelp: '由這個版本的 Maka 指定，不能更改。',
       serverPlaceholder: 'https://maka.example.com',
       saving: '儲存中…',
@@ -222,8 +250,6 @@ const ORG_ACCOUNT_COPY = {
       signedOut: '未登入',
       signInHelp: '在瀏覽器中用公司帳號完成登入。',
       needsServer: '先填寫並儲存公司伺服器位址。',
-      signedInUntil: (date) => `登入有效至 ${date}，之後需要重新登入`,
-      notRemembered: '系統鑰匙圈無法使用，退出 Maka 後需要重新登入。',
       loadFailed: '無法讀取帳號狀態',
     },
   },
@@ -237,7 +263,6 @@ const ORG_ACCOUNT_COPY = {
       'The sign-in page is open in your browser. Come back to Maka when you are done.',
     cancel: 'Cancel',
     tryAgain: 'Try again',
-    admin: 'Admin',
     signOut: 'Sign out',
     signingOut: 'Signing out…',
     lastErrors: {
@@ -279,16 +304,27 @@ const ORG_ACCOUNT_COPY = {
     },
     menu: {
       label: (name) => `Account: ${name}`,
-      accountSettings: 'Account settings',
+      settings: 'Settings',
+      usage: 'Usage',
+      language: 'Language',
+      about: 'About Maka',
+      logOut: 'Log out',
+    },
+    language: {
+      title: 'Choose your language',
+      options: {
+        auto: { name: 'System', detail: 'Match your system' },
+        'zh-CN': { name: '简体中文', detail: 'Chinese (Simplified)' },
+        'zh-TW': { name: '繁體中文', detail: 'Chinese (Traditional)' },
+        en: { name: 'English', detail: 'English' },
+      },
     },
     settings: {
-      title: 'Company account',
-      description:
-        "Once you sign in to your company's Maka server, Maka uses the models and services your company provides.",
+      title: 'Account',
+      signOutHere: 'Sign out of this device',
       server: 'Company server',
       serverHelp:
         "The address of your company's Maka server, starting with https://. Ask your administrator if you don't know it.",
-      serverLockedHelp: 'Sign out to change the server.',
       serverManagedHelp: 'Set by this build of Maka; it cannot be changed.',
       serverPlaceholder: 'https://maka.example.com',
       saving: 'Saving…',
@@ -300,9 +336,6 @@ const ORG_ACCOUNT_COPY = {
       signedOut: 'Not signed in',
       signInHelp: 'Finish signing in with your company account in the browser.',
       needsServer: 'Enter and save your company server address first.',
-      signedInUntil: (date) => `Signed in until ${date}, then sign in again`,
-      notRemembered:
-        'Your system keychain is unavailable; you will need to sign in again after quitting Maka.',
       loadFailed: 'Could not read the account status',
     },
   },

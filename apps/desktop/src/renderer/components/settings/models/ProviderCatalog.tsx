@@ -36,10 +36,9 @@ import {
 } from '@maka/core/provider-registry';
 import { useUiLocale } from '@maka/ui';
 import { Input } from '../../ui/input.js';
-import { cardSurfaceHoverClass } from '../../ui/card-surface.js';
 import { statusChipClass, statusChipToneClass } from '../../ui/status-chip.js';
+import { ProviderTile } from './provider-tile.js';
 import { cn } from '../../../lib/cn.js';
-import { ProviderBrandMark } from '../../../lib/ported/provider-brand-marks.js';
 import { providerDisplay } from '../../../lib/ported/provider-display-copy.js';
 import { getSettingsModelsCopy } from '../../../locales/settings-models-copy.js';
 
@@ -83,11 +82,11 @@ export function ProviderCatalog(props: { onPick: (providerType: ProviderType) =>
   }, [filter, locale]);
 
   return (
-    <div data-maka-contract="provider-catalog" className="flex flex-col gap-6">
+    <div data-maka-contract="provider-catalog" className="flex flex-col gap-6 pt-1">
       <Input
         aria-label={copy.panel.searchAria}
         placeholder={copy.panel.searchPlaceholder}
-        className="w-72"
+        className="w-full max-w-md"
         value={filter}
         onChange={(event) => setFilter(event.target.value)}
       />
@@ -100,10 +99,10 @@ export function ProviderCatalog(props: { onPick: (providerType: ProviderType) =>
 
       {groups.map(({ group, providers }) => (
         <section key={group} className="flex flex-col gap-3">
-          <h3 className="text-[0.8125rem] font-medium leading-[1.125rem] text-text-secondary">
+          <h3 className="text-sm font-medium leading-5 text-text-primary">
             {copy.panel.groups[group]}
           </h3>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {providers.map((providerType) => {
               const display = providerDisplay(providerType, locale);
               const experimental = PROVIDER_REGISTRY[providerType].status !== 'ready';
@@ -114,14 +113,11 @@ export function ProviderCatalog(props: { onPick: (providerType: ProviderType) =>
                   disabled={experimental}
                   aria-label={copy.catalog.cardAria(display.name, display.description)}
                   onClick={() => props.onPick(providerType)}
-                  className={cn(
-                    cardSurfaceHoverClass,
-                    'flex cursor-pointer items-start gap-3 p-3 text-left outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:cursor-default disabled:opacity-60',
-                  )}
+                  // The directory card: r11 on the soft surface, a 10%
+                  // ring that deepens on hover, 14px inside.
+                  className="flex cursor-pointer items-start gap-3 rounded-[11px] bg-surface-1 p-3.5 text-left shadow-[inset_0_0_0_1px_var(--alpha-2)] outline-none transition-shadow hover:shadow-[inset_0_0_0_1px_var(--alpha-3)] focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:cursor-default disabled:opacity-60"
                 >
-                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center text-text-secondary [&>img]:size-full [&>svg]:size-full">
-                    <ProviderBrandMark type={providerType} />
-                  </span>
+                  <ProviderTile type={providerType} size="md" />
                   <span className="flex min-w-0 flex-col gap-1">
                     <span className="flex items-center gap-2">
                       <span className="truncate text-sm font-medium leading-5 text-text-primary">
@@ -138,7 +134,7 @@ export function ProviderCatalog(props: { onPick: (providerType: ProviderType) =>
                         </span>
                       )}
                     </span>
-                    <span className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
+                    <span className="line-clamp-2 text-[0.8125rem] leading-[1.0625rem] text-text-secondary">
                       {display.description}
                     </span>
                   </span>

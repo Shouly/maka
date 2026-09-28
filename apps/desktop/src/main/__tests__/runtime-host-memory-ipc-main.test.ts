@@ -50,7 +50,6 @@ function fakeClient(log: string[]) {
         ? {
             kind: 'list' as const,
             enabled: true,
-            incognitoActive: false,
             directoryPath: '/tmp/root/memory',
             files: [FILE],
           }
@@ -89,7 +88,6 @@ test('lists the files with the folder, and hides the folder for a remote Host', 
   const local = await register(log).get('memory:list')?.({});
   assert.deepEqual(local, {
     enabled: true,
-    incognitoActive: false,
     directoryPath: '/tmp/root/memory',
     files: [FILE],
   });

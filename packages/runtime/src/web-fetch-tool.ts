@@ -105,16 +105,6 @@ export function buildWebFetchTool(executor: WebFetchExecutor): MakaTool {
   };
 }
 
-/** Removes network reading from the model-visible turn while privacy mode is active. */
-export function routeWebFetchTools(
-  tools: readonly MakaTool[],
-  privacy: { readonly incognitoActive: boolean },
-): MakaTool[] {
-  return privacy.incognitoActive
-    ? tools.filter((tool) => tool.name !== WEB_FETCH_TOOL_NAME)
-    : [...tools];
-}
-
 function truncateWebFetchOutput(content: string): string {
   if (Buffer.byteLength(content, 'utf8') <= WEB_FETCH_MODEL_OUTPUT_MAX_BYTES) return content;
   const markerBytes = Buffer.byteLength(WEB_FETCH_TRUNCATION_MARKER, 'utf8');

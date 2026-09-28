@@ -17,13 +17,14 @@
  * under the License.
  */
 
-// 设置页的分区 / 行骨架,来自参照设计的 `components/settings/settings-row.tsx`,
-// 逐字照抄(它是纯展示组件,只把 `@/lib/utils` 换成本仓的 `lib/cn`)。
+// 设置页的分区 / 行骨架,按设计稿实测:
 //
-//   分区      下边距 40px,标题 15/20 · 580,到首行 12px
+//   分区      间距 40px,标题 15/20 · 580,到首行 16px
 //   行        padding 12px 0 · 左右列间距 28px
-//   行标题     14/20 · 400        行说明 13/18 · text-secondary
+//   行标题     14/20 · 400        行说明 14/20 · text-muted,与标题间距 4px
 //   分隔线     1px alpha-1,只画在相邻两行之间,首行上面没有
+//
+// 分区一般没有说明文字;少数分区有说明,排成与行说明同一档。
 //
 // 排版是「左说明、右控件」的横排,不是「标签在上、输入框在下」的竖排表单 ——
 // 设置页和弹框表单最大的形态差别,别混用。
@@ -53,7 +54,7 @@ export function SettingsSection({
   return (
     <section className={cn('mb-10 last:mb-0', className)} {...rest}>
       {(title || action) && (
-        <div className="mb-3 flex items-start justify-between gap-7">
+        <div className="mb-4 flex items-start justify-between gap-7">
           <div className="flex min-w-0 flex-col gap-1">
             {/* `.` 作用域下 font-semibold 解析成 580 */}
             {title && (
@@ -61,11 +62,7 @@ export function SettingsSection({
                 {title}
               </h2>
             )}
-            {description && (
-              <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
-                {description}
-              </p>
-            )}
+            {description && <p className="text-sm leading-5 text-text-muted">{description}</p>}
           </div>
           {action && <div className="flex shrink-0 items-center">{action}</div>}
         </div>
@@ -113,15 +110,13 @@ export function SettingsRow({
           {title}
         </TitleTag>
       </div>
-      {description && (
-        <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">{description}</p>
-      )}
+      {description && <p className="text-sm leading-5 text-text-muted">{description}</p>}
     </div>
   );
 
   if (layout === 'stacked') {
     return (
-      <div className={cn('flex flex-col gap-2 py-3', className)}>
+      <div className={cn('flex flex-col gap-3 py-3', className)}>
         {head}
         {children}
       </div>

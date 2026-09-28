@@ -29,8 +29,17 @@ export interface UsersTable {
   id: string;
   /** Lowercased; unique — one email is one person (D4). */
   email: string;
+  /** The identity provider's, rewritten at every sign-in. */
   name: string;
   avatar_url: string | null;
+  /** The name the person set for themselves; shown instead of `name`. */
+  profile_name: string | null;
+  /** The seed of the generated avatar the person picked; null means initials. */
+  avatar_seed: string | null;
+  /** What the person asks the assistant to call them. */
+  nickname: string | null;
+  /** The person's own preferences for the assistant, as they wrote them. */
+  preferences: string | null;
   org_role: OrgRole;
   status: 'active' | 'deactivated';
   created_at: CreatedAt;

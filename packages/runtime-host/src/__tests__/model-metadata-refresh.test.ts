@@ -255,11 +255,20 @@ test('a failed fetch keeps the bundled snapshot and announces nothing', async (t
   assert.equal(lookupModelMetadata('anthropic', 'claude-opus-4-5').displayName, BUNDLED_OPUS_NAME);
 });
 
-test('privacy mode refuses the refresh before any transport exists', async () => {
+test('a missing proxy credential refuses the refresh before any transport exists', async () => {
   let transportCreated = false;
   const refresh = startHostModelMetadataRefresh({
-    policy: resolver({ kind: 'privacy_mode' }),
-    publish: () => assert.fail('privacy mode must not announce a refresh'),
+    policy: resolver({
+      kind: 'credential_not_configured',
+      status: {
+        locator: { scope: 'network_proxy', kind: 'password' },
+        configured: false,
+        credentialId: null,
+        revision: null,
+        updatedAt: null,
+      },
+    }),
+    publish: () => assert.fail('a skipped refresh must not announce anything'),
     createFetchTransport: () => {
       transportCreated = true;
       throw new Error('transport must not be created');
@@ -270,7 +279,7 @@ test('privacy mode refuses the refresh before any transport exists', async () =>
 
   assert.equal(transportCreated, false);
   assert.deepEqual(refresh.status().lastAttempt?.outcome, 'skipped');
-  assert.equal(refresh.status().lastAttempt?.error, 'privacy_mode');
+  assert.equal(refresh.status().lastAttempt?.error, 'proxy_credential_not_configured');
   await refresh.close();
 });
 

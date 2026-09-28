@@ -22,7 +22,7 @@ import { mainHeaderTextLabelClass } from '../layout/MainHeader';
 /**
  * 会话首屏骨架。
  *
- * 正文部分按 claude.ai 的 `[data-testid="transcript-list"]` 实测结构复刻:
+ * 正文部分按设计稿 `[data-testid="transcript-list"]` 的实测结构复刻:
  * 一个 `animate-pulse` 容器 + `gap-8` 分成"用户气泡"和"助手段落"两块,段落块
  * 内 `gap-2 px-2`,十根 h-4 占位条按 opacity 100→10 均匀递减。
  *
@@ -33,7 +33,7 @@ import { mainHeaderTextLabelClass } from '../layout/MainHeader';
  *     (#e4e4e3)明显更深,写上去整片会压得很实。
  *  2. animate-pulse 挂在**容器**上,不是每根条各挂一个:同一条时间线才会整体
  *     同呼吸,逐条挂会因为各自的动画起点不同而看起来在闪。
- *  3. 宽度用十二分制(w-11/12 …),不是任意百分比 —— 抄的是 Claude 那组节奏。
+ *  3. 宽度用十二分制(w-11/12 …),不是任意百分比 —— 抄的是设计稿那组节奏。
  *
  * 另外它是在 chats/[id]/page.tsx 里**提前 return** 的,不在真实那棵 .chat-area
  * 树里,所以几何得自己带齐,否则骨架消失那一帧会整体位移:
@@ -44,7 +44,7 @@ import { mainHeaderTextLabelClass } from '../layout/MainHeader';
  *  - 正文用 `chat-feed`,宽度由 CSS 的 --chat-content-max 给,不要硬编码。
  */
 
-/** opacity 100→10,每档降 10;宽度节奏照抄 claude.ai。 */
+/** opacity 100→10,每档降 10;宽度节奏照抄设计稿。 */
 const ASSISTANT_LINES = [
   { width: 'w-11/12', opacity: 'opacity-100' },
   { width: 'w-10/12', opacity: 'opacity-90' },
@@ -78,7 +78,7 @@ export function ChatSkeleton() {
       <div className="flex flex-1 flex-col overflow-hidden md:px-2">
         <div className="chat-feed px-4 pt-4 pb-8">
           <div className="flex animate-pulse flex-col gap-8">
-            {/* 用户气泡:右对齐。h-[46px] 是 Claude 的实测值(15/20 正文 +
+            {/* 用户气泡:右对齐。h-[46px] 是设计稿的实测值(15/20 正文 +
                 上下 12.5px 内距),不是 h-10。 */}
             <div className="flex justify-end">
               <div className="h-[46px] w-48 rounded-xl bg-skeleton px-4 py-2.5" />

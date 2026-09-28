@@ -696,10 +696,6 @@ export async function createExecutionRuntimeHostComposition(
           .catch(() => null);
         return abortSignal?.aborted ? null : messages;
       },
-      getPrivacyContext: async () => ({
-        incognitoActive: (await runtimePolicyStores.runtimePolicy.getSnapshot()).policy.privacy
-          .incognitoActive,
-      }),
     });
     const childHostTools = [
       createHostWebSearchToolFromService(webSearchService),
@@ -890,19 +886,7 @@ export async function createExecutionRuntimeHostComposition(
       sessionAdmission,
       context.requestDrain,
       transcriptReader,
-      async (sessionId, attention) => {
-        if (attention) {
-          try {
-            if (
-              (await runtimePolicyStores.runtimePolicy.getSnapshot()).policy.privacy.incognitoActive
-            ) {
-              attention = undefined;
-            }
-          } catch (error) {
-            attention = undefined;
-            console.warn('[runtime-host] Could not read notification privacy policy', error);
-          }
-        }
+      (sessionId, attention) => {
         hostChanges.publishSessionCatalog(sessionId, attention);
       },
       context.sessionAccessAuthority,

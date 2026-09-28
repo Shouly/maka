@@ -35,6 +35,7 @@ import {
   type PlatformIdentityProvider,
   type PlatformMe,
   type PlatformMetadata,
+  type PlatformProfileUpdate,
   type TokenResponse,
   versionAtLeast,
 } from '@maka/platform-protocol';
@@ -51,6 +52,8 @@ const SIGN_IN_TIMEOUT_MS = 5 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 15 * 1000;
 /** Refresh this long before the access token expires. */
 const ACCESS_TOKEN_MARGIN_MS = 60 * 1000;
+/** How stale the profile may get before a reload asks the server again. */
+const PROFILE_RELOAD_INTERVAL_MS = 60 * 1000;
 const SERVER_ERRORS: readonly OrgAccountError[] = [
   'domain_not_allowed',
   'email_not_verified',
@@ -103,6 +106,18 @@ export function normalizeServerUrl(value: string): string | undefined {
 }
 
 /** A request's own timeout, and the sign-in round's cancellation when there is one. */
+function toProfile(me: PlatformMe): OrgAccountProfile {
+  return {
+    name: me.name,
+    email: me.email,
+    ...(me.avatarUrl ? { avatarUrl: me.avatarUrl } : {}),
+    ...(me.avatarSeed ? { avatarSeed: me.avatarSeed } : {}),
+    ...(me.nickname ? { nickname: me.nickname } : {}),
+    ...(me.preferences ? { preferences: me.preferences } : {}),
+    orgRole: me.orgRole,
+  };
+}
+
 function requestSignal(round: AbortSignal | undefined): AbortSignal {
   const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
   return round ? AbortSignal.any([round, timeout]) : timeout;
@@ -117,6 +132,9 @@ export class OrgAccountService {
   #session: StoredSession | undefined;
   #access: { token: string; expiresAt: number } | undefined;
   #refreshing: Promise<string> | undefined;
+  /** When the stored profile was last known to match the server's (epoch ms). */
+  #profileCheckedAt = 0;
+  #reloadingProfile: Promise<void> | undefined;
   #signIn: { cancel(): void } | undefined;
   #lastError: OrgAccountError | undefined;
   #expiryTimer: NodeJS.Timeout | undefined;
@@ -152,6 +170,7 @@ export class OrgAccountService {
     }
     this.#emit();
     if (!this.#session) void this.refresh();
+    else void this.reloadProfile();
   }
 
   /** Load the server's sign-in options again (the retry after "cannot reach the server"). */
@@ -256,6 +275,7 @@ export class OrgAccountService {
         refreshExpiresAt: tokens.refresh_expires_at,
         profile,
       };
+      this.#profileCheckedAt = this.#now();
       this.#access = { token: tokens.access_token, expiresAt: this.#now() + tokens.expires_in * 1000 };
       this.#armExpiry();
       await this.#persist();
@@ -308,6 +328,77 @@ export class OrgAccountService {
 
   #revoke(serverUrl: string, refreshToken: string): void {
     void this.#post(serverUrl, '/oauth/revoke', new URLSearchParams({ token: refreshToken })).catch(() => {});
+  }
+
+  /**
+   * Change the person's own name or avatar on the company server. The answer
+   * is the whole profile as the server now has it, which replaces the one the
+   * sign-in stored.
+   */
+  async updateProfile(update: PlatformProfileUpdate): Promise<OrgAccountState> {
+    const serverUrl = this.#serverUrl;
+    const session = this.#session;
+    if (!serverUrl || !session) throw new OrgAccountUnavailable('signed_out');
+    const token = await this.accessToken();
+    let response: Response;
+    try {
+      response = await this.#fetch(`${serverUrl}/v1/me`, {
+        method: 'PATCH',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          [CLIENT_VERSION_HEADER]: this.#deps.appVersion,
+        },
+        body: JSON.stringify(update),
+        redirect: 'error',
+        signal: requestSignal(undefined),
+      });
+    } catch {
+      throw new OrgAccountUnavailable('server_unreachable');
+    }
+    if (response.status === 426) throw new OrgAccountUnavailable('upgrade_required');
+    if (!response.ok) throw new OrgAccountUnavailable('unknown');
+    const profile = toProfile((await response.json()) as PlatformMe);
+    // Signed out, or signed in again as someone else, while this was in flight.
+    if (this.#session?.sessionId !== session.sessionId) throw new OrgAccountUnavailable('signed_out');
+    this.#session = { ...this.#session, profile };
+    this.#profileCheckedAt = this.#now();
+    await this.#persist();
+    this.#emit();
+    return this.state();
+  }
+
+  /**
+   * Read the profile from the server again. It changes elsewhere too — the
+   * person edits it on another computer — and a new conversation is told what
+   * this copy says, so the copy is renewed at start and whenever the app is
+   * brought back (at most once a minute). A failure keeps the copy there is.
+   */
+  reloadProfile(): Promise<void> {
+    if (this.#now() - this.#profileCheckedAt < PROFILE_RELOAD_INTERVAL_MS) return Promise.resolve();
+    this.#reloadingProfile ??= this.#reloadProfile().finally(() => {
+      this.#reloadingProfile = undefined;
+    });
+    return this.#reloadingProfile;
+  }
+
+  async #reloadProfile(): Promise<void> {
+    const serverUrl = this.#serverUrl;
+    const session = this.#session;
+    if (!serverUrl || !session) return;
+    let profile: OrgAccountProfile;
+    try {
+      profile = await this.#profile(serverUrl, await this.accessToken(), new AbortController().signal);
+    } catch {
+      return;
+    }
+    // Signed out, or signed in again as someone else, while this was in flight.
+    if (this.#session?.sessionId !== session.sessionId) return;
+    this.#profileCheckedAt = this.#now();
+    if (JSON.stringify(profile) === JSON.stringify(this.#session.profile)) return;
+    this.#session = { ...this.#session, profile };
+    await this.#persist();
+    this.#emit();
   }
 
   /** A current access token, refreshed when it is about to expire. */
@@ -478,13 +569,7 @@ export class OrgAccountService {
       throw new SignInFailed('server_unreachable');
     });
     if (!response.ok) throw new SignInFailed('provider_error');
-    const me = (await response.json()) as PlatformMe;
-    return {
-      name: me.name,
-      email: me.email,
-      ...(me.avatarUrl ? { avatarUrl: me.avatarUrl } : {}),
-      orgRole: me.orgRole,
-    };
+    return toProfile((await response.json()) as PlatformMe);
   }
 
   /** Codes and refresh tokens go to the server named, never on to wherever a redirect points. */

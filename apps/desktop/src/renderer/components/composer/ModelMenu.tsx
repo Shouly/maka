@@ -21,7 +21,7 @@
 // surface on both the welcome and the session composer): a 32px ghost chip
 // with the provider mark and the model name, opening the model menu.
 //
-// The menu is the shape of Claude's (owner decision 2026-09-11): the models
+// The menu's shape (owner decision 2026-09-11): the models
 // of the CURRENT connection, name over a one-line description, the chosen one
 // checked; then the effort row with its value and submenu; then "More
 // models", a submenu holding every other connection's models under that

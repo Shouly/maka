@@ -1165,9 +1165,9 @@ test('the DeepSeek Harness arm pins its own minimal composition', async () => {
   assert.deepEqual(profile.dsh.profile.bundles, []);
 });
 
-test('Maka Eval policy enables privacy independently of the tool profile', () => {
+test('Maka Eval policy turns memory off independently of the tool profile', () => {
   const document = makaEvalRuntimePolicyDocument();
-  assert.equal(document.policy.privacy.incognitoActive, true);
+  assert.equal(document.policy.memory.enabled, false);
 });
 
 test('experiment specs do not declare an executor working-directory authority', async () => {

@@ -193,6 +193,19 @@ const MIGRATIONS: Record<string, Migration> = {
     // The quota check sums a period's units per request: answered from the index.
     `CREATE INDEX usage_events_user_at ON usage_events (user_id, at) INCLUDE (weighted_units)`,
   ),
+  // What a person sets for themselves, beside what the identity provider says:
+  // `name` is rewritten from the provider at every sign-in, so the name they
+  // chose cannot live there.
+  '0003_profile': statements(
+    `ALTER TABLE users ADD COLUMN profile_name text`,
+    `ALTER TABLE users ADD COLUMN avatar_seed text`,
+  ),
+  // What the person asks the assistant to call them, and their preferences for
+  // it: user information the desktop hands to each new conversation.
+  '0004_preferences': statements(
+    `ALTER TABLE users ADD COLUMN nickname text`,
+    `ALTER TABLE users ADD COLUMN preferences text`,
+  ),
 };
 
 export async function migrateToLatest(db: Kysely<Database>): Promise<void> {

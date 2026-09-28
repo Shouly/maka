@@ -17,28 +17,32 @@
  * under the License.
  */
 
-// Settings, as a page in the content column — not a modal.
+// Settings is a dialog over whatever the window was showing, not a page that
+// replaces it. Its geometry was measured off a running window (2026-09-27):
+// 44.5px clear of the window's top and bottom edges — not the titlebar's
+// height; the titlebar is 48 and the dialog's top edge sits 3.5px into it — 1rem clear of its sides, at most
+// 1024 × 800, r12 on surface-2 with the light panel shadow; the 192px rail on the left; on the right a 52px bar that
+// holds the close button — and, while a page shows one of its sub-views, the
+// way back (`useSettingsBack`) — then the page, scrolling under it. A dialog
+// opened from a page stacks on this one, which dims itself rather than the
+// window getting a second backdrop (`DialogStackContext`).
 //
-// The geometry is the reference design's `setting/layout.tsx`: a scrolling
-// column with the page title in it and a `220px` sticky nav beside the
-// content, capped at `max-w-6xl`. What is Maka's:
+// What is Maka's:
 //
-//   - the window titlebar above it does not change (plan §2.12). The sidebar
-//     stays usable and its toggle never moves; only the content column is
-//     replaced, and the titlebar's identity slot says "Settings" while it is.
-//   - there is no routing. relx navigates with `next/link`; here the section
-//     is `uiStore` state persisted under the unchanged `maka-settings-section-v1`,
-//     because the main process forbids navigation outright.
+//   - there is no routing. The section is `uiStore` state persisted under the
+//     unchanged `maka-settings-section-v1`, and the dialog is not a place in
+//     the window's back/forward history — the page underneath is.
 //   - every page is bound to the Runtime Host the rest of the renderer is
 //     reading from (`useScopedRuntimeHost`), so what Settings shows and what
 //     the composer is talking to cannot disagree.
 
+import { useCallback, useRef, useState } from 'react';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { useStore } from 'zustand';
 import { useUiLocale } from '@maka/ui';
 import type { SettingsSection } from '@maka/core/settings';
 import { AboutSettings } from './AboutSettings.js';
 import { AccountSettings } from './account/AccountSettings.js';
-import { AppearanceSettings } from './AppearanceSettings.js';
 import { BotChatSettings } from './bots/BotChatSettings.js';
 import { ArchivedTasksSettings } from './ArchivedTasksSettings.js';
 import { DataSettings } from './DataSettings.js';
@@ -48,6 +52,9 @@ import { MemorySettings } from './MemorySettings.js';
 import { ModelsSettings } from './models/ModelsSettings.js';
 import { PermissionsSettings } from './PermissionsSettings.js';
 import { SettingsNav } from './SettingsNav.js';
+import { Anthropicon } from '../icons/Anthropicon.js';
+import { DialogOverlay, DialogPortal, DialogStackContext } from '../ui/dialog.js';
+import { SettingsBackButton, SettingsBackProvider, type SettingsBack } from './settings-kit.js';
 import { SubagentsSettings } from './SubagentsSettings.js';
 import { UsageSettings } from './UsageSettings.js';
 import { WebSearchSettings } from './WebSearchSettings.js';
@@ -57,76 +64,118 @@ import { useScopedRuntimeHost } from '../../hooks/use-workspace.js';
 import { uiStore } from '../../store/index.js';
 import { getSettingsCopy } from '../../locales/settings-copy.js';
 import { getSettingsNavigationCopy } from '../../locales/settings-navigation-copy.js';
+import { getUiCopy } from '../../locales/ui-copy.js';
 
-export function SettingsView(props: { onOpenKeyboardHelp: () => void }) {
+export function SettingsDialog(props: { open: boolean; onOpenKeyboardHelp: () => void }) {
   const locale = useUiLocale();
   const copy = getSettingsCopy(locale);
   const nav = getSettingsNavigationCopy(locale);
   const host = useScopedRuntimeHost();
   const stored = useStore(uiStore, (state) => state.settingsSection);
   const section = resolveSettingsSection(stored);
+  // A sub-view's way back, shown in the top bar while it is set.
+  const [back, setBack] = useState<SettingsBack | null>(null);
+  // Dialogs open on top of this one: while any is, this one dims itself.
+  const [stacked, setStacked] = useState(0);
+  // The same count, current the moment a dialog enters — before this one
+  // re-renders. Radix hands Escape only to the topmost layer, but this layer
+  // learns it is no longer topmost on its next render; an Escape in between
+  // would close Settings along with the dialog on top of it.
+  const stackedNow = useRef(0);
+  const enterStack = useCallback(() => {
+    stackedNow.current += 1;
+    setStacked((count) => count + 1);
+    return () => {
+      stackedNow.current -= 1;
+      setStacked((count) => count - 1);
+    };
+  }, []);
 
   return (
-    <div
-      data-maka-contract="settings-surface"
-      className="relative min-w-0 flex-1 overflow-y-auto bg-surface-1"
+    <DialogPrimitive.Root
+      open={props.open}
+      onOpenChange={(open) => {
+        if (!open) uiStore.closeSettings();
+      }}
     >
-      <header className="mx-auto flex h-12 w-full max-w-7xl md:h-24 md:items-end">
-        <div className="flex w-full items-center justify-between gap-4 px-4 md:px-8">
-          <h1 className="min-w-0 font-display text-2xl font-medium leading-8 text-text-primary [font-variation-settings:'opsz'_24]">
-            <span className="truncate">{copy.title}</span>
-          </h1>
-        </div>
-      </header>
-
-      <div className="mx-auto mt-4 w-full max-w-7xl flex-1 px-4 md:px-8 lg:mt-6">
-        <div className="my-4 grid w-full max-w-6xl grid-cols-1 gap-x-8 md:my-8 md:grid-cols-[220px_minmax(0px,1fr)]">
-          <SettingsNav
-            section={section}
-            label={copy.navLabel}
-            copy={nav}
-            onSelect={(next: SettingsSection) => uiStore.openSettings(next)}
-          />
-          <div
-            className="min-w-0 pb-10"
-            aria-label={copy.contentLabel}
-            data-maka-contract="settings-content"
-            data-settings-section={section}
-          >
-            {section === 'account' ? (
-              <AccountSettings />
-            ) : section === 'general' ? (
-              <GeneralSettings host={host} />
-            ) : section === 'appearance' ? (
-              <AppearanceSettings />
-            ) : section === 'projects' ? (
-              <WorkspaceSettings host={host} />
-            ) : section === 'models' ? (
-              <ModelsSettings host={host} />
-            ) : section === 'subagents' ? (
-              <SubagentsSettings host={host} />
-            ) : section === 'memory' ? (
-              <MemorySettings host={host} />
-            ) : section === 'search' ? (
-              <WebSearchSettings host={host} />
-            ) : section === 'bot-chat' ? (
-              <BotChatSettings host={host} />
-            ) : section === 'usage' ? (
-              <UsageSettings host={host} />
-            ) : section === 'archived-tasks' ? (
-              <ArchivedTasksSettings />
-            ) : section === 'data' ? (
-              <DataSettings host={host} />
-            ) : section === 'permissions' ? (
-              <PermissionsSettings host={host} />
-            ) : section === 'health' ? (
-              <HealthSettings host={host} />
-            ) : section === 'about' ? (
-              <AboutSettings host={host} onOpenKeyboardHelp={props.onOpenKeyboardHelp} />
-            ) : null}
-          </div>
-        </div>
-      </div>
-    </div>
+      <DialogPortal>
+        <DialogOverlay />
+        <DialogPrimitive.Content
+          data-app-dialog=""
+          data-maka-contract="settings-surface"
+          data-nested-dialog-open={stacked > 0 ? '' : undefined}
+          aria-describedby={undefined}
+          onEscapeKeyDown={(event) => {
+            if (stackedNow.current > 0) event.preventDefault();
+          }}
+          className="settings-dialog fixed inset-0 z-50 m-auto flex h-[calc(100dvh-89px)] max-h-[50rem] w-[calc(100vw-2rem)] max-w-[1024px] overflow-hidden rounded-xl bg-surface-2 text-sm leading-5 text-text-primary shadow-[var(--dialog-shadow-sm)] outline-none dark:border dark:border-alpha-1 after:pointer-events-none after:absolute after:inset-0 after:z-10 after:rounded-[inherit] after:bg-dialog-overlay after:opacity-0 after:transition-opacity after:duration-200 data-[nested-dialog-open]:after:opacity-100"
+        >
+          <DialogStackContext.Provider value={enterStack}>
+            <SettingsBackProvider value={setBack}>
+              <DialogPrimitive.Title className="sr-only">{copy.title}</DialogPrimitive.Title>
+              <SettingsNav
+                section={section}
+                label={copy.navLabel}
+                searchPlaceholder={copy.search}
+                searchLabel={copy.searchLabel}
+                noResults={copy.noResults}
+                copy={nav}
+                onSelect={(next: SettingsSection) => uiStore.openSettings(next)}
+              />
+              <div className="flex min-w-0 flex-1 flex-col bg-surface-2">
+                <div className="flex h-[3.25rem] shrink-0 items-center justify-between gap-3 pt-3 pr-3 pb-2 pl-6">
+                  <div className="flex min-w-0 items-center">
+                    {back && <SettingsBackButton back={back} ariaLabel={copy.backTo(back.label)} />}
+                  </div>
+                  <DialogPrimitive.Close className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-text-primary transition-colors hover:bg-sidebar-menu-hover focus:outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)]">
+                    <Anthropicon name="x" size={20} />
+                    <span className="sr-only">{getUiCopy(locale).close}</span>
+                  </DialogPrimitive.Close>
+                </div>
+                <div
+                  // Keyed by page, so each page opens at its top rather than at
+                  // wherever the previous one had been scrolled to.
+                  key={section}
+                  className="min-h-0 flex-1 overflow-y-auto px-6 pt-2 pb-4"
+                  aria-label={copy.contentLabel}
+                  data-maka-contract="settings-content"
+                  data-settings-section={section}
+                >
+                  {section === 'account' ? (
+                    <AccountSettings />
+                  ) : section === 'general' ? (
+                    <GeneralSettings host={host} />
+                  ) : section === 'projects' ? (
+                    <WorkspaceSettings host={host} />
+                  ) : section === 'models' ? (
+                    <ModelsSettings host={host} />
+                  ) : section === 'subagents' ? (
+                    <SubagentsSettings host={host} />
+                  ) : section === 'memory' ? (
+                    <MemorySettings host={host} />
+                  ) : section === 'search' ? (
+                    <WebSearchSettings host={host} />
+                  ) : section === 'bot-chat' ? (
+                    <BotChatSettings host={host} />
+                  ) : section === 'usage' ? (
+                    <UsageSettings host={host} />
+                  ) : section === 'archived-tasks' ? (
+                    <ArchivedTasksSettings />
+                  ) : section === 'data' ? (
+                    <DataSettings host={host} />
+                  ) : section === 'permissions' ? (
+                    <PermissionsSettings host={host} />
+                  ) : section === 'health' ? (
+                    <HealthSettings host={host} />
+                  ) : section === 'about' ? (
+                    <AboutSettings host={host} onOpenKeyboardHelp={props.onOpenKeyboardHelp} />
+                  ) : null}
+                </div>
+              </div>
+            </SettingsBackProvider>
+          </DialogStackContext.Provider>
+        </DialogPrimitive.Content>
+      </DialogPortal>
+    </DialogPrimitive.Root>
   );
 }

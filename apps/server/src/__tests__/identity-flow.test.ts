@@ -276,6 +276,73 @@ test('one email is one person across providers, and a known subject keeps its ac
   });
 });
 
+test('a person sets their own name and avatar, and a later sign-in keeps them', async () => {
+  await withServer(async (server) => {
+    const tokens = await signIn(server);
+    const patch = (payload: Record<string, unknown>) =>
+      server.app.inject({
+        method: 'PATCH',
+        url: '/v1/me',
+        headers: { authorization: `Bearer ${tokens.access_token}` },
+        payload,
+      });
+
+    const set = await patch({ name: '  Ada Lovelace  ', avatarSeed: 'seed-1' });
+    assert.equal(set.statusCode, 200, set.body);
+    assert.equal((set.json() as PlatformMe).name, 'Ada Lovelace');
+    assert.equal((set.json() as PlatformMe).avatarSeed, 'seed-1');
+
+    // The provider's name is rewritten at every sign-in; the chosen one stays.
+    const again = await signIn(server);
+    const profile = (await me(server, again.access_token)).json() as PlatformMe;
+    assert.equal(profile.name, 'Ada Lovelace');
+    assert.equal(profile.avatarSeed, 'seed-1');
+
+    // An absent field is left alone; empty and null go back to the defaults.
+    const cleared = await patch({ name: '', avatarSeed: null });
+    assert.equal(cleared.statusCode, 200, cleared.body);
+    assert.equal((cleared.json() as PlatformMe).name, 'Ada');
+    assert.equal((cleared.json() as PlatformMe).avatarSeed, undefined);
+
+    for (const payload of [
+      { name: 7 },
+      { name: 'x'.repeat(81) },
+      { avatarSeed: '' },
+      { avatarSeed: 3 },
+    ]) {
+      assert.equal((await patch(payload)).statusCode, 400, JSON.stringify(payload));
+    }
+
+    // What to call them and their preferences: user information, trimmed,
+    // cleared by an empty string.
+    const described = await patch({
+      nickname: ' JK ',
+      // A pasted NUL is dropped: a Postgres text column refuses it.
+      preferences: '  Reply in Chinese.\u0000\nKeep it short. ',
+    });
+    assert.equal(described.statusCode, 200, described.body);
+    assert.equal((described.json() as PlatformMe).nickname, 'JK');
+    assert.equal((described.json() as PlatformMe).preferences, 'Reply in Chinese.\nKeep it short.');
+    const emptied = await patch({ nickname: '', preferences: '' });
+    assert.equal((emptied.json() as PlatformMe).nickname, undefined);
+    assert.equal((emptied.json() as PlatformMe).preferences, undefined);
+    for (const payload of [
+      { nickname: 'x'.repeat(61) },
+      { preferences: 'x'.repeat(2001) },
+      { preferences: 1 },
+    ]) {
+      assert.equal((await patch(payload)).statusCode, 400, JSON.stringify(payload));
+    }
+
+    const anonymous = await server.app.inject({
+      method: 'PATCH',
+      url: '/v1/me',
+      payload: { name: 'x' },
+    });
+    assert.equal(anonymous.statusCode, 401);
+  });
+});
+
 test('an email outside the allowed domains cannot sign in or be created', async () => {
   const server = await startTestServer({ allowedEmailDomains: ['relx.com'] });
   try {

@@ -148,7 +148,7 @@ describe('config-transfer-service', () => {
       includedData: ['settings'] as const,
       data: {
         settings: {
-          personalization: { uiLocale: 'zh', displayName: 'Maka user' },
+          personalization: { uiLocale: 'zh' },
         },
       },
     };
@@ -156,7 +156,7 @@ describe('config-transfer-service', () => {
     await applyConfigImport(bundle as any, 'skip', deps);
 
     assert.deepEqual(updatedSettings, [
-      { personalization: { uiLocale: 'zh-CN', displayName: 'Maka user' } },
+      { personalization: { uiLocale: 'zh-CN' } },
     ]);
   });
 

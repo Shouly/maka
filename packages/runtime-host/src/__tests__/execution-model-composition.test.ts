@@ -44,7 +44,7 @@ import {
   decodeRunCompositionSnapshot,
 } from '@maka/core/run-composition';
 import { readInvocation, testInvocationRecord } from '@maka/runtime/test-only/invocation-fixture';
-import { WORKHUB_COORDINATION_SESSION_ID } from '@maka/core/session';
+import { WORKHUB_COORDINATION_SESSION_ID, type SessionUserContext } from '@maka/core/session';
 import { messageContentDigest } from '@maka/core/events';
 import { runtimeInvocationOutcome } from '@maka/core/runtime-invocation';
 import { agentRunCompositionFromEvents } from '@maka/core/agent-run';
@@ -2696,18 +2696,6 @@ test('production Host executes a canonical ai-sdk Session against a real provide
     assert.equal(configured.kind, 'committed');
     await publishConnectionModel(policy, connection.connectionId, MODEL_ID);
     let policySnapshot = await policy.runtimePolicy.getSnapshot();
-    const personalized = await policy.runtimePolicy.mutate({
-      expectedRevision: policySnapshot.revision,
-      operation: {
-        kind: 'set_personalization',
-        value: {
-          displayName: 'HOSTED_PERSONALIZATION_SENTINEL',
-          assistantTone: '',
-        },
-      },
-    });
-    assert.equal(personalized.kind, 'committed');
-    policySnapshot = await policy.runtimePolicy.getSnapshot();
     const memoryEnabled = await policy.runtimePolicy.mutate({
       expectedRevision: policySnapshot.revision,
       operation: {
@@ -2734,6 +2722,11 @@ test('production Host executes a canonical ai-sdk Session against a real provide
       llmConnectionSlug: 'hosted-real-provider',
       model: MODEL_ID,
       permissionMode: 'ask',
+      userContext: {
+        name: 'HOSTED_USER_NAME',
+        email: 'hosted@example.com',
+        preferences: 'HOSTED_PREFERENCES_SENTINEL',
+      },
     });
     const sessionTask = await openInteractiveSessionTaskStoreForWrite(owner.lease);
     await sessionTask.createTask(session.id, {
@@ -2848,7 +2841,6 @@ test('production Host executes a canonical ai-sdk Session against a real provide
     assert.doesNotMatch(requestText, /HOSTED_SKILL_BODY_MUST_STAY_LAZY/);
     assert.match(requestText, /HOSTED_WORKSPACE_SENTINEL/);
     assert.doesNotMatch(requestText, /HOSTED_SESSION_TASK_SENTINEL/);
-    assert.match(requestText, /HOSTED_PERSONALIZATION_SENTINEL/);
     // The memory snapshot is system-delivered with the turn as a user-role
     // context, never inside the cached system prompt.
     const requestMessages = (request?.body.messages ?? []) as Array<{
@@ -2863,6 +2855,21 @@ test('production Host executes a canonical ai-sdk Session against a real provide
       JSON.stringify(requestMessages.filter((message) => message.role === 'user')),
       /<user_memory_snapshot>[\s\S]*<preferences>[\s\S]*HOSTED_MEMORY_SENTINEL/,
     );
+    // The user's preferences and who they are arrive the same way, ahead of
+    // the memory snapshot; the system prompt only says how to apply them.
+    const systemText = JSON.stringify(
+      requestMessages.filter((message) => message.role === 'system'),
+    );
+    assert.match(systemText, /<preferences_info>/);
+    assert.doesNotMatch(systemText, /HOSTED_PREFERENCES_SENTINEL|HOSTED_USER_NAME/);
+    const userText = JSON.stringify(requestMessages.filter((message) => message.role === 'user'));
+    assert.match(
+      userText,
+      /<userPreferences>HOSTED_PREFERENCES_SENTINEL<\/userPreferences>[\s\S]*<user>\\nName: HOSTED_USER_NAME\\nEmail address: hosted@example\.com\\n<\/user>[\s\S]*<user_memory_snapshot>/,
+    );
+    // Neither block wears a reminder envelope: each tag is its own.
+    assert.doesNotMatch(userText, /<system-reminder>(\\n)?<(userPreferences|user)>/);
+    assert.doesNotMatch(userText, /<\/(userPreferences|user)>(\\n)?<\/system-reminder>/);
     // A sent `/<name>` reaches the model as written: the Host loads nothing,
     // the model calls the Skill tool itself.
     assert.match(JSON.stringify(mainRequests[1]?.body), /\/hosted-skill Continue hosted execution/);
@@ -4413,6 +4420,62 @@ test('Host auxiliary models meter provider usage and abort physical requests', {
     await provider.close();
     await rm(base, { recursive: true, force: true });
   }
+});
+
+test("a session's user context reaches the model ahead of its memory, preferences first", async () => {
+  const resolve = async (userContext?: SessionUserContext) =>
+    createInteractiveRunComposer({
+      runtimePolicy: { revision: 1, policy: createDefaultRuntimePolicy() },
+      skills: {
+        readCanonicalModelInventory: async () => ({ inventory: [] }),
+      } as unknown as HostSkillCatalogCoordinator,
+      memory: {
+        readPromptProjection: async () => ({ revision: 'memory-1', body: 'MEMORY_BODY' }),
+      } as unknown as HostMemoryCoordinator,
+      sessionTask: {} as SessionTaskToolStore,
+      ...(userContext ? { userContext } : {}),
+    }).resolveSystemPrompt({ sessionId: 'session', turnId: 'turn-1', cwd: '/workspace' });
+
+  const anonymous = await resolve();
+  assert.deepEqual(
+    anonymous.contexts?.map((context) => context.name),
+    ['user_memory_snapshot'],
+  );
+  assert.doesNotMatch(anonymous.text ?? '', /<preferences_info>/);
+
+  const withoutPreferences = await resolve({ name: 'Ada', email: 'ada@example.com' });
+  assert.deepEqual(
+    withoutPreferences.contexts?.map((context) => context.name),
+    ['user_info', 'user_memory_snapshot'],
+  );
+  assert.equal(
+    withoutPreferences.contexts?.[0]?.text,
+    '<user>\nName: Ada\nEmail address: ada@example.com\n</user>',
+  );
+  assert.doesNotMatch(withoutPreferences.text ?? '', /<preferences_info>/);
+
+  const withPreferences = await resolve({
+    name: 'Ada',
+    email: 'ada@example.com',
+    preferences: 'Answer in Chinese.',
+  });
+  assert.deepEqual(
+    withPreferences.contexts?.map((context) => context.name),
+    ['user_preferences', 'user_info', 'user_memory_snapshot'],
+  );
+  // Each tag is its block's whole envelope: both are delivered bare.
+  assert.deepEqual(withPreferences.contexts?.[0], {
+    name: 'user_preferences',
+    text: '<userPreferences>Answer in Chinese.</userPreferences>',
+    bare: true,
+  });
+  assert.equal(withPreferences.contexts?.[1]?.bare, true);
+  assert.equal(withPreferences.contexts?.[2]?.bare, undefined);
+  // The prompt says how to apply preferences, and sits before the memory rules.
+  const prompt = withPreferences.text ?? '';
+  assert.match(prompt, /<preferences_info>[\s\S]*<\/preferences_info>/);
+  assert.ok(prompt.indexOf('<preferences_info>') < prompt.indexOf('<user_memory>'));
+  assert.doesNotMatch(prompt, /Answer in Chinese\./);
 });
 
 test('one turn shares one canonical Skill inventory across prompt and lazy tools', async () => {

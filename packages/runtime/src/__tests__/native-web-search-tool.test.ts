@@ -105,19 +105,6 @@ test('turn-start routing falls back explicitly when native search is unavailable
     disabled.map((tool) => tool.name),
     ['Read'],
   );
-
-  const incognito = routeWebSearchTools({
-    tools: [read, clientSearch],
-    settings: { enabled: true, defaultProvider: 'model' },
-    privacy: { incognitoActive: true },
-    connection,
-    model: 'deepseek-v4-flash',
-    tavilyReady: false,
-  });
-  assert.deepEqual(
-    incognito.map((tool) => tool.name),
-    ['Read'],
-  );
 });
 
 test('turn-start routing compiles Claude models to the CC-compatible Anthropic tool', () => {

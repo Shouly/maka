@@ -27,6 +27,27 @@ import { cn } from '../../lib/cn';
 
 const Dialog = DialogPrimitive.Root;
 
+/**
+ * Set by a dialog that other dialogs open on top of (Settings). A dialog
+ * rendered under it enters the stack while it is open and draws no backdrop of
+ * its own: the host dims itself instead, so the window keeps exactly one
+ * backdrop however deep the stack gets.
+ * The returned function leaves the stack.
+ */
+const DialogStackContext = React.createContext<(() => () => void) | null>(null);
+
+/**
+ * Enters the stack for as long as it is mounted. It sits INSIDE the Radix
+ * content, which only mounts while the dialog is open (and through its exit
+ * animation); `DialogContent` itself renders whenever its parent does, open or
+ * not, so registering there would dim the host under every closed dialog.
+ */
+function DialogStackEntry() {
+  const enterStack = React.useContext(DialogStackContext);
+  React.useEffect(() => enterStack?.(), [enterStack]);
+  return null;
+}
+
 const DialogTrigger = DialogPrimitive.Trigger;
 
 const DialogPortal = DialogPrimitive.Portal;
@@ -62,46 +83,51 @@ const DialogContent = React.forwardRef<
      */
     nativeDialogElement?: boolean;
   }
->(({ className, children, nativeDialogElement = false, ...props }, ref) => (
-  <DialogPortal>
-    <DialogOverlay />
-    <DialogPrimitive.Content
-      ref={ref}
-      asChild={nativeDialogElement || undefined}
-      // 模态对话框的稳定标记。Radix 的 Popover 内容同样带 role="dialog",
-      // 靠角色分不出"真模态"和"浮层",需要识别时认这个属性。
-      data-app-dialog=""
-      className={cn(
-        // 两层结构(Cowork 同构):
-        //   root  = 定位 + 尺寸 + 卡面,**不写 padding**,被视口高度封顶
-        //   inner = 唯一的滚动容器,也是唯一写 padding 的地方
-        // 这样"内容到边框 24px"是结构保证的,不靠每个弹框自觉;而且内容少时
-        // flex-1 贴合内容、内容多时内部滚动,一套结构覆盖两种情况 —— 不需要
-        // 再给基元加"可滚动变体",也不该有人再写 p-0 gap-0 关掉基元自己搭。
-        //
-        // className 落在 **root** 上。要改内边距/间距请改基元,不要在调用点
-        // 传 p-* / gap-*,那会落到 root 上、对不上内容(root 没有 padding)。
-        'fixed left-[50%] top-[50%] z-50 flex flex-col w-full max-w-[calc(100%-2rem)] md:max-w-md translate-x-[-50%] translate-y-[-50%] max-h-[calc(100dvh-2rem)] bg-surface-3 rounded-xl shadow-[var(--dialog-shadow)]',
-        // A `<dialog>` inherits UA colour and overflow that a `<div>` does not.
-        nativeDialogElement && 'text-inherit overflow-visible',
-        className,
-      )}
-      {...props}
-    >
-      {nativeDialogElement ? (
-        <dialog open>
+>(({ className, children, nativeDialogElement = false, ...props }, ref) => {
+  const enterStack = React.useContext(DialogStackContext);
+  return (
+    <DialogPortal>
+      <DialogOverlay className={enterStack ? 'bg-transparent backdrop-blur-none' : undefined} />
+      <DialogPrimitive.Content
+        ref={ref}
+        asChild={nativeDialogElement || undefined}
+        // 模态对话框的稳定标记。Radix 的 Popover 内容同样带 role="dialog",
+        // 靠角色分不出"真模态"和"浮层",需要识别时认这个属性。
+        data-app-dialog=""
+        className={cn(
+          // 两层结构(与设计稿同构):
+          //   root  = 定位 + 尺寸 + 卡面,**不写 padding**,被视口高度封顶
+          //   inner = 唯一的滚动容器,也是唯一写 padding 的地方
+          // 这样"内容到边框 24px"是结构保证的,不靠每个弹框自觉;而且内容少时
+          // flex-1 贴合内容、内容多时内部滚动,一套结构覆盖两种情况 —— 不需要
+          // 再给基元加"可滚动变体",也不该有人再写 p-0 gap-0 关掉基元自己搭。
+          //
+          // className 落在 **root** 上。要改内边距/间距请改基元,不要在调用点
+          // 传 p-* / gap-*,那会落到 root 上、对不上内容(root 没有 padding)。
+          'fixed left-[50%] top-[50%] z-50 flex flex-col w-full max-w-[calc(100%-2rem)] md:max-w-md translate-x-[-50%] translate-y-[-50%] max-h-[calc(100dvh-2rem)] bg-surface-3 rounded-xl shadow-[var(--dialog-shadow)]',
+          // A `<dialog>` inherits UA colour and overflow that a `<div>` does not.
+          nativeDialogElement && 'text-inherit overflow-visible',
+          className,
+        )}
+        {...props}
+      >
+        {nativeDialogElement ? (
+          <dialog open>
+            <div className="isolate flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto rounded-[inherit] p-6">
+              <DialogStackEntry />
+              {children}
+            </div>
+          </dialog>
+        ) : (
           <div className="isolate flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto rounded-[inherit] p-6">
+            <DialogStackEntry />
             {children}
           </div>
-        </dialog>
-      ) : (
-        <div className="isolate flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto rounded-[inherit] p-6">
-          {children}
-        </div>
-      )}
-    </DialogPrimitive.Content>
-  </DialogPortal>
-));
+        )}
+      </DialogPrimitive.Content>
+    </DialogPortal>
+  );
+});
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 interface DialogHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -120,9 +146,9 @@ const DialogHeader = ({
   const resolvedCloseLabel = closeLabel ?? uiCopy.close;
   return (
     <div className={cn('flex items-start justify-between gap-4', className)} {...props}>
-      {/* gap-1 = 4px:Cowork 的标题↔描述间距 */}
+      {/* gap-1 = 4px:设计稿的标题↔描述间距 */}
       <div className="flex flex-col gap-1 text-left flex-1 min-w-0">{children}</div>
-      {/* 关闭按钮静止态就是文字主色(Cowork 实测 rgb(11,11,11)),hover 只加 5%
+      {/* 关闭按钮静止态就是文字主色(设计稿实测 rgb(11,11,11)),hover 只加 5%
         底、不变色 —— 关闭是弹框里唯一的常驻操作,不该默认压成次要灰。 */}
       {!hideCloseButton && (
         <DialogPrimitive.Close className="shrink-0 rounded-lg text-text-primary transition-colors hover:bg-sidebar-menu-hover focus:outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:pointer-events-none h-8 w-8 flex items-center justify-center -mr-1 -mt-1 cursor-pointer">
@@ -138,7 +164,7 @@ DialogHeader.displayName = 'DialogHeader';
 const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      // gap-3 = 12px(Cowork 实测)。原来是 space-x-2 = 8px,且 space-x 在
+      // gap-3 = 12px(设计稿实测)。原来是 space-x-2 = 8px,且 space-x 在
       // flex-col-reverse 的移动端布局下不生效,gap 两个方向都对。
       'flex flex-col-reverse gap-3 md:flex-row md:justify-end',
       className,
@@ -155,7 +181,7 @@ const DialogTitle = React.forwardRef<
   <DialogPrimitive.Title
     ref={ref}
     className={cn(
-      // 22/28 + semibold(580),三项都是 Cowork 实测值。
+      // 22/28 + semibold(580),三项都是 设计稿实测值。
       // 本仓的字重刻度已按 CDS 定成 medium 500 / semibold 580 / bold 600,
       // 所以这里的 font-semibold 直接就是 580,不用再写死数值。
       'text-[1.375rem] font-semibold leading-7 text-text-primary',
@@ -180,6 +206,7 @@ DialogDescription.displayName = DialogPrimitive.Description.displayName;
 
 export {
   Dialog,
+  DialogStackContext,
   DialogPortal,
   DialogOverlay,
   DialogClose,

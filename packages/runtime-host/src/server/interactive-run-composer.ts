@@ -33,7 +33,8 @@ import type { PermissionMode } from '@maka/core/permission';
 import { createHash } from 'node:crypto';
 import type { RuntimeExecutionConnection } from '@maka/core/llm-connections';
 import type { RuntimePolicySnapshot } from '@maka/core/runtime-policy';
-import type { SessionToolProfile } from '@maka/core/session';
+import type { SessionToolProfile, SessionUserContext } from '@maka/core/session';
+import type { InjectionContext } from '@maka/runtime/injection';
 import {
   assembleMainSessionSystemPrompt,
   type PromptCondition,
@@ -53,7 +54,6 @@ import {
   buildUpdatePlanTool,
 } from '@maka/runtime/plan-tools';
 import { buildParentAgentTools } from '@maka/runtime/subagent-tools';
-import { buildPersonalizationPromptFragment } from '@maka/runtime/system-prompt/personalization-prompt';
 import { buildRequestSandboxBoundaryTool } from '@maka/runtime/sandbox-boundary-tool';
 import { buildSendUserFileTool } from '@maka/runtime/send-user-file-tool';
 import { buildSendUserMessageTool } from '@maka/runtime/send-user-message-tool';
@@ -73,7 +73,6 @@ import { buildWorkspaceInstructionsPromptFragment } from '@maka/runtime/system-p
 import { isDeepResearchToolAllowed } from '@maka/runtime/deep-research-tools';
 import { listRunnableBuiltinAgentDefinitions } from '@maka/runtime/agent-catalog';
 import { renderPlanModePrompt, selectCollaborationTools } from '@maka/runtime/plan-mode';
-import { routeWebFetchTools } from '@maka/runtime/web-fetch-tool';
 import { routeWebSearchTools } from '@maka/runtime/native-web-search-tool';
 import { type MakaTool } from '@maka/runtime/tool-runtime';
 import type { PluginSkillService } from '@maka/runtime/plugin-skill-service';
@@ -124,6 +123,8 @@ export interface InteractiveRunComposerInput {
   readonly sideConversation?: boolean;
   readonly boundTools?: readonly MakaTool[];
   readonly toolProfile?: SessionToolProfile;
+  /** Who the session works for, from its header; delivered ahead of the first turn. */
+  readonly userContext?: SessionUserContext;
   readonly skillBudget?: SkillCatalogBudgetOptions;
   /**
    * Which agents this Session can launch. Read here so the catalog reaches
@@ -308,7 +309,6 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
           : assembleMainSessionSystemPrompt(
               [
                 environment,
-                buildPersonalizationPromptFragment(promptState.policy.personalization).text,
                 workspaceInstructions,
                 input.plan?.mode === 'plan'
                   ? renderPlanModePrompt({ fullAccess: input.plan.permissionMode === 'bypass' })
@@ -317,7 +317,10 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
                 input.sideConversation ? buildSideConversationSystemPromptFragment() : undefined,
               ],
               { knowledge_cutoff_section: knowledgeCutoffSection },
-              new Set<PromptCondition>(promptState.memory === undefined ? [] : ['memory']),
+              new Set<PromptCondition>([
+                ...(input.userContext?.preferences ? (['preferences'] as const) : []),
+                ...(promptState.memory === undefined ? [] : (['memory'] as const)),
+              ]),
             );
         // Keep each turn's source revisions independent while sharing identical
         // immutable text already retained by the turn cache.
@@ -331,7 +334,10 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
         // and in the prompt it would invalidate the cached prefix. As
         // contexts they are recorded ahead of a turn's user text the first
         // time and again only when their revision moves (see `injection/`).
+        // Who the user is comes first: their preferences, then their name and
+        // email — fixed at creation, so recorded once.
         const contexts = [
+          ...(childInstruction ? [] : userContextInjections(input.userContext)),
           ...(promptState.memory
             ? [
                 {
@@ -445,17 +451,15 @@ export function routeInteractiveRunToolSurface(input: InteractiveRunToolSurfaceI
   readonly parentAgentTools?: readonly MakaTool[];
 } {
   const route = (tools: readonly MakaTool[]): MakaTool[] => {
-    const webFetchTools = routeWebFetchTools(tools, input.runtimePolicy.policy.privacy);
     if (!input.connection) {
-      return webFetchTools.filter((tool) => tool.name !== 'WebSearch');
+      return tools.filter((tool) => tool.name !== 'WebSearch');
     }
     return routeWebSearchTools({
-      tools: webFetchTools,
+      tools,
       settings: input.runtimePolicy.policy.webSearch,
       connection: input.connection,
       model: input.modelId,
       tavilyReady: input.tavilyReady,
-      privacy: input.runtimePolicy.policy.privacy,
     });
   };
   const childTools = input.childTools ? route(input.childTools) : undefined;
@@ -538,6 +542,9 @@ export function createInteractiveRunComposerFactory(
         ...(boundTools ? { boundTools } : {}),
         ...(!boundTools && backendContext.header.toolProfile
           ? { toolProfile: backendContext.header.toolProfile }
+          : {}),
+        ...(backendContext.header.userContext
+          ? { userContext: backendContext.header.userContext }
           : {}),
         ...(clientCapabilities ? { clientCapabilities } : {}),
         ...(input.builtinTools ? { builtinTools: input.builtinTools } : {}),
@@ -853,6 +860,32 @@ async function readPromptState(
     memoryRevision: memory.revision,
     ...(memory.body ? { memory: memory.body } : {}),
   };
+}
+
+/**
+ * The user's own account of how to answer them and who they are: the
+ * <userPreferences> block (the <preferences_info> prompt section says how to
+ * apply it) and the <user> block under it. Each tag is its block's whole
+ * envelope, so both are delivered bare.
+ */
+function userContextInjections(user: SessionUserContext | undefined): InjectionContext[] {
+  if (!user) return [];
+  return [
+    ...(user.preferences
+      ? [
+          {
+            name: 'user_preferences',
+            text: `<userPreferences>${user.preferences}</userPreferences>`,
+            bare: true,
+          },
+        ]
+      : []),
+    {
+      name: 'user_info',
+      text: ['<user>', `Name: ${user.name}`, `Email address: ${user.email}`, '</user>'].join('\n'),
+      bare: true,
+    },
+  ];
 }
 
 function joinFragments(fragments: readonly (string | undefined)[]): string | undefined {

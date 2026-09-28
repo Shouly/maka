@@ -42,7 +42,7 @@ import {
  * Who a skill came from, as the governance lock records it: no lock means
  * the user wrote the SKILL.md themselves (`workspace`); `bundled` came from
  * Maka's own catalog and `managed` from a configured skill source. It is
- * the "Created by you / From Anthropic" split of Claude's Customize page.
+ * the "Created by you / built in" split of the Customize page.
  * The Host's `unknown` (a diagnostic, a file it could not read as a skill)
  * is still a file in the user's own directories, so it is theirs too.
  */
@@ -102,7 +102,7 @@ export function skillMatchesOrigin(skill: SkillEntry, origin: SkillOriginFilter)
  * The Yours list as sections, one per origin in `SKILL_ORIGINS` order, empty
  * ones left out. Rows keep the order they arrive in, so sorting happens
  * once, before grouping, and holds inside every section. This is the
- * grouping Claude's Customize page does ("Created by you", "From Anthropic")
+ * grouping the Customize page does ("Created by you", "built in")
  * where the old panel had a pill row.
  */
 export function groupSkillsByOrigin(

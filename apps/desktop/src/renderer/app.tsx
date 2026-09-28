@@ -45,7 +45,7 @@ import { useSystemUiLocale } from './lib/ported/use-system-ui-locale.js';
 import { Toaster } from './components/ui/toaster.js';
 import { TooltipProvider } from './components/ui/tooltip.js';
 import type { PendingE2eFixtureUiState } from './lib/fixture.js';
-import { applyTheme, applyUiFontSize, applyTerminalFontSize } from './lib/theme.js';
+import { applyTheme, applyTranscriptTextSize, applyTerminalFontSize } from './lib/theme.js';
 import { startTitlebarModalSync } from './lib/ported/titlebar-modal-sync.js';
 
 export interface AppProps {
@@ -71,10 +71,10 @@ export function App({ initialTheme, locale, localeOverride, fixture }: AppProps)
   const theme = fixture ? initialTheme : (client?.appearance.theme ?? initialTheme);
   useEffect(() => {
     if (!client) return;
-    if (client.appearance.uiFontSize !== undefined) applyUiFontSize(client.appearance.uiFontSize);
+    applyTranscriptTextSize(client.appearance.transcriptTextSize);
     if (client.appearance.terminalFontSize !== undefined)
       applyTerminalFontSize(client.appearance.terminalFontSize);
-  }, [client?.appearance.uiFontSize, client?.appearance.terminalFontSize]);
+  }, [client?.appearance.transcriptTextSize, client?.appearance.terminalFontSize]);
   useEffect(() => {
     // The pre-paint bootstrap set the DOM from cache; this is what tells the
     // main process (native chrome, titlebar overlay colour) about it.

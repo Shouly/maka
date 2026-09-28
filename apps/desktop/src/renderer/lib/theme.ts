@@ -35,11 +35,11 @@
 
 import {
   DEFAULT_TERMINAL_FONT_SIZE,
-  DEFAULT_UI_FONT_SIZE,
   normalizeTerminalFontSize,
-  normalizeUiFontSize,
+  normalizeTranscriptTextSize,
   type ThemePalette,
   type ThemePreference,
+  type TranscriptTextSize,
 } from '@maka/core/settings';
 import {
   setThemeSource,
@@ -48,7 +48,6 @@ import {
 } from '../bridge/app-window.js';
 import { safeLocalStorageGet, safeLocalStorageSet } from './ported/browser-storage.js';
 import { compositeScrimOverBackground, parseCssRgbColor } from './ported/titlebar-dim-color.js';
-import { TYPE_SCALE_BASE_PX } from './ported/type-scale.js';
 
 const DARK_CLASS = 'dark';
 const LIGHT_CLASS = 'light';
@@ -59,15 +58,16 @@ export const THEME_PALETTE_STORAGE_KEY = 'maka-theme-palette-v1';
 // Persisted alongside the theme cache so the pre-React paint
 // (`applyCachedThemeBeforeMount`) can restore a non-default size before the
 // first frame, same rationale as `maka-theme-v1`.
-const UI_FONT_SIZE_STORAGE_KEY = 'maka-ui-font-size-v1';
+const TRANSCRIPT_TEXT_SIZE_STORAGE_KEY = 'maka-transcript-text-size-v1';
 const TERMINAL_FONT_SIZE_STORAGE_KEY = 'maka-terminal-font-size-v1';
 
-// Every `--font-size-*` in the design system is rem-derived, so the root
-// font-size that reproduces a chosen base px is `16 * px / base`. At the
-// default (which equals the type-scale base) that is the 16px browser default
-// and nothing scales; other values scale what is rem-derived — text — while
-// px-literal spacing and widths stay fixed.
-const BROWSER_ROOT_FONT_SIZE_PX = 16;
+// The attribute and its values: `s` / `m` / `l` on the document root, read
+// by the transcript's typography in `styles/globals.css` and by nothing else.
+const TRANSCRIPT_TEXT_SIZE_ATTRIBUTE: Record<TranscriptTextSize, string> = {
+  small: 's',
+  medium: 'm',
+  large: 'l',
+};
 
 // Sampling fallbacks. They are the design system's `--surface-1` in each mode,
 // which is also what `<html>` paints (styles/globals.css), so a failed sample
@@ -75,24 +75,21 @@ const BROWSER_ROOT_FONT_SIZE_PX = 16;
 const FALLBACK_SURFACE_LIGHT = '#fcfcfb';
 const FALLBACK_SURFACE_DARK = '#151515';
 
-let currentUiFontSize: number = DEFAULT_UI_FONT_SIZE;
 let currentTerminalFontSize: number = DEFAULT_TERMINAL_FONT_SIZE;
 const terminalFontSizeListeners = new Set<(size: number) => void>();
 
-export function getUiFontSize(): number {
-  return currentUiFontSize;
-}
-
 /**
- * Apply the UI base font size by writing the proportional document-root
- * font-size, then persist so the pre-React paint can restore it next launch.
- * Clamps out-of-range / wrong-typed input to a sane value.
+ * Apply the transcript text size by marking the document root, then persist
+ * so the pre-React paint can restore it next launch. Anything that is not one
+ * of the three steps falls back to the default.
  */
-export function applyUiFontSize(size: number): void {
-  const next = normalizeUiFontSize(size);
-  currentUiFontSize = next;
-  document.documentElement.style.fontSize = `${(BROWSER_ROOT_FONT_SIZE_PX * next) / TYPE_SCALE_BASE_PX}px`;
-  safeLocalStorageSet(UI_FONT_SIZE_STORAGE_KEY, String(next));
+export function applyTranscriptTextSize(size: unknown): void {
+  const next = normalizeTranscriptTextSize(size);
+  document.documentElement.setAttribute(
+    'data-chat-text-size',
+    TRANSCRIPT_TEXT_SIZE_ATTRIBUTE[next],
+  );
+  safeLocalStorageSet(TRANSCRIPT_TEXT_SIZE_STORAGE_KEY, next);
 }
 
 export function getTerminalFontSize(): number {
@@ -120,13 +117,13 @@ export function subscribeTerminalFontSize(listener: (size: number) => void): () 
 }
 
 /**
- * Restore the cached UI font size before React mounts, so a non-default size
- * does not paint at the default and snap once settings.json loads. Also seeds
- * the terminal size cache so an early terminal open uses the right size.
+ * Restore the cached transcript text size before React mounts, so a
+ * non-default size does not paint at the default and snap once settings.json
+ * loads. Also seeds the terminal size cache so an early terminal open uses the
+ * right size.
  */
 export function applyCachedFontAppearanceBeforeMount(): void {
-  const cachedUi = Number.parseInt(safeLocalStorageGet(UI_FONT_SIZE_STORAGE_KEY) ?? '', 10);
-  if (Number.isFinite(cachedUi)) applyUiFontSize(cachedUi);
+  applyTranscriptTextSize(safeLocalStorageGet(TRANSCRIPT_TEXT_SIZE_STORAGE_KEY));
   const cachedTerminal = Number.parseInt(
     safeLocalStorageGet(TERMINAL_FONT_SIZE_STORAGE_KEY) ?? '',
     10,

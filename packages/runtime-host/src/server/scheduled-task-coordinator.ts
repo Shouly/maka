@@ -543,14 +543,6 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
 
   async #commitCreate(input: CreateScheduledTaskInput): Promise<ScheduledTask> {
     return this.#exclusive(async () => {
-      const incognito = (await this.#runtimePolicy.runtimePolicy.getSnapshot()).policy.privacy
-        .incognitoActive;
-      if (incognito) {
-        throw new ScheduledTaskMutationError(
-          'operation_conflict',
-          'SCHEDULED_TASK_INCOGNITO_ACTIVE',
-        );
-      }
       if ((await this.#store.list()).length >= SCHEDULED_TASK_CATALOG_MAX_ITEMS) {
         throw new ScheduledTaskMutationError(
           'operation_conflict',
@@ -618,11 +610,6 @@ export class HostScheduledTaskCoordinator implements ScheduledTaskToolAuthority 
     claim: ScheduledTaskFireClaim,
     extraText?: string,
   ): Promise<ScheduledTask | undefined> {
-    const incognito = (await this.#runtimePolicy.runtimePolicy.getSnapshot()).policy.privacy
-      .incognitoActive;
-    if (incognito) {
-      return this.#settle(claim, 'blocked', '隐私模式已开启，定时任务没有触发。', 'blocked');
-    }
     const task = claim.task;
 
     let execution = claim.execution;

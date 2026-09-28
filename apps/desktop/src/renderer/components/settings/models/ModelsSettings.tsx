@@ -20,10 +20,11 @@
 // Settings › Models: which model services this Runtime Host can reach, and
 // which one a new task starts on.
 //
-// The page is four faces in one column — the connection list, one connection's
-// detail, the provider catalog, and one provider's setup form — because
-// Settings replaces the content column only (plan §2.12) and there is nowhere
-// to put a second pane. The face is component state: the main process blocks
+// The page is three faces in one column — the connection list, one
+// connection's detail, and the provider catalog: a detail or a directory replaces the page and the dialog's top bar
+// offers the way back (`useSettingsBack`). Setting up one provider is a form,
+// so it opens as a dialog over the catalog (`ProviderSetupDialog`) rather than
+// as a fourth face. The face is component state: the main process blocks
 // navigation outright, so a URL is not available even as an implementation
 // detail, and `uiStore` would make an ephemeral wizard step survive a restart.
 //
@@ -38,12 +39,15 @@ import { useUiLocale } from '@maka/ui';
 import { ConnectionsList } from './ConnectionsList.js';
 import { ConnectionDetail } from './ConnectionDetail.js';
 import { AddConnection } from './AddConnection.js';
-import { ProviderSetupForm } from './ProviderSetupForm.js';
-import { modelsViewParent, type ModelsView } from './models-view.js';
+import { ProviderSetupDialog } from './ProviderSetupForm.js';
+import type { ModelsView } from './models-view.js';
+import { useSettingsBack } from '../settings-kit.js';
 import { connectionsStore } from '../../../store/index.js';
 import { toast } from '../../../store/toast-store.js';
 import { useSettingsErrorReporter } from '../../../hooks/use-settings.js';
 import { getSettingsModelsCopy } from '../../../locales/settings-models-copy.js';
+import { getSettingsNavigationCopy } from '../../../locales/settings-navigation-copy.js';
+import type { ProviderType } from '@maka/core/llm-connections';
 import type { DesktopRuntimeHostRef } from '../../../bridge/projects.js';
 
 export function ModelsSettings(props: { host: DesktopRuntimeHostRef | undefined }) {
@@ -54,6 +58,15 @@ export function ModelsSettings(props: { host: DesktopRuntimeHostRef | undefined 
   const loading = useStore(connectionsStore, (state) => state.loading);
   const error = useStore(connectionsStore, (state) => state.error);
   const [view, setView] = useState<ModelsView>({ kind: 'list' });
+  const [setup, setSetup] = useState<ProviderType | null>(null);
+  useSettingsBack(
+    view.kind === 'list'
+      ? null
+      : {
+          label: getSettingsNavigationCopy(locale).sections.models.label,
+          onBack: () => setView({ kind: 'list' }),
+        },
+  );
 
   const connections = snapshot?.connections ?? [];
   const detailConnection =
@@ -84,21 +97,7 @@ export function ModelsSettings(props: { host: DesktopRuntimeHostRef | undefined 
         connection={detailConnection}
         host={props.host}
         isDefault={snapshot?.defaultConnection === detailConnection.slug}
-        onBack={openList}
         onDeleted={openList}
-        onError={report}
-      />
-    );
-  }
-
-  if (view.kind === 'setup') {
-    return (
-      <ProviderSetupForm
-        providerType={view.providerType}
-        host={props.host}
-        existingSlugs={connections.map((row) => row.slug)}
-        onBack={() => setView(modelsViewParent(view))}
-        onCreated={openDetail}
         onError={report}
       />
     );
@@ -106,14 +105,26 @@ export function ModelsSettings(props: { host: DesktopRuntimeHostRef | undefined 
 
   if (view.kind === 'catalog') {
     return (
-      <AddConnection
-        host={props.host}
-        connections={connections}
-        onBack={openList}
-        onPickProvider={(providerType) => setView({ kind: 'setup', providerType })}
-        onConnected={openDetail}
-        onError={report}
-      />
+      <>
+        <AddConnection
+          host={props.host}
+          connections={connections}
+          onPickProvider={setSetup}
+          onConnected={openDetail}
+          onError={report}
+        />
+        <ProviderSetupDialog
+          providerType={setup}
+          host={props.host}
+          existingSlugs={connections.map((row) => row.slug)}
+          onClose={() => setSetup(null)}
+          onCreated={(connectionId) => {
+            setSetup(null);
+            openDetail(connectionId);
+          }}
+          onError={report}
+        />
+      </>
     );
   }
 

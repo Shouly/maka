@@ -17,7 +17,11 @@
  * under the License.
  */
 
-import type { OrgAccountSetServerResult, OrgAccountState } from '../shared/org-account.js';
+import type {
+  OrgAccountProfileUpdate,
+  OrgAccountSetServerResult,
+  OrgAccountState,
+} from '../shared/org-account.js';
 import type { DesktopStartupState } from '../shared/desktop-startup.js';
 
 import type {
@@ -3347,6 +3351,9 @@ const makaBridge = {
     },
     refresh(): Promise<OrgAccountState> {
       return ipcRenderer.invoke('orgAccount:refresh');
+    },
+    updateProfile(update: OrgAccountProfileUpdate): Promise<OrgAccountState> {
+      return ipcRenderer.invoke('orgAccount:updateProfile', update);
     },
     cancelSignIn(): Promise<void> {
       return ipcRenderer.invoke('orgAccount:cancelSignIn');

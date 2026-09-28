@@ -17,11 +17,14 @@
  * under the License.
  */
 
-// Settings › Account: the company account's details page.
+// Settings › Account: Profile first — who you are and how
+// you want to be answered — then Account, which signed in holds only signing
+// out. Signed out (only reachable where sign-in is not enforced: a build that
+// requires it shows the login screen instead of the app) it is the way in.
 //
 // The account belongs to the app, not to a Runtime Host — the main process
-// runs the browser sign-in and keeps the refresh token — so the page takes no
-// `host`. It reads `orgAccountStore`, the one the login gate started, so a
+// runs the browser sign-in and keeps the refresh token — so nothing here takes
+// a `host`. It reads `orgAccountStore`, the one the login gate started, so a
 // sign-in begun here and the gate's screen are the same sign-in.
 //
 // Where the deployment names the server (`enforced`) the address is shown,
@@ -33,13 +36,12 @@
 
 import { useState } from 'react';
 import { useStore } from 'zustand';
-import { formatAbsoluteTimestamp } from '@maka/core/relative-time';
 import { useUiLocale } from '@maka/ui';
 import { Button } from '../../ui/button.js';
 import { Input } from '../../ui/input.js';
 import { Skeleton } from '../../ui/skeleton.js';
-import { statusChipClass, statusChipToneClass } from '../../ui/status-chip.js';
 import { SettingsRow, SettingsSection } from '../settings-row.js';
+import { ProfileSection } from './ProfileSection.js';
 import { useSettingsErrorReporter } from '../../../hooks/use-settings.js';
 import type {
   OrgAccountSetServerResult,
@@ -64,33 +66,36 @@ export function AccountSettings() {
   const pending = useStore(orgAccountStore, (state) => state.pending);
 
   const reportFailure = (title: string) => (error: unknown) => report(title, error);
-  // Settings lives in the shell, which the gate mounts only once the account is known.
-  if (account === undefined) return null;
-
   return (
-    <AccountSettingsView
-      account={account}
-      knownProviders={knownProviders}
-      pending={pending}
-      onSaveServer={(url) =>
-        orgAccountStore.setServerUrl(url).catch((error: unknown) => {
-          report(copy.errors.saveFailed, error);
-          return undefined;
-        })
-      }
-      onSignIn={(provider) =>
-        void orgAccountStore.signIn(provider).catch(reportFailure(copy.errors.signInFailed))
-      }
-      onCancelSignIn={() =>
-        void orgAccountStore.cancelSignIn().catch(reportFailure(copy.errors.cancelFailed))
-      }
-      onRefresh={() =>
-        void orgAccountStore.refresh().catch(reportFailure(copy.errors.refreshFailed))
-      }
-      onSignOut={() =>
-        void orgAccountStore.signOut().catch(reportFailure(copy.errors.signOutFailed))
-      }
-    />
+    <>
+      <ProfileSection />
+      {/* Settings lives in the shell, which the gate mounts only once the account is known. */}
+      {account !== undefined && (
+        <AccountSettingsView
+          account={account}
+          knownProviders={knownProviders}
+          pending={pending}
+          onSaveServer={(url) =>
+            orgAccountStore.setServerUrl(url).catch((error: unknown) => {
+              report(copy.errors.saveFailed, error);
+              return undefined;
+            })
+          }
+          onSignIn={(provider) =>
+            void orgAccountStore.signIn(provider).catch(reportFailure(copy.errors.signInFailed))
+          }
+          onCancelSignIn={() =>
+            void orgAccountStore.cancelSignIn().catch(reportFailure(copy.errors.cancelFailed))
+          }
+          onRefresh={() =>
+            void orgAccountStore.refresh().catch(reportFailure(copy.errors.refreshFailed))
+          }
+          onSignOut={() =>
+            void orgAccountStore.signOut().catch(reportFailure(copy.errors.signOutFailed))
+          }
+        />
+      )}
+    </>
   );
 }
 
@@ -111,40 +116,25 @@ export function AccountSettingsView(props: {
 
   const managedHelp = account.enforced ? text.serverManagedHelp : undefined;
 
+  // Signed in, the Account section: signing out is the one thing to
+  // do here; who is signed in is the Profile section above.
   if (account.status === 'signed_in') {
-    const { profile } = account;
     return (
-      <SettingsSection title={text.title} description={text.description}>
+      <SettingsSection title={text.title}>
         <SettingsRow
-          title={
-            <span className="flex min-w-0 items-center gap-2">
-              <span className="truncate">{profile.name || profile.email}</span>
-              {profile.orgRole === 'org_admin' && (
-                <span className={`${statusChipClass} ${statusChipToneClass('neutral')}`}>
-                  {copy.admin}
-                </span>
-              )}
-            </span>
-          }
-          description={profile.email}
+          title={text.signOutHere}
           control={
+            // The 28px secondary: 14px text, 10px sides, radius 7.
             <Button
               variant="secondary"
               size="sm"
+              className="rounded-[7px] text-sm"
               disabled={pending !== null}
               onClick={props.onSignOut}
             >
               {pending === 'signOut' ? copy.signingOut : copy.signOut}
             </Button>
           }
-        />
-        <SettingsRow
-          title={text.signedInUntil(formatAbsoluteTimestamp(account.signInExpiresAt, locale))}
-          description={account.remembered ? undefined : text.notRemembered}
-        />
-        <ServerAddressReadOnlyRow
-          serverUrl={account.serverUrl}
-          help={managedHelp ?? text.serverLockedHelp}
         />
       </SettingsSection>
     );
@@ -153,7 +143,7 @@ export function AccountSettingsView(props: {
   if (account.status === 'signing_in') {
     const provider = signingInProvider(account, props.knownProviders);
     return (
-      <SettingsSection title={text.title} description={text.description}>
+      <SettingsSection title={text.title}>
         <ServerAddressReadOnlyRow serverUrl={account.serverUrl} help={managedHelp} />
         <SettingsRow
           title={provider ? copy.finishInBrowserWith(provider.displayName) : copy.finishInBrowser}
@@ -161,7 +151,6 @@ export function AccountSettingsView(props: {
           control={
             <Button
               variant="secondary"
-              size="sm"
               disabled={pending === 'cancel'}
               onClick={props.onCancelSignIn}
             >
@@ -174,7 +163,7 @@ export function AccountSettingsView(props: {
   }
 
   return (
-    <SettingsSection title={text.title} description={text.description}>
+    <SettingsSection title={text.title}>
       {account.enforced && account.serverUrl !== null ? (
         <ServerAddressReadOnlyRow serverUrl={account.serverUrl} help={managedHelp} />
       ) : (
@@ -207,11 +196,7 @@ function SignInRow(props: {
       <SettingsRow
         title={text.signedOut}
         description={text.needsServer}
-        control={
-          <Button size="sm" disabled>
-            {copy.signIn}
-          </Button>
-        }
+        control={<Button disabled>{copy.signIn}</Button>}
       />
     );
   }
@@ -236,7 +221,7 @@ function SignInRow(props: {
           </span>
         }
         control={
-          <Button variant="secondary" size="sm" disabled={busy} onClick={props.onRefresh}>
+          <Button variant="secondary" disabled={busy} onClick={props.onRefresh}>
             {copy.tryAgain}
           </Button>
         }
@@ -261,7 +246,7 @@ function SignInRow(props: {
         title={text.signedOut}
         description={description}
         control={
-          <Button size="sm" disabled={busy} onClick={() => props.onSignIn()}>
+          <Button disabled={busy} onClick={() => props.onSignIn()}>
             {copy.signIn}
           </Button>
         }
@@ -276,7 +261,6 @@ function SignInRow(props: {
           <Button
             key={provider.id}
             variant="secondary"
-            size="sm"
             data-provider={provider.id}
             disabled={busy}
             onClick={() => props.onSignIn(provider.id)}
@@ -348,7 +332,7 @@ function ServerAddressRow(props: {
             save();
           }}
         />
-        <Button variant="secondary" size="sm" disabled={!dirty || saving} onClick={save}>
+        <Button variant="secondary" disabled={!dirty || saving} onClick={save}>
           {saving ? text.saving : shared.save}
         </Button>
       </div>

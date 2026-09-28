@@ -216,7 +216,7 @@ export interface ModelCatalogStatus {
   readonly lastAttempt: {
     readonly at: number;
     readonly outcome: 'changed' | 'unchanged' | 'failed' | 'skipped';
-    /** The failure's message; for a skipped attempt, `privacy_mode` or `proxy_credential_not_configured`. */
+    /** The failure's message; for a skipped attempt, `proxy_credential_not_configured`. */
     readonly error?: string;
   } | null;
   readonly nextAttemptAt: number | null;

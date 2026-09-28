@@ -33,7 +33,6 @@ import type {
   UsageRange,
   UsageStats,
 } from '@maka/core/settings';
-import type { TestProxyInput } from '@maka/core/settings/network-settings';
 import type { DesktopRuntimeHostRef, MakaBridge } from '../../preload/bridge-contract.js';
 import { requireNamespace, toUnsubscribe, tryNamespace } from './bridge.js';
 
@@ -73,13 +72,6 @@ export function subscribeExternalSettingsChanged(
   host?: DesktopRuntimeHostRef,
 ): () => void {
   return toUnsubscribe(tryNamespace('settings')?.subscribeExternalChanged(handler, host));
-}
-
-export function testNetworkProxy(
-  input?: TestProxyInput,
-  host?: DesktopRuntimeHostRef,
-): Promise<SettingsTestResult> {
-  return settings().testNetworkProxy(input, host);
 }
 
 export function getUsageStats(

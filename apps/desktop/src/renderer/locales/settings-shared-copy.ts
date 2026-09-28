@@ -29,6 +29,9 @@ export type SettingsSharedCopy = {
   loading: string;
   retry: string;
   save: string;
+  /** The explicit save under a field that does not save by itself. */
+  saveChanges: string;
+  discard: string;
   cancel: string;
   copy: string;
   copied: string;
@@ -74,6 +77,8 @@ const SETTINGS_SHARED_COPY_BY_LOCALE = {
     loading: '正在加载设置',
     retry: '重试',
     save: '保存',
+    saveChanges: '保存更改',
+    discard: '放弃',
     cancel: '取消',
     copy: '复制',
     copied: '已复制',
@@ -110,6 +115,8 @@ const SETTINGS_SHARED_COPY_BY_LOCALE = {
     loading: '正在載入設定',
     retry: '重試',
     save: '儲存',
+    saveChanges: '儲存變更',
+    discard: '捨棄',
     cancel: '取消',
     copy: '複製',
     copied: '已複製',
@@ -146,6 +153,8 @@ const SETTINGS_SHARED_COPY_BY_LOCALE = {
     loading: 'Loading settings',
     retry: 'Try again',
     save: 'Save',
+    saveChanges: 'Save changes',
+    discard: 'Discard',
     cancel: 'Cancel',
     copy: 'Copy',
     copied: 'Copied',

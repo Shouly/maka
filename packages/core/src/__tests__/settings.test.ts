@@ -25,14 +25,12 @@ import {
   DEFAULT_APP_ICON,
   DEFAULT_APP_ICON_DARK,
   DEFAULT_TERMINAL_FONT_SIZE,
-  DEFAULT_UI_FONT_SIZE,
+  DEFAULT_TRANSCRIPT_TEXT_SIZE,
   mergeSettings,
   normalizeSettings,
   startupAppIcon,
   TERMINAL_FONT_SIZE_MAX,
   toAppIconChoice,
-  UI_FONT_SIZE_MAX,
-  UI_FONT_SIZE_MIN,
 } from '../settings.js';
 
 test('normalizes user-approved subagent presets without widening the catalog', () => {
@@ -89,8 +87,6 @@ describe('custom pet selection settings', () => {
     for (const selectedPetId of [undefined, '../maodie', 42]) {
       const normalized = normalizeSettings({
         personalization: {
-          displayName: '',
-          assistantTone: '',
           uiLocale: 'auto',
           selectedPetId,
         },
@@ -105,8 +101,6 @@ describe('UI locale preferences', () => {
     for (const uiLocale of ['auto', 'zh-CN', 'zh-TW', 'en'] as const) {
       const normalized = normalizeSettings({
         personalization: {
-          displayName: '',
-          assistantTone: '',
           uiLocale,
           selectedPetId: null,
         },
@@ -116,8 +110,6 @@ describe('UI locale preferences', () => {
 
     const normalizedLegacy = normalizeSettings({
       personalization: {
-        displayName: '',
-        assistantTone: '',
         uiLocale: 'zh',
         selectedPetId: null,
       },
@@ -186,48 +178,47 @@ test('an app icon the build does not ship falls back without disturbing the them
   );
 });
 
-test('font-size appearance defaults, with wrong types failing closed and out-of-range clamped', () => {
-  assert.strictEqual(createDefaultSettings().appearance.uiFontSize, DEFAULT_UI_FONT_SIZE);
+test('text-size appearance defaults, with wrong values failing closed and the terminal clamped', () => {
+  assert.strictEqual(
+    createDefaultSettings().appearance.transcriptTextSize,
+    DEFAULT_TRANSCRIPT_TEXT_SIZE,
+  );
   assert.strictEqual(
     createDefaultSettings().appearance.terminalFontSize,
     DEFAULT_TERMINAL_FONT_SIZE,
   );
 
-  // A wrong-typed value must not reach the renderer as an arbitrary root /
-  // xterm size — it drops to the default, and, like the app-icon guard above,
-  // does not disturb the theme.
-  for (const bad of [undefined, '14', null, Number.NaN, {}]) {
+  // A value outside the three steps, or a wrong-typed terminal size, drops to
+  // the default — and, like the app-icon guard above, does not disturb the theme.
+  for (const bad of [undefined, 'huge', null, {}]) {
     const normalized = normalizeSettings({
-      appearance: { theme: 'dark', uiFontSize: bad, terminalFontSize: bad } as never,
+      appearance: { theme: 'dark', transcriptTextSize: bad, terminalFontSize: bad } as never,
     });
-    assert.strictEqual(normalized.appearance.uiFontSize, DEFAULT_UI_FONT_SIZE);
+    assert.strictEqual(normalized.appearance.transcriptTextSize, DEFAULT_TRANSCRIPT_TEXT_SIZE);
     assert.strictEqual(normalized.appearance.terminalFontSize, DEFAULT_TERMINAL_FONT_SIZE);
     assert.strictEqual(normalized.appearance.theme, 'dark');
   }
 
-  // Out-of-range numbers clamp to the nearest bound rather than resetting, so a
-  // large persisted value is honored up to the cap instead of snapping back.
+  // The old pixel sizes are not steps.
   assert.strictEqual(
-    normalizeSettings({ appearance: { theme: 'auto', uiFontSize: 999 } as never }).appearance
-      .uiFontSize,
-    UI_FONT_SIZE_MAX,
+    normalizeSettings({ appearance: { theme: 'auto', transcriptTextSize: 14 } as never }).appearance
+      .transcriptTextSize,
+    DEFAULT_TRANSCRIPT_TEXT_SIZE,
   );
-  assert.strictEqual(
-    normalizeSettings({ appearance: { theme: 'auto', uiFontSize: 1 } as never }).appearance
-      .uiFontSize,
-    UI_FONT_SIZE_MIN,
-  );
+
+  // An out-of-range terminal size clamps to the nearest bound rather than
+  // resetting, so a large persisted value is honored up to the cap.
   assert.strictEqual(
     normalizeSettings({ appearance: { theme: 'auto', terminalFontSize: 999 } as never }).appearance
       .terminalFontSize,
     TERMINAL_FONT_SIZE_MAX,
   );
 
-  // A value in range survives, rounded to an integer px.
+  // A valid value survives.
   const kept = normalizeSettings({
-    appearance: { theme: 'auto', uiFontSize: 16, terminalFontSize: 15 } as never,
+    appearance: { theme: 'auto', transcriptTextSize: 'large', terminalFontSize: 15 } as never,
   });
-  assert.strictEqual(kept.appearance.uiFontSize, 16);
+  assert.strictEqual(kept.appearance.transcriptTextSize, 'large');
   assert.strictEqual(kept.appearance.terminalFontSize, 15);
 });
 

@@ -38,7 +38,6 @@ export type WebSearchSettingsCopy = {
   providerHelp: string;
   providerModel: string;
   providerTavily: string;
-  modelCredential: string;
   modelCredentialHelp: string;
   statusAria: string;
   lastTest: string;
@@ -59,6 +58,9 @@ export type WebSearchSettingsCopy = {
   clearing: string;
   clearKey: string;
   testSearch: string;
+  openTestSearch: string;
+  keyCheck: string;
+  close: string;
   testSearchHelp: string;
   /** Marks the probe box: it runs a real query and its shape may still change. */
   beta: string;
@@ -98,7 +100,6 @@ const SETTINGS_WEB_SEARCH_COPY = {
     providerHelp: '优先复用当前模型的服务端搜索；不支持时可显式改用 Tavily。',
     providerModel: '当前模型',
     providerTavily: 'Tavily',
-    modelCredential: '主模型原生搜索',
     modelCredentialHelp:
       'Maka 会在每个任务回合开始时，根据当前连接与精确模型决定是否把原生 web_search 注入同一次模型请求。不保存第二份搜索密钥，也不会从设置页另发一次模型调用。',
     statusAria: '联网搜索凭据状态',
@@ -121,6 +122,9 @@ const SETTINGS_WEB_SEARCH_COPY = {
     clearing: '清空中…',
     clearKey: '清空密钥',
     testSearch: '测试搜索',
+    openTestSearch: '测试…',
+    keyCheck: '凭据检查',
+    close: '关闭',
     testSearchHelp:
       '发一条真实查询，确认所选联网搜索来源是否配置可用。结果只显示在这里，不写入任务。',
     beta: 'Beta',
@@ -158,7 +162,6 @@ const SETTINGS_WEB_SEARCH_COPY = {
     },
     errors: {
       invalid_query: '请输入有效的搜索内容。',
-      incognito_active: '无痕模式下无法使用联网搜索。',
       not_configured: '所选搜索来源尚未配置完成。',
       invalid_credentials: '搜索来源拒绝了当前凭据，请更新后重试。',
       rate_limited: '搜索请求过于频繁，请稍后重试。',
@@ -185,7 +188,6 @@ const SETTINGS_WEB_SEARCH_COPY = {
     providerHelp: '優先複用目前模型的服務端搜尋；不支援時可顯式改用 Tavily。',
     providerModel: '目前模型',
     providerTavily: 'Tavily',
-    modelCredential: '主模型原生搜尋',
     modelCredentialHelp:
       'Maka 會在每個任務回合開始時，根據目前連線與精確模型決定是否把原生 web_search 注入同一次模型請求。不儲存第二份搜尋金鑰，也不會從設定頁另發一次模型呼叫。',
     statusAria: '聯網搜尋憑據狀態',
@@ -208,6 +210,9 @@ const SETTINGS_WEB_SEARCH_COPY = {
     clearing: '清空中…',
     clearKey: '清空金鑰',
     testSearch: '測試搜尋',
+    openTestSearch: '測試…',
+    keyCheck: '憑據檢查',
+    close: '關閉',
     testSearchHelp:
       '發一條真實查詢，確認所選聯網搜尋來源是否設定可用。結果只顯示在這裡，不寫入任務。',
     beta: 'Beta',
@@ -245,7 +250,6 @@ const SETTINGS_WEB_SEARCH_COPY = {
     },
     errors: {
       invalid_query: '請輸入有效的搜尋內容。',
-      incognito_active: '無痕模式下無法使用聯網搜尋。',
       not_configured: '所選搜尋來源尚未設定完成。',
       invalid_credentials: '搜尋來源拒絕了目前憑據，請更新後重試。',
       rate_limited: '搜尋請求過於頻繁，請稍後重試。',
@@ -274,7 +278,6 @@ const SETTINGS_WEB_SEARCH_COPY = {
       'Reuse the current model provider when it supports hosted search, or explicitly use Tavily.',
     providerModel: 'Current model',
     providerTavily: 'Tavily',
-    modelCredential: 'Primary-model native search',
     modelCredentialHelp:
       'At the start of each turn, Maka uses the current connection and exact model to decide whether to inject native web_search into the same model request. It stores no second search key and sends no separate model call from Settings.',
     statusAria: 'Web search credential status',
@@ -298,6 +301,9 @@ const SETTINGS_WEB_SEARCH_COPY = {
     clearing: 'Clearing…',
     clearKey: 'Clear key',
     testSearch: 'Test search',
+    openTestSearch: 'Test…',
+    keyCheck: 'Credential check',
+    close: 'Close',
     testSearchHelp:
       'Send a real query to confirm the selected web search source is configured and working. Results appear here only and are not written to the task.',
     beta: 'Beta',
@@ -335,7 +341,6 @@ const SETTINGS_WEB_SEARCH_COPY = {
     },
     errors: {
       invalid_query: 'Enter a valid search query.',
-      incognito_active: 'Web search is unavailable in incognito mode.',
       not_configured: 'The selected search source is not configured.',
       invalid_credentials:
         'The search provider rejected the current credential. Update it and try again.',

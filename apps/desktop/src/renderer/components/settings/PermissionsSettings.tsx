@@ -17,7 +17,10 @@
  * under the License.
  */
 
-// What the OS has granted, and what the agent can therefore do.
+// How a new task may act, then what the OS has granted and what the agent can
+// therefore do. The first two sections are Runtime Host settings — the
+// default permission mode and the shell the Bash tool runs
+// (`host-default-settings.tsx`); the rest is read-only status.
 //
 // Two reads side by side because they answer one question in two halves: the
 // permission snapshot says what the system allows, the capability snapshot
@@ -44,6 +47,8 @@ import { Button } from '../ui/button.js';
 import { Skeleton } from '../ui/skeleton.js';
 import { statusChipClass, statusChipToneClass } from '../ui/status-chip.js';
 import { cn } from '../../lib/cn.js';
+import { DefaultPermissionSection, ShellSection } from './host-default-settings.js';
+import { SettingsCallout } from './settings-kit.js';
 import { SettingsRow, SettingsSection } from './settings-row.js';
 import {
   getCapabilitySnapshot,
@@ -120,11 +125,14 @@ export function PermissionsSettings(props: { host: DesktopRuntimeHostRef | undef
   const permissionData = permissions.data;
   return (
     <>
+      <DefaultPermissionSection host={host} />
+      <ShellSection host={host} />
+
       <SettingsSection
         title={copy.osSection}
         description={copy.osSectionHelp}
         action={
-          <Button variant="secondary" size="sm" onClick={reloadPermissions}>
+          <Button variant="secondary" onClick={reloadPermissions}>
             {copy.detectAgain}
           </Button>
         }
@@ -135,7 +143,7 @@ export function PermissionsSettings(props: { host: DesktopRuntimeHostRef | undef
           <SettingsRow
             title={copy.readFailed}
             control={
-              <Button variant="secondary" size="sm" onClick={reloadPermissions}>
+              <Button variant="secondary" onClick={reloadPermissions}>
                 {copy.readAgain}
               </Button>
             }
@@ -176,14 +184,17 @@ export function PermissionsSettings(props: { host: DesktopRuntimeHostRef | undef
                       {copy.osStates[snapshot.status].label}
                     </span>
                     {showDrag && (
-                      <Button size="sm" disabled={pending !== null} onClick={() => run(id, 'drag')}>
+                      <Button
+                        variant="secondary"
+                        disabled={pending !== null}
+                        onClick={() => run(id, 'drag')}
+                      >
                         {pending === `${id}:drag` ? copy.dragGranting : copy.dragGrant}
                       </Button>
                     )}
                     {showOpen && (
                       <Button
                         variant="secondary"
-                        size="sm"
                         disabled={pending !== null}
                         onClick={() => run(id, 'open')}
                       >
@@ -193,7 +204,6 @@ export function PermissionsSettings(props: { host: DesktopRuntimeHostRef | undef
                     {showRequest && (
                       <Button
                         variant="secondary"
-                        size="sm"
                         disabled={pending !== null}
                         onClick={() => run(id, 'request')}
                       >
@@ -212,7 +222,7 @@ export function PermissionsSettings(props: { host: DesktopRuntimeHostRef | undef
         title={copy.capabilitiesSection}
         description={copy.capabilitiesHelp}
         action={
-          <Button variant="secondary" size="sm" onClick={capabilities.reload}>
+          <Button variant="secondary" onClick={capabilities.reload}>
             {copy.readAgain}
           </Button>
         }
@@ -229,7 +239,7 @@ export function PermissionsSettings(props: { host: DesktopRuntimeHostRef | undef
           ))
         )}
       </SettingsSection>
-      <p className="text-[0.8125rem] leading-[1.125rem] text-text-muted">{copy.footnote}</p>
+      <SettingsCallout title={copy.footnote} />
     </>
   );
 }

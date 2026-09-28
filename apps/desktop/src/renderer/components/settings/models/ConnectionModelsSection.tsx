@@ -50,6 +50,7 @@ import { checkboxBoxClass, CHECKBOX_TICK_SIZE } from '../../ui/checkbox-box.js';
 import { Input } from '../../ui/input.js';
 import { Switch } from '../../ui/switch.js';
 import { AddModelDialog } from './AddModelDialog.js';
+import { SettingsModal } from '../settings-kit.js';
 import { SettingsRow, SettingsSection } from '../settings-row.js';
 import { getSettingsModelsCopy } from '../../../locales/settings-models-copy.js';
 
@@ -67,7 +68,7 @@ export function ConnectionModelsSection(props: {
   const thinkingCopy = getConversationCopy(locale).model.level;
   const [filter, setFilter] = useState('');
   const [addOpen, setAddOpen] = useState(false);
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [declaring, setDeclaring] = useState<string | null>(null);
 
   const entries = props.connection.catalogEntries;
   const enabledIds = useMemo(() => connectionEnabledModelIds(props.connection), [props.connection]);
@@ -113,32 +114,28 @@ export function ConnectionModelsSection(props: {
       description={copy.detail.modelManagementHelp}
       action={
         <span className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={props.busy}
-            onClick={() => setAddOpen(true)}
-          >
+          <Button variant="secondary" disabled={props.busy} onClick={() => setAddOpen(true)}>
             {copy.detail.addModel}
           </Button>
-          <Button variant="secondary" size="sm" disabled={props.busy} onClick={props.onFetchModels}>
+          <Button variant="secondary" disabled={props.busy} onClick={props.onFetchModels}>
             {props.fetching ? copy.page.modelsLoading : copy.detail.updateModels}
           </Button>
         </span>
       }
     >
-      <SettingsRow
-        title={copy.detail.modelsSummary(rows.filter((row) => row.enabled).length, rows.length)}
-        control={
-          <Input
-            aria-label={copy.detail.filterModels}
-            placeholder={copy.detail.filterModels}
-            className="w-56"
-            value={filter}
-            onChange={(event) => setFilter(event.target.value)}
-          />
-        }
-      />
+      {/* The table toolbar: the search at the left, the count at the right. */}
+      <div className="flex items-center justify-between gap-4 pb-2">
+        <Input
+          aria-label={copy.detail.filterModels}
+          placeholder={copy.detail.filterModels}
+          className="w-full max-w-md"
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+        />
+        <span className="shrink-0 text-sm leading-5 text-text-muted">
+          {copy.detail.modelsSummary(rows.filter((row) => row.enabled).length, rows.length)}
+        </span>
+      </div>
 
       {rows.length === 0 && <SettingsRow title={copy.detail.noModels} control={null} />}
 
@@ -149,12 +146,9 @@ export function ConnectionModelsSection(props: {
       {shown.map((row) => {
         const entry = row.entry;
         const label = entry?.displayName?.trim() || row.id;
-        // Nothing to declare capabilities against, so it never expands.
-        const open = expanded === row.id && entry !== undefined;
         return (
           <SettingsRow
             key={row.id}
-            layout={relay && open ? 'stacked' : 'inline'}
             title={
               <span className="flex min-w-0 items-center gap-2">
                 <span className="truncate">{label}</span>
@@ -181,67 +175,72 @@ export function ConnectionModelsSection(props: {
               </span>
             }
             control={
-              relay && open ? undefined : (
-                <span className="flex items-center gap-3">
-                  {relay && entry !== undefined && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label={copy.detail.declareCapabilitiesAria(label)}
-                      onClick={() => setExpanded(row.id)}
-                    >
-                      {copy.detail.declareCapabilities}
-                    </Button>
-                  )}
-                  <Switch
-                    aria-label={copy.detail.enableModelAria(label)}
-                    disabled={props.busy}
-                    checked={row.enabled}
-                    onCheckedChange={(next) => toggle(row.id, next)}
-                  />
-                </span>
-              )
-            }
-          >
-            {relay && open && (
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  {DECLARABLE_RELAY_THINKING_LEVELS.map((level) => {
-                    const checked = declaredLevels(row.id).includes(level);
-                    return (
-                      <button
-                        key={level}
-                        type="button"
-                        role="checkbox"
-                        aria-checked={checked}
-                        disabled={props.busy}
-                        onClick={() => toggleLevel(row.id, level, !checked)}
-                        className="group/cb flex cursor-pointer items-center gap-2 text-sm leading-5 text-text-primary outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)]"
-                      >
-                        <span className={checkboxBoxClass(checked, 'xs')} aria-hidden>
-                          {checked && <Anthropicon name="check" size={CHECKBOX_TICK_SIZE.xs} />}
-                        </span>
-                        <span>{thinkingCopy[level]}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="flex items-center gap-3">
-                  <Switch
-                    aria-label={copy.detail.enableModelAria(label)}
-                    disabled={props.busy}
-                    checked={row.enabled}
-                    onCheckedChange={(next) => toggle(row.id, next)}
-                  />
-                  <Button variant="secondary" size="sm" onClick={() => setExpanded(null)}>
-                    {copy.detail.save}
+              <span className="flex items-center gap-3">
+                {/* Nothing to declare capabilities against without a catalog entry. */}
+                {relay && entry !== undefined && (
+                  <Button
+                    variant="ghost"
+                    aria-label={copy.detail.declareCapabilitiesAria(label)}
+                    onClick={() => setDeclaring(row.id)}
+                  >
+                    {copy.detail.declareCapabilities}
                   </Button>
-                </div>
-              </div>
-            )}
-          </SettingsRow>
+                )}
+                <Switch
+                  aria-label={copy.detail.enableModelAria(label)}
+                  disabled={props.busy}
+                  checked={row.enabled}
+                  onCheckedChange={(next) => toggle(row.id, next)}
+                />
+              </span>
+            }
+          />
         );
       })}
+
+      <SettingsModal
+        open={declaring !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeclaring(null);
+        }}
+        size="sm"
+        title={copy.detail.declareCapabilities}
+        description={declaring ?? undefined}
+        footer={
+          <Button variant="secondary" onClick={() => setDeclaring(null)}>
+            {copy.detail.done}
+          </Button>
+        }
+      >
+        {declaring !== null && (
+          <div
+            className="flex flex-col gap-2"
+            role="group"
+            aria-label={copy.detail.declareCapabilities}
+          >
+            {/* Each box writes as it is ticked, as the switches on the page do. */}
+            {DECLARABLE_RELAY_THINKING_LEVELS.map((level) => {
+              const checked = declaredLevels(declaring).includes(level);
+              return (
+                <button
+                  key={level}
+                  type="button"
+                  role="checkbox"
+                  aria-checked={checked}
+                  disabled={props.busy}
+                  onClick={() => toggleLevel(declaring, level, !checked)}
+                  className="group/cb flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm leading-5 text-text-primary outline-none hover:bg-alpha-1 focus-visible:shadow-[var(--sidebar-focus-shadow)]"
+                >
+                  <span className={checkboxBoxClass(checked, 'xs')} aria-hidden>
+                    {checked && <Anthropicon name="check" size={CHECKBOX_TICK_SIZE.xs} />}
+                  </span>
+                  <span>{thinkingCopy[level]}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </SettingsModal>
 
       <AddModelDialog
         open={addOpen}

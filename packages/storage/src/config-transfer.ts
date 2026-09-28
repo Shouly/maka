@@ -53,7 +53,7 @@ export const SENSITIVE_CATEGORIES: ReadonlySet<ConfigCategory> = new Set(['crede
 export type ConfigData = Partial<Record<ConfigCategory, unknown>>;
 
 /** Why the memory part of an import did not land; the rest of the import stands. */
-export type MemoryImportSkipReason = 'disabled' | 'incognito' | 'failed';
+export type MemoryImportSkipReason = 'disabled' | 'failed';
 
 export interface ConfigBundle {
   schemaVersion: number;

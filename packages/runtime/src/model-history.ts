@@ -48,7 +48,7 @@
  * item without reviving the retired 0.1.x StoredMessage history path.
  */
 
-import { wrapSystemReminder } from './injection/system-reminder.js';
+import { renderInjectionBlock } from './injection/turn-injections.js';
 import {
   isPartialRuntimeEvent,
   isTerminalRuntimeEvent,
@@ -671,7 +671,7 @@ export function buildRuntimeEventModelReplayPlan(
       if (event.content.text.length === 0) continue;
       const turnId = event.turnId ?? '';
       const blocks = injectionsByTurn.get(turnId) ?? [];
-      blocks.push(wrapSystemReminder(event.content.text));
+      blocks.push(renderInjectionBlock(event.content));
       injectionsByTurn.set(turnId, blocks);
       if (!injectionAnchorByTurn.has(turnId)) {
         injectionAnchorByTurn.set(turnId, { index: items.length, ts: event.ts });

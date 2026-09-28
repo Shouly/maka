@@ -63,7 +63,6 @@ const STATIC_ICONS: Partial<Record<StaticCommandId, AnthropiconName>> = {
   'diag:open-workspace': 'folderOpen',
   'diag:open-project-folder': 'folderOpen',
   'diag:copy-diagnostics': 'clipboard',
-  'diag:test-network-proxy': 'globe',
 };
 
 export interface PaletteCommandInput {
@@ -81,7 +80,6 @@ export interface PaletteCommandInput {
   onOpenWorkspaceFolder(): void;
   onOpenProjectFolder?(): void;
   onCopyDiagnostics(): void;
-  onTestNetworkProxy(): void;
   onSetDefaultConnection(slug: string): void;
   onOpenRuntimeDebug(): void;
 }
@@ -125,7 +123,6 @@ export function buildPaletteCommands(input: PaletteCommandInput): PaletteCommand
     staticCommand('nav:automations', () => input.onSelectModule('scheduled-tasks')),
     staticCommand('diag:open-workspace', input.onOpenWorkspaceFolder),
     staticCommand('diag:copy-diagnostics', input.onCopyDiagnostics),
-    staticCommand('diag:test-network-proxy', input.onTestNetworkProxy),
   ];
 
   // Only when a task is open: without one there is no project to open.

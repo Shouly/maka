@@ -23,8 +23,7 @@
 // inspector, an import dialog and a cancellable install, so their vocabulary
 // (titles, help text, failure reasons, `card.manage`, `card.cancel`) survived
 // in `mcp-copy.ts` and is read from there. What is new here is what the
-// pre-rewrite page did NOT have — the filter pills Claude's Connectors page
-// puts under the toolbar, the expandable row detail that replaced the
+// pre-rewrite page did NOT have — the filter pills under the toolbar, the expandable row detail that replaced the
 // inspector pane, and the two summaries an import can now report.
 
 import type { UiCatalog, UiLocale } from '@maka/core/ui-locale';

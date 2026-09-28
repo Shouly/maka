@@ -304,7 +304,7 @@ test('the Connectors page keeps its contracts and adds the search and the pills'
   assert.ok(section?.textContent?.includes('2'));
 
   const pills = document.querySelector('[aria-label="Filter by connection state"]');
-  assert.ok(pills, 'Claude’s connectors page filters All / Connected / Not connected');
+  assert.ok(pills, 'the connectors page filters All / Connected / Not connected');
   const pillText = [...(pills?.querySelectorAll('button') ?? [])].map((pill) => pill.textContent);
   assert.deepEqual(pillText, ['All2', 'Connected1', 'Not connected1']);
 

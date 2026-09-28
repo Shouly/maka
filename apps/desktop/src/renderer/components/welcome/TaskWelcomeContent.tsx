@@ -19,7 +19,7 @@
 
 import { useUiLocale } from '@maka/ui';
 import { useStore } from 'zustand';
-import { settingsStore } from '../../store/settings-store.js';
+import { orgAccountStore } from '../../store/org-account-store.js';
 import { useWelcomeMessage } from '../../hooks/use-welcome-message.js';
 import { ChatInput } from '../composer/ChatInput.js';
 import { getWelcomeCopy } from '../../locales/welcome-copy.js';
@@ -34,7 +34,12 @@ export function TaskWelcomeContent(props: {
 }) {
   const locale = useUiLocale();
   const copy = getWelcomeCopy(locale);
-  const username = useStore(settingsStore.host, (state) => state.data?.personalization.displayName);
+  // The name they asked to be called, else their full name — the same one the model is given.
+  const username = useStore(orgAccountStore, (state) =>
+    state.account?.status === 'signed_in'
+      ? state.account.profile.nickname || state.account.profile.name
+      : undefined,
+  );
   const greeting = useWelcomeMessage(locale, username);
 
   return (

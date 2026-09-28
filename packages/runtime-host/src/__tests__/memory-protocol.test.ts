@@ -74,7 +74,6 @@ describe('Memory protocol', () => {
       response('memory.query', {
         kind: 'list',
         enabled: true,
-        incognitoActive: false,
         directoryPath: '/tmp/root/memory',
         files: [
           {

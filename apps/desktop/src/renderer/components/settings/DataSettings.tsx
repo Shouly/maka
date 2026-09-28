@@ -26,7 +26,12 @@
 // The two "clear" rows are separated on purpose: prompt history is a global
 // list of things the user typed, drafts are per-task unsent text. Losing the
 // wrong one is not recoverable, so they are two rows and two confirmations
-// rather than one "clear local data" button.
+// rather than one "clear local data" button — and neither is a red button on
+// the page; the red is in the confirmation.
+//
+// What to export and how to import are choices that belong to the act, not
+// standing settings, so each opens as a dialog with its choices inside rather
+// than leaving four switches on the page that look like preferences.
 
 import { useState } from 'react';
 import {
@@ -35,9 +40,13 @@ import {
   type MemoryImportSkipReason,
 } from '@maka/storage/config-transfer';
 import { clearGlobalInputHistory, useUiLocale } from '@maka/ui';
+import { Anthropicon } from '../icons/Anthropicon.js';
 import { Button } from '../ui/button.js';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.js';
-import { Switch } from '../ui/switch.js';
+import { checkboxBoxClass, CHECKBOX_TICK_SIZE } from '../ui/checkbox-box.js';
+import { ConfirmDialog } from '../ui/confirm-dialog.js';
+import { SegmentedControl } from '../ui/segmented-control.js';
+import { cn } from '../../lib/cn.js';
+import { SettingsModal } from './settings-kit.js';
 import { SettingsRow, SettingsSection } from './settings-row.js';
 import { getAppInfo, openPath } from '../../bridge/app.js';
 import { exportConfig, importConfig } from '../../bridge/config.js';
@@ -64,11 +73,15 @@ export function DataSettings(props: { host: DesktopRuntimeHostRef | undefined })
     () => new Set<ConfigCategory>(['connections', 'settings']),
   );
   const [strategy, setStrategy] = useState<'skip' | 'overwrite'>('skip');
-  const [busy, setBusy] = useState<'export' | 'import' | 'history' | 'drafts' | null>(null);
+  const [busy, setBusy] = useState<'open' | 'export' | 'import' | null>(null);
+  const [dialog, setDialog] = useState<'export' | 'import' | 'history' | 'drafts' | null>(null);
   const workspacePath = info.data?.workspacePath;
+  const closeDialog = (open: boolean) => {
+    if (!open && busy === null) setDialog(null);
+  };
 
   const openWorkspace = () => {
-    setBusy('export');
+    setBusy('open');
     void openPath('workspace', undefined, host)
       .then((result) => {
         if (!result.ok)
@@ -79,6 +92,52 @@ export function DataSettings(props: { host: DesktopRuntimeHostRef | undefined })
           });
       })
       .catch((error: unknown) => report(copy.openFailed(paths.openPathLabels.workspace), error))
+      .finally(() => setBusy(null));
+  };
+
+  const runExport = () => {
+    setBusy('export');
+    void exportConfig({ categories: [...categories] }, host)
+      .then((result) => {
+        if (result.ok) {
+          setDialog(null);
+          toast({
+            title: copy.exported,
+            description: copy.exportedDetail(
+              result.includedData.map((id) => copy.categories[id].label),
+            ),
+            variant: 'success',
+          });
+        } else if (result.reason === 'no_categories')
+          toast({ title: copy.noCategories, variant: 'destructive' });
+        // The native save dialog closed without a file: the dialog stays for
+        // another go rather than reporting a failure nobody had.
+        else if (result.reason !== 'canceled')
+          toast({ title: copy.exportFailed, variant: 'destructive' });
+      })
+      .catch((error: unknown) => report(copy.exportFailed, error))
+      .finally(() => setBusy(null));
+  };
+
+  const runImport = () => {
+    setBusy('import');
+    void importConfig({ strategy }, host)
+      .then((result) => {
+        if (result.ok) {
+          setDialog(null);
+          toast({
+            title: copy.imported,
+            description: summarizeImport(result.result, copy),
+            variant: 'success',
+          });
+        } else if (result.reason !== 'canceled')
+          toast({
+            title: copy.importFailed,
+            description: copy.importFailures[result.reason],
+            variant: 'destructive',
+          });
+      })
+      .catch((error: unknown) => report(copy.importFailed, error))
       .finally(() => setBusy(null));
   };
 
@@ -99,7 +158,6 @@ export function DataSettings(props: { host: DesktopRuntimeHostRef | undefined })
             <span className="flex items-center gap-2">
               <Button
                 variant="secondary"
-                size="sm"
                 disabled={busy !== null || !workspacePath}
                 onClick={openWorkspace}
               >
@@ -107,7 +165,6 @@ export function DataSettings(props: { host: DesktopRuntimeHostRef | undefined })
               </Button>
               <Button
                 variant="secondary"
-                size="sm"
                 disabled={!workspacePath}
                 onClick={() => {
                   if (!workspacePath) return;
@@ -128,24 +185,16 @@ export function DataSettings(props: { host: DesktopRuntimeHostRef | undefined })
             </span>
           }
         />
+        <SettingsRow title={copy.backupTitle} description={copy.backupNotice} control={null} />
+      </SettingsSection>
+
+      <SettingsSection title={copy.localTitle} description={copy.localHelp}>
         <SettingsRow
           title={copy.rows.history}
           description={copy.rows.historyDetail}
           control={
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={busy !== null}
-              onClick={() => {
-                clearGlobalInputHistory();
-                toast({
-                  title: copy.historyCleared,
-                  description: copy.historyClearedDetail,
-                  variant: 'success',
-                });
-              }}
-            >
-              {busy === 'history' ? copy.clearing : copy.clearHistory}
+            <Button variant="secondary" onClick={() => setDialog('history')}>
+              {copy.clearAction}
             </Button>
           }
         />
@@ -153,138 +202,167 @@ export function DataSettings(props: { host: DesktopRuntimeHostRef | undefined })
           title={own.drafts}
           description={own.draftsDetail}
           control={
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={busy !== null}
-              onClick={() => {
-                const cleared = composerInputStore.clearAll();
-                toast({
-                  title: own.draftsCleared,
-                  description: own.draftsClearedDetail(cleared),
-                  variant: 'success',
-                });
-              }}
-            >
-              {busy === 'drafts' ? own.clearingDrafts : own.clearDrafts}
+            <Button variant="secondary" onClick={() => setDialog('drafts')}>
+              {copy.clearAction}
             </Button>
           }
         />
       </SettingsSection>
 
-      <SettingsSection title={copy.configTitle} description={copy.configHelp}>
-        {CONFIG_CATEGORIES.map((category) => (
-          <SettingsRow
-            key={category}
-            title={copy.categories[category].label}
-            description={
-              <span className="flex flex-col gap-0.5">
-                <span>{copy.categories[category].detail}</span>
-                {copy.categories[category].sensitive === true && categories.has(category) && (
-                  <span className="text-warning">{copy.sensitiveWarning}</span>
-                )}
-              </span>
-            }
-            control={
-              <Switch
-                checked={categories.has(category)}
-                aria-label={copy.categories[category].label}
-                onCheckedChange={(checked) =>
-                  setCategories((current) => {
-                    const next = new Set(current);
-                    if (checked) next.add(category);
-                    else next.delete(category);
-                    return next;
-                  })
-                }
-              />
-            }
-          />
-        ))}
+      <SettingsSection title={copy.configTitle}>
         <SettingsRow
-          title={copy.conflictAria}
+          title={copy.exportRow}
+          description={copy.exportRowHelp}
           control={
-            <Select
-              value={strategy}
-              onValueChange={(value) => setStrategy(value as 'skip' | 'overwrite')}
-            >
-              <SelectTrigger aria-label={copy.conflictAria} className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="skip">{copy.skip}</SelectItem>
-                <SelectItem value="overwrite">{copy.overwrite}</SelectItem>
-              </SelectContent>
-            </Select>
+            <Button variant="secondary" onClick={() => setDialog('export')}>
+              {copy.exportAction}
+            </Button>
           }
         />
         <SettingsRow
-          title={copy.backupTitle}
-          description={copy.backupNotice}
+          title={copy.importRow}
+          description={copy.importRowHelp}
           control={
-            <span className="flex items-center gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={busy !== null}
-                onClick={() => {
-                  if (categories.size === 0) {
-                    toast({ title: copy.selectCategory, variant: 'destructive' });
-                    return;
-                  }
-                  setBusy('export');
-                  void exportConfig({ categories: [...categories] }, host)
-                    .then((result) => {
-                      if (result.ok)
-                        toast({
-                          title: copy.exported,
-                          description: copy.exportedDetail(
-                            result.includedData.map((id) => copy.categories[id].label),
-                          ),
-                          variant: 'success',
-                        });
-                      else if (result.reason === 'no_categories')
-                        toast({ title: copy.noCategories, variant: 'destructive' });
-                      else if (result.reason !== 'canceled')
-                        toast({ title: copy.exportFailed, variant: 'destructive' });
-                    })
-                    .catch((error: unknown) => report(copy.exportFailed, error))
-                    .finally(() => setBusy(null));
-                }}
-              >
-                {copy.exportConfig}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={busy !== null}
-                onClick={() => {
-                  setBusy('import');
-                  void importConfig({ strategy }, host)
-                    .then((result) => {
-                      if (result.ok)
-                        toast({
-                          title: copy.imported,
-                          description: summarizeImport(result.result, copy),
-                          variant: 'success',
-                        });
-                      else if (result.reason !== 'canceled')
-                        toast({
-                          title: copy.importFailed,
-                          description: copy.importFailures[result.reason],
-                          variant: 'destructive',
-                        });
-                    })
-                    .catch((error: unknown) => report(copy.importFailed, error))
-                    .finally(() => setBusy(null));
-                }}
-              >
-                {copy.importConfig}
-              </Button>
-            </span>
+            <Button variant="secondary" onClick={() => setDialog('import')}>
+              {copy.importAction}
+            </Button>
           }
         />
       </SettingsSection>
+
+      <SettingsModal
+        open={dialog === 'export'}
+        onOpenChange={closeDialog}
+        title={copy.exportRow}
+        description={copy.configHelp}
+        data-maka-contract="config-export"
+        footer={
+          <>
+            <Button variant="secondary" disabled={busy !== null} onClick={() => setDialog(null)}>
+              {copy.cancel}
+            </Button>
+            <Button disabled={busy !== null || categories.size === 0} onClick={runExport}>
+              {copy.exportConfirm}
+            </Button>
+          </>
+        }
+      >
+        <div role="group" aria-label={copy.categoryAria} className="flex flex-col gap-1">
+          {CONFIG_CATEGORIES.map((category) => {
+            const checked = categories.has(category);
+            return (
+              <button
+                key={category}
+                type="button"
+                role="checkbox"
+                aria-checked={checked}
+                onClick={() =>
+                  setCategories((current) => {
+                    const next = new Set(current);
+                    if (checked) next.delete(category);
+                    else next.add(category);
+                    return next;
+                  })
+                }
+                className="group/cb -mx-2 flex cursor-pointer items-start gap-3 rounded-lg px-2 py-2 text-left outline-none hover:bg-alpha-1 focus-visible:shadow-[var(--sidebar-focus-shadow)]"
+              >
+                <span className={cn(checkboxBoxClass(checked, 'xs'), 'mt-0.5')} aria-hidden>
+                  {checked && <Anthropicon name="check" size={CHECKBOX_TICK_SIZE.xs} />}
+                </span>
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="text-sm leading-5 text-text-primary">
+                    {copy.categories[category].label}
+                  </span>
+                  <span className="text-[0.8125rem] leading-[1.0625rem] text-text-muted">
+                    {copy.categories[category].detail}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {CONFIG_CATEGORIES.some(
+          (category) => copy.categories[category].sensitive === true && categories.has(category),
+        ) && (
+          <p
+            role="status"
+            className="rounded-xl bg-warning-subtle px-4 py-3 text-sm leading-5 text-warning"
+          >
+            {copy.sensitiveWarning}
+          </p>
+        )}
+      </SettingsModal>
+
+      <SettingsModal
+        open={dialog === 'import'}
+        onOpenChange={closeDialog}
+        title={copy.importRow}
+        description={copy.importRowHelp}
+        data-maka-contract="config-import"
+        footer={
+          <>
+            <Button variant="secondary" disabled={busy !== null} onClick={() => setDialog(null)}>
+              {copy.cancel}
+            </Button>
+            <Button disabled={busy !== null} onClick={runImport}>
+              {copy.importConfirm}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-2">
+          <span className="text-sm font-medium leading-[0.875rem] text-text-primary">
+            {copy.importConflict}
+          </span>
+          <SegmentedControl
+            ariaLabel={copy.conflictAria}
+            value={strategy}
+            onChange={(value: 'skip' | 'overwrite') => setStrategy(value)}
+            options={[
+              { value: 'skip', label: copy.skip },
+              { value: 'overwrite', label: copy.overwrite },
+            ]}
+          />
+          <p className="text-[0.8125rem] leading-[1.0625rem] text-text-muted">
+            {copy.importConflictHelp}
+          </p>
+        </div>
+      </SettingsModal>
+
+      <ConfirmDialog
+        open={dialog === 'history'}
+        onOpenChange={closeDialog}
+        title={copy.clearHistoryTitle}
+        description={copy.clearHistoryBody}
+        confirmText={copy.clearConfirm}
+        cancelText={copy.cancel}
+        variant="destructive"
+        onConfirm={() => {
+          clearGlobalInputHistory();
+          toast({
+            title: copy.historyCleared,
+            description: copy.historyClearedDetail,
+            variant: 'success',
+          });
+        }}
+      />
+      <ConfirmDialog
+        open={dialog === 'drafts'}
+        onOpenChange={closeDialog}
+        title={copy.clearDraftsTitle}
+        description={copy.clearDraftsBody}
+        confirmText={copy.clearConfirm}
+        cancelText={copy.cancel}
+        variant="destructive"
+        onConfirm={() => {
+          const cleared = composerInputStore.clearAll();
+          toast({
+            title: own.draftsCleared,
+            description: own.draftsClearedDetail(cleared),
+            variant: 'success',
+          });
+        }}
+      />
     </>
   );
 }

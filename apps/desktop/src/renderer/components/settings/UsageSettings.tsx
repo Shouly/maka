@@ -34,10 +34,19 @@ import { useState } from 'react';
 import type { UsageRange, UsageStats } from '@maka/core/settings';
 import { estimatedUsageCost, hasUnavailableUsage } from '@maka/core/usage-ledger-merge';
 import { useUiLocale } from '@maka/ui';
+import { Anthropicon } from '../icons/Anthropicon.js';
 import { Button } from '../ui/button.js';
 import { SegmentedControl } from '../ui/segmented-control.js';
 import { Skeleton } from '../ui/skeleton.js';
 import { cn } from '../../lib/cn.js';
+import {
+  SettingsCallout,
+  SettingsEmpty,
+  SettingsTable,
+  SettingsTableCell,
+  SettingsTableHeadCell,
+  SettingsTableRow,
+} from './settings-kit.js';
 import { SettingsRow, SettingsSection, settingsPanelClass } from './settings-row.js';
 import { getUsageStats } from '../../bridge/settings.js';
 import { useAsync } from '../../hooks/use-async.js';
@@ -80,7 +89,6 @@ export function UsageSettings(props: { host: DesktopRuntimeHostRef | undefined }
         action={
           <span className="flex items-center gap-2">
             <SegmentedControl
-              size="sm"
               ariaLabel={copy.rangeAria}
               value={range}
               onChange={setRange}
@@ -90,12 +98,13 @@ export function UsageSettings(props: { host: DesktopRuntimeHostRef | undefined }
               }))}
             />
             <Button
-              variant="secondary"
-              size="sm"
+              variant="ghost"
+              size="icon"
               aria-label={copy.refreshAria}
+              title={copy.refreshAria}
               onClick={stats.reload}
             >
-              {copy.refreshAria}
+              <Anthropicon name="arrowClockwise" size={16} />
             </Button>
           </span>
         }
@@ -116,7 +125,6 @@ export function UsageSettings(props: { host: DesktopRuntimeHostRef | undefined }
           title={copy.viewAria}
           action={
             <SegmentedControl
-              size="sm"
               ariaLabel={copy.viewAria}
               value={tab}
               onChange={setTab}
@@ -165,9 +173,11 @@ function UsageTotals(props: { stats: UsageStats; copy: ReturnType<typeof getUsag
         />
       </div>
       {incomplete && (
-        <p className="text-[0.8125rem] leading-[1.125rem] text-warning" role="status">
-          {`${copy.incompleteTitle} ${copy.incompleteBody}`}
-        </p>
+        <SettingsCallout
+          tone="warning"
+          title={copy.incompleteTitle}
+          description={copy.incompleteBody}
+        />
       )}
     </div>
   );
@@ -175,7 +185,7 @@ function UsageTotals(props: { stats: UsageStats; copy: ReturnType<typeof getUsag
 
 function Metric(props: { label: string; value: string; detail?: string }) {
   return (
-    <div className={cn(settingsPanelClass, 'flex flex-col gap-1 p-3')}>
+    <div className={cn(settingsPanelClass, 'flex flex-col gap-1 p-4')}>
       <span className="text-[0.8125rem] leading-[1.125rem] text-text-muted">{props.label}</span>
       <span className="text-lg leading-6 text-text-primary" data-mono="true">
         {props.value}
@@ -195,55 +205,52 @@ function Breakdowns(props: {
 }) {
   const { stats, tab, copy, own } = props;
   if (tab === 'pricing') {
-    if (stats.pricing.length === 0)
-      return <SettingsRow title={copy.tables.pricingEmptyBody} control={null} />;
+    if (stats.pricing.length === 0) return <SettingsEmpty title={copy.tables.pricingEmptyBody} />;
     return (
-      <>
+      <SettingsTable
+        label={copy.viewAria}
+        head={
+          <>
+            <SettingsTableHeadCell>{own.model}</SettingsTableHeadCell>
+            <SettingsTableHeadCell>{own.provider}</SettingsTableHeadCell>
+            <SettingsTableHeadCell className="w-48 text-right">
+              {own.pricePerMTok}
+            </SettingsTableHeadCell>
+          </>
+        }
+      >
         {stats.pricing.map((row) => (
-          <SettingsRow
-            key={`${row.provider}:${row.model}`}
-            title={row.model}
-            description={row.provider}
-            control={
-              <span
-                className="text-[0.8125rem] leading-[1.125rem] text-text-secondary"
-                data-mono="true"
-              >
-                {`$${row.inputPerMTokUsd} / $${row.outputPerMTokUsd}`}
-              </span>
-            }
-          />
+          <SettingsTableRow key={`${row.provider}:${row.model}`}>
+            <SettingsTableCell className="truncate">{row.model}</SettingsTableCell>
+            <SettingsTableCell className="truncate text-text-secondary">
+              {row.provider}
+            </SettingsTableCell>
+            <SettingsTableCell className="text-right text-text-secondary" data-mono="true">
+              {`$${row.inputPerMTokUsd} / $${row.outputPerMTokUsd}`}
+            </SettingsTableCell>
+          </SettingsTableRow>
         ))}
-      </>
+      </SettingsTable>
     );
   }
   if (tab === 'tools') {
     if (stats.byTool.length === 0)
-      return (
-        <SettingsRow
-          title={copy.tables.toolEmptyTitle}
-          description={copy.tables.toolEmptyBody}
-          control={null}
-        />
-      );
+      return <SettingsEmpty title={copy.tables.toolEmptyTitle} body={copy.tables.toolEmptyBody} />;
     const max = Math.max(...stats.byTool.map((row) => row.calls), 1);
     return (
-      <>
+      <div className="flex flex-col">
         {stats.byTool.map((row) => (
-          <SettingsRow
+          <MeterRow
             key={row.tool}
-            layout="stacked"
-            title={row.tool}
-            description={`${own.calls} ${row.calls} · ${own.averageDuration} ${Math.round(row.avgDurationMs)}ms`}
-          >
-            <Band
-              value={row.calls}
-              max={max}
-              label={own.shareOf(String(row.calls), percent(row.calls, max))}
-            />
-          </SettingsRow>
+            label={row.tool}
+            detail={`${own.averageDuration} ${Math.round(row.avgDurationMs)}ms`}
+            value={row.calls}
+            max={max}
+            valueLabel={`${own.calls} ${row.calls}`}
+            meterLabel={own.shareOf(String(row.calls), percent(row.calls, max))}
+          />
         ))}
-      </>
+      </div>
     );
   }
   const rows =
@@ -264,48 +271,64 @@ function Breakdowns(props: {
         }));
   if (rows.length === 0)
     return (
-      <SettingsRow
+      <SettingsEmpty
         title={tab === 'providers' ? copy.tables.providerEmptyTitle : copy.tables.modelEmptyTitle}
-        description={
-          tab === 'providers' ? copy.tables.providerEmptyBody : copy.tables.modelEmptyBody
-        }
-        control={null}
+        body={tab === 'providers' ? copy.tables.providerEmptyBody : copy.tables.modelEmptyBody}
       />
     );
   const max = Math.max(...rows.map((row) => row.tokens), 1);
   return (
-    <>
+    <div className="flex flex-col">
       {rows.map((row) => (
-        <SettingsRow
+        <MeterRow
           key={row.key}
-          layout="stacked"
-          title={row.label}
-          description={`${own.requests} ${row.requests} · ${own.tokens} ${row.tokens} · ${own.cost} $${row.costUsd.toFixed(2)}`}
-        >
-          <Band
-            value={row.tokens}
-            max={max}
-            label={own.shareOf(String(row.tokens), percent(row.tokens, max))}
-          />
-        </SettingsRow>
+          label={row.label}
+          detail={`${own.requests} ${row.requests} · ${own.cost} $${row.costUsd.toFixed(2)}`}
+          value={row.tokens}
+          max={max}
+          valueLabel={`${row.tokens.toLocaleString()} ${own.tokens}`}
+          meterLabel={own.shareOf(String(row.tokens), percent(row.tokens, max))}
+        />
       ))}
-    </>
+    </div>
+  );
+}
+
+/**
+ * One line of a breakdown, drawn as a usage meter: the name and a
+ * detail line in a 208px column, a 4px meter, the amount at the right.
+ */
+function MeterRow(props: {
+  label: string;
+  detail: string;
+  value: number;
+  max: number;
+  valueLabel: string;
+  meterLabel: string;
+}) {
+  const width = Math.max(2, Math.min(100, (props.value / props.max) * 100));
+  return (
+    <div className="grid grid-cols-[13rem_minmax(0,1fr)_7rem] items-center gap-4 py-3 [&:not(:first-child)]:border-t [&:not(:first-child)]:border-alpha-1">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="truncate text-sm leading-5 text-text-primary">{props.label}</span>
+        <span className="truncate text-[0.8125rem] leading-[1.0625rem] text-text-muted">
+          {props.detail}
+        </span>
+      </div>
+      <div
+        className="h-1 w-full overflow-hidden rounded-full bg-accent-subtle shadow-[inset_0_0_0_1px_var(--alpha-1)]"
+        role="img"
+        aria-label={props.meterLabel}
+      >
+        <div className="h-full rounded-full bg-accent-fill" style={{ width: `${width}%` }} />
+      </div>
+      <span className="text-right text-[0.8125rem] leading-[1.0625rem] text-text-secondary">
+        {props.valueLabel}
+      </span>
+    </div>
   );
 }
 
 function percent(value: number, max: number): number {
   return Math.round((value / max) * 100);
-}
-
-function Band(props: { value: number; max: number; label: string }) {
-  const width = Math.max(2, Math.min(100, (props.value / props.max) * 100));
-  return (
-    <div
-      className="h-1.5 w-full overflow-hidden rounded-full bg-alpha-1"
-      role="img"
-      aria-label={props.label}
-    >
-      <div className="h-full rounded-full bg-accent-fill" style={{ width: `${width}%` }} />
-    </div>
-  );
 }

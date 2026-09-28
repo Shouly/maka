@@ -26,6 +26,7 @@
 
 import type { SessionEvent } from '@maka/core/events';
 import type { SessionInjections } from './injection/session-injections.js';
+import type { InjectionContext } from './injection/turn-injections.js';
 import type { RuntimeEventInjectionContent } from '@maka/core/runtime-event';
 import type {
   BackendKind,
@@ -264,11 +265,7 @@ export interface ResolvedSystemPrompt {
    * turn's user text the first time, and again only when its `revision`
    * (or, without one, its text) changes.
    */
-  contexts?: readonly {
-    readonly name: string;
-    readonly text: string;
-    readonly revision?: string;
-  }[];
+  contexts?: readonly InjectionContext[];
   sourceRevisions: readonly RunCompositionSourceRevision[];
 }
 

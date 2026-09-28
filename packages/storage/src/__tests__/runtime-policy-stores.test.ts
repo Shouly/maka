@@ -72,12 +72,22 @@ describe('runtime policy stores', () => {
       } = createDefaultRuntimePolicy();
       await writeFile(
         join(root, 'runtime-policy.json'),
-        `${JSON.stringify({ schemaVersion: 2, revision: 4, policy: policyV2 })}\n`,
+        `${JSON.stringify({
+          schemaVersion: 2,
+          revision: 4,
+          policy: {
+            ...policyV2,
+            personalization: { displayName: 'Ada', assistantTone: '' },
+            privacy: { incognitoActive: false },
+          },
+        })}\n`,
       );
 
       const snapshot = await stores.runtimePolicy.getSnapshot();
       assert.equal(snapshot.revision, 4);
       assert.deepEqual(snapshot.policy.shell, { preference: 'auto', executable: '' });
+      assert.equal('personalization' in snapshot.policy, false);
+      assert.equal('privacy' in snapshot.policy, false);
       const committed = await stores.runtimePolicy.mutate({
         expectedRevision: 4,
         operation: { kind: 'set_shell', value: snapshot.policy.shell },
@@ -95,9 +105,19 @@ describe('runtime policy stores', () => {
       const { externalAgents: _externalAgents, ...policyV3 } = createDefaultRuntimePolicy();
       await writeFile(
         join(root, 'runtime-policy.json'),
-        JSON.stringify({ schemaVersion: 3, revision: 8, policy: policyV3 }),
+        JSON.stringify({
+          schemaVersion: 3,
+          revision: 8,
+          policy: {
+            ...policyV3,
+            personalization: { displayName: 'Ada', assistantTone: '' },
+            privacy: { incognitoActive: true },
+          },
+        }),
       );
       const before = await stores.runtimePolicy.getSnapshot();
+      assert.equal('personalization' in before.policy, false);
+      assert.equal('privacy' in before.policy, false);
       assert.deepEqual(before.policy.externalAgents, { antigravity: { executable: '' } });
       const value = { antigravity: { executable: '/Applications/ACP/agy_acp_server.par' } };
       const committed = await stores.runtimePolicy.mutate({
@@ -469,7 +489,7 @@ describe('runtime policy stores', () => {
 
   test('commits closed policy mutations, canonicalizes proxy hosts, and preserves connection identity', async () => {
     await withInteractiveOwner(async ({ root, stores }) => {
-      const policy = await stores.runtimePolicy.mutate(personalizationMutation(0));
+      const policy = await stores.runtimePolicy.mutate(workspaceInstructionsMutation(0));
       assert.equal(policy.kind, 'committed');
       assert.deepEqual(
         await stores.runtimePolicy.mutate({
@@ -577,7 +597,7 @@ describe('runtime policy stores', () => {
 
   test('rejects a valid mutation whose combined policy document exceeds its byte limit', async () => {
     await withInteractiveOwner(async ({ root, stores }) => {
-      const committed = await stores.runtimePolicy.mutate(personalizationMutation(0));
+      const committed = await stores.runtimePolicy.mutate(workspaceInstructionsMutation(0));
       assert.equal(committed.kind, 'committed');
       if (committed.kind !== 'committed') return;
       const path = join(root, 'runtime-policy.json');
@@ -3254,15 +3274,6 @@ describe('runtime policy stores', () => {
       assert.equal(ready.secretMaterial.webSearch.secret, 'tavily-execution-secret');
       assert.equal(ready.secretMaterial.networkProxy?.secret, 'proxy-execution-secret');
       assert.equal(ready.networkProxy.host, 'proxy.example');
-
-      const privatePolicy = await stores.runtimePolicy.mutate({
-        expectedRevision: 2,
-        operation: { kind: 'set_privacy', value: { incognitoActive: true } },
-      });
-      assert.equal(privatePolicy.kind, 'committed');
-      assert.deepEqual(await stores.operations.resolveWebSearchExecution(), {
-        kind: 'privacy_mode',
-      });
     });
   });
 
@@ -3643,20 +3654,6 @@ describe('runtime policy stores', () => {
     });
   });
 
-  test('blocks WebFetch while privacy mode is active', async () => {
-    await withInteractiveOwner(async ({ stores }) => {
-      const policy = await stores.runtimePolicy.mutate({
-        expectedRevision: 0,
-        operation: { kind: 'set_privacy', value: { incognitoActive: true } },
-      });
-      assert.equal(policy.kind, 'committed');
-
-      assert.deepEqual(await stores.operations.resolveHostOutboundExecution(), {
-        kind: 'privacy_mode',
-      });
-    });
-  });
-
   test('keeps provider-native WebSearch outside the client search credential resolver', async () => {
     await withInteractiveOwner(async ({ stores }) => {
       const policy = await stores.runtimePolicy.mutate({
@@ -3865,7 +3862,7 @@ describe('runtime policy stores', () => {
       if (!owner) return;
       const stores = await openInteractiveRuntimePolicyStoresForWrite(owner.lease);
 
-      const first = stores.runtimePolicy.mutate(personalizationMutation(0));
+      const first = stores.runtimePolicy.mutate(workspaceInstructionsMutation(0));
       const second = stores.runtimePolicy.mutate({
         expectedRevision: 1,
         operation: {
@@ -3876,8 +3873,8 @@ describe('runtime policy stores', () => {
       const third = stores.runtimePolicy.mutate({
         expectedRevision: 2,
         operation: {
-          kind: 'set_privacy',
-          value: { incognitoActive: true },
+          kind: 'set_web_search',
+          value: { enabled: true, defaultProvider: 'model' },
         },
       });
       const closing = owner.close();
@@ -3896,12 +3893,9 @@ describe('runtime policy stores', () => {
         const reader = await openInteractiveRuntimePolicyStoresForRead(readerHandle.lease);
         const snapshot = await reader.runtimePolicy.getSnapshot();
         assert.equal(snapshot.revision, 3);
-        assert.deepEqual(snapshot.policy.personalization, {
-          displayName: 'Maka',
-          assistantTone: 'concise',
-        });
+        assert.deepEqual(snapshot.policy.workspaceInstructions, { enabled: false });
         assert.deepEqual(snapshot.policy.memory, { enabled: false });
-        assert.deepEqual(snapshot.policy.privacy, { incognitoActive: true });
+        assert.deepEqual(snapshot.policy.webSearch, { enabled: true, defaultProvider: 'model' });
       } finally {
         await readerHandle.close();
       }
@@ -3917,7 +3911,7 @@ describe('runtime policy stores', () => {
       await writeFile(external, original);
       await symlink(external, join(root, 'runtime-policy.json'));
       await assert.rejects(
-        () => stores.runtimePolicy.mutate(personalizationMutation(0)),
+        () => stores.runtimePolicy.mutate(workspaceInstructionsMutation(0)),
         isStoreError('invalid_document'),
       );
       assert.deepEqual(await readFile(external), original);
@@ -3939,7 +3933,7 @@ describe('runtime policy stores', () => {
       const original = Buffer.alloc(256 * 1024 + 1, 0x78);
       await writeFile(path, original);
       await assert.rejects(
-        () => stores.runtimePolicy.mutate(personalizationMutation(0)),
+        () => stores.runtimePolicy.mutate(workspaceInstructionsMutation(0)),
         isStoreError('invalid_document'),
       );
       assert.deepEqual(await readFile(path), original);
@@ -4889,12 +4883,12 @@ function credentialExpectation(status: CredentialStatus): {
   return { credentialId: basis.credentialId, revision: basis.revision };
 }
 
-function personalizationMutation(expectedRevision: number): MutateRuntimePolicyInput {
+function workspaceInstructionsMutation(expectedRevision: number): MutateRuntimePolicyInput {
   return {
     expectedRevision,
     operation: {
-      kind: 'set_personalization',
-      value: { displayName: 'Maka', assistantTone: 'concise' },
+      kind: 'set_workspace_instructions',
+      value: { enabled: false },
     },
   };
 }

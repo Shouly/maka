@@ -33,11 +33,18 @@ import { useMemo, useState } from 'react';
 import { useStore } from 'zustand';
 import { formatCompactTimestamp } from '@maka/core/relative-time';
 import { useUiLocale } from '@maka/ui';
-import { Anthropicon } from '../icons/Anthropicon.js';
 import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../ui/confirm-dialog.js';
 import { Input } from '../ui/input.js';
-import { SettingsRow, SettingsSection } from './settings-row.js';
+import {
+  RowActionsMenu,
+  SettingsEmpty,
+  SettingsTable,
+  SettingsTableCell,
+  SettingsTableHeadCell,
+  SettingsTableRow,
+} from './settings-kit.js';
+import { SettingsSection } from './settings-row.js';
 import { previewSessionRemoval } from '../../bridge/sessions.js';
 import { useProjectContext } from '../../hooks/use-workspace.js';
 import { useSettingsErrorReporter } from '../../hooks/use-settings.js';
@@ -79,79 +86,91 @@ export function ArchivedTasksSettings() {
 
   return (
     <>
-      <SettingsSection
-        title={copy.listAria}
-        action={
+      <SettingsSection title={copy.listAria}>
+        {/* The table toolbar: the search at the left, the count at the right. */}
+        <div className="flex items-center justify-between gap-4 pb-2">
           <Input
             value={query}
             aria-label={copy.searchLabel}
             placeholder={copy.searchLabel}
-            className="w-56"
+            className="w-full max-w-md"
             onChange={(event) => setQuery(event.target.value)}
           />
-        }
-      >
+          <span className="shrink-0 text-sm leading-5 text-text-muted">
+            {copy.count(rows.length)}
+          </span>
+        </div>
         {rows.length === 0 ? (
-          <div className="flex flex-col gap-1 py-6 text-center">
-            <p className="text-sm leading-5 text-text-primary">
-              {query.trim() ? copy.noMatchTitle : copy.emptyTitle}
-            </p>
-            <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
-              {query.trim() ? copy.noMatchBody : copy.emptyBody}
-            </p>
-          </div>
+          <SettingsEmpty
+            title={query.trim() ? copy.noMatchTitle : copy.emptyTitle}
+            body={query.trim() ? copy.noMatchBody : copy.emptyBody}
+          />
         ) : (
-          rows.map((row) => (
-            <SettingsRow
-              key={row.id}
-              title={
-                <span className="flex items-center gap-2">
-                  <Anthropicon name="archive" size={16} className="shrink-0 text-text-muted" />
-                  <span className="truncate">{row.displayName}</span>
-                </span>
-              }
-              description={[
-                row.projectName ?? copy.noProject,
-                row.activityAt > 0
-                  ? formatCompactTimestamp(row.activityAt, Date.now(), locale)
-                  : undefined,
-              ]
-                .filter((part): part is string => part !== undefined)
-                .join(' · ')}
-              control={
-                <span className="flex items-center gap-2">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    disabled={working !== null}
-                    aria-label={copy.restoreTask(row.displayName)}
-                    onClick={() => {
-                      setWorking(row.id);
-                      void sessionsStore
-                        .unarchive(row.id)
-                        .catch((error: unknown) => report(shell.unarchiveFailedTitle, error))
-                        .finally(() => setWorking(null));
-                    }}
-                  >
-                    {copy.restore}
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    disabled={working !== null}
-                    onClick={() => {
-                      void previewSessionRemoval(row.id).then(
-                        (count) => setPendingDelete({ row, count }),
-                        () => setPendingDelete({ row, count: undefined }),
-                      );
-                    }}
-                  >
-                    {copy.delete}
-                  </Button>
-                </span>
-              }
-            />
-          ))
+          <SettingsTable
+            label={copy.listAria}
+            head={
+              <>
+                <SettingsTableHeadCell>{copy.columns.task}</SettingsTableHeadCell>
+                <SettingsTableHeadCell className="w-[24%]">
+                  {copy.columns.project}
+                </SettingsTableHeadCell>
+                <SettingsTableHeadCell className="w-32">
+                  {copy.columns.activity}
+                </SettingsTableHeadCell>
+                <SettingsTableHeadCell className="w-40" srOnly>
+                  {copy.restore}
+                </SettingsTableHeadCell>
+              </>
+            }
+          >
+            {rows.map((row) => (
+              <SettingsTableRow key={row.id}>
+                <SettingsTableCell className="truncate">{row.displayName}</SettingsTableCell>
+                <SettingsTableCell className="truncate text-text-secondary">
+                  {row.projectName ?? copy.noProject}
+                </SettingsTableCell>
+                <SettingsTableCell className="text-text-secondary">
+                  {row.activityAt > 0
+                    ? formatCompactTimestamp(row.activityAt, Date.now(), locale)
+                    : ''}
+                </SettingsTableCell>
+                <SettingsTableCell className="pr-2">
+                  <span className="flex items-center justify-end gap-1">
+                    <Button
+                      variant="secondary"
+                      disabled={working !== null}
+                      aria-label={copy.restoreTask(row.displayName)}
+                      onClick={() => {
+                        setWorking(row.id);
+                        void sessionsStore
+                          .unarchive(row.id)
+                          .catch((error: unknown) => report(shell.unarchiveFailedTitle, error))
+                          .finally(() => setWorking(null));
+                      }}
+                    >
+                      {copy.restore}
+                    </Button>
+                    <RowActionsMenu
+                      label={copy.rowActions(row.displayName)}
+                      actions={[
+                        {
+                          label: copy.delete,
+                          danger: true,
+                          disabled: working !== null,
+                          onSelect: () => {
+                            void previewSessionRemoval(row.id).then(
+                              (count) => setPendingDelete({ row, count }),
+                              () => setPendingDelete({ row, count: undefined }),
+                            );
+                          },
+                        },
+                      ]}
+                    />
+                  </span>
+                </SettingsTableCell>
+              </SettingsTableRow>
+            ))}
+          </SettingsTable>
         )}
       </SettingsSection>
 

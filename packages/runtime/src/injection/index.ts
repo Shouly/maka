@@ -39,6 +39,7 @@ export {
   planTurnInjections,
   renderDateChangedNotice,
   renderDeferredToolsNotice,
+  renderInjectionBlock,
   renderSessionFacts,
   renderTodayLine,
   type InjectionContext,

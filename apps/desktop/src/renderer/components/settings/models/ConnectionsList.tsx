@@ -18,7 +18,7 @@
  */
 
 // The connections this Host can send through, and the model a new task starts
-// on.
+// on — with the thinking level it starts at right under it.
 //
 // The default MODEL and the default CONNECTION are two different facts and get
 // two different controls. A connection can be the default while none of its
@@ -31,23 +31,25 @@ import { modelChoiceValue, parseModelChoiceValue, useUiLocale } from '@maka/ui';
 import type { ProjectedLlmConnection } from '@maka/core/llm-connections';
 import { connectionEnabledModelIds } from '@maka/core/llm-connections';
 import { PROVIDER_REGISTRY } from '@maka/core/provider-registry';
-import { Anthropicon } from '../../icons/Anthropicon.js';
 import { Button } from '../../ui/button.js';
 import { ConfirmDialog } from '../../ui/confirm-dialog.js';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../../ui/dropdown-menu.js';
-import { menuDangerItemClass } from '../../ui/menu-variants.js';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select.js';
 import { Skeleton } from '../../ui/skeleton.js';
 import { statusChipClass, statusChipToneClass } from '../../ui/status-chip.js';
+import { DefaultThinkingRow } from '../host-default-settings.js';
+import {
+  RowActionsMenu,
+  SettingsEmpty,
+  SettingsTable,
+  SettingsTableActionsCell,
+  SettingsTableCell,
+  SettingsTableHeadCell,
+  SettingsTableRow,
+} from '../settings-kit.js';
 import { SettingsRow, SettingsSection } from '../settings-row.js';
 import { ModelCatalogStatusRow } from './ModelCatalogStatusRow.js';
 import { cn } from '../../../lib/cn.js';
-import { ProviderBrandMark } from '../../../lib/ported/provider-brand-marks.js';
+import { ProviderTile } from './provider-tile.js';
 import { providerDisplay } from '../../../lib/ported/provider-display-copy.js';
 import { connectionChipStatus } from '../../../lib/ported/provider-connection-status.js';
 import { connectionsStore } from '../../../store/index.js';
@@ -101,7 +103,7 @@ export function ConnectionsList(props: {
                     .catch((error: unknown) => props.onError(copy.page.defaultModelFailed, error));
                 }}
               >
-                <SelectTrigger aria-label={copy.page.defaultModel} className="w-64">
+                <SelectTrigger aria-label={copy.page.defaultModel} variant="ghost">
                   <SelectValue placeholder={copy.page.defaultModelNone} />
                 </SelectTrigger>
                 <SelectContent>
@@ -121,6 +123,7 @@ export function ConnectionsList(props: {
             )
           }
         />
+        <DefaultThinkingRow host={host} />
         <ModelCatalogStatusRow host={host} onError={props.onError} />
       </SettingsSection>
 
@@ -128,7 +131,7 @@ export function ConnectionsList(props: {
         title={copy.panel.connections}
         description={copy.panel.connectionsHelp}
         action={
-          <Button size="sm" onClick={props.onAddConnection} disabled={!host}>
+          <Button onClick={props.onAddConnection} disabled={!host}>
             {copy.panel.addConnection}
           </Button>
         }
@@ -140,7 +143,6 @@ export function ConnectionsList(props: {
             control={
               <Button
                 variant="secondary"
-                size="sm"
                 disabled={props.loading}
                 onClick={() => void connectionsStore.refresh()}
               >
@@ -158,97 +160,102 @@ export function ConnectionsList(props: {
         )}
 
         {snapshot !== undefined && connections.length === 0 && (
-          <SettingsRow title={copy.panel.empty} description={copy.panel.emptyHelp} control={null} />
+          <SettingsEmpty title={copy.panel.empty} body={copy.panel.emptyHelp} />
         )}
 
-        {connections.map((connection) => {
-          const display = providerDisplay(connection.providerType, locale);
-          const status = connectionChipStatus(connection, locale);
-          const isDefault = snapshot?.defaultConnection === connection.slug;
-          const modelCount = connectionEnabledModelIds(connection).length;
-          return (
-            <SettingsRow
-              key={connection.connectionId}
-              title={
-                <span className="flex items-center gap-2">
-                  <span className="flex size-4 shrink-0 items-center justify-center text-text-secondary [&>img]:size-full [&>svg]:size-full">
-                    <ProviderBrandMark type={connection.providerType} />
-                  </span>
-                  <span className="truncate">{connection.name}</span>
-                  {isDefault && (
-                    <span className={cn(statusChipClass, statusChipToneClass('active'))}>
-                      {copy.panel.default}
+        {connections.length > 0 && (
+          <SettingsTable
+            label={copy.panel.connections}
+            head={
+              <>
+                <SettingsTableHeadCell className="w-[46%]">
+                  {copy.panel.columns.connection}
+                </SettingsTableHeadCell>
+                <SettingsTableHeadCell>{copy.panel.columns.provider}</SettingsTableHeadCell>
+                <SettingsTableHeadCell>{copy.panel.columns.models}</SettingsTableHeadCell>
+                <SettingsTableHeadCell className="w-12" srOnly>
+                  {copy.panel.columns.actions}
+                </SettingsTableHeadCell>
+              </>
+            }
+          >
+            {connections.map((connection) => {
+              const display = providerDisplay(connection.providerType, locale);
+              const status = connectionChipStatus(connection, locale);
+              const isDefault = snapshot?.defaultConnection === connection.slug;
+              const modelCount = connectionEnabledModelIds(connection).length;
+              return (
+                <SettingsTableRow
+                  key={connection.connectionId}
+                  onOpen={() => props.onOpenDetail(connection.connectionId)}
+                  openLabel={copy.page.openDetail(connection.name)}
+                >
+                  <SettingsTableCell>
+                    <span className="flex min-w-0 items-center gap-3">
+                      <ProviderTile type={connection.providerType} />
+                      <span className="min-w-0 truncate font-medium">{connection.name}</span>
+                      {isDefault && (
+                        <span className={cn(statusChipClass, statusChipToneClass('active'))}>
+                          {copy.panel.default}
+                        </span>
+                      )}
+                      {status && (
+                        <span className={cn(statusChipClass, statusChipToneClass(status.tone))}>
+                          {status.label}
+                        </span>
+                      )}
                     </span>
-                  )}
-                  {status && (
-                    <span className={cn(statusChipClass, statusChipToneClass(status.tone))}>
-                      {status.label}
-                    </span>
-                  )}
-                </span>
-              }
-              description={
-                <span className="flex flex-wrap items-center gap-x-2">
-                  <span>{display.name}</span>
-                  <span aria-hidden="true">·</span>
-                  <span>{copy.panel.modelCount(modelCount)}</span>
-                </span>
-              }
-              control={
-                <span className="flex items-center gap-2">
-                  {!isDefault && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      title={copy.panel.setDefaultTitle}
-                      disabled={!host || !connection.enabled}
-                      onClick={() => {
-                        if (!host) return;
-                        void connectionsStore
-                          .setDefault(
-                            { connectionId: connection.connectionId, slug: connection.slug },
-                            host,
-                          )
-                          .catch((error: unknown) =>
-                            props.onError(copy.panel.setDefaultFailed, error),
-                          );
-                      }}
-                    >
-                      {copy.panel.setDefault}
-                    </Button>
-                  )}
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    aria-label={copy.page.openDetail(connection.name)}
-                    onClick={() => props.onOpenDetail(connection.connectionId)}
-                  >
-                    {copy.detail.edit}
-                  </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="iconSm"
-                        aria-label={copy.page.rowMenu(connection.name)}
-                      >
-                        <Anthropicon name="dotsVertical" size={16} />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        className={menuDangerItemClass}
-                        onSelect={() => setPendingDelete(connection)}
-                      >
-                        {copy.detail.delete}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </span>
-              }
-            />
-          );
-        })}
+                  </SettingsTableCell>
+                  <SettingsTableCell className="truncate text-text-secondary">
+                    {display.name}
+                  </SettingsTableCell>
+                  <SettingsTableCell className="text-text-secondary">
+                    {copy.panel.modelCount(modelCount)}
+                  </SettingsTableCell>
+                  <SettingsTableActionsCell>
+                    <RowActionsMenu
+                      label={copy.page.rowMenu(connection.name)}
+                      reveal="hover"
+                      actions={[
+                        {
+                          label: copy.detail.edit,
+                          onSelect: () => props.onOpenDetail(connection.connectionId),
+                        },
+                        ...(isDefault
+                          ? []
+                          : [
+                              {
+                                label: copy.panel.setDefault,
+                                disabled: !host || !connection.enabled,
+                                onSelect: () => {
+                                  if (!host) return;
+                                  void connectionsStore
+                                    .setDefault(
+                                      {
+                                        connectionId: connection.connectionId,
+                                        slug: connection.slug,
+                                      },
+                                      host,
+                                    )
+                                    .catch((error: unknown) =>
+                                      props.onError(copy.panel.setDefaultFailed, error),
+                                    );
+                                },
+                              },
+                            ]),
+                        {
+                          label: copy.detail.delete,
+                          danger: true,
+                          onSelect: () => setPendingDelete(connection),
+                        },
+                      ]}
+                    />
+                  </SettingsTableActionsCell>
+                </SettingsTableRow>
+              );
+            })}
+          </SettingsTable>
+        )}
       </SettingsSection>
 
       <ConfirmDialog

@@ -52,9 +52,7 @@ export type SearchErrorReason =
   | 'aborted'
   | 'needs_human_browser'
   | 'provider_error'
-  | 'parse_error'
-  // Malformed privacy state fails closed to the same user-visible reason.
-  | 'incognito_active';
+  | 'parse_error';
 
 export type SearchSourceSnapshot =
   | { kind: 'thread'; provider: 'local'; enabled: true }

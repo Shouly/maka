@@ -22,6 +22,7 @@ import { stat } from 'node:fs/promises';
 import type { IpcMain } from 'electron';
 import { AttachmentIngestBlockedError, MAX_ATTACHMENT_COUNT } from '@maka/core/attachments';
 import type { CreateSessionRequestInput } from '@maka/core/runtime-inputs';
+import type { SessionUserContext } from '@maka/core/session';
 import {
   RuntimeHostOperationError,
   RuntimeHostRequestInterruptedError,
@@ -578,6 +579,8 @@ export function registerDesktopSessionLocalIpc(deps: {
     input: CreateSessionRequestInput,
   ): Promise<WorkspaceTarget>;
   changed(scope: DesktopTargetScope, sessionId: string): void;
+  /** Who a new Session works for — the signed-in person — or nothing when no one is. */
+  userContext(): Promise<SessionUserContext | undefined>;
 }): void {
   const { ipcMain, service } = deps;
   ipcMain.handle('session-local:catalog', () => service.catalog());
@@ -613,7 +616,10 @@ export function registerDesktopSessionLocalIpc(deps: {
         typeof input.projectId === 'string'
           ? { kind: 'project' as const, projectId: input.projectId }
           : await deps.resolveWorkspace(target, input);
-      const creation = { ...options, workspace };
+      // Captured once, here: the outbox replays this exact request, and the
+      // Session keeps the snapshot however the profile changes afterwards.
+      const userContext = await deps.userContext();
+      const creation = { ...options, ...(userContext ? { userContext } : {}), workspace };
       const summary: DesktopSessionSummaryInput = {
         id: creation.sessionId,
         revision: 0,

@@ -26,6 +26,7 @@ import type {
   SessionBlockedReason,
   SessionStatus,
   SessionToolProfile,
+  SessionUserContext,
   SubagentSessionParent,
   SubagentSessionRuntime,
   SubagentSessionSpawn,
@@ -70,6 +71,8 @@ export interface CreateSessionInput {
   thinkingLevel?: ThinkingLevel;
   /** Immutable versioned prompt/tool contract for this Session. */
   toolProfile?: SessionToolProfile;
+  /** Immutable: who the Session works for, captured when it is created. */
+  userContext?: SessionUserContext;
   /** Internal creation-time choice; not a per-task UI control. */
   toolMode?: ToolMode;
   permissionMode: PermissionMode;
@@ -105,7 +108,7 @@ export interface CreateSessionInput {
  * type-checks against `bridge-contract.d.ts` alone, so a field added on one
  * side and not the other is a type error nowhere.
  */
-export type CreateSessionRequestInput = Partial<CreateSessionInput> & {
+export type CreateSessionRequestInput = Partial<Omit<CreateSessionInput, 'userContext'>> & {
   mode?: SessionStartMode;
 };
 

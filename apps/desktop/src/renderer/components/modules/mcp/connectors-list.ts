@@ -39,7 +39,7 @@ import { formatCommandLine } from '../../../lib/ported/mcp-server-command-line.j
 import type { McpCopy } from '../../../locales/mcp-copy.js';
 import type { ModulesCopy } from '../../../locales/modules-copy.js';
 
-/** Claude's Connectors page: All · Connected · Not connected. */
+/** The Connectors page's filters: All · Connected · Not connected. */
 export type ConnectorFilter = 'all' | 'connected' | 'not-connected';
 
 export interface ConnectorRow {

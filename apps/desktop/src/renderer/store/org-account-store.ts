@@ -33,6 +33,7 @@ import { createStore } from 'zustand/vanilla';
 import * as api from '../bridge/org-account.js';
 import type {
   OrgAccountSetServerResult,
+  OrgAccountProfileUpdate,
   OrgAccountState,
   OrgIdentityProvider,
 } from '../bridge/org-account.js';
@@ -46,6 +47,7 @@ export type OrgAccountBridge = Pick<
   | 'refreshOrgAccount'
   | 'cancelOrgAccountSignIn'
   | 'signOutOfOrgAccount'
+  | 'updateOrgAccountProfile'
 >;
 
 export type OrgAccountAction = 'signIn' | 'cancel' | 'signOut' | 'refresh';
@@ -152,6 +154,10 @@ export function createOrgAccountStore(bridge: OrgAccountBridge = api) {
       }),
     signOut: () => run('signOut', () => bridge.signOutOfOrgAccount()),
     refresh: () => run('refresh', () => bridge.refreshOrgAccount()),
+    /** The person's own name or avatar; rejects for its caller, like the actions above. */
+    async updateProfile(update: OrgAccountProfileUpdate): Promise<void> {
+      apply(await bridge.updateOrgAccountProfile(update));
+    },
     async setServerUrl(url: string): Promise<OrgAccountSetServerResult> {
       const result = await bridge.setOrgAccountServerUrl(url);
       if (result.ok) apply(result.state);

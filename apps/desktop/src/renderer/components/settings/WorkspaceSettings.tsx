@@ -17,7 +17,9 @@
  * under the License.
  */
 
-// The projects on the selected Runtime Host, and the Hosts themselves.
+// The projects on the selected Runtime Host, and the Hosts themselves — and,
+// last, whether each project's own instruction files are read
+// (`host-default-settings.tsx`).
 //
 // The catalog is per-Host, and its CAPABILITIES are too: a Host that owns its
 // own filesystem cannot show a client path or open a folder here, and the
@@ -40,8 +42,19 @@ import { Skeleton } from '../ui/skeleton.js';
 import { statusChipClass, statusChipToneClass } from '../ui/status-chip.js';
 import { cn } from '../../lib/cn.js';
 import { DirectoryBrowserDialog } from './DirectoryBrowserDialog.js';
+import { WorkspaceInstructionsSection } from './host-default-settings.js';
 import { RuntimeHostProfilesSection } from './RuntimeHostProfilesSection.js';
-import { SettingsRow, SettingsSection, settingsFieldWidthClass } from './settings-row.js';
+import {
+  RowActionsMenu,
+  SettingsModal,
+  SettingsModalField,
+  SettingsTable,
+  SettingsTableActionsCell,
+  SettingsTableCell,
+  SettingsTableRow,
+  type RowAction,
+} from './settings-kit.js';
+import { SettingsRow, SettingsSection } from './settings-row.js';
 import { getAppInfo } from '../../bridge/app.js';
 import {
   addProject,
@@ -103,6 +116,13 @@ export function WorkspaceSettings(props: { host: DesktopRuntimeHostRef | undefin
     [reload, report],
   );
 
+  const commitRename = () => {
+    const name = renameValue.trim();
+    if (!renaming || !name || !host) return;
+    setRenaming(null);
+    run(renameProject(renaming, name, host), copy.renameFailed);
+  };
+
   const capabilities = snapshot.data?.capabilities;
   const projects = snapshot.data?.projects ?? [];
   const defaultProjectId = client.data?.projects.defaultProjectId;
@@ -159,184 +179,160 @@ export function WorkspaceSettings(props: { host: DesktopRuntimeHostRef | undefin
             </p>
           </div>
         ) : (
-          projects.map((project) => {
-            const archived = project.archivedAt !== undefined;
-            const isDefault =
-              capabilities?.setLocalDefault === true && project.id === defaultProjectId;
-            const path =
-              capabilities?.viewClientPath && project.preferredPath
-                ? projectPathDisplay(project.preferredPath, { homePath })
-                : undefined;
-            return (
-              <SettingsRow
-                key={project.id}
-                title={
-                  renaming === project.id ? (
-                    <span className="flex items-center gap-2">
-                      <Input
-                        autoFocus
-                        aria-label={copy.renameLabel}
-                        className={settingsFieldWidthClass}
-                        maxLength={80}
-                        value={renameValue}
-                        onChange={(event) => setRenameValue(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.nativeEvent.isComposing) return;
-                          if (event.key === 'Escape') setRenaming(null);
-                          if (event.key === 'Enter' && renameValue.trim() && host) {
-                            setRenaming(null);
-                            run(
-                              renameProject(project.id, renameValue.trim(), host),
-                              copy.renameFailed,
-                            );
-                          }
-                        }}
+          <SettingsTable label={copy.section}>
+            {projects.map((project) => {
+              const archived = project.archivedAt !== undefined;
+              const isDefault =
+                capabilities?.setLocalDefault === true && project.id === defaultProjectId;
+              const path =
+                capabilities?.viewClientPath && project.preferredPath
+                  ? projectPathDisplay(project.preferredPath, { homePath })
+                  : undefined;
+              const actions: RowAction[] = [];
+              if (capabilities?.setLocalDefault === true && !archived)
+                actions.push({
+                  label: isDefault ? copy.clearDefault : copy.setDefault,
+                  disabled: busy || !project.available,
+                  onSelect: () =>
+                    run(
+                      settingsStore.updateClient({
+                        projects: { defaultProjectId: isDefault ? undefined : project.id },
+                      }),
+                      copy.setDefaultFailed,
+                    ),
+                });
+              actions.push({
+                label: copy.rename,
+                disabled: busy,
+                onSelect: () => {
+                  setRenaming(project.id);
+                  setRenameValue(project.name);
+                },
+              });
+              if (capabilities?.viewClientPath === true)
+                actions.push({
+                  label: copy.openFolder,
+                  disabled: busy || !project.available || !host,
+                  onSelect: () => {
+                    if (!host) return;
+                    run(
+                      revealProject(project.id, host).then((result) => {
+                        if (result.ok) return;
+                        // A reveal that could not open says which of the
+                        // Host's five reasons it was, not "failed".
+                        throw new Error(paths.openPathFailures[result.reason]);
+                      }),
+                      copy.openFolderFailed,
+                    );
+                  },
+                });
+              if (!archived && !project.available)
+                actions.push({
+                  label: own.relinkProject,
+                  disabled: busy || !host,
+                  onSelect: () => {
+                    if (!host) return;
+                    run(relinkProject(project.id, host), copy.actionFailed);
+                  },
+                });
+              if (archived)
+                actions.push({
+                  label: own.restoreProject,
+                  disabled: busy || !host,
+                  onSelect: () => {
+                    if (!host) return;
+                    run(restoreProject(project.id, host), copy.actionFailed);
+                  },
+                });
+              else
+                actions.push({
+                  label: copy.remove,
+                  danger: true,
+                  disabled: busy,
+                  onSelect: () => setPendingRemove(project),
+                });
+              return (
+                <SettingsTableRow key={project.id}>
+                  <SettingsTableCell>
+                    <span className="flex min-w-0 items-start gap-3">
+                      <Anthropicon
+                        name="folder"
+                        size={20}
+                        className="mt-0.5 shrink-0 text-text-secondary"
                       />
-                      <Button
-                        size="sm"
-                        disabled={!renameValue.trim()}
-                        onClick={() => {
-                          if (!host) return;
-                          setRenaming(null);
-                          run(
-                            renameProject(project.id, renameValue.trim(), host),
-                            copy.renameFailed,
-                          );
-                        }}
-                      >
-                        {copy.save}
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setRenaming(null)}>
-                        {copy.cancel}
-                      </Button>
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-2">
-                      <Anthropicon name="folder" size={16} className="shrink-0 text-text-muted" />
-                      <span className="truncate">{project.name}</span>
-                      {isDefault && (
-                        <span className={cn(statusChipClass, statusChipToneClass('active'))}>
-                          {copy.defaultBadge}
+                      <span className="flex min-w-0 flex-col">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="truncate">{project.name}</span>
+                          {isDefault && (
+                            <span className={cn(statusChipClass, statusChipToneClass('active'))}>
+                              {copy.defaultBadge}
+                            </span>
+                          )}
+                          {archived && (
+                            <span className={cn(statusChipClass, statusChipToneClass('neutral'))}>
+                              {own.archivedBadge}
+                            </span>
+                          )}
+                          {!project.available && (
+                            <span className={cn(statusChipClass, statusChipToneClass('error'))}>
+                              {copy.unavailable}
+                            </span>
+                          )}
                         </span>
-                      )}
-                      {archived && (
-                        <span className={cn(statusChipClass, statusChipToneClass('neutral'))}>
-                          {own.archivedBadge}
+                        <span
+                          data-mono="true"
+                          title={path?.title}
+                          className="truncate text-[0.8125rem] leading-[1.0625rem] text-text-muted"
+                        >
+                          {path?.text ?? copy.unavailable}
                         </span>
-                      )}
-                      {!project.available && (
-                        <span className={cn(statusChipClass, statusChipToneClass('error'))}>
-                          {copy.unavailable}
-                        </span>
-                      )}
+                      </span>
                     </span>
-                  )
-                }
-                description={
-                  renaming === project.id ? undefined : (
-                    <span data-mono="true" title={path?.title} className="break-all">
-                      {path?.text ?? copy.unavailable}
-                    </span>
-                  )
-                }
-                control={
-                  <span className="flex flex-wrap items-center justify-end gap-2">
-                    {capabilities?.setLocalDefault === true && !archived && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        disabled={busy || !project.available}
-                        title={
-                          project.available ? copy.setDefaultTitle : copy.setDefaultDisabledTitle
-                        }
-                        onClick={() =>
-                          run(
-                            settingsStore.updateClient({
-                              projects: {
-                                defaultProjectId: isDefault ? undefined : project.id,
-                              },
-                            }),
-                            copy.setDefaultFailed,
-                          )
-                        }
-                      >
-                        {isDefault ? copy.clearDefault : copy.setDefault}
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => {
-                        setRenaming(project.id);
-                        setRenameValue(project.name);
-                      }}
-                    >
-                      {copy.rename}
-                    </Button>
-                    {capabilities?.viewClientPath === true && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={busy || !project.available || !host}
-                        onClick={() => {
-                          if (!host) return;
-                          run(
-                            revealProject(project.id, host).then((result) => {
-                              if (result.ok) return;
-                              // A reveal that could not open says which of the
-                              // Host's five reasons it was, not "failed".
-                              throw new Error(paths.openPathFailures[result.reason]);
-                            }),
-                            copy.openFolderFailed,
-                          );
-                        }}
-                      >
-                        {copy.openFolder}
-                      </Button>
-                    )}
-                    {!archived && !project.available && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={busy || !host}
-                        onClick={() => {
-                          if (!host) return;
-                          run(relinkProject(project.id, host), copy.actionFailed);
-                        }}
-                      >
-                        {own.relinkProject}
-                      </Button>
-                    )}
-                    {archived ? (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        disabled={busy || !host}
-                        onClick={() => {
-                          if (!host) return;
-                          run(restoreProject(project.id, host), copy.actionFailed);
-                        }}
-                      >
-                        {own.restoreProject}
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        disabled={busy}
-                        onClick={() => setPendingRemove(project)}
-                      >
-                        {copy.remove}
-                      </Button>
-                    )}
-                  </span>
-                }
-              />
-            );
-          })
+                  </SettingsTableCell>
+                  <SettingsTableActionsCell>
+                    <RowActionsMenu label={own.projectActions(project.name)} actions={actions} />
+                  </SettingsTableActionsCell>
+                </SettingsTableRow>
+              );
+            })}
+          </SettingsTable>
         )}
       </SettingsSection>
+
+      <WorkspaceInstructionsSection host={host} />
+
+      <SettingsModal
+        open={renaming !== null}
+        onOpenChange={(open) => {
+          if (!open) setRenaming(null);
+        }}
+        size="sm"
+        title={copy.rename}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setRenaming(null)}>
+              {copy.cancel}
+            </Button>
+            <Button disabled={!renameValue.trim() || !host} onClick={commitRename}>
+              {copy.save}
+            </Button>
+          </>
+        }
+      >
+        <SettingsModalField label={copy.renameLabel} htmlFor="project-rename">
+          <Input
+            id="project-rename"
+            autoFocus
+            maxLength={80}
+            value={renameValue}
+            onChange={(event) => setRenameValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return;
+              if (event.key === 'Enter') commitRename();
+            }}
+          />
+        </SettingsModalField>
+      </SettingsModal>
 
       <DirectoryBrowserDialog
         open={browser}

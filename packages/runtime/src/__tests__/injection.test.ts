@@ -245,6 +245,31 @@ describe('ahead of the turn: recorded once, again only on change', () => {
     );
   });
 
+  test('a bare context is recorded bare and read as written, outside the envelope', () => {
+    const preferences = {
+      name: 'user_preferences',
+      text: '<userPreferences>Be brief.</userPreferences>',
+      bare: true,
+    };
+    const [planned] = session.planTurn([], facts({ contexts: [preferences, snapshot] }));
+    assert.deepEqual(planned, {
+      name: 'user_preferences',
+      text: preferences.text,
+      data: { revision: planned?.data?.revision, bare: true },
+    });
+    assert.equal(session.renderBlock(planned!), '<userPreferences>Be brief.</userPreferences>');
+    // Being bare is how it is said, not what: it does not make it say itself again.
+    const ledger = session
+      .planTurn([], facts({ contexts: [preferences] }))
+      .map((p) => event('turn-1', p));
+    assert.deepEqual(
+      session
+        .planTurn(ledger, facts({ contexts: [preferences] }))
+        .filter((p) => p.name === 'user_preferences'),
+      [],
+    );
+  });
+
   test('the ledger is read for the last word under each name', () => {
     const ledger = [
       event('turn-1', { name: 'date', text: 'x', data: { date: '2026-09-17' } }),

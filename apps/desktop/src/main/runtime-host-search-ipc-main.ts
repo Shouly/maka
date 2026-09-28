@@ -51,10 +51,6 @@ export function registerRuntimeHostSearchIpc(
             await session.close();
           }
         }, null),
-      getPrivacyContext: async () => ({
-        incognitoActive: (await deps.client.queryRuntimePolicy()).policy.privacy
-          .incognitoActive,
-      }),
     });
     return result.ok ? result.results.map(projectDesktopSearchResult) : result;
   });

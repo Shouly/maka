@@ -39,6 +39,8 @@ export type SubagentSettingsCopy = {
   row: {
     enabled: string;
     configure(name: string): string;
+    edit: string;
+    actions(name: string): string;
     fallbackDescription: string;
   };
   status: {
@@ -48,15 +50,12 @@ export type SubagentSettingsCopy = {
     modelDisabled: string;
   };
   editor: {
-    backToList: string;
     createSubtitle: string;
     editSubtitle: string;
     groupPurpose: string;
     groupPurposeHelp: string;
     groupRoute: string;
     groupRouteHelp: string;
-    dangerZone: string;
-    dangerZoneHelp: string;
     delete: string;
     enabled: string;
     enabledDescription: string;
@@ -110,6 +109,8 @@ const SETTINGS_SUBAGENTS_COPY_BY_LOCALE = {
     },
     row: {
       enabled: '启用',
+      edit: '编辑',
+      actions: (name) => `${name} 的更多操作`,
       configure: (name) => `配置“${name}”`,
       fallbackDescription: '尚未填写适用场景',
     },
@@ -120,15 +121,12 @@ const SETTINGS_SUBAGENTS_COPY_BY_LOCALE = {
       modelDisabled: '模型未启用',
     },
     editor: {
-      backToList: '返回子 Agent 列表',
       createSubtitle: '创建一个可由主 Agent 自动选择的模型配置。',
       editSubtitle: '修改适用场景、能力边界和模型路由。',
       groupPurpose: '用途',
       groupPurposeHelp: '主 Agent 主要根据这里的名称和适用场景挑选配置。',
       groupRoute: '能力与模型',
       groupRouteHelp: '固定这个子 Agent 能做什么，以及它运行在哪个模型上。',
-      dangerZone: '删除子 Agent',
-      dangerZoneHelp: '此操作不可撤销。',
       delete: '删除',
       enabled: '启用',
       enabledDescription: '关闭后配置仍会保留，但主 Agent 暂时不会选择它。',
@@ -201,6 +199,8 @@ const SETTINGS_SUBAGENTS_COPY_BY_LOCALE = {
     },
     row: {
       enabled: '啟用',
+      edit: '編輯',
+      actions: (name) => `${name} 的更多操作`,
       configure: (name) => `設定“${name}”`,
       fallbackDescription: '尚未填寫適用場景',
     },
@@ -211,15 +211,12 @@ const SETTINGS_SUBAGENTS_COPY_BY_LOCALE = {
       modelDisabled: '模型未啟用',
     },
     editor: {
-      backToList: '返回子 Agent 列表',
       createSubtitle: '建立一個可由主 Agent 自動選擇的模型設定。',
       editSubtitle: '修改適用場景、能力邊界和模型路由。',
       groupPurpose: '用途',
       groupPurposeHelp: '主 Agent 主要根據這裡的名稱和適用場景挑選設定。',
       groupRoute: '能力與模型',
       groupRouteHelp: '固定這個子 Agent 能做什麼，以及它執行在哪個模型上。',
-      dangerZone: '刪除子 Agent',
-      dangerZoneHelp: '此操作不可撤銷。',
       delete: '刪除',
       enabled: '啟用',
       enabledDescription: '關閉後設定仍會保留，但主 Agent 暫時不會選擇它。',
@@ -294,6 +291,8 @@ const SETTINGS_SUBAGENTS_COPY_BY_LOCALE = {
     },
     row: {
       enabled: 'Enabled',
+      edit: 'Edit',
+      actions: (name) => `More actions for ${name}`,
       configure: (name) => `Configure “${name}”`,
       fallbackDescription: 'No usage guidance yet',
     },
@@ -304,7 +303,6 @@ const SETTINGS_SUBAGENTS_COPY_BY_LOCALE = {
       modelDisabled: 'Model not enabled',
     },
     editor: {
-      backToList: 'Back to subagents',
       createSubtitle: 'Create a model preset that the main agent can select automatically.',
       editSubtitle: 'Change its usage guidance, capability boundary, and model route.',
       groupPurpose: 'Purpose',
@@ -312,8 +310,6 @@ const SETTINGS_SUBAGENTS_COPY_BY_LOCALE = {
         'The main agent selects a preset primarily from the name and guidance here.',
       groupRoute: 'Capability and model',
       groupRouteHelp: 'Fix what this subagent may do, and which model it runs on.',
-      dangerZone: 'Remove subagent',
-      dangerZoneHelp: 'This cannot be undone.',
       delete: 'Remove',
       enabled: 'Enabled',
       enabledDescription:

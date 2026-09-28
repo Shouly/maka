@@ -49,7 +49,7 @@
 //
 // One departure from relx, deliberate: a reader who scrolls back down to the
 // tail re-engages the authority's pin, and the tail then follows the stream
-// again, the way claude.ai behaves. The floor stays under that pin. Right after
+// again, as the reference does. The floor stays under that pin. Right after
 // a send the viewport already sits at the floor's bottom, so any downward
 // input — a trackpad brush — re-engages the pin there; dropping the floor with
 // it shrank the page under the reader and let the question fall by up to a

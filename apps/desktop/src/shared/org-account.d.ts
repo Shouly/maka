@@ -41,10 +41,31 @@ export type OrgAccountError =
   | 'unknown';
 
 export interface OrgAccountProfile {
+  /** The name the person set for themselves, else the identity provider's. */
   readonly name: string;
   readonly email: string;
   readonly avatarUrl?: string;
+  /** The seed of the generated avatar the person picked; absent means their initials. */
+  readonly avatarSeed?: string;
+  /** What the person asks the assistant to call them. */
+  readonly nickname?: string;
+  /** Their personal preferences for the assistant, handed to each new conversation. */
+  readonly preferences?: string;
   readonly orgRole: 'member' | 'org_admin';
+}
+
+/**
+ * A change to the person's own profile, kept on the company server. Absent
+ * fields are left alone; an empty name goes back to the identity provider's
+ * and a null seed back to initials.
+ */
+export interface OrgAccountProfileUpdate {
+  readonly name?: string;
+  readonly avatarSeed?: string | null;
+  /** An empty string clears it. */
+  readonly nickname?: string;
+  /** An empty string clears them. */
+  readonly preferences?: string;
 }
 
 /** One sign-in button: an identity provider the company server offers. */

@@ -30,13 +30,16 @@
 // connection and an in-flight task, and the default has no successor until
 // someone names one.
 //
+// Registering a remote Host is a form, so it opens as a dialog over Settings
+// rather than unfolding under the list; removing one is in its row's ⋯ menu.
+//
 // SCOPE: this form registers a remote Host that is ALREADY RUNNING. The guided
 // SSH and WSL setups (`runtimeHostOnboarding`), the service management dialog
 // (install / update / credentials / directory roots) and the peer mesh are
 // deferred (plan §3), and the UI says so rather than offering a button that
 // opens nothing.
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useUiLocale } from '@maka/ui';
 import { Button } from '../ui/button.js';
 import { Input } from '../ui/input.js';
@@ -46,7 +49,8 @@ import { Skeleton } from '../ui/skeleton.js';
 import { statusChipClass, statusChipToneClass } from '../ui/status-chip.js';
 import { Switch } from '../ui/switch.js';
 import { cn } from '../../lib/cn.js';
-import { SettingsRow, SettingsSection, settingsFieldWidthClass } from './settings-row.js';
+import { RowActionsMenu, SettingsModal, SettingsModalField } from './settings-kit.js';
+import { SettingsRow, SettingsSection } from './settings-row.js';
 import {
   addRuntimeHostProfile,
   getRuntimeHostProfiles,
@@ -141,14 +145,13 @@ export function RuntimeHostProfilesSection() {
       action={
         <Button
           variant="secondary"
-          size="sm"
           disabled={busy}
           onClick={() => {
             setDraft(createDraft());
-            setAdding((open) => !open);
+            setAdding(true);
           }}
         >
-          {adding ? copy.cancel : own.addRemote}
+          {own.addRemote}
         </Button>
       }
     >
@@ -164,7 +167,7 @@ export function RuntimeHostProfilesSection() {
                 run(setDefaultRuntimeHostProfile(profileId), copy.selectFailed)
               }
             >
-              <SelectTrigger aria-label={copy.selected} className={settingsFieldWidthClass}>
+              <SelectTrigger aria-label={copy.selected} variant="ghost">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -228,16 +231,20 @@ export function RuntimeHostProfilesSection() {
                   }
                 />
                 {!local && (
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    disabled={busy || entry.enabled || entry.isDefault}
-                    onClick={() =>
-                      run(removeRuntimeHostProfile(entry.profile.id), copy.removeFailed)
-                    }
-                  >
-                    {own.removeProfile}
-                  </Button>
+                  <RowActionsMenu
+                    label={own.profileActions(entry.profile.name)}
+                    actions={[
+                      {
+                        // Removal needs the Host switched off first: an enabled
+                        // one may hold an open connection and a running task.
+                        label: own.removeProfile,
+                        danger: true,
+                        disabled: busy || entry.enabled || entry.isDefault,
+                        onSelect: () =>
+                          run(removeRuntimeHostProfile(entry.profile.id), copy.removeFailed),
+                      },
+                    ]}
+                  />
                 )}
               </span>
             }
@@ -245,136 +252,149 @@ export function RuntimeHostProfilesSection() {
         );
       })}
 
-      {adding && (
-        <SettingsRow layout="stacked" title={own.addRemote} description={own.addRemoteHelp}>
-          <div className="flex flex-col gap-3">
-            <Field label={copy.name} help={copy.nameHelp}>
-              <Input
-                aria-label={copy.name}
-                className={settingsFieldWidthClass}
-                value={draft.name}
-                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-              />
-            </Field>
-            <Field label={copy.transport} help={copy.transportHelp}>
-              <SegmentedControl
-                size="sm"
-                ariaLabel={copy.transport}
-                value={draft.transportKind}
-                onChange={(transportKind: TransportKind) => setDraft({ ...draft, transportKind })}
-                options={[
-                  { value: 'tls', label: copy.tls },
-                  { value: 'plaintext', label: copy.plaintext },
-                ]}
-              />
-            </Field>
-            <Field
-              label={draft.transportKind === 'tls' ? copy.url : copy.plaintextUrl}
-              help={draft.transportKind === 'tls' ? copy.urlHelp : copy.plaintextUrlHelp}
-            >
-              <Input
-                aria-label={draft.transportKind === 'tls' ? copy.url : copy.plaintextUrl}
-                className="w-72"
-                placeholder={
-                  draft.transportKind === 'tls' ? 'wss://host.example' : 'ws://host.example'
-                }
-                value={draft.url}
-                onChange={(event) => setDraft({ ...draft, url: event.target.value })}
-              />
-            </Field>
-            {draft.transportKind === 'plaintext' && (
-              <>
-                <Field
-                  label={copy.plaintextAcknowledgement}
-                  help={copy.plaintextAcknowledgementHelp}
-                >
-                  <Switch
-                    aria-label={copy.plaintextAcknowledgement}
-                    checked={draft.acknowledged}
-                    onCheckedChange={(acknowledged) => setDraft({ ...draft, acknowledged })}
-                  />
-                </Field>
-                <p className="text-[0.8125rem] leading-[1.125rem] text-warning" role="status">
-                  {copy.plaintextWarning}
-                </p>
-              </>
-            )}
-            <Field label={copy.rootId} help={copy.rootIdHelp}>
-              <Input
-                aria-label={copy.rootId}
-                className={settingsFieldWidthClass}
-                value={draft.rootId}
-                onChange={(event) => setDraft({ ...draft, rootId: event.target.value })}
-              />
-            </Field>
-            <Field label={copy.credential} help={copy.credentialHelp}>
-              <Input
-                type="password"
-                aria-label={copy.credential}
-                className={settingsFieldWidthClass}
-                value={draft.credential}
-                onChange={(event) => setDraft({ ...draft, credential: event.target.value })}
-              />
-            </Field>
-            <p className="text-[0.8125rem] leading-[1.125rem] text-text-muted">
-              {own.wizardsDeferred}
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                disabled={busy || !draftComplete(draft)}
-                onClick={() => {
-                  setBusy(true);
-                  void addRuntimeHostProfile({
-                    profile: {
-                      id: draft.id,
-                      name: draft.name.trim(),
-                      kind: 'remote',
-                      rootId: draft.rootId.trim(),
-                      transport:
-                        draft.transportKind === 'tls'
-                          ? { kind: 'tls', url: draft.url.trim() }
-                          : {
-                              kind: 'plaintext',
-                              url: draft.url.trim(),
-                              acknowledgement: 'plaintext-bearer-v1',
-                            },
-                    },
-                    credential: draft.credential,
+      <SettingsModal
+        open={adding}
+        onOpenChange={(open) => {
+          if (!busy) setAdding(open);
+        }}
+        title={own.addRemote}
+        description={own.addRemoteHelp}
+        data-maka-contract="runtime-host-add"
+        footer={
+          <>
+            <Button variant="secondary" disabled={busy} onClick={() => setAdding(false)}>
+              {copy.cancel}
+            </Button>
+            <Button
+              disabled={busy || !draftComplete(draft)}
+              onClick={() => {
+                setBusy(true);
+                void addRuntimeHostProfile({
+                  profile: {
+                    id: draft.id,
+                    name: draft.name.trim(),
+                    kind: 'remote',
+                    rootId: draft.rootId.trim(),
+                    transport:
+                      draft.transportKind === 'tls'
+                        ? { kind: 'tls', url: draft.url.trim() }
+                        : {
+                            kind: 'plaintext',
+                            url: draft.url.trim(),
+                            acknowledgement: 'plaintext-bearer-v1',
+                          },
+                  },
+                  credential: draft.credential,
+                })
+                  .then((result) => {
+                    setSnapshot(result.snapshot);
+                    // An unreachable Host is still registered; the dialog stays
+                    // open so the address can be corrected in place.
+                    if (result.kind === 'unavailable')
+                      report(copy.selectFailed, new Error(result.message));
+                    else {
+                      setAdding(false);
+                      setDraft(createDraft());
+                    }
                   })
-                    .then((result) => {
-                      setSnapshot(result.snapshot);
-                      // An unreachable Host is still registered; the form stays
-                      // open so the address can be corrected in place.
-                      if (result.kind === 'unavailable')
-                        report(copy.selectFailed, new Error(result.message));
-                      else {
-                        setAdding(false);
-                        setDraft(createDraft());
-                      }
-                    })
-                    .catch((error: unknown) => report(copy.saveFailed, error))
-                    .finally(() => setBusy(false));
-                }}
-              >
-                {copy.saveAndEnable}
-              </Button>
-              <Button variant="ghost" onClick={() => setAdding(false)}>
-                {copy.cancel}
-              </Button>
-            </div>
+                  .catch((error: unknown) => report(copy.saveFailed, error))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              {copy.saveAndEnable}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          <SettingsModalField label={copy.name} htmlFor="runtime-host-name" hint={copy.nameHelp}>
+            <Input
+              id="runtime-host-name"
+              value={draft.name}
+              onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+            />
+          </SettingsModalField>
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-medium leading-[0.875rem] text-text-primary">
+              {copy.transport}
+            </span>
+            <SegmentedControl
+              ariaLabel={copy.transport}
+              value={draft.transportKind}
+              onChange={(transportKind: TransportKind) => setDraft({ ...draft, transportKind })}
+              options={[
+                { value: 'tls', label: copy.tls },
+                { value: 'plaintext', label: copy.plaintext },
+              ]}
+            />
+            <p className="text-[0.8125rem] leading-[1.0625rem] text-text-muted">
+              {copy.transportHelp}
+            </p>
           </div>
-        </SettingsRow>
-      )}
+          <SettingsModalField
+            label={draft.transportKind === 'tls' ? copy.url : copy.plaintextUrl}
+            htmlFor="runtime-host-url"
+            hint={draft.transportKind === 'tls' ? copy.urlHelp : copy.plaintextUrlHelp}
+          >
+            <Input
+              id="runtime-host-url"
+              placeholder={
+                draft.transportKind === 'tls' ? 'wss://host.example' : 'ws://host.example'
+              }
+              value={draft.url}
+              onChange={(event) => setDraft({ ...draft, url: event.target.value })}
+            />
+          </SettingsModalField>
+          {draft.transportKind === 'plaintext' && (
+            <div className="flex flex-col gap-3 rounded-xl bg-alpha-1 px-4 py-3 shadow-[inset_0_0_0_1px_var(--alpha-2)]">
+              <p className="text-sm leading-5 text-warning" role="status">
+                {copy.plaintextWarning}
+              </p>
+              <label className="flex cursor-pointer items-start justify-between gap-4">
+                <span className="flex flex-col gap-0.5">
+                  <span className="text-sm leading-5 text-text-primary">
+                    {copy.plaintextAcknowledgement}
+                  </span>
+                  <span className="text-[0.8125rem] leading-[1.0625rem] text-text-muted">
+                    {copy.plaintextAcknowledgementHelp}
+                  </span>
+                </span>
+                <Switch
+                  aria-label={copy.plaintextAcknowledgement}
+                  checked={draft.acknowledged}
+                  onCheckedChange={(acknowledged) => setDraft({ ...draft, acknowledged })}
+                />
+              </label>
+            </div>
+          )}
+          <SettingsModalField
+            label={copy.rootId}
+            htmlFor="runtime-host-root"
+            hint={copy.rootIdHelp}
+          >
+            <Input
+              id="runtime-host-root"
+              value={draft.rootId}
+              onChange={(event) => setDraft({ ...draft, rootId: event.target.value })}
+            />
+          </SettingsModalField>
+          <SettingsModalField
+            label={copy.credential}
+            htmlFor="runtime-host-credential"
+            hint={copy.credentialHelp}
+          >
+            <Input
+              id="runtime-host-credential"
+              type="password"
+              value={draft.credential}
+              onChange={(event) => setDraft({ ...draft, credential: event.target.value })}
+            />
+          </SettingsModalField>
+          <p className="text-[0.8125rem] leading-[1.0625rem] text-text-muted">
+            {own.wizardsDeferred}
+          </p>
+        </div>
+      </SettingsModal>
     </SettingsSection>
-  );
-}
-
-function Field(props: { label: string; help: string; children: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-sm leading-5 text-text-primary">{props.label}</span>
-      <span className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">{props.help}</span>
-      <span className="pt-1">{props.children}</span>
-    </div>
   );
 }

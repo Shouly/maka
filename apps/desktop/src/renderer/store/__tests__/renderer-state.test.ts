@@ -1513,13 +1513,13 @@ test('fixture carries sidebar, settings, search, and workbar state into their st
     sidebarSection: 'mcp',
     workbarTab: 'inspector',
     workbarCollapsed: false,
-    openSettingsSection: 'appearance',
+    openSettingsSection: 'memory',
     searchModalOpen: true,
   });
   const state = store.getState();
   assert.equal(state.sidebarCollapsed, false);
   assert.deepEqual(state.navigation.selection, { section: 'extensions', module: 'mcp' });
-  assert.equal(state.settingsSection, 'appearance');
+  assert.equal(state.settingsSection, 'memory');
   assert.equal(state.settingsOpen, true);
   assert.equal(state.searchOpen, true);
   assert.equal(state.workbar.panels.right.activeTabId, 'workbar:inspector');

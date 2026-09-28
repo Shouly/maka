@@ -17,7 +17,9 @@
  * under the License.
  */
 
-// One subagent preset, create and edit in the same form.
+// One subagent preset, create and edit in the same form — a dialog over the
+// list, as every create/rename form opens. Removing a preset is the
+// list row's ⋯, not a button in here.
 //
 // The two levels differ in exactly one field: a new preset's id is the user's
 // to type (derived from the name until they take it over), an existing one's is
@@ -48,7 +50,7 @@ import { Input } from '../../ui/input.js';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select.js';
 import { Textarea } from '../../ui/textarea.js';
 import { Switch } from '../../ui/switch.js';
-import { SettingsRow, SettingsSection, settingsFieldWidthClass } from '../settings-row.js';
+import { SettingsModal, SettingsModalField } from '../settings-kit.js';
 import {
   isSelectableSubagentConnection,
   nextSubagentDraftForName,
@@ -69,8 +71,7 @@ export function SubagentEditor(props: {
   presets: readonly SubagentPreset[];
   connections: readonly ProjectedLlmConnection[];
   saving: boolean;
-  onBack: () => void;
-  onDelete?: () => void;
+  onClose: () => void;
   onSave: (preset: SubagentPreset) => void | Promise<void>;
 }) {
   const locale = useUiLocale();
@@ -180,46 +181,47 @@ export function SubagentEditor(props: {
   };
 
   return (
-    <div data-maka-contract="subagent-detail">
-      <div className="mb-6 flex flex-col gap-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="-ml-2.5 self-start"
-          disabled={props.saving}
-          onClick={props.onBack}
+    <SettingsModal
+      open
+      onOpenChange={(open) => {
+        if (!open && !props.saving) props.onClose();
+      }}
+      size="lg"
+      title={props.preset ? props.preset.name : copy.section.add}
+      description={props.preset ? editor.editSubtitle : editor.createSubtitle}
+      data-maka-contract="subagent-detail"
+      footer={
+        <>
+          <Button variant="secondary" disabled={props.saving} onClick={props.onClose}>
+            {editor.cancel}
+          </Button>
+          <Button disabled={props.saving} onClick={submit}>
+            {props.saving ? editor.saving : props.preset ? editor.save : editor.create}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <SettingsModalField
+          label={editor.name}
+          htmlFor="subagent-name"
+          hint={
+            submitted && !draft.name.trim() ? (
+              <span className="text-danger">{editor.requiredName}</span>
+            ) : undefined
+          }
         >
-          <Anthropicon name="arrowLeft" size={16} />
-          {editor.backToList}
-        </Button>
-        <h2 className="text-[0.9375rem] font-semibold leading-5 text-text-primary">
-          {props.preset ? props.preset.name : copy.section.add}
-        </h2>
-        <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
-          {props.preset ? editor.editSubtitle : editor.createSubtitle}
-        </p>
-      </div>
-
-      <SettingsSection title={editor.groupPurpose} description={editor.groupPurposeHelp}>
-        <SettingsRow title={editor.name} layout="stacked">
           <Input
-            aria-label={editor.name}
+            id="subagent-name"
             value={draft.name}
             placeholder={editor.namePlaceholder}
             disabled={props.saving}
             onChange={(event) => updateName(event.target.value)}
           />
-          {submitted && !draft.name.trim() && (
-            <p className="text-[0.8125rem] leading-[1.125rem] text-danger">{editor.requiredName}</p>
-          )}
-        </SettingsRow>
-        <SettingsRow
-          title={editor.description}
-          description={editor.descriptionPlaceholder}
-          layout="stacked"
-        >
+        </SettingsModalField>
+        <SettingsModalField label={editor.description} htmlFor="subagent-description">
           <Textarea
-            aria-label={editor.description}
+            id="subagent-description"
             rows={3}
             value={draft.description}
             placeholder={editor.descriptionPlaceholder}
@@ -238,21 +240,24 @@ export function SubagentEditor(props: {
               }));
             }}
           />
-        </SettingsRow>
+        </SettingsModalField>
         {props.preset ? (
-          <SettingsRow
-            title={editor.id}
-            description={editor.idDescription}
-            control={
-              <span className="font-mono text-[0.8125rem] leading-[1.125rem] text-text-secondary">
-                {props.preset.id}
-              </span>
-            }
-          />
+          <SettingsModalField label={editor.id} htmlFor="subagent-id" hint={editor.idDescription}>
+            <span
+              id="subagent-id"
+              className="font-mono text-[0.8125rem] leading-[1.125rem] text-text-secondary"
+            >
+              {props.preset.id}
+            </span>
+          </SettingsModalField>
         ) : (
-          <SettingsRow title={editor.id} description={editor.idDescription} layout="stacked">
+          <SettingsModalField
+            label={editor.id}
+            htmlFor="subagent-id"
+            hint={idError ? <span className="text-danger">{idError}</span> : editor.idDescription}
+          >
             <Input
-              aria-label={editor.id}
+              id="subagent-id"
               value={draft.id}
               placeholder={editor.idPlaceholder}
               disabled={props.saving}
@@ -262,25 +267,31 @@ export function SubagentEditor(props: {
                 setDraft((current) => ({ ...current, id }));
               }}
             />
-            {idError && (
-              <p className="text-[0.8125rem] leading-[1.125rem] text-danger">{idError}</p>
-            )}
-          </SettingsRow>
+          </SettingsModalField>
         )}
-      </SettingsSection>
 
-      <SettingsSection title={editor.groupRoute} description={editor.groupRouteHelp}>
-        <SettingsRow
-          title={editor.profile}
-          description={copy.profiles[draft.profile].description}
-          control={
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <SettingsModalField
+            label={editor.profile}
+            htmlFor="subagent-profile"
+            hint={
+              draft.profile === 'implementation' ? (
+                <span className="flex items-start gap-1.5 text-warning">
+                  <Anthropicon name="warning" size={16} className="mt-px shrink-0" />
+                  {editor.implementationWarning}
+                </span>
+              ) : (
+                copy.profiles[draft.profile].description
+              )
+            }
+          >
             <Select
               value={draft.profile}
               onValueChange={(profile) =>
                 setDraft((current) => ({ ...current, profile: profile as SubagentProfile }))
               }
             >
-              <SelectTrigger aria-label={editor.profile} className={settingsFieldWidthClass}>
+              <SelectTrigger id="subagent-profile">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -291,28 +302,25 @@ export function SubagentEditor(props: {
                 ))}
               </SelectContent>
             </Select>
-          }
-        />
-        {draft.profile === 'implementation' && (
-          <SettingsRow
-            title={
-              <span className="flex items-center gap-2 text-warning">
-                <Anthropicon name="warning" size={16} />
-                {editor.implementationWarning}
-              </span>
+          </SettingsModalField>
+
+          <SettingsModalField
+            label={editor.connection}
+            htmlFor="subagent-connection"
+            hint={
+              submitted && !validConnection ? (
+                <span className="text-danger">{editor.invalidConnection}</span>
+              ) : usable.length === 0 ? (
+                editor.noConnection
+              ) : undefined
             }
-          />
-        )}
-        <SettingsRow
-          title={editor.connection}
-          description={usable.length === 0 ? editor.noConnection : undefined}
-          control={
+          >
             <Select
               value={draft.connectionSlug || undefined}
               disabled={props.saving || usable.length === 0}
               onValueChange={selectConnection}
             >
-              <SelectTrigger aria-label={editor.connection} className={settingsFieldWidthClass}>
+              <SelectTrigger id="subagent-connection">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -343,15 +351,19 @@ export function SubagentEditor(props: {
                 })}
               </SelectContent>
             </Select>
-          }
-        />
-        {submitted && !validConnection && (
-          <SettingsRow title={<span className="text-danger">{editor.invalidConnection}</span>} />
-        )}
-        <SettingsRow
-          title={editor.model}
-          description={offerable.length === 0 ? editor.noModel : undefined}
-          control={
+          </SettingsModalField>
+
+          <SettingsModalField
+            label={editor.model}
+            htmlFor="subagent-model"
+            hint={
+              submitted && validConnection && !validModel ? (
+                <span className="text-danger">{editor.invalidModel}</span>
+              ) : offerable.length === 0 ? (
+                editor.noModel
+              ) : undefined
+            }
+          >
             <Select
               value={draft.model || undefined}
               disabled={props.saving || offerable.length === 0}
@@ -363,7 +375,7 @@ export function SubagentEditor(props: {
                 }))
               }
             >
-              <SelectTrigger aria-label={editor.model} className={settingsFieldWidthClass}>
+              <SelectTrigger id="subagent-model">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -379,15 +391,10 @@ export function SubagentEditor(props: {
                 ))}
               </SelectContent>
             </Select>
-          }
-        />
-        {submitted && validConnection && !validModel && (
-          <SettingsRow title={<span className="text-danger">{editor.invalidModel}</span>} />
-        )}
-        {thinkingLevels.length > 0 && (
-          <SettingsRow
-            title={editor.thinking}
-            control={
+          </SettingsModalField>
+
+          {thinkingLevels.length > 0 && (
+            <SettingsModalField label={editor.thinking} htmlFor="subagent-thinking">
               <Select
                 value={
                   draft.thinkingLevel !== MODEL_DEFAULT_THINKING &&
@@ -403,7 +410,7 @@ export function SubagentEditor(props: {
                   }))
                 }
               >
-                <SelectTrigger aria-label={editor.thinking} className={settingsFieldWidthClass}>
+                <SelectTrigger id="subagent-thinking">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -415,52 +422,25 @@ export function SubagentEditor(props: {
                   ))}
                 </SelectContent>
               </Select>
-            }
-          />
-        )}
-        <SettingsRow
-          title={editor.enabled}
-          description={editor.enabledDescription}
-          control={
-            <Switch
-              aria-label={editor.enabled}
-              checked={draft.enabled}
-              disabled={props.saving}
-              onCheckedChange={(enabled) => setDraft((current) => ({ ...current, enabled }))}
-            />
-          }
-        />
-      </SettingsSection>
+            </SettingsModalField>
+          )}
+        </div>
 
-      {/* Save commits the whole preset, not the group above it. */}
-      <div className="mb-10 flex flex-wrap items-center gap-2">
-        <Button disabled={props.saving} onClick={submit}>
-          {props.saving ? editor.saving : props.preset ? editor.save : editor.create}
-        </Button>
-        <Button variant="ghost" disabled={props.saving} onClick={props.onBack}>
-          {editor.cancel}
-        </Button>
+        <label className="flex cursor-pointer items-center justify-between gap-4 pt-1">
+          <span className="flex flex-col gap-0.5">
+            <span className="text-sm leading-5 text-text-primary">{editor.enabled}</span>
+            <span className="text-[0.8125rem] leading-[1.0625rem] text-text-muted">
+              {editor.enabledDescription}
+            </span>
+          </span>
+          <Switch
+            aria-label={editor.enabled}
+            checked={draft.enabled}
+            disabled={props.saving}
+            onCheckedChange={(enabled) => setDraft((current) => ({ ...current, enabled }))}
+          />
+        </label>
       </div>
-
-      {/* Deletion stands alone and last, so a mis-aimed cursor has nothing
-          quiet to hit beside it. */}
-      {props.onDelete && (
-        <SettingsSection title={editor.dangerZone} description={editor.dangerZoneHelp}>
-          <SettingsRow
-            title={editor.delete}
-            control={
-              <Button
-                variant="destructive"
-                size="sm"
-                disabled={props.saving}
-                onClick={props.onDelete}
-              >
-                {editor.delete}
-              </Button>
-            }
-          />
-        </SettingsSection>
-      )}
-    </div>
+    </SettingsModal>
   );
 }

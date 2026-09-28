@@ -227,6 +227,38 @@ export function isSessionToolProfile(value: unknown): value is SessionToolProfil
   return typeof value === 'string' && (SESSION_TOOL_PROFILES as readonly string[]).includes(value);
 }
 
+/**
+ * The person a session works for, as their company account described them
+ * when the session was created. It stays fixed for the session's life: a
+ * profile change reaches new sessions only.
+ */
+export interface SessionUserContext {
+  /** What to call them: the name they chose to be called, else their full name. */
+  readonly name: string;
+  readonly email: string;
+  /** Their personal preferences as written in Settings; absent when they wrote none. */
+  readonly preferences?: string;
+}
+
+const SESSION_USER_NAME_MAX_LENGTH = 256;
+const SESSION_USER_EMAIL_MAX_LENGTH = 320;
+const SESSION_USER_PREFERENCES_MAX_LENGTH = 8_000;
+
+export function isSessionUserContext(value: unknown): value is SessionUserContext {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const { name, email, preferences, ...rest } = value as Record<string, unknown>;
+  return (
+    Object.keys(rest).length === 0 &&
+    boundedText(name, SESSION_USER_NAME_MAX_LENGTH) &&
+    boundedText(email, SESSION_USER_EMAIL_MAX_LENGTH) &&
+    (preferences === undefined || boundedText(preferences, SESSION_USER_PREFERENCES_MAX_LENGTH))
+  );
+}
+
+function boundedText(value: unknown, max: number): value is string {
+  return typeof value === 'string' && value.trim().length > 0 && value.length <= max;
+}
+
 export interface SessionExternalOrigin {
   readonly adapterId: string;
   readonly sourceSessionId: string;
@@ -311,6 +343,8 @@ export interface SessionHeader {
   model: string;
   /** Immutable versioned prompt/tool contract for non-product execution surfaces. */
   toolProfile?: SessionToolProfile;
+  /** Immutable: who a user-started session works for. Absent on sessions nobody signed in started. */
+  userContext?: SessionUserContext;
   /** Per-model reasoning-depth variant; `undefined` = model default. Cleared on model switch. */
   thinkingLevel?: import('./model-thinking.js').ThinkingLevel;
   permissionMode: PermissionMode;

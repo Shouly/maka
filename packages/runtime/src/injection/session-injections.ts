@@ -31,10 +31,10 @@
 // about what the model is told next.
 
 import type { RuntimeEvent } from '@maka/core/runtime-event';
-import { wrapSystemReminder } from './system-reminder.js';
 import {
   collectRecordedInjections,
   planTurnInjections,
+  renderInjectionBlock,
   type PlannedInjection,
   type TurnInjectionFacts,
 } from './turn-injections.js';
@@ -66,8 +66,8 @@ export class SessionInjections {
   }
 
   /** A block as the model reads it. */
-  renderBlock(injection: Pick<PlannedInjection, 'text'>): string {
-    return wrapSystemReminder(injection.text);
+  renderBlock(injection: Pick<PlannedInjection, 'text' | 'data'>): string {
+    return renderInjectionBlock(injection);
   }
 
   // ── on every user message ──────────────────────────────────────────────

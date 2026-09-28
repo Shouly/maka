@@ -43,14 +43,6 @@ test('Host only resolves Tavily readiness when that execution path can be expose
     }),
     true,
   );
-  assert.equal(
-    shouldResolveHostTavilyWebSearchReadiness({
-      ...policy,
-      privacy: { incognitoActive: true },
-      webSearch: { enabled: true, defaultProvider: 'tavily' },
-    }),
-    false,
-  );
 });
 
 test('Host Tavily readiness follows the canonical execution resolver', async () => {
@@ -74,7 +66,6 @@ test('Host Tavily readiness follows the canonical execution resolver', async () 
 
 test('Host WebSearch fails closed before transport creation for unavailable policy states', async () => {
   const states: readonly ResolveWebSearchExecutionResult[] = [
-    { kind: 'privacy_mode' },
     { kind: 'disabled', provider: 'tavily' },
     {
       kind: 'credential_not_configured',
@@ -102,10 +93,7 @@ test('Host WebSearch fails closed before transport creation for unavailable poli
       reason: string;
     };
     assert.equal(result.kind, 'web_search_error');
-    assert.equal(
-      result.reason,
-      state.kind === 'privacy_mode' ? 'incognito_active' : 'not_configured',
-    );
+    assert.equal(result.reason, 'not_configured');
     assert.equal(transportCreated, false);
   }
 });

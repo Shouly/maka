@@ -23,7 +23,7 @@ export function makaEvalRuntimePolicyDocument(proxyUrl?: string) {
   const policy = createDefaultRuntimePolicy();
   const proxy = proxyUrl ? new URL(proxyUrl) : undefined;
   return {
-    schemaVersion: 2 as const,
+    schemaVersion: 4 as const,
     revision: 0,
     policy: {
       ...policy,
@@ -38,7 +38,8 @@ export function makaEvalRuntimePolicyDocument(proxyUrl?: string) {
             },
           }
         : {}),
-      privacy: { incognitoActive: true },
+      // An eval run starts from nothing the machine remembers.
+      memory: { enabled: false },
     },
   };
 }

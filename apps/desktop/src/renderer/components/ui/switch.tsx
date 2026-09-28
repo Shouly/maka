@@ -27,7 +27,7 @@ interface SwitchProps extends React.ComponentPropsWithoutRef<typeof SwitchPrimit
 }
 
 /**
- * 开关。几何来自 CDS 自己的公式(读 claude.ai 的 switch 类名实测):
+ * 开关。几何来自 CDS 自己的公式(读设计稿的 switch 类名实测):
  *
  *   --cds-switch-h: 20px / 18px   轨道高就是这一个数(default / sm 两档)
  *   宽   = h × 1.8   → 36 / 32.4
@@ -62,7 +62,7 @@ const Switch = React.forwardRef<React.ComponentRef<typeof SwitchPrimitives.Root>
       <SwitchPrimitives.Root
         className={cn(
           'group/switch peer inline-flex shrink-0 cursor-pointer items-center rounded-full p-0.5 outline-none transition-colors',
-          // 变体顺序:状态在前、hover 在后(与 Cowork 的 data-[checked]:hover: 一致)。
+          // 变体顺序:状态在前、hover 在后(与设计稿的 data-[checked]:hover: 一致)。
           // 反过来写 hover:data-[state=...] 特异性相同但排序更靠前,会被后面的
           // 静止态规则盖掉 —— hover 就完全不生效。
           'data-[state=unchecked]:bg-alpha-3 data-[state=unchecked]:hover:bg-alpha-4',
@@ -79,7 +79,7 @@ const Switch = React.forwardRef<React.ComponentRef<typeof SwitchPrimitives.Root>
       >
         <SwitchPrimitives.Thumb
           className={cn(
-            // 回弹缓动取自 Cowork 的 knob(ease-overshoot)。
+            // 回弹缓动取自设计稿的 knob(ease-overshoot)。
             // ! 投影别写成 Tailwind 的 shadow-sm:同名两仓不同值,上游那一组
             //   就是本仓的 --card-shadow。
             'pointer-events-none block rounded-full bg-surface-2 shadow-[var(--card-shadow)] transition-transform duration-200 ease-[cubic-bezier(.2,1.3,.6,1)]',

@@ -184,9 +184,7 @@ test('ScheduledTask execution fails closed when the bound Connection identity is
       },
     },
     runtimePolicy: {
-      runtimePolicy: {
-        getSnapshot: async () => ({ policy: { privacy: { incognitoActive: false } } }),
-      },
+      runtimePolicy: null as never,
       connectionCatalog: null as never,
       credentialVault: null as never,
       operations: {
@@ -351,9 +349,7 @@ test('ScheduledTask with an exact Connection identity reaches Session and AgentR
       },
     },
     runtimePolicy: {
-      runtimePolicy: {
-        getSnapshot: async () => ({ policy: { privacy: { incognitoActive: false } } }),
-      },
+      runtimePolicy: null as never,
       connectionCatalog: null as never,
       credentialVault: null as never,
       operations: {
@@ -458,9 +454,7 @@ test('ScheduledTask on the default model admits a fire with no execution fingerp
       },
     },
     runtimePolicy: {
-      runtimePolicy: {
-        getSnapshot: async () => ({ policy: { privacy: { incognitoActive: false } } }),
-      },
+      runtimePolicy: null as never,
       connectionCatalog: null as never,
       credentialVault: null as never,
       operations: {

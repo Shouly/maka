@@ -26,7 +26,7 @@
  *  - `isSelf` → Bookmark tile (Notes-to-self surfaces only).
  *  - `avatar_seed` non-null → Avvvatars 形状(形状选择逻辑原封不动,用户形状
  *    与历史一致),但配色由外层接管:低饱和暖色对(与奶油主题同族,对照
- *    Claude 生成头像的气质)。实现 = CSS !important 压掉库的内置配色:
+ *    参考头像的气质)。实现 = CSS !important 压掉库的内置配色:
  *    底色透明化(由容器画暖底),形状填色经 CSS 变量注入暖前景。
  *  - else → initials 圆盘(原版中性灰,不参与暖色系)。
  *

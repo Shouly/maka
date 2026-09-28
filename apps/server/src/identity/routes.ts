@@ -25,7 +25,11 @@
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
+  AVATAR_SEED_MAX_LENGTH,
   DESKTOP_CLIENT_ID,
+  NICKNAME_MAX_LENGTH,
+  PREFERENCES_MAX_LENGTH,
+  PROFILE_NAME_MAX_LENGTH,
   type OAuthErrorResponse,
   type PlatformMe,
   type TokenResponse,
@@ -33,7 +37,7 @@ import {
 import { recordAudit } from '../audit.js';
 import type { ServerContext } from '../context.js';
 import { newOpaqueToken, pkceChallenge, sha256Hex } from '../crypto/tokens.js';
-import { authenticate } from '../http/common.js';
+import { authenticate, sendPlatformError } from '../http/common.js';
 import { renderError, renderProviderChoice, requestLocale, sendHtml } from '../http/pages.js';
 import type { AccessTokens } from './access-tokens.js';
 import { resolveAccount } from './accounts.js';
@@ -434,21 +438,103 @@ export function registerIdentityRoutes(
     return reply.status(200).header('cache-control', 'no-store').send({});
   });
 
+  const me = async (userId: string): Promise<PlatformMe> => {
+    const user = await ctx.db
+      .selectFrom('users')
+      .select([
+        'id',
+        'email',
+        'name',
+        'avatar_url',
+        'profile_name',
+        'avatar_seed',
+        'nickname',
+        'preferences',
+        'org_role',
+      ])
+      .where('id', '=', userId)
+      .executeTakeFirstOrThrow();
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.profile_name ?? user.name,
+      ...(user.avatar_url ? { avatarUrl: user.avatar_url } : {}),
+      ...(user.avatar_seed ? { avatarSeed: user.avatar_seed } : {}),
+      ...(user.nickname ? { nickname: user.nickname } : {}),
+      ...(user.preferences ? { preferences: user.preferences } : {}),
+      orgRole: user.org_role,
+    };
+  };
+
   app.get('/v1/me', async (request, reply) => {
     const principal = await authenticate(ctx, accessTokens, request, reply);
     if (!principal) return reply;
-    const user = await ctx.db
-      .selectFrom('users')
-      .select(['id', 'email', 'name', 'avatar_url', 'org_role'])
-      .where('id', '=', principal.userId)
-      .executeTakeFirstOrThrow();
-    const me: PlatformMe = {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      ...(user.avatar_url ? { avatarUrl: user.avatar_url } : {}),
-      orgRole: user.org_role,
-    };
-    return reply.header('cache-control', 'no-store').send(me);
+    return reply.header('cache-control', 'no-store').send(await me(principal.userId));
   });
+
+  // A person's own name, avatar, what to call them and their preferences.
+  // Absent fields stay as they are; an empty name and a null seed go back to
+  // the provider's name and to initials, an empty nickname or preferences
+  // clear them.
+  app.patch('/v1/me', async (request, reply) => {
+    const principal = await authenticate(ctx, accessTokens, request, reply);
+    if (!principal) return reply;
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    const update: {
+      profile_name?: string | null;
+      avatar_seed?: string | null;
+      nickname?: string | null;
+      preferences?: string | null;
+    } = {};
+    if (body.name !== undefined) {
+      if (typeof body.name !== 'string') {
+        return sendPlatformError(reply, 400, 'invalid_request', 'name must be a string');
+      }
+      const name = profileText(body.name);
+      if (name.length > PROFILE_NAME_MAX_LENGTH) {
+        return sendPlatformError(reply, 400, 'invalid_request', 'name is too long');
+      }
+      update.profile_name = name === '' ? null : name;
+    }
+    if (body.avatarSeed !== undefined) {
+      if (
+        body.avatarSeed !== null &&
+        (typeof body.avatarSeed !== 'string' ||
+          body.avatarSeed.length === 0 ||
+          body.avatarSeed.length > AVATAR_SEED_MAX_LENGTH)
+      ) {
+        return sendPlatformError(reply, 400, 'invalid_request', 'avatarSeed is not a seed');
+      }
+      update.avatar_seed = body.avatarSeed;
+    }
+    for (const [field, column, max] of [
+      ['nickname', 'nickname', NICKNAME_MAX_LENGTH],
+      ['preferences', 'preferences', PREFERENCES_MAX_LENGTH],
+    ] as const) {
+      const value = body[field];
+      if (value === undefined) continue;
+      if (typeof value !== 'string') {
+        return sendPlatformError(reply, 400, 'invalid_request', `${field} must be a string`);
+      }
+      const trimmed = profileText(value);
+      if (Array.from(trimmed).length > max) {
+        return sendPlatformError(reply, 400, 'invalid_request', `${field} is too long`);
+      }
+      update[column] = trimmed === '' ? null : trimmed;
+    }
+    if (Object.keys(update).length > 0) {
+      const now = new Date();
+      await ctx.db
+        .updateTable('users')
+        .set({ ...update, updated_at: now })
+        .where('id', '=', principal.userId)
+        .execute();
+    }
+    return reply.header('cache-control', 'no-store').send(await me(principal.userId));
+  });
+}
+
+/** Text a person wrote about themselves, as stored: trimmed, and without NUL, which a Postgres text column refuses. */
+function profileText(value: string): string {
+  return value.replaceAll('\u0000', '').trim();
 }

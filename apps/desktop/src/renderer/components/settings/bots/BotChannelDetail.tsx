@@ -67,7 +67,7 @@ import {
 } from '../../ui/select.js';
 import { Switch } from '../../ui/switch.js';
 import { Textarea } from '../../ui/textarea.js';
-import { NoticeCard } from '../../session/notices/NoticeCard.js';
+import { SettingsCallout } from '../settings-kit.js';
 import { SettingsRow, SettingsSection, settingsFieldWidthClass } from '../settings-row.js';
 import { BotOnboardingDialog } from './BotOnboardingDialog.js';
 import { BotBrandTile, ReadinessChip } from './bot-shared.js';
@@ -88,7 +88,6 @@ export interface BotChannelDetailProps {
   pendingAction: BotPendingActionName | null;
   /** Under the e2e fixture only: open the scan dialog at mount. */
   autoOpenScan?: boolean;
-  onBack(): void;
   onUpdateChannel(patch: Partial<BotChannelSettings>): Promise<boolean>;
   onTest(): void;
   onTestAndConnect(): void;
@@ -143,7 +142,7 @@ export function BotChannelDetail(props: BotChannelDetailProps) {
 
   const actions: ReactNode = inQuickOnboarding ? (
     <>
-      <Button size="sm" disabled={props.actionBusy} onClick={() => setScanOpen(true)}>
+      <Button disabled={props.actionBusy} onClick={() => setScanOpen(true)}>
         {provider === 'wecom'
           ? copy.quickBind
           : provider === 'wechat'
@@ -151,37 +150,30 @@ export function BotChannelDetail(props: BotChannelDetailProps) {
             : copy.scanConnect}
       </Button>
       {provider === 'wechat' && (channel.token || status?.identity) && (
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={props.actionBusy}
-          onClick={props.onDisconnectWechat}
-        >
+        <Button variant="secondary" disabled={props.actionBusy} onClick={props.onDisconnectWechat}>
           {pending === 'disconnect' ? copy.disconnecting : copy.disconnectWechat}
         </Button>
       )}
       {provider === 'wechat' && (
         <Button
           variant="secondary"
-          size="sm"
           disabled={props.actionBusy}
           onClick={() => setWechatQrOpen(true)}
         >
           {copy.bridgeQr}
         </Button>
       )}
-      <Button variant="secondary" size="sm" disabled={props.actionBusy} onClick={props.onTest}>
+      <Button variant="secondary" disabled={props.actionBusy} onClick={props.onTest}>
         {pending === 'test' ? copy.testing : copy.test}
       </Button>
     </>
   ) : support === 'runtime' && !status?.running ? (
-    <Button size="sm" disabled={props.actionBusy} onClick={props.onTestAndConnect}>
+    <Button disabled={props.actionBusy} onClick={props.onTestAndConnect}>
       {pending === 'connect' ? copy.connecting : copy.testAndConnect}
     </Button>
   ) : (
     <Button
       variant="secondary"
-      size="sm"
       disabled={props.actionBusy || support === 'planned'}
       onClick={props.onTest}
     >
@@ -194,13 +186,6 @@ export function BotChannelDetail(props: BotChannelDetailProps) {
 
   return (
     <div data-maka-contract="bot-channel-detail" data-provider={provider}>
-      <div className="mb-4 flex items-center gap-2">
-        <Button variant="ghost" size="sm" disabled={props.actionBusy} onClick={props.onBack}>
-          <Anthropicon name="arrowLeft" size={16} />
-          <span className="ml-1.5">{copy.back}</span>
-        </Button>
-      </div>
-
       <header className="mb-8 flex items-start gap-4" data-support={support}>
         <BotBrandTile provider={provider} size="lg" />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -247,12 +232,7 @@ export function BotChannelDetail(props: BotChannelDetailProps) {
           >
             {actions}
             {showRestart && (
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={props.actionBusy}
-                onClick={props.onRestart}
-              >
+              <Button variant="secondary" disabled={props.actionBusy} onClick={props.onRestart}>
                 {restarting ? copy.restarting : copy.restart}
               </Button>
             )}
@@ -280,22 +260,22 @@ export function BotChannelDetail(props: BotChannelDetailProps) {
         (view.currentError && support !== 'planned')) && (
         <div className="mb-10 flex flex-col gap-2">
           {props.statusLoadError && (
-            <NoticeCard
-              tone="destructive"
+            <SettingsCallout
+              tone="danger"
               title={copy.statusRefreshFailed}
               description={props.statusLoadError}
             />
           )}
           {status?.reason && channel.enabled && !view.liveOperational && (
-            <NoticeCard
+            <SettingsCallout
               tone="warning"
               title={botStatusDetail(status, locale)}
               description={readiness.detail}
             />
           )}
           {view.currentError && support !== 'planned' && (
-            <NoticeCard
-              tone="destructive"
+            <SettingsCallout
+              tone="danger"
               title={copy.latestFailure}
               description={botStatusReasonMessage(view.currentError, locale)}
             />
@@ -355,7 +335,7 @@ export function BotChannelDetail(props: BotChannelDetailProps) {
                 onChange={setFeishuBrand}
               />
             )}
-            <Button size="sm" disabled={props.actionBusy} onClick={() => setScanOpen(true)}>
+            <Button disabled={props.actionBusy} onClick={() => setScanOpen(true)}>
               {provider === 'wecom'
                 ? copy.beginQuickBind
                 : copy.scanWith(
@@ -375,7 +355,7 @@ export function BotChannelDetail(props: BotChannelDetailProps) {
         {provider === 'wechat' && (
           <WechatFields channel={channel} onUpdateChannel={props.onUpdateChannel} />
         )}
-        {support === 'planned' && <NoticeCard tone="info" title={copy.planned} />}
+        {support === 'planned' && <SettingsCallout tone="info" title={copy.planned} />}
       </SettingsSection>
 
       {scanOpen && quickOnboarding && (
@@ -566,7 +546,7 @@ function CredentialFields(props: {
           case 'notice':
             return (
               <div key={`notice-${index}`} className="py-3">
-                <NoticeCard tone="info" title={field.text} />
+                <SettingsCallout tone="info" title={field.text} />
               </div>
             );
         }
@@ -691,7 +671,6 @@ function WechatFields(props: {
       <div className="py-3">
         <Button
           variant="ghost"
-          size="sm"
           aria-expanded={advancedOpen}
           onClick={() => setAdvancedOpen((open) => !open)}
         >
@@ -725,7 +704,7 @@ function WechatFields(props: {
             onCommit={(appSecret) => void props.onUpdateChannel({ appSecret })}
           />
           <div className="py-3">
-            <NoticeCard tone="info" title={copy.advancedNotice} />
+            <SettingsCallout tone="info" title={copy.advancedNotice} />
           </div>
         </>
       )}

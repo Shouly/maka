@@ -18,13 +18,11 @@
  */
 
 import { createStore } from 'zustand/vanilla';
-import type { NavSelection } from '@maka/ui';
 import type { DesktopNewTaskTarget } from '../bridge/new-tasks.js';
-import type { SettingsSection } from '@maka/core/settings';
 
+/** A page the window can go back or forward to. Settings is a dialog over one, not a page. */
 export type PageLocation =
   | { view: 'session'; sessionId: string }
-  | { view: 'settings'; section: SettingsSection; sessionId?: string; selection?: NavSelection }
   | { view: 'welcome'; target?: DesktopNewTaskTarget; sessionId?: undefined }
   | { view: 'skills' | 'mcp' | 'automations' | 'debug'; sessionId?: string };
 

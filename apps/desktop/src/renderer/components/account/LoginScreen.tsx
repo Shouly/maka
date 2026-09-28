@@ -18,7 +18,7 @@
  */
 
 // The window, while this deployment requires a company sign-in and there is
-// none. Drawn after the Claude desktop's first run, two steps:
+// none. Two steps:
 //
 // - Welcome: the brand mark, "Maka *for* Mac" in the serif, one grey line,
 //   and a wide solid "Get started" held to the foot of the window.

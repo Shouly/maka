@@ -17,7 +17,8 @@
  * under the License.
  */
 
-// Setting up one provider: two steps, and the first one is a real request.
+// Setting up one provider, in a dialog over the catalog: two steps, and the
+// first one is a real request.
 //
 // Where the Host can do it (`addProviderRoute`), the form VERIFIES before it
 // saves — it probes the endpoint with the credential, shows what the endpoint
@@ -45,8 +46,7 @@ import { Button } from '../../ui/button.js';
 import { checkboxBoxClass, CHECKBOX_TICK_SIZE } from '../../ui/checkbox-box.js';
 import { Input } from '../../ui/input.js';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select.js';
-import { SettingsRow, SettingsSection, settingsFieldWidthClass } from '../settings-row.js';
-import { ProviderBrandMark } from '../../../lib/ported/provider-brand-marks.js';
+import { SettingsModal, SettingsModalField } from '../settings-kit.js';
 import { providerDisplay } from '../../../lib/ported/provider-display-copy.js';
 import { buildCatalogRecommendedDefaultModel } from '../../../lib/ported/model-catalog-choices.js';
 import {
@@ -83,11 +83,11 @@ type Phase =
 
 type FormError = { readonly field: AddProviderField; readonly message: string };
 
-export function ProviderSetupForm(props: {
+function ProviderSetupForm(props: {
   providerType: ProviderType;
   host: DesktopRuntimeHostRef | undefined;
   existingSlugs: readonly string[];
-  onBack: () => void;
+  onClose: () => void;
   onCreated: (connectionId: string) => void;
   onError: (title: string, error: unknown) => void;
 }) {
@@ -322,42 +322,61 @@ export function ProviderSetupForm(props: {
       </p>
     ) : null;
 
+  const modelChoices = phase.kind === 'models' ? phase : null;
   return (
-    <div data-maka-contract="provider-setup">
-      <div className="mb-4">
-        <Button variant="ghost" size="sm" onClick={props.onBack}>
-          <Anthropicon name="arrowLeft" size={16} />
-          <span className="ml-1.5">{copy.panel.backToCatalog}</span>
-        </Button>
-      </div>
-
-      <div className="mb-6 flex items-center gap-2">
-        <span className="flex size-6 shrink-0 items-center justify-center text-text-secondary [&>img]:size-full [&>svg]:size-full">
-          <ProviderBrandMark type={props.providerType} />
-        </span>
-        <h2 className="truncate text-[0.9375rem] font-semibold leading-5 text-text-primary">
-          {copy.panel.connectTitle(display.name)}
-        </h2>
-      </div>
-
-      {phase.kind === 'input' ? (
-        <SettingsSection title={copy.detail.credentials} description={display.description}>
-          <SettingsRow
-            title={copy.add.name}
-            control={
-              <Input
-                aria-label={copy.add.name}
-                className={settingsFieldWidthClass}
-                value={name}
-                disabled={busy}
-                onChange={(event) => setName(event.target.value)}
-              />
-            }
-          />
-          <SettingsRow layout="stacked" title={copy.add.slug}>
+    <SettingsModal
+      open
+      onOpenChange={(open) => {
+        if (!open && !busy) props.onClose();
+      }}
+      title={copy.panel.connectTitle(display.name)}
+      description={modelChoices ? copy.add.onboardingChooseModelsHelp : display.description}
+      data-maka-contract="provider-setup"
+      footer={
+        modelChoices ? (
+          <>
+            <Button variant="secondary" disabled={busy} onClick={() => setPhase({ kind: 'input' })}>
+              {copy.add.onboardingBack}
+            </Button>
+            <Button onClick={submit} disabled={busy || modelChoices.selectedIds.length === 0}>
+              {busy ? copy.add.saving : copy.add.onboardingAddConnection}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button variant="secondary" onClick={props.onClose} disabled={busy}>
+              {copy.add.cancel}
+            </Button>
+            <Button onClick={submit} disabled={busy || !props.host}>
+              {busy
+                ? route === 'host'
+                  ? copy.add.onboardingVerifying
+                  : copy.add.saving
+                : route === 'host'
+                  ? copy.add.onboardingVerifyAndChoose
+                  : copy.add.save}
+            </Button>
+          </>
+        )
+      }
+    >
+      {!modelChoices ? (
+        <div className="flex flex-col gap-4">
+          <SettingsModalField label={copy.add.name} htmlFor="provider-setup-name">
             <Input
-              aria-label={copy.add.slug}
-              className={settingsFieldWidthClass}
+              id="provider-setup-name"
+              value={name}
+              disabled={busy}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </SettingsModalField>
+          <SettingsModalField
+            label={copy.add.slug}
+            htmlFor="provider-setup-slug"
+            hint={fieldError('slug')}
+          >
+            <Input
+              id="provider-setup-slug"
               value={slug}
               disabled={busy}
               onChange={(event) => {
@@ -365,16 +384,20 @@ export function ProviderSetupForm(props: {
                 setError(null);
               }}
             />
-            {fieldError('slug')}
-          </SettingsRow>
+          </SettingsModalField>
 
           {supportsApiKey && (
-            <SettingsRow layout="stacked" title={copy.add.apiKeyLabel}>
+            <SettingsModalField
+              label={copy.add.apiKeyLabel}
+              htmlFor="provider-setup-key"
+              hint={
+                fieldError('apiKey') ?? (requiresApiKey ? undefined : copy.detail.credentialsHelp)
+              }
+            >
               <Input
-                aria-label={copy.add.apiKeyLabel}
+                id="provider-setup-key"
                 type="password"
                 autoComplete="off"
-                className="w-72"
                 placeholder={copy.add.apiKeyPlaceholder}
                 value={apiKey}
                 disabled={busy}
@@ -383,20 +406,17 @@ export function ProviderSetupForm(props: {
                   setError(null);
                 }}
               />
-              {!requiresApiKey && (
-                <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
-                  {copy.detail.credentialsHelp}
-                </p>
-              )}
-              {fieldError('apiKey')}
-            </SettingsRow>
+            </SettingsModalField>
           )}
 
           {isCloudflare && (
-            <SettingsRow layout="stacked" title={copy.add.accountIdLabel}>
+            <SettingsModalField
+              label={copy.add.accountIdLabel}
+              htmlFor="provider-setup-account"
+              hint={fieldError('accountId')}
+            >
               <Input
-                aria-label={copy.add.accountIdLabel}
-                className="w-72"
+                id="provider-setup-account"
                 placeholder={copy.add.accountIdPlaceholder}
                 value={cloudflareAccountId}
                 disabled={busy}
@@ -405,15 +425,17 @@ export function ProviderSetupForm(props: {
                   setError(null);
                 }}
               />
-              {fieldError('accountId')}
-            </SettingsRow>
+            </SettingsModalField>
           )}
 
           {requiresBaseUrl && (
-            <SettingsRow layout="stacked" title={copy.add.endpointLabel}>
+            <SettingsModalField
+              label={copy.add.endpointLabel}
+              htmlFor="provider-setup-endpoint"
+              hint={fieldError('baseUrl') ?? copy.page.endpointHelp}
+            >
               <Input
-                aria-label={copy.add.endpointLabel}
-                className="w-96"
+                id="provider-setup-endpoint"
                 placeholder={copy.page.endpointPlaceholder}
                 value={baseUrl}
                 disabled={busy}
@@ -422,157 +444,144 @@ export function ProviderSetupForm(props: {
                   setError(null);
                 }}
               />
-              <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
-                {copy.page.endpointHelp}
-              </p>
-              {fieldError('baseUrl')}
-            </SettingsRow>
+            </SettingsModalField>
           )}
 
           {route === 'legacy' && recommendedDefaultModel.trim() === '' && (
-            <SettingsRow layout="stacked" title={copy.add.defaultModel}>
+            <SettingsModalField
+              label={copy.add.defaultModel}
+              htmlFor="provider-setup-model"
+              hint={copy.add.defaultModelHelp}
+            >
               <Input
-                aria-label={copy.add.defaultModel}
-                className="w-72"
+                id="provider-setup-model"
                 placeholder={copy.add.defaultModelPlaceholder}
                 value={defaultModel}
                 disabled={busy}
                 onChange={(event) => setDefaultModel(event.target.value)}
               />
-              <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
-                {copy.add.defaultModelHelp}
-              </p>
-            </SettingsRow>
+            </SettingsModalField>
           )}
 
-          <SettingsRow layout="stacked" title="">
-            <div className="flex flex-col gap-2">
-              {fieldError('form')}
-              <div className="flex items-center gap-2">
-                <Button variant="secondary" onClick={props.onBack} disabled={busy}>
-                  {copy.add.cancel}
-                </Button>
-                <Button onClick={submit} disabled={busy || !props.host}>
-                  {busy
-                    ? route === 'host'
-                      ? copy.add.onboardingVerifying
-                      : copy.add.saving
-                    : route === 'host'
-                      ? copy.add.onboardingVerifyAndChoose
-                      : copy.add.save}
-                </Button>
-              </div>
-            </div>
-          </SettingsRow>
-        </SettingsSection>
+          {fieldError('form')}
+        </div>
       ) : (
-        <SettingsSection
-          title={copy.add.onboardingChooseModels}
-          description={copy.add.onboardingChooseModelsHelp}
-        >
-          <SettingsRow
-            title={copy.add.onboardingSelectedCount(phase.selectedIds.length, phase.models.length)}
-            control={
-              <Input
-                aria-label={copy.add.onboardingSearchModels}
-                placeholder={copy.add.onboardingSearchModels}
-                className="w-56"
-                value={phase.filter}
-                onChange={(event) => setPhase({ ...phase, filter: event.target.value })}
-              />
-            }
-          />
-
-          <SettingsRow layout="stacked" title={copy.add.onboardingEnabledModels}>
-            <div className="flex flex-col gap-2">
-              {phase.models
-                .filter((model) =>
-                  phase.filter.trim()
-                    ? model.id.toLowerCase().includes(phase.filter.trim().toLowerCase())
-                    : true,
-                )
-                .map((model) => {
-                  const checked = phase.selectedIds.includes(model.id);
-                  return (
-                    <button
-                      key={model.id}
-                      type="button"
-                      role="checkbox"
-                      aria-checked={checked}
-                      className="group/cb flex cursor-pointer items-center gap-2 text-left text-sm leading-5 text-text-primary outline-none focus-visible:shadow-[var(--sidebar-focus-shadow)]"
-                      onClick={() => {
-                        const selectedIds = checked
-                          ? phase.selectedIds.filter((id) => id !== model.id)
-                          : [...phase.selectedIds, model.id];
-                        setPhase({
-                          ...phase,
-                          selectedIds,
-                          defaultId: selectedIds.includes(phase.defaultId)
-                            ? phase.defaultId
-                            : (selectedIds[0] ?? ''),
-                        });
-                      }}
-                    >
-                      <span className={checkboxBoxClass(checked, 'xs')} aria-hidden>
-                        {checked && <Anthropicon name="check" size={CHECKBOX_TICK_SIZE.xs} />}
-                      </span>
-                      <span className="truncate">{model.displayName?.trim() || model.id}</span>
-                    </button>
-                  );
-                })}
-              {phase.models.length === 0 && (
-                <p className="text-sm leading-5 text-text-secondary">
-                  {copy.add.onboardingNoModelsMatch}
-                </p>
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between gap-4">
+            <Input
+              aria-label={copy.add.onboardingSearchModels}
+              placeholder={copy.add.onboardingSearchModels}
+              className="w-56"
+              value={modelChoices.filter}
+              onChange={(event) => setPhase({ ...modelChoices, filter: event.target.value })}
+            />
+            <span className="shrink-0 text-sm leading-5 text-text-muted">
+              {copy.add.onboardingSelectedCount(
+                modelChoices.selectedIds.length,
+                modelChoices.models.length,
               )}
-            </div>
-          </SettingsRow>
+            </span>
+          </div>
 
-          <SettingsRow
-            title={copy.add.onboardingDefaultModel}
-            description={copy.add.onboardingDefaultModelHelp}
-            control={
-              <Select
-                value={phase.defaultId}
-                disabled={busy || phase.selectedIds.length === 0}
-                onValueChange={(defaultId) => setPhase({ ...phase, defaultId })}
-              >
-                <SelectTrigger
-                  aria-label={copy.add.onboardingDefaultModel}
-                  className={settingsFieldWidthClass}
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {phase.selectedIds.map((id) => (
-                    <SelectItem key={id} value={id}>
-                      {id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            }
-          />
+          <div
+            role="group"
+            aria-label={copy.add.onboardingEnabledModels}
+            className="flex max-h-64 flex-col gap-0.5 overflow-y-auto rounded-xl p-1 shadow-[inset_0_0_0_1px_var(--alpha-2)]"
+          >
+            {modelChoices.models
+              .filter((model) =>
+                modelChoices.filter.trim()
+                  ? model.id.toLowerCase().includes(modelChoices.filter.trim().toLowerCase())
+                  : true,
+              )
+              .map((model) => {
+                const checked = modelChoices.selectedIds.includes(model.id);
+                return (
+                  <button
+                    key={model.id}
+                    type="button"
+                    role="checkbox"
+                    aria-checked={checked}
+                    className="group/cb flex h-8 shrink-0 cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-sm leading-5 text-text-primary outline-none hover:bg-alpha-1 focus-visible:shadow-[var(--sidebar-focus-shadow)]"
+                    onClick={() => {
+                      const selectedIds = checked
+                        ? modelChoices.selectedIds.filter((id) => id !== model.id)
+                        : [...modelChoices.selectedIds, model.id];
+                      setPhase({
+                        ...modelChoices,
+                        selectedIds,
+                        defaultId: selectedIds.includes(modelChoices.defaultId)
+                          ? modelChoices.defaultId
+                          : (selectedIds[0] ?? ''),
+                      });
+                    }}
+                  >
+                    <span className={checkboxBoxClass(checked, 'xs')} aria-hidden>
+                      {checked && <Anthropicon name="check" size={CHECKBOX_TICK_SIZE.xs} />}
+                    </span>
+                    <span className="truncate">{model.displayName?.trim() || model.id}</span>
+                  </button>
+                );
+              })}
+            {modelChoices.models.length === 0 && (
+              <p className="px-2 py-1.5 text-sm leading-5 text-text-secondary">
+                {copy.add.onboardingNoModelsMatch}
+              </p>
+            )}
+          </div>
 
-          <SettingsRow layout="stacked" title="">
-            <div className="flex flex-col gap-2">
-              {fieldError('form')}
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="secondary"
-                  disabled={busy}
-                  onClick={() => setPhase({ kind: 'input' })}
-                >
-                  {copy.add.onboardingBack}
-                </Button>
-                <Button onClick={submit} disabled={busy}>
-                  {busy ? copy.add.saving : copy.add.onboardingAddConnection}
-                </Button>
-              </div>
-            </div>
-          </SettingsRow>
-        </SettingsSection>
+          <SettingsModalField
+            label={copy.add.onboardingDefaultModel}
+            htmlFor="provider-setup-default"
+            hint={copy.add.onboardingDefaultModelHelp}
+          >
+            <Select
+              value={modelChoices.defaultId}
+              disabled={busy || modelChoices.selectedIds.length === 0}
+              onValueChange={(defaultId) => setPhase({ ...modelChoices, defaultId })}
+            >
+              <SelectTrigger id="provider-setup-default">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {modelChoices.selectedIds.map((id) => (
+                  <SelectItem key={id} value={id}>
+                    {id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SettingsModalField>
+
+          {fieldError('form')}
+        </div>
       )}
-    </div>
+    </SettingsModal>
+  );
+}
+
+/**
+ * Setting up the provider picked in the catalog, as a dialog over it. Keyed
+ * by the provider so a second pick starts from a clean form.
+ */
+export function ProviderSetupDialog(props: {
+  providerType: ProviderType | null;
+  host: DesktopRuntimeHostRef | undefined;
+  existingSlugs: readonly string[];
+  onClose: () => void;
+  onCreated: (connectionId: string) => void;
+  onError: (title: string, error: unknown) => void;
+}) {
+  if (props.providerType === null) return null;
+  return (
+    <ProviderSetupForm
+      key={props.providerType}
+      providerType={props.providerType}
+      host={props.host}
+      existingSlugs={props.existingSlugs}
+      onClose={props.onClose}
+      onCreated={props.onCreated}
+      onError={props.onError}
+    />
   );
 }

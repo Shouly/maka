@@ -60,7 +60,6 @@ export type DataSettingsCopy = {
   copying: string;
   copyPath: string;
   clearing: string;
-  clearHistory: string;
   backupTitle: string;
   backupNotice: string;
   pathLoadFailed(error: string): string;
@@ -72,8 +71,25 @@ export type DataSettingsCopy = {
   conflictAria: string;
   skip: string;
   overwrite: string;
-  exportConfig: string;
-  importConfig: string;
+  localTitle: string;
+  localHelp: string;
+  clearAction: string;
+  clearConfirm: string;
+  cancel: string;
+  clearHistoryTitle: string;
+  clearHistoryBody: string;
+  clearDraftsTitle: string;
+  clearDraftsBody: string;
+  exportRow: string;
+  exportRowHelp: string;
+  exportAction: string;
+  exportConfirm: string;
+  importRow: string;
+  importRowHelp: string;
+  importAction: string;
+  importConfirm: string;
+  importConflict: string;
+  importConflictHelp: string;
 };
 
 const SETTINGS_DATA_COPY = {
@@ -97,7 +113,6 @@ const SETTINGS_DATA_COPY = {
       memory: '记忆已应用',
       memorySkipped: {
         disabled: '记忆已关闭，记忆文件未导入',
-        incognito: '隐身中，记忆文件未导入',
         failed: '记忆文件导入失败',
       },
       empty: '文件不含可导入的内容',
@@ -137,7 +152,6 @@ const SETTINGS_DATA_COPY = {
     copying: '复制中…',
     copyPath: '复制路径',
     clearing: '清空中…',
-    clearHistory: '清空输入历史',
     backupTitle: '备份与恢复',
     backupNotice:
       '本机数据保存在工作区。需要备份时先退出 Maka，再复制整个目录；恢复时替换同一路径后重启。模型连接凭据随工作区恢复后需要重新测试；订阅账号令牌通常需要重新登录。',
@@ -151,8 +165,25 @@ const SETTINGS_DATA_COPY = {
     conflictAria: '导入时同名连接的处理方式',
     skip: '跳过',
     overwrite: '覆盖',
-    exportConfig: '导出配置…',
-    importConfig: '导入配置…',
+    localTitle: '本机记录',
+    localHelp: '只保存在这台电脑上的输入记录。',
+    clearAction: '清空…',
+    clearConfirm: '清空',
+    cancel: '取消',
+    clearHistoryTitle: '清空输入历史？',
+    clearHistoryBody: '已发送的提示词记录会从本机移除，清空后无法恢复。',
+    clearDraftsTitle: '清空未发送的草稿？',
+    clearDraftsBody: '各个任务输入框里还没发出去的内容会被清除，清空后无法恢复。',
+    exportRow: '导出配置',
+    exportRowHelp: '选好要带走的内容，生成一个 JSON 文件。默认不含密钥。',
+    exportAction: '导出…',
+    exportConfirm: '导出',
+    importRow: '导入配置',
+    importRowHelp: '用导出的 JSON 文件恢复连接、设置、凭据和记忆。',
+    importAction: '导入…',
+    importConfirm: '选择文件…',
+    importConflict: '同名连接',
+    importConflictHelp: '文件里的连接和本机已有连接重名时怎么处理。',
   },
   'zh-TW': {
     categories: {
@@ -174,7 +205,6 @@ const SETTINGS_DATA_COPY = {
       memory: '記憶已應用',
       memorySkipped: {
         disabled: '記憶已關閉，記憶檔案未匯入',
-        incognito: '隱身中，記憶檔案未匯入',
         failed: '記憶檔案匯入失敗',
       },
       empty: '檔案不含可匯入的內容',
@@ -214,7 +244,6 @@ const SETTINGS_DATA_COPY = {
     copying: '複製中…',
     copyPath: '複製路徑',
     clearing: '清空中…',
-    clearHistory: '清空輸入歷史',
     backupTitle: '備份與恢復',
     backupNotice:
       '本機資料儲存在工作區。需要備份時先退出 Maka，再複製整個目錄；恢復時替換同一路徑後重啟。模型連線憑據隨工作區恢復後需要重新測試；訂閱帳號權杖通常需要重新登入。',
@@ -228,8 +257,25 @@ const SETTINGS_DATA_COPY = {
     conflictAria: '匯入時同名連線的處理方式',
     skip: '跳過',
     overwrite: '覆蓋',
-    exportConfig: '匯出設定…',
-    importConfig: '匯入設定…',
+    localTitle: '本機記錄',
+    localHelp: '只儲存在這台電腦上的輸入記錄。',
+    clearAction: '清空…',
+    clearConfirm: '清空',
+    cancel: '取消',
+    clearHistoryTitle: '清空輸入歷史？',
+    clearHistoryBody: '已送出的提示詞記錄會從本機移除，清空後無法復原。',
+    clearDraftsTitle: '清空未送出的草稿？',
+    clearDraftsBody: '各個任務輸入框裡還沒送出的內容會被清除，清空後無法復原。',
+    exportRow: '匯出設定',
+    exportRowHelp: '選好要帶走的內容，產生一個 JSON 檔案。預設不含金鑰。',
+    exportAction: '匯出…',
+    exportConfirm: '匯出',
+    importRow: '匯入設定',
+    importRowHelp: '用匯出的 JSON 檔案還原連線、設定、憑據和記憶。',
+    importAction: '匯入…',
+    importConfirm: '選擇檔案…',
+    importConflict: '同名連線',
+    importConflictHelp: '檔案裡的連線和本機已有連線重名時怎麼處理。',
   },
   en: {
     categories: {
@@ -259,7 +305,6 @@ const SETTINGS_DATA_COPY = {
       memory: 'Memory applied',
       memorySkipped: {
         disabled: 'Memory is off; memory files were not imported',
-        incognito: 'Incognito; memory files were not imported',
         failed: 'Memory files could not be imported',
       },
       empty: 'The file contains no importable data',
@@ -300,7 +345,6 @@ const SETTINGS_DATA_COPY = {
     copying: 'Copying…',
     copyPath: 'Copy path',
     clearing: 'Clearing…',
-    clearHistory: 'Clear input history',
     backupTitle: 'Backup and restore',
     backupNotice:
       'Local data is stored in the workspace. To back it up, quit Maka and copy the entire directory. To restore it, replace the same path and restart. Model credentials should be tested again after a restore, and subscription accounts usually need to sign in again.',
@@ -315,8 +359,29 @@ const SETTINGS_DATA_COPY = {
     conflictAria: 'How to handle connections with the same name during import',
     skip: 'Skip',
     overwrite: 'Overwrite',
-    exportConfig: 'Export configuration…',
-    importConfig: 'Import configuration…',
+    localTitle: 'On this computer',
+    localHelp: 'Input records kept only on this computer.',
+    clearAction: 'Clear…',
+    clearConfirm: 'Clear',
+    cancel: 'Cancel',
+    clearHistoryTitle: 'Clear input history?',
+    clearHistoryBody: 'Sent prompts are removed from this computer. This cannot be undone.',
+    clearDraftsTitle: 'Clear unsent drafts?',
+    clearDraftsBody:
+      'Text not yet sent from any task’s input box is removed. This cannot be undone.',
+    exportRow: 'Export configuration',
+    exportRowHelp:
+      'Pick what to take with you and save it as a JSON file. Keys are left out by default.',
+    exportAction: 'Export…',
+    exportConfirm: 'Export',
+    importRow: 'Import configuration',
+    importRowHelp:
+      'Restore connections, settings, credentials, and memory from an exported JSON file.',
+    importAction: 'Import…',
+    importConfirm: 'Choose file…',
+    importConflict: 'Same-name connections',
+    importConflictHelp:
+      'What to do when a connection in the file has the name of one already here.',
   },
 } satisfies UiCatalog<DataSettingsCopy>;
 

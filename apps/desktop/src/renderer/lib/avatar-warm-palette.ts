@@ -27,7 +27,7 @@
 // one named module is reviewable; the same literals sprinkled through
 // components are the drift the rule exists to stop.
 //
-// 低饱和暖色对 [底色, 前景]:与页面奶油底同族。首对即 Claude 参照件(米杏/橄榄)。
+// 低饱和暖色对 [底色, 前景]:与页面奶油底同族。首对即参照件(米杏/橄榄)。
 export const AVATAR_WARM_PAIRS: ReadonlyArray<readonly [string, string]> = [
   ['#E3DACC', '#788C5D'], // 米杏 / 橄榄
   ['#EADDD3', '#A8633E'], // 奶杏 / 陶土

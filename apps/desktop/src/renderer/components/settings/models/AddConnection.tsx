@@ -26,14 +26,15 @@
 // alike.
 //
 // Existing account connections are managed here too, next to the sign-in that
-// made them: signing out is the same panel's other button, and putting it on
-// the connection's detail page would leave the sign-in and the sign-out on two
+// made them: signing out is in the same row's ⋯ menu, and putting it on the
+// connection's detail page would leave the sign-in and the sign-out on two
 // different screens.
+//
+// This is a directory face of Settings › Models: the dialog's top bar carries the way back, and picking a provider
+// opens its setup form as a dialog over this page.
 
 import { useUiLocale } from '@maka/ui';
 import type { ProjectedLlmConnection, ProviderType } from '@maka/core/llm-connections';
-import { Anthropicon } from '../../icons/Anthropicon.js';
-import { Button } from '../../ui/button.js';
 import { ProviderCatalog } from './ProviderCatalog.js';
 import { OAuthPanel } from './OAuthPanel.js';
 import { SettingsSection } from '../settings-row.js';
@@ -52,7 +53,6 @@ const OAUTH_PROVIDERS: readonly InteractiveOAuthProviderType[] = [
 export function AddConnection(props: {
   host: DesktopRuntimeHostRef | undefined;
   connections: readonly ProjectedLlmConnection[];
-  onBack: () => void;
   onPickProvider: (providerType: ProviderType) => void;
   onConnected: (connectionId: string) => void;
   onError: (title: string, error: unknown) => void;
@@ -62,13 +62,6 @@ export function AddConnection(props: {
 
   return (
     <div data-maka-contract="add-connection">
-      <div className="mb-4">
-        <Button variant="ghost" size="sm" onClick={props.onBack}>
-          <Anthropicon name="arrowLeft" size={16} />
-          <span className="ml-1.5">{copy.panel.backToList}</span>
-        </Button>
-      </div>
-
       <SettingsSection title={copy.add.accountTitle} description={copy.add.accountDetail}>
         {OAUTH_PROVIDERS.flatMap((provider) => {
           const existing = props.connections.filter((row) => row.providerType === provider);
@@ -102,9 +95,7 @@ export function AddConnection(props: {
       </SettingsSection>
 
       <SettingsSection title={copy.panel.addConnection} description={copy.panel.addHelp}>
-        <div className="py-3">
-          <ProviderCatalog onPick={props.onPickProvider} />
-        </div>
+        <ProviderCatalog onPick={props.onPickProvider} />
       </SettingsSection>
     </div>
   );

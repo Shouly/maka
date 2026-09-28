@@ -17,7 +17,7 @@
  * under the License.
  */
 
-// The frame the three module pages share: Claude's list-page shape — a
+// The frame the three module pages share: the list-page shape — a
 // display title in the content column, a toolbar of pill tabs with the
 // page's actions on the right, the list below — under the window titlebar,
 // which keeps its three columns and its sidebar toggle.
@@ -42,11 +42,11 @@ export function ModulePage(props: {
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-maka-contract="module-main">
       <div className="min-h-0 flex-1 overflow-y-auto pb-16">
-        {/* Claude's list pages: a 56rem column with 2rem gutters (832px of
+        {/* List pages: a 56rem column with 2rem gutters (832px of
             content) whose title row starts 48px below the top. The shell's
             titlebar is those 48px — it is empty above a module page — so the
             column adds nothing; padding here would push the title 48px lower
-            than Claude's. An open search takes the whole actions row; the
+            than the design. An open search takes the whole actions row; the
             other controls hide until it closes (the `has()` rule on the
             actions node). */}
         <div className="mx-auto w-full max-w-4xl px-8">

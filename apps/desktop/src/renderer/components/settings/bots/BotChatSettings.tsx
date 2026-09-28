@@ -41,11 +41,13 @@ import {
   type BotPendingActionName,
 } from '../../../lib/bot-channel-view.js';
 import { getBotSettingsCopy } from '../../../locales/settings-bot-copy.js';
+import { getSettingsNavigationCopy } from '../../../locales/settings-navigation-copy.js';
 import { settingsTestResultMessage } from '../../../locales/settings-test-result-copy.js';
 import { botsStore, settingsStore } from '../../../store/index.js';
 import { toast } from '../../../store/toast-store.js';
 import { ConfirmDialog } from '../../ui/confirm-dialog.js';
 import { Skeleton } from '../../ui/skeleton.js';
+import { useSettingsBack } from '../settings-kit.js';
 import { SettingsRow, SettingsSection } from '../settings-row.js';
 import { BotChannelDetail } from './BotChannelDetail.js';
 import { BotChatOverview } from './BotChatOverview.js';
@@ -65,6 +67,16 @@ export function BotChatSettings(props: { host: DesktopRuntimeHostRef | undefined
   const [disconnectOpen, setDisconnectOpen] = useState(false);
 
   useEffect(() => botsStore.observe(), []);
+  // A channel's page is a sub-view of the overview; the dialog's top bar is
+  // the way back to it.
+  useSettingsBack(
+    detailOpen
+      ? {
+          label: getSettingsNavigationCopy(locale).sections['bot-chat'].label,
+          onBack: () => setDetailOpen(false),
+        }
+      : null,
+  );
 
   // Under the settings-bots-onboarding fixture the page opens on the seeded
   // provider with its scan dialog up, so the QR waiting state can be captured.
@@ -287,7 +299,6 @@ export function BotChatSettings(props: { host: DesktopRuntimeHostRef | undefined
         actionBusy={pending !== null}
         pendingAction={pending?.provider === selected ? pending.action : null}
         autoOpenScan={autoOpenScan === selected}
-        onBack={() => setDetailOpen(false)}
         onUpdateChannel={(patch) => updateChannelFor(selected, patch)}
         onTest={() => void testChannel()}
         onTestAndConnect={() => void testAndConnect()}

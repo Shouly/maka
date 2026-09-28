@@ -37,7 +37,6 @@ export interface WebSearchResultRow {
 
 export type WebSearchErrorReason =
   | 'invalid_query'
-  | 'incognito_active'
   | 'not_configured'
   | 'invalid_credentials'
   | 'rate_limited'

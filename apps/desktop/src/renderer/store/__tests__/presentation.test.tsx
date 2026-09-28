@@ -232,7 +232,6 @@ test('the palette result list groups rows and marks exactly one selected', () =>
     onSelectModule: () => {},
     onOpenWorkspaceFolder: () => {},
     onCopyDiagnostics: () => {},
-    onTestNetworkProxy: () => {},
     onSetDefaultConnection: () => {},
     onOpenRuntimeDebug: () => {},
   }).slice(0, 6);

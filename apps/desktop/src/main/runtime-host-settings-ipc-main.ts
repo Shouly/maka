@@ -280,13 +280,8 @@ async function loadRuntimeHostSettingsWithoutLane(
         passwordConfigured: proxyCredential?.configured === true,
       },
     },
-    personalization: {
-      ...local.personalization,
-      ...policy.personalization,
-    },
     memory: policy.memory,
     workspaceInstructions: policy.workspaceInstructions,
-    privacy: policy.privacy,
     chatDefaults: policy.chatDefaults,
     externalAgents: policy.externalAgents,
     shell: policy.shell,
@@ -350,24 +345,6 @@ async function applyHostPatchWithoutLane(
   if (patch.network?.proxy) {
     skippedCredentials += await updateNetworkProxy(client, patch.network.proxy);
   }
-  if (
-    patch.personalization?.displayName !== undefined ||
-    patch.personalization?.assistantTone !== undefined
-  ) {
-    const personalization = patch.personalization;
-    await client.updateRuntimePolicy((policy) => ({
-      kind: "set_personalization",
-      value: {
-        ...policy.personalization,
-        ...(personalization.displayName === undefined
-          ? {}
-          : { displayName: personalization.displayName }),
-        ...(personalization.assistantTone === undefined
-          ? {}
-          : { assistantTone: personalization.assistantTone }),
-      },
-    }));
-  }
   if (patch.memory) {
     await mergePolicy(client, "memory", patch.memory, "set_memory");
   }
@@ -379,8 +356,6 @@ async function applyHostPatchWithoutLane(
       "set_workspace_instructions",
     );
   }
-  if (patch.privacy)
-    await mergePolicy(client, "privacy", patch.privacy, "set_privacy");
   if (patch.chatDefaults) {
     await mergePolicy(
       client,
@@ -477,7 +452,7 @@ async function updateNetworkProxy(
 }
 
 async function mergePolicy<
-  K extends "memory" | "workspaceInstructions" | "privacy" | "chatDefaults" | "shell",
+  K extends "memory" | "workspaceInstructions" | "chatDefaults" | "shell",
 >(
   client: RuntimeHostSettingsClient,
   key: K,
@@ -485,7 +460,6 @@ async function mergePolicy<
   kind:
     | "set_memory"
     | "set_workspace_instructions"
-    | "set_privacy"
     | "set_chat_defaults"
     | "set_shell",
 ): Promise<void> {

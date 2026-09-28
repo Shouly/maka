@@ -33,7 +33,6 @@ import {
   VISIBLE_SETTINGS_SECTIONS,
   resolveSettingsSection,
 } from '../../components/settings/settings-sections.js';
-import { createOptimisticSettingsDraft } from '../../lib/ported/optimistic-settings-draft.js';
 import { aboutUpdateRow, type AboutUpdateCopy } from '../../lib/ported/about-update-status.js';
 import { updateInstallOutcome } from '../../hooks/use-update-install.js';
 import { connectionModelRows, toggledModelIds } from '../../lib/connection-model-rows.js';
@@ -96,7 +95,9 @@ test('the deferred pages keep their core id but never appear in the nav', () => 
 });
 
 test('a deep link or a restored value naming a deferred page falls back to general', () => {
-  assert.equal(resolveSettingsSection('appearance'), 'appearance');
+  // Appearance is a section of General now, not a page.
+  assert.equal(resolveSettingsSection('appearance'), 'general');
+  assert.equal(resolveSettingsSection('privacy'), 'general');
   assert.equal(resolveSettingsSection('external-agents'), 'general');
   assert.equal(resolveSettingsSection('daily-review'), 'general');
   assert.equal(resolveSettingsSection('import-tasks'), 'general');
@@ -188,21 +189,20 @@ test('client-owned patches go to the client channel', async () => {
 test('Host-owned patches go to the Host channel', async () => {
   const { calls, bridge } = fakeSettingsBridge();
   const store = createSettingsStore(bridge as never);
-  await store.update({ privacy: { incognitoActive: true } }, HOST);
   await store.update({ chatDefaults: { permissionMode: 'bypass' } }, HOST);
-  await store.update({ personalization: { displayName: 'Ada' } }, HOST);
+  await store.update({ memory: { enabled: false } }, HOST);
   await store.update({ network: { proxy: { enabled: true } } }, HOST);
   await store.update({ shell: { preference: 'git_bash' } }, HOST);
   assert.deepEqual(
     calls.map((call) => call.channel),
-    ['host', 'host', 'host', 'host', 'host'],
+    ['host', 'host', 'host', 'host'],
   );
 });
 
 test('a mixed patch goes to the Host, which applies the client half itself', async () => {
   const { calls, bridge } = fakeSettingsBridge();
   const store = createSettingsStore(bridge as never);
-  await store.update({ appearance: { theme: 'light' }, privacy: { incognitoActive: false } }, HOST);
+  await store.update({ appearance: { theme: 'light' }, memory: { enabled: true } }, HOST);
   assert.deepEqual(
     calls.map((call) => call.channel),
     ['host'],
@@ -212,101 +212,10 @@ test('a mixed patch goes to the Host, which applies the client half itself', asy
 test('a Host-owned patch without a Host is refused rather than silently dropped', async () => {
   const { calls, bridge } = fakeSettingsBridge();
   const store = createSettingsStore(bridge as never);
-  await assert.rejects(() => store.update({ privacy: { incognitoActive: true } }, undefined));
+  await assert.rejects(() => store.update({ memory: { enabled: false } }, undefined));
   assert.deepEqual(calls, []);
 });
 
-// ── optimistic edits ───────────────────────────────────────────────────────
-
-interface Draft {
-  host: string;
-  port: number;
-}
-
-function draftHarness(initial: Draft, commit: (patch: Partial<Draft>) => Promise<Draft>) {
-  const seen: Draft[] = [];
-  const errors: unknown[] = [];
-  const controller = createOptimisticSettingsDraft<Draft>({
-    initial,
-    commit,
-    onDraftChange: (draft) => seen.push(draft),
-    onError: (error) => errors.push(error),
-  });
-  return { controller, seen, errors };
-}
-
-test('an edit shows immediately and settles on what the write returned', async () => {
-  const { controller, seen } = draftHarness({ host: '', port: 0 }, async (patch) => ({
-    host: '127.0.0.1',
-    port: 0,
-    ...patch,
-  }));
-  const applied = controller.update({ host: 'proxy.local' });
-  assert.equal(controller.draft().host, 'proxy.local');
-  assert.equal(await applied, true);
-  assert.equal(controller.draft().host, 'proxy.local');
-  assert.ok(seen.length >= 2);
-});
-
-test('a failed write rolls back to what is stored, not to what was typed', async () => {
-  const stored: Draft = { host: 'stored.example', port: 7890 };
-  const { controller, errors } = draftHarness(stored, async () => {
-    throw new Error('nope');
-  });
-  assert.equal(await controller.update({ host: 'typed.example' }), false);
-  assert.deepEqual(controller.draft(), stored);
-  assert.equal(errors.length, 1);
-});
-
-test('the last intent wins even when an earlier write answers last', async () => {
-  const resolvers: ((value: Draft) => void)[] = [];
-  const { controller } = draftHarness({ host: '', port: 0 }, () => {
-    return new Promise<Draft>((resolve) => resolvers.push(resolve));
-  });
-  const first = controller.update({ host: 'one' });
-  const second = controller.update({ host: 'two' });
-  // The slow first write answers after the second one.
-  resolvers[1]?.({ host: 'two', port: 0 });
-  resolvers[0]?.({ host: 'one', port: 0 });
-  assert.equal(await second, true);
-  assert.equal(await first, false);
-  assert.equal(controller.draft().host, 'two');
-});
-
-test('a snapshot arriving mid-flight lands only once the write settles', async () => {
-  let resolve: ((value: Draft) => void) | undefined;
-  const { controller } = draftHarness({ host: 'a', port: 1 }, () => {
-    return new Promise<Draft>((next) => {
-      resolve = next;
-    });
-  });
-  const pending = controller.update({ host: 'b' });
-  // The subscription pushes something unrelated while the write is open.
-  controller.syncPersisted({ host: 'from-subscription', port: 2 });
-  assert.equal(controller.draft().host, 'b', 'the field must not move under the user');
-  resolve?.({ host: 'b', port: 1 });
-  await pending;
-  assert.equal(controller.draft().host, 'b');
-});
-
-test('a disposed draft drops the late response instead of resurrecting itself', async () => {
-  let resolve: ((value: Draft) => void) | undefined;
-  const { controller, seen } = draftHarness({ host: 'a', port: 1 }, () => {
-    return new Promise<Draft>((next) => {
-      resolve = next;
-    });
-  });
-  const pending = controller.update({ host: 'b' });
-  const before = seen.length;
-  controller.dispose();
-  resolve?.({ host: 'server', port: 9 });
-  assert.equal(await pending, false);
-  assert.equal(seen.length, before);
-});
-
-// A catalog is the provider's list; a selection is the user's. The switch used
-// to rebuild the selection by walking the catalog, so an enabled id the catalog
-// no longer offered was invisible AND deleted by the next unrelated toggle.
 test('an enabled model the catalog dropped stays visible and survives another toggle', () => {
   const entry = (id: string) => ({ id, canUseAsChatDefault: true, isDefault: false }) as never;
   const entries = [entry('a'), entry('b')];

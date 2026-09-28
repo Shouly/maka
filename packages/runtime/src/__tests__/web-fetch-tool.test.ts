@@ -20,11 +20,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ZodType } from 'zod';
-import {
-  buildWebFetchTool,
-  routeWebFetchTools,
-  WEB_FETCH_MODEL_OUTPUT_MAX_BYTES,
-} from '../web-fetch-tool.js';
+import { buildWebFetchTool, WEB_FETCH_MODEL_OUTPUT_MAX_BYTES } from '../web-fetch-tool.js';
 import type { MakaToolContext } from '../tool-runtime.js';
 
 test('WebFetch forwards the canonical URL to its executor', async () => {
@@ -101,20 +97,6 @@ test('WebFetch answers the prompt with the executor model when one is wired', as
     prompt: 'What does it say?',
     content: 'the page says hello',
   });
-});
-
-test('privacy mode removes WebFetch from a turn', () => {
-  const webFetch = buildWebFetchTool({ fetch: async () => 'unused' });
-  const other = { ...webFetch, name: 'Read' };
-
-  assert.deepEqual(
-    routeWebFetchTools([other, webFetch], { incognitoActive: true }).map((tool) => tool.name),
-    ['Read'],
-  );
-  assert.deepEqual(
-    routeWebFetchTools([other, webFetch], { incognitoActive: false }).map((tool) => tool.name),
-    ['Read', 'WebFetch'],
-  );
 });
 
 function context(abortSignal: AbortSignal): MakaToolContext {

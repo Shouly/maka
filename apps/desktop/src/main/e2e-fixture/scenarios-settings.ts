@@ -39,21 +39,7 @@ export async function writeSettings(
   workspaceRoot: string,
   scenario?: E2eFixtureScenario,
 ): Promise<void> {
-  // PR-SIDEBAR-IA-0 Phase 3 P0 fixup v2 (kenji `08be08d8` + WAWQAQ
-  // `1886c41b`): the fixture previously seeded a placeholder
-  // Chinese personal name for deterministic rendering, but a real
-  // user reading the chat surface can't tell who that placeholder
-  // is. Worse, if a demo workspace was ever opened on top of a
-  // real user's workspace, the placeholder would persist and
-  // confuse them about who set it.
-  //
-  // Phase 3 fixup v2 leaves `displayName` empty so screenshots and
-  // Settings match a new, unconfigured user. Settings test
-  // (`e2e-fixture.test.ts`) asserts the empty-string value
-  // so a future patch that re-adds a demo name lands as an explicit
-  // copy decision, not silent drift.
   const settings = createDefaultSettings();
-  settings.personalization.displayName = '';
   settings.appearance.theme = 'auto';
   // Settings → 使用统计: the seeded traffic uses the fixed e2e-fixture clock,
   // which sits outside the real-time 24h/7天/30天 windows the store derives

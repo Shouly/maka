@@ -51,9 +51,8 @@ test('native accessibility names cover the shell, transcript, settings and modul
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: '设置', exact: true }).click();
   for (const section of [
-    'account',
     'general',
-    'appearance',
+    'account',
     'projects',
     'models',
     'subagents',
@@ -74,7 +73,7 @@ test('native accessibility names cover the shell, transcript, settings and modul
       section,
     );
     await audit(section);
-    if (section === 'appearance')
+    if (section === 'general')
       await page.screenshot({
         path: resolve(shots, 'phase6-settings-light.png'),
         animations: 'disabled',
@@ -93,7 +92,7 @@ test('native accessibility names cover the shell, transcript, settings and modul
   await audit('scheduled');
   await page.getByRole('button', { name: '设置', exact: true }).click();
   await page
-    .locator('[data-maka-contract="settings-sidebar"] [data-settings-section="appearance"]')
+    .locator('[data-maka-contract="settings-sidebar"] [data-settings-section="general"]')
     .click();
   await page.evaluate(() => window.maka.settings.updateClient({ appearance: { theme: 'dark' } }));
   await expect(page.locator('html')).toHaveClass(/dark/);

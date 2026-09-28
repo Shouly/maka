@@ -198,8 +198,10 @@ test('a turn with no user text carries its injections on an item of their own, t
       ['assistant', 'Answer', undefined, 1],
     ],
   );
-  // With a carrier, the same blocks ride on the head user text instead.
+  // With a carrier, the same blocks ride on the head user text instead; one
+  // recorded bare replays as written, outside the envelope.
   const carried = buildRuntimeEventModelReplayPlan([
+    { ...injection('i0', '<userPreferences>Be brief.</userPreferences>', { bare: true }), ts: 39 },
     { ...injection('i1', 'SNAPSHOT'), ts: 40 },
     {
       ...event({ id: 'u1', role: 'user', author: 'user', content: { kind: 'text', text: 'hi' } }),
@@ -210,17 +212,26 @@ test('a turn with no user text carries its injections on an item of their own, t
     carried.map((item) =>
       item.kind === 'text' ? [item.content, item.injections, item.ts] : item.kind,
     ),
-    [['hi', ['<system-reminder>SNAPSHOT</system-reminder>'], 41]],
+    [
+      [
+        'hi',
+        [
+          '<userPreferences>Be brief.</userPreferences>',
+          '<system-reminder>SNAPSHOT</system-reminder>',
+        ],
+        41,
+      ],
+    ],
   );
 });
 
-function injection(id: string, text: string): RuntimeEvent {
+function injection(id: string, text: string, data?: Record<string, unknown>): RuntimeEvent {
   return {
     ...event({
       id,
       role: 'system',
       author: 'system',
-      content: { kind: 'injection', name: id, text },
+      content: { kind: 'injection', name: id, text, ...(data ? { data } : {}) },
     }),
     modelVisibility: 'visible',
   };

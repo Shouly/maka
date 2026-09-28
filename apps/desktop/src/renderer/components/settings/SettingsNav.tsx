@@ -17,16 +17,17 @@
  * under the License.
  */
 
-// The 220px sticky settings nav, from the reference design's
-// `app/(app)/setting/layout.tsx`: 32px rows, r8, 14/20, icon 20px that does
-// NOT change colour when selected — only the label rises to the primary tier
-// and 500.
+// The Settings dialog's rail: 192px on the surface-1 tint
+// with a hairline on its right; a search field at the top; then the groups,
+// each a 12/17 muted label over 32px rows 1px apart — r8, 14/20, a 20px icon
+// that keeps the secondary tier when its row is selected, while the label
+// rises to primary and 500 on the 10% fill.
 //
-// One difference from the reference, and it is Maka's: the reference has five
-// destinations and no grouping. Eleven need one, so the pre-rewrite grouping
-// (`nav-group-summary.ts`, four groups) comes back as headings. There is no
-// routing behind it — a section is `uiStore` state (plan §2.12).
+// The pages sort into four groups, the pre-rewrite grouping
+// (`nav-group-summary.ts`); only its headings were restyled. The search
+// narrows the rows by label.
 
+import { useMemo, useState } from 'react';
 import type { SettingsSection } from '@maka/core/settings';
 import { Anthropicon } from '../icons/Anthropicon.js';
 import { cn } from '../../lib/cn.js';
@@ -36,23 +37,57 @@ import type { SettingsNavigationCopy } from '../../locales/settings-navigation-c
 export function SettingsNav(props: {
   section: SettingsSection;
   label: string;
+  searchPlaceholder: string;
+  searchLabel: string;
+  noResults: string;
   copy: SettingsNavigationCopy;
   onSelect: (section: SettingsSection) => void;
 }) {
+  const [query, setQuery] = useState('');
+  const groups = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase();
+    return SETTINGS_NAV_GROUPS.map((group) => ({
+      ...group,
+      sections: needle
+        ? group.sections.filter((id) =>
+            props.copy.sections[id].label.toLocaleLowerCase().includes(needle),
+          )
+        : group.sections,
+    })).filter((group) => group.sections.length > 0);
+  }, [query, props.copy]);
+
   return (
     <nav
       data-maka-contract="settings-sidebar"
       aria-label={props.label}
-      className="relative z-10 -ml-3 mb-4 min-w-0 self-start md:sticky md:top-4 md:mb-0"
+      className="flex w-48 shrink-0 flex-col gap-3 border-r border-alpha-2 bg-surface-1"
     >
-      <div className="min-w-0 overflow-x-auto overflow-y-hidden">
-        {SETTINGS_NAV_GROUPS.map((group) => (
-          <div key={group.group} className="mb-3 last:mb-0">
-            <p className="px-2 pb-1 text-[0.6875rem] font-medium uppercase leading-4 tracking-wider text-text-muted">
+      <div className="shrink-0 px-3 pt-3">
+        {/* The field: the frame is the label, so the focus ring is drawn
+            on it when the input inside is keyboard-focused, not on every focus
+            (the dialog focuses this field as it opens). */}
+        <label className="flex h-8 w-full cursor-text items-center gap-3 rounded-lg bg-fill-field px-2 shadow-[var(--field-shadow)] transition-shadow duration-[var(--dur-fast)] ease-out [&:hover:not(:focus-within)]:shadow-[var(--field-shadow-hover)] has-[:focus-visible]:shadow-[var(--sidebar-focus-shadow)]">
+          <Anthropicon name="search" size={20} className="shrink-0 text-text-muted" />
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={props.searchPlaceholder}
+            aria-label={props.searchLabel}
+            className="min-w-0 flex-1 bg-transparent text-sm leading-5 text-text-primary outline-none placeholder:text-text-muted [&::-webkit-search-cancel-button]:hidden"
+          />
+        </label>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 pb-3">
+        {groups.length === 0 && (
+          <p className="px-2 pt-3 text-xs leading-[17px] text-text-muted">{props.noResults}</p>
+        )}
+        {groups.map((group) => (
+          <div key={group.group} className="flex flex-col gap-3">
+            <p className="px-2 pt-3 text-xs leading-[17px] text-text-muted">
               {props.copy.groups[group.group]}
             </p>
-            {/* 竖排行距 1px:导航项自带 32px 高和 hover 底,再撑 4px 整列会散。 */}
-            <ul className="mb-0 flex flex-col gap-px">
+            <ul className="flex flex-col gap-px">
               {group.sections.map((id) => {
                 const active = id === props.section;
                 return (
@@ -63,10 +98,10 @@ export function SettingsNav(props: {
                       aria-current={active ? 'page' : undefined}
                       onClick={() => props.onSelect(id)}
                       className={cn(
-                        'flex h-8 w-full cursor-pointer items-center gap-3 whitespace-nowrap rounded-lg px-2 text-left text-sm leading-5 outline-none transition-colors focus-visible:shadow-[var(--sidebar-focus-shadow)]',
+                        'flex h-8 w-full cursor-pointer items-center gap-3 rounded-lg px-2 text-left text-sm leading-5 outline-none transition-colors focus-visible:shadow-[var(--sidebar-focus-shadow)]',
                         active
                           ? 'bg-alpha-2 font-medium text-text-primary'
-                          : 'text-text-secondary hover:bg-alpha-1 hover:text-text-primary',
+                          : 'text-text-secondary hover:bg-alpha-1',
                       )}
                     >
                       <Anthropicon
@@ -74,7 +109,7 @@ export function SettingsNav(props: {
                         size={20}
                         className="shrink-0 text-text-secondary"
                       />
-                      <span className="truncate">{props.copy.sections[id].label}</span>
+                      <span className="min-w-0 truncate">{props.copy.sections[id].label}</span>
                     </button>
                   </li>
                 );

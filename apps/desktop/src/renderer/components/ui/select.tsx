@@ -33,27 +33,46 @@ const SelectValue = SelectPrimitive.Value;
 
 const SelectTrigger = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger> & {
+    /**
+     * `field` is a form field, framed like the Input beside it. `ghost` is
+     * the settings-row picker: no frame, the value and a caret on a
+     * transparent 32px control that takes the 5% ghost fill on hover and while
+     * open, as wide as its value.
+     */
+    variant?: 'field' | 'ghost';
+  }
+>(({ className, children, variant = 'field', ...props }, ref) => (
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      // 和 Input 共用 fieldSurfaceClass:Select 是表单字段,不该和相邻的输入框
-      // 长成两个样。原来是 h-10(40px) + 真 border + bg-background(页面底色),
-      // 比同一行的 Input(32) 高 8px。
-      fieldSurfaceClass,
-      'h-9 md:h-8 px-3 flex items-center justify-between gap-2 text-left cursor-pointer',
-      // 展开时保持 hover 的描边,让"这个字段正被操作"一直可见
-      'data-[state=open]:shadow-[var(--field-shadow-hover)]',
-      // SelectValue 的 placeholder 态由触发器承载
-      'data-[placeholder]:text-text-muted',
+      variant === 'ghost'
+        ? [
+            'inline-flex h-8 min-w-0 max-w-64 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg bg-transparent px-2 text-left text-sm leading-5 text-text-primary outline-none',
+            'transition-colors duration-[var(--dur-fast)] ease-out hover:bg-alpha-1 data-[state=open]:bg-alpha-1',
+            'focus-visible:shadow-[var(--sidebar-focus-shadow)] disabled:cursor-not-allowed disabled:opacity-50',
+            // A long value (a model name) shortens instead of widening the row.
+            '[&>span:first-child]:min-w-0 [&>span:first-child]:truncate data-[placeholder]:text-text-muted',
+          ]
+        : [
+            // 和 Input 共用 fieldSurfaceClass:Select 是表单字段,不该和相邻的输入框
+            // 长成两个样。原来是 h-10(40px) + 真 border + bg-background(页面底色),
+            // 比同一行的 Input(32) 高 8px。
+            fieldSurfaceClass,
+            'h-9 md:h-8 px-3 flex items-center justify-between gap-2 text-left cursor-pointer',
+            // 展开时保持 hover 的描边,让"这个字段正被操作"一直可见
+            'data-[state=open]:shadow-[var(--field-shadow-hover)]',
+            // SelectValue 的 placeholder 态由触发器承载
+            'data-[placeholder]:text-text-muted',
+          ],
       className,
     )}
     {...props}
   >
     {children}
     <SelectPrimitive.Icon asChild>
-      <Anthropicon name="caretDown" className="text-text-muted" />
+      {/* A 16px caret, the same in both pickers. */}
+      <Anthropicon name="caretDown" size={16} className="shrink-0 text-text-muted" />
     </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
 ));

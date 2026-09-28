@@ -275,23 +275,7 @@ test('ReadHistory excludes the currently executing turn only in the current sess
   );
 });
 
-test('ReadHistory propagates cancellation across privacy and transcript awaits', async () => {
-  const privacyAbort = new AbortController();
-  let privacyListCalls = 0;
-  const privacyResult = await buildReadHistoryTool({
-    listSessions: async () => {
-      privacyListCalls += 1;
-      return [session('past', 'Past', 1)];
-    },
-    readMessages: async () => [user('visible', 'turn-1')],
-    getPrivacyContext: async () => {
-      privacyAbort.abort();
-      return { incognitoActive: false };
-    },
-  }).impl({ session_id: 'past' }, context(privacyAbort.signal));
-  assert.match(JSON.stringify(privacyResult), /aborted/u);
-  assert.equal(privacyListCalls, 0);
-
+test('ReadHistory propagates cancellation across transcript awaits', async () => {
   const readAbort = new AbortController();
   let receivedSignal: AbortSignal | undefined;
   const readResult = await buildReadHistoryTool({
@@ -301,7 +285,6 @@ test('ReadHistory propagates cancellation across privacy and transcript awaits',
       readAbort.abort();
       return [user('visible', 'turn-1')];
     },
-    getPrivacyContext: async () => ({ incognitoActive: false }),
   }).impl({ session_id: 'past' }, context(readAbort.signal));
   assert.equal(receivedSignal, readAbort.signal);
   assert.match(JSON.stringify(readResult), /aborted/u);
@@ -397,39 +380,10 @@ test('ReadHistory rejects mismatched or hidden message anchors', async () => {
   );
 });
 
-test('history access fails closed before transcript reads in incognito mode', async () => {
-  let listCalls = 0;
-  let readCalls = 0;
-  const deps = {
-    listSessions: async () => {
-      listCalls += 1;
-      return [session('past', 'Past', 1)];
-    },
-    readMessages: async () => {
-      readCalls += 1;
-      return [user('secret', 'turn-1')];
-    },
-    getPrivacyContext: async () => ({ incognitoActive: true }),
-  };
-
-  const searchClass = await refusalClassOf(
-    buildSearchHistoryTool(deps).impl({ query: 'secret' }, context()),
-  );
-  const readClass = await refusalClassOf(
-    buildReadHistoryTool(deps).impl({ session_id: 'past' }, context()),
-  );
-
-  assert.equal(searchClass, 'incognito_active');
-  assert.equal(readClass, 'incognito_active');
-  assert.equal(listCalls, 0);
-  assert.equal(readCalls, 0);
-});
-
 function historyDeps(sessions: SessionSummary[], messages: ReadonlyMap<string, StoredMessage[]>) {
   return {
     listSessions: async () => sessions,
     readMessages: async (sessionId: string) => messages.get(sessionId) ?? null,
-    getPrivacyContext: async () => ({ incognitoActive: false }),
   };
 }
 

@@ -50,13 +50,9 @@ export interface HostWebSearchService {
 }
 
 export function shouldResolveHostTavilyWebSearchReadiness(
-  policy: Pick<RuntimePolicy, 'privacy' | 'webSearch'>,
+  policy: Pick<RuntimePolicy, 'webSearch'>,
 ): boolean {
-  return (
-    policy.webSearch.enabled &&
-    policy.webSearch.defaultProvider === 'tavily' &&
-    policy.privacy.incognitoActive !== true
-  );
+  return policy.webSearch.enabled && policy.webSearch.defaultProvider === 'tavily';
 }
 
 export async function resolveHostTavilyWebSearchReadiness(
@@ -71,12 +67,6 @@ export function createHostWebSearchService(input: HostWebSearchServiceInput): Ho
     search: async ({ query, limit, allowedDomains, blockedDomains, abortSignal, policy }) => {
       const resolved = await input.policy.resolveWebSearchExecution(policy);
       switch (resolved.kind) {
-        case 'privacy_mode':
-          return {
-            ok: false,
-            reason: 'incognito_active',
-            message: 'Web search is disabled while privacy mode is active.',
-          };
         case 'disabled':
           return {
             ok: false,

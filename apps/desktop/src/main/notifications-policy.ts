@@ -48,8 +48,7 @@ export interface RunNotificationGate {
 /**
  * Single source of truth for "should we raise a native notification for
  * this Session". All gates must pass; order is irrelevant because the
- * predicate is a plain conjunction. Incognito is not a gate here: the Host
- * that holds the privacy policy sends no attention while it is on.
+ * predicate is a plain conjunction.
  */
 export function shouldRaiseRunNotification(gate: RunNotificationGate): boolean {
   return gate.enabled && gate.supported && !gate.windowFocused && !gate.e2e;

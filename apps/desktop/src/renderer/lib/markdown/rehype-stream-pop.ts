@@ -18,7 +18,7 @@
  */
 
 /**
- * 流式"尾部渐显"入场(claude.ai cowork 式):把文本节点切成 token 级
+ * 流式"尾部渐显"入场:把文本节点切成 token 级
  * <span class="stream-pop">,配合 globals.css 的入场动画使用。
  *
  * 原理:CSS animation 只在元素**新挂载**时播放。流式文本 append-only,

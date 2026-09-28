@@ -73,12 +73,9 @@ export function hasRuntimeHostSettingsPatch(
       patch.network ||
       patch.memory ||
       patch.workspaceInstructions ||
-      patch.privacy ||
       patch.chatDefaults ||
       patch.webSearch ||
-      patch.subagents ||
-      patch.personalization?.displayName !== undefined ||
-      patch.personalization?.assistantTone !== undefined,
+      patch.subagents,
   );
 }
 

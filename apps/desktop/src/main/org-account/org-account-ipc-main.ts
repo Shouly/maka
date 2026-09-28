@@ -23,6 +23,13 @@
 import { join } from 'node:path';
 import type { IpcMain } from 'electron';
 import type { UiCatalog, UiLocale } from '@maka/core/ui-locale';
+import {
+  AVATAR_SEED_MAX_LENGTH,
+  NICKNAME_MAX_LENGTH,
+  PREFERENCES_MAX_LENGTH,
+  PROFILE_NAME_MAX_LENGTH,
+  type PlatformProfileUpdate,
+} from '@maka/platform-protocol';
 import type { OrgAccountSetServerResult, OrgAccountState } from '../../shared/org-account.js';
 import { loopbackFontsLoader } from './loopback-fonts.js';
 import type { LoopbackPage } from './loopback-listener.js';
@@ -46,7 +53,7 @@ export interface OrgAccountIpcDeps {
   readonly rendererAssetsDir: string;
 }
 
-/** The browser page's words, after the Claude desktop's "Finish sign-in in the Claude app". */
+/** The browser page's words once sign-in finishes. */
 const LOOPBACK_PAGE_COPY: UiCatalog<Omit<LoopbackPage, 'appUrl'>> = {
   'zh-CN': {
     lang: 'zh-CN',
@@ -105,6 +112,10 @@ export async function registerOrgAccountIpc(deps: OrgAccountIpcDeps): Promise<Or
     await ready;
     return service.signIn(typeof provider === 'string' && provider.length <= 64 ? provider : undefined);
   });
+  deps.ipcMain.handle('orgAccount:updateProfile', async (_event, value: unknown): Promise<OrgAccountState> => {
+    await ready;
+    return service.updateProfile(profileUpdate(value));
+  });
   deps.ipcMain.handle('orgAccount:refresh', async (): Promise<OrgAccountState> => {
     await ready;
     await service.refresh();
@@ -121,4 +132,45 @@ export async function registerOrgAccountIpc(deps: OrgAccountIpcDeps): Promise<Or
   });
   await ready;
   return service;
+}
+
+/** The renderer's profile change, admitted field by field; anything else is refused. */
+function profileUpdate(value: unknown): PlatformProfileUpdate {
+  if (typeof value !== 'object' || value === null) throw new Error('Invalid profile update');
+  const input = value as Record<string, unknown>;
+  const update: {
+    name?: string;
+    avatarSeed?: string | null;
+    nickname?: string;
+    preferences?: string;
+  } = {};
+  if (input.name !== undefined) {
+    if (typeof input.name !== 'string' || input.name.trim().length > PROFILE_NAME_MAX_LENGTH) {
+      throw new Error('Invalid profile name');
+    }
+    update.name = input.name.trim();
+  }
+  if (input.avatarSeed !== undefined) {
+    if (
+      input.avatarSeed !== null &&
+      (typeof input.avatarSeed !== 'string' ||
+        input.avatarSeed.length === 0 ||
+        input.avatarSeed.length > AVATAR_SEED_MAX_LENGTH)
+    ) {
+      throw new Error('Invalid avatar seed');
+    }
+    update.avatarSeed = input.avatarSeed;
+  }
+  for (const [field, max] of [
+    ['nickname', NICKNAME_MAX_LENGTH],
+    ['preferences', PREFERENCES_MAX_LENGTH],
+  ] as const) {
+    const value = input[field];
+    if (value === undefined) continue;
+    if (typeof value !== 'string' || Array.from(value.trim()).length > max) {
+      throw new Error(`Invalid profile ${field}`);
+    }
+    update[field] = value.trim();
+  }
+  return update;
 }

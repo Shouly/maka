@@ -165,7 +165,6 @@ test('normalizes only the bounded agent settings patch surface', () => {
       operation: {
         kind: 'patch_agent_settings',
         value: {
-          personalization: { assistantTone: 'Be direct.' },
           memory: { enabled: false },
           webSearch: { enabled: true },
         },
@@ -176,24 +175,25 @@ test('normalizes only the bounded agent settings patch surface', () => {
       operation: {
         kind: 'patch_agent_settings',
         value: {
-          personalization: { assistantTone: 'Be direct.' },
           memory: { enabled: false },
           webSearch: { enabled: true },
         },
       },
     },
   );
-  assert.throws(
-    () =>
-      normalizeRuntimePolicyMutation({
-        expectedRevision: 4,
-        operation: {
-          kind: 'patch_agent_settings',
-          value: { networkProxy: { enabled: false } },
-        },
-      }),
-    RuntimePolicyDomainDecodeError,
-  );
+  for (const value of [
+    { networkProxy: { enabled: false } },
+    { personalization: { assistantTone: 'Be direct.' } },
+  ]) {
+    assert.throws(
+      () =>
+        normalizeRuntimePolicyMutation({
+          expectedRevision: 4,
+          operation: { kind: 'patch_agent_settings', value },
+        }),
+      RuntimePolicyDomainDecodeError,
+    );
+  }
 });
 
 test('normalizes catalog inputs while canonical entries reject noncanonical endpoints', () => {

@@ -177,7 +177,7 @@ export default function Markdown({
       // 不解构出来,它就会跟着 {...props} 摊到标签上,渲染成
       // <li node="[object Object]">。React 19 对对象值的未知属性是**静默**
       // 写进 DOM 的(只有函数/symbol 值才告警),所以这事儿不会有任何提示。
-      // claude.ai 实测:它的 p/li/strong/td 上没有这种属性,全是有意挂的
+      // 设计稿实测:它的 p/li/strong/td 上没有这种属性,全是有意挂的
       // class / dir / data-sourcepos / scope。
       // 起成 _node 是本仓 lint 约定(no-unused-vars 的 argsIgnorePattern
       // 是 ^_),别嫌下划线多余把它去掉 —— 去掉就是 19 条 warning。
@@ -225,7 +225,12 @@ export default function Markdown({
               </div>
 
               <div className="p-3.5 overflow-x-auto">
-                <CodeRenderer content={codeString} language={language} showLineNumbers={false} />
+                <CodeRenderer
+                  content={codeString}
+                  language={language}
+                  showLineNumbers={false}
+                  fontSize="calc(0.875rem * var(--chat-text-scale, 1))"
+                />
               </div>
             </div>
           );
@@ -250,14 +255,16 @@ export default function Markdown({
               </button>
 
               <pre className="p-3.5 overflow-x-auto">
-                <code className="font-mono font-normal text-sm">{codeString}</code>
+                <code className="font-mono font-normal text-[length:calc(0.875rem*var(--chat-text-scale,1))]">
+                  {codeString}
+                </code>
               </pre>
             </div>
           );
         }
 
         // 行内代码
-        // 含色值时壳自己切成 inline-flex 定高(claude.ai 实测结构),色点作为
+        // 含色值时壳自己切成 inline-flex 定高(设计稿实测结构),色点作为
         // 直接子节点插在文本前;色值用 bare 模式渲染,不再自带壳。
         // (外层 p/li/td 的 processChildrenColorValues 会跳过 code 子树,
         //  否则那边先包一层带壳的 ColorSwatch,跟这层壳叠成两个背景框。)
@@ -274,7 +281,7 @@ export default function Markdown({
         );
       },
 
-      // 链接。claude.ai 实测(明暗都测):文字 --text-accent(色值逐位相同),
+      // 链接。设计稿实测(明暗都测):文字 --text-accent(色值逐位相同),
       // 下划线同色 40% alpha,hover 补到 100% —— 文字色始终不变。粗细 auto
       // 不写死 1px,offset 3px。
       a({ node: _node, href, className, children, ...props }) {
@@ -323,7 +330,7 @@ export default function Markdown({
         return (
           <div className="overflow-x-auto w-full px-2 mb-6">
             <table
-              className="min-w-full border-collapse text-sm leading-[1.7] whitespace-normal"
+              className="min-w-full border-collapse text-[length:calc(0.875rem*var(--chat-text-scale,1))] leading-[1.7] whitespace-normal"
               {...props}
             >
               {children}
@@ -412,7 +419,10 @@ export default function Markdown({
       // 标题
       h1({ node: _node, children, ...props }) {
         return (
-          <h1 className="text-[1.375rem] leading-[1.65rem] font-semibold mt-3 -mb-1" {...props}>
+          <h1
+            className="text-[length:calc(1.375rem*var(--chat-text-scale,1))] leading-[calc(1.65rem*var(--chat-text-scale,1))] font-semibold mt-3 -mb-1"
+            {...props}
+          >
             {processChildrenColorValues(children)}
           </h1>
         );
@@ -420,7 +430,10 @@ export default function Markdown({
 
       h2({ node: _node, children, ...props }) {
         return (
-          <h2 className="text-[1.125rem] leading-[1.65rem] font-semibold mt-3 -mb-1" {...props}>
+          <h2
+            className="text-[length:calc(1.125rem*var(--chat-text-scale,1))] leading-[calc(1.65rem*var(--chat-text-scale,1))] font-semibold mt-3 -mb-1"
+            {...props}
+          >
             {processChildrenColorValues(children)}
           </h2>
         );
@@ -428,7 +441,10 @@ export default function Markdown({
 
       h3({ node: _node, children, ...props }) {
         return (
-          <h3 className="text-base leading-[1.65rem] font-semibold mt-2 -mb-1" {...props}>
+          <h3
+            className="text-[length:calc(1rem*var(--chat-text-scale,1))] leading-[calc(1.65rem*var(--chat-text-scale,1))] font-semibold mt-2 -mb-1"
+            {...props}
+          >
             {processChildrenColorValues(children)}
           </h3>
         );
@@ -436,7 +452,10 @@ export default function Markdown({
 
       h4({ node: _node, children, ...props }) {
         return (
-          <h4 className="text-base leading-[1.65rem] font-semibold mt-2 -mb-1" {...props}>
+          <h4
+            className="text-[length:calc(1rem*var(--chat-text-scale,1))] leading-[calc(1.65rem*var(--chat-text-scale,1))] font-semibold mt-2 -mb-1"
+            {...props}
+          >
             {processChildrenColorValues(children)}
           </h4>
         );
@@ -444,7 +463,10 @@ export default function Markdown({
 
       h5({ node: _node, children, ...props }) {
         return (
-          <h5 className="text-base leading-[1.65rem] font-semibold mt-2 -mb-1" {...props}>
+          <h5
+            className="text-[length:calc(1rem*var(--chat-text-scale,1))] leading-[calc(1.65rem*var(--chat-text-scale,1))] font-semibold mt-2 -mb-1"
+            {...props}
+          >
             {processChildrenColorValues(children)}
           </h5>
         );
@@ -460,7 +482,7 @@ export default function Markdown({
         );
       },
 
-      // 加粗:浏览器默认 <strong> 是 700,claude.ai 实测 600 —— 700 太重,
+      // 加粗:浏览器默认 <strong> 是 700,设计稿实测 600 —— 700 太重,
       // 会把整段的灰度节奏打断。
       // 用 font-bold 不是 font-semibold:本仓的字重刻度按 CDS 定成
       // medium 500 / semibold 580 / bold 600,600 那一档叫 bold。
@@ -485,7 +507,7 @@ export default function Markdown({
   );
 
   return (
-    // 块间距 = 容器 gap-3(12px,claude.ai Cowork 实测),标题/列表/表格再用
+    // 块间距 = 容器 gap-3(12px,设计稿实测),标题/列表/表格再用
     // 自身的 mt/-mb 做增减。最后一块清零,避免容器尾部多出一段空白。
     <div
       className={`markdown-body ${textColorClass} leading-[1.65rem] whitespace-normal break-words relative grid grid-cols-1 gap-3 [&>*]:min-w-0 [&>*:last-child]:mb-0 ${noPadding ? '' : 'standard-markdown'} ${className}`}

@@ -84,6 +84,8 @@ class FakeServer {
     jwksUri: `${SERVER}/.well-known/jwks.json`,
   };
   requests: { url: string; headers: Record<string, string> }[] = [];
+  /** `/v1/me` as the server has it now; a PATCH changes it. */
+  profile: Record<string, unknown> = { ...PROFILE };
 
   fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = new URL(String(input));
@@ -95,7 +97,23 @@ class FakeServer {
       return Response.json(this.metadata);
     }
     if (url.pathname === '/v1/me') {
-      return headers.authorization?.startsWith('Bearer at-') ? Response.json(PROFILE) : new Response('', { status: 401 });
+      if (!headers.authorization?.startsWith('Bearer at-')) return new Response('', { status: 401 });
+      if (init?.method === 'PATCH') {
+        const patch = JSON.parse(String(init.body)) as { name?: string; avatarSeed?: string | null };
+        const { avatarSeed: _previous, ...rest } = this.profile;
+        this.profile = {
+          ...rest,
+          ...(patch.name !== undefined ? { name: patch.name || PROFILE.name } : {}),
+          ...(patch.avatarSeed === undefined
+            ? _previous === undefined
+              ? {}
+              : { avatarSeed: _previous }
+            : patch.avatarSeed === null
+              ? {}
+              : { avatarSeed: patch.avatarSeed }),
+        };
+      }
+      return Response.json(this.profile);
     }
     if (url.pathname === '/oauth/revoke') {
       this.revoked.push(new URLSearchParams(String(init?.body)).get('token') ?? '');
@@ -245,6 +263,64 @@ test('reuses a fresh access token and refreshes only once for concurrent callers
     const tokens = await Promise.all([service.accessToken(), service.accessToken(), service.accessToken()]);
     assert.deepEqual(tokens, ['at-rt-1', 'at-rt-1', 'at-rt-1']);
     assert.equal(server.refreshCount, 1);
+  });
+});
+
+test('a profile change goes to the server and replaces the stored profile', async () => {
+  await withService(async ({ service, server, make }) => {
+    await service.setServerUrl(SERVER);
+    await service.signIn();
+    const state = await service.updateProfile({ name: 'Ada Lovelace', avatarSeed: 'seed-1' });
+    assert.equal(state.status === 'signed_in' && state.profile.name, 'Ada Lovelace');
+    assert.equal(state.status === 'signed_in' && state.profile.avatarSeed, 'seed-1');
+    const sent = server.requests.at(-1);
+    assert.equal(sent?.url, `${SERVER}/v1/me`);
+    assert.equal(sent?.headers.authorization, 'Bearer at-rt-0');
+    assert.equal(sent?.headers['content-type'], 'application/json');
+
+    // The stored sign-in carries it: a restart shows the same profile.
+    const restarted = (await make()).state();
+    assert.equal(restarted.status === 'signed_in' && restarted.profile.avatarSeed, 'seed-1');
+
+    // A null seed goes back to initials.
+    const cleared = await service.updateProfile({ avatarSeed: null });
+    assert.equal(cleared.status === 'signed_in' && cleared.profile.avatarSeed, undefined);
+
+    await service.signOut();
+    await assert.rejects(service.updateProfile({ name: 'x' }), (error: unknown) => {
+      return error instanceof OrgAccountUnavailable && error.reason === 'signed_out';
+    });
+  });
+});
+
+test('a profile changed on another computer reaches this one at start and when the app comes back', async () => {
+  await withService(async ({ service, server, make }) => {
+    await service.setServerUrl(SERVER);
+    await service.signIn();
+    server.profile = { ...server.profile, nickname: 'Ada', preferences: 'Be brief.' };
+    // Just signed in, the copy is fresh: coming back within the minute asks nothing.
+    const asked = server.requests.length;
+    await service.reloadProfile();
+    assert.equal(server.requests.length, asked);
+    server.now += 61 * 1000;
+    await service.reloadProfile();
+    const state = service.state();
+    assert.equal(state.status === 'signed_in' && state.profile.nickname, 'Ada');
+    assert.equal(state.status === 'signed_in' && state.profile.preferences, 'Be brief.');
+
+    // A restart asks again.
+    server.profile = { ...server.profile, preferences: 'Answer in Chinese.' };
+    const restarted = await make();
+    await restarted.reloadProfile();
+    const again = restarted.state();
+    assert.equal(again.status === 'signed_in' && again.profile.preferences, 'Answer in Chinese.');
+
+    // An unreachable server keeps the copy there is.
+    server.now += 61 * 1000;
+    server.down = true;
+    await restarted.reloadProfile();
+    const kept = restarted.state();
+    assert.equal(kept.status === 'signed_in' && kept.profile.preferences, 'Answer in Chinese.');
   });
 });
 

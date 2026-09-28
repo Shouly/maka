@@ -63,7 +63,6 @@ export interface HostMemoryCoordinatorDeps {
 }
 
 export function memoryGateForPolicy(policy: RuntimePolicy): MemoryToolGate {
-  if (policy.privacy.incognitoActive) return { allowed: false, reason: 'incognito' };
   if (!policy.memory.enabled) return { allowed: false, reason: 'disabled' };
   return { allowed: true };
 }
@@ -132,7 +131,6 @@ export class HostMemoryCoordinator {
           result: {
             kind: 'list',
             enabled: policy.memory.enabled,
-            incognitoActive: policy.privacy.incognitoActive,
             directoryPath: this.#store.directoryPath,
             files: snapshot.files.map((file) => {
               const frontmatter = parseMemoryFrontmatter(file.content);

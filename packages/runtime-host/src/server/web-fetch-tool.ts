@@ -73,9 +73,6 @@ export function createHostWebFetchService(input: HostWebFetchServiceInput): Host
   return {
     fetch: async ({ url, sessionId, abortSignal }) => {
       const resolved = await input.policy.resolveHostOutboundExecution();
-      if (resolved.kind === 'privacy_mode') {
-        throw new Error('WebFetch is disabled while privacy mode is active.');
-      }
       if (resolved.kind === 'credential_not_configured') {
         throw new Error('Configure the network proxy credential before using WebFetch.');
       }

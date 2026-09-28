@@ -17,16 +17,22 @@
  * under the License.
  */
 
-// The renderer type-scale base, in px. `makaTheme.ts` (THE type-scale
-// authority — see the long comment there) feeds this into Astryx's
-// `expandTypeScale`, and `theme.ts` divides by it to turn a chosen UI font
-// size into a document-root font-size. It lives in this dependency-free
-// module rather than in `makaTheme.ts` so the pre-paint bootstrap path
-// (`cached-theme-bootstrap.ts` → `theme.ts`) does not pull the full theme
-// (icon registry included) into the first frame.
-//
-// `DEFAULT_UI_FONT_SIZE` in `@maka/core/settings` must equal this value —
-// the default means "the type scale as designed, no root scaling". Core
-// cannot import renderer code, so the coupling is enforced by
-// `font-size-type-scale.test.ts` instead of the type system.
-export const TYPE_SCALE_BASE_PX = 14;
+import type { SessionUserContext } from '@maka/core/session';
+import type { OrgAccountState } from '../../shared/org-account.js';
+
+/**
+ * What a Session the signed-in person starts is told about them: the name they
+ * asked to be called (else their full name), their email, and their personal
+ * preferences. Nothing while no one is signed in.
+ */
+export function sessionUserContext(
+  state: OrgAccountState | undefined,
+): SessionUserContext | undefined {
+  if (state?.status !== 'signed_in') return undefined;
+  const { profile } = state;
+  const name = profile.nickname?.trim() || profile.name.trim();
+  const email = profile.email.trim();
+  if (!name || !email) return undefined;
+  const preferences = profile.preferences?.trim();
+  return { name, email, ...(preferences ? { preferences } : {}) };
+}

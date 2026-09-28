@@ -30,7 +30,6 @@ import {
 import { collapseSessionRevisions } from '@maka/core/session-revisions';
 import { ToolRefusal } from '@maka/core/events';
 import { redactSecrets } from '@maka/core/redaction';
-import { validateWorkspacePrivacyContext } from '@maka/core/incognito';
 import type { SessionSummary, StoredMessage } from '@maka/core/session';
 import {
   collectSearchableText,
@@ -52,7 +51,6 @@ export const HISTORY_READ_MAX_MESSAGE_BYTES = 8 * 1024;
 export type HistoryToolDeps = ThreadSearchDeps;
 
 type HistoryReadErrorReason =
-  | 'incognito_active'
   | 'session_not_found'
   | 'message_not_found'
   | 'anchor_mismatch'
@@ -269,22 +267,6 @@ export function buildReadHistoryTool(deps: HistoryToolDeps): MakaTool {
       context,
     ) => {
       if (context.abortSignal.aborted) return historyError('aborted', 'History read was aborted.');
-
-      const privacyPayload = await deps.getPrivacyContext();
-      if (context.abortSignal.aborted) return historyError('aborted', 'History read was aborted.');
-      const privacy = validateWorkspacePrivacyContext(privacyPayload);
-      if (!privacy.ok) {
-        return historyError(
-          'incognito_active',
-          'History is unavailable because workspace privacy state could not be verified.',
-        );
-      }
-      if (privacy.value.incognitoActive) {
-        return historyError(
-          'incognito_active',
-          'History is unavailable while incognito is active.',
-        );
-      }
 
       const sessions = collapseSessionRevisions(await deps.listSessions(), context.sessionId);
       if (context.abortSignal.aborted) return historyError('aborted', 'History read was aborted.');

@@ -29,9 +29,11 @@
 // "keep what is stored" — so the field holds only what the user just typed,
 // and an empty field is never a request to clear.
 //
-// Both probes keep their answer on the page rather than only in a toast: a
+// Both probes keep their answer on screen rather than only in a toast: a
 // credential test whose result scrolled away is a test the user has to run
-// again to remember.
+// again to remember. The key sits in an inset panel under the source picker,
+// because it only means something while Tavily is the source; the test search
+// is an act with results of its own, so it opens as a dialog.
 
 import { useState } from 'react';
 import {
@@ -56,6 +58,7 @@ import {
 } from '../ui/select.js';
 import { Switch } from '../ui/switch.js';
 import { statusChipClass, statusChipToneClass } from '../ui/status-chip.js';
+import { SettingsCallout, SettingsInsetPanel, SettingsModal } from './settings-kit.js';
 import { SettingsRow, SettingsSection, settingsFieldWidthClass } from './settings-row.js';
 import { queryWebSearch, testWebSearch } from '../../bridge/web-search.js';
 import { useHostSettings, useSettingsErrorReporter } from '../../hooks/use-settings.js';
@@ -87,6 +90,7 @@ export function WebSearchSettings(props: { host: DesktopRuntimeHostRef | undefin
   const [query, setQuery] = useState('');
   const [rows, setRows] = useState<readonly WebSearchResultRow[] | null>(null);
   const [queryError, setQueryError] = useState<string | null>(null);
+  const [testOpen, setTestOpen] = useState(false);
 
   if (!settings) {
     return (
@@ -187,12 +191,125 @@ export function WebSearchSettings(props: { host: DesktopRuntimeHostRef | undefin
       .finally(() => setPending(null));
   };
 
+  const tavilyPanel = (
+    <SettingsInsetPanel>
+      <SettingsRow
+        title={copy.key}
+        description={
+          usingEnvKey ? (
+            copy.envKeyHelp
+          ) : (
+            <>
+              {copy.savedKeyHelp}
+              <button
+                type="button"
+                className="underline underline-offset-2 hover:text-text-primary"
+                onClick={() => openExternal(TAVILY_SIGNUP_URL)}
+              >
+                tavily.com
+              </button>
+            </>
+          )
+        }
+        control={
+          <span className="flex items-center gap-2">
+            <Input
+              type="password"
+              aria-label={copy.keyAria}
+              className={settingsFieldWidthClass}
+              autoComplete="off"
+              placeholder={
+                usingEnvKey
+                  ? copy.envPlaceholder
+                  : hasStoredKey
+                    ? copy.storedPlaceholder
+                    : copy.keyPlaceholder
+              }
+              value={draftKey}
+              disabled={usingEnvKey || busy}
+              onChange={(event) => setDraftKey(event.target.value)}
+            />
+            <Button
+              variant="secondary"
+              disabled={busy || usingEnvKey || draftKey.length === 0}
+              onClick={() => {
+                setPending('save');
+                void write({ providers: { tavily: { apiKey: draftKey } } })
+                  .then((saved) => {
+                    if (!saved) return;
+                    setDraftKey('');
+                    setTestResult(null);
+                    toast({
+                      title: copy.keySaved,
+                      description: copy.keySavedDetail,
+                      variant: 'success',
+                    });
+                  })
+                  .finally(() => setPending(null));
+              }}
+            >
+              {pending === 'save' ? copy.saving : copy.saveKey}
+            </Button>
+          </span>
+        }
+      />
+      <SettingsRow
+        title={copy.keyCheck}
+        description={
+          testResult ? (
+            <span role="status" className={testResult.ok ? 'text-success' : 'text-danger'}>
+              {testResult.ok
+                ? `${copy.credentialValid} · ${copy.resultCount(testResult.results.length)}`
+                : `${copy.testFailed} · ${copy.errors[testResult.reason]}`}
+            </span>
+          ) : undefined
+        }
+        control={
+          <span className="flex items-center gap-2" role="group" aria-label={copy.actions}>
+            {hasStoredKey && (
+              <Button
+                variant="ghost"
+                disabled={busy}
+                onClick={() => {
+                  setPending('clear');
+                  // Clearing the key turns the feature off in the same write:
+                  // leaving it on would arm a source that cannot answer.
+                  void write({ enabled: false, providers: { tavily: { apiKey: '' } } })
+                    .then((saved) => {
+                      if (!saved) return;
+                      setDraftKey('');
+                      setTestResult(null);
+                      toast({
+                        title: copy.credentialsCleared,
+                        description: copy.credentialsClearedDetail,
+                        variant: 'success',
+                      });
+                    })
+                    .finally(() => setPending(null));
+                }}
+              >
+                {pending === 'clear' ? copy.clearing : copy.clearKey}
+              </Button>
+            )}
+            <Button
+              variant="secondary"
+              disabled={busy || (draftKey.length === 0 && !hasUsableKey)}
+              onClick={runTest}
+            >
+              {pending === 'test' ? copy.testing : copy.testKey}
+            </Button>
+          </span>
+        }
+      />
+    </SettingsInsetPanel>
+  );
+
   return (
     <>
       <SettingsSection title={groups.searchProvider} description={groups.searchProviderHelp}>
         <SettingsRow
           title={copy.provider}
-          description={copy.providerHelp}
+          description={usingModel ? copy.modelCredentialHelp : copy.providerHelp}
           control={
             <Select
               label={copy.provider}
@@ -209,6 +326,8 @@ export function WebSearchSettings(props: { host: DesktopRuntimeHostRef | undefin
             />
           }
         />
+        {/* The key only means something while Tavily is the source. */}
+        {!usingModel && tavilyPanel}
         <SettingsRow
           title={copy.enabled}
           description={copy.enabledHelp}
@@ -239,119 +358,6 @@ export function WebSearchSettings(props: { host: DesktopRuntimeHostRef | undefin
             </span>
           }
         />
-
-        {usingModel ? (
-          <SettingsRow title={copy.modelCredential} description={copy.modelCredentialHelp} />
-        ) : (
-          <SettingsRow
-            title={copy.key}
-            description={
-              usingEnvKey ? (
-                copy.envKeyHelp
-              ) : (
-                <>
-                  {copy.savedKeyHelp}
-                  <button
-                    type="button"
-                    className="underline underline-offset-2 hover:text-text-primary"
-                    onClick={() => openExternal(TAVILY_SIGNUP_URL)}
-                  >
-                    tavily.com
-                  </button>
-                </>
-              )
-            }
-            layout="stacked"
-          >
-            <Input
-              type="password"
-              aria-label={copy.keyAria}
-              className={settingsFieldWidthClass}
-              autoComplete="off"
-              placeholder={
-                usingEnvKey
-                  ? copy.envPlaceholder
-                  : hasStoredKey
-                    ? copy.storedPlaceholder
-                    : copy.keyPlaceholder
-              }
-              value={draftKey}
-              disabled={usingEnvKey || busy}
-              onChange={(event) => setDraftKey(event.target.value)}
-            />
-            <div
-              className="flex flex-wrap items-center gap-2"
-              role="group"
-              aria-label={copy.actions}
-            >
-              <Button
-                size="sm"
-                disabled={busy || usingEnvKey || draftKey.length === 0}
-                onClick={() => {
-                  setPending('save');
-                  void write({ providers: { tavily: { apiKey: draftKey } } })
-                    .then((saved) => {
-                      if (!saved) return;
-                      setDraftKey('');
-                      setTestResult(null);
-                      toast({
-                        title: copy.keySaved,
-                        description: copy.keySavedDetail,
-                        variant: 'success',
-                      });
-                    })
-                    .finally(() => setPending(null));
-                }}
-              >
-                {pending === 'save' ? copy.saving : copy.saveKey}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={busy || (draftKey.length === 0 && !hasUsableKey)}
-                onClick={runTest}
-              >
-                {pending === 'test' ? copy.testing : copy.testKey}
-              </Button>
-              {hasStoredKey && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => {
-                    setPending('clear');
-                    // Clearing the key turns the feature off in the same write:
-                    // leaving it on would arm a source that cannot answer.
-                    void write({ enabled: false, providers: { tavily: { apiKey: '' } } })
-                      .then((saved) => {
-                        if (!saved) return;
-                        setDraftKey('');
-                        setTestResult(null);
-                        toast({
-                          title: copy.credentialsCleared,
-                          description: copy.credentialsClearedDetail,
-                          variant: 'success',
-                        });
-                      })
-                      .finally(() => setPending(null));
-                  }}
-                >
-                  {pending === 'clear' ? copy.clearing : copy.clearKey}
-                </Button>
-              )}
-            </div>
-            {testResult && (
-              <p
-                role="status"
-                className={`text-[0.8125rem] leading-[1.125rem] ${testResult.ok ? 'text-success' : 'text-danger'}`}
-              >
-                {testResult.ok
-                  ? `${copy.credentialValid} · ${copy.resultCount(testResult.results.length)}`
-                  : `${copy.testFailed} · ${copy.errors[testResult.reason]}`}
-              </p>
-            )}
-          </SettingsRow>
-        )}
       </SettingsSection>
 
       <SettingsSection title={groups.searchBehavior} description={groups.searchBehaviorHelp}>
@@ -365,63 +371,72 @@ export function WebSearchSettings(props: { host: DesktopRuntimeHostRef | undefin
             </span>
           }
           description={copy.testSearchHelp}
-          layout="stacked"
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              aria-label={copy.testSearch}
-              className="w-72"
-              placeholder={copy.queryPlaceholder}
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setRows(null);
-                setQueryError(null);
-              }}
-              onKeyDown={(event) => {
-                if (event.key !== 'Enter' || busy || queryBlocked) return;
-                event.preventDefault();
-                runQuery();
-              }}
-            />
-            <Button size="sm" disabled={busy || queryBlocked !== null} onClick={runQuery}>
-              {pending === 'query' ? copy.searching : copy.search}
+          control={
+            <Button variant="secondary" onClick={() => setTestOpen(true)}>
+              {copy.openTestSearch}
             </Button>
-            {queryBlocked && (
-              <small className="text-[0.75rem] leading-4 text-text-muted">{queryBlocked}</small>
-            )}
-          </div>
-          {queryError && (
-            <p role="alert" className="text-[0.8125rem] leading-[1.125rem] text-danger">
-              {copy.queryFailed(queryError)}
-            </p>
-          )}
-          {rows !== null && rows.length === 0 && !queryError && (
-            <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
-              {copy.noResults}
-            </p>
-          )}
-          {rows !== null && rows.length > 0 && (
-            <ul className="flex flex-col gap-3" aria-label={copy.resultsAria}>
-              {safeRows(rows).map((row, index) => (
-                <li key={`${row.url}-${index}`} className="flex flex-col gap-0.5">
-                  <button
-                    type="button"
-                    className="text-left text-sm leading-5 text-accent underline-offset-2 hover:underline"
-                    onClick={() => openExternal(row.url)}
-                  >
-                    {row.title}
-                  </button>
-                  <small className="text-[0.75rem] leading-4 text-text-muted">{row.source}</small>
-                  <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
-                    {row.snippet}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </SettingsRow>
+          }
+        />
       </SettingsSection>
+
+      <SettingsModal
+        open={testOpen}
+        onOpenChange={setTestOpen}
+        title={copy.testSearch}
+        description={copy.testSearchHelp}
+        data-maka-contract="web-search-test"
+        footer={
+          <Button variant="secondary" onClick={() => setTestOpen(false)}>
+            {copy.close}
+          </Button>
+        }
+      >
+        <div className="flex items-center gap-2">
+          <Input
+            aria-label={copy.testSearch}
+            className="flex-1"
+            placeholder={copy.queryPlaceholder}
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setRows(null);
+              setQueryError(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' || busy || queryBlocked) return;
+              event.preventDefault();
+              runQuery();
+            }}
+          />
+          <Button disabled={busy || queryBlocked !== null || !query.trim()} onClick={runQuery}>
+            {pending === 'query' ? copy.searching : copy.search}
+          </Button>
+        </div>
+        {queryBlocked && <p className="text-sm leading-5 text-text-muted">{queryBlocked}</p>}
+        {queryError && <SettingsCallout tone="danger" title={copy.queryFailed(queryError)} />}
+        {rows !== null && rows.length === 0 && !queryError && (
+          <p className="text-sm leading-5 text-text-secondary">{copy.noResults}</p>
+        )}
+        {rows !== null && rows.length > 0 && (
+          <ul className="flex flex-col gap-3" aria-label={copy.resultsAria}>
+            {safeRows(rows).map((row, index) => (
+              <li key={`${row.url}-${index}`} className="flex flex-col gap-0.5">
+                <button
+                  type="button"
+                  className="text-left text-sm leading-5 text-accent underline-offset-2 hover:underline"
+                  onClick={() => openExternal(row.url)}
+                >
+                  {row.title}
+                </button>
+                <small className="text-[0.75rem] leading-4 text-text-muted">{row.source}</small>
+                <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
+                  {row.snippet}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </SettingsModal>
     </>
   );
 
@@ -517,7 +532,7 @@ function Select(props: {
 }) {
   return (
     <SelectRoot value={props.value} disabled={props.disabled} onValueChange={props.onChange}>
-      <SelectTrigger aria-label={props.label} className={settingsFieldWidthClass}>
+      <SelectTrigger aria-label={props.label} variant="ghost">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

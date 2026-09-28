@@ -61,7 +61,6 @@ export const STATIC_COMMAND_IDS = [
   'diag:paste-today-daily-review',
   'diag:save-today-daily-review',
   'diag:copy-diagnostics',
-  'diag:test-network-proxy',
   'diag:open-local-memory',
 ] as const;
 
@@ -195,17 +194,6 @@ const STATIC_COMMAND_KEYWORDS: Record<StaticCommandId, readonly string[]> = {
     '诊断',
     '汇报',
   ],
-  'diag:test-network-proxy': [
-    'network',
-    'proxy',
-    'test',
-    'ping',
-    '网络',
-    '代理',
-    '测试',
-    '连接',
-    '诊断',
-  ],
   'diag:open-local-memory': ['memory', 'folder', 'open', '记忆', '目录', '打开'],
 };
 
@@ -304,10 +292,6 @@ type ShellCopy = {
     diagnosticsCopiedTitle: string;
     diagnosticsCopiedDescription: string;
     clipboardDenied: string;
-    networkPassedTitle: string;
-    networkFailedTitle: string;
-    genericTestFailedTitle: string;
-    networkTestFallback: string;
   };
   sessionRowActions: {
     actionFallback: string;
@@ -690,11 +674,6 @@ const ZH_STATIC_COMMANDS: Record<StaticCommandId, CommandCopy> = {
     },
     group: '诊断',
   },
-  'diag:test-network-proxy': {
-    label: '测试当前网络代理',
-    hint: '诊断 · 不打开设置',
-    group: '诊断',
-  },
   'diag:open-local-memory': {
     label: '打开记忆目录',
     hint: '系统编辑器',
@@ -789,11 +768,6 @@ const EN_STATIC_COMMANDS: Record<StaticCommandId, CommandCopy> = {
     },
     group: 'Diagnostics',
   },
-  'diag:test-network-proxy': {
-    label: 'Test the current network proxy',
-    hint: 'Diagnose without opening Settings',
-    group: 'Diagnostics',
-  },
   'diag:open-local-memory': {
     label: 'Open the memory folder',
     hint: 'System editor',
@@ -804,7 +778,6 @@ const EN_STATIC_COMMANDS: Record<StaticCommandId, CommandCopy> = {
 const ZH_SETTINGS_SECTIONS: Record<SettingsSection, string> = {
   account: '账号',
   general: '通用',
-  appearance: '外观',
   projects: '工作区',
   models: '模型',
   subagents: '子 Agent',
@@ -825,7 +798,6 @@ const ZH_SETTINGS_SECTIONS: Record<SettingsSection, string> = {
 const EN_SETTINGS_SECTIONS: Record<SettingsSection, string> = {
   account: 'Account',
   general: 'General',
-  appearance: 'Appearance',
   projects: 'Workspace',
   models: 'Models',
   subagents: 'Subagents',
@@ -958,10 +930,6 @@ const SHELL_COPY_BY_LOCALE = {
       diagnosticsCopiedTitle: '已复制诊断信息',
       diagnosticsCopiedDescription: '检查内容后，可直接粘贴到问题报告',
       clipboardDenied: '剪贴板不可用或被系统拒绝',
-      networkPassedTitle: '网络代理测试通过',
-      networkFailedTitle: '网络代理测试失败',
-      genericTestFailedTitle: '测试失败',
-      networkTestFallback: '网络代理测试暂时不可用，请稍后重试。',
     },
     sessionRowActions: {
       actionFallback: '任务操作失败，请稍后重试。',
@@ -1482,10 +1450,6 @@ const SHELL_COPY_BY_LOCALE = {
       diagnosticsCopiedTitle: '已複製診斷資訊',
       diagnosticsCopiedDescription: '檢查內容後，可直接貼上到問題報告',
       clipboardDenied: '剪貼簿不可用或被系統拒絕',
-      networkPassedTitle: '網路代理測試透過',
-      networkFailedTitle: '網路代理測試失敗',
-      genericTestFailedTitle: '測試失敗',
-      networkTestFallback: '網路代理測試暫時不可用，請稍後重試。',
     },
     sessionRowActions: {
       actionFallback: '任務操作失敗，請稍後重試。',
@@ -2007,10 +1971,6 @@ const SHELL_COPY_BY_LOCALE = {
       diagnosticsCopiedTitle: 'Diagnostics copied',
       diagnosticsCopiedDescription: 'Review the contents, then paste them into the issue report',
       clipboardDenied: 'The clipboard is unavailable or was denied',
-      networkPassedTitle: 'Network proxy test passed',
-      networkFailedTitle: 'Network proxy test failed',
-      genericTestFailedTitle: 'Test failed',
-      networkTestFallback: 'Network proxy testing is temporarily unavailable. Try again later.',
     },
     sessionRowActions: {
       actionFallback: 'The task action failed. Try again later.',

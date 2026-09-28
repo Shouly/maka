@@ -384,6 +384,7 @@ export class HostSessionCatalogCoordinator {
           model: model.model,
           ...(input.thinkingLevel === undefined ? {} : { thinkingLevel: input.thinkingLevel }),
           ...(input.toolProfile === undefined ? {} : { toolProfile: input.toolProfile }),
+          ...(input.userContext === undefined ? {} : { userContext: input.userContext }),
           permissionMode: prepared.permissionMode ?? policy.policy.chatDefaults.permissionMode,
           toolMode: policy.policy.chatDefaults.codeModeEnabled ? 'code_mode' : 'direct',
           collaborationMode: input.collaborationMode ?? 'agent',
@@ -620,6 +621,7 @@ export class HostSessionCatalogCoordinator {
               model: model.model,
               ...(input.thinkingLevel === undefined ? {} : { thinkingLevel: input.thinkingLevel }),
               ...(input.toolProfile === undefined ? {} : { toolProfile: input.toolProfile }),
+              ...(input.userContext === undefined ? {} : { userContext: input.userContext }),
               permissionMode: prepared.permissionMode ?? policy.policy.chatDefaults.permissionMode,
               toolMode:
                 toolMode ?? (policy.policy.chatDefaults.codeModeEnabled ? 'code_mode' : 'direct'),
@@ -1331,7 +1333,7 @@ function createRequestFingerprint(
   prepared: PreparedSessionCreate,
 ): string {
   const identity = [
-    'session.create.v4',
+    'session.create.v5',
     input.sessionId,
     input.workspace.kind === 'project'
       ? ['project', input.workspace.projectId]
@@ -1348,6 +1350,7 @@ function createRequestFingerprint(
         ],
     input.thinkingLevel ?? null,
     input.toolProfile ?? null,
+    input.userContext ?? null,
     prepared.permissionMode ?? ['runtime_default'],
     input.collaborationMode ?? 'agent',
     input.orchestrationMode ?? 'default',

@@ -141,7 +141,7 @@ export function AboutSettings(props: {
           <SettingsRow
             title={copy.loadFailed}
             control={
-              <Button variant="secondary" size="sm" onClick={info.reload}>
+              <Button variant="secondary" onClick={info.reload}>
                 {shared.retry}
               </Button>
             }
@@ -162,7 +162,6 @@ export function AboutSettings(props: {
               // row's shape with it.
               <Button
                 variant="secondary"
-                size="sm"
                 disabled={busy || update.installing || row.working}
                 onClick={() => {
                   if (row.action === 'install') update.install();
@@ -194,7 +193,6 @@ export function AboutSettings(props: {
           control={
             <Button
               variant="secondary"
-              size="sm"
               disabled={copying}
               onClick={() => {
                 setCopying(true);
@@ -217,7 +215,7 @@ export function AboutSettings(props: {
           title={copy.reportIssueLabel}
           description={copy.reportIssueHelp}
           control={
-            <Button variant="secondary" size="sm" onClick={() => openExternal(ISSUE_TRACKER_URL)}>
+            <Button variant="secondary" onClick={() => openExternal(ISSUE_TRACKER_URL)}>
               {copy.reportIssueOpen}
             </Button>
           }
@@ -226,7 +224,7 @@ export function AboutSettings(props: {
           title={copy.keyboardShortcuts}
           description={copy.keyboardShortcutsHelp}
           control={
-            <Button variant="secondary" size="sm" onClick={props.onOpenKeyboardHelp}>
+            <Button variant="secondary" onClick={props.onOpenKeyboardHelp}>
               {copy.keyboardShortcutsOpen}
             </Button>
           }

@@ -64,7 +64,7 @@ export function HealthSettings(props: { host: DesktopRuntimeHostRef | undefined 
         <SettingsRow
           title={copy.readFailed}
           control={
-            <Button variant="secondary" size="sm" onClick={snapshot.reload}>
+            <Button variant="secondary" onClick={snapshot.reload}>
               {copy.readAgain}
             </Button>
           }
@@ -90,7 +90,7 @@ export function HealthSettings(props: { host: DesktopRuntimeHostRef | undefined 
         title={copy.title}
         description={copy.subtitle}
         action={
-          <Button variant="secondary" size="sm" onClick={snapshot.reload}>
+          <Button variant="secondary" onClick={snapshot.reload}>
             {copy.refresh}
           </Button>
         }

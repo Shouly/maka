@@ -34,7 +34,6 @@ import {
   type TestProxyResult,
 } from "@maka/core/settings/network-settings";
 import type { BotTestErrorCode, BotTestResult } from '@maka/runtime/bots';
-import { collectPersonalizationWarnings } from '@maka/runtime/system-prompt/personalization-prompt';
 import { getTavilyCredentialSource } from "./web-search/credentials.js";
 
 export function proxyTestFailure(result: TestProxyResult): {
@@ -176,11 +175,7 @@ export function buildSettingsUpdateResult(
   settings: AppSettings,
   patch: UpdateAppSettingsInput,
 ): UpdateAppSettingsResult {
-  const personalization = collectPersonalizationWarnings(patch.personalization);
-  return {
-    settings: maskAppSettings(settings, patch),
-    ...(personalization.length ? { warnings: { personalization } } : {}),
-  };
+  return { settings: maskAppSettings(settings, patch) };
 }
 
 function shouldReveal(value: string | undefined): boolean {

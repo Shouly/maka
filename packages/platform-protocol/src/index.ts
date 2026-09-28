@@ -77,14 +77,41 @@ export interface OAuthErrorResponse {
 
 export type OrgRole = 'member' | 'org_admin';
 
-/** `GET /v1/me`. */
+/** `GET /v1/me`, and the answer to `PATCH /v1/me`. */
 export interface PlatformMe {
   readonly id: string;
   readonly email: string;
+  /** The name the person set for themselves, else the identity provider's. */
   readonly name: string;
   readonly avatarUrl?: string;
+  /** The seed of the generated avatar the person picked; absent means their initials. */
+  readonly avatarSeed?: string;
+  /** What they asked to be called; absent when they have not said. */
+  readonly nickname?: string;
+  /** Their personal preferences for the assistant, as they wrote them; absent when empty. */
+  readonly preferences?: string;
   readonly orgRole: OrgRole;
 }
+
+/**
+ * `PATCH /v1/me`: what a person may change about their own profile. Absent
+ * fields are left alone.
+ */
+export interface PlatformProfileUpdate {
+  /** Their full name, trimmed; an empty string goes back to the identity provider's. */
+  readonly name?: string;
+  /** A generated avatar's seed; `null` goes back to their initials. */
+  readonly avatarSeed?: string | null;
+  /** What to call them, trimmed; an empty string clears it. */
+  readonly nickname?: string;
+  /** Their personal preferences, trimmed; an empty string clears them. */
+  readonly preferences?: string;
+}
+
+export const PROFILE_NAME_MAX_LENGTH = 80;
+export const AVATAR_SEED_MAX_LENGTH = 64;
+export const NICKNAME_MAX_LENGTH = 60;
+export const PREFERENCES_MAX_LENGTH = 2000;
 
 export type PlatformErrorCode =
   | 'unauthenticated'
