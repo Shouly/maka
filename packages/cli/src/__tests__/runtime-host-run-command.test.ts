@@ -268,7 +268,7 @@ describe('Runtime Host maka run adapter', () => {
         'step-1',
         'step-2',
         'Boundary was not widened',
-        'RequestSandboxBoundary',
+        'RequestAccess',
       ),
     });
     const exitCode = await runFixtureCommand(
@@ -431,7 +431,7 @@ describe('Runtime Host maka run adapter', () => {
     const stdout: string[] = [];
     const fixture = runFixture({
       graph: true,
-      finalMessages: sandboxBoundaryMessages('step-1', 'step-2', 'RequestSandboxBoundary'),
+      finalMessages: sandboxBoundaryMessages('step-1', 'step-2', 'RequestAccess'),
     });
     const exitCode = await runFixtureCommand(
       fixture,
@@ -1625,7 +1625,7 @@ async function* sandboxBoundaryEvents(
 async function* deniedWideningEvents(turnId: string): AsyncIterable<SessionEvent> {
   yield toolStart(turnId, 'tool-1', 'step-1', 1);
   yield sandboxFailureToolResult(turnId, 2);
-  yield toolStart(turnId, 'tool-2', 'step-2', 3, 'RequestSandboxBoundary');
+  yield toolStart(turnId, 'tool-2', 'step-2', 3, 'RequestAccess');
   yield successfulToolResult(turnId, 4, 'tool-2');
   yield toolStart(turnId, 'tool-3', 'step-3', 5);
   yield successfulToolResult(turnId, 6, 'tool-3');

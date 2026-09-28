@@ -693,7 +693,7 @@ export class FakeBackend implements AgentBackend {
       stepId,
       ts: startedAt,
       toolUseId,
-      toolName: 'RequestSandboxBoundary',
+      toolName: 'RequestAccess',
       args: { expansion, justification },
     };
 

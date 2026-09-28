@@ -54,21 +54,23 @@ const DIRECT_TOOL_NAMES: ReadonlySet<string> = new Set([
   TOOL_NAMES.grep,
   TOOL_NAMES.webFetch,
   TOOL_NAMES.askUserQuestion,
-  // Delivery is default-loaded, as in the reference harness: a ToolSearch
-  // round trip before the first file card would defeat "send it the moment it
-  // exists". Delegation stays deferred.
+  // A call the sandbox stopped answers "call RequestAccess"; a ToolSearch
+  // round trip between that answer and the request would be a step the model
+  // can get wrong while the person waits.
+  TOOL_NAMES.requestAccess,
+  // Delivery is default-loaded, as in the design: a ToolSearch round trip
+  // before the first file card would defeat "send it the moment it exists".
+  // Delegation stays deferred.
   TOOL_NAMES.sendUserFile,
   TOOL_NAMES.sendUserMessage,
-  TOOL_NAMES.taskStop,
-  // The task list is default-loaded for the same reason, and because the
-  // reference harness loads it directly too. `<keeping_the_person_informed>`
-  // asks for a list "whenever the work has stages worth watching" — a search
-  // round trip before the first of them is a step between the request and the
-  // thing that shows the person it landed.
+  // Creating and updating the task list is default-loaded for the same reason,
+  // as the design has it: `<keeping_the_person_informed>` asks for a list
+  // "whenever the work has stages worth watching", and a search round trip
+  // before the first of them is a step between the request and the thing that
+  // shows the person it landed. Reading it back (TaskList, TaskGet) and
+  // stopping a background task (TaskStop) wait behind ToolSearch, as there.
   TOOL_NAMES.taskCreate,
   TOOL_NAMES.taskUpdate,
-  TOOL_NAMES.taskList,
-  TOOL_NAMES.taskGet,
   // Skill is loaded directly, as in the reference; SearchSkills is not listed
   // here, so it waits behind ToolSearch the way the reference defers it.
   TOOL_NAMES.skill,

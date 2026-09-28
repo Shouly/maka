@@ -21,13 +21,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isProviderSandboxBoundaryAttempt } from '../ai-sdk-tool-repair.js';
 
-test('a boundary attempt is RequestSandboxBoundary as registered, or a Bash that declares expand', () => {
+test('a boundary attempt is RequestAccess as registered, or a Bash that declares expand', () => {
   // The tool is PascalCase; lower-casing the call's name before comparing
-  // made every RequestSandboxBoundary call invisible to the denial backstop.
-  assert.equal(
-    isProviderSandboxBoundaryAttempt({ toolName: 'RequestSandboxBoundary', input: '{}' }),
-    true,
-  );
+  // made every RequestAccess call invisible to the denial backstop.
+  assert.equal(isProviderSandboxBoundaryAttempt({ toolName: 'RequestAccess', input: '{}' }), true);
   assert.equal(
     isProviderSandboxBoundaryAttempt({
       toolName: 'Bash',

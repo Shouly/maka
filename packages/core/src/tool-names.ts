@@ -44,7 +44,7 @@ export const TOOL_NAMES = {
   archiveRead: 'ArchiveRead',
   // Interaction
   askUserQuestion: 'AskUserQuestion',
-  requestSandboxBoundary: 'RequestSandboxBoundary',
+  requestAccess: 'RequestAccess',
   // Delivery
   sendUserFile: 'SendUserFile',
   sendUserMessage: 'SendUserMessage',

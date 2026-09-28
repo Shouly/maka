@@ -133,7 +133,7 @@ import {
 } from './ai-sdk-compaction.js';
 import { RunTrace } from './run-trace.js';
 import {
-  REQUEST_SANDBOX_BOUNDARY_TOOL_NAME,
+  REQUEST_ACCESS_TOOL_NAME,
   SANDBOX_BOUNDARY_DENIED_FOR_TURN,
   SANDBOX_BOUNDARY_FINALIZATION_PROMPT,
 } from './sandbox-boundary-tool.js';
@@ -1043,9 +1043,7 @@ export class AiSdkTurn {
         toolMode,
         codeModeExecTool,
         toolRuntime.hasSandboxBoundaryDenial()
-          ? new Map(
-              [...nestedTools].filter(([name]) => name !== REQUEST_SANDBOX_BOUNDARY_TOOL_NAME),
-            )
+          ? new Map([...nestedTools].filter(([name]) => name !== REQUEST_ACCESS_TOOL_NAME))
           : nestedTools,
       );
       const modelTools: ModelToolSet = {};
@@ -1071,7 +1069,7 @@ export class AiSdkTurn {
     const boundaryAwareToolNames = (names: readonly string[]): string[] => {
       if (toolRuntime.shouldFinalizeSandboxBoundary()) return [];
       return toolRuntime.hasSandboxBoundaryDenial()
-        ? names.filter((name) => name !== REQUEST_SANDBOX_BOUNDARY_TOOL_NAME)
+        ? names.filter((name) => name !== REQUEST_ACCESS_TOOL_NAME)
         : [...names];
     };
     const currentRepairToolNames = () => boundaryAwareToolNames(plan.currentRepairToolNames());
@@ -2287,7 +2285,7 @@ export class AiSdkTurn {
                 const sandboxBoundaryAttempt = isProviderSandboxBoundaryAttempt(toolCall);
                 const deniedBoundaryRequest =
                   toolRuntime.hasSandboxBoundaryDenial() &&
-                  toolCall.toolName === REQUEST_SANDBOX_BOUNDARY_TOOL_NAME;
+                  toolCall.toolName === REQUEST_ACCESS_TOOL_NAME;
                 if (deniedBoundaryRequest) {
                   toolRuntime.forceSandboxBoundaryFinalization();
                 }

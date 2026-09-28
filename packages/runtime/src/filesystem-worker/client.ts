@@ -867,7 +867,7 @@ function boundaryRequiredMessage(
   }
   return (
     `${requested.access === 'write' ? 'Writing' : 'Reading'} ${path} is outside the session sandbox. ` +
-    `Call ${TOOL_NAMES.requestSandboxBoundary} for ${requested.access} access to ${requested.path} ` +
+    `Call ${TOOL_NAMES.requestAccess} for ${requested.access} access to ${requested.path} ` +
     `(scope ${requested.scope}), then repeat this call unchanged.`
   );
 }

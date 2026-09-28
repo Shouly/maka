@@ -41,10 +41,7 @@ import type {
 } from '@maka/core/backend-types';
 import type { SandboxBoundaryRequestEvent } from '@maka/core/events';
 
-import {
-  buildRequestSandboxBoundaryTool,
-  SANDBOX_BOUNDARY_UNAVAILABLE,
-} from '../sandbox-boundary-tool.js';
+import { buildRequestAccessTool, SANDBOX_BOUNDARY_UNAVAILABLE } from '../sandbox-boundary-tool.js';
 import { FilesystemWorkerClientError } from '../filesystem-worker/client.js';
 import { SandboxCommandError } from '../sandbox/errors.js';
 import { ToolRuntime, type MakaTool, type ToolRuntimeInput } from '../tool-runtime.js';
@@ -282,7 +279,7 @@ describe('ToolRuntime session sandbox boundary', () => {
       getPermissionPauseTarget: () => null,
       runId: 'run-1',
     });
-    const tool = buildRequestSandboxBoundaryTool();
+    const tool = buildRequestAccessTool();
     const pending = runtime.settleToolCall({
       tool,
       turnId: 'turn-1',
@@ -383,7 +380,7 @@ describe('ToolRuntime session sandbox boundary', () => {
       runId: 'run-1',
     });
     const pending = runtime.settleToolCall({
-      tool: buildRequestSandboxBoundaryTool(),
+      tool: buildRequestAccessTool(),
       turnId: 'turn-1',
       toolCallId: 'tool-boundary',
       input: {
@@ -475,7 +472,7 @@ describe('ToolRuntime session sandbox boundary', () => {
     });
 
     const settlement = await runtime.settleToolCall({
-      tool: buildRequestSandboxBoundaryTool(),
+      tool: buildRequestAccessTool(),
       turnId: 'turn-1',
       toolCallId: 'tool-boundary',
       input: {
@@ -551,7 +548,7 @@ describe('ToolRuntime session sandbox boundary', () => {
 
     try {
       const pending = runtime.settleToolCall({
-        tool: buildRequestSandboxBoundaryTool(),
+        tool: buildRequestAccessTool(),
         turnId: 'turn-1',
         toolCallId: 'tool-boundary',
         input: {
@@ -611,7 +608,7 @@ describe('ToolRuntime session sandbox boundary', () => {
 
     try {
       const settlement = await runtime.settleToolCall({
-        tool: buildRequestSandboxBoundaryTool(),
+        tool: buildRequestAccessTool(),
         turnId: 'turn-1',
         toolCallId: 'tool-boundary',
         input: {
@@ -679,7 +676,7 @@ describe('ToolRuntime session sandbox boundary', () => {
       getPermissionPauseTarget: () => null,
     });
     const pending = runtime.settleToolCall({
-      tool: buildRequestSandboxBoundaryTool(),
+      tool: buildRequestAccessTool(),
       turnId: 'turn-1',
       toolCallId: 'tool-boundary',
       input: {
@@ -753,7 +750,7 @@ describe('ToolRuntime session sandbox boundary', () => {
       getPermissionPauseTarget: () => null,
     });
     const pending = runtime.settleToolCall({
-      tool: buildRequestSandboxBoundaryTool(),
+      tool: buildRequestAccessTool(),
       turnId: 'turn-1',
       toolCallId: 'tool-boundary',
       input: {
@@ -1141,7 +1138,7 @@ describe('ToolRuntime session sandbox boundary', () => {
 
     const events: SessionEvent[] = [];
     const settlement = await runtime.settleToolCall({
-      tool: buildRequestSandboxBoundaryTool() as unknown as MakaTool,
+      tool: buildRequestAccessTool() as unknown as MakaTool,
       turnId: 'turn-1',
       toolCallId: 'call-boundary-unavailable',
       input: {

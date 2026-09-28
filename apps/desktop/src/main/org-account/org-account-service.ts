@@ -397,7 +397,9 @@ export class OrgAccountService {
     this.#profileCheckedAt = this.#now();
     if (JSON.stringify(profile) === JSON.stringify(this.#session.profile)) return;
     this.#session = { ...this.#session, profile };
-    await this.#persist();
+    // Nobody awaits a reload, so a failed write must not escape it: the copy on
+    // disk stays as it was, and the next reload writes this one again.
+    await this.#persist().catch(() => undefined);
     this.#emit();
   }
 
@@ -603,7 +605,11 @@ export class OrgAccountService {
         // By id: a refresh replaces the session object, not the sign-in.
         if (this.#session?.sessionId !== session.sessionId) return;
         this.#clearSession('sign_in_expired');
-        void this.#persist().finally(() => {
+        // A failed write leaves an expired session on disk, which the next
+        // start reads as signed out anyway.
+        void this.#persist()
+          .catch(() => undefined)
+          .finally(() => {
           this.#emit();
           void this.refresh();
         });

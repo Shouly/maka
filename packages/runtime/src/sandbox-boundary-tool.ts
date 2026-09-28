@@ -28,7 +28,7 @@ import { sandboxBoundaryExpansionSchema } from './sandbox-boundary-declaration.j
 import type { MakaTool } from './tool-runtime.js';
 
 /**
- * Refusal for a `RequestSandboxBoundary` call that cannot be carried out.
+ * Refusal for a `RequestAccess` call that cannot be carried out.
  *
  * Shared with `ToolRuntime.requestSandboxBoundary`, which is where the
  * production form of this failure is decided: ToolRuntime injects the context
@@ -37,11 +37,11 @@ import type { MakaTool } from './tool-runtime.js';
  * to say it.
  */
 export const SANDBOX_BOUNDARY_UNAVAILABLE =
-  'RequestSandboxBoundary is not available on this surface, so the sandbox was not widened. ' +
+  'RequestAccess is not available on this surface, so the sandbox was not widened. ' +
   'Retrying will fail the same way — redo the work inside the paths already allowed, or tell the ' +
   'user which path needs access.';
 
-export const REQUEST_SANDBOX_BOUNDARY_TOOL_NAME = TOOL_NAMES.requestSandboxBoundary;
+export const REQUEST_ACCESS_TOOL_NAME = TOOL_NAMES.requestAccess;
 
 export const SANDBOX_BOUNDARY_DENIED_FOR_TURN =
   'The user denied a sandbox boundary expansion for this Turn. Do not request another expansion. ' +
@@ -55,12 +55,12 @@ export const SANDBOX_BOUNDARY_FINALIZATION_PROMPT = [
   '</sandbox_boundary_finalization>',
 ].join('\n');
 
-export function buildRequestSandboxBoundaryTool(): MakaTool<
+export function buildRequestAccessTool(): MakaTool<
   { expansion: SandboxBoundaryExpansion; justification: string },
   SandboxBoundarySettlement
 > {
   return {
-    name: REQUEST_SANDBOX_BOUNDARY_TOOL_NAME,
+    name: REQUEST_ACCESS_TOOL_NAME,
     executionSemantics: 'exclusive_step',
     description: [
       'Ask the user to widen the session sandbox boundary so a local tool that answered sandbox_boundary_required can be retried.',

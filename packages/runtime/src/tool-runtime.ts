@@ -141,7 +141,7 @@ import {
   expansionRequestsWrite,
 } from './sandbox-boundary-path.js';
 import {
-  REQUEST_SANDBOX_BOUNDARY_TOOL_NAME,
+  REQUEST_ACCESS_TOOL_NAME,
   SANDBOX_BOUNDARY_DENIED_FOR_TURN,
   SANDBOX_BOUNDARY_UNAVAILABLE,
 } from './sandbox-boundary-tool.js';
@@ -1289,7 +1289,7 @@ export class ToolRuntime {
         // operation before it interprets the requested expansion. Preserve that
         // availability contract even when an older caller sends a legacy shape.
         const sandboxBoundaryUnavailable =
-          tool.name === TOOL_NAMES.requestSandboxBoundary &&
+          tool.name === TOOL_NAMES.requestAccess &&
           !this.interactionRun() &&
           (!this.input.createSandboxBoundaryRequest || !this.input.settleSandboxBoundaryRequest);
         if (!sandboxBoundaryUnavailable) {
@@ -4195,9 +4195,9 @@ function buildTerminalFailureMessage(
   if (stdoutView) parts.push(`--- stdout ---\n${stdoutView}`);
   if (sandboxDenied) {
     // Naming only the marker left the model knowing a boundary could be widened
-    // and not by what: the tool that widens it is `RequestSandboxBoundary`.
+    // and not by what: the tool that widens it is `RequestAccess`.
     parts.push(
-      `该失败很可能来自 Maka sandbox。请先尝试不扩大边界的替代方案。Bash 的沙箱拒绝本身不会成为申请：若命令确实需要某个路径或网络，用 boundary_intent: expand 加 required_boundary 重发同一条命令，它会返回 sandbox_boundary_required 和具体 expansion；只有拿到这个结果后，才能调用 ${TOOL_NAMES.requestSandboxBoundary} 请求会话边界扩张，并在 expansion 里只写那一条路径。只读会话下写入不可申请，只能由用户切换到手动。不要从命令文本猜测权限，也不要静默绕过 sandbox。`,
+      `该失败很可能来自 Maka sandbox。请先尝试不扩大边界的替代方案。Bash 的沙箱拒绝本身不会成为申请：若命令确实需要某个路径或网络，用 boundary_intent: expand 加 required_boundary 重发同一条命令，它会返回 sandbox_boundary_required 和具体 expansion；只有拿到这个结果后，才能调用 ${TOOL_NAMES.requestAccess} 请求会话边界扩张，并在 expansion 里只写那一条路径。只读会话下写入不可申请，只能由用户切换到手动。不要从命令文本猜测权限，也不要静默绕过 sandbox。`,
     );
   }
   return parts.join('\n\n');
@@ -4231,7 +4231,7 @@ function sandboxDenialKey(toolName: string, cwd: string, args: unknown): string 
 }
 
 function isBoundaryAuthorityAttempt(toolName: string, args: unknown): boolean {
-  if (toolName === REQUEST_SANDBOX_BOUNDARY_TOOL_NAME) return true;
+  if (toolName === REQUEST_ACCESS_TOOL_NAME) return true;
   if (toolName !== 'Bash' || !args || typeof args !== 'object') return false;
   const record = args as Record<string, unknown>;
   return (

@@ -522,7 +522,7 @@ export function canExpandTool(item: ToolActivityItem): boolean {
   // place, and the answer stands in the turn afterwards (the Q&A card, the
   // granted boundary): the row is one line saying it was asked, and opening
   // it would only show the wire form of what the reader already answered.
-  if (isAskUserQuestionTool(item) || item.toolName === TOOL_NAMES.requestSandboxBoundary) {
+  if (isAskUserQuestionTool(item) || item.toolName === TOOL_NAMES.requestAccess) {
     return false;
   }
   const renderer = resolveToolRendererId(item);

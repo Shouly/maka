@@ -1914,7 +1914,7 @@ test('a question and a permission request are one-line steps: answered elsewhere
   const asking: ToolActivityItem = { ...asked, status: 'running', result: undefined };
   const boundary: ToolActivityItem = {
     toolUseId: 'sb-1',
-    toolName: 'RequestSandboxBoundary',
+    toolName: 'RequestAccess',
     status: 'completed',
     args: { justification: 'read the folder' },
     result: { kind: 'text', text: 'approved' },

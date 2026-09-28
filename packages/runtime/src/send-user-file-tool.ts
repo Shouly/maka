@@ -225,7 +225,7 @@ function resolveDeliveryPath(cwd: string, requested: string): string {
  *
  * The boundary still refuses through the same path, so the refusal still
  * carries `sandbox_boundary_required` and its expansion, and
- * RequestSandboxBoundary can still follow it.
+ * RequestAccess can still follow it.
  */
 async function admitDeliveryPath(
   filesystem: Pick<FilesystemExecutor, 'execute'>,
@@ -263,7 +263,7 @@ async function admitDeliveryPath(
  *
  * A boundary refusal is not one of the reference's two. It keeps its own
  * wording and, more importantly, its machine-readable metadata: the boundary
- * reason and the expansion it needs are what RequestSandboxBoundary reads, and
+ * reason and the expansion it needs are what RequestAccess reads, and
  * they survive only on the thrown error itself, never through a `cause`.
  */
 function deliveryPathError(requested: string, cwd: string, error: unknown): Error {

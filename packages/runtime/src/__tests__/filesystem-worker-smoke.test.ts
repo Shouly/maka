@@ -240,7 +240,7 @@ describe('macOS filesystem worker smoke', { skip: process.platform !== 'darwin' 
         // The model only has the sentence to go on, so it names that grant.
         assert.equal(
           error.message,
-          `Writing ${outsideTarget} is outside the session sandbox. Call RequestSandboxBoundary ` +
+          `Writing ${outsideTarget} is outside the session sandbox. Call RequestAccess ` +
             `for write access to ${join(outside, 'created')} (scope subtree), then repeat this call unchanged.`,
         );
         if (executionBoundary.kind === 'managed' && error.requiredExpansion)
@@ -435,7 +435,7 @@ describe('macOS filesystem worker smoke', { skip: process.platform !== 'darwin' 
         assert.ok(error instanceof FilesystemWorkerClientError);
         assert.equal(error.reason, 'sandbox_boundary_required');
         assert.match(error.message, /Read only, so writing cannot be requested/);
-        assert.doesNotMatch(error.message, /RequestSandboxBoundary/);
+        assert.doesNotMatch(error.message, /RequestAccess/);
         return true;
       },
     );

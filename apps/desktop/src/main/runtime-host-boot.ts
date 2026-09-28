@@ -118,7 +118,6 @@ import { assembleDesktopNativeCapabilities } from "./desktop-native-capability-a
 import { clientSettingsConfirmation } from "./client-settings-confirmation-copy.js";
 import { nativeFileDialogCopy } from "./native-file-dialog-copy.js";
 import { createDesktopLocaleAuthority } from "./desktop-locale-authority.js";
-import { buildRiveWorkflowTool } from "./rive-workflow-tool.js";
 import { applyAppIcon } from "./app-icon-surface.js";
 import { registerAppIconIpc } from "./app-icon-ipc.js";
 import { listAppIconPreviews } from "./app-icon-surface.js";
@@ -625,7 +624,6 @@ const native = assembleDesktopNativeCapabilities({
   keepSystemAwake,
   mainWindow: mainWindowController,
 });
-const riveWorkflowTool = buildRiveWorkflowTool();
 const completeDesktopInteractionTurn = (sessionId: string): void => {
   workHubControl.complete(sessionId);
   native.computerUseOverlay.clearForSession(sessionId);
@@ -1250,13 +1248,6 @@ const startLocalRuntimeHostManager = () => startRuntimeHostDesktopManager(
             description:
               "Read or update UI and operating-system settings owned by this Desktop client.",
             tools: clientSettingsTools,
-          },
-          {
-            offerId: "desktop_rive",
-            label: "Rive",
-            description:
-              "Use durable Rive workflows through this Desktop client.",
-            tools: [riveWorkflowTool],
           },
           // One offer per MCP server keeps grant contracts server-scoped: a
           // server change re-prompts only that server's tools.

@@ -184,7 +184,7 @@ If a `computer-use` skill is listed, Copilot reads it as its first step on any r
 </desktop_computer_use>
 
 <questions_and_task_list>
-AskUserQuestion asks the person one to four multiple-choice questions in the interface; they can always type their own answer instead. TaskCreate and TaskUpdate manage the task-list widget, with TaskList and TaskGet to read it back. In a scheduled or headless session any of these may be absent, in which case Copilot decides and says what it decided, or asks in plain text.
+AskUserQuestion asks the person one to four multiple-choice questions in the interface (they can always type their own answer). TaskCreate and TaskUpdate manage the task-list widget. In a scheduled or headless session any of these may be absent, in which case Copilot decides and says what it decided, or asks in plain text.
 </questions_and_task_list>
 
 <scheduled_tasks>

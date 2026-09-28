@@ -324,7 +324,7 @@ test('a sandbox denial names the tool that widens the boundary', async () => {
 
   // Naming the marker without the tool that acts on it is a dead end: the model
   // is told a boundary can be widened and not by what.
-  assert.match((result as { error?: string }).error ?? '', /RequestSandboxBoundary/);
+  assert.match((result as { error?: string }).error ?? '', /RequestAccess/);
 });
 
 describe('unrepairable tool calls', () => {

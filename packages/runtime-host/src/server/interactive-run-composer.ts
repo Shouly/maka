@@ -60,7 +60,7 @@ import {
   buildUpdatePlanTool,
 } from '@maka/runtime/plan-tools';
 import { buildParentAgentTools } from '@maka/runtime/subagent-tools';
-import { buildRequestSandboxBoundaryTool } from '@maka/runtime/sandbox-boundary-tool';
+import { buildRequestAccessTool } from '@maka/runtime/sandbox-boundary-tool';
 import { buildSendUserFileTool } from '@maka/runtime/send-user-file-tool';
 import { buildSendUserMessageTool } from '@maka/runtime/send-user-message-tool';
 import {
@@ -682,7 +682,7 @@ function buildDefaultHostTools(
   // Their Artifact recorder arrives on the ToolRuntime context, not from here.
   const sendUserFile = buildSendUserFileTool(builtinOptions ?? {});
   const sendUserMessage = buildSendUserMessageTool();
-  const sandboxBoundary = buildRequestSandboxBoundaryTool();
+  const sandboxBoundary = buildRequestAccessTool();
   const taskTools = buildSessionTaskTools(sessionTask);
   const activeExecution = plan ? activePlanExecution(plan.state) : undefined;
   const interruptedExecution = plan

@@ -81,7 +81,7 @@ import { buildDefaultContextBudgetPolicy } from '../context-budget-policy.js';
 import { buildRuntimeEventModelReplayPlan, buildSteeringEnvelope } from '../model-history.js';
 import { HistoryCompactSummarizerError } from '../history-compact-summarizer.js';
 import { SandboxCommandError } from '../sandbox/errors.js';
-import { buildRequestSandboxBoundaryTool } from '../sandbox-boundary-tool.js';
+import { buildRequestAccessTool } from '../sandbox-boundary-tool.js';
 import {
   preflightDeclaredSandboxBoundary,
   sandboxBoundaryExpansionSchema,
@@ -787,7 +787,7 @@ describe('AiSdkBackend sandbox boundary convergence', () => {
     const calls = [
       {
         toolCallId: 'boundary-request',
-        toolName: 'RequestSandboxBoundary',
+        toolName: 'RequestAccess',
         // Writing beside the workspace: Manual already reads the whole disk
         // and has the network open, so a write is what still needs approval.
         input: {
@@ -867,7 +867,7 @@ describe('AiSdkBackend sandbox boundary convergence', () => {
       modelId: 'mock-model-id',
       modelFactory: () => model,
       tools: [
-        buildRequestSandboxBoundaryTool(),
+        buildRequestAccessTool(),
         {
           name: 'Bash',
           description: 'Run one command.',
@@ -915,10 +915,7 @@ describe('AiSdkBackend sandbox boundary convergence', () => {
     assert.equal(createCalls, 1);
     assert.equal(bashImplCalls, 1);
     assert.equal(events.filter((event) => event.type === 'sandbox_boundary_request').length, 1);
-    assert.doesNotMatch(
-      JSON.stringify(model.doStreamCalls[1]?.tools ?? []),
-      /RequestSandboxBoundary/u,
-    );
+    assert.doesNotMatch(JSON.stringify(model.doStreamCalls[1]?.tools ?? []), /RequestAccess/u);
     assert.match(JSON.stringify(model.doStreamCalls[1]?.tools ?? []), /Bash/u);
     assert.deepEqual(model.doStreamCalls[3]?.tools ?? [], []);
     assert.deepEqual(model.doStreamCalls[3]?.toolChoice, { type: 'none' });
@@ -945,7 +942,7 @@ describe('AiSdkBackend sandbox boundary convergence', () => {
                     toolCallId: 'code-boundary-request',
                     toolName: 'exec',
                     input: JSON.stringify({
-                      code: 'return await tools.RequestSandboxBoundary({ expansion: { network: { enabled: true } }, justification: "Use the network." })',
+                      code: 'return await tools.RequestAccess({ expansion: { network: { enabled: true } }, justification: "Use the network." })',
                     }),
                   },
                   {
@@ -963,7 +960,7 @@ describe('AiSdkBackend sandbox boundary convergence', () => {
                       toolName: 'exec',
                       input: JSON.stringify({
                         code: [
-                          'return await tools.RequestSandboxBoundary({',
+                          'return await tools.RequestAccess({',
                           '  expansion: { network: { enabled: true } },',
                           '  justification: "Try another expansion."',
                           '})',
@@ -1013,7 +1010,7 @@ describe('AiSdkBackend sandbox boundary convergence', () => {
         connection: connection(),
         modelId: 'mock-model-id',
         modelFactory: () => model,
-        tools: [buildRequestSandboxBoundaryTool()],
+        tools: [buildRequestAccessTool()],
         readExecutionBoundary: async () => managed,
         createSandboxBoundaryRequest: async (input) => {
           createCalls += 1;
@@ -1085,14 +1082,13 @@ describe('AiSdkBackend sandbox boundary convergence', () => {
         1 - inheritedOffset,
       );
       assert.equal(
-        events.filter(
-          (event) => event.type === 'tool_start' && event.toolName === 'RequestSandboxBoundary',
-        ).length,
+        events.filter((event) => event.type === 'tool_start' && event.toolName === 'RequestAccess')
+          .length,
         2 - inheritedOffset,
       );
       assert.doesNotMatch(
         JSON.stringify(model.doStreamCalls[1 - inheritedOffset]?.tools ?? []),
-        /RequestSandboxBoundary/u,
+        /RequestAccess/u,
       );
       assert.match(JSON.stringify(model.doStreamCalls[1 - inheritedOffset]?.tools ?? []), /exec/u);
       assert.deepEqual(model.doStreamCalls[2 - inheritedOffset]?.tools ?? [], []);
@@ -1132,7 +1128,7 @@ describe('AiSdkBackend sandbox boundary convergence', () => {
               {
                 type: 'tool-call',
                 toolCallId: `invalid-boundary-${streamCalls}`,
-                toolName: 'RequestSandboxBoundary',
+                toolName: 'RequestAccess',
                 input: JSON.stringify(input),
               },
               {
@@ -1171,7 +1167,7 @@ describe('AiSdkBackend sandbox boundary convergence', () => {
       connection: connection(),
       modelId: 'mock-model-id',
       modelFactory: () => model,
-      tools: [buildRequestSandboxBoundaryTool()],
+      tools: [buildRequestAccessTool()],
       readExecutionBoundary: async () =>
         createManagedExecutionBoundary(createWorkspaceWritePermissionProfile(), 0),
       createSandboxBoundaryRequest: async () => {

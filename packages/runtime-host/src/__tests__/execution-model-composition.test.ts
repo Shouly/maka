@@ -469,7 +469,7 @@ test('production Host executes Bash against the current live sandbox boundary', 
       // The model is told which grant would unblock the Write.
       assert.match(
         latestToolResultText(sandboxRequests[5]!.body) ?? '',
-        /is outside the session sandbox\. Call RequestSandboxBoundary for write access to .*write-denied\.txt \(scope exact\)/u,
+        /is outside the session sandbox\. Call RequestAccess for write access to .*write-denied\.txt \(scope exact\)/u,
       );
       assert.equal(await fileExists(sandboxPaths.outsideBash), false);
       assert.equal(await fileExists(sandboxPaths.outsideWrite), false);
@@ -2894,19 +2894,18 @@ test('production Host executes a canonical ai-sdk Session against a real provide
       'MemoryStrReplace',
       'MemoryWrite',
       'Read',
+      // A call the sandbox stopped is answered with "call RequestAccess".
+      'RequestAccess',
       'SendUserFile',
       'SendUserMessage',
       // Skill is loaded directly; SearchSkills waits behind ToolSearch, as in
-      // the reference.
+      // the design.
       'Skill',
-      // The task list is default-loaded: `<keeping_the_person_informed>` asks
-      // for one whenever the work has stages worth watching, and a ToolSearch
-      // round trip before the first of them is a step between the request and
-      // the thing that shows the person it landed.
+      // Creating and updating the task list is default-loaded:
+      // `<keeping_the_person_informed>` asks for one whenever the work has
+      // stages worth watching. Reading it back and TaskStop wait behind
+      // ToolSearch, as in the design.
       'TaskCreate',
-      'TaskGet',
-      'TaskList',
-      'TaskStop',
       'TaskUpdate',
       'ToolSearch',
       'WebFetch',
