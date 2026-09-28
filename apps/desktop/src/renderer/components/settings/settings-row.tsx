@@ -29,8 +29,8 @@
 // 排版是「左说明、右控件」的横排,不是「标签在上、输入框在下」的竖排表单 ——
 // 设置页和弹框表单最大的形态差别,别混用。
 //
-// ! 分隔线用 `border-t` 不是 `border`:仓里 `@utility border` 被改成 0.5px,
-// 只影响裸 `border`,`border-t` 仍是 1px。
+// ! 分隔线写 `border-t-[1px]`:仓里 `@utility border-t` 被改成了 0.5px,
+// 在 Retina 屏上只有一个物理像素,5% 墨色几乎看不见;设计稿是 1px。
 
 import type { HTMLAttributes, ReactNode } from 'react';
 import { cn } from '../../lib/cn.js';
@@ -67,7 +67,7 @@ export function SettingsSection({
           {action && <div className="flex shrink-0 items-center">{action}</div>}
         </div>
       )}
-      <div className="[&>*:not(:first-child)]:border-t [&>*:not(:first-child)]:border-alpha-1">
+      <div className="[&>*:not(:first-child)]:border-t-[1px] [&>*:not(:first-child)]:border-alpha-1">
         {children}
       </div>
     </section>

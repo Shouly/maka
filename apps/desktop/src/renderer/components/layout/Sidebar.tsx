@@ -421,8 +421,9 @@ export function Sidebar(props: SidebarProps) {
           </SidebarTabPanel>
         </div>
 
-        {/* The footer tray: a hairline rule (ink 5%) across the whole rail. */}
-        <div className="shrink-0 border-t border-alpha-1 p-2">
+        {/* The footer tray: a 1px rule (ink 5%) across the whole rail. Not the
+            global 0.5px `border-t`, which a Retina screen draws too faint to see. */}
+        <div className="shrink-0 border-t-[1px] border-alpha-1 p-2">
           {chip && (
             <button
               type="button"

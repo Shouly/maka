@@ -308,7 +308,7 @@ function MeterRow(props: {
 }) {
   const width = Math.max(2, Math.min(100, (props.value / props.max) * 100));
   return (
-    <div className="grid grid-cols-[13rem_minmax(0,1fr)_7rem] items-center gap-4 py-3 [&:not(:first-child)]:border-t [&:not(:first-child)]:border-alpha-1">
+    <div className="grid grid-cols-[13rem_minmax(0,1fr)_7rem] items-center gap-4 py-3 [&:not(:first-child)]:border-t-[1px] [&:not(:first-child)]:border-alpha-1">
       <div className="flex min-w-0 flex-col gap-0.5">
         <span className="truncate text-sm leading-5 text-text-primary">{props.label}</span>
         <span className="truncate text-[0.8125rem] leading-[1.0625rem] text-text-muted">

@@ -60,7 +60,7 @@ export function SettingsNav(props: {
     <nav
       data-maka-contract="settings-sidebar"
       aria-label={props.label}
-      className="flex w-48 shrink-0 flex-col gap-3 border-r border-alpha-2 bg-surface-1"
+      className="flex w-48 shrink-0 flex-col gap-3 border-r-[1px] border-alpha-2 bg-surface-1"
     >
       <div className="shrink-0 px-3 pt-3">
         {/* The field: the frame is the label, so the focus ring is drawn
