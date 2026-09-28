@@ -27,7 +27,7 @@
 //                                 whose system prompt names the day
 //   after it                     — the environment, the held tools, the agent
 //                                 types and the skills, recorded once and
-//                                 again on change, read without an envelope
+//                                 again on change
 //
 // Every block is a durable `injection` event, rendered in its place on every
 // replay.

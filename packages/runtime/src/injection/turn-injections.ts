@@ -83,15 +83,13 @@ export function injectionPosition(
 
 /**
  * A recorded block as the model reads it — live and on every replay alike.
- * The listings after the text are read as written, as the design sends them;
- * ahead of it a block wears the reminder envelope unless it carries its own tag.
+ * Every block wears the reminder envelope, the one mark that tells a system
+ * fact from the user's words, unless it carries its own tag.
  */
 export function renderInjectionBlock(
   injection: Pick<RuntimeEventInjectionContent, 'text' | 'data'>,
 ): string {
-  return injection.data?.bare === true || injectionPosition(injection) === 'after'
-    ? injection.text.trim()
-    : wrapSystemReminder(injection.text);
+  return injection.data?.bare === true ? injection.text.trim() : wrapSystemReminder(injection.text);
 }
 
 /**

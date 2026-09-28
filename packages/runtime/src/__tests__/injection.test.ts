@@ -60,8 +60,11 @@ describe('around the user message', () => {
     const skills = renderPlacedBlock({ name: 'skills', text: 'LIST', data: { position: 'after' } });
     assert.equal(snapshot, '<system-reminder>fact</system-reminder>\n');
     assert.equal(date, '<system-reminder>The current date is Monday.</system-reminder>');
-    // After the text a listing is read as written, without the envelope.
-    assert.equal(environment, '\n\n# Environment\n - Platform: darwin');
+    // After the text a listing wears the envelope too, set off by a blank line.
+    assert.equal(
+      environment,
+      '\n\n<system-reminder>\n# Environment\n - Platform: darwin\n</system-reminder>',
+    );
 
     assert.equal(
       prependUserMessageBlocks('hello', [snapshot, date]),
@@ -69,7 +72,7 @@ describe('around the user message', () => {
     );
     assert.equal(
       appendUserMessageBlocks('hello', [environment, skills]),
-      'hello\n\n# Environment\n - Platform: darwin\n\nLIST',
+      'hello\n\n<system-reminder>\n# Environment\n - Platform: darwin\n</system-reminder>\n\n<system-reminder>LIST</system-reminder>',
     );
     assert.deepEqual(prependUserMessageBlocks([{ type: 'text', text: 'hello' }], [snapshot]), [
       { type: 'text', text: '<system-reminder>fact</system-reminder>\nhello' },
@@ -86,14 +89,14 @@ describe('around the user message', () => {
     );
     assert.deepEqual(appendUserMessageBlocks([{ type: 'text', text: 'hello' }], [skills]), [
       { type: 'text', text: 'hello' },
-      { type: 'text', text: 'LIST' },
+      { type: 'text', text: '<system-reminder>LIST</system-reminder>' },
     ]);
     // With no words to hold them, the blocks stand alone, untrimmed inside.
     assert.equal(
       prependUserMessageBlocks('', [snapshot]),
       '<system-reminder>fact</system-reminder>',
     );
-    assert.equal(appendUserMessageBlocks('', [skills]), 'LIST');
+    assert.equal(appendUserMessageBlocks('', [skills]), '<system-reminder>LIST</system-reminder>');
     assert.equal(prependUserMessageBlocks('hello', []), 'hello');
     assert.equal(appendUserMessageBlocks('hello', []), 'hello');
     // The user's own words are what is left after the blocks ahead of them.

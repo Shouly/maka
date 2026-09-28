@@ -16120,7 +16120,7 @@ describe('AiSdkBackend session injections', () => {
     // Around the user text, in ledger order: the blocks ahead of it, the
     // words, then the listing recorded to follow them.
     const userText =
-      /^<system-reminder><user_memory_snapshot>SNAPSHOT<\/user_memory_snapshot><\/system-reminder>\n<system-reminder>PLUGIN_CONTEXT<\/system-reminder>\nwhat is in the cupboard\?\n\nSKILLS_LISTING$/u;
+      /^<system-reminder><user_memory_snapshot>SNAPSHOT<\/user_memory_snapshot><\/system-reminder>\n<system-reminder>PLUGIN_CONTEXT<\/system-reminder>\nwhat is in the cupboard\?\n\n<system-reminder>SKILLS_LISTING<\/system-reminder>$/u;
     const firstUser = first.filter((message) => message.role === 'user');
     assert.equal(firstUser.length, 1, JSON.stringify(first.map(textOf)));
     assert.match(textOf(firstUser[0]!), userText);
