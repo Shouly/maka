@@ -17,36 +17,20 @@
  * under the License.
  */
 
-// What rides ON a user message, ahead of the user's own text.
+// Dates and the blocks that ride ON a user message.
 //
-// The moment the message was sent is a fact about that message, so it stays
-// with it for the rest of the conversation and is rendered the same way
-// every time the history is replayed, from the message's own timestamp —
-// which is what keeps the provider's cached prefix byte-stable. It is the
-// one reminder that is never stored: the timestamp already is.
+// A turn's recorded injections are placed around the user's own text: most
+// ahead of it, the listings the design sends after the message behind it.
+// Dates are written the design's way: "Monday, September 28, 2026".
 
 import type { UserContent } from '../model-protocol.js';
-import { wrapSystemReminder } from './system-reminder.js';
-
-export interface MessageSentReminderInput {
-  /** Epoch milliseconds the message was sent. */
-  readonly ts: number;
-  /** IANA zone of the user's machine; UTC when unknown. */
-  readonly timeZone?: string;
-}
-
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 
 function partsIn(date: Date, timeZone: string): Record<string, string> {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
-    weekday: 'short',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
     timeZoneName: 'longOffset',
   }).formatToParts(date);
   const out: Record<string, string> = {};
@@ -54,21 +38,21 @@ function partsIn(date: Date, timeZone: string): Record<string, string> {
   return out;
 }
 
-/** `Fri 2026-09-18 04:28`, in the zone. */
-export function formatLocalMoment(date: Date, timeZone: string): string {
-  const parts = partsIn(date, timeZone);
-  // `hour12: false` can print midnight as 24 in some ICU builds.
-  const hour = parts.hour === '24' ? '00' : parts.hour;
-  const weekday = WEEKDAYS.includes(parts.weekday as (typeof WEEKDAYS)[number])
-    ? parts.weekday
-    : (parts.weekday ?? '');
-  return `${weekday} ${parts.year}-${parts.month}-${parts.day} ${hour}:${parts.minute}`.trim();
-}
-
-/** `2026-09-18`, in the zone. */
+/** `2026-09-18`, the calendar day in the zone. */
 export function formatLocalDate(date: Date, timeZone: string): string {
   const parts = partsIn(date, timeZone);
   return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+/** The design's date form in the user's zone: "Monday, September 28, 2026". */
+export function formatLongDate(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(date);
 }
 
 /** `UTC-04:00`, the zone's offset at that moment. */
@@ -93,40 +77,43 @@ export function resolveZone(timeZone: string | undefined, date: Date): string {
 }
 
 /**
- * `<system-reminder>The user's timezone is America/New_York (UTC-04:00).
- * Message sent at Fri 2026-09-18 04:28 local time.</system-reminder>`
- *
- * It is the moment THIS message was sent, not a clock: the model reads the
- * current time from the turn's date line and its tools, never from here.
+ * Put placed blocks (`renderPlacedBlock`, each carrying its own break) ahead of
+ * the user's text. A string stays a string; an array keeps its parts, the
+ * blocks joining the first text part or standing as a new one in front of
+ * everything else.
  */
-export function renderMessageSentReminder(input: MessageSentReminderInput): string {
-  const date = new Date(input.ts);
-  const zone = resolveZone(input.timeZone, date);
-  return wrapSystemReminder(
-    `The user's timezone is ${zone} (${formatUtcOffset(date, zone)}). Message sent at ${formatLocalMoment(date, zone)} local time.`,
-  );
-}
-
-/**
- * Put reminder blocks ahead of the user's text. A string stays a string; an
- * array keeps its parts, the reminders joining the first text part or
- * standing as a new one in front of everything else.
- */
-export function prependUserMessageReminders(
+export function prependUserMessageBlocks(
   content: UserContent,
-  reminders: readonly string[],
+  blocks: readonly string[],
 ): UserContent {
-  if (reminders.length === 0) return content;
-  const block = reminders.join('\n');
+  if (blocks.length === 0) return content;
+  const lead = blocks.join('');
   if (typeof content === 'string') {
-    return content.length === 0 ? block : `${block}\n${content}`;
+    return content.length === 0 ? lead.trimEnd() : `${lead}${content}`;
   }
   const [first, ...rest] = content;
   if (first && first.type === 'text') {
     return [
-      { ...first, text: first.text.length === 0 ? block : `${block}\n${first.text}` },
+      { ...first, text: first.text.length === 0 ? lead.trimEnd() : `${lead}${first.text}` },
       ...rest,
     ];
   }
-  return [{ type: 'text', text: block }, ...content];
+  return [{ type: 'text', text: lead.trimEnd() }, ...content];
+}
+
+/**
+ * Put placed blocks after the user's text: the listings the design delivers
+ * after the message. A string stays a string; an array gains a trailing text
+ * part.
+ */
+export function appendUserMessageBlocks(
+  content: UserContent,
+  blocks: readonly string[],
+): UserContent {
+  if (blocks.length === 0) return content;
+  const tail = blocks.join('');
+  if (typeof content === 'string') {
+    return content.length === 0 ? tail.trimStart() : `${content}${tail}`;
+  }
+  return [...content, { type: 'text', text: tail.trimStart() }];
 }

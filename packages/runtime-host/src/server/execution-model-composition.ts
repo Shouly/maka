@@ -299,18 +299,13 @@ async function buildHostAiSdkBackend(
     readonly turnId: string;
     readonly emitSkillCatalogTrace?: (message: string, data?: Record<string, unknown>) => void;
   }) => {
-    const resolved = await modelComposition.resolveSystemPrompt({
+    return await modelComposition.resolveSystemPrompt({
       sessionId: input.context.sessionId,
       turnId: context.turnId,
       cwd: input.context.header.cwd,
       ...(context.emitSkillCatalogTrace
         ? { emitSkillCatalogTrace: context.emitSkillCatalogTrace }
         : {}),
-    });
-    const model = target.model.replace(/[\r\n\t]+/g, ' ').trim();
-    return Object.freeze({
-      ...resolved,
-      text: [`Active model: ${model}`, resolved.text].filter(Boolean).join('\n\n'),
     });
   };
   const recordRunComposition = input.context.recordRunComposition;
@@ -482,6 +477,7 @@ async function buildHostAiSdkBackend(
           return {
             text: resolved.text,
             ...(resolved.contexts ? { contexts: resolved.contexts } : {}),
+            ...(resolved.dated ? { dated: true } : {}),
             sourceRevisions: resolved.sourceRevisions,
           };
         },

@@ -19,61 +19,60 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { renderEnvironmentPromptFragment } from '../system-prompt/environment-prompt.js';
+import { renderEnvironmentContext } from '../system-prompt/environment-prompt.js';
 
-test('environment block names the workspace facts and omits what the host does not know', () => {
-  const text = renderEnvironmentPromptFragment({
+test("the environment block is the design's # Environment, with the model line under it", () => {
+  const text = renderEnvironmentContext({
     cwd: '/work/app',
-    platform: 'darwin',
     gitRepository: true,
-    branch: 'main',
-    shell: 'zsh',
+    platform: 'darwin',
+    shell: '/bin/sh',
+    osVersion: 'Darwin 25.0.0',
+    tmpDir: '/tmp',
     timeZone: 'Asia/Shanghai',
     now: new Date('2026-09-18T12:00:00Z'),
+    model: { id: 'claude-opus-5-5', displayName: 'Claude Opus 5.5' },
+    knowledgeCutoff: '2026-06',
   });
   assert.equal(
     text,
     [
-      'The assistant is Copilot.',
+      '# Environment',
+      'You have been invoked in the following environment:',
+      ' - Primary working directory: /work/app',
+      ' - Is a git repository: true',
+      ' - Platform: darwin',
+      ' - Shell: /bin/sh',
+      ' - OS Version: Darwin 25.0.0',
+      ' - Temporary directory for scratch files: /tmp',
+      ' - Time zone: Asia/Shanghai (UTC+08:00)',
       '',
-      'The current date is (provided in the conversation below).',
-      '',
-      "Copilot is currently operating in the Copilot desktop app, on the person's own computer.",
-      '',
-      "The user's timezone is Asia/Shanghai (UTC+08:00).",
-      '',
-      '<env>',
-      'Primary working directory: /work/app',
-      'Is a git repository: yes (branch main)',
-      'Platform: macOS',
-      'Shell: zsh',
-      '</env>',
+      'You are powered by the model named Claude Opus 5.5. The exact model ID is claude-opus-5-5. Assistant knowledge cutoff is June 2026.',
     ].join('\n'),
-  );
-  assert.doesNotMatch(text, /language/u);
-  // No zone, no zone line — and an unknown zone name falls to UTC.
-  assert.doesNotMatch(
-    renderEnvironmentPromptFragment({ cwd: '/w', platform: 'darwin', gitRepository: false }),
-    /timezone/u,
-  );
-  assert.match(
-    renderEnvironmentPromptFragment({
-      cwd: '/w',
-      platform: 'darwin',
-      gitRepository: false,
-      timeZone: 'Mars/Olympus',
-    }),
-    /The user's timezone is UTC \(UTC\+00:00\)\./u,
   );
 });
 
-test('unknown platforms pass through and Windows gets its label', () => {
-  assert.match(
-    renderEnvironmentPromptFragment({ cwd: 'C:\\\\work', platform: 'win32', gitRepository: false }),
-    /Platform: Windows/u,
+test('what the host does not know is said as unknown or left out, never invented', () => {
+  const bare = renderEnvironmentContext({ cwd: '/w', gitRepository: false, platform: 'linux' });
+  assert.equal(
+    bare,
+    [
+      '# Environment',
+      'You have been invoked in the following environment:',
+      ' - Primary working directory: /w',
+      ' - Is a git repository: false',
+      ' - Platform: linux',
+      ' - Shell: unknown',
+    ].join('\n'),
   );
-  assert.match(
-    renderEnvironmentPromptFragment({ cwd: '/w', platform: 'freebsd', gitRepository: false }),
-    /Platform: freebsd/u,
-  );
+  // A model without a name of its own is named by its id; an unknown zone reads as UTC.
+  const unnamed = renderEnvironmentContext({
+    cwd: '/w',
+    gitRepository: false,
+    platform: 'win32',
+    timeZone: 'Mars/Olympus',
+    model: { id: 'gpt-6' },
+  });
+  assert.match(unnamed, / - Time zone: UTC \(UTC\+00:00\)/u);
+  assert.match(unnamed, /\n\nYou are powered by the model gpt-6\.$/u);
 });

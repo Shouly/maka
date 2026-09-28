@@ -16006,7 +16006,7 @@ function completionModel(): MockLanguageModelV4 {
 }
 
 describe('AiSdkBackend session injections', () => {
-  test('the system speaks ahead of the user text, on the message, and on the tool result — and only the ledger carries it', async () => {
+  test('the system speaks around the user text and on the tool result — and only the ledger carries it', async () => {
     const durable = durableTurnHarness('turn-inject', 'what is in the cupboard?');
     let calls = 0;
     const model = new MockLanguageModelV4({
@@ -16054,7 +16054,9 @@ describe('AiSdkBackend session injections', () => {
           revision: 'm1',
         },
         { name: 'plugin', text: 'PLUGIN_CONTEXT' },
+        { name: 'skills', text: 'SKILLS_LISTING', position: 'after' as const },
       ],
+      dated: true,
       sourceRevisions: [],
     });
     const overriddenConnection = connection();
@@ -16098,7 +16100,8 @@ describe('AiSdkBackend session injections', () => {
       durable,
     );
     assert.equal(calls, 2);
-    assert.deepEqual(recorded, ['user_memory_snapshot', 'plugin', 'session_facts', 'date']);
+    // The session's first turn under a prompt that names the day: no date here.
+    assert.deepEqual(recorded, ['user_memory_snapshot', 'plugin', 'skills']);
 
     type PromptMessage = {
       role: string;
@@ -16114,10 +16117,10 @@ describe('AiSdkBackend session injections', () => {
     const first = model.doStreamCalls[0]?.prompt as PromptMessage[];
     const second = model.doStreamCalls[1]?.prompt as PromptMessage[];
 
-    // Ahead of the user text: the recorded blocks in ledger order, then the
-    // sent-time reminder (from the anchor's own timestamp), then the words.
+    // Around the user text, in ledger order: the blocks ahead of it, the
+    // words, then the listing recorded to follow them.
     const userText =
-      /^<system-reminder><user_memory_snapshot>SNAPSHOT<\/user_memory_snapshot><\/system-reminder>\n<system-reminder>PLUGIN_CONTEXT<\/system-reminder>\n<system-reminder>\nThe model serving this session is mock-model-id\. Say so only if asked; it can change mid-session\.\nPermission mode: ask, [^\n]*\n(?:Sandbox boundary: [^\n]*\n)?<\/system-reminder>\n<system-reminder>Today's date is 1970-01-01\.<\/system-reminder>\n<system-reminder>The user's timezone is Asia\/Shanghai \(UTC\+08:00\)\. Message sent at Thu 1970-01-01 08:00 local time\.<\/system-reminder>\nwhat is in the cupboard\?$/u;
+      /^<system-reminder><user_memory_snapshot>SNAPSHOT<\/user_memory_snapshot><\/system-reminder>\n<system-reminder>PLUGIN_CONTEXT<\/system-reminder>\nwhat is in the cupboard\?\n\nSKILLS_LISTING$/u;
     const firstUser = first.filter((message) => message.role === 'user');
     assert.equal(firstUser.length, 1, JSON.stringify(first.map(textOf)));
     assert.match(textOf(firstUser[0]!), userText);
@@ -16139,7 +16142,7 @@ describe('AiSdkBackend session injections', () => {
     assert.equal(output?.type, 'json');
     assert.deepEqual(output?.value, { tea: true });
 
-    // The next turn says nothing again: the ledger already holds it all.
+    // The next turn says only its date: the ledger already holds the rest.
     const next = durableTurnHarness('turn-inject-2', 'and the fridge?', {
       runId: 'run-2',
       invocationId: 'invocation-2',
@@ -16168,7 +16171,7 @@ describe('AiSdkBackend session injections', () => {
     );
     assert.deepEqual(
       recorded.filter((name) => name.startsWith('again:')),
-      [],
+      ['again:date'],
     );
   });
 });

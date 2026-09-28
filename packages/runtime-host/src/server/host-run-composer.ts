@@ -33,8 +33,10 @@ export type HostModelPromptContext = SystemPromptContext;
 
 export interface ResolvedRunPrompt {
   readonly text: string | undefined;
-  /** System-delivered blocks, recorded ahead of a turn's user text once and again only when `revision` (or the text) moves. */
+  /** System-delivered blocks, recorded with a turn's user text once and again only when `revision` (or the text) moves. */
   readonly contexts?: readonly InjectionContext[];
+  /** The prompt names the day the session began, so its first turn needs no date block. */
+  readonly dated?: boolean;
   readonly sourceRevisions: readonly RunCompositionSourceRevision[];
 }
 

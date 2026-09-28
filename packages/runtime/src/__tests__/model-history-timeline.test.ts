@@ -190,8 +190,8 @@ test('a turn with no user text carries its injections on an item of their own, t
         'user',
         '',
         [
-          '<system-reminder>SNAPSHOT</system-reminder>',
-          '<system-reminder>Today is Friday.</system-reminder>',
+          '<system-reminder>SNAPSHOT</system-reminder>\n',
+          '<system-reminder>Today is Friday.</system-reminder>\n',
         ],
         40,
       ],
@@ -201,7 +201,10 @@ test('a turn with no user text carries its injections on an item of their own, t
   // With a carrier, the same blocks ride on the head user text instead; one
   // recorded bare replays as written, outside the envelope.
   const carried = buildRuntimeEventModelReplayPlan([
-    { ...injection('i0', '<userPreferences>Be brief.</userPreferences>', { bare: true }), ts: 39 },
+    {
+      ...injection('i0', '<user_preferences>Be brief.</user_preferences>', { bare: true }),
+      ts: 39,
+    },
     { ...injection('i1', 'SNAPSHOT'), ts: 40 },
     {
       ...event({ id: 'u1', role: 'user', author: 'user', content: { kind: 'text', text: 'hi' } }),
@@ -216,8 +219,8 @@ test('a turn with no user text carries its injections on an item of their own, t
       [
         'hi',
         [
-          '<userPreferences>Be brief.</userPreferences>',
-          '<system-reminder>SNAPSHOT</system-reminder>',
+          '<user_preferences>Be brief.</user_preferences>\n',
+          '<system-reminder>SNAPSHOT</system-reminder>\n',
         ],
         41,
       ],

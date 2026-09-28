@@ -261,11 +261,17 @@ export interface ResolvedSystemPrompt {
   text?: string;
   /**
    * System-delivered blocks resolved for the session — the memory snapshot,
-   * the skills listing, a plugin's context. Each is recorded ahead of the
-   * turn's user text the first time, and again only when its `revision`
+   * the environment, the listings, a plugin's context. Each is recorded with
+   * the turn's user text the first time, and again only when its `revision`
    * (or, without one, its text) changes.
    */
   contexts?: readonly InjectionContext[];
+  /**
+   * The prompt names the day the session began (<knowledge_cutoff>), so the
+   * session's first turn carries no date block of its own. A prompt without
+   * it — a child agent's, a hosted profile's — leaves every turn dated.
+   */
+  dated?: boolean;
   sourceRevisions: readonly RunCompositionSourceRevision[];
 }
 
@@ -417,11 +423,6 @@ export class AiSdkBackend implements AgentBackend {
       supportsVision: input.supportsVision,
       readAttachmentBytes: input.readAttachmentBytes,
       maxProviderImageRequestBytes: input.maxProviderImageRequestBytes,
-      // Replayed history says the same thing every time: a user message
-      // carries the reminder its send time renders to.
-      ...(input.injections
-        ? { userMessageReminders: (ts: number) => input.injections!.userMessageReminders(ts) }
-        : {}),
     });
     this.compaction = new AiSdkCompaction({
       input,

@@ -170,7 +170,12 @@ test('the composer preserves scoped dynamic contexts for each model step', async
     cwd: '/workspace',
   });
 
-  assert.deepEqual(prompt.contexts, contexts);
+  // The plugin's contexts follow the composer's own.
+  assert.deepEqual(
+    prompt.contexts?.map((context) => context.name),
+    ['environment', 'plugin:context'],
+  );
+  assert.deepEqual(prompt.contexts?.at(-1), contexts[0]);
 });
 
 test('scoped Plugin Skill contributions join the canonical model inventory', async () => {
@@ -203,12 +208,82 @@ test('scoped Plugin Skill contributions join the canonical model inventory', asy
     turnId: 'turn-skill',
     cwd: '/workspace',
   });
-  // The skills listing rides ahead of the turn's user text as a context, not
-  // in the cached prompt.
+  // The skills listing follows the turn's user text as a context, not in the
+  // cached prompt.
   const skillsContext = prompt.contexts?.find((context) => context.name === 'skills')?.text ?? '';
   assert.match(skillsContext, /plugin-probe/u);
   assert.match(skillsContext, /Scoped skill for session-skill/u);
   assert.doesNotMatch(prompt.text ?? '', /plugin-probe/u);
+});
+
+test('the environment, the agent types, then the skills follow the user text; the prompt is dated to the session start', async () => {
+  const composer = createFixtureComposer({
+    knowledgeCutoff: '2026-06',
+    model: { id: 'claude-opus-5-5', displayName: 'Claude Opus 5.5' },
+    sessionStartedAt: Date.UTC(2026, 8, 28, 12),
+    resolveAgentTypes: async () => 'AGENT_TYPES',
+    memory: {
+      readPromptProjection: async () => ({ revision: 'memory-1', body: 'MEMORY_BODY' }),
+    } as unknown as HostMemoryCoordinator,
+    skills: {
+      readCanonicalModelInventory: async ({ projectRoot }: { projectRoot: string }) => ({
+        revision: 'base-revision',
+        projectRoot,
+        inventory: [],
+        diagnostics: [],
+        discoveryDiagnostics: [],
+      }),
+    } as unknown as HostSkillCatalogCoordinator,
+    pluginSkills: {
+      snapshot: () => ({
+        revision: 1,
+        skills: [{ name: 'probe', description: 'A probe', instructions: 'PROBE' }],
+      }),
+    } as never,
+  });
+
+  const prompt = await composer.resolveSystemPrompt({
+    sessionId: 'session',
+    turnId: 'turn',
+    cwd: '/workspace',
+  });
+  assert.deepEqual(
+    prompt.contexts?.map((context) => [context.name, context.position]),
+    [
+      ['user_memory_snapshot', undefined],
+      ['environment', 'after'],
+      ['agent_types', 'after'],
+      ['skills', 'after'],
+    ],
+  );
+  assert.match(
+    prompt.text ?? '',
+    /a highly informed individual in June 2026 would if talking to someone from Monday, September 28, 2026,/u,
+  );
+  // The environment is read in the conversation, not in the cached prompt.
+  const environment = prompt.contexts?.find((context) => context.name === 'environment')?.text;
+  assert.match(
+    environment ?? '',
+    /^# Environment\nYou have been invoked in the following environment:\n - Primary working directory: \/workspace\n/u,
+  );
+  assert.match(
+    environment ?? '',
+    /\n\nYou are powered by the model named Claude Opus 5\.5\. The exact model ID is claude-opus-5-5\. Assistant knowledge cutoff is June 2026\.$/u,
+  );
+  assert.doesNotMatch(prompt.text ?? '', /Primary working directory|# Environment/u);
+  // The prompt names the day the session began, so its first turn needs no date block.
+  assert.equal(prompt.dated, true);
+});
+
+test('a child agent keeps the environment in its prompt, which names no day', async () => {
+  const prompt = await createFixtureComposer({
+    childInstruction: 'Review the diff.',
+    sessionStartedAt: Date.UTC(2026, 8, 28, 12),
+  }).resolveSystemPrompt({ sessionId: 'child', turnId: 'turn', cwd: '/workspace' });
+  assert.match(prompt.text ?? '', /^# Environment\n/u);
+  assert.equal(prompt.contexts?.some((context) => context.name === 'environment') ?? false, false);
+  // Nothing in its prompt dates the session, so every turn — the first too — says the date.
+  assert.equal(prompt.dated, undefined);
 });
 
 function tool(name: string): MakaTool {

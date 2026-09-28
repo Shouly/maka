@@ -32,9 +32,15 @@ import { activePlanExecution, type PlanSessionState, type PlanStore } from '@mak
 import type { PermissionMode } from '@maka/core/permission';
 import { createHash } from 'node:crypto';
 import type { RuntimeExecutionConnection } from '@maka/core/llm-connections';
+import { lookupModelMetadata } from '@maka/core/model-metadata';
 import type { RuntimePolicySnapshot } from '@maka/core/runtime-policy';
 import type { SessionToolProfile, SessionUserContext } from '@maka/core/session';
-import type { InjectionContext } from '@maka/runtime/injection';
+import {
+  ENVIRONMENT_INJECTION,
+  formatLongDate,
+  resolveZone,
+  type InjectionContext,
+} from '@maka/runtime/injection';
 import {
   assembleMainSessionSystemPrompt,
   type PromptCondition,
@@ -42,10 +48,10 @@ import {
 import { renderKnowledgeCutoffSection } from '@maka/runtime/system-prompt/knowledge-cutoff-prompt';
 import {
   hostTimeZone,
-  renderEnvironmentPromptFragment,
+  renderEnvironmentContext,
 } from '@maka/runtime/system-prompt/environment-prompt';
 import { resolveProjectGitInfo } from '@maka/runtime/system-prompt/project-context';
-import { tmpdir } from 'node:os';
+import { release, tmpdir, type as osType } from 'node:os';
 import { buildAskUserQuestionTool } from '@maka/runtime/ask-user-question-tool';
 import { buildBuiltinTools, type BuildBuiltinToolsOptions } from '@maka/runtime/builtin-tools';
 import {
@@ -115,6 +121,10 @@ export interface InteractiveRunComposerInput {
    * behaviour without a date rather than naming a wrong one.
    */
   readonly knowledgeCutoff?: string;
+  /** The serving model, for the environment block. */
+  readonly model?: { readonly id: string; readonly displayName?: string };
+  /** When the session began; <knowledge_cutoff> names that date as the current one. */
+  readonly sessionStartedAt?: number;
   readonly skills: HostSkillCatalogCoordinator;
   readonly pluginSkills?: PluginSkillService;
   readonly memory: HostMemoryCoordinator;
@@ -286,18 +296,30 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
         const workspaceInstructions = promptState.policy.workspaceInstructions.enabled
           ? await buildWorkspaceInstructionsPromptFragment(context.cwd)
           : undefined;
-        // Session-level facts the model would otherwise probe for. The block
-        // is constant for the session, so it sits in the cached prompt rather
-        // than travelling with each turn.
-        const knowledgeCutoffSection = renderKnowledgeCutoffSection(input.knowledgeCutoff);
+        const knowledgeCutoffSection = renderKnowledgeCutoffSection(
+          input.knowledgeCutoff,
+          input.sessionStartedAt === undefined
+            ? undefined
+            : formatLongDate(
+                new Date(input.sessionStartedAt),
+                resolveZone(hostTimeZone(), new Date(input.sessionStartedAt)),
+              ),
+        );
+        // Facts about the machine and the model the model would otherwise
+        // probe for. A main session reads them as the environment block after
+        // its user text; a child agent, which is handed no listings, keeps
+        // them in its prompt.
         const gitInfo = await resolveProjectGitInfo(context.cwd);
-        const environment = renderEnvironmentPromptFragment({
+        const environment = renderEnvironmentContext({
           cwd: context.cwd,
-          platform: process.platform,
           gitRepository: gitInfo.isGitRepo,
-          ...(gitInfo.branch ? { branch: gitInfo.branch } : {}),
+          platform: process.platform,
+          ...(input.shell ? { shell: input.shell.plan.displayName } : {}),
+          osVersion: `${osType()} ${release()}`,
           tmpDir: tmpdir(),
           ...(hostTimeZone() ? { timeZone: hostTimeZone() } : {}),
+          ...(input.model ? { model: input.model } : {}),
+          ...(input.knowledgeCutoff ? { knowledgeCutoff: input.knowledgeCutoff } : {}),
         });
         const text = childInstruction
           ? joinFragments([
@@ -308,7 +330,6 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
             ])
           : assembleMainSessionSystemPrompt(
               [
-                environment,
                 workspaceInstructions,
                 input.plan?.mode === 'plan'
                   ? renderPlanModePrompt({ fullAccess: input.plan.permissionMode === 'bypass' })
@@ -317,10 +338,7 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
                 input.sideConversation ? buildSideConversationSystemPromptFragment() : undefined,
               ],
               { knowledge_cutoff_section: knowledgeCutoffSection },
-              new Set<PromptCondition>([
-                ...(input.userContext?.preferences ? (['preferences'] as const) : []),
-                ...(promptState.memory === undefined ? [] : (['memory'] as const)),
-              ]),
+              new Set<PromptCondition>(promptState.memory === undefined ? [] : ['memory']),
             );
         // Keep each turn's source revisions independent while sharing identical
         // immutable text already retained by the turn cache.
@@ -328,15 +346,17 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
           latestCompletedPromptText !== undefined && latestCompletedPromptText.text === text
             ? latestCompletedPromptText.text
             : text;
-        // The memory snapshot and the skills listing are system-delivered
-        // into the conversation, not part of the system prompt: each changes
-        // on its own (the background pass files something, a skill is added),
-        // and in the prompt it would invalidate the cached prefix. As
-        // contexts they are recorded ahead of a turn's user text the first
-        // time and again only when their revision moves (see `injection/`).
-        // Who the user is comes first: their preferences, then their name and
-        // email — fixed at creation, so recorded once.
-        const contexts = [
+        // The memory snapshot and the listings are system-delivered into the
+        // conversation, not part of the system prompt: each changes on its
+        // own (the background pass files something, a skill is added), and in
+        // the prompt it would invalidate the cached prefix. As contexts they
+        // are recorded with a turn's user text the first time and again only
+        // when their revision moves (see `injection/`). Who the user is and
+        // the memory snapshot go ahead of the text — preferences first, then
+        // name and email, fixed at creation; the environment, then (behind
+        // the held tools) the agent types and the skills follow it, as the
+        // design has them.
+        const contexts: InjectionContext[] = [
           ...(childInstruction ? [] : userContextInjections(input.userContext)),
           ...(promptState.memory
             ? [
@@ -347,14 +367,27 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
                 },
               ]
             : []),
-          ...(skills.text
-            ? [{ name: 'skills', text: skills.text, revision: inventory.revision }]
+          ...(childInstruction
+            ? []
+            : [{ name: ENVIRONMENT_INJECTION, text: environment, position: 'after' as const }]),
+          ...(agentTypes
+            ? [{ name: 'agent_types', text: agentTypes, position: 'after' as const }]
             : []),
-          ...(agentTypes ? [{ name: 'agent_types', text: agentTypes }] : []),
+          ...(skills.text
+            ? [
+                {
+                  name: 'skills',
+                  text: skills.text,
+                  revision: inventory.revision,
+                  position: 'after' as const,
+                },
+              ]
+            : []),
         ];
         const resolvedPrompt = Object.freeze({
           text: sharedText,
           ...(contexts.length > 0 ? { contexts } : {}),
+          ...(!childInstruction && input.sessionStartedAt !== undefined ? { dated: true } : {}),
           sourceRevisions: interactiveSourceRevisions({
             runtimePolicyRevision: promptState.runtimePolicyRevision,
             memoryRevision: promptState.memoryRevision,
@@ -390,6 +423,7 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
     return Object.freeze({
       text: plugin.text,
       ...(contexts.length > 0 ? { contexts } : {}),
+      ...(base.dated ? { dated: true } : {}),
       sourceRevisions: mergeSourceRevisions(base.sourceRevisions, plugin.sourceRevisions),
     });
   };
@@ -529,8 +563,16 @@ export function createInteractiveRunComposerFactory(
         tavilyReady,
       });
       const { hostTools, boundTools, parentAgentTools } = toolSurface;
+      // The model as the connection states it, else as the models metadata
+      // does; an unknown name or cutoff is left out rather than invented.
+      const advertised = connection.models?.find((model) => model.id === modelId);
+      const metadata = lookupModelMetadata(connection.providerType, modelId);
+      const displayName = advertised?.displayName ?? metadata.displayName;
+      const knowledgeCutoff = advertised?.knowledgeCutoff ?? metadata.knowledgeCutoff;
       const composer = createInteractiveRunComposer({
         runtimePolicy,
+        model: { id: modelId, ...(displayName ? { displayName } : {}) },
+        ...(knowledgeCutoff ? { knowledgeCutoff } : {}),
         skills: input.skills,
         ...(input.pluginSkills ? { pluginSkills: input.pluginSkills } : {}),
         memory: input.memory,
@@ -546,6 +588,7 @@ export function createInteractiveRunComposerFactory(
         ...(backendContext.header.userContext
           ? { userContext: backendContext.header.userContext }
           : {}),
+        sessionStartedAt: backendContext.header.createdAt,
         ...(clientCapabilities ? { clientCapabilities } : {}),
         ...(input.builtinTools ? { builtinTools: input.builtinTools } : {}),
         ...(hostTools.length > 0 ? { hostTools } : {}),
@@ -864,9 +907,9 @@ async function readPromptState(
 
 /**
  * The user's own account of how to answer them and who they are: the
- * <userPreferences> block (the <preferences_info> prompt section says how to
- * apply it) and the <user> block under it. Each tag is its block's whole
- * envelope, so both are delivered bare.
+ * <user_preferences> block, worded as the design words it, and the <user>
+ * block under it. Each tag is its block's whole envelope, so both are
+ * delivered bare.
  */
 function userContextInjections(user: SessionUserContext | undefined): InjectionContext[] {
   if (!user) return [];
@@ -875,7 +918,15 @@ function userContextInjections(user: SessionUserContext | undefined): InjectionC
       ? [
           {
             name: 'user_preferences',
-            text: `<userPreferences>${user.preferences}</userPreferences>`,
+            text: [
+              '<user_preferences>',
+              'The user has specified the following personal preferences for how Copilot should respond:',
+              '',
+              user.preferences,
+              '',
+              'Please keep these preferences in mind when responding.',
+              '</user_preferences>',
+            ].join('\n'),
             bare: true,
           },
         ]

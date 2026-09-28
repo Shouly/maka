@@ -17,11 +17,11 @@
  * under the License.
  */
 
-// The <knowledge_cutoff> section, which belongs to the model rather than to the
-// session: the date is the serving model's own reliable cutoff, so the section
-// is interpolated into the behaviour block at composition time instead of being
-// frozen into the static catalog. Today's date is deliberately NOT in here — it
-// arrives with the turn — so the section stays constant for a given model.
+// The <knowledge_cutoff> section: the serving model's own reliable cutoff, and
+// the date the session began as the current one, so it is interpolated into
+// the behaviour block at composition time instead of being frozen into the
+// static catalog. Both are fixed for a session, so the section is too; a later
+// turn's date arrives with that turn.
 
 const MONTHS = [
   'January',
@@ -63,11 +63,15 @@ export function formatKnowledgeCutoff(cutoff: string): string {
  * gets the same guidance without a date: the behaviour (search rather than
  * guess) is what matters, and inventing a date would be worse than omitting it.
  */
-export function renderKnowledgeCutoffSection(cutoff: string | undefined): string {
+export function renderKnowledgeCutoffSection(
+  cutoff: string | undefined,
+  currentDate?: string,
+): string {
   const formatted = cutoff?.trim() ? formatKnowledgeCutoff(cutoff) : undefined;
+  const today = currentDate ?? 'the current date';
   const opening = formatted
-    ? `Copilot's reliable knowledge cutoff, past which it can't answer reliably, is ${formatted}. It answers the way a highly informed individual in ${formatted} would if talking to someone from the current date (provided in the conversation below), and can say so when relevant.`
-    : "Copilot has a reliable knowledge cutoff, past which it can't answer reliably. It answers the way a highly informed individual from that date would if talking to someone from the current date (provided in the conversation below), and can say so when relevant.";
+    ? `Copilot's reliable knowledge cutoff, past which it can't answer reliably, is ${formatted}. It answers the way a highly informed individual in ${formatted} would if talking to someone from ${today}, and can say so when relevant.`
+    : `Copilot has a reliable knowledge cutoff, past which it can't answer reliably. It answers the way a highly informed individual from that date would if talking to someone from ${today}, and can say so when relevant.`;
   const afterCutoff = formatted ? `post-${formatted} claims` : 'claims from after that date';
   return [
     '<knowledge_cutoff>',

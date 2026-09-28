@@ -22,61 +22,87 @@ import { describe, test } from 'node:test';
 import type { RuntimeEvent } from '@maka/core/runtime-event';
 import {
   SessionInjections,
+  appendUserMessageBlocks,
   collectRecordedInjections,
-  prependUserMessageReminders,
-  renderMessageSentReminder,
+  formatLongDate,
+  injectionPosition,
+  prependUserMessageBlocks,
+  renderCurrentDateLine,
+  renderPlacedBlock,
   textAfterSystemReminders,
-  wrapSystemReminder,
+  type PlannedInjection,
   type TurnInjectionFacts,
 } from '../injection/index.js';
 
 const SENT = Date.UTC(2026, 8, 18, 8, 28, 13); // Fri 2026-09-18 08:28:13Z
 
-describe('on every user message', () => {
-  test('the sent-time reminder names the zone, its offset and the local moment', () => {
+describe('around the user message', () => {
+  test("the date is said the reference way, in the user's zone", () => {
     assert.equal(
-      renderMessageSentReminder({ ts: SENT, timeZone: 'America/New_York' }),
-      "<system-reminder>The user's timezone is America/New_York (UTC-04:00). Message sent at Fri 2026-09-18 04:28 local time.</system-reminder>",
+      renderCurrentDateLine(formatLongDate(new Date(SENT), 'Asia/Shanghai')),
+      'The current date is Friday, September 18, 2026.',
     );
+    // Still the 17th west of Greenwich at that hour.
     assert.equal(
-      renderMessageSentReminder({ ts: SENT, timeZone: 'Asia/Shanghai' }),
-      "<system-reminder>The user's timezone is Asia/Shanghai (UTC+08:00). Message sent at Fri 2026-09-18 16:28 local time.</system-reminder>",
-    );
-    // No zone, or a zone the runtime does not know, says UTC rather than failing.
-    assert.match(
-      renderMessageSentReminder({ ts: SENT }),
-      /UTC \(UTC\+00:00\)\. Message sent at Fri 2026-09-18 08:28/u,
-    );
-    assert.match(
-      renderMessageSentReminder({ ts: SENT, timeZone: 'Mars/Olympus' }),
-      /timezone is UTC/u,
+      formatLongDate(new Date(Date.UTC(2026, 8, 18, 2)), 'America/Los_Angeles'),
+      'Thursday, September 17, 2026',
     );
   });
 
-  test('reminders go ahead of the text, whatever shape the content has', () => {
-    const block = wrapSystemReminder('fact');
-    assert.equal(prependUserMessageReminders('hello', [block]), `${block}\nhello`);
-    assert.deepEqual(prependUserMessageReminders([{ type: 'text', text: 'hello' }], [block]), [
-      { type: 'text', text: `${block}\nhello` },
+  test('each block carries its own break: a line ahead, flush for the date, a blank line after', () => {
+    const snapshot = renderPlacedBlock({ name: 'user_memory_snapshot', text: 'fact' });
+    const date = renderPlacedBlock({ name: 'date', text: 'The current date is Monday.' });
+    const environment = renderPlacedBlock({
+      name: 'environment',
+      text: '# Environment\n - Platform: darwin',
+      data: { position: 'after' },
+    });
+    const skills = renderPlacedBlock({ name: 'skills', text: 'LIST', data: { position: 'after' } });
+    assert.equal(snapshot, '<system-reminder>fact</system-reminder>\n');
+    assert.equal(date, '<system-reminder>The current date is Monday.</system-reminder>');
+    // After the text a listing is read as written, without the envelope.
+    assert.equal(environment, '\n\n# Environment\n - Platform: darwin');
+
+    assert.equal(
+      prependUserMessageBlocks('hello', [snapshot, date]),
+      '<system-reminder>fact</system-reminder>\n<system-reminder>The current date is Monday.</system-reminder>hello',
+    );
+    assert.equal(
+      appendUserMessageBlocks('hello', [environment, skills]),
+      'hello\n\n# Environment\n - Platform: darwin\n\nLIST',
+    );
+    assert.deepEqual(prependUserMessageBlocks([{ type: 'text', text: 'hello' }], [snapshot]), [
+      { type: 'text', text: '<system-reminder>fact</system-reminder>\nhello' },
     ]);
     assert.deepEqual(
-      prependUserMessageReminders(
+      prependUserMessageBlocks(
         [{ type: 'image', image: 'data:image/png;base64,AA==' } as never],
-        [block],
+        [snapshot],
       ),
       [
-        { type: 'text', text: block },
+        { type: 'text', text: '<system-reminder>fact</system-reminder>' },
         { type: 'image', image: 'data:image/png;base64,AA==' },
       ],
     );
-    assert.equal(prependUserMessageReminders('hello', []), 'hello');
-    // The user's own words are what is left after the blocks.
-    assert.equal(textAfterSystemReminders(`${block}\n${block}\nhello`), 'hello');
-    assert.equal(textAfterSystemReminders(block), '');
+    assert.deepEqual(appendUserMessageBlocks([{ type: 'text', text: 'hello' }], [skills]), [
+      { type: 'text', text: 'hello' },
+      { type: 'text', text: 'LIST' },
+    ]);
+    // With no words to hold them, the blocks stand alone, untrimmed inside.
+    assert.equal(
+      prependUserMessageBlocks('', [snapshot]),
+      '<system-reminder>fact</system-reminder>',
+    );
+    assert.equal(appendUserMessageBlocks('', [skills]), 'LIST');
+    assert.equal(prependUserMessageBlocks('hello', []), 'hello');
+    assert.equal(appendUserMessageBlocks('hello', []), 'hello');
+    // The user's own words are what is left after the blocks ahead of them.
+    assert.equal(textAfterSystemReminders(`${snapshot}${date}hello`), 'hello');
+    assert.equal(textAfterSystemReminders(snapshot), '');
   });
 });
 
-describe('ahead of the turn: recorded once, again only on change', () => {
+describe('around the turn: recorded once, again only on change', () => {
   const now = new Date(SENT);
   const snapshot = {
     name: 'user_memory_snapshot',
@@ -87,14 +113,12 @@ describe('ahead of the turn: recorded once, again only on change', () => {
     name: 'skills',
     text: 'The following skills are available for use with the Skill tool:…',
     revision: 's1',
+    position: 'after' as const,
   };
   const facts = (overrides: Partial<TurnInjectionFacts> = {}): TurnInjectionFacts => ({
     now,
     contexts: [snapshot, skills],
     deferredToolNames: ['ScheduledTaskCreate', 'MemoryDelete'],
-    modelId: 'claude-opus-5',
-    permissionMode: 'ask',
-    executionBoundary: { kind: 'managed', revision: 3, profile: 'workspace-write' } as never,
     ...overrides,
   });
   const event = (
@@ -114,57 +138,91 @@ describe('ahead of the turn: recorded once, again only on change', () => {
       content: { kind: 'injection', ...content },
     }) as RuntimeEvent;
   const session = new SessionInjections({ sessionId: 's', timeZone: 'Asia/Shanghai' });
+  /** What a later turn says besides its date. */
+  const moved = (planned: PlannedInjection[]) => planned.filter((p) => p.name !== 'date');
 
-  test('a first turn says everything, in reading order', () => {
-    const planned = session.planTurn([], facts());
+  test('a prompt that names the day leaves it out of a first turn that says every listing', () => {
+    const planned = session.planTurn([], facts({ datedByPrompt: true }));
     assert.deepEqual(
-      planned.map((p) => p.name),
-      ['user_memory_snapshot', 'skills', 'deferred_tools', 'session_facts', 'date'],
+      planned.map((p) => [p.name, injectionPosition(p)]),
+      [
+        ['user_memory_snapshot', 'before'],
+        ['deferred_tools', 'after'],
+        ['skills', 'after'],
+      ],
     );
     assert.equal(planned[0]?.text, snapshot.text);
     assert.deepEqual(planned[0]?.data, { revision: 'm1' });
     assert.equal(
-      planned[2]?.text,
+      planned[1]?.text,
       'The following deferred tools are now available via ToolSearch. Their schemas are NOT loaded — calling them directly will fail with InputValidationError. Use ToolSearch with query "select:<name>[,<name>...]" to load tool schemas before calling them:\nMemoryDelete\nScheduledTaskCreate',
     );
-    assert.deepEqual(planned[2]?.data, { names: ['MemoryDelete', 'ScheduledTaskCreate'] });
-    assert.match(
-      planned[3]?.text ?? '',
-      /serving this session is claude-opus-5[\s\S]*Permission mode: ask, reads anywhere on this machine, writes inside the workspace[\s\S]*managed, revision 3/u,
+    assert.deepEqual(planned[1]?.data, {
+      names: ['MemoryDelete', 'ScheduledTaskCreate'],
+      position: 'after',
+    });
+    assert.deepEqual(planned[2]?.data, { revision: 's1', position: 'after' });
+  });
+
+  test('a first turn under a prompt without the day still opens with the date', () => {
+    assert.deepEqual(
+      session.planTurn([], facts()).map((p) => [p.name, injectionPosition(p)]),
+      [
+        ['user_memory_snapshot', 'before'],
+        ['date', 'before'],
+        ['deferred_tools', 'after'],
+        ['skills', 'after'],
+      ],
     );
-    assert.equal(planned[4]?.text, "Today's date is 2026-09-18.");
-    assert.deepEqual(planned[4]?.data, { date: '2026-09-18' });
-    // The model reads each as a reminder block.
+  });
+
+  test('the environment leads the blocks after the text, ahead of the held tools', () => {
+    const environment = {
+      name: 'environment',
+      text: '# Environment\n…',
+      position: 'after' as const,
+    };
+    const planned = session.planTurn(
+      [],
+      facts({ datedByPrompt: true, contexts: [snapshot, environment, skills] }),
+    );
+    assert.deepEqual(
+      planned.map((p) => p.name),
+      ['user_memory_snapshot', 'environment', 'deferred_tools', 'skills'],
+    );
+  });
+
+  test('every later turn opens with the date, as a reminder block', () => {
+    const ledger = session
+      .planTurn([], facts({ datedByPrompt: true }))
+      .map((p) => event('turn-1', p));
+    const planned = session.planTurn(ledger, facts());
+    assert.deepEqual(
+      planned.map((p) => [p.name, injectionPosition(p)]),
+      [['date', 'before']],
+    );
+    assert.equal(planned[0]?.text, 'The current date is Friday, September 18, 2026.');
+    assert.deepEqual(planned[0]?.data, { date: '2026-09-18' });
     assert.equal(
-      session.renderBlock(planned[4]!),
-      "<system-reminder>Today's date is 2026-09-18.</system-reminder>",
+      session.renderBlock(planned[0]!),
+      '<system-reminder>The current date is Friday, September 18, 2026.</system-reminder>',
+    );
+    // Said again on the next turn, the same day or not.
+    assert.deepEqual(
+      session.planTurn([...ledger, event('turn-2', planned[0]!)], facts()).map((p) => p.name),
+      ['date'],
     );
   });
 
-  test('a turn that cannot ask for more is told so instead of being sent to a tool it lacks', () => {
-    const planned = session.planTurn([], facts({ canRequestBoundary: false }));
-    const sessionFacts = planned.find((injection) => injection.name === 'session_facts');
-    assert.ok(sessionFacts);
-    assert.match(sessionFacts.text, /no way to ask for more/u);
-    assert.doesNotMatch(sessionFacts.text, /request the smallest|sandbox_boundary_required/u);
-    assert.equal(sessionFacts.data?.canRequestBoundary, false);
-
-    const asking = session
-      .planTurn([], facts())
-      .find((injection) => injection.name === 'session_facts');
-    assert.match(asking!.text, /request the smallest one[\s\S]*sandbox_denial marker/u);
-  });
-
-  test('a turn where nothing moved says nothing', () => {
-    const ledger = session.planTurn([], facts()).map((p) => event('turn-1', p));
-    assert.deepEqual(session.planTurn(ledger, facts()), []);
-  });
-
-  test('only what changed is said again: a filed memory, a held tool loaded, a new day', () => {
-    const ledger = session.planTurn([], facts()).map((p) => event('turn-1', p));
-    const memory = session.planTurn(
-      ledger,
-      facts({ contexts: [{ ...snapshot, text: 'NEW', revision: 'm2' }, skills] }),
+  test('only what changed is said again: a filed memory, a held tool loaded', () => {
+    const ledger = session
+      .planTurn([], facts({ datedByPrompt: true }))
+      .map((p) => event('turn-1', p));
+    const memory = moved(
+      session.planTurn(
+        ledger,
+        facts({ contexts: [{ ...snapshot, text: 'NEW', revision: 'm2' }, skills] }),
+      ),
     );
     assert.deepEqual(
       memory.map((p) => [p.name, p.text]),
@@ -173,56 +231,33 @@ describe('ahead of the turn: recorded once, again only on change', () => {
     // A loaded tool leaves the held list without a word; a new held tool is
     // announced alone, and the record keeps every name ever announced.
     assert.deepEqual(
-      session.planTurn(ledger, facts({ deferredToolNames: ['ScheduledTaskCreate'] })),
+      moved(session.planTurn(ledger, facts({ deferredToolNames: ['ScheduledTaskCreate'] }))),
       [],
     );
-    const tools = session.planTurn(
-      ledger,
-      facts({ deferredToolNames: ['ScheduledTaskCreate', 'CronList'] }),
+    const tools = moved(
+      session.planTurn(ledger, facts({ deferredToolNames: ['ScheduledTaskCreate', 'CronList'] })),
     );
     assert.equal(tools.length, 1);
     assert.match(tools[0]!.text, /before calling them:\nCronList$/u);
     assert.deepEqual(tools[0]!.data, {
       names: ['CronList', 'MemoryDelete', 'ScheduledTaskCreate'],
+      position: 'after',
     });
     // Reloaded and held again later: still known, still silent.
     const again = [...ledger, event('turn-2', tools[0]!)];
     assert.deepEqual(
-      session.planTurn(again, facts({ deferredToolNames: ['MemoryDelete', 'CronList'] })),
+      moved(session.planTurn(again, facts({ deferredToolNames: ['MemoryDelete', 'CronList'] }))),
       [],
     );
-    // Midnight in Shanghai.
+    // Midnight in Shanghai: the date moves with it.
     const tomorrow = session.planTurn(
       ledger,
       facts({ now: new Date(Date.UTC(2026, 8, 18, 16, 30)) }),
     );
     assert.deepEqual(
       tomorrow.map((p) => p.text),
-      [
-        "The date has changed. Today's date is now 2026-09-19. No need to announce the new date — the user's own clock shows it.",
-      ],
+      ['The current date is Saturday, September 19, 2026.'],
     );
-    // A permission change re-says the facts; the same facts do not.
-    const bypass = session.planTurn(
-      ledger,
-      facts({
-        permissionMode: 'bypass',
-        executionBoundary: { kind: 'bypass', revision: 1 } as never,
-      }),
-    );
-    assert.deepEqual(
-      bypass.map((p) => p.name),
-      ['session_facts'],
-    );
-    assert.match(
-      bypass[0]!.text,
-      /Permission mode: bypass, full access[\s\S]*Sandbox boundary: bypass/u,
-    );
-    // Nothing to ask for, and a destructive command waits only when the user
-    // did not clearly ask for it — not a blanket confirm.
-    assert.match(bypass[0]!.text, /Nothing needs the user's approval\./u);
-    assert.match(bypass[0]!.text, /unless the user has clearly asked for that operation/u);
-    assert.doesNotMatch(bypass[0]!.text, /confirm before anything irreversible/u);
   });
 
   test('a context without a revision is compared by its text, and an empty one is never said', () => {
@@ -236,11 +271,11 @@ describe('ahead of the turn: recorded once, again only on change', () => {
       ['plugin:x'],
     );
     const ledger = first.map((p) => event('turn-1', p));
-    assert.deepEqual(session.planTurn(ledger, facts({ contexts: [plugin] })), []);
+    assert.deepEqual(moved(session.planTurn(ledger, facts({ contexts: [plugin] }))), []);
     assert.deepEqual(
-      session
-        .planTurn(ledger, facts({ contexts: [{ ...plugin, text: 'PLUGIN 2' }] }))
-        .map((p) => p.name),
+      moved(session.planTurn(ledger, facts({ contexts: [{ ...plugin, text: 'PLUGIN 2' }] }))).map(
+        (p) => p.name,
+      ),
       ['plugin:x'],
     );
   });
@@ -248,7 +283,7 @@ describe('ahead of the turn: recorded once, again only on change', () => {
   test('a bare context is recorded bare and read as written, outside the envelope', () => {
     const preferences = {
       name: 'user_preferences',
-      text: '<userPreferences>Be brief.</userPreferences>',
+      text: '<user_preferences>\nBe brief.\n</user_preferences>',
       bare: true,
     };
     const [planned] = session.planTurn([], facts({ contexts: [preferences, snapshot] }));
@@ -257,7 +292,10 @@ describe('ahead of the turn: recorded once, again only on change', () => {
       text: preferences.text,
       data: { revision: planned?.data?.revision, bare: true },
     });
-    assert.equal(session.renderBlock(planned!), '<userPreferences>Be brief.</userPreferences>');
+    assert.equal(
+      session.renderBlock(planned!),
+      '<user_preferences>\nBe brief.\n</user_preferences>',
+    );
     // Being bare is how it is said, not what: it does not make it say itself again.
     const ledger = session
       .planTurn([], facts({ contexts: [preferences] }))

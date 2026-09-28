@@ -48,7 +48,7 @@
  * item without reviving the retired 0.1.x StoredMessage history path.
  */
 
-import { renderInjectionBlock } from './injection/turn-injections.js';
+import { injectionPosition, renderPlacedBlock } from './injection/turn-injections.js';
 import {
   isPartialRuntimeEvent,
   isTerminalRuntimeEvent,
@@ -341,10 +341,13 @@ export type RuntimeEventModelReplayItem =
       /** The turn this text opened; how the turn's injections find their carrier. */
       turnId?: string;
       /**
-       * The system-delivered blocks recorded ahead of this user text, already
-       * enveloped, in ledger order. Materializers put them before the text.
+       * The system-delivered blocks recorded ahead of this user text, in
+       * ledger order, already placed (`renderPlacedBlock`: envelope and the
+       * break that sets each off). Materializers put them before the text.
        */
       injections?: readonly string[];
+      /** The placed blocks recorded to follow this user text; materializers put them after it. */
+      trailingInjections?: readonly string[];
       eventId: string;
       ts: number;
     }
@@ -575,7 +578,7 @@ export function buildRuntimeEventModelReplayPlan(
   const includeSystemEvents = options.includeSystemEvents ?? false;
   const items: RuntimeEventModelReplayItem[] = [];
   const diagnostics: RuntimeEventReplayDiagnostic[] = [];
-  const injectionsByTurn = new Map<string, string[]>();
+  const injectionsByTurn = new Map<string, TurnInjectionBlocks>();
   /** Where — and when — a turn's first injection stood, for a turn with no user text to carry them. */
   const injectionAnchorByTurn = new Map<string, { index: number; ts: number }>();
   const callsById = new Map<
@@ -664,14 +667,14 @@ export function buildRuntimeEventModelReplayPlan(
       continue;
     }
 
-    // A block the system said ahead of this turn's user text. It rides on
+    // A block the system said around this turn's user text. It rides on
     // that text's item (see the pass after the loop), so it is not an item
     // of its own and never trips the system-role gate below.
     if (event.content.kind === 'injection') {
       if (event.content.text.length === 0) continue;
       const turnId = event.turnId ?? '';
-      const blocks = injectionsByTurn.get(turnId) ?? [];
-      blocks.push(renderInjectionBlock(event.content));
+      const blocks = injectionsByTurn.get(turnId) ?? { before: [], after: [] };
+      blocks[injectionPosition(event.content)].push(renderPlacedBlock(event.content));
       injectionsByTurn.set(turnId, blocks);
       if (!injectionAnchorByTurn.has(turnId)) {
         injectionAnchorByTurn.set(turnId, { index: items.length, ts: event.ts });
@@ -1007,6 +1010,12 @@ export function buildRuntimeEventModelReplayPlan(
   };
 }
 
+/** A turn's rendered injections, split by where they sit around its user text. */
+interface TurnInjectionBlocks {
+  before: string[];
+  after: string[];
+}
+
 /**
  * Put each turn's injections on the user text that opened the turn — the
  * head user message, never a steering interjection. A turn with no such text
@@ -1016,7 +1025,7 @@ export function buildRuntimeEventModelReplayPlan(
  */
 function attachInjections(
   items: RuntimeEventModelReplayItem[],
-  injectionsByTurn: ReadonlyMap<string, string[]>,
+  injectionsByTurn: ReadonlyMap<string, TurnInjectionBlocks>,
   anchorByTurn: ReadonlyMap<string, { index: number; ts: number }>,
 ): RuntimeEventModelReplayItem[] {
   if (injectionsByTurn.size === 0) return items;
@@ -1029,7 +1038,15 @@ function attachInjections(
     );
     const item = carrier === -1 ? undefined : out[carrier];
     if (item && item.kind === 'text') {
-      out[carrier] = { ...item, injections: [...(item.injections ?? []), ...blocks] };
+      out[carrier] = {
+        ...item,
+        ...(blocks.before.length > 0
+          ? { injections: [...(item.injections ?? []), ...blocks.before] }
+          : {}),
+        ...(blocks.after.length > 0
+          ? { trailingInjections: [...(item.trailingInjections ?? []), ...blocks.after] }
+          : {}),
+      };
       continue;
     }
     const anchor = anchorByTurn.get(turnId) ?? { index: out.length, ts: 0 };
@@ -1041,7 +1058,8 @@ function attachInjections(
         role: 'user',
         content: '',
         turnId,
-        injections: blocks,
+        ...(blocks.before.length > 0 ? { injections: blocks.before } : {}),
+        ...(blocks.after.length > 0 ? { trailingInjections: blocks.after } : {}),
         eventId: `injection:${turnId}`,
         ts: anchor.ts,
       },

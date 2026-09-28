@@ -60,7 +60,10 @@ import {
   replayPlaintextResponsesProviderOptions,
 } from './responses-reasoning-state.js';
 import { toolResultOutput } from './tool-result-output.js';
-import { prependUserMessageReminders } from './injection/user-message-injections.js';
+import {
+  appendUserMessageBlocks,
+  prependUserMessageBlocks,
+} from './injection/user-message-injections.js';
 
 export interface AiSdkMessageProjectionInput {
   modelAdapter: ModelAdapter;
@@ -82,12 +85,6 @@ export interface AiSdkMessageProjectionInput {
   supportsVision?: boolean;
   readAttachmentBytes?: AttachmentByteReader;
   maxProviderImageRequestBytes?: number;
-  /**
-   * The system-delivered blocks a replayed user message carries ahead of its
-   * text, from the moment it was sent. Deterministic in the timestamp, so a
-   * replay renders the message the same way every time.
-   */
-  userMessageReminders?: (ts: number) => readonly string[] | undefined;
 }
 
 function isImageToolResult(
@@ -640,10 +637,12 @@ export class AiSdkMessageProjection {
           providerOptions: steeringProviderOptions(item.steering.eventId),
         };
       }
-      const reminders = this.input.userMessageReminders?.(item.ts) ?? [];
       return {
         role: 'user',
-        content: prependUserMessageReminders(content, [...(item.injections ?? []), ...reminders]),
+        content: appendUserMessageBlocks(
+          prependUserMessageBlocks(content, item.injections ?? []),
+          item.trailingInjections ?? [],
+        ),
       } as ModelMessage;
     }
     return {

@@ -18,62 +18,72 @@
  */
 
 /**
- * The environment block: what is true about this session's machine and
- * workspace that the model would otherwise have to discover with tools. It is
- * session-level — nothing here changes between turns — so it belongs to the
- * cached system prompt, after the static layer. Anything that changes per turn
- * (the date, the serving model, the permission mode) is delivered with the
- * turn instead, so this block never churns the provider prefix. It opens the
- * way the reference's tail does — who the assistant is, where the date comes
- * from, where it runs, the user's zone — and the machine facts follow in <env>.
+ * The environment block, the design's `# Environment`: what is true about
+ * this session's machine, workspace and model that the model would otherwise
+ * have to discover with tools. It is delivered into the conversation after
+ * the user's text, ahead of the held tools, and recorded again only when any
+ * of it changes — another folder, another model.
  */
 
 import { formatUtcOffset, resolveZone } from '../injection/user-message-injections.js';
+import { formatKnowledgeCutoff } from './knowledge-cutoff-prompt.js';
 
-export interface EnvironmentPromptInput {
+export interface EnvironmentContextInput {
   readonly cwd: string;
+  readonly gitRepository: boolean;
   /** `process.platform` of the machine the tools run on. */
   readonly platform: NodeJS.Platform | string;
   /** The shell Bash commands run in, when the host resolved one. */
   readonly shell?: string;
-  readonly gitRepository: boolean;
-  /** The checked-out branch, when the workspace is a git repository. */
-  readonly branch?: string;
+  /** Kernel name and release, e.g. `Darwin 25.0.0`. */
+  readonly osVersion?: string;
+  /** The operating system's temporary directory, for scratch files. */
+  readonly tmpDir?: string;
   /** IANA zone of the machine the tools run on. */
   readonly timeZone?: string;
   /** The moment the zone's offset is read at; now when absent. */
   readonly now?: Date;
-  /** The user's interface locale (BCP 47), when the host knows it. */
-  readonly locale?: string;
-  /** The operating system's temporary directory, for scratch files. */
-  readonly tmpDir?: string;
+  /** The serving model, as the connection names it. */
+  readonly model?: { readonly id: string; readonly displayName?: string };
+  /** The serving model's reliable knowledge cutoff (`YYYY-MM` or `YYYY-MM-DD`). */
+  readonly knowledgeCutoff?: string;
 }
 
-const PLATFORM_LABELS: Readonly<Record<string, string>> = {
-  darwin: 'macOS',
-  linux: 'Linux',
-  win32: 'Windows',
-};
-
-export function renderEnvironmentPromptFragment(input: EnvironmentPromptInput): string {
+export function renderEnvironmentContext(input: EnvironmentContextInput): string {
+  const now = input.now ?? new Date();
+  const zone = input.timeZone ? resolveZone(input.timeZone, now) : undefined;
   const lines = [
-    `Primary working directory: ${input.cwd}`,
-    `Is a git repository: ${input.gitRepository ? (input.branch ? `yes (branch ${input.branch})` : 'yes') : 'no'}`,
-    `Platform: ${PLATFORM_LABELS[input.platform] ?? input.platform}`,
+    '# Environment',
+    'You have been invoked in the following environment:',
+    ` - Primary working directory: ${input.cwd}`,
+    ` - Is a git repository: ${input.gitRepository}`,
+    ` - Platform: ${input.platform}`,
+    ` - Shell: ${input.shell ?? 'unknown'}`,
+    ...(input.osVersion ? [` - OS Version: ${input.osVersion}`] : []),
+    ...(input.tmpDir ? [` - Temporary directory for scratch files: ${input.tmpDir}`] : []),
+    ...(zone ? [` - Time zone: ${zone} (${formatUtcOffset(now, zone)})`] : []),
   ];
-  if (input.shell) lines.push(`Shell: ${input.shell}`);
-  if (input.tmpDir) lines.push(`Temporary directory for scratch files: ${input.tmpDir}`);
-  if (input.locale) lines.push(`User interface language: ${input.locale}`);
-  const zone = input.timeZone ? resolveZone(input.timeZone, input.now ?? new Date()) : undefined;
-  return [
-    'The assistant is Copilot.',
-    'The current date is (provided in the conversation below).',
-    "Copilot is currently operating in the Copilot desktop app, on the person's own computer.",
-    ...(zone
-      ? [`The user's timezone is ${zone} (${formatUtcOffset(input.now ?? new Date(), zone)}).`]
-      : []),
-    ['<env>', ...lines, '</env>'].join('\n'),
-  ].join('\n\n');
+  const model = renderModelLine(input.model, input.knowledgeCutoff);
+  return model ? [...lines, '', model].join('\n') : lines.join('\n');
+}
+
+function renderModelLine(
+  model: EnvironmentContextInput['model'],
+  cutoff: string | undefined,
+): string | undefined {
+  const sentences: string[] = [];
+  if (model) {
+    const name = model.displayName?.trim();
+    sentences.push(
+      name && name !== model.id
+        ? `You are powered by the model named ${name}. The exact model ID is ${model.id}.`
+        : `You are powered by the model ${model.id}.`,
+    );
+  }
+  if (cutoff?.trim()) {
+    sentences.push(`Assistant knowledge cutoff is ${formatKnowledgeCutoff(cutoff)}.`);
+  }
+  return sentences.length > 0 ? sentences.join(' ') : undefined;
 }
 
 /** The host machine's IANA zone, or undefined when the runtime cannot say. */

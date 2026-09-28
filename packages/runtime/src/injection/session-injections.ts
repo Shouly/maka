@@ -20,11 +20,17 @@
 // Everything the system says into a session's conversation that is not the
 // system prompt, in one place:
 //
-//   ahead of a turn's user text — the durable blocks (`injection` events):
-//                                 contexts, held tools, session facts, date;
-//                                 recorded once and again only on change
-//   on every user message        — the moment it was sent, rendered from the
-//                                 message's own timestamp, never stored
+//   ahead of a turn's user text — the user's preferences and who they are,
+//                                 the memory snapshot, plugin contexts:
+//                                 recorded once and again only on change;
+//                                 the date, on every turn but a first one
+//                                 whose system prompt names the day
+//   after it                     — the environment, the held tools, the agent
+//                                 types and the skills, recorded once and
+//                                 again on change, read without an envelope
+//
+// Every block is a durable `injection` event, rendered in its place on every
+// replay.
 //
 // The instance holds no conversation state. What was already said is read
 // back from the ledger, so a Host restart or a compaction changes nothing
@@ -38,7 +44,6 @@ import {
   type PlannedInjection,
   type TurnInjectionFacts,
 } from './turn-injections.js';
-import { renderMessageSentReminder } from './user-message-injections.js';
 
 export interface SessionInjectionsInput {
   readonly sessionId: string;
@@ -55,11 +60,10 @@ export class SessionInjections {
     this.timeZone = input.timeZone;
   }
 
-  // ── ahead of the turn's user text ──────────────────────────────────────
-
   /**
-   * The blocks a turn adds, given the ledger so far and what is true now.
-   * Empty on a turn where nothing moved, which is most turns.
+   * The blocks a turn adds, given the ledger so far and what is true now:
+   * the date (unless the prompt already names it), anything else only when
+   * it moved.
    */
   planTurn(priorEvents: readonly RuntimeEvent[], facts: TurnInjectionFacts): PlannedInjection[] {
     return planTurnInjections(collectRecordedInjections(priorEvents), facts, this.timeZone);
@@ -68,14 +72,5 @@ export class SessionInjections {
   /** A block as the model reads it. */
   renderBlock(injection: Pick<PlannedInjection, 'text' | 'data'>): string {
     return renderInjectionBlock(injection);
-  }
-
-  // ── on every user message ──────────────────────────────────────────────
-
-  /** The reminders a user message sent at `ts` carries ahead of its text. */
-  userMessageReminders(ts: number): string[] {
-    return [
-      renderMessageSentReminder({ ts, ...(this.timeZone ? { timeZone: this.timeZone } : {}) }),
-    ];
   }
 }

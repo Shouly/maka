@@ -149,7 +149,7 @@ const MIN_IMPLEMENTATION_CHILD_REQUESTS = 6;
 const MAX_IMPLEMENTATION_CHILD_REQUESTS =
   MIN_IMPLEMENTATION_CHILD_REQUESTS + MAX_IMPLEMENTATION_CHILD_PTY_READS - 1;
 const HEADLESS_CODING_V1_PROMPT_HASH =
-  'sha256:b2773282ac4755dc8d8a663eafdec68c3fa6f5680ec8557d261b5f723672b467';
+  'sha256:0e3389e330b8b8f0db1c7a8b8e2126325fe4c672d6eff279afcd3f9412e52271';
 const HEADLESS_CODING_V1_TOOLS_HASH =
   // Every first-party tool description was rewritten in the 2026-09-13 tool
   // refactor (purpose, failure modes, guardrails, result shape), then the file,
@@ -2563,7 +2563,7 @@ test('hosted execution freezes the headless coding provider wire contract', asyn
     const instructions = responsesDeveloperPrompt(request?.body);
     const tools = request?.body.tools;
     assert.equal(typeof instructions, 'string', JSON.stringify(request?.body));
-    assert.match(instructions ?? '', /^Active model: deepseek-v4-flash$/mu);
+    assert.doesNotMatch(instructions ?? '', /Active model:/u);
     assert.ok(Array.isArray(tools));
     assert.equal(stableHash(instructions), HEADLESS_CODING_V1_PROMPT_HASH);
     assert.equal(stableHash(tools), HEADLESS_CODING_V1_TOOLS_HASH);
@@ -2856,20 +2856,22 @@ test('production Host executes a canonical ai-sdk Session against a real provide
       /<user_memory_snapshot>[\s\S]*<preferences>[\s\S]*HOSTED_MEMORY_SENTINEL/,
     );
     // The user's preferences and who they are arrive the same way, ahead of
-    // the memory snapshot; the system prompt only says how to apply them.
+    // the memory snapshot; the system prompt carries neither.
     const systemText = JSON.stringify(
       requestMessages.filter((message) => message.role === 'system'),
     );
-    assert.match(systemText, /<preferences_info>/);
-    assert.doesNotMatch(systemText, /HOSTED_PREFERENCES_SENTINEL|HOSTED_USER_NAME/);
+    assert.doesNotMatch(
+      systemText,
+      /HOSTED_PREFERENCES_SENTINEL|HOSTED_USER_NAME|user_preferences/,
+    );
     const userText = JSON.stringify(requestMessages.filter((message) => message.role === 'user'));
     assert.match(
       userText,
-      /<userPreferences>HOSTED_PREFERENCES_SENTINEL<\/userPreferences>[\s\S]*<user>\\nName: HOSTED_USER_NAME\\nEmail address: hosted@example\.com\\n<\/user>[\s\S]*<user_memory_snapshot>/,
+      /<user_preferences>\\nThe user has specified the following personal preferences for how Copilot should respond:\\n\\nHOSTED_PREFERENCES_SENTINEL\\n\\nPlease keep these preferences in mind when responding\.\\n<\/user_preferences>[\s\S]*<user>\\nName: HOSTED_USER_NAME\\nEmail address: hosted@example\.com\\n<\/user>[\s\S]*<user_memory_snapshot>/,
     );
     // Neither block wears a reminder envelope: each tag is its own.
-    assert.doesNotMatch(userText, /<system-reminder>(\\n)?<(userPreferences|user)>/);
-    assert.doesNotMatch(userText, /<\/(userPreferences|user)>(\\n)?<\/system-reminder>/);
+    assert.doesNotMatch(userText, /<system-reminder>(\\n)?<(user_preferences|user)>/);
+    assert.doesNotMatch(userText, /<\/(user_preferences|user)>(\\n)?<\/system-reminder>/);
     // A sent `/<name>` reaches the model as written: the Host loads nothing,
     // the model calls the Skill tool itself.
     assert.match(JSON.stringify(mainRequests[1]?.body), /\/hosted-skill Continue hosted execution/);
@@ -4439,20 +4441,18 @@ test("a session's user context reaches the model ahead of its memory, preference
   const anonymous = await resolve();
   assert.deepEqual(
     anonymous.contexts?.map((context) => context.name),
-    ['user_memory_snapshot'],
+    ['user_memory_snapshot', 'environment'],
   );
-  assert.doesNotMatch(anonymous.text ?? '', /<preferences_info>/);
 
   const withoutPreferences = await resolve({ name: 'Ada', email: 'ada@example.com' });
   assert.deepEqual(
     withoutPreferences.contexts?.map((context) => context.name),
-    ['user_info', 'user_memory_snapshot'],
+    ['user_info', 'user_memory_snapshot', 'environment'],
   );
   assert.equal(
     withoutPreferences.contexts?.[0]?.text,
     '<user>\nName: Ada\nEmail address: ada@example.com\n</user>',
   );
-  assert.doesNotMatch(withoutPreferences.text ?? '', /<preferences_info>/);
 
   const withPreferences = await resolve({
     name: 'Ada',
@@ -4461,21 +4461,26 @@ test("a session's user context reaches the model ahead of its memory, preference
   });
   assert.deepEqual(
     withPreferences.contexts?.map((context) => context.name),
-    ['user_preferences', 'user_info', 'user_memory_snapshot'],
+    ['user_preferences', 'user_info', 'user_memory_snapshot', 'environment'],
   );
   // Each tag is its block's whole envelope: both are delivered bare.
   assert.deepEqual(withPreferences.contexts?.[0], {
     name: 'user_preferences',
-    text: '<userPreferences>Answer in Chinese.</userPreferences>',
+    text: [
+      '<user_preferences>',
+      'The user has specified the following personal preferences for how Copilot should respond:',
+      '',
+      'Answer in Chinese.',
+      '',
+      'Please keep these preferences in mind when responding.',
+      '</user_preferences>',
+    ].join('\n'),
     bare: true,
   });
   assert.equal(withPreferences.contexts?.[1]?.bare, true);
   assert.equal(withPreferences.contexts?.[2]?.bare, undefined);
-  // The prompt says how to apply preferences, and sits before the memory rules.
-  const prompt = withPreferences.text ?? '';
-  assert.match(prompt, /<preferences_info>[\s\S]*<\/preferences_info>/);
-  assert.ok(prompt.indexOf('<preferences_info>') < prompt.indexOf('<user_memory>'));
-  assert.doesNotMatch(prompt, /Answer in Chinese\./);
+  // The system prompt neither carries them nor explains them.
+  assert.doesNotMatch(withPreferences.text ?? '', /Answer in Chinese\.|preferences_info/);
 });
 
 test('one turn shares one canonical Skill inventory across prompt and lazy tools', async () => {

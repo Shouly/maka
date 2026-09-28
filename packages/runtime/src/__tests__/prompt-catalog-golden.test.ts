@@ -66,9 +66,13 @@ test('a conditional section is present only when its capability is', () => {
 
 test('static sections are ordered, unique and non-empty', () => {
   const sections = mainSessionStaticPromptSections(EVERY_CONDITION);
-  assert.ok(sections.length >= 6);
   const ids = sections.map((section) => section.id);
-  assert.equal(new Set(ids).size, ids.length);
+  assert.deepEqual(ids, [
+    'copilot-behavior',
+    'agentic-behavior',
+    'user-memory',
+    'parallel-tool-calls',
+  ]);
   for (let index = 1; index < sections.length; index += 1) {
     assert.ok(sections[index - 1]!.order < sections[index]!.order, 'orders ascend');
   }

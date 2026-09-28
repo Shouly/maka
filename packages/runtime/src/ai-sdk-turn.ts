@@ -56,7 +56,6 @@ import type { SandboxBoundaryResponse } from '@maka/core/sandbox-boundary';
 import type { UserQuestionResponse } from '@maka/core/user-question';
 import { DEFAULT_TOOL_MODE, isToolMode, type ToolMode } from '@maka/core/tool-mode';
 import { TOOL_NAMES } from '@maka/core/tool-names';
-import { executionBoundaryDisplayMode } from '@maka/core/sandbox-boundary';
 import {
   resolveEffectiveOrchestration,
   type EffectiveOrchestration,
@@ -184,8 +183,11 @@ import {
 } from './history-compact-checkpoint.js';
 import { resolveSelectedModelContextWindow } from './context-budget-policy.js';
 import type { AiSdkBackendInput, ResolvedSystemPrompt } from './ai-sdk-backend.js';
-import { prependUserMessageReminders } from './injection/user-message-injections.js';
-import type { PermissionMode } from '@maka/core/permission';
+import { injectionPosition, renderPlacedBlock } from './injection/turn-injections.js';
+import {
+  appendUserMessageBlocks,
+  prependUserMessageBlocks,
+} from './injection/user-message-injections.js';
 import {
   INVALID_TOOL_NAME,
   isProviderSandboxBoundaryAttempt,
@@ -693,80 +695,39 @@ export class AiSdkTurn {
   }
 
   /**
-   * The facts a turn runs under — permission mode from the boundary when it
-   * has one, the boundary itself — read once at turn start. Readers a test
-   * backend does not provide are simply left out.
-   */
-  private async readTurnFacts(): Promise<{
-    permissionMode?: PermissionMode;
-    executionBoundary?: Awaited<
-      ReturnType<NonNullable<AiSdkBackendInput['readExecutionBoundary']>>
-    >;
-  }> {
-    const backend = this.deps.backend as Partial<
-      Pick<AiSdkBackendInput, 'readExecutionBoundary' | 'readPermissionMode'>
-    >;
-    let boundary:
-      | Awaited<ReturnType<NonNullable<AiSdkBackendInput['readExecutionBoundary']>>>
-      | undefined;
-    try {
-      boundary = await backend.readExecutionBoundary?.();
-    } catch {
-      boundary = undefined;
-    }
-    // The mode the user selected, as the tools see it: a Bypass boundary is
-    // Full access outright, and a managed one keeps the header's selection —
-    // an approved expansion changes the boundary's shape, not the mode.
-    let permissionMode: PermissionMode | undefined;
-    if (boundary?.kind === 'bypass') {
-      permissionMode = 'bypass';
-    } else {
-      try {
-        permissionMode = await backend.readPermissionMode?.();
-      } catch {
-        permissionMode = undefined;
-      }
-      if (!permissionMode && boundary) permissionMode = executionBoundaryDisplayMode(boundary);
-    }
-    return {
-      ...(permissionMode ? { permissionMode } : {}),
-      ...(boundary ? { executionBoundary: boundary } : {}),
-    };
-  }
-
-  /**
-   * What the system says ahead of this turn's user text, recorded to the
-   * ledger before the first request goes out: the contexts the host resolved,
-   * the tools held behind ToolSearch, the session facts, the date — each only
-   * when the ledger does not already say it (see `injection/`). Returns the
-   * blocks as the model reads them, for a request built without the ledger.
+   * What the system says around this turn's user text, recorded to the ledger
+   * before the first request goes out: the contexts the host resolved and the
+   * date ahead of it (no date on a first turn whose prompt names it), the
+   * environment, the tools held behind ToolSearch and the listings after it —
+   * each listing only when the ledger does not already say it (see
+   * `injection/`). Returns the blocks as the model reads them, placed, for a
+   * request built without the ledger.
    */
   private async recordTurnInjections(
     input: BackendSendInput,
     resolved: ResolvedSystemPrompt,
     plan: ToolAvailabilityPlan,
-  ): Promise<string[]> {
+  ): Promise<{ before: string[]; after: string[] }> {
+    const blocks = { before: [] as string[], after: [] as string[] };
     const injections = this.deps.backend.injections;
     const record = this.deps.backend.recordInjection;
-    if (!injections || !record || input.continuation) return [];
-    const facts = await this.readTurnFacts();
+    if (!injections || !record || input.continuation) return blocks;
     const active = new Set(plan.gating?.activeNames() ?? plan.activeTools);
     const held = [...(plan.gating?.gatedNames ?? plan.deferredNames ?? [])].filter(
       (name) => !active.has(name),
     );
-    const planned = injections.planTurn(input.runtimeContext ?? [], {
+    const prior = input.runtimeContext ?? [];
+    const planned = injections.planTurn(prior, {
       now: new Date(this.deps.now()),
+      datedByPrompt: prior.length === 0 && resolved.dated === true,
       contexts: resolved.contexts ?? [],
       deferredToolNames: held,
-      canRequestBoundary: active.has(REQUEST_SANDBOX_BOUNDARY_TOOL_NAME),
-      ...(this.deps.backend.modelId ? { modelId: this.deps.backend.modelId } : {}),
-      ...(this.deps.backend.header.collaborationMode
-        ? { collaborationMode: this.deps.backend.header.collaborationMode }
-        : {}),
-      ...facts,
     });
-    for (const injection of planned) await record(this.turnId, injection);
-    return planned.map((injection) => injections.renderBlock(injection));
+    for (const injection of planned) {
+      await record(this.turnId, injection);
+      blocks[injectionPosition(injection)].push(renderPlacedBlock(injection));
+    }
+    return blocks;
   }
 
   requestStop(reason: 'user_stop' | 'redirect', mode: 'immediate' | 'after_step'): void {
@@ -1244,7 +1205,7 @@ export class AiSdkTurn {
           next.start();
         };
         const activeTools = plan.activeTools;
-        const builtUserContent = input.continuation
+        const currentUserContent = input.continuation
           ? undefined
           : await this.deps.messageProjection.buildCurrentUserContent(
               this.imageBudget,
@@ -1254,18 +1215,6 @@ export class AiSdkTurn {
               input.quotes,
               input.headAnchorRuntimeEvent?.id,
             );
-        // The sent-time reminder rides on the message from its first request,
-        // rendered from the ledger event's own timestamp so the durable replay
-        // on later steps produces the same bytes.
-        const currentUserContent =
-          builtUserContent === undefined
-            ? undefined
-            : prependUserMessageReminders(
-                builtUserContent,
-                this.deps.backend.injections?.userMessageReminders(
-                  input.headAnchorRuntimeEvent?.ts ?? this.deps.now(),
-                ) ?? [],
-              );
         const messages =
           currentUserContent === undefined
             ? [...priorReplay.messages]
@@ -1452,7 +1401,7 @@ export class AiSdkTurn {
           const turnInjectionBlocks =
             completedProviderSteps.length === 0
               ? await this.recordTurnInjections(input, resolvedSystemPrompt, plan)
-              : [];
+              : { before: [], after: [] };
           if (this.deps.backend.loadTurnRuntimeEvents) {
             requestMessages = await loadDurableTurnProjection();
           } else {
@@ -1462,8 +1411,8 @@ export class AiSdkTurn {
             );
             if (missingSteering.length > 0)
               requestMessages = [...requestMessages, ...missingSteering];
-            if (turnInjectionBlocks.length > 0) {
-              requestMessages = prependToHeadUserMessage(requestMessages, turnInjectionBlocks);
+            if (turnInjectionBlocks.before.length + turnInjectionBlocks.after.length > 0) {
+              requestMessages = placeOnHeadUserMessage(requestMessages, turnInjectionBlocks);
             }
           }
           // Resolved BEFORE request projection so the capacity measurement and
@@ -3299,21 +3248,24 @@ function isAgentGraphYieldToolResult(output: unknown): output is YieldAgentGraph
   );
 }
 
-/** The turn's injections go on the message that opened it: the last user message that is not steering. */
-function prependToHeadUserMessage(
+/** The turn's injections go around the message that opened it: the last user message that is not steering. */
+function placeOnHeadUserMessage(
   messages: readonly ModelMessage[],
-  blocks: readonly string[],
+  blocks: { readonly before: readonly string[]; readonly after: readonly string[] },
 ): ModelMessage[] {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]!;
     if (message.role !== 'user' || steeringEventIdOf(message) !== undefined) continue;
-    return [
-      ...messages.slice(0, index),
-      { ...message, content: prependUserMessageReminders(message.content, blocks) },
-      ...messages.slice(index + 1),
-    ];
+    const content = appendUserMessageBlocks(
+      prependUserMessageBlocks(message.content, blocks.before),
+      blocks.after,
+    );
+    return [...messages.slice(0, index), { ...message, content }, ...messages.slice(index + 1)];
   }
-  return [...messages, { role: 'user', content: blocks.join('\n') }];
+  return [
+    ...messages,
+    { role: 'user', content: [...blocks.before, ...blocks.after].join('').trim() },
+  ];
 }
 
 function priorReplayFailureTrace(replay: {

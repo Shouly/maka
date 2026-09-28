@@ -47,7 +47,7 @@ function sectionsOfLayer(layer: PromptSection['layer']): readonly PromptSection[
 }
 
 /** Every named condition a section can carry; the golden pins the prompt with all of them on. */
-export const PROMPT_CONDITIONS = ['preferences', 'memory'] as const;
+export const PROMPT_CONDITIONS = ['memory'] as const;
 export type PromptCondition = (typeof PROMPT_CONDITIONS)[number];
 
 /**
