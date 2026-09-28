@@ -102,7 +102,12 @@ function UnknownProviderDetail(props: ConnectionDetailProps) {
         <RowActionsMenu
           label={copy.detail.moreActions(connection.name || connection.slug)}
           actions={[
-            { label: copy.detail.delete, danger: true, onSelect: () => setDeleteOpen(true) },
+            {
+              label: copy.detail.delete,
+              icon: 'trash',
+              danger: true,
+              onSelect: () => setDeleteOpen(true),
+            },
           ]}
         />
       </div>
@@ -216,6 +221,7 @@ function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: Provid
             actions={[
               {
                 label: accountManaged ? copy.detail.disconnectAndDelete : copy.detail.delete,
+                icon: 'trash',
                 danger: true,
                 disabled: action.busy,
                 onSelect: () => setDeleteOpen(true),

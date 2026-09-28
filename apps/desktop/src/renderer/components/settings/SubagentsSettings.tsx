@@ -207,11 +207,13 @@ export function SubagentsSettings(props: { host: DesktopRuntimeHostRef | undefin
                       actions={[
                         {
                           label: copy.row.edit,
+                          icon: 'edit',
                           disabled: saving,
                           onSelect: () => setRoute({ kind: 'edit', presetId: preset.id }),
                         },
                         {
                           label: copy.remove.confirm,
+                          icon: 'trash',
                           danger: true,
                           disabled: saving,
                           onSelect: () => setPendingRemove(preset),

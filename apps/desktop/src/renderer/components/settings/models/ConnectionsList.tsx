@@ -219,6 +219,7 @@ export function ConnectionsList(props: {
                       actions={[
                         {
                           label: copy.detail.edit,
+                          icon: 'edit',
                           onSelect: () => props.onOpenDetail(connection.connectionId),
                         },
                         ...(isDefault
@@ -226,6 +227,7 @@ export function ConnectionsList(props: {
                           : [
                               {
                                 label: copy.panel.setDefault,
+                                icon: 'checkCircle' as const,
                                 disabled: !host || !connection.enabled,
                                 onSelect: () => {
                                   if (!host) return;
@@ -245,6 +247,7 @@ export function ConnectionsList(props: {
                             ]),
                         {
                           label: copy.detail.delete,
+                          icon: 'trash',
                           danger: true,
                           onSelect: () => setPendingDelete(connection),
                         },

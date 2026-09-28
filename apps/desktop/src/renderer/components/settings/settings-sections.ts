@@ -66,7 +66,7 @@ export const VISIBLE_SETTINGS_SECTIONS: readonly SettingsSection[] = SETTINGS_NA
 export const SETTINGS_SECTION_ICONS: Record<SettingsSection, AnthropiconName> = {
   account: 'user',
   general: 'settings',
-  projects: 'folder',
+  projects: 'projects',
   models: 'connectors',
   subagents: 'users',
   memory: 'memory',

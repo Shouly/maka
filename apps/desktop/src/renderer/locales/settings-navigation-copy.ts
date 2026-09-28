@@ -41,8 +41,8 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
         description: '外观与通知。',
       },
       projects: {
-        label: '工作区',
-        description: '管理 Runtime Host 连接、默认 Host 上的项目，以及是否遵循项目指令。',
+        label: '项目',
+        description: '默认工作目录、项目文件夹，以及是否读取项目里的指令文件。',
       },
       models: {
         label: '模型',
@@ -95,8 +95,8 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
         description: '外觀與通知。',
       },
       projects: {
-        label: '工作區',
-        description: '管理 Runtime Host 連線、預設 Host 上的專案，以及是否遵循專案指令。',
+        label: '專案',
+        description: '預設工作目錄、專案資料夾，以及是否讀取專案裡的指令檔。',
       },
       models: {
         label: '模型',
@@ -149,9 +149,9 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
         description: 'Appearance and notifications.',
       },
       projects: {
-        label: 'Workspace',
+        label: 'Projects',
         description:
-          'Runtime Host connections, projects on the default Host, and project instructions.',
+          'The default working folder, your project folders, and whether project instruction files are read.',
       },
       models: {
         label: 'Models',

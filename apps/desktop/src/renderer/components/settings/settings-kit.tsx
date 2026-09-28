@@ -57,6 +57,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuItemIcon,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu.js';
@@ -318,7 +319,8 @@ export function SettingsEmpty(props: { title: string; body?: string; action?: Re
 
 export interface RowAction {
   label: string;
-  icon?: AnthropiconName;
+  /** Every item carries one, in the account menu's 20px slot. */
+  icon: AnthropiconName;
   onSelect: () => void;
   disabled?: boolean;
   /** Red, after a separator — always the last item. */
@@ -356,8 +358,10 @@ export function RowActionsMenu(props: {
             disabled={action.disabled}
             onSelect={action.onSelect}
           >
-            {action.icon && <Anthropicon name={action.icon} size={16} />}
-            {action.label}
+            <DropdownMenuItemIcon>
+              <Anthropicon name={action.icon} size={20} />
+            </DropdownMenuItemIcon>
+            <span className="min-w-0 flex-1 truncate">{action.label}</span>
           </DropdownMenuItem>
         ))}
         {plain.length > 0 && danger.length > 0 && <DropdownMenuSeparator />}
@@ -368,8 +372,10 @@ export function RowActionsMenu(props: {
             className={menuDangerItemClass}
             onSelect={action.onSelect}
           >
-            {action.icon && <Anthropicon name={action.icon} size={16} />}
-            {action.label}
+            <DropdownMenuItemIcon>
+              <Anthropicon name={action.icon} size={20} />
+            </DropdownMenuItemIcon>
+            <span className="min-w-0 flex-1 truncate">{action.label}</span>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

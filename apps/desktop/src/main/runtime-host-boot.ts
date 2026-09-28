@@ -298,8 +298,13 @@ await resolveShellEnv();
 const MANAGED_UPDATE_RECONNECT_TIMEOUT_MS = 10_000;
 const buildInfo = resolveBuildInfo(app.isPackaged, app.getAppPath());
 const userDataDir = app.getPath("userData");
+/** Where a task with no project gets its own folder, unless Settings › Projects moves it. */
+const defaultTaskFolderRoot = join(
+  isIsolatedE2e ? join(userDataDir, 'Documents') : app.getPath('documents'),
+  'Maka',
+);
 const projectlessWorkspaces = createProjectlessWorkspaces({
-  root: join(isIsolatedE2e ? join(userDataDir, 'Documents') : app.getPath('documents'), 'Maka'),
+  root: async () => (await settingsStore.get()).projects.taskFolderRoot ?? defaultTaskFolderRoot,
   previewRoot: join(userDataDir, 'projectless-preview'),
   reservationsRoot: join(userDataDir, 'task-workspace-reservations'),
 });
@@ -2091,6 +2096,17 @@ function registerPersistentClientIpc(): void {
     }),
   );
   registerDesktopDiagnosticsIpc({ ipcMain, ...desktopDiagnostics });
+  ipcMain.handle('task-folder:default', () => defaultTaskFolderRoot);
+  // Only picks: the renderer writes the choice to the client settings, as it
+  // writes the default project.
+  ipcMain.handle('task-folder:pick', async (_event, current: unknown) => {
+    const result = await mainWindowController.showOpenDialog({
+      title: nativeFileDialogCopy(await desktopLocale.resolve()).taskFolder,
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath: typeof current === 'string' ? current : defaultTaskFolderRoot,
+    });
+    return result.canceled || !result.filePaths[0] ? null : result.filePaths[0];
+  });
   ipcMain.handle('directories:pick', async () => {
     const local = runtimeHostManager?.entries().find(
       (state) => state.target.profile.kind === 'local',

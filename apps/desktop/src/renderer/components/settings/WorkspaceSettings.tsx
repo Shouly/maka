@@ -17,9 +17,12 @@
  * under the License.
  */
 
-// The projects on the selected Runtime Host, and the Hosts themselves — and,
-// last, whether each project's own instruction files are read
-// (`host-default-settings.tsx`).
+// Settings › Projects, two sections of plain rows. Working folders: where a
+// task with no project gets a folder of its own (a client setting, moved with
+// the OS folder picker), and whether each project's instruction files are
+// read (`host-default-settings.tsx`). Projects: the folders you added, each
+// with its ⋯ menu; the default one wears a chip. Which computer runs the
+// tasks (the Runtime Host profiles) is not shown: tasks run here.
 //
 // The catalog is per-Host, and its CAPABILITIES are too: a Host that owns its
 // own filesystem cannot show a client path or open a folder here, and the
@@ -34,7 +37,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ProjectRecord } from '@maka/core/project';
 import { useUiLocale } from '@maka/ui';
-import { Anthropicon } from '../icons/Anthropicon.js';
 import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../ui/confirm-dialog.js';
 import { Input } from '../ui/input.js';
@@ -42,16 +44,12 @@ import { Skeleton } from '../ui/skeleton.js';
 import { statusChipClass, statusChipToneClass } from '../ui/status-chip.js';
 import { cn } from '../../lib/cn.js';
 import { DirectoryBrowserDialog } from './DirectoryBrowserDialog.js';
-import { WorkspaceInstructionsSection } from './host-default-settings.js';
-import { RuntimeHostProfilesSection } from './RuntimeHostProfilesSection.js';
+import { WorkspaceInstructionsRow } from './host-default-settings.js';
 import {
   RowActionsMenu,
+  SettingsEmpty,
   SettingsModal,
   SettingsModalField,
-  SettingsTable,
-  SettingsTableActionsCell,
-  SettingsTableCell,
-  SettingsTableRow,
   type RowAction,
 } from './settings-kit.js';
 import { SettingsRow, SettingsSection } from './settings-row.js';
@@ -59,6 +57,8 @@ import { getAppInfo } from '../../bridge/app.js';
 import {
   addProject,
   getProjectSnapshot,
+  getTaskFolderDefault,
+  pickTaskFolder,
   relinkProject,
   renameProject,
   restoreProject,
@@ -96,6 +96,7 @@ export function WorkspaceSettings(props: { host: DesktopRuntimeHostRef | undefin
     [host?.profileId, host?.hostId],
   );
   const info = useAsync(host ? () => getAppInfo(host) : undefined, [host?.profileId, host?.hostId]);
+  const taskFolderDefault = useAsync(getTaskFolderDefault, []);
   const reload = snapshot.reload;
   useEffect(() => {
     if (!host) return;
@@ -126,11 +127,144 @@ export function WorkspaceSettings(props: { host: DesktopRuntimeHostRef | undefin
   const capabilities = snapshot.data?.capabilities;
   const projects = snapshot.data?.projects ?? [];
   const defaultProjectId = client.data?.projects.defaultProjectId;
+  const customTaskFolder = client.data?.projects.taskFolderRoot;
+  const taskFolder = customTaskFolder ?? taskFolderDefault.data;
   const homePath = info.data?.homePath;
+
+  // A project's ⋯ menu: default, rename, open, then relink / restore / remove.
+  const projectActions = (project: ProjectRecord, isDefault: boolean): RowAction[] => {
+    const archived = project.archivedAt !== undefined;
+    const actions: RowAction[] = [];
+    if (capabilities?.setLocalDefault === true && !archived)
+      actions.push({
+        label: isDefault ? copy.clearDefault : copy.setDefault,
+        icon: isDefault ? 'xCircle' : 'checkCircle',
+        disabled: busy || !project.available,
+        onSelect: () =>
+          run(
+            settingsStore.updateClient({
+              projects: { defaultProjectId: isDefault ? undefined : project.id },
+            }),
+            copy.setDefaultFailed,
+          ),
+      });
+    actions.push({
+      label: copy.rename,
+      icon: 'edit',
+      disabled: busy,
+      onSelect: () => {
+        setRenaming(project.id);
+        setRenameValue(project.name);
+      },
+    });
+    if (capabilities?.viewClientPath === true)
+      actions.push({
+        label: copy.openFolder,
+        icon: 'folderOpen',
+        disabled: busy || !project.available || !host,
+        onSelect: () => {
+          if (!host) return;
+          run(
+            revealProject(project.id, host).then((result) => {
+              if (result.ok) return;
+              // A reveal that could not open says which of the Host's five
+              // reasons it was, not "failed".
+              throw new Error(paths.openPathFailures[result.reason]);
+            }),
+            copy.openFolderFailed,
+          );
+        },
+      });
+    if (!archived && !project.available)
+      actions.push({
+        label: own.relinkProject,
+        icon: 'link',
+        disabled: busy || !host,
+        onSelect: () => {
+          if (!host) return;
+          run(relinkProject(project.id, host), copy.actionFailed);
+        },
+      });
+    if (archived)
+      actions.push({
+        label: own.restoreProject,
+        icon: 'arrowCounterClockwise',
+        disabled: busy || !host,
+        onSelect: () => {
+          if (!host) return;
+          run(restoreProject(project.id, host), copy.actionFailed);
+        },
+      });
+    else
+      actions.push({
+        label: copy.remove,
+        icon: 'trash',
+        danger: true,
+        disabled: busy,
+        onSelect: () => setPendingRemove(project),
+      });
+    return actions;
+  };
 
   return (
     <>
-      <RuntimeHostProfilesSection />
+      <SettingsSection title={copy.foldersSection}>
+        {capabilities?.viewClientPath === true && taskFolder && (
+          // Where a task with no project gets its own folder; the OS picker
+          // only picks, and the choice is a client setting like the default
+          // project.
+          <SettingsRow
+            title={copy.defaultDirectory}
+            description={
+              <>
+                {copy.defaultDirectoryHelp}
+                <span data-mono="true" title={taskFolder} className="mt-0.5 block truncate">
+                  {projectPathDisplay(taskFolder, { homePath }).text}
+                </span>
+              </>
+            }
+            control={
+              <div className="flex items-center gap-2">
+                {customTaskFolder !== undefined && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="rounded-[7px] text-sm"
+                    disabled={busy}
+                    onClick={() =>
+                      run(
+                        settingsStore.updateClient({ projects: { taskFolderRoot: undefined } }),
+                        copy.changeFolderFailed,
+                      )
+                    }
+                  >
+                    {copy.resetFolder}
+                  </Button>
+                )}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-[7px] text-sm"
+                  disabled={busy}
+                  onClick={() =>
+                    run(
+                      pickTaskFolder(taskFolder).then((picked) =>
+                        picked === null
+                          ? undefined
+                          : settingsStore.updateClient({ projects: { taskFolderRoot: picked } }),
+                      ),
+                      copy.changeFolderFailed,
+                    )
+                  }
+                >
+                  {copy.changeFolder}
+                </Button>
+              </div>
+            }
+          />
+        )}
+        <WorkspaceInstructionsRow host={host} />
+      </SettingsSection>
 
       <SettingsSection
         title={copy.section}
@@ -140,6 +274,7 @@ export function WorkspaceSettings(props: { host: DesktopRuntimeHostRef | undefin
             <Button
               variant="secondary"
               size="sm"
+              className="rounded-[7px] text-sm"
               disabled={busy || !host}
               onClick={() => {
                 if (!host) return;
@@ -172,134 +307,54 @@ export function WorkspaceSettings(props: { host: DesktopRuntimeHostRef | undefin
             }
           />
         ) : projects.length === 0 ? (
-          <div className="flex flex-col gap-1 py-6 text-center">
-            <p className="text-sm leading-5 text-text-primary">{copy.emptyTitle}</p>
-            <p className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
-              {copy.emptyBody}
-            </p>
-          </div>
+          <SettingsEmpty title={copy.emptyTitle} body={copy.emptyBody} />
         ) : (
-          <SettingsTable label={copy.section}>
-            {projects.map((project) => {
-              const archived = project.archivedAt !== undefined;
-              const isDefault =
-                capabilities?.setLocalDefault === true && project.id === defaultProjectId;
-              const path =
-                capabilities?.viewClientPath && project.preferredPath
-                  ? projectPathDisplay(project.preferredPath, { homePath })
-                  : undefined;
-              const actions: RowAction[] = [];
-              if (capabilities?.setLocalDefault === true && !archived)
-                actions.push({
-                  label: isDefault ? copy.clearDefault : copy.setDefault,
-                  disabled: busy || !project.available,
-                  onSelect: () =>
-                    run(
-                      settingsStore.updateClient({
-                        projects: { defaultProjectId: isDefault ? undefined : project.id },
-                      }),
-                      copy.setDefaultFailed,
-                    ),
-                });
-              actions.push({
-                label: copy.rename,
-                disabled: busy,
-                onSelect: () => {
-                  setRenaming(project.id);
-                  setRenameValue(project.name);
-                },
-              });
-              if (capabilities?.viewClientPath === true)
-                actions.push({
-                  label: copy.openFolder,
-                  disabled: busy || !project.available || !host,
-                  onSelect: () => {
-                    if (!host) return;
-                    run(
-                      revealProject(project.id, host).then((result) => {
-                        if (result.ok) return;
-                        // A reveal that could not open says which of the
-                        // Host's five reasons it was, not "failed".
-                        throw new Error(paths.openPathFailures[result.reason]);
-                      }),
-                      copy.openFolderFailed,
-                    );
-                  },
-                });
-              if (!archived && !project.available)
-                actions.push({
-                  label: own.relinkProject,
-                  disabled: busy || !host,
-                  onSelect: () => {
-                    if (!host) return;
-                    run(relinkProject(project.id, host), copy.actionFailed);
-                  },
-                });
-              if (archived)
-                actions.push({
-                  label: own.restoreProject,
-                  disabled: busy || !host,
-                  onSelect: () => {
-                    if (!host) return;
-                    run(restoreProject(project.id, host), copy.actionFailed);
-                  },
-                });
-              else
-                actions.push({
-                  label: copy.remove,
-                  danger: true,
-                  disabled: busy,
-                  onSelect: () => setPendingRemove(project),
-                });
-              return (
-                <SettingsTableRow key={project.id}>
-                  <SettingsTableCell>
-                    <span className="flex min-w-0 items-start gap-3">
-                      <Anthropicon
-                        name="folder"
-                        size={20}
-                        className="mt-0.5 shrink-0 text-text-secondary"
-                      />
-                      <span className="flex min-w-0 flex-col">
-                        <span className="flex min-w-0 items-center gap-2">
-                          <span className="truncate">{project.name}</span>
-                          {isDefault && (
-                            <span className={cn(statusChipClass, statusChipToneClass('active'))}>
-                              {copy.defaultBadge}
-                            </span>
-                          )}
-                          {archived && (
-                            <span className={cn(statusChipClass, statusChipToneClass('neutral'))}>
-                              {own.archivedBadge}
-                            </span>
-                          )}
-                          {!project.available && (
-                            <span className={cn(statusChipClass, statusChipToneClass('error'))}>
-                              {copy.unavailable}
-                            </span>
-                          )}
-                        </span>
-                        <span
-                          data-mono="true"
-                          title={path?.title}
-                          className="truncate text-[0.8125rem] leading-[1.0625rem] text-text-muted"
-                        >
-                          {path?.text ?? copy.unavailable}
-                        </span>
+          projects.map((project) => {
+            const isDefault =
+              capabilities?.setLocalDefault === true && project.id === defaultProjectId;
+            const path =
+              capabilities?.viewClientPath && project.preferredPath
+                ? projectPathDisplay(project.preferredPath, { homePath })
+                : undefined;
+            return (
+              <SettingsRow
+                key={project.id}
+                title={
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate">{project.name}</span>
+                    {isDefault && (
+                      <span className={cn(statusChipClass, statusChipToneClass('active'))}>
+                        {copy.defaultBadge}
                       </span>
-                    </span>
-                  </SettingsTableCell>
-                  <SettingsTableActionsCell>
-                    <RowActionsMenu label={own.projectActions(project.name)} actions={actions} />
-                  </SettingsTableActionsCell>
-                </SettingsTableRow>
-              );
-            })}
-          </SettingsTable>
+                    )}
+                    {project.archivedAt !== undefined && (
+                      <span className={cn(statusChipClass, statusChipToneClass('neutral'))}>
+                        {own.archivedBadge}
+                      </span>
+                    )}
+                    {!project.available && (
+                      <span className={cn(statusChipClass, statusChipToneClass('error'))}>
+                        {copy.unavailable}
+                      </span>
+                    )}
+                  </span>
+                }
+                description={
+                  <span data-mono="true" title={path?.title} className="block truncate">
+                    {path?.text ?? copy.unavailable}
+                  </span>
+                }
+                control={
+                  <RowActionsMenu
+                    label={own.projectActions(project.name)}
+                    actions={projectActions(project, isDefault)}
+                  />
+                }
+              />
+            );
+          })
         )}
       </SettingsSection>
-
-      <WorkspaceInstructionsSection host={host} />
 
       <SettingsModal
         open={renaming !== null}

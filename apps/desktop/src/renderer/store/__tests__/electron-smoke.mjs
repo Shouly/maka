@@ -1150,9 +1150,9 @@ try {
   );
   checks.push('a General switch round-trips through the settings IPC and survives a reload');
 
-  // 5a.6 Workspace, Usage, Data, Permissions and Health each render their own page.
+  // 5a.6 Projects, Usage, Data, Permissions and Health each render their own page.
   for (const [name, section, shot] of [
-    ['Workspace', 'projects', 'phase5a-workspace-light.png'],
+    ['Projects', 'projects', 'phase5a-projects-light.png'],
     ['Usage', 'usage', 'phase5a-usage-light.png'],
     ['Data', 'data', 'phase5a-data-light.png'],
     ['Permissions & Capabilities', 'permissions', 'phase5a-permissions-light.png'],
@@ -1165,7 +1165,7 @@ try {
     await new Promise((settle) => setTimeout(settle, 600));
     await page.screenshot({ path: SHOT(shot) });
   }
-  checks.push('Workspace, Usage, Data, Permissions and Health each render against the real Host');
+  checks.push('Projects, Usage, Data, Permissions and Health each render against the real Host');
 
   // ── Phase 5b: Models, Subagents, Memory, Web Search ───────────────────────
 

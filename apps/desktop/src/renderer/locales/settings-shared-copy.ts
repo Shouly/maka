@@ -86,7 +86,7 @@ const SETTINGS_SHARED_COPY_BY_LOCALE = {
     settingsLoadFailed: '载入设置失败',
     usageLoadFailed: '载入使用统计失败',
     runtimeHost: 'Runtime Host',
-    runtimeHostUnavailable: '这个 Runtime Host 当前不可用。请选择其他 Host，或在“项目”中重试连接。',
+    runtimeHostUnavailable: '后台服务暂时连不上，稍后再试。',
     unknownError: '出现错误，请稍后重试。',
     unavailablePage: '该设置页已纳入 Maka 设置树，会随对应 runtime 能力一起工作。',
     showDetails: '展开详情',
@@ -124,7 +124,7 @@ const SETTINGS_SHARED_COPY_BY_LOCALE = {
     settingsLoadFailed: '載入設定失敗',
     usageLoadFailed: '載入使用統計失敗',
     runtimeHost: 'Runtime Host',
-    runtimeHostUnavailable: '這個 Runtime Host 目前不可用。請選擇其他 Host，或在“專案”中重試連線。',
+    runtimeHostUnavailable: '後台服務暫時連不上，稍後再試。',
     unknownError: '出現錯誤，請稍後重試。',
     unavailablePage: '該設定頁已納入 Maka 設定樹，會隨對應 runtime 能力一起工作。',
     showDetails: '展開詳情',
@@ -163,7 +163,7 @@ const SETTINGS_SHARED_COPY_BY_LOCALE = {
     usageLoadFailed: 'Could not load usage statistics',
     runtimeHost: 'Runtime Host',
     runtimeHostUnavailable:
-      'This Runtime Host is unavailable. Choose another Host or retry the connection under Projects.',
+      'The background service cannot be reached right now. Try again shortly.',
     unknownError: 'Something went wrong. Try again.',
     unavailablePage:
       'This page is part of the Maka settings tree and will activate with its runtime capability.',

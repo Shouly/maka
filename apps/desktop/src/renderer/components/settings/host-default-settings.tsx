@@ -20,7 +20,7 @@
 // The Runtime Host defaults that used to sit under General › Tasks, each now
 // placed on the page that owns what it decides: the thinking level on Models
 // under the default model, the permission mode and the Bash shell on
-// Permissions, and the project-instructions switch on Workspace.
+// Permissions, and the project-instructions switch on Projects.
 //
 // They are Runtime Host settings, read from and written to the Host this
 // window is talking to. Every write is a fire-and-forget with a toast on
@@ -206,27 +206,25 @@ export function ShellSection(props: HostProps) {
   );
 }
 
-/** Workspace: whether each project's own instruction files are read. */
-export function WorkspaceInstructionsSection(props: HostProps) {
+/** Projects › Working folders: whether each project's own instruction files are read. */
+export function WorkspaceInstructionsRow(props: HostProps) {
   const copy = getSettingsPreferencesCopy(useUiLocale()).general;
   const settings = useHostSettings().data;
   const write = useHostWrite(props.host);
   return (
-    <SettingsSection>
-      <SettingsRow
-        title={copy.workspaceInstructions}
-        description={copy.workspaceInstructionsHelp}
-        control={
-          <Switch
-            aria-label={copy.workspaceInstructions}
-            disabled={settings === undefined}
-            checked={settings?.workspaceInstructions.enabled ?? false}
-            onCheckedChange={(enabled) =>
-              write({ workspaceInstructions: { enabled } }, copy.workspaceInstructionsFailed)
-            }
-          />
-        }
-      />
-    </SettingsSection>
+    <SettingsRow
+      title={copy.workspaceInstructions}
+      description={copy.workspaceInstructionsHelp}
+      control={
+        <Switch
+          aria-label={copy.workspaceInstructions}
+          disabled={settings === undefined}
+          checked={settings?.workspaceInstructions.enabled ?? false}
+          onCheckedChange={(enabled) =>
+            write({ workspaceInstructions: { enabled } }, copy.workspaceInstructionsFailed)
+          }
+        />
+      }
+    />
   );
 }

@@ -150,7 +150,6 @@
     "src/renderer/components/settings/HealthSettings.tsx",
     "src/renderer/components/settings/MemorySettings.tsx",
     "src/renderer/components/settings/PermissionsSettings.tsx",
-    "src/renderer/components/settings/RuntimeHostProfilesSection.tsx",
     "src/renderer/components/settings/SettingsNav.tsx",
     "src/renderer/components/settings/SettingsView.tsx",
     "src/renderer/components/settings/SubagentsSettings.tsx",
@@ -3569,37 +3568,6 @@
         "react": 1
       }
     },
-    "src/renderer/components/settings/RuntimeHostProfilesSection.tsx": {
-      "bridgePaths": {},
-      "environmentCapabilities": {},
-      "hookCalls": {
-        "useEffect": 1,
-        "useSettingsErrorReporter": 1,
-        "useState": 4,
-        "useUiLocale": 1
-      },
-      "lifecycleMethods": {},
-      "unresolvedDependencies": 0,
-      "actionFactories": [],
-      "dependencyPaths": {
-        "../../bridge/runtime-host-profiles.js": 1,
-        "../../hooks/use-settings.js": 1,
-        "../../lib/cn.js": 1,
-        "../../locales/settings-copy.js": 1,
-        "../../locales/settings-projects-copy.js": 1,
-        "../ui/button.js": 1,
-        "../ui/input.js": 1,
-        "../ui/segmented-control.js": 1,
-        "../ui/select.js": 1,
-        "../ui/skeleton.js": 1,
-        "../ui/status-chip.js": 1,
-        "../ui/switch.js": 1,
-        "./settings-kit.js": 1,
-        "./settings-row.js": 1,
-        "@maka/ui": 1,
-        "react": 1
-      }
-    },
     "src/renderer/components/settings/SettingsNav.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {},
@@ -3765,7 +3733,7 @@
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
-        "useAsync": 2,
+        "useAsync": 3,
         "useClientSettings": 1,
         "useEffect": 1,
         "useSettingsErrorReporter": 1,
@@ -3787,7 +3755,6 @@
         "../../locales/settings-shared-copy.js": 1,
         "../../locales/shell-copy.js": 1,
         "../../store/index.js": 1,
-        "../icons/Anthropicon.js": 1,
         "../ui/button.js": 1,
         "../ui/confirm-dialog.js": 1,
         "../ui/input.js": 1,
@@ -3795,7 +3762,6 @@
         "../ui/status-chip.js": 1,
         "./DirectoryBrowserDialog.js": 1,
         "./host-default-settings.js": 1,
-        "./RuntimeHostProfilesSection.js": 1,
         "./settings-kit.js": 1,
         "./settings-row.js": 1,
         "@maka/ui": 1,
@@ -7235,9 +7201,7 @@
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
-      "dependencyPaths": {
-        "@maka/core/ui-locale": 1
-      }
+      "dependencyPaths": {}
     },
     "src/renderer/locales/settings-shared-copy.ts": {
       "bridgePaths": {},

@@ -2788,6 +2788,9 @@ const makaBridge = {
     },
   },
   projects: {
+    taskFolderDefault: (): Promise<string> => ipcRenderer.invoke('task-folder:default'),
+    pickTaskFolder: (current?: string): Promise<string | null> =>
+      ipcRenderer.invoke('task-folder:pick', current),
     async getDefaultContext(host?: DesktopRuntimeHostRef): Promise<{
       snapshot: DesktopProjectSnapshot;
       info: DesktopAppInfo;

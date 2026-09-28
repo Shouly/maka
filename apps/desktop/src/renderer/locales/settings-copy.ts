@@ -48,18 +48,7 @@ export type SettingsCopy = {
   /** Announced while a page is reading its first snapshot. */
   loadingSection: string;
   workspace: {
-    /** Runtime Host readiness, as the profile snapshot reports it. */
-    readiness: Record<'disabled' | 'connecting' | 'ready' | 'reconnecting' | 'unavailable', string>;
-    kinds: Record<'local' | 'environment' | 'remote', string>;
-    enableProfile: (name: string) => string;
-    setDefaultProfile: string;
-    removeProfile: string;
-    profileActions: (name: string) => string;
     projectActions: (name: string) => string;
-    /** Why the SSH / WSL entry points are missing from this build. */
-    wizardsDeferred: string;
-    addRemote: string;
-    addRemoteHelp: string;
     directoryBrowserOpen: string;
     archivedBadge: string;
     restoreProject: string;
@@ -112,23 +101,7 @@ const SETTINGS_COPY = {
     comingSoonTitle: '尚未构建',
     loadingSection: '正在读取设置…',
     workspace: {
-      readiness: {
-        disabled: '已停用',
-        connecting: '连接中',
-        ready: '就绪',
-        reconnecting: '重新连接中',
-        unavailable: '不可用',
-      },
-      kinds: { local: '本机', environment: '本机环境', remote: '远程' },
-      enableProfile: (name: string) => `启用 ${name}`,
-      setDefaultProfile: '设为默认',
-      removeProfile: '移除',
-      profileActions: (name) => `${name} 的更多操作`,
       projectActions: (name) => `${name} 的更多操作`,
-      wizardsDeferred:
-        'SSH 与 WSL 的引导式配置尚未在此版本提供；这里只能手动登记已经在运行的远程 Runtime Host。',
-      addRemote: '添加远程 Runtime Host',
-      addRemoteHelp: '填写这台 Host 的地址与访问凭据。凭据只保存在本机。',
       directoryBrowserOpen: '浏览 Host 上的文件夹',
       archivedBadge: '已移出',
       restoreProject: '恢复',
@@ -176,23 +149,7 @@ const SETTINGS_COPY = {
     comingSoonTitle: '尚未建置',
     loadingSection: '正在讀取設定…',
     workspace: {
-      readiness: {
-        disabled: '已停用',
-        connecting: '連線中',
-        ready: '就緒',
-        reconnecting: '重新連線中',
-        unavailable: '無法使用',
-      },
-      kinds: { local: '本機', environment: '本機環境', remote: '遠端' },
-      enableProfile: (name: string) => `啟用 ${name}`,
-      setDefaultProfile: '設為預設',
-      removeProfile: '移除',
-      profileActions: (name) => `${name} 的更多操作`,
       projectActions: (name) => `${name} 的更多操作`,
-      wizardsDeferred:
-        'SSH 與 WSL 的引導式設定尚未在此版本提供；這裡只能手動登記已經在執行的遠端 Runtime Host。',
-      addRemote: '新增遠端 Runtime Host',
-      addRemoteHelp: '填寫這臺 Host 的位址與存取憑證。憑證只會保存在本機。',
       directoryBrowserOpen: '瀏覽 Host 上的資料夾',
       archivedBadge: '已移出',
       restoreProject: '恢復',
@@ -240,23 +197,7 @@ const SETTINGS_COPY = {
     comingSoonTitle: 'Not built yet',
     loadingSection: 'Reading settings…',
     workspace: {
-      readiness: {
-        disabled: 'Disabled',
-        connecting: 'Connecting',
-        ready: 'Ready',
-        reconnecting: 'Reconnecting',
-        unavailable: 'Unavailable',
-      },
-      kinds: { local: 'This computer', environment: 'Local environment', remote: 'Remote' },
-      enableProfile: (name: string) => `Enable ${name}`,
-      setDefaultProfile: 'Set as default',
-      removeProfile: 'Remove',
-      profileActions: (name) => `More actions for ${name}`,
       projectActions: (name) => `More actions for ${name}`,
-      wizardsDeferred:
-        'The guided SSH and WSL setups are not in this build; this form registers a remote Runtime Host that is already running.',
-      addRemote: 'Add a remote Runtime Host',
-      addRemoteHelp: 'Its address and an access credential. The credential stays on this machine.',
       directoryBrowserOpen: 'Browse folders on the Host',
       archivedBadge: 'Removed',
       restoreProject: 'Restore',

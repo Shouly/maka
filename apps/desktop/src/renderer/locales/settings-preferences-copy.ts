@@ -316,9 +316,9 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
       notifications: '回复完成',
       notificationsHelp: '任务跑完、出错或等你回答时，发系统通知提醒你，适合耗时较长的任务。',
       notificationsFailed: '通知设置切换失败',
-      workspaceInstructions: '遵循项目指令',
+      workspaceInstructions: '读取项目里的指令文件',
       workspaceInstructionsHelp:
-        '自动读取每个项目中已有的 AGENTS.md、CLAUDE.md 或 GEMINI.md；文件仍由各自项目管理。',
+        '项目里有 AGENTS.md、CLAUDE.md 或 GEMINI.md 时，自动照着里面的要求做。文件还在各自的项目里维护。',
       workspaceInstructionsFailed: '项目指令设置切换失败',
       workHub: '启用 WorkHub',
       workHubHelp: 'WorkHub 目前仍不可用。此开关仅供开发测试，开启后也不能保证正常使用。',
@@ -495,9 +495,9 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
       notifications: '回覆完成',
       notificationsHelp: '任務跑完、出錯或等你回答時，傳送系統通知提醒你，適合耗時較長的任務。',
       notificationsFailed: '通知設定切換失敗',
-      workspaceInstructions: '遵循專案指令',
+      workspaceInstructions: '讀取專案裡的指令檔',
       workspaceInstructionsHelp:
-        '自動讀取每個專案中已有的 AGENTS.md、CLAUDE.md 或 GEMINI.md；檔案仍由各自專案管理。',
+        '專案裡有 AGENTS.md、CLAUDE.md 或 GEMINI.md 時，自動照著裡面的要求做。檔案還在各自的專案裡維護。',
       workspaceInstructionsFailed: '專案指令設定切換失敗',
       workHub: '啟用 WorkHub',
       workHubHelp: '在一個入口檢視已有工作，並將新輸入保守地送往普通任務。',
@@ -681,9 +681,9 @@ const SETTINGS_PREFERENCES_COPY_BY_LOCALE = {
       notificationsHelp:
         'Get a system notification when a task finishes, fails, or is waiting on your answer. Most useful for long-running tasks.',
       notificationsFailed: 'Could not change notification settings',
-      workspaceInstructions: 'Follow project instructions',
+      workspaceInstructions: 'Read project instruction files',
       workspaceInstructionsHelp:
-        'Automatically read existing AGENTS.md, CLAUDE.md, or GEMINI.md files in each project. Manage the files in their respective projects.',
+        'When a project has an AGENTS.md, CLAUDE.md or GEMINI.md, follow what it asks. The files stay in their projects.',
       workspaceInstructionsFailed: 'Could not change project instruction settings',
       workHub: 'Enable WorkHub',
       workHubHelp:

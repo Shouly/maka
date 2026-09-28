@@ -421,3 +421,28 @@ test('retired built-in icons resolve to the current mark in both normalization a
     assert.equal(appearance.appIconDark, DEFAULT_APP_ICON);
   }
 });
+
+describe('the task folder location', () => {
+  test('keeps an absolute path and drops anything else', () => {
+    for (const taskFolderRoot of ['/Users/ada/work', 'C:\\Users\\ada\\work', 'D:/work']) {
+      assert.strictEqual(
+        normalizeSettings({ projects: { taskFolderRoot } }).projects.taskFolderRoot,
+        taskFolderRoot,
+      );
+    }
+    for (const taskFolderRoot of ['work', '~/work', '', 42]) {
+      assert.strictEqual(
+        'taskFolderRoot' in normalizeSettings({ projects: { taskFolderRoot } as never }).projects,
+        false,
+      );
+    }
+  });
+
+  test('a patch that clears it goes back to the default', () => {
+    const custom = mergeSettings(createDefaultSettings(), {
+      projects: { taskFolderRoot: '/Users/ada/work', defaultProjectId: 'p1' },
+    });
+    const cleared = mergeSettings(custom, { projects: { taskFolderRoot: undefined } });
+    assert.deepStrictEqual(cleared.projects, { defaultProjectId: 'p1' });
+  });
+});

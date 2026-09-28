@@ -122,7 +122,7 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 test('projectless creation persists its cwd and user context before delivery and reuses both after a failed admission and restart', async (t) => {
   const db = await database(t);
   const workspaces = createProjectlessWorkspaces({
-    root: join(db.path, '..', 'Documents', 'Maka'),
+    root: () => join(db.path, '..', 'Documents', 'Maka'),
     previewRoot: join(db.path, '..', 'preview'),
     reservationsRoot: join(db.path, '..', 'reservations'),
   });

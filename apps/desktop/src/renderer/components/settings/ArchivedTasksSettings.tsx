@@ -155,6 +155,7 @@ export function ArchivedTasksSettings() {
                       actions={[
                         {
                           label: copy.delete,
+                          icon: 'trash',
                           danger: true,
                           disabled: working !== null,
                           onSelect: () => {

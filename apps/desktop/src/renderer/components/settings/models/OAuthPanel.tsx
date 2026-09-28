@@ -180,11 +180,13 @@ export function OAuthPanel(props: {
               actions={[
                 {
                   label: copy.detail.relogin,
+                  icon: 'arrowClockwise',
                   disabled: busy || !props.host || enrollmentBlocked,
                   onSelect: () => void flow.startLogin(),
                 },
                 {
                   label: flow.pending === 'logout' ? section.loggingOut : section.logout,
+                  icon: 'logout',
                   disabled: busy,
                   danger: true,
                   onSelect: () => void flow.signOut(),

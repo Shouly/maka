@@ -1334,6 +1334,10 @@ export interface MakaBridge {
     import(): Promise<SessionBundleImportIpcResult>;
   };
   projects: {
+    /** Where a task with no project gets its own folder when Settings has not moved it. */
+    taskFolderDefault(): Promise<string>;
+    /** The OS folder picker; null when cancelled. Nothing is saved here. */
+    pickTaskFolder(current?: string): Promise<string | null>;
     getDefaultContext(host?: DesktopRuntimeHostRef): Promise<{
       snapshot: DesktopProjectSnapshot;
       info: DesktopAppInfo;

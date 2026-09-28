@@ -444,6 +444,7 @@ function MemoryFileView(props: {
           actions={[
             {
               label: busy === 'delete' ? text.deleting : text.delete,
+              icon: 'trash',
               danger: true,
               disabled: busy !== null || !document,
               onSelect: () => setConfirmDelete(true),

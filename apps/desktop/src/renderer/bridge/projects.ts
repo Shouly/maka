@@ -86,6 +86,14 @@ export function createPreparedProject(
   return projects().createPrepared(selectionId, name, host);
 }
 
+export function getTaskFolderDefault(): Promise<string> {
+  return projects().taskFolderDefault();
+}
+
+export function pickTaskFolder(current?: string): Promise<string | null> {
+  return projects().pickTaskFolder(current);
+}
+
 export function addProject(host?: DesktopRuntimeHostRef): Promise<ProjectAddResult> {
   return projects().add(host);
 }

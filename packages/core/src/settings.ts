@@ -398,6 +398,11 @@ export interface WorkspaceInstructionsSettings {
 /** Default project identity for new conversations. */
 export interface ProjectPreferencesSettings {
   defaultProjectId?: string;
+  /**
+   * Where a task with no project gets a folder of its own (one per task,
+   * under a dated subfolder). Absent means the platform default.
+   */
+  taskFolderRoot?: string;
 }
 
 /**
@@ -987,5 +992,13 @@ function normalizeProjectPreferencesSettings(
   settings: ProjectPreferencesSettings | undefined,
 ): ProjectPreferencesSettings {
   const id = settings?.defaultProjectId;
-  return typeof id === 'string' && id.trim() !== '' ? { defaultProjectId: id } : {};
+  const root = settings?.taskFolderRoot;
+  return {
+    ...(typeof id === 'string' && id.trim() !== '' ? { defaultProjectId: id } : {}),
+    // An absolute path only (POSIX, or a Windows drive); anything else falls
+    // back to the platform default rather than landing tasks somewhere odd.
+    ...(typeof root === 'string' && /^(\/|[A-Za-z]:[\\/])/.test(root)
+      ? { taskFolderRoot: root }
+      : {}),
+  };
 }

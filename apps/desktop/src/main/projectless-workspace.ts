@@ -22,13 +22,16 @@ import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from 'node:fs
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 
 interface WorkspaceReservation {
+  /** The folder root at reservation time; the user may move it before a replay. */
+  readonly root: string;
   readonly cwd: string;
   readonly initialized: boolean;
 }
 
 /** Desktop owns allocation; the Session's persisted cwd owns the directory thereafter. */
 export function createProjectlessWorkspaces(options: {
-  readonly root: string;
+  /** Read at every allocation: the user can move it in Settings › Projects. */
+  readonly root: () => string | Promise<string>;
   /** An empty context for global Skill discovery before a Session exists. */
   readonly previewRoot: string;
   /** Durable reservations for replayable background creation requests. */
@@ -37,8 +40,7 @@ export function createProjectlessWorkspaces(options: {
 }) {
   const pending = new Map<string, Promise<string>>();
 
-  async function nextPath(): Promise<string> {
-    const root = await ensureDirectory(options.root);
+  async function nextPath(root: string): Promise<string> {
     const date = options.now?.() ?? new Date();
     const day = [
       date.getFullYear(),
@@ -57,18 +59,24 @@ export function createProjectlessWorkspaces(options: {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
-    const record: WorkspaceReservation = raw === undefined
-      ? { cwd: await nextPath(), initialized: false }
-      : JSON.parse(raw);
+    let record: WorkspaceReservation;
+    if (raw === undefined) {
+      const root = await ensureDirectory(await options.root());
+      record = { root, cwd: await nextPath(root), initialized: false };
+    } else {
+      record = JSON.parse(raw);
+    }
     if (
       !record ||
+      typeof record.root !== 'string' ||
+      !isAbsolute(record.root) ||
       typeof record.cwd !== 'string' ||
       !isAbsolute(record.cwd) ||
       typeof record.initialized !== 'boolean'
     ) {
       throw new Error('Invalid task workspace reservation');
     }
-    const root = await existingDirectory(options.root);
+    const root = await existingDirectory(record.root);
     const child = relative(root, record.cwd);
     if (!child || child === '..' || child.startsWith(`..${sep}`) || isAbsolute(child)) {
       throw new Error('Invalid task workspace reservation');
@@ -100,7 +108,7 @@ export function createProjectlessWorkspaces(options: {
           pending.delete(requestKey);
         }
       }
-      const cwd = await nextPath();
+      const cwd = await nextPath(await ensureDirectory(await options.root()));
       await mkdir(cwd);
       return cwd;
     },
