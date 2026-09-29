@@ -84,7 +84,7 @@ export interface TestServer {
 
 export async function startTestServer(
   overrides: Partial<ServerConfig> = {},
-  options: { upstreamFetch?: typeof fetch; googleCallbackUrl?: string } = {},
+  options: { upstreamFetch?: typeof fetch; googleCallbackUrl?: string; consoleDir?: string } = {},
 ): Promise<TestServer> {
   const db = new Kysely<Database>({ dialect: new PGliteDialect({ pglite: new PGlite() }) });
   await migrateToLatest(db);
@@ -121,6 +121,7 @@ export async function startTestServer(
     ...(options.upstreamFetch
       ? { upstreamClients: new UpstreamClients(ctx, options.upstreamFetch) }
       : {}),
+    ...(options.consoleDir ? { consoleDir: options.consoleDir } : {}),
   });
   return {
     app,
@@ -215,5 +216,95 @@ export async function refresh(server: TestServer, refreshToken: string) {
       client_id: 'maka-desktop',
       refresh_token: refreshToken,
     }).toString(),
+  });
+}
+
+export interface ConsoleBrowser {
+  /** The `Cookie` header the browser now sends to /admin. */
+  readonly cookie: string;
+  readonly csrfToken: string;
+  readonly userId: string;
+}
+
+/**
+ * Sign in to the admin console as `email` through `provider` and read the
+ * session back. Throws with the page's status when the sign-in is refused.
+ */
+export async function consoleSignIn(
+  server: TestServer,
+  provider: ScriptedProvider,
+  email: string,
+  options: {
+    readonly subject?: string;
+    readonly next?: string;
+    /** Open the provider's callback in a browser other than the one that started. */
+    readonly otherBrowser?: boolean;
+  } = {},
+): Promise<ConsoleBrowser> {
+  const code = `console-${email}-${Math.random()}`;
+  provider.answers.set(code, {
+    provider: provider.id,
+    subject: options.subject ?? email,
+    email,
+  });
+  const start = await server.app.inject({
+    method: 'GET',
+    url: `/admin/login/${provider.id}`,
+    ...(options.next ? { query: { next: options.next } } : {}),
+  });
+  if (start.statusCode !== 302) throw new Error(`console start answered ${start.statusCode}`);
+  const state = new URL(String(start.headers.location)).searchParams.get('state') ?? '';
+  const binding = [start.headers['set-cookie']]
+    .flat()
+    .map(String)
+    .find((value) => value.startsWith('maka_admin_login='));
+  if (!binding) throw new Error('No sign-in binding cookie was set');
+  const callback = await server.app.inject({
+    method: 'GET',
+    url: `/login/${provider.id}/callback`,
+    query: { code, state },
+    ...(options.otherBrowser ? {} : { headers: { cookie: binding.split(';')[0]! } }),
+  });
+  const location = String(callback.headers.location ?? '');
+  const cookies = [callback.headers['set-cookie']].flat().filter(Boolean).map(String);
+  if (callback.statusCode !== 302 || location.startsWith('/admin/login')) {
+    // Refused: back to the sign-in page, with the reason.
+    const refusal = new URL(location || '/', PUBLIC_URL).searchParams.get('error');
+    throw Object.assign(new Error(`console sign-in refused: ${refusal ?? callback.statusCode}`), {
+      refusal,
+      location,
+      cookies,
+    });
+  }
+  const setCookie = cookies.find((value) => value.startsWith('maka_admin='));
+  if (!setCookie) throw new Error('No console cookie was set');
+  const cookie = String(setCookie).split(';')[0]!;
+  const session = await server.app.inject({
+    method: 'GET',
+    url: '/admin/api/session',
+    headers: { cookie },
+  });
+  const body = session.json() as { csrfToken: string; user: { id: string } };
+  return { cookie, csrfToken: body.csrfToken, userId: body.user.id };
+}
+
+/** One call to the console's API as that browser would make it. */
+export function consoleCall(
+  server: TestServer,
+  browser: ConsoleBrowser,
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+  url: string,
+  payload?: unknown,
+) {
+  const changes = method !== 'GET';
+  return server.app.inject({
+    method,
+    url: `/admin/api${url}`,
+    headers: {
+      cookie: browser.cookie,
+      ...(changes ? { 'x-maka-csrf': browser.csrfToken, origin: PUBLIC_URL } : {}),
+      ...(payload !== undefined ? { 'content-type': 'application/json' } : {}),
+    },
+    ...(payload !== undefined ? { payload: JSON.stringify(payload) } : {}),
   });
 }

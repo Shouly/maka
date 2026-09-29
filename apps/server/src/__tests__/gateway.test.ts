@@ -94,7 +94,10 @@ function fakeAnthropic(plan: (number | 'stream' | 'json' | 'slow')[]) {
   return { calls, fetchImpl };
 }
 
-async function seedGateway(server: TestServer, routes: { name: string; priority: number }[]) {
+async function seedGateway(
+  server: TestServer,
+  routes: { name: string; priority: number; kind?: 'anthropic' | 'openrouter' }[],
+) {
   const now = server.clock.now;
   for (const route of routes) {
     const id = newId();
@@ -103,8 +106,10 @@ async function seedGateway(server: TestServer, routes: { name: string; priority:
       .values({
         id,
         name: route.name,
-        kind: 'anthropic',
-        config: JSON.stringify({ baseUrl: `https://${route.name}.test` }),
+        kind: route.kind ?? 'anthropic',
+        config: JSON.stringify(
+          route.kind === 'openrouter' ? {} : { baseUrl: `https://${route.name}.test` },
+        ),
         credential_sealed: server.ctx.secrets.seal(
           JSON.stringify({ apiKey: `key-${route.name}` }),
           `upstream:${id}`,
@@ -207,6 +212,29 @@ test('a stream passes through byte for byte, reaches the upstream as the org, an
     );
     assert.equal(row?.client_version, '0.3.0');
     assert.equal(row?.upstream_request_id, 'req_stream');
+  } finally {
+    await server.close();
+  }
+});
+
+test('an OpenRouter account is sent its key as a bearer token, at OpenRouter', async () => {
+  const upstream = fakeAnthropic(['stream']);
+  const server = await startTestServer({}, { upstreamFetch: upstream.fetchImpl });
+  try {
+    await seedGateway(server, [{ name: 'openrouter', priority: 0, kind: 'openrouter' }]);
+    const response = await server.app.inject({
+      method: 'POST',
+      url: '/model/anthropic/v1/messages',
+      headers: { authorization: `Bearer ${await accessToken(server)}` },
+      payload: message(),
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body, SSE);
+    const [call] = upstream.calls;
+    assert.equal(call?.url, 'https://openrouter.ai/api/v1/messages');
+    assert.equal(call?.headers.authorization, 'Bearer key-openrouter');
+    assert.equal(call?.headers['x-api-key'], undefined);
+    assert.equal(call?.body.model, 'openrouter-opus');
   } finally {
     await server.close();
   }
@@ -483,13 +511,15 @@ test("the caller cannot pick the organization's workspace or profile through bod
   }
 });
 
-test('an upstream that refuses the organization (401/403/404) hands over to the next route', async () => {
-  const upstream = fakeAnthropic([404, 'stream']);
+test('an upstream that refuses the organization (401/402/403/404) hands over to the next route', async () => {
+  // Out of credit, then no such model in its region.
+  const upstream = fakeAnthropic([402, 404, 'stream']);
   const server = await startTestServer({}, { upstreamFetch: upstream.fetchImpl });
   try {
     await seedGateway(server, [
       { name: 'primary', priority: 0 },
       { name: 'backup', priority: 1 },
+      { name: 'last', priority: 2 },
     ]);
     const response = await server.app.inject({
       method: 'POST',
@@ -498,7 +528,7 @@ test('an upstream that refuses the organization (401/403/404) hands over to the 
       payload: message(),
     });
     assert.equal(response.statusCode, 200);
-    assert.equal(upstream.calls.length, 2);
+    assert.equal(upstream.calls.length, 3);
   } finally {
     await server.close();
   }

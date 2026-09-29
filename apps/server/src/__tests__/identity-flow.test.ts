@@ -681,11 +681,29 @@ test('expired sign-in leftovers are purged after a day', async () => {
         state: 's',
       },
     });
-    assert.deepEqual(await purgeExpiredSignIns(server.ctx), { transactions: 0, refreshTokens: 0 });
+    const user = await server.db.selectFrom('users').select('id').executeTakeFirstOrThrow();
+    await server.db
+      .insertInto('admin_sessions')
+      .values({
+        id: crypto.randomUUID(),
+        token_hash: 'console-cookie-hash',
+        user_id: user.id,
+        csrf_token: 'csrf',
+        provider: 'google',
+        last_used_at: server.clock.now,
+        expires_at: new Date(server.clock.now.getTime() + 12 * 60 * 60 * 1000),
+      })
+      .execute();
+    assert.deepEqual(await purgeExpiredSignIns(server.ctx), {
+      transactions: 0,
+      refreshTokens: 0,
+      adminSessions: 0,
+    });
     server.advance(8 * 24 * 60 * 60 * 1000 + 1);
     const purged = await purgeExpiredSignIns(server.ctx);
     assert.equal(purged.transactions, 2);
     assert.equal(purged.refreshTokens, 1);
+    assert.equal(purged.adminSessions, 1);
   });
 });
 

@@ -17,9 +17,10 @@
  * under the License.
  */
 
-// Administration from the command line, until the admin console (design §3.2)
-// takes over: people, upstreams, models, quotas, usage. Reads the same
-// environment as the server; every change is written to the audit log.
+// Administration from the command line, beside the admin console (design
+// §3.2): people, upstreams, models, quotas, usage. Reads the same environment
+// as the server. The changes are administration.ts's, the console's own, so
+// the same rules hold and the same audit entries are written.
 //
 //   node dist/admin.js <group> <command> [options]
 
@@ -27,15 +28,25 @@ import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
-import { recordAudit } from './audit.js';
+import {
+  type AdminActor,
+  AdminRefused,
+  addModelRoute,
+  createModel,
+  createUpstream,
+  setQuota,
+  unlinkIdentity,
+  updateModel,
+  updateUpstream,
+  updateUser,
+} from './administration.js';
 import { loadConfig } from './config.js';
 import type { ServerContext } from './context.js';
 import { localSecretBox } from './crypto/secret-box.js';
-import { newId } from './crypto/tokens.js';
 import { connectPostgres } from './db/database.js';
 import { migrateToLatest } from './db/migrations.js';
-import type { Database, UpstreamKind } from './db/schema.js';
-import { validateUpstream } from './gateway/upstream-clients.js';
+import type { ConsoleUpstreamKind } from './admin-console/types.js';
+import type { Database } from './db/schema.js';
 
 const USAGE = `Usage: node dist/admin.js <group> <command> [options]
 
@@ -48,12 +59,12 @@ const USAGE = `Usage: node dist/admin.js <group> <command> [options]
                                        the next sign-in from that provider links afresh;
                                        devices signed in through it are signed out)
   upstreams list
-  upstreams add --name <n> --kind anthropic|vertex --config '<json>' --credential-file <path>
+  upstreams add --name <n> --kind anthropic|vertex|openrouter --config '<json>' --credential-file <path>
                anthropic: config {"baseUrl"?}, credential file {"apiKey": "..."}
                vertex:    config {"projectId", "region"}, credential file {"serviceAccount": <the GCP key JSON>}
   upstreams enable|disable <name>
   models list
-  models add --id <id> --protocol anthropic|openai|gemini --name <display name>
+  models add --id <id> --protocol anthropic --name <display name>
              [--capabilities '<json>'] [--cost-weight <n>] [--sort <n>]
   models route --model <id> --upstream <name> --upstream-model <name> [--priority <n>]
   models enable|disable <id>
@@ -105,13 +116,9 @@ function numberOption(
   return parsed;
 }
 
-/** Which gateway protocols an upstream kind can serve. */
-const KIND_PROTOCOLS: Readonly<Record<string, readonly string[]>> = {
-  anthropic: ['anthropic'],
-  vertex: ['anthropic', 'gemini'],
-  openai: ['openai'],
-  gemini: ['gemini'],
-};
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 export async function runAdmin(
   ctx: ServerContext,
@@ -145,13 +152,7 @@ export async function runAdmin(
   const [group, command, subject, extra] = positionals;
   const { db } = ctx;
   const now = ctx.now();
-  const audit = (
-    action: string,
-    targetType: string,
-    targetId: string,
-    detail: Record<string, unknown> = {},
-  ) =>
-    recordAudit(db, { action, targetType, targetId, detail: { ...detail, via: 'admin-cli' } }, now);
+  const actor: AdminActor = { userId: null, via: 'admin-cli' };
 
   switch (`${group} ${command}`) {
     case 'users list': {
@@ -172,12 +173,7 @@ export async function runAdmin(
       if (role !== 'member' && role !== 'org_admin')
         throw new UsageError('role must be member or org_admin');
       const user = await userByEmail(db, need(subject, 'email'));
-      await db
-        .updateTable('users')
-        .set({ org_role: role, updated_at: now })
-        .where('id', '=', user.id)
-        .execute();
-      await audit('user.role_changed', 'user', user.id, { orgRole: role });
+      await updateUser(ctx, actor, user.id, { orgRole: role });
       out(`${user.email} is now ${role}`);
       return;
     }
@@ -185,22 +181,7 @@ export async function runAdmin(
     case 'users activate': {
       const user = await userByEmail(db, need(subject, 'email'));
       const status = command === 'deactivate' ? 'deactivated' : 'active';
-      await db.transaction().execute(async (tx) => {
-        await tx
-          .updateTable('users')
-          .set({ status, updated_at: now })
-          .where('id', '=', user.id)
-          .execute();
-        if (status === 'deactivated') {
-          await tx
-            .updateTable('device_sessions')
-            .set({ revoked_at: now, revoke_reason: 'account_deactivated' })
-            .where('user_id', '=', user.id)
-            .where('revoked_at', 'is', null)
-            .execute();
-        }
-      });
-      await audit(`user.${command}d`, 'user', user.id);
+      await updateUser(ctx, actor, user.id, { status });
       out(`${user.email} is ${status}`);
       return;
     }
@@ -219,23 +200,7 @@ export async function runAdmin(
     case 'users unlink': {
       const user = await userByEmail(db, need(subject, 'email'));
       const provider = need(extra, 'provider');
-      const removed = await db.transaction().execute(async (tx) => {
-        const result = await tx
-          .deleteFrom('identity_links')
-          .where('user_id', '=', user.id)
-          .where('provider', '=', provider)
-          .executeTakeFirst();
-        await tx
-          .updateTable('device_sessions')
-          .set({ revoked_at: now, revoke_reason: 'identity_unlinked' })
-          .where('user_id', '=', user.id)
-          .where('provider', '=', provider)
-          .where('revoked_at', 'is', null)
-          .execute();
-        return Number(result.numDeletedRows);
-      });
-      if (removed === 0) throw new UsageError(`${user.email} has no ${provider} link`);
-      await audit('identity.unlinked', 'user', user.id, { provider });
+      await unlinkIdentity(ctx, actor, user.id, provider);
       out(`${user.email} is no longer linked to ${provider}`);
       return;
     }
@@ -253,7 +218,7 @@ export async function runAdmin(
     }
     case 'upstreams add': {
       const name = need(values.name, '--name');
-      const kind = need(values.kind, '--kind') as UpstreamKind;
+      const kind = need(values.kind, '--kind') as ConsoleUpstreamKind;
       const config = json(values.config, '--config');
       const credentialText = (
         await readFile(need(values['credential-file'], '--credential-file'), 'utf8')
@@ -264,33 +229,22 @@ export async function runAdmin(
       } catch {
         throw new UsageError('The credential file must hold JSON');
       }
-      validateUpstream(kind, config, credential);
-      const id = newId();
-      await db
-        .insertInto('upstreams')
-        .values({
-          id,
-          name,
-          kind,
-          config: JSON.stringify(config),
-          credential_sealed: ctx.secrets.seal(JSON.stringify(credential), `upstream:${id}`),
-          enabled: true,
-          updated_at: now,
-        })
-        .execute();
-      await audit('upstream.created', 'upstream', id, { name, kind });
+      if (!isRecord(config) || !isRecord(credential)) {
+        throw new UsageError('The config and the credential must be JSON objects');
+      }
+      await createUpstream(ctx, actor, { name, kind, config, credential });
       out(`Added upstream ${name} (${kind})`);
       return;
     }
     case 'upstreams enable':
     case 'upstreams disable': {
-      const result = await db
-        .updateTable('upstreams')
-        .set({ enabled: command === 'enable', updated_at: now })
+      const upstream = await db
+        .selectFrom('upstreams')
+        .select('id')
         .where('name', '=', need(subject, 'name'))
         .executeTakeFirst();
-      if (Number(result.numUpdatedRows) === 0) throw new UsageError(`No upstream named ${subject}`);
-      await audit(`upstream.${command}d`, 'upstream', subject!);
+      if (!upstream) throw new UsageError(`No upstream named ${subject}`);
+      await updateUpstream(ctx, actor, upstream.id, { enabled: command === 'enable' });
       out(`${subject} ${command}d`);
       return;
     }
@@ -325,23 +279,14 @@ export async function runAdmin(
     }
     case 'models add': {
       const id = need(values.id, '--id');
-      const protocol = need(values.protocol, '--protocol');
-      if (!['anthropic', 'openai', 'gemini'].includes(protocol))
-        throw new UsageError('protocol must be anthropic, openai or gemini');
-      await db
-        .insertInto('models')
-        .values({
-          id,
-          protocol: protocol as 'anthropic' | 'openai' | 'gemini',
-          display_name: need(values.name, '--name'),
-          capabilities: JSON.stringify(json(values.capabilities, '--capabilities')),
-          cost_weight: numberOption(values['cost-weight'], '--cost-weight', 1),
-          enabled: true,
-          sort_order: numberOption(values.sort, '--sort', 0, true),
-          updated_at: now,
-        })
-        .execute();
-      await audit('model.created', 'model', id, { protocol });
+      await createModel(ctx, actor, {
+        id,
+        protocol: need(values.protocol, '--protocol') as 'anthropic',
+        displayName: need(values.name, '--name'),
+        capabilities: json(values.capabilities, '--capabilities'),
+        costWeight: numberOption(values['cost-weight'], '--cost-weight', 1),
+        sortOrder: numberOption(values.sort, '--sort', 0, true),
+      });
       out(`Added model ${id}`);
       return;
     }
@@ -349,52 +294,24 @@ export async function runAdmin(
       const modelId = need(values.model, '--model');
       const upstream = await db
         .selectFrom('upstreams')
-        .selectAll()
+        .select('id')
         .where('name', '=', need(values.upstream, '--upstream'))
         .executeTakeFirst();
       if (!upstream) throw new UsageError(`No upstream named ${values.upstream}`);
-      const model = await db
-        .selectFrom('models')
-        .select('protocol')
-        .where('id', '=', modelId)
-        .executeTakeFirst();
-      if (!model) throw new UsageError(`No model ${modelId}`);
-      if (!KIND_PROTOCOLS[upstream.kind]?.includes(model.protocol)) {
-        throw new UsageError(
-          `${upstream.name} (${upstream.kind}) cannot serve ${model.protocol} models`,
-        );
-      }
-      await db
-        .insertInto('model_routes')
-        .values({
-          model_id: modelId,
-          upstream_id: upstream.id,
-          upstream_model: need(values['upstream-model'], '--upstream-model'),
-          priority: numberOption(values.priority, '--priority', 0, true),
-        })
-        .onConflict((oc) =>
-          oc.columns(['model_id', 'upstream_id']).doUpdateSet((eb) => ({
-            upstream_model: eb.ref('excluded.upstream_model'),
-            priority: eb.ref('excluded.priority'),
-          })),
-        )
-        .execute();
-      await audit('model.routed', 'model', modelId, {
-        upstream: upstream.name,
-        upstreamModel: values['upstream-model'],
+      const upstreamModel = need(values['upstream-model'], '--upstream-model');
+      await addModelRoute(ctx, actor, modelId, {
+        upstreamId: upstream.id,
+        upstreamModel,
+        priority: numberOption(values.priority, '--priority', 0, true),
       });
-      out(`${modelId} -> ${upstream.name}:${values['upstream-model']}`);
+      out(`${modelId} -> ${values.upstream}:${upstreamModel}`);
       return;
     }
     case 'models enable':
     case 'models disable': {
-      const result = await db
-        .updateTable('models')
-        .set({ enabled: command === 'enable', updated_at: now })
-        .where('id', '=', need(subject, 'model id'))
-        .executeTakeFirst();
-      if (Number(result.numUpdatedRows) === 0) throw new UsageError(`No model ${subject}`);
-      await audit(`model.${command}d`, 'model', subject!);
+      await updateModel(ctx, actor, need(subject, 'model id'), {
+        enabled: command === 'enable',
+      });
       out(`${subject} ${command}d`);
       return;
     }
@@ -418,28 +335,15 @@ export async function runAdmin(
       const limit = Number(need(values.limit, '--limit'));
       if (!Number.isFinite(limit) || limit < 0)
         throw new UsageError('limit must be a non-negative number');
-      const scopeId =
-        scope === 'user' ? (await userByEmail(db, need(values.email, '--email'))).id : null;
-      await db.transaction().execute(async (tx) => {
-        await tx
-          .deleteFrom('quotas')
-          .where('scope', '=', scope)
-          .where('period', '=', period)
-          .where((eb) => (scopeId ? eb('scope_id', '=', scopeId) : eb('scope_id', 'is', null)))
-          .execute();
-        await tx
-          .insertInto('quotas')
-          .values({
-            id: newId(),
-            scope,
-            scope_id: scopeId,
-            period,
-            limit_units: limit,
-            updated_at: now,
-          })
-          .execute();
-      });
-      await audit('quota.set', 'quota', `${scope}:${scopeId ?? '*'}:${period}`, { limit });
+      await setQuota(
+        ctx,
+        actor,
+        scope === 'user'
+          ? { scope, userId: (await userByEmail(db, need(values.email, '--email'))).id }
+          : { scope },
+        period,
+        limit,
+      );
       out(`Quota ${scope} ${period}: ${limit}`);
       return;
     }
@@ -484,7 +388,9 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop()
       (line) => console.log(line),
     );
   } catch (error) {
-    console.error(error instanceof UsageError ? error.message : error);
+    console.error(
+      error instanceof UsageError || error instanceof AdminRefused ? error.message : error,
+    );
     process.exitCode = 1;
   } finally {
     await db.destroy();

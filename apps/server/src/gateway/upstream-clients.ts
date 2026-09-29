@@ -46,26 +46,46 @@ export interface AnthropicFamilyClient {
   beta: { messages: { create(body: never, options?: unknown): RawCall } };
 }
 
-const anthropicConfig = z.object({ baseUrl: z.url().optional() });
-const anthropicCredential = z.object({ apiKey: z.string().min(1) });
-const vertexConfig = z.object({ projectId: z.string().min(1), region: z.string().min(1) });
-const vertexCredential = z.object({ serviceAccount: z.record(z.string(), z.unknown()) });
+// Strict: a misspelt key (`baseURL`) would otherwise be stored, shown back,
+// and ignored, and the request would go to the default address.
+const anthropicConfig = z.strictObject({ baseUrl: z.url().optional() });
+const anthropicCredential = z.strictObject({ apiKey: z.string().min(1) });
+const vertexConfig = z.strictObject({ projectId: z.string().min(1), region: z.string().min(1) });
+const vertexCredential = z.strictObject({ serviceAccount: z.record(z.string(), z.unknown()) });
+const openRouterConfig = z.strictObject({});
+/** OpenRouter's one address: its Anthropic-compatible Messages endpoint lives under it. */
+const OPENROUTER_BASE_URL = 'https://openrouter.ai/api';
 
-/** Validate an upstream's settings before they are stored. */
-export function validateUpstream(
+/**
+ * The non-secret half on its own (a changed base URL keeps the stored key),
+ * as it is to be stored: only the keys the kind knows.
+ */
+export function validateUpstreamConfig(
   kind: UpstreamRow['kind'],
   config: unknown,
-  credential: unknown,
-): void {
+): Record<string, unknown> {
   switch (kind) {
     case 'anthropic':
-      anthropicConfig.parse(config);
-      anthropicCredential.parse(credential);
-      return;
+      return anthropicConfig.parse(config);
     case 'vertex':
-      vertexConfig.parse(config);
-      vertexCredential.parse(credential);
-      return;
+      return vertexConfig.parse(config);
+    case 'openrouter':
+      return openRouterConfig.parse(config);
+    default:
+      throw new Error(`Upstream kind ${kind} is not supported yet`);
+  }
+}
+
+export function validateUpstreamCredential(
+  kind: UpstreamRow['kind'],
+  credential: unknown,
+): Record<string, unknown> {
+  switch (kind) {
+    case 'anthropic':
+    case 'openrouter':
+      return anthropicCredential.parse(credential);
+    case 'vertex':
+      return vertexCredential.parse(credential);
     default:
       throw new Error(`Upstream kind ${kind} is not supported yet`);
   }
@@ -97,6 +117,17 @@ function build(
         apiKey,
         authToken: null,
         baseURL: config.baseUrl ?? 'https://api.anthropic.com',
+        ...COMMON,
+        ...fetchOption,
+      }) as unknown as AnthropicFamilyClient;
+    }
+    case 'openrouter': {
+      const { apiKey } = anthropicCredential.parse(credential);
+      // OpenRouter takes its key as a bearer token, never as x-api-key.
+      return new Anthropic({
+        apiKey: null,
+        authToken: apiKey,
+        baseURL: OPENROUTER_BASE_URL,
         ...COMMON,
         ...fetchOption,
       }) as unknown as AnthropicFamilyClient;

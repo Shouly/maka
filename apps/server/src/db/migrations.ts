@@ -206,6 +206,31 @@ const MIGRATIONS: Record<string, Migration> = {
     `ALTER TABLE users ADD COLUMN nickname text`,
     `ALTER TABLE users ADD COLUMN preferences text`,
   ),
+  // The admin console's browser sessions (§3.2): a cookie, not the desktop's
+  // tokens. Only the cookie's hash is kept; the CSRF token goes back to the
+  // page with the session.
+  '0005_admin_sessions': statements(
+    `CREATE TABLE admin_sessions (
+      id uuid PRIMARY KEY,
+      token_hash text NOT NULL UNIQUE,
+      user_id uuid NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+      csrf_token text NOT NULL,
+      provider text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      last_used_at timestamptz NOT NULL,
+      expires_at timestamptz NOT NULL,
+      revoked_at timestamptz,
+      ip text,
+      user_agent text
+    )`,
+    `CREATE INDEX admin_sessions_user ON admin_sessions (user_id)`,
+  ),
+  // OpenRouter's Anthropic-compatible endpoint, as a kind of its own: it
+  // takes the key as a bearer token where Anthropic takes x-api-key.
+  '0006_openrouter': statements(
+    `ALTER TABLE upstreams DROP CONSTRAINT upstreams_kind_check`,
+    `ALTER TABLE upstreams ADD CONSTRAINT upstreams_kind_check CHECK (kind IN ('anthropic', 'vertex', 'openrouter', 'bedrock', 'openai', 'azure-openai', 'openai-compatible', 'gemini'))`,
+  ),
 };
 
 export async function migrateToLatest(db: Kysely<Database>): Promise<void> {

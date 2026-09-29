@@ -20,6 +20,7 @@
 // Assembles the HTTP server from its modules. Everything it needs is passed
 // in, so tests build the same server over an in-process database.
 
+import cookie from '@fastify/cookie';
 import formbody from '@fastify/formbody';
 import Fastify, { type FastifyInstance } from 'fastify';
 import {
@@ -34,6 +35,7 @@ import { UpstreamClients } from './gateway/upstream-clients.js';
 import type { AccessTokens } from './identity/access-tokens.js';
 import type { IdentityProvider } from './identity/providers/types.js';
 import { registerIdentityRoutes } from './identity/routes.js';
+import { registerAdminConsole, wantsNotFoundPage } from './admin-console/routes.js';
 
 export interface ServerDependencies {
   readonly providers: ReadonlyMap<string, IdentityProvider>;
@@ -42,6 +44,8 @@ export interface ServerDependencies {
   readonly upstreamClients?: UpstreamClients;
   /** Omit to log nothing (tests). */
   readonly logger?: { readonly level: string };
+  /** The admin console's built page; defaults to dist/console. */
+  readonly consoleDir?: string;
 }
 
 /** A hop count becomes "trust the nearest N proxies"; addresses pass through. */
@@ -74,6 +78,8 @@ export async function buildServer(
     bodyLimit: 1024 * 1024,
   });
   await app.register(formbody);
+  // The admin console's session, and the sign-in binding its callback reads.
+  await app.register(cookie);
   app.addHook('onRequest', clientVersionGate(ctx));
 
   app.setErrorHandler((error, request, reply) => {
@@ -90,9 +96,6 @@ export async function buildServer(
     request.log.error({ err: error }, 'request failed');
     return sendPlatformError(reply, 500, 'upstream_unavailable', 'Internal server error');
   });
-  app.setNotFoundHandler((_request, reply) =>
-    sendPlatformError(reply, 404, 'not_found', 'Not found'),
-  );
 
   app.get('/healthz', async () => {
     await ctx.db.selectFrom('users').select('id').limit(1).execute();
@@ -124,6 +127,17 @@ export async function buildServer(
   );
 
   registerIdentityRoutes(app, ctx, deps);
+  const sendConsolePage = await registerAdminConsole(app, ctx, {
+    providers: deps.providers,
+    ...(deps.consoleDir ? { consoleDir: deps.consoleDir } : {}),
+  });
+  // A browser that opened an address the server does not have gets a page
+  // saying so; a program gets the error in JSON, as everywhere else.
+  app.setNotFoundHandler((request, reply) =>
+    wantsNotFoundPage(request)
+      ? sendConsolePage(reply, 404)
+      : sendPlatformError(reply, 404, 'not_found', 'Not found'),
+  );
   await registerAnthropicGateway(app, ctx, {
     accessTokens: deps.accessTokens,
     clients: deps.upstreamClients ?? new UpstreamClients(ctx),

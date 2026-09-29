@@ -109,6 +109,7 @@ Maka 桌面端                              Platform API（单体，TypeScript�
 - 阶段 2：组织策略、技能与插件目录。
 - 阶段 3：频道管理、每个频道的 agent 配置与授权、消息保留期限。
 - 前端用 React + 与 Maka 相同的设计系统，作为 `apps/server` 里的一个单页应用，由服务端直接托管。
+- **实现状态（2026-09-29）**：阶段 1 的页面已实现（成员与设备、额度、模型与路由、上游服务、用量、审计日志），在 `/admin`；方案与细节见 `admin-console-plan.md`。
 
 ## 4. 身份与组织（阶段 1）
 
@@ -170,7 +171,7 @@ Maka 本地存储：现在的 `packages/storage/src/credential-store.ts` 是权�
 
 | 对 Maka 暴露的接口 | 可配置的上游 |
 |---|---|
-| `POST /model/anthropic/v1/messages` | Anthropic API、AWS Bedrock、Google Vertex AI |
+| `POST /model/anthropic/v1/messages` | Anthropic API、AWS Bedrock、Google Vertex AI、OpenRouter（它的 Anthropic 兼容接口，密钥按 Bearer 发送） |
 | `POST /model/openai/v1/chat/completions`、`/v1/responses` | OpenAI、Azure OpenAI、任何 OpenAI 兼容服务（vLLM 等自部署模型，或其他厂商） |
 | `POST /model/gemini/...` | Gemini API、Google Vertex AI |
 | `GET /model/catalog` | 当前用户可用的模型 |

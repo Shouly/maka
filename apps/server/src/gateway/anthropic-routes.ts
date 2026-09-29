@@ -93,10 +93,11 @@ interface UpstreamFailure {
 
 /**
  * SDK errors come from several copies of the SDK, so they are read by shape,
- * not class. A 401/403/404 is this upstream's problem (a revoked key, a
- * project without access, a model missing in its region), so the next route
- * gets the request. An error with no status that is not a connection failure
- * is the SDK refusing the body before sending it: the caller's to fix.
+ * not class. A 401/402/403/404 is this upstream's problem (a revoked key, an
+ * account out of credit, a project without access, a model missing in its
+ * region), so the next route gets the request. An error with no status that
+ * is not a connection failure is the SDK refusing the body before sending it:
+ * the caller's to fix.
  */
 function upstreamFailure(error: unknown): UpstreamFailure {
   const status = (error as { status?: unknown }).status;
@@ -109,6 +110,7 @@ function upstreamFailure(error: unknown): UpstreamFailure {
       ...(retryAfter ? { retryAfter } : {}),
       retryable:
         status === 401 ||
+        status === 402 ||
         status === 403 ||
         status === 404 ||
         status === 408 ||

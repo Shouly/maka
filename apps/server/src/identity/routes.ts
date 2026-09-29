@@ -39,6 +39,9 @@ import type { ServerContext } from '../context.js';
 import { newOpaqueToken, pkceChallenge, sha256Hex } from '../crypto/tokens.js';
 import { authenticate, sendPlatformError } from '../http/common.js';
 import { renderError, renderProviderChoice, requestLocale, sendHtml } from '../http/pages.js';
+import { completeConsoleSignIn } from '../admin-console/sign-in.js';
+import { beginProviderSignIn, providerCallbackUrl } from './provider-sign-in.js';
+import { ADMIN_CONSOLE_CLIENT_ID } from '../admin-console/session.js';
 import type { AccessTokens } from './access-tokens.js';
 import { resolveAccount } from './accounts.js';
 import { IdentityRefused, type IdentityProvider } from './providers/types.js';
@@ -106,9 +109,6 @@ export function registerIdentityRoutes(
   },
 ): void {
   const { providers, accessTokens } = deps;
-  const callbackUrl = (providerId: string) =>
-    providers.get(providerId)?.callbackUrl ??
-    `${ctx.config.publicUrl}/login/${providerId}/callback`;
 
   app.get('/oauth/authorize', async (request, reply) => {
     const query = request.query as Record<string, unknown>;
@@ -162,7 +162,7 @@ export function registerIdentityRoutes(
     // the choice here.
     const chosen = providers.get(singleString(query.provider) ?? '');
     if (chosen) {
-      const target = await startProvider(chosen, id);
+      const target = await beginProviderSignIn(ctx, chosen, id);
       if (target) return reply.redirect(target, 302);
     }
     const choices = [...providers.values()].map((provider) => ({
@@ -172,28 +172,6 @@ export function registerIdentityRoutes(
     return sendHtml(reply, 200, renderProviderChoice(locale, choices));
   });
 
-  /** Bind a transaction to a provider and return where to send the browser; undefined once expired. */
-  async function startProvider(
-    provider: IdentityProvider,
-    txnId: string,
-  ): Promise<string | undefined> {
-    const providerState = newOpaqueToken();
-    const nonce = newOpaqueToken();
-    const updated = await ctx.db
-      .updateTable('login_transactions')
-      .set({ provider: provider.id, provider_state: providerState, nonce })
-      .where('id', '=', txnId)
-      .where('consumed_at', 'is', null)
-      .where('expires_at', '>', ctx.now())
-      .executeTakeFirst();
-    if (Number(updated.numUpdatedRows) !== 1) return undefined;
-    return provider.authorizationUrl({
-      state: providerState,
-      nonce,
-      redirectUri: callbackUrl(provider.id),
-    });
-  }
-
   app.get('/login/:provider/start', async (request, reply) => {
     const locale = requestLocale(request);
     const provider = providers.get((request.params as { provider: string }).provider);
@@ -201,7 +179,7 @@ export function registerIdentityRoutes(
     if (!provider || !txnId) {
       return sendHtml(reply, 400, renderError(locale, 'Invalid sign-in request'));
     }
-    const target = await startProvider(provider, txnId);
+    const target = await beginProviderSignIn(ctx, provider, txnId);
     if (!target) return sendHtml(reply, 400, renderError(locale, 'This sign-in has expired'));
     return reply.redirect(target, 302);
   });
@@ -229,6 +207,19 @@ export function registerIdentityRoutes(
       .executeTakeFirst();
     if (!txn || !txn.nonce)
       return sendHtml(reply, 400, renderError(locale, 'This sign-in has expired'));
+    // The admin console's sign-ins share the provider's registered callback;
+    // they end in a browser session, not a code for the desktop.
+    if (txn.client_id === ADMIN_CONSOLE_CLIENT_ID) {
+      return completeConsoleSignIn(ctx, request, reply, {
+        provider,
+        transaction: {
+          redirectUri: txn.redirect_uri,
+          nonce: txn.nonce,
+          binding: txn.code_challenge,
+        },
+        code: singleString(query.code),
+      });
+    }
     const back = (params: Record<string, string>) =>
       redirectToClient(reply, txn.redirect_uri, { ...params, state: txn.client_state });
     const code = singleString(query.code);
@@ -239,7 +230,7 @@ export function registerIdentityRoutes(
       const identity = await provider.exchange({
         code,
         nonce: txn.nonce,
-        redirectUri: callbackUrl(provider.id),
+        redirectUri: providerCallbackUrl(ctx, provider),
       });
       const account = await resolveAccount(ctx, identity);
       const authorizationCode = newOpaqueToken();

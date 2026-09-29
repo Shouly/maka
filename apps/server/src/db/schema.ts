@@ -121,6 +121,23 @@ export interface SigningKeysTable {
   retired_at: Date | null;
 }
 
+/** One signed-in browser of the admin console (§3.2). */
+export interface AdminSessionsTable {
+  id: string;
+  /** SHA-256 of the cookie's token; the token itself is never stored. */
+  token_hash: string;
+  user_id: string;
+  /** Sent back on every change the page makes, beside the cookie. */
+  csrf_token: string;
+  provider: string;
+  created_at: CreatedAt;
+  last_used_at: Date;
+  expires_at: Date;
+  revoked_at: Date | null;
+  ip: string | null;
+  user_agent: string | null;
+}
+
 export interface AuditEventsTable {
   id: Generated<string>;
   at: CreatedAt;
@@ -135,6 +152,7 @@ export interface AuditEventsTable {
 export type UpstreamKind =
   | 'anthropic'
   | 'vertex'
+  | 'openrouter'
   | 'bedrock'
   | 'openai'
   | 'azure-openai'
@@ -214,6 +232,7 @@ export interface Database {
   device_sessions: DeviceSessionsTable;
   refresh_tokens: RefreshTokensTable;
   signing_keys: SigningKeysTable;
+  admin_sessions: AdminSessionsTable;
   audit_events: AuditEventsTable;
   upstreams: UpstreamsTable;
   models: ModelsTable;

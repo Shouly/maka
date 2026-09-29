@@ -29,7 +29,7 @@ export const HOUSEKEEPING_INTERVAL_MS = 60 * 60 * 1000;
 
 export async function purgeExpiredSignIns(
   ctx: ServerContext,
-): Promise<{ transactions: number; refreshTokens: number }> {
+): Promise<{ transactions: number; refreshTokens: number; adminSessions: number }> {
   const before = new Date(ctx.now().getTime() - KEEP_EXPIRED_MS);
   // Their authorization codes go with them (ON DELETE CASCADE).
   const transactions = await ctx.db
@@ -40,8 +40,13 @@ export async function purgeExpiredSignIns(
     .deleteFrom('refresh_tokens')
     .where('expires_at', '<', before)
     .executeTakeFirst();
+  const adminSessions = await ctx.db
+    .deleteFrom('admin_sessions')
+    .where('expires_at', '<', before)
+    .executeTakeFirst();
   return {
     transactions: Number(transactions.numDeletedRows),
     refreshTokens: Number(refreshTokens.numDeletedRows),
+    adminSessions: Number(adminSessions.numDeletedRows),
   };
 }

@@ -1,0 +1,14 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "incremental": false,
+    "types": ["vite/client", "node"],
+    "paths": {
+      "@desktop/*": ["../../desktop/src/renderer/*"],
+      "@maka/ui": ["../../../packages/ui/src/locale-context.tsx"]
+    }
+  },
+  "include": ["src", "vite.config.ts"]
+}
