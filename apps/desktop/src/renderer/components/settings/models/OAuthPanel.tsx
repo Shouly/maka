@@ -171,7 +171,12 @@ export function OAuthPanel(props: {
       control={
         <span className="flex items-center gap-2">
           {flow.stateHint !== null ? (
-            <Button variant="secondary" onClick={flow.cancelLogin}>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="rounded-[7px] text-sm"
+              onClick={flow.cancelLogin}
+            >
               {copy.detail.cancel}
             </Button>
           ) : props.connectionId !== undefined && signedIn ? (
@@ -196,13 +201,21 @@ export function OAuthPanel(props: {
           ) : (
             <>
               {capabilities.canImportLocalCredential && (
-                <Button variant="secondary" disabled={busy || !props.host} onClick={importLocal}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-[7px] text-sm"
+                  disabled={busy || !props.host}
+                  onClick={importLocal}
+                >
                   {section.importCredential}
                 </Button>
               )}
               {!enrollmentBlocked && (
                 <Button
                   variant="secondary"
+                  size="sm"
+                  className="rounded-[7px] text-sm"
                   disabled={busy || !props.host}
                   onClick={() => void flow.startLogin()}
                 >

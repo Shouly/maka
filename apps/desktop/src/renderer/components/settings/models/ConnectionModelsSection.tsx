@@ -43,16 +43,25 @@ import {
   type ThinkingLevel,
 } from '@maka/core/model-thinking';
 import { getConversationCopy, useUiLocale } from '@maka/ui';
-import { connectionModelRows, toggledModelIds } from '../../../lib/connection-model-rows.js';
+import {
+  connectionModelRows,
+  toggledModelIds,
+  type ConnectionModelRow,
+} from '../../../lib/connection-model-rows.js';
 import { Anthropicon } from '../../icons/Anthropicon.js';
 import { Button } from '../../ui/button.js';
 import { checkboxBoxClass, CHECKBOX_TICK_SIZE } from '../../ui/checkbox-box.js';
 import { Input } from '../../ui/input.js';
+import { statusChipClass, statusChipToneClass } from '../../ui/status-chip.js';
 import { Switch } from '../../ui/switch.js';
 import { AddModelDialog } from './AddModelDialog.js';
 import { SettingsModal } from '../settings-kit.js';
 import { SettingsRow, SettingsSection } from '../settings-row.js';
+import { cn } from '../../../lib/cn.js';
 import { getSettingsModelsCopy } from '../../../locales/settings-models-copy.js';
+
+/** More models than this and the list gets a search box. */
+const SEARCHABLE_FROM = 8;
 
 export function ConnectionModelsSection(props: {
   connection: ProjectedLlmConnection;
@@ -72,10 +81,19 @@ export function ConnectionModelsSection(props: {
 
   const entries = props.connection.catalogEntries;
   const enabledIds = useMemo(() => connectionEnabledModelIds(props.connection), [props.connection]);
+  // The models that were on when the page opened lead the list, so a catalog
+  // of hundreds opens on the few in use. Switching one does not move it: a
+  // row that jumps away from the pointer is how the wrong one gets switched.
+  const [inUse] = useState(() => new Set(enabledIds));
   // The catalog's models AND anything else this connection still has enabled.
-  const rows = useMemo(() => connectionModelRows(entries, enabledIds), [entries, enabledIds]);
+  const rows = useMemo(() => {
+    const all = connectionModelRows(entries, enabledIds);
+    return [...all.filter((row) => inUse.has(row.id)), ...all.filter((row) => !inUse.has(row.id))];
+  }, [entries, enabledIds, inUse]);
   const relay = isRelayProviderType(props.connection.providerType);
-  const needle = filter.trim().toLowerCase();
+  // The search applies only while it is on screen: a list that drops to a
+  // readable length must not stay narrowed by a box no longer there.
+  const needle = rows.length > SEARCHABLE_FROM ? filter.trim().toLowerCase() : '';
   const shown = needle
     ? rows.filter(
         (row) =>
@@ -114,28 +132,43 @@ export function ConnectionModelsSection(props: {
       description={copy.detail.modelManagementHelp}
       action={
         <span className="flex items-center gap-2">
-          <Button variant="secondary" disabled={props.busy} onClick={() => setAddOpen(true)}>
-            {copy.detail.addModel}
+          <Button
+            variant="secondary"
+            size="sm"
+            className="rounded-[7px] text-sm"
+            disabled={props.busy || props.fetching}
+            onClick={props.onFetchModels}
+          >
+            {props.fetching ? copy.sources.refreshing : copy.sources.refresh}
           </Button>
-          <Button variant="secondary" disabled={props.busy} onClick={props.onFetchModels}>
-            {props.fetching ? copy.page.modelsLoading : copy.detail.updateModels}
+          <Button
+            variant="secondary"
+            size="sm"
+            className="rounded-[7px] text-sm"
+            disabled={props.busy}
+            onClick={() => setAddOpen(true)}
+          >
+            {copy.detail.addModel}
           </Button>
         </span>
       }
     >
-      {/* The table toolbar: the search at the left, the count at the right. */}
-      <div className="flex items-center justify-between gap-4 pb-2">
-        <Input
-          aria-label={copy.detail.filterModels}
-          placeholder={copy.detail.filterModels}
-          className="w-full max-w-md"
-          value={filter}
-          onChange={(event) => setFilter(event.target.value)}
-        />
-        <span className="shrink-0 text-sm leading-5 text-text-muted">
-          {copy.detail.modelsSummary(rows.filter((row) => row.enabled).length, rows.length)}
-        </span>
-      </div>
+      {/* The table toolbar: the search at the left, the count at the right. A
+          list that fits on the page is read, not searched. */}
+      {rows.length > SEARCHABLE_FROM && (
+        <div className="flex items-center justify-between gap-4 pb-2">
+          <Input
+            aria-label={copy.detail.filterModels}
+            placeholder={copy.detail.filterModels}
+            className="w-full max-w-md"
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+          />
+          <span className="shrink-0 text-sm leading-5 text-text-muted">
+            {copy.detail.modelsSummary(rows.filter((row) => row.enabled).length, rows.length)}
+          </span>
+        </div>
+      )}
 
       {rows.length === 0 && <SettingsRow title={copy.detail.noModels} control={null} />}
 
@@ -153,27 +186,13 @@ export function ConnectionModelsSection(props: {
               <span className="flex min-w-0 items-center gap-2">
                 <span className="truncate">{label}</span>
                 {entry?.isDefault && (
-                  <span className="shrink-0 text-[0.8125rem] text-text-muted">
-                    {copy.page.defaultModel}
+                  <span className={cn(statusChipClass, statusChipToneClass('active'))}>
+                    {copy.panel.default}
                   </span>
                 )}
               </span>
             }
-            description={
-              <span className="flex flex-wrap items-center gap-x-2">
-                <span className="font-mono text-[0.75rem]">{row.id}</span>
-                {row.missingFromCatalog && (
-                  <span className="text-text-muted">{copy.detail.modelNotOffered}</span>
-                )}
-                {entry?.contextWindow !== undefined && (
-                  <span>{copy.detail.contextToken(String(entry.contextWindow))}</span>
-                )}
-                {entry?.supportsVision && <span>{copy.detail.visionToken}</span>}
-                {entry !== undefined && entry.thinkingSource !== 'none' && (
-                  <span>{copy.detail.thinkingSourceToken[entry.thinkingSource]}</span>
-                )}
-              </span>
-            }
+            description={<ModelFacts row={row} />}
             control={
               <span className="flex items-center gap-3">
                 {/* Nothing to declare capabilities against without a catalog entry. */}
@@ -250,4 +269,34 @@ export function ConnectionModelsSection(props: {
       />
     </SettingsSection>
   );
+}
+
+/** Under a model's name: its id, then what it takes and does. */
+export function ModelFacts(props: { row: ConnectionModelRow }) {
+  const copy = getSettingsModelsCopy(useUiLocale());
+  const { row } = props;
+  const entry = row.entry;
+  const facts = [
+    row.missingFromCatalog ? copy.detail.modelNotOffered : undefined,
+    entry?.contextWindow === undefined
+      ? undefined
+      : copy.detail.contextToken(compactTokens(entry.contextWindow)),
+    entry?.supportsVision ? copy.detail.visionToken : undefined,
+    entry === undefined || entry.thinkingSource === 'none'
+      ? undefined
+      : copy.detail.thinkingSourceToken[entry.thinkingSource],
+  ].filter(Boolean);
+  return (
+    <span className="block truncate">
+      <span data-mono="true">{row.id}</span>
+      {facts.length > 0 && ` · ${facts.join(' · ')}`}
+    </span>
+  );
+}
+
+/** A context window as people say it: 200K, 1M. */
+function compactTokens(tokens: number): string {
+  if (tokens >= 1_000_000) return `${Math.round(tokens / 100_000) / 10}M`;
+  if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}K`;
+  return String(tokens);
 }

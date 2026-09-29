@@ -48,6 +48,7 @@ export function ModelCatalogStatusRow(props: {
   const copy = getSettingsModelsCopy(locale);
   const [status, setStatus] = useState<DesktopModelCatalogStatus | undefined>();
   const [refreshing, setRefreshing] = useState(false);
+  const [unreadable, setUnreadable] = useState(false);
   const host = props.host;
   // A catalog the Host swapped in the background re-resolves every connection
   // and announces it; re-reading on that announcement keeps this line current.
@@ -56,23 +57,43 @@ export function ModelCatalogStatusRow(props: {
   useEffect(() => {
     if (!host) return;
     let live = true;
-    void getModelCatalogStatus(host)
-      .then((next) => {
-        if (live) setStatus(next);
-      })
-      .catch(() => {});
+    void getModelCatalogStatus(host).then(
+      (next) => {
+        if (!live) return;
+        setStatus(next);
+        setUnreadable(false);
+      },
+      () => {
+        if (live) setUnreadable(true);
+      },
+    );
     return () => {
       live = false;
     };
   }, [host?.hostId, host?.profileId, catalogRevision]);
 
   return (
+    // Under the section's own title, the row is the state: which table, since when.
     <SettingsRow
-      title={copy.page.catalogTitle}
-      description={status ? modelCatalogDescription(status, copy, locale) : undefined}
+      title={
+        status ? (
+          modelCatalogDescription(status, copy, locale)
+        ) : !host || unreadable ? (
+          copy.sources.catalogUnreadable
+        ) : (
+          // A span, not the block Skeleton: the title is phrasing content.
+          <span
+            aria-hidden
+            className="inline-block h-4 w-56 animate-pulse rounded-md bg-skeleton align-middle"
+          />
+        )
+      }
+      description={copy.sources.catalogHelp}
       control={
         <Button
           variant="secondary"
+          size="sm"
+          className="rounded-[7px] text-sm"
           disabled={!host || refreshing}
           onClick={() => {
             if (!host) return;

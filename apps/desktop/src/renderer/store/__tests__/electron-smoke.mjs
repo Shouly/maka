@@ -1176,8 +1176,8 @@ try {
   await providers.getByText('E2E', { exact: true }).first().waitFor();
   await new Promise((settle) => setTimeout(settle, 400));
   await page.screenshot({ path: SHOT('phase5b-models-light.png') });
-  // A connection is a table row; the row itself opens it.
-  await page.getByRole('row', { name: 'Open connection E2E', exact: true }).click();
+  // A connection is a setting row; its Manage link opens it.
+  await page.getByRole('button', { name: 'Manage E2E', exact: true }).click();
   const connectionDetail = page.locator('[data-maka-contract="connection-detail"]');
   await connectionDetail.waitFor();
   // The detail face replaces the dialog's page and nothing else: the window

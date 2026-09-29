@@ -154,6 +154,13 @@ interface ConnectionDetailProps {
   onError: (title: string, error: unknown) => void;
 }
 
+/** The 28px secondary the Preferences pages use: 14px text, 10px sides, radius 7. */
+const smallButton = {
+  variant: 'secondary',
+  size: 'sm',
+  className: 'rounded-[7px] text-sm',
+} as const;
+
 function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: ProviderDefaults }) {
   const locale = useUiLocale();
   const copy = getSettingsModelsCopy(locale);
@@ -162,16 +169,18 @@ function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: Provid
   const identity = { connectionId: connection.connectionId, slug: connection.slug };
   const display = providerDisplay(connection.providerType, locale);
   const endpoint = providerEndpointPresentation(connection);
-  const defaults = props.defaults;
   const supportsApiKey = providerAuthSupportsApiKey(connection.providerType);
-  const accountManaged = defaults.authKind === 'oauth_token';
+  const accountManaged = props.defaults.authKind === 'oauth_token';
   const reads = useConnectionDetailReads(identity, host);
   const action = useConnectionAction();
 
   const [name, setName] = useState(connection.name);
   const [baseUrl, setBaseUrl] = useState(connection.baseUrl ?? '');
+  // The key is typed into its own dialog; the row only says whether there is one.
+  const [keyOpen, setKeyOpen] = useState(false);
   const [apiKey, setApiKey] = useState('');
   const [headers, setHeaders] = useState<RequestHeaderDraft[] | null>(null);
+  const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
   const [fetching, setFetching] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -191,6 +200,24 @@ function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: Provid
     void action
       .run(() => connectionsStore.update(identity, patch, host))
       .catch((error: unknown) => props.onError(failure, error));
+  };
+
+  const closeKey = () => {
+    setApiKey('');
+    setKeyOpen(false);
+  };
+  const saveKey = () => {
+    const key = apiKey.trim();
+    if (!host || !key) return;
+    void action
+      .run(() => connectionsStore.update(identity, { apiKey: key }, host))
+      .then(() => {
+        closeKey();
+        // The last test was of the key that was replaced.
+        setTestResult(null);
+        reads.reloadCredential();
+      })
+      .catch((error: unknown) => props.onError(copy.detail.saveFailed, error));
   };
 
   const status = connectionChipStatus(connection, locale);
@@ -231,7 +258,7 @@ function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: Provid
         </span>
       </div>
 
-      <SettingsSection title={copy.detail.credentials} description={copy.detail.credentialsHelp}>
+      <SettingsSection title={copy.detail.credentials}>
         <SettingsRow
           title={copy.detail.connectionName}
           control={
@@ -248,6 +275,7 @@ function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: Provid
                 write({ name: next }, copy.detail.saveFailed);
               }}
               onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing) return;
                 if (event.key === 'Enter') event.currentTarget.blur();
                 if (event.key === 'Escape') setName(connection.name);
               }}
@@ -255,11 +283,13 @@ function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: Provid
           }
         />
 
-        <SettingsRow
-          title={copy.detail.endpoint}
-          description={endpoint.modelOverrides ? copy.detail.endpointModelOverridesNote : undefined}
-          control={
-            endpoint.editable ? (
+        {endpoint.editable ? (
+          <SettingsRow
+            title={copy.detail.endpoint}
+            description={
+              endpoint.modelOverrides ? copy.detail.endpointModelOverridesNote : undefined
+            }
+            control={
               <Input
                 aria-label={copy.detail.endpoint}
                 className="w-72"
@@ -273,19 +303,29 @@ function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: Provid
                   write({ baseUrl: next }, copy.detail.saveFailed);
                 }}
                 onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing) return;
                   if (event.key === 'Enter') event.currentTarget.blur();
                 }}
               />
-            ) : (
-              <span className="max-w-96 truncate text-[0.8125rem] leading-[1.125rem] text-text-secondary">
-                {endpoint.value ??
-                  (endpoint.emptyState === 'managed'
-                    ? copy.detail.endpointManaged
-                    : copy.detail.endpointMissing)}
+            }
+          />
+        ) : (
+          // An address that is not the person's to change is read, under its title.
+          <SettingsRow
+            title={copy.detail.endpoint}
+            description={
+              <span className="flex flex-col gap-0.5">
+                <span className="break-all">
+                  {endpoint.value ??
+                    (endpoint.emptyState === 'managed'
+                      ? copy.detail.endpointManaged
+                      : copy.detail.endpointMissing)}
+                </span>
+                {endpoint.modelOverrides && <span>{copy.detail.endpointModelOverridesNote}</span>}
               </span>
-            )
-          }
-        />
+            }
+          />
+        )}
 
         {supportsApiKey && (
           <SettingsRow
@@ -297,98 +337,69 @@ function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: Provid
                   ? copy.detail.credentialLoadingDetail
                   : reads.credential === 'unknown'
                     ? copy.detail.credentialUnknownDetail
-                    : copy.detail.credentialsHelp
+                    : reads.credential === 'set'
+                      ? copy.sources.keyStored
+                      : copy.sources.keyMissing
             }
             control={
-              <span className="flex items-center gap-2">
-                <span
-                  className={cn(
-                    statusChipClass,
-                    statusChipToneClass(CREDENTIAL_TONE[reads.credential]),
-                  )}
-                >
-                  {credentialLabel(copy, reads.credential)}
-                </span>
-                <Input
-                  aria-label={copy.detail.modelKeyAria(connection.name)}
-                  type="password"
-                  autoComplete="off"
-                  className="w-56"
-                  value={apiKey}
-                  placeholder={copy.page.keyReplacePlaceholder}
-                  disabled={action.busy || accountManaged}
-                  onChange={(event) => setApiKey(event.target.value)}
-                />
+              accountManaged ? null : (
                 <Button
-                  variant="secondary"
-                  disabled={action.busy || accountManaged || apiKey.trim().length === 0}
-                  onClick={() => {
-                    if (!host) return;
-                    void action
-                      .run(() => connectionsStore.update(identity, { apiKey: apiKey.trim() }, host))
-                      .then(() => {
-                        setApiKey('');
-                        reads.reloadCredential();
-                      })
-                      .catch((error: unknown) => props.onError(copy.detail.saveFailed, error));
-                  }}
+                  {...smallButton}
+                  disabled={action.busy || reads.credential === 'loading'}
+                  onClick={() => setKeyOpen(true)}
                 >
-                  {copy.page.keyReplace}
+                  {reads.credential === 'set' ? copy.detail.change : copy.detail.set}
                 </Button>
-              </span>
+              )
             }
           />
         )}
 
         <SettingsRow
-          title={copy.detail.status}
+          title={copy.detail.testConnection}
           description={
-            testResult === null
-              ? connection.lastTestMessage
-              : testResult.ok
-                ? [
-                    testResult.latencyMs === undefined
-                      ? ''
-                      : copy.page.testLatency(testResult.latencyMs),
-                    testResult.modelTested ? copy.page.testedModel(testResult.modelTested) : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')
-                : (testResult.errorMessage ?? testFailureReason(copy, testResult.errorClass))
+            testResult === null ? (
+              (connection.lastTestMessage ?? copy.sources.testHelp)
+            ) : testResult.ok ? (
+              <span role="status">
+                {[
+                  copy.detail.statusHealthy,
+                  testResult.latencyMs === undefined
+                    ? ''
+                    : copy.page.testLatency(testResult.latencyMs),
+                  testResult.modelTested ? copy.page.testedModel(testResult.modelTested) : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
+            ) : (
+              <span role="alert" className="text-danger">
+                {testResult.errorMessage ?? testFailureReason(copy, testResult.errorClass)}
+              </span>
+            )
           }
           control={
-            <span className="flex items-center gap-2">
-              {testResult && (
-                <span
-                  role="status"
-                  className={cn(
-                    statusChipClass,
-                    statusChipToneClass(testResult.ok ? 'success' : 'error'),
-                  )}
-                >
-                  {testResult.ok
-                    ? copy.detail.connectionSuccess(connection.name)
-                    : copy.detail.connectionFailed(connection.name)}
-                </span>
-              )}
-              <Button
-                variant="secondary"
-                disabled={action.busy || !connection.enabled}
-                onClick={() => {
-                  setTestResult(null);
-                  void action
-                    .run(() => testConnection(identity, undefined, host))
-                    .then((result) => {
-                      if (result) setTestResult(result);
-                    })
-                    .catch((error: unknown) =>
-                      props.onError(copy.detail.connectionTestError(connection.name), error),
-                    );
-                }}
-              >
-                {action.busy ? copy.page.testRunning : copy.detail.testConnection}
-              </Button>
-            </span>
+            <Button
+              {...smallButton}
+              disabled={testing || action.busy || !connection.enabled}
+              onClick={() => {
+                setTestResult(null);
+                setTesting(true);
+                // Through the page's one action, so nothing else is written
+                // while the test is out; the label is the test's own.
+                void action
+                  .run(() => testConnection(identity, undefined, host))
+                  .then((result) => {
+                    if (result) setTestResult(result);
+                  })
+                  .catch((error: unknown) =>
+                    props.onError(copy.detail.connectionTestError(connection.name), error),
+                  )
+                  .finally(() => setTesting(false));
+              }}
+            >
+              {testing ? copy.page.testRunning : copy.sources.test}
+            </Button>
           }
         />
 
@@ -431,14 +442,10 @@ function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: Provid
         onFetchModels={() => {
           if (!host) return;
           setFetching(true);
+          // Silent when it works, as every settings write is: the list itself
+          // is what changed.
           void fetchConnectionModels(identity, host)
-            .then((result) => {
-              toast({
-                title: copy.detail.modelsFetched(result.models.length, connection.name),
-                variant: 'success',
-              });
-              return connectionsStore.refresh();
-            })
+            .then(() => connectionsStore.refresh())
             .catch((error: unknown) =>
               props.onError(copy.detail.modelsFetchFailed(connection.name), error),
             )
@@ -449,10 +456,7 @@ function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: Provid
         }
       />
 
-      <SettingsSection
-        title={copy.detail.advancedRequest}
-        description={copy.detail.advancedRequestHelp}
-      >
+      <SettingsSection title={copy.detail.advancedRequest}>
         <SettingsRow
           title={copy.detail.requestHeaders}
           description={
@@ -462,7 +466,7 @@ function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: Provid
           }
           control={
             <Button
-              variant="secondary"
+              {...smallButton}
               disabled={action.busy || headers === null}
               onClick={() => setHeadersOpen(true)}
             >
@@ -471,6 +475,41 @@ function KnownConnectionDetail(props: ConnectionDetailProps & { defaults: Provid
           }
         />
       </SettingsSection>
+
+      <SettingsModal
+        open={keyOpen}
+        onOpenChange={(open) => {
+          if (!open) closeKey();
+        }}
+        size="sm"
+        title={copy.sources.keyDialogTitle(connection.name)}
+        description={copy.detail.credentialsHelp}
+        footer={
+          <>
+            <Button variant="secondary" disabled={action.busy} onClick={closeKey}>
+              {copy.detail.cancel}
+            </Button>
+            <Button disabled={action.busy || apiKey.trim().length === 0} onClick={saveKey}>
+              {copy.detail.save}
+            </Button>
+          </>
+        }
+      >
+        <Input
+          aria-label={copy.detail.modelKeyAria(connection.name)}
+          type="password"
+          autoComplete="off"
+          autoFocus
+          value={apiKey}
+          placeholder={copy.detail.pasteModelKey}
+          disabled={action.busy}
+          onChange={(event) => setApiKey(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing) return;
+            if (event.key === 'Enter') saveKey();
+          }}
+        />
+      </SettingsModal>
 
       <SettingsModal
         open={headersOpen && headers !== null}
@@ -568,21 +607,4 @@ function testFailureReason(
   errorClass: ConnectionTestResult['errorClass'],
 ): string {
   return errorClass ? copy.shared.lastTest[errorClass] : copy.shared.statusUnavailable;
-}
-
-const CREDENTIAL_TONE = {
-  loading: 'neutral',
-  set: 'success',
-  missing: 'attention',
-  unknown: 'neutral',
-} as const;
-
-function credentialLabel(
-  copy: ReturnType<typeof getSettingsModelsCopy>,
-  state: keyof typeof CREDENTIAL_TONE,
-): string {
-  if (state === 'loading') return copy.detail.statusLoading;
-  if (state === 'set') return copy.detail.keySet;
-  if (state === 'missing') return copy.detail.keyMissing;
-  return copy.detail.credentialUnknown;
 }

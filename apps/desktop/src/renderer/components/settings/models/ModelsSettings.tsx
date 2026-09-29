@@ -33,7 +33,7 @@
 // subscription: two observers of one catalog is how a settings page ends up
 // showing one machine's connections while saving to another's.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 import { useUiLocale } from '@maka/ui';
 import { ConnectionsList } from './ConnectionsList.js';
@@ -59,6 +59,13 @@ export function ModelsSettings(props: { host: DesktopRuntimeHostRef | undefined 
   const error = useStore(connectionsStore, (state) => state.error);
   const [view, setView] = useState<ModelsView>({ kind: 'list' });
   const [setup, setSetup] = useState<ProviderType | null>(null);
+  // Each face opens at its top, as each Settings page does: the scroller is
+  // the dialog's, and it outlives the face that scrolled it.
+  const faceTop = useRef<HTMLDivElement>(null);
+  const face = view.kind === 'detail' ? `detail:${view.connectionId}` : view.kind;
+  useLayoutEffect(() => {
+    faceTop.current?.closest('[data-maka-contract="settings-content"]')?.scrollTo({ top: 0 });
+  }, [face]);
   useSettingsBack(
     view.kind === 'list'
       ? null
@@ -91,20 +98,26 @@ export function ModelsSettings(props: { host: DesktopRuntimeHostRef | undefined 
     [],
   );
 
+  const faceOf = (content: ReactNode) => (
+    <div ref={faceTop} className="contents">
+      {content}
+    </div>
+  );
+
   if (view.kind === 'detail' && detailConnection) {
-    return (
+    return faceOf(
       <ConnectionDetail
         connection={detailConnection}
         host={props.host}
         isDefault={snapshot?.defaultConnection === detailConnection.slug}
         onDeleted={openList}
         onError={report}
-      />
+      />,
     );
   }
 
   if (view.kind === 'catalog') {
-    return (
+    return faceOf(
       <>
         <AddConnection
           host={props.host}
@@ -124,11 +137,11 @@ export function ModelsSettings(props: { host: DesktopRuntimeHostRef | undefined 
           }}
           onError={report}
         />
-      </>
+      </>,
     );
   }
 
-  return (
+  return faceOf(
     <ConnectionsList
       host={props.host}
       snapshot={snapshot}
@@ -137,6 +150,6 @@ export function ModelsSettings(props: { host: DesktopRuntimeHostRef | undefined 
       onOpenDetail={openDetail}
       onAddConnection={() => setView({ kind: 'catalog' })}
       onError={report}
-    />
+    />,
   );
 }

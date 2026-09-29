@@ -62,7 +62,10 @@ export function AddConnection(props: {
 
   return (
     <div data-maka-contract="add-connection">
-      <SettingsSection title={copy.add.accountTitle} description={copy.add.accountDetail}>
+      <SettingsSection
+        title={copy.sources.subscriptionTitle}
+        description={copy.sources.subscriptionHelp}
+      >
         {OAUTH_PROVIDERS.flatMap((provider) => {
           const existing = props.connections.filter((row) => row.providerType === provider);
           const managed = existing.map((connection) => (
@@ -94,7 +97,7 @@ export function AddConnection(props: {
         })}
       </SettingsSection>
 
-      <SettingsSection title={copy.panel.addConnection} description={copy.panel.addHelp}>
+      <SettingsSection title={copy.sources.providersTitle} description={copy.sources.providersHelp}>
         <ProviderCatalog onPick={props.onPickProvider} />
       </SettingsSection>
     </div>

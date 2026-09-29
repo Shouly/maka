@@ -4061,7 +4061,7 @@
         "useConnectionAction": 1,
         "useConnectionDetailReads": 1,
         "useEffect": 3,
-        "useState": 9,
+        "useState": 11,
         "useUiLocale": 2
       },
       "lifecycleMethods": {},
@@ -4097,19 +4097,21 @@
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {
-        "useState": 3,
-        "useUiLocale": 1
+        "useState": 4,
+        "useUiLocale": 2
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../../../lib/cn.js": 1,
         "../../../lib/connection-model-rows.js": 1,
         "../../../locales/settings-models-copy.js": 1,
         "../../icons/Anthropicon.js": 1,
         "../../ui/button.js": 1,
         "../../ui/checkbox-box.js": 1,
         "../../ui/input.js": 1,
+        "../../ui/status-chip.js": 1,
         "../../ui/switch.js": 1,
         "../settings-kit.js": 1,
         "../settings-row.js": 1,
@@ -4125,31 +4127,35 @@
       "environmentCapabilities": {},
       "hookCalls": {
         "useState": 1,
-        "useUiLocale": 1
+        "useStore": 1,
+        "useUiLocale": 3
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../../../bridge/connections.js": 1,
         "../../../lib/cn.js": 1,
+        "../../../lib/connection-model-rows.js": 1,
         "../../../lib/ported/provider-connection-status.js": 1,
         "../../../lib/ported/provider-display-copy.js": 1,
         "../../../locales/settings-models-copy.js": 1,
+        "../../../locales/settings-shared-copy.js": 1,
         "../../../store/index.js": 1,
+        "../../icons/Anthropicon.js": 1,
         "../../ui/button.js": 1,
-        "../../ui/confirm-dialog.js": 1,
         "../../ui/select.js": 1,
         "../../ui/skeleton.js": 1,
         "../../ui/status-chip.js": 1,
         "../host-default-settings.js": 1,
         "../settings-kit.js": 1,
         "../settings-row.js": 1,
+        "./ConnectionModelsSection.js": 1,
         "./ModelCatalogStatusRow.js": 1,
-        "./provider-tile.js": 1,
         "@maka/core/llm-connections": 1,
-        "@maka/core/provider-registry": 1,
         "@maka/ui": 1,
-        "react": 1
+        "react": 1,
+        "zustand": 1
       }
     },
     "src/renderer/components/settings/models/ModelCatalogStatusRow.tsx": {
@@ -4157,7 +4163,7 @@
       "environmentCapabilities": {},
       "hookCalls": {
         "useEffect": 1,
-        "useState": 2,
+        "useState": 3,
         "useStore": 1,
         "useUiLocale": 1
       },
@@ -4180,6 +4186,8 @@
       "environmentCapabilities": {},
       "hookCalls": {
         "useEffect": 1,
+        "useLayoutEffect": 1,
+        "useRef": 1,
         "useSettingsBack": 1,
         "useSettingsErrorReporter": 1,
         "useState": 2,
