@@ -20,6 +20,8 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
+import Ajv2020 from 'ajv/dist/2020.js';
+import { toJSONSchema } from 'zod';
 import { computerUseApprovalSummary, CU_TOOL_ACTION_TYPES } from '@maka/core/computer-use';
 import { computerParams } from '../computer-use-codec.js';
 import { computerWireParams } from '../computer-use-tools.js';
@@ -176,6 +178,29 @@ describe('the two argument schemas describe the same tool', () => {
       [...wire].filter((action) => !catalog.has(action)),
       [],
       'the wire carries actions the approval catalog records as "unknown"',
+    );
+  });
+
+  test('the wire declares valid JSON Schema 2020-12, as Anthropic requires', () => {
+    // The desktop publishes the tool with these exact options. `position` and
+    // `size` were tuples, which draft-07 writes as an array-valued `items`, and
+    // every request that offered the tool came back 400.
+    const schema = toJSONSchema(computerWireParams, {
+      io: 'input',
+      target: 'draft-07',
+      unrepresentable: 'any',
+      cycles: 'ref',
+      reused: 'inline',
+    });
+    delete schema.$schema;
+    const ajv = new Ajv2020({ strict: false });
+    assert.equal(ajv.validateSchema(schema), true, JSON.stringify(ajv.errors));
+
+    const move = { action: 'window_action', window_action: 'move', position: [-193, -1080] };
+    assert.equal(computerWireParams.safeParse(move).success, true);
+    assert.equal(
+      computerWireParams.safeParse({ ...move, position: [-193, -1080, 0] }).success,
+      false,
     );
   });
 

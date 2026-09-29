@@ -271,18 +271,24 @@ export const computerWireParams = z
           'observing it afterwards fails. Only the person at the machine can bring it back, from the Dock. ' +
           'Do not minimize a window to get it out of the way — move it instead.',
       ),
+    // Pairs, not tuples. A tuple becomes an array-valued `items`, which is
+    // invalid under JSON Schema 2020-12, and Anthropic rejects the whole request
+    // (400) the moment this tool is offered. The union still narrows each to a
+    // tuple before anything runs.
     position: z
       // Signed, because a second display is a real place: one measured here sits
       // at (-193, -1080) in the space the observation reports. Refusing a
       // negative would make half the desktop unaddressable.
-      .tuple([z.number().int(), z.number().int()])
+      .array(z.number().int())
+      .length(2)
       .optional()
       .describe(
         "Required for window_action=move: [x, y] of the window's top-left in screen points, the same space the " +
           'observation reports window bounds and displays in.',
       ),
     size: z
-      .tuple([z.number().int().positive(), z.number().int().positive()])
+      .array(z.number().int().positive())
+      .length(2)
       .optional()
       .describe('Required for window_action=resize: [width, height] in points.'),
     steps: z

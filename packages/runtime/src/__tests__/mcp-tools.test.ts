@@ -138,7 +138,9 @@ test('buildMcpTools leaves MCP JSON Schema validation to the server', async () =
     jsonSchema?: unknown;
     validate?: unknown;
   };
-  assert.deepEqual(parameters.jsonSchema, inputSchema);
+  // A valid 2020-12 schema reaches the model as written, less its `$schema`.
+  const { $schema: _dialect, ...modelFacing } = inputSchema;
+  assert.deepEqual(parameters.jsonSchema, modelFacing);
   assert.equal(parameters.validate, undefined);
   if (!tool) throw new Error('expected MCP tool');
   assert.deepEqual(
