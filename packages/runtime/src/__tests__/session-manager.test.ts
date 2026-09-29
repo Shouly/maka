@@ -136,13 +136,11 @@ import {
 import { buildLlmHistorySummarizer } from '../history-compact-summarizer.js';
 import { decodeModelCallAttempt, type ModelCallAttempt } from '@maka/core/model-call-attempt';
 import {
-  AGENT_WORKSPACE_WORKTREE,
-  IMPLEMENTATION_AGENT_DEFINITION,
-  IMPLEMENTATION_AGENT_ID,
-  LOCAL_READ_AGENT_DEFINITION,
-  LOCAL_READ_AGENT_ID,
-  LOCAL_READ_AGENT_PROFILE,
-  WEB_RESEARCH_AGENT_ID,
+  EXPLORE_AGENT_DEFINITION,
+  EXPLORE_AGENT_TYPE,
+  GENERAL_PURPOSE_AGENT_DEFINITION,
+  GENERAL_PURPOSE_AGENT_TYPE,
+  PLAN_AGENT_TYPE,
 } from '../agent-catalog.js';
 import {
   RuntimeMessageAuthorityInvariantError,
@@ -529,7 +527,6 @@ describe('SessionManager graph operator provisioning', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       subagentCatalog: {
         list: async () => [],
         resolve: async (id) => ({
@@ -537,7 +534,7 @@ describe('SessionManager graph operator provisioning', () => {
           id,
           name: 'Fast graph reader',
           description: 'Cheap graph scans',
-          profile: 'local_read',
+          profile: 'Explore',
           connectionSlug: 'worker-connection',
           model: 'worker-model',
           thinkingLevel: 'low',
@@ -583,7 +580,7 @@ describe('SessionManager graph operator provisioning', () => {
     assert.strictEqual(provisioned.header.model, 'worker-model');
     assert.strictEqual(provisioned.header.thinkingLevel, 'low');
     assert.strictEqual(provisioned.header.subagentRuntime?.presetId, 'fast-reader');
-    assert.strictEqual(provisioned.provision.agentId, LOCAL_READ_AGENT_ID);
+    assert.strictEqual(provisioned.provision.agentId, EXPLORE_AGENT_TYPE);
 
     parentGate.release();
     while (!(await parentTurn.next()).done) {}
@@ -597,7 +594,6 @@ describe('SessionManager graph operator provisioning', () => {
       runStore,
       runtimeEventStore: runStore,
       backends: new BackendRegistry(),
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       newId: nextId(),
       now: nextNow(20),
       shellRuns: {
@@ -628,7 +624,7 @@ describe('SessionManager graph operator provisioning', () => {
     const provision = manager.provisionAgentGraphOperator({
       graphId: 'graph-config-fence',
       workId: `graph_work_${'a'.repeat(32)}`,
-      agentId: LOCAL_READ_AGENT_ID,
+      agentId: EXPLORE_AGENT_TYPE,
       operatorId: `graph_operator_${'b'.repeat(32)}`,
       source: {
         sessionId: parent.id,
@@ -694,7 +690,6 @@ describe('SessionManager graph operator provisioning', () => {
       runStore,
       runtimeEventStore: runStore,
       backends: new BackendRegistry(),
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       newId: nextId(),
       now: nextNow(30),
     });
@@ -720,7 +715,7 @@ describe('SessionManager graph operator provisioning', () => {
     const result = await manager.provisionAgentGraphOperator({
       graphId: 'graph-1',
       workId: `graph_work_${'1'.repeat(32)}`,
-      agentId: LOCAL_READ_AGENT_ID,
+      agentId: EXPLORE_AGENT_TYPE,
       operatorId: `graph_operator_${'2'.repeat(32)}`,
       source: {
         sessionId: parent.id,
@@ -744,7 +739,7 @@ describe('SessionManager graph operator provisioning', () => {
       workId: `graph_work_${'1'.repeat(32)}`,
       operatorId: `graph_operator_${'2'.repeat(32)}`,
     });
-    assert.strictEqual(result.header.subagentRuntime?.agentId, LOCAL_READ_AGENT_ID);
+    assert.strictEqual(result.header.subagentRuntime?.agentId, EXPLORE_AGENT_TYPE);
     assert.strictEqual(result.header.permissionMode, 'explore');
     assert.strictEqual(result.provision.initialTurnId, result.header.subagentSpawn?.initialTurnId);
     assert.strictEqual(result.provision.initialRunId, result.header.subagentSpawn?.initialRunId);
@@ -759,7 +754,6 @@ describe('SessionManager graph operator provisioning', () => {
       runStore,
       runtimeEventStore: runStore,
       backends: new BackendRegistry(),
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       newId: nextId(),
       now: nextNow(90),
     });
@@ -781,7 +775,7 @@ describe('SessionManager graph operator provisioning', () => {
       const provisioned = await manager.provisionAgentGraphOperator({
         graphId: 'graph-large-output',
         workId: `graph_work_${identity}`,
-        agentId: LOCAL_READ_AGENT_ID,
+        agentId: EXPLORE_AGENT_TYPE,
         operatorId: `graph_operator_${identity}`,
         source: {
           sessionId: parent.id,
@@ -887,323 +881,6 @@ describe('SessionManager graph operator provisioning', () => {
       'Replacement branch completed with a verified answer.',
     );
   });
-
-  test('does not advertise implementation when the current project cannot use worktrees', async () => {
-    const store = new MemorySessionStore();
-    const checkedSources: unknown[] = [];
-    const manager = new SessionManager({
-      store,
-      backends: new BackendRegistry(),
-      childTools: IMPLEMENTATION_AGENT_DEFINITION.tools.map(testTool),
-      worktreeChildExecutor: {
-        isAvailable: async (input) => {
-          checkedSources.push(input);
-          return false;
-        },
-        provision: async () => {
-          throw new Error('unavailable executor must not provision');
-        },
-        ensure: async () => {},
-        capturePatch: async () => new Uint8Array(),
-        recover: async () => {},
-        retire: async () => {},
-      },
-      newId: nextId(),
-      now: nextNow(40),
-    });
-    const parent = await manager.createSession(
-      makeInput({ cwd: '/tmp/plain-folder', projectId: 'plain-project' }),
-    );
-
-    const implementation = (await manager.listChildAgents(parent.id)).definitions.find(
-      (definition) => definition.id === IMPLEMENTATION_AGENT_ID,
-    );
-
-    assert.deepStrictEqual(checkedSources, [
-      { sourceCwd: '/tmp/plain-folder', sourceProjectId: 'plain-project' },
-    ]);
-    assert.deepStrictEqual(implementation?.availability, {
-      status: 'unavailable',
-      reason: 'workspace_isolation_unavailable',
-      workspace: AGENT_WORKSPACE_WORKTREE,
-      requiredRuntime: 'worktree_child_executor',
-    });
-  });
-
-  test('binds implementation operators to a durable project worktree', async () => {
-    const store = new MemorySessionStore();
-    const runStore = new MemoryAgentRunStore();
-    const provisioned: unknown[] = [];
-    const binding = {
-      schemaVersion: 1 as const,
-      kind: 'git_worktree' as const,
-      leaseId: `subagent_worktree_${'a'.repeat(32)}`,
-      gitCommonDir: '/tmp/project/.git',
-      worktreePath: '/tmp/worktrees/implementation-a',
-      branch: `maka/subagent/${'a'.repeat(32)}`,
-      baseCommit: 'b'.repeat(40),
-    };
-    const manager = new SessionManager({
-      store,
-      runStore,
-      runtimeEventStore: runStore,
-      backends: new BackendRegistry(),
-      childTools: IMPLEMENTATION_AGENT_DEFINITION.tools
-        .filter((name) => name !== 'Write' && name !== 'Edit')
-        .map(testTool),
-      worktreeChildExecutor: {
-        isAvailable: async () => true,
-        provision: async (input) => {
-          provisioned.push(input);
-          return {
-            ...binding,
-            leaseId: input.leaseId,
-            worktreePath: `/tmp/worktrees/${input.leaseId}`,
-            branch: `maka/subagent/${input.leaseId.slice('subagent_worktree_'.length)}`,
-          };
-        },
-        ensure: async () => {},
-        capturePatch: async () => new Uint8Array(),
-        recover: async () => {},
-        retire: async () => {},
-      },
-      listArtifactsForTurn: async () => [],
-      publishChildWorkspacePatch: async () => {
-        throw new Error('Patch publication is not expected during provisioning');
-      },
-      assertChildWorkspaceQuiescent: async () => {},
-      newId: nextId(),
-      now: nextNow(40),
-    });
-    const parent = await manager.createSession(
-      makeInput({
-        cwd: '/tmp/project',
-        projectId: 'project-1',
-        permissionMode: 'ask',
-      }),
-    );
-    await seedInvocationFromHeader(
-      runStore,
-      makeRunHeader({
-        sessionId: parent.id,
-        runId: 'supervisor-run',
-        turnId: 'supervisor-turn',
-        cwd: '/tmp/project',
-      }),
-    );
-
-    const result = await manager.provisionAgentGraphOperator({
-      graphId: 'graph-worktree',
-      workId: `graph_work_${'4'.repeat(32)}`,
-      agentId: IMPLEMENTATION_AGENT_ID,
-      operatorId: `graph_operator_${'5'.repeat(32)}`,
-      source: {
-        sessionId: parent.id,
-        runId: 'supervisor-run',
-        turnId: 'supervisor-turn',
-        toolCallId: 'schedule-tool',
-      },
-      edges: [],
-      expectedScheduleRevision: 1,
-    });
-
-    assert.strictEqual(provisioned.length, 1);
-    assert.strictEqual(result.header.projectId, 'project-1');
-    assert.strictEqual(result.header.permissionMode, 'ask');
-    assert.strictEqual(
-      result.header.subagentRuntime
-        ? 'permissionCeiling' in result.header.subagentRuntime
-        : undefined,
-      false,
-    );
-    assert.strictEqual(result.header.cwd, result.header.subagentWorkspace?.worktreePath);
-    assert.strictEqual(result.header.subagentWorkspace?.kind, 'git_worktree');
-    assert.match(String(result.header.subagentWorkspace?.branch), /^maka\/subagent\//);
-    assert.deepStrictEqual(result.header.subagentRuntime?.toolNames, [
-      'Read',
-      'Glob',
-      'Grep',
-      'apply_patch',
-      'Bash',
-      'TaskInput',
-      'TaskStop',
-    ]);
-    assert.deepStrictEqual(
-      headerToSummary(result.header).subagentWorkspace,
-      result.header.subagentWorkspace,
-    );
-  });
-
-  test('recovers only the latest unpublished implementation patch idempotently', async () => {
-    const store = new MemorySessionStore();
-    const runStore = new ReverseOrderedAgentRunStore();
-    const binding = {
-      schemaVersion: 1 as const,
-      kind: 'git_worktree' as const,
-      leaseId: `subagent_worktree_${'d'.repeat(32)}`,
-      gitCommonDir: '/tmp/project/.git',
-      worktreePath: '/tmp/worktrees/implementation-recovery',
-      branch: `maka/subagent/${'d'.repeat(32)}`,
-      baseCommit: 'e'.repeat(40),
-    };
-    const parent = await store.create(makeInput({ cwd: '/tmp/project' }));
-    const { header: child } = await store.createSubagent(
-      makeInput({
-        cwd: binding.worktreePath,
-        permissionMode: 'ask',
-        subagentParent: {
-          kind: 'subagent',
-          parentSessionId: parent.id,
-          spawnedBy: {
-            parentRunId: 'parent-run',
-            parentTurnId: 'parent-turn',
-            toolCallId: 'implementation-spawn',
-          },
-          lifecycle: 'foreground',
-        },
-        subagentRuntime: {
-          schemaVersion: 1,
-          definitionVersion: IMPLEMENTATION_AGENT_DEFINITION.definitionVersion,
-          agentId: IMPLEMENTATION_AGENT_ID,
-          agentName: IMPLEMENTATION_AGENT_DEFINITION.name,
-          profile: 'implementation',
-          systemPrompt: IMPLEMENTATION_AGENT_DEFINITION.systemPrompt,
-          toolNames: [...IMPLEMENTATION_AGENT_DEFINITION.tools],
-        },
-        subagentSpawn: {
-          schemaVersion: 1,
-          requestFingerprint: 'f'.repeat(64),
-          initialTurnId: 'child-turn',
-          initialRunId: 'child-run',
-        },
-        subagentWorkspace: binding,
-      }),
-    );
-    await seedRuntimeRun(
-      runStore,
-      makeRunHeader({
-        sessionId: child.id,
-        runId: 'child-run',
-        turnId: 'child-turn',
-        status: 'completed',
-        completedAt: 20,
-        updatedAt: 20,
-        cwd: binding.worktreePath,
-        permissionMode: 'ask',
-        agentId: IMPLEMENTATION_AGENT_ID,
-        agentName: IMPLEMENTATION_AGENT_DEFINITION.name,
-      }),
-      [
-        runtimeEvent({
-          id: 'child-complete',
-          sessionId: child.id,
-          runId: 'child-run',
-          turnId: 'child-turn',
-          ts: 20,
-          status: 'completed',
-          actions: { endInvocation: true },
-        }),
-      ],
-    );
-    const artifacts = new Map<string, ArtifactRecord[]>();
-    let captures = 0;
-    const manager = new SessionManager({
-      store,
-      runStore,
-      runtimeEventStore: runStore,
-      backends: new BackendRegistry(),
-      worktreeChildExecutor: {
-        isAvailable: async () => true,
-        provision: async () => binding,
-        ensure: async () => {},
-        capturePatch: async () => {
-          captures += 1;
-          return new TextEncoder().encode('terminal patch');
-        },
-        recover: async () => {},
-        retire: async () => {},
-      },
-      listArtifactsForTurn: async (sessionId, turnId) =>
-        artifacts.get(`${sessionId}:${turnId}`) ?? [],
-      publishChildWorkspacePatch: async ({ sessionId, turnId, patch }) => {
-        const record: ArtifactRecord = {
-          id: 'recovered-writeback',
-          sessionId,
-          turnId,
-          createdAt: 30,
-          name: 'workspace.patch',
-          kind: 'diff',
-          relativePath: `${sessionId}/recovered-writeback-workspace.patch`,
-          sizeBytes: patch.byteLength,
-          mimeType: 'text/x-diff; charset=utf-8',
-          source: 'subagent_writeback',
-        };
-        artifacts.set(`${sessionId}:${turnId}`, [record]);
-        return record;
-      },
-      assertChildWorkspaceQuiescent: async () => {},
-      newId: nextId(),
-      now: nextNow(40),
-    });
-
-    await manager.recoverChildWorkspacePatches([parent.id, child.id]);
-    await manager.recoverChildWorkspacePatches([child.id]);
-
-    assert.strictEqual(captures, 1);
-    assert.strictEqual(artifacts.get(`${child.id}:child-turn`)?.[0]?.source, 'subagent_writeback');
-
-    await seedRuntimeRun(
-      runStore,
-      makeRunHeader({
-        sessionId: child.id,
-        runId: 'newer-child-run',
-        turnId: 'newer-child-turn',
-        status: 'completed',
-        createdAt: 50,
-        completedAt: 60,
-        updatedAt: 60,
-        cwd: binding.worktreePath,
-        permissionMode: 'ask',
-        agentId: IMPLEMENTATION_AGENT_ID,
-        agentName: IMPLEMENTATION_AGENT_DEFINITION.name,
-        resumedFromRunId: 'child-run',
-      }),
-      [
-        runtimeEvent({
-          id: 'newer-child-complete',
-          sessionId: child.id,
-          runId: 'newer-child-run',
-          turnId: 'newer-child-turn',
-          ts: 60,
-          status: 'completed',
-          actions: { endInvocation: true },
-        }),
-      ],
-    );
-    const oldArtifact = artifacts.get(`${child.id}:child-turn`)?.[0];
-    if (!oldArtifact) throw new Error('Recovered patch Artifact is missing');
-    artifacts.set(`${child.id}:newer-child-turn`, [
-      {
-        ...oldArtifact,
-        id: 'newer-writeback',
-        turnId: 'newer-child-turn',
-        relativePath: `${child.id}/newer-writeback-workspace.patch`,
-      },
-    ]);
-    artifacts.delete(`${child.id}:child-turn`);
-
-    await expectRejects(
-      manager.readChildAgentOutput(parent.id, {
-        execution: {
-          kind: 'child_session',
-          sessionId: child.id,
-          currentRunId: 'child-run',
-        },
-      }),
-      /cannot reconstruct the historical workspace patch/,
-    );
-    assert.strictEqual(captures, 1);
-  });
 });
 
 describe('SessionManager claimed graph intent execution', () => {
@@ -1221,7 +898,6 @@ describe('SessionManager claimed graph intent execution', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       messageAuthority: hostedRootAuthority(),
       newId: nextId(),
       now: nextNow(20),
@@ -1287,7 +963,6 @@ describe('SessionManager claimed graph intent execution', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       messageAuthority: authority,
       hostedAgentGraphExecution: {
         async readAgentGraphIntentClaim(graphId, intentId) {
@@ -1322,8 +997,8 @@ describe('SessionManager claimed graph intent execution', () => {
     assert.deepStrictEqual((executions[0] as { execution?: unknown }).execution, {
       kind: 'claimed_agent_graph_intent',
       claim,
-      agentId: LOCAL_READ_AGENT_ID,
-      agentName: LOCAL_READ_AGENT_DEFINITION.name,
+      agentId: EXPLORE_AGENT_TYPE,
+      agentName: EXPLORE_AGENT_DEFINITION.name,
     });
     assert.deepStrictEqual((executions[0] as { content?: unknown }).content, { text: prompt });
     assert.partialDeepStrictEqual(
@@ -1387,7 +1062,6 @@ describe('SessionManager claimed graph intent execution', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       messageAuthority: authority,
       hostedAgentGraphExecution: hostedGraphExecutionCapability(durableClaims, runStore),
       newId: nextId(),
@@ -1433,8 +1107,8 @@ describe('SessionManager claimed graph intent execution', () => {
     const descriptor: RootExecutionDescriptor = {
       kind: 'claimed_agent_graph_intent',
       claim,
-      agentId: LOCAL_READ_AGENT_ID,
-      agentName: LOCAL_READ_AGENT_DEFINITION.name,
+      agentId: EXPLORE_AGENT_TYPE,
+      agentName: EXPLORE_AGENT_DEFINITION.name,
     };
     runStore.seedRootTurnAdmission(child.id, claim.targetTurnId, {
       runId: claim.targetRunId,
@@ -1460,7 +1134,6 @@ describe('SessionManager claimed graph intent execution', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       messageAuthority: authority,
       hostedAgentGraphExecution: hostedGraphExecutionCapability(
         graphExecutionInput(claim, '').claimStore,
@@ -1515,8 +1188,8 @@ describe('SessionManager claimed graph intent execution', () => {
         status: 'completed',
         completedAt: 34,
         permissionMode: 'explore',
-        agentId: LOCAL_READ_AGENT_ID,
-        agentName: LOCAL_READ_AGENT_DEFINITION.name,
+        agentId: EXPLORE_AGENT_TYPE,
+        agentName: EXPLORE_AGENT_DEFINITION.name,
       }),
     );
     let hostedExecutions = 0;
@@ -1529,7 +1202,6 @@ describe('SessionManager claimed graph intent execution', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       messageAuthority: authority,
       hostedAgentGraphExecution: hostedGraphExecutionCapability(
         graphExecutionInput(claim, '').claimStore,
@@ -1585,7 +1257,6 @@ describe('SessionManager claimed graph intent execution', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       messageAuthority: authority,
       hostedAgentGraphExecution: hostedGraphExecutionCapability(
         graphExecutionInput(claim, '').claimStore,
@@ -1642,8 +1313,8 @@ describe('SessionManager claimed graph intent execution', () => {
       execution: {
         kind: 'claimed_agent_graph_intent',
         claim,
-        agentId: LOCAL_READ_AGENT_ID,
-        agentName: LOCAL_READ_AGENT_DEFINITION.name,
+        agentId: EXPLORE_AGENT_TYPE,
+        agentName: EXPLORE_AGENT_DEFINITION.name,
       },
     });
 
@@ -1651,8 +1322,8 @@ describe('SessionManager claimed graph intent execution', () => {
     assert.strictEqual(runtimeInvocationOutcome(run), 'failed');
     assert.strictEqual(runtimeInvocationFailureClass(run), 'app_restarted');
     assert.partialDeepStrictEqual(run.opening.lineage, {
-      agentId: LOCAL_READ_AGENT_ID,
-      agentName: LOCAL_READ_AGENT_DEFINITION.name,
+      agentId: EXPLORE_AGENT_TYPE,
+      agentName: EXPLORE_AGENT_DEFINITION.name,
     });
     assert.strictEqual(run.opening.configuration.workspaceIdentity, undefined);
     assert.strictEqual(run.opening.lineage?.resumedFromRunId, undefined);
@@ -1685,7 +1356,6 @@ describe('SessionManager claimed graph intent execution', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       listArtifactsForTurn: async (sessionId, turnId) => [
         {
           id: 'child-output',
@@ -1740,7 +1410,7 @@ describe('SessionManager claimed graph intent execution', () => {
       childSessionId: child.id,
       turnId: 'graph-turn',
       runId: 'graph-run',
-      agentId: LOCAL_READ_AGENT_ID,
+      agentId: EXPLORE_AGENT_TYPE,
       status: 'completed',
       summary: 'ok',
     });
@@ -1754,8 +1424,8 @@ describe('SessionManager claimed graph intent execution', () => {
         childSessionId: child.id,
         turnId: 'graph-turn',
         runId: 'graph-run',
-        agentId: LOCAL_READ_AGENT_ID,
-        agentName: LOCAL_READ_AGENT_DEFINITION.name,
+        agentId: EXPLORE_AGENT_TYPE,
+        agentName: EXPLORE_AGENT_DEFINITION.name,
       },
     ]);
     const run = await readInvocation(runStore, child.id, 'graph-run');
@@ -1807,7 +1477,6 @@ describe('SessionManager claimed graph intent execution', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       newId: nextId(),
       now: nextNow(60),
     });
@@ -1891,7 +1560,6 @@ describe('SessionManager claimed graph intent execution', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       newId: nextId(),
       now: nextNow(75),
     });
@@ -1949,7 +1617,6 @@ describe('SessionManager claimed graph intent execution', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       newId: nextId(),
       now: nextNow(77),
     });
@@ -2069,7 +1736,6 @@ describe('SessionManager claimed graph intent execution', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       newId: nextId(),
       now: nextNow(80),
     });
@@ -2085,8 +1751,8 @@ describe('SessionManager claimed graph intent execution', () => {
         turnId: claim.targetTurnId,
         status: 'running',
         permissionMode: 'explore',
-        agentId: LOCAL_READ_AGENT_ID,
-        agentName: LOCAL_READ_AGENT_DEFINITION.name,
+        agentId: EXPLORE_AGENT_TYPE,
+        agentName: EXPLORE_AGENT_DEFINITION.name,
       }),
       [
         makeRunEvent({
@@ -2123,7 +1789,6 @@ describe('SessionManager claimed graph intent execution', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       newId: nextId(),
       now: nextNow(90),
     });
@@ -2177,7 +1842,6 @@ describe('SessionManager claimed graph intent execution', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       newId: nextId(),
       now: nextNow(100),
     });
@@ -2225,8 +1889,8 @@ describe('SessionManager claimed graph intent execution', () => {
         status: 'completed',
         permissionMode: 'explore',
         completedAt: 101,
-        agentId: LOCAL_READ_AGENT_ID,
-        agentName: LOCAL_READ_AGENT_DEFINITION.name,
+        agentId: EXPLORE_AGENT_TYPE,
+        agentName: EXPLORE_AGENT_DEFINITION.name,
       }),
     );
     await expectRejects(
@@ -2295,7 +1959,6 @@ describe('SessionManager child-session runtime primitive', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       newId: nextId(),
       now: nextNow(100),
       runBackendActivation: async (operation) => {
@@ -2330,7 +1993,7 @@ describe('SessionManager child-session runtime primitive', () => {
         parentTurnId: parentRun.turnId,
         toolCallId: 'tool-call-1',
       },
-      agentProfile: LOCAL_READ_AGENT_PROFILE,
+      agentProfile: EXPLORE_AGENT_TYPE,
       prompt: 'inspect the storage boundary',
     });
 
@@ -2364,13 +2027,12 @@ describe('SessionManager child-session runtime primitive', () => {
       lifecycle: 'foreground',
     });
     assert.deepStrictEqual(childHeader.subagentRuntime, {
-      schemaVersion: 1,
+      schemaVersion: 2,
       definitionVersion: 1,
-      agentId: LOCAL_READ_AGENT_ID,
-      agentName: 'Local Read',
-      profile: LOCAL_READ_AGENT_PROFILE,
-      systemPrompt: LOCAL_READ_AGENT_DEFINITION.systemPrompt,
-      toolNames: ['Read', 'Glob', 'Grep'],
+      agentId: EXPLORE_AGENT_TYPE,
+      agentName: 'Explore',
+      profile: EXPLORE_AGENT_TYPE,
+      systemPrompt: EXPLORE_AGENT_DEFINITION.systemPrompt,
     });
     assert.strictEqual(childHeader.subagentSpawn?.schemaVersion, 1);
     assert.match(String(childHeader.subagentSpawn?.requestFingerprint), /^[a-f0-9]{64}$/);
@@ -2381,7 +2043,7 @@ describe('SessionManager child-session runtime primitive', () => {
     if (!childRun) throw new Error('child run was not recorded');
     assert.strictEqual(childRun.runId, result.runId);
     assert.strictEqual(childRun.opening.lineage?.parentRunId, undefined);
-    assert.strictEqual(childRun.opening.lineage?.agentId, LOCAL_READ_AGENT_ID);
+    assert.strictEqual(childRun.opening.lineage?.agentId, EXPLORE_AGENT_TYPE);
     assert.strictEqual(isSessionInlineInvocation(childRun.opening), true);
     assert.strictEqual(
       (await manager.waitForChildAgent(result.childSessionId))?.status,
@@ -2396,11 +2058,9 @@ describe('SessionManager child-session runtime primitive', () => {
     );
 
     const childContext = contexts.find((ctx) => ctx.sessionId === result.childSessionId);
-    assert.strictEqual(childContext?.systemPrompt, LOCAL_READ_AGENT_DEFINITION.systemPrompt);
-    assert.deepStrictEqual(
-      childContext?.tools?.map((tool) => tool.name),
-      ['Read', 'Glob', 'Grep'],
-    );
+    assert.strictEqual(childContext?.systemPrompt, EXPLORE_AGENT_DEFINITION.systemPrompt);
+    // No fixed list: the Host composes a child's tools from its type.
+    assert.strictEqual(childContext?.tools, undefined);
     assert.strictEqual(
       backendsBySession.get(result.childSessionId)?.sendInputs[0]?.context,
       undefined,
@@ -2488,14 +2148,13 @@ describe('SessionManager child-session runtime primitive', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       subagentCatalog: {
         list: async () => [
           {
             id: 'fast-reader',
             name: 'Fast reader',
             description: 'Cheap scans',
-            profile: 'local_read',
+            profile: 'Explore',
             connectionSlug: 'worker-connection',
             model: 'worker-model',
             thinkingLevel: 'low',
@@ -2510,7 +2169,7 @@ describe('SessionManager child-session runtime primitive', () => {
             id,
             name: 'Fast reader',
             description: 'Cheap scans',
-            profile: 'local_read',
+            profile: 'Explore',
             connectionSlug: 'worker-connection',
             model: 'worker-model',
             thinkingLevel: 'low',
@@ -2541,7 +2200,7 @@ describe('SessionManager child-session runtime primitive', () => {
         parentTurnId: parentRun.turnId,
         toolCallId: 'tool-call-preset',
       },
-      agentProfile: LOCAL_READ_AGENT_PROFILE,
+      agentProfile: EXPLORE_AGENT_TYPE,
       subagentId: 'fast-reader',
       prompt: 'inspect cheaply',
     });
@@ -2574,7 +2233,6 @@ describe('SessionManager child-session runtime primitive', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       newId: nextId(),
       now: nextNow(200),
     });
@@ -2592,7 +2250,7 @@ describe('SessionManager child-session runtime primitive', () => {
         parentTurnId: parentRun.turnId,
         toolCallId: 'tool-call-no-project',
       },
-      agentProfile: LOCAL_READ_AGENT_PROFILE,
+      agentProfile: EXPLORE_AGENT_TYPE,
       prompt: 'inspect without a project',
     });
 
@@ -2618,7 +2276,6 @@ describe('SessionManager child-session runtime primitive', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       newId: nextId(),
       now: nextNow(150),
       messageAuthority: hostedRootAuthority(),
@@ -2636,7 +2293,7 @@ describe('SessionManager child-session runtime primitive', () => {
         parentTurnId: parentRun.turnId,
         toolCallId: 'same-tool-call',
       },
-      agentProfile: LOCAL_READ_AGENT_PROFILE,
+      agentProfile: EXPLORE_AGENT_TYPE,
       prompt: 'one durable task',
     } as const;
     const ready = makeGate();
@@ -2675,6 +2332,128 @@ describe('SessionManager child-session runtime primitive', () => {
     while (!(await parentTurn.next()).done) {}
   });
 
+  test('a child reports what it hands back, and a message sent while it works reaches it', async () => {
+    const store = new MemorySessionStore();
+    const runStore = new MemoryAgentRunStore();
+    const backends = new BackendRegistry();
+    const parentGate = makeGate();
+    const childGate = makeGate();
+    const childBackends: HandbackBackend[] = [];
+    backends.register('ai-sdk', (ctx) => {
+      if (!ctx.header.subagentRuntime) return new TestBackend(ctx, parentGate);
+      const backend = new HandbackBackend(ctx, childGate);
+      childBackends.push(backend);
+      return backend;
+    });
+    const manager = new SessionManager({
+      store,
+      runStore,
+      runtimeEventStore: runStore,
+      backends,
+      newId: nextId(),
+      now: nextNow(300),
+    });
+    const parent = await manager.createSession(makeInput({ permissionMode: 'ask' }));
+    const parentTurn = manager
+      .sendMessage(parent.id, { turnId: 'parent-turn', text: 'delegate' })
+      [Symbol.asyncIterator]();
+    await parentTurn.next();
+    const [parentRun] = await runStore.listSessionInvocations(parent.id);
+    if (!parentRun) throw new Error('parent run was not recorded');
+
+    const child = await manager.spawnChildSession(parent.id, {
+      spawnedBy: {
+        parentRunId: parentRun.runId,
+        parentTurnId: parentRun.turnId,
+        toolCallId: 'call-agent',
+      },
+      agentProfile: GENERAL_PURPOSE_AGENT_TYPE,
+      prompt: 'Sum the primes.',
+      description: 'Sum primes',
+    });
+
+    // Still working: the message waits for the child's next step.
+    assert.deepStrictEqual(
+      await manager.sendChildAgentMessage({
+        parentSessionId: parent.id,
+        childSessionId: child.childSessionId,
+        text: 'Also report the time.',
+      }),
+      { delivery: 'queued', childSessionId: child.childSessionId },
+    );
+    const [lease] = await manager.taskNotificationLeases(child.childSessionId);
+    assert.deepStrictEqual(lease && { ...lease, id: undefined }, {
+      id: undefined,
+      kind: 'coordinator',
+      toolUseId: 'call-agent',
+      text: 'The coordinator sent a message while you were working:\nAlso report the time.\n\nAddress this before completing your current task.',
+    });
+    await manager.settleTaskNotificationLease(lease!);
+    assert.deepStrictEqual(await manager.taskNotificationLeases(child.childSessionId), []);
+
+    // A second message the child never reads waits for the report of the
+    // Turn that ended to reach the parent, then opens the child's next Turn.
+    await manager.sendChildAgentMessage({
+      parentSessionId: parent.id,
+      childSessionId: child.childSessionId,
+      text: 'And the date.',
+    });
+    childGate.release();
+    const first = await manager.waitForChildAgent(child.childSessionId);
+    assert.strictEqual(first?.summary, 'The sum is 142913828922.');
+    const sends = () => childBackends.flatMap((backend) => backend.sendInputs);
+    assert.strictEqual(sends().length, 1, 'no new Turn before the report is read');
+
+    // Finished, report still owed: another message queues rather than
+    // resuming the child over its unread report.
+    assert.deepStrictEqual(
+      await manager.sendChildAgentMessage({
+        parentSessionId: parent.id,
+        childSessionId: child.childSessionId,
+        text: 'And the weekday.',
+      }),
+      { delivery: 'queued', childSessionId: child.childSessionId },
+    );
+    const [owed] = await manager.pendingChildAgentNotificationLeases(parent.id);
+    assert.match(owed?.text ?? '', /<result>The sum is 142913828922\.<\/result>/u);
+    assert.match(
+      owed?.text ?? '',
+      /<usage><subagent_tokens>0<\/subagent_tokens><tool_uses>1<\/tool_uses><duration_ms>\d+<\/duration_ms><\/usage>/u,
+    );
+    await manager.settleTaskNotificationLease(owed!);
+    for (let attempt = 0; attempt < 200 && sends().length < 2; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    assert.strictEqual(sends().at(-1)?.text, 'And the date.\n\nAnd the weekday.');
+    await manager.waitForChildAgent(child.childSessionId);
+    // Taken off the queue as the Turn opened: its steps do not read them again.
+    assert.deepStrictEqual(await manager.taskNotificationLeases(child.childSessionId), []);
+
+    // A stop is the last word: what was queued before it opens no new Turn.
+    assert.strictEqual(
+      (
+        await manager.sendChildAgentMessage({
+          parentSessionId: parent.id,
+          childSessionId: child.childSessionId,
+          text: 'One more thing.',
+        })
+      ).delivery,
+      'queued',
+    );
+    await manager.stopChildAgent({
+      parentSessionId: parent.id,
+      childSessionId: child.childSessionId,
+    });
+    await manager.settleTaskNotificationLease(
+      (await manager.pendingChildAgentNotificationLeases(parent.id))[0]!,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.strictEqual(sends().length, 2);
+    assert.deepStrictEqual(await manager.taskNotificationLeases(child.childSessionId), []);
+    parentGate.release();
+    while (!(await parentTurn.next()).done) {}
+  });
+
   test('starts a metadata-only retry once, notifies once, and rechecks cancellation', async () => {
     const store = new MemorySessionStore();
     const abortController = new AbortController();
@@ -2694,7 +2473,6 @@ describe('SessionManager child-session runtime primitive', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       newId: nextId(),
       now: nextNow(170),
     });
@@ -2720,7 +2498,7 @@ describe('SessionManager child-session runtime primitive', () => {
             parentRun.runId,
             parentRun.turnId,
             toolCallId,
-            LOCAL_READ_AGENT_PROFILE,
+            EXPLORE_AGENT_TYPE,
             prompt,
             null,
             null,
@@ -2744,13 +2522,12 @@ describe('SessionManager child-session runtime primitive', () => {
               lifecycle: 'foreground',
             },
             subagentRuntime: {
-              schemaVersion: 1,
-              definitionVersion: LOCAL_READ_AGENT_DEFINITION.definitionVersion,
-              agentId: LOCAL_READ_AGENT_ID,
-              agentName: LOCAL_READ_AGENT_DEFINITION.name,
-              profile: LOCAL_READ_AGENT_PROFILE,
-              systemPrompt: LOCAL_READ_AGENT_DEFINITION.systemPrompt,
-              toolNames: [...LOCAL_READ_AGENT_DEFINITION.tools],
+              schemaVersion: 2,
+              definitionVersion: EXPLORE_AGENT_DEFINITION.definitionVersion,
+              agentId: EXPLORE_AGENT_TYPE,
+              agentName: EXPLORE_AGENT_DEFINITION.name,
+              profile: EXPLORE_AGENT_TYPE,
+              systemPrompt: EXPLORE_AGENT_DEFINITION.systemPrompt,
             },
             subagentSpawn: {
               schemaVersion: 1,
@@ -2776,7 +2553,7 @@ describe('SessionManager child-session runtime primitive', () => {
         parentTurnId: parentRun.turnId,
         toolCallId: 'metadata-only-tool',
       },
-      agentProfile: LOCAL_READ_AGENT_PROFILE,
+      agentProfile: EXPLORE_AGENT_TYPE,
       prompt: 'resume after metadata commit',
       onReady: () => {
         readyCalls += 1;
@@ -2801,7 +2578,7 @@ describe('SessionManager child-session runtime primitive', () => {
           parentTurnId: parentRun.turnId,
           toolCallId: 'cancelled-metadata-tool',
         },
-        agentProfile: LOCAL_READ_AGENT_PROFILE,
+        agentProfile: EXPLORE_AGENT_TYPE,
         prompt: 'must remain cancelled',
         abortSignal: abortController.signal,
         onReady: () => {
@@ -2817,7 +2594,7 @@ describe('SessionManager child-session runtime primitive', () => {
     while (!(await parentTurn.next()).done) {}
   });
 
-  test('reopens a child from its exact runtime snapshot after the builtin profile changes', async () => {
+  test('reopens a child with the role card it was started with after the type changes', async () => {
     const store = new MemorySessionStore();
     const runStore = new MemoryAgentRunStore();
     const backends = new BackendRegistry();
@@ -2832,7 +2609,6 @@ describe('SessionManager child-session runtime primitive', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       newId: nextId(),
       now: nextNow(175),
     });
@@ -2849,14 +2625,14 @@ describe('SessionManager child-session runtime primitive', () => {
         parentTurnId: parentRun.turnId,
         toolCallId: 'snapshot-tool-call',
       },
-      agentProfile: LOCAL_READ_AGENT_PROFILE,
+      agentProfile: EXPLORE_AGENT_TYPE,
       prompt: 'first child turn',
     });
     const durablePrompt = (await store.readHeader(child.childSessionId)).subagentRuntime
       ?.systemPrompt;
     if (!durablePrompt) throw new Error('child runtime snapshot was not persisted');
 
-    const originalPrompt = LOCAL_READ_AGENT_DEFINITION.systemPrompt;
+    const originalPrompt = EXPLORE_AGENT_DEFINITION.systemPrompt;
     let parentTurnDrained = false;
     const drainParentTurn = async (): Promise<void> => {
       parentGate.release();
@@ -2864,53 +2640,26 @@ describe('SessionManager child-session runtime primitive', () => {
       parentTurnDrained = true;
     };
     try {
-      LOCAL_READ_AGENT_DEFINITION.systemPrompt = 'Changed catalog prompt that must not leak.';
-      let refreshSettled = false;
-      const refresh = manager.refreshIdleBackends().finally(() => {
-        refreshSettled = true;
-      });
-      await Promise.resolve();
-      assert.strictEqual(refreshSettled, false);
-      assert.strictEqual(contexts.filter((ctx) => ctx.sessionId === parent.id).length, 1);
+      EXPLORE_AGENT_DEFINITION.systemPrompt = 'Changed catalog prompt that must not leak.';
+      await manager.waitForChildAgent(child.childSessionId);
       await drainParentTurn();
-      await refresh;
+      await manager.refreshIdleBackends();
       await drain(
         manager.sendMessage(child.childSessionId, {
           turnId: 'child-follow-up',
-          text: 'use the durable profile',
+          text: 'use the durable role card',
         }),
       );
     } finally {
       if (!parentTurnDrained) await drainParentTurn();
-      LOCAL_READ_AGENT_DEFINITION.systemPrompt = originalPrompt;
+      EXPLORE_AGENT_DEFINITION.systemPrompt = originalPrompt;
     }
 
+    // The role card is the one the child was started with; its tools are
+    // composed at activation, so no list rides with it.
     const childContexts = contexts.filter((ctx) => ctx.sessionId === child.childSessionId);
-    assert.strictEqual(childContexts.length, 2);
-    assert.strictEqual(childContexts[1]?.systemPrompt, durablePrompt);
-    assert.deepStrictEqual(
-      childContexts[1]?.tools?.map((tool) => tool.name),
-      ['Read', 'Glob', 'Grep'],
-    );
-
-    const missingToolManager = new SessionManager({
-      store,
-      runStore,
-      runtimeEventStore: runStore,
-      backends,
-      childTools: [testTool('Read'), testTool('Glob')],
-      newId: nextId(),
-      now: nextNow(185),
-    });
-    await expectRejects(
-      drain(
-        missingToolManager.sendMessage(child.childSessionId, {
-          turnId: 'missing-tool-follow-up',
-          text: 'must fail closed',
-        }),
-      ),
-      /runtime tool snapshot is unavailable/,
-    );
+    assert.strictEqual(childContexts.at(-1)?.systemPrompt, durablePrompt);
+    assert.strictEqual(childContexts.at(-1)?.tools, undefined);
   });
 
   test('reopens after restart with isolated history, tool activity, usage, and compaction', async () => {
@@ -2931,7 +2680,6 @@ describe('SessionManager child-session runtime primitive', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       newId: nextId(),
       now: nextNow(186),
     });
@@ -2949,7 +2697,7 @@ describe('SessionManager child-session runtime primitive', () => {
         parentTurnId: parentRun.turnId,
         toolCallId: 'restart-observation-tool',
       },
-      agentProfile: LOCAL_READ_AGENT_PROFILE,
+      agentProfile: EXPLORE_AGENT_TYPE,
       prompt: 'inspect README before restart',
     });
 
@@ -2960,7 +2708,6 @@ describe('SessionManager child-session runtime primitive', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       // Its own id space: a restarted host mints fresh ids, it does not replay
       // the sequence the dead process was on.
       newId: nextId('restarted'),
@@ -3038,7 +2785,6 @@ describe('SessionManager child-session runtime primitive', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       newId: nextId(),
       now: nextNow(190),
     });
@@ -3059,7 +2805,7 @@ describe('SessionManager child-session runtime primitive', () => {
           parentRun.runId,
           parentRun.turnId,
           toolCallId,
-          LOCAL_READ_AGENT_PROFILE,
+          EXPLORE_AGENT_TYPE,
           prompt,
           null,
           null,
@@ -3083,13 +2829,12 @@ describe('SessionManager child-session runtime primitive', () => {
           lifecycle: 'foreground',
         },
         subagentRuntime: {
-          schemaVersion: 1,
-          definitionVersion: LOCAL_READ_AGENT_DEFINITION.definitionVersion,
-          agentId: LOCAL_READ_AGENT_ID,
-          agentName: LOCAL_READ_AGENT_DEFINITION.name,
-          profile: LOCAL_READ_AGENT_PROFILE,
-          systemPrompt: LOCAL_READ_AGENT_DEFINITION.systemPrompt,
-          toolNames: [...LOCAL_READ_AGENT_DEFINITION.tools],
+          schemaVersion: 2,
+          definitionVersion: EXPLORE_AGENT_DEFINITION.definitionVersion,
+          agentId: EXPLORE_AGENT_TYPE,
+          agentName: EXPLORE_AGENT_DEFINITION.name,
+          profile: EXPLORE_AGENT_TYPE,
+          systemPrompt: EXPLORE_AGENT_DEFINITION.systemPrompt,
         },
         subagentSpawn: {
           schemaVersion: 1,
@@ -3108,8 +2853,8 @@ describe('SessionManager child-session runtime primitive', () => {
         turnId: 'stale-child-turn',
         status: 'running',
         permissionMode: 'explore',
-        agentId: LOCAL_READ_AGENT_ID,
-        agentName: LOCAL_READ_AGENT_DEFINITION.name,
+        agentId: EXPLORE_AGENT_TYPE,
+        agentName: EXPLORE_AGENT_DEFINITION.name,
       }),
       [
         makeRunEvent({
@@ -3128,7 +2873,7 @@ describe('SessionManager child-session runtime primitive', () => {
         parentTurnId: parentRun.turnId,
         toolCallId,
       },
-      agentProfile: LOCAL_READ_AGENT_PROFILE,
+      agentProfile: EXPLORE_AGENT_TYPE,
       prompt,
     });
     assert.strictEqual(recovered.childSessionId, child.id);
@@ -3152,7 +2897,6 @@ describe('SessionManager child-session runtime primitive', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       newId: nextId(),
       now: nextNow(200),
     });
@@ -3170,7 +2914,7 @@ describe('SessionManager child-session runtime primitive', () => {
           parentTurnId: parentRun.turnId,
           toolCallId: 'tool-call-1',
         },
-        agentProfile: LOCAL_READ_AGENT_PROFILE,
+        agentProfile: EXPLORE_AGENT_TYPE,
         prompt: 'must not start',
       }),
       /parent run is not active/,
@@ -3195,7 +2939,6 @@ describe('SessionManager child-session runtime primitive', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       isParentRunActive: (sessionId, runId, turnId) =>
         externalParent !== undefined &&
         externalParent.sessionId === sessionId &&
@@ -3220,7 +2963,7 @@ describe('SessionManager child-session runtime primitive', () => {
         parentTurnId: parentRun.turnId,
         toolCallId: 'tool-call-1',
       },
-      agentProfile: LOCAL_READ_AGENT_PROFILE,
+      agentProfile: EXPLORE_AGENT_TYPE,
       prompt: 'inspect',
     });
 
@@ -3250,7 +2993,6 @@ describe('SessionManager child-session runtime primitive', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       newId: nextId(),
       now: nextNow(300),
     });
@@ -3271,7 +3013,7 @@ describe('SessionManager child-session runtime primitive', () => {
         parentTurnId: parentRun.turnId,
         toolCallId: 'tool-call-1',
       },
-      agentProfile: LOCAL_READ_AGENT_PROFILE,
+      agentProfile: EXPLORE_AGENT_TYPE,
       prompt: 'first child',
       onReady: ({ childSessionId }) => {
         childOneId = childSessionId;
@@ -3291,7 +3033,7 @@ describe('SessionManager child-session runtime primitive', () => {
         parentTurnId: parentRun.turnId,
         toolCallId: 'tool-call-2',
       },
-      agentProfile: LOCAL_READ_AGENT_PROFILE,
+      agentProfile: EXPLORE_AGENT_TYPE,
       prompt: 'second child',
       onReady: ({ childSessionId }) => {
         childTwoId = childSessionId;
@@ -3434,13 +3176,12 @@ describe('SessionManager child-session runtime primitive', () => {
           lifecycle: 'foreground',
         },
         subagentRuntime: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           definitionVersion: 1,
-          agentId: LOCAL_READ_AGENT_ID,
+          agentId: EXPLORE_AGENT_TYPE,
           agentName: 'Local Read',
-          profile: LOCAL_READ_AGENT_PROFILE,
-          systemPrompt: LOCAL_READ_AGENT_DEFINITION.systemPrompt,
-          toolNames: ['Read', 'Glob', 'Grep'],
+          profile: EXPLORE_AGENT_TYPE,
+          systemPrompt: EXPLORE_AGENT_DEFINITION.systemPrompt,
         },
         subagentSpawn: {
           schemaVersion: 1,
@@ -3459,7 +3200,7 @@ describe('SessionManager child-session runtime primitive', () => {
         turnId: 'child-turn',
         status: 'running',
         permissionMode: 'explore',
-        agentId: LOCAL_READ_AGENT_ID,
+        agentId: EXPLORE_AGENT_TYPE,
         agentName: 'Local Read',
       }),
       [
@@ -5280,7 +5021,6 @@ describe('SessionManager permission mode updates', () => {
     const manager = new SessionManager({
       store,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       newId: nextId(),
       now: nextNow(990),
       shellRuns: {
@@ -5314,13 +5054,12 @@ describe('SessionManager permission mode updates', () => {
           lifecycle: 'foreground',
         },
         subagentRuntime: {
-          schemaVersion: 1,
-          definitionVersion: LOCAL_READ_AGENT_DEFINITION.definitionVersion,
-          agentId: LOCAL_READ_AGENT_ID,
-          agentName: LOCAL_READ_AGENT_DEFINITION.name,
-          profile: LOCAL_READ_AGENT_PROFILE,
-          systemPrompt: LOCAL_READ_AGENT_DEFINITION.systemPrompt,
-          toolNames: ['Read', 'Glob', 'Grep'],
+          schemaVersion: 2,
+          definitionVersion: EXPLORE_AGENT_DEFINITION.definitionVersion,
+          agentId: EXPLORE_AGENT_TYPE,
+          agentName: EXPLORE_AGENT_DEFINITION.name,
+          profile: EXPLORE_AGENT_TYPE,
+          systemPrompt: EXPLORE_AGENT_DEFINITION.systemPrompt,
         },
         subagentSpawn: {
           schemaVersion: 1,
@@ -5344,13 +5083,12 @@ describe('SessionManager permission mode updates', () => {
           lifecycle: 'foreground',
         },
         subagentRuntime: {
-          schemaVersion: 1,
-          definitionVersion: LOCAL_READ_AGENT_DEFINITION.definitionVersion,
-          agentId: LOCAL_READ_AGENT_ID,
-          agentName: LOCAL_READ_AGENT_DEFINITION.name,
-          profile: LOCAL_READ_AGENT_PROFILE,
-          systemPrompt: LOCAL_READ_AGENT_DEFINITION.systemPrompt,
-          toolNames: ['Read', 'Glob', 'Grep'],
+          schemaVersion: 2,
+          definitionVersion: EXPLORE_AGENT_DEFINITION.definitionVersion,
+          agentId: EXPLORE_AGENT_TYPE,
+          agentName: EXPLORE_AGENT_DEFINITION.name,
+          profile: EXPLORE_AGENT_TYPE,
+          systemPrompt: EXPLORE_AGENT_DEFINITION.systemPrompt,
         },
         subagentSpawn: {
           schemaVersion: 1,
@@ -5410,7 +5148,6 @@ describe('SessionManager permission mode updates', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       newId: nextId(),
       now: nextNow(991),
       shellRuns: {
@@ -5431,7 +5168,7 @@ describe('SessionManager permission mode updates', () => {
     });
     const linkedChild = (
       permissionMode: PermissionMode,
-      definition: typeof IMPLEMENTATION_AGENT_DEFINITION,
+      definition: typeof GENERAL_PURPOSE_AGENT_DEFINITION,
       toolCallId: string,
     ) =>
       makeInput({
@@ -5443,13 +5180,12 @@ describe('SessionManager permission mode updates', () => {
           lifecycle: 'foreground',
         },
         subagentRuntime: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           definitionVersion: definition.definitionVersion,
           agentId: definition.id,
           agentName: definition.name,
           profile: definition.profile,
           systemPrompt: definition.systemPrompt,
-          toolNames: ['Read', 'Glob', 'Grep'],
         },
         subagentSpawn: {
           schemaVersion: 1,
@@ -5460,10 +5196,10 @@ describe('SessionManager permission mode updates', () => {
       });
     const session = await manager.createSession(makeInput({ permissionMode: 'ask' }));
     const implementer = await manager.createSession(
-      linkedChild('ask', IMPLEMENTATION_AGENT_DEFINITION, 'a-implementer'),
+      linkedChild('ask', GENERAL_PURPOSE_AGENT_DEFINITION, 'a-implementer'),
     );
     const reader = await manager.createSession(
-      linkedChild('explore', LOCAL_READ_AGENT_DEFINITION, 'b-reader'),
+      linkedChild('explore', EXPLORE_AGENT_DEFINITION, 'b-reader'),
     );
     const updatePermissionMode = async (permissionMode: PermissionMode) => {
       const current = await store.readHeaderRecordSnapshot(session.id);
@@ -5486,7 +5222,11 @@ describe('SessionManager permission mode updates', () => {
       childSessionId: implementer.id,
       text: 'carry on',
     });
-    assert.strictEqual(implementerRun.permissionMode, 'bypass');
+    assert.strictEqual(implementerRun.delivery, 'resumed');
+    assert.strictEqual(
+      implementerRun.delivery === 'resumed' && implementerRun.permissionMode,
+      'bypass',
+    );
     assert.deepStrictEqual(await store.readExecutionBoundary(implementer.id), {
       kind: 'bypass',
       revision: 1,
@@ -5499,7 +5239,7 @@ describe('SessionManager permission mode updates', () => {
       childSessionId: reader.id,
       text: 'look again',
     });
-    assert.strictEqual(readerRun.permissionMode, 'explore');
+    assert.strictEqual(readerRun.delivery === 'resumed' && readerRun.permissionMode, 'explore');
     assert.deepStrictEqual(await store.readExecutionBoundary(reader.id), {
       kind: 'managed',
       profile: createReadOnlyPermissionProfile(),
@@ -6523,7 +6263,6 @@ describe('SessionManager permission mode updates', () => {
       runtimeEventStore: runStore,
       toolBoundaryProtocol: 't1_after_preflight_v1',
       backends,
-      childTools: [testTool('Read')],
       inspectContinuationSafety: async () => ({
         workspaceIdentity: 'workspace-1',
         backgroundOperationsSettled: true,
@@ -6829,7 +6568,6 @@ describe('SessionManager permission mode updates', () => {
       runtimeEventStore: runStore,
       toolBoundaryProtocol: 't1_after_preflight_v1',
       backends,
-      childTools: [testTool('Read')],
       inspectContinuationSafety: async () => ({
         workspaceIdentity: 'workspace-1',
         backgroundOperationsSettled: true,
@@ -10576,7 +10314,6 @@ describe('SessionManager permission mode updates', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       listArtifactsForTurn: async (_sessionId, turnId) =>
         turnId === 'child-turn'
           ? [
@@ -10643,7 +10380,7 @@ describe('SessionManager permission mode updates', () => {
         updatedAt: 130,
         completedAt: 130,
         parentRunId: 'parent-run',
-        agentId: LOCAL_READ_AGENT_ID,
+        agentId: EXPLORE_AGENT_TYPE,
         agentName: 'Researcher',
         permissionMode: 'explore',
       }),
@@ -10727,23 +10464,14 @@ describe('SessionManager permission mode updates', () => {
 
     const list = await manager.listChildAgents(session.id);
     assert.deepStrictEqual(
-      list.definitions.map((agent) => agent.id),
-      [LOCAL_READ_AGENT_ID, WEB_RESEARCH_AGENT_ID, IMPLEMENTATION_AGENT_ID],
+      list.definitions.map((agent) => [agent.id, agent.tools]),
+      [
+        [GENERAL_PURPOSE_AGENT_TYPE, '*'],
+        [EXPLORE_AGENT_TYPE, 'All tools except Agent, Write, Edit, NotebookEdit, apply_patch'],
+        [PLAN_AGENT_TYPE, 'All tools except Agent, Write, Edit, NotebookEdit, apply_patch'],
+      ],
     );
     assert.deepStrictEqual(list.definitions[0]?.availability, { status: 'available' });
-    assert.strictEqual(list.definitions[0]?.contract.defaultWriteBack, 'summary');
-    assert.strictEqual(list.definitions[0]?.contract.workspace, 'same_workspace');
-    assert.deepStrictEqual(list.definitions[1]?.availability, {
-      status: 'unavailable',
-      reason: 'missing_tools',
-      missingTools: ['WebSearch'],
-    });
-    assert.deepStrictEqual(list.definitions[2]?.availability, {
-      status: 'unavailable',
-      reason: 'workspace_isolation_unavailable',
-      workspace: AGENT_WORKSPACE_WORKTREE,
-      requiredRuntime: 'worktree_child_executor',
-    });
     assert.deepStrictEqual(
       list.runs.map((agent) => agent.runId),
       ['child-run'],
@@ -10758,7 +10486,7 @@ describe('SessionManager permission mode updates', () => {
         },
       ],
     );
-    assert.strictEqual(list.runs[0]?.agentId, LOCAL_READ_AGENT_ID);
+    assert.strictEqual(list.runs[0]?.agentId, EXPLORE_AGENT_TYPE);
     assert.strictEqual(list.runs[0]?.agentName, 'Researcher');
     assert.strictEqual(list.runs[0]?.durationMs, 10);
 
@@ -10784,7 +10512,6 @@ describe('SessionManager permission mode updates', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       newId: nextId(),
       now: nextNow(6_900),
     });
@@ -10821,7 +10548,7 @@ describe('SessionManager permission mode updates', () => {
         createdAt: 130,
         updatedAt: 140,
         parentRunId: 'parent-run',
-        agentId: LOCAL_READ_AGENT_ID,
+        agentId: EXPLORE_AGENT_TYPE,
         agentName: 'Researcher',
         permissionMode: 'explore',
       }),
@@ -10884,7 +10611,7 @@ describe('SessionManager permission mode updates', () => {
       updatedAt: 200,
       completedAt: 200,
       parentRunId: 'parent-run',
-      agentId: LOCAL_READ_AGENT_ID,
+      agentId: EXPLORE_AGENT_TYPE,
       agentName: 'Researcher',
       permissionMode: 'explore',
     });
@@ -10966,7 +10693,7 @@ describe('SessionManager permission mode updates', () => {
         updatedAt: 200,
         completedAt: 200,
         parentRunId: 'parent-run',
-        agentId: LOCAL_READ_AGENT_ID,
+        agentId: EXPLORE_AGENT_TYPE,
         agentName: 'Researcher',
         permissionMode: 'explore',
       }),
@@ -12881,6 +12608,54 @@ class TestBackend implements AgentBackend {
   }
 }
 
+/** A child that reasons aloud, then hands its report back. */
+class HandbackBackend extends TestBackend {
+  constructor(
+    ctx: BackendFactoryContext,
+    private readonly childGate: Gate,
+  ) {
+    super(ctx);
+  }
+
+  override async *send(input: BackendSendInput): AsyncIterable<SessionEvent> {
+    this.sendInputs.push(input);
+    await this.childGate.promise;
+    yield {
+      type: 'text_complete',
+      id: `${input.turnId}-thinking-aloud`,
+      turnId: input.turnId,
+      ts: 1,
+      messageId: `${input.turnId}-m`,
+      text: 'Let me also double-check that.',
+    };
+    yield {
+      type: 'tool_start',
+      id: `${input.turnId}-handback`,
+      turnId: input.turnId,
+      ts: 2,
+      toolUseId: `${input.turnId}-handback-call`,
+      toolName: 'SubagentHandback',
+      args: { message: 'The sum is 142913828922.' },
+    };
+    yield {
+      type: 'tool_result',
+      id: `${input.turnId}-handback-result`,
+      turnId: input.turnId,
+      ts: 3,
+      toolUseId: `${input.turnId}-handback-call`,
+      isError: false,
+      content: { kind: 'text', text: 'Your report was delivered to your caller. Stop here.' },
+    };
+    yield {
+      type: 'complete',
+      id: `${input.turnId}-complete`,
+      turnId: input.turnId,
+      ts: 4,
+      stopReason: 'end_turn',
+    };
+  }
+}
+
 class PermissionBroadcastBackend extends TestBackend {
   permissionResponses = 0;
 
@@ -14755,13 +14530,12 @@ function createGraphOperatorSession(
         lifecycle: 'foreground',
       },
       subagentRuntime: {
-        schemaVersion: 1,
-        definitionVersion: LOCAL_READ_AGENT_DEFINITION.definitionVersion,
-        agentId: LOCAL_READ_AGENT_ID,
-        agentName: LOCAL_READ_AGENT_DEFINITION.name,
-        profile: LOCAL_READ_AGENT_PROFILE,
-        systemPrompt: LOCAL_READ_AGENT_DEFINITION.systemPrompt,
-        toolNames: [...LOCAL_READ_AGENT_DEFINITION.tools],
+        schemaVersion: 2,
+        definitionVersion: EXPLORE_AGENT_DEFINITION.definitionVersion,
+        agentId: EXPLORE_AGENT_TYPE,
+        agentName: EXPLORE_AGENT_DEFINITION.name,
+        profile: EXPLORE_AGENT_TYPE,
+        systemPrompt: EXPLORE_AGENT_DEFINITION.systemPrompt,
       },
     }),
   );
@@ -14864,7 +14638,6 @@ async function createQueuedGraphScenario(firstAbortSignal?: AbortSignal) {
     runStore,
     runtimeEventStore: runStore,
     backends,
-    childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
     newId: nextId(),
     now: nextNow(70),
   });

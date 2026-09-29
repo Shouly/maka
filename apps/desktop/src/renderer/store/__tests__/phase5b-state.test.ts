@@ -285,7 +285,7 @@ const preset = (patch: Partial<SubagentPreset> = {}): SubagentPreset => ({
   id: 'fast-reader',
   name: 'Fast reader',
   description: '',
-  profile: 'local_read',
+  profile: 'Explore',
   connectionSlug: 'gateway',
   model: 'a-model',
   enabled: true,

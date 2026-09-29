@@ -1164,13 +1164,12 @@ async function seedSource(
           lifecycle: 'foreground',
         },
         subagentRuntime: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           definitionVersion: 1,
           agentId: 'worker',
           agentName: 'Graph Worker',
           profile: 'default',
           systemPrompt: 'Complete the delegated task.',
-          toolNames: [],
         },
         subagentSpawn: {
           schemaVersion: 1,
@@ -1394,13 +1393,12 @@ async function seedSource(
         lifecycle: 'foreground',
       },
       subagentRuntime: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         definitionVersion: 1,
         agentId: 'worker',
         agentName: 'Worker',
         profile: 'default',
         systemPrompt: 'Complete the delegated task.',
-        toolNames: [],
       },
       subagentSpawn: {
         schemaVersion: 1,

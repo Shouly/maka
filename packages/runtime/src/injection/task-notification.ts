@@ -122,8 +122,14 @@ export interface ChildAgentNotificationFacts {
   readonly status: 'completed' | 'failed' | 'cancelled' | 'running' | 'waiting_for_user';
   /** The parent's 3-5 word label, or the agent's name when it gave none. */
   readonly name: string;
-  /** The child's last words on that Turn. */
+  /** The report the child handed back; its last words on that Turn when it handed none back. */
   readonly result: string;
+  /** What the Turn cost: every token its model calls spent, its tool calls, how long it ran. */
+  readonly usage?: {
+    readonly tokens: number;
+    readonly toolUses: number;
+    readonly durationMs: number;
+  };
   readonly failureClass?: string;
   /**
    * What the child produced and left behind — a worktree write-back patch,
@@ -167,7 +173,27 @@ export function renderChildAgentNotification(facts: ChildAgentNotificationFacts)
       ? [`<artifacts>${inBlock(facts.artifactIds.join(' '))}</artifacts>`]
       : []),
     `<result>${inBlock(facts.result)}</result>`,
+    ...(facts.usage
+      ? [
+          `<usage><subagent_tokens>${facts.usage.tokens}</subagent_tokens>` +
+            `<tool_uses>${facts.usage.toolUses}</tool_uses>` +
+            `<duration_ms>${facts.usage.durationMs}</duration_ms></usage>`,
+        ]
+      : []),
     '</task-notification>',
+  ].join('\n');
+}
+
+/**
+ * A message from the agent that launched a child, reaching it while it works:
+ * the design's words for a mid-task course correction.
+ */
+export function renderCoordinatorMessage(text: string): string {
+  return [
+    'The coordinator sent a message while you were working:',
+    text,
+    '',
+    'Address this before completing your current task.',
   ].join('\n');
 }
 

@@ -357,7 +357,7 @@ describe('Host Agent Graph coordinator', () => {
   test('rejects work whose current and selected historical inputs exceed the combined cap', () => {
     const work = {
       workId: 'work-1',
-      target: { kind: 'agent', agentId: 'local-read' },
+      target: { kind: 'agent', agentId: 'Explore' },
       inputIds: Array.from({ length: 64 }, (_, index) => `input-${index}`),
       selectedResultInputs: [{ sourceGraphId: 'graph-prev', resultId: 'result-1' }],
       status: 'requested',

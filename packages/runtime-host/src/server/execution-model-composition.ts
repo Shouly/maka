@@ -489,6 +489,7 @@ async function buildHostAiSdkBackend(
             text: resolved.text,
             ...(resolved.contexts ? { contexts: resolved.contexts } : {}),
             ...(resolved.dated ? { dated: true } : {}),
+            ...(resolved.childAgent ? { childAgent: true } : {}),
             sourceRevisions: resolved.sourceRevisions,
           };
         },

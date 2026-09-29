@@ -496,7 +496,7 @@ export class ExecutionFixture {
         kind === 'linked_child_resume' || kind === 'linked_child_provider_retry'
           ? randomUUID()
           : undefined;
-      const agentId = 'local-read';
+      const agentId = 'Explore';
       const agentName = 'Local Read';
       const child = await stores.sessionStore.createSubagent({
         cwd: this.root,
@@ -518,13 +518,12 @@ export class ExecutionFixture {
           lifecycle: 'foreground',
         },
         subagentRuntime: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           definitionVersion: 1,
           agentId,
           agentName,
-          profile: 'local_read',
+          profile: 'Explore',
           systemPrompt: 'Read the assigned workspace task.',
-          toolNames: ['Read', 'Glob', 'Grep'],
         },
         subagentSpawn: {
           schemaVersion: 1,
@@ -613,7 +612,7 @@ export class ExecutionFixture {
                     intentId: `graph_intent_${'b'.repeat(32)}`,
                     intentFingerprint: `sha256:${'c'.repeat(64)}`,
                     readinessContextFingerprint: `sha256:${'d'.repeat(64)}`,
-                    targetOperatorId: 'local-read',
+                    targetOperatorId: 'Explore',
                     targetSessionId: child.header.id,
                     targetTurnId: turnId,
                     targetRunId: runId,

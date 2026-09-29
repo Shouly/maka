@@ -17,100 +17,56 @@
  * under the License.
  */
 
-import {
-  BUILTIN_TOOL_CATEGORY,
-  type PermissionMode,
-  type ToolCategory,
-} from '@maka/core/permission';
+// The agent types a session can launch, as the design has them: a general
+// agent that can do what its caller can, and two read-only ones. A type is a
+// role card and a rule for which tools it goes without; everything else a
+// child reads and holds is composed the way a main session's is.
+
+import type { PermissionMode } from '@maka/core/permission';
 import { TOOL_NAMES } from '@maka/core/tool-names';
 import {
   SUBAGENT_PROFILES,
   type SubagentPreset,
   type SubagentProfile,
 } from '@maka/core/subagent-settings';
-import type { MakaTool } from './tool-runtime.js';
 
-export const LOCAL_READ_AGENT_ID = 'local-read';
-export const LOCAL_READ_AGENT_PROFILE = 'local_read';
-export const WEB_RESEARCH_AGENT_ID = 'web-research';
-export const WEB_RESEARCH_AGENT_PROFILE = 'web_research';
-export const IMPLEMENTATION_AGENT_ID = 'implementation';
-export const IMPLEMENTATION_AGENT_PROFILE = 'implementation';
+export const GENERAL_PURPOSE_AGENT_TYPE = 'general-purpose';
+export const EXPLORE_AGENT_TYPE = 'Explore';
+export const PLAN_AGENT_TYPE = 'Plan';
+/** What `Agent` runs when no `subagent_type` is given. */
+export const DEFAULT_AGENT_TYPE = GENERAL_PURPOSE_AGENT_TYPE;
 export const BUILTIN_AGENT_PROFILES = SUBAGENT_PROFILES;
-export const AGENT_INVOCATION_FOREGROUND = 'foreground';
-export const AGENT_CONTEXT_ISOLATED = 'isolated';
-export const AGENT_WORKSPACE_SAME_WORKSPACE = 'same_workspace';
-export const AGENT_WORKSPACE_WORKTREE = 'worktree';
-export const AGENT_WRITE_BACK_SUMMARY = 'summary';
-export const AGENT_WRITE_BACK_PATCH = 'patch';
 
 export type AgentProfile = SubagentProfile;
-export type AgentCapability = AgentProfile;
-export type AgentInvocationMode = typeof AGENT_INVOCATION_FOREGROUND;
-export type AgentContextMode = typeof AGENT_CONTEXT_ISOLATED;
-export type AgentWorkspaceMode = typeof AGENT_WORKSPACE_SAME_WORKSPACE | 'worktree' | 'sandbox';
-export type AgentWriteBackMode =
-  | typeof AGENT_WRITE_BACK_SUMMARY
-  | 'decision'
-  | 'artifact'
-  | 'patch';
-export type AgentToolGroup = 'file_edit';
-
-const AGENT_TOOL_GROUP_ALTERNATIVES = {
-  file_edit: [[TOOL_NAMES.write, TOOL_NAMES.edit], [TOOL_NAMES.applyPatch]],
-} as const satisfies Record<AgentToolGroup, readonly (readonly string[])[]>;
-
-export interface AgentProfileContract {
-  capability: AgentCapability;
-  invocation: AgentInvocationMode;
-  context: AgentContextMode;
-  workspace: AgentWorkspaceMode;
-  defaultWriteBack: AgentWriteBackMode;
-  supportedWriteBack: readonly AgentWriteBackMode[];
-}
-
-export type AgentDefinitionAvailability =
-  | { status: 'unknown' }
-  | { status: 'available' }
-  | {
-      status: 'unavailable';
-      reason: 'missing_tools';
-      missingTools: string[];
-    }
-  | {
-      status: 'unavailable';
-      reason: 'workspace_isolation_unavailable';
-      workspace: AgentWorkspaceMode;
-      requiredRuntime: 'worktree_child_executor';
-    };
 
 export interface AgentDefinition {
   definitionVersion: number;
-  id: string;
+  /** What `subagent_type` names, and the id recorded on the child. */
   profile: AgentProfile;
+  id: string;
   name: string;
+  /** The one line the agent types listing gives it. */
   description: string;
-  contract: AgentProfileContract;
+  /**
+   * `explore` keeps the child read-only whatever its parent may do; any other
+   * mode follows the parent, Full access included.
+   */
   permissionMode: PermissionMode;
-  tools: readonly string[];
-  toolGroups?: readonly AgentToolGroup[];
+  /** What this type goes without on top of what no child has. */
+  excludedTools: readonly string[];
+  /** The role card: the first section of the child's system prompt. */
   systemPrompt: string;
 }
-
-export type AgentRuntimeDefinition = Pick<
-  AgentDefinition,
-  'id' | 'permissionMode' | 'tools' | 'toolGroups'
->;
 
 export interface AgentDefinitionListItem {
   id: string;
   profile: AgentProfile;
   name: string;
   description: string;
-  contract: AgentProfileContract;
-  availability: AgentDefinitionAvailability;
+  availability: { status: 'available' };
   permissionMode: PermissionMode;
-  tools: string[];
+  /** The listing's `(Tools: …)`: `*`, or what the type goes without. */
+  tools: string;
 }
 
 export type SubagentPresetAvailability =
@@ -129,267 +85,225 @@ export interface SubagentPresetListItem extends SubagentPreset {
   availability: SubagentPresetAvailability;
 }
 
-export interface AgentDefinitionListOptions {
-  tools?: readonly MakaTool[];
-  worktreeChildExecutorAvailable?: boolean;
-}
+/**
+ * What no child agent holds. A child cannot start another agent or talk to
+ * one, ask the user anything, change the user's memory, set itself up to come
+ * back later, or take over the session's own plan and goal — the design's
+ * general agent goes without the same things. It cannot schedule work either:
+ * a scheduled run carries its own permission mode, so a read-only child
+ * could otherwise start a run that writes. Nor can it change the app's
+ * settings, which no agent's message may authorize.
+ */
+export const CHILD_EXCLUDED_TOOL_NAMES: readonly string[] = Object.freeze([
+  TOOL_NAMES.agent,
+  TOOL_NAMES.sendMessage,
+  TOOL_NAMES.listAgents,
+  TOOL_NAMES.agentOutput,
+  TOOL_NAMES.swarmStatus,
+  TOOL_NAMES.viewAgentGraph,
+  TOOL_NAMES.updateAgentGraph,
+  TOOL_NAMES.yieldAgentGraph,
+  TOOL_NAMES.askUserQuestion,
+  TOOL_NAMES.memoryWrite,
+  TOOL_NAMES.memoryStrReplace,
+  TOOL_NAMES.memoryAppend,
+  TOOL_NAMES.memoryDelete,
+  TOOL_NAMES.sendLater,
+  TOOL_NAMES.scheduledTaskCreate,
+  TOOL_NAMES.scheduledTaskList,
+  TOOL_NAMES.scheduledTaskUpdate,
+  TOOL_NAMES.scheduledTaskDelete,
+  TOOL_NAMES.scheduledTaskRun,
+  TOOL_NAMES.copilotSettingsUpdate,
+  TOOL_NAMES.submitPlan,
+  TOOL_NAMES.updatePlan,
+  TOOL_NAMES.cancelPlan,
+  TOOL_NAMES.goalSet,
+  TOOL_NAMES.goalClear,
+  TOOL_NAMES.goalPause,
+  TOOL_NAMES.goalResume,
+  TOOL_NAMES.goalStatus,
+]);
 
-export const LOCAL_READ_AGENT_DEFINITION: AgentDefinition = {
+/** Only a child holds this one, and only to hand its report back. */
+export const PARENT_EXCLUDED_TOOL_NAMES: readonly string[] = Object.freeze([
+  TOOL_NAMES.subagentHandback,
+]);
+
+const FILE_WRITE_TOOL_NAMES: readonly string[] = Object.freeze([
+  TOOL_NAMES.write,
+  TOOL_NAMES.edit,
+  TOOL_NAMES.notebookEdit,
+  TOOL_NAMES.applyPatch,
+]);
+
+const READ_ONLY_RULES = [
+  '=== CRITICAL: READ-ONLY MODE - NO FILE MODIFICATIONS ===',
+  'This is a READ-ONLY {task} task. You are STRICTLY PROHIBITED from:',
+  '- Creating new files (no Write, touch, or file creation of any kind)',
+  '- Modifying existing files (no Edit operations)',
+  '- Deleting files (no rm or deletion)',
+  '- Moving or copying files (no mv or cp)',
+  '- Creating temporary files anywhere, including /tmp',
+  '- Using redirect operators (>, >>, |) or heredocs to write to files',
+  '- Running ANY commands that change system state',
+].join('\n');
+
+const READ_ONLY_BASH_RULES = [
+  '- Use Bash ONLY for read-only operations (ls, git status, git log, git diff, find, cat, head, tail)',
+  '- NEVER use Bash for: mkdir, touch, rm, cp, mv, git add, git commit, npm install, pip install, or any file creation/modification',
+].join('\n');
+
+export const GENERAL_PURPOSE_AGENT_DEFINITION: AgentDefinition = {
   definitionVersion: 1,
-  id: LOCAL_READ_AGENT_ID,
-  profile: LOCAL_READ_AGENT_PROFILE,
-  name: 'Local Read',
-  description: 'Read-only repository exploration with file and text search tools only.',
-  contract: {
-    capability: 'local_read',
-    invocation: AGENT_INVOCATION_FOREGROUND,
-    context: AGENT_CONTEXT_ISOLATED,
-    workspace: AGENT_WORKSPACE_SAME_WORKSPACE,
-    defaultWriteBack: AGENT_WRITE_BACK_SUMMARY,
-    supportedWriteBack: [AGENT_WRITE_BACK_SUMMARY],
-  },
+  profile: GENERAL_PURPOSE_AGENT_TYPE,
+  id: GENERAL_PURPOSE_AGENT_TYPE,
+  name: 'General purpose',
+  description:
+    'General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you.',
+  permissionMode: 'ask',
+  excludedTools: [],
+  systemPrompt: [
+    "You are an agent for Copilot. Given the user's message, you should use the tools available to complete the task. Complete the task fully—don't gold-plate, but don't leave it half-done. When you complete the task, hand back a concise report covering what was done and any key findings through SubagentHandback — the caller will relay this to the user, so it only needs the essentials.",
+    '',
+    'Your strengths:',
+    '- Searching for code, configurations, and patterns across large codebases',
+    '- Analyzing multiple files to understand system architecture',
+    '- Investigating complex questions that require exploring many files',
+    '- Performing multi-step research tasks',
+    '',
+    'Guidelines:',
+    "- For file searches: search broadly when you don't know where something lives. Use Read when you know the specific file path.",
+    "- For analysis: Start broad and narrow down. Use multiple search strategies if the first doesn't yield results.",
+    '- Be thorough: Check multiple locations, consider different naming conventions, look for related files.',
+    "- NEVER create files unless they're absolutely necessary for achieving your goal. ALWAYS prefer editing an existing file to creating a new one.",
+    '- NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested.',
+    '- You are already the dedicated agent for this task. Do the work directly — do not re-delegate your entire assignment to another single subagent.',
+  ].join('\n'),
+};
+
+export const EXPLORE_AGENT_DEFINITION: AgentDefinition = {
+  definitionVersion: 1,
+  profile: EXPLORE_AGENT_TYPE,
+  id: EXPLORE_AGENT_TYPE,
+  name: 'Explore',
+  description:
+    'Read-only search agent for broad fan-out searches — when answering means sweeping many files, directories, or naming conventions and you only need the conclusion, not the file dumps. It reads excerpts rather than whole files, so it locates code; it doesn\'t review or audit it. Specify search breadth: "medium" for moderate exploration, "very thorough" for multiple locations and naming conventions.',
   permissionMode: 'explore',
-  tools: [TOOL_NAMES.read, TOOL_NAMES.glob, TOOL_NAMES.grep],
+  excludedTools: FILE_WRITE_TOOL_NAMES,
   systemPrompt: [
-    'You are a foreground local-read child agent.',
-    'Use only the provided Read, Glob, and Grep tools.',
-    'Do not use shell, web, browser, write, or nested agent tools.',
-    'Return a concise answer with concrete file or symbol evidence.',
+    'You are a file search specialist for Copilot. You excel at thoroughly navigating and exploring codebases.',
+    '',
+    READ_ONLY_RULES.replace('{task}', 'exploration'),
+    '',
+    'Your role is EXCLUSIVELY to search and analyze existing code. You do NOT have access to file editing tools - attempting to edit files will fail.',
+    '',
+    'Your strengths:',
+    '- Rapidly finding files using glob patterns',
+    '- Searching code and text with powerful regex patterns',
+    '- Reading and analyzing file contents',
+    '',
+    'Guidelines:',
+    '- Use Glob for broad file pattern matching',
+    '- Use Grep for searching file contents with regex',
+    '- Use Read when you know the specific file path you need to read',
+    READ_ONLY_BASH_RULES,
+    '- Adapt your search approach based on the thoroughness level specified by the caller',
+    '- Hand back your final report with SubagentHandback - do NOT attempt to create files',
+    '',
+    'NOTE: You are meant to be a fast agent that returns output as quickly as possible. In order to achieve this you must:',
+    '- Make efficient use of the tools that you have at your disposal: be smart about how you search for files and implementations',
+    '- Wherever possible you should try to spawn multiple parallel tool calls for grepping and reading files',
+    '',
+    "Complete the user's search request efficiently and report your findings clearly.",
   ].join('\n'),
 };
 
-export const WEB_RESEARCH_AGENT_DEFINITION: AgentDefinition = {
+/**
+ * The design names a Plan type but its role card was never captured; this one
+ * is ours, built on the Explore card's read-only rules.
+ */
+export const PLAN_AGENT_DEFINITION: AgentDefinition = {
   definitionVersion: 1,
-  id: WEB_RESEARCH_AGENT_ID,
-  profile: WEB_RESEARCH_AGENT_PROFILE,
-  name: 'Web Research',
-  description: 'Network-backed web research with WebSearch only.',
-  contract: {
-    capability: 'web_research',
-    invocation: AGENT_INVOCATION_FOREGROUND,
-    context: AGENT_CONTEXT_ISOLATED,
-    workspace: AGENT_WORKSPACE_SAME_WORKSPACE,
-    defaultWriteBack: AGENT_WRITE_BACK_SUMMARY,
-    supportedWriteBack: [AGENT_WRITE_BACK_SUMMARY],
-  },
-  permissionMode: 'ask',
-  tools: [TOOL_NAMES.webSearch],
+  profile: PLAN_AGENT_TYPE,
+  id: PLAN_AGENT_TYPE,
+  name: 'Plan',
+  description:
+    'Software architect agent for designing implementation plans. Use this when you need to plan the implementation strategy for a task. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs.',
+  permissionMode: 'explore',
+  excludedTools: FILE_WRITE_TOOL_NAMES,
   systemPrompt: [
-    'You are a foreground web-research child agent.',
-    'Use only the provided WebSearch tool.',
-    'Do not read local files, use shell, browser, write, or nested agent tools.',
-    'Return concise findings with source titles and URLs for every external claim.',
-    'Separate sourced facts from your own inference.',
-  ].join('\n'),
-};
-
-export const IMPLEMENTATION_AGENT_DEFINITION: AgentDefinition = {
-  definitionVersion: 3,
-  id: IMPLEMENTATION_AGENT_ID,
-  profile: IMPLEMENTATION_AGENT_PROFILE,
-  name: 'Implementation',
-  description: 'Code-changing implementation work in an isolated worktree with patch write-back.',
-  contract: {
-    capability: 'implementation',
-    invocation: AGENT_INVOCATION_FOREGROUND,
-    context: AGENT_CONTEXT_ISOLATED,
-    workspace: AGENT_WORKSPACE_WORKTREE,
-    defaultWriteBack: AGENT_WRITE_BACK_PATCH,
-    supportedWriteBack: [AGENT_WRITE_BACK_PATCH],
-  },
-  permissionMode: 'ask',
-  tools: [
-    TOOL_NAMES.read,
-    TOOL_NAMES.glob,
-    TOOL_NAMES.grep,
-    TOOL_NAMES.write,
-    TOOL_NAMES.edit,
-    TOOL_NAMES.applyPatch,
-    TOOL_NAMES.bash,
-    TOOL_NAMES.taskInput,
-    TOOL_NAMES.taskStop,
-  ],
-  toolGroups: ['file_edit'],
-  systemPrompt: [
-    'You are a foreground implementation child agent.',
-    'Run only inside a dedicated worktree child executor when the host provides one.',
-    'Use local file and shell tools only for the assigned implementation task.',
-    'Do not use web, browser, or nested agent tools.',
-    'Return a concise patch-oriented summary with verification results.',
+    'You are a software architect and planning specialist for Copilot. You explore codebases and design implementation plans.',
+    '',
+    READ_ONLY_RULES.replace('{task}', 'planning'),
+    '',
+    'Your role is EXCLUSIVELY to explore the codebase and design implementation plans. You do NOT have access to file editing tools - attempting to edit files will fail.',
+    '',
+    'Your process:',
+    "1. Understand the requirements in the caller's brief, and any perspective or constraints it assigns you.",
+    '2. Explore thoroughly: read the files the brief points to, find the existing patterns and conventions with Glob, Grep and Read, and trace the code paths the change will touch.',
+    '3. Design the solution: weigh the approaches against the constraints, follow the existing patterns where they fit, and name the trade-offs.',
+    '4. Detail the plan: a step-by-step implementation strategy, in order, with the dependencies between the steps and the risks to watch.',
+    '',
+    'Guidelines:',
+    READ_ONLY_BASH_RULES,
+    '- Hand back your plan with SubagentHandback - do NOT attempt to create files',
+    '',
+    'End the plan with the files most critical to carrying it out:',
+    '',
+    '### Critical Files for Implementation',
+    '- /absolute/path/to/file - why it matters',
+    '',
+    'You can ONLY explore and plan. You CANNOT and MUST NOT write, edit, or modify any files.',
   ].join('\n'),
 };
 
 export const BUILTIN_AGENT_DEFINITIONS: readonly AgentDefinition[] = [
-  LOCAL_READ_AGENT_DEFINITION,
-  WEB_RESEARCH_AGENT_DEFINITION,
-  IMPLEMENTATION_AGENT_DEFINITION,
+  GENERAL_PURPOSE_AGENT_DEFINITION,
+  EXPLORE_AGENT_DEFINITION,
+  PLAN_AGENT_DEFINITION,
 ];
 
-export function listBuiltinAgentDefinitions(
-  options: AgentDefinitionListOptions = {},
-): AgentDefinitionListItem[] {
+export function listBuiltinAgentDefinitions(): AgentDefinitionListItem[] {
   return BUILTIN_AGENT_DEFINITIONS.map((definition) => ({
     id: definition.id,
     profile: definition.profile,
     name: definition.name,
     description: definition.description,
-    contract: definition.contract,
-    availability: options.tools
-      ? evaluateAgentDefinitionAvailability({
-          definition,
-          tools: options.tools,
-          worktreeChildExecutorAvailable: options.worktreeChildExecutorAvailable,
-        })
-      : { status: 'unknown' },
+    availability: { status: 'available' },
     permissionMode: definition.permissionMode,
-    tools: [...definition.tools],
+    tools: agentToolsLabel(definition),
   }));
 }
 
-export function getBuiltinAgentDefinition(id: string): AgentDefinition | undefined {
-  return BUILTIN_AGENT_DEFINITIONS.find((definition) => definition.id === id);
+/** The listing's `(Tools: …)`, in the design's words: everything, or everything but. */
+export function agentToolsLabel(definition: Pick<AgentDefinition, 'excludedTools'>): string {
+  if (definition.excludedTools.length === 0) return '*';
+  return `All tools except ${[TOOL_NAMES.agent, ...definition.excludedTools].join(', ')}`;
 }
 
 export function getBuiltinAgentDefinitionByProfile(profile: string): AgentDefinition | undefined {
   return BUILTIN_AGENT_DEFINITIONS.find((definition) => definition.profile === profile);
 }
 
-export function agentProfilesForDefinitions(
-  definitions: readonly AgentDefinition[],
-): [AgentProfile, ...AgentProfile[]] {
-  const profiles = definitions.map((definition) => definition.profile);
-  if (profiles.length === 0) throw new Error('At least one agent definition is required');
-  if (new Set(profiles).size !== profiles.length) {
-    throw new Error('Agent definitions must have unique profiles');
-  }
-  return profiles as [AgentProfile, ...AgentProfile[]];
-}
-
-export function requireAgentDefinitionByProfile(
-  definitions: readonly AgentDefinition[],
-  profile: string,
-): AgentDefinition {
-  const definition = definitions.find((candidate) => candidate.profile === profile);
-  if (!definition) {
-    const available = definitions.map((candidate) => candidate.profile).join(', ');
-    throw new Error(`Unknown agent profile "${profile}". Available profiles: ${available}.`);
-  }
-  return definition;
-}
-
-export function requireBuiltinAgentDefinition(id: string): AgentDefinition {
-  const definition = getBuiltinAgentDefinition(id);
-  if (!definition) {
-    const available = BUILTIN_AGENT_DEFINITIONS.map((agent) => agent.id).join(', ');
-    throw new Error(`Unknown agent "${id}". Available agents: ${available}.`);
-  }
-  return definition;
-}
-
 export function requireBuiltinAgentDefinitionByProfile(profile: string): AgentDefinition {
-  return requireAgentDefinitionByProfile(BUILTIN_AGENT_DEFINITIONS, profile);
-}
-
-export function listRunnableBuiltinAgentDefinitions(
-  options: AgentDefinitionListOptions,
-): AgentDefinition[] {
-  return BUILTIN_AGENT_DEFINITIONS.filter(
-    (definition) =>
-      evaluateAgentDefinitionAvailability({
-        definition,
-        tools: options.tools ?? [],
-        worktreeChildExecutorAvailable: options.worktreeChildExecutorAvailable,
-      }).status === 'available',
-  );
-}
-
-export function evaluateAgentDefinitionAvailability(input: {
-  definition: AgentDefinition;
-  tools: readonly MakaTool[];
-  worktreeChildExecutorAvailable?: boolean;
-}): AgentDefinitionAvailability {
-  const { definition, tools } = input;
-  if (
-    definition.contract.workspace === AGENT_WORKSPACE_WORKTREE &&
-    !input.worktreeChildExecutorAvailable
-  ) {
-    return {
-      status: 'unavailable',
-      reason: 'workspace_isolation_unavailable',
-      workspace: definition.contract.workspace,
-      requiredRuntime: 'worktree_child_executor',
-    };
+  const definition = getBuiltinAgentDefinitionByProfile(profile);
+  if (!definition) {
+    const available = BUILTIN_AGENT_PROFILES.join(', ');
+    throw new Error(`Agent type '${profile}' not found. Available agents: ${available}`);
   }
-
-  const { missingTools } = resolveAgentDefinitionToolSet(tools, definition);
-  if (missingTools.length > 0) {
-    return { status: 'unavailable', reason: 'missing_tools', missingTools };
-  }
-
-  return { status: 'available' };
+  return definition;
 }
 
-export function buildToolsForAgentDefinition(
-  tools: readonly MakaTool[],
-  definition: AgentRuntimeDefinition = LOCAL_READ_AGENT_DEFINITION,
-): MakaTool[] {
-  return resolveAgentDefinitionToolSet(tools, definition).tools;
-}
-
-function resolveAgentDefinitionToolSet(
-  tools: readonly MakaTool[],
-  definition: AgentRuntimeDefinition,
-): { tools: MakaTool[]; missingTools: string[] } {
-  const byName = new Map(tools.map((tool) => [tool.name, tool]));
-  const groupedToolNames = new Set<string>(
-    (definition.toolGroups ?? []).flatMap((group) =>
-      AGENT_TOOL_GROUP_ALTERNATIVES[group].flatMap((alternative) => alternative),
-    ),
-  );
-  const missingTools = definition.tools.filter(
-    (name) => !groupedToolNames.has(name) && !byName.has(name),
-  );
-  for (const group of definition.toolGroups ?? []) {
-    const alternatives = AGENT_TOOL_GROUP_ALTERNATIVES[group];
-    if (alternatives.some((alternative) => alternative.every((name) => byName.has(name)))) continue;
-    for (const name of alternatives.flat()) {
-      if (!byName.has(name) && !missingTools.includes(name)) missingTools.push(name);
-    }
-  }
-  return {
-    tools: definition.tools.flatMap((name) => {
-      const tool = byName.get(name);
-      return tool ? [tool] : [];
-    }),
-    missingTools,
-  };
-}
-
-export function assertAgentDefinitionRunnable(input: {
-  definition: AgentDefinition;
-  tools: readonly MakaTool[];
-  worktreeChildExecutorAvailable?: boolean;
-}): void {
-  const { definition, tools } = input;
-  const availability = evaluateAgentDefinitionAvailability({
-    definition,
-    tools,
-    worktreeChildExecutorAvailable: input.worktreeChildExecutorAvailable,
-  });
-  if (availability.status !== 'unavailable') return;
-
-  if (availability.reason === 'missing_tools') {
-    throw new Error(
-      `Agent "${definition.id}" is unavailable: missing tools: ${availability.missingTools.join(', ')}`,
-    );
-  }
-  if (availability.reason === 'workspace_isolation_unavailable') {
-    throw new Error(
-      `Agent "${definition.id}" is unavailable: "${availability.workspace}" workspace isolation requires a worktree child executor.`,
-    );
-  }
-}
-
-function categoryForTool(tool: Pick<MakaTool, 'name' | 'categoryHint'>): ToolCategory {
-  return tool.categoryHint ?? BUILTIN_TOOL_CATEGORY[tool.name] ?? 'custom_tool';
+/**
+ * The tools a child of this type holds, out of what a main session would hold
+ * in its place. Everything not named here stays — deferred where the main
+ * session defers it.
+ */
+export function selectChildAgentTools<T extends { readonly name: string }>(
+  tools: readonly T[],
+  definition: Pick<AgentDefinition, 'excludedTools'>,
+): T[] {
+  const excluded = new Set([...CHILD_EXCLUDED_TOOL_NAMES, ...definition.excludedTools]);
+  return tools.filter((tool) => !excluded.has(tool.name));
 }

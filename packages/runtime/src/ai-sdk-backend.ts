@@ -84,7 +84,6 @@ import { bindToolResultArchiveDecoder } from './tool-result-archive-capability.j
 import { resolveSelectedModelContextWindow } from './context-budget-policy.js';
 export {
   MAX_ACTIVE_CHILD_AGENT_RUNS_PER_TURN,
-  MAX_ACTIVE_SUBAGENT_TOOLS_PER_TURN,
   TOOL_ERROR_RESULT_MAX_CHARS,
   formatSyntheticToolErrorText,
 } from './tool-runtime.js';
@@ -272,6 +271,8 @@ export interface ResolvedSystemPrompt {
    * it — a child agent's, a hosted profile's — leaves every turn dated.
    */
   dated?: boolean;
+  /** A child agent's prompt: its turns are laid out the way the design lays a child's. */
+  childAgent?: boolean;
   sourceRevisions: readonly RunCompositionSourceRevision[];
 }
 

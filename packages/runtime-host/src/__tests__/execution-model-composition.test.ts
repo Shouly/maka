@@ -93,7 +93,6 @@ import {
 import type { TurnSnapshot, UsageQueryResult } from '../protocol/index.js';
 import type { ClientCapabilityHostFrame } from '../protocol/index.js';
 import { createExecutionRuntimeHostComposition } from '../server/execution-composition.js';
-import { createHostChildAgentToolComposition } from '../server/child-agent-composition.js';
 import {
   createHostDailyReviewModel,
   createHostGoalEvaluator,
@@ -144,10 +143,6 @@ const COMPACT_SUMMARY_TEXT = [
 ].join('\n');
 const CLIENT_CAPABILITY_RESULT_TEXT = 'HOSTED_CLIENT_CAPABILITY_RESULT_SENTINEL';
 const CHILD_AGENT_RESULT_TEXT = 'HOSTED_CHILD_AGENT_RESULT_SENTINEL';
-const MAX_IMPLEMENTATION_CHILD_PTY_READS = 5;
-const MIN_IMPLEMENTATION_CHILD_REQUESTS = 6;
-const MAX_IMPLEMENTATION_CHILD_REQUESTS =
-  MIN_IMPLEMENTATION_CHILD_REQUESTS + MAX_IMPLEMENTATION_CHILD_PTY_READS - 1;
 const HEADLESS_CODING_V1_PROMPT_HASH =
   'sha256:0e3389e330b8b8f0db1c7a8b8e2126325fe4c672d6eff279afcd3f9412e52271';
 const HEADLESS_CODING_V1_TOOLS_HASH =
@@ -2880,12 +2875,16 @@ test('production Host executes a canonical ai-sdk Session against a real provide
     // must never see WebSearch in the effective root tool surface. Non-direct
     // bound tools stay deferred behind ToolSearch until activated.
     assert.deepEqual(toolNames(request?.body), [
+      // Launching an agent and listing the running ones are loaded directly,
+      // as in the design; SendMessage waits behind ToolSearch.
+      'Agent',
       'ArchiveRead',
       'AskUserQuestion',
       'Bash',
       'Edit',
       'Glob',
       'Grep',
+      'ListAgents',
       // Memory is read before the first reply and written on an explicit
       // "remember"; only MemoryDelete stays behind ToolSearch.
       'MemoryAppend',
@@ -3023,269 +3022,7 @@ test('production Host executes a canonical ai-sdk Session against a real provide
   }
 });
 
-test('production Host executes and durably supervises an Agent Graph over a real provider wire', {
-  timeout: 20_000,
-}, async () => {
-  const base = await mkdtemp(join(tmpdir(), 'maka-host-agent-graph-'));
-  const root = join(base, 'interactive');
-  const project = join(base, 'project');
-  const provider = await startProvider();
-  provider.configureAgentGraphFlow();
-  const capability = await resolveStorageRoot({ path: root, kind: 'interactive' });
-  const owner = await tryAcquireInteractiveRootOwner(capability);
-  assert.ok(owner);
-  if (!owner) return;
-  let liveResidencies = 0;
-  const context: ConnectionContext = {
-    hostEpoch: 'agent-graph-test-epoch',
-    connectionId: 'agent-graph-test-client',
-    principal: 'local_os_user',
-    acquireResidency: () => {
-      liveResidencies += 1;
-      let released = false;
-      return {
-        release: () => {
-          if (released) return;
-          released = true;
-          liveResidencies -= 1;
-        },
-      };
-    },
-  };
-  let composition: Awaited<ReturnType<typeof createExecutionRuntimeHostComposition>> | undefined;
-  let graphStore: ReturnType<typeof createAgentGraphControlStore> | undefined;
-  try {
-    await mkdir(project);
-    await writeFile(join(project, 'README.md'), '# Hosted Graph fixture\n');
-    const policy = await openInteractiveRuntimePolicyStoresForWrite(owner.lease);
-    const created = await policy.connectionCatalog.create({
-      expectedCatalogRevision: 0,
-      connection: {
-        slug: 'hosted-graph-provider',
-        name: 'Hosted Graph provider',
-        providerType: 'moonshot',
-        baseUrl: provider.baseUrl,
-        enabled: true,
-        enabledModelIds: [MODEL_ID],
-      },
-    });
-    assert.equal(created.kind, 'committed');
-    if (created.kind !== 'committed') return;
-    const connection = created.snapshot.connections[0];
-    assert.ok(connection);
-    if (!connection) return;
-    assert.equal(
-      (
-        await policy.credentialVault.set({
-          locator: {
-            scope: 'connection',
-            connectionId: connection.connectionId,
-            kind: 'api_key',
-          },
-          expected: null,
-          secret: API_KEY,
-        })
-      ).kind,
-      'committed',
-    );
-    await publishConnectionModel(policy, connection.connectionId, MODEL_ID, 32_768);
-
-    const execution = await openInteractiveExecutionStoresForWrite(owner.lease);
-    const session = await execution.sessionStore.create({
-      cwd: project,
-      llmConnectionId: connection.connectionId,
-      llmConnectionSlug: 'hosted-graph-provider',
-      model: MODEL_ID,
-      permissionMode: 'bypass',
-    });
-    composition = await createExecutionRuntimeHostComposition({
-      owner,
-      hostEpoch: context.hostEpoch,
-      acquireResidency: context.acquireResidency,
-      retainUntilProcessExit: () => undefined,
-      requestDrain: () => assert.fail('The healthy Agent Graph must not drain the Host'),
-    });
-    await composition.recover();
-
-    const turnId = 'hosted-agent-graph-turn';
-    const started = await composition.handlers['turn.start'](
-      {
-        sessionId: session.id,
-        turnId,
-        content: { text: 'Coordinate this task through a hosted Agent Graph.' },
-        turnOrchestration: { mode: 'graph', source: 'host_api' },
-      },
-      context,
-    );
-    assert.equal(started.ok, true);
-    if (!started.ok) return;
-    assert.equal(started.result.kind, 'started');
-    if (started.result.kind !== 'started') return;
-    let initialTerminal: TurnSnapshot;
-    try {
-      initialTerminal = await waitForTerminal(
-        composition,
-        session.id,
-        turnId,
-        started.result.turn,
-        context,
-      );
-    } catch (error) {
-      throw new Error(
-        `Hosted Graph root did not settle: ${JSON.stringify({
-          error: error instanceof Error ? error.message : String(error),
-          requests: providerRequestTrace(provider.requests),
-        })}`,
-      );
-    }
-    assert.equal(initialTerminal.status, 'completed');
-
-    graphStore = createAgentGraphControlStore(root);
-    const graph = graphStore;
-    const graphId = agentGraphIdForRootSession(session.id);
-    let updates = await graph.listAgentGraphScheduleUpdates(graphId);
-    let runs = await execution.runtimeEventStore.listSessionInvocations(session.id);
-    try {
-      await waitFor(
-        async () => {
-          const wakeRuns = runs.filter(
-            (run) => run.opening.root.kind === 'agent_graph_supervisor_wake',
-          );
-          if (
-            updates.at(-1)?.finish &&
-            wakeRuns.length > 0 &&
-            wakeRuns.every((run) => runtimeInvocationOutcome(run) !== undefined) &&
-            liveResidencies === 0
-          ) {
-            return true;
-          }
-          [updates, runs] = await Promise.all([
-            graph.listAgentGraphScheduleUpdates(graphId),
-            execution.runtimeEventStore.listSessionInvocations(session.id),
-          ]);
-          return false;
-        },
-        { timeoutMs: 30_000, pollMs: 10, message: 'graph wake runs did not settle' },
-      );
-    } catch (error) {
-      assert.ok(
-        updates.at(-1)?.finish,
-        JSON.stringify({
-          updateCount: updates.length,
-          lastUpdate: updates.at(-1),
-          runs: runs.map((run) => ({
-            runId: run.runId,
-            status: runtimeInvocationOutcome(run) ?? 'running',
-            root: run.opening.root,
-          })),
-          requests: providerRequestTrace(provider.requests),
-        }),
-      );
-      throw error;
-    }
-
-    const finish = updates.at(-1)?.finish;
-    assert.ok(
-      finish,
-      JSON.stringify({
-        updateCount: updates.length,
-        lastUpdate: updates.at(-1),
-        runs: runs.map((run) => ({
-          runId: run.runId,
-          status: runtimeInvocationOutcome(run) ?? 'running',
-          root: run.opening.root,
-        })),
-        requests: providerRequestTrace(provider.requests),
-      }),
-    );
-    assert.equal(finish?.resultIds.length, 1);
-    const rootRun = runs.find((run) => run.runId === initialTerminal.runId);
-    assert.ok(rootRun);
-    const rootComposition = agentRunCompositionFromEvents(
-      await execution.agentRunStore.readEvents(session.id, rootRun.runId),
-    );
-    assert.equal(rootComposition?.composerId, 'maka.interactive');
-    assert.equal(rootComposition?.contextWindow, 32_768);
-    assert.match(rootComposition?.baseSystemPromptHash ?? '', /^sha256:[a-f0-9]{64}$/u);
-    assert.ok(rootComposition?.toolNames.includes('ViewAgentGraph'));
-    const wakeRuns = runs.filter((run) => run.opening.root.kind === 'agent_graph_supervisor_wake');
-    const rootRunEvents = await execution.agentRunStore.readEvents(
-      session.id,
-      initialTerminal.runId,
-    );
-    const requestCompositions = rootRunEvents
-      .filter((event) => event.type === 'request_composition_resolved')
-      .map((event) => decodeRequestCompositionSnapshot(event.data?.snapshot));
-    assert.ok(requestCompositions.length > 0);
-    assert.match(requestCompositions[0]?.systemPromptHash ?? '', /^sha256:[a-f0-9]{64}$/u);
-    assert.ok(
-      requestCompositions.some((snapshot) => snapshot.toolNames.includes('ViewAgentGraph')),
-    );
-    const requestCompositionIds = new Set(
-      requestCompositions.map((snapshot) => snapshot.compositionId),
-    );
-    const modelAttempts = rootRunEvents.filter(
-      (event) => event.type === 'model_call_attempt_recorded',
-    );
-    assert.ok(modelAttempts.length > 0);
-    assert.ok(
-      modelAttempts.every(
-        (event) =>
-          typeof event.data?.requestCompositionId === 'string' &&
-          requestCompositionIds.has(event.data.requestCompositionId),
-      ),
-    );
-    assert.ok(wakeRuns.length > 0);
-    assert.ok(wakeRuns.every((run) => runtimeInvocationOutcome(run) === 'completed'));
-    assert.ok(wakeRuns.every((run) => run.opening.configuration.orchestrationMode === 'graph'));
-    assert.equal(liveResidencies, 0);
-
-    const sessions = await execution.sessionStore.listForRecovery();
-    const child = sessions.find(
-      (candidate) => candidate.subagentParent?.graph?.graphId === graphId,
-    );
-    assert.ok(child);
-    assert.equal(child?.subagentRuntime?.profile, 'local_read');
-    assert.equal(child?.subagentParent?.parentSessionId, session.id);
-    const childRuns = child
-      ? await execution.runtimeEventStore.listSessionInvocations(child.id)
-      : [];
-    assert.equal(childRuns.length, 1);
-    assert.equal(childRuns[0] && runtimeInvocationOutcome(childRuns[0]), 'completed');
-
-    const graphRequests = provider.requests.filter(
-      (request) =>
-        request.body.stream === true && toolNames(request.body).includes('ViewAgentGraph'),
-    );
-    assert.ok(graphRequests.length >= 4);
-    for (const request of graphRequests) {
-      assert.ok(toolNames(request.body).includes('UpdateAgentGraph'));
-      assert.ok(toolNames(request.body).includes('YieldAgentGraph'));
-      assert.ok(toolNames(request.body).includes('AgentOutput'));
-    }
-    assert.ok(
-      provider.requests.some(
-        (request) =>
-          request.body.stream === true &&
-          JSON.stringify(request.body).includes('child_session_run'),
-      ),
-    );
-  } finally {
-    graphStore?.close();
-    try {
-      await composition?.close();
-    } finally {
-      try {
-        await owner.close();
-      } finally {
-        await provider.close();
-        await rm(base, { recursive: true, force: true });
-      }
-    }
-  }
-});
-
-test('production Host executes a durable runnable child with an exact tool ceiling', async () => {
+test('production Host runs a child agent on the main surface its type allows, and hears its hand-back', async () => {
   const base = await mkdtemp(join(tmpdir(), 'maka-host-child-agent-'));
   const root = join(base, 'interactive');
   const project = join(base, 'project');
@@ -3395,19 +3132,15 @@ test('production Host executes a durable runnable child with an exact tool ceili
     );
 
     const sessions = await execution.sessionStore.listForRecovery();
-    const child = sessions.find((session) => session.subagentRuntime?.profile === 'local_read');
-    const webChild = sessions.find(
-      (session) => session.subagentRuntime?.profile === 'web_research',
-    );
+    const child = sessions.find((session) => session.subagentRuntime?.profile === 'Explore');
     assert.ok(child);
-    assert.equal(webChild, undefined);
-    assert.equal(child?.subagentRuntime?.profile, 'local_read');
     assert.equal(child?.subagentParent?.parentSessionId, parent.id);
     if (!child) return;
     assert.equal(child.subagentWorkspace, undefined);
     assert.equal(child.cwd, project);
-    // The child outlives the parent's Turn now, so its end is something to
-    // wait for rather than something the parent's terminal implies.
+    assert.equal(child.permissionMode, 'explore');
+    // The child outlives the parent's Turn, so its end is something to wait
+    // for rather than something the parent's terminal implies.
     await waitFor(
       async () => {
         const runs = await execution.runtimeEventStore.listSessionInvocations(child.id);
@@ -3416,70 +3149,89 @@ test('production Host executes a durable runnable child with an exact tool ceili
       { timeoutMs: 10_000, pollMs: 25, message: 'child agent did not finish' },
     );
     const childRuns = await execution.runtimeEventStore.listSessionInvocations(child.id);
-    assert.equal(childRuns.length, 1);
-    assert.equal(childRuns[0] && runtimeInvocationOutcome(childRuns[0]), 'completed');
-    // Parent and child requests interleave now, so they are told apart by the
-    // surface each one carries rather than by position.
-    const streamed = provider.requests.filter((request) => request.body.stream === true);
-    // The child's surface is its allowlist exactly; everything else is the
-    // parent's, including its first request, which carries no Agent tool yet
-    // because the tools are still deferred.
-    const CHILD_SURFACE = ['ArchiveRead', 'Glob', 'Grep', 'Read'];
-    const isChildSurface = (request: (typeof streamed)[number]) =>
-      JSON.stringify(toolNames(request.body)) === JSON.stringify(CHILD_SURFACE);
-    const childRequests = streamed.filter(isChildSurface);
-    const parentRequests = streamed.filter((request) => !isChildSurface(request));
-    // How many times the parent is asked is no longer fixed: the child runs
-    // in the background, so whether its end lands inside this Turn or after it
-    // is a matter of timing. What this test is named for does not depend on
-    // that — each surface carries exactly the tools it is allowed.
-    assert.equal(childRequests.length, 1);
-    assert.ok(parentRequests.length >= 2);
-    assert.ok(toolNames(parentRequests[0]?.body).includes('ToolSearch'));
-    assert.equal(toolNames(parentRequests[0]?.body).includes('Agent'), false);
-    // The same routed child surface removes web_research when Tavily cannot run.
-    assert.match(
-      toolParameterDescription(
-        parentRequests.find((request) => toolNames(request.body).includes('Agent'))?.body,
-        'Agent',
-        'subagent_type',
-      ) ?? '',
-      /Built-in profiles available here: local_read, implementation\./,
-    );
-    // A child now carries the archive decoder alongside its allowlist (#2026).
-    // Its own placeholders name `ArchiveRead`, so the ceiling that governs
-    // agent-permission tools cannot be the thing that decides whether the child
-    // can read back a result the runtime itself pruned.
-    const childSurface = childRequests[0];
-    assert.deepEqual(toolNames(childSurface?.body), ['ArchiveRead', 'Glob', 'Grep', 'Read']);
-    assert.doesNotMatch(JSON.stringify(childSurface?.body), /<situation>/u);
     assert.equal(childRuns[0]?.opening.lineage?.parentRunId, undefined);
-    const childMessages = await readLedgerMessages(execution.runtimeEventStore, child.id);
+
+    // Parent and child requests interleave, so they are told apart by the
+    // hand-back tool only a child holds.
+    const streamed = provider.requests.filter((request) => request.body.stream === true);
+    const isChild = (request: (typeof streamed)[number]) =>
+      toolNames(request.body).includes('SubagentHandback');
+    const childRequests = streamed.filter(isChild);
+    const parentRequests = streamed.filter((request) => !isChild(request));
+    // Handing the report back ends the child's Turn: one request, no more.
+    assert.equal(childRequests.length, 1, JSON.stringify(providerRequestTrace(streamed)));
+    assert.ok(parentRequests.length >= 2);
+    // Agent is loaded directly, as in the design.
+    assert.ok(toolNames(parentRequests[0]?.body).includes('Agent'));
+    assert.equal(toolNames(parentRequests[0]?.body).includes('SubagentHandback'), false);
     assert.equal(
-      childMessages.find((message) => message.type === 'assistant')?.text,
-      CHILD_AGENT_RESULT_TEXT,
+      toolParameterDescription(parentRequests[0]?.body, 'Agent', 'subagent_type'),
+      'The type of specialized agent to use for this task',
     );
-    const artifacts = await openInteractiveArtifactStoreForWrite(owner.lease);
-    const childArtifacts = await artifacts.listTurnArtifacts(child.id, childRuns[0]!.turnId);
-    assert.equal(childArtifacts.length, 0, 'a child turn no longer stores anything of its own');
-    const parentRuntimeEvents = await execution.runtimeEventStore.readRuntimeEvents(
-      parent.id,
-      terminal.runId,
+
+    // An Explore child holds what the main session would, as it would hold
+    // it, less what no child and no read-only type may: no writes, no agents,
+    // no questions to the user, no memory writes.
+    const childBody = childRequests[0]?.body;
+    assert.deepEqual(toolNames(childBody), [
+      'ArchiveRead',
+      'Bash',
+      'Glob',
+      'Grep',
+      'MemoryList',
+      'MemoryRead',
+      'Read',
+      'RequestAccess',
+      'SendUserFile',
+      'SendUserMessage',
+      'Skill',
+      'SubagentHandback',
+      'TaskCreate',
+      'TaskUpdate',
+      'ToolSearch',
+      'WebFetch',
+    ]);
+    const messages = (childBody?.messages ?? []) as Array<{ role: string; content: unknown }>;
+    const systemText = JSON.stringify(messages.filter((message) => message.role === 'system'));
+    assert.match(systemText, /You are a file search specialist for Copilot\./u);
+    assert.match(systemText, /Messages from the agent that launched you/u);
+    assert.match(systemText, /Hand back findings directly with SubagentHandback/u);
+    assert.doesNotMatch(systemText, /# Environment/u);
+    // Everything else follows its brief, in the design's order.
+    const userText = JSON.stringify(messages.filter((message) => message.role === 'user'));
+    const order = [
+      'Inspect the hosted child execution boundary without changing files.',
+      'The following deferred tools are now available via ToolSearch',
+      'Your final report is delivered through SubagentHandback',
+      '# Environment',
+      'The current date is ',
+    ].map((marker) => userText.indexOf(marker));
+    assert.ok(
+      order.every(
+        (index, position) => index >= 0 && (position === 0 || index > order[position - 1]!),
+      ),
+      JSON.stringify({ order, userText }),
     );
-    const spawnResult = parentRuntimeEvents.find(
-      (event) => event.content?.kind === 'function_response' && event.content.name === 'Agent',
+    assert.doesNotMatch(userText, /user_preferences/u);
+
+    // The parent is told the report the child handed back.
+    await waitFor(
+      async () =>
+        provider.requests.some(
+          (request) =>
+            !isChild(request) &&
+            JSON.stringify(request.body).includes(`<result>${CHILD_AGENT_RESULT_TEXT}</result>`),
+        ),
+      { timeoutMs: 10_000, pollMs: 25, message: 'the parent never read the hand-back' },
     );
-    assert.ok(spawnResult?.content?.kind === 'function_response');
-    const typedSpawnResult = decodeCanonicalToolResultContent(spawnResult.content.result);
-    assert.equal(typedSpawnResult.kind, 'subagent');
-    // The Agent call returns while the child is still working, so its result
-    // cannot carry what the child had not produced yet. The child's artifacts
-    // are asserted on the child's own Turn above.
-    // TODO(async-agents): name the write-back in the completion notification
-    // so the model can find the patch without going looking for it.
-    assert.deepEqual(
-      (typedSpawnResult as { artifactIds?: readonly string[] }).artifactIds ?? [],
-      [],
+    const told = provider.requests.find(
+      (request) =>
+        !isChild(request) &&
+        JSON.stringify(request.body).includes(`<result>${CHILD_AGENT_RESULT_TEXT}</result>`),
+    );
+    assert.match(
+      JSON.stringify(told?.body),
+      /<usage><subagent_tokens>\d+<\/subagent_tokens><tool_uses>1<\/tool_uses><duration_ms>\d+<\/duration_ms><\/usage>/u,
     );
   } finally {
     try {
@@ -3490,329 +3242,6 @@ test('production Host executes a durable runnable child with an exact tool ceili
       } finally {
         await provider.close();
         await rm(base, { recursive: true, force: true });
-      }
-    }
-  }
-});
-
-test('production Host publishes and retires an implementation child patch', async () => {
-  const base = await mkdtemp(join(tmpdir(), 'maka-host-child-agent-'));
-  const root = join(base, 'interactive');
-  const project = join(base, 'project');
-  const provider = await startProvider();
-  provider.configureImplementationChildAgentFlow();
-  const capability = await resolveStorageRoot({ path: root, kind: 'interactive' });
-  const owner = await tryAcquireInteractiveRootOwner(capability);
-  assert.ok(owner);
-  if (!owner) return;
-  const context: ConnectionContext = {
-    hostEpoch: 'child-agent-test-epoch',
-    connectionId: 'child-agent-test-client',
-    principal: 'local_os_user',
-    acquireResidency: () => ({ release() {} }),
-  };
-  let composition: Awaited<ReturnType<typeof createExecutionRuntimeHostComposition>> | undefined;
-  let restartedOwner: Awaited<ReturnType<typeof tryAcquireInteractiveRootOwner>>;
-  let initialOwnerClosed = false;
-  try {
-    await mkdir(project);
-    await writeFile(join(project, 'README.md'), '# Hosted child fixture\n');
-    await writeFile(
-      join(project, 'pty-child.mjs'),
-      [
-        "process.stdin.setEncoding('utf8');",
-        "process.stdout.write('READY\\n');",
-        "process.stdin.once('data', (data) => {",
-        '  process.stdout.write(`CHILD_PTY_OK:${data.trim()}\\n`);',
-        '  setTimeout(() => {}, 30_000);',
-        '});',
-        '',
-      ].join('\n'),
-    );
-    await git(project, 'init', '--initial-branch=main');
-    await git(project, 'add', 'README.md', 'pty-child.mjs');
-    await git(
-      project,
-      '-c',
-      'user.name=Maka Test',
-      '-c',
-      'user.email=test@maka.invalid',
-      'commit',
-      '-m',
-      'fixture',
-    );
-    const policy = await openInteractiveRuntimePolicyStoresForWrite(owner.lease);
-    const created = await policy.connectionCatalog.create({
-      expectedCatalogRevision: 0,
-      connection: {
-        slug: 'hosted-child-provider',
-        name: 'Hosted child provider',
-        providerType: 'moonshot',
-        baseUrl: provider.baseUrl,
-        enabled: true,
-        enabledModelIds: [MODEL_ID],
-      },
-    });
-    assert.equal(created.kind, 'committed');
-    if (created.kind !== 'committed') return;
-    const connection = created.snapshot.connections[0];
-    assert.ok(connection);
-    if (!connection) return;
-    assert.equal(
-      (
-        await policy.credentialVault.set({
-          locator: {
-            scope: 'connection',
-            connectionId: connection.connectionId,
-            kind: 'api_key',
-          },
-          expected: null,
-          secret: API_KEY,
-        })
-      ).kind,
-      'committed',
-    );
-    await publishConnectionModel(policy, connection.connectionId, MODEL_ID, 32_768);
-
-    const execution = await openInteractiveExecutionStoresForWrite(owner.lease);
-    const parent = await execution.sessionStore.create({
-      cwd: project,
-      llmConnectionId: connection.connectionId,
-      llmConnectionSlug: 'hosted-child-provider',
-      model: MODEL_ID,
-      permissionMode: 'bypass',
-    });
-    composition = await createExecutionRuntimeHostComposition({
-      owner,
-      hostEpoch: context.hostEpoch,
-      acquireResidency: context.acquireResidency,
-      retainUntilProcessExit: () => undefined,
-      requestDrain: () => undefined,
-    });
-    await composition.recover();
-
-    const turnId = 'hosted-child-parent-turn';
-    const terminal = await waitForTerminal(
-      composition,
-      parent.id,
-      turnId,
-      await startTurn(
-        composition,
-        parent.id,
-        turnId,
-        'Delegate this bounded implementation task.',
-        context,
-      ),
-      context,
-    );
-    const parentRun = await readInvocation(execution, parent.id, terminal.runId);
-    const parentRunEvents = await execution.agentRunStore.readEvents(parent.id, terminal.runId);
-    assert.equal(
-      terminal.status,
-      'completed',
-      JSON.stringify({
-        terminal,
-        parentRun,
-        parentRunEvents,
-        requests: provider.requests.map((request) => ({
-          stream: request.body.stream,
-          tools: toolNames(request.body),
-        })),
-      }),
-    );
-
-    const requests = provider.requests.filter((request) => request.body.stream === true);
-    const sessions = await execution.sessionStore.listForRecovery();
-    const child = sessions.find((session) => session.id !== parent.id);
-    assert.ok(child);
-    assert.equal(child?.subagentRuntime?.profile, 'implementation');
-    // The child outlives the parent's Turn now, so its script finishes on its
-    // own time: wait for that before reading what it asked the provider.
-    await waitFor(
-      async () => {
-        const runs = await execution.runtimeEventStore.listSessionInvocations(child.id);
-        return (
-          runs.length >= 1 && runs.every((run) => runtimeInvocationOutcome(run) === 'completed')
-        );
-      },
-      { timeoutMs: 20_000, pollMs: 25, message: 'implementation child did not finish' },
-    );
-    const childToolNames = [
-      'ArchiveRead',
-      'Bash',
-      'Edit',
-      'Glob',
-      'Grep',
-      'Read',
-      'TaskInput',
-      'TaskStop',
-      'Write',
-    ];
-    // The child runs in the background, so parent and child requests interleave
-    // and neither their positions nor the running total is fixed. Each surface
-    // is still exactly what it was allowed to be.
-    // Read the provider's log again: the snapshot above was taken while the
-    // child was still asking.
-    const settled = provider.requests.filter((request) => request.body.stream === true);
-    const isChildRequest = (request: (typeof settled)[number]) =>
-      JSON.stringify(toolNames(request.body)) === JSON.stringify(childToolNames);
-    const childRequests = settled.filter(isChildRequest);
-    const parentRequests = settled.filter((request) => !isChildRequest(request));
-    assert.ok(
-      childRequests.length >= MIN_IMPLEMENTATION_CHILD_REQUESTS &&
-        childRequests.length <= MAX_IMPLEMENTATION_CHILD_REQUESTS,
-      JSON.stringify(providerRequestTrace(settled)),
-    );
-    assert.ok(toolNames(parentRequests[0]?.body).includes('ToolSearch'));
-    assert.equal(toolNames(parentRequests[0]?.body).includes('Agent'), false);
-    const parentAgentRequest = parentRequests.find((request) =>
-      toolNames(request.body).includes('Agent'),
-    );
-    assert.ok(parentAgentRequest);
-    assert.match(
-      toolParameterDescription(parentAgentRequest?.body, 'Agent', 'subagent_type') ?? '',
-      /Built-in profiles available here: local_read, implementation\./,
-    );
-
-    assert.equal(child?.subagentParent?.parentSessionId, parent.id);
-    if (!child) return;
-    // An implementation child follows its parent, Full access included, and
-    // its header says so: the mode shown is the authority it runs under.
-    assert.equal(child.permissionMode, 'bypass');
-    const childBoundary = await execution.sessionStore.readExecutionBoundary(child.id);
-    assert.equal(childBoundary.kind, 'bypass');
-    assert.ok(child.subagentWorkspace);
-    assert.equal(child.cwd, child.subagentWorkspace?.worktreePath);
-    assert.equal(await fileExists(join(project, 'implementation.txt')), false);
-    assert.equal(await fileExists(join(child.cwd, 'implementation.txt')), true);
-    const childRuns = await execution.runtimeEventStore.listSessionInvocations(child.id);
-    assert.equal(childRuns.length, 1);
-    assert.equal(childRuns[0] && runtimeInvocationOutcome(childRuns[0]), 'completed');
-    assert.equal(childRuns[0]?.opening.lineage?.parentRunId, undefined);
-    const childMessages = await readLedgerMessages(execution.runtimeEventStore, child.id);
-    assert.equal(
-      childMessages.find((message) => message.type === 'assistant')?.text,
-      CHILD_AGENT_RESULT_TEXT,
-    );
-    const artifacts = await openInteractiveArtifactStoreForWrite(owner.lease);
-    // The write-back patch is published as the child is finished off, which
-    // now happens after its Run is terminal rather than inside the parent's
-    // tool call, so it is waited for like any other end-of-child fact.
-    await waitFor(
-      async () => (await artifacts.listTurnArtifacts(child.id, childRuns[0]!.turnId)).length === 2,
-      { timeoutMs: 20_000, pollMs: 25, message: 'child write-back patch was not published' },
-    );
-    const childArtifacts = await artifacts.listTurnArtifacts(child.id, childRuns[0]!.turnId);
-    assert.equal(childArtifacts.length, 2);
-    assert.ok(
-      childArtifacts.some(
-        (artifact) => artifact.source === 'tool_result' && artifact.name === 'implementation.txt',
-      ),
-    );
-    const patchArtifact = childArtifacts.find(
-      (artifact) => artifact.source === 'subagent_writeback',
-    );
-    assert.ok(patchArtifact);
-    if (!patchArtifact) return;
-    const patch = await artifacts.readTextInSession(child.id, patchArtifact.id);
-    assert.equal(patch.ok, true);
-    if (patch.ok) {
-      assert.match(patch.text, /diff --git a\/implementation\.txt b\/implementation\.txt/);
-      assert.match(patch.text, /\+HOSTED_IMPLEMENTATION_PATCH_SENTINEL/);
-    }
-    const parentRuntimeEvents = await execution.runtimeEventStore.readRuntimeEvents(
-      parent.id,
-      terminal.runId,
-    );
-    const spawnResult = parentRuntimeEvents.find(
-      (event) => event.content?.kind === 'function_response' && event.content.name === 'Agent',
-    );
-    assert.ok(spawnResult?.content?.kind === 'function_response');
-    const typedSpawnResult = decodeCanonicalToolResultContent(spawnResult.content.result);
-    assert.equal(typedSpawnResult.kind, 'subagent');
-    // The Agent call returns while the child is still working, so its result
-    // cannot carry what the child had not produced yet. The child's artifacts
-    // are asserted on the child's own Turn above.
-    // TODO(async-agents): name the write-back in the completion notification
-    // so the model can find the patch without going looking for it.
-    assert.deepEqual((typedSpawnResult as { artifactIds?: readonly string[] }).artifactIds, []);
-
-    const worktreePath = child.subagentWorkspace?.worktreePath;
-    assert.ok(worktreePath);
-    await artifacts.purgeSessionArtifacts(child.id);
-    assert.deepEqual(await artifacts.listTurnArtifacts(child.id, childRuns[0]!.turnId), []);
-    await composition.close();
-    composition = undefined;
-    if (worktreePath) assert.equal(await fileExists(worktreePath), true);
-    await owner.close();
-    initialOwnerClosed = true;
-    restartedOwner = await tryAcquireInteractiveRootOwner(capability);
-    assert.ok(restartedOwner);
-    if (!restartedOwner) return;
-
-    const restartContext = { ...context, hostEpoch: 'child-agent-test-restart-epoch' };
-    composition = await createExecutionRuntimeHostComposition({
-      owner: restartedOwner,
-      hostEpoch: restartContext.hostEpoch,
-      acquireResidency: restartContext.acquireResidency,
-      retainUntilProcessExit: () => undefined,
-      requestDrain: () => undefined,
-    });
-    await composition.recover();
-    if (worktreePath) assert.equal(await fileExists(worktreePath), true);
-    const recoveredArtifacts = await openInteractiveArtifactStoreForWrite(restartedOwner.lease);
-    const recoveredPatch = (
-      await recoveredArtifacts.listTurnArtifacts(child.id, childRuns[0]!.turnId)
-    ).find((artifact) => artifact.source === 'subagent_writeback');
-    assert.ok(recoveredPatch);
-    if (recoveredPatch) {
-      const recoveredPatchText = await recoveredArtifacts.readTextInSession(
-        child.id,
-        recoveredPatch.id,
-      );
-      assert.equal(recoveredPatchText.ok, true);
-      if (recoveredPatchText.ok) {
-        assert.match(recoveredPatchText.text, /\+HOSTED_IMPLEMENTATION_PATCH_SENTINEL/);
-      }
-    }
-    // Read the revision through the restarted Host, and read it here rather
-    // than before the wait above: the child's header moves while it is
-    // finished off, and removing a version that has already moved removes
-    // nothing while still reporting success.
-    const restartedStores = await openInteractiveExecutionStoresForWrite(restartedOwner.lease);
-    const childSnapshot = await restartedStores.sessionStore.readHeaderRecordSnapshot(child.id);
-    const removed = await composition.handlers['session.remove'](
-      { sessionId: child.id, expectedRevision: childSnapshot.revision },
-      restartContext,
-    );
-    assert.equal(removed.ok, true);
-    // Removing the child retires its worktree, and that is filesystem work
-    // the call schedules rather than performs. Wait for it while the Host is
-    // still up: closing the composition first would race its own cleanup.
-    if (worktreePath) {
-      await waitFor(async () => !(await fileExists(worktreePath)), {
-        // Retirement is asynchronous and backs off when another process is
-        // holding the same files, which a full suite run makes likely.
-        timeoutMs: 30_000,
-        pollMs: 25,
-        message: `child worktree was not retired (child ${child.id}, path ${worktreePath})`,
-      });
-    }
-    await composition.close();
-    composition = undefined;
-  } finally {
-    try {
-      await composition?.close();
-    } finally {
-      try {
-        await restartedOwner?.close();
-      } finally {
-        try {
-          if (!initialOwnerClosed) await owner.close();
-        } finally {
-          await provider.close();
-          await rm(base, { recursive: true, force: true });
-        }
       }
     }
   }
@@ -4756,97 +4185,6 @@ test('backend composition survives a moved saved Git Bash executable while Bash 
     cwd: '/workspace',
   });
   assert.ok(prompt.sourceRevisions.length > 0);
-
-  const capturedChildShell = {
-    plan: {
-      kind: 'git-bash' as const,
-      displayName: 'captured child shell',
-      exe: 'C:\\captured\\bash.exe',
-    },
-  };
-  const capturedChildTools = createHostChildAgentToolComposition({
-    builtinTools: { shell: capturedChildShell },
-    hostTools: [],
-    worktreePatchWriteBackAvailable: true,
-  }).childTools;
-  const childComposer = await factory({
-    backendContext: {
-      ...fixture.context,
-      tools: capturedChildTools,
-      turnShellPlan: capturedChildShell,
-    },
-    connection,
-    modelId: MODEL_ID,
-    runtimePolicy: { revision: 1, policy },
-    contextWindow: null,
-  });
-  assert.equal(
-    shellPolicyResolutions,
-    1,
-    'a child activation must not re-read shell policy after Runtime captured its plan',
-  );
-  const capturedBash = childComposer.tools.find((tool) => tool.name === 'Bash');
-  assert.match(capturedBash?.description ?? '', /captured child shell/);
-  assert.doesNotMatch(capturedBash?.description ?? '', /unavailable this turn/);
-});
-
-test('child execution Bash carries the configured shell guidance and spawn plan', async () => {
-  const calls: unknown[] = [];
-  const shell = {
-    plan: {
-      kind: 'git-bash' as const,
-      displayName: 'Git Bash',
-      exe: 'C:\\Program Files\\Git\\bin\\bash.exe',
-    },
-  };
-  const composition = createHostChildAgentToolComposition({
-    builtinTools: {
-      shell,
-      shellRuns: {
-        async runForegroundBash(input) {
-          calls.push(input);
-          return {
-            kind: 'terminal' as const,
-            cwd: input.cwd,
-            cmd: input.command,
-            status: 'completed' as const,
-            exitCode: 0,
-            output: {
-              mode: 'pipes' as const,
-              stdout: '',
-              stderr: '',
-              stdoutTruncated: false,
-              stderrTruncated: false,
-              redacted: false,
-            },
-          };
-        },
-        async runBackgroundBash() {
-          throw new Error('background execution was not requested');
-        },
-      },
-    },
-    worktreePatchWriteBackAvailable: true,
-  });
-  const bash = composition.childTools.find((tool) => tool.name === 'Bash') as
-    | MakaTool<{ command: string }, unknown>
-    | undefined;
-  assert.ok(bash);
-  assert.match(bash.description, /Git Bash/);
-  assert.match(bash.description, /POSIX shell syntax/);
-
-  await bash.impl(
-    { command: 'printf child-shell' },
-    {
-      sessionId: 'child-session',
-      turnId: 'child-turn',
-      cwd: '/workspace',
-      toolCallId: 'child-bash',
-      abortSignal: new AbortController().signal,
-      emitOutput: () => {},
-    },
-  );
-  assert.deepEqual((calls[0] as { shell?: unknown }).shell, shell.plan);
 });
 
 test('a bound tool ceiling excludes dynamic Client Capability tools', () => {
@@ -5501,14 +4839,6 @@ function latestToolResultText(body: Record<string, unknown>): string | undefined
       : JSON.stringify(content);
 }
 
-function requireLatestToolResult(body: Record<string, unknown>): Record<string, unknown> {
-  const serialized = latestToolResultText(body);
-  assert.ok(serialized, 'provider fixture expected a tool result in model history');
-  const result: unknown = JSON.parse(serialized);
-  assert.ok(result && typeof result === 'object' && !Array.isArray(result));
-  return result as Record<string, unknown>;
-}
-
 function toolParameterEnum(
   body: Record<string, unknown> | undefined,
   toolName: string,
@@ -5540,15 +4870,6 @@ function toolParameterDescription(
   if (!schema || typeof schema !== 'object') return undefined;
   const description = (schema as { description?: unknown }).description;
   return typeof description === 'string' ? description : undefined;
-}
-
-/** The task ID the model was handed, read back out of its own history. */
-function requireBackgroundTaskId(body: Record<string, unknown>): string {
-  const id = JSON.stringify(body).match(
-    /Command running in background with ID: ([A-Za-z0-9_-]+)\./u,
-  )?.[1];
-  assert.ok(id, 'provider fixture expected a background task ID in model history');
-  return id;
 }
 
 async function git(cwd: string, ...args: string[]): Promise<string> {
@@ -5603,13 +4924,6 @@ type ProviderFlow =
     }
   | { readonly kind: 'projection_image'; readonly toolName: string }
   | { readonly kind: 'child_agent'; agentCalled: boolean }
-  | {
-      readonly kind: 'implementation_child_agent';
-      ptyReadCount: number;
-      stopRequested: boolean;
-      agentCalled: boolean;
-      childStep: number;
-    }
   | { readonly kind: 'agent_graph'; readonly scenario: AgentGraphProviderScenario };
 
 async function startProvider(): Promise<{
@@ -5627,7 +4941,6 @@ async function startProvider(): Promise<{
   configureClientCapability(input: { groupId: string; toolName: string }): void;
   configureProjectionImageFlow(toolName: string): void;
   configureChildAgentFlow(): void;
-  configureImplementationChildAgentFlow(): void;
   configureAgentGraphFlow(): void;
   configurePayloadProportionalUsage(): void;
   close(): Promise<void>;
@@ -5686,16 +4999,6 @@ async function startProvider(): Promise<{
     configureChildAgentFlow: () => {
       if (flow.kind !== 'default') throw new Error('Provider flow is already configured');
       flow = { kind: 'child_agent', agentCalled: false };
-    },
-    configureImplementationChildAgentFlow: () => {
-      if (flow.kind !== 'default') throw new Error('Provider flow is already configured');
-      flow = {
-        kind: 'implementation_child_agent',
-        ptyReadCount: 0,
-        stopRequested: false,
-        agentCalled: false,
-        childStep: 0,
-      };
     },
     configureAgentGraphFlow: () => {
       if (flow.kind !== 'default') throw new Error('Provider flow is already configured');
@@ -5888,128 +5191,24 @@ async function handleProviderRequest(
   // the surface it carries.
   if (flow.kind === 'child_agent') {
     const tools = toolNames(body);
-    if (tools.includes('ToolSearch') && !tools.includes('Agent')) {
-      respondProviderToolCall(response, streamRequestIndex, 'ToolSearch', { query: 'Agent' });
-      return;
-    }
-    if (tools.includes('Agent')) {
-      if (!flow.agentCalled) {
-        flow.agentCalled = true;
-        respondProviderToolCall(response, streamRequestIndex, 'Agent', {
-          subagent_type: 'local_read',
-          description: 'Inspect the boundary',
-          prompt: 'Inspect the hosted child execution boundary without changing files.',
-          isolation: 'same_workspace',
-          write_back: 'summary',
-        });
-        return;
-      }
-      respondProviderText(response, RESPONSE_TEXT);
-      return;
-    }
-    assert.deepEqual(tools, ['ArchiveRead', 'Glob', 'Grep', 'Read']);
-    respondProviderText(response, CHILD_AGENT_RESULT_TEXT);
-    return;
-  }
-  // Parent and child interleave once the child runs in the background, so the
-  // parent's side of this flow answers by surface and the child keeps a step
-  // counter of its own.
-  if (flow.kind === 'implementation_child_agent') {
-    const tools = toolNames(body);
-    if (tools.includes('ToolSearch') && !tools.includes('Agent')) {
-      respondProviderToolCall(response, streamRequestIndex, 'ToolSearch', { query: 'Agent' });
-      return;
-    }
-    if (tools.includes('Agent')) {
-      if (!flow.agentCalled) {
-        flow.agentCalled = true;
-        respondProviderToolCall(response, streamRequestIndex, 'Agent', {
-          subagent_type: 'implementation',
-          description: 'Write the sentinel',
-          prompt: 'Create implementation.txt with the requested sentinel.',
-          isolation: 'worktree',
-          write_back: 'patch',
-        });
-        return;
-      }
-      respondProviderText(response, RESPONSE_TEXT);
-      return;
-    }
-    flow.childStep += 1;
-  }
-  if (flow.kind === 'implementation_child_agent' && flow.childStep === 1) {
-    assert.deepEqual(toolNames(body), [
-      'ArchiveRead',
-      'Bash',
-      'Edit',
-      'Glob',
-      'Grep',
-      'Read',
-      'TaskInput',
-      'TaskStop',
-      'Write',
-    ]);
-    respondProviderToolCall(response, streamRequestIndex, 'Write', {
-      file_path: 'implementation.txt',
-      content: 'HOSTED_IMPLEMENTATION_PATCH_SENTINEL\n',
-    });
-    return;
-  }
-  if (flow.kind === 'implementation_child_agent' && flow.childStep === 2) {
-    respondProviderToolCall(response, streamRequestIndex, 'Bash', {
-      command: 'node pty-child.mjs',
-      boundary_intent: 'current',
-      run_in_background: true,
-      pty: true,
-    });
-    return;
-  }
-  if (flow.kind === 'implementation_child_agent' && flow.childStep === 3) {
-    respondProviderToolCall(response, streamRequestIndex, 'TaskInput', {
-      task_id: requireBackgroundTaskId(body),
-      actions: [
-        { type: 'text', text: 'ping' },
-        { type: 'key', key: 'enter' },
-      ],
-    });
-    return;
-  }
-  if (flow.kind === 'implementation_child_agent' && flow.childStep === 4) {
-    flow.ptyReadCount = 1;
-    respondProviderToolCall(response, streamRequestIndex, 'TaskInput', {
-      task_id: requireBackgroundTaskId(body),
-      size: { cols: 80, rows: 24 },
-    });
-    return;
-  }
-  if (flow.kind === 'implementation_child_agent' && flow.childStep >= 5) {
-    const latestResult = latestToolResultText(body) ?? '';
-    if (!flow.stopRequested) {
-      if (!latestResult.includes('CHILD_PTY_OK:ping')) {
-        assert.ok(
-          flow.ptyReadCount < MAX_IMPLEMENTATION_CHILD_PTY_READS,
-          'PTY child did not publish its input response',
-        );
-        flow.ptyReadCount += 1;
-        respondProviderToolCall(response, streamRequestIndex, 'TaskInput', {
-          task_id: requireBackgroundTaskId(body),
-          size: { cols: 80, rows: 24 },
-        });
-        return;
-      }
-      flow.stopRequested = true;
-      respondProviderToolCall(response, streamRequestIndex, 'TaskStop', {
-        task_id: requireBackgroundTaskId(body),
+    // A child holds the hand-back tool and the parent never does, so the
+    // surface tells the two apart while their requests interleave.
+    if (tools.includes('SubagentHandback')) {
+      respondProviderToolCall(response, streamRequestIndex, 'SubagentHandback', {
+        message: CHILD_AGENT_RESULT_TEXT,
       });
       return;
     }
-    // TaskStop answers the model with one JSON line, the reference's shape.
-    const stopResult = requireLatestToolResult(body);
-    assert.equal(stopResult.status, 'cancelled');
-    assert.equal(stopResult.task_type, 'local_bash');
-    assert.match(String(stopResult.message), /^Successfully stopped task: [A-Za-z0-9_-]+ \(/u);
-    assert.match(String(stopResult.task_id), /^[A-Za-z0-9_-]+$/u);
-    respondProviderText(response, CHILD_AGENT_RESULT_TEXT);
+    if (!flow.agentCalled) {
+      flow.agentCalled = true;
+      respondProviderToolCall(response, streamRequestIndex, 'Agent', {
+        subagent_type: 'Explore',
+        description: 'Inspect the boundary',
+        prompt: 'Inspect the hosted child execution boundary without changing files.',
+      });
+      return;
+    }
+    respondProviderText(response, RESPONSE_TEXT);
     return;
   }
   if (flow.kind === 'client_capability' && streamRequestIndex === 1) {

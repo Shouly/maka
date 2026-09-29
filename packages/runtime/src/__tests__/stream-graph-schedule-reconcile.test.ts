@@ -57,7 +57,7 @@ describe('stream graph schedule reconciliation', () => {
       await commitSchedule(controlStore, 'tool-historical', {
         add_work: [
           {
-            agent_id: 'local-read',
+            agent_id: 'Explore',
             instruction: 'Continue from the selected earlier result.',
             input_ids: [],
             selected_result_inputs: [
@@ -65,7 +65,7 @@ describe('stream graph schedule reconciliation', () => {
             ],
           },
           {
-            agent_id: 'local-read',
+            agent_id: 'Explore',
             instruction: 'This work only requested a current-graph input.',
             input_ids: [historical.recordId],
           },
@@ -143,7 +143,7 @@ describe('stream graph schedule reconciliation', () => {
       await commitSchedule(controlStore, 'tool-unresolvable', {
         add_work: [
           {
-            agent_id: 'local-read',
+            agent_id: 'Explore',
             instruction: 'Continue from the selected earlier result.',
             input_ids: [],
             selected_result_inputs: [
@@ -195,7 +195,7 @@ describe('stream graph schedule reconciliation', () => {
       await commitSchedule(controlStore, 'tool-cached-resolution', {
         add_work: [
           {
-            agent_id: 'local-read',
+            agent_id: 'Explore',
             instruction: 'Continue from the selected earlier result.',
             input_ids: [],
             selected_result_inputs: [
@@ -261,7 +261,7 @@ describe('stream graph schedule reconciliation', () => {
       await commitSchedule(controlStore, 'tool-partial-resolution', {
         add_work: [
           {
-            agent_id: 'local-read',
+            agent_id: 'Explore',
             instruction: 'Continue from the readable earlier result.',
             input_ids: [],
             selected_result_inputs: [
@@ -269,7 +269,7 @@ describe('stream graph schedule reconciliation', () => {
             ],
           },
           {
-            agent_id: 'local-read',
+            agent_id: 'Explore',
             instruction: 'Continue from the unreadable earlier result.',
             input_ids: [],
             selected_result_inputs: [
@@ -375,7 +375,7 @@ describe('stream graph schedule reconciliation', () => {
             input_ids: ['record-input'],
           },
           {
-            agent_id: 'local-read',
+            agent_id: 'Explore',
             instruction: 'Check one more source.',
             input_ids: [],
           },
@@ -450,7 +450,7 @@ describe('stream graph schedule reconciliation', () => {
       const update = await commitSchedule(controlStore, 'tool-agent', {
         add_work: [
           {
-            agent_id: 'local-read',
+            agent_id: 'Explore',
             instruction: 'Inspect one more source.',
             input_ids: ['record-input'],
           },
@@ -1108,7 +1108,7 @@ class MemoryScheduleExecutor implements AgentGraphIntentExecutor {
       childSessionId: claim.targetSessionId,
       turnId: claim.targetTurnId,
       runId: claim.targetRunId,
-      agentId: 'local-read',
+      agentId: 'Explore',
       agentName: 'Local Read',
     });
     const result = {
@@ -1119,9 +1119,9 @@ class MemoryScheduleExecutor implements AgentGraphIntentExecutor {
       childSessionId: claim.targetSessionId,
       turnId: claim.targetTurnId,
       runId: claim.targetRunId,
-      agentId: 'local-read',
+      agentId: 'Explore',
       agentName: 'Local Read',
-      profile: 'local_read',
+      profile: 'Explore',
       status: this.status,
       permissionMode: 'explore' as const,
       summary: this.status,

@@ -106,7 +106,7 @@ test('keeps user-approved subagent presets canonical in Runtime Policy', () => {
     id: 'fast-reader',
     name: 'Fast reader',
     description: 'Cheap scans',
-    profile: 'local_read' as const,
+    profile: 'Explore' as const,
     connectionSlug: 'openrouter',
     model: 'openrouter/free',
     enabled: true,

@@ -219,13 +219,12 @@ test('carries the subagent subtree and its artifact bytes across', async () => {
           lifecycle: 'foreground',
         },
         subagentRuntime: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           definitionVersion: 1,
-          agentId: 'local-read',
+          agentId: 'Explore',
           agentName: 'Local Read',
-          profile: 'local_read',
+          profile: 'Explore',
           systemPrompt: 'Read.',
-          toolNames: ['Read'],
         },
         subagentSpawn: {
           schemaVersion: 1,

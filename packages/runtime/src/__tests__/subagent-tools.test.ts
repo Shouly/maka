@@ -17,841 +17,417 @@
  * under the License.
  */
 
-import { nextId } from '@maka/core/test-only/async-primitives';
 import assert from 'node:assert/strict';
-import { createTestToolRuntime } from './execution-boundary-test-helpers.js';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { describe, test } from 'node:test';
-import type { LlmConnection } from '@maka/core/llm-connections';
-import type { SessionHeader } from '@maka/core/session';
-import type { SessionEvent } from '@maka/core/events';
-import { zodSchema } from 'ai';
 import { TOOL_NAMES } from '@maka/core/tool-names';
-import { buildBuiltinTools } from '../builtin-tools.js';
 import {
-  AGENT_WORKSPACE_SAME_WORKSPACE,
-  AGENT_WORKSPACE_WORKTREE,
-  AGENT_WRITE_BACK_PATCH,
-  AGENT_WRITE_BACK_SUMMARY,
-  IMPLEMENTATION_AGENT_ID,
-  IMPLEMENTATION_AGENT_DEFINITION,
-  IMPLEMENTATION_AGENT_PROFILE,
-  LOCAL_READ_AGENT_ID,
-  LOCAL_READ_AGENT_DEFINITION,
-  LOCAL_READ_AGENT_PROFILE,
-  WEB_RESEARCH_AGENT_ID,
-  WEB_RESEARCH_AGENT_DEFINITION,
-  WEB_RESEARCH_AGENT_PROFILE,
-  assertAgentDefinitionRunnable,
-  evaluateAgentDefinitionAvailability,
+  CHILD_EXCLUDED_TOOL_NAMES,
+  EXPLORE_AGENT_DEFINITION,
+  GENERAL_PURPOSE_AGENT_DEFINITION,
+  PLAN_AGENT_DEFINITION,
+  agentToolsLabel,
   listBuiltinAgentDefinitions,
-  requireBuiltinAgentDefinitionByProfile,
+  selectChildAgentTools,
 } from '../agent-catalog.js';
 import {
   AGENT_LIST_TOOL_NAME,
-  AGENT_OUTPUT_TOOL_NAME,
   AGENT_SPAWN_TOOL_NAME,
-  CHILD_AGENT_TOOL_NAMES,
-  buildChildAgentTools,
+  SUBAGENT_HANDBACK_REMINDER,
   buildParentAgentTools,
+  buildSendMessageToChildAgentTool,
+  buildSubagentHandbackTool,
   buildSubagentListTool,
   buildSubagentOutputTool,
   buildSubagentSpawnTool,
+  renderAgentRoster,
 } from '../subagent-tools.js';
-import { ToolRuntime, type MakaTool } from '../tool-runtime.js';
+import type { MakaTool, MakaToolContext } from '../tool-runtime.js';
+
+function context(overrides: Partial<MakaToolContext> = {}): MakaToolContext {
+  return {
+    sessionId: 'session-1',
+    turnId: 'parent-turn',
+    cwd: '/tmp/cwd',
+    toolCallId: 'tool-1',
+    abortSignal: new AbortController().signal,
+    emitOutput: () => {},
+    ...overrides,
+  };
+}
+
+function parse(tool: MakaTool, input: unknown): { success: boolean; data?: unknown } {
+  return (
+    tool.parameters as { safeParse(value: unknown): { success: boolean; data?: unknown } }
+  ).safeParse(input);
+}
+
+function started(input: { agentProfile: string }) {
+  return {
+    childSessionId: 'child-session',
+    agentId: input.agentProfile,
+    agentName: input.agentProfile,
+    turnId: 'child-turn',
+    runId: 'child-run',
+    permissionMode: 'ask',
+  };
+}
+
+async function expectRejects(promise: Promise<unknown>, pattern: RegExp): Promise<void> {
+  try {
+    await promise;
+  } catch (error) {
+    assert.match(error instanceof Error ? error.message : String(error), pattern);
+    return;
+  }
+  throw new Error('Expected promise to reject');
+}
+
+describe('agent types', () => {
+  test('the design has three: general-purpose, Explore and Plan', () => {
+    assert.deepStrictEqual(
+      listBuiltinAgentDefinitions().map((definition) => [
+        definition.profile,
+        definition.permissionMode,
+        definition.tools,
+      ]),
+      [
+        ['general-purpose', 'ask', '*'],
+        ['Explore', 'explore', 'All tools except Agent, Write, Edit, NotebookEdit, apply_patch'],
+        ['Plan', 'explore', 'All tools except Agent, Write, Edit, NotebookEdit, apply_patch'],
+      ],
+    );
+    assert.strictEqual(agentToolsLabel(GENERAL_PURPOSE_AGENT_DEFINITION), '*');
+  });
+
+  test('every role card hands its report back and none contradicts it', () => {
+    for (const definition of [
+      GENERAL_PURPOSE_AGENT_DEFINITION,
+      EXPLORE_AGENT_DEFINITION,
+      PLAN_AGENT_DEFINITION,
+    ]) {
+      assert.match(definition.systemPrompt, /SubagentHandback/u, definition.profile);
+      assert.doesNotMatch(definition.systemPrompt, /final assistant message|as a regular message/u);
+      assert.doesNotMatch(definition.systemPrompt, /Claude/u);
+    }
+    assert.match(EXPLORE_AGENT_DEFINITION.systemPrompt, /READ-ONLY MODE/u);
+    assert.match(PLAN_AGENT_DEFINITION.systemPrompt, /READ-ONLY MODE/u);
+    assert.doesNotMatch(GENERAL_PURPOSE_AGENT_DEFINITION.systemPrompt, /READ-ONLY/u);
+  });
+
+  test('a child holds what a main session would, less what no child and its type may hold', () => {
+    const surface = [
+      TOOL_NAMES.read,
+      TOOL_NAMES.write,
+      TOOL_NAMES.edit,
+      TOOL_NAMES.notebookEdit,
+      TOOL_NAMES.applyPatch,
+      TOOL_NAMES.bash,
+      TOOL_NAMES.sendUserMessage,
+      TOOL_NAMES.sendUserFile,
+      TOOL_NAMES.skill,
+      TOOL_NAMES.memoryRead,
+      TOOL_NAMES.memoryList,
+      TOOL_NAMES.scheduledTaskCreate,
+      TOOL_NAMES.taskStop,
+      ...CHILD_EXCLUDED_TOOL_NAMES,
+    ].map((name) => ({ name }));
+    const general = selectChildAgentTools(surface, GENERAL_PURPOSE_AGENT_DEFINITION).map(
+      ({ name }) => name,
+    );
+    assert.deepStrictEqual(general, [
+      'Read',
+      'Write',
+      'Edit',
+      'NotebookEdit',
+      'apply_patch',
+      'Bash',
+      'SendUserMessage',
+      'SendUserFile',
+      'Skill',
+      'MemoryRead',
+      'MemoryList',
+      'TaskStop',
+    ]);
+    for (const excluded of [
+      TOOL_NAMES.agent,
+      TOOL_NAMES.askUserQuestion,
+      TOOL_NAMES.memoryWrite,
+      TOOL_NAMES.memoryDelete,
+      TOOL_NAMES.sendLater,
+      TOOL_NAMES.scheduledTaskCreate,
+      TOOL_NAMES.scheduledTaskRun,
+      TOOL_NAMES.copilotSettingsUpdate,
+      TOOL_NAMES.submitPlan,
+      TOOL_NAMES.goalSet,
+      TOOL_NAMES.sendMessage,
+    ]) {
+      assert.ok(!general.includes(excluded), excluded);
+    }
+    assert.deepStrictEqual(
+      selectChildAgentTools(surface, EXPLORE_AGENT_DEFINITION).map(({ name }) => name),
+      general.filter((name) => !['Write', 'Edit', 'NotebookEdit', 'apply_patch'].includes(name)),
+    );
+  });
+});
 
 describe('subagent tools', () => {
-  test('parent-facing agent tools declare permission hints and names', () => {
-    const spawnTool = buildSubagentSpawnTool();
-    assert.strictEqual(spawnTool.categoryHint, 'subagent');
+  test('the parent holds Agent, SendMessage and ListAgents', () => {
     assert.deepStrictEqual(
-      buildParentAgentTools().map((tool) => tool.name),
-      [AGENT_SPAWN_TOOL_NAME, TOOL_NAMES.sendMessage, AGENT_LIST_TOOL_NAME, AGENT_OUTPUT_TOOL_NAME],
+      buildParentAgentTools().map((tool) => [tool.name, tool.categoryHint]),
+      [
+        [AGENT_SPAWN_TOOL_NAME, 'subagent'],
+        [TOOL_NAMES.sendMessage, 'subagent'],
+        [AGENT_LIST_TOOL_NAME, 'read'],
+      ],
     );
   });
 
-  test('parent tools advertise only definitions runnable in their composition', () => {
-    const tools = buildParentAgentTools({ definitions: [LOCAL_READ_AGENT_DEFINITION] });
-    const spawn = tools.find((tool) => tool.name === AGENT_SPAWN_TOOL_NAME);
-    assert.notStrictEqual(spawn, undefined);
-    const spawnSchema = spawn!.parameters as {
-      safeParse(input: unknown): { success: boolean };
-    };
+  test('Agent takes description, prompt and an optional subagent_type — nothing else', () => {
+    const tool = buildSubagentSpawnTool();
+    assert.strictEqual(parse(tool, { description: 'Look', prompt: 'Look.' }).success, true);
     assert.strictEqual(
-      spawnSchema.safeParse({
-        subagent_type: LOCAL_READ_AGENT_PROFILE,
-        description: 'Inspect the repo',
-        prompt: 'Inspect the repo.',
-      }).success,
+      parse(tool, { description: 'Look', prompt: 'Look.', subagent_type: 'Explore' }).success,
       true,
     );
-    assert.strictEqual(
-      spawnSchema.safeParse({
-        subagent_type: WEB_RESEARCH_AGENT_PROFILE,
-        description: 'Search the web',
-        prompt: 'Search the web.',
-      }).success,
-      false,
-    );
-    assert.strictEqual(
-      spawnSchema.safeParse({
-        subagent_type: IMPLEMENTATION_AGENT_PROFILE,
-        description: 'Change a file',
-        prompt: 'Change a file.',
-      }).success,
-      false,
-    );
-    assert.deepStrictEqual(
-      buildParentAgentTools({ definitions: [] }).map((tool) => tool.name),
-      [AGENT_LIST_TOOL_NAME, AGENT_OUTPUT_TOOL_NAME],
-    );
-  });
-
-  test('Agent does not advertise retired task binding', async () => {
-    const advertisedProperties = async (tool: MakaTool) => {
-      const schema = (await zodSchema(tool.parameters as never).jsonSchema) as {
-        properties?: Record<string, unknown>;
-      };
-      return schema.properties ?? {};
-    };
-
-    assert.deepStrictEqual(Object.keys(await advertisedProperties(buildSubagentSpawnTool())), [
-      'subagent_type',
-      'description',
-      'prompt',
-      'model',
-      'write_back',
-      'isolation',
-    ]);
-  });
-
-  test('Agent strips task_id when task binding is unavailable', () => {
-    const schema = buildSubagentSpawnTool().parameters as {
-      safeParse(input: unknown): { success: boolean; data?: Record<string, unknown> };
-    };
-
-    const parsed = schema.safeParse({
-      subagent_type: LOCAL_READ_AGENT_PROFILE,
-      description: 'Delegate one task',
-      prompt: 'Inspect the repo.',
-      task_id: 'T1',
-    });
-    assert.strictEqual(parsed.success, true);
-    assert.deepStrictEqual(parsed.data, {
-      subagent_type: LOCAL_READ_AGENT_PROFILE,
-      description: 'Delegate one task',
-      prompt: 'Inspect the repo.',
-    });
-
-    const presetParsed = schema.safeParse({
-      subagent_type: 'fast-reader',
-      prompt: 'Inspect the repo.',
-      description: 'Inspect the repo',
-      task_id: { malformed: true },
-      ignored: true,
-    });
-    assert.strictEqual(presetParsed.success, true);
-    assert.deepStrictEqual(presetParsed.data, {
-      subagent_type: 'fast-reader',
-      description: 'Inspect the repo',
-      prompt: 'Inspect the repo.',
-    });
-  });
-
-  test('Agent names where the types are when no child selector is provided', () => {
-    const schema = buildSubagentSpawnTool({
-      definitions: [LOCAL_READ_AGENT_DEFINITION, WEB_RESEARCH_AGENT_DEFINITION],
-    }).parameters as {
-      safeParse(input: unknown): {
-        success: boolean;
-        error?: { issues: Array<{ message: string }> };
-      };
-    };
-
-    const parsed = schema.safeParse({ prompt: 'Inspect the repo.', description: 'Inspect' });
-    assert.strictEqual(parsed.success, false);
-    assert.ok(
-      parsed.error?.issues
-        .map((issue) => issue.message)
-        .includes(
-          'No child selector was provided. Pass one of the agent types listed in your context as subagent_type; the built-in profiles here are: local_read, web_research.',
-        ),
-    );
-  });
-
-  test('built-in catalog exposes local-read without shell, web, nested, or write tools', () => {
-    const definitions = listBuiltinAgentDefinitions({
-      tools: [
-        testCatalogTool('Read', 'read'),
-        testCatalogTool('Glob', 'read'),
-        testCatalogTool('Grep', 'read'),
-        testCatalogTool('WebSearch', 'web_read'),
-      ],
-    });
-    const localRead = definitions.find((definition) => definition.id === LOCAL_READ_AGENT_ID);
-    assert.deepStrictEqual(localRead?.tools, ['Read', 'Glob', 'Grep']);
-    assert.deepStrictEqual(localRead?.availability, { status: 'available' });
-  });
-
-  test('built-in catalog exposes web-research with only WebSearch and no local or write tools', () => {
-    const withWebSearch = listBuiltinAgentDefinitions({
-      tools: [
-        testCatalogTool('Read', 'read'),
-        testCatalogTool('Glob', 'read'),
-        testCatalogTool('Grep', 'read'),
-        testCatalogTool('WebSearch', undefined),
-      ],
-    });
-    const webResearch = withWebSearch.find((definition) => definition.id === WEB_RESEARCH_AGENT_ID);
-    assert.deepStrictEqual(webResearch?.tools, ['WebSearch']);
-    assert.deepStrictEqual(webResearch?.availability, { status: 'available' });
-
-    assert.deepStrictEqual(
-      listBuiltinAgentDefinitions({
-        tools: [
-          testCatalogTool('Read', 'read'),
-          testCatalogTool('Glob', 'read'),
-          testCatalogTool('Grep', 'read'),
-        ],
-      }).find((definition) => definition.id === WEB_RESEARCH_AGENT_ID)?.availability,
-      {
-        status: 'unavailable',
-        reason: 'missing_tools',
-        missingTools: ['WebSearch'],
-      },
-    );
-  });
-
-  test('built-in catalog exposes implementation only when a worktree executor is available', async () => {
-    const availability = listBuiltinAgentDefinitions({
-      tools: implementationCatalogTools(),
-    }).find((definition) => definition.id === IMPLEMENTATION_AGENT_ID)?.availability;
-    assert.deepStrictEqual(availability, {
-      status: 'unavailable',
-      reason: 'workspace_isolation_unavailable',
-      workspace: AGENT_WORKSPACE_WORKTREE,
-      requiredRuntime: 'worktree_child_executor',
-    });
-
-    await expectRejects(
-      Promise.resolve().then(() =>
-        assertAgentDefinitionRunnable({
-          definition: IMPLEMENTATION_AGENT_DEFINITION,
-          tools: implementationCatalogTools(),
-        }),
-      ),
-      /worktree child executor/,
-    );
-
-    const runnableAvailability = listBuiltinAgentDefinitions({
-      worktreeChildExecutorAvailable: true,
-      tools: implementationCatalogTools(),
-    }).find((definition) => definition.id === IMPLEMENTATION_AGENT_ID)?.availability;
-    assert.deepStrictEqual(runnableAvailability, { status: 'available' });
-    assertAgentDefinitionRunnable({
-      worktreeChildExecutorAvailable: true,
-      definition: IMPLEMENTATION_AGENT_DEFINITION,
-      tools: implementationCatalogTools(),
-    });
-  });
-
-  test('an agent definition carries an explicit tool allowlist', () => {
-    assert.deepStrictEqual(LOCAL_READ_AGENT_DEFINITION.tools.includes('Read'), true);
-    assert.deepStrictEqual(LOCAL_READ_AGENT_DEFINITION.tools.includes('Write'), false);
-  });
-
-  test('implementation remains available with the Write and Edit fallback', () => {
-    const tools = implementationCatalogTools().filter((tool) => tool.name !== 'apply_patch');
-    assert.deepStrictEqual(
-      evaluateAgentDefinitionAvailability({
-        definition: IMPLEMENTATION_AGENT_DEFINITION,
-        tools,
-        worktreeChildExecutorAvailable: true,
-      }),
-      { status: 'available' },
-    );
-  });
-
-  test('implementation remains available with the ApplyPatch alternative', () => {
-    const tools = implementationCatalogTools().filter(
-      (tool) => tool.name !== 'Write' && tool.name !== 'Edit',
-    );
-    assert.deepStrictEqual(
-      evaluateAgentDefinitionAvailability({
-        definition: IMPLEMENTATION_AGENT_DEFINITION,
-        tools,
-        worktreeChildExecutorAvailable: true,
-      }),
-      { status: 'available' },
-    );
-  });
-
-  test('child agent toolset keeps only built-in profile allowlisted tools', () => {
-    const tools = buildChildAgentTools([
-      ...buildBuiltinTools(),
-      testCatalogTool('TaskInput', 'shell_unsafe'),
-      testCatalogTool('TaskStop', 'shell_unsafe'),
-      {
-        name: AGENT_SPAWN_TOOL_NAME,
-        description: 'spawn',
-        parameters: {},
-        categoryHint: 'subagent',
-        impl: async () => ({}),
-      },
-      {
-        name: 'WebSearch',
-        description: 'web',
-        parameters: {},
-        categoryHint: 'web_read',
-        impl: async () => ({}),
-      },
-    ]);
-
-    assert.deepStrictEqual(
-      tools.map((tool) => tool.name),
-      [
-        'Read',
-        'Glob',
-        'Grep',
-        'WebSearch',
-        'Write',
-        'Edit',
-        'apply_patch',
-        'Bash',
-        'TaskInput',
-        'TaskStop',
-      ],
-    );
-    assert.deepStrictEqual(
-      [...CHILD_AGENT_TOOL_NAMES],
-      [
-        'Read',
-        'Glob',
-        'Grep',
-        'WebSearch',
-        'Write',
-        'Edit',
-        'apply_patch',
-        'Bash',
-        'TaskInput',
-        'TaskStop',
-      ],
-    );
-  });
-
-  test('does not smuggle ArchiveRead through the child allowlist', () => {
-    // The pool-level pass-through this replaces never worked: every child
-    // surface is re-narrowed against `definition.tools`, and no definition
-    // lists ArchiveRead. The decoder now reaches a child from its own backend's
-    // archive capability, so the allowlist stays exactly what it says it is.
-    const tools = buildChildAgentTools([
-      testCatalogTool('Read', 'read'),
-      testCatalogTool('Glob', 'read'),
-      testCatalogTool('Grep', 'read'),
-      testCatalogTool('WebSearch', 'web_read'),
-      testCatalogTool('ArchiveRead', 'read'),
-    ]);
-
-    assert.strictEqual(
-      tools.find((tool) => tool.name === 'ArchiveRead'),
-      undefined,
-    );
-  });
-
-  test('child agent toolset enforces explore-mode read-only behavior without prompting', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'maka-child-tools-'));
-    try {
-      await writeFile(join(cwd, 'notes.txt'), 'SUBAGENT_CHILD_TOOL_MARKER\n', 'utf8');
-      const events: SessionEvent[] = [];
-      const runtime = makeChildToolRuntime(cwd);
-      const tools = new Map(
-        buildChildAgentTools(buildBuiltinTools()).map((tool) => [tool.name, tool]),
+    assert.strictEqual(parse(tool, { prompt: 'Look.' }).success, false);
+    assert.strictEqual(parse(tool, { description: 'Look' }).success, false);
+    for (const extra of [{ model: 'haiku' }, { isolation: 'worktree' }, { write_back: 'patch' }]) {
+      assert.strictEqual(
+        parse(tool, { description: 'Look', prompt: 'Look.', ...extra }).success,
+        false,
+        JSON.stringify(extra),
       );
-
-      await runTool(runtime, tools, 'Read', { path: 'notes.txt' }, events);
-      await runTool(runtime, tools, 'Glob', { pattern: '*.txt' }, events);
-      await runTool(runtime, tools, 'Grep', { pattern: 'SUBAGENT_CHILD_TOOL_MARKER' }, events);
-
-      assert.strictEqual(tools.has('Bash'), true);
-    } finally {
-      await rm(cwd, { recursive: true, force: true });
     }
+    assert.match(tool.description, /If omitted, the general-purpose agent is used\./u);
   });
 
-  test('Agent delegates an explicit profile and task through the narrow context capability', async () => {
+  test('Agent runs general-purpose when no type is named, and says it is running', async () => {
     const tool = buildSubagentSpawnTool();
-    const abortController = new AbortController();
-    const calls: unknown[] = [];
-    const output: Array<{ stream: string; chunk: string }> = [];
-
+    const calls: Record<string, unknown>[] = [];
+    const output: string[] = [];
     const result = await tool.impl(
-      {
-        subagent_type: LOCAL_READ_AGENT_PROFILE,
-        description: 'Delegate one task',
-        prompt: 'Inspect the runtime tests.',
-      },
-      {
-        sessionId: 'session-1',
-        turnId: 'parent-turn',
-        cwd: '/tmp/cwd',
-        toolCallId: 'tool-1',
-        abortSignal: abortController.signal,
-        emitOutput: (stream, chunk) => output.push({ stream, chunk }),
+      { description: 'Check env', prompt: 'Check the environment.' },
+      context({
+        emitOutput: (_stream, chunk) => output.push(chunk),
         spawnChildSession: async (input) => {
-          calls.push(input);
-          input.onEvent?.({
-            type: 'tool_start',
-            id: 'child-start',
-            turnId: 'child-turn',
-            ts: 1,
-            toolUseId: 'child-tool',
-            toolName: 'Read',
-            displayName: 'Read file',
-            args: { file_path: 'secret.txt' },
-          });
-          input.onEvent?.({
-            type: 'tool_result',
-            id: 'child-result',
-            turnId: 'child-turn',
-            ts: 2,
-            toolUseId: 'child-tool',
-            isError: false,
-            content: { kind: 'text', text: 'secret body' },
-          });
-          return {
-            profile: input.agentProfile,
-            childSessionId: 'child-session',
-            agentId: requireBuiltinAgentDefinitionByProfile(input.agentProfile).id,
-            agentName: requireBuiltinAgentDefinitionByProfile(input.agentProfile).name,
-            turnId: 'child-turn',
-            runId: 'child-run',
-            status: 'completed',
-            permissionMode: 'explore',
-            summary: 'done',
-            artifactIds: [],
-            internalField: 'must not cross the tool result boundary',
-          };
+          calls.push(input as unknown as Record<string, unknown>);
+          return started(input);
         },
-      },
+      }),
     );
-
-    assert.strictEqual(tool.name, AGENT_SPAWN_TOOL_NAME);
-    assert.strictEqual(tool.categoryHint, 'subagent');
-    assert.strictEqual(calls.length, 1);
-    const call = calls[0] as {
-      agentProfile: string;
-      prompt: string;
-      onEvent?: (event: SessionEvent) => void;
-    };
-    assert.strictEqual(call.agentProfile, LOCAL_READ_AGENT_PROFILE);
-    assert.strictEqual(call.prompt, 'Inspect the runtime tests.');
-    // No observer: the child's activity belongs to the child's own Session,
-    // because this row closes as soon as the child is running.
-    assert.strictEqual(call.onEvent, undefined);
-    assert.deepStrictEqual(output, [
-      { stream: 'stdout', chunk: 'Starting child agent: Local Read\n' },
-      { stream: 'stdout', chunk: 'Child agent Local Read is running\n' },
+    assert.deepStrictEqual(calls, [
+      {
+        agentProfile: 'general-purpose',
+        prompt: 'Check the environment.',
+        description: 'Check env',
+      },
     ]);
-    assert.ok(!JSON.stringify(output).includes('secret.txt'));
-    assert.ok(!JSON.stringify(output).includes('secret body'));
+    assert.deepStrictEqual(output, [
+      'Starting child agent: General purpose\n',
+      'Child agent General purpose is running\n',
+    ]);
     assert.deepStrictEqual(result, {
       kind: 'subagent',
       childSessionId: 'child-session',
-      agentId: LOCAL_READ_AGENT_ID,
-      agentName: 'Local Read',
+      agentId: 'general-purpose',
+      agentName: 'general-purpose',
       turnId: 'child-turn',
       runId: 'child-run',
       status: 'running',
-      permissionMode: 'explore',
+      permissionMode: 'ask',
       summary: '',
       artifactIds: [],
     });
+    const model = tool.toModelOutput?.({ input: {}, output: result } as never) as {
+      value: string;
+    };
+    assert.match(model.value, /^Async agent launched successfully\./u);
+    assert.match(model.value, /agentId: child-session /u);
+  });
+
+  test('Agent runs a preset as its base type on the preset id', async () => {
+    const tool = buildSubagentSpawnTool();
+    const calls: Record<string, unknown>[] = [];
+    await tool.impl(
+      { description: 'Scan', prompt: 'Scan.', subagent_type: 'fast-reader' },
+      context({
+        listChildAgents: async () => ({
+          presets: [
+            { id: 'fast-reader', profile: 'Explore', availability: { status: 'available' } },
+          ],
+        }),
+        spawnChildSession: async (input) => {
+          calls.push(input as unknown as Record<string, unknown>);
+          return started(input);
+        },
+      }),
+    );
+    assert.strictEqual(calls[0]?.agentProfile, 'Explore');
+    assert.strictEqual(calls[0]?.subagentId, 'fast-reader');
+  });
+
+  test('an unknown type names every type there is, as the design does', async () => {
+    const tool = buildSubagentSpawnTool();
+    await expectRejects(
+      Promise.resolve(
+        tool.impl(
+          { description: 'Scan', prompt: 'Scan.', subagent_type: 'nonexistent-type-test' },
+          context({
+            listChildAgents: async () => ({
+              presets: [
+                { id: 'fast-reader', profile: 'Explore', availability: { status: 'available' } },
+                { id: 'off', profile: 'Explore', availability: { status: 'unavailable' } },
+              ],
+            }),
+            spawnChildSession: async () => assert.fail('must not start'),
+          }),
+        ),
+      ),
+      /^Agent type 'nonexistent-type-test' not found\. Available agents: Explore, fast-reader, general-purpose, Plan$/u,
+    );
   });
 
   test('Agent bounds projected startup failures', async () => {
     const tool = buildSubagentSpawnTool();
     const output: string[] = [];
-
     await expectRejects(
       Promise.resolve(
         tool.impl(
-          {
-            subagent_type: LOCAL_READ_AGENT_PROFILE,
-            description: 'Delegate one task',
-            prompt: 'Fail.',
-          },
-          {
-            sessionId: 'session-1',
-            turnId: 'parent-turn',
-            cwd: '/tmp',
-            toolCallId: 'tool-1',
-            abortSignal: new AbortController().signal,
+          { description: 'Delegate one task', prompt: 'Fail.' },
+          context({
             emitOutput: (_stream, chunk) => output.push(chunk),
             spawnChildSession: async () => {
               throw new Error('x'.repeat(10_000));
             },
-          },
+          }),
         ),
       ),
-      /^x+$/,
+      /^x+$/u,
     );
-
     assert.strictEqual(output.length, 2);
     assert.strictEqual((output[1]?.length ?? Number.POSITIVE_INFINITY) < 1_100, true);
   });
 
-  test('Agent validates profile contracts and delegates worktree availability to runtime', async () => {
-    const tool = buildSubagentSpawnTool();
-    const schema = tool.parameters as {
-      safeParse(input: unknown): { success: boolean; data?: unknown };
-    };
-
-    assert.strictEqual(
-      schema.safeParse({
-        subagent_type: LOCAL_READ_AGENT_PROFILE,
-        prompt: 'Inspect the repo.',
-        description: 'Inspect the repo',
-      }).success,
-      true,
-    );
-    assert.strictEqual(
-      schema.safeParse({
-        subagent_type: WEB_RESEARCH_AGENT_PROFILE,
-        prompt: 'Find current sources.',
-        description: 'Find sources',
-      }).success,
-      true,
-    );
-    assert.deepStrictEqual(
-      schema.safeParse({
-        subagent_type: IMPLEMENTATION_AGENT_PROFILE,
-        description: 'Delegate one task',
-        prompt: 'Edit the repo.',
-        write_back: AGENT_WRITE_BACK_PATCH,
-        isolation: AGENT_WORKSPACE_WORKTREE,
-      }),
-      {
-        success: true,
-        data: {
-          subagent_type: IMPLEMENTATION_AGENT_PROFILE,
-          description: 'Delegate one task',
-          prompt: 'Edit the repo.',
-          write_back: AGENT_WRITE_BACK_PATCH,
-          isolation: AGENT_WORKSPACE_WORKTREE,
-        },
-      },
-    );
-    assert.deepStrictEqual(
-      schema.safeParse({
-        subagent_type: LOCAL_READ_AGENT_PROFILE,
-        description: 'Delegate one task',
-        prompt: 'Inspect the repo.',
-        write_back: AGENT_WRITE_BACK_SUMMARY,
-        isolation: AGENT_WORKSPACE_SAME_WORKSPACE,
-      }),
-      {
-        success: true,
-        data: {
-          subagent_type: LOCAL_READ_AGENT_PROFILE,
-          description: 'Delegate one task',
-          prompt: 'Inspect the repo.',
-          write_back: AGENT_WRITE_BACK_SUMMARY,
-          isolation: AGENT_WORKSPACE_SAME_WORKSPACE,
-        },
-      },
-    );
-    assert.strictEqual(
-      schema.safeParse({
-        subagent_type: LOCAL_READ_AGENT_PROFILE,
-        description: 'Delegate one task',
-        prompt: 'Inspect the repo.',
-        write_back: 'patch',
-      }).success,
-      false,
-    );
-    assert.strictEqual(
-      schema.safeParse({
-        subagent_type: LOCAL_READ_AGENT_PROFILE,
-        description: 'Delegate one task',
-        prompt: 'Inspect the repo.',
-        isolation: 'worktree',
-      }).success,
-      false,
-    );
-    assert.strictEqual(
-      schema.safeParse({
-        subagent_type: IMPLEMENTATION_AGENT_PROFILE,
-        description: 'Delegate one task',
-        prompt: 'Edit the repo.',
-        write_back: AGENT_WRITE_BACK_SUMMARY,
-        isolation: AGENT_WORKSPACE_WORKTREE,
-      }).success,
-      false,
-    );
-    assert.strictEqual(
-      schema.safeParse({
-        subagent_type: IMPLEMENTATION_AGENT_PROFILE,
-        description: 'Delegate one task',
-        prompt: 'Edit the repo.',
-        write_back: AGENT_WRITE_BACK_PATCH,
-        isolation: AGENT_WORKSPACE_SAME_WORKSPACE,
-      }).success,
-      false,
-    );
-    assert.strictEqual(
-      schema.safeParse({ agent: LOCAL_READ_AGENT_ID, prompt: 'Inspect the repo.' }).success,
-      false,
-    );
-    assert.strictEqual(
-      schema.safeParse({ agent_name: 'Researcher', instructions: 'Read only.', prompt: 'Inspect.' })
-        .success,
-      false,
-    );
-
-    const calls: unknown[] = [];
-    await tool.impl(
-      {
-        subagent_type: IMPLEMENTATION_AGENT_PROFILE,
-        description: 'Delegate one task',
-        prompt: 'Edit files.',
-        write_back: AGENT_WRITE_BACK_PATCH,
-        isolation: AGENT_WORKSPACE_WORKTREE,
-      },
-      {
-        sessionId: 'session-1',
-        turnId: 'parent-turn',
-        cwd: '/tmp/cwd',
-        toolCallId: 'tool-1',
-        abortSignal: new AbortController().signal,
-        emitOutput: () => {},
-        spawnChildSession: async (input) => {
-          calls.push(input);
-          return {
-            childSessionId: 'child-session',
-            agentId: IMPLEMENTATION_AGENT_ID,
-            agentName: 'Implementation',
-            turnId: 'child-turn',
-            runId: 'child-run',
-            status: 'completed',
-            permissionMode: 'ask',
-            summary: 'done',
-            artifactIds: [],
-          };
-        },
-      },
-    );
-    assert.strictEqual(calls.length, 1);
-    assert.partialDeepStrictEqual(calls[0], {
-      agentProfile: IMPLEMENTATION_AGENT_PROFILE,
-      prompt: 'Edit files.',
-    });
-  });
-
-  test('agent projection tools delegate through read-only context capabilities', async () => {
-    const listTool = buildSubagentListTool();
-    const outputTool = buildSubagentOutputTool();
-
-    const list = await listTool.impl(
-      // The default view is the roster of agents this Session started; the
-      // catalog projection this test is about is the other one.
-      { view: 'selection' },
-      {
-        sessionId: 'session-1',
-        turnId: 'parent-turn',
-        cwd: '/tmp/cwd',
-        toolCallId: 'tool-list',
-        abortSignal: new AbortController().signal,
-        emitOutput: () => {},
-        listChildAgents: async () => ({
-          definitions: [
-            {
-              id: LOCAL_READ_AGENT_ID,
-              profile: LOCAL_READ_AGENT_PROFILE,
-              name: 'Local Read',
-              description: 'Read-only repository exploration.',
-              contract: { workspace: 'same_workspace', defaultWriteBack: 'summary' },
-              availability: { status: 'available' },
-            },
-          ],
-          presets: [
-            {
-              id: 'fast-reader',
-              name: 'Fast reader',
-              description: 'Cheap repository inspection.',
-              profile: LOCAL_READ_AGENT_PROFILE,
-              model: 'deepseek-v4-flash',
-              thinkingLevel: 'low',
-              availability: { status: 'available' },
-            },
-          ],
-          executions: [{ execution: { kind: 'legacy_child_run', runId: 'child-run' } }],
-          runs: [{ runId: 'child-run', turnId: 'child-turn' }],
-        }),
-      },
-    );
-    const output = await outputTool.impl(
-      { run_id: 'child-run' },
-      {
-        sessionId: 'session-1',
-        turnId: 'parent-turn',
-        cwd: '/tmp/cwd',
-        toolCallId: 'tool-output',
-        abortSignal: new AbortController().signal,
-        emitOutput: () => {},
-        readChildAgentOutput: async (input) => ({ requested: input }),
-      },
-    );
-    const childSessionOutput = await outputTool.impl(
-      { child_session_id: 'child-session', run_id: 'child-session-run' },
-      {
-        sessionId: 'session-1',
-        turnId: 'parent-turn',
-        cwd: '/tmp/cwd',
-        toolCallId: 'tool-output-child-session',
-        abortSignal: new AbortController().signal,
-        emitOutput: () => {},
-        readChildAgentOutput: async (input) => ({ requested: input }),
-      },
-    );
-
-    assert.strictEqual(listTool.name, AGENT_LIST_TOOL_NAME);
-    assert.strictEqual(outputTool.name, AGENT_OUTPUT_TOOL_NAME);
-    assert.deepStrictEqual(list, {
-      presets: [
-        {
-          subagent_id: 'fast-reader',
-          name: 'Fast reader',
-          description: 'Cheap repository inspection.',
-          profile: LOCAL_READ_AGENT_PROFILE,
-          model: 'deepseek-v4-flash',
-          thinking_level: 'low',
-          status: 'available',
-        },
-      ],
-      legacy_profiles: [
-        {
-          agent_id: LOCAL_READ_AGENT_ID,
-          profile: LOCAL_READ_AGENT_PROFILE,
-          name: 'Local Read',
-          description: 'Read-only repository exploration.',
-          workspace: 'same_workspace',
-          write_back: 'summary',
-          status: 'available',
-        },
-      ],
-      page: { returned: 1, total: 1 },
-      view: 'selection',
-    });
-    assert.deepStrictEqual(output, {
-      requested: {
-        execution: {
-          kind: 'legacy_child_run',
-          sessionId: 'session-1',
-          runId: 'child-run',
-        },
-      },
-    });
-    assert.deepStrictEqual(childSessionOutput, {
-      requested: {
-        execution: {
-          kind: 'child_session',
-          sessionId: 'child-session',
-          currentRunId: 'child-session-run',
-        },
-      },
-    });
-  });
-
-  test('ListAgents keeps the catalog view compact, paginated, and free of execution history', async () => {
-    const listTool = buildSubagentListTool();
-    const schema = listTool.parameters as {
-      safeParse(input: unknown): {
-        success: boolean;
-        data?: { view?: string; cursor?: string };
-      };
-    };
-    assert.deepStrictEqual(schema.safeParse({ ignored: true }).data, { view: 'agents' });
-    assert.strictEqual(schema.safeParse({ cursor: 'not-a-cursor' }).success, false);
-
-    const catalog = {
-      definitions: [
-        {
-          id: LOCAL_READ_AGENT_ID,
-          profile: LOCAL_READ_AGENT_PROFILE,
-          name: 'Local Read',
-          description: 'Read-only repository exploration.',
-          contract: { workspace: 'same_workspace', defaultWriteBack: 'summary' },
-          availability: { status: 'available' },
-        },
-      ],
-      presets: Array.from({ length: 11 }, (_, index) => ({
-        id: `reader-${index}`,
-        name: `Reader ${index}`,
-        description: 'x'.repeat(1_000),
-        profile: LOCAL_READ_AGENT_PROFILE,
-        model: 'deepseek-v4-flash',
-        availability:
-          index === 10
-            ? { status: 'unavailable', reason: 'connection_disabled' }
-            : { status: 'available' },
-      })),
-      executions: Array.from({ length: 100 }, (_, index) => ({ runId: `run-${index}` })),
-      runs: Array.from({ length: 100 }, (_, index) => ({ runId: `legacy-run-${index}` })),
-    };
-    const call = async (
-      input: { view?: 'selection' | 'catalog'; cursor?: string },
-      source = catalog,
-    ) =>
-      (await listTool.impl(input, {
-        sessionId: 'session-1',
-        turnId: 'parent-turn',
-        cwd: '/tmp/cwd',
-        toolCallId: 'tool-list-compact',
-        abortSignal: new AbortController().signal,
-        emitOutput: () => {},
-        listChildAgents: async () => source,
-      })) as Record<string, unknown>;
-
-    const first = await call({ view: 'selection' });
-    assert.strictEqual((first.presets as unknown[]).length, 8);
-    assert.deepStrictEqual(first.page, { returned: 8, total: 10, next_cursor: '8' });
-    assert.strictEqual('definitions' in first, false);
-    assert.strictEqual('executions' in first, false);
-    assert.strictEqual('runs' in first, false);
-    assert.strictEqual(JSON.stringify(first).length < 8_192, true);
-
-    const second = await call({ view: 'selection', cursor: '8' });
-    assert.strictEqual((second.presets as unknown[]).length, 2);
-    assert.deepStrictEqual(second.page, { returned: 2, total: 10 });
-
-    const diagnosticTail = await call({ view: 'catalog', cursor: '8' });
-    assert.deepStrictEqual(diagnosticTail.page, { returned: 3, total: 11 });
-    assert.partialDeepStrictEqual((diagnosticTail.presets as Array<Record<string, unknown>>)[2], {
-      subagent_id: 'reader-10',
-      status: 'unavailable',
-      reason: 'connection_disabled',
-    });
-
-    const worstCase = await call(
+  test('ListAgents takes no arguments and lists what this session started', async () => {
+    const tool = buildSubagentListTool();
+    assert.strictEqual(parse(tool, {}).success, true);
+    assert.strictEqual(parse(tool, { view: 'catalog' }).success, false);
+    const empty = await tool.impl(
       {},
-      {
-        ...catalog,
-        definitions: catalog.definitions.map((definition) => ({
-          ...definition,
-          name: 'n'.repeat(128),
-          description: 'd'.repeat(1_000),
-        })),
-        presets: catalog.presets.map((preset, index) => ({
-          ...preset,
-          id: `reader-${index}`.padEnd(128, 'x'),
-          name: 'n'.repeat(128),
-          model: 'm'.repeat(500),
-        })),
-      },
+      context({ listChildAgents: async () => ({ executions: [] }) }),
     );
-    assert.strictEqual(JSON.stringify(worstCase).length <= 7_000, true);
+    assert.deepStrictEqual(empty, {
+      type: 'text',
+      value:
+        'This session is session-1 — the ID other tools use to reach it (it is not listed below; a message to it would be a message to yourself).\n\nNo reachable agents — this session has not started any.',
+    });
+    assert.match(
+      renderAgentRoster(
+        'session-1',
+        {
+          executions: [
+            {
+              execution: { kind: 'child_session', sessionId: 'child-1' },
+              profile: 'Explore',
+              status: 'running',
+              createdAt: 1_000,
+              agentName: 'Explore',
+            },
+          ],
+        },
+        61_000,
+      ),
+      /\nSubagents \(1\):\n {2}child-1 · Explore · running · started 1m ago · Explore$/u,
+    );
+  });
+
+  test('SendMessage resumes a finished agent and reports it', async () => {
+    const tool = buildSendMessageToChildAgentTool();
+    const sent: unknown[] = [];
+    const result = await tool.impl(
+      { to: 'child-session', message: 'Report the sum again.', summary: 'ask again' },
+      context({
+        sendChildAgentMessage: async (input) => {
+          sent.push(input);
+          return { delivery: 'resumed', ...started({ agentProfile: 'general-purpose' }) };
+        },
+      }),
+    );
+    // The summary stays on this side: it is not part of what the agent reads.
+    assert.deepStrictEqual(sent, [
+      { childSessionId: 'child-session', text: 'Report the sum again.' },
+    ]);
+    const model = tool.toModelOutput?.({ input: {}, output: result } as never) as { value: string };
+    assert.deepStrictEqual(JSON.parse(model.value), {
+      success: true,
+      message:
+        'Resumed agent in the background with its context intact. You will be notified when it finishes.',
+      resumedAgentId: 'child-session',
+    });
+  });
+
+  test('SendMessage reaches an agent still at work at its next step', async () => {
+    const tool = buildSendMessageToChildAgentTool();
+    const result = await tool.impl(
+      { to: 'child-session', message: 'Also check the tests.' },
+      context({
+        sendChildAgentMessage: async () => ({
+          delivery: 'queued',
+          childSessionId: 'child-session',
+        }),
+      }),
+    );
+    const model = tool.toModelOutput?.({ input: {}, output: result } as never) as { value: string };
+    assert.deepStrictEqual(JSON.parse(model.value), {
+      success: true,
+      message:
+        'Message delivered to child-session. It acts on it next: at its next step if it is still working, or in a new turn once its last report has reached you.',
+    });
+  });
+
+  test('a send that cannot be delivered answers success:false instead of failing', async () => {
+    const tool = buildSendMessageToChildAgentTool();
+    const result = await tool.impl(
+      { to: 'no-such-agent-xyz', message: 'Hello.' },
+      context({
+        sendChildAgentMessage: async () => {
+          throw new Error(
+            "No agent named 'no-such-agent-xyz' is reachable.\nUse ListAgents to see everyone you can message.",
+          );
+        },
+      }),
+    );
+    const model = tool.toModelOutput?.({ input: {}, output: result } as never) as { value: string };
+    assert.deepStrictEqual(JSON.parse(model.value), {
+      success: false,
+      message:
+        "No agent named 'no-such-agent-xyz' is reachable.\nUse ListAgents to see everyone you can message.",
+    });
+    assert.strictEqual(parse(tool, { to: 'a\nb', message: 'x' }).success, false);
+  });
+
+  test('SubagentHandback takes the report and nothing else, in the design words', async () => {
+    const tool = buildSubagentHandbackTool();
+    assert.strictEqual(tool.name, TOOL_NAMES.subagentHandback);
+    assert.strictEqual(parse(tool, { message: 'Done.' }).success, true);
+    assert.strictEqual(parse(tool, {}).success, false);
+    assert.strictEqual(parse(tool, { message: 'Done.', to: 'main' }).success, false);
+    assert.match(
+      tool.description,
+      /^Deliver your final report to the agent that spawned you \(your caller\)\./u,
+    );
+    assert.match(
+      tool.description,
+      /plain text you write at the end of your turn is NOT delivered/u,
+    );
+    assert.match(
+      SUBAGENT_HANDBACK_REMINDER,
+      /^Your final report is delivered through SubagentHandback/u,
+    );
+    assert.deepStrictEqual(await tool.impl({ message: 'Done.' }, context()), {
+      type: 'text',
+      value: 'Your report was delivered to your caller. Stop here.',
+    });
   });
 
   test('AgentOutput uses an explicit locator when a provider fills unrelated fields', async () => {
@@ -907,227 +483,5 @@ describe('subagent tools', () => {
         view: 'runtime_events',
       },
     });
-  });
-});
-
-function makeChildToolRuntime(cwd: string): ToolRuntime {
-  return createTestToolRuntime({
-    sessionId: 'session-1',
-    header: childHeader(cwd),
-    connection: testConnection(),
-    modelId: 'mock-model',
-    newId: nextId(),
-    now: () => 1,
-    getPermissionPauseTarget: () => null,
-  });
-}
-
-async function runTool(
-  runtime: ToolRuntime,
-  tools: Map<string, MakaTool>,
-  name: string,
-  args: unknown,
-  events: SessionEvent[],
-): Promise<unknown> {
-  const tool = tools.get(name);
-  if (!tool) throw new Error(`Missing child tool ${name}`);
-  return (
-    await runtime.settleToolCall({
-      tool,
-      turnId: 'child-turn',
-      toolCallId: `tool-${name}-${typeof args === 'object' && args && 'command' in args ? (args as { command: string }).command : 'read'}`,
-      input: args,
-      abortSignal: new AbortController().signal,
-      eventSink: {
-        push: (event) => events.push(event),
-        pushAndWaitUntilConsumed: async (event) => {
-          events.push(event);
-        },
-      },
-    })
-  ).result;
-}
-
-function testCatalogTool(name: string, categoryHint: MakaTool['categoryHint']): MakaTool {
-  return {
-    name,
-    description: name,
-    parameters: {},
-    categoryHint,
-    impl: async () => ({}),
-  };
-}
-
-function implementationCatalogTools(): MakaTool[] {
-  return IMPLEMENTATION_AGENT_DEFINITION.tools.map((name) => testCatalogTool(name, undefined));
-}
-
-async function expectRejects(promise: Promise<unknown>, pattern: RegExp): Promise<void> {
-  try {
-    await promise;
-  } catch (error) {
-    assert.match(String(error instanceof Error ? error.message : String(error)), pattern);
-    return;
-  }
-  throw new Error('Expected promise to reject');
-}
-
-function childHeader(cwd: string): SessionHeader {
-  return {
-    id: 'session-1',
-    workspaceRoot: cwd,
-    cwd,
-    createdAt: 1,
-    name: 'Test',
-    titleIsManual: true,
-    isFlagged: false,
-    labels: [],
-    isArchived: false,
-    status: 'active',
-    statusUpdatedAt: 1,
-    hasUnread: false,
-    backend: 'ai-sdk',
-    llmConnectionSlug: 'anthropic-main',
-    connectionLocked: true,
-    model: 'mock-model',
-    permissionMode: 'explore',
-    schemaVersion: 1,
-  };
-}
-
-function testConnection(): LlmConnection {
-  return {
-    slug: 'anthropic-main',
-    name: 'Anthropic',
-    providerType: 'anthropic',
-    defaultModel: 'mock-model',
-    enabled: true,
-    createdAt: 1,
-    updatedAt: 1,
-  };
-}
-
-describe('Agent — reference argument names', () => {
-  const spawnContext = {
-    sessionId: 'session-1',
-    turnId: 'parent-turn',
-    cwd: '/tmp',
-    toolCallId: 'tool-1',
-    abortSignal: new AbortController().signal,
-    emitOutput: () => {},
-  };
-
-  test('subagent_type carries a built-in profile or a preset id', () => {
-    const schema = buildSubagentSpawnTool().parameters as {
-      safeParse(input: unknown): { success: boolean; data?: Record<string, unknown> };
-    };
-
-    const builtinProfile = schema.safeParse({
-      subagent_type: LOCAL_READ_AGENT_PROFILE,
-      prompt: 'Inspect the repo.',
-      description: 'Inspect the repo',
-    });
-    assert.strictEqual(builtinProfile.success, true);
-    assert.deepStrictEqual(builtinProfile.data, {
-      subagent_type: LOCAL_READ_AGENT_PROFILE,
-      description: 'Inspect the repo',
-      prompt: 'Inspect the repo.',
-    });
-
-    const preset = schema.safeParse({
-      subagent_type: 'preset-1',
-      prompt: 'Inspect the repo.',
-      description: 'Inspect the repo',
-    });
-    assert.strictEqual(preset.success, true);
-    assert.deepStrictEqual((preset.data as { subagent_type: string }).subagent_type, 'preset-1');
-  });
-
-  test('description is required and prompt carries the brief', () => {
-    const schema = buildSubagentSpawnTool().parameters as {
-      safeParse(input: unknown): { success: boolean };
-    };
-
-    assert.strictEqual(
-      schema.safeParse({ subagent_type: LOCAL_READ_AGENT_PROFILE, prompt: 'Inspect.' }).success,
-      false,
-    );
-    assert.strictEqual(
-      schema.safeParse({
-        subagent_type: LOCAL_READ_AGENT_PROFILE,
-        prompt: 'Inspect.',
-        description: 'Inspect the repo',
-      }).success,
-      true,
-    );
-  });
-
-  test('a model override is accepted, ignored, and said so in the result', async () => {
-    const tool = buildSubagentSpawnTool();
-    const spawned: unknown[] = [];
-
-    const result = await tool.impl(
-      {
-        subagent_type: LOCAL_READ_AGENT_PROFILE,
-        description: 'Inspect the repo',
-        prompt: 'Inspect.',
-        model: 'some-other-model',
-      },
-      {
-        ...spawnContext,
-        spawnChildSession: async (input: { agentProfile: string }) => {
-          spawned.push(input);
-          return {
-            profile: input.agentProfile,
-            childSessionId: 'child-session',
-            agentId: requireBuiltinAgentDefinitionByProfile(input.agentProfile).id,
-            agentName: requireBuiltinAgentDefinitionByProfile(input.agentProfile).name,
-            turnId: 'child-turn',
-            runId: 'child-run',
-            status: 'completed',
-            permissionMode: 'explore',
-            summary: 'done',
-            artifactIds: [],
-          };
-        },
-      } as never,
-    );
-
-    assert.strictEqual(spawned.length, 1);
-    assert.strictEqual((spawned[0] as { model?: unknown }).model, undefined);
-    const projected = tool.toModelOutput?.({
-      toolCallId: 'tool-1',
-      input: {
-        subagent_type: LOCAL_READ_AGENT_PROFILE,
-        description: 'Inspect the repo',
-        prompt: 'Inspect.',
-        model: 'some-other-model',
-      },
-      output: result,
-    });
-    assert.ok(projected);
-    // The model reads a ref and what to do with it, and is told plainly that
-    // its model choice did not travel.
-    assert.strictEqual(projected.type, 'text');
-    assert.match(
-      String((projected as { value: string }).value),
-      /^Async agent launched successfully\./u,
-    );
-    assert.match(String((projected as { value: string }).value), /agentId: child-session/u);
-    assert.match(
-      String((projected as { value: string }).value),
-      /The agent carries its own model, so "some-other-model" was not applied\./u,
-    );
-    const plain = tool.toModelOutput?.({
-      toolCallId: 'tool-1',
-      input: {
-        subagent_type: LOCAL_READ_AGENT_PROFILE,
-        description: 'Inspect the repo',
-        prompt: 'Inspect.',
-      },
-      output: result,
-    });
-    assert.strictEqual(plain?.type, 'text');
-    assert.doesNotMatch(String((plain as { value: string }).value), /was not applied/u);
   });
 });

@@ -761,9 +761,9 @@ describe('projectRuntimeEventsToStoredMessages', () => {
         {
           itemId: 'contract',
           index: 0,
-          profile: 'local_read',
+          profile: 'Explore',
           started: true,
-          agentId: 'local-read',
+          agentId: 'Explore',
           agentName: 'Local Read',
           turnId: 'child-turn',
           runId: 'child-run',

@@ -5792,12 +5792,11 @@ Slug openai-work<cursor>
         lifecycle: 'foreground' as const,
       },
       subagentRuntime: {
-        schemaVersion: 1 as const,
+        schemaVersion: 2 as const,
         definitionVersion: 1,
-        agentId: 'local-read',
+        agentId: 'Explore',
         agentName: 'Local Read',
-        profile: 'local_read',
-        toolNames: ['Read', 'Glob', 'Grep'],
+        profile: 'Explore',
       },
     };
     const driver = new SlashCommandDriver([parent, child]);
@@ -5814,7 +5813,7 @@ Slug openai-work<cursor>
     terminal.input('/session');
     terminal.input('\r');
     await waitFor(() => plainTerminalOutput(terminal.screenOutput()).includes('↳ Local Read'));
-    assert.match(plainTerminalOutput(terminal.screenOutput()), /Local Read.*subagent:local_read/);
+    assert.match(plainTerminalOutput(terminal.screenOutput()), /Local Read.*subagent:Explore/);
     assert.doesNotMatch(plainTerminalOutput(terminal.screenOutput()), /\bactive\b/);
 
     terminal.input('\x1b[B');

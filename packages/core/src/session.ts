@@ -96,7 +96,7 @@ export type TurnStatus = (typeof TURN_STATUSES)[number];
 export const SUBAGENT_SESSION_LIFECYCLES = ['foreground'] as const;
 
 export type SubagentSessionLifecycle = (typeof SUBAGENT_SESSION_LIFECYCLES)[number];
-export const SUBAGENT_SESSION_RUNTIME_SCHEMA_VERSION = 1 as const;
+export const SUBAGENT_SESSION_RUNTIME_SCHEMA_VERSION = 2 as const;
 export const SUBAGENT_SESSION_SPAWN_SCHEMA_VERSION = 1 as const;
 
 /**
@@ -130,10 +130,11 @@ export interface SubagentSessionParent {
 /**
  * Durable execution snapshot for a linked subagent session.
  *
- * The snapshot prevents a reopened child session from silently inheriting a
- * wider tool surface from a later parent/default configuration. The concrete
- * SessionHeader continues to own backend/model/cwd while ExecutionBoundary is
- * the authoritative local execution authority.
+ * It pins what the child was started as: its agent type and the role card it
+ * reads. The tools follow from the type at every activation, the way a main
+ * session's follow from its configuration. The concrete SessionHeader
+ * continues to own backend/model/cwd while ExecutionBoundary is the
+ * authoritative local execution authority.
  */
 export interface SubagentSessionRuntime {
   schemaVersion: typeof SUBAGENT_SESSION_RUNTIME_SCHEMA_VERSION;
@@ -144,7 +145,6 @@ export interface SubagentSessionRuntime {
   /** User-approved model route selected at spawn time. Absent for legacy profile spawns. */
   presetId?: string;
   systemPrompt: string;
-  toolNames: string[];
 }
 
 /**
@@ -517,15 +517,7 @@ const SUBAGENT_SESSION_GRAPH_SHAPE = defineObjectShape<
   NonNullable<SubagentSessionParent['graph']>
 >()(['graphId', 'workId', 'operatorId'], []);
 const SUBAGENT_SESSION_RUNTIME_SHAPE = defineObjectShape<SubagentSessionRuntime>()(
-  [
-    'schemaVersion',
-    'definitionVersion',
-    'agentId',
-    'agentName',
-    'profile',
-    'systemPrompt',
-    'toolNames',
-  ],
+  ['schemaVersion', 'definitionVersion', 'agentId', 'agentName', 'profile', 'systemPrompt'],
   ['presetId'],
   ['permissionCeiling'],
 );
@@ -541,7 +533,6 @@ const SESSION_LINEAGE_ID_MAX_CHARS = 512;
 const SESSION_LINEAGE_CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 const SUBAGENT_RUNTIME_NAME_MAX_CHARS = 512;
 const SUBAGENT_RUNTIME_SYSTEM_PROMPT_MAX_CHARS = 100_000;
-const SUBAGENT_RUNTIME_TOOL_LIMIT = 128;
 const SUBAGENT_REQUEST_FINGERPRINT_PATTERN = /^[a-f0-9]{64}$/;
 
 /** Strict decoder guard for the persisted child-session relation. */
@@ -594,11 +585,7 @@ export function isSubagentSessionRuntime(value: unknown): value is SubagentSessi
     typeof value.systemPrompt !== 'string' ||
     value.systemPrompt.length === 0 ||
     value.systemPrompt.length > SUBAGENT_RUNTIME_SYSTEM_PROMPT_MAX_CHARS ||
-    value.systemPrompt.includes('\u0000') ||
-    !Array.isArray(value.toolNames) ||
-    value.toolNames.length > SUBAGENT_RUNTIME_TOOL_LIMIT ||
-    !value.toolNames.every(isSessionLineageId) ||
-    new Set(value.toolNames).size !== value.toolNames.length
+    value.systemPrompt.includes('\u0000')
   ) {
     return false;
   }

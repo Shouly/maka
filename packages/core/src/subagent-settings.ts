@@ -19,7 +19,8 @@
 
 import { isThinkingLevel, type ThinkingLevel } from './model-thinking.js';
 
-export const SUBAGENT_PROFILES = ['local_read', 'web_research', 'implementation'] as const;
+/** The built-in agent types; a preset runs as one of them on its own model. */
+export const SUBAGENT_PROFILES = ['general-purpose', 'Explore', 'Plan'] as const;
 export type SubagentProfile = (typeof SUBAGENT_PROFILES)[number];
 
 export const MAX_SUBAGENT_PRESETS = 64;

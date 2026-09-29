@@ -54,7 +54,6 @@ import { z } from 'zod';
 import {
   AiSdkBackend,
   INVALID_TOOL_NAME,
-  MAX_ACTIVE_SUBAGENT_TOOLS_PER_TURN,
   TOOL_ERROR_RESULT_MAX_CHARS,
   formatSyntheticToolErrorText,
   normalizeAiSdkUsage,
@@ -11701,68 +11700,6 @@ describe('AiSdkBackend tool execution', () => {
     assert.equal(providerCalls, 1);
     const completion = events.find((event) => event.type === 'complete');
     assert.equal(completion?.type === 'complete' ? completion.stopReason : undefined, 'end_turn');
-  });
-
-  test('caps concurrent subagent tools in one turn', async () => {
-    const messages: unknown[] = [];
-    const events: SessionEvent[] = [];
-    const backend = createBackend({
-      header: header('explore'),
-      appendMessage: async (message) => {
-        messages.push(message);
-      },
-      connection: connection(),
-      modelId: 'claude-sonnet-4-5-20250929',
-      modelFactory: () => ({}),
-      tools: [],
-      now: () => 1,
-    });
-    let implStarted = 0;
-    const release: Array<() => void> = [];
-    const tool: MakaTool = {
-      name: 'Agent',
-      description: 'read-only worker',
-      parameters: {},
-      categoryHint: 'subagent',
-      impl: async () => {
-        implStarted += 1;
-        return new Promise((resolve) => {
-          release.push(() => resolve({ ok: true }));
-        });
-      },
-    };
-    const execute = runtimeExecute(backend, tool, 'turn-1', {
-      push: (event) => events.push(event),
-    });
-
-    const pending = Array.from({ length: MAX_ACTIVE_SUBAGENT_TOOLS_PER_TURN }, (_, index) =>
-      execute(
-        { objective: `research ${index}` },
-        { toolCallId: `tool-${index}`, abortSignal: new AbortController().signal },
-      ),
-    );
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.equal(implStarted, MAX_ACTIVE_SUBAGENT_TOOLS_PER_TURN);
-
-    const rejected = await execute(
-      { objective: 'overflow' },
-      { toolCallId: 'tool-overflow', abortSignal: new AbortController().signal },
-    );
-    assert.deepEqual(rejected, {
-      error: '子代理并发过多：同一轮最多 5 个子代理。请等待已有任务完成后再继续。',
-    });
-    assert.equal(implStarted, MAX_ACTIVE_SUBAGENT_TOOLS_PER_TURN);
-    assert.equal(
-      events.some(
-        (event) =>
-          event.type === 'tool_result' && event.toolUseId === 'tool-overflow' && event.isError,
-      ),
-      true,
-    );
-    assert.equal(JSON.stringify(messages).includes('tool-overflow'), true);
-
-    release.forEach((resume) => resume());
-    await Promise.all(pending);
   });
 
   test('maps foreground subagent terminal states to persisted tool status', async () => {

@@ -275,15 +275,55 @@ test('the environment, the agent types, then the skills follow the user text; th
   assert.equal(prompt.dated, true);
 });
 
-test('a child agent keeps the environment in its prompt, which names no day', async () => {
-  const prompt = await createFixtureComposer({
+test("a child agent's prompt is its role card over the shared base, and its listings follow its brief", async () => {
+  const composer = createFixtureComposer({
     childInstruction: 'Review the diff.',
+    childAgentType: 'Explore',
     sessionStartedAt: Date.UTC(2026, 8, 28, 12),
-  }).resolveSystemPrompt({ sessionId: 'child', turnId: 'turn', cwd: '/workspace' });
-  assert.match(prompt.text ?? '', /^# Environment\n/u);
-  assert.equal(prompt.contexts?.some((context) => context.name === 'environment') ?? false, false);
+    userContext: { name: 'Ada', email: 'ada@example.com', preferences: 'Be terse.' },
+  });
+  const prompt = await composer.resolveSystemPrompt({
+    sessionId: 'child',
+    turnId: 'turn',
+    cwd: '/workspace',
+  });
+  assert.match(
+    prompt.text ?? '',
+    /^Review the diff\.\n\nMessages from the agent that launched you/u,
+  );
+  assert.doesNotMatch(prompt.text ?? '', /# Environment/u);
+  assert.deepEqual(
+    prompt.contexts?.map((context) => [context.name, context.position]),
+    [
+      ['subagent_handback', 'after'],
+      ['environment', 'after'],
+      ['user_info', 'after'],
+    ],
+  );
+  // No preferences: they shape a reply to the user, not a report.
+  assert.equal(
+    prompt.contexts?.some((context) => context.name === 'user_preferences'),
+    false,
+  );
   // Nothing in its prompt dates the session, so every turn — the first too — says the date.
   assert.equal(prompt.dated, undefined);
+  assert.equal(prompt.childAgent, true);
+
+  // Its tools are a main session's, less what its type goes without, plus the hand-back.
+  const names = composer.tools.map(({ name }) => name);
+  assert.ok(names.includes('SubagentHandback'));
+  for (const excluded of [
+    'Agent',
+    'SendMessage',
+    'ListAgents',
+    'AskUserQuestion',
+    'Write',
+    'Edit',
+  ]) {
+    assert.equal(names.includes(excluded), false, excluded);
+  }
+  assert.ok(names.includes('Read'));
+  assert.equal(composer.toolAvailability !== undefined, true);
 });
 
 function tool(name: string): MakaTool {

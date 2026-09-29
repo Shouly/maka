@@ -446,6 +446,16 @@ function onceCompletion(
   };
 }
 
+/** A task that had already ended when the stop reached it: a failure, as the design reports it. */
+class TaskNotRunningError extends Error {
+  constructor(taskId: string, status: unknown) {
+    super(
+      `Task ${taskId} is not running (status: ${typeof status === 'string' ? status : 'completed'})`,
+    );
+    this.name = 'TaskNotRunningError';
+  }
+}
+
 export function buildStopBackgroundTaskTool(backgroundTasks: BackgroundTaskStopper): MakaTool {
   return {
     name: TOOL_NAMES.taskStop,
@@ -453,9 +463,9 @@ export function buildStopBackgroundTaskTool(backgroundTasks: BackgroundTaskStopp
     description: [
       'Stops a running background task.',
       '',
-      '- `task_id` is the ID a background Bash or an Agent returned. Both kinds are accepted.',
-      '- Only tasks of the current session can be stopped; an ID from elsewhere is rejected.',
-      '- Returns the task state after the stop. A task that had already finished is reported as such rather than failing.',
+      "- `task_id` is the ID a background Bash or an Agent returned, or an agent's name. Both kinds are accepted.",
+      '- Only tasks of the current session can be stopped; an ID from elsewhere is not found.',
+      '- Returns success or failure: a task that is no longer running fails with the status it ended in.',
       '- Stop a task as soon as its work is done: one left running holds its process for the rest of the session.',
     ].join('\n'),
     parameters: z.object({
@@ -465,41 +475,45 @@ export function buildStopBackgroundTaskTool(backgroundTasks: BackgroundTaskStopp
       // Both kinds wear the same shape of ID, so the answer decides which it
       // is: the command store knows its own tasks, and anything it has never
       // heard of is looked for among this Session's agents.
-      let unknownToCommands: unknown;
+      const notFound = () => new Error(`No task found with ID: ${taskId}`);
       try {
-        return await backgroundTasks.stopBackgroundTask(
+        const result = await backgroundTasks.stopBackgroundTask(
           ctx.sessionId,
           shellRunResourceRef(taskId),
           ctx.abortSignal,
         );
+        const operation = (result as { operation?: { kind?: string; applied?: boolean } })
+          .operation;
+        if (operation?.kind === 'stop' && operation.applied === false) {
+          throw new TaskNotRunningError(taskId, (result as { status?: unknown }).status);
+        }
+        return result;
       } catch (error) {
-        if (!isUnknownTaskError(error) || !ctx.stopChildAgent) throw error;
-        unknownToCommands = error;
+        if (error instanceof TaskNotRunningError) throw error;
+        if (!isUnknownTaskError(error)) throw error;
+        if (!ctx.stopChildAgent) throw notFound();
       }
-      // Neither kind claims it. The command store's answer is the one written
-      // for this case, so it is what the model reads — not the agent lookup's
-      // complaint about a Session that was never a Session.
+      // Neither kind claims it: the design's one line for that, not the agent
+      // lookup's complaint about a Session that was never a Session.
       const stopped = (await ctx.stopChildAgent({ childSessionId: taskId }).catch(() => {
-        throw unknownToCommands;
+        throw notFound();
       })) as {
         stopped?: boolean;
         agentName?: string;
         description?: string;
         status?: string;
       };
+      if (!stopped.stopped) throw new TaskNotRunningError(taskId, stopped.status);
       // The same line a stopped background command answers with, so one tool
       // reads one way whatever it stopped.
       const command = stopped.description ?? stopped.agentName ?? 'agent';
       return {
         kind: 'text',
         text: JSON.stringify({
-          message: stopped.stopped
-            ? `Successfully stopped task: ${taskId} (${command})`
-            : `Task ${taskId} had already finished (${command})`,
+          message: `Successfully stopped task: ${taskId} (${command})`,
           task_id: taskId,
           task_type: 'local_agent',
           command,
-          ...(stopped.status !== undefined ? { status: stopped.status } : {}),
         }),
       };
     },

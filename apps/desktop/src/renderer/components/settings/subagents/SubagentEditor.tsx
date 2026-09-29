@@ -44,7 +44,6 @@ import {
 import { offerableCatalogEntries, type ProjectedLlmConnection } from '@maka/core/llm-connections';
 import type { ThinkingLevel } from '@maka/core/model-thinking';
 import { useUiLocale } from '@maka/ui';
-import { Anthropicon } from '../../icons/Anthropicon.js';
 import { Button } from '../../ui/button.js';
 import { Input } from '../../ui/input.js';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select.js';
@@ -101,7 +100,7 @@ export function SubagentEditor(props: {
       id: props.preset?.id ?? '',
       name: props.preset?.name ?? '',
       description: props.preset?.description ?? '',
-      profile: props.preset?.profile ?? 'local_read',
+      profile: props.preset?.profile ?? 'general-purpose',
       connectionSlug: props.preset?.connectionSlug ?? usable[0]?.slug ?? '',
       model: props.preset?.model ?? initialModels[0]?.id ?? '',
       thinkingLevel: props.preset?.thinkingLevel ?? MODEL_DEFAULT_THINKING,
@@ -274,16 +273,7 @@ export function SubagentEditor(props: {
           <SettingsModalField
             label={editor.profile}
             htmlFor="subagent-profile"
-            hint={
-              draft.profile === 'implementation' ? (
-                <span className="flex items-start gap-1.5 text-warning">
-                  <Anthropicon name="warning" size={16} className="mt-px shrink-0" />
-                  {editor.implementationWarning}
-                </span>
-              ) : (
-                copy.profiles[draft.profile].description
-              )
-            }
+            hint={copy.profiles[draft.profile].description}
           >
             <Select
               value={draft.profile}

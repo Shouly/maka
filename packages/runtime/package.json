@@ -126,6 +126,7 @@
     "./organization-model-fetch": "./dist/organization-model-fetch.js",
     "./subscription-model-fetch": "./dist/subscription-model-fetch.js",
     "./system-prompt/main-session-prompt": "./dist/system-prompt/main-session-prompt.js",
+    "./system-prompt/child-agent-prompt": "./dist/system-prompt/child-agent-prompt.js",
     "./system-prompt/knowledge-cutoff-prompt": "./dist/system-prompt/knowledge-cutoff-prompt.js",
     "./system-prompt/environment-prompt": "./dist/system-prompt/environment-prompt.js",
     "./injection": "./dist/injection/index.js",

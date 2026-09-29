@@ -37,6 +37,8 @@ export interface ResolvedRunPrompt {
   readonly contexts?: readonly InjectionContext[];
   /** The prompt names the day the session began, so its first turn needs no date block. */
   readonly dated?: boolean;
+  /** A child agent's prompt: its turns are laid out the way the design lays a child's. */
+  readonly childAgent?: boolean;
   readonly sourceRevisions: readonly RunCompositionSourceRevision[];
 }
 

@@ -139,21 +139,21 @@ function statusLine(result: ShellRunLikeResult): string {
   }
 }
 
-/** One JSON line, the way the reference's TaskStop answers. */
+/**
+ * One JSON line, the way the reference's TaskStop answers. TaskStop itself
+ * fails a task that had already ended; the line still says so if one arrives.
+ */
 function stopResultLine(result: ShellRunLikeResult): string {
   const command = typeof result.cmd === 'string' ? result.cmd : '';
-  const exitCode = typeof result.exitCode === 'number' ? ` (code ${result.exitCode})` : '';
   const id = shellRunIdOfRef(result.ref);
-  const message =
-    result.operation?.applied === true
-      ? `Successfully stopped task: ${id} (${command})`
-      : `Task ${id} had already exited${exitCode} (${command})`;
   return JSON.stringify({
-    message,
+    message:
+      result.operation?.applied === true
+        ? `Successfully stopped task: ${id} (${command})`
+        : `Task ${id} is not running (status: ${String(result.status)})`,
     task_id: id,
     task_type: 'local_bash',
     command,
-    status: result.status,
   });
 }
 

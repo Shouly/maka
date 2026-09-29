@@ -57,6 +57,12 @@ export interface TurnInjectionFacts {
    * under a prompt that names the day the session began — so no date block.
    */
   readonly datedByPrompt?: boolean;
+  /**
+   * A child agent's turn, laid out as the design lays a child's: everything
+   * after its brief — the memory snapshot, then the held tools, the reminders
+   * and listings, and the date last.
+   */
+  readonly childAgent?: boolean;
   readonly contexts: readonly InjectionContext[];
   /** Tools the provider is told about only through ToolSearch, on this request. */
   readonly deferredToolNames: readonly string[];
@@ -73,6 +79,7 @@ export type PlannedInjection = Omit<RuntimeEventInjectionContent, 'kind'>;
 export const ENVIRONMENT_INJECTION = 'environment';
 export const DEFERRED_TOOLS_INJECTION = 'deferred_tools';
 export const DATE_INJECTION = 'date';
+export const MEMORY_SNAPSHOT_INJECTION = 'user_memory_snapshot';
 
 /** Where a recorded block goes: after the user's text, or (the default) ahead of it. */
 export function injectionPosition(
@@ -175,14 +182,17 @@ export function planTurnInjections(
   }
 
   // Every turn says the date it was sent on, just ahead of the text — except
-  // the first, when the system prompt already names the day.
+  // the first, when the system prompt already names the day. A child reads
+  // it last, after everything else it is handed.
   if (!facts.datedByPrompt) {
     const zone = resolveZone(timeZone, facts.now);
-    before.push({
-      name: DATE_INJECTION,
-      text: renderCurrentDateLine(formatLongDate(facts.now, zone)),
-      data: { date: formatLocalDate(facts.now, zone) },
-    });
+    const text = renderCurrentDateLine(formatLongDate(facts.now, zone));
+    const date = formatLocalDate(facts.now, zone);
+    if (facts.childAgent) {
+      after.push({ name: DATE_INJECTION, text, data: { date, position: 'after' } });
+    } else {
+      before.push({ name: DATE_INJECTION, text, data: { date } });
+    }
   }
 
   // A held tool is announced once, when it first appears. One that leaves the
@@ -190,11 +200,12 @@ export function planTurnInjections(
   // spoken of: the record keeps every name ever announced, so a tool the
   // model already knows about is never announced again. The listing goes
   // after the text, behind the environment and ahead of the agent types and
-  // the skills.
+  // the skills; a child reads it right behind its memory snapshot.
   const announced = new Set(stringList(prior.get(DEFERRED_TOOLS_INJECTION)?.data?.names));
   const added = [...new Set(facts.deferredToolNames)].filter((name) => !announced.has(name)).sort();
   if (added.length > 0) {
-    after.splice(after[0]?.name === ENVIRONMENT_INJECTION ? 1 : 0, 0, {
+    const anchor = facts.childAgent ? MEMORY_SNAPSHOT_INJECTION : ENVIRONMENT_INJECTION;
+    after.splice(after[0]?.name === anchor ? 1 : 0, 0, {
       name: DEFERRED_TOOLS_INJECTION,
       text: renderDeferredToolsNotice(added),
       data: { names: [...announced, ...added].sort(), position: 'after' },

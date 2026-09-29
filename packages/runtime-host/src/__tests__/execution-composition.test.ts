@@ -53,7 +53,8 @@ import {
   FAKE_HOLD_OPEN_PROMPT,
   FakeBackend,
 } from '@maka/runtime/test-only/fake-backend';
-import { LOCAL_READ_AGENT_DEFINITION } from '@maka/runtime/agent-catalog';
+import { EXPLORE_AGENT_DEFINITION } from '@maka/runtime/agent-catalog';
+import { HostClientCapabilityCoordinator } from '../server/client-capability-coordinator.js';
 import { SessionManager, type BackendFactory } from '@maka/runtime/session-manager';
 import { workHubDirectStopAbortSource } from '@maka/runtime/session-manager';
 import { fingerprintAgentGraphRunnableIntent } from '@maka/runtime/stream-graph-admission';
@@ -1945,11 +1946,16 @@ test('production Skill catalog preserves an archive race during live tool resolu
       permissionMode: 'ask',
     });
     const composition = await createExecutionRuntimeHostComposition(compositionContext(owner));
-    const originalToolsForSession = AgentGraphCoordinator.prototype.toolsForSession;
+    const originalPreview = HostClientCapabilityCoordinator.prototype.runWithSessionBindingPreview;
     let archiveInjected = false;
     try {
       await composition.recover();
-      AgentGraphCoordinator.prototype.toolsForSession = async function (sessionId) {
+      HostClientCapabilityCoordinator.prototype.runWithSessionBindingPreview = async function (
+        this: HostClientCapabilityCoordinator,
+        sessionId: string,
+        connectionId: string,
+        operation: () => Promise<string[]>,
+      ) {
         if (sessionId === session.id && !archiveInjected) {
           archiveInjected = true;
           const snapshot = await stores.sessionStore.readHeaderRecordSnapshot(session.id);
@@ -1958,8 +1964,8 @@ test('production Skill catalog preserves an archive race during live tool resolu
             true,
           );
         }
-        return originalToolsForSession.call(this, sessionId);
-      };
+        return originalPreview.call(this, sessionId, connectionId, operation);
+      } as typeof originalPreview;
 
       const outcome = await composition.handlers['skill.catalog.invocable.query'](
         {
@@ -1979,7 +1985,7 @@ test('production Skill catalog preserves an archive race during live tool resolu
         error: { code: 'session_archived', message: 'Session is archived' },
       });
     } finally {
-      AgentGraphCoordinator.prototype.toolsForSession = originalToolsForSession;
+      HostClientCapabilityCoordinator.prototype.runWithSessionBindingPreview = originalPreview;
       await composition.close();
     }
   });
@@ -1996,11 +2002,16 @@ test('production Skill catalog preserves a removal race during live tool resolut
       permissionMode: 'ask',
     });
     const composition = await createExecutionRuntimeHostComposition(compositionContext(owner));
-    const originalToolsForSession = AgentGraphCoordinator.prototype.toolsForSession;
+    const originalPreview = HostClientCapabilityCoordinator.prototype.runWithSessionBindingPreview;
     let removalInjected = false;
     try {
       await composition.recover();
-      AgentGraphCoordinator.prototype.toolsForSession = async function (sessionId) {
+      HostClientCapabilityCoordinator.prototype.runWithSessionBindingPreview = async function (
+        this: HostClientCapabilityCoordinator,
+        sessionId: string,
+        connectionId: string,
+        operation: () => Promise<string[]>,
+      ) {
         if (sessionId === session.id && !removalInjected) {
           removalInjected = true;
           const snapshot = await stores.sessionStore.readHeaderRecordSnapshot(session.id);
@@ -2008,8 +2019,8 @@ test('production Skill catalog preserves a removal race during live tool resolut
             { sessionId: session.id, expectedVersion: snapshot.revision },
           ]);
         }
-        return originalToolsForSession.call(this, sessionId);
-      };
+        return originalPreview.call(this, sessionId, connectionId, operation);
+      } as typeof originalPreview;
 
       const outcome = await composition.handlers['skill.catalog.invocable.query'](
         {
@@ -2029,7 +2040,7 @@ test('production Skill catalog preserves a removal race during live tool resolut
         error: { code: 'not_found', message: 'Session does not exist' },
       });
     } finally {
-      AgentGraphCoordinator.prototype.toolsForSession = originalToolsForSession;
+      HostClientCapabilityCoordinator.prototype.runWithSessionBindingPreview = originalPreview;
       await composition.close();
     }
   });
@@ -2594,7 +2605,7 @@ test('interaction fail-stop stops graph operators through the kernel and release
         graphId: agentGraphIdForRootSession(session.id),
         workId: `graph_work_${'a'.repeat(32)}`,
         operatorId: `graph_operator_${'b'.repeat(32)}`,
-        agentId: LOCAL_READ_AGENT_DEFINITION.id,
+        agentId: EXPLORE_AGENT_DEFINITION.id,
         source: {
           sessionId: session.id,
           turnId,
@@ -2882,13 +2893,12 @@ async function createClaimedGraphChild(input: {
       lifecycle: 'foreground',
     },
     subagentRuntime: {
-      schemaVersion: 1,
-      definitionVersion: LOCAL_READ_AGENT_DEFINITION.definitionVersion,
-      agentId: LOCAL_READ_AGENT_DEFINITION.id,
-      agentName: LOCAL_READ_AGENT_DEFINITION.name,
-      profile: LOCAL_READ_AGENT_DEFINITION.profile,
-      systemPrompt: LOCAL_READ_AGENT_DEFINITION.systemPrompt,
-      toolNames: [...LOCAL_READ_AGENT_DEFINITION.tools],
+      schemaVersion: 2,
+      definitionVersion: EXPLORE_AGENT_DEFINITION.definitionVersion,
+      agentId: EXPLORE_AGENT_DEFINITION.id,
+      agentName: EXPLORE_AGENT_DEFINITION.name,
+      profile: EXPLORE_AGENT_DEFINITION.profile,
+      systemPrompt: EXPLORE_AGENT_DEFINITION.systemPrompt,
     },
     subagentSpawn: {
       schemaVersion: 1,
@@ -2905,7 +2915,7 @@ async function createClaimedGraphChild(input: {
     readinessContextFingerprint: `sha256:${nextHex(input.suffix).repeat(64)}`,
     policyFingerprint: `sha256:${nextHex(nextHex(input.suffix)).repeat(64)}`,
     readinessId: `readiness-${input.suffix}`,
-    operatorId: LOCAL_READ_AGENT_DEFINITION.id,
+    operatorId: EXPLORE_AGENT_DEFINITION.id,
     targetSessionId: child.header.id,
     policyKind: 'map',
     triggerRouteIds: [`route-${input.suffix}`],
@@ -2923,7 +2933,7 @@ async function createClaimedGraphChild(input: {
         executionInput: { prompt: input.prompt },
       }),
       readinessContextFingerprint: intent.readinessContextFingerprint,
-      targetOperatorId: LOCAL_READ_AGENT_DEFINITION.id,
+      targetOperatorId: EXPLORE_AGENT_DEFINITION.id,
       targetSessionId: child.header.id,
       targetTurnId: turnId,
       targetRunId: runId,
@@ -2935,8 +2945,8 @@ function graphExecutionDescriptor(claim: AgentGraphIntentClaim) {
   return {
     kind: 'claimed_agent_graph_intent' as const,
     claim,
-    agentId: LOCAL_READ_AGENT_DEFINITION.id,
-    agentName: LOCAL_READ_AGENT_DEFINITION.name,
+    agentId: EXPLORE_AGENT_DEFINITION.id,
+    agentName: EXPLORE_AGENT_DEFINITION.name,
   };
 }
 

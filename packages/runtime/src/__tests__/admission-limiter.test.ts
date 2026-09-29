@@ -245,7 +245,7 @@ describe('ToolRuntime child Session run permits', () => {
     assert.ok(capturedSpawn);
     await assert.rejects(
       capturedSpawn({
-        agentProfile: 'local_read',
+        agentProfile: 'Explore',
         prompt: 'late child',
       }),
       /permit scope ended/,
@@ -269,7 +269,7 @@ function childBatchProbeTool(
       if (!ctx.spawnChildSession) throw new Error('missing spawn capability');
       const pending = Array.from({ length: count }, (_, index) =>
         ctx.spawnChildSession!({
-          agentProfile: 'local_read',
+          agentProfile: 'Explore',
           prompt: `${promptPrefix}-${index}`,
         }),
       );
@@ -298,7 +298,7 @@ function sequentialFailureProbeTool(count: number): MakaTool {
       for (let index = 0; index < count; index += 1) {
         try {
           await ctx.spawnChildSession({
-            agentProfile: 'local_read',
+            agentProfile: 'Explore',
             prompt: `failure-${index}`,
           });
         } catch {

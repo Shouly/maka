@@ -71,7 +71,6 @@ export type SubagentSettingsCopy = {
     model: string;
     thinking: string;
     defaultThinking: string;
-    implementationWarning: string;
     noConnection: string;
     noModel: string;
     requiredName: string;
@@ -142,7 +141,6 @@ const SETTINGS_SUBAGENTS_COPY_BY_LOCALE = {
       model: '模型',
       thinking: '思考级别',
       defaultThinking: '跟随模型默认',
-      implementationWarning: '实现代码 Profile 可以写文件和执行命令，并会在隔离 worktree 中运行。',
       noConnection: '请先在“模型”页启用一个模型连接。',
       noModel: '所选连接没有已启用的模型。',
       requiredName: '请输入显示名称。',
@@ -166,17 +164,17 @@ const SETTINGS_SUBAGENTS_COPY_BY_LOCALE = {
       rejected: '配置没有被保存。请确认名称长度和配置数量都在上限之内。',
     },
     profiles: {
-      local_read: {
-        label: '代码阅读',
-        description: '只读访问当前工作区，适合搜索、理解和总结代码。',
+      'general-purpose': {
+        label: '通用',
+        description: '可以使用主 Agent 的大部分工具，适合调研、搜代码和多步骤任务。',
       },
-      web_research: {
-        label: '网络研究',
-        description: '只使用联网搜索，适合查找外部资料和最新信息。',
+      Explore: {
+        label: '探索',
+        description: '只读，适合大范围查找文件和代码，只汇报结论。',
       },
-      implementation: {
-        label: '实现代码',
-        description: '可以读写文件并执行命令，在隔离 worktree 中完成改动。',
+      Plan: {
+        label: '规划',
+        description: '只读，阅读现有代码后给出分步实施方案和关键文件。',
       },
     },
     thinking: {
@@ -232,8 +230,6 @@ const SETTINGS_SUBAGENTS_COPY_BY_LOCALE = {
       model: '模型',
       thinking: '思考級別',
       defaultThinking: '跟隨模型預設',
-      implementationWarning:
-        '實現程式碼 Profile 可以寫檔案和執行命令，並會在隔離 worktree 中執行。',
       noConnection: '請先在“模型”頁啟用一個模型連線。',
       noModel: '所選連線沒有已啟用的模型。',
       requiredName: '請輸入顯示名稱。',
@@ -257,17 +253,17 @@ const SETTINGS_SUBAGENTS_COPY_BY_LOCALE = {
       rejected: '設定沒有被儲存。請確認名稱長度和設定數量都在上限之內。',
     },
     profiles: {
-      local_read: {
-        label: '程式碼閱讀',
-        description: '只讀存取目前工作區，適合搜尋、理解和總結程式碼。',
+      'general-purpose': {
+        label: '通用',
+        description: '可以使用主 Agent 的大部分工具，適合調研、搜尋程式碼和多步驟任務。',
       },
-      web_research: {
-        label: '網路研究',
-        description: '只使用聯網搜尋，適合查詢外部資料和最新資訊。',
+      Explore: {
+        label: '探索',
+        description: '唯讀，適合大範圍查找檔案和程式碼，只回報結論。',
       },
-      implementation: {
-        label: '實現程式碼',
-        description: '可以讀寫檔案並執行命令，在隔離 worktree 中完成改動。',
+      Plan: {
+        label: '規劃',
+        description: '唯讀，閱讀現有程式碼後給出分步實施方案和關鍵檔案。',
       },
     },
     thinking: {
@@ -327,8 +323,6 @@ const SETTINGS_SUBAGENTS_COPY_BY_LOCALE = {
       model: 'Model',
       thinking: 'Thinking level',
       defaultThinking: 'Use model default',
-      implementationWarning:
-        'The Implementation profile can write files and run commands inside an isolated worktree.',
       noConnection: 'Enable a model connection on the Models page first.',
       noModel: 'The selected connection has no enabled models.',
       requiredName: 'Enter a display name.',
@@ -355,18 +349,19 @@ const SETTINGS_SUBAGENTS_COPY_BY_LOCALE = {
         'The preset was not saved. Check that its name length and the preset count are within their limits.',
     },
     profiles: {
-      local_read: {
-        label: 'Code reading',
+      'general-purpose': {
+        label: 'General purpose',
         description:
-          'Read-only access to the current workspace for search, understanding, and summaries.',
+          "Most of the main agent's tools, for research, code search, and multi-step tasks.",
       },
-      web_research: {
-        label: 'Web research',
-        description: 'Web search only, for external sources and current information.',
+      Explore: {
+        label: 'Explore',
+        description: 'Read-only, for sweeping searches across files and code; reports conclusions.',
       },
-      implementation: {
-        label: 'Implementation',
-        description: 'Read and write files and run commands in an isolated worktree.',
+      Plan: {
+        label: 'Plan',
+        description:
+          'Read-only; reads the existing code and returns a step-by-step plan and key files.',
       },
     },
     thinking: {

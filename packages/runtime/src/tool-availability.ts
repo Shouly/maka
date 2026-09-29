@@ -60,9 +60,14 @@ const DIRECT_TOOL_NAMES: ReadonlySet<string> = new Set([
   TOOL_NAMES.requestAccess,
   // Delivery is default-loaded, as in the design: a ToolSearch round trip
   // before the first file card would defeat "send it the moment it exists".
-  // Delegation stays deferred.
   TOOL_NAMES.sendUserFile,
   TOOL_NAMES.sendUserMessage,
+  // Launching an agent and listing the ones running are loaded directly, as
+  // in the design; SendMessage waits behind ToolSearch. A child hands its
+  // report back without a search.
+  TOOL_NAMES.agent,
+  TOOL_NAMES.listAgents,
+  TOOL_NAMES.subagentHandback,
   // Creating and updating the task list is default-loaded for the same reason,
   // as the design has it: `<keeping_the_person_informed>` asks for a list
   // "whenever the work has stages worth watching", and a search round trip

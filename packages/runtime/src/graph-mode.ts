@@ -28,7 +28,7 @@ export function renderGraphModePrompt(): string {
     'Keep topology changes monotonic: add work and input frontiers, stop obsolete work when necessary, and do not assume arbitrary edge deletion, rewiring, or cycles.',
     'Operator inputs and selected results must be committed record ids. Never treat partial model chunks as durable graph facts.',
     "Before creating work, call ListAgents. Prefer target_kind=new_preset with its exact subagent_id. Otherwise use target_kind=new_agent with the legacy choice's exact agent_id, not its profile.",
-    'For example: {"operation":"add_work","add_work":[{"target_kind":"new_agent","agent_id":"local-read","instruction":"...","input_ids":[],"replacement_mode":"none"}]}. Logical labels such as A or B belong in the instruction.',
+    'For example: {"operation":"add_work","add_work":[{"target_kind":"new_agent","agent_id":"Explore","instruction":"...","input_ids":[],"replacement_mode":"none"}]}. Logical labels such as A or B belong in the instruction.',
     'Use operator_id only to send follow-up work to an existing runtime operator id returned by ViewAgentGraph.',
     'A scheduling update must omit finish. Send finish only in a later terminal update after all selected result_ids are committed.',
     'Stay available to the user across supervisor turns. Intervene only through the typed graph controls, and explain material supervision decisions.',

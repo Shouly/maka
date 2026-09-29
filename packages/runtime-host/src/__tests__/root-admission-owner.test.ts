@@ -198,7 +198,7 @@ test('fails closed when a known durable admission identity drifts', async () => 
           ...first.admission,
           execution: {
             kind: 'linked_child_resume',
-            agentId: 'local-read',
+            agentId: 'Explore',
             agentName: 'Local Read',
             sourceRunId: 'source-run',
           },

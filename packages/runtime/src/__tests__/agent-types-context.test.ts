@@ -21,25 +21,26 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { renderAgentTypesPromptFragment } from '../agent-types-context.js';
 import { listBuiltinAgentDefinitions } from '../agent-catalog.js';
-import { buildBuiltinTools } from '../builtin-tools.js';
 import {
   purgeSessionShellRunOutputFiles,
   shellRunOutputFilePath,
 } from '../shell-run-output-file.js';
 
 describe('the agent types a Session is told it can launch', () => {
-  test('names each runnable type, what it is for, and what it can use', () => {
-    const definitions = listBuiltinAgentDefinitions({
-      tools: buildBuiltinTools({}),
-      worktreeChildExecutorAvailable: false,
+  test('names each type, what it is for, and what it can use, as the design lists them', () => {
+    const text = renderAgentTypesPromptFragment({
+      definitions: listBuiltinAgentDefinitions(),
+      presets: [],
     });
-    const text = renderAgentTypesPromptFragment({ definitions, presets: [] });
     assert.ok(text);
     assert.match(text, /^Available agent types for the Agent tool:\n/u);
-    assert.match(text, /\n- local_read: [^\n]*\(Tools: Glob, Grep, Read\)/u);
+    assert.match(text, /\n- general-purpose: General-purpose agent for [^\n]*\(Tools: \*\)/u);
+    assert.match(
+      text,
+      /\n- Explore: Read-only search agent [^\n]*\(Tools: All tools except Agent, Write, Edit, NotebookEdit, apply_patch\)/u,
+    );
+    assert.match(text, /\n- Plan: Software architect agent [^\n]*\(Tools: All tools except /u);
     assert.match(text, /run at the same time\.$/u);
-    // A profile this composition cannot run is not offered.
-    assert.doesNotMatch(text, /\n- implementation:/u);
   });
 
   test('a user preset is offered by the id Agent takes', () => {
@@ -50,7 +51,7 @@ describe('the agent types a Session is told it can launch', () => {
           id: 'preset-1',
           name: 'Docs reader',
           description: 'Reads   the   docs',
-          profile: 'local_read',
+          profile: 'Explore',
           model: 'some-model',
           availability: { status: 'available' },
         } as never,
@@ -58,14 +59,18 @@ describe('the agent types a Session is told it can launch', () => {
           id: 'preset-2',
           name: 'Disabled',
           description: 'Not runnable',
-          profile: 'local_read',
+          profile: 'Explore',
           model: 'some-model',
           availability: { status: 'unavailable', reason: 'disabled' },
         } as never,
       ],
     });
     assert.ok(text);
-    assert.match(text, /\n- preset-1: Reads the docs \(Docs reader\)/u);
+    // A preset holds what its base type holds.
+    assert.match(
+      text,
+      /\n- preset-1: Reads the docs \(Tools: All tools except Agent, Write, Edit, NotebookEdit, apply_patch\)/u,
+    );
     assert.doesNotMatch(text, /preset-2/u);
   });
 

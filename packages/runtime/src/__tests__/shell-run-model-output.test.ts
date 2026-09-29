@@ -121,7 +121,6 @@ describe('a background task, as the model reads it', () => {
       task_id: 'sr_1',
       task_type: 'local_bash',
       command: 'npm run dev',
-      status: 'cancelled',
     });
     const already = JSON.parse(
       shellRunResultText({
@@ -132,7 +131,7 @@ describe('a background task, as the model reads it', () => {
         operation: { kind: 'stop', applied: false },
       }),
     );
-    assert.equal(already.message, `Task sr_1 had already exited (code 0) (npm run dev)`);
+    assert.equal(already.message, 'Task sr_1 is not running (status: completed)');
   });
 
   test('a TaskInput result leads with what the terminal took', () => {

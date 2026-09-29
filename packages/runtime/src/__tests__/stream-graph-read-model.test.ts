@@ -513,7 +513,7 @@ function provision(
     provisionFingerprint: `sha256:${'0'.repeat(64)}`,
     graphId,
     workId: 'graph_work_00000000000000000000000000000000',
-    agentId: 'local-read',
+    agentId: 'Explore',
     operatorId,
     initialTurnId: 'turn-0',
     initialRunId: 'run-0',
@@ -538,7 +538,7 @@ function scheduleUpdate(graphId: string, instruction: string): AgentGraphSchedul
     addWork: [
       {
         workId: 'graph_work_00000000000000000000000000000000',
-        target: { kind: 'agent', agentId: 'local-read' },
+        target: { kind: 'agent', agentId: 'Explore' },
         instruction,
         inputIds: [],
       },

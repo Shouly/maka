@@ -792,13 +792,12 @@ describe('Host Session retirement coordinator', () => {
             lifecycle: 'foreground',
           },
           subagentRuntime: {
-            schemaVersion: 1,
+            schemaVersion: 2,
             definitionVersion: 1,
-            agentId: 'implementation',
+            agentId: 'general-purpose',
             agentName: 'Implementation',
-            profile: 'implementation',
+            profile: 'general-purpose',
             systemPrompt: 'Implement the task.',
-            toolNames: ['Read', 'Write'],
           },
           subagentSpawn: {
             schemaVersion: 1,
@@ -1550,13 +1549,12 @@ async function createClosedSubagent(
         lifecycle: 'foreground',
       },
       subagentRuntime: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         definitionVersion: 1,
-        agentId: 'implementation',
+        agentId: 'general-purpose',
         agentName: 'Implementation',
-        profile: 'implementation',
+        profile: 'general-purpose',
         systemPrompt: 'Implement the task.',
-        toolNames: ['Read', 'Write'],
       },
       subagentSpawn: {
         schemaVersion: 1,
@@ -1594,7 +1592,7 @@ async function createClosedGraphOperator(
     addWork: [
       {
         workId,
-        target: { kind: 'agent', agentId: 'implementation' },
+        target: { kind: 'agent', agentId: 'general-purpose' },
         instruction: 'Implement the assigned task.',
         inputIds: [],
       },
@@ -1607,7 +1605,7 @@ async function createClosedGraphOperator(
     provisionFingerprint: `sha256:${seed.repeat(63)}6`,
     graphId,
     workId,
-    agentId: 'implementation',
+    agentId: 'general-purpose',
     operatorId,
     initialTurnId: `operator-turn-${seed}`,
     initialRunId: `operator-run-${seed}`,
@@ -1628,13 +1626,12 @@ async function createClosedGraphOperator(
         lifecycle: 'foreground',
       },
       subagentRuntime: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         definitionVersion: 1,
-        agentId: 'implementation',
+        agentId: 'general-purpose',
         agentName: 'Implementation',
-        profile: 'implementation',
+        profile: 'general-purpose',
         systemPrompt: 'Implement the assigned task.',
-        toolNames: ['Read', 'Write'],
       },
       subagentSpawn: {
         schemaVersion: 1,

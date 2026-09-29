@@ -2434,9 +2434,9 @@ describe('Maka Pi TUI transcript', () => {
   test('folds concurrent child lifecycles into their parent agent cards', () => {
     const state = createMakaPiTranscriptState();
     for (const [toolUseId, profile] of [
-      ['agent-a', 'local_read'],
-      ['agent-b', 'web_research'],
-      ['agent-c', 'local_read'],
+      ['agent-a', 'Explore'],
+      ['agent-b', 'general-purpose'],
+      ['agent-c', 'Explore'],
     ] as const) {
       applyMakaSessionEventToTranscript(
         state,
@@ -2539,7 +2539,7 @@ describe('Maka Pi TUI transcript', () => {
         turnId: 'turn-1',
         ts: 1,
         toolName: 'Agent',
-        args: { profile: 'local_read', task: 'Inspect.' },
+        args: { profile: 'Explore', task: 'Inspect.' },
       },
       {
         type: 'tool_result',
@@ -2926,7 +2926,7 @@ describe('Maka Pi TUI transcript', () => {
       {
         id: 'subagent-failed',
         toolName: 'Agent',
-        args: { profile: 'local_read', task: 'read' },
+        args: { profile: 'Explore', task: 'read' },
         isError: true,
         content: subagentResult({ status: 'failed', summary: 'child failed' }),
         expected: '(failed)',
@@ -2934,7 +2934,7 @@ describe('Maka Pi TUI transcript', () => {
       {
         id: 'subagent-aborted',
         toolName: 'Agent',
-        args: { profile: 'local_read', task: 'read' },
+        args: { profile: 'Explore', task: 'read' },
         isError: true,
         content: subagentResult({ status: 'cancelled', summary: 'child stopped' }),
         expected: '(aborted)',

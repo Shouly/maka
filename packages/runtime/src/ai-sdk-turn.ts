@@ -720,6 +720,7 @@ export class AiSdkTurn {
     const planned = injections.planTurn(prior, {
       now: new Date(this.deps.now()),
       datedByPrompt: prior.length === 0 && resolved.dated === true,
+      ...(resolved.childAgent ? { childAgent: true } : {}),
       contexts: resolved.contexts ?? [],
       deferredToolNames: held,
     });
@@ -2356,6 +2357,12 @@ export class AiSdkTurn {
               ) {
                 this.handleAgentGraphYieldToolResult(settlement.result);
               }
+              if (
+                toolCall?.toolName === TOOL_NAMES.subagentHandback &&
+                settlement.providerError === undefined
+              ) {
+                this.handleSubagentHandback();
+              }
             });
             // Continuation reads durable events, not raw results. Do not retain
             // an entire completed batch across the next provider request.
@@ -2795,6 +2802,7 @@ export class AiSdkTurn {
           ) {
             this.handleAgentGraphYieldToolResult(settlement.result);
           }
+          if (name === TOOL_NAMES.subagentHandback) this.handleSubagentHandback();
           return settlement.result;
         },
       });
@@ -2842,6 +2850,16 @@ export class AiSdkTurn {
     // the conversational Turn. The execution prompt tells the model to persist
     // final progress before its final response, so let it consume this result
     // and produce that response on the next provider step.
+  }
+
+  /**
+   * A child agent handed its report back: that is the end of its turn, as the
+   * hand-back tells it. Whatever else ran in the same step settles first; no
+   * further step is asked for.
+   */
+  private handleSubagentHandback(): void {
+    this.loopStopReason ??= 'end_turn';
+    this.loopStopRequested = true;
   }
 
   private handleAgentGraphYieldToolResult(result: YieldAgentGraphToolResult): void {

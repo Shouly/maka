@@ -406,7 +406,6 @@ export interface ToolGating {
 }
 
 export const TOOL_ERROR_RESULT_MAX_CHARS = 4000;
-export const MAX_ACTIVE_SUBAGENT_TOOLS_PER_TURN = 5;
 export const MAX_ACTIVE_CHILD_AGENT_RUNS_PER_TURN = 32;
 
 /**
@@ -424,8 +423,6 @@ const SANDBOX_BOUNDARY_FAILURE_ROUND_LIMIT = 3;
 type SandboxBoundaryFailureKind = 'invalid' | 'unresolved';
 type SandboxBoundaryFailureDetails = Extract<ToolResultContent, { kind: 'text' }>['sandboxFailure'];
 
-const SUBAGENT_TOOL_LIMIT_MESSAGE =
-  '子代理并发过多：同一轮最多 5 个子代理。请等待已有任务完成后再继续。';
 const CLIENT_CAPABILITY_BOUNDARY_MESSAGE =
   'Client Capability tools run outside the sandbox, so a Read only session refuses them. Switch this Session to Manual or Full access and retry.';
 const CLIENT_CAPABILITY_PREPARATION_MESSAGE =
@@ -649,7 +646,6 @@ export class ToolRuntime {
   private sandboxBoundaryClosureDeferred = false;
   private questionClosureDeferred = false;
   private formClosureDeferred = false;
-  private activeSubagentToolCount = 0;
   private childAgentRunLimiter = new AdmissionLimiter(MAX_ACTIVE_CHILD_AGENT_RUNS_PER_TURN);
   /**
    * Tool-availability gating for the execute boundary. Set by the backend each
@@ -1073,7 +1069,6 @@ export class ToolRuntime {
     priorChildAgentRunLimiter.close(
       new Error('Child agent run permit scope ended before capacity became available'),
     );
-    this.activeSubagentToolCount = 0;
     this.gating = undefined;
     this.lastFailedToolCallSignature = undefined;
     this.failedToolCallStreak = 0;
@@ -1750,21 +1745,6 @@ export class ToolRuntime {
       }
     }
 
-    const reservedSubagentSlot = this.reserveSubagentSlot(tool);
-    if (!reservedSubagentSlot) {
-      await preparedExecution?.cancel();
-      await disposeManagedMutationAdmission(managedMutationAdmission);
-      trace?.emit('tool', 'tool_failed', 'Tool execution rejected by runtime limit', {
-        toolUseId,
-        toolName: tool.name,
-        errorClass: 'RuntimeLimit',
-        boundary: 'subagent_tool_admission',
-      });
-      await refuseBeforeDispatch(SUBAGENT_TOOL_LIMIT_MESSAGE, { class: 'RuntimeLimit' });
-      this.recordLoopGateOutcome(callSignature, true);
-      return this.errorReturn(SUBAGENT_TOOL_LIMIT_MESSAGE);
-    }
-
     let durableAttempt: DurableToolAttempt | undefined;
     try {
       durableAttempt = await this.prepareDurableToolAttempt({
@@ -1781,7 +1761,6 @@ export class ToolRuntime {
       });
     } catch (error) {
       await preparedExecution?.cancel();
-      if (reservedSubagentSlot) this.releaseSubagentSlot(tool);
       await disposeManagedMutationAdmission(managedMutationAdmission);
       throw error;
     }
@@ -2390,7 +2369,6 @@ export class ToolRuntime {
         attemptBoundaryKind,
         attemptBoundaryDetails,
       );
-      if (reservedSubagentSlot) this.releaseSubagentSlot(tool);
       await disposeManagedMutationAdmission(managedMutationAdmission);
     }
   }
@@ -2669,18 +2647,6 @@ export class ToolRuntime {
     throw abortSignal.reason instanceof Error
       ? abortSignal.reason
       : new Error(`Tool ${toolName} was cancelled before durable dispatch`);
-  }
-
-  private reserveSubagentSlot(tool: MakaTool): boolean {
-    if (tool.categoryHint !== 'subagent') return true;
-    if (this.activeSubagentToolCount >= MAX_ACTIVE_SUBAGENT_TOOLS_PER_TURN) return false;
-    this.activeSubagentToolCount += 1;
-    return true;
-  }
-
-  private releaseSubagentSlot(tool: MakaTool): void {
-    if (tool.categoryHint !== 'subagent') return;
-    this.activeSubagentToolCount = Math.max(0, this.activeSubagentToolCount - 1);
   }
 
   private errorReturn(message: string): unknown {

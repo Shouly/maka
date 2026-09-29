@@ -53,7 +53,8 @@ import {
   type BackendFactory,
   type BackendPreparationContext,
 } from '@maka/runtime/session-manager';
-import { buildToolsForAgentDefinition } from '@maka/runtime/agent-catalog';
+import { DEFAULT_AGENT_TYPE } from '@maka/runtime/agent-catalog';
+import { buildParentAgentTools } from '@maka/runtime/subagent-tools';
 import { buildHistoryTools } from '@maka/runtime/history-tools';
 import { buildBuiltinTools } from '@maka/runtime/builtin-tools';
 import { createLocalContinuationSafetyInspector } from '@maka/runtime/continuation-safety';
@@ -125,10 +126,7 @@ import type { RuntimePolicyStoresWriter } from '@maka/storage/runtime-policy-sto
 import { resolveWorkspaceIdentity } from '@maka/storage/workspace-identity';
 import { CanonicalSessionProjectionReader } from './canonical-session-projection.js';
 import { HostPluginDataRuntime } from './plugin-data-runtime.js';
-import {
-  bindHostChildAgentBackend,
-  createHostChildAgentToolComposition,
-} from './child-agent-composition.js';
+import { bindHostChildAgentBackend } from './child-agent-composition.js';
 import { HostArtifactCoordinator } from './artifact-coordinator.js';
 import { HostAgentGraphCoordinator } from './agent-graph-coordinator.js';
 import { HostAgentGraphExecutionCoordinator } from './agent-graph-execution-coordinator.js';
@@ -708,19 +706,16 @@ export async function createExecutionRuntimeHostComposition(
         return abortSignal?.aborted ? null : messages;
       },
     });
-    const childHostTools = [
+    // A child agent holds these too, as far as its type allows: it reads the
+    // user's memory but never changes it. Hosted profiles project their own list.
+    const hostTools = [
       createHostWebSearchToolFromService(webSearchService),
       createHostWebFetchToolFromService(webFetchService),
       ...runtimePolicy.modelTools,
+      ...historyTools,
+      ...memory.tools,
     ];
-    // Memory tools bind only where the memory pass runs: the main session.
-    // Children get `childHostTools` and hosted profiles project their own list.
-    const hostTools = [...childHostTools, ...historyTools, ...memory.tools];
-    const childAgentTools = createHostChildAgentToolComposition({
-      builtinTools,
-      hostTools: childHostTools,
-      worktreePatchWriteBackAvailable: true,
-    });
+    const parentAgentTools = buildParentAgentTools();
     const openedGraphControlStore = createAgentGraphControlStore(
       context.owner.capability.canonicalPath,
     );
@@ -801,6 +796,20 @@ export async function createExecutionRuntimeHostComposition(
             throw error;
           }
           if (!preview.ok) throw new Error(preview.message);
+          // Archived or removed while its tools were being resolved: answer as
+          // if it had been so before.
+          let settled;
+          try {
+            settled = await stores.sessionStore.readHeaderSnapshot(sessionId);
+          } catch (error) {
+            if (isSessionNotFoundError(error)) {
+              throw new SkillCatalogInvocableContextError('not_found', 'Session does not exist');
+            }
+            throw error;
+          }
+          if (settled.isArchived) {
+            throw new SkillCatalogInvocableContextError('session_archived', 'Session is archived');
+          }
           return {
             projectRoot: header.cwd,
             host: buildHostCapabilitiesFromBinding(preview.value),
@@ -1029,8 +1038,6 @@ export async function createExecutionRuntimeHostComposition(
         goalTools: requireGoal(goal).tools,
         builtinTools,
         hostTools,
-        resolveRootTools: (sessionId) =>
-          requireGraphCoordinator(graphCoordinator).toolsForSession(sessionId),
         resolvePluginTools: (sessionId, coreTools) =>
           pluginTools.resolveContributions(sessionId, coreTools),
         resolvePluginSystemPrompt: async (sessionId, promptContext, baseText) => {
@@ -1048,9 +1055,7 @@ export async function createExecutionRuntimeHostComposition(
             sourceRevisions: assembly.sourceRevision ? [assembly.sourceRevision] : [],
           };
         },
-        parentAgentTools: childAgentTools.parentTools,
-        childTools: childAgentTools.childTools,
-        worktreePatchWriteBackAvailable: true,
+        parentAgentTools,
         resolveProfileSystemPrompt: async (promptContext, basePrompt) => {
           if (promptContext.sessionId !== WORKHUB_COORDINATION_SESSION_ID) return basePrompt;
           const admission = await stores.agentRunStore.readRootTurnAdmission(
@@ -1100,7 +1105,6 @@ export async function createExecutionRuntimeHostComposition(
       readonly modelId: string;
       readonly hostTools: readonly MakaTool[];
       readonly boundTools?: readonly MakaTool[];
-      readonly childTools?: readonly MakaTool[];
       readonly parentAgentTools?: readonly MakaTool[];
     }) => {
       const [runtimePolicy, resolved] = await Promise.all([
@@ -1139,51 +1143,28 @@ export async function createExecutionRuntimeHostComposition(
           modelId: input.modelId,
           hostTools: input.hostTools,
           ...(input.boundTools ? { boundTools: input.boundTools } : {}),
-          ...(input.childTools ? { childTools: input.childTools } : {}),
           ...(input.parentAgentTools ? { parentAgentTools: input.parentAgentTools } : {}),
-          worktreePatchWriteBackAvailable: true,
           tavilyReady,
         }),
       };
     };
     resolveAvailableToolNames = async (sessionId: string): Promise<string[]> => {
       const header = await stores.sessionStore.readHeaderSnapshot(sessionId);
-      if (header.subagentRuntime) {
-        if (!header.subagentParent) {
-          throw new Error('Subagent runtime snapshot requires a linked child session');
-        }
-        const tools = buildToolsForAgentDefinition(childAgentTools.childTools, {
-          id: header.subagentRuntime.agentId,
-          permissionMode: header.permissionMode,
-          tools: header.subagentRuntime.toolNames,
-        });
-        if (tools.length !== header.subagentRuntime.toolNames.length) {
-          throw new Error('Subagent runtime tool snapshot is unavailable');
-        }
-        const { surface } = await resolveInteractiveToolSurface({
-          connectionRef: sessionExecutionConnectionRef(header),
-          modelId: header.model,
-          hostTools: [],
-          boundTools: tools,
-        });
-        return (surface.boundTools ?? []).map((tool) => tool.name);
+      if (header.subagentRuntime && !header.subagentParent) {
+        throw new Error('Subagent runtime snapshot requires a linked child session');
       }
-      if (header.subagentParent) {
+      if (header.subagentParent && !header.subagentRuntime) {
         throw new Error('Linked child session is missing its durable runtime snapshot');
       }
       const capabilitySnapshot =
         requireClientCapabilities(clientCapabilities).snapshotForSession(sessionId);
       try {
-        const [graphTools, planState] = await Promise.all([
-          requireGraphCoordinator(graphCoordinator).toolsForSession(sessionId),
-          openedPlanStore.readState(sessionId),
-        ]);
+        const planState = await openedPlanStore.readState(sessionId);
         const { runtimePolicy, surface, knowledgeCutoff } = await resolveInteractiveToolSurface({
           connectionRef: sessionExecutionConnectionRef(header),
           modelId: header.model,
-          hostTools: [...hostTools, ...graphTools],
-          childTools: childAgentTools.childTools,
-          parentAgentTools: childAgentTools.parentTools,
+          hostTools,
+          parentAgentTools,
         });
         const runProfile = hostedExecutionRunProfile(header.toolProfile);
         return createInteractiveRunComposer({
@@ -1193,6 +1174,8 @@ export async function createExecutionRuntimeHostComposition(
           skills,
           memory: memory,
           sessionTask,
+          // A child holds what its agent type may hold of the same surface.
+          ...(header.subagentRuntime ? { childAgentType: header.subagentRuntime.profile } : {}),
           ...(runProfile ? { toolProfile: header.toolProfile } : {}),
           ...(capabilitySnapshot ? { clientCapabilities: capabilitySnapshot } : {}),
           builtinTools,
@@ -1249,8 +1232,7 @@ export async function createExecutionRuntimeHostComposition(
               : {}),
             modelId: target?.modelId ?? '',
             hostTools,
-            childTools: childAgentTools.childTools,
-            parentAgentTools: childAgentTools.parentTools,
+            parentAgentTools,
           });
           return createInteractiveRunComposer({
             runtimePolicy,
@@ -1307,24 +1289,6 @@ export async function createExecutionRuntimeHostComposition(
       requestDrain: context.requestDrain,
     });
     sessionEffects = sessionEffectCoordinator;
-    const resolveChildTools = async (sessionId: string) => {
-      const header = await stores.sessionStore.readHeader(sessionId);
-      const shell = resolveTurnShellPlan(
-        (await runtimePolicyStores.runtimePolicy.getSnapshot()).policy.shell,
-      );
-      const childTools = createHostChildAgentToolComposition({
-        builtinTools: { ...builtinTools, shell },
-        hostTools,
-        worktreePatchWriteBackAvailable: true,
-      }).childTools;
-      const { surface } = await resolveInteractiveToolSurface({
-        connectionRef: sessionExecutionConnectionRef(header),
-        modelId: header.model,
-        hostTools: [],
-        childTools,
-      });
-      return { tools: surface.childTools ?? [], shell };
-    };
     const subagentCatalog = createConfiguredSubagentCatalog({
       getPresets: async () =>
         (await runtimePolicyStores.runtimePolicy.getSnapshot()).policy.subagents.presets,
@@ -1385,7 +1349,6 @@ export async function createExecutionRuntimeHostComposition(
       interactionAuthority: interactions,
       shellRuns,
       planStore: openedPlanStore,
-      resolveChildTools,
       worktreeChildExecutor,
       listArtifactsForTurn: (sessionId, turnId) =>
         openedArtifactStore.listTurnArtifacts(sessionId, turnId),
@@ -1720,7 +1683,7 @@ export async function createExecutionRuntimeHostComposition(
         if (!options.prompt?.trim()) throw new Error('Agent creation requires a prompt');
         return new Promise((resolve, reject) => {
           void spawn({
-            agentProfile: options.agentProfile ?? 'implementation',
+            agentProfile: options.agentProfile ?? DEFAULT_AGENT_TYPE,
             prompt: options.prompt!,
             ...(options.signal ? { abortSignal: options.signal } : {}),
             onReady: (ready) =>

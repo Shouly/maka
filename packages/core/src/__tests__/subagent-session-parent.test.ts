@@ -207,13 +207,12 @@ function summary(id: string, overrides: Partial<SessionSummary> = {}): SessionSu
 
 describe('legacy child execution snapshots', () => {
   const runtime = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     definitionVersion: 1,
     agentId: 'agent-1',
     agentName: 'Reader',
-    profile: 'local_read',
+    profile: 'Explore',
     systemPrompt: 'Read only.',
-    toolNames: ['Read'],
   } as const;
 
   test('accepts a snapshot carrying a retired key', () => {
@@ -229,5 +228,13 @@ describe('legacy child execution snapshots', () => {
 
   test('still rejects a key that was never part of the shape', () => {
     assert.equal(isSubagentSessionRuntime({ ...runtime, notAField: 'x' }), false);
+  });
+
+  test('rejects a first-version snapshot that pinned a tool list', () => {
+    // A child's tools follow from its type now; the old snapshot is not read.
+    assert.equal(
+      isSubagentSessionRuntime({ ...runtime, schemaVersion: 1, toolNames: ['Read'] }),
+      false,
+    );
   });
 });

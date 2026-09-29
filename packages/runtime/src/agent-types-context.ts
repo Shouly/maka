@@ -26,7 +26,12 @@
 // it changes — because it changes on its own schedule and would otherwise
 // invalidate the cached system prompt every time a preset is edited.
 
-import type { AgentDefinitionListItem, SubagentPresetListItem } from './agent-catalog.js';
+import {
+  agentToolsLabel,
+  getBuiltinAgentDefinitionByProfile,
+  type AgentDefinitionListItem,
+  type SubagentPresetListItem,
+} from './agent-catalog.js';
 
 export const AGENT_TYPES_PROMPT_INTRO = 'Available agent types for the Agent tool:';
 
@@ -42,19 +47,21 @@ export function renderAgentTypesPromptFragment(catalog: {
   for (const definition of catalog.definitions) {
     if (definition.availability.status !== 'available') continue;
     lines.push(
-      `- ${definition.profile}: ${clean(definition.description)} (Tools: ${toolList(definition.tools)})`,
+      `- ${definition.profile}: ${clean(definition.description)} (Tools: ${definition.tools})`,
     );
   }
+  // A preset is a type the user set up: one of the above on its own model, so
+  // it holds what that type holds.
   for (const preset of catalog.presets) {
     if (preset.availability.status !== 'available') continue;
-    lines.push(`- ${preset.id}: ${clean(preset.description)} (${clean(preset.name)})`);
+    const base = getBuiltinAgentDefinitionByProfile(preset.profile);
+    if (!base) continue;
+    lines.push(
+      `- ${preset.id}: ${clean(preset.description || preset.name)} (Tools: ${agentToolsLabel(base)})`,
+    );
   }
   if (lines.length === 0) return undefined;
   return [AGENT_TYPES_PROMPT_INTRO, ...lines, '', AGENT_TYPES_PROMPT_OUTRO].join('\n');
-}
-
-function toolList(tools: readonly string[]): string {
-  return tools.length === 0 ? 'none' : [...tools].sort().join(', ');
 }
 
 function clean(text: string): string {

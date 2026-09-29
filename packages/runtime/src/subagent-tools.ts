@@ -24,45 +24,21 @@ import { TOOL_NAMES } from '@maka/core/tool-names';
 import { type ToolResultContent } from '@maka/core/events';
 import type { MakaTool, MakaToolContext } from './tool-runtime.js';
 import {
-  AGENT_WORKSPACE_SAME_WORKSPACE,
-  AGENT_WORKSPACE_WORKTREE,
-  AGENT_WRITE_BACK_PATCH,
-  AGENT_WRITE_BACK_SUMMARY,
   BUILTIN_AGENT_DEFINITIONS,
-  agentProfilesForDefinitions,
-  buildToolsForAgentDefinition,
-  requireAgentDefinitionByProfile,
+  DEFAULT_AGENT_TYPE,
+  getBuiltinAgentDefinitionByProfile,
   type AgentDefinition,
 } from './agent-catalog.js';
 
 export const AGENT_SPAWN_TOOL_NAME = TOOL_NAMES.agent;
 export const AGENT_LIST_TOOL_NAME = TOOL_NAMES.listAgents;
 export const AGENT_OUTPUT_TOOL_NAME = TOOL_NAMES.agentOutput;
-export const AGENT_TOOL_GROUP_ID = 'agent';
-export const AGENT_TOOL_NAMES = [
-  AGENT_SPAWN_TOOL_NAME,
-  AGENT_LIST_TOOL_NAME,
-  AGENT_OUTPUT_TOOL_NAME,
-] as const;
-export const CHILD_AGENT_TOOL_NAMES = [
-  ...new Set(BUILTIN_AGENT_DEFINITIONS.flatMap((definition) => definition.tools)),
-] as readonly string[];
-const AGENT_SPAWN_WRITE_BACK_MODES = [AGENT_WRITE_BACK_SUMMARY, AGENT_WRITE_BACK_PATCH] as const;
-const AGENT_SPAWN_ISOLATION_MODES = [
-  AGENT_WORKSPACE_SAME_WORKSPACE,
-  AGENT_WORKSPACE_WORKTREE,
-] as const;
+export const SUBAGENT_HANDBACK_TOOL_NAME = TOOL_NAMES.subagentHandback;
 const CHILD_PROGRESS_ERROR_MAX_CHARS = 1_000;
-const AGENT_LIST_PAGE_SIZE = 8;
-// Active tool-result archival starts at roughly 8k characters with the default
-// token estimate. Keep discovery safely below it even with maximal catalog text.
-const AGENT_LIST_MAX_RESPONSE_CHARS = 7_000;
-const AGENT_LIST_DESCRIPTION_MAX_CHARS = 240;
-const AGENT_LIST_MODEL_MAX_CHARS = 160;
 /** The 3-5 word label a person reads while the child runs. */
 const AGENT_DESCRIPTION_MAX_CHARS = 120;
-/** Longest model name an override may name before it is obviously not one. */
-const AGENT_MODEL_MAX_CHARS = 128;
+/** A `to` is one line; the design caps it at 300 characters. */
+const SEND_MESSAGE_TO_MAX_CHARS = 300;
 
 /**
  * Which schema fields each `AgentOutput` locator needs. A rejection that only
@@ -78,56 +54,26 @@ const LOCATOR_REQUIRED_FIELDS = {
 
 type SubagentToolResult = Extract<ToolResultContent, { kind: 'subagent' }>;
 
-export function buildChildAgentTools(tools: readonly MakaTool[]): MakaTool[] {
-  const seen = new Set<string>();
-  const out: MakaTool[] = [];
-  for (const definition of BUILTIN_AGENT_DEFINITIONS) {
-    for (const tool of buildToolsForAgentDefinition(tools, definition)) {
-      if (seen.has(tool.name)) continue;
-      seen.add(tool.name);
-      out.push(tool);
-    }
-  }
-  return out;
-}
-
-export function buildSubagentSpawnTool(
-  deps: { definitions?: readonly AgentDefinition[] } = {},
-): MakaTool<
+export function buildSubagentSpawnTool(): MakaTool<
   {
-    subagent_type: string;
+    subagent_type?: string;
     description: string;
     prompt: string;
-    model?: string;
-    write_back?: string;
-    isolation?: string;
   },
   unknown
 > {
-  const definitions = deps.definitions ?? BUILTIN_AGENT_DEFINITIONS;
-  const profiles = agentProfilesForDefinitions(definitions);
-  const isLegacyProfile = (value: string): boolean => profiles.some((profile) => profile === value);
-  // A built-in profile this composition does not carry is a wrong selector, not
-  // an unknown preset id: say so at the schema, where the model can still fix
-  // it, rather than letting it travel to the catalog as a preset lookup.
-  const allBuiltinProfiles = agentProfilesForDefinitions(BUILTIN_AGENT_DEFINITIONS);
-  const isUnavailableBuiltinProfile = (value: string): boolean =>
-    !isLegacyProfile(value) && allBuiltinProfiles.some((profile) => profile === value);
-  const missingSelectorMessage =
-    'No child selector was provided. Pass one of the agent types listed in your context as ' +
-    `subagent_type; the built-in profiles here are: ${profiles.join(', ')}.`;
   return {
     name: AGENT_SPAWN_TOOL_NAME,
     displayName: 'Agent',
     activityKind: 'delegate',
     description: [
-      'Launch a new agent to handle complex, multi-step tasks. Each agent type has its own tools and its own model.',
+      'Launch a new agent to handle complex, multi-step tasks. Each agent type has specific capabilities and tools available to it.',
       '',
-      'The agent types this session can run are listed in your context, each with what it is for and what it can use. Pass one of those as `subagent_type`. `ListAgents` with `view=selection` resolves a selector that came back unknown, and carries the contracts in full.',
+      `The agent types this session can run are listed in your context, each with what it is for and what it can use. When using the Agent tool, specify a subagent_type parameter to select which agent type to use. If omitted, the ${DEFAULT_AGENT_TYPE} agent is used.`,
       '',
       '## When to use',
       '',
-      "A fresh agent costs more than it looks. It knows only what you put in the prompt, and you see only the summary it sends back — both handoffs drop detail, and neither of you can tell what the other missed. You can't watch it work, only wait or stop it. Its mistakes come back in the same confident register as its findings, and an agent handed your hypothesis tends to return it confirmed. Several at once spend tokens in a burst the user didn't ask for. Weigh those tokens against the accuracy they buy: the user pays for agents you did not need, and pays again for work you redo because you skipped one.",
+      "A fresh agent costs more than it looks. It knows only what you put in the prompt, and you see only the report it hands back — both handoffs drop detail, and neither of you can tell what the other missed. You can't watch it work, only wait or stop it. Its mistakes come back in the same confident register as its findings, and an agent handed your hypothesis tends to return it confirmed. Several at once spend tokens in a burst the user didn't ask for. Weigh those tokens against the accuracy they buy: the user pays for agents you did not need, and pays again for work you redo because you skipped one.",
       '',
       "Reach for this when you have independent work to run in parallel, when the user asks for a side quest that shouldn't block your main thread, or when answering would mean reading across several files — delegate that and you keep the conclusion, not the file dumps.",
       '',
@@ -137,116 +83,33 @@ export function buildSubagentSpawnTool(
       '',
       '- The child sees nothing of this conversation and cannot ask you or the user anything, so write `prompt` as the whole brief.',
       "- `description` is the 3-5 word label a person reads while the child runs; it is not part of the child's brief.",
-      "- Agents run in the background: this returns an ID as soon as the child is running, and you'll be notified when it finishes. Never fabricate or predict a pending agent's results — the notification is never something you write yourself; if the user asks before it arrives, say it is still running.",
+      "- Agents run in the background: this returns an ID as soon as the child is running, and you'll be notified when it finishes, with the report it handed back. Never fabricate or predict a pending agent's results — the notification is never something you write yourself; if the user asks before it arrives, say it is still running.",
       "- Don't duplicate a running agent's work: stay off the files and topics it is using.",
       '- Use SendMessage with the agent ID to continue it with its context intact; a new Agent call starts a fresh one. End one early with TaskStop.',
       "- The agent's final report is not shown to the user — relay what matters in your own words.",
-      '- Each agent carries its own model, so `model` is accepted and ignored; the result says so when you pass one.',
-      '- `write_back` and `isolation` must match the contract the selected agent declares and ListAgents shows; a mismatch is rejected before any child starts, and `isolation: "worktree"` fails closed while no worktree executor exists.',
-      '- Returns the ID to send messages to, stop, or read with AgentOutput. The result carries nothing the child produced: none of it exists yet.',
-      '- Fails when `subagent_type` is unknown or unavailable, which ListAgents resolves, and when this session has no child-agent capability at all; that one repeats on retry, so do the task with the tools you already have.',
+      '- Fails when `subagent_type` names no agent type listed in your context, and when this session has no child-agent capability at all; that one repeats on retry, so do the task with the tools you already have.',
     ].join('\n'),
     parameters: z
       .object({
-        subagent_type: z
-          .string({ error: () => missingSelectorMessage })
-          .min(1)
-          .max(128)
-          // Preset ids are per user and cannot be enumerated in a frozen
-          // schema, but the built-in profiles this composition can actually
-          // run can — and naming them is what keeps a wrong selector out of
-          // the catalog lookup in the first place.
-          .describe(
-            'The type of specialized agent to use for this task, from the agent types listed ' +
-              `in your context. Built-in profiles available here: ${profiles.join(', ')}.`,
-          ),
         description: z
           .string()
           .min(1)
           .max(AGENT_DESCRIPTION_MAX_CHARS)
           .describe('A short (3-5 word) description of the task'),
         prompt: z.string().min(1).max(60_000).describe('The task for the agent to perform'),
-        model: z
+        subagent_type: z
           .string()
           .min(1)
-          .max(AGENT_MODEL_MAX_CHARS)
+          .max(128)
           .optional()
-          .describe(
-            'Optional model override. Every agent here carries its own model, so this is accepted and ignored.',
-          ),
-        write_back: z
-          .enum(AGENT_SPAWN_WRITE_BACK_MODES)
-          .optional()
-          .describe(
-            'Requested child write-back mode. Each built-in profile declares its supported modes.',
-          ),
-        isolation: z
-          .enum(AGENT_SPAWN_ISOLATION_MODES)
-          .optional()
-          .describe(
-            'Requested child workspace isolation. Worktree profiles fail closed until a worktree child executor is available.',
-          ),
+          .describe('The type of specialized agent to use for this task'),
       })
-      .strip()
-      .superRefine((input, ctx) => {
-        if (!isLegacyProfile(input.subagent_type)) {
-          if (isUnavailableBuiltinProfile(input.subagent_type)) {
-            ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              path: ['subagent_type'],
-              message:
-                `Agent profile "${input.subagent_type}" is not runnable in this composition. ` +
-                `Available built-in profiles: ${profiles.join(', ')}.`,
-            });
-            return;
-          }
-          if (!isSafeSubagentPresetId(input.subagent_type)) {
-            ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              path: ['subagent_type'],
-              message:
-                'subagent_type is not a well-formed preset id. Call ListAgents with view=selection and pass a returned ' +
-                `subagent_id, or one built-in profile: ${profiles.join(', ')}.`,
-            });
-          }
-          return;
-        }
-        const definition = requireAgentDefinitionByProfile(definitions, input.subagent_type);
-        const requestedWriteBack = input.write_back ?? definition.contract.defaultWriteBack;
-        if (!definition.contract.supportedWriteBack.some((mode) => mode === requestedWriteBack)) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['write_back'],
-            message: `Agent profile "${definition.profile}" does not support write_back "${requestedWriteBack}".`,
-          });
-        }
-        const requestedIsolation = input.isolation ?? definition.contract.workspace;
-        if (requestedIsolation !== definition.contract.workspace) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['isolation'],
-            message: `Agent profile "${definition.profile}" requires isolation "${definition.contract.workspace}", not "${requestedIsolation}".`,
-          });
-        }
-      }),
+      .strict(),
     categoryHint: 'subagent',
     impl: async (input, ctx) => {
-      const preset = isLegacyProfile(input.subagent_type) ? undefined : input.subagent_type;
-      const definition = preset
-        ? await resolvePresetDefinition(preset, ctx, definitions)
-        : requireAgentDefinitionByProfile(definitions, input.subagent_type);
-      const requestedWriteBack = input.write_back ?? definition.contract.defaultWriteBack;
-      if (!definition.contract.supportedWriteBack.some((mode) => mode === requestedWriteBack)) {
-        throw new Error(
-          `Agent profile "${definition.profile}" does not support write_back "${requestedWriteBack}".`,
-        );
-      }
-      const requestedIsolation = input.isolation ?? definition.contract.workspace;
-      if (requestedIsolation !== definition.contract.workspace) {
-        throw new Error(
-          `Agent profile "${definition.profile}" requires isolation "${definition.contract.workspace}", not "${requestedIsolation}".`,
-        );
-      }
+      const selector = input.subagent_type ?? DEFAULT_AGENT_TYPE;
+      const builtin = getBuiltinAgentDefinitionByProfile(selector);
+      const definition = builtin ?? (await resolvePresetDefinition(selector, ctx));
       if (!ctx.spawnChildSession) {
         throw new Error(
           'Agent is not available in this session, so no child agent was started. ' +
@@ -265,7 +128,7 @@ export function buildSubagentSpawnTool(
         started = projectStartedChildAgent(
           await ctx.spawnChildSession({
             agentProfile: definition.profile,
-            ...(preset ? { subagentId: preset } : {}),
+            ...(builtin ? {} : { subagentId: selector }),
             prompt: input.prompt,
             description: input.description,
           }),
@@ -293,60 +156,48 @@ export function buildSubagentSpawnTool(
         artifactIds: [],
       } satisfies SubagentToolResult;
     },
-    // A silently ignored argument is a lie the caller repeats. The durable
-    // result stays the canonical subagent shape; the note rides on the model's
-    // view of it, and only when a model override was actually asked for.
-    toModelOutput: ({ input, output }) => {
-      const result = output as { kind?: string; childSessionId?: string; agentName?: string };
+    toModelOutput: ({ output }) => {
+      const result = output as { kind?: string; childSessionId?: string };
       if (result?.kind !== 'subagent' || typeof result.childSessionId !== 'string') {
         return undefined;
       }
-      const model = (input as { model?: unknown } | null)?.model;
-      const ignored =
-        typeof model === 'string' && model.trim() !== ''
-          ? ` The agent carries its own model, so "${model}" was not applied.`
-          : '';
-      return {
-        type: 'text',
-        value: startedChildAgentText(result.childSessionId, ignored),
-      };
+      return { type: 'text', value: startedChildAgentText(result.childSessionId) };
     },
   };
 }
 
+/**
+ * A `subagent_type` that is not a built-in type names a preset: a custom type
+ * the user set up in Settings, running as one of the built-in ones on its own
+ * model.
+ */
 async function resolvePresetDefinition(
   subagentId: string,
   ctx: MakaToolContext,
-  definitions: readonly AgentDefinition[],
 ): Promise<AgentDefinition> {
-  if (!ctx.listChildAgents) {
-    throw new Error('listChildAgents capability is unavailable in this runtime context');
+  const catalog = isSafeSubagentPresetId(subagentId) ? await ctx.listChildAgents?.() : undefined;
+  const presets = (catalog as { presets?: unknown } | undefined)?.presets;
+  const available = Array.isArray(presets)
+    ? presets.filter(
+        (candidate): candidate is { id: string; profile: string } =>
+          Boolean(candidate) &&
+          typeof candidate === 'object' &&
+          typeof (candidate as { id?: unknown }).id === 'string' &&
+          typeof (candidate as { profile?: unknown }).profile === 'string' &&
+          (candidate as { availability?: { status?: unknown } }).availability?.status ===
+            'available',
+      )
+    : [];
+  const preset = available.find((candidate) => candidate.id === subagentId);
+  const definition = preset ? getBuiltinAgentDefinitionByProfile(preset.profile) : undefined;
+  if (!definition) {
+    const names = [
+      ...BUILTIN_AGENT_DEFINITIONS.map((candidate) => candidate.profile),
+      ...available.map((candidate) => candidate.id),
+    ].sort((left, right) => left.localeCompare(right, 'en', { sensitivity: 'base' }));
+    throw new Error(`Agent type '${subagentId}' not found. Available agents: ${names.join(', ')}`);
   }
-  const catalog = await ctx.listChildAgents();
-  if (!catalog || typeof catalog !== 'object' || Array.isArray(catalog)) {
-    throw new Error('ListAgents returned an invalid catalog');
-  }
-  const presets = (catalog as { presets?: unknown }).presets;
-  if (!Array.isArray(presets)) throw new Error('Configured subagent catalog is unavailable');
-  const preset = presets.find(
-    (candidate): candidate is { id: string; profile: string; availability?: { status?: string } } =>
-      Boolean(candidate) &&
-      typeof candidate === 'object' &&
-      !Array.isArray(candidate) &&
-      (candidate as { id?: unknown }).id === subagentId &&
-      typeof (candidate as { profile?: unknown }).profile === 'string',
-  );
-  if (!preset)
-    throw new Error(
-      `Unknown subagent_type "${subagentId}"; no child agent was started. Pass one of the agent ` +
-        'types listed in your context (built-in profiles: ' +
-        `${agentProfilesForDefinitions(definitions).join(', ')}), or call ListAgents with ` +
-        'view=selection to resolve it.',
-    );
-  if (preset.availability?.status !== 'available') {
-    throw new Error(`Subagent preset "${subagentId}" is unavailable.`);
-  }
-  return requireAgentDefinitionByProfile(definitions, preset.profile);
+  return definition;
 }
 
 interface StartedChildAgent {
@@ -359,7 +210,7 @@ interface StartedChildAgent {
 }
 
 /** What the model is told the moment a child agent is running. */
-export function startedChildAgentText(agentId: string, trailer = ''): string {
+export function startedChildAgentText(agentId: string): string {
   return (
     'Async agent launched successfully. (This tool result is internal metadata — never quote ' +
     'or paste any part of it, including the agentId below, into a user-facing reply.)\n' +
@@ -371,8 +222,7 @@ export function startedChildAgentText(agentId: string, trailer = ''): string {
     'report, assume, or predict them; continue other work or respond to the user in the ' +
     'meantime.\n' +
     "Do not duplicate this agent's work — avoid working with the same files or topics it is " +
-    'using.' +
-    trailer
+    'using.'
   );
 }
 
@@ -413,62 +263,32 @@ function boundedChildError(error: unknown): string {
     : `${message.slice(0, CHILD_PROGRESS_ERROR_MAX_CHARS - 1)}…`;
 }
 
-export function buildSubagentListTool(): MakaTool<
-  { view?: 'selection' | 'catalog'; cursor?: string },
-  unknown
-> {
+export function buildSubagentListTool(): MakaTool<Record<string, never>, unknown> {
   return {
     name: AGENT_LIST_TOOL_NAME,
     displayName: 'Agent List',
     activityKind: 'delegate',
     description: [
-      'The agents this session has started, and the catalog behind them.',
+      'List the agents you can SendMessage to: the ones this session has started.',
       '',
-      '- With no arguments it lists the agents already running or finished here: the ID to message or stop, what type each one is, how it stands, and how long ago it started.',
-      '- The types you can launch are listed in your context, so reach for view=selection or view=catalog only when that is not enough: a selector came back unknown or unavailable, you need the contracts behind an entry, or a graph tool needs an id.',
-      '',
-      '- Each entry carries the id, its description, the model behind it, and the workspace and write-back contract Agent will hold you to. Match a task to a description, never to a name.',
-      '- The ids are not interchangeable: subagent_id is what Agent takes as subagent_type and UpdateAgentGraph as target_kind=new_preset, agent_id goes to UpdateAgentGraph as target_kind=new_agent, and a built-in profile is also a valid Agent subagent_type.',
-      '- The default selection view lists only what is runnable. view=catalog adds the unavailable entries and the reason each is unavailable — read it to diagnose a rejected selector, not to pick from.',
-      '- One page per call; a response carrying next_cursor has more entries behind it.',
-      '- It reports no execution history at all. What a child did is read with AgentOutput, using the ids Agent or the graph returned.',
-      '- Fails when the session exposes no agent catalog; that repeats on retry, so pick one of the types listed in your context instead.',
+      '- Each line starts with the ID SendMessage and TaskStop take, then what type the agent is, how it stands, and how long ago it started.',
+      '- The types you can launch are listed in your context, not here.',
+      '- Takes no arguments and changes nothing.',
     ].join('\n'),
-    parameters: z
-      .object({
-        view: z
-          .enum(['agents', 'selection', 'catalog'])
-          .default('agents')
-          .describe(
-            'agents lists what this session has started; selection lists runnable choices; ' +
-              'catalog also includes unavailable choices and reasons.',
-          ),
-        cursor: z
-          .string()
-          .regex(/^\d+$/)
-          .optional()
-          .describe('next_cursor returned by the previous ListAgents page.'),
-      })
-      .strip(),
+    parameters: z.object({}).strict(),
     categoryHint: 'read',
-    impl: async (input, ctx) => {
+    impl: async (_input, ctx) => {
       // Runtime Host supplies this capability to production clients. Keep the
       // failure explicit at the embedding boundary.
       if (!ctx.listChildAgents) {
         throw new Error(
-          'ListAgents is not available in this session, so no agent catalog could be read. ' +
-            'Retrying ListAgents will fail the same way — pick one of the agent types listed in your context instead.',
+          'ListAgents is not available in this session, so no agent could be listed. ' +
+            'Retrying ListAgents will fail the same way.',
           { cause: new Error('listChildAgents capability is unavailable in this runtime context') },
         );
       }
       const catalog = await ctx.listChildAgents();
-      if ((input.view ?? 'agents') === 'agents') {
-        return { type: 'text', value: renderAgentRoster(ctx.sessionId, catalog, Date.now()) };
-      }
-      return projectAgentList(
-        catalog,
-        input as { view?: 'selection' | 'catalog'; cursor?: string },
-      );
+      return { type: 'text', value: renderAgentRoster(ctx.sessionId, catalog, Date.now()) };
     },
   };
 }
@@ -513,7 +333,7 @@ export function renderAgentRoster(sessionId: string, catalog: unknown, now: numb
     `This session is ${sessionId} — the ID other tools use to reach it ` +
     '(it is not listed below; a message to it would be a message to yourself).';
   if (rows.length === 0) {
-    return `${header}\n\nSubagents (0): none started in this session yet.`;
+    return `${header}\n\nNo reachable agents — this session has not started any.`;
   }
   return `${header}\n\nSubagents (${rows.length}):\n${rows.join('\n')}`;
 }
@@ -527,158 +347,6 @@ function agoLabel(elapsedMs: number): string {
   const hours = Math.round(minutes / 60);
   if (hours < 48) return `${hours}h ago`;
   return `${Math.round(hours / 24)}d ago`;
-}
-
-function projectAgentList(
-  catalog: unknown,
-  input: { view?: 'selection' | 'catalog'; cursor?: string },
-): unknown {
-  // The host capability remains a rich control-plane projection because spawn
-  // and swarm resolve presets through it. Only the model-facing list is narrowed.
-  if (!catalog || typeof catalog !== 'object' || Array.isArray(catalog)) {
-    throw new Error('ListAgents returned an invalid catalog');
-  }
-  const raw = catalog as Record<string, unknown>;
-  const definitions = Array.isArray(raw.definitions) ? raw.definitions : [];
-  const definitionByProfile = new Map<string, Record<string, unknown>>();
-  for (const candidate of definitions) {
-    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue;
-    const definition = candidate as Record<string, unknown>;
-    if (typeof definition.profile === 'string') {
-      definitionByProfile.set(definition.profile, definition);
-    }
-  }
-
-  const view = input.view ?? 'selection';
-  const presets = (Array.isArray(raw.presets) ? raw.presets : [])
-    .flatMap((candidate) => {
-      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return [];
-      const preset = candidate as Record<string, unknown>;
-      if (
-        typeof preset.id !== 'string' ||
-        typeof preset.name !== 'string' ||
-        typeof preset.description !== 'string' ||
-        typeof preset.profile !== 'string' ||
-        typeof preset.model !== 'string'
-      ) {
-        return [];
-      }
-      const availability = effectivePresetAvailability(
-        preset,
-        definitionByProfile.get(preset.profile),
-      );
-      return [
-        {
-          subagent_id: preset.id,
-          name: boundedCatalogText(preset.name, 128),
-          description: boundedCatalogText(preset.description, AGENT_LIST_DESCRIPTION_MAX_CHARS),
-          profile: preset.profile,
-          model: boundedCatalogText(preset.model, AGENT_LIST_MODEL_MAX_CHARS),
-          ...(typeof preset.thinkingLevel === 'string'
-            ? { thinking_level: boundedCatalogText(preset.thinkingLevel, 32) }
-            : {}),
-          ...availability,
-        },
-      ];
-    })
-    .filter((preset) => view === 'catalog' || preset.status === 'available');
-
-  const offset = Math.min(Number.parseInt(input.cursor ?? '0', 10), presets.length);
-  const pagePresets = presets.slice(offset, offset + AGENT_LIST_PAGE_SIZE);
-  const legacyProfiles = definitions.flatMap((candidate) => {
-    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return [];
-    const definition = candidate as Record<string, unknown>;
-    if (
-      typeof definition.id !== 'string' ||
-      typeof definition.profile !== 'string' ||
-      typeof definition.name !== 'string' ||
-      typeof definition.description !== 'string'
-    ) {
-      return [];
-    }
-    const availability = catalogAvailability(definition.availability);
-    if (view === 'selection' && availability.status !== 'available') return [];
-    const contract =
-      definition.contract &&
-      typeof definition.contract === 'object' &&
-      !Array.isArray(definition.contract)
-        ? (definition.contract as Record<string, unknown>)
-        : undefined;
-    return [
-      {
-        agent_id: definition.id,
-        profile: definition.profile,
-        name: boundedCatalogText(definition.name, 128),
-        description: boundedCatalogText(definition.description, AGENT_LIST_DESCRIPTION_MAX_CHARS),
-        ...(typeof contract?.workspace === 'string'
-          ? { workspace: boundedCatalogText(contract.workspace, 32) }
-          : {}),
-        ...(typeof contract?.defaultWriteBack === 'string'
-          ? { write_back: boundedCatalogText(contract.defaultWriteBack, 32) }
-          : {}),
-        ...availability,
-      },
-    ];
-  });
-
-  const buildPage = () => {
-    const nextOffset = offset + pagePresets.length;
-    return {
-      presets: pagePresets,
-      legacy_profiles: legacyProfiles,
-      page: {
-        returned: pagePresets.length,
-        total: presets.length,
-        ...(nextOffset < presets.length ? { next_cursor: String(nextOffset) } : {}),
-      },
-      view,
-    };
-  };
-  while (
-    pagePresets.length > 1 &&
-    JSON.stringify(buildPage()).length > AGENT_LIST_MAX_RESPONSE_CHARS
-  ) {
-    pagePresets.pop();
-  }
-  return buildPage();
-}
-
-function effectivePresetAvailability(
-  preset: Record<string, unknown>,
-  definition: Record<string, unknown> | undefined,
-): { status: 'available' } | { status: 'unavailable'; reason: string } {
-  const presetAvailability = catalogAvailability(preset.availability);
-  if (presetAvailability.status === 'unavailable') return presetAvailability;
-  if (!definition) return { status: 'unavailable', reason: 'unknown_profile' };
-  const definitionAvailability = catalogAvailability(definition.availability);
-  if (definitionAvailability.status === 'unavailable') {
-    return {
-      status: 'unavailable',
-      reason: `profile_${definitionAvailability.reason}`,
-    };
-  }
-  return { status: 'available' };
-}
-
-function catalogAvailability(
-  value: unknown,
-): { status: 'available' } | { status: 'unavailable'; reason: string } {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return { status: 'unavailable', reason: 'availability_unknown' };
-  }
-  const availability = value as Record<string, unknown>;
-  if (availability.status === 'available') return { status: 'available' };
-  return {
-    status: 'unavailable',
-    reason:
-      typeof availability.reason === 'string'
-        ? boundedCatalogText(availability.reason, 120)
-        : 'availability_unknown',
-  };
-}
-
-function boundedCatalogText(value: string, maxChars: number): string {
-  return value.length <= maxChars ? value : `${value.slice(0, maxChars - 1)}…`;
 }
 
 export function buildSubagentOutputTool(): MakaTool<
@@ -877,16 +545,21 @@ function cleanSubagentOutputInput(input: unknown): unknown {
   return cleaned;
 }
 
-export function buildSubagentProjectionTools(): MakaTool[] {
-  return [buildSubagentListTool(), buildSubagentOutputTool()];
-}
+/**
+ * How a message reached an agent: a finished one runs again from where it
+ * left off; one still working reads it at its next step.
+ */
+export type ChildAgentMessageDelivery =
+  | ({ readonly delivery: 'resumed' } & Record<string, unknown>)
+  | { readonly delivery: 'queued'; readonly childSessionId: string };
 
 /**
  * Another message for an agent this session already started.
  *
- * The child keeps its own Session, so a message here is a new Turn of it: it
- * answers with everything it learned the first time. Like the first brief, the
- * answer comes back as a notification, not as this tool's result.
+ * The child keeps its own Session, so a message to a finished one is a new
+ * Turn of it: it answers with everything it learned the first time, and like
+ * the first brief the answer comes back as a notification. A child still at
+ * work reads the message at its next step, as a course correction.
  */
 export function buildSendMessageToChildAgentTool(): MakaTool<{
   to: string;
@@ -901,41 +574,54 @@ export function buildSendMessageToChildAgentTool(): MakaTool<{
     // children one Turn may set running.
     categoryHint: 'subagent',
     description: [
-      'Send a message to an agent this session started, continuing it with its context intact.',
+      'Send a message to an agent this session started.',
       '',
-      "- `to` is the ID the Agent tool returned, or the agent's name.",
-      "- `summary` is a 5-10 word recap of what you are asking; it labels the row a person reads and is not part of the agent's brief.",
-      '- The agent picks up where it left off; a new Agent call would instead start one that knows nothing.',
-      '- It runs in the background like the first brief: you are notified when it finishes, and you know nothing about its answer until then.',
-      '- Only agents of the current session can be continued, and only one message at a time: an agent that is still working rejects a second one.',
+      "- `to` is the ID the Agent tool returned, or the agent's name. ListAgents lists everyone you can message.",
+      '- An agent that has finished keeps working after a send: it resumes from its transcript with its context intact, in the background like the first brief, and you are notified when it finishes. A new Agent call would instead start one that knows nothing.',
+      '- An agent still working reads the message at its next step, as a course correction to the task it is on. One that has finished but whose report has not reached you yet takes the message up in a new turn once it has.',
+      "- `summary` is a 5-10 word recap of what you are asking; it stays in this session's record and is not sent to the agent.",
+      '- A send that cannot be delivered is not an error: the result says `"success":false` and why, so check it.',
     ].join('\n'),
     parameters: z.object({
       to: z
         .string()
         .min(1)
-        .max(256)
+        .max(SEND_MESSAGE_TO_MAX_CHARS)
+        .regex(/^[^\r\n]*$/u, 'to must be one line')
         .describe("The ID the Agent tool returned, or the agent's name"),
       message: z.string().min(1).max(60_000).describe('What to tell the agent'),
       summary: z
         .string()
-        .min(1)
-        .max(AGENT_DESCRIPTION_MAX_CHARS)
         .optional()
-        .describe('A 5-10 word recap of this message, for the transcript row'),
+        .describe("A 5-10 word recap of this message, for this session's record"),
     }),
     impl: async (input, ctx) => {
       if (!ctx.sendChildAgentMessage) {
         throw new Error(
-          'SendMessage is not available in this session, so no agent was continued. ' +
+          'SendMessage is not available in this session, so no agent was reached. ' +
             'Retrying SendMessage will fail the same way — start a fresh agent with Agent instead.',
         );
       }
-      const started = projectStartedChildAgent(
-        await ctx.sendChildAgentMessage({
+      let delivered: unknown;
+      try {
+        delivered = await ctx.sendChildAgentMessage({
           childSessionId: input.to,
           text: input.message,
-        }),
-      );
+        });
+      } catch (error) {
+        return {
+          success: false,
+          message: error instanceof Error ? error.message : 'The message could not be delivered.',
+        };
+      }
+      if ((delivered as { delivery?: unknown })?.delivery === 'queued') {
+        const id = (delivered as { childSessionId: string }).childSessionId;
+        return {
+          success: true,
+          message: `Message delivered to ${id}. It acts on it next: at its next step if it is still working, or in a new turn once its last report has reached you.`,
+        };
+      }
+      const started = projectStartedChildAgent(delivered);
       return {
         kind: 'subagent',
         childSessionId: started.childSessionId,
@@ -950,29 +636,53 @@ export function buildSendMessageToChildAgentTool(): MakaTool<{
       } satisfies SubagentToolResult;
     },
     toModelOutput: ({ output }) => {
-      const result = output as { childSessionId?: string };
-      if (typeof result?.childSessionId !== 'string') return undefined;
-      const id = result.childSessionId;
+      const result = output as { kind?: unknown; childSessionId?: unknown };
+      if (result?.kind !== 'subagent' || typeof result.childSessionId !== 'string') {
+        return { type: 'text', value: JSON.stringify(output) };
+      }
       return {
         type: 'text',
         value: JSON.stringify({
           success: true,
-          message: `Resuming agent ${id.slice(0, 7)}`,
-          resumedAgentId: id,
+          message:
+            'Resumed agent in the background with its context intact. You will be notified when it finishes.',
+          resumedAgentId: result.childSessionId,
         }),
       };
     },
   };
 }
 
-export function buildParentAgentTools(
-  deps: { definitions?: readonly AgentDefinition[] } = {},
-): MakaTool[] {
-  const definitions = deps.definitions ?? BUILTIN_AGENT_DEFINITIONS;
-  return [
-    ...(definitions.length > 0
-      ? [buildSubagentSpawnTool({ ...deps, definitions }), buildSendMessageToChildAgentTool()]
-      : []),
-    ...buildSubagentProjectionTools(),
-  ];
+/** The design's words for the hand-back, repeated where the child reads its reminder. */
+export const SUBAGENT_HANDBACK_REMINDER =
+  'Your final report is delivered through SubagentHandback: when your work is complete, call SubagentHandback({message: <your full report>}) and then stop. Only a SubagentHandback call reaches your caller as your result; plain text you write at the end is not delivered.';
+
+/**
+ * A child agent's one way to deliver its report. The call ends the child's
+ * turn; the report is what its caller's notification carries.
+ */
+export function buildSubagentHandbackTool(): MakaTool<{ message: string }> {
+  return {
+    name: SUBAGENT_HANDBACK_TOOL_NAME,
+    displayName: 'Hand back',
+    activityKind: 'tool',
+    description: [
+      'Deliver your final report to the agent that spawned you (your caller). Use it once, for that hand-off only: when your work is complete, call SubagentHandback({message: <your full report>}) as your last tool call and then stop. It is not a messaging channel: do not use it for progress updates or questions.',
+      '',
+      'Only a report delivered through SubagentHandback reaches your caller; plain text you write at the end of your turn is NOT delivered. There is no recipient parameter: the report can only go to your caller.',
+    ].join('\n'),
+    parameters: z
+      .object({
+        message: z.string().describe('Your full report for your caller'),
+      })
+      .strict(),
+    impl: async () => ({
+      type: 'text',
+      value: 'Your report was delivered to your caller. Stop here.',
+    }),
+  };
+}
+
+export function buildParentAgentTools(): MakaTool[] {
+  return [buildSubagentSpawnTool(), buildSendMessageToChildAgentTool(), buildSubagentListTool()];
 }

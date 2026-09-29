@@ -298,7 +298,6 @@ describe('host-managed agent graph coordinator', () => {
       runStore,
       runtimeEventStore,
       backends,
-      childTools: localReadTools(),
       newId: randomUUID,
       now: Date.now,
     });
@@ -389,7 +388,7 @@ describe('host-managed agent graph coordinator', () => {
             {
               add_work: [
                 {
-                  agent_id: 'local-read',
+                  agent_id: 'Explore',
                   instruction: 'This request must not become durable.',
                   input_ids: [],
                 },
@@ -405,7 +404,7 @@ describe('host-managed agent graph coordinator', () => {
         {
           add_work: [
             {
-              agent_id: 'local-read',
+              agent_id: 'Explore',
               instruction: 'Inspect the repository and report one concrete finding.',
               input_ids: [],
             },
@@ -482,7 +481,7 @@ describe('host-managed agent graph coordinator', () => {
 
       const firstProvisions = await controlStore.listAgentGraphOperatorProvisions(graphId);
       assert.equal(firstProvisions.length, 1);
-      assert.equal(firstProvisions[0]?.agentId, 'local-read');
+      assert.equal(firstProvisions[0]?.agentId, 'Explore');
       assert.equal((await controlStore.listAgentGraphIntentClaims(graphId)).length, 1);
       assert.equal((await coordinator.observe(rootSession.id)).projection.operators.length, 1);
       const historyReadsBeforeClient = graphRuntimeHistoryReads;
@@ -498,7 +497,7 @@ describe('host-managed agent graph coordinator', () => {
       assert.equal(snapshot.scheduleRevision, 1);
       assert.equal(snapshot.operators.length, 1);
       assert.equal(snapshot.operators[0]?.childSessionId, childSessions[0]?.id);
-      assert.equal(snapshot.operators[0]?.agentId, 'local-read');
+      assert.equal(snapshot.operators[0]?.agentId, 'Explore');
       assert.equal(
         snapshot.work[0]?.instructionPreview,
         'Inspect the repository and report one concrete finding.',
@@ -696,7 +695,7 @@ describe('host-managed agent graph coordinator', () => {
           {
             add_work: [
               {
-                agent_id: 'local-read',
+                agent_id: 'Explore',
                 instruction: 'This pre-stop update must remain paused.',
                 input_ids: [],
               },
@@ -1178,7 +1177,6 @@ describe('host-managed agent graph coordinator', () => {
       runStore,
       runtimeEventStore,
       backends,
-      childTools: localReadTools(),
       newId: randomUUID,
       now: Date.now,
     });
@@ -1230,7 +1228,7 @@ describe('host-managed agent graph coordinator', () => {
           add_work: [
             {
               target_kind: 'new_agent',
-              agent_id: 'local-read',
+              agent_id: 'Explore',
               instruction: 'This provision is expected to fail.',
               input_ids: [],
               replacement_mode: 'none',
@@ -1410,7 +1408,7 @@ describe('host-managed agent graph coordinator', () => {
         add_work: [
           {
             target_kind: 'new_agent',
-            agent_id: 'local-read',
+            agent_id: 'Explore',
             instruction: 'Inspect the repository.',
             input_ids: [],
             replacement_mode: 'none',
@@ -1461,7 +1459,7 @@ describe('host-managed agent graph coordinator', () => {
       provisionFingerprint: `sha256:${'4'.repeat(64)}`,
       graphId,
       workId,
-      agentId: 'local-read',
+      agentId: 'Explore',
       operatorId,
       initialTurnId: turnId,
       initialRunId: runId,
@@ -1922,7 +1920,7 @@ describe('host-managed agent graph coordinator', () => {
             add_work: [
               {
                 target_kind: 'new_agent',
-                agent_id: 'implementation',
+                agent_id: 'general-purpose',
                 instruction: 'Use an upstream result that is not committed yet.',
                 input_ids: ['missing-record'],
                 replacement_mode: 'none',

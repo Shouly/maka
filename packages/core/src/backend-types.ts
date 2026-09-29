@@ -61,8 +61,12 @@ export interface RuntimeContinuationMetadata {
 export interface TaskNotificationLease {
   /** The ID the model was given for this task. */
   readonly id: string;
-  /** Which kind of task it was, so an acknowledgement reaches the right ledger. */
-  readonly kind: 'command' | 'agent';
+  /**
+   * Which kind of task it was, so an acknowledgement reaches the right ledger.
+   * `coordinator` is not a finished task but a message the parent sent a
+   * child that is still working; it reaches that child the same way.
+   */
+  readonly kind: 'command' | 'agent' | 'coordinator';
   readonly toolUseId: string;
   readonly text: string;
 }

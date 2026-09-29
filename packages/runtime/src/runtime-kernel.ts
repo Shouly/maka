@@ -80,22 +80,18 @@ import type {
   HostedInteractionBridge,
   RuntimeContinuationMetadata,
 } from '@maka/core/backend-types';
-import type { MakaTool } from './tool-runtime.js';
 import type {
   BackendFactoryContext,
   BackendRegistry,
   CompactSessionInput,
   PreparedBackendActivation,
-  ResolvedChildToolActivation,
   SessionStore,
   StopSessionInput,
 } from './session-manager.js';
-import type { TurnShellPlan } from './shell-detect.js';
 import type { ShellRunProcessManager } from './shell-run-manager.js';
 import type { TaskNotificationLease } from '@maka/core/backend-types';
 import { renderTaskNotification } from './injection/task-notification.js';
 import { buildStatusPatch, normalizeStopSessionSource } from './session-projection-helpers.js';
-import { buildToolsForAgentDefinition } from './agent-catalog.js';
 import { loadLatestHistoryCompactCheckpointFromRunLedger } from './history-compact-ledger.js';
 import { loadModelProjectionTransitionsFromRunLedger } from './model-projection-transition-ledger.js';
 import type { ModelProjectionTransition } from '@maka/core/model-projection-transition';
@@ -266,11 +262,6 @@ export class RuntimeOwnerCleanupError extends Error {
 
 export type BackendActivationBoundary = <T>(operation: () => Promise<T> | T) => Promise<T>;
 
-interface ChildToolActivation {
-  readonly tools: readonly MakaTool[];
-  readonly shell?: TurnShellPlan;
-}
-
 export interface RuntimeKernelDeps {
   store: SessionStore;
   runStore?: AgentRunStore;
@@ -280,8 +271,6 @@ export interface RuntimeKernelDeps {
   backends: BackendRegistry;
   newId: () => string;
   now: () => number;
-  childTools?: readonly MakaTool[];
-  resolveChildTools?: (sessionId: string) => Promise<ResolvedChildToolActivation>;
   shellRuns?: ShellRunProcessManager;
   /**
    * Child agents of a Session whose end the model has not been told about.
@@ -290,7 +279,7 @@ export interface RuntimeKernelDeps {
    */
   childAgentNotifications?: {
     pending: (sessionId: string) => Promise<readonly TaskNotificationLease[]>;
-    markNotified: (ref: string) => Promise<void>;
+    markNotified: (lease: TaskNotificationLease) => Promise<void>;
   };
   cleanupHistoryCompactArtifacts?: (input: HistoryCompactCleanupRequest) => Promise<void>;
   inspectContinuationSafety?: (sessionId: string) => Promise<RuntimeContinuationSafetyObservation>;
@@ -2271,7 +2260,7 @@ export class RuntimeKernel implements RuntimeKernelLike {
           return;
         }
         if (!agents) throw new Error(`No agent owner for ${lease.id}`);
-        await agents.markNotified(lease.id);
+        await agents.markNotified(lease);
       },
     };
   }
@@ -2674,13 +2663,9 @@ export class RuntimeKernel implements RuntimeKernelLike {
         header,
         store: this.deps.store,
         abortSignal: execution.abortController.signal,
-        ...(subagent
-          ? {
-              systemPrompt: subagent.systemPrompt,
-              tools: subagent.tools,
-              ...(subagent.shell ? { turnShellPlan: subagent.shell } : {}),
-            }
-          : {}),
+        // A child's role card; its tools are composed the way any Session's
+        // are, then narrowed to what its type may hold.
+        ...(subagent ? { systemPrompt: subagent.systemPrompt } : {}),
         ...this.buildBackendRecorderHooks({
           sessionId,
         }),
@@ -2720,7 +2705,7 @@ export class RuntimeKernel implements RuntimeKernelLike {
 
   private async resolveSubagentActivation(
     header: SessionHeader,
-  ): Promise<{ systemPrompt: string; tools: MakaTool[]; shell?: TurnShellPlan } | undefined> {
+  ): Promise<{ systemPrompt: string } | undefined> {
     const snapshot = header.subagentRuntime;
     if (!snapshot) {
       if (header.subagentParent) {
@@ -2731,26 +2716,7 @@ export class RuntimeKernel implements RuntimeKernelLike {
     if (!header.subagentParent) {
       throw new Error('Subagent runtime snapshot requires a linked child session');
     }
-    const snapshotDefinition = {
-      id: snapshot.agentId,
-      permissionMode: header.permissionMode,
-      tools: snapshot.toolNames,
-    };
-    const available = await this.childToolActivationForSession(header.id);
-    const tools = buildToolsForAgentDefinition(available.tools, snapshotDefinition);
-    if (tools.length !== snapshot.toolNames.length) {
-      throw new Error('Subagent runtime tool snapshot is unavailable');
-    }
-    return {
-      systemPrompt: snapshot.systemPrompt,
-      tools,
-      ...(available.shell ? { shell: available.shell } : {}),
-    };
-  }
-
-  private async childToolActivationForSession(sessionId: string): Promise<ChildToolActivation> {
-    if (!this.deps.resolveChildTools) return { tools: this.deps.childTools ?? [] };
-    return await this.deps.resolveChildTools(sessionId);
+    return { systemPrompt: snapshot.systemPrompt };
   }
 
   private async reserveParentRun(

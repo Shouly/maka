@@ -221,11 +221,10 @@ function expandHomePath(path: string): string {
  * says Copilot cannot tell what happened to the file, and sends the model to look
  * rather than to retry a call that may have already taken effect.
  *
- * Neither may name Bash. Read, Glob and Grep are the entire tool set of a
- * `local_read` child (`agent-catalog.ts`), and `buildToolsForAgentDefinition`
- * hands that child those three tools and nothing else. "Use Bash to do the same
- * work" is, for the caller most likely to be running a bare Grep, an
- * instruction it cannot carry out — a dead end dressed as a way out. The
+ * Neither may name Bash. A session can hold Read, Glob and Grep without it —
+ * a hosted profile's list, a narrowed tool surface — and "Use Bash to do the
+ * same work" is, for such a caller, an instruction it cannot carry out — a dead
+ * end dressed as a way out. The
  * fallback is therefore offered on a condition the model can check for itself,
  * and the sentence ends on a move that is available to every caller.
  *

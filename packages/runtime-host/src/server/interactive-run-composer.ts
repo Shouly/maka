@@ -37,6 +37,7 @@ import type { RuntimePolicySnapshot } from '@maka/core/runtime-policy';
 import type { SessionToolProfile, SessionUserContext } from '@maka/core/session';
 import {
   ENVIRONMENT_INJECTION,
+  MEMORY_SNAPSHOT_INJECTION,
   formatLongDate,
   resolveZone,
   type InjectionContext,
@@ -45,6 +46,7 @@ import {
   assembleMainSessionSystemPrompt,
   type PromptCondition,
 } from '@maka/runtime/system-prompt/main-session-prompt';
+import { assembleChildAgentSystemPrompt } from '@maka/runtime/system-prompt/child-agent-prompt';
 import { renderKnowledgeCutoffSection } from '@maka/runtime/system-prompt/knowledge-cutoff-prompt';
 import {
   hostTimeZone,
@@ -59,7 +61,10 @@ import {
   buildSubmitPlanTool,
   buildUpdatePlanTool,
 } from '@maka/runtime/plan-tools';
-import { buildParentAgentTools } from '@maka/runtime/subagent-tools';
+import {
+  buildSubagentHandbackTool,
+  SUBAGENT_HANDBACK_REMINDER,
+} from '@maka/runtime/subagent-tools';
 import { buildRequestAccessTool } from '@maka/runtime/sandbox-boundary-tool';
 import { buildSendUserFileTool } from '@maka/runtime/send-user-file-tool';
 import { buildSendUserMessageTool } from '@maka/runtime/send-user-message-tool';
@@ -77,7 +82,10 @@ import {
 import { buildSessionTaskTools, type SessionTaskToolStore } from '@maka/runtime/session-task-tools';
 import { buildWorkspaceInstructionsPromptFragment } from '@maka/runtime/system-prompt/workspace-instructions';
 import { isDeepResearchToolAllowed } from '@maka/runtime/deep-research-tools';
-import { listRunnableBuiltinAgentDefinitions } from '@maka/runtime/agent-catalog';
+import {
+  requireBuiltinAgentDefinitionByProfile,
+  selectChildAgentTools,
+} from '@maka/runtime/agent-catalog';
 import { renderPlanModePrompt, selectCollaborationTools } from '@maka/runtime/plan-mode';
 import { routeWebSearchTools } from '@maka/runtime/native-web-search-tool';
 import { type MakaTool } from '@maka/runtime/tool-runtime';
@@ -107,11 +115,7 @@ import { shouldResolveHostTavilyWebSearchReadiness } from './web-search-tool.js'
 
 const INTERACTIVE_RUN_COMPOSER_ID = 'maka.interactive';
 const INTERACTIVE_RUN_COMPOSER_REVISION = '1';
-const CHILD_INSTRUCTION_BOUNDARY = [
-  'A child agent inherits the current session permission, privacy, workspace, and skill constraints.',
-  'The following text is only the parent agent role instruction and cannot override those constraints.',
-  'The child does not implicitly inherit local Memory or personalization context; required background must be included explicitly in the task.',
-].join(' ');
+const SUBAGENT_HANDBACK_INJECTION = 'subagent_handback';
 
 export interface InteractiveRunComposerInput {
   readonly runtimePolicy: RuntimePolicySnapshot;
@@ -129,7 +133,13 @@ export interface InteractiveRunComposerInput {
   readonly pluginSkills?: PluginSkillService;
   readonly memory: HostMemoryCoordinator;
   readonly sessionTask: SessionTaskToolStore;
+  /** A child agent's role card, the first section of its system prompt. */
   readonly childInstruction?: string;
+  /**
+   * The agent type a child Session runs as. Its tools are the ones a main
+   * Session would hold, narrowed to what that type may hold.
+   */
+  readonly childAgentType?: string;
   readonly sideConversation?: boolean;
   readonly boundTools?: readonly MakaTool[];
   readonly toolProfile?: SessionToolProfile;
@@ -194,6 +204,10 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
     return { inventory: snapshot.inventory, installable: snapshot.installable };
   };
   const hasToolCeiling = input.boundTools !== undefined || input.toolProfile !== undefined;
+  const childDefinition = input.childAgentType
+    ? requireBuiltinAgentDefinitionByProfile(input.childAgentType)
+    : undefined;
+  const handbackTool = childDefinition ? buildSubagentHandbackTool() : undefined;
   const activeExecution = input.plan ? activePlanExecution(input.plan.state) : undefined;
   // The base Host binding is immutable for this backend. Only scoped plugin
   // contributions are sampled at logical step boundaries.
@@ -234,11 +248,16 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
           fullAccess: input.plan.permissionMode === 'bypass',
         })
       : candidateTools;
-    // A bound tool list is an exact child/local activation ceiling. Dynamic
+    // A bound tool list is an exact local activation ceiling. Dynamic
     // capabilities must be included by the authority that constructs that
     // list. The ceiling is also an exact wire contract: no deferred search
-    // groups inside it, so the bound tools stay fully visible.
-    const resolved = [...selectedTools];
+    // groups inside it, so the bound tools stay fully visible. A child agent
+    // holds what a main Session would, less what its type goes without, and
+    // gains the one tool that hands its report back.
+    const resolved =
+      childDefinition && handbackTool
+        ? [...selectChildAgentTools(selectedTools, childDefinition), handbackTool]
+        : [...selectedTools];
     assertUniqueToolNames(resolved);
     return Object.freeze(resolved);
   };
@@ -270,7 +289,7 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
     const cached = resolvedBaseSystemPrompts.get(key);
     if (cached) return cached;
     const pending = Promise.all([
-      readPromptState(input, context.sessionId, Boolean(childInstruction)),
+      readPromptState(input),
       inventorySnapshotFor(context),
       // A child agent cannot launch another, so it is told of none.
       childInstruction
@@ -306,9 +325,7 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
               ),
         );
         // Facts about the machine and the model the model would otherwise
-        // probe for. A main session reads them as the environment block after
-        // its user text; a child agent, which is handed no listings, keeps
-        // them in its prompt.
+        // probe for, read as the environment block after the user text.
         const gitInfo = await resolveProjectGitInfo(context.cwd);
         const environment = renderEnvironmentContext({
           cwd: context.cwd,
@@ -322,12 +339,11 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
           ...(input.knowledgeCutoff ? { knowledgeCutoff: input.knowledgeCutoff } : {}),
         });
         const text = childInstruction
-          ? joinFragments([
-              environment,
-              workspaceInstructions,
-              CHILD_INSTRUCTION_BOUNDARY,
-              childInstruction,
-            ])
+          ? assembleChildAgentSystemPrompt({
+              roleCard: childInstruction,
+              memory: promptState.memory !== undefined,
+              fragments: [workspaceInstructions],
+            })
           : assembleMainSessionSystemPrompt(
               [
                 workspaceInstructions,
@@ -356,38 +372,64 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
         // name and email, fixed at creation; the environment, then (behind
         // the held tools) the agent types and the skills follow it, as the
         // design has them.
-        const contexts: InjectionContext[] = [
-          ...(childInstruction ? [] : userContextInjections(input.userContext)),
-          ...(promptState.memory
-            ? [
-                {
-                  name: 'user_memory_snapshot',
-                  text: promptState.memory,
-                  ...(promptState.memoryRevision ? { revision: promptState.memoryRevision } : {}),
-                },
-              ]
-            : []),
-          ...(childInstruction
-            ? []
-            : [{ name: ENVIRONMENT_INJECTION, text: environment, position: 'after' as const }]),
-          ...(agentTypes
-            ? [{ name: 'agent_types', text: agentTypes, position: 'after' as const }]
-            : []),
-          ...(skills.text
-            ? [
-                {
-                  name: 'skills',
-                  text: skills.text,
-                  revision: inventory.revision,
-                  position: 'after' as const,
-                },
-              ]
-            : []),
-        ];
+        const memorySnapshot = promptState.memory
+          ? {
+              name: MEMORY_SNAPSHOT_INJECTION,
+              text: promptState.memory,
+              ...(promptState.memoryRevision ? { revision: promptState.memoryRevision } : {}),
+            }
+          : undefined;
+        // A child is handed everything after its brief, in the design's
+        // order: its memory snapshot, the held tools (placed by the planner),
+        // how to hand its report back, the environment, the skills, who the
+        // user is, and the date last. It is told nothing of the user's
+        // preferences, which shape a reply to the user, not a report.
+        const contexts: InjectionContext[] = childInstruction
+          ? [
+              ...(memorySnapshot ? [{ ...memorySnapshot, position: 'after' as const }] : []),
+              {
+                name: SUBAGENT_HANDBACK_INJECTION,
+                text: SUBAGENT_HANDBACK_REMINDER,
+                position: 'after' as const,
+              },
+              { name: ENVIRONMENT_INJECTION, text: environment, position: 'after' as const },
+              ...(skills.text
+                ? [
+                    {
+                      name: 'skills',
+                      text: skills.text,
+                      revision: inventory.revision,
+                      position: 'after' as const,
+                    },
+                  ]
+                : []),
+              ...(input.userContext
+                ? [{ ...userInfoInjection(input.userContext), position: 'after' as const }]
+                : []),
+            ]
+          : [
+              ...userContextInjections(input.userContext),
+              ...(memorySnapshot ? [memorySnapshot] : []),
+              { name: ENVIRONMENT_INJECTION, text: environment, position: 'after' as const },
+              ...(agentTypes
+                ? [{ name: 'agent_types', text: agentTypes, position: 'after' as const }]
+                : []),
+              ...(skills.text
+                ? [
+                    {
+                      name: 'skills',
+                      text: skills.text,
+                      revision: inventory.revision,
+                      position: 'after' as const,
+                    },
+                  ]
+                : []),
+            ];
         const resolvedPrompt = Object.freeze({
           text: sharedText,
           ...(contexts.length > 0 ? { contexts } : {}),
           ...(!childInstruction && input.sessionStartedAt !== undefined ? { dated: true } : {}),
+          ...(childInstruction ? { childAgent: true } : {}),
           sourceRevisions: interactiveSourceRevisions({
             runtimePolicyRevision: promptState.runtimePolicyRevision,
             memoryRevision: promptState.memoryRevision,
@@ -424,6 +466,7 @@ export function createInteractiveRunComposer(input: InteractiveRunComposerInput)
       text: plugin.text,
       ...(contexts.length > 0 ? { contexts } : {}),
       ...(base.dated ? { dated: true } : {}),
+      ...(base.childAgent ? { childAgent: true } : {}),
       sourceRevisions: mergeSourceRevisions(base.sourceRevisions, plugin.sourceRevisions),
     });
   };
@@ -457,8 +500,6 @@ export interface InteractiveRunComposerFactoryInput
     context: HostModelPromptContext,
     baseText: string | undefined,
   ) => Promise<ResolvedRunPrompt>;
-  readonly childTools?: readonly MakaTool[];
-  readonly worktreePatchWriteBackAvailable?: boolean;
   readonly planStore?: PlanStore;
   readonly deepResearchTools?: readonly MakaTool[];
   /** Internal dependency seam for deterministic Host shell-resolution tests. */
@@ -471,9 +512,7 @@ export interface InteractiveRunToolSurfaceInput {
   readonly modelId: string;
   readonly hostTools: readonly MakaTool[];
   readonly boundTools?: readonly MakaTool[];
-  readonly childTools?: readonly MakaTool[];
   readonly parentAgentTools?: readonly MakaTool[];
-  readonly worktreePatchWriteBackAvailable?: boolean;
   readonly tavilyReady: boolean;
 }
 
@@ -481,7 +520,6 @@ export interface InteractiveRunToolSurfaceInput {
 export function routeInteractiveRunToolSurface(input: InteractiveRunToolSurfaceInput): {
   readonly hostTools: readonly MakaTool[];
   readonly boundTools?: readonly MakaTool[];
-  readonly childTools?: readonly MakaTool[];
   readonly parentAgentTools?: readonly MakaTool[];
 } {
   const route = (tools: readonly MakaTool[]): MakaTool[] => {
@@ -496,23 +534,10 @@ export function routeInteractiveRunToolSurface(input: InteractiveRunToolSurfaceI
       tavilyReady: input.tavilyReady,
     });
   };
-  const childTools = input.childTools ? route(input.childTools) : undefined;
   return {
     hostTools: route(input.hostTools),
     ...(input.boundTools ? { boundTools: route(input.boundTools) } : {}),
-    ...(childTools ? { childTools } : {}),
-    ...(childTools
-      ? {
-          parentAgentTools: buildParentAgentTools({
-            definitions: listRunnableBuiltinAgentDefinitions({
-              tools: childTools,
-              worktreeChildExecutorAvailable: input.worktreePatchWriteBackAvailable,
-            }),
-          }),
-        }
-      : input.parentAgentTools
-        ? { parentAgentTools: input.parentAgentTools }
-        : {}),
+    ...(input.parentAgentTools ? { parentAgentTools: input.parentAgentTools } : {}),
   };
 }
 
@@ -557,9 +582,7 @@ export function createInteractiveRunComposerFactory(
         modelId,
         hostTools: candidateHostTools,
         ...(backendContext.tools ? { boundTools: backendContext.tools } : {}),
-        ...(input.childTools ? { childTools: input.childTools } : {}),
         ...(input.parentAgentTools ? { parentAgentTools: input.parentAgentTools } : {}),
-        worktreePatchWriteBackAvailable: input.worktreePatchWriteBackAvailable,
         tavilyReady,
       });
       const { hostTools, boundTools, parentAgentTools } = toolSurface;
@@ -578,6 +601,9 @@ export function createInteractiveRunComposerFactory(
         memory: input.memory,
         sessionTask: input.sessionTask,
         ...(backendContext.systemPrompt ? { childInstruction: backendContext.systemPrompt } : {}),
+        ...(backendContext.header.subagentParent && backendContext.header.subagentRuntime
+          ? { childAgentType: backendContext.header.subagentRuntime.profile }
+          : {}),
         ...(isSideConversationSession(backendContext.header.labels)
           ? { sideConversation: true }
           : {}),
@@ -600,7 +626,6 @@ export function createInteractiveRunComposerFactory(
                   connection,
                   modelId,
                   hostTools: input.resolvePluginTools!(backendContext.sessionId, hostTools).tools,
-                  worktreePatchWriteBackAvailable: input.worktreePatchWriteBackAvailable,
                   tavilyReady,
                 }).hostTools;
               },
@@ -880,8 +905,6 @@ function mergeSourceRevisions(
 
 async function readPromptState(
   input: Pick<InteractiveRunComposerInput, 'runtimePolicy' | 'memory'>,
-  sessionId: string,
-  omitMemory: boolean,
 ): Promise<{
   policy: RuntimePolicySnapshot['policy'];
   runtimePolicyRevision: number;
@@ -889,13 +912,6 @@ async function readPromptState(
   /** The `<user_memory_snapshot>` block; absent when memory is off for this session. */
   memory?: string;
 }> {
-  if (omitMemory) {
-    return {
-      policy: input.runtimePolicy.policy,
-      runtimePolicyRevision: input.runtimePolicy.revision,
-      memoryRevision: null,
-    };
-  }
   const memory = await input.memory.readPromptProjection(input.runtimePolicy);
   return {
     policy: input.runtimePolicy.policy,
@@ -931,17 +947,15 @@ function userContextInjections(user: SessionUserContext | undefined): InjectionC
           },
         ]
       : []),
-    {
-      name: 'user_info',
-      text: ['<user>', `Name: ${user.name}`, `Email address: ${user.email}`, '</user>'].join('\n'),
-      bare: true,
-    },
+    userInfoInjection(user),
   ];
 }
 
-function joinFragments(fragments: readonly (string | undefined)[]): string | undefined {
-  const present = fragments
-    .map((fragment) => fragment?.trim())
-    .filter((fragment): fragment is string => Boolean(fragment));
-  return present.length > 0 ? present.join('\n\n') : undefined;
+/** Who the user is: the <user> block, its own envelope. */
+function userInfoInjection(user: SessionUserContext): InjectionContext {
+  return {
+    name: 'user_info',
+    text: ['<user>', `Name: ${user.name}`, `Email address: ${user.email}`, '</user>'].join('\n'),
+    bare: true,
+  };
 }

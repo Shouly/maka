@@ -744,14 +744,14 @@ describe('ToolRuntime settlement', () => {
           childSessionId: 'child-session',
           turnId: 'child-turn',
           runId: 'child-run',
-          agentId: 'local_read',
+          agentId: 'Explore',
           agentName: 'Local Read',
           permissionMode: 'explore',
         });
         return {
           kind: 'subagent',
           childSessionId: 'child-session',
-          agentId: 'local_read',
+          agentId: 'Explore',
           agentName: 'Local Read',
           turnId: 'child-turn',
           runId: 'child-run',
@@ -771,7 +771,7 @@ describe('ToolRuntime settlement', () => {
         impl: async (_args, ctx) => {
           assert.equal(typeof ctx.spawnChildSession, 'function');
           return await ctx.spawnChildSession!({
-            agentProfile: 'local_read',
+            agentProfile: 'Explore',
             prompt: 'Inspect',
           });
         },
@@ -793,7 +793,7 @@ describe('ToolRuntime settlement', () => {
     assert.deepEqual(preview?.content, {
       kind: 'subagent',
       childSessionId: 'child-session',
-      agentId: 'local_read',
+      agentId: 'Explore',
       agentName: 'Local Read',
       turnId: 'child-turn',
       runId: 'child-run',

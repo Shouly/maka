@@ -195,6 +195,39 @@ describe('around the turn: recorded once, again only on change', () => {
     );
   });
 
+  test("a child's turn is laid out as the design lays a child's: everything after its brief", () => {
+    const after = <T extends { name: string }>(context: T) => ({
+      ...context,
+      position: 'after' as const,
+    });
+    const planned = session.planTurn(
+      [],
+      facts({
+        childAgent: true,
+        contexts: [
+          after(snapshot),
+          after({ name: 'subagent_handback', text: 'Your final report is delivered…' }),
+          after({ name: 'environment', text: '# Environment\n…' }),
+          skills,
+          { name: 'user_info', text: '<user>…</user>', bare: true, position: 'after' },
+        ],
+      }),
+    );
+    assert.deepEqual(
+      planned.map((p) => [p.name, injectionPosition(p)]),
+      [
+        ['user_memory_snapshot', 'after'],
+        ['deferred_tools', 'after'],
+        ['subagent_handback', 'after'],
+        ['environment', 'after'],
+        ['skills', 'after'],
+        ['user_info', 'after'],
+        ['date', 'after'],
+      ],
+    );
+    assert.deepEqual(planned.at(-1)?.data, { date: '2026-09-18', position: 'after' });
+  });
+
   test('every later turn opens with the date, as a reminder block', () => {
     const ledger = session
       .planTurn([], facts({ datedByPrompt: true }))

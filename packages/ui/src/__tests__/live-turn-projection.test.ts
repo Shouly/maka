@@ -993,7 +993,7 @@ describe('tool_result_preview live projection', () => {
       content: {
         kind: 'subagent',
         childSessionId: 'child-session',
-        agentId: 'local_read',
+        agentId: 'Explore',
         agentName: 'Local Read',
         turnId: 'child-turn',
         runId: 'child-run',
@@ -1081,7 +1081,7 @@ function previewedSubagentTurn(): LiveTurnProjection {
     stepId: 'step-1',
     toolUseId: 'tool-1',
     toolName: 'Agent',
-    args: { profile: 'local_read', task: 'Inspect' },
+    args: { profile: 'Explore', task: 'Inspect' },
     ts: 100,
   });
   return applyLiveTurnEvent(started, {
@@ -1093,7 +1093,7 @@ function previewedSubagentTurn(): LiveTurnProjection {
     content: {
       kind: 'subagent',
       childSessionId: 'child-session',
-      agentId: 'local_read',
+      agentId: 'Explore',
       agentName: 'Local Read',
       turnId: 'child-turn',
       runId: 'child-run',

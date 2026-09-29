@@ -48,10 +48,7 @@ import {
   commitTerminalRunWithRuntimeFact,
 } from '@maka/runtime/terminal-run-commit';
 import { FakeBackend, FAKE_ASK_USER_QUESTION_PROMPT } from '@maka/runtime/test-only/fake-backend';
-import {
-  IMPLEMENTATION_AGENT_DEFINITION,
-  LOCAL_READ_AGENT_PROFILE,
-} from '@maka/runtime/agent-catalog';
+import { GENERAL_PURPOSE_AGENT_DEFINITION, EXPLORE_AGENT_TYPE } from '@maka/runtime/agent-catalog';
 import { mcpProxyToolName } from '@maka/runtime/mcp-tools';
 import {
   RuntimeHostedRootConflictError,
@@ -1639,13 +1636,12 @@ test('linked child Sessions reject public safe-boundary continuation', async () 
         lifecycle: 'foreground',
       },
       subagentRuntime: {
-        schemaVersion: 1,
-        definitionVersion: IMPLEMENTATION_AGENT_DEFINITION.definitionVersion,
-        agentId: IMPLEMENTATION_AGENT_DEFINITION.id,
-        agentName: IMPLEMENTATION_AGENT_DEFINITION.name,
-        profile: 'implementation',
-        systemPrompt: IMPLEMENTATION_AGENT_DEFINITION.systemPrompt,
-        toolNames: [...IMPLEMENTATION_AGENT_DEFINITION.tools],
+        schemaVersion: 2,
+        definitionVersion: GENERAL_PURPOSE_AGENT_DEFINITION.definitionVersion,
+        agentId: GENERAL_PURPOSE_AGENT_DEFINITION.id,
+        agentName: GENERAL_PURPOSE_AGENT_DEFINITION.name,
+        profile: 'general-purpose',
+        systemPrompt: GENERAL_PURPOSE_AGENT_DEFINITION.systemPrompt,
       },
       subagentSpawn: {
         schemaVersion: 1,
@@ -1751,7 +1747,6 @@ test('worktree child Sessions reject roots outside managed child execution', asy
         backend = new LinkedChildAuthorityBackend(context.sessionId);
         return backend;
       }),
-    childTools: IMPLEMENTATION_AGENT_DEFINITION.tools.map(testTool),
   });
   const binding = {
     schemaVersion: 1 as const,
@@ -1782,13 +1777,12 @@ test('worktree child Sessions reject roots outside managed child execution', asy
         lifecycle: 'foreground',
       },
       subagentRuntime: {
-        schemaVersion: 1,
-        definitionVersion: IMPLEMENTATION_AGENT_DEFINITION.definitionVersion,
-        agentId: IMPLEMENTATION_AGENT_DEFINITION.id,
-        agentName: IMPLEMENTATION_AGENT_DEFINITION.name,
-        profile: 'implementation',
-        systemPrompt: IMPLEMENTATION_AGENT_DEFINITION.systemPrompt,
-        toolNames: [...IMPLEMENTATION_AGENT_DEFINITION.tools],
+        schemaVersion: 2,
+        definitionVersion: GENERAL_PURPOSE_AGENT_DEFINITION.definitionVersion,
+        agentId: GENERAL_PURPOSE_AGENT_DEFINITION.id,
+        agentName: GENERAL_PURPOSE_AGENT_DEFINITION.name,
+        profile: 'general-purpose',
+        systemPrompt: GENERAL_PURPOSE_AGENT_DEFINITION.systemPrompt,
       },
       subagentSpawn: {
         schemaVersion: 1,
@@ -1840,8 +1834,8 @@ test('worktree child Sessions reject roots outside managed child execution', asy
       userMessageId: 'managed-child-message',
       execution: {
         kind: 'linked_child_initial',
-        agentId: IMPLEMENTATION_AGENT_DEFINITION.id,
-        agentName: IMPLEMENTATION_AGENT_DEFINITION.name,
+        agentId: GENERAL_PURPOSE_AGENT_DEFINITION.id,
+        agentName: GENERAL_PURPOSE_AGENT_DEFINITION.name,
       },
       content: { text: HOLD_EXTERNAL_PROMPT },
       start: ({ runId, userMessageId, onRunStarted }) =>
@@ -1850,8 +1844,8 @@ test('worktree child Sessions reject roots outside managed child execution', asy
           {
             turnId: 'managed-child-turn',
             text: HOLD_EXTERNAL_PROMPT,
-            agentId: IMPLEMENTATION_AGENT_DEFINITION.id,
-            agentName: IMPLEMENTATION_AGENT_DEFINITION.name,
+            agentId: GENERAL_PURPOSE_AGENT_DEFINITION.id,
+            agentName: GENERAL_PURPOSE_AGENT_DEFINITION.name,
           },
           {
             runId,
@@ -2809,7 +2803,6 @@ test('hosted linked child roots share admission, message, terminal, and stop aut
       runStore: stores.agentRunStore,
       runtimeEventStore: stores.runtimeEventStore,
       backends,
-      childTools: [testTool('Read'), testTool('Glob'), testTool('Grep')],
       newId: randomUUID,
       now: Date.now,
       safeBoundaryResumeEnabled: true,
@@ -2898,7 +2891,7 @@ test('hosted linked child roots share admission, message, terminal, and stop aut
         parentTurnId,
         toolCallId: 'linked-initial',
       },
-      agentProfile: LOCAL_READ_AGENT_PROFILE,
+      agentProfile: EXPLORE_AGENT_TYPE,
       prompt: 'initial linked child',
       onReady: async (ready) => {
         initialReady = ready;
@@ -2994,7 +2987,7 @@ test('hosted linked child roots share admission, message, terminal, and stop aut
         parentTurnId,
         toolCallId: 'linked-ready-stop',
       },
-      agentProfile: LOCAL_READ_AGENT_PROFILE,
+      agentProfile: EXPLORE_AGENT_TYPE,
       prompt: FAKE_ASK_USER_QUESTION_PROMPT,
       abortSignal: callbackAbortController.signal,
       onReady: async (ready) => {
@@ -3062,7 +3055,7 @@ test('hosted linked child roots share admission, message, terminal, and stop aut
         parentTurnId,
         toolCallId: 'linked-interrupt',
       },
-      agentProfile: LOCAL_READ_AGENT_PROFILE,
+      agentProfile: EXPLORE_AGENT_TYPE,
       prompt: FAKE_ASK_USER_QUESTION_PROMPT,
       abortSignal: abortController.signal,
       onReady: () => {
@@ -3072,7 +3065,7 @@ test('hosted linked child roots share admission, message, terminal, and stop aut
             parentTurnId,
             toolCallId: 'linked-interrupt',
           },
-          agentProfile: LOCAL_READ_AGENT_PROFILE,
+          agentProfile: EXPLORE_AGENT_TYPE,
           prompt: FAKE_ASK_USER_QUESTION_PROMPT,
         });
         abortController.abort();

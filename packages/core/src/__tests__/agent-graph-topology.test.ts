@@ -52,7 +52,7 @@ function provisionRequest(): AgentGraphOperatorProvisionRequest {
     provisionFingerprint: `sha256:${'2'.repeat(64)}`,
     graphId: 'graph-1',
     workId: `graph_work_${'3'.repeat(32)}`,
-    agentId: 'local-read',
+    agentId: 'Explore',
     operatorId,
     initialTurnId: 'turn-1',
     initialRunId: 'run-1',

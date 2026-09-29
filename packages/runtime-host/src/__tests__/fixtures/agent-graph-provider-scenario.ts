@@ -70,7 +70,7 @@ export class AgentGraphProviderScenario {
           add_work: [
             {
               target_kind: 'new_agent',
-              agent_id: 'local-read',
+              agent_id: 'Explore',
               instruction: 'Inspect the hosted Graph execution boundary.',
               input_ids: [],
               replacement_mode: 'none',

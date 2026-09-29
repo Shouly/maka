@@ -19,14 +19,6 @@
 
 import { AiSdkBackend } from '@maka/runtime/ai-sdk-backend';
 
-import { buildBuiltinTools, type BuildBuiltinToolsOptions } from '@maka/runtime/builtin-tools';
-
-import { buildChildAgentTools, buildParentAgentTools } from '@maka/runtime/subagent-tools';
-
-import { listRunnableBuiltinAgentDefinitions } from '@maka/runtime/agent-catalog';
-
-import { type MakaTool } from '@maka/runtime/tool-runtime';
-
 import { type SessionManager } from '@maka/runtime/session-manager';
 
 type ChildAgentAuthority = Pick<
@@ -46,29 +38,6 @@ export type HostChildAgentBackendCapabilities = Pick<
   | 'sendChildAgentMessage'
   | 'stopChildAgent'
 >;
-
-export interface HostChildAgentToolComposition {
-  readonly parentTools: readonly MakaTool[];
-  readonly childTools: readonly MakaTool[];
-}
-
-/** Composes the parent control tools and the exact catalog-child capability union. */
-export function createHostChildAgentToolComposition(input: {
-  readonly builtinTools: BuildBuiltinToolsOptions;
-  readonly hostTools?: readonly MakaTool[];
-  readonly worktreePatchWriteBackAvailable?: boolean;
-}): HostChildAgentToolComposition {
-  const builtinTools = buildBuiltinTools(input.builtinTools);
-  const childTools = buildChildAgentTools([...builtinTools, ...(input.hostTools ?? [])]);
-  const definitions = listRunnableBuiltinAgentDefinitions({
-    tools: childTools,
-    worktreeChildExecutorAvailable: input.worktreePatchWriteBackAvailable,
-  });
-  return Object.freeze({
-    parentTools: Object.freeze(buildParentAgentTools({ definitions })),
-    childTools: Object.freeze(childTools),
-  });
-}
 
 /** Binds one root backend to the child authority of its owning Session. */
 export function bindHostChildAgentBackend(

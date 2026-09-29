@@ -271,7 +271,7 @@ test('a launched child agent settles the row it was launched from', () => {
     args: {},
     result: {
       kind: 'subagent',
-      agentId: 'local-read',
+      agentId: 'Explore',
       agentName: 'Local Read',
       childSessionId: 'child-1',
       turnId: 'turn-1',

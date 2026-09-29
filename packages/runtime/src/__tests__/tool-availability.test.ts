@@ -443,7 +443,7 @@ describe('ToolAvailabilityRuntime — search activation', () => {
   test('buckets ungrouped native tools into capability families by categoryHint', () => {
     const plan = new ToolAvailabilityRuntime(
       [
-        withCategory('Agent', 'subagent'),
+        withCategory('SendMessage', 'subagent'),
         withCategory('web_search', 'web_read'),
         withCategory('screen_click', 'computer_use'),
         withCategory('session_tool', 'custom_tool'), // no family mapping -> other
@@ -455,7 +455,7 @@ describe('ToolAvailabilityRuntime — search activation', () => {
 
     const bySource = plan.diagnostics([], 0)!.visibleToolNamesBySource!;
     // Distinct permission hints land in distinct browsing families, not one `other`.
-    assert.deepEqual(bySource.agents, ['Agent']);
+    assert.deepEqual(bySource.agents, ['SendMessage']);
     assert.deepEqual(bySource.web, ['web_search']);
     assert.deepEqual(bySource.computer_use, ['screen_click']);
     // Only hint-less / custom_tool tools fall back to `other`.
@@ -466,22 +466,22 @@ describe('ToolAvailabilityRuntime — search activation', () => {
 
     // Family ids surface in the searchable inventory the model sees.
     const description = searchTool(plan).description;
-    assert.match(description, /agents:\n- Agent/);
+    assert.match(description, /agents:\n- SendMessage/);
     assert.match(description, /web:\n- web_search/);
     assert.match(description, /computer_use:\n- screen_click/);
   });
 
   test('a caller-supplied group keeps precedence over a categoryHint family', () => {
     const plan = new ToolAvailabilityRuntime(
-      [withCategory('Agent', 'subagent'), withCategory('ListAgents', 'subagent')],
-      { groups: [{ id: 'orchestration', label: 'Orchestration', toolNames: ['Agent'] }] },
+      [withCategory('SendMessage', 'subagent'), withCategory('UpdateAgentGraph', 'subagent')],
+      { groups: [{ id: 'orchestration', label: 'Orchestration', toolNames: ['SendMessage'] }] },
       invalid,
     ).prepare(new Map());
 
     const bySource = plan.diagnostics([], 0)!.visibleToolNamesBySource!;
-    // The explicit group claims Agent; only the remaining hinted tool is family-bucketed.
-    assert.deepEqual(bySource.orchestration, ['Agent']);
-    assert.deepEqual(bySource.agents, ['ListAgents']);
+    // The explicit group claims SendMessage; only the remaining hinted tool is family-bucketed.
+    assert.deepEqual(bySource.orchestration, ['SendMessage']);
+    assert.deepEqual(bySource.agents, ['UpdateAgentGraph']);
   });
 });
 

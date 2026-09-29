@@ -29,7 +29,10 @@
  * persistence and same-session serialization semantics.
  */
 
-import { renderChildAgentNotification } from './injection/task-notification.js';
+import {
+  renderChildAgentNotification,
+  renderCoordinatorMessage,
+} from './injection/task-notification.js';
 import type { TaskNotificationLease } from '@maka/core/backend-types';
 import { TOOL_NAMES } from '@maka/core/tool-names';
 import type { WorkHubActionReceipt } from '@maka/core/workhub-action-result';
@@ -220,14 +223,9 @@ import type { AgentGraphRunnableIntent } from './stream-graph-readiness.js';
 import { projectAgentGraphRecords } from './stream-graph-projection.js';
 import { buildStatusPatch, type RunLifecycleStatus } from './session-projection-helpers.js';
 import {
-  assertAgentDefinitionRunnable,
-  buildToolsForAgentDefinition,
   listBuiltinAgentDefinitions,
-  requireBuiltinAgentDefinition,
   requireBuiltinAgentDefinitionByProfile,
-  AGENT_WORKSPACE_WORKTREE,
   type AgentProfile,
-  type AgentDefinition,
   type AgentDefinitionListItem,
   type SubagentPresetListItem,
 } from './agent-catalog.js';
@@ -354,12 +352,24 @@ export interface StartChildSessionResult {
   description?: string;
 }
 
+/**
+ * How a parent's message reached its child: a finished child runs a new Turn
+ * with it; one still working reads it at its next step.
+ */
+export type ChildAgentMessageResult =
+  | ({ readonly delivery: 'resumed' } & StartChildSessionResult)
+  | { readonly delivery: 'queued'; readonly childSessionId: string };
+
 /** A child Turn that ended, as the parent is told about it. */
 export interface ChildAgentFinishedRecord extends SpawnChildSessionResult {
   parentSessionId: string;
   description?: string;
   /** The tool call that started this child; the notification names it. */
   toolCallId: string;
+  /** Every token the Turn's model calls spent, when the ledger was read for it. */
+  tokens?: number;
+  /** The tool calls the Turn made, hand-back included. */
+  toolUses?: number;
 }
 
 export interface SpawnChildSessionResult {
@@ -445,6 +455,12 @@ type ResolvedClaimedAgentGraphIntentInput = Omit<
 };
 
 const CHILD_AGENT_SUMMARY_MAX_CHARS = 4_000;
+/**
+ * A report a child hands back is its whole answer, and nothing else carries it
+ * to the parent, so it is kept far longer than a summary; past this it says
+ * how much was cut rather than ending mid-sentence unmarked.
+ */
+const CHILD_AGENT_REPORT_MAX_CHARS = 100_000;
 
 export interface AgentListItem {
   runId: string;
@@ -860,8 +876,6 @@ interface SessionManagerBaseDeps {
   backends: BackendRegistry;
   newId: () => string;
   now: () => number;
-  childTools?: readonly MakaTool[];
-  resolveChildTools?: (sessionId: string) => Promise<ResolvedChildToolActivation>;
   /** Host-owned user catalog. Runtime receives ids from models, never raw model targets. */
   subagentCatalog?: {
     list(): Promise<SubagentPresetListItem[]>;
@@ -899,11 +913,6 @@ interface SessionManagerBaseDeps {
   /** Trusted Host-owned graph readers. Hosted graph execution fails closed without them. */
   hostedAgentGraphExecution?: RuntimeHostedAgentGraphExecutionCapability;
   onContinuationLifecycleEvent?: (event: RuntimeContinuationLifecycleEvent) => void | Promise<void>;
-}
-
-export interface ResolvedChildToolActivation {
-  readonly tools: readonly MakaTool[];
-  readonly shell?: TurnShellPlan;
 }
 
 type SessionManagerInteractionDeps = {
@@ -996,8 +1005,8 @@ export class SessionManager {
         // Child Sessions are this manager's to account for; the kernel only
         // needs the two questions a turn asks at its boundaries.
         childAgentNotifications: {
-          pending: (sessionId) => this.pendingChildAgentNotificationLeases(sessionId),
-          markNotified: (ref) => this.markChildAgentNotifiedByRef(ref),
+          pending: (sessionId) => this.taskNotificationLeases(sessionId),
+          markNotified: (lease) => this.settleTaskNotificationLease(lease),
         },
       });
   }
@@ -1049,32 +1058,6 @@ export class SessionManager {
     return this.#projectLiveRunState(childSessionsForParent(sessions, parentSessionId));
   }
 
-  private async provisionChildWorkspace(
-    parent: SessionHeader,
-    definition: AgentDefinition,
-    requestFingerprint: string,
-  ): Promise<SubagentWorkspaceBinding | undefined> {
-    if (definition.contract.workspace !== AGENT_WORKSPACE_WORKTREE) return undefined;
-    const executor = this.deps.worktreeChildExecutor;
-    if (!executor) {
-      throw new Error(
-        `Agent "${definition.id}" is unavailable: "worktree" workspace isolation requires a worktree child executor.`,
-      );
-    }
-    const fingerprint = requestFingerprint.startsWith('sha256:')
-      ? requestFingerprint.slice('sha256:'.length)
-      : requestFingerprint;
-    if (!/^[a-f0-9]{64}$/.test(fingerprint)) {
-      throw new Error('Child workspace request fingerprint must be SHA-256');
-    }
-    return executor.provision({
-      leaseId: `subagent_worktree_${fingerprint.slice(0, 32)}`,
-      sourceSessionId: parent.id,
-      sourceCwd: parent.cwd,
-      ...(parent.projectId !== undefined ? { sourceProjectId: parent.projectId } : {}),
-    });
-  }
-
   private async ensureChildWorkspace(header: SessionHeader): Promise<void> {
     const binding = header.subagentWorkspace;
     if (!binding) return;
@@ -1097,17 +1080,6 @@ export class SessionManager {
         this.deps.publishChildWorkspacePatch &&
         this.deps.assertChildWorkspaceQuiescent,
     );
-  }
-
-  private async isWorktreeChildExecutorAvailable(
-    header: Pick<SessionHeader, 'cwd' | 'projectId'>,
-  ): Promise<boolean> {
-    const executor = this.deps.worktreeChildExecutor;
-    if (!executor) return false;
-    return await executor.isAvailable({
-      sourceCwd: header.cwd,
-      ...(header.projectId !== undefined ? { sourceProjectId: header.projectId } : {}),
-    });
   }
 
   private async finalizeAndListChildTurnArtifacts(
@@ -2626,6 +2598,9 @@ export class SessionManager {
         this.childOutcomes.delete(child.id);
         if (input.spawnKey !== undefined) this.childSessionsBySpawnKey.delete(input.spawnKey);
       }
+      // A child that was stopped is not woken by what it was sent while it
+      // ran: the stop is the last word.
+      if (aborted || record?.status === 'cancelled') this.coordinatorMessages.delete(child.id);
       if (record) {
         this.lastChildOutcomes.set(child.id, record);
         this.#announceChildFinished(record);
@@ -2698,7 +2673,7 @@ export class SessionManager {
     parentSessionId: string;
     childSessionId: string;
     text: string;
-  }): Promise<StartChildSessionResult> {
+  }): Promise<ChildAgentMessageResult> {
     const child = await this.deps.store.readHeader(
       await this.#resolveChildAgentHandle(input.parentSessionId, input.childSessionId),
     );
@@ -2709,8 +2684,26 @@ export class SessionManager {
       parent.parentSessionId !== input.parentSessionId ||
       !snapshot
     ) {
-      throw new Error('That agent belongs to another session');
+      throw new Error(unreachableAgentMessage(input.childSessionId));
     }
+    // Still working: the message is a course correction it reads at its next
+    // step, not a Turn of its own. Finished but its report not yet delivered:
+    // the message waits for that report to reach the parent and then opens
+    // the child's next Turn — resuming it now would bury the report.
+    if (this.childExecutions.has(child.id) || (await this.#childOwesNotification(child.id))) {
+      this.#queueCoordinatorMessage(child.id, input.text, parent.spawnedBy.toolCallId);
+      return { delivery: 'queued', childSessionId: child.id };
+    }
+    return { delivery: 'resumed', ...(await this.#resumeChildAgent(input, child)) };
+  }
+
+  /** A new Turn of a finished child, carrying the parent's message as its user text. */
+  async #resumeChildAgent(
+    input: { parentSessionId: string; text: string },
+    child: SessionHeader,
+  ): Promise<StartChildSessionResult> {
+    const snapshot = child.subagentRuntime!;
+    const parent = child.subagentParent!;
     const turnId = this.deps.newId();
     const runId = this.deps.newId();
     const identity = { sessionId: child.id, turnId, runId };
@@ -2858,7 +2851,7 @@ export class SessionManager {
     const children = await this.listChildSessions(parentSessionId).catch(() => []);
     const named = children.filter((child) => child.name === handle);
     const newest = named.at(-1);
-    if (!newest) throw new Error(`No agent of this session is called "${handle}"`);
+    if (!newest) throw new Error(unreachableAgentMessage(handle));
     return newest.id;
   }
 
@@ -2883,6 +2876,7 @@ export class SessionManager {
         ? { description: child.subagentSpawn.description }
         : {}),
     };
+    this.coordinatorMessages.delete(child.id);
     const live = this.childExecutions.get(child.id);
     if (!live) {
       return { stopped: false, ...identity, status: await this.#childAgentStatus(child.id) };
@@ -2960,7 +2954,7 @@ export class SessionManager {
         runId: run.runId,
         status: agentRunStatusForSpawnResult(facts.status),
         permissionMode: facts.permissionMode ?? child.permissionMode,
-        summary: await this.#childTurnSummaryText(child.id, run.turnId),
+        ...(await this.#childTurnReport(child.id, run.turnId, run.runId)),
         // What the child left behind. Only read here, never finalized: this
         // scan runs at a step boundary of the PARENT, and finishing a child
         // off from there would reach for locks its own run still holds.
@@ -2991,6 +2985,92 @@ export class SessionManager {
   }
 
   /**
+   * Messages for children still at work, by child Session: each is read at
+   * the child's next step and then settled. Held in memory — a message is
+   * only ever queued for a Turn running in this process.
+   */
+  private readonly coordinatorMessages = new Map<
+    string,
+    { readonly id: string; readonly text: string; readonly toolUseId: string }[]
+  >();
+
+  #queueCoordinatorMessage(childSessionId: string, text: string, toolUseId: string): void {
+    const queued = this.coordinatorMessages.get(childSessionId) ?? [];
+    queued.push({ id: `coordinator_${this.deps.newId()}`, text, toolUseId });
+    this.coordinatorMessages.set(childSessionId, queued);
+  }
+
+  /** What a running child has been sent since its last step, as it reads it. */
+  #pendingCoordinatorMessageLeases(childSessionId: string): TaskNotificationLease[] {
+    return (this.coordinatorMessages.get(childSessionId) ?? []).map((message) => ({
+      id: message.id,
+      kind: 'coordinator' as const,
+      toolUseId: message.toolUseId,
+      text: renderCoordinatorMessage(message.text),
+    }));
+  }
+
+  #settleCoordinatorMessage(id: string): void {
+    for (const [childSessionId, queued] of this.coordinatorMessages) {
+      const remaining = queued.filter((message) => message.id !== id);
+      if (remaining.length === queued.length) continue;
+      if (remaining.length === 0) this.coordinatorMessages.delete(childSessionId);
+      else this.coordinatorMessages.set(childSessionId, remaining);
+      return;
+    }
+  }
+
+  /**
+   * Messages a child did not read before its Turn ended open its next Turn,
+   * once the report of the one that ended has reached the parent. A resume
+   * that fails leaves them queued: a later Turn reads them at its first step.
+   */
+  async #deliverLeftoverCoordinatorMessages(childSessionId: string): Promise<void> {
+    if (this.childExecutions.has(childSessionId)) return;
+    const queued = this.coordinatorMessages.get(childSessionId);
+    if (!queued || queued.length === 0) return;
+    const child = await this.deps.store.readHeader(childSessionId);
+    const parent = child.subagentParent;
+    if (parent?.kind !== 'subagent' || !child.subagentRuntime) return;
+    if (await this.#childOwesNotification(childSessionId)) return;
+    // Taken off the queue before the Turn starts: the Turn's own step
+    // boundaries read the queue, and must not read these a second time.
+    this.coordinatorMessages.delete(childSessionId);
+    try {
+      await this.#resumeChildAgent(
+        {
+          parentSessionId: parent.parentSessionId,
+          text: queued.map((message) => message.text).join('\n\n'),
+        },
+        child,
+      );
+    } catch (error) {
+      this.coordinatorMessages.set(childSessionId, [
+        ...queued,
+        ...(this.coordinatorMessages.get(childSessionId) ?? []),
+      ]);
+      throw error;
+    }
+  }
+
+  /** The leases a turn of this Session is owed: its children's ends, and messages sent to it. */
+  async taskNotificationLeases(sessionId: string): Promise<TaskNotificationLease[]> {
+    return [
+      ...(await this.pendingChildAgentNotificationLeases(sessionId)),
+      ...this.#pendingCoordinatorMessageLeases(sessionId),
+    ];
+  }
+
+  /** Settle one lease a turn acknowledged, by the kind it was handed out as. */
+  async settleTaskNotificationLease(lease: TaskNotificationLease): Promise<void> {
+    if (lease.kind === 'coordinator') {
+      this.#settleCoordinatorMessage(lease.id);
+      return;
+    }
+    await this.markChildAgentNotifiedByRef(lease.id);
+  }
+
+  /**
    * The Turn each outstanding lease speaks for. A ref names a child Session,
    * not one of its Turns, so without this an acknowledgement would settle
    * whatever Turn happened to be newest when it arrived — burying a Turn the
@@ -3016,6 +3096,15 @@ export class SessionManager {
         status: record.status,
         name: record.description ?? record.agentName,
         result: record.summary,
+        ...(record.tokens !== undefined
+          ? {
+              usage: {
+                tokens: record.tokens,
+                toolUses: record.toolUses ?? 0,
+                durationMs: record.durationMs,
+              },
+            }
+          : {}),
         ...(record.artifactIds.length > 0 ? { artifactIds: record.artifactIds } : {}),
         ...(record.failureClass ? { failureClass: record.failureClass } : {}),
       }),
@@ -3038,18 +3127,56 @@ export class SessionManager {
   /** The parent has been told about this child Turn; it will not be announced again. */
   async markChildAgentNotified(childSessionId: string, turnId: string): Promise<void> {
     await this.deps.store.updateHeader(childSessionId, { subagentNotifiedTurnId: turnId });
+    // What the parent sent after that Turn ended opens the next one, now that
+    // the report it answers has been read.
+    void this.#deliverLeftoverCoordinatorMessages(childSessionId).catch(() => undefined);
   }
 
-  /** The child's last words on that Turn, as the parent's notification quotes them. */
-  async #childTurnSummaryText(childSessionId: string, turnId: string): Promise<string> {
+  /** The child's latest Turn has ended and its parent has not been told. */
+  async #childOwesNotification(childSessionId: string): Promise<boolean> {
+    const run = latestInvocation(await this.listInvocations(childSessionId).catch(() => []));
+    if (!run?.terminalEvent) return false;
+    const child = await this.deps.store.readHeader(childSessionId);
+    return child.subagentNotifiedTurnId !== run.turnId;
+  }
+
+  /**
+   * What the parent's notification says of one child Turn: the report the
+   * child handed back — its last words when it handed none back — and what
+   * the Turn cost.
+   */
+  async #childTurnReport(
+    childSessionId: string,
+    turnId: string,
+    runId: string,
+  ): Promise<{ summary: string; tokens?: number; toolUses?: number }> {
+    const events = await this.deps.runtimeEventStore
+      ?.readRuntimeEvents(childSessionId, runId)
+      .catch(() => undefined);
+    let handback: string | undefined;
+    let toolUses = 0;
+    let tokens = 0;
+    for (const event of events ?? []) {
+      const usage = event.actions?.tokenUsage;
+      if (usage) tokens += usage.total ?? usage.input + usage.output;
+      if (event.content?.kind !== 'function_call' || event.partial) continue;
+      toolUses += 1;
+      if (event.content.name !== TOOL_NAMES.subagentHandback) continue;
+      const message = (event.content.args as { message?: unknown } | undefined)?.message;
+      if (typeof message === 'string' && message.trim()) handback = message;
+    }
+    // Usage is said only when the ledger was read: a count of nothing is not
+    // a Turn that cost nothing.
+    const usage = events ? { tokens, toolUses } : {};
+    if (handback !== undefined) return { summary: trimReport(handback), ...usage };
     const messages = await this.getMessages(childSessionId).catch(() => []);
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       const message = messages[index]!;
       if (message.type === 'assistant' && message.turnId === turnId && message.text.trim()) {
-        return trimSummary(message.text);
+        return { summary: trimReport(message.text), ...usage };
       }
     }
-    return '';
+    return { summary: '', ...usage };
   }
 
   /** A parent has something new to be told; any scan in flight is now stale. */
@@ -3137,17 +3264,8 @@ export class SessionManager {
     if (input.subagentId && !resolvedPreset) {
       throw new Error('Configured subagent catalog is unavailable in this runtime');
     }
-    const definition = resolvedPreset
-      ? requireBuiltinAgentDefinitionByProfile(resolvedPreset.profile)
-      : requireBuiltinAgentDefinition(input.agentId!);
-    const availableChildTools = await this.childToolsForSession(input.source.sessionId);
-    assertAgentDefinitionRunnable({
-      definition,
-      tools: availableChildTools,
-      worktreeChildExecutorAvailable: await this.isWorktreeChildExecutorAvailable(parentHeader),
-    });
-    const resolvedToolNames = buildToolsForAgentDefinition(availableChildTools, definition).map(
-      (tool) => tool.name,
+    const definition = requireBuiltinAgentDefinitionByProfile(
+      resolvedPreset ? resolvedPreset.profile : input.agentId!,
     );
     const childBoundary = deriveLinkedChildExecutionBoundary(
       parentBoundary,
@@ -3175,9 +3293,7 @@ export class SessionManager {
         definitionVersion: definition.definitionVersion,
         agentId: definition.id,
         profile: definition.profile,
-        workspace: definition.contract.workspace,
         permissionMode: childPermissionMode,
-        toolNames: resolvedToolNames,
         systemPrompt: definition.systemPrompt,
         ...(resolvedPreset
           ? {
@@ -3192,11 +3308,6 @@ export class SessionManager {
           : {}),
       },
     });
-    const workspace = await this.provisionChildWorkspace(
-      parentHeader,
-      definition,
-      provisionFingerprint,
-    );
     const request: AgentGraphOperatorProvisionRequest = {
       schemaVersion: AGENT_GRAPH_OPERATOR_PROVISION_SCHEMA_VERSION,
       provisionId: `graph_provision_${identityHash}`,
@@ -3212,7 +3323,7 @@ export class SessionManager {
     const result = await create.call(
       this.deps.store,
       {
-        cwd: workspace?.worktreePath ?? parentHeader.cwd,
+        cwd: parentHeader.cwd,
         ...(parentHeader.projectId !== undefined ? { projectId: parentHeader.projectId } : {}),
         name: resolvedPreset?.name ?? definition.name,
         ...(resolvedPreset
@@ -3233,6 +3344,9 @@ export class SessionManager {
         collaborationMode: 'agent',
         orchestrationMode: 'default',
         toolMode: parentHeader.toolMode ?? DEFAULT_TOOL_MODE,
+        // Who the user is travels with the work: a child is told it the way
+        // its parent was.
+        ...(parentHeader.userContext ? { userContext: parentHeader.userContext } : {}),
         subagentParent: {
           kind: 'subagent',
           parentSessionId: input.source.sessionId,
@@ -3256,7 +3370,6 @@ export class SessionManager {
           profile: definition.profile,
           ...(resolvedPreset ? { presetId: resolvedPreset.id } : {}),
           systemPrompt: definition.systemPrompt,
-          toolNames: resolvedToolNames,
         },
         subagentSpawn: {
           schemaVersion: SUBAGENT_SESSION_SPAWN_SCHEMA_VERSION,
@@ -3264,7 +3377,6 @@ export class SessionManager {
           initialTurnId,
           initialRunId,
         },
-        ...(workspace ? { subagentWorkspace: workspace } : {}),
       },
       request,
       input.expectedScheduleRevision,
@@ -3276,7 +3388,7 @@ export class SessionManager {
       relation.workId !== input.workId ||
       relation.operatorId !== result.provision.operatorId ||
       result.header.id !== result.provision.targetSessionId ||
-      !sameSubagentWorkspace(result.header.subagentWorkspace, workspace)
+      result.header.subagentWorkspace !== undefined
     ) {
       throw new Error('Stored graph operator provision returned mismatched Session metadata');
     }
@@ -3766,23 +3878,9 @@ export class SessionManager {
     this.assertActiveParentRun(parentSessionId, parentRun, input.spawnedBy.parentTurnId);
 
     const definition = requireBuiltinAgentDefinitionByProfile(input.agentProfile);
-    const availableChildTools = await this.childToolsForSession(parentSessionId);
-    assertAgentDefinitionRunnable({
-      definition,
-      tools: availableChildTools,
-      worktreeChildExecutorAvailable: await this.isWorktreeChildExecutorAvailable(parentHeader),
-    });
-    const resolvedToolNames = buildToolsForAgentDefinition(availableChildTools, definition).map(
-      (tool) => tool.name,
-    );
 
     const proposedTurnId = input.turnId ?? this.deps.newId();
     const proposedRunId = input.runId ?? this.deps.newId();
-    const workspace = await this.provisionChildWorkspace(
-      parentHeader,
-      definition,
-      requestFingerprint,
-    );
     // The child's authority is its parent's, capped by its definition; the
     // header mode is the parent's selection under the same cap.
     const childBoundary = deriveLinkedChildExecutionBoundary(
@@ -3793,7 +3891,7 @@ export class SessionManager {
     const childPermissionMode = linkedChildPermissionMode(parentHeader, definition.permissionMode);
     const creation = await this.deps.store.createSubagent(
       {
-        cwd: workspace?.worktreePath ?? parentHeader.cwd,
+        cwd: parentHeader.cwd,
         ...(parentHeader.projectId !== undefined ? { projectId: parentHeader.projectId } : {}),
         name: input.name ?? input.resolvedPreset?.name ?? definition.name,
         ...(input.resolvedPreset
@@ -3814,6 +3912,9 @@ export class SessionManager {
         collaborationMode: 'agent',
         orchestrationMode: 'default',
         toolMode: parentHeader.toolMode ?? DEFAULT_TOOL_MODE,
+        // Who the user is travels with the work: a child is told it the way
+        // its parent was.
+        ...(parentHeader.userContext ? { userContext: parentHeader.userContext } : {}),
         subagentParent: {
           kind: 'subagent',
           parentSessionId,
@@ -3829,7 +3930,6 @@ export class SessionManager {
           profile: definition.profile,
           ...(input.resolvedPreset ? { presetId: input.resolvedPreset.id } : {}),
           systemPrompt: definition.systemPrompt,
-          toolNames: resolvedToolNames,
         },
         subagentSpawn: {
           schemaVersion: SUBAGENT_SESSION_SPAWN_SCHEMA_VERSION,
@@ -3838,19 +3938,13 @@ export class SessionManager {
           initialRunId: proposedRunId,
           ...(input.description !== undefined ? { description: input.description } : {}),
         },
-        ...(workspace ? { subagentWorkspace: workspace } : {}),
       },
       childBoundary,
     );
     const child = creation.header;
     const snapshot = child.subagentRuntime;
     const spawn = child.subagentSpawn;
-    if (
-      !snapshot ||
-      !spawn ||
-      !child.subagentParent ||
-      !sameSubagentWorkspace(child.subagentWorkspace, workspace)
-    ) {
+    if (!snapshot || !spawn || !child.subagentParent || child.subagentWorkspace !== undefined) {
       throw new Error('Stored child session is missing its durable runtime or spawn identity');
     }
     try {
@@ -4137,14 +4231,7 @@ export class SessionManager {
   }
 
   async listChildAgents(sessionId: string): Promise<AgentListResult> {
-    const [header, tools] = await Promise.all([
-      this.deps.store.readHeader(sessionId),
-      this.childToolsForSession(sessionId),
-    ]);
-    const definitions = listBuiltinAgentDefinitions({
-      tools,
-      worktreeChildExecutorAvailable: await this.isWorktreeChildExecutorAvailable(header),
-    });
+    const definitions = listBuiltinAgentDefinitions();
     const presets = this.deps.subagentCatalog ? await this.deps.subagentCatalog.list() : [];
     if (!this.deps.runStore) return { definitions, presets, executions: [], runs: [] };
     const childRuns = (await this.listInvocations(sessionId)).filter(
@@ -4161,11 +4248,15 @@ export class SessionManager {
         ...facts,
       };
     });
-    const childSessionHeaders = await Promise.all(
-      (await this.listChildSessions(sessionId)).map((child) =>
-        this.deps.store.readHeader(child.id),
-      ),
-    );
+    // A child this build cannot read — one written under an older snapshot —
+    // is left out rather than taking the whole listing down with it.
+    const childSessionHeaders = (
+      await Promise.all(
+        (
+          await this.listChildSessions(sessionId)
+        ).map((child) => this.deps.store.readHeader(child.id).catch(() => undefined)),
+      )
+    ).filter((child): child is SessionHeader => child !== undefined);
     const childSessionExecutions = await Promise.all(
       childSessionHeaders.map(async (child): Promise<SubagentExecutionListItem> => {
         const run = latestInvocation(await this.listInvocations(child.id));
@@ -4220,11 +4311,6 @@ export class SessionManager {
       ],
       runs: legacyRuns,
     };
-  }
-
-  private async childToolsForSession(sessionId: string): Promise<readonly MakaTool[]> {
-    if (!this.deps.resolveChildTools) return this.deps.childTools ?? [];
-    return (await this.deps.resolveChildTools(sessionId)).tools;
   }
 
   async readChildAgentOutput(
@@ -5699,22 +5785,6 @@ function isNotFoundError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }
 
-function sameSubagentWorkspace(
-  left: SubagentWorkspaceBinding | undefined,
-  right: SubagentWorkspaceBinding | undefined,
-): boolean {
-  if (!left || !right) return left === right;
-  return (
-    left.schemaVersion === right.schemaVersion &&
-    left.kind === right.kind &&
-    left.leaseId === right.leaseId &&
-    left.gitCommonDir === right.gitCommonDir &&
-    left.worktreePath === right.worktreePath &&
-    left.branch === right.branch &&
-    left.baseCommit === right.baseCommit
-  );
-}
-
 function childSessionSpawnKey(
   parentSessionId: string,
   input: Pick<SpawnChildSessionInput, 'spawnedBy' | 'swarm'>,
@@ -5874,6 +5944,18 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError');
 }
 
+/** The design's words for a send no agent of this session can receive. */
+function unreachableAgentMessage(handle: string): string {
+  return `No agent named '${handle}' is reachable.\nUse ListAgents to see everyone you can message.`;
+}
+
+function trimReport(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= CHILD_AGENT_REPORT_MAX_CHARS) return trimmed;
+  const cut = trimmed.length - CHILD_AGENT_REPORT_MAX_CHARS;
+  return `${trimmed.slice(0, CHILD_AGENT_REPORT_MAX_CHARS)}…(+${cut} chars)`;
+}
+
 function trimSummary(text: string): string {
   const trimmed = text.trim();
   return trimmed.length <= CHILD_AGENT_SUMMARY_MAX_CHARS
@@ -5889,10 +5971,17 @@ class ChildAgentSummaryAccumulator {
   private textDeltaTail = '';
   private textDeltaTruncated = false;
   private lastError = '';
+  private handback = '';
 
   add(event: SessionEvent): void {
     this.eventCount += 1;
     switch (event.type) {
+      case 'tool_start': {
+        if (event.toolName !== TOOL_NAMES.subagentHandback) break;
+        const message = (event.args as { message?: unknown } | undefined)?.message;
+        if (typeof message === 'string' && message.trim()) this.handback = trimReport(message);
+        break;
+      }
       case 'text_complete':
         this.lastTextComplete = trimSummary(event.text);
         break;
@@ -5928,7 +6017,9 @@ class ChildAgentSummaryAccumulator {
     }
   }
 
+  /** The report the child handed back; its last words when it handed none back. */
   text(): string {
+    if (this.handback) return this.handback;
     if (this.lastTextComplete.trim()) return this.lastTextComplete;
     if (this.textDeltaTail.trim()) {
       return this.textDeltaTruncated

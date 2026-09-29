@@ -445,7 +445,7 @@ async function timelineFixture() {
         addWork: [
           {
             workId: `graph_work_${'b'.repeat(32)}`,
-            target: { kind: 'agent', agentId: 'local-read' },
+            target: { kind: 'agent', agentId: 'Explore' },
             instruction: 'SECRET_INSTRUCTION',
             inputIds: [],
           },
@@ -482,7 +482,7 @@ async function timelineFixture() {
         provisionFingerprint: `sha256:${'d'.repeat(64)}`,
         graphId: 'graph-1',
         workId: `graph_work_${'b'.repeat(32)}`,
-        agentId: 'local-read',
+        agentId: 'Explore',
         operatorId: 'operator-1',
         initialTurnId: 'child-turn',
         initialRunId: 'child-run',

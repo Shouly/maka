@@ -2133,13 +2133,12 @@ describe('SqliteSessionMetadataStore', () => {
         lifecycle: 'foreground',
       },
       subagentRuntime: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         definitionVersion: 1,
-        agentId: 'implementation',
+        agentId: 'general-purpose',
         agentName: 'Implementation',
-        profile: 'implementation',
+        profile: 'general-purpose',
         systemPrompt: 'Implement the task.',
-        toolNames: ['Read', 'Write'],
       },
       subagentSpawn: {
         schemaVersion: 1,
@@ -2210,13 +2209,12 @@ describe('SqliteSessionMetadataStore', () => {
         lifecycle: 'foreground',
       },
       subagentRuntime: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         definitionVersion: 1,
-        agentId: 'implementation',
+        agentId: 'general-purpose',
         agentName: 'Implementation',
-        profile: 'implementation',
+        profile: 'general-purpose',
         systemPrompt: 'Implement the task.',
-        toolNames: ['Read', 'Write'],
       },
       subagentSpawn: {
         schemaVersion: 1,
@@ -3299,13 +3297,12 @@ describe('SqliteSessionMetadataStore', () => {
       lifecycle: 'foreground' as const,
     };
     const subagentRuntime = {
-      schemaVersion: 1 as const,
+      schemaVersion: 2 as const,
       definitionVersion: 1,
-      agentId: 'local-read',
+      agentId: 'Explore',
       agentName: 'Local Read',
-      profile: 'local_read',
+      profile: 'Explore',
       systemPrompt: 'Read the assigned workspace task.',
-      toolNames: ['Read', 'Glob', 'Grep'],
     };
     const subagentSpawn = {
       schemaVersion: 1 as const,
@@ -3397,13 +3394,12 @@ describe('SqliteSessionMetadataStore', () => {
       lifecycle: 'foreground' as const,
     };
     const runtime = {
-      schemaVersion: 1 as const,
+      schemaVersion: 2 as const,
       definitionVersion: 1,
-      agentId: 'local-read',
-      agentName: 'Local Read',
-      profile: 'local_read',
+      agentId: 'Explore',
+      agentName: 'Explore',
+      profile: 'Explore',
       systemPrompt: 'Original durable prompt.',
-      toolNames: ['Read'],
     };
     const childHeader = (overrides: Partial<SessionHeader>): SessionHeader =>
       fullHeader({
@@ -3884,7 +3880,7 @@ describe('SQLite agent graph operator provisions', () => {
         addWork: [
           {
             workId: `graph_work_${'3'.repeat(32)}`,
-            target: { kind: 'agent', agentId: 'local-read' },
+            target: { kind: 'agent', agentId: 'Explore' },
             instruction: 'Inspect the input.',
             inputIds: [],
           },
@@ -3970,7 +3966,7 @@ describe('SQLite agent graph operator provisions', () => {
         addWork: [
           {
             workId: `graph_work_${'3'.repeat(32)}`,
-            target: { kind: 'agent', agentId: 'local-read' },
+            target: { kind: 'agent', agentId: 'Explore' },
             instruction: 'Inspect the input.',
             inputIds: [],
           },
@@ -4097,7 +4093,7 @@ describe('SQLite agent graph operator provisions', () => {
         addWork: [
           {
             workId: `graph_work_${'3'.repeat(32)}`,
-            target: { kind: 'agent', agentId: 'local-read' },
+            target: { kind: 'agent', agentId: 'Explore' },
             instruction: 'Inspect the input.',
             inputIds: [],
           },
@@ -4501,7 +4497,7 @@ function graphProvisionRequest(): AgentGraphOperatorProvisionRequest {
     provisionFingerprint: `sha256:${'5'.repeat(64)}`,
     graphId: 'graph-1',
     workId: `graph_work_${'3'.repeat(32)}`,
-    agentId: 'local-read',
+    agentId: 'Explore',
     operatorId: `graph_operator_${'6'.repeat(32)}`,
     initialTurnId: 'graph-turn',
     initialRunId: 'graph-run',
@@ -4539,13 +4535,12 @@ function graphChildHeader(overrides: Partial<SessionHeader> = {}): SessionHeader
       lifecycle: 'foreground',
     },
     subagentRuntime: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       definitionVersion: 1,
       agentId: request.agentId,
       agentName: 'Local Read',
-      profile: 'local_read',
+      profile: 'Explore',
       systemPrompt: 'Read only.',
-      toolNames: ['Read'],
     },
     subagentSpawn: {
       schemaVersion: 1,
