@@ -1232,7 +1232,7 @@ const startLocalRuntimeHostManager = () => startRuntimeHostDesktopManager(
       },
       releaseBrowserSession,
       computerUseTools: native.computerUseTools,
-      additionalGroups: (scope) => {
+      additionalGroups: () => {
         const mcpTools = buildMcpToolsWithIdentities(mcpManager);
         const mcpServers = new Map<string, typeof mcpTools>();
         for (const identified of mcpTools) {
@@ -1241,7 +1241,6 @@ const startLocalRuntimeHostManager = () => startRuntimeHostDesktopManager(
           else mcpServers.set(identified.serverId, [identified]);
         }
         return [
-          workHubControl.group(scope),
           {
             offerId: "desktop_settings",
             label: "Client settings",

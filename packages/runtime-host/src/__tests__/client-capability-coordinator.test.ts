@@ -471,6 +471,72 @@ describe('Host Client Capability coordinator', () => {
     await coordinator.close();
   });
 
+  test('approves trusted Desktop Computer Use once for the whole Session', async () => {
+    let approvedTarget:
+      | Parameters<
+          HostClientCapabilityCoordinatorOptions['interactions']['requestClientCapabilityApproval']
+        >[0]['target']
+      | undefined;
+    let approvalCount = 0;
+    const coordinator = createCoordinator(() => undefined, {
+      interactions: {
+        requestClientCapabilityApproval: async ({ target }) => {
+          approvalCount += 1;
+          approvedTarget = target;
+          return 'allow';
+        },
+      },
+      grants: {
+        readClientCapabilitySessionGrant: async (key) =>
+          approvedTarget &&
+          approvedTarget.providerId === key.providerId &&
+          approvedTarget.contractId === key.contractId &&
+          approvedTarget.capability === key.capability &&
+          approvedTarget.scope.kind === key.scope.kind
+            ? { version: 1, ...key, grantedAt: 1 }
+            : undefined,
+      },
+    });
+    const connection = attachAutoAdmittingConnection(
+      coordinator,
+      'connection-a',
+      () => ({ kind: 'none' }),
+      'computer',
+    );
+    await registerSessionTools(
+      coordinator,
+      'connection-a',
+      'registration-computer',
+      'desktop_computer_use',
+      ['Computer'],
+    );
+    assert.deepEqual(await coordinator.bindSession('session-a', 'connection-a'), { ok: true });
+    const snapshot = coordinator.snapshotForSession('session-a');
+    assert.ok(snapshot);
+    const computer = snapshot.tools[0];
+
+    const first = await prepare(computer, {}, 'tool-computer-1');
+    assert.equal(approvalCount, 1);
+    assert.equal(approvedTarget?.capability, 'computer_use');
+    assert.deepEqual(approvedTarget?.scope, { kind: 'capability' });
+    assert.deepEqual(
+      await first.execute(managedContext('tool-computer-1')),
+      textResult('computer'),
+    );
+
+    // The grant covers the capability: the next call is not asked about again.
+    const second = await prepare(computer, {}, 'tool-computer-2');
+    assert.equal(approvalCount, 1);
+    assert.deepEqual(
+      await second.execute(managedContext('tool-computer-2')),
+      textResult('computer'),
+    );
+
+    snapshot.release();
+    await connection.close();
+    await coordinator.close();
+  });
+
   test('approves a trusted Desktop MCP tool once and scopes the Session Grant per tool', async () => {
     let approvedTarget:
       | Parameters<

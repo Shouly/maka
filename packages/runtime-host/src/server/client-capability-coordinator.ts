@@ -66,6 +66,7 @@ import { clientCapabilityProviderId } from './client-capability-provider-id.js';
 const DEFAULT_CALL_TIMEOUT_MS = 150_000;
 const DESKTOP_BROWSER_SERVER_ID = 'desktop_browser';
 const DESKTOP_SETTINGS_SERVER_ID = 'desktop_settings';
+const DESKTOP_COMPUTER_USE_SERVER_ID = 'desktop_computer_use';
 const DESKTOP_MCP_OFFER_PREFIX = 'desktop_mcp';
 const DESKTOP_BROWSER_TOOLS: ReadonlySet<string> = new Set([
   TOOL_NAMES.browserNavigate,
@@ -1554,6 +1555,24 @@ function managedClientCapabilityGrantTarget(
       throw new Error('Desktop Settings admission does not accept scope evidence');
     }
     return undefined;
+  }
+  // Computer use operates the person's whole machine: the person approves it
+  // once, and the grant covers the capability for the rest of the Session.
+  if (
+    tool.offerId === DESKTOP_COMPUTER_USE_SERVER_ID &&
+    serverId === DESKTOP_COMPUTER_USE_SERVER_ID
+  ) {
+    if (evidence.kind !== 'none') {
+      throw new Error('Desktop Computer Use admission does not accept scope evidence');
+    }
+    return Object.freeze({
+      providerId: registration.providerId,
+      contractId,
+      serverId,
+      toolName,
+      capability: 'computer_use',
+      scope: Object.freeze({ kind: 'capability' }),
+    });
   }
   if (
     tool.offerId === DESKTOP_BROWSER_SERVER_ID &&
