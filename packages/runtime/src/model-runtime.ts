@@ -29,6 +29,7 @@ import {
   openAiAdapterApiProtocol,
 } from '@maka/core/model-metadata';
 import { isRetiredProvider } from '@maka/core/provider-registry';
+import { GATEWAY_PATHS, type GatewayProtocol } from '@maka/platform-protocol';
 import {
   anthropicV1BaseUrl,
   googleV1BetaBaseUrl,
@@ -143,9 +144,12 @@ export function resolveModelRuntime(
     throw new Error(`${defaults.label} does not support ${apiProtocol} for model ${modelId}`);
   const { adapter, wire, reasoningReplay: replay } = call;
   const configuredBaseUrl = connection.baseUrl?.trim();
-  const resolvedBaseUrl = configuredBaseUrl
+  const connectionBaseUrl = configuredBaseUrl
     ? effectiveBaseUrl(connection)
     : ((calls.includes(call) ? override?.baseUrl : undefined) ?? effectiveBaseUrl(connection));
+  const resolvedBaseUrl = defaults.organizationGateway
+    ? organizationGatewayUrl(connectionBaseUrl, wire, defaults.label)
+    : connectionBaseUrl;
   const baseUrl =
     adapter.kind === 'anthropic' && adapter.normalizeBaseUrl
       ? anthropicV1BaseUrl(resolvedBaseUrl)
@@ -177,6 +181,21 @@ export function resolveModelRuntime(
       modelId,
     ),
   };
+}
+
+/** The wires an organisation gateway serves so far. */
+const GATEWAY_PROTOCOL_BY_WIRE: Partial<Record<ModelRuntimeWire, GatewayProtocol>> = {
+  'anthropic-messages': 'anthropic',
+};
+
+/**
+ * An organisation server's gateway path for a request wire: the connection's
+ * base URL is the server itself, and each protocol has its own prefix there.
+ */
+function organizationGatewayUrl(serverUrl: string, wire: ModelRuntimeWire, label: string): string {
+  const protocol = GATEWAY_PROTOCOL_BY_WIRE[wire];
+  if (!protocol) throw new Error(`${label} has no gateway path for ${wire}`);
+  return `${serverUrl.replace(/\/+$/, '')}${GATEWAY_PATHS[protocol]}`;
 }
 
 function resolveParallelToolCalls(

@@ -23,7 +23,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { IpcMain } from 'electron';
 import type { AppSettings, UpdateAppSettingsInput } from '@maka/core/settings';
 import type { LlmConnection } from '@maka/core/llm-connections';
-import { PROVIDER_REGISTRY } from '@maka/core/llm-connections';
+import { PROVIDER_REGISTRY, providerUsesOrganizationAccount } from '@maka/core/llm-connections';
 import {
   canonicalConnectionEffectiveBaseUrl,
   connectionCredentialTarget,
@@ -233,7 +233,9 @@ export async function gatherRuntimeHostConfig(
   );
 
   if (selected.has('connections') && catalog) {
-    data.connections = projectHostConnections(catalog);
+    data.connections = projectHostConnections(catalog).filter(
+      ({ providerType }) => !providerUsesOrganizationAccount(providerType),
+    );
   }
   // Schema v1 stores the network-proxy password and Tavily key in the
   // settings payload. Keep a credentials-only request lossless by making the
@@ -328,6 +330,14 @@ export async function saveConnection(
 ): Promise<LlmConnection> {
   let catalog = await client.loadConnectionCatalog();
   let existing = catalog.connections.find((item) => item.slug === connection.slug);
+  // The organisation connection is the account's, made and pointed by the
+  // sign-in: an import neither makes one nor replaces the one there is.
+  if (
+    providerUsesOrganizationAccount(connection.providerType) ||
+    (existing && !importable(existing))
+  ) {
+    return connection;
+  }
   if (existing && existing.providerType !== connection.providerType) {
     const removed = await client.removeConnection({
       connectionId: existing.connectionId,
@@ -388,7 +398,8 @@ async function saveConnectionCredential(
 ): Promise<boolean> {
   const catalog = await client.loadConnectionCatalog();
   const connection = catalog.connections.find((item) => item.slug === entry.slug);
-  if (!connection || !matchesCredentialConnection(entry.connection, connection)) return false;
+  if (!connection || !importable(connection)) return false;
+  if (!matchesCredentialConnection(entry.connection, connection)) return false;
   const locator =
     entry.kind === 'request_headers'
       ? ({
@@ -414,7 +425,7 @@ function exportLocators(
   connections: readonly ConnectionCatalogEntry[],
 ): CredentialExportRequest[] {
   return [
-    ...connections.flatMap((connection) => {
+    ...connections.filter(importable).flatMap((connection) => {
       const locator = connectionCredentialLocator(connection);
       const requestHeaders = {
         scope: 'connection',
@@ -432,6 +443,11 @@ function exportLocators(
     { locator: { scope: 'network_proxy', kind: 'password' } },
     { locator: { scope: 'web_search', provider: 'tavily', kind: 'api_key' } },
   ];
+}
+
+/** Everything but the organisation connection, which follows the account and nothing else. */
+function importable(connection: Pick<ConnectionCatalogEntry, 'providerType'>): boolean {
+  return !providerUsesOrganizationAccount(connection.providerType);
 }
 
 function connectionCredentials(
@@ -637,7 +653,8 @@ function connectionCredentialLocator(
   connection: ConnectionCatalogEntry,
 ): Extract<CredentialLocator, { scope: 'connection' }> | null {
   const kind = PROVIDER_REGISTRY[connection.providerType].authKind;
-  if (kind === 'none') return null;
+  // An organisation connection keeps nothing: its token is the account's.
+  if (kind === 'none' || kind === 'org_session') return null;
   return {
     scope: 'connection',
     connectionId: connection.connectionId,

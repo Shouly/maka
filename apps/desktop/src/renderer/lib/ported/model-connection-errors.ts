@@ -64,7 +64,7 @@ export function sessionEventErrorMessage(
   if (isNoRealConnectionEvent(event)) {
     return noRealConnectionSetupDescription(noRealConnectionReasonFromEvent(event), locale);
   }
-  const reasonDescription = describeSessionErrorReason(event.reason, locale);
+  const reasonDescription = describeSessionErrorReason(event.reason, locale, event.message);
   if (reasonDescription) return reasonDescription;
   const fallback = getDesktopConversationCopy(locale).actions.conversationErrorFallback;
   return localizedShellErrorMessage(new Error(event.message), fallback, locale);

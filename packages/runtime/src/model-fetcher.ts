@@ -27,7 +27,9 @@ import {
   type ModelInfo,
   type ModelModality,
 } from '@maka/core/llm-connections';
+import { lookupModelMetadata } from '@maka/core/model-metadata';
 import { inDisplayOrder, isThinkingLevel, type ThinkingLevel } from '@maka/core/model-thinking';
+import { MODEL_CATALOG_PATH, type PlatformModel } from '@maka/platform-protocol';
 import { generalizedErrorMessage } from '@maka/core/redaction';
 import {
   CONNECTION_CATALOG_MAX_MODELS_PER_CONNECTION,
@@ -217,6 +219,9 @@ async function fetchProviderModelsStrict(
   }
   if (discovery.kind === 'cloudflare') {
     return fetchCloudflareModels(baseUrl, apiKey, fetchFn);
+  }
+  if (discovery.kind === 'platform-catalog') {
+    return fetchOrganizationCatalogModels(baseUrl, apiKey, fetchFn);
   }
   if (discovery.auth === 'github-copilot') {
     return fetchGitHubCopilotModels(baseUrl, apiKey, fetchFn);
@@ -536,6 +541,76 @@ export async function fetchOpenAiCodexModels(
     );
     return entry;
   });
+}
+
+/**
+ * The organisation server's catalog (`GET /model/catalog`): the models this
+ * account may use, as the server describes them. What the server leaves out
+ * comes from the vendor's own entry, looked up by `referenceModelId` when the
+ * administrator named the model differently.
+ *
+ * Only the Anthropic protocol is served by the gateway so far; a model on
+ * another protocol is left out until its path exists, rather than listed and
+ * failing on the first send.
+ */
+export async function fetchOrganizationCatalogModels(
+  baseUrl: string,
+  accessToken: string,
+  fetchFn?: ConnectionEffectFetch,
+): Promise<ModelInfo[]> {
+  const response = await fetchForConnectionEffect(
+    fetchFn,
+    `${stripTrailing(baseUrl)}${MODEL_CATALOG_PATH}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}`, accept: 'application/json' },
+      timeoutMs: MODEL_FETCH_TIMEOUT_MS,
+    },
+  );
+  if (!response.ok) {
+    await response.cancel();
+    throw new ConnectionEffectHttpError(response.status);
+  }
+  const payload = await readProviderJson<{ models?: unknown }>(response);
+  return providerObjectArray<Partial<PlatformModel>>(
+    payload.models,
+    'Organization models',
+    true,
+  ).flatMap((model) => {
+    const entry = organizationModelInfo(model);
+    return entry ? [entry] : [];
+  });
+}
+
+function organizationModelInfo(model: Partial<PlatformModel>): ModelInfo | undefined {
+  const id = typeof model.id === 'string' ? model.id.trim() : '';
+  if (!id || model.protocol !== 'anthropic') return undefined;
+  const referenceId =
+    typeof model.referenceModelId === 'string' ? model.referenceModelId.trim() : '';
+  const reference =
+    referenceId && referenceId !== id ? lookupModelMetadata('anthropic', referenceId) : {};
+  const count = (value: unknown): number | undefined =>
+    typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
+  const entry: ModelInfo = { id, apiProtocol: 'anthropic-messages' };
+  const displayName = typeof model.displayName === 'string' ? model.displayName.trim() : '';
+  if (displayName) entry.displayName = displayName;
+  const contextWindow = count(model.contextWindow) ?? reference.contextWindow;
+  if (contextWindow !== undefined) entry.contextWindow = contextWindow;
+  const maxOutputTokens = count(model.maxOutputTokens) ?? reference.maxOutputTokens;
+  if (maxOutputTokens !== undefined) entry.maxOutputTokens = maxOutputTokens;
+  if (reference.knowledgeCutoff !== undefined) entry.knowledgeCutoff = reference.knowledgeCutoff;
+  const input = Array.isArray(model.inputModalities)
+    ? model.inputModalities.filter(isModelModality)
+    : undefined;
+  const modalities = input?.length ? { input, output: ['text' as const] } : reference.modalities;
+  if (modalities) entry.modalities = modalities;
+  const capabilities = {
+    ...reference.capabilities,
+    ...(input?.length ? { vision: input.includes('image') } : {}),
+    ...(typeof model.supportsTools === 'boolean' ? { functionCalling: model.supportsTools } : {}),
+  };
+  if (Object.keys(capabilities).length > 0) entry.capabilities = capabilities;
+  Object.assign(entry, advertisedThinking(model.thinkingLevels, model.defaultThinkingLevel));
+  return entry;
 }
 
 /**

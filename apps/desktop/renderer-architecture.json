@@ -6454,7 +6454,8 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
-        "../../locales/conversation-copy.js": 1
+        "../../locales/conversation-copy.js": 1,
+        "@maka/core/model-failure": 1
       }
     },
     "src/renderer/lib/ported/session-event-health.ts": {

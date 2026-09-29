@@ -24,7 +24,11 @@ import type {
   ConnectionTestSummary,
 } from '@maka/core/runtime-policy';
 import { parseRequestHeaders } from '@maka/core/runtime-policy';
-import { PROVIDER_REGISTRY, providerFallbackModelIds } from '@maka/core/llm-connections';
+import {
+  PROVIDER_REGISTRY,
+  providerFallbackModelIds,
+  providerUsesOrganizationAccount,
+} from '@maka/core/llm-connections';
 import {
   createConnectionEffectFetchTransport,
   type ConnectionEffectFetchTransport,
@@ -71,6 +75,12 @@ import type { ConnectionEffectOperationHandlerMap } from './operation-dispatcher
 import type { HostOAuthExecutionAuthority } from './oauth-execution-authority.js';
 import { RuntimePolicyActivationGate } from './runtime-policy-activation-gate.js';
 import { toRuntimePolicyProxy } from './runtime-policy-proxy.js';
+import {
+  createOrganizationModelFetch,
+  OrganizationAccountUnavailableError,
+  type OrganizationAccessToken,
+} from '@maka/runtime/organization-model-fetch';
+import { providerOffersEveryDiscoveredModel } from '@maka/core/model-metadata';
 
 type ModelDiscoveryRunner = (
   connection: ConnectionCatalogEntry,
@@ -88,7 +98,7 @@ type ConnectionTestRunner = (
 export interface HostConnectionEffectCoordinatorOptions {
   readonly stores: RuntimePolicyStoresWriter;
   readonly activation: RuntimePolicyActivationGate;
-  readonly oauthCredentials: Pick<HostOAuthExecutionAuthority, 'bind'>;
+  readonly oauthCredentials: Pick<HostOAuthExecutionAuthority, 'bind' | 'organizationSession'>;
   readonly onCommittedMutation?: () => void;
   readonly now?: () => number;
   readonly runModelDiscovery?: ModelDiscoveryRunner;
@@ -138,7 +148,7 @@ export class HostConnectionEffectCoordinator {
 
   readonly #stores: RuntimePolicyStoresWriter;
   readonly #activation: RuntimePolicyActivationGate;
-  readonly #oauthCredentials: Pick<HostOAuthExecutionAuthority, 'bind'>;
+  readonly #oauthCredentials: Pick<HostOAuthExecutionAuthority, 'bind' | 'organizationSession'>;
   readonly #onCommittedMutation: () => void;
   readonly #modelCatalog: HostConnectionEffectCoordinatorOptions['modelCatalog'];
   readonly #now: () => number;
@@ -190,8 +200,12 @@ export class HostConnectionEffectCoordinator {
 
       const effect = await this.#withTransport(prepared, (fetch, secret) =>
         this.#runModelDiscovery(prepared.connection, secret, { fetch }),
-      );
-      if (!effect.ok || effect.models.length === 0) {
+      ).catch(unsignedEffect);
+      if (
+        !effect.ok ||
+        (effect.models.length === 0 &&
+          !providerOffersEveryDiscoveredModel(prepared.connection.providerType))
+      ) {
         return {
           kind: 'failed',
           errorClass: effect.ok ? 'invalid_response' : effect.error.kind,
@@ -399,7 +413,7 @@ export class HostConnectionEffectCoordinator {
           { fetch },
           prepared.modelId ?? undefined,
         ),
-      );
+      ).catch(unsignedEffect);
       const projected = projectConnectionTest(effect, this.#now());
       const completion = await this.#complete(() =>
         this.#stores.operations.completeConnectionTest(
@@ -458,22 +472,54 @@ export class HostConnectionEffectCoordinator {
       prepared.networkProxy,
       prepared.secretMaterial.networkProxy?.secret,
     );
-    const secret = await this.#connectionSecret(prepared, proxy);
+    // Discovery and the connection test sign with the account's token as a
+    // turn does, and through the same fetch: the app's version rides along and
+    // a lapsed token is refreshed once. The token asked for here goes on the
+    // first request, so an account that cannot sign fails before anything is
+    // sent, as a failure the effect can name.
+    const organization = providerUsesOrganizationAccount(prepared.connection.providerType)
+      ? await this.#organizationToken(prepared.connection)
+      : undefined;
+    const secret = organization
+      ? organization.token.accessToken
+      : await this.#connectionSecret(prepared, proxy);
     const transport = this.#createTransport(proxy);
     try {
       const requestHeaders = prepared.secretMaterial.requestHeaders
         ? parseRequestHeaders(prepared.secretMaterial.requestHeaders.secret)
         : {};
+      const fetch = createRequestCustomizationFetch(transport.fetch, {
+        headers: requestHeaders,
+        bodyOverlay: prepared.connection.requestBodyOverlay,
+      });
       return await run(
-        createRequestCustomizationFetch(transport.fetch, {
-          headers: requestHeaders,
-          bodyOverlay: prepared.connection.requestBodyOverlay,
-        }),
+        organization
+          ? createOrganizationModelFetch({
+              token: ({ forceRefresh, signal }) =>
+                forceRefresh
+                  ? this.#oauthCredentials
+                      .organizationSession()
+                      .accessToken(organization.serverUrl, { forceRefresh, signal })
+                  : Promise.resolve(organization.token),
+              fetchFn: fetch,
+            })
+          : fetch,
         secret,
       );
     } finally {
       await transport.close();
     }
+  }
+
+  async #organizationToken(
+    connection: Pick<ConnectionCatalogEntry, 'baseUrl'>,
+  ): Promise<{ readonly serverUrl: string; readonly token: OrganizationAccessToken }> {
+    const serverUrl = connection.baseUrl;
+    if (!serverUrl) throw new Error('The organization connection has no server address');
+    return {
+      serverUrl,
+      token: await this.#oauthCredentials.organizationSession().accessToken(serverUrl),
+    };
   }
 
   async #connectionSecret(
@@ -620,6 +666,27 @@ function committedConnectionBasis(
   const connection = connections.find((candidate) => candidate.connectionId === connectionId);
   if (!connection) throw new Error('Connection effect commit omitted its connection');
   return { connectionId, revision: connection.revision };
+}
+
+/**
+ * An organisation connection whose account cannot sign right now fails the
+ * effect rather than going out unsigned, as what it is: a server that cannot
+ * be reached is the network, one that will not serve this app is the
+ * service's refusal, and anything else (signed out, the sign-in expired, no
+ * app to ask) is a credential the provider would refuse.
+ */
+function unsignedEffect(error: unknown): {
+  readonly ok: false;
+  readonly error: { readonly kind: ConnectionEffectErrorKind };
+} {
+  if (!(error instanceof OrganizationAccountUnavailableError)) throw error;
+  const kind: ConnectionEffectErrorKind =
+    error.reason === 'server_unreachable'
+      ? 'network'
+      : error.reason === 'upgrade_required'
+        ? 'provider_unavailable'
+        : 'auth';
+  return { ok: false, error: { kind } };
 }
 
 function storeFailure<

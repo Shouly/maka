@@ -60,15 +60,18 @@ export function providerEndpointPresentation(connection: {
   const defaults = PROVIDER_REGISTRY[connection.providerType];
   const effective = effectiveBaseUrl(connection).trim();
   const value = endpointForDisplay(effective);
+  // An account decides these endpoints: the provider's for an OAuth sign-in,
+  // the server the person signed in to for the organisation connection.
+  const accountManaged = defaults.authKind === 'oauth_token' || defaults.authKind === 'org_session';
   const editable =
-    defaults.authKind !== 'oauth_token' &&
+    !accountManaged &&
     !defaults.baseUrlTemplate &&
     (!defaults.baseUrl || defaults.category === 'local');
 
   return {
     value: value || null,
     editable,
-    emptyState: defaults.authKind === 'oauth_token' ? 'managed' : 'missing',
+    emptyState: accountManaged ? 'managed' : 'missing',
     ...(providerRoutesModelsElsewhere(connection) ? { modelOverrides: true as const } : {}),
   };
 }

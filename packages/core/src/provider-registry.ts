@@ -112,7 +112,12 @@ export type ProviderModelDiscovery =
   | { kind: 'cloudflare' }
   | { kind: 'fallback'; reason: string }
   | { kind: 'ollama' }
-  | { kind: 'cohere' };
+  | { kind: 'cohere' }
+  /**
+   * The organisation server's `GET /model/catalog`: the models this person's
+   * account may use, already described by the server.
+   */
+  | { kind: 'platform-catalog' };
 
 export interface ProviderDefaults {
   label: string;
@@ -124,7 +129,12 @@ export interface ProviderDefaults {
   menuLabel?: string;
   baseUrl: string;
   baseUrlTemplate?: string;
-  authKind: 'api_key' | 'optional_api_key' | 'oauth_token' | 'none';
+  /**
+   * `org_session`: the organisation account the app is signed in to. Nothing
+   * is kept per connection; each request carries the account's short-lived
+   * access token, which the desktop app hands out.
+   */
+  authKind: 'api_key' | 'optional_api_key' | 'oauth_token' | 'org_session' | 'none';
   /**
    * The baseline this provider ships: what it offers with no live list to go
    * on. Read it through `providerFallbackModelIds`, never directly.
@@ -136,6 +146,12 @@ export interface ProviderDefaults {
   protocolAdapters?: Partial<
     Record<'openai-chat' | 'openai-responses' | 'anthropic-messages', ProviderRuntimeAdapter>
   >;
+  /**
+   * The connection's base URL is an organisation server, whose model gateway
+   * serves each request protocol under its own path (`GATEWAY_PATHS` in
+   * `@maka/platform-protocol`); Runtime appends the one the model's wire needs.
+   */
+  organizationGateway?: true;
   /**
    * Maka used to offer this provider and no longer does. The entry stays
    * registered so stored connections still decode; it just cannot be used.
@@ -1547,37 +1563,27 @@ const providerRegistry = {
     catalogOrder: 18.2,
   },
   /**
-   * The company's own model gateway: one OpenAI-compatible endpoint in front
-   * of whatever the organisation licenses, reached with a gateway-issued key.
+   * The organisation's own Maka server (design §5.3): the models the person's
+   * company account may use, reached through the server's gateway with the
+   * account's access token. Nothing is kept on this machine but the server's
+   * address.
    *
-   * Registered as its own entry rather than left to `openai-compatible`
-   * because the two differ in what the user has to know. A custom relay asks
-   * for an endpoint the user must supply from somewhere; the gateway's
-   * endpoint is one value an operator hands out, and naming it here is what
-   * lets the catalog put it first and describe it in the company's terms
-   * instead of as "a custom relay you happen to have a URL for".
-   *
-   * No `relayModelProfiles`: `isRelayProviderType` narrows to the two custom
-   * relay ids, and a third provider answering true through it would make that
-   * type predicate false. The gateway's models are described by discovery and
-   * by built-in metadata, like every other endpoint's.
+   * The desktop app creates and keeps this connection once the person signs
+   * in; nobody adds it from the catalog, so it has no `catalogOrder`. Only the
+   * Anthropic protocol is served for now: the catalog's other protocols wait
+   * for the gateway's OpenAI and Gemini paths.
    */
-  'relx-gateway': {
-    label: 'RELX Gateway',
-    // Deployment-specific, so there is nothing to ship: the setup form
-    // requires it (`category: 'custom'` is what admits an empty default).
+  organization: {
+    label: 'Organization',
+    // The server's address, written by the app from the signed-in account.
     baseUrl: '',
-    authKind: 'api_key',
+    authKind: 'org_session',
     fallbackModels: [],
     status: 'ready',
-    runtimeAdapter: { kind: 'openai-compatible', name: 'connection', requireBaseUrl: true },
-    // `GET <baseUrl>/models`, the OpenAI-compatible listing the gateway serves.
-    modelDiscovery: { kind: 'protocol' },
+    runtimeAdapter: { kind: 'anthropic', auth: 'bearer', normalizeBaseUrl: true },
+    organizationGateway: true,
+    modelDiscovery: { kind: 'platform-catalog' },
     category: 'custom',
-    catalogGroup: 'recommended',
-    // Ahead of the shipped catalog: on this build it is the provider the
-    // organisation expects its people to use.
-    catalogOrder: -1,
   },
   'github-copilot': {
     label: githubCopilot.name,

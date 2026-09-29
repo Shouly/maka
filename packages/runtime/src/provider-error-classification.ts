@@ -18,7 +18,10 @@
  */
 
 import { RetryError } from 'ai';
-import { MODEL_FAILURE_MESSAGE_MAX_BYTES } from '@maka/core/model-failure';
+import {
+  MODEL_FAILURE_MESSAGE_MAX_BYTES,
+  organizationQuotaFailureMessage,
+} from '@maka/core/model-failure';
 import { truncateUtf8 } from '@maka/core/diagnostic-log';
 import { isAuthenticationErrorText } from '@maka/core/redaction';
 import type { ProviderRetryReason } from '@maka/core/events';
@@ -139,6 +142,14 @@ interface ProviderErrorFacts {
   summarySources: ProviderFailureSources;
   bareMessage?: string;
   responseHeaders?: Record<string, string>;
+  /** An answer from the organisation's gateway or account, which outranks every other reading. */
+  organization?: OrganizationFailure;
+}
+
+interface OrganizationFailure {
+  readonly kind: ModelFailureKind;
+  /** For `organization_quota`: when the allowance resets (epoch ms). */
+  readonly resetsAt?: number;
 }
 
 /** Bounded, allowlisted provider failure facts safe for durable telemetry. */
@@ -181,6 +192,12 @@ export const MODEL_FAILURE_RETRY: Readonly<Record<ModelFailureKind, ProviderRetr
   stream_truncated: 'stream_truncated',
   timeout: 'timeout',
   unknown: null,
+  // The gateway says so, and says `x-should-retry: false`: the allowance
+  // resets on its own schedule, and the rest waits on the person.
+  organization_quota: null,
+  organization_model_denied: null,
+  organization_sign_in: null,
+  organization_upgrade: null,
 };
 
 /**
@@ -459,6 +476,83 @@ export function providerFailureDiagnostic(error: unknown): ProviderFailureDiagno
 }
 
 function extractProviderErrorFacts(error: unknown): ProviderErrorFacts | undefined {
+  const facts = locateProviderErrorFacts(error);
+  const organization = facts?.aborted ? undefined : organizationFailureOf(error);
+  return facts && organization ? { ...facts, organization } : facts;
+}
+
+/**
+ * The organisation gateway's own reason (`maka.code` on its error bodies, in
+ * whatever protocol's shape) or the account's refusal to sign
+ * (`OrganizationAccountUnavailableError`, recognised by name: it is raised in
+ * `organization-model-fetch.ts` and may reach here wrapped).
+ */
+const ORGANIZATION_GATEWAY_KINDS: Readonly<Record<string, ModelFailureKind>> = {
+  quota_exceeded: 'organization_quota',
+  model_not_allowed: 'organization_model_denied',
+  unauthenticated: 'organization_sign_in',
+  upgrade_required: 'organization_upgrade',
+};
+
+function organizationFailureOf(error: unknown): OrganizationFailure | undefined {
+  let current: unknown = providerErrorTarget(error);
+  const seen = new Set<unknown>();
+  for (let depth = 0; depth < 5 && current !== undefined && !seen.has(current); depth += 1) {
+    seen.add(current);
+    const record = objectRecord(current);
+    if (!record) return undefined;
+    if (safeField(record, 'name') === 'OrganizationAccountUnavailableError') {
+      const reason = safeField(record, 'reason');
+      return {
+        kind:
+          reason === 'upgrade_required'
+            ? 'organization_upgrade'
+            : reason === 'server_unreachable'
+              ? 'network'
+              : 'organization_sign_in',
+      };
+    }
+    const body = safeField(record, 'responseBody');
+    const detail = typeof body === 'string' ? organizationGatewayDetail(body) : undefined;
+    const kind =
+      detail && Object.hasOwn(ORGANIZATION_GATEWAY_KINDS, detail.code)
+        ? ORGANIZATION_GATEWAY_KINDS[detail.code]
+        : undefined;
+    if (kind) {
+      return {
+        kind,
+        ...(kind === 'organization_quota' && detail?.retryAt !== undefined
+          ? { resetsAt: detail.retryAt }
+          : {}),
+      };
+    }
+    current = safeField(record, 'cause');
+  }
+  return undefined;
+}
+
+function organizationGatewayDetail(
+  body: string,
+): { readonly code: string; readonly retryAt?: number } | undefined {
+  if (!body.includes('"maka"')) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+  const record = providerRecord(parsed);
+  const maka = record ? providerRecord(safeField(record, 'maka')) : undefined;
+  const code = maka ? safeField(maka, 'code') : undefined;
+  if (typeof code !== 'string') return undefined;
+  const retryAt = safeField(maka!, 'retryAt');
+  return {
+    code,
+    ...(typeof retryAt === 'number' && Number.isSafeInteger(retryAt) ? { retryAt } : {}),
+  };
+}
+
+function locateProviderErrorFacts(error: unknown): ProviderErrorFacts | undefined {
   if (RetryError.isInstance(error) && error.reason === 'abort') {
     const facts = normalizeProviderError(error);
     return facts ? { ...facts, aborted: true } : undefined;
@@ -712,7 +806,11 @@ export function providerModelFailure(error: unknown): ModelFailure {
     kind,
     ...retry,
     ...(summary?.code !== undefined ? { code: summary.code } : {}),
-    message: summary?.message ?? 'Model request failed',
+    // The reset time rides the message, which is what reaches the turn record.
+    message:
+      kind === 'organization_quota'
+        ? organizationQuotaFailureMessage(facts?.organization?.resetsAt)
+        : (summary?.message ?? 'Model request failed'),
   };
 }
 
@@ -723,6 +821,7 @@ export function classifyError(error: unknown): ModelFailureKind {
 
 function classifyProviderFacts(facts: ProviderErrorFacts): ModelFailureKind {
   if (facts.aborted) return 'abort';
+  if (facts.organization) return facts.organization.kind;
   const { evidence } = facts;
   const { text, statusCode, code, structuredCodes } = evidence;
   const normalizedCode = code.toLowerCase();

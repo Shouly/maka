@@ -560,10 +560,12 @@ export function decodeConnectionModelFetchResult(value: unknown): ConnectionMode
     ]);
     return {
       ...decodeCommitted(committed, 'connection model fetch committed result'),
+      // Zero is a catalog that offers nothing now (an organisation's, which
+      // the Host commits as it is rather than keeping the last list).
       modelCount: boundedInteger(
         committed.modelCount,
         'model count',
-        1,
+        0,
         CONNECTION_CATALOG_MAX_MODELS_PER_CONNECTION,
       ),
       source: modelDiscoverySource(committed.source),

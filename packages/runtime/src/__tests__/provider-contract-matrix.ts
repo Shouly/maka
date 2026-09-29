@@ -293,6 +293,13 @@ function discoveryCell(providerType: ProviderType, def: ProviderDefaults): Provi
         overrideKey: overrideKeyFor(providerType, 'discovery'),
         contract: 'Ollama native /api/tags discovery',
       };
+    case 'platform-catalog':
+      return {
+        state: 'override',
+        dimension: 'discovery',
+        overrideKey: overrideKeyFor(providerType, 'discovery'),
+        contract: 'Organisation server /model/catalog discovery with the account access token',
+      };
     case 'protocol':
       if (discovery.auth === 'github-copilot') {
         return {
@@ -345,6 +352,15 @@ function wireDimensionCell(
       dimension,
       overrideKey: overrideKeyFor(providerType, dimension),
       contract: `${def.runtimeAdapter.kind} subscription wire is provider-specific (per-model protocol, headers, auth)`,
+    };
+  }
+  if (def.organizationGateway) {
+    return {
+      state: 'override',
+      dimension,
+      overrideKey: overrideKeyFor(providerType, dimension),
+      contract:
+        'Organisation gateway wire: the base URL is the server, each protocol on its own gateway path',
     };
   }
   if (

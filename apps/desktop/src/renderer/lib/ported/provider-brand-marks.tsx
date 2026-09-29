@@ -461,7 +461,7 @@ function GatewayProviderMark(): ReactElement {
  */
 export function ProviderBrandMark({ type }: { type: ProviderType }): ReactElement {
   switch (type) {
-    case 'relx-gateway':
+    case 'organization':
       return <GatewayProviderMark />;
     case 'nvidia':
       return <img src={nvidiaMarkUrl} alt="" />;

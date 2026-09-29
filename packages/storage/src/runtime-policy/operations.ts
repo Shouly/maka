@@ -453,6 +453,9 @@ export function connectionCredentialLocator(
       return { scope: 'connection', connectionId, kind: 'api_key' };
     case 'oauth_token':
       return { scope: 'connection', connectionId, kind: 'oauth_token' };
+    // The organisation account's token is the app's to hand out per request;
+    // nothing is kept for the connection.
+    case 'org_session':
     case 'none':
       return null;
   }

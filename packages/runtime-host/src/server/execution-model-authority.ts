@@ -75,6 +75,11 @@ import {
   type HostOAuthExecutionAuthority,
   type HostOAuthExecutionBinding,
 } from './oauth-execution-authority.js';
+import { ORGANIZATION_ACCOUNT_KEY_PLACEHOLDER } from '@maka/runtime/organization-model-fetch';
+import {
+  createHostOrganizationModelFetch,
+  type HostOrganizationSession,
+} from './organization-session.js';
 import { toRuntimePolicyProxy } from './runtime-policy-proxy.js';
 
 export interface HostGoalEvaluatorInput {
@@ -602,6 +607,15 @@ async function runHostAuxiliaryModelCall(
         fetchFn: transport.fetch,
       });
     }
+    const organizationSession = target.organizationSession;
+    if (organizationSession) {
+      apiKey = ORGANIZATION_ACCOUNT_KEY_PLACEHOLDER;
+      modelFetch = createHostOrganizationModelFetch({
+        session: organizationSession,
+        serverUrl: target.connection.baseUrl!,
+        fetchFn: transport.fetch,
+      });
+    }
     const startedAt = authority.now();
     const baseRecord = {
       ...(input.telemetrySessionId ? { sessionId: input.telemetrySessionId } : {}),
@@ -838,6 +852,8 @@ export interface ResolvedExecutionTarget {
   readonly apiKey: string;
   readonly requestHeaders: Readonly<Record<string, string>>;
   readonly oauthBinding?: HostOAuthExecutionBinding;
+  /** Signs each request on an `org_session` connection, whose base URL is the server. */
+  readonly organizationSession?: HostOrganizationSession;
   readonly networkProxy: RuntimePolicy['networkProxy'];
   readonly proxySecret?: string;
   readonly providerStateIdentity: `sha256:${string}`;
@@ -983,6 +999,12 @@ export async function resolveExecutionTarget(
   const requestHeaders = resolved.secretMaterial.requestHeaders
     ? parseRequestHeaders(resolved.secretMaterial.requestHeaders.secret)
     : {};
+  // Said before the provider state is keyed on the address, which needs one.
+  if (provider.authKind === 'org_session' && !resolved.connection.baseUrl) {
+    throw new AuxiliaryModelCallConfigurationError(
+      'Runtime Host organization connection has no server address',
+    );
+  }
   const providerStateIdentity = providerStateIdentityForResolvedExecution(resolved);
   if (provider.authKind === 'oauth_token') {
     const material = resolved.secretMaterial.connection;
@@ -1007,6 +1029,21 @@ export async function resolveExecutionTarget(
         material,
         createRefreshTransport: () => createFetchTransport(refreshProxy),
       }),
+      networkProxy: resolved.networkProxy,
+      providerStateIdentity,
+      ...(resolved.secretMaterial.networkProxy
+        ? { proxySecret: resolved.secretMaterial.networkProxy.secret }
+        : {}),
+    };
+  }
+
+  if (provider.authKind === 'org_session') {
+    return {
+      connection,
+      model,
+      apiKey: '',
+      requestHeaders,
+      organizationSession: oauthCredentials.organizationSession(),
       networkProxy: resolved.networkProxy,
       providerStateIdentity,
       ...(resolved.secretMaterial.networkProxy

@@ -75,6 +75,7 @@ export * from './configuration-change.js';
 export * from './connection-catalog-change.js';
 export * from './goal.js';
 export * from './hosted-execution.js';
+export * from './organization-account.js';
 export * from './host-resources.js';
 export * from './plan.js';
 export * from './peer-mesh.js';
@@ -137,7 +138,12 @@ export const RUNTIME_HOST_PROTOCOL_VERSION = 0 as const;
 // memory mutation nor a web search answers the incognito reasons any more. An
 // old Host rejects the unknown create key; an old client requires the list
 // flag a new Host no longer sends.
-export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 164 as const;
+// 165: the `organization` provider replaces `relx-gateway` in the connection
+// catalog, and the Host asks the desktop for the organization account's token
+// through the `organization_account` client service. An old client cannot
+// read the new provider type; an old Host never asks, an old desktop never
+// answers.
+export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 165 as const;
 // 155: A tool call is on the wire while the model is still writing it.
 // `subscription.session_event` carries `tool_input_start` and
 // `tool_input_delta`, which a Client that does not know them decodes as an

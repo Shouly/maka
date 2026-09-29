@@ -273,8 +273,9 @@ now conflicts by design; resolve toward `TOOL_NAMES.*` and the resources under
   read-only config file will do) and confirm the list stays on screen with the
   "could not refresh" row above it, rather than being replaced. The store rule
   and the branch are unit-tested; only a real refusal exercises the wiring.
-- A real RELX Gateway connection end to end (verify, choose models, send a
-  turn); each of the three OAuth sign-ins including sign-out and the local `gh`
+- A real organization account end to end (sign in, the company's models
+  appear in Settings › Models, send a turn through the server's gateway); each
+  of the three OAuth sign-ins including sign-out and the local `gh`
   credential import; a connection test and a model-catalog refetch against a
   live provider; request headers against a real endpoint; a Tavily key saved and
   probed; an MCP server added from the directory, tested and signed into; a

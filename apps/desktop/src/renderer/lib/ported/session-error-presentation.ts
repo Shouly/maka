@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import type { ModelFailureKind } from '@maka/core/model-failure';
+import { organizationQuotaResetsAt, type ModelFailureKind } from '@maka/core/model-failure';
 import type { UiLocale } from '@maka/core/ui-locale';
 import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
 
@@ -29,10 +29,13 @@ import { getDesktopConversationCopy } from '../../locales/conversation-copy.js';
 export function describeSessionErrorReason(
   reason: string | undefined,
   locale: UiLocale,
+  /** The failure's own message, where a kind carries data in it (the quota's reset time). */
+  message?: string,
 ): string | undefined {
   const copy = getDesktopConversationCopy(locale).turnError;
   const kind = reason?.toLowerCase();
   if (kind === 'model_after_tool_timeout') return copy.timeout;
+  const resetsAt = organizationQuotaResetsAt(message);
   const descriptions = {
     context_overflow: copy.contextOverflow,
     timeout: copy.timeout,
@@ -46,8 +49,24 @@ export function describeSessionErrorReason(
     request_rejected: copy.requestRejected,
     abort: copy.unknown,
     unknown: copy.unknown,
+    organization_quota: copy.organizationQuota(
+      resetsAt === undefined ? undefined : readerTime(resetsAt, locale),
+    ),
+    organization_model_denied: copy.organizationModelDenied,
+    organization_sign_in: copy.organizationSignIn,
+    organization_upgrade: copy.organizationUpgrade,
   } satisfies Record<ModelFailureKind, string>;
   return kind && Object.hasOwn(descriptions, kind)
     ? descriptions[kind as ModelFailureKind]
     : undefined;
+}
+
+/** A moment as the reader reads it: their language, their clock, no year or seconds. */
+function readerTime(epochMs: number, locale: UiLocale): string {
+  return new Intl.DateTimeFormat(locale, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(epochMs);
 }

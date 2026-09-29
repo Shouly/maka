@@ -54,26 +54,22 @@ export const UNKNOWN_PROVIDER_DESCRIPTION = {
 } satisfies UiCatalog<string>;
 
 export const PROVIDER_DISPLAY_COPY = {
-  // First in the catalog because it is first in `CATALOG_PROVIDER_TYPES`: on
-  // this build the company gateway is the provider people are meant to use,
-  // and the description says what they have to supply (an endpoint an
-  // operator gives them, and a gateway key) rather than naming any model.
-  'relx-gateway': {
+  // The connection the app keeps for the signed-in company account. Never in
+  // the catalog (nobody adds it), so the description says where its models
+  // come from and what the person does not have to supply.
+  organization: {
     'zh-CN': {
-      name: 'RELX Gateway',
-      description: '公司模型网关 · OpenAI 兼容；需要网关地址与网关密钥。',
-      badge: 'Gateway',
+      name: '组织账号',
+      description: '公司账号可用的模型 · 由组织统一管理，无需密钥。',
     },
     'zh-TW': {
-      name: 'RELX Gateway',
-      description: '公司模型閘道 · OpenAI 相容；需要閘道位址與閘道金鑰。',
-      badge: 'Gateway',
+      name: '組織帳號',
+      description: '公司帳號可用的模型 · 由組織統一管理，無需金鑰。',
     },
     en: {
-      name: 'RELX Gateway',
+      name: 'Organization',
       description:
-        'The company model gateway · OpenAI-compatible; needs its URL and a gateway key.',
-      badge: 'Gateway',
+        'The models your company account can use · managed by your organization, no key needed.',
     },
   },
   'kimi-coding-plan': {

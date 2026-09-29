@@ -76,6 +76,8 @@ import {
 } from './execution-model-authority.js';
 import { toRuntimePolicyProxy } from './runtime-policy-proxy.js';
 import type { HostRunComposer, HostRunComposerFactory } from './host-run-composer.js';
+import { ORGANIZATION_ACCOUNT_KEY_PLACEHOLDER } from '@maka/runtime/organization-model-fetch';
+import { createHostOrganizationModelFetch } from './organization-session.js';
 
 export interface HostAiSdkBackendInput {
   readonly context: BackendFactoryContext;
@@ -172,6 +174,15 @@ async function buildHostAiSdkBackend(
       await transport.close();
       throw error;
     }
+  }
+  const organizationSession = target.organizationSession;
+  if (organizationSession) {
+    apiKey = ORGANIZATION_ACCOUNT_KEY_PLACEHOLDER;
+    modelFetch = createHostOrganizationModelFetch({
+      session: organizationSession,
+      serverUrl: target.connection.baseUrl!,
+      fetchFn: transport.fetch,
+    });
   }
   const providerOptions = buildProviderOptions(
     target.connection,

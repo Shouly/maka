@@ -44,6 +44,7 @@ import {
   type AddProviderDraft,
 } from '../../lib/ported/provider-add-submission.js';
 import { connectionChipStatus } from '../../lib/ported/provider-connection-status.js';
+import { providerEndpointPresentation } from '../../lib/ported/provider-endpoint-presentation.js';
 import { oauthFailureMessage } from '../../lib/ported/provider-oauth-message.js';
 import {
   isSelectableSubagentConnection,
@@ -67,32 +68,35 @@ import {
 import { createMcpStore } from '../mcp-store.js';
 import { createScheduledTasksStore } from '../scheduled-tasks-store.js';
 
-// ── the company gateway ────────────────────────────────────────────────────
+// ── the organisation connection ────────────────────────────────────────────
 //
 // The one entry this fork adds to `packages/core`. Each assertion below is a
 // property some surface depends on, so a well-meant tidy of the registry entry
 // fails here rather than in a screenshot nobody re-takes.
 
-test('the RELX Gateway is registered, offerable, and heads the catalog', () => {
-  const gateway = PROVIDER_REGISTRY['relx-gateway'];
-  assert.equal(gateway.label, 'RELX Gateway');
-  assert.equal(gateway.category, 'custom');
-  assert.equal(gateway.catalogGroup, 'recommended');
-  assert.equal(gateway.authKind, 'api_key');
-  assert.equal(gateway.runtimeAdapter.kind, 'openai-compatible');
-  // No shipped endpoint and no template: the setup form has to ask, which is
-  // what `addProviderRequiresBaseUrl` reads.
-  assert.equal(gateway.baseUrl, '');
-  assert.equal(gateway.baseUrlTemplate, undefined);
-  // Discovery over the endpoint the user supplies, not a fallback list.
-  assert.equal(gateway.modelDiscovery.kind, 'protocol');
-  assert.equal(CATALOG_PROVIDER_TYPES[0], 'relx-gateway');
+test('the organisation provider rides the account and is never offered in the catalog', () => {
+  const organization = PROVIDER_REGISTRY.organization;
+  // No credential of its own: each request carries the account's token.
+  assert.equal(organization.authKind, 'org_session');
+  // The base URL is the server the app signs in to, written by the app.
+  assert.equal(organization.category, 'custom');
+  assert.equal(organization.baseUrl, '');
+  assert.equal(organization.organizationGateway, true);
+  assert.equal(organization.modelDiscovery.kind, 'platform-catalog');
+  assert.deepEqual(organization.runtimeAdapter, {
+    kind: 'anthropic',
+    auth: 'bearer',
+    normalizeBaseUrl: true,
+  });
+  // The app creates it on sign-in; nobody adds it from the catalog.
+  assert.equal(organization.catalogOrder, undefined);
+  assert.equal(CATALOG_PROVIDER_TYPES.includes('organization'), false);
 });
 
-test('the gateway has display copy in every locale, and no model generation in it', () => {
+test('the organisation provider has display copy in every locale, and no model generation in it', () => {
   for (const locale of UI_LOCALES) {
-    const copy = providerDisplay('relx-gateway', locale);
-    assert.equal(copy.name, 'RELX Gateway');
+    const copy = providerDisplay('organization', locale);
+    assert.ok(copy.name.length > 0);
     assert.ok(copy.description.length > 0);
     // The catalog descriptions are deliberately version-agnostic; a model name
     // here goes stale while the provider does not.
@@ -110,23 +114,23 @@ test('the gateway has display copy in every locale, and no model generation in i
 
 // ── adding a connection ────────────────────────────────────────────────────
 
-const gatewayDraft = (patch: Partial<AddProviderDraft> = {}): AddProviderDraft => ({
-  providerType: 'relx-gateway',
-  slug: 'relx-gateway',
+const relayDraft = (patch: Partial<AddProviderDraft> = {}): AddProviderDraft => ({
+  providerType: 'openai-compatible',
+  slug: 'company-relay',
   existingSlugs: [],
   apiKey: 'gw-key',
   cloudflareAccountId: '',
-  baseUrl: 'https://gateway.example.com/v1',
+  baseUrl: 'https://relay.example.com/v1',
   ...patch,
 });
 
-test('the gateway setup form blocks on a missing endpoint, by name', () => {
-  assert.equal(addProviderRequiresBaseUrl('relx-gateway'), true);
-  assert.deepEqual(validateAddProviderDraft(gatewayDraft({ baseUrl: '   ' })), {
+test('a relay setup form blocks on a missing endpoint, by name', () => {
+  assert.equal(addProviderRequiresBaseUrl('openai-compatible'), true);
+  assert.deepEqual(validateAddProviderDraft(relayDraft({ baseUrl: '   ' })), {
     field: 'baseUrl',
     reason: 'required',
   });
-  assert.equal(validateAddProviderDraft(gatewayDraft()), null);
+  assert.equal(validateAddProviderDraft(relayDraft()), null);
 });
 
 test('the field gate reports one issue at a time, in fixing order', () => {
@@ -136,18 +140,18 @@ test('the field gate reports one issue at a time, in fixing order', () => {
   // they owe. A key is obviously required; an address an operator hands out
   // is not.
   assert.deepEqual(
-    validateAddProviderDraft(gatewayDraft({ slug: 'Not A Slug', apiKey: '', baseUrl: '' })),
+    validateAddProviderDraft(relayDraft({ slug: 'Not A Slug', apiKey: '', baseUrl: '' })),
     { field: 'slug', reason: 'invalid', detail: 'format' },
   );
-  assert.deepEqual(validateAddProviderDraft(gatewayDraft({ existingSlugs: ['relx-gateway'] })), {
+  assert.deepEqual(validateAddProviderDraft(relayDraft({ existingSlugs: ['company-relay'] })), {
     field: 'slug',
     reason: 'duplicate',
   });
-  assert.deepEqual(validateAddProviderDraft(gatewayDraft({ apiKey: '', baseUrl: '' })), {
+  assert.deepEqual(validateAddProviderDraft(relayDraft({ apiKey: '', baseUrl: '' })), {
     field: 'baseUrl',
     reason: 'required',
   });
-  assert.deepEqual(validateAddProviderDraft(gatewayDraft({ apiKey: '' })), {
+  assert.deepEqual(validateAddProviderDraft(relayDraft({ apiKey: '' })), {
     field: 'apiKey',
     reason: 'required',
   });
@@ -156,7 +160,7 @@ test('the field gate reports one issue at a time, in fixing order', () => {
 test('a keyed provider is verified before it is written', () => {
   // The Host onboarding pair probes the endpoint with the credential before
   // anything is persisted; the legacy writer creates first and discovers after.
-  assert.equal(addProviderRoute('relx-gateway'), 'host');
+  assert.equal(addProviderRoute('openai-compatible'), 'host');
   assert.equal(addProviderRoute('openai'), 'host');
   // Cloudflare composes its endpoint from an account id rather than taking one.
   assert.equal(addProviderRoute('cloudflare-workers-ai'), 'legacy');
@@ -189,7 +193,7 @@ test('the chosen default model is the head of the enabled list the Host stores',
 const connection = (patch: Partial<LlmConnection> = {}): LlmConnection => ({
   slug: 'gateway',
   name: 'Gateway',
-  providerType: 'relx-gateway',
+  providerType: 'openai-compatible',
   defaultModel: 'a-model',
   enabled: true,
   createdAt: 0,
@@ -222,6 +226,16 @@ test('a connection row badges only what the user has to act on', () => {
       'en',
     )?.tone,
     'error',
+  );
+});
+
+test("the organisation connection's server is shown and never edited", () => {
+  assert.deepEqual(
+    providerEndpointPresentation({
+      providerType: 'organization',
+      baseUrl: 'https://maka.example.com/',
+    }),
+    { value: 'https://maka.example.com/', editable: false, emptyState: 'managed' },
   );
 });
 

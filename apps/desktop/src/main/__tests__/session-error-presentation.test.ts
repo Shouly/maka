@@ -19,6 +19,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { organizationQuotaFailureMessage } from '@maka/core/model-failure';
 
 import { describeSessionErrorReason } from '../../renderer/lib/ported/session-error-presentation.js';
 import { sessionEventErrorMessage } from '../../renderer/lib/ported/model-connection-errors.js';
@@ -30,5 +31,37 @@ describe('provider capacity presentation', () => {
     assert.match(describeSessionErrorReason('provider_capacity', 'en') ?? '', /at capacity/);
     assert.equal(describeTurnErrorClass('provider_capacity', 'zh-CN'), '模型服务暂时满载。');
     assert.equal(describeTurnErrorClass('provider_capacity', 'en'), 'The model service is temporarily at capacity.');
+  });
+});
+
+describe('organisation gateway presentation', () => {
+  it('tells when a used-up allowance resets, in the reader’s own clock and language', () => {
+    const resetsAt = Date.parse('2026-10-05T00:00:00.000Z');
+    const message = organizationQuotaFailureMessage(resetsAt);
+    const when = new Intl.DateTimeFormat('zh-CN', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(resetsAt);
+    const label = describeTurnErrorClass('organization_quota', 'zh-CN', message);
+    assert.ok(label.includes(when), label);
+    assert.match(label, /额度本期已用完/);
+    // The live toast says the same, from the event's message.
+    assert.equal(
+      sessionEventErrorMessage(
+        { type: 'error', reason: 'organization_quota', message } as never,
+        'zh-CN',
+      ),
+      label,
+    );
+    // Without a reset in the message there is still something to say.
+    assert.match(describeTurnErrorClass('organization_quota', 'en', 'Organization model allowance used up'), /used up/);
+  });
+
+  it('names the other organisation refusals', () => {
+    assert.match(describeTurnErrorClass('organization_model_denied', 'zh-CN'), /没有为你开放/);
+    assert.match(describeTurnErrorClass('organization_sign_in', 'zh-CN'), /重新登录/);
+    assert.match(describeTurnErrorClass('organization_upgrade', 'zh-CN'), /请更新/);
   });
 });

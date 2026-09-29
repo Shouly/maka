@@ -618,3 +618,89 @@ function catalog(): ConnectionCatalogSnapshot {
 function connectionIdentity() {
   return { connectionId: 'connection-1', slug: 'openrouter' } as const;
 }
+
+// The app keeps the organisation connection for the signed-in account
+// (org-account-connection.ts); the renderer may switch it on or off, nothing more.
+test('the organisation connection is not the renderer’s to make, delete, re-point, re-key or give headers', async () => {
+  const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
+  const organization = {
+    connectionId: 'organization-1',
+    revision: 1,
+    slug: 'organization',
+    name: 'maka.example.com',
+    providerType: 'organization',
+    baseUrl: 'https://maka.example.com/',
+    enabled: true,
+    enabledModelIds: ['claude'],
+    catalogEntries: [],
+    models: [{ id: 'claude' }],
+    modelSource: 'fetched',
+  } as unknown as ConnectionCatalogEntry;
+  const catalog = {
+    revision: 3,
+    defaultTarget: null,
+    connections: [organization],
+  } as unknown as ConnectionCatalogSnapshot;
+  const writes: string[] = [];
+  registerRuntimeHostConnectionsIpc({
+    ipcMain: {
+      handle: (channel, handler) => {
+        handlers.set(channel, handler as (...args: unknown[]) => Promise<unknown>);
+      },
+    },
+    client: {
+      loadConnectionCatalog: async () => catalog,
+      removeConnection: async () => {
+        writes.push('remove');
+        return { kind: 'committed' };
+      },
+      createConnection: async () => {
+        writes.push('create');
+        return { kind: 'committed' };
+      },
+      updateConnection: async (_expected: unknown, changes: { enabled: boolean }) => {
+        writes.push(`update enabled=${changes.enabled}`);
+        return { kind: 'committed' };
+      },
+      replaceConnectionRequestHeaders: async () => {
+        writes.push('headers');
+        return { kind: 'committed', names: [] };
+      },
+    } as never,
+    emitConnectionListChanged() {},
+  });
+  const identity = { connectionId: 'organization-1', slug: 'organization' };
+  const call = (channel: string, ...args: unknown[]) => handlers.get(channel)!({}, ...args);
+
+  await assert.rejects(call('connections:delete', identity), /managed by the organization account/);
+  await assert.rejects(
+    call('connections:update', identity, { baseUrl: 'https://elsewhere.example.com' }),
+    /managed by the organization account/,
+  );
+  await assert.rejects(
+    call('connections:update', identity, { name: 'Mine' }),
+    /managed by the organization account/,
+  );
+  await assert.rejects(
+    call('connections:update', identity, { apiKey: 'sk-mine' }),
+    /managed by the organization account/,
+  );
+  await assert.rejects(
+    call('connections:create', {
+      slug: 'organization-2',
+      name: 'Another',
+      providerType: 'organization',
+      baseUrl: 'https://maka.example.com/',
+    }),
+    /managed by the organization account/,
+  );
+  await assert.rejects(
+    call('connections:setRequestHeaders', identity, []),
+    /managed by the organization account/,
+  );
+  assert.deepEqual(writes, []);
+
+  await call('connections:update', identity, { enabled: false });
+  await call('connections:update', identity, { enabled: true });
+  assert.deepEqual(writes, ['update enabled=false', 'update enabled=true']);
+});

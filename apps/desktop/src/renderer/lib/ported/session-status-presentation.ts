@@ -84,10 +84,14 @@ export function normalizeSessionSummaryForDisplay<
   return { ...rest, status: 'active' } as T;
 }
 
-export function describeTurnErrorClass(errorClass: string | undefined, locale: UiLocale): string {
+export function describeTurnErrorClass(
+  errorClass: string | undefined,
+  locale: UiLocale,
+  failureMessage?: string,
+): string {
   const copy = getDesktopConversationCopy(locale).turnError;
   if (!errorClass) return copy.unknown;
-  const reasonDescription = describeSessionErrorReason(errorClass, locale);
+  const reasonDescription = describeSessionErrorReason(errorClass, locale, failureMessage);
   if (reasonDescription) return reasonDescription;
   switch (errorClass.toLowerCase()) {
     // Before #3758, transport failures could persist their raw code as the class.

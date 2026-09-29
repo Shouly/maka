@@ -54,6 +54,7 @@ import {
 import { PROVIDER_REGISTRY, reconcileConnectionAfterModelFetch } from '@maka/core/llm-connections';
 import {
   modelIdAliasesForProvider,
+  providerOffersEveryDiscoveredModel,
   providerReportsCompleteModelCatalog,
 } from '@maka/core/model-metadata';
 import { isRetiredProvider } from '@maka/core/provider-registry';
@@ -448,13 +449,16 @@ export class ConnectionCatalogDocumentOwner {
     rawResult: ConnectionModelDiscoveryResult,
   ): Promise<ConnectionCatalogSnapshot> {
     const result = decodeConnectionInput(() => normalizeConnectionModelDiscoveryResult(rawResult));
-    if (result.models.length === 0) {
-      throw codecError('invalid_connection_input', 'Model discovery result must not be empty');
-    }
     const index = findConnectionIndex(current, expected);
     const previous = current.connections[index];
     if (!previous || previous.revision !== expected.revision) {
       throw codecError('invalid_document', 'Coordinator admitted a stale model discovery result');
+    }
+    // An empty list is a provider's hiccup, except where someone curates the
+    // list for the person: an organisation that enables nothing for them has
+    // said so, and the models it withdrew must go.
+    if (result.models.length === 0 && !providerOffersEveryDiscoveredModel(previous.providerType)) {
+      throw codecError('invalid_connection_input', 'Model discovery result must not be empty');
     }
     const currentDefaultTarget =
       current.defaultTarget?.connectionId === previous.connectionId
@@ -474,6 +478,7 @@ export class ConnectionCatalogDocumentOwner {
       {
         aliases: modelIdAliasesForProvider(previous.providerType),
         authoritative: providerReportsCompleteModelCatalog(previous.providerType),
+        offersEveryModel: providerOffersEveryDiscoveredModel(previous.providerType),
       },
     );
     // Discovery MOVES a target: a provider's model rename carries the default

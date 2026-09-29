@@ -31,6 +31,8 @@ import {
   connectionEnabledModelIds,
   PROVIDER_REGISTRY,
   providerAuthRequiresSecret,
+  providerUsesOrganizationAccount,
+  type ProviderType,
 } from '@maka/core/llm-connections';
 import { normalizeModelOverrides } from '@maka/core/model-thinking';
 import type { CredentialLocator } from '@maka/core/runtime-policy';
@@ -127,6 +129,7 @@ export function registerRuntimeHostConnectionsIpc(
     'connections:setRequestHeaders',
     async (_event, identity: unknown, rawUpdates: unknown) => {
       const connection = requireConnectionIdentity(await snapshot(), identity);
+      refuseOrganizationWrite(connection);
       const result = await deps.client.replaceConnectionRequestHeaders(
         connection.connectionId,
         normalizeRequestHeaderUpdates(rawUpdates),
@@ -200,6 +203,7 @@ export function registerRuntimeHostConnectionsIpc(
   });
   deps.ipcMain.handle('connections:create', async (_event, raw: unknown) => {
     const input = normalizeCreateInput(raw);
+    refuseOrganizationWrite(input);
     const catalog = await snapshot();
     // Profiles ride as the typed field end to end — nothing free-form
     // crosses to the host.
@@ -251,6 +255,11 @@ export function registerRuntimeHostConnectionsIpc(
     const catalog = await snapshot();
     const current = requireConnectionIdentity(catalog, rawIdentity);
     const patch = normalizeUpdateInput(current, rawPatch);
+    // The person may switch the organisation connection off and on, or pick
+    // one of its models as the default; the rest is the account's.
+    if (Object.keys(patch).some((key) => key !== 'enabled' && key !== 'defaultModel')) {
+      refuseOrganizationWrite(current);
+    }
     const updated = await deps.client.updateConnection(
       { connectionId: current.connectionId, revision: current.revision },
       {
@@ -315,6 +324,7 @@ export function registerRuntimeHostConnectionsIpc(
         }
         throw error;
       }
+      refuseOrganizationWrite(current);
       const result = await deps.client.removeConnection({
         connectionId: current.connectionId,
         revision: current.revision,
@@ -469,6 +479,17 @@ async function updateCredential(
       : undefined;
   if (result && result.kind !== 'committed') {
     throw new Error(`Unable to update Connection credential: ${result.kind}`);
+  }
+}
+
+/**
+ * The organisation connection is the app's, kept for the signed-in account
+ * (`org-account-connection.ts`): its server, name, credential, headers and
+ * very existence follow the account, not the renderer.
+ */
+function refuseOrganizationWrite(connection: { readonly providerType: string }): void {
+  if (providerUsesOrganizationAccount(connection.providerType as ProviderType)) {
+    throw new Error('The organization connection is managed by the organization account');
   }
 }
 

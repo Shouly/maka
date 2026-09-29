@@ -80,9 +80,37 @@ function generatedMetadataProviderType(providerType: ProviderType): ProviderType
   return GENERATED_METADATA_PROVIDER_ALIASES[providerType] ?? providerType;
 }
 
+/**
+ * The vendors whose models an organisation gateway serves. Its administrator
+ * names each model, as a rule by the vendor's own id, and the vendor's entry
+ * is what describes it; the server's own catalog values still come first
+ * (they are stored on the connection's models by discovery).
+ */
+const ORGANIZATION_METADATA_VENDORS: readonly ProviderType[] = ['anthropic', 'openai', 'google'];
+
+/** The provider whose metadata describes `id` when it is served under `providerType`. */
+function metadataProviderTypeFor(providerType: ProviderType, id: string): ProviderType {
+  if (providerType !== 'organization') return providerType;
+  const statics = staticModelMetadata();
+  return (
+    ORGANIZATION_METADATA_VENDORS.find(
+      (vendor) =>
+        activeMetadata()[vendor]?.[id] !== undefined || statics[vendor]?.[id] !== undefined,
+    ) ?? providerType
+  );
+}
+
 /** Whether discovery is the complete usable model catalog for this account. */
 export function providerReportsCompleteModelCatalog(providerType: ProviderType): boolean {
-  return providerType === 'github-copilot';
+  return providerType === 'github-copilot' || providerType === 'organization';
+}
+
+/**
+ * Whether discovery is a catalog someone curated for this person — the
+ * organisation's administrator — so every model in it is offered as it comes.
+ */
+export function providerOffersEveryDiscoveredModel(providerType: ProviderType): boolean {
+  return providerType === 'organization';
 }
 
 /**
@@ -94,8 +122,9 @@ export function hasModelMetadata(providerType: ProviderType, modelId: string): b
   return Object.keys(lookupModelMetadata(providerType, modelId)).length > 0;
 }
 
-export function lookupModelMetadata(providerType: ProviderType, modelId: string): ModelMetadata {
+export function lookupModelMetadata(requested: ProviderType, modelId: string): ModelMetadata {
   const id = modelId.trim();
+  const providerType = metadataProviderTypeFor(requested, id);
   const metadataProviderType = generatedMetadataProviderType(providerType);
   const generated = activeMetadata()[metadataProviderType]?.[id];
   const statics = staticModelMetadata();

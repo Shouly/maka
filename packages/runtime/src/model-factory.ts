@@ -534,13 +534,18 @@ function buildThinkingProviderOptions(
     // Anthropic-protocol: effort enum models send `effort`; toggle/budget
     // models send `thinking.disabled` for off. No budget-token mapping — the
     // provider's native effort values pass through unchanged.
+    //
+    // An organisation gateway hands a Claude request to Anthropic's own API
+    // unchanged, so it is sent exactly as one, prompt caching included.
+    case 'organization':
     case 'anthropic':
     case 'MiniMax':
     case 'MiniMax-cn': {
+      const nativeAnthropic =
+        connection.providerType === 'anthropic' || connection.providerType === 'organization';
       let reasoning = {};
       const summarizedThinking =
-        connection.providerType === 'anthropic' &&
-        (thinkingLevel === undefined || level !== undefined)
+        nativeAnthropic && (thinkingLevel === undefined || level !== undefined)
           ? visibleClaudeThinking(connection.providerType, modelId, thinkingOptions, level)
           : undefined;
       if (level === 'off' && thinkingOptions?.offBehavior === 'anthropic-thinking-disabled') {
@@ -552,9 +557,7 @@ function buildThinkingProviderOptions(
       }
       return {
         anthropic: {
-          ...(connection.providerType === 'anthropic'
-            ? { cacheControl: { type: 'ephemeral' as const } }
-            : {}),
+          ...(nativeAnthropic ? { cacheControl: { type: 'ephemeral' as const } } : {}),
           ...reasoning,
         },
       };

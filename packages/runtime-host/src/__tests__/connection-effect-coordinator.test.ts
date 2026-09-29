@@ -39,10 +39,12 @@ import {
 import { resolveStorageRoot, tryAcquireInteractiveRootOwner } from '@maka/storage/root-authority';
 import { HostConnectionEffectCoordinator } from '../server/connection-effect-coordinator.js';
 import { HostOAuthExecutionAuthority } from '../server/oauth-execution-authority.js';
+import { createHostOrganizationSession } from '../server/organization-session.js';
 import type { ConnectionContext } from '../server/operation-dispatcher.js';
 import { RuntimePolicyActivationGate } from '../server/runtime-policy-activation-gate.js';
 import { resolveExecutionTarget } from '../server/execution-model-authority.js';
 import type { ConnectionOnboardingSaveResult, OperationOutcome } from '../protocol/index.js';
+import { decodeConnectionModelFetchResult } from '../protocol/connection-effects.js';
 
 const context: ConnectionContext = {
   hostEpoch: 'connection-effect-test-epoch',
@@ -1675,6 +1677,167 @@ test('projects credential changes during provider I/O as semantic superseded and
 });
 
 type Writer = RuntimePolicyStoresWriter;
+
+test('an organisation connection reads its catalog with the account token and offers every model on it', async () => {
+  await withFixture(async ({ stores }) => {
+    const server = 'https://maka.example.com';
+    const connection = await createConnection(stores, 0, {
+      ...connectionDraft('organization', 'organization'),
+      baseUrl: server,
+      enabledModelIds: [],
+    });
+    const session = createHostOrganizationSession({
+      call: async () => ({
+        kind: 'token',
+        accessToken: 'org-token',
+        serverUrl: server,
+        clientVersion: '0.2.0',
+      }),
+    });
+    const secrets: string[] = [];
+    let listed: Array<{ id: string }> = [{ id: 'claude-a' }, { id: 'claude-b' }];
+    const coordinator = new HostConnectionEffectCoordinator({
+      stores,
+      activation: new RuntimePolicyActivationGate(),
+      oauthCredentials: new HostOAuthExecutionAuthority(stores, Date.now, session),
+      createTransport: () => recordingTransport(() => undefined),
+      runModelDiscovery: async (_connection, secret) => {
+        secrets.push(secret);
+        return { ok: true, models: listed };
+      },
+    });
+    const fetchModels = () =>
+      coordinator.handlers['connection.models.fetch'](
+        { connectionId: connection.connectionId },
+        context,
+      );
+    const enabled = async () =>
+      (await stores.connectionCatalog.getSnapshot()).connections.find(
+        ({ connectionId }) => connectionId === connection.connectionId,
+      )?.enabledModelIds;
+
+    assert.equal((await fetchModels()).ok, true);
+    assert.deepEqual(secrets, ['org-token'], 'nothing is kept for it: the account signs the read');
+    assert.deepEqual(await enabled(), ['claude-a', 'claude-b']);
+    // An administrator enables another model: it is offered at once, not opt-in.
+    listed = [{ id: 'claude-a' }, { id: 'claude-b' }, { id: 'claude-c' }];
+    assert.equal((await fetchModels()).ok, true);
+    assert.deepEqual(await enabled(), ['claude-a', 'claude-b', 'claude-c']);
+    assert.deepEqual((await stores.credentialVault.getSnapshot()).entries, []);
+    // The organisation withdraws them all: nothing is left to offer, rather
+    // than the last list lingering as if the server had not answered.
+    listed = [];
+    const emptied = await fetchModels();
+    assert.equal(emptied.ok, true);
+    assert.deepEqual(await enabled(), []);
+    // The answer crosses the wire as it is: a count of none is a count.
+    assert.equal(emptied.ok && decodeConnectionModelFetchResult(emptied.result).kind, 'committed');
+
+    // Signed out, the read fails instead of going out unsigned.
+    const signedOut = new HostConnectionEffectCoordinator({
+      stores,
+      activation: new RuntimePolicyActivationGate(),
+      oauthCredentials: new HostOAuthExecutionAuthority(
+        stores,
+        Date.now,
+        createHostOrganizationSession({
+          call: async () => ({ kind: 'unavailable', reason: 'signed_out' }),
+        }),
+      ),
+      createTransport: () => recordingTransport(() => undefined),
+      runModelDiscovery: async (_connection, secret) => {
+        secrets.push(secret);
+        return { ok: true, models: listed };
+      },
+    });
+    const refused = await signedOut.handlers['connection.models.fetch'](
+      { connectionId: connection.connectionId },
+      context,
+    );
+    assert.deepEqual(refused, { ok: true, result: { kind: 'failed', errorClass: 'auth' } });
+    assert.equal(secrets.length, 3, 'no discovery ran without a token');
+  });
+});
+
+test("an organisation connection's reads go out as a turn's do, and a failure is named for what it is", async () => {
+  await withFixture(async ({ stores }) => {
+    const server = 'https://maka.example.com';
+    const connection = await createConnection(stores, 0, {
+      ...connectionDraft('organization', 'organization'),
+      baseUrl: server,
+      enabledModelIds: [],
+    });
+    const asked: boolean[] = [];
+    const session = createHostOrganizationSession({
+      call: async ({ input }) => {
+        asked.push(input.forceRefresh === true);
+        return {
+          kind: 'token',
+          accessToken: input.forceRefresh ? 'fresh' : 'stale',
+          serverUrl: server,
+          clientVersion: '0.2.0',
+        };
+      },
+    });
+    const sent: Array<{ authorization: string | null; version: string | null }> = [];
+    const coordinator = new HostConnectionEffectCoordinator({
+      stores,
+      activation: new RuntimePolicyActivationGate(),
+      oauthCredentials: new HostOAuthExecutionAuthority(stores, Date.now, session),
+      createTransport: () => ({
+        fetch: async (_url, init) => {
+          const headers = new Headers(init?.headers);
+          sent.push({
+            authorization: headers.get('authorization'),
+            version: headers.get('x-maka-client-version'),
+          });
+          return new Response('{}', { status: sent.length === 1 ? 401 : 200 });
+        },
+        close: async () => undefined,
+      }),
+      runModelDiscovery: async (_connection, secret, { fetch }) => {
+        const response = await fetch(`${server}/model/catalog`, {
+          headers: { authorization: `Bearer ${secret}` },
+        });
+        return response.ok
+          ? { ok: true, models: [{ id: 'claude-a' }] }
+          : { ok: false, error: { kind: 'auth' } };
+      },
+    });
+    const fetched = await coordinator.handlers['connection.models.fetch'](
+      { connectionId: connection.connectionId },
+      context,
+    );
+    assert.equal(fetched.ok && fetched.result.kind, 'committed');
+    // The token asked for up front goes first; the 401 is answered once with a refresh.
+    assert.deepEqual(asked, [false, true]);
+    assert.deepEqual(sent, [
+      { authorization: 'Bearer stale', version: '0.2.0' },
+      { authorization: 'Bearer fresh', version: '0.2.0' },
+    ]);
+
+    // A server that cannot be reached is the network, not a refused credential.
+    const unreachable = new HostConnectionEffectCoordinator({
+      stores,
+      activation: new RuntimePolicyActivationGate(),
+      oauthCredentials: new HostOAuthExecutionAuthority(
+        stores,
+        Date.now,
+        createHostOrganizationSession({
+          call: async () => ({ kind: 'unavailable', reason: 'server_unreachable' }),
+        }),
+      ),
+      createTransport: () => recordingTransport(() => undefined),
+    });
+    assert.deepEqual(
+      await unreachable.handlers['connection.models.fetch'](
+        { connectionId: connection.connectionId },
+        context,
+      ),
+      { ok: true, result: { kind: 'failed', errorClass: 'network' } },
+    );
+  });
+});
 
 async function withFixture(
   run: (fixture: { root: string; stores: Writer }) => Promise<void>,

@@ -31,8 +31,39 @@ export type ModelFailureKind =
   | 'request_rejected'
   | 'stream_truncated'
   | 'timeout'
-  | 'unknown';
+  | 'unknown'
+  // Answers from the organisation server's gateway, or from the account that
+  // signs its requests. None is retried: each waits on the person or on time.
+  /** The organisation's model allowance for this period is used up. */
+  | 'organization_quota'
+  /** The organisation has not made this model available to the person. */
+  | 'organization_model_denied'
+  /** The organisation account has to be signed in again. */
+  | 'organization_sign_in'
+  /** The organisation server no longer serves this version of the app. */
+  | 'organization_upgrade';
 export const MODEL_FAILURE_MESSAGE_MAX_BYTES = 2 * 1024;
+
+const ORGANIZATION_QUOTA_MESSAGE = 'Organization model allowance used up; it resets at ';
+
+/**
+ * The failure message of an `organization_quota` failure: it carries the
+ * moment the allowance resets, which the person is told in their own time.
+ */
+export function organizationQuotaFailureMessage(resetsAt: number | undefined): string {
+  // A time no date can hold says nothing about when; it is left out, not thrown.
+  const when = resetsAt === undefined ? undefined : new Date(resetsAt);
+  return when === undefined || Number.isNaN(when.getTime())
+    ? 'Organization model allowance used up'
+    : `${ORGANIZATION_QUOTA_MESSAGE}${when.toISOString()}`;
+}
+
+/** When the allowance resets (epoch ms), read back from that message. */
+export function organizationQuotaResetsAt(message: string | undefined): number | undefined {
+  if (!message?.startsWith(ORGANIZATION_QUOTA_MESSAGE)) return undefined;
+  const resetsAt = Date.parse(message.slice(ORGANIZATION_QUOTA_MESSAGE.length).split(/\s/)[0]!);
+  return Number.isFinite(resetsAt) ? resetsAt : undefined;
+}
 
 export type ModelRetryDecision =
   | { decision: 'exhausted'; attempts: number }

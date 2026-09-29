@@ -279,6 +279,8 @@ import {
 } from './startup-presentation.js';
 import { registerWorkspaceSearchIpc } from "./workspace-search-ipc-main.js";
 import { registerOrgAccountIpc } from "./org-account/org-account-ipc-main.js";
+import { followOrganizationAccount } from "./org-account/org-account-connection.js";
+import { organizationAccountTokenService } from "./org-account/org-account-token-service.js";
 import { appOpenUrl, installAppUrlScheme } from "./app-url-scheme.js";
 import { wantsSignInWindow } from "./sign-in-window.js";
 import { resolveMainRendererEntry } from "./main-renderer-loader.js";
@@ -1265,6 +1267,14 @@ const startLocalRuntimeHostManager = () => startRuntimeHostDesktopManager(
         ];
       },
       oauthPresentation,
+      // The organisation account signs the Host's gateway requests; the Host
+      // asks for a token as it needs one.
+      additionalServices: () => [
+        organizationAccountTokenService({
+          account: () => orgAccountService,
+          clientVersion: app.getVersion(),
+        }),
+      ],
       releaseDesktopInteractionSession,
     },
     botRegistry,
@@ -1918,7 +1928,28 @@ function registerHostClientIpc(
   });
   registerOnboardingIpc({ onboardingService, ipcMain: scopedIpc });
   registerTaskSubmissionReadinessIpc(taskSubmissionReadinessService, scopedIpc);
+  // The organisation account's connection lives in the Hosts the person owns,
+  // the ones the account's token is offered to.
+  let organizationFollowing: (() => void) | "released" | undefined;
+  if (target.access === "owner") {
+    void orgAccountService?.then(
+      (account) => {
+        // Not gated on `isTargetActive()`: a target turns active only after
+        // this registration returns, and the release below is what ends it.
+        if (organizationFollowing === "released") return;
+        organizationFollowing = followOrganizationAccount({
+          account,
+          client,
+          onError: (error) =>
+            console.error("[org-account] organization connection sync failed", error),
+        });
+      },
+      () => undefined,
+    );
+  }
   return async () => {
+    if (typeof organizationFollowing === "function") organizationFollowing();
+    organizationFollowing = "released";
     releaseArtifactPreviews();
     unsubscribeConfigurationChanges();
     unsubscribeConnectionCatalogChanges();

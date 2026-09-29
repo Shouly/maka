@@ -85,9 +85,13 @@ export function deriveProviderAuthContract(input: {
 
   // `none` needs no key, and `optional_api_key` may need none for this
   // instance, so both leave testing and fetching open whether or not one is
-  // saved. Only a provider that requires a key waits for one.
+  // saved; `org_session` never saves one, since the app signs each request
+  // with the organisation account's token. Only a provider that requires a
+  // key waits for one.
   const reachableWithoutSecret =
-    defaults.authKind === 'none' || defaults.authKind === 'optional_api_key';
+    defaults.authKind === 'none' ||
+    defaults.authKind === 'optional_api_key' ||
+    defaults.authKind === 'org_session';
   return {
     requiresSecret,
     actionAvailability: actions({

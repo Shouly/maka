@@ -436,6 +436,13 @@ export function reconcileConnectionAfterModelFetch(
      * Missing ids are therefore unavailable, unlike ordinary partial snapshots.
      */
     readonly authoritative?: boolean;
+    /**
+     * The catalog is what someone else decided this person may use (an
+     * organisation's administrator), so every model in it is offered, a model
+     * added later included; there is no selection of the person's own to keep.
+     * Such a catalog is complete by definition: it implies `authoritative`.
+     */
+    readonly offersEveryModel?: boolean;
   },
 ): {
   defaultModel: string;
@@ -468,14 +475,15 @@ export function reconcileConnectionAfterModelFetch(
       ),
     ),
   ];
-  if (options?.authoritative) {
+  if (options?.authoritative || options?.offersEveryModel) {
     // The first account-scoped fetch replaces the provider fallback guess: no
     // user chose those bootstrap ids, and every usable model should be offered.
     // Later refreshes preserve explicit user choices only while they remain in
     // the account catalog; newly introduced models stay opt-in.
-    const enabledModelIds = connection.hasModelInventory
-      ? previousEnabled.filter((id) => live.has(id))
-      : liveIds;
+    const enabledModelIds =
+      connection.hasModelInventory && !options?.offersEveryModel
+        ? previousEnabled.filter((id) => live.has(id))
+        : liveIds;
     const defaultModel = enabledModelIds.includes(previousDefault)
       ? previousDefault
       : (enabledModelIds[0] ?? '');
@@ -532,6 +540,14 @@ export function providerAuthRequiresSecret(providerType: ProviderType): boolean 
 export function providerAuthSupportsApiKey(providerType: ProviderType): boolean {
   const authKind = providerDefaultsOf(providerType)?.authKind;
   return authKind === 'api_key' || authKind === 'optional_api_key';
+}
+
+/**
+ * Whether the provider rides the organisation account the app is signed in
+ * to: no credential of its own, the account's access token on every request.
+ */
+export function providerUsesOrganizationAccount(providerType: ProviderType): boolean {
+  return providerDefaultsOf(providerType)?.authKind === 'org_session';
 }
 
 export function providerSupportsModelDiscovery(providerType: ProviderType): boolean {

@@ -36,6 +36,8 @@ import {
   type RuntimePolicyCredentialMaterial,
   type RuntimePolicyStoresWriter,
 } from '@maka/storage/runtime-policy-stores';
+import { OrganizationAccountUnavailableError } from '@maka/runtime/organization-model-fetch';
+import type { HostOrganizationSession } from './organization-session.js';
 
 export type OAuthExecutionCredentialErrorCode =
   | 'credential_unavailable'
@@ -88,10 +90,27 @@ export class HostOAuthExecutionAuthority {
   readonly #stores: RuntimePolicyStoresWriter;
   readonly #states = new Map<string, CredentialState>();
   readonly #now: () => number;
+  readonly #organizationSession: HostOrganizationSession | undefined;
 
-  constructor(stores: RuntimePolicyStoresWriter, now: () => number = Date.now) {
+  constructor(
+    stores: RuntimePolicyStoresWriter,
+    now: () => number = Date.now,
+    organizationSession?: HostOrganizationSession,
+  ) {
     this.#stores = authenticateRuntimePolicyStoresWriter(stores);
     this.#now = now;
+    this.#organizationSession = organizationSession;
+  }
+
+  /**
+   * What signs a request on an `org_session` connection: the organisation
+   * account's token, which the desktop app hands out. Like the OAuth grants
+   * here, it is an account's credential rather than one kept per connection,
+   * so every execution path that can reach one can reach the other.
+   */
+  organizationSession(): HostOrganizationSession {
+    if (!this.#organizationSession) throw new OrganizationAccountUnavailableError('not_offered');
+    return this.#organizationSession;
   }
 
   bind(input: {

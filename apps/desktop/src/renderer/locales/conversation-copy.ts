@@ -354,6 +354,11 @@ export interface DesktopConversationCopy {
     streamTruncated: string;
     requestRejected: string;
     unknown: string;
+    /** `resetsAt` is already in the reader's time and language. */
+    organizationQuota: (resetsAt: string | undefined) => string;
+    organizationModelDenied: string;
+    organizationSignIn: string;
+    organizationUpgrade: string;
     contextOverflow: string;
     timeout: string;
     auth: string;
@@ -809,6 +814,13 @@ const COPY = {
       streamTruncated: '响应中途断开。',
       requestRejected: '模型服务拒绝了请求，请检查模型与请求配置。',
       unknown: '出错了，暂时无法确定原因。',
+      organizationQuota: (resetsAt) =>
+        resetsAt
+          ? `你在组织的模型额度本期已用完，${resetsAt} 重置。需要更多额度请联系管理员。`
+          : '你在组织的模型额度本期已用完，要等额度重置后才能继续用。需要更多额度请联系管理员。',
+      organizationModelDenied: '组织没有为你开放这个模型。换一个模型，或联系管理员。',
+      organizationSignIn: '组织账号需要重新登录，登录后再发一次。',
+      organizationUpgrade: '这个版本的 Maka 已不被组织服务支持，请更新后再试。',
       contextOverflow: '上下文超出模型窗口限制，减少附件或开启新任务。',
       timeout: '模型请求超时。',
       auth: '模型鉴权失败，请到设置里重新连接或登录。',
@@ -1192,6 +1204,13 @@ const COPY = {
       streamTruncated: '回應中途斷開。',
       requestRejected: '模型服務拒絕了請求，請檢查模型與請求設定。',
       unknown: '出錯了，暫時無法確定原因。',
+      organizationQuota: (resetsAt) =>
+        resetsAt
+          ? `你在組織的模型額度本期已用完，${resetsAt} 重置。需要更多額度請聯絡管理員。`
+          : '你在組織的模型額度本期已用完，要等額度重置後才能繼續用。需要更多額度請聯絡管理員。',
+      organizationModelDenied: '組織沒有為你開放這個模型。換一個模型，或聯絡管理員。',
+      organizationSignIn: '組織帳號需要重新登入，登入後再傳送一次。',
+      organizationUpgrade: '這個版本的 Maka 已不被組織服務支援，請更新後再試。',
       contextOverflow: '上下文超出模型視窗限制，減少附件或開啟新任務。',
       timeout: '模型請求逾時。',
       auth: '模型鑑權失敗，請到設定裡重新連線或登入。',
@@ -1603,6 +1622,15 @@ const COPY = {
       requestRejected:
         'The model service rejected the request. Check the model and request configuration.',
       unknown: 'Something went wrong; the cause is unknown.',
+      organizationQuota: (resetsAt) =>
+        resetsAt
+          ? `Your organization's model allowance for this period is used up; it resets ${resetsAt}. Ask an administrator if you need more.`
+          : "Your organization's model allowance for this period is used up; it resets on its own. Ask an administrator if you need more.",
+      organizationModelDenied:
+        "Your organization hasn't made this model available to you. Pick another model, or ask an administrator.",
+      organizationSignIn: 'Sign in to your organization account again, then resend your message.',
+      organizationUpgrade:
+        'Your organization no longer supports this version of Maka. Update it and try again.',
       contextOverflow: 'Context exceeded the model window. Reduce attachments or start a new task.',
       timeout: 'The model request timed out.',
       auth: 'Model authentication failed. Reconnect or sign in again from Settings.',

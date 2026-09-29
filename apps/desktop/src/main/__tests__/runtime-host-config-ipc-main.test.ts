@@ -30,6 +30,7 @@ import type { ConfigBundle } from '@maka/storage/config-transfer';
 import {
   adaptRuntimeHostConfigImport,
   gatherRuntimeHostConfig,
+  saveConnection,
 } from '../runtime-host-config-ipc-main.js';
 import type {
   RuntimeHostConnectionCatalogSnapshot as ConnectionCatalogSnapshot,
@@ -497,6 +498,71 @@ test('Runtime Host config import rejects conflicting authentication before apply
     () => adaptRuntimeHostConfigImport(bundle),
     /authentication.*disabled/i,
   );
+});
+
+const ORGANIZATION = {
+  connectionId: '00000000-0000-4000-8000-0000000000b1',
+  revision: 1,
+  slug: 'organization',
+  name: 'maka.example.com',
+  providerType: 'organization',
+  baseUrl: 'https://maka.example.com',
+  enabled: true,
+  enabledModelIds: ['claude-a'],
+  catalogEntries: [],
+  models: [{ id: 'claude-a' }],
+} as const;
+
+test('the organisation connection is neither exported nor made, replaced or re-keyed by an import', async () => {
+  const catalog = {
+    ...CATALOG,
+    connections: [...CATALOG.connections, ORGANIZATION],
+  } as unknown as ConnectionCatalogSnapshot;
+  const asked: CredentialLocator[] = [];
+  const bundle = await gatherRuntimeHostConfig(['connections', 'credentials'], {
+    client: {
+      loadConnectionCatalog: async () => catalog,
+      exportConfigurationCredentials: async ({ locator }: { locator: CredentialLocator }) => {
+        asked.push(locator);
+        return { credential: null };
+      },
+    },
+    appVersion: '0.1.0',
+    getSettings: async () => settingsWithSecrets(),
+  } as never);
+  assert.deepEqual(
+    (bundle.data.connections as Array<{ slug: string }>).map(({ slug }) => slug),
+    ['deepseek-main'],
+  );
+  assert.equal(
+    asked.some((locator) => 'connectionId' in locator && locator.connectionId === ORGANIZATION.connectionId),
+    false,
+  );
+
+  // An import names the organisation, or takes its slug for another provider:
+  // either way nothing is written.
+  const writes: string[] = [];
+  const client = {
+    loadConnectionCatalog: async () => catalog,
+    removeConnection: async () => {
+      writes.push('remove');
+      return { kind: 'committed' };
+    },
+    updateConnection: async () => {
+      writes.push('update');
+      return { kind: 'committed' };
+    },
+    createConnection: async () => {
+      writes.push('create');
+      return { kind: 'committed' };
+    },
+  };
+  await saveConnection(client as never, { ...ORGANIZATION, baseUrl: 'https://other.example.com' } as never);
+  await saveConnection(client as never, {
+    ...CATALOG.connections[0],
+    slug: 'organization',
+  } as never);
+  assert.deepEqual(writes, []);
 });
 
 function settingsWithSecrets(): RuntimeHostAppSettings {

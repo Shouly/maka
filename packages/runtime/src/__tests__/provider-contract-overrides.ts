@@ -33,10 +33,13 @@
 
 import assert from 'node:assert/strict';
 import type { LlmConnection } from '@maka/core/llm-connections';
+import { lookupModelMetadata } from '@maka/core/model-metadata';
+import { organizationQuotaResetsAt } from '@maka/core/model-failure';
 import { generateText, isStepCount, streamText, tool } from 'ai';
 import { z } from 'zod';
 import { fetchProviderModels } from '../model-fetcher.js';
 import { buildProviderOptions, getAIModel } from '../model-factory.js';
+import { providerModelFailure } from '../provider-error-classification.js';
 import { buildSubscriptionModelFetch } from '../subscription-model-fetch.js';
 import {
   readBody,
@@ -86,6 +89,12 @@ export const PROVIDER_CONTRACT_OVERRIDE_BINDINGS: readonly ProviderContractOverr
     keys: ['cohere:discovery'],
     title: 'Cohere paginates account models and completes its native V2 tool-call loop',
     run: runCohereDiscovery,
+  },
+  {
+    keys: ['organization:discovery', 'organization:exact-model-id', 'organization:tool-loop'],
+    title:
+      'An organisation server lists its Anthropic models with the account token and serves them on its gateway path',
+    run: runOrganizationGateway,
   },
   {
     keys: ['cloudflare-workers-ai:discovery'],
@@ -334,6 +343,149 @@ async function runCloudflareDiscovery(): Promise<void> {
   assert.deepEqual(await fetchProviderModels(connection, 'cloudflare-test-token'), [
     { id: '@cf/meta/llama-text' },
   ]);
+}
+
+async function runOrganizationGateway(): Promise<void> {
+  const token = 'org-access-token';
+  const modelId = 'claude-sonnet-4-6';
+  const requestBodies: Array<Record<string, unknown>> = [];
+  let allowanceUsedUp = false;
+  const resetsAt = Date.parse('2026-10-05T00:00:00.000Z');
+  const server = await startJsonServer(async (request, response) => {
+    assert.equal(request.headers.authorization, `Bearer ${token}`);
+    assert.equal(request.headers['x-api-key'], undefined);
+    if (allowanceUsedUp) {
+      response.writeHead(429, {
+        'content-type': 'application/json',
+        'retry-after': '86400',
+        'x-should-retry': 'false',
+      });
+      response.end(
+        JSON.stringify({
+          type: 'error',
+          error: { type: 'rate_limit_error', message: 'Your model allowance is used up' },
+          maka: { code: 'quota_exceeded', retryAt: resetsAt },
+        }),
+      );
+      return;
+    }
+    if (request.method === 'GET' && request.url === '/model/catalog') {
+      respondJson(response, 200, {
+        models: [
+          {
+            id: modelId,
+            protocol: 'anthropic',
+            displayName: 'Claude Sonnet 4.6',
+            contextWindow: 1_000_000,
+            maxOutputTokens: 64_000,
+            // A level Maka has no word for is dropped, not guessed at.
+            thinkingLevels: ['low', 'high', 'turbo'],
+            defaultThinkingLevel: 'high',
+            inputModalities: ['text', 'image', 'spreadsheet'],
+            supportsTools: true,
+          },
+          // The gateway serves no OpenAI path yet: listed, it would fail on send.
+          { id: 'gpt-5.4', protocol: 'openai', displayName: 'GPT-5.4' },
+          {
+            id: 'company-claude',
+            protocol: 'anthropic',
+            displayName: 'Company Claude',
+            referenceModelId: modelId,
+          },
+        ],
+      });
+      return;
+    }
+    assert.equal(request.method, 'POST');
+    assert.equal(request.url, '/model/anthropic/v1/messages');
+    const body = JSON.parse(await readBody(request)) as Record<string, unknown>;
+    requestBodies.push(body);
+    respondJson(response, 200, {
+      id: `msg-${requestBodies.length}`,
+      type: 'message',
+      role: 'assistant',
+      model: modelId,
+      content:
+        requestBodies.length === 1
+          ? [{ type: 'tool_use', id: 'toolu-echo', name: 'echo', input: { text: 'hello' } }]
+          : [{ type: 'text', text: 'Echoed hello.' }],
+      stop_reason: requestBodies.length === 1 ? 'tool_use' : 'end_turn',
+      stop_sequence: null,
+      usage: { input_tokens: 8, output_tokens: 4 },
+    });
+  });
+  const discovery: LlmConnection = {
+    slug: 'organization',
+    name: 'Organization',
+    providerType: 'organization',
+    baseUrl: server.url,
+    defaultModel: '',
+    enabled: true,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+
+  const models = await fetchProviderModels(discovery, token);
+  assert.deepEqual(
+    models.map((model) => model.id),
+    [modelId, 'company-claude'],
+  );
+  assert.deepEqual(models[0], {
+    id: modelId,
+    apiProtocol: 'anthropic-messages',
+    displayName: 'Claude Sonnet 4.6',
+    contextWindow: 1_000_000,
+    maxOutputTokens: 64_000,
+    modalities: { input: ['text', 'image'], output: ['text'] },
+    capabilities: { vision: true, functionCalling: true },
+    thinkingLevels: ['low', 'high'],
+    defaultThinkingLevel: 'high',
+  });
+  // Named differently by the administrator: the vendor's entry fills in.
+  const reference = lookupModelMetadata('anthropic', modelId);
+  assert.ok(reference.contextWindow, 'the premise: the bundled catalog describes the model');
+  assert.equal(models[1]?.displayName, 'Company Claude');
+  assert.equal(models[1]?.contextWindow, reference.contextWindow);
+  assert.deepEqual(models[1]?.modalities, reference.modalities);
+
+  const connection: LlmConnection = { ...discovery, defaultModel: modelId, models };
+  const result = await generateText({
+    model: getAIModel({ connection, apiKey: token, modelId }),
+    prompt: 'Call echo with hello, then report the result.',
+    providerOptions: buildProviderOptions(connection, modelId),
+    tools: {
+      echo: tool({
+        description: 'Echo text',
+        inputSchema: z.object({ text: z.string() }),
+        execute: async ({ text }) => ({ text }),
+      }),
+    },
+    stopWhen: isStepCount(2),
+  });
+
+  assert.equal(result.text, 'Echoed hello.');
+  assert.deepEqual(
+    requestBodies.map((body) => body.model),
+    [modelId, modelId],
+  );
+  // Passed through to Anthropic's own API, so sent as one: prompt caching included.
+  assert.ok(JSON.stringify(requestBodies[0]).includes('"cache_control"'));
+
+  // The gateway's reason survives the SDK's error handling: an allowance that
+  // is used up reads as such, with its reset, and is not retried.
+  allowanceUsedUp = true;
+  const refused = await generateText({
+    model: getAIModel({ connection, apiKey: token, modelId }),
+    prompt: 'hello',
+    maxRetries: 0,
+  }).then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  const failure = providerModelFailure(refused);
+  assert.equal(failure.kind, 'organization_quota');
+  assert.equal(failure.retryable, false);
+  assert.equal(organizationQuotaResetsAt(failure.message), resetsAt);
 }
 
 async function runGitHubCopilotDiscovery(): Promise<void> {

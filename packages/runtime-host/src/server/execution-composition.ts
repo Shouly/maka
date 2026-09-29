@@ -263,6 +263,7 @@ import {
 } from './web-fetch-tool.js';
 import { createHostExecutionArtifactServices } from './execution-artifacts.js';
 import { openToolResultArchiveEvidenceReader } from '@maka/storage/tool-result-archive-evidence';
+import { createHostOrganizationSession } from './organization-session.js';
 
 export interface ExecutionRuntimeHostComposition extends RuntimeHostComposition {
   readonly plugins: HostPluginPlatform;
@@ -376,7 +377,17 @@ export async function createExecutionRuntimeHostComposition(
     const pluginPlatformCoordinator = new HostPluginPlatformCoordinator(pluginPlatform);
     const openedProjectCatalog = storage.projectCatalog;
     const runtimePolicyStores = storage.runtimePolicy;
-    const oauthCredentials = new HostOAuthExecutionAuthority(runtimePolicyStores);
+    // The organisation account's token comes from the desktop app through its
+    // workspace service; the Client Capability coordinator is composed further
+    // down, and nothing asks for a token before a model call reaches it.
+    const oauthCredentials = new HostOAuthExecutionAuthority(
+      runtimePolicyStores,
+      Date.now,
+      createHostOrganizationSession({
+        call: (request) =>
+          requireClientCapabilities(clientCapabilities).callWorkspaceService(request),
+      }),
+    );
     const openedScheduledTaskStore = storage.scheduledTasks;
     const openedPlanStore = storage.plan;
     const openedDeepResearchStore = storage.deepResearch;

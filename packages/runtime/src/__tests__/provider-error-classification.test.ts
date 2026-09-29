@@ -23,6 +23,7 @@ import { APICallError } from '@ai-sdk/provider';
 import { createJsonErrorResponseHandler, postJsonToApi } from '@ai-sdk/provider-utils';
 import { RetryError } from 'ai';
 import { z } from 'zod/v4';
+import { organizationQuotaResetsAt } from '@maka/core/model-failure';
 
 import {
   classifyError,
@@ -30,6 +31,75 @@ import {
   providerFailureDiagnostic,
   providerModelFailure,
 } from '../provider-error-classification.js';
+
+describe('Organisation gateway failures', () => {
+  // The gateway answers in the protocol's own error shape; `maka` says why.
+  const gatewayError = (statusCode: number, maka: Record<string, unknown>, message: string) => {
+    const error = { type: statusCode === 429 ? 'rate_limit_error' : 'permission_error', message };
+    return new APICallError({
+      message,
+      url: 'https://maka.example.com/model/anthropic/v1/messages',
+      requestBodyValues: {},
+      statusCode,
+      responseHeaders: { 'retry-after': '86400', 'x-should-retry': 'false' },
+      responseBody: JSON.stringify({ type: 'error', error, maka }),
+      // What the SDK's schema keeps: `maka` is not in it.
+      data: { type: 'error', error },
+    });
+  };
+
+  test('a used-up allowance is not retried, and its failure says when it resets', () => {
+    const resetsAt = Date.parse('2026-10-05T00:00:00.000Z');
+    const failure = providerModelFailure(
+      gatewayError(429, { code: 'quota_exceeded', retryAt: resetsAt }, 'Allowance used up'),
+    );
+    assert.equal(failure.kind, 'organization_quota');
+    assert.equal(failure.retryable, false, 'not a throttle to wait out for a day');
+    assert.equal(organizationQuotaResetsAt(failure.message), resetsAt);
+
+    // A reset time no date can hold is left out rather than failing the classification.
+    const beyond = providerModelFailure(
+      gatewayError(429, { code: 'quota_exceeded', retryAt: 9e15 }, 'Allowance used up'),
+    );
+    assert.equal(beyond.kind, 'organization_quota');
+    assert.equal(organizationQuotaResetsAt(beyond.message), undefined);
+  });
+
+  test("the gateway's other reasons read as what they are", () => {
+    for (const [statusCode, code, kind] of [
+      [403, 'model_not_allowed', 'organization_model_denied'],
+      [401, 'unauthenticated', 'organization_sign_in'],
+      [426, 'upgrade_required', 'organization_upgrade'],
+      // A busy upstream and a failed one keep their ordinary, retried kinds.
+      [429, 'rate_limited', 'rate_limit'],
+      [503, 'upstream_unavailable', 'provider_unavailable'],
+    ] as const) {
+      const failure = providerModelFailure(gatewayError(statusCode, { code }, 'refused'));
+      assert.equal(failure.kind, kind, code);
+      assert.equal(failure.retryable, MODEL_FAILURE_RETRY[kind] !== null, code);
+    }
+  });
+
+  test('an account that cannot sign asks for a sign-in, or an update, wherever it surfaces', () => {
+    const unavailable = (reason: string) =>
+      Object.assign(new Error(`The organization account cannot sign this request: ${reason}`), {
+        name: 'OrganizationAccountUnavailableError',
+        reason,
+      });
+    for (const [reason, kind] of [
+      ['signed_out', 'organization_sign_in'],
+      ['sign_in_expired', 'organization_sign_in'],
+      ['not_offered', 'organization_sign_in'],
+      ['server_mismatch', 'organization_sign_in'],
+      ['upgrade_required', 'organization_upgrade'],
+      ['server_unreachable', 'network'],
+    ] as const) {
+      // Raised inside the SDK's fetch, it can arrive wrapped.
+      const wrapped = new Error('request failed', { cause: unavailable(reason) });
+      assert.equal(classifyError(wrapped), kind, reason);
+    }
+  });
+});
 
 describe('Provider error classification', () => {
   test('projects only bounded allowlisted facts into durable diagnostics', () => {

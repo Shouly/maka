@@ -1192,26 +1192,26 @@ try {
   await connectionDetail.waitFor({ state: 'detached' });
   checks.push('Models lists the seeded connection and opens its detail');
 
-  // 5b.2 The catalog offers the company gateway, and its setup form refuses to
-  //      go out to an empty address rather than failing at the network.
+  // 5b.2 The catalog offers a custom relay, and its setup form refuses to go
+  //      out to an empty address rather than failing at the network.
   await page.getByRole('button', { name: 'Add connection', exact: true }).click();
   await page.locator('[data-maka-contract="add-connection"]').waitFor();
   await page.locator('[data-maka-contract="provider-catalog"]').waitFor();
-  const gatewayCard = page
-    .getByRole('button', { name: /^Add model provider: RELX Gateway/u })
+  const relayCard = page
+    .getByRole('button', { name: /^Add model provider: Custom relay \(OpenAI Chat\)/u })
     .first();
-  await gatewayCard.waitFor();
+  await relayCard.waitFor();
   // The catalog opens on the account sign-ins; the capture is of the grid, so
   // it has to be looking at the grid.
-  await gatewayCard.scrollIntoViewIfNeeded();
+  await relayCard.scrollIntoViewIfNeeded();
   await new Promise((settle) => setTimeout(settle, 300));
   await page.screenshot({ path: SHOT('phase5b-provider-catalog-light.png') });
-  await gatewayCard.click();
+  await relayCard.click();
   const setup = page.locator('[data-maka-contract="provider-setup"]');
   await setup.waitFor();
-  // A key and no endpoint: the gateway registry entry ships neither a baseUrl
-  // nor a template, so the endpoint is the field the operator has to hand out.
-  await page.getByLabel('API key', { exact: true }).fill('smoke-gateway-key');
+  // A key and no endpoint: a relay's registry entry ships neither a baseUrl
+  // nor a template, so the endpoint is the field the user has to supply.
+  await page.getByLabel('API key', { exact: true }).fill('smoke-relay-key');
   await page.getByRole('button', { name: 'Verify and choose models', exact: true }).click();
   await setup
     .getByRole('alert')
@@ -1225,7 +1225,9 @@ try {
   await page.locator('[data-maka-contract="provider-catalog"]').waitFor();
   await page.getByRole('button', { name: 'Back to Models', exact: true }).click();
   await providers.waitFor();
-  checks.push('the add-connection catalog offers RELX Gateway and blocks on its missing endpoint');
+  checks.push(
+    'the add-connection catalog offers a custom relay and blocks on its missing endpoint',
+  );
 
   // 5b.3 A subagent preset round-trips through the settings IPC and back out.
   const PRESET = 'Smoke reader';

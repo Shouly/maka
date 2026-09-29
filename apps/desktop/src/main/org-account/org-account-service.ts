@@ -131,7 +131,7 @@ export class OrgAccountService {
   #serverUrl: string | null = null;
   #session: StoredSession | undefined;
   #access: { token: string; expiresAt: number } | undefined;
-  #refreshing: Promise<string> | undefined;
+  #refreshing: Promise<{ token: string; expiresAt: number }> | undefined;
   /** When the stored profile was last known to match the server's (epoch ms). */
   #profileCheckedAt = 0;
   #reloadingProfile: Promise<void> | undefined;
@@ -405,16 +405,39 @@ export class OrgAccountService {
 
   /** A current access token, refreshed when it is about to expire. */
   async accessToken(): Promise<string> {
-    const access = this.#access;
-    if (access && access.expiresAt - this.#now() > ACCESS_TOKEN_MARGIN_MS) return access.token;
-    if (!this.#session || !this.#serverUrl) throw new OrgAccountUnavailable('signed_out');
-    this.#refreshing ??= this.#refresh(this.#serverUrl, this.#session).finally(() => {
-      this.#refreshing = undefined;
-    });
-    return this.#refreshing;
+    return (await this.accessGrant()).token;
   }
 
-  async #refresh(serverUrl: string, session: StoredSession): Promise<string> {
+  /**
+   * A current access token with its expiry and the server it is for — what
+   * the Runtime Host signs model requests with. Refreshed when it is about to
+   * expire, or at once when the gateway just refused the one the caller holds
+   * (`forceRefresh`); one refresh in flight answers every caller.
+   */
+  async accessGrant(
+    options: { readonly forceRefresh?: boolean } = {},
+  ): Promise<{ token: string; expiresAt: number; serverUrl: string }> {
+    const serverUrl = this.#serverUrl;
+    const access = this.#access;
+    if (
+      serverUrl &&
+      access &&
+      !options.forceRefresh &&
+      access.expiresAt - this.#now() > ACCESS_TOKEN_MARGIN_MS
+    ) {
+      return { ...access, serverUrl };
+    }
+    if (!this.#session || !serverUrl) throw new OrgAccountUnavailable('signed_out');
+    this.#refreshing ??= this.#refresh(serverUrl, this.#session).finally(() => {
+      this.#refreshing = undefined;
+    });
+    return { ...(await this.#refreshing), serverUrl };
+  }
+
+  async #refresh(
+    serverUrl: string,
+    session: StoredSession,
+  ): Promise<{ token: string; expiresAt: number }> {
     let response: Response;
     try {
       response = await this.#post(
@@ -453,10 +476,11 @@ export class OrgAccountService {
     }
     if (this.#session !== session) throw new OrgAccountUnavailable('signed_out');
     this.#session = { ...session, refreshToken: tokens.refresh_token, refreshExpiresAt: tokens.refresh_expires_at };
-    this.#access = { token: tokens.access_token, expiresAt: this.#now() + tokens.expires_in * 1000 };
+    const access = { token: tokens.access_token, expiresAt: this.#now() + tokens.expires_in * 1000 };
+    this.#access = access;
     this.#armExpiry();
     await this.#persist();
-    return tokens.access_token;
+    return access;
   }
 
   async #runSignIn(

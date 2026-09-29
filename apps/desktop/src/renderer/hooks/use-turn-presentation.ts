@@ -262,7 +262,11 @@ function deriveTurnPresentationEntry(input: {
   const entry: TurnPresentationEntry = { footerActions };
 
   if (turn.status === 'failed' && (turn.failureMessage || !isRemediableOnlyToolFailure(turn))) {
-    entry.failedReasonLabel = describeTurnErrorClass(turn.errorClass, uiLocale);
+    entry.failedReasonLabel = describeTurnErrorClass(
+      turn.errorClass,
+      uiLocale,
+      turn.failureMessage,
+    );
     entry.failedSeverity = deriveFailedTurnSeverity(turn.errorClass);
     // The grades, not a count: a refused call changed nothing, and advice that
     // tells the reader to go read its result sends them after a result that
