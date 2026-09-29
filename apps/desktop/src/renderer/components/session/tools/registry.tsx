@@ -37,7 +37,6 @@ import type { ToolActivityItem } from '@maka/ui';
 import { DiffResult } from './renderers/DiffResult.js';
 import { TerminalResult } from './renderers/TerminalResult.js';
 import { WebSearchErrorResult, WebSearchResult } from './renderers/WebSearchResult.js';
-import { AgentSwarmResult, SubagentResult } from './renderers/SubagentResult.js';
 import {
   ArchivedResult,
   FileWriteResult,
@@ -60,8 +59,6 @@ import {
 } from '../../../lib/tool-delivery-results.js';
 
 export interface ToolContentContext {
-  /** Opens a child task in the shell. */
-  readonly onOpenSession: (sessionId: string) => void;
   /** Hands a URL to the host; the renderer never navigates itself. */
   readonly onOpenExternal: (url: string) => void;
   /**
@@ -139,14 +136,6 @@ export function renderToolContent(item: ToolActivityItem, context: ToolContentCo
       ) : null;
     case 'web_search_error':
       return result?.kind === 'web_search_error' ? <WebSearchErrorResult result={result} /> : null;
-    case 'subagent':
-      return result?.kind === 'subagent' ? (
-        <SubagentResult result={result} onOpenSession={context.onOpenSession} />
-      ) : null;
-    case 'agent_swarm':
-      return result?.kind === 'agent_swarm' ? (
-        <AgentSwarmResult result={result} onOpenSession={context.onOpenSession} />
-      ) : null;
     case 'json':
       return result?.kind === 'json' ? <JsonResult result={result} /> : null;
     case 'image':

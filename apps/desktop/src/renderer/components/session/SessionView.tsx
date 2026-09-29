@@ -325,7 +325,6 @@ function SessionTranscript(props: SessionViewProps) {
 
   const toolContext = useMemo(
     () => ({
-      onOpenSession: (childSessionId: string) => sessionsStore.select(childSessionId),
       onOpenExternal: (url: string) => {
         openExternal(url);
       },

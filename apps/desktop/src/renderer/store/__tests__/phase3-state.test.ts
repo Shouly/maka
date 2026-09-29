@@ -136,8 +136,15 @@ const RESULT_KINDS: readonly ToolResultContent['kind'][] = [
 ];
 
 test('every result kind the runtime can emit resolves to a renderer', () => {
+  // An agent's row is its description alone, as the design draws it: the
+  // two agent kinds are the only ones with nothing to open.
+  const bodiless = new Set(['subagent', 'agent_swarm']);
   for (const kind of RESULT_KINDS) {
     const id = rendererForResultKind(kind);
+    if (bodiless.has(kind)) {
+      assert.equal(id, 'none', `${kind} has a body`);
+      continue;
+    }
     assert.ok(id !== 'none' && id !== 'pending', `${kind} fell through to ${id}`);
   }
   // The two shell shapes share one renderer; that is the point of keying on
@@ -190,7 +197,7 @@ test('a scheduled task row wears the clock the rest of the app wears', () => {
 // about it at all.
 test('names the work of the families that had no activity kind', () => {
   const delegated = tool({ toolUseId: 'a', toolName: 'Agent', activityKind: 'delegate' });
-  assert.equal(summarizeToolGroup([delegated], 'en'), 'Delegated a task');
+  assert.equal(summarizeToolGroup([delegated], 'en'), 'Ran an agent');
   assert.equal(toolRowIcon(delegated), 'agent');
 
   const scheduled = tool({

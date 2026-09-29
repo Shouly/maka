@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import type { SessionSummary } from '@maka/core/session';
+import { linkedSubagentParentSessionId, type SessionSummary } from '@maka/core/session';
 
 /**
  * Which sessions the rail lists. Archived tasks are managed in Settings › 活动 ›
@@ -26,9 +26,20 @@ import type { SessionSummary } from '@maka/core/session';
  * This used to switch on `NavSelection.filter`. That filter is gone (#2984): its
  * last two values were a destination that moved to Settings and a value nothing
  * ever selected, which left one branch reachable — this one.
+ *
+ * A child agent's Session is part of the Turn that started it, not a
+ * conversation of its own, so the rail leaves it out while its parent is in
+ * the catalog (`catalogIds`). Deleting a parent moves its children to the
+ * archive; one restored from there has no parent left to be read through, and
+ * keeps its row.
  */
-export function sessionMatchesRail(session: SessionSummary): boolean {
-  return !session.isArchived && !isScheduledRunSession(session);
+export function sessionMatchesRail(
+  session: SessionSummary,
+  catalogIds: ReadonlySet<string>,
+): boolean {
+  if (session.isArchived || isScheduledRunSession(session)) return false;
+  const parentSessionId = linkedSubagentParentSessionId(session);
+  return parentSessionId === undefined || !catalogIds.has(parentSessionId);
 }
 
 /**

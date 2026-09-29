@@ -39,13 +39,14 @@ export function projectTaskCount(
   sessions: readonly DesktopSessionSummary[],
   session: DesktopSessionSummary,
 ): number {
+  const catalogIds = new Set(sessions.map((row) => row.id));
   return collapseSessionRevisions(
     sessions.filter(
       (row) =>
         row.profileId === session.profileId &&
         row.runtimeHostId === session.runtimeHostId &&
         row.projectId === session.projectId &&
-        sessionMatchesRail(row),
+        sessionMatchesRail(row, catalogIds),
     ),
     session.id,
   ).length;

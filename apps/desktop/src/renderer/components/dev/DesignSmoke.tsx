@@ -557,7 +557,7 @@ export function DesignSmoke({ showThemeControl = true }: { showThemeControl?: bo
               turn={TRANSCRIPT_FIXTURE}
               live={false}
               footerActions={TRANSCRIPT_FIXTURE_ACTIONS}
-              toolContext={{ onOpenSession: () => {}, onOpenExternal: () => {} }}
+              toolContext={{ onOpenExternal: () => {} }}
               onFooterAction={() => {}}
               onOpenLineage={() => {}}
               onOpenExternal={() => {}}

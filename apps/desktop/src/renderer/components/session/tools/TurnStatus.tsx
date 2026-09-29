@@ -358,8 +358,16 @@ export const TurnStatus = memo(function TurnStatus(props: TurnStatusProps) {
   } else {
     // A run with no call is "Thought process". Deviation: the reference names
     // one block of reasoning by a summary it generates; the model gives none,
-    // and its own first line reads as half a sentence, not a title.
-    label = tools.length > 0 ? summarizeToolGroup(tools, locale) : copy.thinkingOnly;
+    // and its own first line reads as half a sentence, not a title. A run of
+    // one call is named by that call, as the design does — an agent by its
+    // description, a new file by its name — whatever reasoning sits beside it;
+    // only two or more are summarised.
+    label =
+      tools.length === 1
+        ? toolStepLabel(tools[0]!, locale).text
+        : tools.length > 0
+          ? summarizeToolGroup(tools, locale)
+          : copy.thinkingOnly;
   }
 
   const state = blocked ? 'blocked' : props.complete ? 'done' : 'busy';

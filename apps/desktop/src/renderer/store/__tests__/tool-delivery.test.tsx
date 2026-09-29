@@ -78,7 +78,7 @@ function renderTree(node: Parameters<typeof renderToStaticMarkup>[0]) {
   return parseHTML(html).document;
 }
 
-const CONTEXT = { onOpenSession: () => {}, onOpenExternal: () => {} };
+const CONTEXT = { onOpenExternal: () => {} };
 
 /** A settled call, with whatever result the case under test needs. */
 function call(overrides: Partial<ToolActivityItem> & { toolUseId: string }): ToolActivityItem {

@@ -246,6 +246,35 @@ test('archived tasks stay out of the rail unless asked for', () => {
   assert.equal(listModel(rows, { includeArchived: true }).total, 2);
 });
 
+test("a child agent's Session is not a row of the rail, though it can still be read", () => {
+  const rows = [
+    session('parent'),
+    session('child', { subagent: { parentSessionId: 'parent' } } as Partial<SessionSummary>),
+  ];
+  assert.deepEqual(
+    listModel(rows).rows.map((row) => row.id),
+    ['parent'],
+  );
+  // Selected all the same, it is still the Session on screen.
+  const opened = listModel(rows, { activeId: 'child' });
+  assert.deepEqual(
+    opened.rows.map((row) => row.id),
+    ['parent'],
+  );
+  assert.equal(opened.activeRow?.id, 'child');
+  // Its parent deleted, a child restored from the archive has no other way in.
+  assert.deepEqual(
+    listModel(rows.slice(1)).rows.map((row) => row.id),
+    ['child'],
+  );
+  // An archived parent is still the child's way in once it is restored.
+  const archivedParent = [{ ...rows[0]!, isArchived: true }, rows[1]!];
+  assert.deepEqual(
+    listModel(archivedParent).rows.map((row) => row.id),
+    [],
+  );
+});
+
 const readyHost = (projects: { id: string; name: string }[]) => ({
   profile: { id: 'local', name: 'This Mac' },
   hostId: 'host-1',

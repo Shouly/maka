@@ -151,8 +151,9 @@ export function buildSessionListModel(input: SessionListInput): SessionListModel
   // Session on screen is admitted past it regardless: a row has to exist for
   // the titlebar to name what is being read, even when the rail deliberately
   // hides it (a scheduled task's runs) — it just never reaches `rows`.
+  const catalogIds = new Set(input.sessions.map((session) => session.id));
   const railed = (session: SessionSummary): boolean =>
-    input.includeArchived === true || sessionMatchesRail(session);
+    input.includeArchived === true || sessionMatchesRail(session, catalogIds);
   const listed = input.sessions.filter(
     (session) => railed(session) || session.id === input.activeId,
   );

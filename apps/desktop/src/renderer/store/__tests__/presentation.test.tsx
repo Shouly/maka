@@ -369,7 +369,7 @@ test('a turn renders its ask, its answer, and one closed status row for its work
       turn,
       live: false,
       footerActions: presentation.footerActionsByTurn[turn.turnId] ?? [],
-      toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
+      toolContext: { onOpenExternal: () => {} },
       onFooterAction: () => {},
       onOpenLineage: () => {},
       onOpenExternal: () => {},
@@ -416,7 +416,7 @@ test('a run of reasoning with no call is a run too, so the turn keeps its shape 
         turn,
         live: true,
         footerActions: [],
-        toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
+        toolContext: { onOpenExternal: () => {} },
         onFooterAction: () => {},
         onOpenLineage: () => {},
         onOpenExternal: () => {},
@@ -488,6 +488,50 @@ test('a run of reasoning with no call is a run too, so the turn keeps its shape 
     ],
   });
   assert.ok(statusText(twice).includes('Thought process'), statusText(twice));
+});
+
+test('a finished run of one call is named by that call; two or more are summarized', () => {
+  const base = transcriptFixture();
+  const renderDone = (tools: readonly ToolActivityItem[]) =>
+    renderTree(
+      createElement(TranscriptTurn, {
+        turn: {
+          ...base,
+          status: 'completed',
+          tools: [...tools],
+          timeline: [
+            { kind: 'thinking', text: 'Weighing two options.', messageId: 'step-1' },
+            { kind: 'tools', items: [...tools] },
+            { kind: 'text', text: 'Done.', messageId: 'step-2', complete: true },
+          ],
+        },
+        live: false,
+        footerActions: [],
+        toolContext: { onOpenExternal: () => {} },
+        onFooterAction: () => {},
+        onOpenLineage: () => {},
+        onOpenExternal: () => {},
+      }),
+    ).querySelector('[data-maka-turn-status] button')?.textContent ?? '';
+
+  // Reasoning beside the call does not make it a run of two.
+  const command = base.tools[1]!;
+  assert.ok(
+    renderDone([command]).includes(toolStepLabel(command, 'en').text),
+    renderDone([command]),
+  );
+
+  const agent: ToolActivityItem = {
+    ...base.tools[2]!,
+    activityKind: 'delegate',
+    status: 'completed',
+    args: { description: 'Review the change', prompt: 'Review src/a.ts' },
+  };
+  assert.ok(renderDone([agent]).includes(toolStepLabel(agent, 'en').text), renderDone([agent]));
+
+  const both = [command, agent];
+  assert.ok(renderDone(both).includes(summarizeToolGroup(both, 'en')), renderDone(both));
+  assert.ok(renderDone(both).includes('ran an agent'), renderDone(both));
 });
 
 test('a reasoning step in the card is Thinking… while live and Thought process once done', () => {
@@ -863,7 +907,7 @@ test('the status shown before a turn arrives stands where the turn draws its fir
         live: true,
         liveStatus: live,
         footerActions: [],
-        toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
+        toolContext: { onOpenExternal: () => {} },
         onFooterAction: () => {},
         onOpenLineage: () => {},
         onOpenExternal: () => {},
@@ -884,7 +928,7 @@ test('the live turn carries its status on its newest run: the call in flight, th
         live: true,
         liveStatus: { turnId: base.turnId, startedAt: NOW, unsteady, mark: 'default' },
         footerActions: [],
-        toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
+        toolContext: { onOpenExternal: () => {} },
         onFooterAction: () => {},
         onOpenLineage: () => {},
         onOpenExternal: () => {},
@@ -966,7 +1010,7 @@ test('a turn that goes quiet says it is still working, on the row that is live',
         live: true,
         liveStatus: { turnId: base.turnId, startedAt: NOW, unsteady },
         footerActions: [],
-        toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
+        toolContext: { onOpenExternal: () => {} },
         onFooterAction: () => {},
         onOpenLineage: () => {},
         onOpenExternal: () => {},
@@ -1010,7 +1054,7 @@ test('a live turn is one run: the line being written stands under it and folds i
         turn: { ...base, status: 'running', tools: [call, next], timeline },
         live: true,
         footerActions: [],
-        toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
+        toolContext: { onOpenExternal: () => {} },
         onFooterAction: () => {},
         onOpenLineage: () => {},
         onOpenExternal: () => {},
@@ -1125,7 +1169,7 @@ test('a running turn always shows exactly one live status, whatever its newest b
         live: true,
         liveStatus: { turnId: base.turnId, startedAt: NOW },
         footerActions: [],
-        toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
+        toolContext: { onOpenExternal: () => {} },
         onFooterAction: () => {},
         onOpenLineage: () => {},
         onOpenExternal: () => {},
@@ -1164,7 +1208,7 @@ test('a run the turn is parked on says what it waits for', () => {
         live: true,
         blocked,
         footerActions: [],
-        toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
+        toolContext: { onOpenExternal: () => {} },
         onFooterAction: () => {},
         onOpenLineage: () => {},
         onOpenExternal: () => {},
@@ -1233,7 +1277,7 @@ test('the jump button has an animated working mark only during generation', () =
 
 test('each result kind renders its own body, and a diff keeps its markers', () => {
   const turn = transcriptFixture();
-  const context = { onOpenSession: () => {}, onOpenExternal: () => {} };
+  const context = { onOpenExternal: () => {} };
   const bodies = turn.tools.map((tool) =>
     renderTree(createElement(Fragment, null, renderToolContent(tool, context))),
   );
@@ -1248,13 +1292,9 @@ test('each result kind renders its own body, and a diff keeps its markers', () =
   assert.ok(terminal.includes('ok 1 passing'), 'the output is on screen');
   assert.ok(terminal.includes('/workspace'), 'the working directory is on screen');
 
-  const agent = bodies[2]!;
-  const open = agent.querySelector('button[aria-label]');
-  assert.ok(open?.getAttribute('aria-label')?.includes('reviewer'), 'the child task is reachable');
-  assert.ok(
-    (agent.documentElement.textContent ?? '').includes('Read only'),
-    'an explore-mode child says so',
-  );
+  // An agent's step is its description and nothing else; it does not open.
+  assert.equal(renderToolContent(turn.tools[2]!, context), null, 'an agent step has no body');
+  assert.equal(canExpandTool(turn.tools[2]!), false);
 });
 
 // A running command and a settled one must cap the same END. They are two
@@ -1280,7 +1320,7 @@ test('a long tool output is watched at its tail while it runs, not only once it 
           args: { command: 'npm run build' },
           outputChunks: [{ text: lines.join('\n') }],
         } as unknown as ToolActivityItem,
-        { onOpenSession: () => {}, onOpenExternal: () => {} },
+        { onOpenExternal: () => {} },
       ),
     ),
   );
@@ -1327,7 +1367,7 @@ test('a web search result is text, never markup from the page it found', () => {
             ],
           },
         },
-        { onOpenSession: () => {}, onOpenExternal: () => {} },
+        { onOpenExternal: () => {} },
       ),
     ),
   );
@@ -1358,7 +1398,7 @@ test('a failed step keeps its words, says Failed after them, and reasons in a pa
       children: createElement(TooltipProvider, {
         children: createElement(TurnStatusToolStep, {
           item: failed,
-          context: { onOpenSession: () => {}, onOpenExternal: () => {} },
+          context: { onOpenExternal: () => {} },
         }),
       }),
     }),
@@ -1582,7 +1622,7 @@ test('a call still being written keeps its icon, its box and its sweep at dispat
         children: createElement(TooltipProvider, {
           children: createElement(TurnStatusToolStep, {
             item,
-            context: { onOpenSession: () => {}, onOpenExternal: () => {} },
+            context: { onOpenExternal: () => {} },
           }),
         }),
       }),
@@ -1658,7 +1698,7 @@ test('a running row that cannot be opened shimmers too', () => {
       children: createElement(TooltipProvider, {
         children: createElement(TurnStatusToolStep, {
           item: searching,
-          context: { onOpenSession: () => {}, onOpenExternal: () => {} },
+          context: { onOpenExternal: () => {} },
         }),
       }),
     }),
@@ -1773,7 +1813,7 @@ test('a running question is a live row until its request lands, then waits', () 
         liveStatus: { turnId: base.turnId, startedAt: NOW },
         ...(blocked ? { blocked } : {}),
         footerActions: [],
-        toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
+        toolContext: { onOpenExternal: () => {} },
         onFooterAction: () => {},
         onOpenLineage: () => {},
         onOpenExternal: () => {},
@@ -1846,7 +1886,7 @@ test('steering rows retain attachments, directories, and inline references', () 
       turn,
       live: false,
       footerActions: [],
-      toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
+      toolContext: { onOpenExternal: () => {} },
       onFooterAction: () => {},
       onOpenLineage: () => {},
       onOpenExternal: () => {},
@@ -1883,7 +1923,7 @@ test('a plain user turn renders no stray 0 where its chips would be', () => {
       turn: { ...turn, timeline: [], tools: [] },
       live: false,
       footerActions: [],
-      toolContext: { onOpenSession: () => {}, onOpenExternal: () => {} },
+      toolContext: { onOpenExternal: () => {} },
       onFooterAction: () => {},
       onOpenLineage: () => {},
       onOpenExternal: () => {},
@@ -1966,7 +2006,6 @@ test('a tool search is its own row: what was asked, no body, nothing to open', (
   assert.equal(canExpandTool(item), false, 'the row is the whole statement');
   assert.equal(
     renderToolContent(item, {
-      onOpenSession: () => {},
       onOpenExternal: () => {},
     }),
     null,

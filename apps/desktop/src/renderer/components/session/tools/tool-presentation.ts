@@ -83,8 +83,6 @@ export type ToolRendererId =
   | 'terminal'
   | 'web_search'
   | 'web_search_error'
-  | 'subagent'
-  | 'agent_swarm'
   | 'json'
   | 'image'
   | 'archived'
@@ -118,10 +116,11 @@ export function rendererForResultKind(kind: DurableToolResultKind): ToolRenderer
       return 'web_search';
     case 'web_search_error':
       return 'web_search_error';
+    // An agent's row is its description and nothing more, as the design has
+    // it: what the agent did comes back as its report, not as a panel here.
     case 'subagent':
-      return 'subagent';
     case 'agent_swarm':
-      return 'agent_swarm';
+      return 'none';
     case 'json':
       return 'json';
     case 'image':
@@ -525,6 +524,9 @@ export function canExpandTool(item: ToolActivityItem): boolean {
   if (isAskUserQuestionTool(item) || item.toolName === TOOL_NAMES.requestAccess) {
     return false;
   }
+  // An Agent step is one line, its description, and does not open — not even
+  // while the call is starting the child.
+  if (item.toolName === TOOL_NAMES.agent) return false;
   const renderer = resolveToolRendererId(item);
   if (renderer === 'none') return false;
   if (renderer === 'file_write') return false;
