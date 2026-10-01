@@ -17,7 +17,13 @@
  * under the License.
  */
 
-import { CLIENT_VERSION_HEADER } from '@maka/platform-protocol';
+import {
+  CLIENT_VERSION_HEADER,
+  GATEWAY_ERROR_HEADER,
+  GATEWAY_MODEL_HEADER,
+  GATEWAY_SCHEMA_VERSION,
+  GATEWAY_VERSION_HEADER,
+} from '@maka/platform-protocol';
 
 /** Why no request can be signed for the organisation account right now. */
 export type OrganizationAccountUnavailableReason =
@@ -62,14 +68,20 @@ export interface OrganizationAccessToken {
 
 /**
  * Sign each request to an organisation gateway with the account's current
- * access token, whatever key the SDK put on it.
+ * access token, whatever key the SDK put on it, and the gateway version the
+ * request is written for.
  *
- * A request the gateway refuses with 401 goes out once more with a refreshed
- * token: the token lives minutes and can lapse between two requests of one
- * turn, and the app refreshes it only when asked. A refresh that fails says
- * more than the 401 it answers (the app must be updated, the server is down),
- * so its error is what the request fails with. Anything else, including a
- * second 401, is the gateway's answer and goes back as it came.
+ * A request the gateway itself refuses as unauthenticated (401 with
+ * `x-maka-error: unauthenticated`) goes out once more with a refreshed token:
+ * the token lives minutes and can lapse between two requests of one turn, and
+ * the app refreshes it only when asked. A 401 without that header is the
+ * provider's, about the organisation's own key, and a new token cannot change
+ * it. A refresh that fails says more than the 401 it answers (the app must be
+ * updated, the server is down), so its error is what the request fails with.
+ * Anything else, including a second 401, goes back as it came.
+ *
+ * Redirects are not followed: the organisation's credential goes to its
+ * server and nowhere else.
  */
 export function createOrganizationModelFetch(input: {
   token(options: {
@@ -82,10 +94,19 @@ export function createOrganizationModelFetch(input: {
     const signal =
       init?.signal !== undefined ? init.signal : url instanceof Request ? url.signal : undefined;
     const send = (token: OrganizationAccessToken) =>
-      input.fetchFn(url, { ...init, headers: signed(url, init?.headers, token) });
+      input.fetchFn(url, {
+        ...init,
+        redirect: 'manual',
+        headers: signed(url, init?.headers, token),
+      });
     const first = await input.token({ forceRefresh: false, signal });
     const response = await send(first);
-    if (response.status !== 401 || !replayable(url, init)) return response;
+    if (
+      response.status !== 401 ||
+      response.headers.get(GATEWAY_ERROR_HEADER) !== 'unauthenticated' ||
+      !replayable(url, init)
+    )
+      return response;
     let fresh: OrganizationAccessToken;
     try {
       fresh = await input.token({ forceRefresh: true, signal });
@@ -96,6 +117,22 @@ export function createOrganizationModelFetch(input: {
     if (fresh.accessToken === first.accessToken) return response;
     await response.body?.cancel();
     return send(fresh);
+  };
+}
+
+/**
+ * Name the organisation model (`m_…`) a request is for. The body the SDK
+ * writes names the provider's own model; the gateway routes by this header.
+ */
+export function withOrganizationModel(
+  fetchFn: typeof fetch,
+  organizationModelId: string,
+): typeof fetch {
+  return (url, init) => {
+    const headers = new Headers(url instanceof Request ? url.headers : undefined);
+    new Headers(init?.headers).forEach((value, name) => headers.set(name, value));
+    headers.set(GATEWAY_MODEL_HEADER, organizationModelId);
+    return fetchFn(url, { ...init, headers });
   };
 }
 
@@ -112,6 +149,7 @@ function signed(
   headers.delete('x-goog-api-key');
   headers.set('authorization', `Bearer ${token.accessToken}`);
   headers.set(CLIENT_VERSION_HEADER, token.clientVersion);
+  headers.set(GATEWAY_VERSION_HEADER, String(GATEWAY_SCHEMA_VERSION));
   return headers;
 }
 

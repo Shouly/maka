@@ -30,6 +30,7 @@ import {
 } from '@maka/platform-protocol';
 import type { ServerContext } from '../context.js';
 import type { AccessTokens } from '../identity/access-tokens.js';
+import { gatewayError, protocolOfPath } from '../gateway/errors.js';
 
 export interface Principal {
   readonly userId: string;
@@ -97,16 +98,9 @@ export function clientVersionGate(ctx: ServerContext) {
     if (!minimum || typeof version !== 'string') return;
     if (!versionAtLeast(version, minimum)) {
       const message = `Update Maka to ${minimum} or later`;
-      // The model gateway answers in its protocol's error shape (§5.1).
+      // The model gateway refuses as it refuses anything: in the protocol's shape.
       if (request.url.startsWith('/model/')) {
-        await reply
-          .status(426)
-          .header('cache-control', 'no-store')
-          .send({
-            type: 'error',
-            error: { type: 'invalid_request_error', message },
-            maka: { code: 'upgrade_required' },
-          });
+        await gatewayError(reply, protocolOfPath(request.url), 426, 'upgrade_required', message);
         return;
       }
       await sendPlatformError(reply, 426, 'upgrade_required', message, {

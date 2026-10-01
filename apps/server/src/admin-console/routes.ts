@@ -31,24 +31,28 @@ import {
   type AdminActor,
   AdminRefused,
   auditPage,
-  createModel,
-  createUpstream,
-  deleteModel,
-  deleteUpstream,
-  listModels,
   listQuotas,
-  listUpstreams,
   listUsers,
   revokeDevice,
-  setModelRoutes,
   setQuota,
   unlinkIdentity,
-  updateModel,
-  updateUpstream,
   updateUser,
   usageReport,
   userDetail,
 } from '../administration.js';
+import { z } from 'zod';
+import {
+  createModelProvider,
+  deleteModel,
+  deleteModelProvider,
+  listModelProviders,
+  listModels,
+  modelProviderById,
+  modelProviderDetail,
+  publishToProvider,
+  updateModel,
+  updateModelProvider,
+} from '../model-management.js';
 import { recordAudit } from '../audit.js';
 import type { ServerContext } from '../context.js';
 import { sendPlatformError } from '../http/common.js';
@@ -63,7 +67,8 @@ import {
   sameOriginChange,
 } from './session.js';
 import { consoleLoginPath, consoleReturnPath, startConsoleSignIn } from './sign-in.js';
-import { CONSOLE_CSRF_HEADER, type ConsoleQuotaPeriod } from './types.js';
+import { CONSOLE_CSRF_HEADER, type ConsoleErrorCode, type ConsoleQuotaPeriod } from './types.js';
+import { type CatalogDeps, discoverModels, storedDraft, validatedDraft } from './model-catalog.js';
 
 /** Where the built page lives: dist/console, beside this module's dist/admin-console. */
 const DEFAULT_CONSOLE_DIR = fileURLToPath(new URL('../console/', import.meta.url));
@@ -106,6 +111,8 @@ export async function registerAdminConsole(
     readonly providers: ReadonlyMap<string, IdentityProvider>;
     /** The built page; tests point it elsewhere or at nothing. */
     readonly consoleDir?: string;
+    /** How providers' model lists are read. */
+    readonly catalog: CatalogDeps;
   },
 ): Promise<SendConsolePage> {
   const consoleDir = resolve(deps.consoleDir ?? DEFAULT_CONSOLE_DIR);
@@ -174,11 +181,29 @@ export async function registerAdminConsole(
             if (reply.sent) return reply;
             return reply.header('cache-control', 'no-store').send(result ?? {});
           } catch (error) {
-            if (error instanceof AdminRefused) {
-              const code: PlatformErrorCode =
-                error.status === 404 ? 'not_found' : 'invalid_request';
-              return sendPlatformError(reply, error.status, code, error.message);
-            }
+            const refuse = (status: number, code: ConsoleErrorCode, message: string) =>
+              reply
+                .status(status)
+                .header('cache-control', 'no-store')
+                .send({ error: { code, message } });
+            if (error instanceof z.ZodError)
+              return refuse(400, 'invalid_request', 'Some fields are missing or malformed');
+            // A unique key taken by a change that landed meanwhile: a provider's
+            // name, or a model another publish added first.
+            if ((error as { code?: string }).code === '23505')
+              return (error as { constraint?: string }).constraint === 'model_providers_name_key'
+                ? refuse(409, 'name_taken', 'This name is taken')
+                : refuse(
+                    409,
+                    'revision_conflict',
+                    'This was changed elsewhere; reload and try again',
+                  );
+            if (error instanceof AdminRefused)
+              return refuse(
+                error.status,
+                error.code ?? (error.status === 404 ? 'not_found' : 'invalid_request'),
+                error.message,
+              );
             throw error;
           }
         };
@@ -252,87 +277,84 @@ export async function registerAdminConsole(
       );
 
       api.get(
-        '/upstreams',
-        handle(async () => listUpstreams(ctx)),
+        '/model-providers',
+        handle(async () => listModelProviders(ctx)),
+      );
+      api.get(
+        '/model-providers/:id',
+        handle(async (request) => modelProviderDetail(ctx, params(request).id!)),
+      );
+      // Read a provider account's model list, for one not yet saved.
+      api.post(
+        '/model-providers/discover',
+        handle(async (request) =>
+          discoverModels(
+            ctx,
+            actorOf(request),
+            validatedDraft(objectBody(request).draft),
+            deps.catalog,
+          ),
+        ),
       );
       api.post(
-        '/upstreams',
+        '/model-providers',
+        handle(async (request) => createModelProvider(ctx, actorOf(request), objectBody(request))),
+      );
+      // Read a saved provider's model list again, to publish more of it.
+      api.post(
+        '/model-providers/:id/discover',
         handle(async (request) => {
-          const body = objectBody(request);
-          await createUpstream(ctx, actorOf(request), {
-            name: String(body.name ?? ''),
-            kind: String(body.kind ?? '') as never,
-            config: objectField(body.config, 'config'),
-            credential: objectField(body.credential, 'credential'),
-          });
-          return listUpstreams(ctx);
+          const row = await modelProviderById(ctx, params(request).id!);
+          return discoverModels(ctx, actorOf(request), storedDraft(ctx, row), deps.catalog, row);
         }),
+      );
+      api.post(
+        '/model-providers/:id/publish',
+        handle(async (request) =>
+          publishToProvider(ctx, actorOf(request), params(request).id!, objectBody(request)),
+        ),
       );
       api.patch(
-        '/upstreams/:id',
-        handle(async (request) => {
-          const body = objectBody(request);
-          await updateUpstream(ctx, actorOf(request), params(request).id!, {
-            ...(body.name !== undefined ? { name: String(body.name) } : {}),
-            ...(body.config !== undefined ? { config: objectField(body.config, 'config') } : {}),
-            ...(body.credential !== undefined
-              ? { credential: objectField(body.credential, 'credential') }
-              : {}),
-            ...(body.enabled !== undefined
-              ? { enabled: booleanField(body.enabled, 'enabled') }
-              : {}),
-          });
-          return listUpstreams(ctx);
-        }),
+        '/model-providers/:id',
+        handle(async (request) =>
+          updateModelProvider(
+            ctx,
+            actorOf(request),
+            params(request).id!,
+            objectBody(request),
+            deps.catalog,
+          ),
+        ),
       );
       api.delete(
-        '/upstreams/:id',
+        '/model-providers/:id',
         handle(async (request) => {
-          await deleteUpstream(ctx, actorOf(request), params(request).id!);
-          return listUpstreams(ctx);
+          await deleteModelProvider(
+            ctx,
+            actorOf(request),
+            params(request).id!,
+            objectBody(request),
+          );
+          return {};
         }),
       );
-
       api.get(
         '/models',
         handle(async () => listModels(ctx)),
       );
-      api.post(
-        '/models',
-        handle(async (request) => {
-          await createModel(ctx, actorOf(request), objectBody(request) as never);
-          return listModels(ctx);
-        }),
-      );
       api.patch(
         '/models/:id',
-        handle(async (request) => {
-          await updateModel(
-            ctx,
-            actorOf(request),
-            params(request).id!,
-            objectBody(request) as never,
-          );
-          return listModels(ctx);
-        }),
+        handle(async (request) =>
+          updateModel(ctx, actorOf(request), params(request).id!, objectBody(request)),
+        ),
       );
       api.delete(
         '/models/:id',
         handle(async (request) => {
-          await deleteModel(ctx, actorOf(request), params(request).id!);
-          return listModels(ctx);
+          await deleteModel(ctx, actorOf(request), params(request).id!, objectBody(request));
+          return {};
         }),
       );
-      api.put(
-        '/models/:id/routes',
-        handle(async (request) => {
-          const body = objectBody(request);
-          if (!Array.isArray(body.routes)) throw new AdminRefused(400, 'Give the routes');
-          await setModelRoutes(ctx, actorOf(request), params(request).id!, body.routes);
-          return listModels(ctx);
-        }),
-      );
-
       api.get(
         '/quotas',
         handle(async () => listQuotas(ctx)),
@@ -463,18 +485,6 @@ function objectBody(request: FastifyRequest): Record<string, unknown> {
     throw new AdminRefused(400, 'Send a JSON object');
   }
   return body as Record<string, unknown>;
-}
-
-function objectField(value: unknown, what: string): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new AdminRefused(400, `The ${what} must be an object`);
-  }
-  return value as Record<string, unknown>;
-}
-
-function booleanField(value: unknown, what: string): boolean {
-  if (typeof value !== 'boolean') throw new AdminRefused(400, `${what} is true or false`);
-  return value;
 }
 
 function limitField(value: unknown): number | null {

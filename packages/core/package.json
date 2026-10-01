@@ -155,7 +155,8 @@
     "./maka-wordmark": "./dist/maka-wordmark.js",
     "./test-only/async-primitives": "./dist/test-only/async-primitives.js",
     "./workhub-action-result": "./dist/workhub-action-result.js",
-    "./workhub-routing": "./dist/workhub-routing.js"
+    "./workhub-routing": "./dist/workhub-routing.js",
+    "./model-gateway": "./dist/model-gateway.js"
   },
   "scripts": {
     "clean": "node ../../scripts/clean-paths.mjs dist tsconfig.tsbuildinfo src/model-metadata.generated.ts",

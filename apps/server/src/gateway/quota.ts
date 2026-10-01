@@ -79,7 +79,7 @@ export async function exceededQuota(
   let exceeded: QuotaExceeded | undefined;
   for (const [period, limit] of limits) {
     const used = await ctx.db
-      .selectFrom('usage_events')
+      .selectFrom('model_usage')
       .select(sql<number>`coalesce(sum(weighted_units), 0)`.as('units'))
       .where('user_id', '=', userId)
       .where('at', '>=', periodStart(period, now))

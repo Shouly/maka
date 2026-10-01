@@ -32,8 +32,10 @@ export type ModelFailureKind =
   | 'stream_truncated'
   | 'timeout'
   | 'unknown'
-  // Answers from the organisation server's gateway, or from the account that
-  // signs its requests. None is retried: each waits on the person or on time.
+  // Answers about the organisation's side of a request: from its gateway, from
+  // the account that signs its requests, or from the provider about the
+  // organisation's own account there. None is retried: each waits on the
+  // person, their administrator, or time.
   /** The organisation's model allowance for this period is used up. */
   | 'organization_quota'
   /** The organisation has not made this model available to the person. */
@@ -41,7 +43,12 @@ export type ModelFailureKind =
   /** The organisation account has to be signed in again. */
   | 'organization_sign_in'
   /** The organisation server no longer serves this version of the app. */
-  | 'organization_upgrade';
+  | 'organization_upgrade'
+  /**
+   * The provider refused the organisation's account with it (its key,
+   * permissions or balance), which only the administrator can fix.
+   */
+  | 'organization_provider_account';
 export const MODEL_FAILURE_MESSAGE_MAX_BYTES = 2 * 1024;
 
 const ORGANIZATION_QUOTA_MESSAGE = 'Organization model allowance used up; it resets at ';

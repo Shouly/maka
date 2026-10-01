@@ -33,11 +33,11 @@ import type { ConsoleCopy, ConsoleLocale } from './copy.js';
 import { AuditPage } from './pages/audit.js';
 import { MemberDetailPage } from './pages/member-detail.js';
 import { MembersPage } from './pages/members.js';
-import { ModelDetailPage } from './pages/model-detail.js';
+import { ModelProviderPage } from './pages/model-provider.js';
+import { ModelProvidersPage } from './pages/model-providers.js';
 import { ModelsPage } from './pages/models.js';
 import { NotFoundPanel } from './pages/not-found.js';
 import { QuotasPage } from './pages/quotas.js';
-import { UpstreamsPage } from './pages/upstreams.js';
 import { UsagePage } from './pages/usage.js';
 import { navigate, type Route, type Section, sectionOf, useRoute } from './router.js';
 import { Avatar, reportFailure } from './ui.js';
@@ -47,15 +47,15 @@ const NAV: readonly {
   readonly sections: readonly Section[];
 }[] = [
   { group: 'organization', sections: ['members', 'quotas'] },
-  { group: 'models', sections: ['upstreams', 'models'] },
+  { group: 'models', sections: ['model-providers', 'models'] },
   { group: 'records', sections: ['usage', 'audit'] },
 ];
 
 const ICONS: Readonly<Record<Section, AnthropiconName>> = {
   members: 'users',
   quotas: 'gauge',
+  'model-providers': 'buildings',
   models: 'shapes',
-  upstreams: 'buildings',
   usage: 'usage',
   audit: 'scroll',
 };
@@ -66,7 +66,9 @@ export function App(props: { locale: ConsoleLocale; copy: ConsoleCopy; session: 
   const { copy } = props;
   const scroller = useRef<HTMLDivElement>(null);
   const pageKey =
-    route.page === 'member' || route.page === 'model' ? `${route.page}:${route.id}` : route.page;
+    route.page === 'member' || route.page === 'model-provider'
+      ? `${route.page}:${route.id}`
+      : route.page;
 
   // Each page opens at its top, as each Settings page does.
   useEffect(() => {
@@ -79,8 +81,8 @@ export function App(props: { locale: ConsoleLocale; copy: ConsoleCopy; session: 
   const back: { label: string; to: Route } | undefined =
     route.page === 'member'
       ? { label: copy.nav.members, to: { page: 'members' } }
-      : route.page === 'model'
-        ? { label: copy.nav.models, to: { page: 'models' } }
+      : route.page === 'model-provider'
+        ? { label: copy.nav['model-providers'], to: { page: 'model-providers' } }
         : undefined;
 
   return (
@@ -194,12 +196,12 @@ function Page(props: { route: Route }): ReactNode {
       return <MemberDetailPage key={route.id} id={route.id} />;
     case 'quotas':
       return <QuotasPage />;
+    case 'model-providers':
+      return <ModelProvidersPage />;
+    case 'model-provider':
+      return <ModelProviderPage key={route.id} id={route.id} />;
     case 'models':
       return <ModelsPage />;
-    case 'model':
-      return <ModelDetailPage key={route.id} id={route.id} />;
-    case 'upstreams':
-      return <UpstreamsPage />;
     case 'usage':
       return <UsagePage />;
     case 'audit':

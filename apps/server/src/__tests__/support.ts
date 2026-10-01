@@ -31,7 +31,7 @@ import { localSecretBox } from '../crypto/secret-box.js';
 import { pkceChallenge } from '../crypto/tokens.js';
 import { migrateToLatest } from '../db/migrations.js';
 import type { Database } from '../db/schema.js';
-import { UpstreamClients } from '../gateway/upstream-clients.js';
+import { ModelProviderTransport } from '../gateway/model-providers.js';
 import { AccessTokens } from '../identity/access-tokens.js';
 import type { IdentityProvider, VerifiedIdentity } from '../identity/providers/types.js';
 import { IdentityRefused } from '../identity/providers/types.js';
@@ -75,6 +75,11 @@ export interface TestServer {
   readonly app: FastifyInstance;
   readonly ctx: ServerContext;
   readonly db: Kysely<Database>;
+  /**
+   * What the stand-in providers list when a test does not answer model-list
+   * requests itself: these ids, in each integration's list shape.
+   */
+  readonly catalogModels: string[];
   readonly google: ScriptedProvider;
   readonly relx: ScriptedProvider;
   readonly clock: { now: Date };
@@ -84,9 +89,52 @@ export interface TestServer {
 
 export async function startTestServer(
   overrides: Partial<ServerConfig> = {},
-  options: { upstreamFetch?: typeof fetch; googleCallbackUrl?: string; consoleDir?: string } = {},
+  options: {
+    /** Stands in for the providers model requests are sent to. */
+    upstreamFetch?: typeof fetch;
+    /** Stands in for Google's token service. */
+    vertexToken?: () => Promise<string>;
+    /** Stands in for the providers' model lists; by default, `catalogModels`. */
+    catalogFetch?: typeof fetch;
+    googleCallbackUrl?: string;
+    consoleDir?: string;
+  } = {},
 ): Promise<TestServer> {
   const db = new Kysely<Database>({ dialect: new PGliteDialect({ pglite: new PGlite() }) });
+  const catalogModels: string[] = [];
+  // Every integration's list request, answered in its own shape.
+  const listed: typeof fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'aiplatform.googleapis.com') {
+      const publisher = url.pathname.split('/')[3];
+      return Response.json({
+        publisherModels: catalogModels
+          .filter((id) => id.startsWith(publisher === 'anthropic' ? 'claude-' : 'gemini-'))
+          .map((id) => {
+            const [name, versionId] = id.split('@');
+            return {
+              name: `publishers/${publisher}/models/${name}`,
+              versionId: versionId ?? '001',
+            };
+          }),
+      });
+    }
+    if (
+      url.hostname === 'generativelanguage.googleapis.com' ||
+      url.pathname.endsWith('/v1beta/models')
+    )
+      return Response.json({
+        models: catalogModels.map((id) => ({
+          name: `models/${id}`,
+          displayName: id,
+          supportedGenerationMethods: ['generateContent'],
+        })),
+      });
+    return Response.json({
+      data: catalogModels.map((id) => ({ id, display_name: id, name: id })),
+      has_more: false,
+    });
+  };
   await migrateToLatest(db);
   const clock = { now: new Date('2026-09-26T08:00:00Z') };
   const config: ServerConfig = {
@@ -118,15 +166,23 @@ export async function startTestServer(
       [google.id, google],
     ]),
     accessTokens,
-    ...(options.upstreamFetch
-      ? { upstreamClients: new UpstreamClients(ctx, options.upstreamFetch) }
-      : {}),
+    transport: new ModelProviderTransport(
+      ctx,
+      options.upstreamFetch ??
+        (async () => Response.json({ error: { message: 'no stand-in' } }, { status: 500 })),
+      options.vertexToken ?? (async () => 'test-google-access-token'),
+    ),
     ...(options.consoleDir ? { consoleDir: options.consoleDir } : {}),
+    catalog: {
+      fetch: options.catalogFetch ?? listed,
+      vertexToken: options.vertexToken ?? (async () => 'test-google-access-token'),
+    },
   });
   return {
     app,
     ctx,
     db,
+    catalogModels,
     google,
     relx,
     clock,

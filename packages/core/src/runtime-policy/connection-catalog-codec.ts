@@ -18,6 +18,11 @@
  */
 
 import {
+  decodeExecutionContract,
+  ExecutionContractError,
+  type ModelExecutionContract,
+} from '../model-gateway.js';
+import {
   isModelModality,
   isRelayProviderType,
   effectiveBaseUrl,
@@ -65,6 +70,7 @@ import {
   booleanValue,
   domainError,
   entityIdValue,
+  RuntimePolicyDomainDecodeError,
   exactRecord,
   integerValue,
   nonEmptyStringValue,
@@ -320,8 +326,7 @@ export function decodeModelOverridesTable(value: unknown): Readonly<Record<strin
         declared[field] = stringValue(entry[field], `model ${field}`, 2048);
     }
     if (entry.apiProtocol !== undefined) {
-      const model = decodeConnectionModel({ id: modelId, apiProtocol: entry.apiProtocol });
-      declared.apiProtocol = model.apiProtocol;
+      declared.apiProtocol = decodePersonalApiProtocol(entry.apiProtocol);
     }
     const facts = decodeConnectionModel({
       id: modelId,
@@ -438,7 +443,10 @@ export function decodeCanonicalConnectionCatalogEntry(value: unknown): Connectio
   ) {
     throw domainError('connection models must be a bounded array');
   }
-  const models = item.models.map(decodeConnectionModel);
+  const cached = decodeEntryModels(item.models, draft.providerType);
+  // An organization model list this build cannot read is dropped, not fatal.
+  const expired = cached === undefined;
+  const models = cached ?? [];
   if (new Set(models.map((model) => model.id)).size !== models.length) {
     throw domainError('connection model ids must be unique');
   }
@@ -460,8 +468,8 @@ export function decodeCanonicalConnectionCatalogEntry(value: unknown): Connectio
     connectionId: entityIdValue(item.connectionId, 'connection id'),
     revision: positiveRevisionValue(item.revision, 'connection revision'),
     models,
-    ...(item.modelSource === undefined ? {} : { modelSource: item.modelSource }),
-    ...(item.modelsFetchedAt === undefined
+    ...(expired || item.modelSource === undefined ? {} : { modelSource: item.modelSource }),
+    ...(expired || item.modelsFetchedAt === undefined
       ? {}
       : {
           modelsFetchedAt: integerValue(
@@ -475,8 +483,44 @@ export function decodeCanonicalConnectionCatalogEntry(value: unknown): Connectio
       ? {}
       : { lastTest: decodeConnectionTestSummary(item.lastTest) }),
   };
-  assertCanonicalValue(value, decoded, 'connection catalog entry');
+  if (!expired) assertCanonicalValue(value, decoded, 'connection catalog entry');
   return decoded;
+}
+
+/**
+ * A connection's stored models. An organization connection's are the
+ * organization server's catalog as last read — a cache: one this build can no
+ * longer read (an execution contract of another shape) is dropped and read
+ * again at the next sync, instead of failing the whole catalog and with it
+ * the start of the app. Anything else stored is the person's own, and stays
+ * strict.
+ */
+function decodeEntryModels(
+  raw: readonly unknown[],
+  providerType: ProviderType,
+): ConnectionModel[] | undefined {
+  if (providerType !== 'organization') {
+    return raw.map((value) => {
+      const model = decodeConnectionModel(value);
+      if (model.executionContract !== undefined) {
+        throw domainError('only an organization model carries an execution contract');
+      }
+      return model;
+    });
+  }
+  try {
+    return raw.map((value) => {
+      const model = decodeConnectionModel(value);
+      // Written before models carried their contract: nothing says how to call it.
+      if (model.executionContract === undefined) {
+        throw domainError('organization model has no execution contract');
+      }
+      return model;
+    });
+  } catch (error) {
+    if (error instanceof RuntimePolicyDomainDecodeError) return undefined;
+    throw error;
+  }
 }
 
 export function decodeConnectionVersionBasis(value: unknown): ConnectionVersionBasis {
@@ -565,6 +609,8 @@ export function decodeConnectionModel(value: unknown): ConnectionModel {
       'displayName',
       'description',
       'apiProtocol',
+      'executionContract',
+      'availability',
       'contextWindow',
       'inputLimit',
       'maxOutputTokens',
@@ -578,13 +624,30 @@ export function decodeConnectionModel(value: unknown): ConnectionModel {
     ],
     ['id'],
   );
+  // An organisation model's contract fixes its wire, and only it may name one
+  // no other connection's model can be declared to speak.
+  const contract =
+    item.executionContract === undefined
+      ? undefined
+      : decodeConnectionModelContract(item.executionContract);
+  let apiProtocol: ConnectionModel['apiProtocol'];
+  if (contract) {
+    if (item.apiProtocol !== undefined && item.apiProtocol !== contract.apiProtocol) {
+      throw domainError('connection model API protocol must be its contract wire');
+    }
+    apiProtocol = item.apiProtocol === undefined ? undefined : contract.apiProtocol;
+  } else if (item.apiProtocol !== undefined) {
+    apiProtocol = decodePersonalApiProtocol(item.apiProtocol);
+  }
+  if ((contract === undefined) !== (item.availability === undefined)) {
+    throw domainError('connection model contract and availability must occur together');
+  }
   if (
-    item.apiProtocol !== undefined &&
-    item.apiProtocol !== 'openai-chat' &&
-    item.apiProtocol !== 'openai-responses' &&
-    item.apiProtocol !== 'anthropic-messages'
+    item.availability !== undefined &&
+    item.availability !== 'available' &&
+    item.availability !== 'provider_disabled'
   ) {
-    throw domainError('connection model API protocol is invalid');
+    throw domainError('connection model availability is invalid');
   }
   let capabilities: ConnectionModel['capabilities'];
   if (item.capabilities !== undefined) {
@@ -614,6 +677,10 @@ export function decodeConnectionModel(value: unknown): ConnectionModel {
     item.modalities === undefined ? undefined : decodeModelModalities(item.modalities);
   return {
     id: decodeConnectionModelId(item.id),
+    ...(contract === undefined ? {} : { executionContract: contract }),
+    ...(item.availability === undefined
+      ? {}
+      : { availability: item.availability as ConnectionModel['availability'] }),
     ...(item.displayName === undefined
       ? {}
       : {
@@ -632,7 +699,7 @@ export function decodeConnectionModel(value: unknown): ConnectionModel {
             CONNECTION_MODEL_DESCRIPTION_MAX_LENGTH,
           ),
         }),
-    ...(item.apiProtocol === undefined ? {} : { apiProtocol: item.apiProtocol }),
+    ...(apiProtocol === undefined ? {} : { apiProtocol }),
     ...(item.contextWindow === undefined
       ? {}
       : {
@@ -815,6 +882,73 @@ function decodeRequestBodyOverlay(value: unknown): JsonObject | undefined {
     }
     throw error;
   }
+}
+
+/** A wire a person's own connection may declare for one of its models. */
+function decodePersonalApiProtocol(
+  value: unknown,
+): 'openai-chat' | 'openai-responses' | 'anthropic-messages' {
+  if (value !== 'openai-chat' && value !== 'openai-responses' && value !== 'anthropic-messages') {
+    throw domainError('connection model API protocol is invalid');
+  }
+  return value;
+}
+
+/**
+ * An organisation model's execution contract: one this build implements, in
+ * exactly the fields it reads. A contract the shared decoder refuses is a
+ * domain decode failure like any other malformed field.
+ */
+function decodeConnectionModelContract(value: unknown): ModelExecutionContract {
+  let contract: ModelExecutionContract;
+  try {
+    contract = decodeExecutionContract(value);
+  } catch (error) {
+    if (error instanceof ExecutionContractError) {
+      throw domainError(`connection model execution contract: ${error.message}`);
+    }
+    throw error;
+  }
+  exactRecord(
+    value,
+    'connection model execution contract',
+    ['apiProtocol', 'profileId', 'sdkModelId', 'metadataRef', 'capabilities'],
+    ['apiProtocol', 'profileId', 'sdkModelId', 'capabilities'],
+  );
+  exactRecord(
+    contract.capabilities,
+    'execution contract capabilities',
+    [
+      'contextWindow',
+      'maxOutputTokens',
+      'inputModalities',
+      'supportsTools',
+      'supportsReasoning',
+      'supportsStructuredOutput',
+      'parallelToolCalls',
+      'thinkingLevels',
+      'defaultThinkingLevel',
+    ],
+    ['inputModalities', 'supportsTools', 'supportsReasoning', 'supportsStructuredOutput'],
+  );
+  nonEmptyStringValue(
+    contract.sdkModelId,
+    'execution contract model id',
+    CONNECTION_MODEL_ID_MAX_LENGTH,
+  );
+  if (contract.metadataRef !== undefined) {
+    exactRecord(contract.metadataRef, 'execution contract metadata reference', [
+      'providerType',
+      'modelId',
+    ]);
+    stringValue(contract.metadataRef.providerType, 'metadata reference provider', 64);
+    stringValue(
+      contract.metadataRef.modelId,
+      'metadata reference model id',
+      CONNECTION_MODEL_ID_MAX_LENGTH,
+    );
+  }
+  return contract;
 }
 
 export function decodeConnectionModelId(value: unknown): string {

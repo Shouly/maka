@@ -704,3 +704,58 @@ test('the organisation connection is not the renderer’s to make, delete, re-po
   await call('connections:update', identity, { enabled: true });
   assert.deepEqual(writes, ['update enabled=false', 'update enabled=true']);
 });
+
+// Whoever reads the models may be about to pick one; the organisation's
+// catalog is read again then, but by its follower, which keeps one read at a
+// time and its own wait after a failure.
+test('reading the connections asks the organisation follower to refresh, and reads no catalog itself', async () => {
+  const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
+  const organization = {
+    connectionId: 'organization-1',
+    revision: 1,
+    slug: 'organization',
+    name: 'maka.example.com',
+    providerType: 'organization',
+    baseUrl: 'https://maka.example.com/',
+    enabled: true,
+    enabledModelIds: ['m_claude'],
+    catalogEntries: [],
+    models: [{ id: 'm_claude', availability: 'available' }],
+    modelSource: 'fetched',
+  } as unknown as ConnectionCatalogEntry;
+  let catalog = {
+    revision: 3,
+    defaultTarget: null,
+    connections: [organization],
+  } as unknown as ConnectionCatalogSnapshot;
+  const fetched: string[] = [];
+  let refreshes = 0;
+  registerRuntimeHostConnectionsIpc({
+    ipcMain: {
+      handle: (channel, handler) => {
+        handlers.set(channel, handler as (...args: unknown[]) => Promise<unknown>);
+      },
+    },
+    client: {
+      loadConnectionCatalog: async () => catalog,
+      fetchConnectionModels: async (connectionId: string) => {
+        fetched.push(connectionId);
+        return { kind: 'committed' };
+      },
+    } as never,
+    emitConnectionListChanged() {},
+    refreshOrganizationCatalog: () => {
+      refreshes += 1;
+    },
+  });
+  const read = () => handlers.get('connections:getSnapshot')!({});
+
+  await read();
+  await read();
+  assert.equal(refreshes, 2, 'whether to read is the follower’s to decide');
+  assert.deepEqual(fetched, []);
+
+  catalog = { ...catalog, connections: [] } as unknown as ConnectionCatalogSnapshot;
+  await read();
+  assert.equal(refreshes, 2, 'no organisation connection, nothing to refresh');
+});

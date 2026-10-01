@@ -26,15 +26,15 @@ export type Route =
   | { readonly page: 'members' }
   | { readonly page: 'member'; readonly id: string }
   | { readonly page: 'quotas' }
+  | { readonly page: 'model-providers' }
+  | { readonly page: 'model-provider'; readonly id: string }
   | { readonly page: 'models' }
-  | { readonly page: 'model'; readonly id: string }
-  | { readonly page: 'upstreams' }
   | { readonly page: 'usage' }
   | { readonly page: 'audit' }
   /** A console path that names no page. */
   | { readonly page: 'not-found' };
 
-export type Section = 'members' | 'quotas' | 'models' | 'upstreams' | 'usage' | 'audit';
+export type Section = 'members' | 'quotas' | 'model-providers' | 'models' | 'usage' | 'audit';
 
 const BASE = '/admin';
 
@@ -55,10 +55,10 @@ export function parseRoute(pathname: string): Route {
   switch (head) {
     case 'members':
       return id ? { page: 'member', id } : { page: 'members' };
+    case 'model-providers':
+      return id ? { page: 'model-provider', id } : { page: 'model-providers' };
     case 'models':
-      return id ? { page: 'model', id } : { page: 'models' };
     case 'quotas':
-    case 'upstreams':
     case 'usage':
     case 'audit':
       return id ? { page: 'not-found' } : { page: head };
@@ -73,8 +73,8 @@ export function routePath(route: Route): string {
   switch (route.page) {
     case 'member':
       return `${BASE}/members/${encodeURIComponent(route.id)}`;
-    case 'model':
-      return `${BASE}/models/${encodeURIComponent(route.id)}`;
+    case 'model-provider':
+      return `${BASE}/model-providers/${encodeURIComponent(route.id)}`;
     case 'not-found':
       return window.location.pathname;
     default:
@@ -85,7 +85,7 @@ export function routePath(route: Route): string {
 /** The nav entry a route belongs to; none for a path that names no page. */
 export function sectionOf(route: Route): Section | undefined {
   if (route.page === 'member') return 'members';
-  if (route.page === 'model') return 'models';
+  if (route.page === 'model-provider') return 'model-providers';
   if (route.page === 'not-found') return undefined;
   return route.page;
 }

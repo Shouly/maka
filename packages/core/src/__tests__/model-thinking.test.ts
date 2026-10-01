@@ -123,6 +123,71 @@ test('relay profiles preserve the fast service tier declaration', () => {
   assert.deepEqual(normalizeModelOverrides({ m: { serviceTier: 'unknown' } }), { m: {} });
 });
 
+test("a person's model cannot be declared to speak the Gemini wire: only a contract fixes it", () => {
+  assert.deepEqual(
+    normalizeModelOverrides({
+      'gemini-custom': { apiProtocol: 'google-generate', maxOutputTokens: 8192 },
+    }),
+    { 'gemini-custom': { maxOutputTokens: 8192 } },
+  );
+});
+
+test("an organisation model's levels come from its contract, else from the entry it names", () => {
+  const contract = {
+    apiProtocol: 'anthropic-messages',
+    profileId: 'compatible-anthropic',
+    sdkModelId: 'company-claude',
+    metadataRef: { providerType: 'anthropic', modelId: 'claude-sonnet-4-6' },
+    capabilities: {
+      inputModalities: ['text'],
+      supportsTools: true,
+      supportsReasoning: true,
+      supportsStructuredOutput: false,
+    },
+  } as const;
+  const catalog = thinkingVariantsForModel('anthropic', 'claude-sonnet-4-6');
+  assert.ok(catalog.length > 0, 'the premise: the named entry has levels');
+  const organization = (row: Record<string, unknown>) => ({
+    providerType: 'organization' as const,
+    models: [{ id: 'm_claude', capabilities: { reasoning: true }, ...row }],
+  });
+  // The contract says nothing of levels: the entry it names does.
+  const named = resolveModelThinking(organization({ executionContract: contract }), 'm_claude');
+  assert.deepEqual(named.levels, catalog);
+  assert.equal(named.source, 'catalog');
+  // Without a reference, the provider model it is called as.
+  const { metadataRef: _reference, ...unnamed } = contract;
+  assert.deepEqual(
+    resolveModelThinking(
+      organization({
+        executionContract: { ...unnamed, profileId: 'anthropic', sdkModelId: 'claude-sonnet-4-6' },
+      }),
+      'm_claude',
+    ).levels,
+    catalog,
+  );
+  // The contract's own levels win; a model it says does not reason has none.
+  assert.deepEqual(
+    resolveModelThinking(
+      organization({ executionContract: contract, thinkingLevels: ['low', 'high'] }),
+      'm_claude',
+    ).levels,
+    ['low', 'high'],
+  );
+  const silent = resolveModelThinking(
+    organization({
+      executionContract: {
+        ...contract,
+        capabilities: { ...contract.capabilities, supportsReasoning: false },
+      },
+      capabilities: { reasoning: false },
+    }),
+    'm_claude',
+  );
+  assert.deepEqual(silent.levels, []);
+  assert.equal(silent.reasoning, 'no');
+});
+
 test('Fast visibility mirrors the pinned OpenAI SDK priority-processing families', () => {
   const cases = [
     ['gpt-4o', true],

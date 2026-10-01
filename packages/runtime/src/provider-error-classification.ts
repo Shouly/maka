@@ -18,6 +18,7 @@
  */
 
 import { RetryError } from 'ai';
+import { GATEWAY_ERROR_HEADER, type PlatformErrorCode } from '@maka/platform-protocol';
 import {
   MODEL_FAILURE_MESSAGE_MAX_BYTES,
   organizationQuotaFailureMessage,
@@ -144,6 +145,18 @@ interface ProviderErrorFacts {
   responseHeaders?: Record<string, string>;
   /** An answer from the organisation's gateway or account, which outranks every other reading. */
   organization?: OrganizationFailure;
+  /** The request was for an organisation model: the provider's answer passed through its gateway. */
+  organizationModel?: boolean;
+}
+
+/** What classification knows about the request beyond its error. */
+export interface ProviderFailureContext {
+  /**
+   * The request was for an organisation model. The provider's own answers
+   * reach it unchanged and are read as any other; only a refusal of the
+   * organisation's account with the provider is the administrator's to fix.
+   */
+  readonly organizationModel?: boolean;
 }
 
 interface OrganizationFailure {
@@ -193,11 +206,13 @@ export const MODEL_FAILURE_RETRY: Readonly<Record<ModelFailureKind, ProviderRetr
   timeout: 'timeout',
   unknown: null,
   // The gateway says so, and says `x-should-retry: false`: the allowance
-  // resets on its own schedule, and the rest waits on the person.
+  // resets on its own schedule, and the rest waits on the person or their
+  // administrator.
   organization_quota: null,
   organization_model_denied: null,
   organization_sign_in: null,
   organization_upgrade: null,
+  organization_provider_account: null,
 };
 
 /**
@@ -301,6 +316,16 @@ function retryMetadataFromFacts(
   // Do not let the outer model loop restart that same transport budget.
   if (isTrustedCodexEdgeRejection(facts)) return { retryable: false };
   if (MODEL_FAILURE_RETRY[errorClass] === null || RECOVERY_ONLY_KINDS.has(errorClass)) {
+    return { retryable: false };
+  }
+  // Through an organisation gateway, `x-should-retry: false` is either the
+  // gateway's own word (its refusals all carry one, and an unreachable
+  // provider says `true` only when nothing was sent) or the provider's,
+  // passed through: the vendor SDKs honour it, and so does this.
+  if (
+    (facts.organizationModel || facts.organization) &&
+    facts.responseHeaders?.['x-should-retry'] === 'false'
+  ) {
     return { retryable: false };
   }
   // A throttle with no delay, or a malformed one, is still a throttle: the
@@ -455,8 +480,11 @@ function failureSummaryFromFacts(facts: ProviderErrorFacts): ProviderFailureSumm
  * presentation summary, this intentionally excludes provider messages and
  * response bodies: free text can echo prompts or credentials.
  */
-export function providerFailureDiagnostic(error: unknown): ProviderFailureDiagnostic {
-  const facts = extractProviderErrorFacts(error);
+export function providerFailureDiagnostic(
+  error: unknown,
+  context: ProviderFailureContext = {},
+): ProviderFailureDiagnostic {
+  const facts = extractProviderErrorFacts(error, context);
   if (!facts) return { errorClass: 'unknown', retryable: false };
   const sources = facts.summarySources;
   const httpStatus = providerHttpStatus(facts);
@@ -475,25 +503,43 @@ export function providerFailureDiagnostic(error: unknown): ProviderFailureDiagno
   };
 }
 
-function extractProviderErrorFacts(error: unknown): ProviderErrorFacts | undefined {
+function extractProviderErrorFacts(
+  error: unknown,
+  context: ProviderFailureContext = {},
+): ProviderErrorFacts | undefined {
   const facts = locateProviderErrorFacts(error);
-  const organization = facts?.aborted ? undefined : organizationFailureOf(error);
-  return facts && organization ? { ...facts, organization } : facts;
+  if (!facts) return undefined;
+  const organization = facts.aborted ? undefined : organizationFailureOf(error);
+  return {
+    ...facts,
+    ...(organization ? { organization } : {}),
+    ...(context.organizationModel ? { organizationModel: true } : {}),
+  };
 }
 
 /**
- * The organisation gateway's own reason (`maka.code` on its error bodies, in
- * whatever protocol's shape) or the account's refusal to sign
+ * The organisation gateway's own refusals, which it marks with
+ * `x-maka-error` and a `maka` field on the protocol's error body. Anything
+ * else from a gateway is the provider's answer and is read as one. A code not
+ * listed here is left to that ordinary reading too: a throttle is retried as
+ * any rate limit is.
+ */
+const ORGANIZATION_GATEWAY_KINDS: Partial<Record<PlatformErrorCode, ModelFailureKind>> = {
+  unauthenticated: 'organization_sign_in',
+  model_not_allowed: 'organization_model_denied',
+  quota_exceeded: 'organization_quota',
+  upgrade_required: 'organization_upgrade',
+  // The provider could not be reached. Retried as any unavailable provider
+  // is, unless the gateway says a retry could repeat work (`x-should-retry`).
+  upstream_unavailable: 'provider_unavailable',
+  invalid_request: 'request_rejected',
+};
+
+/**
+ * The gateway's refusal, or the account's refusal to sign
  * (`OrganizationAccountUnavailableError`, recognised by name: it is raised in
  * `organization-model-fetch.ts` and may reach here wrapped).
  */
-const ORGANIZATION_GATEWAY_KINDS: Readonly<Record<string, ModelFailureKind>> = {
-  quota_exceeded: 'organization_quota',
-  model_not_allowed: 'organization_model_denied',
-  unauthenticated: 'organization_sign_in',
-  upgrade_required: 'organization_upgrade',
-};
-
 function organizationFailureOf(error: unknown): OrganizationFailure | undefined {
   let current: unknown = providerErrorTarget(error);
   const seen = new Set<unknown>();
@@ -514,9 +560,10 @@ function organizationFailureOf(error: unknown): OrganizationFailure | undefined 
     }
     const body = safeField(record, 'responseBody');
     const detail = typeof body === 'string' ? organizationGatewayDetail(body) : undefined;
+    const code = responseHeadersFromError(current)?.[GATEWAY_ERROR_HEADER] ?? detail?.code;
     const kind =
-      detail && Object.hasOwn(ORGANIZATION_GATEWAY_KINDS, detail.code)
-        ? ORGANIZATION_GATEWAY_KINDS[detail.code]
+      code !== undefined && Object.hasOwn(ORGANIZATION_GATEWAY_KINDS, code)
+        ? ORGANIZATION_GATEWAY_KINDS[code as PlatformErrorCode]
         : undefined;
     if (kind) {
       return {
@@ -796,8 +843,11 @@ export function isContextOverflowErrorText(text: string): boolean {
  * wrap a provider failure in a misleading status or message; the weak
  * heuristics rank last so "generate" can never become a rate limit.
  */
-export function providerModelFailure(error: unknown): ModelFailure {
-  const facts = extractProviderErrorFacts(error);
+export function providerModelFailure(
+  error: unknown,
+  context: ProviderFailureContext = {},
+): ModelFailure {
+  const facts = extractProviderErrorFacts(error, context);
   const kind = facts ? classifyProviderFacts(facts) : 'unknown';
   const summary = facts ? failureSummaryFromFacts(facts) : undefined;
   const retry = facts ? retryMetadataFromFacts(facts, kind) : { retryable: false };
@@ -814,14 +864,27 @@ export function providerModelFailure(error: unknown): ModelFailure {
   };
 }
 
-export function classifyError(error: unknown): ModelFailureKind {
-  const facts = extractProviderErrorFacts(error);
+export function classifyError(
+  error: unknown,
+  context: ProviderFailureContext = {},
+): ModelFailureKind {
+  const facts = extractProviderErrorFacts(error, context);
   return facts ? classifyProviderFacts(facts) : 'unknown';
 }
 
 function classifyProviderFacts(facts: ProviderErrorFacts): ModelFailureKind {
   if (facts.aborted) return 'abort';
   if (facts.organization) return facts.organization.kind;
+  const kind = classifyProviderEvidence(facts);
+  // The provider refused the organisation's own key, permissions or balance:
+  // nothing the person can reconnect or top up, so their administrator is
+  // who they are sent to.
+  return facts.organizationModel && (kind === 'auth' || kind === 'provider_billing')
+    ? 'organization_provider_account'
+    : kind;
+}
+
+function classifyProviderEvidence(facts: ProviderErrorFacts): ModelFailureKind {
   const { evidence } = facts;
   const { text, statusCode, code, structuredCodes } = evidence;
   const normalizedCode = code.toLowerCase();

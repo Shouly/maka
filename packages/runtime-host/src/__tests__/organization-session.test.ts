@@ -129,12 +129,16 @@ test('the app says why it has no token, and a Host with no app to ask says so', 
   );
 });
 
+/** The gateway's own refusal of the account token, marked as its own. */
+const unauthenticated = () =>
+  new Response('no', { status: 401, headers: { 'x-maka-error': 'unauthenticated' } });
+
 test('a refresh that fails says why, rather than the 401 it answered', async () => {
   const app = desktop([token('stale'), { kind: 'unavailable', reason: 'upgrade_required' }]);
   const signed = createHostOrganizationModelFetch({
     session: createHostOrganizationSession({ call: app.call }),
     serverUrl: SERVER,
-    fetchFn: async () => new Response('no', { status: 401 }),
+    fetchFn: async () => unauthenticated(),
   });
   await assert.rejects(
     signed(`${SERVER}/model/anthropic/v1/messages`, { method: 'POST', body: '{}' }),
@@ -160,19 +164,18 @@ test('a gateway request carries the bearer token and the app version, never the 
   assert.equal(seen[0]?.get('authorization'), 'Bearer first');
   assert.equal(seen[0]?.get('x-api-key'), null);
   assert.equal(seen[0]?.get('x-maka-client-version'), '0.2.0');
+  assert.equal(seen[0]?.get('x-maka-gateway-version'), '1');
   assert.equal(seen[0]?.get('content-type'), 'application/json');
 });
 
-test('a 401 is answered once with a refreshed token, and a second 401 goes back as it came', async () => {
+test("the gateway's 401 is answered once with a refreshed token, and a second 401 goes back as it came", async () => {
   const app = desktop([token('stale'), token('fresh')]);
   const session = createHostOrganizationSession({ call: app.call });
   const tokens: string[] = [];
   const fetchFn: typeof fetch = async (_url, init) => {
     const bearer = new Headers(init?.headers).get('authorization') ?? '';
     tokens.push(bearer);
-    return new Response(bearer === 'Bearer fresh' ? 'ok' : 'no', {
-      status: bearer === 'Bearer fresh' ? 200 : 401,
-    });
+    return bearer === 'Bearer fresh' ? new Response('ok') : unauthenticated();
   };
   const signed = createHostOrganizationModelFetch({ session, serverUrl: SERVER, fetchFn });
   const response = await signed(`${SERVER}/model/anthropic/v1/messages`, {
@@ -190,7 +193,7 @@ test('a 401 is answered once with a refreshed token, and a second 401 goes back 
     serverUrl: SERVER,
     fetchFn: async () => {
       sent += 1;
-      return new Response('no', { status: 401 });
+      return unauthenticated();
     },
   });
   assert.equal((await refused(`${SERVER}/model/catalog`)).status, 401);
@@ -201,8 +204,27 @@ test('a 401 is answered once with a refreshed token, and a second 401 goes back 
   const stuck = createHostOrganizationModelFetch({
     session: createHostOrganizationSession({ call: same.call }),
     serverUrl: SERVER,
-    fetchFn: async () => new Response('no', { status: 401 }),
+    fetchFn: async () => unauthenticated(),
   });
   assert.equal((await stuck(`${SERVER}/model/catalog`)).status, 401);
   assert.equal(same.calls.length, 2);
+
+  // The provider's 401 (no gateway mark) is about the organisation's own key:
+  // no new token is asked for, and it goes back as it came.
+  const provider = desktop([token('only')]);
+  let forwarded = 0;
+  const passed = createHostOrganizationModelFetch({
+    session: createHostOrganizationSession({ call: provider.call }),
+    serverUrl: SERVER,
+    fetchFn: async () => {
+      forwarded += 1;
+      return new Response('{"type":"error"}', { status: 401 });
+    },
+  });
+  assert.equal(
+    (await passed(`${SERVER}/model/anthropic/v1/messages`, { method: 'POST', body: '{}' })).status,
+    401,
+  );
+  assert.equal(forwarded, 1);
+  assert.equal(provider.calls.length, 1);
 });

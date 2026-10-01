@@ -27,15 +27,10 @@ import { connectPostgres } from './db/database.js';
 import { migrateToLatest } from './db/migrations.js';
 import { AccessTokens } from './identity/access-tokens.js';
 import { HOUSEKEEPING_INTERVAL_MS, purgeExpiredSignIns } from './identity/housekeeping.js';
+import { purgeModelAdministration } from './model-management.js';
 import { providersFromConfig } from './identity/providers-from-config.js';
 
 const config = loadConfig(process.env);
-// The model SDKs read these from the environment on their own (extra headers,
-// another base URL or bearer token for every upstream call). The upstreams'
-// settings live in the database; nothing here may add to them.
-for (const name of Object.keys(process.env)) {
-  if (name.startsWith('ANTHROPIC_') || name === 'CLOUD_ML_REGION') delete process.env[name];
-}
 const db = connectPostgres(config.databaseUrl);
 await migrateToLatest(db);
 const ctx: ServerContext = {
@@ -53,7 +48,7 @@ const app = await buildServer(ctx, {
 });
 
 const housekeeping = setInterval(() => {
-  purgeExpiredSignIns(ctx).catch((error: unknown) =>
+  Promise.all([purgeExpiredSignIns(ctx), purgeModelAdministration(ctx)]).catch((error: unknown) =>
     app.log.error({ err: error }, 'housekeeping failed'),
   );
 }, HOUSEKEEPING_INTERVAL_MS);

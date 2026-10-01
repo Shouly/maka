@@ -32,7 +32,7 @@ import { activePlanExecution, type PlanSessionState, type PlanStore } from '@mak
 import type { PermissionMode } from '@maka/core/permission';
 import { createHash } from 'node:crypto';
 import type { RuntimeExecutionConnection } from '@maka/core/llm-connections';
-import { lookupModelMetadata } from '@maka/core/model-metadata';
+import { lookupConnectionModelMetadata } from '@maka/core/model-metadata';
 import type { RuntimePolicySnapshot } from '@maka/core/runtime-policy';
 import type { SessionToolProfile, SessionUserContext } from '@maka/core/session';
 import {
@@ -587,9 +587,10 @@ export function createInteractiveRunComposerFactory(
       });
       const { hostTools, boundTools, parentAgentTools } = toolSurface;
       // The model as the connection states it, else as the models metadata
-      // does; an unknown name or cutoff is left out rather than invented.
+      // does (an organisation model's, under the entry its contract names); an
+      // unknown name or cutoff is left out rather than invented.
       const advertised = connection.models?.find((model) => model.id === modelId);
-      const metadata = lookupModelMetadata(connection.providerType, modelId);
+      const metadata = lookupConnectionModelMetadata(connection, modelId);
       const displayName = advertised?.displayName ?? metadata.displayName;
       const knowledgeCutoff = advertised?.knowledgeCutoff ?? metadata.knowledgeCutoff;
       const composer = createInteractiveRunComposer({

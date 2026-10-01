@@ -19,6 +19,7 @@
 
 import type { ModelInfo, ProviderType, ProviderRuntimeAdapter } from './llm-connections.js';
 import type { ThinkingOptions } from './model-thinking.js';
+import { EXECUTION_PROFILES, type ModelExecutionContract } from './model-gateway.js';
 import {
   GENERATED_MODELS_DEV_METADATA,
   GENERATED_MODELS_DEV_MODEL_PROVIDER_OVERRIDES,
@@ -80,26 +81,6 @@ function generatedMetadataProviderType(providerType: ProviderType): ProviderType
   return GENERATED_METADATA_PROVIDER_ALIASES[providerType] ?? providerType;
 }
 
-/**
- * The vendors whose models an organisation gateway serves. Its administrator
- * names each model, as a rule by the vendor's own id, and the vendor's entry
- * is what describes it; the server's own catalog values still come first
- * (they are stored on the connection's models by discovery).
- */
-const ORGANIZATION_METADATA_VENDORS: readonly ProviderType[] = ['anthropic', 'openai', 'google'];
-
-/** The provider whose metadata describes `id` when it is served under `providerType`. */
-function metadataProviderTypeFor(providerType: ProviderType, id: string): ProviderType {
-  if (providerType !== 'organization') return providerType;
-  const statics = staticModelMetadata();
-  return (
-    ORGANIZATION_METADATA_VENDORS.find(
-      (vendor) =>
-        activeMetadata()[vendor]?.[id] !== undefined || statics[vendor]?.[id] !== undefined,
-    ) ?? providerType
-  );
-}
-
 /** Whether discovery is the complete usable model catalog for this account. */
 export function providerReportsCompleteModelCatalog(providerType: ProviderType): boolean {
   return providerType === 'github-copilot' || providerType === 'organization';
@@ -122,9 +103,8 @@ export function hasModelMetadata(providerType: ProviderType, modelId: string): b
   return Object.keys(lookupModelMetadata(providerType, modelId)).length > 0;
 }
 
-export function lookupModelMetadata(requested: ProviderType, modelId: string): ModelMetadata {
+export function lookupModelMetadata(providerType: ProviderType, modelId: string): ModelMetadata {
   const id = modelId.trim();
-  const providerType = metadataProviderTypeFor(requested, id);
   const metadataProviderType = generatedMetadataProviderType(providerType);
   const generated = activeMetadata()[metadataProviderType]?.[id];
   const statics = staticModelMetadata();
@@ -138,6 +118,32 @@ export function lookupModelMetadata(requested: ProviderType, modelId: string): M
     capabilities: { ...generated.capabilities, ...override.capabilities },
     modalities: override.modalities ?? generated.modalities,
   };
+}
+
+/**
+ * The metadata describing one of a connection's models. An organisation
+ * model's `m_…` id is the organisation's own: its execution contract names
+ * the entry that describes it (`metadataRef`), else the provider model it is
+ * called as. Every other model is looked up under its connection's provider.
+ */
+export function lookupConnectionModelMetadata(
+  connection: { readonly providerType: ProviderType; readonly models?: readonly ModelInfo[] },
+  modelId: string,
+): ModelMetadata {
+  const contract = connection.models?.find((model) => model.id === modelId)?.executionContract;
+  return contract
+    ? lookupContractMetadata(contract)
+    : lookupModelMetadata(connection.providerType, modelId);
+}
+
+/** The metadata an organisation model's execution contract points at. */
+export function lookupContractMetadata(contract: ModelExecutionContract): ModelMetadata {
+  return contract.metadataRef
+    ? lookupModelMetadata(
+        contract.metadataRef.providerType as ProviderType,
+        contract.metadataRef.modelId,
+      )
+    : lookupModelMetadata(EXECUTION_PROFILES[contract.profileId].providerType, contract.sdkModelId);
 }
 
 /**

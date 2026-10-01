@@ -13,5 +13,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:dist": "node --test \"dist/**/*.test.js\""
+  },
+  "dependencies": {
+    "@maka/core": "0.1.0"
   }
 }

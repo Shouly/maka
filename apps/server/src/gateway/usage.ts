@@ -17,159 +17,282 @@
  * under the License.
  */
 
-// Metering (design §5.2): read token usage out of the upstream answer as it
-// passes through, weigh it, and record one usage event per request.
-//
-// Anthropic streams carry usage in two events: `message_start` holds the
-// input and cache tokens, `message_delta` the cumulative output count (and,
-// on newer models, updated input and cache counts). A non-streaming answer
-// has it all in `usage`.
+// Reading usage off an answer as it passes, in each protocol's own terms,
+// without holding it back or changing it: the gateway only watches.
 
-import type { GatewayProtocol } from '@maka/platform-protocol';
-import type { ServerContext } from '../context.js';
+import type { ModelApiProtocol } from '@maka/core/model-gateway';
 
 export interface TokenUsage {
+  /** Input not read from or written to the cache. */
   input: number;
+  /** Output including any reasoning the provider counts in it. */
   output: number;
   cacheWrite: number;
   cacheRead: number;
 }
-
 export const emptyUsage = (): TokenUsage => ({ input: 0, output: 0, cacheWrite: 0, cacheRead: 0 });
 
-/** Input ×1, output ×5, cache write ×1.25, cache read ×0.1, times the model's weight (from relx-copilot). */
-export function weightedUnits(usage: TokenUsage, costWeight: number): number {
-  return (
-    (usage.input + usage.output * 5 + usage.cacheWrite * 1.25 + usage.cacheRead * 0.1) * costWeight
-  );
+/** Allowance units: output weighs five times input, cache reads a tenth. */
+export function weightedUnits(u: TokenUsage, weight: number): number {
+  return (u.input + 5 * u.output + 1.25 * u.cacheWrite + 0.1 * u.cacheRead) * weight;
 }
 
-const count = (value: unknown) =>
-  typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
-
-/** Fold an Anthropic `usage` object into the running totals; absent fields keep their value. */
-export function applyAnthropicUsage(total: TokenUsage, usage: unknown): void {
-  if (typeof usage !== 'object' || usage === null) return;
-  const record = usage as Record<string, unknown>;
-  total.input = count(record.input_tokens) ?? total.input;
-  total.output = count(record.output_tokens) ?? total.output;
-  total.cacheWrite = count(record.cache_creation_input_tokens) ?? total.cacheWrite;
-  total.cacheRead = count(record.cache_read_input_tokens) ?? total.cacheRead;
-}
-
-/** Rough tokens for streamed text: ~4 ASCII characters a token, one per other character (CJK). */
-function estimateTokens(text: string): number {
-  let ascii = 0;
-  let other = 0;
-  for (const char of text) {
-    if (char.charCodeAt(0) < 0x80) ascii += 1;
-    else other += 1;
-  }
-  return Math.ceil(ascii / 4) + other;
+/** About four characters a token, a CJK character one; only for text that was seen. */
+export function estimateTokens(text: string): number {
+  let units = 0;
+  for (const c of text) units += c.charCodeAt(0) > 127 ? 1 : 0.25;
+  return Math.ceil(units);
 }
 
 /**
- * Watches an Anthropic SSE byte stream for usage without altering it. Events
- * may be separated by CRLF as well as LF (the SSE spec allows both). The
- * output count only arrives at the end, in `message_delta`; a stream that
- * stops before it — the client hung up, the upstream dropped — is charged
- * for what it had already streamed, estimated from the text (§5.2).
+ * An encoded image or file inside a request, bare or as a data URL (the
+ * OpenAI wires): counted as one would cost, not by its characters.
  */
-export class AnthropicStreamMeter {
-  readonly usage = emptyUsage();
-  #pending = '';
-  #carriageReturn = false;
-  #finalUsage = false;
-  #estimatedOutput = 0;
-  readonly #decoder = new TextDecoder();
+const ENCODED = /^(?:data:[\w.+-]+\/[\w.+-]+(?:;[^;,]*)*;base64,)?[A-Za-z0-9+/=_-]{1024,}$/;
+const ENCODED_TOKENS = 1600;
 
-  push(chunk: Uint8Array): void {
-    let text = this.#decoder.decode(chunk, { stream: true });
-    // A CRLF split across two chunks must stay one line break.
-    if (this.#carriageReturn) text = `\r${text}`;
-    this.#carriageReturn = text.endsWith('\r');
-    if (this.#carriageReturn) text = text.slice(0, -1);
-    this.#pending += text.replace(/\r\n?/g, '\n');
-    let boundary = this.#pending.indexOf('\n\n');
-    while (boundary !== -1) {
-      this.#event(this.#pending.slice(0, boundary));
-      this.#pending = this.#pending.slice(boundary + 2);
-      boundary = this.#pending.indexOf('\n\n');
+/**
+ * A request's input, estimated from its text, for when the provider never
+ * said (the answer broke off before its usage). Encoded media counts as a
+ * fixed amount rather than by the length of its base64.
+ */
+export function estimateRequestTokens(body: unknown): number {
+  let tokens = 0;
+  const walk = (value: unknown) => {
+    if (typeof value === 'string') {
+      tokens += ENCODED.test(value) ? ENCODED_TOKENS : estimateTokens(value);
+    } else if (Array.isArray(value)) {
+      for (const item of value) walk(item);
+    } else if (value !== null && typeof value === 'object') {
+      for (const item of Object.values(value)) walk(item);
     }
-    // A single event larger than this is not usage; stop holding it.
-    if (this.#pending.length > 1024 * 1024) this.#pending = '';
+  };
+  walk(body);
+  return tokens;
+}
+
+const object = (v: unknown): Record<string, any> =>
+  v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, any>) : {};
+const count = (v: unknown): number | undefined =>
+  typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : undefined;
+
+/** Past this, one streamed event is passed on without being read. */
+const EVENT_LIMIT = 8 * 1024 * 1024;
+/** Past this, a whole JSON answer is passed on without being read. */
+const DOCUMENT_LIMIT = 64 * 1024 * 1024;
+
+/**
+ * Watches one answer: its usage, whether it reached its end, and whether the
+ * provider reported an error inside it. Fed the bytes as they are forwarded.
+ */
+export class GatewayUsageMeter {
+  usage = emptyUsage();
+  #inputReported = false;
+  #outputReported = false;
+  /** The protocol's end-of-answer marker was seen. */
+  complete = false;
+  /** The provider reported an error inside a successful response. */
+  failed = false;
+  #estimatedOutput = 0;
+  /** A JSON answer too large to read: forwarded, but its usage is estimated. */
+  #overflow = false;
+  #decoder = new TextDecoder();
+  #buffer = '';
+  /** Where in the buffer to look for the next event's end: earlier text has none. */
+  #scanFrom = 0;
+  /** Inside an event too large to read: passed on until it ends. */
+  #skipping = false;
+  readonly #chunks: Uint8Array[] = [];
+  #size = 0;
+
+  constructor(
+    readonly protocol: ModelApiProtocol,
+    /** Server-sent events, or one JSON document. */
+    readonly stream: boolean,
+    /** The request's input, estimated, for when the provider never says it. */
+    readonly estimateInput: () => number = () => 0,
+  ) {}
+
+  feed(bytes: Uint8Array): void {
+    if (this.#overflow) return;
+    if (!this.stream) {
+      this.#size += bytes.byteLength;
+      if (this.#size > DOCUMENT_LIMIT) {
+        this.#overflow = true;
+        this.#chunks.length = 0;
+        return;
+      }
+      this.#chunks.push(bytes);
+      return;
+    }
+    this.#buffer += this.#decoder.decode(bytes, { stream: true });
+    const end = /\r?\n\r?\n/g;
+    for (;;) {
+      // A separator may have begun at the end of the text already searched.
+      end.lastIndex = Math.max(0, this.#scanFrom - 3);
+      const match = end.exec(this.#buffer);
+      if (!match) break;
+      const frame = this.#buffer.slice(0, match.index);
+      this.#buffer = this.#buffer.slice(match.index + match[0].length);
+      this.#scanFrom = 0;
+      if (this.#skipping) this.#skipping = false;
+      else this.#frame(frame);
+    }
+    this.#scanFrom = this.#buffer.length;
+    // One event too large to read (an inline image) is skipped; the events after it still count.
+    if (this.#buffer.length > EVENT_LIMIT) {
+      this.#skipping = true;
+      this.#buffer = '';
+      this.#scanFrom = 0;
+    }
   }
 
-  /** What to charge: the stream's own count, or an estimate when it stopped before giving one. */
-  charge(): TokenUsage {
-    if (this.#finalUsage) return { ...this.usage };
-    return { ...this.usage, output: Math.max(this.usage.output, this.#estimatedOutput) };
+  /** The answer ended (fully read): read what is left. */
+  finish(): void {
+    if (this.#overflow) return;
+    if (!this.stream) {
+      try {
+        const text = new TextDecoder().decode(Buffer.concat(this.#chunks));
+        this.#accept(JSON.parse(text), true);
+        this.complete = true;
+      } catch {
+        // Not JSON: forwarded as it was; nothing to count.
+      }
+      return;
+    }
+    this.#buffer += this.#decoder.decode();
+    if (this.#buffer.trim() && !this.#skipping) this.#frame(this.#buffer);
+    this.#buffer = '';
   }
 
-  #event(block: string): void {
-    const data = block
-      .split('\n')
+  /** What to record: the provider's own counts when it gave them, otherwise what was seen. */
+  result(): { usage: TokenUsage; quality: 'reported' | 'estimated' } {
+    // A stream that broke off has only running counts (Anthropic's opening output of 1).
+    if (this.#inputReported && this.#outputReported && this.complete && !this.#overflow)
+      return { usage: { ...this.usage }, quality: 'reported' };
+    return {
+      usage: {
+        ...this.usage,
+        input: this.#inputReported ? this.usage.input : this.estimateInput(),
+        output: Math.max(this.usage.output, this.#estimatedOutput),
+      },
+      quality: 'estimated',
+    };
+  }
+
+  #frame(frame: string): void {
+    const data = frame
+      .split(/\r?\n/)
       .filter((line) => line.startsWith('data:'))
       .map((line) => line.slice(5).trimStart())
       .join('\n');
-    const delta = data.includes('"content_block_delta"');
-    if (!delta && !data.includes('usage')) return;
+    if (!data) return;
+    if (data === '[DONE]') {
+      if (this.protocol === 'openai-chat') this.complete = true;
+      return;
+    }
     try {
-      const event = JSON.parse(data) as {
-        type?: unknown;
-        message?: { usage?: unknown };
-        usage?: unknown;
-        delta?: { text?: unknown; thinking?: unknown; partial_json?: unknown };
-      };
-      if (event.type === 'message_start') applyAnthropicUsage(this.usage, event.message?.usage);
-      else if (event.type === 'message_delta') {
-        applyAnthropicUsage(this.usage, event.usage);
-        if (event.usage) this.#finalUsage = true;
-      } else if (event.type === 'content_block_delta') {
-        const piece = event.delta?.text ?? event.delta?.thinking ?? event.delta?.partial_json;
-        if (typeof piece === 'string') this.#estimatedOutput += estimateTokens(piece);
-      }
+      this.#accept(JSON.parse(data), false);
     } catch {
-      // Not JSON: nothing to meter.
+      // A frame that is not JSON is the client's to make sense of.
     }
   }
-}
 
-export interface UsageRecord {
-  readonly userId: string;
-  readonly sessionId: string;
-  readonly modelId: string;
-  readonly upstreamId: string | null;
-  readonly protocol: GatewayProtocol;
-  readonly usage: TokenUsage;
-  readonly costWeight: number;
-  readonly status: 'ok' | 'error' | 'cancelled';
-  readonly httpStatus: number | null;
-  readonly latencyMs: number;
-  readonly clientVersion: string | null;
-  readonly upstreamRequestId: string | null;
-}
+  #applyUsage(value: unknown): void {
+    const u = object(value);
+    let input: unknown, output: unknown, read: unknown, write: unknown;
+    if (this.protocol === 'anthropic-messages') {
+      input = u.input_tokens;
+      output = u.output_tokens;
+      read = u.cache_read_input_tokens;
+      write = u.cache_creation_input_tokens;
+    } else if (this.protocol === 'openai-chat') {
+      input = u.prompt_tokens;
+      output = u.completion_tokens;
+      read = object(u.prompt_tokens_details).cached_tokens;
+    } else if (this.protocol === 'openai-responses') {
+      input = u.input_tokens;
+      output = u.output_tokens;
+      read = object(u.input_tokens_details).cached_tokens;
+    } else {
+      input = u.promptTokenCount;
+      read = u.cachedContentTokenCount;
+      const candidates = count(u.candidatesTokenCount);
+      const thoughts = count(u.thoughtsTokenCount);
+      if (candidates !== undefined || thoughts !== undefined)
+        output = (candidates ?? 0) + (thoughts ?? 0);
+    }
+    const r = count(read);
+    const w = count(write);
+    const i = count(input);
+    const o = count(output);
+    if (r !== undefined) this.usage.cacheRead = r;
+    if (w !== undefined) this.usage.cacheWrite = w;
+    if (i !== undefined) {
+      this.#inputReported = true;
+      // Anthropic counts cache reads apart; the others include them in the input.
+      this.usage.input =
+        this.protocol === 'anthropic-messages' ? i : Math.max(0, i - this.usage.cacheRead);
+    }
+    if (o !== undefined) {
+      this.#outputReported = true;
+      this.usage.output = o;
+    }
+  }
 
-export async function recordUsage(ctx: ServerContext, record: UsageRecord): Promise<void> {
-  await ctx.db
-    .insertInto('usage_events')
-    .values({
-      at: ctx.now(),
-      user_id: record.userId,
-      session_id: record.sessionId,
-      model_id: record.modelId,
-      upstream_id: record.upstreamId,
-      protocol: record.protocol,
-      input_tokens: record.usage.input,
-      output_tokens: record.usage.output,
-      cache_write_tokens: record.usage.cacheWrite,
-      cache_read_tokens: record.usage.cacheRead,
-      weighted_units: weightedUnits(record.usage, record.costWeight),
-      status: record.status,
-      http_status: record.httpStatus,
-      latency_ms: Math.round(record.latencyMs),
-      client_version: record.clientVersion,
-      upstream_request_id: record.upstreamRequestId,
-    })
-    .execute();
+  #accept(value: unknown, whole: boolean): void {
+    const e = object(value);
+    if (e.error || e.type === 'error' || e.type === 'response.failed') this.failed = true;
+    if (this.protocol === 'anthropic-messages') {
+      this.#applyUsage(e.type === 'message_start' ? object(e.message).usage : e.usage);
+      if (e.type === 'message_stop') this.complete = true;
+      if (e.type === 'content_block_delta') {
+        const d = object(e.delta);
+        this.#estimatedOutput += estimateTokens(
+          String(d.text ?? d.thinking ?? d.partial_json ?? ''),
+        );
+      }
+    } else if (this.protocol === 'openai-chat') {
+      this.#applyUsage(e.usage);
+      for (const choice of Array.isArray(e.choices) ? e.choices : []) {
+        const d = object(whole ? choice.message : choice.delta);
+        this.#estimatedOutput +=
+          estimateTokens(String(d.content ?? d.reasoning ?? d.reasoning_content ?? '')) +
+          (d.tool_calls ? estimateTokens(JSON.stringify(d.tool_calls)) : 0);
+      }
+    } else if (this.protocol === 'openai-responses') {
+      const r = e.response ? object(e.response) : e;
+      this.#applyUsage(r.usage);
+      if (
+        e.type === 'response.completed' ||
+        e.type === 'response.incomplete' ||
+        e.type === 'response.failed'
+      )
+        this.complete = true;
+      if (typeof e.delta === 'string') this.#estimatedOutput += estimateTokens(e.delta);
+    } else {
+      this.#applyUsage(e.usageMetadata);
+      for (const candidate of Array.isArray(e.candidates) ? e.candidates : []) {
+        // Any finish reason ends the answer; which one is the client's to read.
+        if (candidate.finishReason) this.complete = true;
+        if (candidate.content)
+          this.#estimatedOutput += estimateTokens(JSON.stringify(candidate.content));
+      }
+      if (object(e.promptFeedback).blockReason) this.complete = true;
+      const usage = object(e.usageMetadata);
+      // Gemini leaves zero counters out: a finished answer with only totals had no output.
+      if (
+        this.complete &&
+        count(usage.candidatesTokenCount) === undefined &&
+        count(usage.thoughtsTokenCount) === undefined
+      ) {
+        const prompt = count(usage.promptTokenCount);
+        const total = count(usage.totalTokenCount);
+        if (prompt !== undefined && total !== undefined && total >= prompt) {
+          this.#outputReported = true;
+          this.usage.output = total - prompt;
+        }
+      }
+    }
+  }
 }

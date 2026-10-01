@@ -17,6 +17,8 @@
  * under the License.
  */
 
+import { decodeExecutionContract, type ModelExecutionContract } from '@maka/core/model-gateway';
+import { GATEWAY_SCHEMA_VERSION, GATEWAY_VERSION_HEADER } from '@maka/platform-protocol';
 import {
   PROVIDER_REGISTRY,
   providerFallbackModelIds,
@@ -26,6 +28,7 @@ import {
   type LlmConnection,
   type ModelInfo,
   type ModelModality,
+  type ProviderType,
 } from '@maka/core/llm-connections';
 import { lookupModelMetadata } from '@maka/core/model-metadata';
 import { inDisplayOrder, isThinkingLevel, type ThinkingLevel } from '@maka/core/model-thinking';
@@ -34,6 +37,7 @@ import { generalizedErrorMessage } from '@maka/core/redaction';
 import {
   CONNECTION_CATALOG_MAX_MODELS_PER_CONNECTION,
   CONNECTION_MODEL_ID_MAX_LENGTH,
+  decodeConnectionModel,
   normalizeConnectionModelDiscoveryResult,
 } from '@maka/core/runtime-policy';
 import { anthropicV1Url, googleApiUrl } from './provider-urls.js';
@@ -169,6 +173,20 @@ export async function runConnectionModelDiscoveryEffect(
   options: ConnectionEffectFetchDependency,
 ): Promise<ConnectionModelDiscoveryEffectOutcome> {
   try {
+    // An organisation's catalog says which revision it is, so an unchanged one
+    // need not be stored again.
+    if (PROVIDER_REGISTRY[connection.providerType]?.modelDiscovery.kind === 'platform-catalog') {
+      const catalog = await fetchOrganizationCatalog(
+        effectiveBaseUrl(connection),
+        apiKey,
+        options.fetch,
+      );
+      return {
+        ok: true,
+        models: normalizeConnectionEffectModels(catalog.models),
+        catalogRevision: catalog.revision,
+      };
+    }
     return {
       ok: true,
       models: normalizeConnectionEffectModels(
@@ -545,24 +563,38 @@ export async function fetchOpenAiCodexModels(
 
 /**
  * The organisation server's catalog (`GET /model/catalog`): the models this
- * account may use, as the server describes them. What the server leaves out
- * comes from the vendor's own entry, looked up by `referenceModelId` when the
- * administrator named the model differently.
+ * account may use, each under the organisation's own id (`m_…`) and with the
+ * execution contract it is called by. What the catalog leaves out comes from
+ * the entry its contract names (`metadataRef`); nothing the catalog says is
+ * overridden by it.
  *
- * Only the Anthropic protocol is served by the gateway so far; a model on
- * another protocol is left out until its path exists, rather than listed and
- * failing on the first send.
+ * A model this build cannot use (a profile it does not implement, a malformed
+ * row) is left out and logged, and the rest of the catalog still lands. Only a
+ * catalog in another schema is refused whole.
  */
 export async function fetchOrganizationCatalogModels(
   baseUrl: string,
   accessToken: string,
   fetchFn?: ConnectionEffectFetch,
 ): Promise<ModelInfo[]> {
+  return (await fetchOrganizationCatalog(baseUrl, accessToken, fetchFn)).models;
+}
+
+/** The organisation catalog's models, with the revision the server published them under. */
+export async function fetchOrganizationCatalog(
+  baseUrl: string,
+  accessToken: string,
+  fetchFn?: ConnectionEffectFetch,
+): Promise<{ readonly revision: string; readonly models: ModelInfo[] }> {
   const response = await fetchForConnectionEffect(
     fetchFn,
     `${stripTrailing(baseUrl)}${MODEL_CATALOG_PATH}`,
     {
-      headers: { Authorization: `Bearer ${accessToken}`, accept: 'application/json' },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        accept: 'application/json',
+        [GATEWAY_VERSION_HEADER]: String(GATEWAY_SCHEMA_VERSION),
+      },
       timeoutMs: MODEL_FETCH_TIMEOUT_MS,
     },
   );
@@ -570,47 +602,117 @@ export async function fetchOrganizationCatalogModels(
     await response.cancel();
     throw new ConnectionEffectHttpError(response.status);
   }
-  const payload = await readProviderJson<{ models?: unknown }>(response);
-  return providerObjectArray<Partial<PlatformModel>>(
+  const payload = await readProviderJson<{
+    schemaVersion?: unknown;
+    revision?: unknown;
+    models?: unknown;
+  }>(response);
+  if (payload.schemaVersion !== GATEWAY_SCHEMA_VERSION || typeof payload.revision !== 'string') {
+    throw new ConnectionEffectInvalidResponseError('Unsupported organization model catalog');
+  }
+  const models = providerObjectArray<Record<string, unknown>>(
     payload.models,
     'Organization models',
     true,
   ).flatMap((model) => {
-    const entry = organizationModelInfo(model);
-    return entry ? [entry] : [];
+    try {
+      return [decodeConnectionModel(organizationModelInfo(model))];
+    } catch (error) {
+      const id = typeof model.id === 'string' ? model.id.slice(0, 80) : '(no id)';
+      console.warn(
+        `[runtime] organization model ${id} left out of the catalog: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return [];
+    }
   });
+  return { revision: payload.revision, models };
 }
 
-function organizationModelInfo(model: Partial<PlatformModel>): ModelInfo | undefined {
-  const id = typeof model.id === 'string' ? model.id.trim() : '';
-  if (!id || model.protocol !== 'anthropic') return undefined;
-  const referenceId =
-    typeof model.referenceModelId === 'string' ? model.referenceModelId.trim() : '';
-  const reference =
-    referenceId && referenceId !== id ? lookupModelMetadata('anthropic', referenceId) : {};
-  const count = (value: unknown): number | undefined =>
-    typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
-  const entry: ModelInfo = { id, apiProtocol: 'anthropic-messages' };
-  const displayName = typeof model.displayName === 'string' ? model.displayName.trim() : '';
-  if (displayName) entry.displayName = displayName;
-  const contextWindow = count(model.contextWindow) ?? reference.contextWindow;
-  if (contextWindow !== undefined) entry.contextWindow = contextWindow;
-  const maxOutputTokens = count(model.maxOutputTokens) ?? reference.maxOutputTokens;
-  if (maxOutputTokens !== undefined) entry.maxOutputTokens = maxOutputTokens;
-  if (reference.knowledgeCutoff !== undefined) entry.knowledgeCutoff = reference.knowledgeCutoff;
-  const input = Array.isArray(model.inputModalities)
-    ? model.inputModalities.filter(isModelModality)
-    : undefined;
-  const modalities = input?.length ? { input, output: ['text' as const] } : reference.modalities;
-  if (modalities) entry.modalities = modalities;
-  const capabilities = {
-    ...reference.capabilities,
-    ...(input?.length ? { vision: input.includes('image') } : {}),
-    ...(typeof model.supportsTools === 'boolean' ? { functionCalling: model.supportsTools } : {}),
+const ORGANIZATION_MODEL_AVAILABILITY: readonly PlatformModel['availability'][] = [
+  'available',
+  'provider_disabled',
+];
+
+function organizationModelInfo(model: Record<string, unknown>): ModelInfo {
+  const { id, displayName, availability } = model;
+  if (typeof id !== 'string' || !id.startsWith('m_')) {
+    throw new Error('Invalid organization model id');
+  }
+  if (typeof displayName !== 'string' || !displayName.trim()) {
+    throw new Error('Invalid organization model name');
+  }
+  if (!ORGANIZATION_MODEL_AVAILABILITY.includes(availability as PlatformModel['availability'])) {
+    throw new Error('Invalid organization model availability');
+  }
+  const contract = knownContractFields(decodeExecutionContract(model.contract));
+  const c = contract.capabilities;
+  const reference = contract.metadataRef
+    ? lookupModelMetadata(
+        contract.metadataRef.providerType as ProviderType,
+        contract.metadataRef.modelId,
+      )
+    : {};
+  const contextWindow = c.contextWindow ?? reference.contextWindow;
+  // An input limit belongs to the window it narrows: the entry's, not the catalog's.
+  const inputLimit = c.contextWindow === undefined ? reference.inputLimit : undefined;
+  const maxOutputTokens = c.maxOutputTokens ?? reference.maxOutputTokens;
+  return {
+    id,
+    displayName: displayName.trim(),
+    executionContract: contract,
+    availability: availability as PlatformModel['availability'],
+    apiProtocol: contract.apiProtocol,
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
+    ...(inputLimit !== undefined ? { inputLimit } : {}),
+    ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
+    ...(reference.knowledgeCutoff !== undefined
+      ? { knowledgeCutoff: reference.knowledgeCutoff }
+      : {}),
+    ...(reference.lastUpdated !== undefined ? { lastUpdated: reference.lastUpdated } : {}),
+    structuredOutput: c.supportsStructuredOutput,
+    capabilities: {
+      chat: true,
+      vision: c.inputModalities.includes('image'),
+      reasoning: c.supportsReasoning,
+      functionCalling: c.supportsTools,
+      ...(c.parallelToolCalls === undefined ? {} : { parallelToolCalls: c.parallelToolCalls }),
+      // Search the provider runs is billed outside the gateway's allowance.
+      webSearch: false,
+    },
+    modalities: { input: [...c.inputModalities], output: ['text'] },
+    ...advertisedThinking(c.thinkingLevels, c.defaultThinkingLevel),
   };
-  if (Object.keys(capabilities).length > 0) entry.capabilities = capabilities;
-  Object.assign(entry, advertisedThinking(model.thinkingLevels, model.defaultThinkingLevel));
-  return entry;
+}
+
+/** The contract in the fields this build reads: a newer server may say more. */
+function knownContractFields(contract: ModelExecutionContract): ModelExecutionContract {
+  const c = contract.capabilities;
+  return {
+    apiProtocol: contract.apiProtocol,
+    profileId: contract.profileId,
+    sdkModelId: contract.sdkModelId,
+    ...(contract.metadataRef
+      ? {
+          metadataRef: {
+            providerType: contract.metadataRef.providerType,
+            modelId: contract.metadataRef.modelId,
+          },
+        }
+      : {}),
+    capabilities: {
+      ...(c.contextWindow === undefined ? {} : { contextWindow: c.contextWindow }),
+      ...(c.maxOutputTokens === undefined ? {} : { maxOutputTokens: c.maxOutputTokens }),
+      inputModalities: [...c.inputModalities],
+      supportsTools: c.supportsTools,
+      supportsReasoning: c.supportsReasoning,
+      supportsStructuredOutput: c.supportsStructuredOutput,
+      ...(c.parallelToolCalls === undefined ? {} : { parallelToolCalls: c.parallelToolCalls }),
+      ...(c.thinkingLevels === undefined ? {} : { thinkingLevels: [...c.thinkingLevels] }),
+      ...(c.defaultThinkingLevel === undefined
+        ? {}
+        : { defaultThinkingLevel: c.defaultThinkingLevel }),
+    },
+  };
 }
 
 /**

@@ -19,628 +19,1026 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { decodeTokenResponse, type PlatformModelCatalog } from '@maka/platform-protocol';
-import { newId } from '../crypto/tokens.js';
+import { createAnthropic } from '@ai-sdk/anthropic';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createOpenAI } from '@ai-sdk/openai';
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import type { ModelApiProtocol, ModelIntegrationId } from '@maka/core/model-gateway';
+import type { ConsoleModel } from '../admin-console/types.js';
+import { providerBaseUrl, validateProviderConfig } from '../gateway/model-providers.js';
 import { nextPeriodStart, periodStart } from '../gateway/quota.js';
-import { AnthropicStreamMeter, weightedUnits } from '../gateway/usage.js';
-import { browserSignIn, exchangeCode, startTestServer, type TestServer } from './support.js';
+import { GatewayUsageMeter, weightedUnits } from '../gateway/usage.js';
+import {
+  accessToken,
+  anthropicDraft,
+  anthropicJson,
+  anthropicStream,
+  event,
+  modelHeaders,
+  publish,
+} from './gateway-support.js';
+import { consoleCall, startTestServer, type TestServer } from './support.js';
 
-const SSE = [
-  'event: message_start',
-  'data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[],"model":"up","usage":{"input_tokens":100,"cache_creation_input_tokens":20,"cache_read_input_tokens":300,"output_tokens":1}}}',
-  '',
-  'event: content_block_start',
-  'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
-  '',
-  'event: content_block_delta',
-  'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}',
-  '',
-  'event: message_delta',
-  'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":42}}',
-  '',
-  'event: message_stop',
-  'data: {"type":"message_stop"}',
-  '',
-  '',
-].join('\n');
+type LanguageModel = Pick<
+  ReturnType<ReturnType<typeof createOpenAI>['chat']>,
+  'doGenerate' | 'doStream'
+>;
 
-interface UpstreamCall {
-  url: string;
-  headers: Record<string, string>;
-  body: Record<string, unknown>;
-}
-
-/** An Anthropic API stand-in. `plan` answers each call in turn: a status, or 'stream' / 'json'. */
-function fakeAnthropic(plan: (number | 'stream' | 'json' | 'slow')[]) {
-  const calls: UpstreamCall[] = [];
-  const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
-    const url = String(input instanceof Request ? input.url : input);
-    calls.push({
-      url,
-      headers: Object.fromEntries(new Headers(init?.headers).entries()),
-      body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>,
-    });
-    const step = plan[Math.min(calls.length - 1, plan.length - 1)];
-    if (typeof step === 'number') {
-      return Response.json(
-        { type: 'error', error: { type: 'api_error', message: `upstream ${step}` } },
-        { status: step },
-      );
-    }
-    if (step === 'json') {
-      return Response.json(
-        { id: 'msg', type: 'message', content: [], usage: { input_tokens: 10, output_tokens: 5 } },
-        { headers: { 'request-id': 'req_json' } },
-      );
-    }
-    const encoder = new TextEncoder();
-    const body = new ReadableStream<Uint8Array>({
-      async start(controller) {
-        if (step === 'slow') {
-          controller.enqueue(
-            encoder.encode(SSE.slice(0, SSE.indexOf('event: content_block_start'))),
-          );
-          await new Promise((resolve) => setTimeout(resolve, 5_000));
-        }
-        controller.enqueue(encoder.encode(SSE));
-        controller.close();
-      },
-      cancel() {},
-    });
-    return new Response(body, {
-      headers: { 'content-type': 'text/event-stream', 'request-id': 'req_stream' },
-    });
-  }) as typeof fetch;
-  return { calls, fetchImpl };
-}
-
-async function seedGateway(
-  server: TestServer,
-  routes: { name: string; priority: number; kind?: 'anthropic' | 'openrouter' }[],
-) {
-  const now = server.clock.now;
-  for (const route of routes) {
-    const id = newId();
-    await server.db
-      .insertInto('upstreams')
-      .values({
-        id,
-        name: route.name,
-        kind: route.kind ?? 'anthropic',
-        config: JSON.stringify(
-          route.kind === 'openrouter' ? {} : { baseUrl: `https://${route.name}.test` },
-        ),
-        credential_sealed: server.ctx.secrets.seal(
-          JSON.stringify({ apiKey: `key-${route.name}` }),
-          `upstream:${id}`,
-        ),
-        enabled: true,
-        updated_at: now,
-      })
-      .execute();
-    await server.db
-      .insertInto('models')
-      .values({
-        id: 'claude-opus-5',
-        protocol: 'anthropic',
-        display_name: 'Claude Opus 5',
-        capabilities: JSON.stringify({
-          contextWindow: 1_000_000,
-          thinkingLevels: ['low', 'high'],
-          supportsTools: true,
-        }),
-        cost_weight: 2,
-        enabled: true,
-        sort_order: 0,
-        updated_at: now,
-      })
-      .onConflict((oc) => oc.column('id').doNothing())
-      .execute();
-    await server.db
-      .insertInto('model_routes')
-      .values({
-        model_id: 'claude-opus-5',
-        upstream_id: id,
-        upstream_model: `${route.name}-opus`,
-        priority: route.priority,
-      })
-      .execute();
-  }
-}
-
-async function accessToken(server: TestServer, email = 'ada@relx.com'): Promise<string> {
-  const code = `c-${email}-${server.clock.now.getTime()}`;
-  server.relx.answers.set(code, { provider: 'relx-sso', subject: email, email });
-  const { redirect } = await browserSignIn(server, server.relx, code);
-  return decodeTokenResponse(
-    (await exchangeCode(server, redirect.searchParams.get('code') ?? '')).json(),
-  ).access_token;
-}
-
-const message = (overrides: Record<string, unknown> = {}) => ({
-  model: 'claude-opus-5',
-  max_tokens: 1024,
-  stream: true,
+const requestBody = {
+  model: 'claude-sonnet-4-6',
   messages: [{ role: 'user', content: 'Hi' }],
-  ...overrides,
+  max_tokens: 1024,
+  stream: false,
+};
+const chatJson = () => ({
+  id: 'chat_1',
+  object: 'chat.completion',
+  created: 1,
+  model: 'gpt-4.1',
+  choices: [{ index: 0, message: { role: 'assistant', content: 'Hello' }, finish_reason: 'stop' }],
+  usage: {
+    prompt_tokens: 100,
+    completion_tokens: 40,
+    prompt_tokens_details: { cached_tokens: 60 },
+  },
+});
+const responsesJson = () => ({
+  id: 'resp_1',
+  object: 'response',
+  created_at: 1,
+  model: 'gpt-5.4',
+  status: 'completed',
+  output: [
+    {
+      id: 'msg_1',
+      type: 'message',
+      status: 'completed',
+      role: 'assistant',
+      content: [{ type: 'output_text', text: 'Hello', annotations: [] }],
+    },
+  ],
+  usage: {
+    input_tokens: 100,
+    output_tokens: 40,
+    input_tokens_details: { cached_tokens: 60 },
+    output_tokens_details: { reasoning_tokens: 30 },
+  },
+});
+const googleJson = () => ({
+  candidates: [
+    { content: { role: 'model', parts: [{ text: 'Hello' }] }, finishReason: 'STOP', index: 0 },
+  ],
+  usageMetadata: {
+    promptTokenCount: 100,
+    cachedContentTokenCount: 60,
+    candidatesTokenCount: 10,
+    thoughtsTokenCount: 30,
+  },
+  modelVersion: 'gemini-2.5-pro',
+  responseId: 'google_1',
 });
 
-async function usageRows(server: TestServer) {
-  return server.db.selectFrom('usage_events').selectAll().orderBy('id').execute();
+async function usage(s: TestServer) {
+  return s.db.selectFrom('model_usage').selectAll().orderBy('at').execute();
+}
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/** Usage is written when the answer has gone; a streamed one may finish just after. */
+async function recordedUsage(s: TestServer, count = 1) {
+  for (let i = 0; i < 200; i++) {
+    const rows = await usage(s);
+    if (rows.length >= count) return rows;
+    await delay(10);
+  }
+  throw new Error('No usage was recorded');
 }
 
-test('a stream passes through byte for byte, reaches the upstream as the org, and is metered', async () => {
-  const upstream = fakeAnthropic(['stream']);
-  const server = await startTestServer({}, { upstreamFetch: upstream.fetchImpl });
+/** One Anthropic model behind a stand-in provider that answers with `answer`. */
+async function anthropicModel(answer: (url: string, init?: RequestInit) => Promise<Response>) {
+  const sent: { url: string; headers: Headers; body: any }[] = [];
+  const s = await startTestServer(
+    {},
+    {
+      upstreamFetch: async (url, init) => {
+        sent.push({
+          url: String(url),
+          headers: new Headers(init?.headers),
+          body: JSON.parse(String(init?.body)),
+        });
+        return answer(String(url), init);
+      },
+    },
+  );
+  const p = await publish(s, anthropicDraft(), ['claude-sonnet-4-6']);
+  return { s, sent, model: p.models[0]!, admin: p.admin, token: await accessToken(s) };
+}
+
+test('a request reaches the provider as the SDK built it, with the organization credential', async () => {
+  const raw = anthropicStream();
+  const { s, sent, model, token } = await anthropicModel(
+    async () =>
+      new Response(raw, {
+        headers: { 'content-type': 'text/event-stream', 'request-id': 'up_123' },
+      }),
+  );
   try {
-    await seedGateway(server, [{ name: 'primary', priority: 0 }]);
-    const token = await accessToken(server);
-    const response = await server.app.inject({
+    const body = {
+      ...requestBody,
+      stream: true,
+      workspace_id: 'caller-workspace',
+      user_profile_id: 'caller-profile',
+      future_field: { foo: 1 },
+      tools: [{ name: 'read_file', input_schema: { type: 'object', properties: {} } }],
+      messages: [
+        {
+          role: 'assistant',
+          content: [{ type: 'thinking', thinking: 't', signature: 'signed-opaque' }],
+        },
+        { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'call_1', content: 'ok' }] },
+      ],
+    };
+    const r = await s.app.inject({
       method: 'POST',
       url: '/model/anthropic/v1/messages',
-      headers: {
-        authorization: `Bearer ${token}`,
-        'anthropic-beta': 'interleaved-thinking-2025-05-14',
-        'x-maka-client-version': '0.3.0',
-      },
-      payload: message(),
+      headers: { ...modelHeaders(model, token), 'x-api-key': 'untrusted', 'anthropic-beta': 'b1' },
+      payload: body,
     });
-    assert.equal(response.statusCode, 200);
-    assert.equal(response.headers['content-type'], 'text/event-stream');
-    assert.equal(response.body, SSE, 'the stream is not altered');
-
-    const [call] = upstream.calls;
-    assert.equal(call?.url, 'https://primary.test/v1/messages?beta=true');
-    assert.equal(call?.headers['x-api-key'], 'key-primary', 'the org key, never the person token');
-    assert.equal(call?.headers.authorization, undefined);
-    assert.match(call?.headers['anthropic-beta'] ?? '', /interleaved-thinking-2025-05-14/);
-    assert.equal(call?.body.model, 'primary-opus');
-    assert.equal(call?.body.stream, true);
-
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    const [row] = await usageRows(server);
-    assert.equal(row?.status, 'ok');
-    assert.deepEqual(
-      [row?.input_tokens, row?.output_tokens, row?.cache_write_tokens, row?.cache_read_tokens].map(
-        Number,
-      ),
-      [100, 42, 20, 300],
-    );
+    assert.equal(r.statusCode, 200, r.body);
+    assert.equal(r.body, raw, 'the stream is not altered');
+    assert.equal(r.headers['request-id'], 'up_123');
+    assert.equal(r.headers['x-maka-error'], undefined);
+    const [call] = sent;
+    assert.equal(call!.url, 'https://anthropic.test/v1/messages');
+    assert.equal(call!.body.model, 'claude-sonnet-4-6');
+    assert.deepEqual(call!.body.messages, body.messages, 'messages are not rebuilt');
+    assert.deepEqual(call!.body.tools, body.tools);
+    assert.deepEqual(call!.body.future_field, { foo: 1 });
+    assert.equal(call!.body.workspace_id, undefined, 'the caller cannot pick a workspace');
+    assert.equal(call!.body.user_profile_id, undefined);
+    assert.equal(call!.headers.get('x-api-key'), 'test-key-Anthropic');
+    assert.equal(call!.headers.get('authorization'), null, 'the employee token stays here');
+    assert.equal(call!.headers.get('anthropic-beta'), 'b1');
+    const [row] = await recordedUsage(s);
+    assert.equal(row!.status, 'ok');
+    assert.equal(row!.quality, 'reported');
     assert.equal(
-      row?.weighted_units,
-      weightedUnits({ input: 100, output: 42, cacheWrite: 20, cacheRead: 300 }, 2),
+      row!.weighted_units,
+      weightedUnits({ input: 100, output: 42, cacheWrite: 20, cacheRead: 300 }, 1),
     );
-    assert.equal(row?.client_version, '0.3.0');
-    assert.equal(row?.upstream_request_id, 'req_stream');
+    assert.equal(row!.upstream_request_id, 'up_123');
   } finally {
-    await server.close();
+    await s.close();
   }
 });
 
-test('an OpenRouter account is sent its key as a bearer token, at OpenRouter', async () => {
-  const upstream = fakeAnthropic(['stream']);
-  const server = await startTestServer({}, { upstreamFetch: upstream.fetchImpl });
-  try {
-    await seedGateway(server, [{ name: 'openrouter', priority: 0, kind: 'openrouter' }]);
-    const response = await server.app.inject({
-      method: 'POST',
-      url: '/model/anthropic/v1/messages',
-      headers: { authorization: `Bearer ${await accessToken(server)}` },
-      payload: message(),
-    });
-    assert.equal(response.statusCode, 200);
-    assert.equal(response.body, SSE);
-    const [call] = upstream.calls;
-    assert.equal(call?.url, 'https://openrouter.ai/api/v1/messages');
-    assert.equal(call?.headers.authorization, 'Bearer key-openrouter');
-    assert.equal(call?.headers['x-api-key'], undefined);
-    assert.equal(call?.body.model, 'openrouter-opus');
-  } finally {
-    await server.close();
-  }
-});
-
-test('a non-streaming answer is metered from its usage', async () => {
-  const upstream = fakeAnthropic(['json']);
-  const server = await startTestServer({}, { upstreamFetch: upstream.fetchImpl });
-  try {
-    await seedGateway(server, [{ name: 'primary', priority: 0 }]);
-    const response = await server.app.inject({
-      method: 'POST',
-      url: '/model/anthropic/v1/messages',
-      headers: { 'x-api-key': await accessToken(server) },
-      payload: message({ stream: false }),
-    });
-    assert.equal(response.statusCode, 200);
-    assert.equal(response.json().id, 'msg');
-    const [row] = await usageRows(server);
-    assert.deepEqual([Number(row?.input_tokens), Number(row?.output_tokens)], [10, 5]);
-  } finally {
-    await server.close();
-  }
-});
-
-test('an upstream failure before any answer falls over to the next; a bad request does not', async () => {
-  const upstream = fakeAnthropic([529, 'stream']);
-  const server = await startTestServer({}, { upstreamFetch: upstream.fetchImpl });
-  try {
-    await seedGateway(server, [
-      { name: 'primary', priority: 0 },
-      { name: 'backup', priority: 1 },
-    ]);
-    const token = await accessToken(server);
-    const response = await server.app.inject({
-      method: 'POST',
-      url: '/model/anthropic/v1/messages',
-      headers: { authorization: `Bearer ${token}` },
-      payload: message(),
-    });
-    assert.equal(response.statusCode, 200);
-    assert.deepEqual(
-      upstream.calls.map((call) => new URL(call.url).host),
-      ['primary.test', 'backup.test'],
-    );
-
-    const invalid = fakeAnthropic([400]);
-    const strict = await startTestServer({}, { upstreamFetch: invalid.fetchImpl });
-    try {
-      await seedGateway(strict, [
-        { name: 'primary', priority: 0 },
-        { name: 'backup', priority: 1 },
-      ]);
-      const refused = await strict.app.inject({
-        method: 'POST',
-        url: '/model/anthropic/v1/messages',
-        headers: { authorization: `Bearer ${await accessToken(strict)}` },
-        payload: message(),
-      });
-      assert.equal(refused.statusCode, 400);
-      assert.equal(refused.json().error.message, 'upstream 400');
-      assert.equal(invalid.calls.length, 1);
-    } finally {
-      await strict.close();
-    }
-  } finally {
-    await server.close();
-  }
-});
-
-test('every upstream failing answers 502 in the Anthropic shape', async () => {
-  const upstream = fakeAnthropic([500]);
-  const server = await startTestServer({}, { upstreamFetch: upstream.fetchImpl });
-  try {
-    await seedGateway(server, [{ name: 'primary', priority: 0 }]);
-    const response = await server.app.inject({
-      method: 'POST',
-      url: '/model/anthropic/v1/messages',
-      headers: { authorization: `Bearer ${await accessToken(server)}` },
-      payload: message(),
-    });
-    assert.equal(response.statusCode, 502);
-    assert.deepEqual(response.json(), {
-      type: 'error',
-      error: { type: 'overloaded_error', message: 'The model provider could not be reached' },
-      maka: { code: 'upstream_unavailable' },
-    });
-    assert.equal((await usageRows(server))[0]?.status, 'error');
-  } finally {
-    await server.close();
-  }
-});
-
-test('a disabled model is refused and left out of the catalog; no one unsigned gets in', async () => {
-  const upstream = fakeAnthropic(['stream']);
-  const server = await startTestServer({}, { upstreamFetch: upstream.fetchImpl });
-  try {
-    await seedGateway(server, [{ name: 'primary', priority: 0 }]);
-    await server.db.updateTable('models').set({ enabled: false }).execute();
-    const token = await accessToken(server);
-    const hidden = await server.app.inject({
-      method: 'POST',
-      url: '/model/anthropic/v1/messages',
-      headers: { authorization: `Bearer ${token}` },
-      payload: message(),
-    });
-    assert.equal(hidden.statusCode, 403);
-    assert.equal(hidden.json().maka.code, 'model_not_allowed');
-    const catalog = (
-      await server.app.inject({
-        method: 'GET',
-        url: '/model/catalog',
-        headers: { authorization: `Bearer ${token}` },
-      })
-    ).json() as PlatformModelCatalog;
-    assert.deepEqual(catalog.models, []);
-
-    // Enabled, it is everyone's.
-    await server.db.updateTable('models').set({ enabled: true }).execute();
-    const visible = (
-      await server.app.inject({
-        method: 'GET',
-        url: '/model/catalog',
-        headers: { authorization: `Bearer ${token}` },
-      })
-    ).json() as PlatformModelCatalog;
-    assert.deepEqual(visible.models, [
+test("the provider's refusals come back as the provider sent them, without a gateway mark", async () => {
+  const cases = [
+    { status: 400, error: { type: 'invalid_request_error', message: 'prompt is too long' } },
+    { status: 401, error: { type: 'authentication_error', message: 'invalid x-api-key' } },
+    { status: 429, error: { type: 'rate_limit_error', message: 'slow down' } },
+    { status: 529, error: { type: 'overloaded_error', message: 'overloaded' } },
+  ];
+  let next = 0;
+  const { s, model, token } = await anthropicModel(async () => {
+    const c = cases[next++]!;
+    return Response.json(
+      { type: 'error', error: c.error },
       {
-        id: 'claude-opus-5',
-        protocol: 'anthropic',
-        displayName: 'Claude Opus 5',
-        contextWindow: 1_000_000,
-        thinkingLevels: ['low', 'high'],
-        supportsTools: true,
+        status: c.status,
+        headers: { 'retry-after': '7', 'x-should-retry': 'true', 'x-private': 'no' },
       },
-    ]);
-
-    const anonymous = await server.app.inject({
-      method: 'POST',
-      url: '/model/anthropic/v1/messages',
-      payload: message(),
-    });
-    assert.equal(anonymous.statusCode, 401);
-    assert.equal(anonymous.json().error.type, 'authentication_error');
-    assert.equal(upstream.calls.length, 0);
-  } finally {
-    await server.close();
-  }
-});
-
-test('an exhausted allowance answers 429 with when it resets', async () => {
-  const upstream = fakeAnthropic(['stream']);
-  const server = await startTestServer({}, { upstreamFetch: upstream.fetchImpl });
+    );
+  });
   try {
-    await seedGateway(server, [{ name: 'primary', priority: 0 }]);
-    let token = await accessToken(server);
-    await server.db
-      .insertInto('quotas')
-      .values({
-        id: newId(),
-        scope: 'user_default',
-        scope_id: null,
-        period: 'week',
-        limit_units: 500,
-        updated_at: server.clock.now,
-      })
-      .execute();
-    const send = () =>
-      server.app.inject({
+    for (const c of cases) {
+      const r = await s.app.inject({
         method: 'POST',
         url: '/model/anthropic/v1/messages',
-        headers: { authorization: `Bearer ${token}` },
-        payload: message(),
+        headers: modelHeaders(model, token),
+        payload: requestBody,
       });
-    assert.equal((await send()).statusCode, 200);
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    const refused = await send();
-    assert.equal(refused.statusCode, 429);
-    const resetAt = nextPeriodStart('week', server.clock.now).getTime();
-    assert.deepEqual(refused.json().maka, { code: 'quota_exceeded', retryAt: resetAt });
-    assert.ok(Number(refused.headers['retry-after']) > 0);
-    assert.equal(upstream.calls.length, 1);
-
-    // A new week starts afresh (with a fresh sign-in: the old token expired long ago).
-    server.clock.now = new Date(resetAt + 1000);
-    token = await accessToken(server, 'ada@relx.com');
-    assert.equal((await send()).statusCode, 200);
+      assert.equal(r.statusCode, c.status);
+      assert.deepEqual(r.json(), { type: 'error', error: c.error });
+      assert.equal(r.headers['x-maka-error'], undefined, 'not the gateway speaking');
+      assert.equal(r.headers['retry-after'], '7');
+      assert.equal(r.headers['x-should-retry'], 'true');
+      assert.equal(r.headers['x-private'], undefined, 'only the headers SDKs read');
+    }
+    const rows = await recordedUsage(s, cases.length);
+    assert.deepEqual(
+      rows.map((row) => [row.status, row.http_status, row.weighted_units]),
+      cases.map((c) => ['error', c.status, 0]),
+    );
   } finally {
-    await server.close();
+    await s.close();
   }
 });
 
-test('periods begin Monday 00:00 UTC and on the 1st', () => {
-  const thursday = new Date('2026-09-24T15:00:00Z');
-  assert.equal(periodStart('week', thursday).toISOString(), '2026-09-21T00:00:00.000Z');
-  assert.equal(nextPeriodStart('week', thursday).toISOString(), '2026-09-28T00:00:00.000Z');
-  assert.equal(periodStart('month', thursday).toISOString(), '2026-09-01T00:00:00.000Z');
-  assert.equal(
-    nextPeriodStart('month', new Date('2026-12-31T23:00:00Z')).toISOString(),
-    '2027-01-01T00:00:00.000Z',
+test("the gateway's own refusals say so, and nothing reaches a provider", async () => {
+  const { s, sent, model, admin, token } = await anthropicModel(async () =>
+    Response.json(anthropicJson()),
   );
-  assert.equal(
-    periodStart('week', new Date('2026-09-27T23:59:00Z')).toISOString(),
-    '2026-09-21T00:00:00.000Z',
-  );
+  try {
+    const call = (headers: Record<string, string>, url = '/model/anthropic/v1/messages') =>
+      s.app.inject({ method: 'POST', url, headers, payload: requestBody });
+    const signedOut = await call({ ...modelHeaders(model, token), authorization: 'Bearer x' });
+    assert.equal(signedOut.statusCode, 401);
+    assert.equal(signedOut.headers['x-maka-error'], 'unauthenticated');
+    assert.equal(signedOut.json().maka.code, 'unauthenticated');
+    const old = await call({ ...modelHeaders(model, token), 'x-maka-gateway-version': '0' });
+    assert.equal(old.statusCode, 409);
+    assert.equal(old.headers['x-maka-error'], 'upgrade_required');
+    const unknown = await call({ ...modelHeaders(model, token), 'x-maka-model-id': 'm_nope' });
+    assert.equal(unknown.statusCode, 403);
+    assert.equal(unknown.headers['x-maka-error'], 'model_not_allowed');
+    const wrongPath = await call(modelHeaders(model, token), '/model/openai/v1/chat/completions');
+    assert.equal(wrongPath.statusCode, 400);
+    assert.equal(wrongPath.json().maka.code, 'invalid_request');
+
+    // Switched off, either the model or its provider: refused at once.
+    const off = await consoleCall(s, admin, 'PATCH', `/models/${model.id}`, {
+      expectedRevision: model.revision,
+      enabled: false,
+    });
+    assert.equal(off.statusCode, 200, off.body);
+    assert.equal((await call(modelHeaders(model, token))).statusCode, 403);
+    const back = off.json() as ConsoleModel;
+    await consoleCall(s, admin, 'PATCH', `/models/${model.id}`, {
+      expectedRevision: back.revision,
+      enabled: true,
+    });
+    const provider = (
+      await consoleCall(s, admin, 'GET', `/model-providers/${model.provider.id}`)
+    ).json();
+    await consoleCall(s, admin, 'PATCH', `/model-providers/${model.provider.id}`, {
+      expectedRevision: provider.revision,
+      enabled: false,
+    });
+    const providerOff = await call(modelHeaders(model, token));
+    assert.equal(providerOff.statusCode, 403);
+    assert.equal(providerOff.headers['x-maka-error'], 'model_not_allowed');
+    assert.equal(sent.length, 0);
+    assert.equal((await usage(s)).length, 0, 'a refusal costs nothing');
+  } finally {
+    await s.close();
+  }
 });
 
-test('a person who hangs up mid-stream is billed for what was produced, as cancelled', async () => {
-  const upstream = fakeAnthropic(['slow']);
-  const server = await startTestServer({}, { upstreamFetch: upstream.fetchImpl });
+test('a used-up allowance is refused before the provider, with when it resets', async () => {
+  const { s, sent, model, admin, token } = await anthropicModel(async () =>
+    Response.json(anthropicJson()),
+  );
   try {
-    await seedGateway(server, [{ name: 'primary', priority: 0 }]);
-    const token = await accessToken(server);
-    const address = await server.app.listen({ host: '127.0.0.1', port: 0 });
-    const abort = new AbortController();
+    await consoleCall(s, admin, 'PUT', '/quotas/default/week', { limit: 100 });
+    const first = await s.app.inject({
+      method: 'POST',
+      url: '/model/anthropic/v1/messages',
+      headers: modelHeaders(model, token),
+      payload: requestBody,
+    });
+    assert.equal(first.statusCode, 200);
+    await recordedUsage(s);
+    const second = await s.app.inject({
+      method: 'POST',
+      url: '/model/anthropic/v1/messages',
+      headers: modelHeaders(model, token),
+      payload: requestBody,
+    });
+    assert.equal(second.statusCode, 429);
+    assert.equal(second.headers['x-maka-error'], 'quota_exceeded');
+    assert.equal(second.headers['x-should-retry'], 'false', 'not until the allowance resets');
+    assert.equal(second.json().maka.retryAt, nextPeriodStart('week', s.clock.now).getTime());
+    assert.equal(sent.length, 1);
+  } finally {
+    await s.close();
+  }
+});
+
+test('an unreachable provider is a 502 from the gateway; retried only when nothing was sent', async () => {
+  const failures = [
+    Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } }),
+    Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } }),
+  ];
+  let next = 0;
+  const { s, model, token } = await anthropicModel(async () => {
+    throw failures[next++];
+  });
+  try {
+    const answers = [];
+    for (let i = 0; i < failures.length; i++)
+      answers.push(
+        await s.app.inject({
+          method: 'POST',
+          url: '/model/anthropic/v1/messages',
+          headers: modelHeaders(model, token),
+          payload: requestBody,
+        }),
+      );
+    assert.deepEqual(
+      answers.map((r) => [r.statusCode, r.headers['x-maka-error'], r.headers['x-should-retry']]),
+      [
+        [502, 'upstream_unavailable', 'true'],
+        [502, 'upstream_unavailable', 'false'],
+      ],
+    );
+    const rows = await recordedUsage(s, 2);
+    assert.ok(rows.every((row) => row.status === 'error' && row.weighted_units === 0));
+  } finally {
+    await s.close();
+  }
+});
+
+test('a replaced key is used from the next request on; the conversation goes on', async () => {
+  const { s, sent, model, admin, token } = await anthropicModel(async () =>
+    Response.json(anthropicJson()),
+  );
+  try {
+    const send = () =>
+      s.app.inject({
+        method: 'POST',
+        url: '/model/anthropic/v1/messages',
+        headers: modelHeaders(model, token),
+        payload: requestBody,
+      });
+    assert.equal((await send()).statusCode, 200);
+    const provider = (
+      await consoleCall(s, admin, 'GET', `/model-providers/${model.provider.id}`)
+    ).json();
+    const replaced = await consoleCall(s, admin, 'PATCH', `/model-providers/${model.provider.id}`, {
+      expectedRevision: provider.revision,
+      credential: { apiKey: 'rotated-key' },
+    });
+    assert.equal(replaced.statusCode, 200, replaced.body);
+    assert.equal((await send()).statusCode, 200);
+    assert.deepEqual(
+      sent.map((call) => call.headers.get('x-api-key')),
+      ['test-key-Anthropic', 'rotated-key'],
+    );
+  } finally {
+    await s.close();
+  }
+});
+
+test("OpenRouter's routes, provider preferences and per-request plugins are the organization's", async () => {
+  const sent: any[] = [];
+  const s = await startTestServer(
+    {},
+    {
+      upstreamFetch: async (_url, init) => {
+        sent.push(JSON.parse(String(init?.body)));
+        return Response.json(chatJson());
+      },
+    },
+  );
+  try {
+    const p = await publish(
+      s,
+      { name: 'Router', integration: 'openrouter', config: {}, credential: { apiKey: 'or' } },
+      ['anthropic/claude-sonnet-4.6'],
+    );
+    const r = await s.app.inject({
+      method: 'POST',
+      url: '/model/openai/v1/chat/completions',
+      headers: modelHeaders(p.models[0]!, await accessToken(s)),
+      payload: {
+        model: 'anthropic/claude-sonnet-4.6',
+        messages: [{ role: 'user', content: 'Hi' }],
+        models: ['openai/gpt-5'],
+        fallbacks: ['x'],
+        route: 'fallback',
+        provider: { data_collection: 'allow' },
+        plugins: [{ id: 'web' }],
+      },
+    });
+    assert.equal(r.statusCode, 200, r.body);
+    assert.equal(sent[0].model, 'anthropic/claude-sonnet-4.6');
+    for (const field of ['models', 'fallbacks', 'route', 'provider', 'plugins'])
+      assert.equal(sent[0][field], undefined, field);
+  } finally {
+    await s.close();
+  }
+});
+
+test('real SDKs call through each protocol path and read the native answers', async () => {
+  const lanes: readonly {
+    integration: ModelIntegrationId;
+    id: string;
+    wire: ModelApiProtocol;
+    answer: () => object;
+    factory: (baseURL: string, fetchFn: typeof fetch) => LanguageModel;
+  }[] = [
+    {
+      integration: 'anthropic',
+      id: 'claude-sonnet-4-6',
+      wire: 'anthropic-messages',
+      answer: anthropicJson,
+      factory: (baseURL, fetch) =>
+        createAnthropic({ baseURL, apiKey: 'desktop-placeholder', fetch }).chat(
+          'claude-sonnet-4-6',
+        ),
+    },
+    {
+      integration: 'custom-chat',
+      id: 'qwen3-coder',
+      wire: 'openai-chat',
+      answer: chatJson,
+      factory: (baseURL, fetch) =>
+        createOpenAI({ baseURL, apiKey: 'desktop-placeholder', fetch }).chat('qwen3-coder'),
+    },
+    {
+      integration: 'openai',
+      id: 'gpt-5.4',
+      wire: 'openai-responses',
+      answer: responsesJson,
+      factory: (baseURL, fetch) =>
+        createOpenAI({ baseURL, apiKey: 'desktop-placeholder', fetch }).responses('gpt-5.4'),
+    },
+    {
+      integration: 'gemini',
+      id: 'gemini-2.5-pro',
+      wire: 'google-generate',
+      answer: googleJson,
+      factory: (baseURL, fetch) =>
+        createGoogleGenerativeAI({ baseURL, apiKey: 'desktop-placeholder', fetch }).chat(
+          'gemini-2.5-pro',
+        ),
+    },
+    {
+      integration: 'openrouter',
+      id: 'anthropic/claude-sonnet-4.6',
+      wire: 'openai-chat',
+      answer: chatJson,
+      factory: (baseURL, fetch) =>
+        createOpenAICompatible({
+          name: 'openrouter',
+          baseURL,
+          apiKey: 'placeholder',
+          fetch,
+        }).chatModel('anthropic/claude-sonnet-4.6'),
+    },
+  ];
+  for (const lane of lanes) {
+    let sent: { url: string; body: any; headers: Headers } | undefined;
+    const s = await startTestServer(
+      {},
+      {
+        upstreamFetch: async (url, init) => {
+          sent = {
+            url: String(url),
+            body: JSON.parse(String(init?.body)),
+            headers: new Headers(init?.headers),
+          };
+          return Response.json(lane.answer());
+        },
+      },
+    );
+    try {
+      const p = await publish(
+        s,
+        {
+          name: lane.integration,
+          integration: lane.integration,
+          config: lane.integration.startsWith('custom-')
+            ? { baseUrl: 'https://custom.test/v1' }
+            : {},
+          credential: { apiKey: 'server-secret' },
+        },
+        [lane.id],
+      );
+      const m = p.models[0]!;
+      assert.equal(m.contract.apiProtocol, lane.wire, lane.integration);
+      const token = await accessToken(s);
+      const gatewayFetch: typeof fetch = async (url, init) => {
+        const parsed = new URL(String(url));
+        const r = await s.app.inject({
+          method: 'POST',
+          url: parsed.pathname + parsed.search,
+          headers: { ...Object.fromEntries(new Headers(init?.headers)), ...modelHeaders(m, token) },
+          payload: String(init?.body),
+        });
+        return new Response(r.body, {
+          status: r.statusCode,
+          headers: Object.fromEntries(Object.entries(r.headers).map(([k, v]) => [k, String(v)])),
+        });
+      };
+      const path =
+        lane.wire === 'anthropic-messages'
+          ? '/model/anthropic/v1'
+          : lane.wire === 'google-generate'
+            ? '/model/gemini/v1beta'
+            : '/model/openai/v1';
+      const result = await lane.factory(`https://maka.test${path}`, gatewayFetch).doGenerate({
+        prompt: [{ role: 'user', content: [{ type: 'text', text: 'Hi' }] }],
+        maxOutputTokens: 1024,
+      });
+      assert.equal(result.content.find((c) => c.type === 'text')?.text, 'Hello', lane.integration);
+      assert.ok(sent, lane.integration);
+      assert.ok(!JSON.stringify(sent.body).includes(m.id), 'the m_ id stays at the gateway');
+      assert.ok(!sent.headers.get('authorization')?.includes(token));
+      assert.equal(sent.headers.get('x-maka-model-id'), null);
+      if (lane.wire === 'openai-responses') assert.equal(sent.body.store, false);
+      if (lane.integration === 'openrouter')
+        assert.equal(sent.url, 'https://openrouter.ai/api/v1/chat/completions');
+      if (lane.wire === 'google-generate')
+        assert.ok(sent.url.endsWith('/models/gemini-2.5-pro:generateContent'));
+      const [row] = await recordedUsage(s);
+      assert.equal(row!.status, 'ok', lane.integration);
+      assert.equal(row!.quality, 'reported', lane.integration);
+    } finally {
+      await s.close();
+    }
+  }
+});
+
+test('Vertex AI: one provider lists Claude and Gemini, each called with its publisher envelope', async () => {
+  for (const region of ['us-east5', 'eu']) {
+    const sent: { url: string; headers: Headers; body: any }[] = [];
+    const s = await startTestServer(
+      {},
+      {
+        upstreamFetch: async (url, init) => {
+          sent.push({
+            url: String(url),
+            headers: new Headers(init?.headers),
+            body: JSON.parse(String(init?.body)),
+          });
+          return Response.json(
+            String(url).includes('/anthropic/') ? anthropicJson() : googleJson(),
+          );
+        },
+      },
+    );
+    try {
+      const p = await publish(
+        s,
+        {
+          name: 'Vertex',
+          integration: 'vertex',
+          config: { projectId: 'my-project', region },
+          credential: {
+            serviceAccount: {
+              type: 'service_account',
+              client_email: 'gateway@example.test',
+              private_key: 'fixture-only',
+              token_uri: 'https://elsewhere.test/token',
+            },
+          },
+        },
+        ['claude-sonnet-4-5@20250929', 'gemini-2.5-pro'],
+      );
+      const [claude, gemini] = p.models;
+      assert.equal(claude!.contract.apiProtocol, 'anthropic-messages');
+      assert.equal(claude!.contract.sdkModelId, 'claude-sonnet-4-5-20250929');
+      assert.equal(gemini!.contract.apiProtocol, 'google-generate');
+      const token = await accessToken(s);
+      const host =
+        region === 'eu'
+          ? 'aiplatform.eu.rep.googleapis.com'
+          : `${region}-aiplatform.googleapis.com`;
+      const toClaude = await s.app.inject({
+        method: 'POST',
+        url: '/model/anthropic/v1/messages',
+        headers: { ...modelHeaders(claude!, token), 'anthropic-beta': 'b1' },
+        payload: requestBody,
+      });
+      assert.equal(toClaude.statusCode, 200, toClaude.body);
+      const toGemini = await s.app.inject({
+        method: 'POST',
+        url: '/model/gemini/v1beta/models/gemini-2.5-pro:generateContent',
+        headers: modelHeaders(gemini!, token),
+        payload: {
+          contents: [{ role: 'user', parts: [{ text: 'Hi', thoughtSignature: 'opaque' }] }],
+        },
+      });
+      assert.equal(toGemini.statusCode, 200, toGemini.body);
+      assert.equal(
+        sent[0]!.url,
+        `https://${host}/v1/projects/my-project/locations/${region}/publishers/anthropic/models/claude-sonnet-4-5@20250929:rawPredict`,
+      );
+      assert.equal(sent[0]!.body.anthropic_version, 'vertex-2023-10-16');
+      assert.equal(sent[0]!.body.model, undefined);
+      assert.equal(sent[0]!.headers.get('anthropic-beta'), 'b1');
+      assert.equal(sent[0]!.headers.get('authorization'), 'Bearer test-google-access-token');
+      assert.equal(
+        sent[1]!.url,
+        `https://${host}/v1/projects/my-project/locations/${region}/publishers/google/models/gemini-2.5-pro:generateContent`,
+      );
+      assert.equal(sent[1]!.body.contents[0].parts[0].thoughtSignature, 'opaque');
+      // Only the key's own fields are kept: no URL from the upload is ever fetched.
+      const stored = await s.db
+        .selectFrom('model_providers')
+        .select(['id', 'credential_sealed'])
+        .executeTakeFirstOrThrow();
+      const opened = JSON.parse(
+        s.ctx.secrets.open(stored.credential_sealed, `model-provider:${stored.id}`),
+      );
+      assert.equal(opened.serviceAccount.token_uri, undefined);
+    } finally {
+      await s.close();
+    }
+  }
+});
+
+test('a Google credential other than a service-account key is refused', async () => {
+  const s = await startTestServer();
+  try {
+    const { admin } = await publish(s, anthropicDraft(), ['claude-sonnet-4-6']);
+    const r = await consoleCall(s, admin, 'POST', '/model-providers/discover', {
+      draft: {
+        integration: 'vertex',
+        config: { projectId: 'my-project', region: 'global' },
+        credential: {
+          serviceAccount: {
+            type: 'external_account',
+            client_email: 'x@example.test',
+            private_key: 'k',
+            credential_source: { url: 'http://169.254.169.254/' },
+          },
+        },
+      },
+    });
+    assert.equal(r.statusCode, 400);
+    assert.equal(r.json().error.code, 'invalid_request');
+  } finally {
+    await s.close();
+  }
+});
+
+test('a person who hangs up stops the provider, and what was produced is recorded as cancelled', async () => {
+  let aborted = false;
+  const { s, model, token } = await anthropicModel(
+    async (_url, init) =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(c) {
+            c.enqueue(
+              new TextEncoder().encode(
+                event({
+                  type: 'message_start',
+                  message: { usage: { input_tokens: 100, output_tokens: 1 } },
+                }) +
+                  event({
+                    type: 'content_block_delta',
+                    delta: { text: 'Partial output before cancellation' },
+                  }),
+              ),
+            );
+            init?.signal?.addEventListener(
+              'abort',
+              () => {
+                aborted = true;
+                c.error(new Error('aborted'));
+              },
+              { once: true },
+            );
+          },
+        }),
+        { headers: { 'content-type': 'text/event-stream' } },
+      ),
+  );
+  try {
+    const address = await s.app.listen({ host: '127.0.0.1', port: 0 });
+    const controller = new AbortController();
     const response = await fetch(`${address}/model/anthropic/v1/messages`, {
       method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify(message()),
-      signal: abort.signal,
+      headers: { ...modelHeaders(model, token), 'content-type': 'application/json' },
+      body: JSON.stringify({ ...requestBody, stream: true }),
+      signal: controller.signal,
     });
     const reader = response.body!.getReader();
     await reader.read();
-    abort.abort();
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    const [row] = await usageRows(server);
-    assert.equal(row?.status, 'cancelled');
-    assert.equal(Number(row?.input_tokens), 100, 'the input already sent is billed');
+    controller.abort();
+    await reader.cancel().catch(() => {});
+    const [row] = await recordedUsage(s);
+    assert.equal(aborted, true);
+    assert.equal(row!.status, 'cancelled');
+    assert.equal(row!.quality, 'estimated');
+    assert.equal(Number(row!.input_tokens), 100);
+    assert.ok(Number(row!.output_tokens) > 1);
   } finally {
-    await server.close();
+    await s.close();
   }
 });
 
-test('the meter reads CRLF-separated events and estimates output a stream stopped before counting', () => {
-  const encoder = new TextEncoder();
-  const crlf = new AnthropicStreamMeter();
-  const bytes = encoder.encode(SSE.replaceAll('\n', '\r\n'));
-  // Byte by byte, so every CRLF is also split across chunks.
-  for (const byte of bytes) crlf.push(new Uint8Array([byte]));
-  assert.deepEqual(crlf.charge(), { input: 100, output: 42, cacheWrite: 20, cacheRead: 300 });
-
-  const stopped = new AnthropicStreamMeter();
-  stopped.push(encoder.encode(SSE.slice(0, SSE.indexOf('event: message_delta'))));
-  stopped.push(
-    encoder.encode(
-      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"' +
-        'x'.repeat(400) +
-        '你好"}}\n\n',
-    ),
-  );
-  // "Hello" (2) + 400 ASCII (100) + 2 CJK (2); message_start's own count was 1.
-  assert.equal(stopped.charge().output, 104);
-});
-
-test("the caller cannot pick the organization's workspace or profile through body fields", async () => {
-  const upstream = fakeAnthropic(['json']);
-  const server = await startTestServer({}, { upstreamFetch: upstream.fetchImpl });
-  try {
-    await seedGateway(server, [{ name: 'primary', priority: 0 }]);
-    const response = await server.app.inject({
-      method: 'POST',
-      url: '/model/anthropic/v1/messages',
-      headers: { authorization: `Bearer ${await accessToken(server)}` },
-      payload: message({ stream: false, workspace_id: 'wrkspc_other', user_profile_id: 'someone' }),
-    });
-    assert.equal(response.statusCode, 200);
-    const [call] = upstream.calls;
-    assert.equal(call?.body.workspace_id, undefined);
-    assert.equal(call?.body.user_profile_id, undefined);
-    assert.equal(call?.headers['anthropic-workspace-id'], undefined);
-    assert.equal(call?.headers['anthropic-user-profile-id'], undefined);
-  } finally {
-    await server.close();
-  }
-});
-
-test('an upstream that refuses the organization (401/402/403/404) hands over to the next route', async () => {
-  // Out of credit, then no such model in its region.
-  const upstream = fakeAnthropic([402, 404, 'stream']);
-  const server = await startTestServer({}, { upstreamFetch: upstream.fetchImpl });
-  try {
-    await seedGateway(server, [
-      { name: 'primary', priority: 0 },
-      { name: 'backup', priority: 1 },
-      { name: 'last', priority: 2 },
-    ]);
-    const response = await server.app.inject({
-      method: 'POST',
-      url: '/model/anthropic/v1/messages',
-      headers: { authorization: `Bearer ${await accessToken(server)}` },
-      payload: message(),
-    });
-    assert.equal(response.statusCode, 200);
-    assert.equal(upstream.calls.length, 3);
-  } finally {
-    await server.close();
-  }
-});
-
-test('a used-up allowance says not to retry, and names the later reset when two are used up', async () => {
-  const upstream = fakeAnthropic(['stream']);
-  const server = await startTestServer({}, { upstreamFetch: upstream.fetchImpl });
-  try {
-    await seedGateway(server, [{ name: 'primary', priority: 0 }]);
-    const token = await accessToken(server);
-    for (const period of ['week', 'month'] as const) {
-      await server.db
-        .insertInto('quotas')
-        .values({
-          id: newId(),
-          scope: 'user_default',
-          scope_id: null,
-          period,
-          limit_units: 1,
-          updated_at: server.clock.now,
-        })
-        .execute();
-    }
-    const send = () =>
-      server.app.inject({
+test('a stream that ends early, or reports an error inside, is passed on and recorded as such', async () => {
+  for (const inband of [false, true]) {
+    const raw =
+      event({
+        type: 'message_start',
+        message: { usage: { input_tokens: 100, output_tokens: 1 } },
+      }) +
+      event({
+        type: 'content_block_delta',
+        delta: { type: 'text_delta', text: 'x'.repeat(4000) },
+      }) +
+      (inband
+        ? event({ type: 'error', error: { type: 'overloaded_error', message: 'failed' } })
+        : '');
+    const { s, model, token } = await anthropicModel(
+      async () => new Response(raw, { headers: { 'content-type': 'text/event-stream' } }),
+    );
+    try {
+      const r = await s.app.inject({
         method: 'POST',
         url: '/model/anthropic/v1/messages',
-        headers: { authorization: `Bearer ${token}` },
-        payload: message(),
+        headers: modelHeaders(model, token),
+        payload: { ...requestBody, stream: true },
       });
-    assert.equal((await send()).statusCode, 200);
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    const refused = await send();
-    assert.equal(refused.statusCode, 429);
-    assert.equal(refused.headers['x-should-retry'], 'false');
-    const week = nextPeriodStart('week', server.clock.now).getTime();
-    const month = nextPeriodStart('month', server.clock.now).getTime();
-    assert.equal(refused.json().maka.retryAt, Math.max(week, month));
-  } finally {
-    await server.close();
+      assert.equal(r.statusCode, 200);
+      assert.equal(r.body, raw, 'the client sees exactly what the provider sent');
+      const [row] = await recordedUsage(s);
+      assert.equal(row!.status, inband ? 'error' : 'incomplete');
+      assert.equal(row!.quality, 'estimated');
+      assert.equal(Number(row!.output_tokens), 1000);
+    } finally {
+      await s.close();
+    }
   }
 });
 
-test('a weight or limit that is not a finite number cannot be stored', async () => {
-  const server = await startTestServer();
+test('Gemini and Responses answers with any finish reason pass through unchanged', async () => {
+  const blocked = {
+    candidates: [{ content: { parts: [] }, finishReason: 'OTHER', index: 0 }],
+    usageMetadata: { promptTokenCount: 50, totalTokenCount: 50 },
+  };
+  const incomplete = {
+    ...responsesJson(),
+    status: 'incomplete',
+    incomplete_details: { reason: 'max_output_tokens' },
+  };
+  const s = await startTestServer(
+    {},
+    {
+      upstreamFetch: async (url) =>
+        Response.json(String(url).endsWith('/responses') ? incomplete : blocked),
+    },
+  );
   try {
-    await assert.rejects(
-      server.db
-        .insertInto('models')
-        .values({
-          id: 'nan-model',
-          protocol: 'anthropic',
-          display_name: 'NaN',
-          capabilities: '{}',
-          cost_weight: Number.NaN,
-          enabled: true,
-          sort_order: 0,
-          updated_at: server.clock.now,
-        })
-        .execute(),
+    const google = await publish(
+      s,
+      { name: 'Google', integration: 'gemini', config: {}, credential: { apiKey: 'g' } },
+      ['gemini-2.5-pro'],
     );
-    await assert.rejects(
-      server.db
-        .insertInto('quotas')
-        .values({
-          id: newId(),
-          scope: 'user_default',
-          scope_id: null,
-          period: 'week',
-          limit_units: Number.POSITIVE_INFINITY,
-          updated_at: server.clock.now,
-        })
-        .execute(),
+    const openai = await publish(
+      s,
+      { name: 'OpenAI', integration: 'openai', config: {}, credential: { apiKey: 'o' } },
+      ['gpt-5.4'],
+      google.admin,
+    );
+    const token = await accessToken(s);
+    const g = await s.app.inject({
+      method: 'POST',
+      url: '/model/gemini/v1beta/models/gemini-2.5-pro:generateContent',
+      headers: modelHeaders(google.models[0]!, token),
+      payload: { contents: [{ role: 'user', parts: [{ text: 'Hi' }] }] },
+    });
+    assert.equal(g.statusCode, 200);
+    assert.deepEqual(g.json(), blocked);
+    const o = await s.app.inject({
+      method: 'POST',
+      url: '/model/openai/v1/responses',
+      headers: modelHeaders(openai.models[0]!, token),
+      payload: { model: 'gpt-5.4', input: 'Hi' },
+    });
+    assert.equal(o.statusCode, 200);
+    assert.deepEqual(o.json(), incomplete);
+    const rows = await recordedUsage(s, 2);
+    assert.deepEqual(
+      rows.map((row) => row.status),
+      ['ok', 'ok'],
     );
   } finally {
-    await server.close();
+    await s.close();
   }
 });
 
-test('the gateway takes any JSON, answers malformed bodies in the Anthropic shape', async () => {
-  const upstream = fakeAnthropic(['json']);
-  const server = await startTestServer({}, { upstreamFetch: upstream.fetchImpl });
-  try {
-    await seedGateway(server, [{ name: 'primary', priority: 0 }]);
-    const token = await accessToken(server);
-    // A tool input may carry a "__proto__" key; it is data, passed on as is.
-    const body =
-      '{"model":"claude-opus-5","max_tokens":10,"messages":[{"role":"user","content":"Hi"},' +
-      '{"role":"assistant","content":[{"type":"tool_use","id":"t","name":"x","input":{"__proto__":{"a":1}}}]},' +
-      '{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":"ok"}]}]}';
-    const accepted = await server.app.inject({
-      method: 'POST',
-      url: '/model/anthropic/v1/messages',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      payload: body,
-    });
-    assert.equal(accepted.statusCode, 200, accepted.body);
-    const sent = JSON.stringify(upstream.calls[0]?.body.messages);
-    assert.ok(sent.includes('"__proto__":{"a":1}'));
+test('usage counts cached input and reasoning once, in every protocol', () => {
+  const read = (protocol: ModelApiProtocol, answer: object) => {
+    const meter = new GatewayUsageMeter(protocol, false);
+    meter.feed(new TextEncoder().encode(JSON.stringify(answer)));
+    meter.finish();
+    return meter.result();
+  };
+  assert.deepEqual(read('anthropic-messages', anthropicJson()), {
+    usage: { input: 100, output: 42, cacheWrite: 20, cacheRead: 300 },
+    quality: 'reported',
+  });
+  // Cached tokens are part of OpenAI's input count; reasoning is part of its output.
+  assert.deepEqual(read('openai-chat', chatJson()).usage, {
+    input: 40,
+    output: 40,
+    cacheWrite: 0,
+    cacheRead: 60,
+  });
+  assert.deepEqual(read('openai-responses', responsesJson()).usage, {
+    input: 40,
+    output: 40,
+    cacheWrite: 0,
+    cacheRead: 60,
+  });
+  // Gemini's thoughts are counted beside its candidates.
+  assert.deepEqual(read('google-generate', googleJson()).usage, {
+    input: 40,
+    output: 40,
+    cacheWrite: 0,
+    cacheRead: 60,
+  });
+});
 
-    const broken = await server.app.inject({
+test('a streamed answer is read across any chunking, CRLF and multibyte splits', () => {
+  const raw = anthropicStream().replaceAll('\n', '\r\n');
+  const bytes = new TextEncoder().encode(raw);
+  const meter = new GatewayUsageMeter('anthropic-messages', true);
+  for (let i = 0; i < bytes.length; i += 7) meter.feed(bytes.slice(i, i + 7));
+  meter.finish();
+  assert.equal(meter.complete, true);
+  assert.deepEqual(meter.result(), {
+    usage: { input: 100, output: 42, cacheWrite: 20, cacheRead: 300 },
+    quality: 'reported',
+  });
+  // Every split falls inside a three-byte character somewhere.
+  const chatBytes = new TextEncoder().encode(
+    `${event({ choices: [{ delta: { content: '你好世界' } }] })}${event({ choices: [], usage: { prompt_tokens: 10, completion_tokens: 2 } })}data: [DONE]\n\n`,
+  );
+  for (const size of [1, 2, 4, 5]) {
+    const chat = new GatewayUsageMeter('openai-chat', true);
+    for (let i = 0; i < chatBytes.length; i += size) chat.feed(chatBytes.slice(i, i + size));
+    chat.finish();
+    assert.equal(chat.complete, true, `chunks of ${size}`);
+    assert.deepEqual(chat.result().usage, { input: 10, output: 2, cacheWrite: 0, cacheRead: 0 });
+  }
+});
+
+test('an event too large to read is passed over, and the answer is still counted', () => {
+  const huge = event({
+    candidates: [{ content: { parts: [{ inlineData: { data: 'A'.repeat(9 * 1024 * 1024) } }] } }],
+  });
+  const tail = event({
+    candidates: [{ content: { parts: [{ text: 'ok' }] }, finishReason: 'STOP' }],
+    usageMetadata: { promptTokenCount: 40, candidatesTokenCount: 1300 },
+  });
+  const bytes = new TextEncoder().encode(huge + tail);
+  const meter = new GatewayUsageMeter('google-generate', true);
+  const started = performance.now();
+  for (let i = 0; i < bytes.length; i += 64 * 1024) meter.feed(bytes.slice(i, i + 64 * 1024));
+  meter.finish();
+  assert.ok(performance.now() - started < 2000, 'each chunk is searched once');
+  assert.equal(meter.complete, true);
+  assert.deepEqual(meter.result(), {
+    usage: { input: 40, output: 1300, cacheWrite: 0, cacheRead: 0 },
+    quality: 'reported',
+  });
+  // A whole JSON answer of that size is read too.
+  const whole = new GatewayUsageMeter('google-generate', false);
+  whole.feed(
+    new TextEncoder().encode(
+      JSON.stringify({
+        candidates: [
+          {
+            content: { parts: [{ inlineData: { data: 'A'.repeat(9 * 1024 * 1024) } }] },
+            finishReason: 'STOP',
+          },
+        ],
+        usageMetadata: { promptTokenCount: 40, candidatesTokenCount: 1300 },
+      }),
+    ),
+  );
+  whole.finish();
+  assert.equal(whole.result().quality, 'reported');
+  assert.equal(whole.result().usage.output, 1300);
+});
+
+test('an answer that broke off before its usage counts the request it was sent', async () => {
+  const s = await startTestServer(
+    {},
+    {
+      upstreamFetch: async () =>
+        new Response(event({ type: 'response.output_text.delta', delta: 'Hello' }), {
+          headers: { 'content-type': 'text/event-stream' },
+        }),
+    },
+  );
+  try {
+    const p = await publish(
+      s,
+      { name: 'OpenAI', integration: 'openai', config: {}, credential: { apiKey: 'o' } },
+      ['gpt-5.4'],
+    );
+    const prompt = 'Summarise the attached report. '.repeat(1250);
+    // As the OpenAI SDKs write an image: a data URL.
+    const image = `data:image/png;base64,${'A'.repeat(2 * 1024 * 1024)}`;
+    const r = await s.app.inject({
+      method: 'POST',
+      url: '/model/openai/v1/responses',
+      headers: modelHeaders(p.models[0]!, await accessToken(s)),
+      payload: {
+        model: 'gpt-5.4',
+        stream: true,
+        input: [
+          {
+            role: 'user',
+            content: [
+              { type: 'input_text', text: prompt },
+              { type: 'input_image', image_url: image },
+            ],
+          },
+        ],
+      },
+    });
+    assert.equal(r.statusCode, 200);
+    const [row] = await recordedUsage(s);
+    assert.equal(row!.status, 'incomplete');
+    assert.equal(row!.quality, 'estimated');
+    // The text by its length; the image as one image, not by its base64.
+    const input = Number(row!.input_tokens);
+    assert.ok(input >= 10_000 && input < 15_000, String(input));
+  } finally {
+    await s.close();
+  }
+});
+
+test('the version gate refuses in the protocol shape, marked as the gateway, not to be retried', async () => {
+  const s = await startTestServer({ minimumClientVersion: '9.0.0' });
+  try {
+    const r = await s.app.inject({
+      method: 'POST',
+      url: '/model/openai/v1/chat/completions',
+      headers: { 'x-maka-client-version': '0.2.0' },
+      payload: { model: 'x', messages: [] },
+    });
+    assert.equal(r.statusCode, 426);
+    assert.equal(r.headers['x-maka-error'], 'upgrade_required');
+    assert.equal(r.headers['x-should-retry'], 'false');
+    assert.equal(r.json().maka.code, 'upgrade_required');
+    assert.equal(r.json().error.type, 'maka_gateway_error');
+  } finally {
+    await s.close();
+  }
+});
+
+test('a provider whose credential cannot be used is refused without inviting a retry, until the key is replaced', async () => {
+  const { s, sent, model, admin, token } = await anthropicModel(async () =>
+    Response.json(anthropicJson()),
+  );
+  try {
+    // The sealed credential no longer opens (rotated master key, damaged row).
+    await s.db.updateTable('model_providers').set({ credential_sealed: 'damaged' }).execute();
+    const r = await s.app.inject({
       method: 'POST',
       url: '/model/anthropic/v1/messages',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      payload: '{"model":',
+      headers: modelHeaders(model, token),
+      payload: requestBody,
     });
-    assert.equal(broken.statusCode, 400);
-    assert.equal(broken.json().type, 'error');
-    assert.equal(broken.json().error.type, 'invalid_request_error');
-    assert.equal(broken.json().maka.code, 'invalid_request');
+    assert.equal(r.statusCode, 502);
+    assert.equal(r.headers['x-maka-error'], 'upstream_unavailable');
+    assert.equal(r.headers['x-should-retry'], 'false', 'it would fail the same way again');
+    assert.equal(sent.length, 0);
+    const provider = await consoleCall(s, admin, 'GET', `/model-providers/${model.provider.id}`);
+    const replaced = await consoleCall(s, admin, 'PATCH', `/model-providers/${model.provider.id}`, {
+      expectedRevision: provider.json().revision,
+      credential: { apiKey: 'replacement-key' },
+    });
+    assert.equal(replaced.statusCode, 200, replaced.body);
+    const again = await s.app.inject({
+      method: 'POST',
+      url: '/model/anthropic/v1/messages',
+      headers: modelHeaders(model, token),
+      payload: requestBody,
+    });
+    assert.equal(again.statusCode, 200, again.body);
+    assert.equal(sent[0]!.headers.get('x-api-key'), 'replacement-key');
   } finally {
-    await server.close();
+    await s.close();
   }
+});
+
+test('a custom service is called at the address given, as the desktop calls it directly', () => {
+  const at = (integration: ModelIntegrationId, baseUrl: string) =>
+    providerBaseUrl(integration, validateProviderConfig(integration, { baseUrl }));
+  assert.equal(
+    at('custom-chat', 'https://generativelanguage.googleapis.com/v1beta/openai/'),
+    'https://generativelanguage.googleapis.com/v1beta/openai',
+  );
+  assert.equal(at('custom-responses', 'https://llm.test/api/responses'), 'https://llm.test/api');
+  assert.equal(
+    at('custom-anthropic', 'https://llm.test/anthropic'),
+    'https://llm.test/anthropic/v1',
+  );
+  assert.equal(
+    at('custom-anthropic', 'https://llm.test/anthropic/v1/'),
+    'https://llm.test/anthropic/v1',
+  );
+  // An official service's address override still gains its version.
+  assert.equal(at('openai', 'https://proxy.test'), 'https://proxy.test/v1');
+  assert.equal(providerBaseUrl('gemini', {}), 'https://generativelanguage.googleapis.com/v1beta');
+  // An empty query or fragment parses away; it is refused all the same.
+  for (const baseUrl of ['https://llm.test/v1?', 'https://llm.test/v1#'])
+    assert.throws(() => validateProviderConfig('custom-chat', { baseUrl }));
+});
+
+test('periods begin Monday 00:00 UTC and on the 1st', () => {
+  const wednesday = new Date('2026-09-30T15:00:00Z');
+  assert.equal(periodStart('week', wednesday).toISOString(), '2026-09-28T00:00:00.000Z');
+  assert.equal(nextPeriodStart('week', wednesday).toISOString(), '2026-10-05T00:00:00.000Z');
+  assert.equal(periodStart('month', wednesday).toISOString(), '2026-09-01T00:00:00.000Z');
+  assert.equal(nextPeriodStart('month', wednesday).toISOString(), '2026-10-01T00:00:00.000Z');
 });

@@ -18,11 +18,11 @@
  */
 
 // What an administrator can do to the organization (design §3.2): people and
-// their devices, upstreams, models and their routes, allowances, and the
-// reports. The admin console and the command line both call these, so a rule
-// (the last administrator stays, a deactivated person is signed out
-// everywhere) holds whichever one is used. Every change is audited in the
-// transaction that makes it.
+// their devices, allowances, and the reports (models and their providers are
+// model-management.ts). The admin console and the command line both call
+// these, so a rule (the last administrator stays, a deactivated person is
+// signed out everywhere) holds whichever one is used. Every change is audited
+// in the transaction that makes it.
 
 import { type Kysely, sql, type Transaction } from 'kysely';
 import { recordAudit } from './audit.js';
@@ -30,19 +30,10 @@ import type {
   ConsoleAuditEntry,
   ConsoleAuditPage,
   ConsoleDevice,
-  ConsoleModel,
-  ConsoleModelCapabilities,
-  ConsoleModelDraft,
-  ConsoleModelPatch,
   ConsoleOrgRole,
   ConsoleQuotaPeriod,
   ConsoleQuotas,
   ConsoleQuotaUsage,
-  ConsoleRouteDraft,
-  ConsoleUpstream,
-  ConsoleUpstreamDraft,
-  ConsoleUpstreamKind,
-  ConsoleUpstreamPatch,
   ConsoleUsageReport,
   ConsoleUsageTotals,
   ConsoleUser,
@@ -51,9 +42,8 @@ import type {
 } from './admin-console/types.js';
 import type { ServerContext } from './context.js';
 import { newId } from './crypto/tokens.js';
-import type { Database, ModelProtocol } from './db/schema.js';
+import type { Database } from './db/schema.js';
 import { nextPeriodStart, periodStart } from './gateway/quota.js';
-import { validateUpstreamConfig, validateUpstreamCredential } from './gateway/upstream-clients.js';
 
 type Db = Kysely<Database> | Transaction<Database>;
 
@@ -62,6 +52,8 @@ export class AdminRefused extends Error {
   constructor(
     readonly status: 400 | 404 | 409,
     message: string,
+    /** Why, for the page to say in its own words; by default from the status. */
+    readonly code?: import('./admin-console/types.js').ConsoleErrorCode,
   ) {
     super(message);
     this.name = 'AdminRefused';
@@ -77,22 +69,6 @@ export interface AdminActor {
 }
 
 const QUOTA_PERIODS: readonly ConsoleQuotaPeriod[] = ['week', 'month'];
-
-/** Which gateway protocols an upstream kind can serve. */
-export const KIND_PROTOCOLS: Readonly<Record<string, readonly ModelProtocol[]>> = {
-  anthropic: ['anthropic'],
-  vertex: ['anthropic', 'gemini'],
-  openrouter: ['anthropic'],
-  openai: ['openai'],
-  gemini: ['gemini'],
-};
-
-/** The upstream kinds the gateway can call today. */
-export const SUPPORTED_UPSTREAM_KINDS: readonly ConsoleUpstreamKind[] = [
-  'anthropic',
-  'vertex',
-  'openrouter',
-];
 
 function audit(
   db: Db,
@@ -423,573 +399,6 @@ export async function revokeDevice(
   });
 }
 
-/* ------------------------------------------------------------------ *
- * Upstreams
- * ------------------------------------------------------------------ */
-
-export async function listUpstreams(ctx: ServerContext): Promise<ConsoleUpstream[]> {
-  const rows = await ctx.db
-    .selectFrom('upstreams')
-    .select((eb) => [
-      'upstreams.id',
-      'upstreams.name',
-      'upstreams.kind',
-      'upstreams.config',
-      'upstreams.enabled',
-      'upstreams.credential_sealed',
-      'upstreams.updated_at',
-      eb
-        .selectFrom('model_routes')
-        .select(sql<number>`count(*)`.as('count'))
-        .whereRef('model_routes.upstream_id', '=', 'upstreams.id')
-        .as('model_count'),
-    ])
-    .orderBy('upstreams.name')
-    .execute();
-  return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    kind: row.kind as ConsoleUpstreamKind,
-    config: row.config,
-    enabled: row.enabled,
-    credentialConfigured: row.credential_sealed !== null,
-    modelCount: Number(row.model_count ?? 0),
-    updatedAt: row.updated_at.getTime(),
-  }));
-}
-
-function upstreamName(value: string): string {
-  const name = value.trim();
-  if (!name || name.length > 80)
-    throw new AdminRefused(400, 'Name the upstream (up to 80 characters)');
-  return name;
-}
-
-function supportedKind(kind: string): ConsoleUpstreamKind {
-  if (!(SUPPORTED_UPSTREAM_KINDS as readonly string[]).includes(kind)) {
-    throw new AdminRefused(400, `Upstream kind ${kind} is not supported yet`);
-  }
-  return kind as ConsoleUpstreamKind;
-}
-
-/** A flat settings object compared by content: the database keeps its keys in its own order. */
-function canonical(value: Record<string, unknown>): string {
-  return JSON.stringify(
-    Object.keys(value)
-      .sort()
-      .map((key) => [key, value[key]]),
-  );
-}
-
-function validated<T>(check: () => T, what: string): T {
-  try {
-    return check();
-  } catch {
-    throw new AdminRefused(400, `The ${what} is incomplete or malformed`);
-  }
-}
-
-async function nameTaken(db: Db, name: string, except?: string): Promise<boolean> {
-  const row = await db
-    .selectFrom('upstreams')
-    .select('id')
-    .where('name', '=', name)
-    .$if(Boolean(except), (query) => query.where('id', '<>', except!))
-    .executeTakeFirst();
-  return Boolean(row);
-}
-
-export async function createUpstream(
-  ctx: ServerContext,
-  actor: AdminActor,
-  draft: ConsoleUpstreamDraft,
-): Promise<string> {
-  const name = upstreamName(draft.name);
-  const kind = supportedKind(draft.kind);
-  const config = validated(() => validateUpstreamConfig(kind, draft.config), 'configuration');
-  const credential = validated(
-    () => validateUpstreamCredential(kind, draft.credential),
-    'credential',
-  );
-  const now = ctx.now();
-  const id = newId();
-  const taken = `An upstream is already named ${name}`;
-  await unlessTaken(
-    () =>
-      ctx.db.transaction().execute(async (tx) => {
-        if (await nameTaken(tx, name)) throw new AdminRefused(409, taken);
-        await tx
-          .insertInto('upstreams')
-          .values({
-            id,
-            name,
-            kind,
-            config: JSON.stringify(config),
-            credential_sealed: ctx.secrets.seal(JSON.stringify(credential), `upstream:${id}`),
-            enabled: true,
-            updated_at: now,
-          })
-          .execute();
-        await audit(tx, actor, now, 'upstream.created', 'upstream', id, { name, kind });
-      }),
-    taken,
-  );
-  return id;
-}
-
-export async function updateUpstream(
-  ctx: ServerContext,
-  actor: AdminActor,
-  id: string,
-  patch: ConsoleUpstreamPatch,
-): Promise<void> {
-  requireId(id, 'upstream');
-  const now = ctx.now();
-  await ctx.db.transaction().execute(async (tx) => {
-    const row = await tx
-      .selectFrom('upstreams')
-      .selectAll()
-      .where('id', '=', id)
-      .forUpdate()
-      .executeTakeFirst();
-    if (!row) throw new AdminRefused(404, 'No such upstream');
-    const changes: {
-      name?: string;
-      config?: string;
-      credential_sealed?: string;
-      enabled?: boolean;
-    } = {};
-    const changed: string[] = [];
-    if (patch.name !== undefined) {
-      const name = upstreamName(patch.name);
-      if (name !== row.name) {
-        if (await nameTaken(tx, name, id)) {
-          throw new AdminRefused(409, `An upstream is already named ${name}`);
-        }
-        changes.name = name;
-        changed.push('name');
-      }
-    }
-    if (patch.config !== undefined) {
-      const config = validated(
-        () => validateUpstreamConfig(row.kind, patch.config),
-        'configuration',
-      );
-      if (canonical(config) !== canonical(row.config)) {
-        changes.config = JSON.stringify(config);
-        changed.push('config');
-      }
-    }
-    if (patch.credential !== undefined) {
-      const credential = validated(
-        () => validateUpstreamCredential(row.kind, patch.credential),
-        'credential',
-      );
-      changes.credential_sealed = ctx.secrets.seal(JSON.stringify(credential), `upstream:${id}`);
-      changed.push('credential');
-    }
-    if (patch.enabled !== undefined && patch.enabled !== row.enabled) {
-      changes.enabled = patch.enabled;
-      changed.push(patch.enabled ? 'enabled' : 'disabled');
-    }
-    if (changed.length === 0) return;
-    // `updated_at` is also the gateway's cue to build a new client.
-    await tx
-      .updateTable('upstreams')
-      .set({ ...changes, updated_at: now })
-      .where('id', '=', id)
-      .execute();
-    await audit(tx, actor, now, 'upstream.updated', 'upstream', id, { changed });
-  });
-}
-
-/** Only an upstream no model routes through: a route to nowhere would fail every request. */
-export async function deleteUpstream(
-  ctx: ServerContext,
-  actor: AdminActor,
-  id: string,
-): Promise<void> {
-  requireId(id, 'upstream');
-  const now = ctx.now();
-  await ctx.db.transaction().execute(async (tx) => {
-    // Locked first: a route being added to it waits (or makes this wait), so
-    // the count below is the last word and the cascade never takes a route.
-    const upstream = await tx
-      .selectFrom('upstreams')
-      .select('name')
-      .where('id', '=', id)
-      .forUpdate()
-      .executeTakeFirst();
-    if (!upstream) throw new AdminRefused(404, 'No such upstream');
-    const routes = await tx
-      .selectFrom('model_routes')
-      .select('model_id')
-      .where('upstream_id', '=', id)
-      .execute();
-    if (routes.length > 0) {
-      throw new AdminRefused(409, 'Models still route through this upstream; move them first');
-    }
-    await tx.deleteFrom('upstreams').where('id', '=', id).execute();
-    await audit(tx, actor, now, 'upstream.deleted', 'upstream', id, { name: upstream.name });
-  });
-}
-
-/* ------------------------------------------------------------------ *
- * Models
- * ------------------------------------------------------------------ */
-
-const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,127}$/;
-const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
-const MODALITIES = new Set(['text', 'image', 'pdf', 'audio', 'video']);
-/** Beyond any model's window: the desktop sizes its context from these. */
-const MAX_TOKEN_COUNT = 100_000_000;
-/**
- * The protocols a model may be offered on: only those the gateway serves, or
- * the model would be listed to people and fail on the first send.
- */
-const OFFERED_PROTOCOLS: readonly ModelProtocol[] = ['anthropic'];
-
-/** What is stored for a model's capabilities: only what was said, each field checked. */
-function capabilitiesOf(input: ConsoleModelCapabilities | undefined): Record<string, unknown> {
-  if (input === undefined) return {};
-  if (typeof input !== 'object' || input === null) {
-    throw new AdminRefused(400, 'Capabilities must be an object');
-  }
-  const out: Record<string, unknown> = {};
-  const positive = (value: unknown, what: string) => {
-    if (value === undefined) return undefined;
-    if (
-      typeof value !== 'number' ||
-      !Number.isInteger(value) ||
-      value <= 0 ||
-      value > MAX_TOKEN_COUNT
-    ) {
-      throw new AdminRefused(400, `${what} must be a whole number from 1 to ${MAX_TOKEN_COUNT}`);
-    }
-    return value;
-  };
-  if (input.referenceModelId !== undefined) {
-    const reference = String(input.referenceModelId).trim();
-    if (reference && !MODEL_ID.test(reference)) {
-      throw new AdminRefused(400, 'The vendor model id is not a model id');
-    }
-    if (reference) out.referenceModelId = reference;
-  }
-  const contextWindow = positive(input.contextWindow, 'The context window');
-  if (contextWindow !== undefined) out.contextWindow = contextWindow;
-  const maxOutputTokens = positive(input.maxOutputTokens, 'The output limit');
-  if (maxOutputTokens !== undefined) out.maxOutputTokens = maxOutputTokens;
-  if (input.thinkingLevels !== undefined) {
-    if (
-      !Array.isArray(input.thinkingLevels) ||
-      !input.thinkingLevels.every((level) => THINKING_LEVELS.has(level))
-    ) {
-      throw new AdminRefused(400, 'Unknown thinking level');
-    }
-    if (input.thinkingLevels.length > 0) out.thinkingLevels = [...new Set(input.thinkingLevels)];
-  }
-  if (input.defaultThinkingLevel !== undefined) {
-    const levels = (out.thinkingLevels as string[] | undefined) ?? [];
-    if (!levels.includes(input.defaultThinkingLevel)) {
-      throw new AdminRefused(400, 'The default thinking level must be one of the levels offered');
-    }
-    out.defaultThinkingLevel = input.defaultThinkingLevel;
-  }
-  if (input.inputModalities !== undefined) {
-    if (
-      !Array.isArray(input.inputModalities) ||
-      !input.inputModalities.every((modality) => MODALITIES.has(modality))
-    ) {
-      throw new AdminRefused(400, 'Unknown input kind');
-    }
-    if (input.inputModalities.length > 0) out.inputModalities = [...new Set(input.inputModalities)];
-  }
-  if (input.supportsTools !== undefined) {
-    if (typeof input.supportsTools !== 'boolean') {
-      throw new AdminRefused(400, 'Tool support is yes or no');
-    }
-    out.supportsTools = input.supportsTools;
-  }
-  return out;
-}
-
-function costWeight(value: number | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1000) {
-    throw new AdminRefused(400, 'The cost weight must be a number from 0 to 1000');
-  }
-  return value;
-}
-
-function sortOrder(value: number | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== 'number' || !Number.isInteger(value) || Math.abs(value) > 1_000_000) {
-    throw new AdminRefused(400, 'The order must be a whole number');
-  }
-  return value;
-}
-
-function displayName(value: string): string {
-  const name = typeof value === 'string' ? value.trim() : '';
-  if (!name || name.length > 120)
-    throw new AdminRefused(400, 'Name the model (up to 120 characters)');
-  return name;
-}
-
-export async function listModels(ctx: ServerContext): Promise<ConsoleModel[]> {
-  const models = await ctx.db
-    .selectFrom('models')
-    .selectAll()
-    .orderBy('sort_order')
-    .orderBy('id')
-    .execute();
-  const routes = await ctx.db
-    .selectFrom('model_routes')
-    .innerJoin('upstreams', 'upstreams.id', 'model_routes.upstream_id')
-    .select([
-      'model_routes.model_id',
-      'model_routes.upstream_id',
-      'model_routes.upstream_model',
-      'model_routes.priority',
-      'upstreams.name',
-      'upstreams.kind',
-      'upstreams.enabled',
-    ])
-    .orderBy('model_routes.priority')
-    .orderBy('upstreams.name')
-    .execute();
-  return models.map((model) => ({
-    id: model.id,
-    protocol: model.protocol,
-    displayName: model.display_name,
-    capabilities: model.capabilities as ConsoleModelCapabilities,
-    costWeight: model.cost_weight,
-    enabled: model.enabled,
-    sortOrder: model.sort_order,
-    updatedAt: model.updated_at.getTime(),
-    routes: routes
-      .filter((route) => route.model_id === model.id)
-      .map((route) => ({
-        upstreamId: route.upstream_id,
-        upstreamName: route.name,
-        upstreamKind: route.kind as ConsoleUpstreamKind,
-        upstreamEnabled: route.enabled,
-        upstreamModel: route.upstream_model,
-        priority: route.priority,
-      })),
-  }));
-}
-
-export async function createModel(
-  ctx: ServerContext,
-  actor: AdminActor,
-  draft: ConsoleModelDraft,
-): Promise<void> {
-  const id = typeof draft.id === 'string' ? draft.id.trim() : '';
-  if (!MODEL_ID.test(id)) {
-    throw new AdminRefused(400, 'A model id is letters, digits and . _ : / @ - (up to 128)');
-  }
-  if (!OFFERED_PROTOCOLS.includes(draft.protocol)) {
-    throw new AdminRefused(400, `Protocol ${String(draft.protocol)} is not offered`);
-  }
-  if (draft.enabled !== undefined && typeof draft.enabled !== 'boolean') {
-    throw new AdminRefused(400, 'Enabled is yes or no');
-  }
-  const values = {
-    id,
-    protocol: draft.protocol,
-    display_name: displayName(draft.displayName),
-    capabilities: JSON.stringify(capabilitiesOf(draft.capabilities)),
-    cost_weight: costWeight(draft.costWeight) ?? 1,
-    enabled: draft.enabled ?? true,
-    sort_order: sortOrder(draft.sortOrder) ?? 0,
-  };
-  const now = ctx.now();
-  const taken = `A model ${id} already exists`;
-  await unlessTaken(
-    () =>
-      ctx.db.transaction().execute(async (tx) => {
-        const existing = await tx
-          .selectFrom('models')
-          .select('id')
-          .where('id', '=', id)
-          .executeTakeFirst();
-        if (existing) throw new AdminRefused(409, taken);
-        await tx
-          .insertInto('models')
-          .values({ ...values, updated_at: now })
-          .execute();
-        await audit(tx, actor, now, 'model.created', 'model', id, { protocol: draft.protocol });
-      }),
-    taken,
-  );
-}
-
-export async function updateModel(
-  ctx: ServerContext,
-  actor: AdminActor,
-  id: string,
-  patch: ConsoleModelPatch,
-): Promise<void> {
-  const changes: {
-    display_name?: string;
-    capabilities?: string;
-    cost_weight?: number;
-    sort_order?: number;
-    enabled?: boolean;
-  } = {};
-  if (patch.displayName !== undefined) changes.display_name = displayName(patch.displayName);
-  if (patch.capabilities !== undefined) {
-    changes.capabilities = JSON.stringify(capabilitiesOf(patch.capabilities));
-  }
-  const weight = costWeight(patch.costWeight);
-  if (weight !== undefined) changes.cost_weight = weight;
-  const order = sortOrder(patch.sortOrder);
-  if (order !== undefined) changes.sort_order = order;
-  if (patch.enabled !== undefined) {
-    if (typeof patch.enabled !== 'boolean') throw new AdminRefused(400, 'Enabled is yes or no');
-    changes.enabled = patch.enabled;
-  }
-  if (Object.keys(changes).length === 0) return;
-  const now = ctx.now();
-  await ctx.db.transaction().execute(async (tx) => {
-    const updated = await tx
-      .updateTable('models')
-      .set({ ...changes, updated_at: now })
-      .where('id', '=', id)
-      .executeTakeFirst();
-    if (Number(updated.numUpdatedRows) === 0) throw new AdminRefused(404, 'No such model');
-    await audit(tx, actor, now, 'model.updated', 'model', id, { changed: Object.keys(changes) });
-  });
-}
-
-/** Its routes go with it; its usage stays, recorded under its id. */
-export async function deleteModel(
-  ctx: ServerContext,
-  actor: AdminActor,
-  id: string,
-): Promise<void> {
-  const now = ctx.now();
-  await ctx.db.transaction().execute(async (tx) => {
-    const removed = await tx.deleteFrom('models').where('id', '=', id).executeTakeFirst();
-    if (Number(removed.numDeletedRows) === 0) throw new AdminRefused(404, 'No such model');
-    await audit(tx, actor, now, 'model.deleted', 'model', id);
-  });
-}
-
-/** Replace where a model's requests go, each upstream once, in priority order. */
-export async function setModelRoutes(
-  ctx: ServerContext,
-  actor: AdminActor,
-  modelId: string,
-  routes: readonly ConsoleRouteDraft[],
-): Promise<void> {
-  await ctx.db.transaction().execute((tx) => writeRoutes(tx, actor, ctx.now(), modelId, routes));
-}
-
-async function writeRoutes(
-  tx: Transaction<Database>,
-  actor: AdminActor,
-  now: Date,
-  modelId: string,
-  routes: readonly ConsoleRouteDraft[],
-): Promise<void> {
-  if (!Array.isArray(routes) || routes.length > 10) {
-    throw new AdminRefused(400, 'Give up to ten routes');
-  }
-  const model = await tx
-    .selectFrom('models')
-    .select('protocol')
-    .where('id', '=', modelId)
-    .forUpdate()
-    .executeTakeFirst();
-  if (!model) throw new AdminRefused(404, 'No such model');
-  const seen = new Set<string>();
-  const rows = [];
-  for (const route of routes) {
-    const upstreamModel =
-      typeof route?.upstreamModel === 'string' ? route.upstreamModel.trim() : '';
-    if (!upstreamModel || upstreamModel.length > 200) {
-      throw new AdminRefused(400, "Give the model's name at each upstream");
-    }
-    const priority = sortOrder(route.priority) ?? 0;
-    if (typeof route.upstreamId !== 'string' || seen.has(route.upstreamId)) {
-      throw new AdminRefused(400, 'Each upstream once');
-    }
-    requireId(route.upstreamId, 'upstream');
-    seen.add(route.upstreamId);
-    // Shared: deleting the upstream waits until this is written.
-    const upstream = await tx
-      .selectFrom('upstreams')
-      .select(['id', 'name', 'kind'])
-      .where('id', '=', route.upstreamId)
-      .forShare()
-      .executeTakeFirst();
-    if (!upstream) throw new AdminRefused(404, 'No such upstream');
-    if (!KIND_PROTOCOLS[upstream.kind]?.includes(model.protocol)) {
-      throw new AdminRefused(
-        400,
-        `${upstream.name} (${upstream.kind}) cannot serve ${model.protocol} models`,
-      );
-    }
-    rows.push({
-      model_id: modelId,
-      upstream_id: upstream.id,
-      upstream_model: upstreamModel,
-      priority,
-      name: upstream.name,
-    });
-  }
-  await tx.deleteFrom('model_routes').where('model_id', '=', modelId).execute();
-  if (rows.length > 0) {
-    await tx
-      .insertInto('model_routes')
-      .values(rows.map(({ name: _name, ...row }) => row))
-      .execute();
-  }
-  await audit(tx, actor, now, 'model.routed', 'model', modelId, {
-    routes: rows.map((row) => `${row.name}:${row.upstream_model}`),
-  });
-}
-
-/** Add or replace one route, keeping the others (the command line's `models route`). */
-export async function addModelRoute(
-  ctx: ServerContext,
-  actor: AdminActor,
-  modelId: string,
-  route: ConsoleRouteDraft,
-): Promise<void> {
-  await ctx.db.transaction().execute(async (tx) => {
-    // Read under the model's lock, so a change made meanwhile is not lost.
-    const model = await tx
-      .selectFrom('models')
-      .select('id')
-      .where('id', '=', modelId)
-      .forUpdate()
-      .executeTakeFirst();
-    if (!model) throw new AdminRefused(404, `No model ${modelId}`);
-    const current = await tx
-      .selectFrom('model_routes')
-      .select(['upstream_id', 'upstream_model', 'priority'])
-      .where('model_id', '=', modelId)
-      .execute();
-    await writeRoutes(tx, actor, ctx.now(), modelId, [
-      ...current
-        .filter((existing) => existing.upstream_id !== route.upstreamId)
-        .map((existing) => ({
-          upstreamId: existing.upstream_id,
-          upstreamModel: existing.upstream_model,
-          priority: existing.priority,
-        })),
-      route,
-    ]);
-  });
-}
-
-/* ------------------------------------------------------------------ *
- * Allowances
- * ------------------------------------------------------------------ */
-
 export async function listQuotas(ctx: ServerContext): Promise<ConsoleQuotas> {
   const rows = await ctx.db
     .selectFrom('quotas')
@@ -1118,7 +527,7 @@ async function quotaUsage(ctx: ServerContext, userId: string): Promise<ConsoleQu
     const own = rows.find((row) => row.scope === 'user' && row.period === period);
     const fallback = rows.find((row) => row.scope === 'user_default' && row.period === period);
     const used = await ctx.db
-      .selectFrom('usage_events')
+      .selectFrom('model_usage')
       .select(sql<number>`coalesce(sum(weighted_units), 0)`.as('units'))
       .where('user_id', '=', userId)
       .where('at', '>=', periodStart(period, now))
@@ -1140,6 +549,7 @@ async function quotaUsage(ctx: ServerContext, userId: string): Promise<ConsoleQu
 
 function totalsOf(row: {
   requests: unknown;
+  estimated: unknown;
   errors: unknown;
   input: unknown;
   output: unknown;
@@ -1149,6 +559,7 @@ function totalsOf(row: {
 }): ConsoleUsageTotals {
   return {
     requests: Number(row.requests ?? 0),
+    estimatedRequests: Number(row.estimated ?? 0),
     errors: Number(row.errors ?? 0),
     inputTokens: Number(row.input ?? 0),
     outputTokens: Number(row.output ?? 0),
@@ -1160,12 +571,14 @@ function totalsOf(row: {
 
 const TOTALS = [
   sql<number>`count(*)`.as('requests'),
-  sql<number>`count(*) FILTER (WHERE usage_events.status = 'error')`.as('errors'),
-  sql<number>`coalesce(sum(usage_events.input_tokens), 0)`.as('input'),
-  sql<number>`coalesce(sum(usage_events.output_tokens), 0)`.as('output'),
-  sql<number>`coalesce(sum(usage_events.cache_read_tokens), 0)`.as('cache_read'),
-  sql<number>`coalesce(sum(usage_events.cache_write_tokens), 0)`.as('cache_write'),
-  sql<number>`coalesce(sum(usage_events.weighted_units), 0)`.as('units'),
+  // A person's own stop is not a failure; a refusal or a broken-off answer is.
+  sql<number>`count(*) FILTER (WHERE model_usage.status IN ('error', 'incomplete'))`.as('errors'),
+  sql<number>`count(*) FILTER (WHERE model_usage.quality = 'estimated')`.as('estimated'),
+  sql<number>`coalesce(sum(model_usage.input_tokens), 0)`.as('input'),
+  sql<number>`coalesce(sum(model_usage.output_tokens), 0)`.as('output'),
+  sql<number>`coalesce(sum(model_usage.cache_read_tokens), 0)`.as('cache_read'),
+  sql<number>`coalesce(sum(model_usage.cache_write_tokens), 0)`.as('cache_write'),
+  sql<number>`coalesce(sum(model_usage.weighted_units), 0)`.as('units'),
 ] as const;
 
 export async function usageReport(ctx: ServerContext, days: number): Promise<ConsoleUsageReport> {
@@ -1174,24 +587,24 @@ export async function usageReport(ctx: ServerContext, days: number): Promise<Con
   }
   const since = new Date(ctx.now().getTime() - days * 24 * 60 * 60 * 1000);
   const totals = await ctx.db
-    .selectFrom('usage_events')
+    .selectFrom('model_usage')
     .select([...TOTALS])
-    .where('usage_events.at', '>=', since)
+    .where('model_usage.at', '>=', since)
     .executeTakeFirstOrThrow();
   const byUser = await ctx.db
-    .selectFrom('usage_events')
-    .innerJoin('users', 'users.id', 'usage_events.user_id')
+    .selectFrom('model_usage')
+    .innerJoin('users', 'users.id', 'model_usage.user_id')
     .select(['users.id', 'users.email', 'users.name', 'users.profile_name', ...TOTALS])
-    .where('usage_events.at', '>=', since)
+    .where('model_usage.at', '>=', since)
     .groupBy(['users.id', 'users.email', 'users.name', 'users.profile_name'])
     .orderBy('units', 'desc')
     .execute();
   const byModel = await ctx.db
-    .selectFrom('usage_events')
-    .leftJoin('models', 'models.id', 'usage_events.model_id')
-    .select(['usage_events.model_id', 'models.display_name', ...TOTALS])
-    .where('usage_events.at', '>=', since)
-    .groupBy(['usage_events.model_id', 'models.display_name'])
+    .selectFrom('model_usage')
+    .leftJoin('organization_models', 'organization_models.id', 'model_usage.model_id')
+    .select(['model_usage.model_id', 'organization_models.display_name', ...TOTALS])
+    .where('model_usage.at', '>=', since)
+    .groupBy(['model_usage.model_id', 'organization_models.display_name'])
     .orderBy('units', 'desc')
     .execute();
   return {
@@ -1215,7 +628,7 @@ export async function usageReport(ctx: ServerContext, days: number): Promise<Con
 const AUDIT_PAGE_SIZE = 100;
 const MAX_BIGINT = 9_223_372_036_854_775_807n;
 
-/** Members, upstreams and devices by name, for the page's targets that still exist. */
+/** Members, model providers, models and devices by name, for the page's targets that still exist. */
 async function auditTargetLabels(
   ctx: ServerContext,
   rows: readonly { target_type: string | null; target_id: string | null }[],
@@ -1245,14 +658,30 @@ async function auditTargetLabels(
       labels.set(`quota:user:${user.id}:month`, user.email);
     }
   }
-  const upstreams = ids('upstream');
-  if (upstreams.length > 0) {
-    for (const upstream of await ctx.db
-      .selectFrom('upstreams')
+  const providers = ids('model_provider');
+  if (providers.length > 0) {
+    for (const provider of await ctx.db
+      .selectFrom('model_providers')
       .select(['id', 'name'])
-      .where('id', 'in', upstreams)
+      .where('id', 'in', providers)
       .execute()) {
-      labels.set(`upstream:${upstream.id}`, upstream.name);
+      labels.set(`model_provider:${provider.id}`, provider.name);
+    }
+  }
+  const models = [
+    ...new Set(
+      rows
+        .filter((row) => row.target_type === 'model' && row.target_id)
+        .map((row) => row.target_id!),
+    ),
+  ];
+  if (models.length > 0) {
+    for (const model of await ctx.db
+      .selectFrom('organization_models')
+      .select(['id', 'display_name'])
+      .where('id', 'in', models)
+      .execute()) {
+      labels.set(`model:${model.id}`, model.display_name);
     }
   }
   const devices = ids('device_session');

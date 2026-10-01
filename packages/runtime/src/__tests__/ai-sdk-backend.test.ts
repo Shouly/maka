@@ -99,6 +99,10 @@ import {
 import type { OpenAiResponsesSemanticBaseline } from '../openai-responses-continuation.js';
 import type { OpenAiResponsesTransportState } from '../openai-responses-websocket.js';
 import { getAIModel } from '../model-factory.js';
+import {
+  createOrganizationModelFetch,
+  OrganizationAccountUnavailableError,
+} from '../organization-model-fetch.js';
 import { deferred, waitFor as pollFor } from '@maka/core/test-only/async-primitives';
 import { Context } from '../plugin-kernel.js';
 import { MakaCompositionLoader } from '../plugin-composition-loader.js';
@@ -17202,4 +17206,340 @@ describe('AiSdkBackend streamed tool arguments', () => {
     assert.ok(deltas.length > 1, `sent ${deltas.length} frames`);
     assert.equal(deltas.map((delta) => delta.delta).join(''), '{"file_path":"/tmp/a.ts"}');
   });
+});
+
+function organizationRetryConnection(): LlmConnection {
+  return {
+    ...connection(),
+    providerType: 'organization',
+    baseUrl: 'https://organization.test',
+    defaultModel: 'm_company',
+    models: [
+      {
+        id: 'm_company',
+        availability: 'available',
+        executionContract: {
+          apiProtocol: 'anthropic-messages',
+          profileId: 'anthropic',
+          sdkModelId: 'claude-sonnet-4-6',
+          capabilities: {
+            inputModalities: ['text'],
+            supportsTools: true,
+            supportsReasoning: true,
+            supportsStructuredOutput: true,
+          },
+        },
+      },
+    ],
+  };
+}
+
+function organizationRetryStream(
+  mode: 'idle' | 'truncated' | 'complete',
+  signal?: AbortSignal | null,
+): Response {
+  const frames: unknown[] = [
+    {
+      type: 'message_start',
+      message: {
+        id: 'message-fixture',
+        type: 'message',
+        role: 'assistant',
+        model: 'claude-sonnet-4-6',
+        content: [],
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: 1, output_tokens: 0 },
+      },
+    },
+  ];
+  if (mode === 'idle')
+    frames.push(
+      {
+        type: 'content_block_start',
+        index: 0,
+        content_block: { type: 'thinking', thinking: '', signature: '' },
+      },
+      {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'thinking_delta', thinking: 'pending thought' },
+      },
+    );
+  if (mode === 'complete')
+    frames.push(
+      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Done' } },
+      { type: 'content_block_stop', index: 0 },
+      {
+        type: 'message_delta',
+        delta: { stop_reason: 'end_turn', stop_sequence: null },
+        usage: { output_tokens: 1 },
+      },
+      { type: 'message_stop' },
+    );
+  let detach = () => {};
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const frame of frames)
+          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(frame)}\n\n`));
+        if (mode !== 'idle' || signal?.aborted) controller.close();
+        else {
+          const stop = () => {
+            detach();
+            controller.close();
+          };
+          detach = () => signal?.removeEventListener('abort', stop);
+          signal?.addEventListener('abort', stop, { once: true });
+        }
+      },
+      cancel() {
+        detach();
+      },
+    }),
+    { headers: { 'content-type': 'text/event-stream' } },
+  );
+}
+
+test("an organisation model's stalled or cut stream is recovered as any other model's", async () => {
+  const run = async (organization: boolean, failure: 'idle' | 'truncated') => {
+    let calls = 0;
+    const timers = manualWatchdogTimer();
+    const backend = createBackend({
+      connection: organization ? organizationRetryConnection() : connection(),
+      modelId: organization ? 'm_company' : 'claude-sonnet-4-6',
+      tools: [],
+      streamWatchdogTimer: timers.clock,
+      providerRetrySleep: async () => {},
+      modelFactory: (input) =>
+        getAIModel({
+          ...input,
+          fetch: async (_url, init) => {
+            calls++;
+            return organizationRetryStream(calls === 1 ? failure : 'complete', init?.signal);
+          },
+        }),
+    });
+    for await (const event of backend.send({
+      turnId: `org-${failure}`,
+      text: 'hello',
+      context: [],
+    })) {
+      if (event.type === 'thinking_delta' && calls === 1) timers.fire();
+    }
+    return calls;
+  };
+  for (const failure of ['idle', 'truncated'] as const) {
+    assert.equal(await run(true, failure), await run(false, failure), failure);
+  }
+  // The premise: a stalled stream is recovered at all.
+  assert.equal(await run(true, 'idle'), 2);
+});
+
+/**
+ * How one first answer from an organisation model is retried: the gateway
+ * forwards, so a provider's answer is read as any provider's, and only the
+ * gateway's own refusals (`x-maka-error`) and `x-should-retry` say more.
+ */
+const ORGANIZATION_FIRST_ANSWERS = {
+  // The provider's throttle, paced by its own headers.
+  rate_limit: { retried: true, delays: [120_000] },
+  rate_limit_ms: { retried: true, delays: [1500] },
+  rate_limit_date: { retried: true },
+  // The account could not sign: the server did not answer the app.
+  signing: { retried: true, tokens: 2, calls: 1 },
+  // The connection to the gateway broke before an answer.
+  transport: { retried: true, tokens: 2 },
+  // The gateway's own refusal: the allowance is used up.
+  quota: { retried: false, reason: 'organization_quota' },
+  // The provider refused the organisation's balance, or its key.
+  provider_billing: { retried: false, reason: 'organization_provider_account' },
+  provider_401: { retried: false, reason: 'organization_provider_account' },
+  // The gateway refused the account token: refreshed once inside the fetch.
+  gateway_401: { retried: false, completes: true, tokens: 2, calls: 2 },
+  // The provider could not be reached, and nothing was sent / it may have been.
+  unreachable_unsent: { retried: true },
+  unreachable_maybe_sent: { retried: false, reason: 'provider_unavailable' },
+} as const satisfies Record<
+  string,
+  {
+    readonly retried: boolean;
+    readonly completes?: boolean;
+    readonly reason?: string;
+    readonly delays?: readonly number[];
+    readonly tokens?: number;
+    readonly calls?: number;
+  }
+>;
+
+for (const [outcome, expected] of Object.entries(ORGANIZATION_FIRST_ANSWERS)) {
+  test(`an organisation model's first answer is retried by the ordinary rules: ${outcome}`, async () => {
+    let calls = 0;
+    let tokens = 0;
+    const delays: number[] = [];
+    const startedAt = Date.now();
+    const retryDate = new Date(startedAt + 120_000).toUTCString();
+    const anthropicError = (
+      status: number,
+      type: string,
+      headers: Record<string, string>,
+      maka?: object,
+    ) =>
+      Response.json(
+        { type: 'error', error: { type, message: 'fixture refusal' }, ...(maka ? { maka } : {}) },
+        { status, headers },
+      );
+    const first = (): Response => {
+      switch (outcome) {
+        case 'rate_limit':
+          return anthropicError(429, 'rate_limit_error', { 'retry-after': '120' });
+        case 'rate_limit_ms':
+          return anthropicError(429, 'rate_limit_error', {
+            'retry-after': '120',
+            'retry-after-ms': '1500',
+          });
+        case 'rate_limit_date':
+          return anthropicError(429, 'rate_limit_error', { 'retry-after': retryDate });
+        case 'quota':
+          return anthropicError(
+            429,
+            'rate_limit_error',
+            { 'x-maka-error': 'quota_exceeded', 'x-should-retry': 'false', 'retry-after': '86400' },
+            { code: 'quota_exceeded', retryAt: startedAt + 86_400_000 },
+          );
+        case 'provider_billing':
+          return Response.json(
+            { error: { code: 'insufficient_quota', message: 'Credit balance is too low' } },
+            { status: 402 },
+          );
+        case 'provider_401':
+          return anthropicError(401, 'authentication_error', {});
+        case 'gateway_401':
+          return anthropicError(
+            401,
+            'authentication_error',
+            { 'x-maka-error': 'unauthenticated', 'x-should-retry': 'false' },
+            { code: 'unauthenticated' },
+          );
+        case 'unreachable_unsent':
+        case 'unreachable_maybe_sent':
+          return anthropicError(
+            502,
+            'api_error',
+            {
+              'x-maka-error': 'upstream_unavailable',
+              'x-should-retry': String(outcome === 'unreachable_unsent'),
+            },
+            { code: 'upstream_unavailable' },
+          );
+        default:
+          throw new Error(`no first answer for ${outcome}`);
+      }
+    };
+    const fetchFn: typeof fetch = async (_url, init) => {
+      calls++;
+      if (calls > 1 || outcome === 'signing')
+        return organizationRetryStream('complete', init?.signal);
+      if (outcome === 'transport')
+        throw new TypeError('fetch failed', {
+          cause: Object.assign(new Error('disconnected'), { code: 'ECONNRESET' }),
+        });
+      return first();
+    };
+    const backend = createBackend({
+      connection: organizationRetryConnection(),
+      modelId: 'm_company',
+      tools: [],
+      providerRetrySleep: async (delayMs) => {
+        delays.push(delayMs);
+      },
+      modelFactory: (input) =>
+        getAIModel({
+          ...input,
+          fetch: createOrganizationModelFetch({
+            fetchFn,
+            token: async ({ forceRefresh }) => {
+              tokens++;
+              if (outcome === 'signing' && tokens === 1)
+                throw new OrganizationAccountUnavailableError('server_unreachable');
+              return {
+                accessToken: forceRefresh ? 'fresh-token' : 'fixture-token',
+                clientVersion: '0.2.0',
+              };
+            },
+          }),
+        }),
+    });
+    const events: SessionEvent[] = [];
+    for await (const event of backend.send({
+      turnId: `org-${outcome}`,
+      text: 'hello',
+      context: [],
+    }))
+      events.push(event);
+    const completes = expected.retried || ('completes' in expected && expected.completes);
+    assert.equal(calls, 'calls' in expected ? expected.calls : expected.retried ? 2 : 1);
+    assert.equal(tokens, 'tokens' in expected ? expected.tokens : calls);
+    assert.equal(
+      events.some((e) => e.type === 'provider_retry' && e.phase === 'started'),
+      expected.retried,
+    );
+    assert.equal(
+      events.some((e) => e.type === 'error'),
+      !completes,
+    );
+    if ('reason' in expected) {
+      assert.equal(events.find((e) => e.type === 'error')?.reason, expected.reason);
+    }
+    if ('delays' in expected) assert.deepEqual(delays, expected.delays);
+    if (outcome === 'rate_limit_date') {
+      assert.equal(delays.length, 1);
+      assert.ok(delays[0]! >= Date.parse(retryDate) - Date.now());
+      assert.ok(delays[0]! <= Date.parse(retryDate) - startedAt);
+    }
+    if (!expected.retried) assert.deepEqual(delays, []);
+  });
+}
+
+test("an organisation model defers tools natively exactly as the same model on a person's own connection", async () => {
+  const firstRequest = async (organization: boolean) => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const backend = createBackend({
+      connection: organization ? organizationRetryConnection() : connection(),
+      modelId: organization ? 'm_company' : 'claude-sonnet-4-6',
+      tools: [
+        {
+          name: 'Read',
+          description: 'Read a local file',
+          parameters: z.object({ path: z.string() }),
+          impl: () => ({ ok: true }),
+        },
+        {
+          name: 'BrowserClick',
+          description: 'Click an element in the browser',
+          parameters: z.object({}),
+          impl: () => ({ ok: true }),
+        },
+      ],
+      toolAvailability: { groups: [{ id: 'browser', toolNames: ['BrowserClick'] }] },
+      modelFactory: (input) =>
+        getAIModel({
+          ...input,
+          fetch: async (_url, init) => {
+            bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+            return organizationRetryStream('complete', init?.signal);
+          },
+        }),
+    });
+    for await (const event of backend.send({ turnId: 'deferral', text: 'hello', context: [] }))
+      void event;
+    return bodies[0]!;
+  };
+  const own = await firstRequest(false);
+  // The premise: this model's own API holds the browser tool back for search.
+  assert.match(JSON.stringify(own.tools), /"defer_loading":true/);
+  const organization = await firstRequest(true);
+  assert.equal(organization.model, own.model);
+  assert.deepEqual(organization.tools, own.tools);
 });

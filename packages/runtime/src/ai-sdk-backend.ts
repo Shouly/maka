@@ -410,7 +410,12 @@ export class AiSdkBackend implements AgentBackend {
     });
     const applyPatchProfile = runtime.applyPatchProfile;
     this.applyPatchProfile = applyPatchProfile;
-    this.nativeToolDeferral = resolveNativeToolDeferral(runtime, input.modelId);
+    // Detected on the provider's own model id: an organisation model's `m_…`
+    // id names nothing a provider serves.
+    this.nativeToolDeferral = resolveNativeToolDeferral(
+      runtime,
+      runtime.sdkModelId ?? input.modelId,
+    );
     this.messageProjection = new AiSdkMessageProjection({
       modelAdapter: this.modelAdapter,
       applyPatchProfile,

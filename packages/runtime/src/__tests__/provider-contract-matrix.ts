@@ -35,8 +35,8 @@
  *                      assertion the executor must still hold).
  *
  * The row set is discovered from the registry, never a hard-coded provider list:
- * every `status: 'ready'` entry whose runtime adapter is wired (i.e. not
- * `unavailable`) is a row. Crucially this is *not* `READY_PROVIDER_TYPES`, whose
+ * every `status: 'ready'` entry is a row, including organisation models whose
+ * adapter is supplied by their execution contract. This is *not* `READY_PROVIDER_TYPES`, whose
  * membership is "has a `readyOrder`" and would silently drop `github-copilot`
  * (ready, but intentionally without a `readyOrder`).
  *
@@ -336,6 +336,15 @@ function wireDimensionCell(
   providerType: ProviderType,
   def: ProviderDefaults,
 ): ProviderContractCell {
+  if (def.organizationGateway) {
+    return {
+      state: 'override',
+      dimension,
+      overrideKey: overrideKeyFor(providerType, dimension),
+      contract:
+        'Organisation models resolve their SDK, canonical model id and gateway path from the catalog execution contract',
+    };
+  }
   // Ahead of every generated branch: an unavailable adapter has no wire, so
   // falling through would state an `anthropic-messages` contract for a provider
   // that cannot send at all.
@@ -352,15 +361,6 @@ function wireDimensionCell(
       dimension,
       overrideKey: overrideKeyFor(providerType, dimension),
       contract: `${def.runtimeAdapter.kind} subscription wire is provider-specific (per-model protocol, headers, auth)`,
-    };
-  }
-  if (def.organizationGateway) {
-    return {
-      state: 'override',
-      dimension,
-      overrideKey: overrideKeyFor(providerType, dimension),
-      contract:
-        'Organisation gateway wire: the base URL is the server, each protocol on its own gateway path',
     };
   }
   if (

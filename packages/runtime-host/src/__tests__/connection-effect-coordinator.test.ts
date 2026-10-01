@@ -1759,6 +1759,88 @@ test('an organisation connection reads its catalog with the account token and of
   });
 });
 
+test('an organisation catalog read again at the same revision is not stored again', async () => {
+  await withFixture(async ({ stores }) => {
+    const server = 'https://maka.example.com';
+    const connection = await createConnection(stores, 0, {
+      ...connectionDraft('organization', 'organization'),
+      baseUrl: server,
+      enabledModelIds: [],
+    });
+    const session = createHostOrganizationSession({
+      call: async () => ({
+        kind: 'token',
+        accessToken: 'org-token',
+        serverUrl: server,
+        clientVersion: '0.2.0',
+      }),
+    });
+    const model = (id: string) => ({
+      id,
+      apiProtocol: 'anthropic-messages' as const,
+      executionContract: {
+        apiProtocol: 'anthropic-messages' as const,
+        profileId: 'anthropic' as const,
+        sdkModelId: 'claude-sonnet-4-6',
+        capabilities: {
+          inputModalities: ['text' as const],
+          supportsTools: true,
+          supportsReasoning: true,
+          supportsStructuredOutput: false,
+        },
+      },
+      availability: 'available' as const,
+    });
+    let catalogRevision = 'r1';
+    let listed = [model('m_a')];
+    const coordinator = new HostConnectionEffectCoordinator({
+      stores,
+      activation: new RuntimePolicyActivationGate(),
+      oauthCredentials: new HostOAuthExecutionAuthority(stores, Date.now, session),
+      createTransport: () => recordingTransport(() => undefined),
+      runModelDiscovery: async () => ({ ok: true, models: listed, catalogRevision }),
+    });
+    const fetchModels = async () => {
+      const outcome = await coordinator.handlers['connection.models.fetch'](
+        { connectionId: connection.connectionId },
+        context,
+      );
+      assert.equal(outcome.ok && outcome.result.kind, 'committed');
+      return outcome.ok && outcome.result.kind === 'committed' ? outcome.result : assert.fail();
+    };
+    const stored = async () => {
+      const snapshot = await stores.connectionCatalog.getSnapshot();
+      return {
+        revision: snapshot.revision,
+        entry: snapshot.connections.find(
+          ({ connectionId }) => connectionId === connection.connectionId,
+        ),
+      };
+    };
+
+    await fetchModels();
+    const first = await stored();
+    assert.deepEqual(first.entry?.enabledModelIds, ['m_a']);
+
+    // The same revision: nothing is written, and the answer is what is stored.
+    const again = await fetchModels();
+    const unchanged = await stored();
+    assert.equal(unchanged.revision, first.revision);
+    assert.deepEqual(unchanged.entry, first.entry);
+    assert.equal(again.catalogRevision, first.revision);
+    assert.equal(again.fetchedAt, first.entry?.modelsFetchedAt);
+    assert.equal(again.modelCount, 1);
+
+    // A new revision is stored as it comes.
+    catalogRevision = 'r2';
+    listed = [model('m_a'), model('m_b')];
+    await fetchModels();
+    const next = await stored();
+    assert.ok(next.revision > first.revision);
+    assert.deepEqual(next.entry?.enabledModelIds, ['m_a', 'm_b']);
+  });
+});
+
 test("an organisation connection's reads go out as a turn's do, and a failure is named for what it is", async () => {
   await withFixture(async ({ stores }) => {
     const server = 'https://maka.example.com';
@@ -1791,7 +1873,13 @@ test("an organisation connection's reads go out as a turn's do, and a failure is
             authorization: headers.get('authorization'),
             version: headers.get('x-maka-client-version'),
           });
-          return new Response('{}', { status: sent.length === 1 ? 401 : 200 });
+          // The gateway's own refusal of a lapsed token, which it marks as its own.
+          return sent.length === 1
+            ? new Response('{}', {
+                status: 401,
+                headers: { 'x-maka-error': 'unauthenticated' },
+              })
+            : new Response('{}', { status: 200 });
         },
         close: async () => undefined,
       }),
@@ -1809,7 +1897,7 @@ test("an organisation connection's reads go out as a turn's do, and a failure is
       context,
     );
     assert.equal(fetched.ok && fetched.result.kind, 'committed');
-    // The token asked for up front goes first; the 401 is answered once with a refresh.
+    // The token asked for up front goes first; the gateway's 401 is answered once with a refresh.
     assert.deepEqual(asked, [false, true]);
     assert.deepEqual(sent, [
       { authorization: 'Bearer stale', version: '0.2.0' },

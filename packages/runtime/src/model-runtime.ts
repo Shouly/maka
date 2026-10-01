@@ -29,7 +29,12 @@ import {
   openAiAdapterApiProtocol,
 } from '@maka/core/model-metadata';
 import { isRetiredProvider } from '@maka/core/provider-registry';
-import { GATEWAY_PATHS, type GatewayProtocol } from '@maka/platform-protocol';
+import { GATEWAY_PATHS } from '@maka/platform-protocol';
+import {
+  decodeExecutionContract,
+  EXECUTION_PROFILES,
+  type ModelExecutionContract,
+} from '@maka/core/model-gateway';
 import {
   anthropicV1BaseUrl,
   googleV1BetaBaseUrl,
@@ -88,6 +93,10 @@ type ModelRuntimeCall =
 
 export type ResolvedModelRuntime = ModelRuntimeCall & {
   baseUrl: string;
+  /** The provider's own model id the SDK is built for, where it is not the selected id. */
+  sdkModelId?: string;
+  /** An organisation model's contract, which everything above was resolved from. */
+  organizationContract?: ModelExecutionContract;
   /** Effective parallel-tool-call support after model facts and wire defaults are resolved. */
   parallelToolCalls?: boolean;
   /** Provider-options namespace used by durable plaintext-summary replay. */
@@ -105,10 +114,23 @@ export interface ModelRuntimeConnection {
   readonly models?: readonly ModelInfo[];
 }
 
+/** The provider executing this model, distinct from the organization account carrying it. */
+export function executionProviderType(
+  connection: Pick<ModelRuntimeConnection, 'providerType'>,
+  runtime: Pick<ResolvedModelRuntime, 'organizationContract'>,
+): ProviderType {
+  return runtime.organizationContract
+    ? EXECUTION_PROFILES[runtime.organizationContract.profileId].providerType
+    : connection.providerType;
+}
+
 export function resolveModelRuntime(
   connection: ModelRuntimeConnection,
   modelId: string,
 ): ResolvedModelRuntime {
+  if (PROVIDER_REGISTRY[connection.providerType]?.organizationGateway) {
+    return resolveOrganizationModelRuntime(connection, modelId);
+  }
   // Model metadata cannot reactivate a retired provider.
   if (isRetiredProvider(connection.providerType)) {
     throw new Error(
@@ -127,7 +149,12 @@ export function resolveModelRuntime(
   const calls = adapterCalls(baseAdapter);
   const preferred = openAiAdapterApiProtocol(modelId, connection.providerType);
   const defaultCall = calls.find((call) => call.wire === preferred) ?? calls[0]!;
-  const declared = apiProtocol ? defaults.protocolAdapters?.[apiProtocol] : undefined;
+  // Only an organisation model's contract names the Gemini wire, and its
+  // provider type's adapter speaks it; no provider declares it as an extra.
+  const declared =
+    apiProtocol && apiProtocol !== 'google-generate'
+      ? defaults.protocolAdapters?.[apiProtocol]
+      : undefined;
   const call =
     apiProtocol === undefined
       ? defaultCall
@@ -147,19 +174,16 @@ export function resolveModelRuntime(
   const connectionBaseUrl = configuredBaseUrl
     ? effectiveBaseUrl(connection)
     : ((calls.includes(call) ? override?.baseUrl : undefined) ?? effectiveBaseUrl(connection));
-  const resolvedBaseUrl = defaults.organizationGateway
-    ? organizationGatewayUrl(connectionBaseUrl, wire, defaults.label)
-    : connectionBaseUrl;
   const baseUrl =
     adapter.kind === 'anthropic' && adapter.normalizeBaseUrl
-      ? anthropicV1BaseUrl(resolvedBaseUrl)
+      ? anthropicV1BaseUrl(connectionBaseUrl)
       : adapter.kind === 'google' && adapter.normalizeBaseUrl !== false
-        ? googleV1BetaBaseUrl(resolvedBaseUrl)
+        ? googleV1BetaBaseUrl(connectionBaseUrl)
         : adapter.kind === 'openai-compatible' && adapter.normalizeBaseUrl
-          ? anthropicV1BaseUrl(resolvedBaseUrl)
-          : wire === 'openai-responses' && resolvedBaseUrl
-            ? openAiResponsesBaseUrl(resolvedBaseUrl)
-            : resolvedBaseUrl;
+          ? anthropicV1BaseUrl(connectionBaseUrl)
+          : wire === 'openai-responses' && connectionBaseUrl
+            ? openAiResponsesBaseUrl(connectionBaseUrl)
+            : connectionBaseUrl;
   const parallelToolCalls = resolveParallelToolCalls(connection, modelId, baseAdapter);
   return {
     ...call,
@@ -183,19 +207,32 @@ export function resolveModelRuntime(
   };
 }
 
-/** The wires an organisation gateway serves so far. */
-const GATEWAY_PROTOCOL_BY_WIRE: Partial<Record<ModelRuntimeWire, GatewayProtocol>> = {
-  'anthropic-messages': 'anthropic',
-};
-
 /**
- * An organisation server's gateway path for a request wire: the connection's
- * base URL is the server itself, and each protocol has its own prefix there.
+ * An organisation model is called exactly as a model of its contract's
+ * provider type at the gateway's path for its wire: that provider type's
+ * adapter, request rules and model facts, for the provider's own model id.
+ * The organisation server only forwards what the SDK writes. A contract this
+ * build does not implement fails here, before anything is sent.
  */
-function organizationGatewayUrl(serverUrl: string, wire: ModelRuntimeWire, label: string): string {
-  const protocol = GATEWAY_PROTOCOL_BY_WIRE[wire];
-  if (!protocol) throw new Error(`${label} has no gateway path for ${wire}`);
-  return `${serverUrl.replace(/\/+$/, '')}${GATEWAY_PATHS[protocol]}`;
+function resolveOrganizationModelRuntime(
+  connection: ModelRuntimeConnection,
+  modelId: string,
+): ResolvedModelRuntime {
+  const row = connection.models?.find((model) => model.id === modelId);
+  if (!row) throw new Error(`The organization does not offer the model ${modelId}`);
+  const contract = decodeExecutionContract(row.executionContract);
+  const server = connection.baseUrl?.trim().replace(/\/+$/, '');
+  if (!server) throw new Error('The organization connection has no server address');
+  const runtime = resolveModelRuntime(
+    {
+      ...connection,
+      providerType: EXECUTION_PROFILES[contract.profileId].providerType,
+      baseUrl: `${server}${GATEWAY_PATHS[contract.apiProtocol]}`,
+      models: [{ ...row, id: contract.sdkModelId, apiProtocol: contract.apiProtocol }],
+    },
+    contract.sdkModelId,
+  );
+  return { ...runtime, sdkModelId: contract.sdkModelId, organizationContract: contract };
 }
 
 function resolveParallelToolCalls(

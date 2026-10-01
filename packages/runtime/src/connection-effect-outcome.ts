@@ -42,7 +42,12 @@ export interface ConnectionEffectError {
 }
 
 export type ConnectionModelDiscoveryEffectOutcome =
-  | { readonly ok: true; readonly models: readonly ModelInfo[] }
+  | {
+      readonly ok: true;
+      readonly models: readonly ModelInfo[];
+      /** An organisation catalog's own revision: the same one lists the same models. */
+      readonly catalogRevision?: string;
+    }
   | { readonly ok: false; readonly error: ConnectionEffectError };
 
 export type ConnectionTestEffectOutcome =

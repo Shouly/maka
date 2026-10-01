@@ -30,8 +30,9 @@ import {
 } from '@maka/platform-protocol';
 import type { ServerContext } from './context.js';
 import { clientVersionGate, sendPlatformError } from './http/common.js';
-import { registerAnthropicGateway } from './gateway/anthropic-routes.js';
-import { UpstreamClients } from './gateway/upstream-clients.js';
+import { registerModelGateway } from './gateway/routes.js';
+import { ModelProviderTransport } from './gateway/model-providers.js';
+import type { CatalogDeps } from './admin-console/model-catalog.js';
 import type { AccessTokens } from './identity/access-tokens.js';
 import type { IdentityProvider } from './identity/providers/types.js';
 import { registerIdentityRoutes } from './identity/routes.js';
@@ -40,12 +41,14 @@ import { registerAdminConsole, wantsNotFoundPage } from './admin-console/routes.
 export interface ServerDependencies {
   readonly providers: ReadonlyMap<string, IdentityProvider>;
   readonly accessTokens: AccessTokens;
-  /** Upstream model clients; tests pass one over a fake fetch. */
-  readonly upstreamClients?: UpstreamClients;
+  /** Sends model requests on; tests pass one over a fake fetch. */
+  readonly transport?: ModelProviderTransport;
   /** Omit to log nothing (tests). */
   readonly logger?: { readonly level: string };
   /** The admin console's built page; defaults to dist/console. */
   readonly consoleDir?: string;
+  /** Reads providers' model lists; tests stand in for the providers. */
+  readonly catalog?: CatalogDeps;
 }
 
 /** A hop count becomes "trust the nearest N proxies"; addresses pass through. */
@@ -130,6 +133,7 @@ export async function buildServer(
   const sendConsolePage = await registerAdminConsole(app, ctx, {
     providers: deps.providers,
     ...(deps.consoleDir ? { consoleDir: deps.consoleDir } : {}),
+    catalog: deps.catalog ?? { fetch },
   });
   // A browser that opened an address the server does not have gets a page
   // saying so; a program gets the error in JSON, as everywhere else.
@@ -138,9 +142,9 @@ export async function buildServer(
       ? sendConsolePage(reply, 404)
       : sendPlatformError(reply, 404, 'not_found', 'Not found'),
   );
-  await registerAnthropicGateway(app, ctx, {
+  await registerModelGateway(app, ctx, {
     accessTokens: deps.accessTokens,
-    clients: deps.upstreamClients ?? new UpstreamClients(ctx),
+    transport: deps.transport ?? new ModelProviderTransport(ctx),
   });
   return app;
 }

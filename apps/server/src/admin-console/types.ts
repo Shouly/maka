@@ -24,8 +24,7 @@
 export type ConsoleOrgRole = 'member' | 'org_admin';
 export type ConsoleUserStatus = 'active' | 'deactivated';
 export type ConsoleQuotaPeriod = 'week' | 'month';
-export type ConsoleUpstreamKind = 'anthropic' | 'vertex' | 'openrouter';
-export type ConsoleModelProtocol = 'anthropic' | 'openai' | 'gemini';
+import type { ModelIntegrationId, ModelExecutionContract } from '@maka/core/model-gateway';
 
 /** Why a sign-in went back to the sign-in page instead of into the console (`?error=`). */
 export type ConsoleSignInFailure =
@@ -108,93 +107,129 @@ export interface ConsoleUserPatch {
   readonly status?: ConsoleUserStatus;
 }
 
-export interface ConsoleUpstream {
+/**
+ * A provider account the organization connected: an integration, its
+ * non-secret settings and a sealed credential. What it is (integration,
+ * address, project) is fixed once created; its name, key and switch are not.
+ */
+export interface ConsoleModelProvider {
   readonly id: string;
   readonly name: string;
-  readonly kind: ConsoleUpstreamKind;
-  /** Non-secret settings: base URL, project, region. */
+  readonly integration: ModelIntegrationId;
+  /** Non-secret settings: `baseUrl`, or Vertex's `projectId` and `region`. */
   readonly config: Readonly<Record<string, unknown>>;
   readonly enabled: boolean;
-  /** The credential is written, never read back. */
-  readonly credentialConfigured: boolean;
-  /** Models that route through it. */
   readonly modelCount: number;
+  readonly revision: number;
   readonly updatedAt: number;
 }
-
-export interface ConsoleUpstreamDraft {
-  readonly name: string;
-  readonly kind: ConsoleUpstreamKind;
+export interface ConsoleModelProviderDetail extends ConsoleModelProvider {
+  readonly models: readonly ConsoleModel[];
+}
+/** What the add flow sends: the name may be left out (the integration's label, made unique). */
+export interface ConsoleModelProviderDraft {
+  readonly integration: ModelIntegrationId;
+  readonly name?: string;
   readonly config: Readonly<Record<string, unknown>>;
   readonly credential: Readonly<Record<string, unknown>>;
 }
-
-export interface ConsoleUpstreamPatch {
+export interface ConsoleModelProviderPatch {
+  readonly expectedRevision: number;
   readonly name?: string;
-  readonly config?: Readonly<Record<string, unknown>>;
-  /** Replaces the stored one; absent keeps it. */
+  /** A replacement key; checked against the provider before it is kept. */
   readonly credential?: Readonly<Record<string, unknown>>;
   readonly enabled?: boolean;
 }
-
-/** What people's apps are told about a model; empty fields come from the vendor's own entry. */
-export interface ConsoleModelCapabilities {
-  /** The vendor's id for it, when this model is published under another name. */
-  readonly referenceModelId?: string;
-  readonly contextWindow?: number;
-  readonly maxOutputTokens?: number;
-  readonly thinkingLevels?: readonly string[];
-  readonly defaultThinkingLevel?: string;
-  readonly inputModalities?: readonly string[];
-  readonly supportsTools?: boolean;
+/** One model the provider account lists, as it would be published. */
+export interface ConsoleCatalogModel {
+  /** The provider's own model id. */
+  readonly id: string;
+  readonly displayName: string;
+  readonly contract: ModelExecutionContract;
+  /** Already published from this provider: the organization model's id. */
+  readonly publishedModelId?: string;
 }
-
-export interface ConsoleModelRoute {
-  readonly upstreamId: string;
-  readonly upstreamName: string;
-  readonly upstreamKind: ConsoleUpstreamKind;
-  readonly upstreamEnabled: boolean;
-  /** The model's name at that upstream. */
-  readonly upstreamModel: string;
-  /** Lower goes first. */
-  readonly priority: number;
+export type ConsoleModelCatalog =
+  | {
+      readonly status: 'ready';
+      readonly snapshotId: string;
+      readonly expiresAt: number;
+      readonly models: readonly ConsoleCatalogModel[];
+      /** Entries the provider listed that could not be read. */
+      readonly skippedModels?: number;
+    }
+  | {
+      readonly status: 'failed';
+      /** `credentials`: the provider refused the key; the others may pass on retry. */
+      readonly reason: 'credentials' | 'unavailable' | 'invalid_response';
+    };
+export interface ConsoleModelSelection {
+  /** A `ConsoleCatalogModel.id` from the snapshot. */
+  readonly id: string;
 }
-
+export interface ConsolePublishModels {
+  readonly snapshotId: string;
+  /** Empty: keep the provider without publishing anything yet. */
+  readonly selections: readonly ConsoleModelSelection[];
+  /** One per attempt the person makes; a retry of a lost answer reuses it. */
+  readonly idempotencyKey: string;
+}
+/** `POST /model-providers`. */
+export interface ConsoleCreateModelProvider {
+  readonly draft: ConsoleModelProviderDraft;
+  readonly publish: ConsolePublishModels;
+}
+/** `POST /model-providers/:id/publish`. */
+export interface ConsolePublishToProvider extends ConsolePublishModels {
+  readonly expectedRevision: number;
+}
+export interface ConsolePublished {
+  readonly providerId: string;
+  /** The name it was saved under, when the requested one was taken. */
+  readonly providerName: string;
+  readonly modelIds: readonly string[];
+}
+/** An organization model: what people pick in Maka, fixed to one provider and one provider model. */
 export interface ConsoleModel {
   readonly id: string;
-  readonly protocol: ConsoleModelProtocol;
   readonly displayName: string;
-  readonly capabilities: ConsoleModelCapabilities;
+  readonly contract: ModelExecutionContract;
+  readonly availability: import('@maka/platform-protocol').PlatformModel['availability'];
   readonly costWeight: number;
   readonly enabled: boolean;
   readonly sortOrder: number;
-  readonly routes: readonly ConsoleModelRoute[];
+  readonly revision: number;
+  readonly provider: {
+    readonly id: string;
+    readonly name: string;
+    readonly integration: ModelIntegrationId;
+    readonly enabled: boolean;
+  };
+  /** The provider's own model id. */
+  readonly providerModel: string;
   readonly updatedAt: number;
 }
-
-export interface ConsoleModelDraft {
-  readonly id: string;
-  readonly protocol: ConsoleModelProtocol;
-  readonly displayName: string;
-  readonly capabilities?: ConsoleModelCapabilities;
-  readonly costWeight?: number;
-  readonly sortOrder?: number;
-  readonly enabled?: boolean;
-}
-
 export interface ConsoleModelPatch {
+  readonly expectedRevision: number;
   readonly displayName?: string;
-  readonly capabilities?: ConsoleModelCapabilities;
   readonly costWeight?: number;
   readonly sortOrder?: number;
   readonly enabled?: boolean;
 }
-
-export interface ConsoleRouteDraft {
-  readonly upstreamId: string;
-  readonly upstreamModel: string;
-  readonly priority: number;
-}
+/**
+ * Why an administration call was refused, beside the message, so the page
+ * can say it in its own words. `revision_conflict` and `catalog_expired`
+ * mean: read again and retry.
+ */
+export type ConsoleErrorCode =
+  | 'invalid_request'
+  | 'not_found'
+  | 'revision_conflict'
+  | 'catalog_expired'
+  | 'credentials_rejected'
+  | 'provider_in_use'
+  | 'name_taken'
+  | 'idempotency_conflict';
 
 export interface ConsoleQuotas {
   /** Null: no limit for that period. */
@@ -209,7 +244,10 @@ export interface ConsoleQuotas {
 
 export interface ConsoleUsageTotals {
   readonly requests: number;
+  /** The provider refused, or the answer broke off; a person's own stop is not one. */
   readonly errors: number;
+  /** Counted from what was seen, because the provider did not report its usage. */
+  readonly estimatedRequests: number;
   readonly inputTokens: number;
   readonly outputTokens: number;
   readonly cacheReadTokens: number;
@@ -240,7 +278,7 @@ export interface ConsoleAuditEntry {
   readonly actor: { readonly id: string; readonly email: string; readonly name: string } | null;
   readonly targetType: string | null;
   readonly targetId: string | null;
-  /** The target in words where there is one: a member's email, an upstream's name, a device's name. */
+  /** The target in words where there is one: a member's email, a provider's or model's name, a device's name. */
   readonly targetLabel?: string;
   readonly detail: Readonly<Record<string, unknown>>;
   readonly ip: string | null;

@@ -32,7 +32,11 @@ import {
   providerFallbackModelIds,
   providerSupportsModelDiscovery,
 } from './llm-connections.js';
-import { lookupModelMetadata, resolveModelVisionSupport } from './model-metadata.js';
+import {
+  lookupConnectionModelMetadata,
+  lookupModelMetadata,
+  resolveModelVisionSupport,
+} from './model-metadata.js';
 import {
   modelOverride,
   type ModelOverrides,
@@ -339,7 +343,10 @@ function makeEntry(
     { ...model, id: model.id.trim() },
     input.modelOverrides?.[model.id.trim()],
   );
-  const metadata = lookupModelMetadata(input.providerType, normalizedModel.id);
+  const metadata = lookupConnectionModelMetadata(
+    { providerType: input.providerType, models: [normalizedModel] },
+    normalizedModel.id,
+  );
   const sourceModel = { ...model, id: normalizedModel.id };
   const defaults = resolveModelLimits(input.providerType, sourceModel);
   const limits = resolveModelLimits(
@@ -382,6 +389,7 @@ function makeEntry(
   // selectable, and reaches here as a bare row whose metadata says nothing.
   const canUseAsChatDefault =
     input.providerRetired !== true &&
+    (input.providerType !== 'organization' || normalizedModel.availability === 'available') &&
     !isModelExplicitlyUnsupportedForChat({
       ...normalizedModel,
       capabilities,

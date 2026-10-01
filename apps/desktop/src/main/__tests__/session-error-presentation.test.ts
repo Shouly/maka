@@ -64,4 +64,13 @@ describe('organisation gateway presentation', () => {
     assert.match(describeTurnErrorClass('organization_sign_in', 'zh-CN'), /重新登录/);
     assert.match(describeTurnErrorClass('organization_upgrade', 'zh-CN'), /请更新/);
   });
+
+  it("sends a refusal of the organization's provider account to the administrator", () => {
+    for (const locale of ['zh-CN', 'en'] as const) {
+      const text = describeTurnErrorClass('organization_provider_account', locale);
+      assert.match(text, locale === 'en' ? /administrator/ : /管理员/);
+      // Not the personal connection's advice: nothing in Settings fixes it.
+      assert.doesNotMatch(text, /Settings|设置/);
+    }
+  });
 });

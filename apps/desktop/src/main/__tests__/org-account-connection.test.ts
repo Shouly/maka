@@ -43,6 +43,8 @@ function hostCatalog(initial: Partial<ConnectionCatalogSnapshot> = {}) {
   };
   const calls: string[] = [];
   let models = ['claude-a', 'claude-b'];
+  // Listed, but their provider is switched off.
+  let disabled = new Set<string>();
   // What the next fetches answer, before falling back to a commit.
   const fetchOutcomes: Array<'failed' | 'throw'> = [];
   const commit = (next: Partial<ConnectionCatalogSnapshot>) => {
@@ -91,7 +93,10 @@ function hostCatalog(initial: Partial<ConnectionCatalogSnapshot> = {}) {
           entry.connectionId === connectionId
             ? ({
                 ...entry,
-                models: models.map((id) => ({ id })),
+                models: models.map((id) => ({
+                  id,
+                  availability: disabled.has(id) ? 'provider_disabled' : 'available',
+                })),
                 enabledModelIds: [...models],
               } as ConnectionCatalogEntry)
             : entry,
@@ -109,8 +114,9 @@ function hostCatalog(initial: Partial<ConnectionCatalogSnapshot> = {}) {
     client,
     calls,
     catalog: () => catalog,
-    list(next: string[]) {
+    list(next: string[], providerDisabled: string[] = []) {
       models = next;
+      disabled = new Set(providerDisabled);
     },
     failNextFetches(...outcomes: Array<'failed' | 'throw'>) {
       fetchOutcomes.push(...outcomes);
@@ -136,6 +142,51 @@ describe('synchronizeOrganizationConnection', () => {
       modelId: 'claude-a',
     });
     assert.deepEqual(host.calls, ['create', 'fetch', 'default']);
+  });
+
+  it('takes the first model that can be called as the default', async () => {
+    const host = hostCatalog();
+    host.list(['claude-a', 'claude-b', 'claude-c'], ['claude-a']);
+    await synchronizeOrganizationConnection(host.client, SERVER);
+    assert.equal(host.catalog().defaultTarget?.modelId, 'claude-b');
+
+    // None can be called: no default rather than one that fails when sent.
+    const none = hostCatalog();
+    none.list(['claude-a'], ['claude-a']);
+    await synchronizeOrganizationConnection(none.client, SERVER);
+    assert.equal(none.catalog().defaultTarget, null);
+    assert.deepEqual(none.calls, ['create', 'fetch']);
+  });
+
+  it('moves an organisation default the organisation withdrew or switched off', async () => {
+    const host = hostCatalog();
+    await synchronizeOrganizationConnection(host.client, SERVER);
+    assert.equal(host.catalog().defaultTarget?.modelId, 'claude-a');
+
+    // Its provider switched off: the first one that can be called takes over.
+    host.list(['claude-a', 'claude-b'], ['claude-a']);
+    await synchronizeOrganizationConnection(host.client, SERVER);
+    assert.equal(host.catalog().defaultTarget?.modelId, 'claude-b');
+
+    // Withdrawn from the catalog altogether.
+    host.list(['claude-c']);
+    await synchronizeOrganizationConnection(host.client, SERVER);
+    assert.equal(host.catalog().defaultTarget?.modelId, 'claude-c');
+
+    // Nothing can be called: the default stays where it was.
+    host.list(['claude-d'], ['claude-d']);
+    await synchronizeOrganizationConnection(host.client, SERVER);
+    assert.equal(host.catalog().defaultTarget?.modelId, 'claude-c');
+    assert.deepEqual(host.calls, [
+      'create',
+      'fetch',
+      'default',
+      'fetch',
+      'default',
+      'fetch',
+      'default',
+      'fetch',
+    ]);
   });
 
   it("leaves the person's own default where it is", async () => {
@@ -219,7 +270,7 @@ describe('followOrganizationAccount', () => {
     let listener: ((state: OrgAccountState) => void) | undefined;
     let state = signedIn(SERVER, 100);
     const errors: unknown[] = [];
-    const stop = followOrganizationAccount({
+    const following = followOrganizationAccount({
       account: {
         state: () => state,
         subscribe: (next) => {
@@ -249,7 +300,7 @@ describe('followOrganizationAccount', () => {
     assert.deepEqual(host.calls, ['create', 'fetch', 'default', 'fetch']);
     assert.deepEqual(errors, []);
 
-    stop();
+    following.stop();
     assert.equal(listener, undefined);
   });
 
@@ -257,7 +308,7 @@ describe('followOrganizationAccount', () => {
     const host = hostCatalog();
     host.failNextFetches('throw', 'failed');
     const errors: unknown[] = [];
-    const stop = followOrganizationAccount({
+    const following = followOrganizationAccount({
       account: { state: () => signedIn(SERVER, 100), subscribe: () => () => undefined },
       client: host.client,
       onError: (error) => errors.push(error),
@@ -270,6 +321,100 @@ describe('followOrganizationAccount', () => {
     assert.equal(errors.length, 2);
     assert.deepEqual(organization(host.catalog())?.enabledModelIds, ['claude-a', 'claude-b']);
     assert.deepEqual(host.calls, ['create', 'fetch', 'fetch', 'fetch', 'default']);
-    stop();
+    following.stop();
+  });
+
+  // Nothing but microtasks runs between the fixture's steps.
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+  it("a request to refresh neither cuts a failure's wait short nor overlaps a read", async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const host = hostCatalog();
+    host.failNextFetches('throw', 'throw');
+    let clock = 1_000_000;
+    const following = followOrganizationAccount({
+      account: { state: () => signedIn(SERVER, 100), subscribe: () => () => undefined },
+      client: host.client,
+      onError: () => undefined,
+      retryDelaysMs: [1_000, 60_000],
+      refreshIntervalMs: 300_000,
+      now: () => clock,
+    });
+    await settle();
+    assert.deepEqual(host.calls, ['create', 'fetch']);
+
+    // Focus while the failure waits: ignored, and the wait stands.
+    following.refresh();
+    await settle();
+    assert.deepEqual(host.calls, ['create', 'fetch']);
+    t.mock.timers.tick(1_000);
+    await settle();
+    assert.deepEqual(host.calls, ['create', 'fetch', 'fetch']);
+
+    // Focus again after the second failure: the next wait is still the longer one.
+    following.refresh();
+    t.mock.timers.tick(59_999);
+    await settle();
+    assert.equal(host.calls.length, 3);
+    t.mock.timers.tick(1);
+    await settle();
+    assert.deepEqual(host.calls, ['create', 'fetch', 'fetch', 'fetch', 'default']);
+
+    // Just read: a request is not a read.
+    following.refresh();
+    await settle();
+    assert.equal(host.calls.length, 5);
+
+    // Stale: two requests at once share one read.
+    clock += 31_000;
+    following.refresh();
+    following.refresh();
+    await settle();
+    assert.deepEqual(host.calls.slice(5), ['fetch']);
+
+    // The timer finds that read done and reads again on its own schedule.
+    t.mock.timers.tick(300_000);
+    await settle();
+    assert.deepEqual(host.calls.slice(5), ['fetch', 'fetch']);
+    following.stop();
+  });
+
+  it('a request to refresh does nothing while signed out', async () => {
+    const host = hostCatalog();
+    const following = followOrganizationAccount({
+      account: {
+        state: () => ({ enforced: true, status: 'signed_out', serverUrl: SERVER }),
+        subscribe: () => () => undefined,
+      },
+      client: host.client,
+      onError: () => undefined,
+    });
+    following.refresh();
+    await settle();
+    assert.deepEqual(host.calls, []);
+    following.stop();
+  });
+
+  it('a sign-in that arrives while another is being read is read next', async () => {
+    const host = hostCatalog();
+    let listener: ((state: OrgAccountState) => void) | undefined;
+    let state = signedIn(SERVER, 100);
+    const following = followOrganizationAccount({
+      account: {
+        state: () => state,
+        subscribe: (next) => {
+          listener = next;
+          return () => undefined;
+        },
+      },
+      client: host.client,
+      onError: () => undefined,
+    });
+    // The first read is under way: a new sign-in waits for it, then goes.
+    state = signedIn(SERVER, 200);
+    listener?.(state);
+    await settle();
+    assert.deepEqual(host.calls, ['create', 'fetch', 'default', 'fetch']);
+    following.stop();
   });
 });

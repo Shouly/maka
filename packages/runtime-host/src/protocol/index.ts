@@ -143,7 +143,14 @@ export const RUNTIME_HOST_PROTOCOL_VERSION = 0 as const;
 // through the `organization_account` client service. An old client cannot
 // read the new provider type; an old Host never asks, an old desktop never
 // answers.
-export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 165 as const;
+// 166: an organization model row in the connection catalog carries the
+// `executionContract` it is called by and its `availability` (`available` or
+// `provider_disabled`), and such a row's `apiProtocol` may be
+// `google-generate`. The organization provider has no wire of its own; each
+// model's contract names one. An error event may give the reason
+// `organization_provider_account`. An old client rejects the unknown keys and
+// values, and an old Host would call every organization model as Anthropic.
+export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 166 as const;
 // 155: A tool call is on the wire while the model is still writing it.
 // `subscription.session_event` carries `tool_input_start` and
 // `tool_input_delta`, which a Client that does not know them decodes as an

@@ -19,7 +19,8 @@
 
 // Schema migrations, applied in order at startup. Each migration is a list of
 // single statements: PGlite (tests) runs one statement per query.
-// Migrations only ever add; a released one is never edited (§10).
+// 0001 is the whole schema of this release: nothing has shipped, so there is
+// no upgrade path from any earlier shape. A later release adds migrations.
 
 import { type Kysely, sql } from 'kysely';
 import { type Migration, Migrator } from 'kysely/migration';
@@ -34,12 +35,16 @@ function statements(...queries: string[]): Migration {
 }
 
 const MIGRATIONS: Record<string, Migration> = {
-  '0001_identity': statements(
+  '0001_initial': statements(
     `CREATE TABLE users (
       id uuid PRIMARY KEY,
       email text NOT NULL UNIQUE CHECK (email = lower(email)),
       name text NOT NULL,
       avatar_url text,
+      profile_name text,
+      avatar_seed text,
+      nickname text,
+      preferences text,
       org_role text NOT NULL CHECK (org_role IN ('member', 'org_admin')),
       status text NOT NULL CHECK (status IN ('active', 'deactivated')),
       created_at timestamptz NOT NULL DEFAULT now(),
@@ -125,91 +130,6 @@ const MIGRATIONS: Record<string, Migration> = {
       ip text
     )`,
     `CREATE INDEX audit_events_at ON audit_events (at DESC)`,
-  ),
-  '0002_gateway': statements(
-    `CREATE TABLE upstreams (
-      id uuid PRIMARY KEY,
-      name text NOT NULL UNIQUE,
-      kind text NOT NULL CHECK (kind IN ('anthropic', 'vertex', 'bedrock', 'openai', 'azure-openai', 'openai-compatible', 'gemini')),
-      config jsonb NOT NULL DEFAULT '{}'::jsonb,
-      credential_sealed text,
-      enabled boolean NOT NULL DEFAULT true,
-      created_at timestamptz NOT NULL DEFAULT now(),
-      updated_at timestamptz NOT NULL
-    )`,
-    `CREATE TABLE models (
-      id text PRIMARY KEY,
-      protocol text NOT NULL CHECK (protocol IN ('anthropic', 'openai', 'gemini')),
-      display_name text NOT NULL,
-      capabilities jsonb NOT NULL DEFAULT '{}'::jsonb,
-      -- Postgres ranks NaN above every number, so ">= 0" alone lets it
-      -- through; one NaN weight would make every later sum NaN and switch
-      -- quotas off.
-      cost_weight double precision NOT NULL DEFAULT 1
-        CHECK (cost_weight >= 0 AND cost_weight <> 'NaN'::float8 AND cost_weight < 'Infinity'::float8),
-      enabled boolean NOT NULL DEFAULT true,
-      sort_order integer NOT NULL DEFAULT 0,
-      created_at timestamptz NOT NULL DEFAULT now(),
-      updated_at timestamptz NOT NULL
-    )`,
-    `CREATE TABLE model_routes (
-      model_id text NOT NULL REFERENCES models (id) ON DELETE CASCADE,
-      upstream_id uuid NOT NULL REFERENCES upstreams (id) ON DELETE CASCADE,
-      upstream_model text NOT NULL,
-      priority integer NOT NULL DEFAULT 0,
-      PRIMARY KEY (model_id, upstream_id)
-    )`,
-    `CREATE TABLE quotas (
-      id uuid PRIMARY KEY,
-      scope text NOT NULL CHECK (scope IN ('user_default', 'user')),
-      scope_id uuid,
-      period text NOT NULL CHECK (period IN ('week', 'month')),
-      limit_units double precision NOT NULL
-        CHECK (limit_units >= 0 AND limit_units <> 'NaN'::float8 AND limit_units < 'Infinity'::float8),
-      updated_at timestamptz NOT NULL,
-      CHECK ((scope = 'user_default') = (scope_id IS NULL))
-    )`,
-    `CREATE UNIQUE INDEX quotas_scope ON quotas (scope, COALESCE(scope_id, '00000000-0000-0000-0000-000000000000'::uuid), period)`,
-    `CREATE TABLE usage_events (
-      id bigserial PRIMARY KEY,
-      at timestamptz NOT NULL DEFAULT now(),
-      user_id uuid NOT NULL,
-      session_id uuid,
-      model_id text NOT NULL,
-      upstream_id uuid,
-      protocol text NOT NULL,
-      input_tokens bigint NOT NULL DEFAULT 0,
-      output_tokens bigint NOT NULL DEFAULT 0,
-      cache_write_tokens bigint NOT NULL DEFAULT 0,
-      cache_read_tokens bigint NOT NULL DEFAULT 0,
-      weighted_units double precision NOT NULL DEFAULT 0
-        CHECK (weighted_units <> 'NaN'::float8 AND weighted_units < 'Infinity'::float8),
-      status text NOT NULL CHECK (status IN ('ok', 'error', 'cancelled')),
-      http_status integer,
-      latency_ms integer,
-      client_version text,
-      upstream_request_id text
-    )`,
-    // The quota check sums a period's units per request: answered from the index.
-    `CREATE INDEX usage_events_user_at ON usage_events (user_id, at) INCLUDE (weighted_units)`,
-  ),
-  // What a person sets for themselves, beside what the identity provider says:
-  // `name` is rewritten from the provider at every sign-in, so the name they
-  // chose cannot live there.
-  '0003_profile': statements(
-    `ALTER TABLE users ADD COLUMN profile_name text`,
-    `ALTER TABLE users ADD COLUMN avatar_seed text`,
-  ),
-  // What the person asks the assistant to call them, and their preferences for
-  // it: user information the desktop hands to each new conversation.
-  '0004_preferences': statements(
-    `ALTER TABLE users ADD COLUMN nickname text`,
-    `ALTER TABLE users ADD COLUMN preferences text`,
-  ),
-  // The admin console's browser sessions (§3.2): a cookie, not the desktop's
-  // tokens. Only the cookie's hash is kept; the CSRF token goes back to the
-  // page with the session.
-  '0005_admin_sessions': statements(
     `CREATE TABLE admin_sessions (
       id uuid PRIMARY KEY,
       token_hash text NOT NULL UNIQUE,
@@ -224,12 +144,89 @@ const MIGRATIONS: Record<string, Migration> = {
       user_agent text
     )`,
     `CREATE INDEX admin_sessions_user ON admin_sessions (user_id)`,
-  ),
-  // OpenRouter's Anthropic-compatible endpoint, as a kind of its own: it
-  // takes the key as a bearer token where Anthropic takes x-api-key.
-  '0006_openrouter': statements(
-    `ALTER TABLE upstreams DROP CONSTRAINT upstreams_kind_check`,
-    `ALTER TABLE upstreams ADD CONSTRAINT upstreams_kind_check CHECK (kind IN ('anthropic', 'vertex', 'openrouter', 'bedrock', 'openai', 'azure-openai', 'openai-compatible', 'gemini'))`,
+    `CREATE TABLE quotas (
+      id uuid PRIMARY KEY,
+      scope text NOT NULL CHECK (scope IN ('user_default', 'user')),
+      scope_id uuid,
+      period text NOT NULL CHECK (period IN ('week', 'month')),
+      limit_units double precision NOT NULL
+        CHECK (limit_units >= 0 AND limit_units <> 'NaN'::float8 AND limit_units < 'Infinity'::float8),
+      updated_at timestamptz NOT NULL,
+      CHECK ((scope = 'user_default') = (scope_id IS NULL))
+    )`,
+    `CREATE UNIQUE INDEX quotas_scope ON quotas (scope, COALESCE(scope_id, '00000000-0000-0000-0000-000000000000'::uuid), period)`,
+
+    `CREATE TABLE model_providers (
+      id uuid PRIMARY KEY,
+      name text NOT NULL UNIQUE,
+      integration text NOT NULL,
+      config jsonb NOT NULL,
+      credential_sealed text NOT NULL,
+      enabled boolean NOT NULL DEFAULT true,
+      revision integer NOT NULL DEFAULT 1,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL
+    )`,
+    // A provider with models cannot be deleted under them (RESTRICT).
+    `CREATE TABLE organization_models (
+      id text PRIMARY KEY CHECK (id ~ '^m_[a-zA-Z0-9_-]+$'),
+      model_provider_id uuid NOT NULL REFERENCES model_providers (id) ON DELETE RESTRICT,
+      provider_model text NOT NULL,
+      display_name text NOT NULL,
+      contract jsonb NOT NULL,
+      cost_weight double precision NOT NULL DEFAULT 1
+        CHECK (cost_weight >= 0 AND cost_weight < 'Infinity'::float8),
+      enabled boolean NOT NULL DEFAULT true,
+      sort_order integer NOT NULL DEFAULT 0,
+      revision integer NOT NULL DEFAULT 1,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL,
+      UNIQUE (model_provider_id, provider_model)
+    )`,
+    `CREATE TABLE provider_catalog_snapshots (
+      id uuid PRIMARY KEY,
+      actor_id text NOT NULL,
+      fingerprint text NOT NULL,
+      models jsonb NOT NULL,
+      expires_at timestamptz NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX provider_catalog_snapshots_expiry ON provider_catalog_snapshots (expires_at)`,
+    `CREATE TABLE model_catalog_state (id integer PRIMARY KEY CHECK (id = 1), revision integer NOT NULL)`,
+    `INSERT INTO model_catalog_state VALUES (1, 1)`,
+    `CREATE TABLE admin_mutations (
+      id text PRIMARY KEY,
+      actor_id text NOT NULL,
+      fingerprint text NOT NULL,
+      result jsonb NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX admin_mutations_created ON admin_mutations (created_at)`,
+    // Usage outlives the model and the provider it was spent on: no foreign keys.
+    `CREATE TABLE model_usage (
+      id uuid PRIMARY KEY,
+      at timestamptz NOT NULL DEFAULT now(),
+      cost_weight double precision NOT NULL,
+      user_id uuid NOT NULL,
+      session_id uuid,
+      model_id text NOT NULL,
+      model_provider_id uuid NOT NULL,
+      api_protocol text NOT NULL,
+      input_tokens bigint NOT NULL DEFAULT 0,
+      output_tokens bigint NOT NULL DEFAULT 0,
+      cache_write_tokens bigint NOT NULL DEFAULT 0,
+      cache_read_tokens bigint NOT NULL DEFAULT 0,
+      weighted_units double precision NOT NULL
+        CHECK (weighted_units >= 0 AND weighted_units < 'Infinity'::float8),
+      quality text NOT NULL CHECK (quality IN ('reported', 'estimated')),
+      status text NOT NULL CHECK (status IN ('ok', 'error', 'cancelled', 'incomplete')),
+      http_status integer,
+      latency_ms integer,
+      client_version text,
+      upstream_request_id text
+    )`,
+    `CREATE INDEX model_usage_user_at ON model_usage (user_id, at) INCLUDE (weighted_units)`,
+    `CREATE INDEX model_usage_at ON model_usage (at)`,
   ),
 };
 

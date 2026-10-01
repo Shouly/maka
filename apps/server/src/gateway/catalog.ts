@@ -17,64 +17,38 @@
  * under the License.
  */
 
-// Which models people may use (design §5.1): every enabled model, for
-// everyone signed in; phase 2 layers organization policy on top.
+// The organization's model list as desktops read it (`GET /model/catalog`):
+// every model open to people, with the contract it is called under. A model
+// whose provider is switched off stays listed, unavailable, so conversations
+// on it keep its name.
 
-import type { Selectable } from 'kysely';
-import type { GatewayProtocol, PlatformModel } from '@maka/platform-protocol';
+import { GATEWAY_SCHEMA_VERSION, type PlatformModelCatalog } from '@maka/platform-protocol';
 import type { ServerContext } from '../context.js';
-import type { ModelsTable } from '../db/schema.js';
+import { listModels } from '../model-management.js';
 
-export type ModelRow = Selectable<ModelsTable>;
-
-export async function visibleModels(ctx: ServerContext): Promise<ModelRow[]> {
+export async function organizationCatalog(ctx: ServerContext): Promise<PlatformModelCatalog> {
+  // One snapshot: never a new revision beside an old list.
   return ctx.db
-    .selectFrom('models')
-    .selectAll()
-    .where('enabled', '=', true)
-    .orderBy('sort_order')
-    .orderBy('id')
-    .execute();
-}
-
-export async function modelForRequest(
-  ctx: ServerContext,
-  protocol: GatewayProtocol,
-  modelId: string,
-): Promise<ModelRow | undefined> {
-  const visible = await visibleModels(ctx);
-  return visible.find((model) => model.id === modelId && model.protocol === protocol);
-}
-
-const numberField = (value: unknown) =>
-  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-const stringList = (value: unknown) =>
-  Array.isArray(value) && value.every((item) => typeof item === 'string')
-    ? (value as string[])
-    : undefined;
-
-export function toPlatformModel(row: ModelRow): PlatformModel {
-  const capabilities = row.capabilities as Record<string, unknown>;
-  const contextWindow = numberField(capabilities.contextWindow);
-  const maxOutputTokens = numberField(capabilities.maxOutputTokens);
-  const thinkingLevels = stringList(capabilities.thinkingLevels);
-  const inputModalities = stringList(capabilities.inputModalities);
-  return {
-    id: row.id,
-    protocol: row.protocol,
-    displayName: row.display_name,
-    ...(contextWindow !== undefined ? { contextWindow } : {}),
-    ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
-    ...(thinkingLevels ? { thinkingLevels } : {}),
-    ...(typeof capabilities.defaultThinkingLevel === 'string'
-      ? { defaultThinkingLevel: capabilities.defaultThinkingLevel }
-      : {}),
-    ...(inputModalities ? { inputModalities } : {}),
-    ...(typeof capabilities.supportsTools === 'boolean'
-      ? { supportsTools: capabilities.supportsTools }
-      : {}),
-    ...(typeof capabilities.referenceModelId === 'string'
-      ? { referenceModelId: capabilities.referenceModelId }
-      : {}),
-  };
+    .transaction()
+    .setIsolationLevel('repeatable read')
+    .execute(async (tx) => {
+      const state = await tx
+        .selectFrom('model_catalog_state')
+        .select('revision')
+        .where('id', '=', 1)
+        .executeTakeFirstOrThrow();
+      const models = await listModels({ ...ctx, db: tx });
+      return {
+        schemaVersion: GATEWAY_SCHEMA_VERSION,
+        revision: String(state.revision),
+        models: models
+          .filter((model) => model.enabled)
+          .map(({ id, displayName, contract, availability }) => ({
+            id,
+            displayName,
+            contract,
+            availability,
+          })),
+      };
+    });
 }

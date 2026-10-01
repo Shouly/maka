@@ -18,7 +18,7 @@
  */
 
 // Administration from the command line, beside the admin console (design
-// §3.2): people, upstreams, models, quotas, usage. Reads the same environment
+// §3.2): people, model providers, models, quotas, usage. Reads the same environment
 // as the server. The changes are administration.ts's, the console's own, so
 // the same rules hold and the same audit entries are written.
 //
@@ -31,13 +31,8 @@ import { sql } from 'kysely';
 import {
   type AdminActor,
   AdminRefused,
-  addModelRoute,
-  createModel,
-  createUpstream,
   setQuota,
   unlinkIdentity,
-  updateModel,
-  updateUpstream,
   updateUser,
 } from './administration.js';
 import { loadConfig } from './config.js';
@@ -45,8 +40,18 @@ import type { ServerContext } from './context.js';
 import { localSecretBox } from './crypto/secret-box.js';
 import { connectPostgres } from './db/database.js';
 import { migrateToLatest } from './db/migrations.js';
-import type { ConsoleUpstreamKind } from './admin-console/types.js';
+import {
+  createModelProvider,
+  listModelProviders,
+  listModels,
+  modelProviderById,
+  updateModel,
+  updateModelProvider,
+} from './model-management.js';
+import { discoverModels, validatedDraft } from './admin-console/model-catalog.js';
+import { randomUUID } from 'node:crypto';
 import type { Database } from './db/schema.js';
+import { z } from 'zod';
 
 const USAGE = `Usage: node dist/admin.js <group> <command> [options]
 
@@ -58,16 +63,14 @@ const USAGE = `Usage: node dist/admin.js <group> <command> [options]
   users unlink <email> <provider>     (after a sign-in was refused as identity_conflict:
                                        the next sign-in from that provider links afresh;
                                        devices signed in through it are signed out)
-  upstreams list
-  upstreams add --name <n> --kind anthropic|vertex|openrouter --config '<json>' --credential-file <path>
-               anthropic: config {"baseUrl"?}, credential file {"apiKey": "..."}
-               vertex:    config {"projectId", "region"}, credential file {"serviceAccount": <the GCP key JSON>}
-  upstreams enable|disable <name>
+  providers list
+  providers add --integration <id> [--name <name>] --config '<json>' --credential-file <path>
+                --models <comma-separated provider model ids, as the provider lists them>
+                (the credential file holds {"apiKey": "…"}, or for vertex
+                 {"serviceAccount": <the downloaded service-account key JSON>})
+  providers enable|disable <provider id>
   models list
-  models add --id <id> --protocol anthropic --name <display name>
-             [--capabilities '<json>'] [--cost-weight <n>] [--sort <n>]
-  models route --model <id> --upstream <name> --upstream-model <name> [--priority <n>]
-  models enable|disable <id>
+  models enable|disable <model ID>
   quotas list
   quotas set --scope user_default|user [--email <e>] --period week|month --limit <units>
   usage summary [--days <n>]
@@ -116,10 +119,6 @@ function numberOption(
   return parsed;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 export async function runAdmin(
   ctx: ServerContext,
   argv: readonly string[],
@@ -130,18 +129,10 @@ export async function runAdmin(
     allowPositionals: true,
     options: {
       name: { type: 'string' },
-      kind: { type: 'string' },
+      integration: { type: 'string' },
+      models: { type: 'string' },
       config: { type: 'string' },
       'credential-file': { type: 'string' },
-      id: { type: 'string' },
-      protocol: { type: 'string' },
-      capabilities: { type: 'string' },
-      'cost-weight': { type: 'string' },
-      sort: { type: 'string' },
-      model: { type: 'string' },
-      upstream: { type: 'string' },
-      'upstream-model': { type: 'string' },
-      priority: { type: 'string' },
       scope: { type: 'string' },
       email: { type: 'string' },
       period: { type: 'string' },
@@ -204,115 +195,76 @@ export async function runAdmin(
       out(`${user.email} is no longer linked to ${provider}`);
       return;
     }
-    case 'upstreams list': {
-      const rows = await db
-        .selectFrom('upstreams')
-        .select(['name', 'kind', 'config', 'enabled'])
-        .orderBy('name')
-        .execute();
-      for (const row of rows)
+    case 'providers list': {
+      for (const provider of await listModelProviders(ctx))
         out(
-          `${row.name}\t${row.kind}\t${JSON.stringify(row.config)}\t${row.enabled ? 'enabled' : 'disabled'}`,
+          `${provider.id}\t${provider.name}\t${provider.integration}\t${provider.enabled ? 'enabled' : 'disabled'}\t${provider.modelCount} models`,
         );
       return;
     }
-    case 'upstreams add': {
-      const name = need(values.name, '--name');
-      const kind = need(values.kind, '--kind') as ConsoleUpstreamKind;
-      const config = json(values.config, '--config');
-      const credentialText = (
-        await readFile(need(values['credential-file'], '--credential-file'), 'utf8')
-      ).trim();
-      let credential: unknown;
-      try {
-        credential = JSON.parse(credentialText);
-      } catch {
-        throw new UsageError('The credential file must hold JSON');
-      }
-      if (!isRecord(config) || !isRecord(credential)) {
-        throw new UsageError('The config and the credential must be JSON objects');
-      }
-      await createUpstream(ctx, actor, { name, kind, config, credential });
-      out(`Added upstream ${name} (${kind})`);
+    case 'providers add': {
+      const draftInput = {
+        integration: need(values.integration, '--integration'),
+        ...(values.name ? { name: values.name } : {}),
+        config: json(values.config, '--config'),
+        credential: json(
+          await readFile(need(values['credential-file'], '--credential-file'), 'utf8'),
+          'credential',
+        ),
+      };
+      const ids = need(values.models, '--models')
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean);
+      // The models come from the provider's own list, as in the console.
+      const catalog = await discoverModels(ctx, actor, validatedDraft(draftInput), { fetch });
+      if (catalog.status !== 'ready')
+        throw new UsageError(`The provider's model list could not be read (${catalog.reason})`);
+      const unknown = ids.filter((id) => !catalog.models.some((model) => model.id === id));
+      if (unknown.length > 0)
+        throw new UsageError(`Not in the provider's model list: ${unknown.join(', ')}`);
+      const result = await createModelProvider(ctx, actor, {
+        draft: draftInput,
+        publish: {
+          snapshotId: catalog.snapshotId,
+          selections: ids.map((id) => ({ id })),
+          idempotencyKey: randomUUID(),
+        },
+      });
+      out(
+        `Added ${result.providerName} (${result.providerId}) with ${result.modelIds.length} models`,
+      );
       return;
     }
-    case 'upstreams enable':
-    case 'upstreams disable': {
-      const upstream = await db
-        .selectFrom('upstreams')
-        .select('id')
-        .where('name', '=', need(subject, 'name'))
-        .executeTakeFirst();
-      if (!upstream) throw new UsageError(`No upstream named ${subject}`);
-      await updateUpstream(ctx, actor, upstream.id, { enabled: command === 'enable' });
-      out(`${subject} ${command}d`);
+    case 'providers enable':
+    case 'providers disable': {
+      const row = await modelProviderById(ctx, need(subject, 'provider id'));
+      await updateModelProvider(
+        ctx,
+        actor,
+        row.id,
+        { expectedRevision: row.revision, enabled: command === 'enable' },
+        { fetch },
+      );
+      out(`${row.name} ${command}d`);
       return;
     }
     case 'models list': {
-      const models = await db
-        .selectFrom('models')
-        .selectAll()
-        .orderBy('sort_order')
-        .orderBy('id')
-        .execute();
-      const routes = await db
-        .selectFrom('model_routes')
-        .innerJoin('upstreams', 'upstreams.id', 'model_routes.upstream_id')
-        .select([
-          'model_routes.model_id',
-          'upstreams.name',
-          'model_routes.upstream_model',
-          'model_routes.priority',
-        ])
-        .orderBy('model_routes.priority')
-        .execute();
-      for (const model of models) {
-        const via = routes
-          .filter((route) => route.model_id === model.id)
-          .map((route) => `${route.name}:${route.upstream_model}`)
-          .join(' > ');
+      for (const m of await listModels(ctx))
         out(
-          `${model.id}\t${model.protocol}\t${model.display_name}\t${model.enabled ? 'enabled' : 'disabled'}\t${via || '(no route)'}`,
+          `${m.id}\t${m.displayName}\t${m.provider.name}\t${m.providerModel}\t${m.enabled ? 'enabled' : 'disabled'}`,
         );
-      }
-      return;
-    }
-    case 'models add': {
-      const id = need(values.id, '--id');
-      await createModel(ctx, actor, {
-        id,
-        protocol: need(values.protocol, '--protocol') as 'anthropic',
-        displayName: need(values.name, '--name'),
-        capabilities: json(values.capabilities, '--capabilities'),
-        costWeight: numberOption(values['cost-weight'], '--cost-weight', 1),
-        sortOrder: numberOption(values.sort, '--sort', 0, true),
-      });
-      out(`Added model ${id}`);
-      return;
-    }
-    case 'models route': {
-      const modelId = need(values.model, '--model');
-      const upstream = await db
-        .selectFrom('upstreams')
-        .select('id')
-        .where('name', '=', need(values.upstream, '--upstream'))
-        .executeTakeFirst();
-      if (!upstream) throw new UsageError(`No upstream named ${values.upstream}`);
-      const upstreamModel = need(values['upstream-model'], '--upstream-model');
-      await addModelRoute(ctx, actor, modelId, {
-        upstreamId: upstream.id,
-        upstreamModel,
-        priority: numberOption(values.priority, '--priority', 0, true),
-      });
-      out(`${modelId} -> ${values.upstream}:${upstreamModel}`);
       return;
     }
     case 'models enable':
     case 'models disable': {
-      await updateModel(ctx, actor, need(subject, 'model id'), {
+      const model = (await listModels(ctx)).find((m) => m.id === subject);
+      if (!model) throw new UsageError('Model not found');
+      await updateModel(ctx, actor, model.id, {
+        expectedRevision: model.revision,
         enabled: command === 'enable',
       });
-      out(`${subject} ${command}d`);
+      out(`${model.displayName} ${command}d`);
       return;
     }
     case 'quotas list': {
@@ -351,18 +303,18 @@ export async function runAdmin(
       const days = numberOption(values.days, '--days', 7);
       const since = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
       const rows = await db
-        .selectFrom('usage_events')
-        .innerJoin('users', 'users.id', 'usage_events.user_id')
+        .selectFrom('model_usage')
+        .innerJoin('users', 'users.id', 'model_usage.user_id')
         .select([
           'users.email',
-          'usage_events.model_id',
+          'model_usage.model_id',
           sql<number>`count(*)`.as('requests'),
-          sql<number>`sum(usage_events.input_tokens)`.as('input'),
-          sql<number>`sum(usage_events.output_tokens)`.as('output'),
-          sql<number>`round(sum(usage_events.weighted_units)::numeric, 1)`.as('units'),
+          sql<number>`sum(model_usage.input_tokens)`.as('input'),
+          sql<number>`sum(model_usage.output_tokens)`.as('output'),
+          sql<number>`round(sum(model_usage.weighted_units)::numeric, 1)`.as('units'),
         ])
-        .where('usage_events.at', '>=', since)
-        .groupBy(['users.email', 'usage_events.model_id'])
+        .where('model_usage.at', '>=', since)
+        .groupBy(['users.email', 'model_usage.model_id'])
         .orderBy('units', 'desc')
         .execute();
       out(`Since ${since.toISOString()}`);
@@ -389,7 +341,11 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop()
     );
   } catch (error) {
     console.error(
-      error instanceof UsageError || error instanceof AdminRefused ? error.message : error,
+      error instanceof UsageError || error instanceof AdminRefused
+        ? error.message
+        : error instanceof z.ZodError
+          ? `Invalid input: ${error.issues.map((issue) => `${issue.path.join('.') || 'value'} ${issue.message}`).join('; ')}`
+          : error,
     );
     process.exitCode = 1;
   } finally {

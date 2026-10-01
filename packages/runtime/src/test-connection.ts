@@ -23,6 +23,7 @@ import {
   effectiveBaseUrl,
   providerDefaultsOf,
   providerFallbackModelIds,
+  providerUsesOrganizationAccount,
   connectionModelsEnumerateAccount,
   connectionEnabledModelIds,
   type ConnectionTestErrorClass,
@@ -159,6 +160,16 @@ async function testConnectionStrict(
   // clear failure rather than crashing. Mirrors `isRealConnection`.
   if (!defaults) {
     return { ok: false, errorMessage: `Unknown provider type "${connection.providerType}"` };
+  }
+  // The organisation's models are its administrator's to test, against the
+  // organisation's own provider accounts; a probe from here would only spend
+  // its allowance. (Its connection has no adapter of its own either: each
+  // model brings its contract, so it must not read as a retired provider.)
+  if (providerUsesOrganizationAccount(connection.providerType)) {
+    return {
+      ok: false,
+      errorMessage: 'This connection is managed by your organization and is not tested here.',
+    };
   }
   const sessionId = connection.providerType === 'opencode-go' ? randomUUID() : undefined;
   const auth = defaults.authKind;

@@ -52,8 +52,8 @@ const FILTERS = [
   'user.',
   'session.',
   'identity.',
+  'model_provider.',
   'model.',
-  'upstream.',
   'quota.',
   'signin.',
 ] as const;

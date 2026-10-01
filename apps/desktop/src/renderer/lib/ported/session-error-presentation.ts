@@ -55,6 +55,7 @@ export function describeSessionErrorReason(
     organization_model_denied: copy.organizationModelDenied,
     organization_sign_in: copy.organizationSignIn,
     organization_upgrade: copy.organizationUpgrade,
+    organization_provider_account: copy.organizationProviderAccount,
   } satisfies Record<ModelFailureKind, string>;
   return kind && Object.hasOwn(descriptions, kind)
     ? descriptions[kind as ModelFailureKind]

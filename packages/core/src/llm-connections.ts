@@ -104,7 +104,11 @@ export interface ModelInfo {
   /** Short upstream description, when the provider advertises one. */
   description?: string;
   /** Account-advertised request wire when one provider exposes multiple model protocols. */
-  apiProtocol?: 'openai-chat' | 'openai-responses' | 'anthropic-messages';
+  apiProtocol?: import('./model-gateway.js').ModelApiProtocol;
+  /** An organisation model's: how it is called, fixed when it was published. */
+  executionContract?: import('./model-gateway.js').ModelExecutionContract;
+  /** An organisation model's: `provider_disabled` keeps its name listed, but it cannot be called. */
+  availability?: 'available' | 'provider_disabled';
   contextWindow?: number;
   /** Maximum provider-visible input tokens, when narrower than contextWindow. */
   inputLimit?: number;

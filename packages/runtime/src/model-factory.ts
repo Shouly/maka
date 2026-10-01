@@ -35,7 +35,8 @@ import {
   type SharedV4ProviderOptions,
 } from '@ai-sdk/provider';
 import { type RuntimeExecutionConnection } from '@maka/core/llm-connections';
-import { lookupModelMetadata } from '@maka/core/model-metadata';
+import { EXECUTION_PROFILES } from '@maka/core/model-gateway';
+import { lookupConnectionModelMetadata, lookupModelMetadata } from '@maka/core/model-metadata';
 import type { ThinkingLevel } from '@maka/core/model-thinking';
 import {
   resolveModelThinking,
@@ -52,12 +53,17 @@ import {
 import type { OpenAiResponsesTransportState } from './openai-responses-websocket.js';
 import { openResponsesUrl } from './provider-urls.js';
 import { createOpenResponsesCompatibilityFinalizer } from './open-responses-compatibility.js';
-import { resolveModelRuntime, type ResolvedModelRuntime } from './model-runtime.js';
+import {
+  executionProviderType,
+  resolveModelRuntime,
+  type ResolvedModelRuntime,
+} from './model-runtime.js';
 import { runtimeProviderName, type RuntimeProviderAdapter } from './provider-runtime-policy.js';
 import { openAiCodexHeaders } from './subscription-auth.js';
 import { createRequestCustomizationFetch } from './request-customization-fetch.js';
 import { createStreamUsageFallbackFetch } from './stream-usage-fallback-fetch.js';
 import { withOpenCodeSessionHeader } from './opencode-session-header.js';
+import { withOrganizationModel } from './organization-model-fetch.js';
 
 export interface ModelFactoryInput {
   connection: RuntimeExecutionConnection;
@@ -85,6 +91,10 @@ export function getAIModel(input: ModelFactoryInput): LanguageModelV4 {
     openAiResponsesTransportState,
   } = input;
   const runtime = resolvedRuntime ?? resolveModelRuntime(connection, modelId);
+  const providerIdentity = {
+    ...connection,
+    providerType: executionProviderType(connection, runtime),
+  };
   const { adapter, baseUrl: baseURL, wire, reasoningReplay } = runtime;
   const effectiveRequestHeaders = withOpenCodeSessionHeader(
     connection.providerType,
@@ -99,7 +109,13 @@ export function getAIModel(input: ModelFactoryInput): LanguageModelV4 {
     headers: effectiveRequestHeaders,
     bodyOverlay: connection.requestBodyOverlay,
   } as const;
-  const requestFetch = createRequestCustomizationFetch(baseFetch, requestCustomization);
+  const customizedFetch = createRequestCustomizationFetch(baseFetch, requestCustomization);
+  // An organisation model is asked for by its own id; the SDK, built for the
+  // provider's model, writes the provider's id into the body.
+  const requestFetch = runtime.organizationContract
+    ? withOrganizationModel(customizedFetch, modelId)
+    : customizedFetch;
+  const sdkModelId = runtime.sdkModelId ?? modelId;
 
   switch (adapter.kind) {
     case 'anthropic':
@@ -109,7 +125,7 @@ export function getAIModel(input: ModelFactoryInput): LanguageModelV4 {
         fetch: requestFetch,
         headers:
           adapter.includeBetaHeaders === false ? undefined : { 'anthropic-beta': ANTHROPIC_BETA },
-      }).chat(modelId);
+      }).chat(sdkModelId);
 
     case 'openai-codex':
       return createOpenAI({
@@ -120,7 +136,7 @@ export function getAIModel(input: ModelFactoryInput): LanguageModelV4 {
             ? openAiResponsesTransportState.wrapFetch(requestFetch)
             : requestFetch,
         headers: openAiCodexHeaders(apiKey),
-      }).responses(modelId);
+      }).responses(sdkModelId);
 
     case 'openai': {
       const openai = createOpenAI({
@@ -131,7 +147,7 @@ export function getAIModel(input: ModelFactoryInput): LanguageModelV4 {
             ? openAiResponsesTransportState.wrapFetch(requestFetch)
             : requestFetch,
       });
-      return wire === 'openai-responses' ? openai.responses(modelId) : openai.chat(modelId);
+      return wire === 'openai-responses' ? openai.responses(sdkModelId) : openai.chat(sdkModelId);
     }
 
     case 'google':
@@ -139,10 +155,10 @@ export function getAIModel(input: ModelFactoryInput): LanguageModelV4 {
         apiKey,
         baseURL,
         fetch: requestFetch,
-      }).chat(modelId);
+      }).chat(sdkModelId);
 
     case 'cohere':
-      return createCohere({ apiKey, baseURL, fetch: requestFetch })(modelId);
+      return createCohere({ apiKey, baseURL, fetch: requestFetch })(sdkModelId);
 
     case 'openai-compatible': {
       if (adapter.requireBaseUrl && !baseURL) {
@@ -165,17 +181,17 @@ export function getAIModel(input: ModelFactoryInput): LanguageModelV4 {
               })
             : requestFetch;
           return createOpenResponses({
-            name: runtimeProviderName(adapter, connection),
+            name: runtimeProviderName(adapter, providerIdentity),
             apiKey,
             url: openResponsesUrl(baseURL),
             fetch: responsesFetch,
-          })(modelId);
+          })(sdkModelId);
         }
         return createOpenAI({
           apiKey,
           baseURL,
           fetch: requestFetch,
-        }).responses(modelId);
+        }).responses(sdkModelId);
       }
       if (reasoningReplay.kind !== 'openai-chat-plaintext') {
         throw new Error('OpenAI-compatible Chat wire requires plaintext reasoning replay');
@@ -193,7 +209,7 @@ export function getAIModel(input: ModelFactoryInput): LanguageModelV4 {
           )
         : reasoningTransport.transformRequestBody;
       const model = createOpenAICompatible({
-        name: runtimeProviderName(adapter, connection),
+        name: runtimeProviderName(adapter, providerIdentity),
         apiKey,
         baseURL,
         // Ask every Chat Completions server for stream usage unless the
@@ -208,7 +224,7 @@ export function getAIModel(input: ModelFactoryInput): LanguageModelV4 {
         ...(adapter.replayAssistantReasoningDetails
           ? { metadataExtractor: reasoningDetailsMetadataExtractor() }
           : {}),
-      }).chatModel(modelId);
+      }).chatModel(sdkModelId);
       return adapter.replayAssistantReasoningDetails ? attachReasoningDetails(model) : model;
     }
   }
@@ -472,11 +488,56 @@ export function buildProviderOptions(
   thinkingLevel?: ThinkingLevel,
   runtime = resolveModelRuntime(connection, modelId),
 ): SharedV4ProviderOptions {
+  // An organisation model is asked for exactly as its provider type's own
+  // model would be: the same thinking options, provider-options namespace and
+  // parallel-tool switch, keyed by the provider's model id. The person's
+  // per-model settings follow it there, and so does its row, contract
+  // included, so its levels resolve as its picker's do.
+  if (runtime.organizationContract) {
+    const contract = runtime.organizationContract;
+    const row = connection.models?.find((model) => model.id === modelId);
+    const override = connection.modelOverrides?.[modelId];
+    const execution: RuntimeExecutionConnection = {
+      ...connection,
+      providerType: EXECUTION_PROFILES[contract.profileId].providerType,
+      models: row ? [{ ...row, id: contract.sdkModelId }] : [],
+      modelOverrides: override ? { [contract.sdkModelId]: override } : undefined,
+    };
+    const options = buildProviderOptions(execution, contract.sdkModelId, thinkingLevel, {
+      ...runtime,
+      organizationContract: undefined,
+    });
+    // A model its picker says does not reason is not asked to, not even by
+    // the provider type's own default.
+    return resolveModelThinking(connection, modelId).reasoning === 'no'
+      ? withoutReasoningOptions(options)
+      : options;
+  }
+
   return withParallelToolCallOptions(
     connection,
     modelId,
     buildThinkingProviderOptions(connection, modelId, thinkingLevel, runtime),
     runtime,
+  );
+}
+
+/** The provider-option keys this file writes to ask a model to reason, in any namespace. */
+const REASONING_OPTION_KEYS: ReadonlySet<string> = new Set([
+  'thinking',
+  'effort',
+  'reasoningEffort',
+  'reasoningSummary',
+  'forceReasoning',
+  'thinkingConfig',
+]);
+
+function withoutReasoningOptions(options: SharedV4ProviderOptions): SharedV4ProviderOptions {
+  return Object.fromEntries(
+    Object.entries(options).map(([namespace, values]) => [
+      namespace,
+      Object.fromEntries(Object.entries(values).filter(([key]) => !REASONING_OPTION_KEYS.has(key))),
+    ]),
   );
 }
 
@@ -486,7 +547,8 @@ function buildThinkingProviderOptions(
   thinkingLevel?: ThinkingLevel,
   runtime = resolveModelRuntime(connection, modelId),
 ): SharedV4ProviderOptions {
-  const thinkingOptions = thinkingOptionsForModel(connection.providerType, modelId);
+  // An organisation model's options are the entry its contract names, as its picker's are.
+  const thinkingOptions = lookupConnectionModelMetadata(connection, modelId).thinkingOptions;
   const level = resolveThinkingLevel(connection, modelId, thinkingLevel);
   switch (connection.providerType) {
     case 'kimi-coding-plan': {
@@ -534,15 +596,10 @@ function buildThinkingProviderOptions(
     // Anthropic-protocol: effort enum models send `effort`; toggle/budget
     // models send `thinking.disabled` for off. No budget-token mapping — the
     // provider's native effort values pass through unchanged.
-    //
-    // An organisation gateway hands a Claude request to Anthropic's own API
-    // unchanged, so it is sent exactly as one, prompt caching included.
-    case 'organization':
     case 'anthropic':
     case 'MiniMax':
     case 'MiniMax-cn': {
-      const nativeAnthropic =
-        connection.providerType === 'anthropic' || connection.providerType === 'organization';
+      const nativeAnthropic = connection.providerType === 'anthropic';
       let reasoning = {};
       const summarizedThinking =
         nativeAnthropic && (thinkingLevel === undefined || level !== undefined)

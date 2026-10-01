@@ -359,6 +359,7 @@ export interface DesktopConversationCopy {
     organizationModelDenied: string;
     organizationSignIn: string;
     organizationUpgrade: string;
+    organizationProviderAccount: string;
     contextOverflow: string;
     timeout: string;
     auth: string;
@@ -821,6 +822,8 @@ const COPY = {
       organizationModelDenied: '组织没有为你开放这个模型。换一个模型，或联系管理员。',
       organizationSignIn: '组织账号需要重新登录，登录后再发一次。',
       organizationUpgrade: '这个版本的 Maka 已不被组织服务支持，请更新后再试。',
+      organizationProviderAccount:
+        '模型服务商拒绝了组织的账号（密钥、权限或余额），请联系管理员处理。',
       contextOverflow: '上下文超出模型窗口限制，减少附件或开启新任务。',
       timeout: '模型请求超时。',
       auth: '模型鉴权失败，请到设置里重新连接或登录。',
@@ -1211,6 +1214,8 @@ const COPY = {
       organizationModelDenied: '組織沒有為你開放這個模型。換一個模型，或聯絡管理員。',
       organizationSignIn: '組織帳號需要重新登入，登入後再傳送一次。',
       organizationUpgrade: '這個版本的 Maka 已不被組織服務支援，請更新後再試。',
+      organizationProviderAccount:
+        '模型服務商拒絕了組織的帳號（金鑰、權限或餘額），請聯絡管理員處理。',
       contextOverflow: '上下文超出模型視窗限制，減少附件或開啟新任務。',
       timeout: '模型請求逾時。',
       auth: '模型鑑權失敗，請到設定裡重新連線或登入。',
@@ -1631,6 +1636,8 @@ const COPY = {
       organizationSignIn: 'Sign in to your organization account again, then resend your message.',
       organizationUpgrade:
         'Your organization no longer supports this version of Maka. Update it and try again.',
+      organizationProviderAccount:
+        "The model provider refused your organization's account (its key, permissions or balance). Ask an administrator to fix it.",
       contextOverflow: 'Context exceeded the model window. Reduce attachments or start a new task.',
       timeout: 'The model request timed out.',
       auth: 'Model authentication failed. Reconnect or sign in again from Settings.',

@@ -24,7 +24,7 @@ import {
   providerAuthRequiresSecret,
   type RuntimeExecutionConnection,
 } from '@maka/core/llm-connections';
-import { lookupModelMetadata } from '@maka/core/model-metadata';
+import { lookupConnectionModelMetadata } from '@maka/core/model-metadata';
 import { providerAcceptsOutputTokenLimit } from '@maka/core/provider-registry';
 import { TOOL_SEARCH_PROVIDER_NAME } from '@maka/core/tool-names';
 import type { CacheMissInputSource } from '@maka/core/usage-stats/types';
@@ -57,12 +57,20 @@ export type {
   ModelToolSet,
 } from './model-protocol.js';
 
-import { resolveModelRuntime, type ResolvedModelRuntime } from './model-runtime.js';
+import {
+  executionProviderType,
+  resolveModelRuntime,
+  type ResolvedModelRuntime,
+} from './model-runtime.js';
 import {
   plaintextResponsesReasoningProviderOptions,
   safePlaintextResponsesReasoningItemId,
 } from './responses-reasoning-state.js';
-import { classifyError, providerModelFailure } from './provider-error-classification.js';
+import {
+  classifyError,
+  providerModelFailure,
+  type ProviderFailureContext,
+} from './provider-error-classification.js';
 import {
   withProviderStreamTracking,
   type ProviderRequestTracker,
@@ -162,7 +170,10 @@ export class ModelAdapter {
 
   constructor(private readonly input: ModelAdapterInput) {
     this.runtime = input.resolvedRuntime ?? resolveModelRuntime(input.connection, input.modelId);
-    this.nativeToolDeferral = resolveNativeToolDeferral(this.runtime, input.modelId);
+    this.nativeToolDeferral = resolveNativeToolDeferral(
+      this.runtime,
+      this.runtime.sdkModelId ?? input.modelId,
+    );
     this.openAiChatReasoningTransportState = createOpenAiChatReasoningTransportState(
       this.runtime.reasoningReplay.kind === 'openai-chat-plaintext'
         ? this.runtime.reasoningReplay.requestField
@@ -229,7 +240,9 @@ export class ModelAdapter {
    * all. When it may not, no limit is sent, configured or not.
    */
   acceptsOutputTokenLimit(): boolean {
-    return providerAcceptsOutputTokenLimit(this.input.connection.providerType);
+    return providerAcceptsOutputTokenLimit(
+      executionProviderType(this.input.connection, this.runtime),
+    );
   }
 
   maxOutputTokens(): number | undefined {
@@ -287,7 +300,7 @@ export class ModelAdapter {
       aliasesToolSearch && name === TOOL_SEARCH_NAME ? TOOL_SEARCH_PROVIDER_NAME : name;
     const runtimeToolName = (name: string): string =>
       aliasesToolSearch && name === TOOL_SEARCH_PROVIDER_NAME ? TOOL_SEARCH_NAME : name;
-    const { providerType } = this.input.connection;
+    const providerType = executionProviderType(this.input.connection, this.runtime);
     const sdkTools = lowerModelTools(input.tools, this.nativeToolDeferral, {
       nonStrictFunctions: providerType === 'openai' || providerType === 'openai-codex',
     });
@@ -459,7 +472,7 @@ export class ModelAdapter {
           }
         } catch (error) {
           if (!failure) {
-            failure = normalizeProviderFailure(error);
+            failure = normalizeProviderFailure(error, resolvedRuntime);
             yield { kind: 'error', failure };
           }
         } finally {
@@ -579,7 +592,7 @@ export class ModelAdapter {
   }
 
   makeErrorEvent(turnId: string, err: unknown, reasonOverride?: string): ErrorEvent {
-    const failure = normalizeProviderFailure(err);
+    const failure = normalizeProviderFailure(err, this.runtime);
     return {
       type: 'error',
       id: this.input.newId(),
@@ -597,12 +610,12 @@ export class ModelAdapter {
   }
 
   normalizeFailure(error: unknown): ModelFailure {
-    return normalizeProviderFailure(error);
+    return normalizeProviderFailure(error, this.runtime);
   }
 
   classifyError(error: unknown): ModelFailureKind {
     if (isModelFailure(error)) return error.kind;
-    return classifyError(error);
+    return classifyError(error, failureContext(this.runtime));
   }
 
   /** Map a successfully settled provider step to its runtime stop reason. */
@@ -721,7 +734,7 @@ function selectedModelMaxOutputTokens(
   if (requestedBudget === undefined && !anthropicMessages && !kimiOpenAiChat) return undefined;
   const capacity =
     connection.models?.find((model) => model.id === modelId)?.maxOutputTokens ??
-    lookupModelMetadata(connection.providerType, modelId).maxOutputTokens;
+    lookupConnectionModelMetadata(connection, modelId).maxOutputTokens;
   const wireOutputLimit =
     requestedBudget === undefined
       ? capacity
@@ -1244,7 +1257,7 @@ function translateChunk(
       return [{ kind: 'tool-call', toolCall }];
     }
     case 'error':
-      return [{ kind: 'error', failure: normalizeProviderFailure(chunk.error) }];
+      return [{ kind: 'error', failure: normalizeProviderFailure(chunk.error, runtime) }];
     default:
       return [];
   }
@@ -1456,8 +1469,18 @@ function drainAbandonedStream(chunks: AsyncIterator<unknown>): void {
   })().catch(() => undefined);
 }
 
-function normalizeProviderFailure(error: unknown): ModelFailure {
-  return isModelFailure(error) ? error : providerModelFailure(error);
+function normalizeProviderFailure(
+  error: unknown,
+  runtime?: Pick<ResolvedModelRuntime, 'organizationContract'>,
+): ModelFailure {
+  return isModelFailure(error) ? error : providerModelFailure(error, failureContext(runtime));
+}
+
+/** An organisation model's failures are the provider's, read knowing whose account it was. */
+function failureContext(
+  runtime: Pick<ResolvedModelRuntime, 'organizationContract'> | undefined,
+): ProviderFailureContext {
+  return runtime?.organizationContract ? { organizationModel: true } : {};
 }
 
 function isModelFailure(value: unknown): value is ModelFailure {

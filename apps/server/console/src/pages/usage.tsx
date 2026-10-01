@@ -50,11 +50,24 @@ export function UsagePage() {
   const compact = (value: number) => formatCompact(locale, value);
 
   const totals = report.data?.totals;
-  const stats: readonly { label: string; value: (totals: ConsoleUsageTotals) => string }[] = [
+  const stats: readonly {
+    label: string;
+    value: (totals: ConsoleUsageTotals) => string;
+    detail?: (totals: ConsoleUsageTotals) => string;
+  }[] = [
     { label: text.units, value: (entry) => compact(entry.units) },
     { label: text.requests, value: (entry) => formatNumber(locale, entry.requests) },
     { label: text.inputTokens, value: (entry) => compact(entry.inputTokens) },
     { label: text.outputTokens, value: (entry) => compact(entry.outputTokens) },
+    {
+      label: text.cacheTokens,
+      value: (entry) => compact(entry.cacheReadTokens + entry.cacheWriteTokens),
+      detail: (entry) =>
+        text.cacheDetail(
+          formatNumber(locale, entry.cacheReadTokens),
+          formatNumber(locale, entry.cacheWriteTokens),
+        ),
+    },
     { label: text.errors, value: (entry) => formatNumber(locale, entry.errors) },
   ];
 
@@ -114,18 +127,29 @@ export function UsagePage() {
         ) : !totals ? (
           <LoadingRows rows={1} />
         ) : (
-          <div className={cn(settingsPanelClass, 'grid grid-cols-5 divide-x divide-alpha-1')}>
-            {stats.map((stat) => (
-              <div key={stat.label} className="flex flex-col gap-1 px-4 py-3">
-                <span className="text-[0.8125rem] leading-[1.125rem] text-text-secondary">
-                  {stat.label}
-                </span>
-                <span className="text-lg font-medium leading-6 tabular-nums">
-                  {stat.value(totals)}
-                </span>
-              </div>
-            ))}
-          </div>
+          <>
+            <div className={cn(settingsPanelClass, 'grid grid-cols-6 divide-x divide-alpha-1')}>
+              {stats.map((stat) => (
+                <div
+                  key={stat.label}
+                  className="flex min-w-0 flex-col gap-1 px-4 py-3"
+                  title={stat.detail?.(totals)}
+                >
+                  <span className="truncate text-[0.8125rem] leading-[1.125rem] text-text-secondary">
+                    {stat.label}
+                  </span>
+                  <span className="text-lg font-medium leading-6 tabular-nums">
+                    {stat.value(totals)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {totals.estimatedRequests > 0 && (
+              <p className="!border-t-0 pt-3 text-[0.8125rem] leading-[1.125rem] text-text-muted">
+                {text.estimated(formatNumber(locale, totals.estimatedRequests))}
+              </p>
+            )}
+          </>
         )}
       </SettingsSection>
 

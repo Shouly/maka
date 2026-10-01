@@ -90,6 +90,13 @@ export interface RuntimeHostConnectionsIpcDeps {
   readonly ipcMain: ReconnectableReadIpcMain;
   readonly client: HostConnectionsClient;
   readonly emitConnectionListChanged: () => void;
+  /**
+   * Ask the organisation account's follower to read its catalog again. It
+   * does so only while signed in, with no read under way or waiting to be
+   * retried, and the last one stale; for a Host the account is not offered
+   * to, there is no follower to ask.
+   */
+  readonly refreshOrganizationCatalog?: () => void;
 }
 
 export function registerRuntimeHostConnectionsIpc(
@@ -99,6 +106,15 @@ export function registerRuntimeHostConnectionsIpc(
 
   handleReconnectableRead(deps.ipcMain, 'connections:getSnapshot', async () => {
     const catalog = await snapshot();
+    // Whoever reads the models is about to choose one: an organisation's
+    // catalog gone stale is read again, and its change arrives as any other.
+    if (
+      catalog.connections.some(({ providerType }) =>
+        providerUsesOrganizationAccount(providerType),
+      )
+    ) {
+      deps.refreshOrganizationCatalog?.();
+    }
     const connections = projectHostConnections(catalog);
     return {
       connections,

@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -24,9 +25,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import type {
   ConsoleAuditPage,
-  ConsoleModel,
   ConsoleQuotas,
-  ConsoleUpstream,
   ConsoleUsageReport,
   ConsoleUser,
   ConsoleUserDetail,
@@ -421,195 +420,6 @@ test('people: listed with their devices, searched, promoted, and never left with
   });
 });
 
-test('upstreams: the credential is written, never read back, and a routed one cannot be deleted', async () => {
-  await withServer(async (server) => {
-    const boss = await consoleSignIn(server, server.google, BOSS);
-    const created = await consoleCall(server, boss, 'POST', '/upstreams', {
-      name: 'anthropic-main',
-      kind: 'anthropic',
-      config: {},
-      credential: { apiKey: 'sk-ant-secret' },
-    });
-    assert.equal(created.statusCode, 200);
-    assert.equal(created.body.includes('sk-ant-secret'), false);
-    const [upstream] = created.json() as ConsoleUpstream[];
-    assert.equal(upstream?.credentialConfigured, true);
-    const sealed = await server.db
-      .selectFrom('upstreams')
-      .select('credential_sealed')
-      .executeTakeFirstOrThrow();
-    assert.equal(sealed.credential_sealed?.includes('sk-ant-secret'), false);
-
-    const duplicate = await consoleCall(server, boss, 'POST', '/upstreams', {
-      name: 'anthropic-main',
-      kind: 'anthropic',
-      config: {},
-      credential: { apiKey: 'x' },
-    });
-    assert.equal(duplicate.statusCode, 409);
-    const unsupported = await consoleCall(server, boss, 'POST', '/upstreams', {
-      name: 'bedrock',
-      kind: 'bedrock',
-      config: {},
-      credential: {},
-    });
-    assert.equal(unsupported.statusCode, 400);
-    const noKey = await consoleCall(server, boss, 'POST', '/upstreams', {
-      name: 'other',
-      kind: 'anthropic',
-      config: {},
-      credential: {},
-    });
-    assert.equal(noKey.statusCode, 400);
-    // A misspelt setting is refused, not stored and ignored.
-    const misspelt = await consoleCall(server, boss, 'POST', '/upstreams', {
-      name: 'other',
-      kind: 'anthropic',
-      config: { baseURL: 'https://proxy.example.com' },
-      credential: { apiKey: 'x' },
-    });
-    assert.equal(misspelt.statusCode, 400);
-
-    // A new address keeps the stored key.
-    const moved = await consoleCall(server, boss, 'PATCH', `/upstreams/${upstream!.id}`, {
-      config: { baseUrl: 'https://proxy.example.com' },
-    });
-    assert.equal(moved.statusCode, 200);
-    const after = await server.db
-      .selectFrom('upstreams')
-      .select(['credential_sealed', 'config'])
-      .executeTakeFirstOrThrow();
-    assert.equal(after.credential_sealed, sealed.credential_sealed);
-    assert.deepEqual(after.config, { baseUrl: 'https://proxy.example.com' });
-
-    await consoleCall(server, boss, 'POST', '/models', {
-      id: 'claude-sonnet-4-5',
-      protocol: 'anthropic',
-      displayName: 'Claude Sonnet 4.5',
-    });
-    await consoleCall(server, boss, 'PUT', '/models/claude-sonnet-4-5/routes', {
-      routes: [{ upstreamId: upstream!.id, upstreamModel: 'claude-sonnet-4-5', priority: 0 }],
-    });
-    const blocked = await consoleCall(server, boss, 'DELETE', `/upstreams/${upstream!.id}`);
-    assert.equal(blocked.statusCode, 409);
-    await consoleCall(server, boss, 'PUT', '/models/claude-sonnet-4-5/routes', { routes: [] });
-    assert.equal(
-      (await consoleCall(server, boss, 'DELETE', `/upstreams/${upstream!.id}`)).statusCode,
-      200,
-    );
-
-    // OpenRouter: one key, and no address of its own to set.
-    const withAddress = await consoleCall(server, boss, 'POST', '/upstreams', {
-      name: 'openrouter',
-      kind: 'openrouter',
-      config: { baseUrl: 'https://proxy.example.com' },
-      credential: { apiKey: 'sk-or-secret' },
-    });
-    assert.equal(withAddress.statusCode, 400);
-    const openRouter = await consoleCall(server, boss, 'POST', '/upstreams', {
-      name: 'openrouter',
-      kind: 'openrouter',
-      config: {},
-      credential: { apiKey: 'sk-or-secret' },
-    });
-    assert.equal(openRouter.statusCode, 200);
-    assert.equal(openRouter.body.includes('sk-or-secret'), false);
-    const [account] = openRouter.json() as ConsoleUpstream[];
-    assert.equal(account?.kind, 'openrouter');
-    const routed = await consoleCall(server, boss, 'PUT', '/models/claude-sonnet-4-5/routes', {
-      routes: [
-        { upstreamId: account!.id, upstreamModel: 'anthropic/claude-sonnet-4.5', priority: 0 },
-      ],
-    });
-    assert.equal(routed.statusCode, 200);
-  });
-});
-
-test('models: offered to people as configured, routed only where they can be served', async () => {
-  await withServer(async (server) => {
-    const boss = await consoleSignIn(server, server.google, BOSS);
-    const upstream = (
-      await consoleCall(server, boss, 'POST', '/upstreams', {
-        name: 'vertex-prod',
-        kind: 'vertex',
-        config: { projectId: 'p', region: 'global' },
-        credential: { serviceAccount: { type: 'service_account' } },
-      })
-    ).json() as ConsoleUpstream[];
-    const vertexId = upstream[0]!.id;
-    const created = await consoleCall(server, boss, 'POST', '/models', {
-      id: 'company/sonnet',
-      protocol: 'anthropic',
-      displayName: 'Sonnet',
-      capabilities: {
-        referenceModelId: 'claude-sonnet-4-5',
-        contextWindow: 200000,
-        thinkingLevels: ['low', 'high'],
-        defaultThinkingLevel: 'high',
-      },
-      costWeight: 1.5,
-    });
-    assert.equal(created.statusCode, 200);
-    // The gateway serves the Anthropic protocol only, so the console offers no other.
-    const openai = await consoleCall(server, boss, 'POST', '/models', {
-      id: 'gpt-5',
-      protocol: 'openai',
-      displayName: 'GPT-5',
-    });
-    assert.equal(openai.statusCode, 400);
-    const badDefault = await consoleCall(server, boss, 'POST', '/models', {
-      id: 'claude-x',
-      protocol: 'anthropic',
-      displayName: 'X',
-      capabilities: { thinkingLevels: ['low'], defaultThinkingLevel: 'high' },
-    });
-    assert.equal(badDefault.statusCode, 400);
-
-    // An id with a slash travels encoded in the path.
-    const routed = await consoleCall(server, boss, 'PUT', '/models/company%2Fsonnet/routes', {
-      routes: [{ upstreamId: vertexId, upstreamModel: 'claude-sonnet-4-5@20250929', priority: 0 }],
-    });
-    assert.equal(routed.statusCode, 200);
-    const [model] = routed.json() as ConsoleModel[];
-    assert.deepEqual(
-      model?.routes.map((route) => [route.upstreamName, route.upstreamModel]),
-      [['vertex-prod', 'claude-sonnet-4-5@20250929']],
-    );
-    const twice = await consoleCall(server, boss, 'PUT', '/models/company%2Fsonnet/routes', {
-      routes: [
-        { upstreamId: vertexId, upstreamModel: 'a', priority: 0 },
-        { upstreamId: vertexId, upstreamModel: 'b', priority: 1 },
-      ],
-    });
-    assert.equal(twice.statusCode, 400);
-
-    // What the desktop's catalog read sees follows the console.
-    const disabled = await consoleCall(server, boss, 'PATCH', '/models/company%2Fsonnet', {
-      enabled: false,
-      displayName: 'Sonnet (paused)',
-    });
-    assert.equal((disabled.json() as ConsoleModel[])[0]?.enabled, false);
-    const stored = await server.db
-      .selectFrom('models')
-      .select(['enabled', 'display_name', 'capabilities', 'cost_weight'])
-      .executeTakeFirstOrThrow();
-    assert.equal(stored.enabled, false);
-    assert.equal(stored.display_name, 'Sonnet (paused)');
-    assert.equal(stored.cost_weight, 1.5);
-    assert.deepEqual(stored.capabilities, {
-      referenceModelId: 'claude-sonnet-4-5',
-      contextWindow: 200000,
-      thinkingLevels: ['low', 'high'],
-      defaultThinkingLevel: 'high',
-    });
-    assert.equal(
-      (await consoleCall(server, boss, 'DELETE', '/models/company%2Fsonnet')).statusCode,
-      200,
-    );
-    assert.equal((await server.db.selectFrom('model_routes').selectAll().execute()).length, 0);
-  });
-});
-
 test('allowances: the default, a person of their own, and removing either', async () => {
   await withServer(async (server) => {
     const boss = await consoleSignIn(server, server.google, BOSS);
@@ -663,13 +473,20 @@ test('the usage report sums the window by person and by model; the audit log pag
     const aliceId = await userId(server, 'alice@relx.com');
     const at = (daysAgo: number) =>
       new Date(server.clock.now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
-    const usage = (daysAgo: number, units: number, status: 'ok' | 'error' = 'ok') => ({
+    const usage = (
+      daysAgo: number,
+      units: number,
+      status: 'ok' | 'error' | 'cancelled' = 'ok',
+    ) => ({
+      id: randomUUID(),
+      cost_weight: 1,
       at: at(daysAgo),
       user_id: aliceId,
       session_id: null,
-      model_id: 'claude-sonnet-4-5',
-      upstream_id: null,
-      protocol: 'anthropic' as const,
+      model_id: 'm_sonnet',
+      model_provider_id: randomUUID(),
+      quality: 'reported' as const,
+      api_protocol: 'anthropic-messages' as const,
       input_tokens: 100,
       output_tokens: 20,
       cache_write_tokens: 0,
@@ -681,24 +498,23 @@ test('the usage report sums the window by person and by model; the audit log pag
       client_version: '0.2.0',
       upstream_request_id: null,
     });
-    await server.db
-      .insertInto('usage_events')
-      .values([usage(1, 10), usage(2, 5.5, 'error'), usage(40, 99)])
-      .execute();
+    // A person's own stop is counted, but is not a failure.
+    const records = [usage(1, 10), usage(2, 5.5, 'error'), usage(3, 0, 'cancelled'), usage(40, 99)];
+    await server.db.insertInto('model_usage').values(records).execute();
     const report = (
       await consoleCall(server, boss, 'GET', '/usage?days=30')
     ).json() as ConsoleUsageReport;
-    assert.equal(report.totals.requests, 2);
+    assert.equal(report.totals.requests, 3);
     assert.equal(report.totals.errors, 1);
     assert.equal(report.totals.units, 15.5);
-    assert.equal(report.totals.cacheReadTokens, 100);
+    assert.equal(report.totals.cacheReadTokens, 150);
     assert.deepEqual(
       report.byUser.map((row) => [row.email, row.units]),
       [['alice@relx.com', 15.5]],
     );
     assert.deepEqual(
       report.byModel.map((row) => [row.modelId, row.requests]),
-      [['claude-sonnet-4-5', 2]],
+      [['m_sonnet', 3]],
     );
     assert.equal((await consoleCall(server, boss, 'GET', '/usage?days=0')).statusCode, 400);
 

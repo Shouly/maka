@@ -21,6 +21,11 @@
 // truth; these types must follow it.
 
 import type { ColumnType, Generated } from 'kysely';
+import type {
+  ModelApiProtocol,
+  ModelExecutionContract,
+  ModelIntegrationId,
+} from '@maka/core/model-gateway';
 import type { OrgRole } from '@maka/platform-protocol';
 
 type CreatedAt = ColumnType<Date, Date | undefined, never>;
@@ -149,49 +154,55 @@ export interface AuditEventsTable {
   ip: string | null;
 }
 
-export type UpstreamKind =
-  | 'anthropic'
-  | 'vertex'
-  | 'openrouter'
-  | 'bedrock'
-  | 'openai'
-  | 'azure-openai'
-  | 'openai-compatible'
-  | 'gemini';
-export type ModelProtocol = 'anthropic' | 'openai' | 'gemini';
-
-export interface UpstreamsTable {
+/** A provider account: what it is is fixed at creation; name, key and switch are not. */
+export interface ModelProvidersTable {
   id: string;
   name: string;
-  kind: UpstreamKind;
-  /** Non-secret settings: region, project, base URL. */
-  config: ColumnType<Record<string, unknown>, string, string>;
-  /** The provider credential, sealed (§10). */
-  credential_sealed: string | null;
+  integration: ModelIntegrationId;
+  /** Non-secret settings: a base URL, or Vertex's project and region. */
+  config: ColumnType<Record<string, unknown>, string, never>;
+  credential_sealed: string;
   enabled: boolean;
+  /** Bumped by every change; the console sends it back to change it again. */
+  revision: number;
   created_at: CreatedAt;
   updated_at: Date;
 }
-
-/** A model as people see it (everyone, once enabled); where its requests go lives in model_routes. */
-export interface ModelsTable {
+/** What people pick in Maka: one provider model under one provider, under a contract fixed at publishing. */
+export interface OrganizationModelsTable {
   id: string;
-  protocol: ModelProtocol;
+  model_provider_id: string;
+  /** The provider's own model id. */
+  provider_model: string;
   display_name: string;
-  capabilities: ColumnType<Record<string, unknown>, string, string>;
+  contract: ColumnType<ModelExecutionContract, string, never>;
   cost_weight: number;
   enabled: boolean;
   sort_order: number;
+  revision: number;
   created_at: CreatedAt;
   updated_at: Date;
 }
-
-export interface ModelRoutesTable {
-  model_id: string;
-  upstream_id: string;
-  upstream_model: string;
-  /** Lower goes first; the next one takes over when an upstream fails before answering. */
-  priority: number;
+/** A provider's model list as read for one administrator, kept briefly so publishing never trusts the page. */
+export interface ProviderCatalogSnapshotsTable {
+  id: string;
+  actor_id: string;
+  fingerprint: string;
+  models: ColumnType<import('../admin-console/types.js').ConsoleCatalogModel[], string, never>;
+  expires_at: Date;
+  created_at: CreatedAt;
+}
+export interface ModelCatalogStateTable {
+  id: number;
+  revision: number;
+}
+/** The answer to a create or publish, kept a day under its idempotency key. */
+export interface AdminMutationsTable {
+  id: string;
+  actor_id: string;
+  fingerprint: string;
+  result: ColumnType<Record<string, unknown>, string, never>;
+  created_at: CreatedAt;
 }
 
 export interface QuotasTable {
@@ -204,20 +215,25 @@ export interface QuotasTable {
   updated_at: Date;
 }
 
-export interface UsageEventsTable {
-  id: Generated<string>;
+/** One forwarded request, written when it ends. */
+export interface ModelUsageTable {
+  id: string;
+  cost_weight: number;
   at: CreatedAt;
   user_id: string;
   session_id: string | null;
   model_id: string;
-  upstream_id: string | null;
-  protocol: ModelProtocol;
+  model_provider_id: string;
+  api_protocol: ModelApiProtocol;
+  /** `reported` by the provider, or `estimated` from what was seen of the answer. */
+  quality: 'reported' | 'estimated';
   input_tokens: number;
   output_tokens: number;
   cache_write_tokens: number;
   cache_read_tokens: number;
   weighted_units: number;
-  status: 'ok' | 'error' | 'cancelled';
+  /** `incomplete`: the answer began and broke off. */
+  status: 'ok' | 'error' | 'cancelled' | 'incomplete';
   http_status: number | null;
   latency_ms: number | null;
   client_version: string | null;
@@ -234,9 +250,11 @@ export interface Database {
   signing_keys: SigningKeysTable;
   admin_sessions: AdminSessionsTable;
   audit_events: AuditEventsTable;
-  upstreams: UpstreamsTable;
-  models: ModelsTable;
-  model_routes: ModelRoutesTable;
+  model_providers: ModelProvidersTable;
+  organization_models: OrganizationModelsTable;
+  provider_catalog_snapshots: ProviderCatalogSnapshotsTable;
+  model_catalog_state: ModelCatalogStateTable;
+  admin_mutations: AdminMutationsTable;
   quotas: QuotasTable;
-  usage_events: UsageEventsTable;
+  model_usage: ModelUsageTable;
 }

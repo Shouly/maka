@@ -18,7 +18,11 @@
  */
 
 // One read from the API, kept on screen while it is read again. A change
-// answers with the fresh state, which replaces it without a second read.
+// answers with the fresh state, which replaces it without a second read —
+// and a read still out from before the change is dropped when it lands, so it
+// cannot put back what the change replaced. A change to part of what is shown
+// reads again afterwards when it dropped a read, since that read was out for
+// something the change does not carry.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -26,8 +30,11 @@ export interface Resource<T> {
   readonly data: T | undefined;
   readonly error: Error | undefined;
   readonly loading: boolean;
-  reload(): void;
+  /** Read again; settles (never rejects) once this read has landed or been dropped. */
+  reload(): Promise<void>;
   replace(next: T): void;
+  /** Change what is shown from what is shown now: answers that land together each keep theirs. */
+  update(change: (current: T) => T): void;
 }
 
 export function useResource<T>(load: () => Promise<T>, key: string): Resource<T> {
@@ -35,18 +42,26 @@ export function useResource<T>(load: () => Promise<T>, key: string): Resource<T>
   const [error, setError] = useState<Error | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const generation = useRef(0);
+  const reading = useRef(false);
+  const shown = useRef<T | undefined>(undefined);
   const loadRef = useRef(load);
   loadRef.current = load;
 
-  const reload = useCallback(() => {
+  const show = useCallback((next: T | undefined) => {
+    shown.current = next;
+    setData(next);
+  }, []);
+
+  const reload = useCallback((): Promise<void> => {
     const request = ++generation.current;
+    reading.current = true;
     setLoading(true);
-    loadRef
+    return loadRef
       .current()
       .then(
         (next) => {
           if (request !== generation.current) return;
-          setData(next);
+          show(next);
           setError(undefined);
         },
         (failure: unknown) => {
@@ -55,21 +70,45 @@ export function useResource<T>(load: () => Promise<T>, key: string): Resource<T>
         },
       )
       .finally(() => {
-        if (request === generation.current) setLoading(false);
+        if (request !== generation.current) return;
+        reading.current = false;
+        setLoading(false);
       });
-  }, []);
+  }, [show]);
 
   useEffect(() => {
-    setData(undefined);
-    reload();
-  }, [key, reload]);
+    show(undefined);
+    void reload();
+  }, [key, reload, show]);
 
-  const replace = useCallback((next: T) => {
-    generation.current += 1;
-    setData(next);
-    setError(undefined);
-    setLoading(false);
-  }, []);
+  const replace = useCallback(
+    (next: T) => {
+      generation.current += 1;
+      reading.current = false;
+      show(next);
+      setError(undefined);
+      setLoading(false);
+    },
+    [show],
+  );
 
-  return { data, error, loading, reload, replace };
+  const update = useCallback(
+    (change: (current: T) => T) => {
+      // Nothing shown yet: the first read is still the only source, keep it.
+      if (shown.current === undefined) return;
+      const dropped = reading.current;
+      generation.current += 1;
+      reading.current = false;
+      setLoading(false);
+      setData((current) => {
+        const next = current === undefined ? current : change(current);
+        shown.current = next;
+        return next;
+      });
+      if (dropped) void reload();
+    },
+    [reload],
+  );
+
+  return { data, error, loading, reload, replace, update };
 }

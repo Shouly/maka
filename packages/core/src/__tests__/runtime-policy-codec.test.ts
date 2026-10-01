@@ -522,6 +522,67 @@ test('normalizes exact bounded model discovery results', () => {
   }
 });
 
+test('an organisation model row keeps its contract and availability, and a bad contract is a domain error', () => {
+  const contract = {
+    apiProtocol: 'google-generate',
+    profileId: 'google',
+    sdkModelId: 'gemini-2.5-pro',
+    metadataRef: { providerType: 'google', modelId: 'gemini-2.5-pro' },
+    capabilities: {
+      inputModalities: ['text', 'image'],
+      supportsTools: true,
+      supportsReasoning: true,
+      supportsStructuredOutput: false,
+      thinkingLevels: ['low', 'high'],
+    },
+  };
+  const discovery = (model: Record<string, unknown>) =>
+    normalizeConnectionModelDiscoveryResult({ models: [model], source: 'fetched', fetchedAt: 42 });
+  const row = {
+    id: 'm_gemini',
+    apiProtocol: 'google-generate',
+    executionContract: contract,
+    availability: 'provider_disabled',
+  };
+  assert.deepEqual(discovery(row).models[0], row);
+  for (const invalid of [
+    { ...row, availability: 'no_source' },
+    // A profile this build does not implement, or a wire its profile does not speak.
+    { ...row, executionContract: { ...contract, profileId: 'openai-chat' } },
+    { ...row, executionContract: { ...contract, apiProtocol: 'openai-chat' } },
+    // Stored exactly as it is read: nothing a newer server said and this build ignores.
+    { ...row, executionContract: { ...contract, replayPolicy: 'source-bound' } },
+    {
+      ...row,
+      executionContract: { ...contract, capabilities: { ...contract.capabilities, extra: true } },
+    },
+    { ...row, executionContract: { ...contract, metadataRef: { providerType: 'google' } } },
+    // The row's wire is its contract's, and a contract comes with its availability.
+    { ...row, apiProtocol: 'openai-chat' },
+    { id: 'm_gemini', apiProtocol: 'google-generate', executionContract: contract },
+    { id: 'm_gemini', availability: 'available' },
+  ]) {
+    assert.throws(() => discovery(invalid), RuntimePolicyDomainDecodeError);
+  }
+});
+
+test("a person's own model rows and overrides stay on the wires they could always declare", () => {
+  const discovery = (model: Record<string, unknown>) =>
+    normalizeConnectionModelDiscoveryResult({ models: [model], source: 'fetched', fetchedAt: 42 });
+  for (const apiProtocol of ['openai-chat', 'openai-responses', 'anthropic-messages']) {
+    assert.equal(discovery({ id: 'model', apiProtocol }).models[0]?.apiProtocol, apiProtocol);
+  }
+  // Only an organisation model's contract can fix the Gemini wire.
+  assert.throws(
+    () => discovery({ id: 'gemini-custom', apiProtocol: 'google-generate' }),
+    RuntimePolicyDomainDecodeError,
+  );
+  assert.throws(
+    () => decodeModelOverridesTable({ 'gemini-custom': { apiProtocol: 'google-generate' } }),
+    RuntimePolicyDomainDecodeError,
+  );
+});
+
 test('normalizes extended model facts used by the runtime host catalog', () => {
   const result = normalizeConnectionModelDiscoveryResult({
     models: [
@@ -648,4 +709,71 @@ test('credential domain validation requires material but leaves capacity to call
     () => normalizeSetCredentialInput({ ...input, secret: '' }),
     RuntimePolicyDomainDecodeError,
   );
+});
+
+test("an organization's stored model list it cannot read is dropped for the next sync; anyone else's stays strict", () => {
+  const contract = {
+    apiProtocol: 'anthropic-messages',
+    profileId: 'anthropic',
+    sdkModelId: 'claude-sonnet-4-6',
+    capabilities: {
+      inputModalities: ['text'],
+      supportsTools: true,
+      supportsReasoning: false,
+      supportsStructuredOutput: false,
+    },
+  };
+  const stored = (providerType: string, model: Record<string, unknown>) => ({
+    slug: providerType,
+    name: 'Stored',
+    providerType,
+    baseUrl: 'https://maka.example.test/',
+    enabled: true,
+    enabledModelIds: ['m_a'],
+    connectionId: '123e4567-e89b-42d3-a456-426614174000',
+    revision: 3,
+    models: [{ id: 'm_a', ...model }],
+    modelSource: 'fetched',
+    modelsFetchedAt: 1,
+  });
+  const readable = decodeCanonicalConnectionCatalogEntry(
+    stored('organization', { executionContract: contract, availability: 'available' }),
+  );
+  assert.equal(readable.models.length, 1);
+  assert.equal(readable.modelSource, 'fetched');
+  // Written by a build whose contract had another shape.
+  const older = decodeCanonicalConnectionCatalogEntry(
+    stored('organization', {
+      executionContract: { ...contract, replayPolicy: 'portable', contractVersion: 'v1' },
+      availability: 'available',
+    }),
+  );
+  assert.deepEqual(older.models, []);
+  assert.equal(older.modelSource, undefined);
+  assert.equal(older.modelsFetchedAt, undefined);
+  assert.deepEqual(older.enabledModelIds, ['m_a'], 'what was chosen stays chosen');
+  assert.throws(
+    () =>
+      decodeCanonicalConnectionCatalogEntry(
+        stored('openai-compatible', { apiProtocol: 'not-a-protocol' }),
+      ),
+    RuntimePolicyDomainDecodeError,
+  );
+  // A row written before models carried their contract says nothing of how to
+  // call it: as unreadable as any other stale cache.
+  const contractless = decodeCanonicalConnectionCatalogEntry(
+    stored('organization', { apiProtocol: 'anthropic-messages', displayName: 'Claude' }),
+  );
+  assert.deepEqual(contractless.models, []);
+  assert.equal(contractless.modelSource, undefined);
+  // A person's own connection never holds an organisation model, nor its wire.
+  for (const model of [
+    { executionContract: contract, apiProtocol: 'anthropic-messages', availability: 'available' },
+    { apiProtocol: 'google-generate' },
+  ]) {
+    assert.throws(
+      () => decodeCanonicalConnectionCatalogEntry(stored('openai-compatible', model)),
+      RuntimePolicyDomainDecodeError,
+    );
+  }
 });

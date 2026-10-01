@@ -83,11 +83,8 @@ test('the organisation provider rides the account and is never offered in the ca
   assert.equal(organization.baseUrl, '');
   assert.equal(organization.organizationGateway, true);
   assert.equal(organization.modelDiscovery.kind, 'platform-catalog');
-  assert.deepEqual(organization.runtimeAdapter, {
-    kind: 'anthropic',
-    auth: 'bearer',
-    normalizeBaseUrl: true,
-  });
+  // No wire of its own: each model's execution contract names one.
+  assert.deepEqual(organization.runtimeAdapter, { kind: 'unavailable' });
   // The app creates it on sign-in; nobody adds it from the catalog.
   assert.equal(organization.catalogOrder, undefined);
   assert.equal(CATALOG_PROVIDER_TYPES.includes('organization'), false);

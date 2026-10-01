@@ -33,15 +33,21 @@ import {
 } from '../provider-error-classification.js';
 
 describe('Organisation gateway failures', () => {
-  // The gateway answers in the protocol's own error shape; `maka` says why.
-  const gatewayError = (statusCode: number, maka: Record<string, unknown>, message: string) => {
+  // The gateway answers in the protocol's own error shape; `maka` and
+  // `x-maka-error` say it is its own refusal, and why.
+  const gatewayError = (
+    statusCode: number,
+    maka: Record<string, unknown>,
+    message: string,
+    headers: Record<string, string> = { 'x-should-retry': 'false' },
+  ) => {
     const error = { type: statusCode === 429 ? 'rate_limit_error' : 'permission_error', message };
     return new APICallError({
       message,
       url: 'https://maka.example.com/model/anthropic/v1/messages',
       requestBodyValues: {},
       statusCode,
-      responseHeaders: { 'retry-after': '86400', 'x-should-retry': 'false' },
+      responseHeaders: { 'x-maka-error': String(maka.code), ...headers },
       responseBody: JSON.stringify({ type: 'error', error, maka }),
       // What the SDK's schema keeps: `maka` is not in it.
       data: { type: 'error', error },
@@ -51,7 +57,10 @@ describe('Organisation gateway failures', () => {
   test('a used-up allowance is not retried, and its failure says when it resets', () => {
     const resetsAt = Date.parse('2026-10-05T00:00:00.000Z');
     const failure = providerModelFailure(
-      gatewayError(429, { code: 'quota_exceeded', retryAt: resetsAt }, 'Allowance used up'),
+      gatewayError(429, { code: 'quota_exceeded', retryAt: resetsAt }, 'Allowance used up', {
+        'retry-after': '86400',
+        'x-should-retry': 'false',
+      }),
     );
     assert.equal(failure.kind, 'organization_quota');
     assert.equal(failure.retryable, false, 'not a throttle to wait out for a day');
@@ -65,19 +74,63 @@ describe('Organisation gateway failures', () => {
     assert.equal(organizationQuotaResetsAt(beyond.message), undefined);
   });
 
-  test("the gateway's other reasons read as what they are", () => {
+  test("the gateway's other refusals read as what they are", () => {
     for (const [statusCode, code, kind] of [
       [403, 'model_not_allowed', 'organization_model_denied'],
       [401, 'unauthenticated', 'organization_sign_in'],
-      [426, 'upgrade_required', 'organization_upgrade'],
-      // A busy upstream and a failed one keep their ordinary, retried kinds.
-      [429, 'rate_limited', 'rate_limit'],
-      [503, 'upstream_unavailable', 'provider_unavailable'],
+      [409, 'upgrade_required', 'organization_upgrade'],
+      [400, 'invalid_request', 'request_rejected'],
+      [502, 'upstream_unavailable', 'provider_unavailable'],
     ] as const) {
       const failure = providerModelFailure(gatewayError(statusCode, { code }, 'refused'));
       assert.equal(failure.kind, kind, code);
-      assert.equal(failure.retryable, MODEL_FAILURE_RETRY[kind] !== null, code);
+      // Every refusal says `x-should-retry: false`, which an unreachable provider's honours too.
+      assert.equal(failure.retryable, false, code);
     }
+  });
+
+  test('an unreachable provider is retried only when the gateway says nothing was sent', () => {
+    const unreachable = (shouldRetry: string) =>
+      providerModelFailure(
+        gatewayError(502, { code: 'upstream_unavailable' }, 'Provider unreachable', {
+          'x-should-retry': shouldRetry,
+        }),
+      );
+    assert.equal(unreachable('true').kind, 'provider_unavailable');
+    assert.equal(unreachable('true').retryable, true);
+    assert.equal(unreachable('false').retryable, false);
+  });
+
+  test('a refusal is known by its header or by its body, either alone', () => {
+    const byHeader = new APICallError({
+      message: 'Sign in again',
+      url: 'https://maka.example.com/model/openai/v1/chat/completions',
+      requestBodyValues: {},
+      statusCode: 401,
+      responseHeaders: { 'x-maka-error': 'unauthenticated' },
+      responseBody: JSON.stringify({ error: { message: 'Sign in again' } }),
+    });
+    assert.equal(classifyError(byHeader), 'organization_sign_in');
+    const byBody = new APICallError({
+      message: 'Not offered',
+      url: 'https://maka.example.com/model/gemini/v1beta/models/x:generateContent',
+      requestBodyValues: {},
+      statusCode: 403,
+      responseBody: JSON.stringify({
+        error: { code: 403, status: 'PERMISSION_DENIED', message: 'Not offered' },
+        maka: { code: 'model_not_allowed' },
+      }),
+    });
+    assert.equal(classifyError(byBody), 'organization_model_denied');
+  });
+
+  test('a code the desktop does not map keeps the ordinary reading', () => {
+    const failure = providerModelFailure(
+      gatewayError(429, { code: 'rate_limited' }, 'Slow down', { 'retry-after': '3' }),
+    );
+    assert.equal(failure.kind, 'rate_limit');
+    assert.equal(failure.retryable, true);
+    assert.equal(failure.retryAfterMs, 3_000);
   });
 
   test('an account that cannot sign asks for a sign-in, or an update, wherever it surfaces', () => {
@@ -98,6 +151,117 @@ describe('Organisation gateway failures', () => {
       const wrapped = new Error('request failed', { cause: unavailable(reason) });
       assert.equal(classifyError(wrapped), kind, reason);
     }
+  });
+});
+
+describe("A provider's own answers on an organisation model", () => {
+  const organizationModel = { organizationModel: true } as const;
+  const providerError = (
+    statusCode: number,
+    body: unknown,
+    headers: Record<string, string> = {},
+    url = 'https://maka.example.com/model/anthropic/v1/messages',
+  ) =>
+    new APICallError({
+      message: 'Provider error',
+      url,
+      requestBodyValues: {},
+      statusCode,
+      responseHeaders: headers,
+      responseBody: JSON.stringify(body),
+    });
+
+  test("a refusal of the organisation's key, permissions or balance goes to its administrator", () => {
+    for (const [statusCode, body] of [
+      [
+        401,
+        { type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } },
+      ],
+      [403, { type: 'error', error: { type: 'permission_error', message: 'Not permitted' } }],
+      [402, { error: { message: 'Payment required' } }],
+      [429, { error: { code: 'insufficient_quota', message: 'You exceeded your current quota' } }],
+    ] as const) {
+      const failure = providerModelFailure(providerError(statusCode, body), organizationModel);
+      assert.equal(failure.kind, 'organization_provider_account', String(statusCode));
+      assert.equal(failure.retryable, false);
+      // The same answer on a person's own connection still sends them to their key.
+      assert.notEqual(
+        providerModelFailure(providerError(statusCode, body)).kind,
+        'organization_provider_account',
+      );
+    }
+    assert.equal(classifyError(providerError(401, { error: { message: 'bad key' } })), 'auth');
+  });
+
+  test('context overflow is recognised natively on every wire', () => {
+    for (const [url, body] of [
+      [
+        'https://maka.example.com/model/anthropic/v1/messages',
+        {
+          type: 'error',
+          error: {
+            type: 'invalid_request_error',
+            message: 'prompt is too long: 250000 tokens > 200000 maximum',
+          },
+        },
+      ],
+      [
+        'https://maka.example.com/model/openai/v1/chat/completions',
+        {
+          error: {
+            message: "This model's maximum context length is 128000 tokens.",
+            type: 'invalid_request_error',
+            code: 'context_length_exceeded',
+          },
+        },
+      ],
+      [
+        'https://maka.example.com/model/openai/v1/responses',
+        {
+          error: {
+            message: 'Your input exceeds the context window of this model.',
+            type: 'invalid_request_error',
+            code: 'context_length_exceeded',
+          },
+        },
+      ],
+      [
+        'https://maka.example.com/model/gemini/v1beta/models/gemini-2.5-pro:streamGenerateContent',
+        {
+          error: {
+            code: 400,
+            message:
+              'The input token count (1200000) exceeds the maximum number of tokens allowed (1048576).',
+            status: 'INVALID_ARGUMENT',
+          },
+        },
+      ],
+    ] as const) {
+      const failure = providerModelFailure(providerError(400, body, {}, url), organizationModel);
+      assert.equal(failure.kind, 'context_overflow', url);
+      assert.equal(failure.retryable, false, url);
+    }
+  });
+
+  test("the provider's throttle is paced by its own headers, and its `x-should-retry: false` holds", () => {
+    const throttled = providerModelFailure(
+      providerError(
+        429,
+        { type: 'error', error: { type: 'rate_limit_error', message: 'Slow down' } },
+        { 'retry-after': '7' },
+      ),
+      organizationModel,
+    );
+    assert.equal(throttled.kind, 'rate_limit');
+    assert.equal(throttled.retryAfterMs, 7_000);
+    const overloaded = providerError(
+      529,
+      { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } },
+      { 'x-should-retry': 'false' },
+    );
+    assert.equal(providerModelFailure(overloaded, organizationModel).retryable, false);
+    // A person's own connection keeps reading the kind alone.
+    assert.equal(providerModelFailure(overloaded).retryable, true);
   });
 });
 

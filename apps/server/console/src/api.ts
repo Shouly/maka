@@ -24,19 +24,77 @@
 // session is read again and the change sent once more, or, if someone else
 // signed in, the page starts over as them.
 
-import { CONSOLE_CSRF_HEADER, type ConsoleSession } from '../../src/admin-console/types.js';
+import {
+  CONSOLE_CSRF_HEADER,
+  type ConsoleErrorCode,
+  type ConsoleSession,
+} from '../../src/admin-console/types.js';
 import { consoleLocale, getCopy } from './copy.js';
 
 const text = getCopy(consoleLocale()).common;
 
+const ERROR_CODES: ReadonlySet<string> = new Set<ConsoleErrorCode>([
+  'invalid_request',
+  'not_found',
+  'revision_conflict',
+  'catalog_expired',
+  'credentials_rejected',
+  'provider_in_use',
+  'name_taken',
+  'idempotency_conflict',
+]);
+
+/**
+ * A call that did not go through. `code` is why, where the server said; the
+ * message is the server's own words (English), or the page's when the server
+ * was not reached — the page says it in its own words from the code.
+ */
 export class ConsoleApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly code?: ConsoleErrorCode,
   ) {
     super(message);
     this.name = 'ConsoleApiError';
   }
+}
+
+/** Why a call was refused, when the server said. */
+export function errorCode(error: unknown): ConsoleErrorCode | undefined {
+  return error instanceof ConsoleApiError ? error.code : undefined;
+}
+
+/**
+ * Someone changed it in the meantime: what the page shows is old, and the
+ * change goes again once it is read afresh.
+ */
+export function isStale(error: unknown): boolean {
+  const code = errorCode(error);
+  return code === 'revision_conflict' || code === 'catalog_expired' || code === 'not_found';
+}
+
+/**
+ * The answer never came (the network, or a proxy in front of the server): the
+ * change may have been made, so a retry of the same change sends the same
+ * idempotency key.
+ */
+export function answerLost(error: unknown): boolean {
+  return error instanceof ConsoleApiError && (error.status === 0 || error.status >= 500);
+}
+
+/**
+ * A key for one save attempt: an RFC 4122 version 4 UUID, which the server
+ * checks. A page served over plain http has no `randomUUID`, so the same is
+ * built from random bytes there.
+ */
+export function newIdempotencyKey(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40; // version 4
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80; // variant 10xx
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 let csrfToken: string | undefined;
@@ -84,10 +142,15 @@ async function call<T>(method: string, path: string, body?: unknown, again = fal
     payload = undefined;
   }
   if (!response.ok) {
+    const failure = (payload as { error?: { message?: unknown; code?: unknown } } | undefined)
+      ?.error;
     const message =
-      (payload as { error?: { message?: string } } | undefined)?.error?.message ??
-      text.requestFailed(response.status);
-    throw new ConsoleApiError(response.status, message);
+      typeof failure?.message === 'string' ? failure.message : text.requestFailed(response.status);
+    const code =
+      typeof failure?.code === 'string' && ERROR_CODES.has(failure.code)
+        ? (failure.code as ConsoleErrorCode)
+        : undefined;
+    throw new ConsoleApiError(response.status, message, code);
   }
   return payload as T;
 }
@@ -109,7 +172,7 @@ export const api = {
   post: <T>(path: string, body?: unknown) => call<T>('POST', path, body),
   put: <T>(path: string, body?: unknown) => call<T>('PUT', path, body),
   patch: <T>(path: string, body?: unknown) => call<T>('PATCH', path, body),
-  delete: <T>(path: string) => call<T>('DELETE', path),
+  delete: <T>(path: string, body?: unknown) => call<T>('DELETE', path, body),
 };
 
 /** A path segment: model ids carry slashes. */

@@ -37,7 +37,11 @@
  */
 
 import type { ModelInfo, ProviderType } from './llm-connections.js';
-import { lookupModelMetadata } from './model-metadata.js';
+import {
+  lookupConnectionModelMetadata,
+  lookupContractMetadata,
+  lookupModelMetadata,
+} from './model-metadata.js';
 
 /**
  * Reasoning-depth variants. Ordered from shallowest to deepest for display.
@@ -329,6 +333,10 @@ export interface ThinkingSubject extends ConnectionThinkingContext {
  * Each layer speaks only when the one above said nothing. The catalog entry,
  * the Session gate and the wire all read this, so a level the picker offers is
  * exactly a level the request may carry.
+ *
+ * An organisation model's catalog is the entry its execution contract names,
+ * and only when the contract says the model reasons; the request for it is
+ * resolved from the same row, so both read the same entry.
  */
 export function resolveModelThinking(
   connection: ThinkingSubject,
@@ -336,11 +344,17 @@ export function resolveModelThinking(
 ): ModelThinkingFacts {
   const id = modelId.trim();
   const row = connection.models?.find((model) => model.id.trim() === id);
-  const metadata = lookupModelMetadata(connection.providerType, id);
+  const contract = row?.executionContract;
+  const metadata = contract
+    ? lookupContractMetadata(contract)
+    : lookupModelMetadata(connection.providerType, id);
   const override = modelOverride(connection, id);
   const declared = override?.thinkingLevels ?? [];
   const advertised = inDisplayOrder(row?.thinkingLevels ?? []);
-  const catalog = deriveThinkingChoices(metadata.thinkingOptions);
+  const catalog =
+    contract && !contract.capabilities.supportsReasoning
+      ? []
+      : deriveThinkingChoices(metadata.thinkingOptions);
   const [levels, source]: [readonly ThinkingLevel[], ThinkingSource] =
     declared.length > 0
       ? [declared, 'user']
@@ -451,7 +465,7 @@ export function resolveModelLimits(
   model: ModelInfo,
   override?: ModelOverride,
 ): ModelLimits {
-  const metadata = lookupModelMetadata(providerType, model.id);
+  const metadata = lookupConnectionModelMetadata({ providerType, models: [model] }, model.id);
   const contextWindow = override?.contextWindow ?? model.contextWindow ?? metadata.contextWindow;
   const declaredInputLimit = override?.inputLimit ?? model.inputLimit ?? metadata.inputLimit;
   // When BOTH numbers are Maka's own, an input limit larger than the window is

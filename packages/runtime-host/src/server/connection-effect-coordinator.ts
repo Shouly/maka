@@ -158,6 +158,15 @@ export class HostConnectionEffectCoordinator {
     proxy: ConnectionEffectProxySnapshot | null,
   ) => ConnectionEffectFetchTransport;
   readonly #tails = new Map<string, Promise<void>>();
+  /**
+   * The organisation catalog revision each connection's models were last
+   * stored from, and the connection revision that store left. Kept for this
+   * Host's life only: after a restart the first read is stored once more.
+   */
+  readonly #organizationCatalogs = new Map<
+    string,
+    { readonly catalogRevision: string; readonly connectionRevision: number }
+  >();
   #accepting = true;
   #closePromise: Promise<void> | undefined;
 
@@ -212,6 +221,12 @@ export class HostConnectionEffectCoordinator {
         };
       }
 
+      const unchanged = await this.#unchangedOrganizationCatalog(
+        prepared.connection,
+        effect.catalogRevision,
+      );
+      if (unchanged) return unchanged;
+
       const result: ConnectionModelDiscoveryResult = {
         models: effect.models,
         source: 'fetched',
@@ -220,20 +235,60 @@ export class HostConnectionEffectCoordinator {
       const completion = await this.#complete(() =>
         this.#stores.operations.completeModelFetch(prepared.ticket, result),
       );
-      return completion.kind === 'committed'
-        ? {
-            kind: 'committed',
-            catalogRevision: completion.snapshot.revision,
-            connection: committedConnectionBasis(
-              completion.snapshot.connections,
-              prepared.connection.connectionId,
-            ),
-            modelCount: result.models.length,
-            source: result.source,
-            fetchedAt: result.fetchedAt,
-          }
-        : projectSuperseded(completion);
+      if (completion.kind !== 'committed') return projectSuperseded(completion);
+      const connection = committedConnectionBasis(
+        completion.snapshot.connections,
+        prepared.connection.connectionId,
+      );
+      if (effect.catalogRevision !== undefined) {
+        this.#organizationCatalogs.set(connection.connectionId, {
+          catalogRevision: effect.catalogRevision,
+          connectionRevision: connection.revision,
+        });
+      }
+      return {
+        kind: 'committed',
+        catalogRevision: completion.snapshot.revision,
+        connection,
+        modelCount: result.models.length,
+        source: result.source,
+        fetchedAt: result.fetchedAt,
+      };
     });
+  }
+
+  /**
+   * The stored models, when the organisation's catalog is the revision they
+   * were stored from and nothing has written the connection since: there is
+   * nothing to write, so nothing is rewritten and no change goes out.
+   */
+  async #unchangedOrganizationCatalog(
+    connection: ConnectionCatalogEntry,
+    catalogRevision: string | undefined,
+  ): Promise<Extract<ConnectionModelFetchResult, { readonly kind: 'committed' }> | undefined> {
+    const stored = this.#organizationCatalogs.get(connection.connectionId);
+    if (catalogRevision === undefined || stored?.catalogRevision !== catalogRevision) {
+      return undefined;
+    }
+    const snapshot = await this.#stores.connectionCatalog.getSnapshot();
+    const current = snapshot.connections.find(
+      ({ connectionId }) => connectionId === connection.connectionId,
+    );
+    if (
+      current?.revision !== stored.connectionRevision ||
+      current.modelSource !== 'fetched' ||
+      current.modelsFetchedAt === undefined
+    ) {
+      return undefined;
+    }
+    return {
+      kind: 'committed',
+      catalogRevision: snapshot.revision,
+      connection: { connectionId: current.connectionId, revision: current.revision },
+      modelCount: current.models.length,
+      source: current.modelSource,
+      fetchedAt: current.modelsFetchedAt,
+    };
   }
 
   #verifyOnboarding(

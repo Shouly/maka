@@ -26,7 +26,7 @@ import type { AttachmentRef } from '@maka/core/events';
 import type { ArtifactKind, ArtifactRecord } from '@maka/core/artifacts';
 import { NO_REAL_CONNECTION_CODE } from '@maka/core/connection-error-copy';
 import type { RuntimeExecutionConnection } from '@maka/core/llm-connections';
-import { lookupModelMetadata } from '@maka/core/model-metadata';
+import { lookupConnectionModelMetadata } from '@maka/core/model-metadata';
 import { generalizedErrorMessage } from '@maka/core/redaction';
 import { emptyPlanSessionState } from '@maka/core/plan';
 import { readLogicalRuntimeExecutionForRun } from '@maka/core/runtime-logical-execution';
@@ -1128,11 +1128,12 @@ export async function createExecutionRuntimeHostComposition(
           : false;
       // The serving model's own cutoff, for <knowledge_cutoff>. A connection
       // entry states it when the account advertises one; otherwise the models
-      // metadata snapshot does. Unknown stays undefined — the section then
-      // omits the date rather than inventing one.
+      // metadata snapshot does (for an organisation model, the entry its
+      // contract names). Unknown stays undefined — the section then omits the
+      // date rather than inventing one.
       const knowledgeCutoff = connection
         ? (connection.models?.find((model) => model.id === input.modelId)?.knowledgeCutoff ??
-          lookupModelMetadata(connection.providerType, input.modelId).knowledgeCutoff)
+          lookupConnectionModelMetadata(connection, input.modelId).knowledgeCutoff)
         : undefined;
       return {
         runtimePolicy,

@@ -149,7 +149,8 @@ export interface ProviderDefaults {
   /**
    * The connection's base URL is an organisation server, whose model gateway
    * serves each request protocol under its own path (`GATEWAY_PATHS` in
-   * `@maka/platform-protocol`); Runtime appends the one the model's wire needs.
+   * `@maka/platform-protocol`). Runtime calls each model as its execution
+   * contract says, at the path for the contract's wire.
    */
   organizationGateway?: true;
   /**
@@ -1569,9 +1570,8 @@ const providerRegistry = {
    * address.
    *
    * The desktop app creates and keeps this connection once the person signs
-   * in; nobody adds it from the catalog, so it has no `catalogOrder`. Only the
-   * Anthropic protocol is served for now: the catalog's other protocols wait
-   * for the gateway's OpenAI and Gemini paths.
+   * in; nobody adds it from the catalog. Each model supplies its own verified
+   * execution contract; the organization connection has no default wire.
    */
   organization: {
     label: 'Organization',
@@ -1580,7 +1580,7 @@ const providerRegistry = {
     authKind: 'org_session',
     fallbackModels: [],
     status: 'ready',
-    runtimeAdapter: { kind: 'anthropic', auth: 'bearer', normalizeBaseUrl: true },
+    runtimeAdapter: { kind: 'unavailable' },
     organizationGateway: true,
     modelDiscovery: { kind: 'platform-catalog' },
     category: 'custom',

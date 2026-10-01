@@ -136,44 +136,37 @@ export interface PlatformErrorBody {
   };
 }
 
-/** The wire protocols the model gateway speaks, one path prefix each (design §5.1). */
-export type GatewayProtocol = 'anthropic' | 'openai' | 'gemini';
-
-export const GATEWAY_PATHS: Readonly<Record<GatewayProtocol, string>> = {
-  anthropic: '/model/anthropic/v1',
-  openai: '/model/openai/v1',
-  gemini: '/model/gemini',
+export type { ModelApiProtocol, ModelExecutionContract } from '@maka/core/model-gateway';
+import type { ModelApiProtocol, ModelExecutionContract } from '@maka/core/model-gateway';
+// The model gateway forwards each request in the protocol the desktop's SDK
+// spoke and returns the provider's answer as it came, errors included. Only
+// its own refusals (sign-in, model, allowance, version) are its words, and
+// they carry GATEWAY_ERROR_HEADER so a client can tell them from the
+// provider's.
+export const GATEWAY_SCHEMA_VERSION = 1;
+export const GATEWAY_VERSION_HEADER = 'x-maka-gateway-version';
+/** The organization model (`m_…`) a request is for; the body names the provider's model. */
+export const GATEWAY_MODEL_HEADER = 'x-maka-model-id';
+/** On the gateway's own refusals only: its `PlatformErrorCode`. */
+export const GATEWAY_ERROR_HEADER = 'x-maka-error';
+export const GATEWAY_PATHS: Readonly<Record<ModelApiProtocol, string>> = {
+  'anthropic-messages': '/model/anthropic/v1',
+  'openai-chat': '/model/openai/v1',
+  'openai-responses': '/model/openai/v1',
+  'google-generate': '/model/gemini/v1beta',
 };
-
 export const MODEL_CATALOG_PATH = '/model/catalog';
-
-/** One model the signed-in person may use, in the shape Maka's model metadata expects. */
 export interface PlatformModel {
   readonly id: string;
-  readonly protocol: GatewayProtocol;
   readonly displayName: string;
-  readonly contextWindow?: number;
-  readonly maxOutputTokens?: number;
-  readonly thinkingLevels?: readonly string[];
-  readonly defaultThinkingLevel?: string;
-  readonly inputModalities?: readonly string[];
-  readonly supportsTools?: boolean;
-  /** The vendor's own model id, for looking up anything the server does not say. */
-  readonly referenceModelId?: string;
+  readonly contract: ModelExecutionContract;
+  /** `provider_disabled`: listed so a conversation keeps its name, but not callable. */
+  readonly availability: 'available' | 'provider_disabled';
 }
-
-/** `GET /model/catalog`. */
 export interface PlatformModelCatalog {
+  readonly schemaVersion: typeof GATEWAY_SCHEMA_VERSION;
+  readonly revision: string;
   readonly models: readonly PlatformModel[];
-}
-
-/**
- * Errors on the gateway paths keep each protocol's own error shape, so a
- * client library shows `error.message` as is; `maka` carries the reason.
- */
-export interface GatewayErrorDetail {
-  readonly code: PlatformErrorCode;
-  readonly retryAt?: number;
 }
 
 /** Decode a token answer from the wire, refusing anything that is not one. */

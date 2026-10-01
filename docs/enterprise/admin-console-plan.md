@@ -21,7 +21,7 @@
 
 2026-09-29。依据是 `server-platform-design.md` 的 D5 和 §3.2：服务端自带的网页管理后台，和 API 同一个服务、同一个镜像；只有组织管理员能进；登录方式和员工一样，用浏览器会话 cookie（HttpOnly、SameSite、CSRF 防护），不用桌面端的令牌；前端用 React 和 Maka 相同的设计系统，是 `apps/server` 里的单页应用，由服务端直接托管。
 
-阶段 1 的页面：用户、模型与模型提供商（上游）、额度、用量报表、审计日志、设备会话。命令行 `admin.js` 保留，作为没有浏览器时的兜底。
+阶段 1 的页面：用户、模型提供商与模型、额度、用量报表、审计日志、设备会话。命令行 `admin.js` 保留，作为没有浏览器时的兜底。
 
 ## 1. 登录与会话
 
@@ -52,13 +52,12 @@
 | | `PATCH /users/:id` | 改角色、停用/启用。停用时吊销全部设备会话和网页会话。不能停用或降级自己，也不能动最后一个管理员 |
 | | `DELETE /users/:id/links/:provider` | 解除身份源绑定，并吊销通过该身份源登录的设备和管理后台会话 |
 | | `POST /users/:id/devices/:deviceId/revoke` | 让某台设备退出登录 |
-| 上游 | `GET /upstreams`、`POST /upstreams`、`PATCH /upstreams/:id`、`DELETE /upstreams/:id` | 凭据只写不读，列表只说“已设置”；删除前要求没有模型走它 |
-| 模型 | `GET /models`、`POST /models`、`PATCH /models/:id`、`DELETE /models/:id`、`PUT /models/:id/routes` | 路由整组替换；只能路由到能服务该协议的上游 |
+| 模型提供商、模型 | `/model-providers…`、`/models…` | 见 [模型接入与网关设计](model-gateway-refactor-design.md) §8 |
 | 额度 | `GET /quotas`、`PUT /quotas/default/:period`、`PUT /quotas/users/:userId/:period` | 周额度、月额度；`limit: null` 表示去掉（组织默认即不限制，个人即回到默认） |
 | 用量 | `GET /usage?days=` | 合计、按人、按模型；失败只算出错的请求，用户自己停止的不算。成员本期额度的使用情况在成员详情里 |
-| 审计 | `GET /audit?before=&action=` | 按时间倒序分页，每页 100 条；成员、上游、设备、个人额度的对象带上可读名称 |
+| 审计 | `GET /audit?before=&action=` | 按时间倒序分页，每页 100 条；成员、模型提供商、模型、设备、个人额度的对象带上可读名称 |
 
-模型的“协议”第一版只开放 Anthropic：网关目前只服务这一种协议（OpenAI / Gemini 随搜索重构后的 M3 再开）。模型提供商的类型：Anthropic API（可改服务地址）、Google Vertex AI、OpenRouter（地址固定为 `https://openrouter.ai/api`，密钥按 `Authorization: Bearer` 发送，迁移 0006 把它加进 `upstreams.kind`）。
+模型提供商与模型的接口、数据和网关见 [模型接入与网关设计](model-gateway-refactor-design.md)。
 
 ## 3. 前端
 
@@ -67,11 +66,13 @@
 - **布局**：和 Maka 设置页相同，左侧导航、右侧内容，内容是分区加纯文字行和表格，详情页替换内容区、顶部带返回。
 - **导航**：
   - 组织：成员、额度；
-  - 模型：模型提供商（英文 LLM Provider）、模型。先有提供商，模型才能路由过去，所以提供商在前。接口、数据表和命令行里仍叫 upstream；
+  - 模型：模型提供商（英文 LLM Provider）、模型。先有提供商，模型才能从它开放，所以提供商在前；
   - 记录：用量、审计日志。
   - 左下角是当前管理员和“退出登录”。
 - **语言**：跟随浏览器，中文或英文，和登录页一致。
-- **写操作**：和设置页一样即时生效、失败才提示；危险操作（停用成员、删除上游或模型、让设备退出）先确认。
+- **写操作**：和设置页一样即时生效、失败才提示；危险操作（停用成员、删除模型提供商或模型、让设备退出）先确认。
+
+模型提供商和模型的页面流程见 [模型接入与网关设计](model-gateway-refactor-design.md) §2。
 
 ## 4. 测试
 
@@ -84,13 +85,12 @@
 
 - 服务端：`src/administration.ts` 是全部管理操作，管理后台接口和命令行 `admin.js` 共用，规则只写一处（不能动自己的权限、至少留一个管理员、停用即全部退出登录）。`src/admin-console/` 是登录、会话、接口和页面托管；迁移 0005 建 `admin_sessions`。
 - 前端：`apps/server/console/`，构建进 `dist/console`，`npm --workspace @maka/server run build` 一并构建。桌面端的组件通过 `@desktop/*` 别名直接引用，`@maka/ui` 只取语言上下文。
-- 测试：管理后台 15 个（登录与浏览器绑定、返回地址、会话、CSRF 与只收 JSON、每次请求复核管理员身份、解除绑定、每类接口、页面托管），网关补了 OpenRouter 和余额不足（402）换下一条路由；前端用示例数据在真实浏览器里走过开关模型、添加上游、设置额度、停用成员、添加路由。
-- 并发：改角色和状态、写同一个额度，各自用事务级 advisory lock 排队；删除上游先锁住它再数路由，写路由时对上游加共享锁，删除和新路由不会互相漏掉；名字或 id 被并发抢先时回 409 而不是 500。
+- 测试：管理后台 15 个（登录与浏览器绑定、返回地址、会话、CSRF 与只收 JSON、每次请求复核管理员身份、解除绑定、每类接口、页面托管）；前端用示例数据在真实浏览器里走过设置额度、停用成员等写操作。模型提供商与网关的测试见网关设计 §9。
+- 并发：改角色和状态、写同一个额度，各自用事务级 advisory lock 排队；名字或 id 被并发抢先时回 409 而不是 500。
 - 部署（M5 要处理）：前端构建直接引用 `apps/desktop/src/renderer`、`apps/desktop/assets`、`packages/ui/src`，还需要已构建的 `@maka/core`，所以镜像要在整个 monorepo 里构建，不能只拷 `apps/server`。
 - 本地第一次进入：用命令行把自己设为管理员（`node dist/admin.js users role <email> org_admin`），或在部署配置里写 `MAKA_BOOTSTRAP_ADMIN_EMAILS`。
 
 ## 6. 不在这一版
 
 - 组织策略、技能与插件目录（阶段 2）。
-- OpenAI / Gemini 协议的模型和上游（M3）。
 - 用量图表：第一版只有表格。
