@@ -198,7 +198,7 @@ export function ModelProviderPage(props: { id: string }) {
               <>
                 <SettingsTableHeadCell>{text.columns.model}</SettingsTableHeadCell>
                 <SettingsTableHeadCell className="w-28 text-right">
-                  {text.columns.published}
+                  {text.columns.enabled}
                 </SettingsTableHeadCell>
                 <SettingsTableHeadCell className="w-12" srOnly>
                   {copy.model.actions}
@@ -234,7 +234,7 @@ export function ModelProviderPage(props: { id: string }) {
                   onKeyDown={(event) => event.stopPropagation()}
                 >
                   <Switch
-                    aria-label={copy.models.publishAria(model.displayName)}
+                    aria-label={copy.models.enableAria(model.displayName)}
                     checked={modelSwitches.checked(model.id, model.enabled)}
                     disabled={modelSwitches.busy(model.id)}
                     onCheckedChange={(next) =>

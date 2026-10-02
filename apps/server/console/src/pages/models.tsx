@@ -157,11 +157,11 @@ export function ModelsPage() {
                 <SettingsTableHeadCell className="w-[24%]">
                   {text.columns.provider}
                 </SettingsTableHeadCell>
-                <SettingsTableHeadCell className="w-28 text-right">
+                <SettingsTableHeadCell className="w-36 whitespace-nowrap text-right">
                   {text.columns.quota}
                 </SettingsTableHeadCell>
                 <SettingsTableHeadCell className="w-28 text-right">
-                  {text.columns.published}
+                  {text.columns.enabled}
                 </SettingsTableHeadCell>
                 <SettingsTableHeadCell className="w-12" srOnly>
                   {copy.model.actions}
@@ -222,7 +222,7 @@ export function ModelsPage() {
                   onKeyDown={(event) => event.stopPropagation()}
                 >
                   <Switch
-                    aria-label={text.publishAria(model.displayName)}
+                    aria-label={text.enableAria(model.displayName)}
                     checked={switches.checked(model.id, model.enabled)}
                     disabled={switches.busy(model.id)}
                     onCheckedChange={(enabled) =>
