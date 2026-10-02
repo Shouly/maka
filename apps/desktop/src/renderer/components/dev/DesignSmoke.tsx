@@ -29,6 +29,9 @@
 import { useState } from 'react';
 import type { ToolActivityItem, TurnViewModel } from '@maka/ui';
 import { TranscriptTurn } from '../session/TranscriptTurn';
+import { ChildAgentsStatusView } from '../session/notices/ChildAgentsStatus';
+import { COMPOSER_PANEL_CLASS } from '../../lib/composer-surface';
+import { cn } from '../../lib/cn';
 import { deriveTurnPresentation } from '../../hooks/use-turn-presentation';
 import { Anthropicon, type AnthropiconName } from '../icons';
 import { Avatar } from '../ui/avatar';
@@ -180,6 +183,82 @@ $$
 `;
 
 /** One turn holding every timeline shape, so all four renderers are visible. */
+function previewAgent(toolUseId: string, description: string, running = false): ToolActivityItem {
+  return {
+    toolUseId,
+    toolName: 'Agent',
+    activityKind: 'delegate',
+    status: 'completed',
+    args: { description, prompt: description },
+    result: {
+      kind: 'subagent',
+      childSessionId: `${toolUseId}-child`,
+      agentName: 'General purpose',
+      turnId: `${toolUseId}-turn`,
+      status: 'running',
+      permissionMode: 'ask',
+      summary: '',
+      artifactIds: [],
+    },
+    ...(running ? { childAgentRunning: true as const } : {}),
+  };
+}
+
+/** The design surface's clocks start from when it was opened. */
+const PREVIEW_AGENTS_NOW = Date.now();
+
+const PREVIEW_AGENTS = [
+  {
+    id: 'preview-agent-a-child',
+    name: '读取系统信息',
+    since: PREVIEW_AGENTS_NOW - 133_000,
+  },
+  {
+    id: 'preview-agent-b-child',
+    name: 'Review the auth change',
+    type: 'Explore',
+    since: PREVIEW_AGENTS_NOW - 252_000,
+  },
+  {
+    id: 'preview-agent-c-child',
+    name: 'Draft the migration plan',
+    type: 'Plan',
+    since: PREVIEW_AGENTS_NOW - 61_000,
+  },
+];
+
+/** A finished turn whose agents are still at work: one running, one done. */
+const AGENTS_FIXTURE: TurnViewModel = (() => {
+  const running = previewAgent('preview-agent-a', 'Review the auth change', true);
+  const done = previewAgent('preview-agent-b', 'Map the test layout');
+  return {
+    turnId: 'preview-agents-turn',
+    status: 'completed',
+    partialOutputRetained: false,
+    user: {
+      id: 'preview-agents-user',
+      role: 'user',
+      text: 'Review the auth change and map the tests, in parallel.',
+      ts: Date.UTC(2026, 8, 7, 9, 40),
+    },
+    assistant: { id: 'preview-agents-assistant', role: 'assistant', text: 'Started two agents.' },
+    tools: [running, done],
+    timeline: [
+      { kind: 'tools', items: [running, done] },
+      {
+        kind: 'text',
+        messageId: 'preview-agents-step',
+        complete: true,
+        text: 'Started two agents; each reports back when it is done.',
+      },
+    ],
+    notes: [],
+    startedAt: Date.UTC(2026, 8, 7, 9, 40),
+    modelId: 'claude-sonnet-4-5',
+    durationMs: 3_100,
+  };
+})();
+
 const TRANSCRIPT_FIXTURE: TurnViewModel = (() => {
   const diff: ToolActivityItem = {
     toolUseId: 'preview-diff',
@@ -223,24 +302,7 @@ const TRANSCRIPT_FIXTURE: TurnViewModel = (() => {
       },
     },
   };
-  const subagent: ToolActivityItem = {
-    toolUseId: 'preview-agent',
-    toolName: 'Agent',
-    activityKind: 'tool',
-    status: 'completed',
-    args: { profile: 'reviewer' },
-    result: {
-      kind: 'subagent',
-      childSessionId: 'preview-child',
-      agentName: 'reviewer',
-      turnId: 'preview-child-turn',
-      status: 'completed',
-      permissionMode: 'explore',
-      summary: 'Reviewed the projection change and found no regressions.',
-      artifactIds: [],
-      durationMs: 8200,
-    },
-  };
+  const subagent: ToolActivityItem = previewAgent('preview-agent', 'Review the projection change');
   return {
     turnId: 'preview-turn',
     status: 'completed',
@@ -544,10 +606,10 @@ export function DesignSmoke({ showThemeControl = true }: { showThemeControl?: bo
         </Section>
 
         {/* Phase 3a. A whole turn, from a fixture: the ask, reasoning, the tool
-            timeline with three different result renderers, the answer and the
-            footer. The deterministic test backend emits none of these shapes,
-            so this is the only place the diff / terminal / subagent bodies can
-            be looked at rather than read about. */}
+            timeline with two result renderers and an Agent step, the answer
+            and the footer. The deterministic test backend emits none of these
+            shapes, so this is the only place the diff / terminal bodies can be
+            looked at rather than read about. */}
         <Section title="Transcript">
           <div
             className="chat-area rounded-lg border border-hairline bg-surface-1 p-4"
@@ -562,6 +624,47 @@ export function DesignSmoke({ showThemeControl = true }: { showThemeControl?: bo
               onOpenLineage={() => {}}
               onOpenExternal={() => {}}
             />
+          </div>
+        </Section>
+
+        {/* Agents still at work after their turn answered: the run keeps
+            shimmering and a tray tucked under the composer lists them, each
+            with its clock. Nothing the test backend runs starts a child agent. */}
+        <Section title="Child agents">
+          <div
+            className="chat-area flex flex-col gap-4 rounded-lg border border-hairline bg-surface-1 p-4"
+            data-maka-contract="child-agents-preview"
+          >
+            <TranscriptTurn
+              turn={AGENTS_FIXTURE}
+              live={false}
+              footerActions={[]}
+              toolContext={{ onOpenExternal: () => {} }}
+              onFooterAction={() => {}}
+              onOpenLineage={() => {}}
+              onOpenExternal={() => {}}
+            />
+            {[PREVIEW_AGENTS.slice(0, 1), PREVIEW_AGENTS].map((agents) => (
+              <div
+                key={agents.length}
+                className="flex flex-col gap-2"
+                data-maka-child-agents-tray=""
+              >
+                <ChildAgentsStatusView agents={agents} onOpen={() => {}} />
+                <div
+                  className={cn(
+                    COMPOSER_PANEL_CLASS,
+                    'flex h-12 items-center px-4 text-base text-text-muted',
+                  )}
+                >
+                  Reply…
+                </div>
+              </div>
+            ))}
+            {/* With the composer away — a revision draft — the tray closes its own foot. */}
+            <div data-maka-child-agents-tray-standalone="">
+              <ChildAgentsStatusView docked={false} agents={PREVIEW_AGENTS} onOpen={() => {}} />
+            </div>
           </div>
         </Section>
       </div>

@@ -262,17 +262,47 @@ test("a child agent's Session is not a row of the rail, though it can still be r
     ['parent'],
   );
   assert.equal(opened.activeRow?.id, 'child');
+  assert.deepEqual(opened.activeRow?.branchOf, { id: 'parent', name: 'parent' });
   // Its parent deleted, a child restored from the archive has no other way in.
   assert.deepEqual(
     listModel(rows.slice(1)).rows.map((row) => row.id),
     ['child'],
   );
-  // An archived parent is still the child's way in once it is restored.
+  // Nor while its parent is archived: no crumb leads to a parent the rail
+  // does not show, and the child keeps a row of its own.
   const archivedParent = [{ ...rows[0]!, isArchived: true }, rows[1]!];
   assert.deepEqual(
     listModel(archivedParent).rows.map((row) => row.id),
-    [],
+    ['child'],
   );
+  assert.equal(listModel(archivedParent, { activeId: 'child' }).activeRow?.branchOf, undefined);
+});
+
+test('a conversation reads as running while an agent it started works, and the agent leads back to it', () => {
+  const child = (overrides: Partial<SessionSummary> = {}) =>
+    session('child', {
+      name: 'Review the auth change',
+      subagent: { parentSessionId: 'parent', agentName: 'Explore' },
+      ...overrides,
+    } as Partial<SessionSummary>);
+  const parentRow = (rows: SessionSummary[]) =>
+    listModel(rows).rows.find((row) => row.id === 'parent');
+
+  // The parent's own turn ended when the Agent call returned.
+  const working = [session('parent', { runningTurnIds: [] }), child({ runningTurnIds: ['t-1'] })];
+  assert.equal(parentRow(working)?.running, true);
+  assert.equal(parentRow([session('parent'), child({ runningTurnIds: [] })])?.running, false);
+  // Archived, the child no longer counts.
+  assert.equal(
+    parentRow([session('parent'), child({ runningTurnIds: ['t-1'], isArchived: true })])?.running,
+    false,
+  );
+
+  // Opened, the child names its parent in the crumb.
+  assert.deepEqual(listModel(working, { activeId: 'child' }).activeRow?.branchOf, {
+    id: 'parent',
+    name: 'parent',
+  });
 });
 
 const readyHost = (projects: { id: string; name: string }[]) => ({

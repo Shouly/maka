@@ -37,9 +37,29 @@ import {
   buildSafeBoundaryContinuationPlan,
   buildResumePlanFromRuntimeEvents,
   buildResumeReplayRuntimeEvents,
+  continuationTurnStartedAt,
   projectToolOperationsFromRuntimeEvents,
 } from '../runtime-resume.js';
 import { testInvocationRecord } from './invocation-fixture.js';
+
+test('a continued Turn starts when its earliest replayed event did, not when it was picked up', () => {
+  const history = [
+    base({ id: 'earlier-turn', turnId: 'turn-0', ts: 100 }),
+    base({ id: 'turn-start', turnId: 'turn-1', ts: 1_000 }),
+    base({ id: 'turn-later', turnId: 'turn-1', ts: 4_000 }),
+  ];
+  assert.equal(continuationTurnStartedAt({ turnId: 'turn-1', runtimeContext: history }), 1_000);
+  assert.equal(
+    continuationTurnStartedAt({
+      turnId: 'turn-1',
+      runtimeContext: [base({ id: 'late', turnId: 'turn-1', ts: 4_000 })],
+      sourceRuntimeContext: [base({ id: 'start', turnId: 'turn-1', ts: 900 })],
+    }),
+    900,
+  );
+  // Nothing of the Turn in the history: the caller falls back to now.
+  assert.equal(continuationTurnStartedAt({ turnId: 'turn-9', runtimeContext: history }), undefined);
+});
 
 describe('runtime resume phase 0 projection', () => {
   test('publishes the stable P0-P11 crash failpoint catalog', () => {

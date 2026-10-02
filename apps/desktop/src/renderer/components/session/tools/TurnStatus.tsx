@@ -58,9 +58,10 @@ import { Anthropicon } from '../../icons/Anthropicon.js';
 import { ShimmerTitle } from '../../ui/shimmer-title.js';
 import { cn } from '../../../lib/cn.js';
 import { getTranscriptCopy } from '../../../locales/transcript-copy.js';
+import { getChildAgentsCopy } from '../../../locales/child-agents-copy.js';
 import { statusGroupTools, type TurnStatusGroup } from '../../../lib/turn-timeline-groups.js';
 import type { ToolContentContext } from './registry.js';
-import { summarizeToolGroup, toolStepLabel } from './tool-presentation.js';
+import { summarizeToolGroup, toolRowStatus, toolStepLabel } from './tool-presentation.js';
 import { ThinkingText } from '../ThinkingStep.js';
 import {
   TurnStatusNarrationStep,
@@ -195,7 +196,12 @@ export function latchedStart(
   return seen ?? startedAt;
 }
 
-export function TurnElapsedTime(props: { startedAt?: number; turnId?: string }) {
+export function TurnElapsedTime(props: {
+  startedAt?: number;
+  turnId?: string;
+  /** Without the " · " that joins it to words before it: a clock in a column of its own. */
+  bare?: boolean;
+}) {
   // Latched to the earliest start seen for the turn. A live Turn whose durable
   // rows have not landed yet is synthesised by the projection with
   // `startedAt: Date.now()` on every delta; taking each value as it comes
@@ -224,7 +230,7 @@ export function TurnElapsedTime(props: { startedAt?: number; turnId?: string }) 
     >
       {elapsedMs !== undefined && elapsedMs >= ELAPSED_SHOW_AFTER_MS && (
         <>
-          <span className="mx-1 select-none">·</span>
+          {!props.bare && <span className="mx-1 select-none">·</span>}
           {formatTurnDuration(elapsedMs)}
         </>
       )}
@@ -341,10 +347,26 @@ export const TurnStatus = memo(function TurnStatus(props: TurnStatusProps) {
   // pill from the call's first frame, and here that pill stood over a
   // composer with nothing to answer until the arguments were complete.
   const blocked = props.blocked;
+  // A run can be over and its agents not: an Agent or SendMessage call returns
+  // once its child is running, and the child works on after the turn has
+  // answered. The run's words shimmer until the last of them is done, named by
+  // the one still working. No working mark: that is the model's, and it has
+  // moved on — the row only changes its ink, so nothing shifts when it ends.
+  const workingAgents =
+    props.complete && !blocked
+      ? tools.filter(
+          (tool) => tool.result?.kind === 'subagent' && toolRowStatus(tool) === 'running',
+        )
+      : [];
 
   let label: string;
   if (blocked) {
     label = copy.blocked[blocked];
+  } else if (workingAgents.length > 0) {
+    label =
+      workingAgents.length === 1
+        ? toolStepLabel(workingAgents[0]!, locale).text
+        : getChildAgentsCopy(locale).status(workingAgents.length);
   } else if (!props.complete) {
     const last = steps.at(-1);
     const lastTool = tools.at(-1);
@@ -370,7 +392,11 @@ export const TurnStatus = memo(function TurnStatus(props: TurnStatusProps) {
           : copy.thinkingOnly;
   }
 
-  const state = blocked ? 'blocked' : props.complete ? 'done' : 'busy';
+  const state = blocked
+    ? 'blocked'
+    : props.complete && workingAgents.length === 0
+      ? 'done'
+      : 'busy';
   // The mark the row shows, and the one still leaving after the row stops
   // showing it: the run finished, or the turn moved on to its next run.
   const mark: RowMarkKind | undefined = blocked

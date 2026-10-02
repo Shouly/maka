@@ -28,18 +28,30 @@ import { linkedSubagentParentSessionId, type SessionSummary } from '@maka/core/s
  * ever selected, which left one branch reachable — this one.
  *
  * A child agent's Session is part of the Turn that started it, not a
- * conversation of its own, so the rail leaves it out while its parent is in
- * the catalog (`catalogIds`). Deleting a parent moves its children to the
- * archive; one restored from there has no parent left to be read through, and
- * keeps its row.
+ * conversation of its own, so the rail leaves it out while its parent is open
+ * (`agentParentOf`). A child whose parent was archived or deleted has no other
+ * way in, and keeps its row.
  */
 export function sessionMatchesRail(
   session: SessionSummary,
-  catalogIds: ReadonlySet<string>,
+  sessionsById: ReadonlyMap<string, SessionSummary>,
 ): boolean {
   if (session.isArchived || isScheduledRunSession(session)) return false;
+  return agentParentOf(session, sessionsById) === undefined;
+}
+
+/**
+ * The open conversation a child agent works for — in the catalog and not
+ * archived — which its Session is read through: the crumb, the way back and
+ * the rail all go by it.
+ */
+export function agentParentOf<T extends SessionSummary>(
+  session: SessionSummary,
+  sessionsById: ReadonlyMap<string, T>,
+): T | undefined {
   const parentSessionId = linkedSubagentParentSessionId(session);
-  return parentSessionId === undefined || !catalogIds.has(parentSessionId);
+  const parent = parentSessionId === undefined ? undefined : sessionsById.get(parentSessionId);
+  return parent && !parent.isArchived ? parent : undefined;
 }
 
 /**

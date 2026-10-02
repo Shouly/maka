@@ -194,6 +194,8 @@ export interface RuntimeKernelLike {
    * from an arbitrary one of them.
    */
   runningTurnIds?(sessionId: string): string[];
+  /** When the earliest of those Turns started: what a client's elapsed clock counts from. */
+  runningSince?(sessionId: string): number | undefined;
   hasActiveRun?(sessionId: string, runId: string, turnId?: string): boolean;
   requestRunHandoff?(
     sessionId: string,
@@ -2271,6 +2273,13 @@ export class RuntimeKernel implements RuntimeKernelLike {
 
   runningTurnIds(sessionId: string): string[] {
     return [...new Set(this.activeRunsFor(sessionId).map((run) => run.turnId))];
+  }
+
+  runningSince(sessionId: string): number | undefined {
+    const starts = this.activeRunsFor(sessionId)
+      .map((run) => run.turnStartedAt)
+      .filter((startedAt): startedAt is number => startedAt !== undefined);
+    return starts.length > 0 ? Math.min(...starts) : undefined;
   }
 
   hasActiveRun(sessionId: string, runId: string, turnId?: string): boolean {

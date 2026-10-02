@@ -77,6 +77,11 @@ import {
   createTurnPresentationDerivation,
   pendingTurnActionKey,
 } from '../../hooks/use-turn-presentation.js';
+import {
+  createChildAgentOverlay,
+  runningChildAgentsOf,
+  runningChildTurnsKey,
+} from '../../lib/child-agent-runs.js';
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 
@@ -1274,4 +1279,77 @@ test('retaining a running-turn reading keeps the last informative one', () => {
   // Any set replaces it, the empty one included.
   assert.deepEqual(retainRunningTurnIds(['turn-1'], []), []);
   assert.equal(retainRunningTurnIds(undefined, undefined), undefined);
+});
+
+test('an Agent row runs while its child runs the Turn that call started', () => {
+  const summary = (id: string, overrides: Record<string, unknown>) =>
+    ({ id, name: id, isArchived: false, ...overrides }) as never;
+  const catalog = [
+    summary('parent', { runningTurnIds: [] }),
+    summary('child-a', { subagent: { parentSessionId: 'parent' }, runningTurnIds: ['ta-1'] }),
+    summary('child-b', { subagent: { parentSessionId: 'parent' }, runningTurnIds: [] }),
+    summary('elsewhere', { subagent: { parentSessionId: 'other' }, runningTurnIds: ['te-1'] }),
+  ];
+  assert.deepEqual(
+    runningChildAgentsOf(catalog, 'parent').map((session: { id: string }) => session.id),
+    ['child-a'],
+  );
+  const key = runningChildTurnsKey(catalog, 'parent');
+
+  const agent = (toolUseId: string, childSessionId: string, turnId: string): ToolActivityItem => ({
+    toolUseId,
+    toolName: 'Agent',
+    activityKind: 'delegate',
+    status: 'completed',
+    args: { description: `Task ${toolUseId}`, prompt: '…' },
+    result: {
+      kind: 'subagent',
+      childSessionId,
+      agentName: 'general-purpose',
+      turnId,
+      status: 'running',
+      permissionMode: 'ask',
+      summary: '',
+      artifactIds: [],
+    },
+  });
+  const turnOf = (turnId: string, tools: ToolActivityItem[]): TurnViewModel =>
+    ({
+      turnId,
+      status: 'completed',
+      user: { id: `u-${turnId}`, role: 'user', text: 'go', ts: 0 },
+      tools,
+      timeline: [{ kind: 'tools', items: tools }],
+    }) as unknown as TurnViewModel;
+  const launched = turnOf('turn-1', [
+    agent('call-a', 'child-a', 'ta-1'),
+    agent('call-b', 'child-b', 'tb-1'),
+  ]);
+  // An earlier Turn of the same child is not the one running now.
+  const resumed = turnOf('turn-2', [agent('call-c', 'child-a', 'ta-0')]);
+  // A SendMessage that resumed a child names the Turn it started, the same way.
+  const messaged = turnOf('turn-5', [
+    { ...agent('call-m', 'child-a', 'ta-1'), toolName: 'SendMessage', activityKind: 'tool' },
+  ]);
+  assert.equal(toolRowStatus(createChildAgentOverlay()([messaged], key)[0]!.tools[0]!), 'running');
+  const quiet = turnOf('turn-3', []);
+
+  const overlay = createChildAgentOverlay();
+  const turns = [launched, resumed, quiet];
+  const out = overlay(turns, key);
+  const rows = out[0]!.tools;
+  assert.equal(toolRowStatus(rows[0]!), 'running');
+  assert.equal(toolRowStatus(rows[1]!), 'completed');
+  assert.equal(out[1], resumed);
+  assert.equal(out[2], quiet);
+  // The timeline carries the same rows the turn's tool list does.
+  assert.equal((out[0]!.timeline[0] as { items: ToolActivityItem[] }).items[0], rows[0]);
+
+  // The same source turn comes back as the same object while nothing moved,
+  // so a memoized view of it does not re-render with every live frame.
+  assert.equal(overlay([launched, resumed, turnOf('turn-4', [])], key)[0], out[0]);
+  // Nothing running: the turns pass through untouched.
+  assert.equal(overlay(turns, ''), turns);
+  // Unmarked, the frozen launch result reads as done.
+  assert.equal(toolRowStatus(launched.tools[0]!), 'completed');
 });

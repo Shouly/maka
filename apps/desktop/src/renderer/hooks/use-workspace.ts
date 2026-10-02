@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import type { StoredMessage } from '@maka/core/session';
@@ -28,6 +28,7 @@ import {
   type TurnViewModel,
 } from '@maka/ui';
 import { deriveLiveTurnSnapshot } from '../lib/ported/live-turn-snapshot.js';
+import { createChildAgentOverlay, runningChildTurnsKey } from '../lib/child-agent-runs.js';
 import {
   awaitingAcceptedTurn,
   deriveTurnActive,
@@ -154,7 +155,23 @@ export function useActiveTurns() {
       ? { ...input, locale }
       : { sessionId: selectedId, locale, messages: NO_MESSAGES },
   );
-  return useLiveStatusOverlay(turns, input.sessionId === selectedId ? input.liveTurn : undefined);
+  const live = useLiveStatusOverlay(
+    turns,
+    input.sessionId === selectedId ? input.liveTurn : undefined,
+  );
+  return useChildAgentOverlay(live, selectedId);
+}
+
+/** Agent rows run while the child they started does (`child-agent-runs.ts`). */
+function useChildAgentOverlay(
+  turns: readonly TurnViewModel[],
+  sessionId: string | undefined,
+): readonly TurnViewModel[] {
+  const runningKey = useStore(sessionsStore, (state) =>
+    sessionId ? runningChildTurnsKey(state.sessions, sessionId) : '',
+  );
+  const [overlay] = useState(createChildAgentOverlay);
+  return useMemo(() => overlay(turns, runningKey), [overlay, turns, runningKey]);
 }
 
 /**

@@ -133,7 +133,7 @@ type SessionRuntimePolicyStores = {
 
 type SessionConfigurationAuthority = Pick<
   SessionManager,
-  'transitionSessionConfiguration' | 'relocateSessionWorkspace' | 'runningTurnIds'
+  'transitionSessionConfiguration' | 'relocateSessionWorkspace' | 'runningTurnIds' | 'runningSince'
 >;
 type SessionContinuity = Pick<SessionContinuityCoordinator, 'refreshCanonical'>;
 
@@ -462,7 +462,10 @@ export class HostSessionCatalogCoordinator {
           session: record
             ? projectSharedSessionCatalogRecord(
                 record,
-                projectCatalogLiveRunState(this.#manager.runningTurnIds(record.header.id)),
+                projectCatalogLiveRunState(
+                  this.#manager.runningTurnIds(record.header.id),
+                  this.#manager.runningSince(record.header.id),
+                ),
               )
             : null,
         },
@@ -478,7 +481,10 @@ export class HostSessionCatalogCoordinator {
   #projectCatalogQueryRecord(record: SessionCatalogRecord): SessionCatalogItem {
     return projectSessionCatalogRecord(
       record,
-      projectCatalogLiveRunState(this.#manager.runningTurnIds(record.header.id)),
+      projectCatalogLiveRunState(
+        this.#manager.runningTurnIds(record.header.id),
+        this.#manager.runningSince(record.header.id),
+      ),
     );
   }
 
@@ -1470,12 +1476,14 @@ function projectSharedSessionCatalogRecord(
 
 function projectCatalogLiveRunState(
   runningTurnIds: readonly string[],
+  runningSince: number | undefined,
 ): SessionCatalogLiveRunState | undefined {
   const uniqueRunningTurnIds = [...new Set(runningTurnIds)];
   if (uniqueRunningTurnIds.length > SESSION_CATALOG_RUNNING_TURN_MAX_ITEMS) return undefined;
   return {
     schemaVersion: SESSION_CATALOG_LIVE_RUN_STATE_SCHEMA_VERSION,
     runningTurnIds: uniqueRunningTurnIds,
+    ...(runningSince !== undefined && uniqueRunningTurnIds.length > 0 ? { runningSince } : {}),
   };
 }
 

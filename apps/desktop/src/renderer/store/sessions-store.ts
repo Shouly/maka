@@ -25,6 +25,8 @@ import {
   clearNewTaskReloadIntent,
 } from '../lib/ported/new-task-reload-intent.js';
 import { errorMessage } from './resource-store.js';
+import { sessionMatchesRail } from '../lib/ported/session-nav-filter.js';
+import { retainRunningTurnIds } from '../lib/ported/model-wait-state.js';
 import type { DesktopSessionSummary, SessionRevisionFamilyOptions } from '../bridge/sessions.js';
 import type { SessionChangedEvent } from '@maka/core/session';
 
@@ -75,7 +77,7 @@ export function createSessionsStore(api = bridge) {
       const rows = result.sessions;
       for (const [hook, capture] of observed) hook.after(rows, capture);
       const s = store.getState();
-      const sessions = reconcileRows(s.sessions, rows);
+      const sessions = reconcileRows(s.sessions, rows.map(retainLiveRunState(s.sessions)));
       const completeHostIds = sameIds(s.completeHostIds, result.completeHostIds)
         ? s.completeHostIds
         : result.completeHostIds;
@@ -85,9 +87,13 @@ export function createSessionsStore(api = bridge) {
       // new-task selection or reopen an archived task.
       const bootstrap = !selectionInitialized && !hasNewTaskReloadIntent();
       selectionInitialized = true;
+      // The latest conversation the rail lists: a child agent or a scheduled
+      // run is usually the most recently active Session, and opening on one
+      // lands the user in a Session with no row of its own.
+      const rowsById = new Map(rows.map((row) => [row.id, row]));
       const initial = bootstrap
         ? rows
-            .filter((row) => !row.isArchived)
+            .filter((row) => sessionMatchesRail(row, rowsById))
             .sort((a, b) => (b.lastMessageAt ?? 0) - (a.lastMessageAt ?? 0))[0]?.id
         : undefined;
       const activeId = removed ? undefined : (s.activeId ?? initial);
@@ -148,7 +154,10 @@ export function createSessionsStore(api = bridge) {
   const upsert = (row: DesktopSessionSummary) => {
     generation++;
     store.setState((s) => ({
-      sessions: [...s.sessions.filter((item) => item.id !== row.id), row],
+      sessions: [
+        ...s.sessions.filter((item) => item.id !== row.id),
+        retainLiveRunState(s.sessions)(row),
+      ],
       loading: false,
     }));
   };
@@ -226,6 +235,31 @@ export function createSessionsStore(api = bridge) {
   };
 }
 export const sessionsStore = createSessionsStore();
+
+/**
+ * A row that cannot say which turns are running keeps the last reading that
+ * could (`retainRunningTurnIds`). The desktop cache serves every read it could
+ * not make authoritative without the field, and those reads interleave with
+ * authoritative ones on each change event: taken as "nothing running", a
+ * child agent's Session flipped off and on again with every step it took, and
+ * everything reading it with it.
+ */
+function retainLiveRunState(
+  held: readonly DesktopSessionSummary[],
+): (row: DesktopSessionSummary) => DesktopSessionSummary {
+  const byId = new Map(held.map((row) => [row.id, row]));
+  return (row) => {
+    const previous = byId.get(row.id);
+    const runningTurnIds = retainRunningTurnIds(previous?.runningTurnIds, row.runningTurnIds);
+    if (runningTurnIds === row.runningTurnIds || runningTurnIds === undefined) return row;
+    // The start of what is running belongs to the same reading, and goes with it.
+    return {
+      ...row,
+      runningTurnIds: [...runningTurnIds],
+      ...(previous?.runningSince === undefined ? {} : { runningSince: previous.runningSince }),
+    };
+  };
+}
 
 /**
  * The catalog as read, keeping the previous object for every row whose content

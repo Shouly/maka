@@ -150,7 +150,10 @@ export const RUNTIME_HOST_PROTOCOL_VERSION = 0 as const;
 // model's contract names one. An error event may give the reason
 // `organization_provider_account`. An old client rejects the unknown keys and
 // values, and an old Host would call every organization model as Anthropic.
-export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 166 as const;
+// 167: a session catalog row's `liveRunState` may carry `runningSince`, when
+// its earliest running Turn started — what a client counts an elapsed clock
+// from. An old client decodes that record by its exact keys and rejects it.
+export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 167 as const;
 // 155: A tool call is on the wire while the model is still writing it.
 // `subscription.session_event` carries `tool_input_start` and
 // `tool_input_delta`, which a Client that does not know them decodes as an

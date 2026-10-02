@@ -118,6 +118,8 @@
     "src/renderer/components/session/TurnFooter.tsx",
     "src/renderer/components/session/UserMessageRow.tsx",
     "src/renderer/components/session/message-action-bar.ts",
+    "src/renderer/components/session/notices/ChildAgentComposerNote.tsx",
+    "src/renderer/components/session/notices/ChildAgentsStatus.tsx",
     "src/renderer/components/session/notices/ContextUsageIndicator.tsx",
     "src/renderer/components/session/notices/GoalBanner.tsx",
     "src/renderer/components/session/notices/NoticeCard.tsx",
@@ -135,7 +137,6 @@
     "src/renderer/components/session/tools/renderers/ScheduledTaskResult.tsx",
     "src/renderer/components/session/tools/renderers/SearchResults.tsx",
     "src/renderer/components/session/tools/renderers/SimpleResults.tsx",
-    "src/renderer/components/session/tools/renderers/SubagentResult.tsx",
     "src/renderer/components/session/tools/renderers/TerminalResult.tsx",
     "src/renderer/components/session/tools/renderers/WebSearchResult.tsx",
     "src/renderer/components/session/tools/tool-presentation.ts",
@@ -261,6 +262,7 @@
     "src/renderer/lib/ask-user-question.ts",
     "src/renderer/lib/avatar-warm-palette.ts",
     "src/renderer/lib/bot-channel-view.ts",
+    "src/renderer/lib/child-agent-runs.ts",
     "src/renderer/lib/cn.ts",
     "src/renderer/lib/compose-refs.ts",
     "src/renderer/lib/composer-document.ts",
@@ -279,6 +281,7 @@
     "src/renderer/lib/memory-tool-results.ts",
     "src/renderer/lib/module-list-state.ts",
     "src/renderer/lib/narration-fold.ts",
+    "src/renderer/lib/open-overlay.ts",
     "src/renderer/lib/org-account-view.ts",
     "src/renderer/lib/platform.ts",
     "src/renderer/lib/ported/about-update-status.ts",
@@ -371,6 +374,7 @@
     "src/renderer/locales/artifact-copy.ts",
     "src/renderer/locales/browser-copy.ts",
     "src/renderer/locales/capability-reason-copy.ts",
+    "src/renderer/locales/child-agents-copy.ts",
     "src/renderer/locales/composer-copy.ts",
     "src/renderer/locales/connectors-page-copy.ts",
     "src/renderer/locales/conversation-copy.ts",
@@ -1251,7 +1255,6 @@
     "src/renderer/components/composer/InteractionPrompts.tsx": {
       "bridgePaths": {},
       "environmentCapabilities": {
-        "document.querySelector": 1,
         "window.addEventListener": 1,
         "window.removeEventListener": 1
       },
@@ -1273,6 +1276,8 @@
         "../../hooks/use-hotkeys.js": 1,
         "../../lib/ask-user-question.js": 1,
         "../../lib/cn.js": 1,
+        "../../lib/composer-surface.js": 1,
+        "../../lib/open-overlay.js": 1,
         "../../lib/platform.js": 1,
         "../../lib/ported/project-path-display.js": 1,
         "../../lib/user-question-shape.js": 1,
@@ -1392,9 +1397,12 @@
       "actionFactories": [],
       "dependencyPaths": {
         "../../hooks/use-turn-presentation": 1,
+        "../../lib/cn": 1,
+        "../../lib/composer-surface": 1,
         "../../lib/theme": 1,
         "../../store/toast-store": 1,
         "../icons": 1,
+        "../session/notices/ChildAgentsStatus": 1,
         "../session/TranscriptTurn": 1,
         "../ui/avatar": 1,
         "../ui/button": 1,
@@ -2630,7 +2638,7 @@
         "useShallow": 1,
         "useShellLiveTurn": 1,
         "useState": 1,
-        "useStore": 6,
+        "useStore": 7,
         "useTranscriptScrollAuthority": 1,
         "useTurnPresentation": 1,
         "useUiLocale": 1
@@ -2646,6 +2654,7 @@
         "../../hooks/use-workbar.js": 1,
         "../../hooks/use-workspace.js": 1,
         "../../lib/cn.js": 1,
+        "../../lib/ported/session-nav-filter.js": 1,
         "../../lib/ported/session-revisions.js": 1,
         "../../lib/ported/session-workspace-errors.js": 1,
         "../../lib/transcript-gap-press.js": 1,
@@ -2665,6 +2674,8 @@
         "../ui/chat-skeleton.js": 1,
         "./HistoryControls.js": 1,
         "./MessageQueue.js": 1,
+        "./notices/ChildAgentComposerNote.js": 1,
+        "./notices/ChildAgentsStatus.js": 1,
         "./notices/GoalBanner.js": 1,
         "./notices/NoticeCard.js": 1,
         "./notices/PlanExecutionBanner.js": 1,
@@ -2815,6 +2826,57 @@
       "actionFactories": [],
       "dependencyPaths": {
         "../../lib/cn.js": 1
+      }
+    },
+    "src/renderer/components/session/notices/ChildAgentComposerNote.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "document.activeElement": 4,
+        "document.body": 1
+      },
+      "hookCalls": {
+        "useEffect": 1,
+        "useRef": 1,
+        "useStore": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/cn.js": 1,
+        "../../../lib/composer-surface.js": 1,
+        "../../../locales/child-agents-copy.js": 1,
+        "../../../store/index.js": 1,
+        "../../../store/turn-actions-store.js": 1,
+        "../../icons/Anthropicon.js": 1,
+        "../../ui/button.js": 1,
+        "@maka/ui": 1,
+        "react": 1,
+        "zustand": 1
+      }
+    },
+    "src/renderer/components/session/notices/ChildAgentsStatus.tsx": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {
+        "useShallow": 1,
+        "useStore": 1,
+        "useUiLocale": 1
+      },
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../../../lib/child-agent-runs.js": 1,
+        "../../../lib/cn.js": 1,
+        "../../../locales/child-agents-copy.js": 1,
+        "../../../store/index.js": 1,
+        "../tools/TurnStatus.js": 1,
+        "@maka/core/subagent-settings": 1,
+        "@maka/ui": 1,
+        "zustand": 1,
+        "zustand/react/shallow": 1
       }
     },
     "src/renderer/components/session/notices/ContextUsageIndicator.tsx": {
@@ -2995,6 +3057,7 @@
       "dependencyPaths": {
         "../../../lib/cn.js": 1,
         "../../../lib/turn-timeline-groups.js": 1,
+        "../../../locales/child-agents-copy.js": 1,
         "../../../locales/transcript-copy.js": 1,
         "../../icons/Anthropicon.js": 1,
         "../../icons/WorkingMark.js": 1,
@@ -3047,7 +3110,6 @@
         "./renderers/ScheduledTaskResult.js": 1,
         "./renderers/SearchResults.js": 1,
         "./renderers/SimpleResults.js": 1,
-        "./renderers/SubagentResult.js": 1,
         "./renderers/TerminalResult.js": 1,
         "./renderers/WebSearchResult.js": 1,
         "./tool-presentation.js": 1
@@ -3179,26 +3241,6 @@
         "../tool-result.js": 1,
         "@maka/ui": 1,
         "react": 1
-      }
-    },
-    "src/renderer/components/session/tools/renderers/SubagentResult.tsx": {
-      "bridgePaths": {},
-      "environmentCapabilities": {},
-      "hookCalls": {
-        "useStore": 1,
-        "useUiLocale": 3
-      },
-      "lifecycleMethods": {},
-      "unresolvedDependencies": 0,
-      "actionFactories": [],
-      "dependencyPaths": {
-        "../../../../lib/cn.js": 1,
-        "../../../../locales/transcript-copy.js": 1,
-        "../../../../store/sessions-store.js": 1,
-        "../tool-result.js": 1,
-        "@maka/ui": 1,
-        "react": 1,
-        "zustand": 1
       }
     },
     "src/renderer/components/session/tools/renderers/TerminalResult.tsx": {
@@ -4176,6 +4218,7 @@
         "../../../store/index.js": 1,
         "../../ui/button.js": 1,
         "../settings-row.js": 1,
+        "@maka/core/ui-locale": 1,
         "@maka/ui": 1,
         "react": 1,
         "zustand": 1
@@ -4404,7 +4447,6 @@
       "dependencyPaths": {
         "../../../lib/ported/subagent-preset-presentation.js": 1,
         "../../../locales/settings-subagents-copy.js": 1,
-        "../../icons/Anthropicon.js": 1,
         "../../ui/button.js": 1,
         "../../ui/input.js": 1,
         "../../ui/select.js": 1,
@@ -5761,7 +5803,8 @@
         "useLayoutEffect": 4,
         "useRef": 3,
         "useShallow": 5,
-        "useStore": 21,
+        "useState": 1,
+        "useStore": 22,
         "useTranscriptProjection": 1,
         "useUiLocale": 2
       },
@@ -5769,6 +5812,7 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../lib/child-agent-runs.js": 1,
         "../lib/ported/live-turn-snapshot.js": 1,
         "../lib/ported/model-wait-state.js": 1,
         "../store/index.js": 1,
@@ -5809,6 +5853,18 @@
       "dependencyPaths": {
         "../locales/settings-bot-copy.js": 1,
         "@maka/core/bot-events": 1
+      }
+    },
+    "src/renderer/lib/child-agent-runs.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "@maka/core/session": 1,
+        "@maka/ui": 1
       }
     },
     "src/renderer/lib/cn.ts": {
@@ -5990,6 +6046,17 @@
     "src/renderer/lib/narration-fold.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
+    },
+    "src/renderer/lib/open-overlay.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {
+        "document.querySelector": 1
+      },
       "hookCalls": {},
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
@@ -6544,7 +6611,9 @@
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
       "actionFactories": [],
-      "dependencyPaths": {}
+      "dependencyPaths": {
+        "@maka/core/session": 1
+      }
     },
     "src/renderer/lib/ported/session-revisions.ts": {
       "bridgePaths": {},
@@ -6978,6 +7047,15 @@
       "dependencyPaths": {
         "@maka/core/ui-locale": 1
       }
+    },
+    "src/renderer/locales/child-agents-copy.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {}
     },
     "src/renderer/locales/composer-copy.ts": {
       "bridgePaths": {},
@@ -7714,6 +7792,7 @@
       "unresolvedDependencies": 0,
       "actionFactories": [],
       "dependencyPaths": {
+        "../lib/child-agent-runs.js": 1,
         "../lib/ported/branch-banner.js": 1,
         "../lib/ported/session-nav-filter.js": 1,
         "../lib/ported/stale-sessions.js": 1,
@@ -7738,7 +7817,9 @@
       "actionFactories": [],
       "dependencyPaths": {
         "../bridge/sessions.js": 1,
+        "../lib/ported/model-wait-state.js": 1,
         "../lib/ported/new-task-reload-intent.js": 1,
+        "../lib/ported/session-nav-filter.js": 1,
         "./resource-store.js": 1,
         "zustand/vanilla": 1
       }

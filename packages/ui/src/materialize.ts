@@ -160,6 +160,13 @@ export interface ToolActivityItem {
   outputTruncated?: boolean;
   /** Ownership state for a running ShellRun copied into a branched session. */
   shellRunSource?: "owned" | "unavailable";
+  /**
+   * Client-only: the child an Agent or SendMessage call started is still
+   * running the Turn that call started. The stored result is frozen at
+   * launch, so only the client, reading the session catalog, can say the
+   * child is still at work.
+   */
+  childAgentRunning?: true;
 }
 
 function systemNoteLabel(kind: string, data: unknown, locale: UiLocale): string {
@@ -814,12 +821,14 @@ export function toolActivityPresentationStatus(item: ToolActivityItem): ToolActi
   // This is NOT the background shell run next door, though it looks like it.
   // A `shell_run` result is kept current by `applyShellRunOverlayEntry` and
   // settles on its own, so mapping its `running` to a running row is honest.
-  // A subagent result has no such overlay — it is frozen at launch and the
-  // child's end arrives as a notification, never as an update to this result —
-  // so a running row here would shimmer for the rest of the session. The call
-  // is over: it launched what it was asked to launch. Where the child got to
-  // is the card's business, and the card links to it.
+  // A subagent result is frozen at launch — the child's end arrives as a
+  // notification, never as an update to this result — so read alone, a running
+  // row here would shimmer for the rest of the session. The row runs while the
+  // client says the child's Turn does (`childAgentRunning`, from the session
+  // catalog); without that word the call is over: it launched what it was
+  // asked to launch.
   if (item.result?.kind === "subagent") {
+    if (item.childAgentRunning) return "running";
     return SUBAGENT_PRESENTATION_STATUS[item.result.status];
   }
   if (item.status === "errored") return "errored";

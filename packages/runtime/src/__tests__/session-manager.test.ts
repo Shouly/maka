@@ -244,6 +244,29 @@ test('listSessions preserves known-empty live run state', async () => {
   assert.equal((await store.readHeader(session.id)).status, 'active');
 });
 
+test('listSessions says when the running turns started, only while one runs', async () => {
+  const store = new MemorySessionStore();
+  let running: { turnIds: string[]; since?: number } = { turnIds: [] };
+  const manager = new SessionManager({
+    store,
+    backends: new BackendRegistry(),
+    newId: nextId(),
+    now: nextNow(1),
+    runtimeKernel: {
+      runningTurnIds: () => [...running.turnIds],
+      runningSince: () => running.since,
+    } as unknown as RuntimeKernelLike,
+  });
+  await manager.createSession(makeInput());
+
+  assert.equal('runningSince' in (await manager.listSessions())[0]!, false);
+  running = { turnIds: ['turn-live'], since: 1_700 };
+  const listed = (await manager.listSessions())[0]!;
+  assert.deepEqual(listed.runningTurnIds, ['turn-live']);
+  assert.equal(listed.runningSince, 1_700);
+  assert.equal(manager.runningSince(listed.id), 1_700);
+});
+
 test('listChildSessions preserves known-empty live run state', async () => {
   const store = new MemorySessionStore();
   const runningTurnIdsBySession = new Map<string, string[]>();

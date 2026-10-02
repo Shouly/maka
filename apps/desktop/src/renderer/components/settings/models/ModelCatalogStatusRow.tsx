@@ -27,7 +27,7 @@
 
 import { useEffect, useState } from 'react';
 import { useStore } from 'zustand';
-import type { UiLocale } from '@maka/core/ui-locale';
+import { uiLocaleToIntlLocale, type UiLocale } from '@maka/core/ui-locale';
 import { useUiLocale } from '@maka/ui';
 import { Button } from '../../ui/button.js';
 import { SettingsRow } from '../settings-row.js';
@@ -125,7 +125,7 @@ export function modelCatalogDescription(
         ? copy.page.catalogCached(when)
         : copy.page.catalogFetched(when);
   const attempt = status.lastAttempt;
-  const join = locale === 'en' ? '. ' : '。';
+  const join = copy.page.catalogSentenceJoin;
   if (attempt?.outcome === 'failed' && attempt.error) {
     return `${source}${join}${copy.page.catalogFailed(attempt.error)}`;
   }
@@ -136,7 +136,7 @@ export function modelCatalogDescription(
 }
 
 function formatWhen(epochMs: number, locale: UiLocale): string {
-  return new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : locale, {
+  return new Intl.DateTimeFormat(uiLocaleToIntlLocale(locale), {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',

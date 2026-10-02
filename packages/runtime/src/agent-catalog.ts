@@ -25,6 +25,7 @@
 import type { PermissionMode } from '@maka/core/permission';
 import { TOOL_NAMES } from '@maka/core/tool-names';
 import {
+  GENERAL_PURPOSE_AGENT_NAME,
   SUBAGENT_PROFILES,
   type SubagentPreset,
   type SubagentProfile,
@@ -158,7 +159,7 @@ export const GENERAL_PURPOSE_AGENT_DEFINITION: AgentDefinition = {
   definitionVersion: 1,
   profile: GENERAL_PURPOSE_AGENT_TYPE,
   id: GENERAL_PURPOSE_AGENT_TYPE,
-  name: 'General purpose',
+  name: GENERAL_PURPOSE_AGENT_NAME,
   description:
     'General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you.',
   permissionMode: 'ask',

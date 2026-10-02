@@ -253,7 +253,12 @@ export class DesktopSessionLocalService {
               ? { ...session, localState: 'pending' as const }
               : authoritative
                 ? session
-                : { ...session, runningTurnIds: undefined, localState: 'cached' as const },
+                : {
+                    ...session,
+                    runningTurnIds: undefined,
+                    runningSince: undefined,
+                    localState: 'cached' as const,
+                  },
           );
         if (
           target.client &&

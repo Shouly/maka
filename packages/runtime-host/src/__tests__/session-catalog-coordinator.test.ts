@@ -1946,6 +1946,7 @@ function createFixture(
   const runtimePolicy = options.runtimePolicy ?? runtimePolicyFixture(options.connection ?? {});
   const manager: ConfigurationAuthority = {
     runningTurnIds: () => [],
+    runningSince: () => undefined,
     transitionSessionConfiguration: async (_sessionId, input) => {
       header = {
         ...header,

@@ -34,6 +34,7 @@ import { getSidebarCopy } from '../../locales/sidebar-copy.js';
 import { getShellCopy } from '../../locales/shell-copy.js';
 import { buildPaletteCommands } from '../../components/palette/commands.js';
 import { TranscriptTurn, TurnStatusBeforeTurn } from '../../components/session/TranscriptTurn.js';
+import { ChildAgentsStatusView } from '../../components/session/notices/ChildAgentsStatus.js';
 import { latchedStart } from '../../components/session/tools/TurnStatus.js';
 import { pressTranscriptGap } from '../../lib/transcript-gap-press.js';
 import { renderToolContent } from '../../components/session/tools/registry.js';
@@ -532,6 +533,80 @@ test('a finished run of one call is named by that call; two or more are summariz
   const both = [command, agent];
   assert.ok(renderDone(both).includes(summarizeToolGroup(both, 'en')), renderDone(both));
   assert.ok(renderDone(both).includes('ran an agent'), renderDone(both));
+});
+
+test('a finished run stays busy while an agent it started works, named by that agent', () => {
+  const base = transcriptFixture();
+  const renderDone = (tools: readonly ToolActivityItem[]) =>
+    renderTree(
+      createElement(TranscriptTurn, {
+        turn: {
+          ...base,
+          status: 'completed',
+          tools: [...tools],
+          timeline: [
+            { kind: 'tools', items: [...tools] },
+            { kind: 'text', text: 'Started two agents.', messageId: 'step-2', complete: true },
+          ],
+        },
+        live: false,
+        footerActions: [],
+        toolContext: { onOpenExternal: () => {} },
+        onFooterAction: () => {},
+        onOpenLineage: () => {},
+        onOpenExternal: () => {},
+      }),
+    ).querySelector('[data-maka-turn-status]');
+  const agent = (description: string, running: boolean): ToolActivityItem => ({
+    ...base.tools[2]!,
+    toolUseId: `agent-${description}`,
+    activityKind: 'delegate',
+    status: 'completed',
+    args: { description, prompt: '…' },
+    ...(running ? { childAgentRunning: true as const } : {}),
+  });
+
+  const one = renderDone([agent('Review the auth change', true), agent('Map the tests', false)]);
+  assert.equal(one?.getAttribute('data-state'), 'busy');
+  assert.ok(one?.textContent?.includes('Review the auth change'), one?.textContent ?? '');
+  // Only the words shimmer: the working mark is the model's, and it has moved
+  // on, so nothing shifts when the agent finishes.
+  assert.equal(one?.querySelector('[data-maka-working-mark]'), null);
+
+  const two = renderDone([agent('Review the auth change', true), agent('Map the tests', true)]);
+  assert.ok(two?.textContent?.includes('2 agents running'), two?.textContent ?? '');
+
+  const done = renderDone([agent('Review the auth change', false), agent('Map the tests', false)]);
+  assert.equal(done?.getAttribute('data-state'), 'done');
+  assert.ok(done?.textContent?.includes('Ran 2 agents'), done?.textContent ?? '');
+});
+
+test('above the composer each running agent has a line: its dot, its task, its type, its clock', () => {
+  const lines = (agents: Parameters<typeof ChildAgentsStatusView>[0]['agents']) =>
+    renderTree(createElement(ChildAgentsStatusView, { agents, onOpen: () => {} })).querySelector(
+      '[data-maka-contract="child-agents"]',
+    );
+  const one = lines([{ id: 'a', name: 'Review the auth change', type: 'Explore', since: 1_000 }]);
+  assert.equal(one?.getAttribute('aria-label'), 'Agent running');
+  const line = one?.querySelector('button');
+  assert.equal(line?.getAttribute('aria-label'), 'Open agent: Review the auth change');
+  assert.ok(line?.querySelector('.animate-status-dot-breathe'));
+  assert.ok(line?.textContent?.includes('Review the auth change'), line?.textContent ?? '');
+  assert.ok(line?.textContent?.includes('Explore'), line?.textContent ?? '');
+  // The clock: the transcript's elapsed counter, counting from `since`.
+  assert.ok(line?.querySelector('[data-maka-contract="turn-elapsed"]'));
+
+  const three = lines(['a', 'b', 'c'].map((id) => ({ id, name: `Task ${id}` })));
+  assert.equal(three?.getAttribute('aria-label'), '3 agents running');
+  // A line each, each opening its own agent: no menu between.
+  const buttons = [...(three?.querySelectorAll('button') ?? [])];
+  assert.equal(buttons.length, 3);
+  assert.ok(buttons.every((button) => button.getAttribute('aria-haspopup') === null));
+  assert.equal(three?.querySelector('.overflow-y-auto'), null);
+
+  // Past four lines the list scrolls rather than pushing the transcript up.
+  const five = lines(['a', 'b', 'c', 'd', 'e'].map((id) => ({ id, name: id })));
+  assert.ok(five?.querySelector('.overflow-y-auto') ?? five?.classList.contains('overflow-y-auto'));
 });
 
 test('a reasoning step in the card is Thinking… while live and Thought process once done', () => {

@@ -47,6 +47,9 @@ export function projectDesktopSharedSessionSummary(
     ...(session.liveRunState === undefined
       ? {}
       : { runningTurnIds: [...session.liveRunState.runningTurnIds] }),
+    ...(session.liveRunState?.runningSince === undefined
+      ? {}
+      : { runningSince: session.liveRunState.runningSince }),
     ...(session.blockedReason === undefined ? {} : { blockedReason: session.blockedReason }),
     ...(session.statusUpdatedAt === undefined
       ? {}

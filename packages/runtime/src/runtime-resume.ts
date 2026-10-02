@@ -338,6 +338,26 @@ export interface RuntimeContinuation {
   safetySnapshot: RuntimeContinuationSafetySnapshot;
 }
 
+/**
+ * When the Turn a continuation runs first started: its earliest event in the
+ * history the continuation replays. A handoff continues the same Turn, so a
+ * client's clock keeps counting from that Turn's start; a resume runs a fresh
+ * Turn the history holds nothing of, and this is undefined.
+ */
+export function continuationTurnStartedAt(
+  continuation: Pick<RuntimeContinuation, 'turnId' | 'runtimeContext' | 'sourceRuntimeContext'>,
+): number | undefined {
+  let earliest: number | undefined;
+  for (const event of [
+    ...continuation.runtimeContext,
+    ...(continuation.sourceRuntimeContext ?? []),
+  ]) {
+    if (event.turnId !== continuation.turnId || !Number.isFinite(event.ts)) continue;
+    if (earliest === undefined || event.ts < earliest) earliest = event.ts;
+  }
+  return earliest;
+}
+
 export interface RuntimeContinuationSafetySnapshot {
   workspaceIdentity: string;
   backgroundOperationsSettled: true;

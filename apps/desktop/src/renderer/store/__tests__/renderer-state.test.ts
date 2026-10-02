@@ -28,6 +28,7 @@ import { moduleListState } from '../../lib/module-list-state.js';
 import { goalReadout } from '../../lib/goal-readout.js';
 import { createGoalStore } from '../goal-store.js';
 import { createSessionsStore } from '../sessions-store.js';
+import { clearNewTaskReloadIntent } from '../../lib/ported/new-task-reload-intent.js';
 import { createActiveSessionStore } from '../active-session-store.js';
 import { createTurnActionsStore } from '../turn-actions-store.js';
 import { isSessionWorkbarCollapsed } from '../../lib/ported/workbar-layout.js';
@@ -1638,6 +1639,55 @@ test('bootstrap restores only active history and later catalog refreshes preserv
   store.select(undefined);
   await store.refresh();
   assert.equal(store.getState().activeId, undefined);
+});
+
+test('bootstrap opens the latest conversation the rail lists, not a child agent working under it', async () => {
+  // An earlier test left the user on a new task; this launch has no such intent.
+  clearNewTaskReloadIntent();
+  const rows = [
+    { ...row('parent'), lastMessageAt: 10 },
+    { ...row('child'), subagent: { parentSessionId: 'parent' }, lastMessageAt: 40 },
+  ];
+  const store = createSessionsStore({
+    ...sessions,
+    async listSessionsWithCoverage() {
+      return { sessions: rows, completeHostIds: ['A'] };
+    },
+  });
+  await store.refresh();
+  assert.equal(store.getState().activeId, 'parent');
+});
+
+test('a catalog read that cannot say what is running keeps the last reading that could', async () => {
+  let reads = [
+    [{ ...row('child'), runningTurnIds: ['t-1'], runningSince: 1_700 }],
+    // The desktop cache answers between authoritative reads, without the field.
+    [{ ...row('child'), localState: 'cached' as const }],
+    [{ ...row('child'), runningTurnIds: [] as string[] }],
+    [{ ...row('child'), localState: 'cached' as const }],
+  ];
+  const store = createSessionsStore({
+    ...sessions,
+    async listSessionsWithCoverage() {
+      const [next, ...rest] = reads;
+      reads = rest;
+      return { sessions: next!, completeHostIds: ['A'] };
+    },
+  });
+  const running = async () => {
+    await store.refresh();
+    return store.getState().sessions[0]?.runningTurnIds;
+  };
+  assert.deepEqual(await running(), ['t-1']);
+  assert.deepEqual(await running(), ['t-1']);
+  // When it started is the same reading's, kept with it.
+  assert.equal(store.getState().sessions[0]?.runningSince, 1_700);
+  // An empty set is a reading: the turn is over.
+  assert.deepEqual(await running(), []);
+  assert.deepEqual(await running(), []);
+  // A mutation's row describes the header alone.
+  store.upsert({ ...row('child') });
+  assert.deepEqual(store.getState().sessions[0]?.runningTurnIds, []);
 });
 
 test('a selected task disappears from the active surface when archived', async () => {

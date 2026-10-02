@@ -23,6 +23,9 @@ import { isThinkingLevel, type ThinkingLevel } from './model-thinking.js';
 export const SUBAGENT_PROFILES = ['general-purpose', 'Explore', 'Plan'] as const;
 export type SubagentProfile = (typeof SUBAGENT_PROFILES)[number];
 
+/** The built-in default type's name: what a child started without a type is called. */
+export const GENERAL_PURPOSE_AGENT_NAME = 'General purpose';
+
 export const MAX_SUBAGENT_PRESETS = 64;
 export const SUBAGENT_PRESET_ID_MAX_CHARS = 128;
 // Normalization DROPS a preset whose name is too long and TRUNCATES a

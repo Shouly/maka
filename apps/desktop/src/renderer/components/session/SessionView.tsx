@@ -38,7 +38,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { revealSessionFile } from '../../bridge/app.js';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
-import { userFacingText, type StoredMessage } from '@maka/core/session';
+import {
+  linkedSubagentParentSessionId,
+  userFacingText,
+  type StoredMessage,
+} from '@maka/core/session';
 import type { PlanProposal } from '@maka/core/plan';
 import {
   SessionAttachmentProvider,
@@ -95,6 +99,9 @@ import { ChatInput } from '../composer/ChatInput.js';
 import { InteractionPrompts } from '../composer/InteractionPrompts.js';
 import { JumpToLatest, TranscriptGapRow } from './HistoryControls.js';
 import { MessageQueue } from './MessageQueue.js';
+import { agentParentOf } from '../../lib/ported/session-nav-filter.js';
+import { ChildAgentComposerNote } from './notices/ChildAgentComposerNote.js';
+import { ChildAgentsStatus } from './notices/ChildAgentsStatus.js';
 import { SelectionQuote } from './SelectionQuote.js';
 import { UserMessageRow } from './UserMessageRow.js';
 import { TranscriptTurn, TurnStatusBeforeTurn } from './TranscriptTurn.js';
@@ -198,6 +205,13 @@ function SessionTranscript(props: SessionViewProps) {
   const hostAdmitted = useStore(sessionsStore, (state) => {
     const row = state.sessions.find((session) => session.id === sessionId);
     return row !== undefined && row.localState !== 'pending';
+  });
+  // A child agent answers to the conversation that started it while that one
+  // is open: one whose parent was archived or deleted is the user's to talk to.
+  const agentParentId = useStore(sessionsStore, (state) => {
+    const row = state.sessions.find((session) => session.id === sessionId);
+    if (!row || linkedSubagentParentSessionId(row) === undefined) return undefined;
+    return agentParentOf(row, new Map(state.sessions.map((session) => [session.id, session])))?.id;
   });
   useEffect(() => {
     if (!hostAdmitted) {
@@ -436,6 +450,10 @@ function SessionTranscript(props: SessionViewProps) {
   // stream is folded in defensively for the rare replay where the projection
   // was over-cleared.
   const running = shellLive.turnActive || shellLive.activeStreamingLive;
+  // A revision draft and an unreadable boundary each stand in the composer's place.
+  const composerShown =
+    !(draft && (draft.sourceSessionId === sessionId || draft.revisionSessionId === sessionId)) &&
+    !feed.boundaryUnreadable;
   // No committed turn to own the status line yet — the send is still on its
   // way to the Host, or the turn it opened has not reached the transcript.
   // Mirrors upstream's bare running phrase (no clock, since there is no
@@ -674,14 +692,26 @@ function SessionTranscript(props: SessionViewProps) {
           )}
           {/* The composer stays under an open interaction (relx): Stop lives
               here, and while a question is open a plain send answers it. */}
-          {!(
-            draft &&
-            (draft.sourceSessionId === sessionId || draft.revisionSessionId === sessionId)
-          ) &&
-            !feed.boundaryUnreadable &&
-            (props.composerSlot ?? (
-              <ChatInput sessionId={sessionId} running={running} onError={reportError} />
-            ))}
+          {composerShown ? (
+            // The agents' tray stands right above the composer it tucks under.
+            <>
+              {!agentParentId && <ChildAgentsStatus sessionId={sessionId} />}
+              {props.composerSlot ??
+                (agentParentId ? (
+                  <ChildAgentComposerNote
+                    sessionId={sessionId}
+                    parentSessionId={agentParentId}
+                    running={running}
+                    onError={reportError}
+                  />
+                ) : (
+                  <ChatInput sessionId={sessionId} running={running} onError={reportError} />
+                ))}
+            </>
+          ) : (
+            // With the composer away the agents are still at work.
+            !agentParentId && <ChildAgentsStatus sessionId={sessionId} docked={false} />
+          )}
         </div>
       </div>
     </div>

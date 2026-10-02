@@ -53,6 +53,30 @@ describe('Session catalog protocol', () => {
     assert.deepEqual(decodeSessionCatalogItem(unknown), unknown);
     assert.deepEqual(decodeSessionCatalogItem(knownEmpty), knownEmpty);
     assert.deepEqual(decodeSessionCatalogItem(running), running);
+    const since = {
+      ...projection(),
+      liveRunState: { schemaVersion: 1, runningTurnIds: ['turn-1'], runningSince: 1_700 },
+    };
+    assert.deepEqual(decodeSessionCatalogItem(since), since);
+  });
+
+  test('a running-since needs a running turn and a timestamp', () => {
+    assert.throws(
+      () =>
+        decodeSessionCatalogItem({
+          ...projection(),
+          liveRunState: { schemaVersion: 1, runningTurnIds: [], runningSince: 1_700 },
+        }),
+      isProtocolError,
+    );
+    assert.throws(
+      () =>
+        decodeSessionCatalogItem({
+          ...projection(),
+          liveRunState: { schemaVersion: 1, runningTurnIds: ['turn-1'], runningSince: 'soon' },
+        }),
+      isProtocolError,
+    );
   });
 
   test('rejects malformed or open live run state', () => {

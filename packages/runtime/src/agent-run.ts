@@ -28,7 +28,7 @@ import type {
 import type { RuntimeEventStore } from '@maka/core/runtime-event-store';
 import { isRuntimeHandoffPause, type RuntimeHandoffIntent } from '@maka/core/runtime-handoff';
 import { RunHandoffGate, type RunHandoffRequest } from './run-handoff-gate.js';
-import { preserveHandoffOpening } from './runtime-resume.js';
+import { continuationTurnStartedAt, preserveHandoffOpening } from './runtime-resume.js';
 import type {
   RequestCompositionSnapshot,
   RequestCompositionSnapshotInput,
@@ -277,6 +277,8 @@ export class AgentRun {
   private failureClass: string | undefined;
   private failureMessage: string | undefined;
   private lastTs = 0;
+  /** When this run's Turn started, as the session catalog reports it running. */
+  private turnStarted: number | undefined;
   private sawCompletion = false;
   private finalStatus: { status: SessionStatus; blockedReason?: SessionBlockedReason } | undefined;
   private turnFailed = false;
@@ -387,6 +389,11 @@ export class AgentRun {
     this.handoffGate.close();
     this.abortSource = abortSource;
     return true;
+  }
+
+  /** When this run's Turn started; undefined until it has begun. */
+  get turnStartedAt(): number | undefined {
+    return this.turnStarted;
   }
 
   isStopped(): boolean {
@@ -964,6 +971,7 @@ export class AgentRun {
     await this.openInvocation();
 
     this.lastTs = this.input.now();
+    this.turnStarted = this.lastTs;
     const initialRuntimeEvent = await this.recordInitialRuntimeEvent(this.lastTs);
 
     return initialRuntimeEvent;
@@ -1035,6 +1043,7 @@ export class AgentRun {
 
     const startedAt = this.input.now();
     this.lastTs = startedAt;
+    this.turnStarted = startedAt;
 
     this.active = await this.input.hooks.reserveRun(this.sessionId, this.header, this);
 
@@ -1064,6 +1073,9 @@ export class AgentRun {
     await this.openInvocation(continuation);
     const startedAt = this.input.now();
     this.lastTs = startedAt;
+    // A handoff picks the same Turn up again, and its clock counts from when
+    // that Turn first started; a resume runs a Turn of its own, which starts now.
+    this.turnStarted = continuationTurnStartedAt(continuation) ?? startedAt;
     if (!this.input.commitContinuationStart) {
       throw new Error('Runtime continuation requires a durable continuation-start authority');
     }

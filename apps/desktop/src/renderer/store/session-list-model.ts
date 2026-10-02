@@ -37,9 +37,10 @@ import {
   revisionFamilySessionIds,
   sessionRevisionFamilyId,
 } from '@maka/core/session-revisions';
-import { sessionMatchesRail } from '../lib/ported/session-nav-filter.js';
+import { agentParentOf, sessionMatchesRail } from '../lib/ported/session-nav-filter.js';
 import { deriveStaleSessionIds } from '../lib/ported/stale-sessions.js';
 import { deriveBranchBanner } from '../lib/ported/branch-banner.js';
+import { parentsOfRunningChildAgents } from '../lib/child-agent-runs.js';
 import type { SidebarCopy, SidebarGroupKey } from '../locales/sidebar-copy.js';
 
 export type SessionListGroupMode = 'time' | 'project';
@@ -60,7 +61,10 @@ export interface SessionListRow {
   readonly flagged: boolean;
   readonly unread: boolean;
   readonly archived: boolean;
-  /** The parent this task was branched from, when that parent is still listed. */
+  /**
+   * The conversation this one came from, when it is still listed: the task it
+   * was branched from, or the one that started this child agent.
+   */
   readonly branchOf: { readonly id: string; readonly name: string } | undefined;
   /** Family size when edit-and-resend produced more than one revision. */
   readonly revisionCount: number;
@@ -151,9 +155,12 @@ export function buildSessionListModel(input: SessionListInput): SessionListModel
   // Session on screen is admitted past it regardless: a row has to exist for
   // the titlebar to name what is being read, even when the rail deliberately
   // hides it (a scheduled task's runs) — it just never reaches `rows`.
-  const catalogIds = new Set(input.sessions.map((session) => session.id));
+  const sessionsById = new Map(input.sessions.map((session) => [session.id, session]));
+  // A conversation is at work while an agent it started is: the Agent call
+  // returned long ago, and the child has no row of its own to say so.
+  const agentsAtWork = parentsOfRunningChildAgents(input.sessions);
   const railed = (session: SessionSummary): boolean =>
-    input.includeArchived === true || sessionMatchesRail(session, catalogIds);
+    input.includeArchived === true || sessionMatchesRail(session, sessionsById);
   const listed = input.sessions.filter(
     (session) => railed(session) || session.id === input.activeId,
   );
@@ -178,6 +185,7 @@ export function buildSessionListModel(input: SessionListInput): SessionListModel
     };
     const familyIds = revisionFamilySessionIds(listed, session.id);
     const banner = deriveBranchBanner(session, listed);
+    const agentParent = agentParentOf(session, sessionsById);
     const row: SessionListRow = {
       id: session.id,
       name: session.name,
@@ -192,12 +200,17 @@ export function buildSessionListModel(input: SessionListInput): SessionListModel
       running:
         input.runningIds?.has(session.id) === true ||
         (session.runningTurnIds?.length ?? 0) > 0 ||
-        session.status === 'running',
+        session.status === 'running' ||
+        agentsAtWork.has(session.id),
       stale: staleIds.has(session.id),
       flagged: session.isFlagged,
       unread: session.hasUnread,
       archived: session.isArchived,
-      branchOf: banner ? { id: banner.parentSessionId, name: banner.parentSessionName } : undefined,
+      branchOf: banner
+        ? { id: banner.parentSessionId, name: banner.parentSessionName }
+        : agentParent
+          ? { id: agentParent.id, name: agentParent.name }
+          : undefined,
       revisionCount: new Set(
         listed
           .filter(

@@ -211,6 +211,8 @@ export interface SessionExecutionBoundaryQueryInput {
 export interface SessionCatalogLiveRunState {
   readonly schemaVersion: typeof SESSION_CATALOG_LIVE_RUN_STATE_SCHEMA_VERSION;
   readonly runningTurnIds: readonly string[];
+  /** When the earliest running Turn started; absent while none runs. */
+  readonly runningSince?: number;
 }
 
 export interface SessionCatalogProjection {
@@ -932,10 +934,12 @@ function optionalLiveRunState(
   record: Record<string, unknown>,
 ): Pick<SessionCatalogProjection, 'liveRunState'> | Record<string, never> {
   if (record.liveRunState === undefined) return {};
-  const state = requireExactRecord(record.liveRunState, 'Session catalog live run state', [
-    'schemaVersion',
-    'runningTurnIds',
-  ]);
+  const state = requireShapedRecord(
+    record.liveRunState,
+    'Session catalog live run state',
+    ['schemaVersion', 'runningTurnIds'],
+    ['runningSince'],
+  );
   if (state.schemaVersion !== SESSION_CATALOG_LIVE_RUN_STATE_SCHEMA_VERSION) {
     throw invalidProtocolFrame('Unsupported Session catalog live run state schema version');
   }
@@ -952,10 +956,16 @@ function optionalLiveRunState(
   if (new Set(runningTurnIds).size !== runningTurnIds.length) {
     throw invalidProtocolFrame('Duplicate Session catalog running turn id');
   }
+  if (Object.hasOwn(state, 'runningSince') && runningTurnIds.length === 0) {
+    throw invalidProtocolFrame('Session catalog running-since without a running turn');
+  }
   return {
     liveRunState: {
       schemaVersion: SESSION_CATALOG_LIVE_RUN_STATE_SCHEMA_VERSION,
       runningTurnIds,
+      ...(Object.hasOwn(state, 'runningSince')
+        ? { runningSince: timestamp(state.runningSince, 'Session running-since') }
+        : {}),
     },
   };
 }

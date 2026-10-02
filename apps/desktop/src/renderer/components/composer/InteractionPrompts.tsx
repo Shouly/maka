@@ -77,6 +77,8 @@ import { Input } from '../ui/input.js';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.js';
 import { checkboxBoxClass, CHECKBOX_TICK_SIZE } from '../ui/checkbox-box.js';
 import { cn } from '../../lib/cn.js';
+import { COMPOSER_PANEL_CLASS } from '../../lib/composer-surface.js';
+import { isOverlayOpen } from '../../lib/open-overlay.js';
 import { detectPlatform } from '../../lib/platform.js';
 import { getComposerCopy } from '../../locales/composer-copy.js';
 import { userQuestionPanelStore } from '../../store/user-question-panel-store.js';
@@ -97,8 +99,7 @@ import {
  * composer under it read as one stack rather than a panel floating over an
  * input.
  */
-const PANEL_CLASS =
-  'relative z-10 overflow-hidden rounded-[var(--chat-composer-radius)] bg-surface-3 shadow-[var(--composer-shadow)]';
+const PANEL_CLASS = COMPOSER_PANEL_CLASS;
 
 const ICON_BUTTON_CLASS =
   'inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-text-muted transition duration-300 hover:bg-alpha-1 hover:text-text-primary active:scale-95 disabled:pointer-events-none disabled:opacity-40';
@@ -375,15 +376,13 @@ function PermissionPrompt(props: {
   answers.current = { busy, onDecline, onAllow };
 
   useEffect(() => {
-    const overlayOpen = () =>
-      document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]') !== null;
     // Neither key is heard in a text field: there Esc stops the turn and ⌘↵
     // belongs to what the user is typing — a grant must never be the side
     // effect of a keystroke meant for the composer.
     const heard = (event: KeyboardEvent) =>
       !event.isComposing &&
       !answers.current.busy &&
-      !overlayOpen() &&
+      !isOverlayOpen() &&
       !isTextEntryTarget(event.target);
     const onKeyDown = (event: KeyboardEvent) => {
       const decline = event.key === 'Escape';

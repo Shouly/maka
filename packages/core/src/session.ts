@@ -435,6 +435,13 @@ export interface SessionSummary {
    * the header alone and omits it.
    */
   runningTurnIds?: string[];
+  /**
+   * When the earliest of `runningTurnIds` started, from the same live runs and
+   * with the same standing: absent whenever `runningTurnIds` is absent or empty.
+   * What a client counts an elapsed clock from — a child agent's, above all,
+   * whose Turn the parent never sees start.
+   */
+  runningSince?: number;
   parentSessionId?: string;
   branchOfTurnId?: string;
   subagent?: SessionSubagentProjection;

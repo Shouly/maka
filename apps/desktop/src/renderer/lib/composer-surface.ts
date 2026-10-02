@@ -27,6 +27,13 @@ export const COMPOSER_SHADOW_CLASS =
   'shadow-[var(--composer-shadow)] hover:[&:not(:where(:has(button:hover,a:hover,[role=button]:hover,label:hover)))]:shadow-[var(--composer-shadow-hover)] focus-within:shadow-[var(--composer-shadow-focus)]';
 
 /**
+ * 输入框上方挂的卡片(提问、权限)和替代输入框的说明条(子代理会话)都是输入框
+ * 同一个壳:圆角、底色、投影都取 composer 的 token,不另画一圈 hairline 边框。
+ */
+export const COMPOSER_PANEL_CLASS =
+  'relative z-10 overflow-hidden rounded-[var(--chat-composer-radius)] bg-surface-3 shadow-[var(--composer-shadow)]';
+
+/**
  * meta 行的 chip,Project / Agents 共用 —— 同一行同一档,各写各的迟早分叉。
  * 24 高 / 13px / 圆角 6 / px-2 / 无图标,有值时换实心 accent。
  *

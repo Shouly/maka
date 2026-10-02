@@ -1040,13 +1040,22 @@ export class SessionManager {
     return this.runtimeKernel.runningTurnIds?.(sessionId) ?? [];
   }
 
+  /** When the earliest of `runningTurnIds` started; undefined while none runs. */
+  runningSince(sessionId: string): number | undefined {
+    return this.runtimeKernel.runningSince?.(sessionId);
+  }
+
   #projectLiveRunState(sessions: SessionSummary[]): SessionSummary[] {
     const runningTurnIds = this.runtimeKernel.runningTurnIds?.bind(this.runtimeKernel);
     if (!runningTurnIds) return sessions;
-    return sessions.map((session) => ({
-      ...session,
-      runningTurnIds: runningTurnIds(session.id),
-    }));
+    return sessions.map((session) => {
+      const runningSince = this.runningSince(session.id);
+      return {
+        ...session,
+        runningTurnIds: runningTurnIds(session.id),
+        ...(runningSince === undefined ? {} : { runningSince }),
+      };
+    });
   }
 
   async listSessions(filter?: SessionListFilter): Promise<SessionSummary[]> {
@@ -3893,7 +3902,13 @@ export class SessionManager {
       {
         cwd: parentHeader.cwd,
         ...(parentHeader.projectId !== undefined ? { projectId: parentHeader.projectId } : {}),
-        name: input.name ?? input.resolvedPreset?.name ?? definition.name,
+        // Named by the task it was given, as its caller and the user read it;
+        // the type is on the runtime snapshot.
+        name:
+          input.name ??
+          childSessionNameOf(input.description) ??
+          input.resolvedPreset?.name ??
+          definition.name,
         ...(input.resolvedPreset
           ? { llmConnectionId: input.resolvedPreset.connectionId }
           : parentHeader.llmConnectionId === undefined
@@ -6291,3 +6306,19 @@ function shellRunBashToolCallIds(messages: readonly StoredMessage[]): Set<string
 // Re-export the suppressed-unused types so this file is the canonical home
 // for them. (Avoids TS "imported but unused" warnings.)
 export type { TextDeltaEvent, CompleteEvent, ErrorEvent, AbortEvent };
+
+const CHILD_SESSION_NAME_MAX_CODE_POINTS = 80;
+
+/**
+ * A child Session's name, from its description. Cut to 80 code points so the
+ * name fits every catalog's byte bound whatever the script; the description
+ * itself rides the notification whole.
+ */
+function childSessionNameOf(description: string | undefined): string | undefined {
+  const trimmed = description?.trim();
+  if (!trimmed) return undefined;
+  const points = Array.from(trimmed);
+  return points.length > CHILD_SESSION_NAME_MAX_CODE_POINTS
+    ? `${points.slice(0, CHILD_SESSION_NAME_MAX_CODE_POINTS - 1).join('')}…`
+    : trimmed;
+}
