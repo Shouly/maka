@@ -210,10 +210,14 @@ export class GatewayUsageMeter {
       input = u.prompt_tokens;
       output = u.completion_tokens;
       read = object(u.prompt_tokens_details).cached_tokens;
+      // OpenRouter's, when it writes a Claude prompt to the cache; inside the input count.
+      write = object(u.prompt_tokens_details).cache_write_tokens;
     } else if (this.protocol === 'openai-responses') {
       input = u.input_tokens;
       output = u.output_tokens;
       read = object(u.input_tokens_details).cached_tokens;
+      // GPT-5.6 and later report what they wrote apart, inside the input count.
+      write = object(u.input_tokens_details).cache_write_tokens;
     } else {
       input = u.promptTokenCount;
       read = u.cachedContentTokenCount;
@@ -230,9 +234,11 @@ export class GatewayUsageMeter {
     if (w !== undefined) this.usage.cacheWrite = w;
     if (i !== undefined) {
       this.#inputReported = true;
-      // Anthropic counts cache reads apart; the others include them in the input.
+      // Anthropic counts the cache apart; the others include it in the input.
       this.usage.input =
-        this.protocol === 'anthropic-messages' ? i : Math.max(0, i - this.usage.cacheRead);
+        this.protocol === 'anthropic-messages'
+          ? i
+          : Math.max(0, i - this.usage.cacheRead - this.usage.cacheWrite);
     }
     if (o !== undefined) {
       this.#outputReported = true;

@@ -829,10 +829,39 @@ test('usage counts cached input and reasoning once, in every protocol', () => {
     cacheWrite: 0,
     cacheRead: 60,
   });
+  // A cache write is inside the input count too (OpenRouter's Claude, OpenAI from GPT-5.6).
+  const openRouterWrite = {
+    ...chatJson(),
+    usage: {
+      prompt_tokens: 100,
+      completion_tokens: 40,
+      prompt_tokens_details: { cached_tokens: 60, cache_write_tokens: 30 },
+    },
+  };
+  assert.deepEqual(read('openai-chat', openRouterWrite).usage, {
+    input: 10,
+    output: 40,
+    cacheWrite: 30,
+    cacheRead: 60,
+  });
   assert.deepEqual(read('openai-responses', responsesJson()).usage, {
     input: 40,
     output: 40,
     cacheWrite: 0,
+    cacheRead: 60,
+  });
+  const responsesWrite = {
+    ...responsesJson(),
+    usage: {
+      input_tokens: 100,
+      output_tokens: 40,
+      input_tokens_details: { cached_tokens: 60, cache_write_tokens: 30 },
+    },
+  };
+  assert.deepEqual(read('openai-responses', responsesWrite).usage, {
+    input: 10,
+    output: 40,
+    cacheWrite: 30,
     cacheRead: 60,
   });
   // Gemini's thoughts are counted beside its candidates.

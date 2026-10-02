@@ -417,6 +417,16 @@ describe('buildProviderOptions: thinking level', () => {
       [...thinkingVariantsForModel('openrouter', 'anthropic/claude-sonnet-5')],
       ['low', 'medium', 'high', 'xhigh', 'max'],
     );
+    // A Claude model there is asked to cache the prompt; the others cache on their own.
+    assert.deepEqual(
+      buildProviderOptions(conn('openrouter'), 'anthropic/claude-sonnet-5', 'high'),
+      {
+        openrouter: { reasoningEffort: 'high', cache_control: { type: 'ephemeral' } },
+      },
+    );
+    assert.deepEqual(buildProviderOptions(conn('openrouter'), '~anthropic/claude-sonnet-latest'), {
+      openrouter: { cache_control: { type: 'ephemeral' } },
+    });
     assert.deepEqual(
       [...thinkingVariantsForModel('deepseek', 'deepseek-v4-flash')],
       ['low', 'high', 'max'],

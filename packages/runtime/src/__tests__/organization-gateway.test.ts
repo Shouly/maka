@@ -619,6 +619,47 @@ test('organization Chat models send their selected reasoning effort and parallel
     );
     assert.equal(body.reasoning_effort, 'high', profile);
     assert.equal(body.parallel_tool_calls, false, profile);
+    // OpenRouter caches a Claude prompt only when asked; a custom service is
+    // sent nothing it may not understand.
+    assert.deepEqual(
+      body.cache_control,
+      profile === 'openrouter-chat' ? { type: 'ephemeral' } : undefined,
+      profile,
+    );
+  }
+});
+
+test('organization Claude models are asked to cache as a direct Claude connection is', async () => {
+  for (const [profile, sdkModelId, cached] of [
+    ['anthropic', 'claude-opus-5-5', true],
+    ['openrouter-chat', 'anthropic/claude-opus-5.5', true],
+    ['compatible-anthropic', 'claude-opus-5-5', false],
+  ] as const) {
+    const { connection } = fixture(profile, sdkModelId);
+    let body: any;
+    const model = getAIModel({
+      connection,
+      apiKey: 'test-key',
+      modelId: 'm_company',
+      fetch: async (_url, init) => {
+        body = JSON.parse(String(init?.body));
+        return Response.json({ error: { message: 'fixture refusal' } }, { status: 400 });
+      },
+    });
+    await assert.rejects(
+      async () =>
+        await model.doGenerate({
+          prompt: [
+            { role: 'system', content: 'You are Maka.' },
+            { role: 'user', content: [{ type: 'text', text: 'Hi' }] },
+          ],
+          providerOptions: buildProviderOptions(connection, 'm_company'),
+        }),
+    );
+    const system = profile === 'openrouter-chat' ? body.messages[0].content : body.system;
+    const systemEnd = Array.isArray(system) ? system.at(-1) : undefined;
+    assert.equal(systemEnd?.cache_control?.type, cached ? 'ephemeral' : undefined, profile);
+    assert.equal(body.cache_control?.type, cached ? 'ephemeral' : undefined, profile);
   }
 });
 

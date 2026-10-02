@@ -126,7 +126,7 @@
 
 ## 6. 额度与用量
 
-额度单位 = `(输入 + 输出 × 5 + 缓存写 × 1.25 + 缓存读 × 0.1) × 模型倍率`。各协议的口径在网关统一：Anthropic 的缓存单独计；OpenAI 和 Gemini 的输入里含缓存读，扣掉后再计；推理 token 已含在输出里（Gemini 的 thoughts 单独报，加进输出），不重复计。
+额度单位 = `(输入 + 输出 × 5 + 缓存写 × 1.25 + 缓存读 × 0.1) × 模型倍率`。各协议的口径在网关统一：Anthropic 的缓存单独计；OpenAI 和 Gemini 的输入里含缓存读，OpenAI（GPT-5.6 起）和 OpenRouter 还含单独报出的缓存写（`cache_write_tokens`），都扣掉后再计；推理 token 已含在输出里（Gemini 的 thoughts 单独报，加进输出），不重复计。
 
 只在提供商报了完整用量、回答也走到结束时记 `reported`；否则估算，记 `estimated`：输出按已看到的内容，输入按请求正文的文字（图片等编码数据每个按固定量计）。提供商直接返回错误或根本没连上时记 0。单个超大的流事件（如内嵌图片）跳过不读，后面的事件照常计量。发出前只检查已用量是否超额，所以额度用完前最后几个并发请求可能略超，内部使用可以接受。
 
@@ -135,6 +135,7 @@
 - 登录后读 `GET /model/catalog`：每个开放的模型给出 ID、显示名、调用契约和可用状态（`available`，或提供商已停用 `provider_disabled`，后者照常列出但不能调用，对话里的名字不丢）。修订号变了就刷新。
 - 调用时按契约选协议和 SDK，SDK 拿到的是提供商的模型 ID；思考参数、原生工具、ApplyPatch、上下文上限等按配置对应的服务商类型和真实模型资料判断，不再把组织模型一律当 Claude。
 - 某个模型的契约解不开时只跳过这个模型，不影响整个列表。
+- 提示缓存由桌面端按服务商类型请求，网关原样转发、不增不减。Claude（Anthropic、Vertex、OpenRouter 上的 `anthropic/` 模型）每个请求放三个 5 分钟缓存点：系统提示末尾（连同前面的工具，新对话、子 agent、后台调用直接读这段）、上一次请求的末尾（不受 20 块回溯的限制）、最后一块（顶层 `cache_control`，供下一步读）。OpenRouter 只在它文档写明的位置放，即系统和用户消息的文本；上一次请求停在工具结果上时，第二个点省略。OpenAI、Gemini 和 OpenRouter 上的其他模型自动缓存，自定义服务什么都不发。实现在 `packages/runtime/src/claude-prompt-cache.ts`。
 - 提供商的错误按该服务商类型的原生规则分类；认证、权限、余额类错误提示“联系管理员”。
 
 ## 8. 管理接口（`/admin/api`，管理员会话 + CSRF）
@@ -155,4 +156,6 @@
 
 已用 PGlite 和模拟的提供商测试：各协议用真实 SDK 往返、原样转发、网关拒绝、额度、取消和中断、换密钥后继续、模型列表读取（含 Vertex Model Garden 的列表格式）与发布、快照与幂等。
 
-**未验证**：真实提供商账号的调用，尤其是 Vertex AI 的 Model Garden 列表（`versionId` 的取值和 `名称@日期` 的调用方式按 Google 发现文档和 Anthropic 的 Vertex SDK 推断）和 OpenRouter 推理细节的回传。
+2026-10-02 用真实的 OpenRouter 账号（Claude Opus 5.5，OpenAI Chat）走通了桌面端对话：模型列表、发布、转发、用量上报，以及缓存（第一步写入、之后各步读取；OpenRouter 的 `prompt_tokens` 包含缓存读和缓存写，按此扣除）。
+
+**未验证**：其他提供商的真实账号调用，尤其是 Vertex AI 的 Model Garden 列表（`versionId` 的取值和 `名称@日期` 的调用方式按 Google 发现文档和 Anthropic 的 Vertex SDK 推断）和 OpenRouter 推理细节的回传。

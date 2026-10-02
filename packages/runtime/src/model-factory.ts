@@ -54,6 +54,11 @@ import type { OpenAiResponsesTransportState } from './openai-responses-websocket
 import { openResponsesUrl } from './provider-urls.js';
 import { createOpenResponsesCompatibilityFinalizer } from './open-responses-compatibility.js';
 import {
+  isOpenRouterClaude,
+  placeAnthropicCacheBreakpoints,
+  placeOpenRouterCacheBreakpoints,
+} from './claude-prompt-cache.js';
+import {
   executionProviderType,
   resolveModelRuntime,
   type ResolvedModelRuntime,
@@ -122,7 +127,15 @@ export function getAIModel(input: ModelFactoryInput): LanguageModelV4 {
       return createAnthropic({
         ...(adapter.auth === 'bearer' ? { authToken: apiKey } : { apiKey }),
         baseURL,
-        fetch: requestFetch,
+        // Claude itself is asked to cache past the system prompt and the
+        // previous request too (claude-prompt-cache.ts); services that only
+        // speak its protocol are sent nothing they may not understand.
+        fetch:
+          providerIdentity.providerType === 'anthropic'
+            ? createRequestCustomizationFetch(requestFetch, {
+                finalizeBody: placeAnthropicCacheBreakpoints,
+              })
+            : requestFetch,
         headers:
           adapter.includeBetaHeaders === false ? undefined : { 'anthropic-beta': ANTHROPIC_BETA },
       }).chat(sdkModelId);
@@ -202,12 +215,15 @@ export function getAIModel(input: ModelFactoryInput): LanguageModelV4 {
           createOpenAiChatReasoningTransportState(reasoningReplay.requestField),
         adapter.normalizeUsage,
       );
-      const transformRequestBody = adapter.replayAssistantReasoningDetails
+      const reasoningTransform = adapter.replayAssistantReasoningDetails
         ? composeRequestTransforms(
             reasoningTransport.transformRequestBody,
             replayAssistantReasoning('reasoning', true),
           )
         : reasoningTransport.transformRequestBody;
+      const transformRequestBody = isOpenRouterClaude(providerIdentity.providerType, sdkModelId)
+        ? composeRequestTransforms(reasoningTransform, placeOpenRouterCacheBreakpoints)
+        : reasoningTransform;
       const model = createOpenAICompatible({
         name: runtimeProviderName(adapter, providerIdentity),
         apiKey,
@@ -514,12 +530,48 @@ export function buildProviderOptions(
       : options;
   }
 
-  return withParallelToolCallOptions(
+  return withPromptCacheOptions(
     connection,
     modelId,
-    buildThinkingProviderOptions(connection, modelId, thinkingLevel, runtime),
+    withParallelToolCallOptions(
+      connection,
+      modelId,
+      buildThinkingProviderOptions(connection, modelId, thinkingLevel, runtime),
+      runtime,
+    ),
     runtime,
   );
+}
+
+/**
+ * OpenRouter caches a Claude prompt only when asked. A top-level
+ * `cache_control` puts the breakpoint on the last cacheable block, as the
+ * Anthropic provider's own `cacheControl` does; without it every turn pays
+ * for the whole conversation again. The other breakpoints are placed on the
+ * body (claude-prompt-cache.ts).
+ */
+function withPromptCacheOptions(
+  connection: RuntimeExecutionConnection,
+  modelId: string,
+  options: SharedV4ProviderOptions,
+  runtime: ResolvedModelRuntime,
+): SharedV4ProviderOptions {
+  if (
+    !isOpenRouterClaude(connection.providerType, modelId) ||
+    runtime.wire !== 'openai-chat' ||
+    runtime.adapter.kind !== 'openai-compatible'
+  ) {
+    return options;
+  }
+  const providerKey = openAiCompatibleProviderOptionsKey(runtime.adapter, connection);
+  const current = options[providerKey];
+  return {
+    ...options,
+    [providerKey]: {
+      ...(isRecord(current) ? current : {}),
+      cache_control: { type: 'ephemeral' },
+    },
+  };
 }
 
 /** The provider-option keys this file writes to ask a model to reason, in any namespace. */
