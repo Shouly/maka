@@ -156,6 +156,6 @@
 
 已用 PGlite 和模拟的提供商测试：各协议用真实 SDK 往返、原样转发、网关拒绝、额度、取消和中断、换密钥后继续、模型列表读取（含 Vertex Model Garden 的列表格式）与发布、快照与幂等。
 
-2026-10-02 用真实的 OpenRouter 账号（Claude Opus 5.5，OpenAI Chat）走通了桌面端对话：模型列表、发布、转发、用量上报，以及缓存（第一步写入、之后各步读取；OpenRouter 的 `prompt_tokens` 包含缓存读和缓存写，按此扣除）。
+2026-10-02 用真实的 OpenRouter 账号（Claude Opus 5.5，OpenAI Chat）走通了桌面端对话：模型列表、发布、转发、用量上报，以及缓存（第一步写入、之后各步读取；OpenRouter 的 `prompt_tokens` 包含缓存读和缓存写，按此扣除）。系统提示末尾的缓存点同样实测有效：5 分钟内新开的对话，第一步从缓存读到工具和系统提示的 38,851 token，只写入约 1,200；每轮的后台调用读到 7,423 token。
 
-**未验证**：其他提供商的真实账号调用，尤其是 Vertex AI 的 Model Garden 列表（`versionId` 的取值和 `名称@日期` 的调用方式按 Google 发现文档和 Anthropic 的 Vertex SDK 推断）和 OpenRouter 推理细节的回传。
+**未验证**：其他提供商的真实账号调用，尤其是 Vertex AI 的 Model Garden 列表（`versionId` 的取值和 `名称@日期` 的调用方式按 Google 发现文档和 Anthropic 的 Vertex SDK 推断）、OpenRouter 推理细节的回传、“上一次请求末尾”那个缓存点（OpenRouter 上工具循环里放不了，只在 Anthropic 和 Vertex 上起作用），以及不同员工之间能否共用系统提示的缓存。
