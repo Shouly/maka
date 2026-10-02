@@ -60,6 +60,22 @@ describe('Session catalog protocol', () => {
     assert.deepEqual(decodeSessionCatalogItem(since), since);
   });
 
+  test('an awaiting-user flag is true or absent', () => {
+    const awaiting = {
+      ...projection(),
+      liveRunState: { schemaVersion: 1, runningTurnIds: ['turn-1'], awaitingUser: true },
+    };
+    assert.deepEqual(decodeSessionCatalogItem(awaiting), awaiting);
+    assert.throws(
+      () =>
+        decodeSessionCatalogItem({
+          ...projection(),
+          liveRunState: { schemaVersion: 1, runningTurnIds: ['turn-1'], awaitingUser: false },
+        }),
+      isProtocolError,
+    );
+  });
+
   test('a running-since needs a running turn and a timestamp', () => {
     assert.throws(
       () =>

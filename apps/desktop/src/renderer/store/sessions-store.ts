@@ -252,11 +252,13 @@ function retainLiveRunState(
     const previous = byId.get(row.id);
     const runningTurnIds = retainRunningTurnIds(previous?.runningTurnIds, row.runningTurnIds);
     if (runningTurnIds === row.runningTurnIds || runningTurnIds === undefined) return row;
-    // The start of what is running belongs to the same reading, and goes with it.
+    // When it started, and whether it waits on the user, belong to the same
+    // reading, and go with it.
     return {
       ...row,
       runningTurnIds: [...runningTurnIds],
       ...(previous?.runningSince === undefined ? {} : { runningSince: previous.runningSince }),
+      ...(previous?.awaitingUser ? { awaitingUser: true } : {}),
     };
   };
 }

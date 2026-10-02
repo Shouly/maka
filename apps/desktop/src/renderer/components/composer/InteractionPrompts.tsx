@@ -79,6 +79,9 @@ import { checkboxBoxClass, CHECKBOX_TICK_SIZE } from '../ui/checkbox-box.js';
 import { cn } from '../../lib/cn.js';
 import { COMPOSER_PANEL_CLASS } from '../../lib/composer-surface.js';
 import { isOverlayOpen } from '../../lib/open-overlay.js';
+import { awaitsUser, runningChildAgentsOf } from '../../lib/child-agent-runs.js';
+import { childInteractionsStore } from '../../store/child-interactions-store.js';
+import { getChildAgentsCopy } from '../../locales/child-agents-copy.js';
 import { detectPlatform } from '../../lib/platform.js';
 import { getComposerCopy } from '../../locales/composer-copy.js';
 import { userQuestionPanelStore } from '../../store/user-question-panel-store.js';
@@ -113,25 +116,100 @@ export function InteractionPrompts({
   onError: (title: string, error: unknown) => void;
 }) {
   const request = useStore(activeSessionStore, (s) => s.interactions[sessionId]?.[0]);
-  if (!request) return null;
+  const child = useChildAgentRequest(sessionId);
+  const childCopy = getChildAgentsCopy(useUiLocale());
+  if (request) {
+    return (
+      <InteractionPrompt
+        key={`${sessionId}:${request.requestId}`}
+        sessionId={sessionId}
+        request={request}
+        onError={onError}
+      />
+    );
+  }
+  if (!child) return null;
+  // A child agent's request, answered here on the child's own Session: this
+  // conversation's own come first, then its agents', in the order they run.
   return (
     <InteractionPrompt
-      key={`${sessionId}:${request.requestId}`}
-      sessionId={sessionId}
-      request={request}
+      key={`${child.childId}:${child.request.requestId}`}
+      sessionId={child.childId}
+      request={child.request}
       onError={onError}
+      origin={childCopy.requestFrom(child.name, child.others)}
+      isLive={() =>
+        childInteractionsStore
+          .getState()
+          .byChild[child.childId]?.some((r) => r.requestId === child.request.requestId) === true
+      }
+      onAnswered={() => void childInteractionsStore.refresh(child.childId)}
     />
   );
+}
+
+/**
+ * The first request one of this conversation's running agents is waiting on,
+ * and how many more there are. Watches the running children while mounted:
+ * their requests are read when they start, when the catalog says one waits on
+ * the user, and on every change reported for them.
+ */
+function useChildAgentRequest(parentSessionId: string):
+  | {
+      readonly childId: string;
+      readonly name: string;
+      readonly request: ActiveInteractionRequestEvent;
+      readonly others: number;
+    }
+  | undefined {
+  const children = useStore(
+    sessionsStore,
+    useShallow((state) => runningChildAgentsOf(state.sessions, parentSessionId)),
+  );
+  const watchKey = JSON.stringify(children.map((child) => [child.id, awaitsUser(child)]));
+  useEffect(() => {
+    const entries = JSON.parse(watchKey) as [string, boolean][];
+    childInteractionsStore.watch(entries.map(([id]) => id));
+    // The catalog's word that one waits: read it now rather than at its next change.
+    for (const [id, awaiting] of entries) if (awaiting) void childInteractionsStore.refresh(id);
+  }, [watchKey]);
+  useEffect(() => {
+    const off = sessionsStore.onChange((event) => childInteractionsStore.changed(event.sessionId));
+    return () => {
+      off();
+      childInteractionsStore.watch([]);
+    };
+  }, []);
+  const byChild = useStore(childInteractionsStore, (state) => state.byChild);
+  const waiting = children.flatMap((child) =>
+    (byChild[child.id] ?? []).map((request) => ({ child, request })),
+  );
+  const first = waiting[0];
+  if (!first) return undefined;
+  return {
+    childId: first.child.id,
+    name: first.child.name.trim() || first.child.subagent?.agentName || '',
+    request: first.request,
+    others: waiting.length - 1,
+  };
 }
 
 function InteractionPrompt({
   sessionId,
   request,
   onError,
+  origin,
+  isLive,
+  onAnswered,
 }: {
   sessionId: string;
   request: ActiveInteractionRequestEvent;
   onError: (title: string, error: unknown) => void;
+  /** Whose request this is, when it is not the conversation's own: a line above the card. */
+  origin?: string;
+  /** Whether the request still waits; the open conversation's own by default. */
+  isLive?: () => boolean;
+  onAnswered?: () => void;
 }) {
   const locale = useUiLocale();
   const copy = getConversationCopy(locale);
@@ -150,12 +228,15 @@ function InteractionPrompt({
     setPending(true);
     setError('');
     try {
-      const live = activeSessionStore
-        .getState()
-        .interactions[sessionId]?.some((r) => r.requestId === request.requestId);
+      const live = isLive
+        ? isLive()
+        : activeSessionStore
+            .getState()
+            .interactions[sessionId]?.some((r) => r.requestId === request.requestId);
       if (!live) return;
       await action();
       setAnswered(true);
+      onAnswered?.();
     } catch (e) {
       // The shell's words for a failure, never the raw message (#4457).
       setError(localizedShellErrorMessage(e, local.send.failedFallback, locale));
@@ -191,6 +272,7 @@ function InteractionPrompt({
     return (
       <PermissionPrompt
         request={request}
+        {...(origin ? { origin } : {})}
         homePath={homePath}
         busy={busy}
         pending={pending}
@@ -210,6 +292,7 @@ function InteractionPrompt({
       data-maka-contract="interaction-prompt"
       data-interaction-kind={request.type}
     >
+      {origin && <PromptOrigin>{origin}</PromptOrigin>}
       <h2 className="mb-3 text-sm font-medium leading-5 text-text-primary">{title}</h2>
       <fieldset disabled={busy} className="min-w-0 space-y-3">
         <FormPrompt sessionId={sessionId} request={request} run={run} />
@@ -341,6 +424,15 @@ function KeyHint(props: { children: ReactNode }) {
   );
 }
 
+/** Whose request a card answers, when not the conversation's own. */
+function PromptOrigin(props: { children: ReactNode }) {
+  return (
+    <p className="mb-2 text-xs leading-4 text-text-muted" data-maka-prompt-origin="">
+      {props.children}
+    </p>
+  );
+}
+
 /**
  * A request to reach past the task's boundary — a folder, the network, a site,
  * the screen, a desktop tool.
@@ -353,6 +445,7 @@ function KeyHint(props: { children: ReactNode }) {
  */
 function PermissionPrompt(props: {
   request: SandboxBoundaryRequestEvent | ClientCapabilityRequestEvent;
+  origin?: string;
   homePath: string | undefined;
   busy: boolean;
   pending: boolean;
@@ -404,6 +497,7 @@ function PermissionPrompt(props: {
       data-maka-contract="interaction-prompt"
       data-interaction-kind={props.request.type}
     >
+      {props.origin && <PromptOrigin>{props.origin}</PromptOrigin>}
       <button
         type="button"
         aria-expanded={open}

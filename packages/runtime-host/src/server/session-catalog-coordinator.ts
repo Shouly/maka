@@ -192,6 +192,8 @@ export interface HostSessionCatalogCoordinatorOptions {
     RuntimeHostAccessAuthority,
     'activeSessionGrantForPrincipal'
   >;
+  /** Which sessions are parked on a request the user can answer now. */
+  readonly interactions?: { awaitsUser(sessionId: string): boolean };
 }
 
 interface ResolvedSessionModel {
@@ -302,6 +304,7 @@ export class HostSessionCatalogCoordinator {
   readonly #sessionAccessAuthority:
     | Pick<RuntimeHostAccessAuthority, 'activeSessionGrantForPrincipal'>
     | undefined;
+  readonly #interactions: { awaitsUser(sessionId: string): boolean } | undefined;
 
   constructor(options: HostSessionCatalogCoordinatorOptions) {
     this.#stores = options.stores;
@@ -313,6 +316,7 @@ export class HostSessionCatalogCoordinator {
     this.#workspaceResolver = options.workspaceResolver;
     this.#requestDrain = options.requestDrain;
     this.#sessionAccessAuthority = options.sessionAccessAuthority;
+    this.#interactions = options.interactions;
   }
 
   /**
@@ -460,13 +464,7 @@ export class HostSessionCatalogCoordinator {
         ok: true,
         result: {
           session: record
-            ? projectSharedSessionCatalogRecord(
-                record,
-                projectCatalogLiveRunState(
-                  this.#manager.runningTurnIds(record.header.id),
-                  this.#manager.runningSince(record.header.id),
-                ),
-              )
+            ? projectSharedSessionCatalogRecord(record, this.#liveRunState(record.header.id))
             : null,
         },
       };
@@ -479,12 +477,16 @@ export class HostSessionCatalogCoordinator {
   }
 
   #projectCatalogQueryRecord(record: SessionCatalogRecord): SessionCatalogItem {
-    return projectSessionCatalogRecord(
-      record,
-      projectCatalogLiveRunState(
-        this.#manager.runningTurnIds(record.header.id),
-        this.#manager.runningSince(record.header.id),
-      ),
+    return projectSessionCatalogRecord(record, this.#liveRunState(record.header.id));
+  }
+
+  /** What only the running process knows: the turns running, since when, and a wait on the user. */
+  #liveRunState(sessionId: string): SessionCatalogLiveRunState | undefined {
+    const runningTurnIds = this.#manager.runningTurnIds(sessionId);
+    return projectCatalogLiveRunState(
+      runningTurnIds,
+      this.#manager.runningSince(sessionId),
+      runningTurnIds.length > 0 && this.#interactions?.awaitsUser(sessionId) === true,
     );
   }
 
@@ -1477,6 +1479,7 @@ function projectSharedSessionCatalogRecord(
 function projectCatalogLiveRunState(
   runningTurnIds: readonly string[],
   runningSince: number | undefined,
+  awaitingUser: boolean,
 ): SessionCatalogLiveRunState | undefined {
   const uniqueRunningTurnIds = [...new Set(runningTurnIds)];
   if (uniqueRunningTurnIds.length > SESSION_CATALOG_RUNNING_TURN_MAX_ITEMS) return undefined;
@@ -1484,6 +1487,7 @@ function projectCatalogLiveRunState(
     schemaVersion: SESSION_CATALOG_LIVE_RUN_STATE_SCHEMA_VERSION,
     runningTurnIds: uniqueRunningTurnIds,
     ...(runningSince !== undefined && uniqueRunningTurnIds.length > 0 ? { runningSince } : {}),
+    ...(awaitingUser ? { awaitingUser: true as const } : {}),
   };
 }
 

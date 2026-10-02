@@ -257,6 +257,7 @@ export class DesktopSessionLocalService {
                     ...session,
                     runningTurnIds: undefined,
                     runningSince: undefined,
+                    awaitingUser: undefined,
                     localState: 'cached' as const,
                   },
           );

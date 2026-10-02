@@ -298,6 +298,27 @@ test('a conversation reads as running while an agent it started works, and the a
     false,
   );
 
+  // A child waiting on the user makes its parent's row say so, and the Host's
+  // own word does the same for a Session of its own.
+  const parentStatus = (rows: SessionSummary[]) =>
+    listModel(rows).rows.find((row) => row.id === 'parent')?.status;
+  assert.equal(
+    parentStatus([session('parent'), child({ runningTurnIds: ['t-1'], awaitingUser: true })]),
+    'waiting_for_user',
+  );
+  assert.equal(
+    parentStatus([
+      session('parent'),
+      child({ runningTurnIds: ['t-1'], status: 'waiting_for_user' } as Partial<SessionSummary>),
+    ]),
+    'waiting_for_user',
+  );
+  assert.equal(parentStatus(working), 'active');
+  assert.equal(
+    parentStatus([session('parent', { runningTurnIds: ['p-1'], awaitingUser: true })]),
+    'waiting_for_user',
+  );
+
   // Opened, the child names its parent in the crumb.
   assert.deepEqual(listModel(working, { activeId: 'child' }).activeRow?.branchOf, {
     id: 'parent',

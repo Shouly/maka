@@ -96,6 +96,17 @@ prompt-snapshot sections). Decisions taken with the user on 2026-09-29.
   which carry none (`retainRunningTurnIds`): read as "nothing running", every step a child took flipped
   all of the above off and on.
 - A child is named by its description (cut to 80 code points).
+- A child's requests (sandbox boundary, client capability, form) are answered from its parent: while the
+  parent is on screen, `child-interactions-store` reads each running child's pending requests (on start,
+  when the catalog's `awaitingUser` turns on, and on every change reported for it); the parent's prompt slot
+  shows its own request first, then the agents' with a line naming the agent, and answers on the child's
+  Session. The tray line turns amber and says "等你处理" in place of its clock (the rail's words, as a
+  form waits as well as an approval), the run holding the Agent row wears the waiting pill, and the
+  parent's rail row reads "等你处理".
+- `liveRunState.awaitingUser` (epoch 168): the Host's interaction coordinator says, from its live set,
+  which running sessions are parked on a request for the user — every kind, a client capability included,
+  which never touched the Session's stored status. An answered entry is marked settling before the catalog
+  is told, so a read in between does not still report the wait.
 
 ## Not done
 
@@ -103,5 +114,3 @@ prompt-snapshot sections). Decisions taken with the user on 2026-09-29.
   from children until that exists.
 - The worktree child executor and patch write-back remain in the tree, unused by any type.
 - The orchestration subsystem (graph/swarm coordinator, supervisor wakes, `AgentOutput`) awaits deletion.
-- A child's approval requests are answered only from the child's Session (reached through the tray);
-  the parent does not show them yet.

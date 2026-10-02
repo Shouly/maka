@@ -48,6 +48,7 @@ export function projectSessionCatalogSummary(
     ...(session.liveRunState?.runningSince === undefined
       ? {}
       : { runningSince: session.liveRunState.runningSince }),
+    ...(session.liveRunState?.awaitingUser ? { awaitingUser: true } : {}),
     ...(session.parentSessionId === undefined ? {} : { parentSessionId: session.parentSessionId }),
     ...(session.branchOfTurnId === undefined ? {} : { branchOfTurnId: session.branchOfTurnId }),
     ...(session.subagent === undefined ? {} : { subagent: session.subagent }),

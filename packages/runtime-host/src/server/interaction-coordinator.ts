@@ -134,6 +134,12 @@ interface BoundRun extends RuntimeInteractionRunIdentity {
 interface LiveEntryBase {
   readonly run: BoundRun;
   phase: 'admitting' | 'live';
+  /**
+   * Answered: the outcome is committed and the catalog is told before the
+   * entry leaves the live set, so a catalog read in between must not report
+   * the session as still waiting on the user (`awaitsUser`).
+   */
+  settling?: true;
 }
 
 interface LiveQuestionEntry extends LiveEntryBase {
@@ -427,6 +433,21 @@ export class HostInteractionCoordinator implements RuntimeInteractionAuthority {
 
   recoverPendingAfterHostRestart(): Promise<void> {
     return observed(this.#recoverPendingAfterHostRestart());
+  }
+
+  /**
+   * Whether a run of this session is parked on a request the user can answer
+   * now — a question, a form, a sandbox boundary, a client capability. Live
+   * state only, read without touching storage: the session catalog asks it of
+   * every running session it lists.
+   */
+  awaitsUser(sessionId: string): boolean {
+    for (const entry of this.#live.values()) {
+      if (entry.phase === 'live' && !entry.settling && entry.run.sessionId === sessionId) {
+        return true;
+      }
+    }
+    return false;
   }
 
   async hasPendingSession(sessionId: string): Promise<boolean> {
@@ -977,6 +998,7 @@ export class HostInteractionCoordinator implements RuntimeInteractionAuthority {
       requestId: request.requestId,
       decision: answer.decision,
     });
+    entry.settling = true;
     await this.#refreshCanonicalContinuity(request.sessionId, admission);
     this.#throwIfPoisoned();
     await this.#applySandboxBoundaryDecisionAndDelete(entry, settlement);
@@ -1019,6 +1041,7 @@ export class HostInteractionCoordinator implements RuntimeInteractionAuthority {
           }
         : undefined;
     const outcome = await this.#commitClientCapabilityOutcome(entry.request, canonical, grant);
+    entry.settling = true;
     await this.#refreshCanonicalContinuity(entry.request.sessionId, admission);
     this.#throwIfPoisoned();
     await this.#applyAndDelete(entry, outcome);
@@ -1031,6 +1054,7 @@ export class HostInteractionCoordinator implements RuntimeInteractionAuthority {
     admission: SessionAdmissionLease,
   ): Promise<StoredInteractionOutcome> {
     const target = await this.#commitOutcome(entry.request, candidate);
+    entry.settling = true;
     await this.#refreshCanonicalContinuity(entry.request.sessionId, admission);
     this.#throwIfPoisoned();
     await this.#applyAndDelete(entry, target);
@@ -1108,6 +1132,7 @@ export class HostInteractionCoordinator implements RuntimeInteractionAuthority {
             reason: 'producer_cancelled',
             committedAt: this.#now(),
           });
+          entry.settling = true;
           await this.#refreshCanonicalContinuity(run.sessionId, admission);
           this.#throwIfPoisoned();
           await this.#applyAndDelete(entry, outcome);
@@ -1199,6 +1224,8 @@ export class HostInteractionCoordinator implements RuntimeInteractionAuthority {
           }),
         });
       }
+      for (const item of committed) item.entry.settling = true;
+      for (const item of settledSandboxBoundaries) item.entry.settling = true;
       await this.#refreshCanonicalContinuity(run.sessionId, admission);
       this.#throwIfPoisoned();
       for (const item of committed) await this.#applyAndDelete(item.entry, item.outcome);

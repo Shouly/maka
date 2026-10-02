@@ -36,7 +36,7 @@ import { useUiLocale } from '@maka/ui';
 import { GENERAL_PURPOSE_AGENT_NAME } from '@maka/core/subagent-settings';
 import { cn } from '../../../lib/cn.js';
 import { TurnElapsedTime } from '../tools/TurnStatus.js';
-import { runningChildAgentsOf } from '../../../lib/child-agent-runs.js';
+import { awaitsUser, runningChildAgentsOf } from '../../../lib/child-agent-runs.js';
 import { sessionsStore } from '../../../store/index.js';
 import { getChildAgentsCopy } from '../../../locales/child-agents-copy.js';
 
@@ -47,6 +47,8 @@ export interface ChildAgentRow {
   readonly type?: string;
   /** When the Turn it is running started, as the Host says: the clock counts from here. */
   readonly since?: number;
+  /** It waits on the user: its request is on the card above the composer. */
+  readonly awaiting?: boolean;
 }
 
 /** Past this many lines the list scrolls rather than pushing the transcript up. */
@@ -74,6 +76,7 @@ export function ChildAgentsStatus(props: {
       name,
       ...(type && type !== name && type !== GENERAL_PURPOSE_AGENT_NAME ? { type } : {}),
       ...(session.runningSince !== undefined ? { since: session.runningSince } : {}),
+      ...(awaitsUser(session) ? { awaiting: true } : {}),
     };
   });
   return (
@@ -85,9 +88,11 @@ export function ChildAgentsStatus(props: {
   );
 }
 
-/** The rail's running dot. */
-function RunningDot() {
-  return (
+/** The rail's running dot; amber and still while the agent waits on the user. */
+function RunningDot(props: { awaiting?: boolean }) {
+  return props.awaiting ? (
+    <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-warning-fill" />
+  ) : (
     <span
       aria-hidden="true"
       className="animate-status-dot-breathe size-1.5 shrink-0 rounded-full bg-fill-brand [--status-dot-strong:var(--fill-brand)] [--status-dot-soft:color-mix(in_srgb,var(--fill-brand)_45%,var(--surface-3))]"
@@ -132,20 +137,25 @@ export function ChildAgentsStatusView(props: {
           onClick={() => props.onOpen(agent.id)}
           className="flex h-7 min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-lg px-2.5 text-left text-[13px] leading-5 outline-none transition-colors hover:bg-alpha-1 focus-visible:shadow-[var(--sidebar-focus-shadow)]"
         >
-          <RunningDot />
+          <RunningDot {...(agent.awaiting ? { awaiting: true } : {})} />
           <span className="min-w-0 truncate text-text-primary" title={agent.name}>
             {agent.name}
           </span>
           {agent.type && <span className="shrink-0 text-text-muted">{agent.type}</span>}
-          {/* The clocks line up in a column at the composer's right edge. */}
-          <span className="ml-auto shrink-0 pl-6 text-text-muted tabular-nums">
-            {/* No latch key: the Host's start is the reading, and the
-                transcript's per-turn latch is no place for these. */}
-            <TurnElapsedTime
-              bare
-              {...(agent.since !== undefined ? { startedAt: agent.since } : {})}
-            />
-          </span>
+          {/* The clocks line up in a column at the composer's right edge; an
+              agent waiting on the user says so there instead. */}
+          {agent.awaiting ? (
+            <span className="ml-auto shrink-0 pl-6 text-warning">{copy.awaiting}</span>
+          ) : (
+            <span className="ml-auto shrink-0 pl-6 text-text-muted tabular-nums">
+              {/* No latch key: the Host's start is the reading, and the
+                  transcript's per-turn latch is no place for these. */}
+              <TurnElapsedTime
+                bare
+                {...(agent.since !== undefined ? { startedAt: agent.since } : {})}
+              />
+            </span>
+          )}
         </button>
       ))}
     </div>

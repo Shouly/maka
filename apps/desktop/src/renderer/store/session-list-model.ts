@@ -196,12 +196,17 @@ export function buildSessionListModel(input: SessionListInput): SessionListModel
       profileName: summary.profileName ?? '',
       runtimeHostId: summary.runtimeHostId ?? '',
       activityAt: activityOf(summary),
-      status: session.status,
+      // Waiting on the user outranks running on the rail: the Host's live word
+      // for this Session, or one of its agents waiting on an answer.
+      status:
+        session.awaitingUser === true || agentsAtWork.awaitingUser.has(session.id)
+          ? 'waiting_for_user'
+          : session.status,
       running:
         input.runningIds?.has(session.id) === true ||
         (session.runningTurnIds?.length ?? 0) > 0 ||
         session.status === 'running' ||
-        agentsAtWork.has(session.id),
+        agentsAtWork.running.has(session.id),
       stale: staleIds.has(session.id),
       flagged: session.isFlagged,
       unread: session.hasUnread,

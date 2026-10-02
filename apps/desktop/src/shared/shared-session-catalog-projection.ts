@@ -50,6 +50,7 @@ export function projectDesktopSharedSessionSummary(
     ...(session.liveRunState?.runningSince === undefined
       ? {}
       : { runningSince: session.liveRunState.runningSince }),
+    ...(session.liveRunState?.awaitingUser ? { awaitingUser: true } : {}),
     ...(session.blockedReason === undefined ? {} : { blockedReason: session.blockedReason }),
     ...(session.statusUpdatedAt === undefined
       ? {}

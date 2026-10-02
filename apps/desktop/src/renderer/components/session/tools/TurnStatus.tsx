@@ -346,7 +346,14 @@ export const TurnStatus = memo(function TurnStatus(props: TurnStatusProps) {
   // Deviation (owner's call, 2026-09-27): the reference wears the waiting
   // pill from the call's first frame, and here that pill stood over a
   // composer with nothing to answer until the arguments were complete.
-  const blocked = props.blocked;
+  // A finished run waits on the user while one of its agents does: the turn's
+  // own waiting pill, since what the user answers is the same kind of request.
+  const blocked: TurnStatusBlocked | undefined =
+    props.blocked ??
+    (props.complete &&
+    tools.some((tool) => tool.result?.kind === 'subagent' && tool.childAgentAwaitingUser)
+      ? 'input'
+      : undefined);
   // A run can be over and its agents not: an Agent or SendMessage call returns
   // once its child is running, and the child works on after the turn has
   // answered. The run's words shimmer until the last of them is done, named by

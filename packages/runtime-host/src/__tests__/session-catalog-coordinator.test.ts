@@ -331,6 +331,40 @@ test('catalog queries project known-empty and running state from Runtime authori
   });
 });
 
+test('a running session parked on a request for the user says so, with when it started', async () => {
+  let awaiting = true;
+  const fixture = createFixture({
+    manager: {
+      runningTurnIds: () => ['turn-live'],
+      runningSince: () => 1_700,
+    },
+    interactions: { awaitsUser: () => awaiting },
+  });
+  const read = async () => {
+    const outcome = await fixture.coordinator.handlers['session.catalog.query'](
+      { kind: 'get', sessionId: fixture.sessionId },
+      context,
+    );
+    if (!outcome.ok || outcome.result.kind !== 'session' || !outcome.result.session) {
+      assert.fail('Catalog get did not return a Session');
+    }
+    if ('kind' in outcome.result.session) assert.fail('unsupported Session projection');
+    return outcome.result.session.liveRunState;
+  };
+  assert.deepEqual(await read(), {
+    schemaVersion: 1,
+    runningTurnIds: ['turn-live'],
+    runningSince: 1_700,
+    awaitingUser: true,
+  });
+  awaiting = false;
+  assert.deepEqual(await read(), {
+    schemaVersion: 1,
+    runningTurnIds: ['turn-live'],
+    runningSince: 1_700,
+  });
+});
+
 test('ordinary catalog lookup hides the WorkHub Coordination Session', async () => {
   const fixture = createFixture({
     stores: {
@@ -1895,6 +1929,7 @@ function createFixture(
     readonly onProjectChanged?: () => void;
     readonly legacyConnectionIdentity?: boolean;
     readonly header?: Partial<SessionHeader>;
+    readonly interactions?: { awaitsUser(sessionId: string): boolean };
   } = {},
 ) {
   const sessionId = 'session-1';
@@ -1985,6 +2020,7 @@ function createFixture(
     requestDrain: () => {
       drains += 1;
     },
+    ...(options.interactions ? { interactions: options.interactions } : {}),
   });
   return {
     coordinator,

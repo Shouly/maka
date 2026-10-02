@@ -213,6 +213,8 @@ export interface SessionCatalogLiveRunState {
   readonly runningTurnIds: readonly string[];
   /** When the earliest running Turn started; absent while none runs. */
   readonly runningSince?: number;
+  /** A run of this session is parked on a request the user can answer now. */
+  readonly awaitingUser?: true;
 }
 
 export interface SessionCatalogProjection {
@@ -938,7 +940,7 @@ function optionalLiveRunState(
     record.liveRunState,
     'Session catalog live run state',
     ['schemaVersion', 'runningTurnIds'],
-    ['runningSince'],
+    ['runningSince', 'awaitingUser'],
   );
   if (state.schemaVersion !== SESSION_CATALOG_LIVE_RUN_STATE_SCHEMA_VERSION) {
     throw invalidProtocolFrame('Unsupported Session catalog live run state schema version');
@@ -959,6 +961,9 @@ function optionalLiveRunState(
   if (Object.hasOwn(state, 'runningSince') && runningTurnIds.length === 0) {
     throw invalidProtocolFrame('Session catalog running-since without a running turn');
   }
+  if (Object.hasOwn(state, 'awaitingUser') && state.awaitingUser !== true) {
+    throw invalidProtocolFrame('Invalid Session catalog awaiting-user flag');
+  }
   return {
     liveRunState: {
       schemaVersion: SESSION_CATALOG_LIVE_RUN_STATE_SCHEMA_VERSION,
@@ -966,6 +971,7 @@ function optionalLiveRunState(
       ...(Object.hasOwn(state, 'runningSince')
         ? { runningSince: timestamp(state.runningSince, 'Session running-since') }
         : {}),
+      ...(state.awaitingUser === true ? { awaitingUser: true as const } : {}),
     },
   };
 }

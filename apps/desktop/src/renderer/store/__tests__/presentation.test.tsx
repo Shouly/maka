@@ -576,6 +576,14 @@ test('a finished run stays busy while an agent it started works, named by that a
   const two = renderDone([agent('Review the auth change', true), agent('Map the tests', true)]);
   assert.ok(two?.textContent?.includes('2 agents running'), two?.textContent ?? '');
 
+  // An agent waiting on the user: the run wears the turn's waiting pill.
+  const waiting = renderDone([
+    { ...agent('Review the auth change', true), childAgentAwaitingUser: true },
+    agent('Map the tests', true),
+  ]);
+  assert.equal(waiting?.getAttribute('data-state'), 'blocked');
+  assert.ok(waiting?.textContent?.includes('Needs your input'), waiting?.textContent ?? '');
+
   const done = renderDone([agent('Review the auth change', false), agent('Map the tests', false)]);
   assert.equal(done?.getAttribute('data-state'), 'done');
   assert.ok(done?.textContent?.includes('Ran 2 agents'), done?.textContent ?? '');
@@ -603,6 +611,16 @@ test('above the composer each running agent has a line: its dot, its task, its t
   assert.equal(buttons.length, 3);
   assert.ok(buttons.every((button) => button.getAttribute('aria-haspopup') === null));
   assert.equal(three?.querySelector('.overflow-y-auto'), null);
+
+  // Waiting on the user: an amber, still dot, and the words where the clock was.
+  const awaiting = lines([{ id: 'a', name: 'Read system info', since: 1_000, awaiting: true }]);
+  const awaitingLine = awaiting?.querySelector('button');
+  assert.ok(
+    awaitingLine?.textContent?.includes('Waiting for you'),
+    awaitingLine?.textContent ?? '',
+  );
+  assert.equal(awaitingLine?.querySelector('.animate-status-dot-breathe'), null);
+  assert.equal(awaitingLine?.querySelector('[data-maka-contract="turn-elapsed"]'), null);
 
   // Past four lines the list scrolls rather than pushing the transcript up.
   const five = lines(['a', 'b', 'c', 'd', 'e'].map((id) => ({ id, name: id })));

@@ -167,6 +167,8 @@ export interface ToolActivityItem {
    * child is still at work.
    */
   childAgentRunning?: true;
+  /** Client-only, with `childAgentRunning`: that child is waiting on the user. */
+  childAgentAwaitingUser?: true;
 }
 
 function systemNoteLabel(kind: string, data: unknown, locale: UiLocale): string {

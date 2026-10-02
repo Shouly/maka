@@ -442,6 +442,12 @@ export interface SessionSummary {
    * whose Turn the parent never sees start.
    */
   runningSince?: number;
+  /**
+   * A run of this session is parked on a request the user can answer now — a
+   * question, a form, a sandbox boundary, a client capability. Live like
+   * `runningTurnIds`, and absent wherever that is.
+   */
+  awaitingUser?: boolean;
   parentSessionId?: string;
   branchOfTurnId?: string;
   subagent?: SessionSubagentProjection;

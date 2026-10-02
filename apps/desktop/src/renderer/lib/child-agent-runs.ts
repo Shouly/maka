@@ -32,6 +32,17 @@ function isRunning(session: SessionSummary): boolean {
   return !session.isArchived && (session.runningTurnIds?.length ?? 0) > 0;
 }
 
+/**
+ * A running child parked on a request the user can answer: the Host says so
+ * live (`awaitingUser`), and a question, form or sandbox boundary also leaves
+ * the Session's own status at `waiting_for_user`.
+ */
+export function awaitsUser(session: SessionSummary): boolean {
+  return (
+    isRunning(session) && (session.awaitingUser === true || session.status === 'waiting_for_user')
+  );
+}
+
 /** A parent's children that are running a Turn now, in catalog order. */
 export function runningChildAgentsOf<T extends SessionSummary>(
   sessions: readonly T[],
@@ -42,19 +53,25 @@ export function runningChildAgentsOf<T extends SessionSummary>(
   );
 }
 
-/** The sessions that have a child running a Turn now. */
-export function parentsOfRunningChildAgents(
-  sessions: readonly SessionSummary[],
-): ReadonlySet<string> {
-  const parents = new Set<string>();
+/** The sessions that have a child running a Turn now, and those with one waiting on the user. */
+export function parentsOfRunningChildAgents(sessions: readonly SessionSummary[]): {
+  readonly running: ReadonlySet<string>;
+  readonly awaitingUser: ReadonlySet<string>;
+} {
+  const running = new Set<string>();
+  const awaitingUser = new Set<string>();
   for (const session of sessions) {
     const parent = linkedSubagentParentSessionId(session);
-    if (parent !== undefined && isRunning(session)) parents.add(parent);
+    if (parent === undefined || !isRunning(session)) continue;
+    running.add(parent);
+    if (awaitsUser(session)) awaitingUser.add(parent);
   }
-  return parents;
+  return { running, awaitingUser };
 }
 
 const childTurnKey = (childSessionId: string, turnId: string) => `${childSessionId}/${turnId}`;
+/** Marks a key whose child waits on the user. */
+const AWAITING = '!';
 
 /**
  * Every Turn a parent's children are running, as one string: a store selector
@@ -66,20 +83,25 @@ export function runningChildTurnsKey(
 ): string {
   return runningChildAgentsOf(sessions, parentSessionId)
     .flatMap((session) =>
-      (session.runningTurnIds ?? []).map((turnId) => childTurnKey(session.id, turnId)),
+      (session.runningTurnIds ?? []).map(
+        (turnId) => `${childTurnKey(session.id, turnId)}${awaitsUser(session) ? AWAITING : ''}`,
+      ),
     )
     .sort()
     .join('\n');
 }
 
-function runsOn(tool: ToolActivityItem, running: ReadonlySet<string>): boolean {
-  if (tool.result?.kind !== 'subagent') return false;
+/** Whether this row's child runs the Turn the row started, and whether it waits on the user. */
+function runsOn(
+  tool: ToolActivityItem,
+  running: ReadonlySet<string>,
+): 'running' | 'awaiting' | undefined {
+  if (tool.result?.kind !== 'subagent') return undefined;
   const { childSessionId, turnId } = tool.result;
-  return (
-    childSessionId !== undefined &&
-    turnId !== undefined &&
-    running.has(childTurnKey(childSessionId, turnId))
-  );
+  if (childSessionId === undefined || turnId === undefined) return undefined;
+  const key = childTurnKey(childSessionId, turnId);
+  if (running.has(`${key}${AWAITING}`)) return 'awaiting';
+  return running.has(key) ? 'running' : undefined;
 }
 
 /**
@@ -105,18 +127,28 @@ export function createChildAgentOverlay(): (
     const running = new Set(runningKey.split('\n'));
     let moved = false;
     const overlaid = turns.map((turn) => {
-      const marked = turn.tools.filter((tool) => runsOn(tool, running));
-      if (marked.length === 0) return turn;
+      const states = new Map(
+        turn.tools.flatMap((tool) => {
+          const state = runsOn(tool, running);
+          return state ? [[tool.toolUseId, state] as const] : [];
+        }),
+      );
+      if (states.size === 0) return turn;
       moved = true;
-      const key = marked.map((tool) => tool.toolUseId).join('\n');
+      const key = [...states].map(([id, state]) => `${id}:${state}`).join('\n');
       const cached = cache.get(turn);
       if (cached?.key === key) return cached.turn;
-      const ids = new Set(marked.map((tool) => tool.toolUseId));
       const next = projectTurnTools(
         [turn],
-        turn.tools.map((tool) =>
-          ids.has(tool.toolUseId) ? { ...tool, childAgentRunning: true as const } : tool,
-        ),
+        turn.tools.map((tool) => {
+          const state = states.get(tool.toolUseId);
+          if (!state) return tool;
+          return {
+            ...tool,
+            childAgentRunning: true as const,
+            ...(state === 'awaiting' ? { childAgentAwaitingUser: true as const } : {}),
+          };
+        }),
       )[0]!;
       cache.set(turn, { key, turn: next });
       return next;

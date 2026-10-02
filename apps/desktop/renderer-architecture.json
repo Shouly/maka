@@ -447,6 +447,7 @@
     "src/renderer/store/__tests__/working-mark.test.ts",
     "src/renderer/store/active-session-store.ts",
     "src/renderer/store/bots-store.ts",
+    "src/renderer/store/child-interactions-store.ts",
     "src/renderer/store/composer-draft-store.ts",
     "src/renderer/store/composer-input-store.ts",
     "src/renderer/store/connections-store.ts",
@@ -1260,12 +1261,12 @@
       },
       "hookCalls": {
         "useAsync": 1,
-        "useEffect": 5,
+        "useEffect": 7,
         "useRef": 3,
-        "useShallow": 1,
+        "useShallow": 2,
         "useState": 8,
-        "useStore": 2,
-        "useUiLocale": 6
+        "useStore": 4,
+        "useUiLocale": 7
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,
@@ -1275,14 +1276,17 @@
         "../../hooks/use-async.js": 1,
         "../../hooks/use-hotkeys.js": 1,
         "../../lib/ask-user-question.js": 1,
+        "../../lib/child-agent-runs.js": 1,
         "../../lib/cn.js": 1,
         "../../lib/composer-surface.js": 1,
         "../../lib/open-overlay.js": 1,
         "../../lib/platform.js": 1,
         "../../lib/ported/project-path-display.js": 1,
         "../../lib/user-question-shape.js": 1,
+        "../../locales/child-agents-copy.js": 1,
         "../../locales/composer-copy.js": 1,
         "../../locales/shell-copy.js": 1,
+        "../../store/child-interactions-store.js": 1,
         "../../store/index.js": 1,
         "../../store/user-question-panel-store.js": 1,
         "../icons/Anthropicon.js": 1,
@@ -7490,6 +7494,18 @@
       "dependencyPaths": {
         "../bridge/bots.js": 1,
         "./resource-store.js": 1,
+        "zustand/vanilla": 1
+      }
+    },
+    "src/renderer/store/child-interactions-store.ts": {
+      "bridgePaths": {},
+      "environmentCapabilities": {},
+      "hookCalls": {},
+      "lifecycleMethods": {},
+      "unresolvedDependencies": 0,
+      "actionFactories": [],
+      "dependencyPaths": {
+        "../bridge/sessions.js": 1,
         "zustand/vanilla": 1
       }
     },

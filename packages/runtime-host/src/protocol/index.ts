@@ -153,7 +153,9 @@ export const RUNTIME_HOST_PROTOCOL_VERSION = 0 as const;
 // 167: a session catalog row's `liveRunState` may carry `runningSince`, when
 // its earliest running Turn started — what a client counts an elapsed clock
 // from. An old client decodes that record by its exact keys and rejects it.
-export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 167 as const;
+// 168: `liveRunState` may carry `awaitingUser: true` while a run of the session
+// is parked on a request the user can answer. Same exact-key rejection.
+export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 168 as const;
 // 155: A tool call is on the wire while the model is still writing it.
 // `subscription.session_event` carries `tool_input_start` and
 // `tool_input_delta`, which a Client that does not know them decodes as an

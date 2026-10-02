@@ -223,6 +223,7 @@ describe('HostInteractionCoordinator', () => {
     await withStore(async ({ store }) => {
       const order: string[] = [];
       const attention: unknown[] = [];
+      const awaiting: boolean[] = [];
       const continuation = questionContinuation('question_1', {
         answer: (answers) => order.push(`apply:${answers.join(',')}`),
       });
@@ -236,6 +237,8 @@ describe('HostInteractionCoordinator', () => {
         refreshCanonicalContinuity: async (sessionId, _admission, event) => {
           const record = await store.readInteraction('question_1');
           order.push(record?.outcome ? 'refresh:answered' : 'refresh:pending');
+          // What a catalog read this refresh triggers would say.
+          awaiting.push(coordinator.awaitsUser(sessionId));
           if (event) {
             order.push('attention');
             attention.push({ sessionId, ...event });
@@ -279,6 +282,10 @@ describe('HostInteractionCoordinator', () => {
       ]);
       assert.equal(attention.length, 1);
       assert.equal(await coordinator.hasPendingSession(RUN.sessionId), false);
+      // Waiting from the refresh that publishes the question; no longer from
+      // the one that publishes its answer, though the entry is still live then.
+      assert.deepEqual(awaiting, [true, false]);
+      assert.equal(coordinator.awaitsUser(RUN.sessionId), false);
 
       const conflicting = await coordinator.handlers['interaction.answer'](
         {

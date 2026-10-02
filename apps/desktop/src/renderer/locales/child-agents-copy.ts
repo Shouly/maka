@@ -24,6 +24,14 @@ interface ChildAgentsCopy {
   status: (count: number) => string;
   /** A tray line's accessible name: it opens that agent's Session. */
   open: (name: string) => string;
+  /**
+   * In place of a tray line's clock while that agent waits on the user — for
+   * an approval or a form alike, so the rail's own words for a Session that
+   * waits on you.
+   */
+  awaiting: string;
+  /** Above a card that answers an agent's request; `others` more wait behind it. */
+  requestFrom: (name: string, others: number) => string;
   /** In place of a child agent's composer. */
   directedByParent: string;
   backToParent: string;
@@ -36,6 +44,9 @@ const catalog = {
   en: {
     status: (count) => (count === 1 ? 'Agent running' : `${count} agents running`),
     open: (name) => `Open agent: ${name}`,
+    awaiting: 'Waiting for you',
+    requestFrom: (name, others) =>
+      `Agent “${name}” is asking${others > 0 ? ` · ${others} more waiting` : ''}`,
     directedByParent: 'This agent works for the main conversation; its results go back there.',
     backToParent: 'Back to the main conversation',
     stop: 'Stop',
@@ -45,6 +56,9 @@ const catalog = {
   'zh-CN': {
     status: (count) => (count === 1 ? '子代理运行中' : `${count} 个子代理运行中`),
     open: (name) => `查看子代理：${name}`,
+    awaiting: '等你处理',
+    requestFrom: (name, others) =>
+      `子代理「${name}」的请求${others > 0 ? ` · 还有 ${others} 个在等` : ''}`,
     directedByParent: '这个子代理为主对话工作，结果会交回主对话。',
     backToParent: '返回主对话',
     stop: '停止',
@@ -54,6 +68,9 @@ const catalog = {
   'zh-TW': {
     status: (count) => (count === 1 ? '子代理執行中' : `${count} 個子代理執行中`),
     open: (name) => `查看子代理：${name}`,
+    awaiting: '等你處理',
+    requestFrom: (name, others) =>
+      `子代理「${name}」的請求${others > 0 ? ` · 還有 ${others} 個在等` : ''}`,
     directedByParent: '這個子代理為主對話工作，結果會交回主對話。',
     backToParent: '返回主對話',
     stop: '停止',

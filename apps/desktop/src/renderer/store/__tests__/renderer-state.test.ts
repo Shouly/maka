@@ -28,6 +28,7 @@ import { moduleListState } from '../../lib/module-list-state.js';
 import { goalReadout } from '../../lib/goal-readout.js';
 import { createGoalStore } from '../goal-store.js';
 import { createSessionsStore } from '../sessions-store.js';
+import { createChildInteractionsStore } from '../child-interactions-store.js';
 import { clearNewTaskReloadIntent } from '../../lib/ported/new-task-reload-intent.js';
 import { createActiveSessionStore } from '../active-session-store.js';
 import { createTurnActionsStore } from '../turn-actions-store.js';
@@ -1660,7 +1661,7 @@ test('bootstrap opens the latest conversation the rail lists, not a child agent 
 
 test('a catalog read that cannot say what is running keeps the last reading that could', async () => {
   let reads = [
-    [{ ...row('child'), runningTurnIds: ['t-1'], runningSince: 1_700 }],
+    [{ ...row('child'), runningTurnIds: ['t-1'], runningSince: 1_700, awaitingUser: true }],
     // The desktop cache answers between authoritative reads, without the field.
     [{ ...row('child'), localState: 'cached' as const }],
     [{ ...row('child'), runningTurnIds: [] as string[] }],
@@ -1680,14 +1681,66 @@ test('a catalog read that cannot say what is running keeps the last reading that
   };
   assert.deepEqual(await running(), ['t-1']);
   assert.deepEqual(await running(), ['t-1']);
-  // When it started is the same reading's, kept with it.
+  // When it started, and that it waits on the user, are the same reading's, kept with it.
   assert.equal(store.getState().sessions[0]?.runningSince, 1_700);
+  assert.equal(store.getState().sessions[0]?.awaitingUser, true);
   // An empty set is a reading: the turn is over.
   assert.deepEqual(await running(), []);
   assert.deepEqual(await running(), []);
   // A mutation's row describes the header alone.
   store.upsert({ ...row('child') });
   assert.deepEqual(store.getState().sessions[0]?.runningTurnIds, []);
+});
+
+test("a parent reads its running agents' pending requests, again on each change reported for one", async () => {
+  const pending: Record<string, unknown[]> = {
+    'child-a': [{ type: 'sandbox_boundary_request', requestId: 'r-1' }],
+    'child-b': [],
+  };
+  const reads: string[] = [];
+  let release: (() => void) | undefined;
+  const store = createChildInteractionsStore({
+    async listActiveInteractions(sessionId: string) {
+      reads.push(sessionId);
+      if (sessionId === 'child-slow') await new Promise<void>((resolve) => (release = resolve));
+      return (pending[sessionId] ?? []) as never;
+    },
+  });
+  store.watch(['child-a', 'child-b']);
+  await tick();
+  assert.deepEqual(reads, ['child-a', 'child-b']);
+  assert.deepEqual(Object.keys(store.getState().byChild), ['child-a']);
+
+  // A change to a child it does not watch reads nothing.
+  store.changed('child-c');
+  await tick();
+  assert.equal(reads.length, 2);
+
+  // Answered: the next read finds nothing, and the child's entry goes.
+  pending['child-a'] = [];
+  store.changed('child-a');
+  await tick();
+  assert.deepEqual(store.getState().byChild, {});
+
+  // One read at a time per child; changes meanwhile read once more after it.
+  store.watch(['child-slow']);
+  store.changed('child-slow');
+  store.changed('child-slow');
+  await tick();
+  assert.deepEqual(reads.slice(3), ['child-slow']);
+  release?.();
+  await tick();
+  release?.();
+  await tick();
+  assert.deepEqual(reads.slice(3), ['child-slow', 'child-slow']);
+
+  // Unwatched, a child's requests are forgotten and a late read lands nowhere.
+  pending['child-slow'] = [{ type: 'form_request', requestId: 'r-2' }];
+  store.changed('child-slow');
+  store.watch([]);
+  release?.();
+  await tick();
+  assert.deepEqual(store.getState().byChild, {});
 });
 
 test('a selected task disappears from the active surface when archived', async () => {

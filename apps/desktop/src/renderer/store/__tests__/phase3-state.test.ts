@@ -1352,4 +1352,15 @@ test('an Agent row runs while its child runs the Turn that call started', () => 
   assert.equal(overlay(turns, ''), turns);
   // Unmarked, the frozen launch result reads as done.
   assert.equal(toolRowStatus(launched.tools[0]!), 'completed');
+
+  // A child waiting on the user marks its row so.
+  const waitingCatalog = catalog.map((row: { id: string }) =>
+    row.id === 'child-a' ? { ...row, awaitingUser: true } : row,
+  ) as never[];
+  const waitingKey = runningChildTurnsKey(waitingCatalog, 'parent');
+  assert.notEqual(waitingKey, key);
+  const waitingRow = createChildAgentOverlay()([launched], waitingKey)[0]!.tools[0]!;
+  assert.equal(waitingRow.childAgentRunning, true);
+  assert.equal(waitingRow.childAgentAwaitingUser, true);
+  assert.equal(overlay(turns, key)[0]!.tools[0]!.childAgentAwaitingUser, undefined);
 });
