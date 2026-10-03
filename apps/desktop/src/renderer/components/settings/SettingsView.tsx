@@ -57,7 +57,6 @@ import { DialogOverlay, DialogPortal, DialogStackContext } from '../ui/dialog.js
 import { SettingsBackButton, SettingsBackProvider, type SettingsBack } from './settings-kit.js';
 import { SubagentsSettings } from './SubagentsSettings.js';
 import { UsageSettings } from './UsageSettings.js';
-import { WebSearchSettings } from './WebSearchSettings.js';
 import { WorkspaceSettings } from './WorkspaceSettings.js';
 import { resolveSettingsSection } from './settings-sections.js';
 import { useScopedRuntimeHost } from '../../hooks/use-workspace.js';
@@ -153,8 +152,6 @@ export function SettingsDialog(props: { open: boolean; onOpenKeyboardHelp: () =>
                     <SubagentsSettings host={host} />
                   ) : section === 'memory' ? (
                     <MemorySettings host={host} />
-                  ) : section === 'search' ? (
-                    <WebSearchSettings host={host} />
                   ) : section === 'bot-chat' ? (
                     <BotChatSettings host={host} />
                   ) : section === 'usage' ? (

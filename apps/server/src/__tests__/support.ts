@@ -96,6 +96,8 @@ export async function startTestServer(
     vertexToken?: () => Promise<string>;
     /** Stands in for the providers' model lists; by default, `catalogModels`. */
     catalogFetch?: typeof fetch;
+    /** Stands in for the web search service. */
+    searchFetch?: typeof fetch;
     googleCallbackUrl?: string;
     consoleDir?: string;
   } = {},
@@ -176,6 +178,11 @@ export async function startTestServer(
     catalog: {
       fetch: options.catalogFetch ?? listed,
       vertexToken: options.vertexToken ?? (async () => 'test-google-access-token'),
+    },
+    webSearch: {
+      fetch:
+        options.searchFetch ??
+        (async () => Response.json({ detail: { error: 'no stand-in' } }, { status: 500 })),
     },
   });
   return {

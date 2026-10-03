@@ -166,7 +166,7 @@ test('normalizes only the bounded agent settings patch surface', () => {
         kind: 'patch_agent_settings',
         value: {
           memory: { enabled: false },
-          webSearch: { enabled: true },
+          workspaceInstructions: { enabled: true },
         },
       },
     }),
@@ -176,7 +176,7 @@ test('normalizes only the bounded agent settings patch surface', () => {
         kind: 'patch_agent_settings',
         value: {
           memory: { enabled: false },
-          webSearch: { enabled: true },
+          workspaceInstructions: { enabled: true },
         },
       },
     },
@@ -184,6 +184,7 @@ test('normalizes only the bounded agent settings patch surface', () => {
   for (const value of [
     { networkProxy: { enabled: false } },
     { personalization: { assistantTone: 'Be direct.' } },
+    { webSearch: { enabled: true } },
   ]) {
     assert.throws(
       () =>

@@ -27,6 +27,7 @@ import {
   OrganizationAccountUnavailableError,
   type OrganizationAccessToken,
 } from '@maka/runtime/organization-model-fetch';
+import type { OrganizationAccount } from '@maka/runtime/organization-web';
 import {
   decodeOrganizationAccountTokenResult,
   ORGANIZATION_ACCOUNT_SERVICE_ID,
@@ -41,6 +42,11 @@ export interface HostOrganizationSession {
     serverUrl: string,
     options?: { readonly forceRefresh?: boolean; readonly signal?: AbortSignal | null },
   ): Promise<OrganizationAccessToken>;
+  /** Whichever server the person is signed in to, with a token it accepts now. */
+  account(options?: {
+    readonly forceRefresh?: boolean;
+    readonly signal?: AbortSignal | null;
+  }): Promise<OrganizationAccount>;
 }
 
 /** Ask the desktop app for the account's token, through its workspace service. */
@@ -90,20 +96,29 @@ export function createHostOrganizationSession(input: {
     };
   };
 
-  return {
-    async accessToken(serverUrl, options = {}) {
+  const current = (options: {
+    readonly forceRefresh?: boolean;
+    readonly signal?: AbortSignal | null;
+  }) =>
+    untilAborted(
       // A forced refresh is the one caller's own question, so it is theirs to stop.
-      const asked = options.forceRefresh
+      options.forceRefresh
         ? ask(true, options.signal)
         : (shared ??= ask(false).finally(() => {
             shared = undefined;
-          }));
-      const token = await untilAborted(asked, options.signal);
+          })),
+      options.signal,
+    );
+
+  return {
+    async accessToken(serverUrl, options = {}) {
+      const token = await current(options);
       if (token.serverUrl !== serverKey(serverUrl)) {
         throw new OrganizationAccountUnavailableError('server_mismatch');
       }
       return { accessToken: token.accessToken, clientVersion: token.clientVersion };
     },
+    account: (options = {}) => current(options),
   };
 }
 

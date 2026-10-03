@@ -192,6 +192,16 @@ export interface ProviderCatalogSnapshotsTable {
   expires_at: Date;
   created_at: CreatedAt;
 }
+/** The organization's web search service: one row, there once a key is saved. */
+export interface WebSearchSettingsTable {
+  id: 1;
+  provider: 'tavily';
+  credential_sealed: string;
+  enabled: boolean;
+  /** Bumped by every change; the console sends it back to change it again. */
+  revision: number;
+  updated_at: Date;
+}
 export interface ModelCatalogStateTable {
   id: number;
   revision: number;
@@ -254,6 +264,7 @@ export interface Database {
   organization_models: OrganizationModelsTable;
   provider_catalog_snapshots: ProviderCatalogSnapshotsTable;
   model_catalog_state: ModelCatalogStateTable;
+  web_search_settings: WebSearchSettingsTable;
   admin_mutations: AdminMutationsTable;
   quotas: QuotasTable;
   model_usage: ModelUsageTable;

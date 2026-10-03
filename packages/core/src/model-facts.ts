@@ -170,7 +170,6 @@ function normalizeCapabilities(value: unknown): NonNullable<ModelInfo['capabilit
     'functionCalling',
     'parallelToolCalls',
     'imageGeneration',
-    'webSearch',
   ] as const;
   for (const key of allowed) {
     if (key in value) {

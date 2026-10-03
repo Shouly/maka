@@ -36,7 +36,6 @@ import { fetchOrganizationCatalogModels } from '../model-fetcher.js';
 import { ModelAdapter } from '../model-adapter.js';
 import { resolveSelectedModelContextWindow } from '../context-budget-policy.js';
 import { resolveNativeToolDeferral } from '../native-tool-deferral.js';
-import { routeWebSearchTools } from '../native-web-search-tool.js';
 import { testConnection } from '../test-connection.js';
 import {
   createOrganizationModelFetch,
@@ -73,7 +72,7 @@ function fixture(profileId: ExecutionProfileId, sdkModelId: string) {
         thinkingLevels: ['low', 'high'],
         contextWindow: 200000,
         maxOutputTokens: 32000,
-        capabilities: { functionCalling: true, reasoning: true, webSearch: false },
+        capabilities: { functionCalling: true, reasoning: true },
       },
     ],
   };
@@ -326,25 +325,6 @@ test("a compatible profile gets none of the vendor's own features its vendor pro
       .applyPatchProfile,
     null,
   );
-
-  // Search a provider runs is not offered on any organisation model.
-  const search = {
-    name: 'WebSearch',
-    description: 'Search',
-    parameters: {},
-    impl: async () => undefined,
-  };
-  for (const profileId of Object.keys(EXECUTION_PROFILES) as ExecutionProfileId[]) {
-    const { connection } = fixture(profileId, 'claude-sonnet-4-6');
-    const routed = routeWebSearchTools({
-      tools: [search],
-      settings: { enabled: true, defaultProvider: 'model' },
-      connection,
-      model: 'm_company',
-      tavilyReady: false,
-    });
-    assert.deepEqual(routed, [], profileId);
-  }
 });
 
 test('organization off-only reasoning controls survive catalog decoding and reach the native SDK', async () => {

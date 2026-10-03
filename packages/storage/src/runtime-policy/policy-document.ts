@@ -150,8 +150,6 @@ function applyMutation(policy: RuntimePolicy, operation: RuntimePolicyMutation):
       return { ...policy, workspaceInstructions: operation.value };
     case 'set_chat_defaults':
       return { ...policy, chatDefaults: operation.value };
-    case 'set_web_search':
-      return { ...policy, webSearch: operation.value };
     case 'set_subagents':
       return { ...policy, subagents: operation.value };
     case 'set_external_agents':
@@ -171,9 +169,6 @@ function applyMutation(policy: RuntimePolicy, operation: RuntimePolicyMutation):
                 ...operation.value.workspaceInstructions,
               },
             }
-          : {}),
-        ...(operation.value.webSearch
-          ? { webSearch: { ...policy.webSearch, ...operation.value.webSearch } }
           : {}),
       };
   }

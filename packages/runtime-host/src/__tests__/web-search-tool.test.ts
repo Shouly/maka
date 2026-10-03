@@ -21,84 +21,76 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createDefaultRuntimePolicy } from '@maka/core/runtime-policy';
 import { WEB_SEARCH_DEFAULT_LIMIT } from '@maka/core/web-search';
-import type { MakaToolContext } from '@maka/runtime/tool-runtime';
 import type { ProxiedFetchProxy } from '@maka/runtime/network/scoped-fetch-transport';
+import { OrganizationAccountUnavailableError } from '@maka/runtime/organization-model-fetch';
+import type { MakaToolContext } from '@maka/runtime/tool-runtime';
 import type {
-  ResolveWebSearchExecutionResult,
+  ResolveHostOutboundExecutionResult,
   RuntimePolicyOperationCoordinator,
 } from '@maka/storage/runtime-policy-stores';
+import type { HostOrganizationSession } from '../server/organization-session.js';
 import {
-  createHostWebSearchTool,
-  resolveHostTavilyWebSearchReadiness,
-  shouldResolveHostTavilyWebSearchReadiness,
+  createHostWebSearchService,
+  createHostWebSearchToolFromService,
 } from '../server/web-search-tool.js';
 
-test('Host only resolves Tavily readiness when that execution path can be exposed', () => {
-  const policy = createDefaultRuntimePolicy();
-  assert.equal(shouldResolveHostTavilyWebSearchReadiness(policy), false);
-  assert.equal(
-    shouldResolveHostTavilyWebSearchReadiness({
-      ...policy,
-      webSearch: { enabled: true, defaultProvider: 'tavily' },
-    }),
-    true,
-  );
-});
+const SERVER = 'https://org.example/';
 
-test('Host Tavily readiness follows the canonical execution resolver', async () => {
-  assert.equal(
-    await resolveHostTavilyWebSearchReadiness(
-      resolver({
-        kind: 'credential_not_configured',
-        status: {
-          locator: { scope: 'web_search', provider: 'tavily', kind: 'api_key' },
-          configured: false,
-          credentialId: null,
-          revision: null,
-          updatedAt: null,
-        },
-      }),
-    ),
-    false,
-  );
-  assert.equal(await resolveHostTavilyWebSearchReadiness(resolver(readyDirectExecution())), true);
-});
-
-test('Host WebSearch fails closed before transport creation for unavailable policy states', async () => {
-  const states: readonly ResolveWebSearchExecutionResult[] = [
-    { kind: 'disabled', provider: 'tavily' },
-    {
-      kind: 'credential_not_configured',
-      status: {
-        locator: { scope: 'web_search', provider: 'tavily', kind: 'api_key' },
-        configured: false,
-        credentialId: null,
-        revision: null,
-        updatedAt: null,
-      },
+/** A signed-in account whose token changes on every forced refresh. */
+function account(
+  options: { readonly refused?: OrganizationAccountUnavailableError } = {},
+): HostOrganizationSession & { readonly refreshes: number } {
+  let refreshes = 0;
+  return {
+    get refreshes() {
+      return refreshes;
     },
-  ];
+    accessToken: async () => {
+      throw new Error('web search asks for the account, not a token for one server');
+    },
+    account: async (request = {}) => {
+      if (options.refused) throw options.refused;
+      if (request.forceRefresh) refreshes += 1;
+      return { serverUrl: SERVER, accessToken: `token-${refreshes}`, clientVersion: '1.2.3' };
+    },
+  };
+}
 
-  for (const state of states) {
-    let transportCreated = false;
-    const tool = createHostWebSearchTool({
-      policy: resolver(state),
-      createFetchTransport: () => {
-        transportCreated = true;
-        throw new Error('transport must not be created');
+function tool(input: {
+  readonly session: () => HostOrganizationSession;
+  readonly proxy?: ResolveHostOutboundExecutionResult;
+  readonly fetch?: typeof fetch;
+  readonly onTransport?: (proxy: ProxiedFetchProxy | null) => void;
+  readonly onClose?: () => void;
+}) {
+  const policy: Pick<RuntimePolicyOperationCoordinator, 'resolveHostOutboundExecution'> = {
+    resolveHostOutboundExecution: async () =>
+      input.proxy ?? {
+        kind: 'ready',
+        networkProxy: createDefaultRuntimePolicy().networkProxy,
+        secretMaterial: {},
       },
-    });
-    const result = (await tool.impl({ query: 'current result' }, context())) as {
-      kind: string;
-      reason: string;
-    };
-    assert.equal(result.kind, 'web_search_error');
-    assert.equal(result.reason, 'not_configured');
-    assert.equal(transportCreated, false);
-  }
-});
+  };
+  return createHostWebSearchToolFromService(
+    createHostWebSearchService({
+      organizationSession: input.session,
+      policy,
+      createFetchTransport: (proxy) => {
+        input.onTransport?.(proxy);
+        return {
+          fetch:
+            input.fetch ??
+            (async () => {
+              throw new Error('no network in this test');
+            }),
+          close: async () => input.onClose?.(),
+        };
+      },
+    }),
+  );
+}
 
-test('Host WebSearch consumes one canonical credential/proxy snapshot and closes transport', async () => {
+test("WebSearch asks the organization server with the account's token, through the network proxy", async () => {
   const networkProxy = {
     ...createDefaultRuntimePolicy().networkProxy,
     enabled: true,
@@ -112,19 +104,13 @@ test('Host WebSearch consumes one canonical credential/proxy snapshot and closes
   };
   let proxy: ProxiedFetchProxy | null | undefined;
   let closed = 0;
-  let providerBody: Record<string, unknown> | undefined;
-  const tool = createHostWebSearchTool({
-    policy: resolver({
+  const sent: { url: string; init: RequestInit | undefined }[] = [];
+  const search = tool({
+    session: () => account(),
+    proxy: {
       kind: 'ready',
-      provider: 'tavily',
       networkProxy,
       secretMaterial: {
-        webSearch: {
-          locator: { scope: 'web_search', provider: 'tavily', kind: 'api_key' },
-          credentialId: 'web-search-credential',
-          revision: 3,
-          secret: 'tavily-secret',
-        },
         networkProxy: {
           locator: { scope: 'network_proxy', kind: 'password' },
           credentialId: 'proxy-credential',
@@ -132,30 +118,26 @@ test('Host WebSearch consumes one canonical credential/proxy snapshot and closes
           secret: 'proxy-secret',
         },
       },
-    }),
-    createFetchTransport: (candidate) => {
+    },
+    onTransport: (candidate) => {
       proxy = candidate;
-      return {
-        fetch: async (_input, init) => {
-          providerBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-          return Response.json({
-            results: [
-              {
-                title: 'Maka',
-                url: 'https://maka.example/current',
-                content: 'Current information.',
-              },
-            ],
-          });
-        },
-        close: async () => {
-          closed += 1;
-        },
-      };
+    },
+    onClose: () => {
+      closed += 1;
+    },
+    fetch: async (url, init) => {
+      sent.push({ url: String(url), init });
+      return Response.json({
+        results: [
+          { title: 'Maka', url: 'https://maka.example/current', snippet: 'Current information.' },
+          { title: '', url: 'https://other.example/a', snippet: '' },
+          { title: 'Not a page', url: 'ftp://files.example/a', snippet: 'dropped' },
+        ],
+      });
     },
   });
 
-  const result = await tool.impl(
+  const result = await search.impl(
     {
       query: ' latest Maka ',
       allowed_domains: ['maka.example'],
@@ -172,13 +154,17 @@ test('Host WebSearch consumes one canonical credential/proxy snapshot and closes
     password: 'proxy-secret',
     bypassList: ['one.example', 'two.example'],
   });
-  assert.deepEqual(providerBody, {
-    api_key: 'tavily-secret',
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0]?.url, 'https://org.example/tools/web-search');
+  const headers = new Headers(sent[0]?.init?.headers);
+  assert.equal(headers.get('authorization'), 'Bearer token-0');
+  assert.equal(headers.get('x-maka-client-version'), '1.2.3');
+  assert.equal(sent[0]?.init?.redirect, 'manual');
+  assert.deepEqual(JSON.parse(String(sent[0]?.init?.body)), {
     query: 'latest Maka',
-    max_results: WEB_SEARCH_DEFAULT_LIMIT,
-    search_depth: 'basic',
-    include_domains: ['maka.example'],
-    exclude_domains: ['spam.example'],
+    limit: WEB_SEARCH_DEFAULT_LIMIT,
+    allowedDomains: ['maka.example'],
+    blockedDomains: ['spam.example'],
   });
   assert.equal(closed, 1);
   assert.deepEqual(result, {
@@ -192,81 +178,149 @@ test('Host WebSearch consumes one canonical credential/proxy snapshot and closes
         snippet: 'Current information.',
         source: 'maka.example',
       },
+      {
+        title: 'https://other.example/a',
+        url: 'https://other.example/a',
+        snippet: '',
+        source: 'other.example',
+      },
     ],
   });
-  assert.doesNotMatch(JSON.stringify(result), /tavily-secret|proxy-secret/);
+  assert.doesNotMatch(JSON.stringify(result), /token-0|proxy-secret/);
 });
 
-test('Host WebSearch closes its transport when the owning turn is cancelled', async () => {
+test('without a signed-in account WebSearch says so', async () => {
+  let transports = 0;
+  const offline = tool({
+    session: () => {
+      throw new OrganizationAccountUnavailableError('not_offered');
+    },
+    onTransport: () => {
+      transports += 1;
+    },
+  });
+  assert.deepEqual(await offline.impl({ query: 'maka' }, context()), {
+    kind: 'web_search_error',
+    ok: false,
+    provider: 'tavily',
+    query: 'maka',
+    reason: 'not_signed_in',
+    message: 'The web needs the Maka app, signed in to the organization account.',
+  });
+  assert.equal(transports, 0, 'nothing is sent without an account');
+
+  const signedOut = tool({
+    session: () => account({ refused: new OrganizationAccountUnavailableError('signed_out') }),
+  });
+  const result = (await signedOut.impl({ query: 'maka' }, context())) as {
+    reason: string;
+    message: string;
+  };
+  assert.deepEqual(
+    [result.reason, result.message],
+    ['not_signed_in', 'Sign in to the organization account in Maka to use the web.'],
+  );
+});
+
+test('without the network proxy credential WebSearch says so and sends nothing', async () => {
+  let transports = 0;
+  const search = tool({
+    session: () => account(),
+    proxy: {
+      kind: 'credential_not_configured',
+      status: {
+        locator: { scope: 'network_proxy', kind: 'password' },
+        configured: false,
+        credentialId: null,
+        revision: null,
+        updatedAt: null,
+      },
+    },
+    onTransport: () => {
+      transports += 1;
+    },
+  });
+  const result = (await search.impl({ query: 'maka' }, context())) as {
+    reason: string;
+    message: string;
+  };
+  assert.deepEqual(
+    [result.reason, result.message],
+    ['network_error', 'Configure the network proxy credential before using the web.'],
+  );
+  assert.equal(transports, 0);
+});
+
+test('a refused token is refreshed once, and the server refusals become the tool reasons', async () => {
+  const session = account();
+  const tokens: string[] = [];
+  const once = tool({
+    session: () => session,
+    fetch: async (_url, init) => {
+      const token = new Headers(init?.headers).get('authorization') ?? '';
+      tokens.push(token);
+      return token === 'Bearer token-0'
+        ? Response.json(
+            { error: { code: 'unauthenticated', message: 'Sign in again' } },
+            { status: 401 },
+          )
+        : Response.json({ results: [] });
+    },
+  });
+  assert.deepEqual(await once.impl({ query: 'maka' }, context()), {
+    kind: 'web_search',
+    provider: 'tavily',
+    query: 'maka',
+    rows: [],
+  });
+  assert.deepEqual(tokens, ['Bearer token-0', 'Bearer token-1']);
+
+  for (const [status, code, reason] of [
+    [503, 'web_access_unavailable', 'unavailable'],
+    [429, 'rate_limited', 'rate_limited'],
+    [502, 'upstream_unavailable', 'network_error'],
+  ] as const) {
+    const refused = tool({
+      session: () => account(),
+      fetch: async () =>
+        Response.json({ error: { code, message: `server says ${code}` } }, { status }),
+    });
+    const result = (await refused.impl({ query: 'maka' }, context())) as {
+      reason: string;
+      message: string;
+    };
+    assert.deepEqual([result.reason, result.message], [reason, `server says ${code}`]);
+  }
+});
+
+test('WebSearch closes its transport when the owning turn is cancelled mid-request', async () => {
   const abort = new AbortController();
   let closed = false;
-  const tool = createHostWebSearchTool({
-    policy: resolver(readyDirectExecution()),
-    createFetchTransport: () => ({
-      fetch: async (_input, init) =>
-        await new Promise<Response>((_resolve, reject) => {
-          const signal = init?.signal;
-          signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
-        }),
-      close: async () => {
-        closed = true;
-      },
-    }),
+  let started!: () => void;
+  const sent = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const search = tool({
+    session: () => account(),
+    onClose: () => {
+      closed = true;
+    },
+    fetch: async (_input, init) =>
+      await new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+        started();
+      }),
   });
   const running = Promise.resolve(
-    tool.impl(
-      { query: 'cancel me' },
-      {
-        ...context(),
-        abortSignal: abort.signal,
-      },
-    ),
+    search.impl({ query: 'cancel me' }, { ...context(), abortSignal: abort.signal }),
   );
+  await sent;
   const reason = new DOMException('Turn stopped', 'AbortError');
   abort.abort(reason);
   await assert.rejects(running, (error: unknown) => error === reason);
   assert.equal(closed, true);
 });
-
-test('Host client WebSearch refuses provider-native execution outside the primary request', async () => {
-  let transportCreated = false;
-  const tool = createHostWebSearchTool({
-    policy: resolver({ kind: 'model_native_only', provider: 'model' }),
-    createFetchTransport: () => ({
-      fetch: async () => {
-        transportCreated = true;
-        throw new Error('provider-native search must not create a client transport');
-      },
-      close: async () => {},
-    }),
-  });
-
-  const result = await tool.impl({ query: 'DeepSeek current news' }, context());
-  assert.equal((result as { reason?: string }).reason, 'unsupported_provider');
-  assert.equal(transportCreated, false);
-});
-
-function resolver(
-  result: ResolveWebSearchExecutionResult,
-): Pick<RuntimePolicyOperationCoordinator, 'resolveWebSearchExecution'> {
-  return { resolveWebSearchExecution: async () => result };
-}
-
-function readyDirectExecution(): ResolveWebSearchExecutionResult {
-  return {
-    kind: 'ready',
-    provider: 'tavily',
-    networkProxy: createDefaultRuntimePolicy().networkProxy,
-    secretMaterial: {
-      webSearch: {
-        locator: { scope: 'web_search', provider: 'tavily', kind: 'api_key' },
-        credentialId: 'web-search-credential',
-        revision: 1,
-        secret: 'tavily-secret',
-      },
-    },
-  };
-}
 
 function context(): MakaToolContext {
   return {

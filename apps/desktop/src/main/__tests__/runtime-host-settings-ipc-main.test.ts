@@ -227,23 +227,6 @@ function createModuleFixture(options: {
         updatedAt: 1,
       };
     },
-    async setCredential(input: { secret: string }) {
-      events.push(`set:${input.secret}`);
-      await options.beforeSetCredential?.();
-      if (failFirstSet) {
-        failFirstSet = false;
-        throw new Error("credential write failed");
-      }
-      secret = input.secret;
-      revision += 1;
-      return { kind: "committed", snapshot: { revision, entries: [] } };
-    },
-    async deleteCredential() {
-      events.push("delete");
-      secret = undefined;
-      revision += 1;
-      return { kind: "committed", snapshot: { revision, entries: [] } };
-    },
     async testNetworkProxy() {
       events.push("test");
       return { ok: true, latencyMs: 1, status: 200 };

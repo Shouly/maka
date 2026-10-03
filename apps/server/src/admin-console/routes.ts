@@ -69,6 +69,7 @@ import {
 import { consoleLoginPath, consoleReturnPath, startConsoleSignIn } from './sign-in.js';
 import { CONSOLE_CSRF_HEADER, type ConsoleErrorCode, type ConsoleQuotaPeriod } from './types.js';
 import { type CatalogDeps, discoverModels, storedDraft, validatedDraft } from './model-catalog.js';
+import { updateWebSearch, type WebSearchDeps, webSearchSettings } from '../web-search/settings.js';
 
 /** Where the built page lives: dist/console, beside this module's dist/admin-console. */
 const DEFAULT_CONSOLE_DIR = fileURLToPath(new URL('../console/', import.meta.url));
@@ -113,6 +114,8 @@ export async function registerAdminConsole(
     readonly consoleDir?: string;
     /** How providers' model lists are read. */
     readonly catalog: CatalogDeps;
+    /** How a web search key is checked. */
+    readonly webSearch: WebSearchDeps;
   },
 ): Promise<SendConsolePage> {
   const consoleDir = resolve(deps.consoleDir ?? DEFAULT_CONSOLE_DIR);
@@ -354,6 +357,16 @@ export async function registerAdminConsole(
           await deleteModel(ctx, actorOf(request), params(request).id!, objectBody(request));
           return {};
         }),
+      );
+      api.get(
+        '/web-search',
+        handle(async () => webSearchSettings(ctx)),
+      );
+      api.put(
+        '/web-search',
+        handle(async (request) =>
+          updateWebSearch(ctx, actorOf(request), objectBody(request), deps.webSearch),
+        ),
       );
       api.get(
         '/quotas',

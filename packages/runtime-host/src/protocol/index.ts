@@ -155,7 +155,17 @@ export const RUNTIME_HOST_PROTOCOL_VERSION = 0 as const;
 // from. An old client decodes that record by its exact keys and rejects it.
 // 168: `liveRunState` may carry `awaitingUser: true` while a run of the session
 // is parked on a request the user can answer. Same exact-key rejection.
-export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 168 as const;
+// 169: web search and fetch run on the organization server.
+// `web-search.execute` is gone, the runtime policy has no `webSearch` (its
+// mutation and the agent settings patch field go with it), the credential
+// vault has no `web_search` scope, a model's capabilities no longer carry
+// `webSearch`, and a web search error record no longer carries
+// `credentialSource`. A new peer rejects an old one's runtime policy,
+// `web_search` credential locators, model capabilities with `webSearch` and
+// error records with `credentialSource` by their exact keys; an old client
+// rejects a new Host's runtime policy snapshot, which lacks `webSearch`, and
+// calls an operation the new Host does not have.
+export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 169 as const;
 // 155: A tool call is on the wire while the model is still writing it.
 // `subscription.session_event` carries `tool_input_start` and
 // `tool_input_delta`, which a Client that does not know them decodes as an

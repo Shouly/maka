@@ -612,10 +612,10 @@ test('keeps provider-native tools out of the cell snapshot', async () => {
   let implementationCalls = 0;
   const tools: MakaTool[] = [
     {
-      name: 'native_search',
-      description: 'Search through the model provider',
+      name: 'native_tool',
+      description: 'A tool the model provider declares',
       parameters: z.object({}),
-      providerTool: { kind: 'openai-web-search' },
+      providerTool: { kind: 'openai-tool-search' },
       impl: () => {
         implementationCalls += 1;
         return { exposed: true };
@@ -623,7 +623,7 @@ test('keeps provider-native tools out of the cell snapshot', async () => {
     },
   ];
   const events = await collect(
-    backend(execThenStopModel('return await tools.native_search({})'), [], undefined, {
+    backend(execThenStopModel('return await tools.native_tool({})'), [], undefined, {
       tools,
     }).send({
       turnId: 'turn-code',
@@ -635,7 +635,7 @@ test('keeps provider-native tools out of the cell snapshot', async () => {
 
   assert.equal(implementationCalls, 0);
   assert.equal(
-    events.some((event) => event.type === 'tool_start' && event.toolName === 'native_search'),
+    events.some((event) => event.type === 'tool_start' && event.toolName === 'native_tool'),
     false,
   );
   const execResult = events.find(

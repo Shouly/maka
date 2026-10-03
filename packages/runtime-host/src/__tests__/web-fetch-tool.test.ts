@@ -20,15 +20,65 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createDefaultRuntimePolicy } from '@maka/core/runtime-policy';
-import type { MakaToolContext } from '@maka/runtime/tool-runtime';
 import type { ProxiedFetchProxy } from '@maka/runtime/network/scoped-fetch-transport';
+import { OrganizationAccountUnavailableError } from '@maka/runtime/organization-model-fetch';
+import type { MakaToolContext } from '@maka/runtime/tool-runtime';
 import type {
   ResolveHostOutboundExecutionResult,
   RuntimePolicyOperationCoordinator,
 } from '@maka/storage/runtime-policy-stores';
-import { createHostWebFetchTool } from '../server/web-fetch-tool.js';
+import type { HostOrganizationSession } from '../server/organization-session.js';
+import {
+  createHostWebFetchService,
+  createHostWebFetchToolFromService,
+} from '../server/web-fetch-tool.js';
 
-test('Host WebFetch uses the resolved proxy snapshot and closes its transport', async () => {
+const session: HostOrganizationSession = {
+  accessToken: async () => {
+    throw new Error('web fetch asks for the account, not a token for one server');
+  },
+  account: async () => ({
+    serverUrl: 'https://org.example',
+    accessToken: 'token',
+    clientVersion: '1.2.3',
+  }),
+};
+
+function tool(input: {
+  readonly session?: () => HostOrganizationSession;
+  readonly outbound?: ResolveHostOutboundExecutionResult;
+  readonly fetch?: typeof fetch;
+  readonly onTransport?: (proxy: ProxiedFetchProxy | null) => void;
+  readonly onClose?: () => void;
+}) {
+  const policy: Pick<RuntimePolicyOperationCoordinator, 'resolveHostOutboundExecution'> = {
+    resolveHostOutboundExecution: async () =>
+      input.outbound ?? {
+        kind: 'ready',
+        networkProxy: createDefaultRuntimePolicy().networkProxy,
+        secretMaterial: {},
+      },
+  };
+  return createHostWebFetchToolFromService(
+    createHostWebFetchService({
+      organizationSession: input.session ?? (() => session),
+      policy,
+      createFetchTransport: (proxy) => {
+        input.onTransport?.(proxy);
+        return {
+          fetch:
+            input.fetch ??
+            (async () => {
+              throw new Error('no network in this test');
+            }),
+          close: async () => input.onClose?.(),
+        };
+      },
+    }),
+  );
+}
+
+test('WebFetch reads the page through the organization server, under the address it was read at', async () => {
   const networkProxy = {
     ...createDefaultRuntimePolicy().networkProxy,
     enabled: true,
@@ -38,41 +88,49 @@ test('Host WebFetch uses the resolved proxy snapshot and closes its transport', 
     authEnabled: true,
     username: 'proxy-user',
     bypassList: ['direct.example'],
+    autoBypassDomains: [],
   };
   let proxy: ProxiedFetchProxy | null | undefined;
   let closed = 0;
-  const tool = createHostWebFetchTool({
-    policy: resolver({
+  const sent: { url: string; body: unknown; authorization: string | null }[] = [];
+  const fetchTool = tool({
+    outbound: {
       kind: 'ready',
       networkProxy,
       secretMaterial: {
         networkProxy: {
           locator: { scope: 'network_proxy', kind: 'password' },
           credentialId: 'proxy-credential',
-          revision: 1,
+          revision: 2,
           secret: 'proxy-secret',
         },
       },
-    }),
-    createFetchTransport: (candidate) => {
+    },
+    onTransport: (candidate) => {
       proxy = candidate;
-      return {
-        fetch: async () =>
-          new Response('fetched body', { headers: { 'content-type': 'text/plain' } }),
-        close: async () => {
-          closed += 1;
-        },
-      };
+    },
+    onClose: () => {
+      closed += 1;
+    },
+    fetch: async (url, init) => {
+      sent.push({
+        url: String(url),
+        body: JSON.parse(String(init?.body)),
+        authorization: new Headers(init?.headers).get('authorization'),
+      });
+      return Response.json({ url: 'https://example.com/moved', content: '# Hello\n\nThe page.' });
     },
   });
 
-  const result = await tool.impl(
-    { url: 'https://example.com/page', prompt: 'summarise' },
-    context(),
-  );
-
-  assert.match(String(result), /No summarising model is available/u);
-  assert.match(String(result), /fetched body$/u);
+  const result = await fetchTool.impl({ url: 'https://example.com/page' }, context());
+  assert.equal(result, 'URL: https://example.com/moved\n\n# Hello\n\nThe page.');
+  assert.deepEqual(sent, [
+    {
+      url: 'https://org.example/tools/web-fetch',
+      body: { url: 'https://example.com/page' },
+      authorization: 'Bearer token',
+    },
+  ]);
   assert.deepEqual(proxy, {
     enabled: true,
     type: 'http',
@@ -80,15 +138,41 @@ test('Host WebFetch uses the resolved proxy snapshot and closes its transport', 
     port: 8080,
     username: 'proxy-user',
     password: 'proxy-secret',
-    bypassList: [...networkProxy.bypassList, ...networkProxy.autoBypassDomains],
+    bypassList: ['direct.example'],
   });
   assert.equal(closed, 1);
 });
 
-test('Host WebFetch fails closed before transport creation when proxy credentials are missing', async () => {
-  let transportCreated = false;
-  const tool = createHostWebFetchTool({
-    policy: resolver({
+test('WebFetch says why a page could not be read, and never fetches without an account', async () => {
+  let transports = 0;
+  const offline = tool({
+    session: () => {
+      throw new OrganizationAccountUnavailableError('not_offered');
+    },
+    onTransport: () => {
+      transports += 1;
+    },
+  });
+  await assert.rejects(
+    Promise.resolve(offline.impl({ url: 'https://example.com' }, context())),
+    /The web needs the Maka app, signed in to the organization account\./,
+  );
+  assert.equal(transports, 0);
+
+  const gone = tool({
+    fetch: async () =>
+      Response.json(
+        { error: { code: 'web_fetch_failed', message: 'HTTP 404 Not Found' } },
+        { status: 422 },
+      ),
+  });
+  await assert.rejects(
+    Promise.resolve(gone.impl({ url: 'https://example.com/gone' }, context())),
+    /The page could not be read: HTTP 404 Not Found/,
+  );
+
+  const noProxyCredential = tool({
+    outbound: {
       kind: 'credential_not_configured',
       status: {
         locator: { scope: 'network_proxy', kind: 'password' },
@@ -97,71 +181,55 @@ test('Host WebFetch fails closed before transport creation when proxy credential
         revision: null,
         updatedAt: null,
       },
-    }),
-    createFetchTransport: () => {
-      transportCreated = true;
-      throw new Error('transport must not be created');
     },
   });
-
   await assert.rejects(
-    async () => tool.impl({ url: 'https://example.com/page', prompt: 'summarise' }, context()),
-    /configure the network proxy credential/i,
+    Promise.resolve(noProxyCredential.impl({ url: 'https://example.com' }, context())),
+    /Configure the network proxy credential/,
   );
-  assert.equal(transportCreated, false);
 });
 
-test('Host WebFetch closes its transport when the owning turn is cancelled', async () => {
+test('WebFetch closes its transport when the owning turn is cancelled mid-request', async () => {
   const abort = new AbortController();
-  let closed = 0;
-  let markFetchStarted!: () => void;
-  const fetchStarted = new Promise<void>((resolve) => {
-    markFetchStarted = resolve;
+  let closed = false;
+  let started!: () => void;
+  const sent = new Promise<void>((resolve) => {
+    started = resolve;
   });
-  const tool = createHostWebFetchTool({
-    policy: resolver({
-      kind: 'ready',
-      networkProxy: createDefaultRuntimePolicy().networkProxy,
-      secretMaterial: {},
-    }),
-    createFetchTransport: () => ({
-      fetch: async (_url, init) =>
-        await new Promise<Response>((_resolve, reject) => {
-          markFetchStarted();
-          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
-            once: true,
-          });
-        }),
-      close: async () => {
-        closed += 1;
+  const fetchTool = tool({
+    onClose: () => {
+      closed = true;
+    },
+    fetch: async (_input, init) =>
+      await new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+        started();
+      }),
+  });
+  const running = Promise.resolve(
+    fetchTool.impl(
+      { url: 'https://example.com' },
+      {
+        ...context(),
+        abortSignal: abort.signal,
       },
-    }),
-  });
-
-  const result = tool.impl(
-    { url: 'https://example.com/page', prompt: 'summarise' },
-    context(abort.signal),
+    ),
   );
-  await fetchStarted;
-  abort.abort(new Error('turn cancelled'));
-
-  await assert.rejects(async () => result, /turn cancelled/i);
-  assert.equal(closed, 1);
+  await sent;
+  const reason = new DOMException('Turn stopped', 'AbortError');
+  abort.abort(reason);
+  await assert.rejects(running, (error: unknown) => error === reason);
+  assert.equal(closed, true);
 });
 
-function resolver(
-  result: ResolveHostOutboundExecutionResult,
-): Pick<RuntimePolicyOperationCoordinator, 'resolveHostOutboundExecution'> {
-  return { resolveHostOutboundExecution: async () => result };
-}
-
-function context(abortSignal = new AbortController().signal): MakaToolContext {
+function context(): MakaToolContext {
   return {
     sessionId: 'session-1',
     turnId: 'turn-1',
     cwd: '/tmp',
     toolCallId: 'tool-1',
-    abortSignal,
+    abortSignal: new AbortController().signal,
     emitOutput: () => {},
   };
 }

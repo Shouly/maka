@@ -39,6 +39,7 @@ import { ModelsPage } from './pages/models.js';
 import { NotFoundPanel } from './pages/not-found.js';
 import { QuotasPage } from './pages/quotas.js';
 import { UsagePage } from './pages/usage.js';
+import { WebSearchPage } from './pages/web-search.js';
 import { navigate, type Route, type Section, sectionOf, useRoute } from './router.js';
 import { Avatar, reportFailure } from './ui.js';
 
@@ -48,6 +49,7 @@ const NAV: readonly {
 }[] = [
   { group: 'organization', sections: ['members', 'quotas'] },
   { group: 'models', sections: ['model-providers', 'models'] },
+  { group: 'tools', sections: ['web-search'] },
   { group: 'records', sections: ['usage', 'audit'] },
 ];
 
@@ -56,6 +58,7 @@ const ICONS: Readonly<Record<Section, AnthropiconName>> = {
   quotas: 'gauge',
   'model-providers': 'buildings',
   models: 'shapes',
+  'web-search': 'globe',
   usage: 'usage',
   audit: 'scroll',
 };
@@ -202,6 +205,8 @@ function Page(props: { route: Route }): ReactNode {
       return <ModelProviderPage key={route.id} id={route.id} />;
     case 'models':
       return <ModelsPage />;
+    case 'web-search':
+      return <WebSearchPage />;
     case 'usage':
       return <UsagePage />;
     case 'audit':

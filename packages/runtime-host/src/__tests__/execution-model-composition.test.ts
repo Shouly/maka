@@ -2699,15 +2699,6 @@ test('production Host executes a canonical ai-sdk Session against a real provide
       },
     });
     assert.equal(memoryEnabled.kind, 'committed');
-    policySnapshot = await policy.runtimePolicy.getSnapshot();
-    const webSearchEnabled = await policy.runtimePolicy.mutate({
-      expectedRevision: policySnapshot.revision,
-      operation: {
-        kind: 'set_web_search',
-        value: { enabled: true, defaultProvider: 'tavily' },
-      },
-    });
-    assert.equal(webSearchEnabled.kind, 'committed');
 
     const execution = await openInteractiveExecutionStoresForWrite(owner.lease);
     const usageStores = await openInteractiveUsageStoresForWrite(owner.lease);
@@ -2871,9 +2862,8 @@ test('production Host executes a canonical ai-sdk Session against a real provide
     // the model calls the Skill tool itself.
     assert.match(JSON.stringify(mainRequests[1]?.body), /\/hosted-skill Continue hosted execution/);
     assert.doesNotMatch(JSON.stringify(mainRequests[1]?.body), /HOSTED_SKILL_BODY_MUST_STAY_LAZY/);
-    // Tavily is selected but no web-search credential exists, so the provider
-    // must never see WebSearch in the effective root tool surface. Non-direct
-    // bound tools stay deferred behind ToolSearch until activated.
+    // Non-direct bound tools stay deferred behind ToolSearch until activated;
+    // the web tools are loaded directly.
     assert.deepEqual(toolNames(request?.body), [
       // Launching an agent and listing the running ones are loaded directly,
       // as in the design; SendMessage waits behind ToolSearch.
@@ -2908,6 +2898,7 @@ test('production Host executes a canonical ai-sdk Session against a real provide
       'TaskUpdate',
       'ToolSearch',
       'WebFetch',
+      'WebSearch',
       'Write',
     ]);
     assert.match(JSON.stringify(compactRequests[0]?.body), /context summarization assistant/);
@@ -3074,15 +3065,6 @@ test('production Host runs a child agent on the main surface its type allows, an
       'committed',
     );
     await publishConnectionModel(policy, connection.connectionId, MODEL_ID, 32_768);
-    const policySnapshot = await policy.runtimePolicy.getSnapshot();
-    const webSearchEnabled = await policy.runtimePolicy.mutate({
-      expectedRevision: policySnapshot.revision,
-      operation: {
-        kind: 'set_web_search',
-        value: { enabled: true, defaultProvider: 'tavily' },
-      },
-    });
-    assert.equal(webSearchEnabled.kind, 'committed');
 
     const execution = await openInteractiveExecutionStoresForWrite(owner.lease);
     const parent = await execution.sessionStore.create({
@@ -3190,6 +3172,7 @@ test('production Host runs a child agent on the main surface its type allows, an
       'TaskUpdate',
       'ToolSearch',
       'WebFetch',
+      'WebSearch',
     ]);
     const messages = (childBody?.messages ?? []) as Array<{ role: string; content: unknown }>;
     const systemText = JSON.stringify(messages.filter((message) => message.role === 'system'));
@@ -4131,7 +4114,6 @@ test('backend composition survives a moved saved Git Bash executable while Bash 
     clientCapabilities: {
       snapshotForSession: () => undefined,
     } as unknown as HostClientCapabilityCoordinator,
-    resolveTavilyWebSearchReadiness: async () => false,
     builtinTools: {},
     resolveTurnShellPlan: (settings) => {
       shellPolicyResolutions += 1;
@@ -4548,7 +4530,6 @@ function backendCreationFixture(input: {
       clientCapabilities: {
         snapshotForSession: input.snapshotClientCapabilities ?? (() => undefined),
       } as unknown as HostClientCapabilityCoordinator,
-      resolveTavilyWebSearchReadiness: async () => false,
     });
   return {
     context: {

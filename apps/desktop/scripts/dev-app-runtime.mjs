@@ -277,7 +277,6 @@ function isForwardedEnvironmentKey(key) {
       'ANTHROPIC_API_KEY',
       'OPENAI_API_KEY',
       'DEEPSEEK_API_KEY',
-      'TAVILY_API_KEY',
       'COPILOT_GITHUB_TOKEN',
       'GH_TOKEN',
       'GITHUB_TOKEN',

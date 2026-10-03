@@ -109,8 +109,8 @@ test('a deep link or a restored value naming a deferred page falls back to gener
 // spelled out rather than read from a constant: the constant that named them
 // was deleted with the placeholder, and a page silently dropping out of the
 // nav is exactly what this asserts against.
-test('the four capability pages are in the nav', () => {
-  for (const section of ['models', 'subagents', 'memory', 'search', 'bot-chat'] as const) {
+test('the capability pages are in the nav', () => {
+  for (const section of ['models', 'subagents', 'memory', 'bot-chat'] as const) {
     assert.equal(VISIBLE_SETTINGS_SECTIONS.includes(section), true);
   }
 });

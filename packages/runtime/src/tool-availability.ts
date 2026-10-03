@@ -52,6 +52,9 @@ const DIRECT_TOOL_NAMES: ReadonlySet<string> = new Set([
   TOOL_NAMES.edit,
   TOOL_NAMES.glob,
   TOOL_NAMES.grep,
+  // The web tools are offered whole, not found through ToolSearch: looking
+  // something up is common enough that a search round trip first is waste.
+  TOOL_NAMES.webSearch,
   TOOL_NAMES.webFetch,
   TOOL_NAMES.askUserQuestion,
   // A call the sandbox stopped answers "call RequestAccess"; a ToolSearch

@@ -237,141 +237,14 @@ const CHILD_STEP_BUDGET_FINALIZATION_PROMPT = [
   '</step_budget_finalization>',
 ].join('\n');
 
-function providerToolResultContent(
-  toolName: string,
-  output: unknown,
-  input?: unknown,
-): ToolResultContent {
+function providerToolResultContent(toolName: string, output: unknown): ToolResultContent {
   if (output === undefined) {
     return {
       kind: 'text',
       text: `${toolName} completed without a structured result.`,
     };
   }
-  if (toolName !== 'WebSearch') {
-    return { kind: 'json', value: output };
-  }
-  const queryFromInput = providerWebSearchQuery(input);
-  if (Array.isArray(output)) {
-    const rows: Array<{
-      title: string;
-      url: string;
-      snippet: string;
-      source: string;
-    }> = [];
-    for (const result of output) {
-      if (
-        !result ||
-        typeof result !== 'object' ||
-        (result as { type?: unknown }).type !== 'web_search_result' ||
-        typeof (result as { url?: unknown }).url !== 'string'
-      ) {
-        continue;
-      }
-      const item = result as {
-        url: string;
-        title?: unknown;
-        pageAge?: unknown;
-      };
-      try {
-        const parsed = new URL(item.url);
-        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') continue;
-        rows.push({
-          title: typeof item.title === 'string' && item.title.trim() ? item.title : parsed.hostname,
-          url: parsed.toString(),
-          snippet: typeof item.pageAge === 'string' ? item.pageAge : '',
-          source: parsed.hostname,
-        });
-      } catch {
-        // Provider source rows are untrusted; malformed URLs are dropped.
-      }
-    }
-    return {
-      kind: 'web_search',
-      provider: 'model',
-      query: queryFromInput,
-      rows,
-    };
-  }
-  if (!output || typeof output !== 'object') return { kind: 'json', value: output };
-  const providerError = output as { type?: unknown; errorCode?: unknown };
-  if (
-    providerError.type === 'web_search_tool_result_error' ||
-    typeof providerError.errorCode === 'string'
-  ) {
-    return {
-      kind: 'web_search_error',
-      ok: false,
-      provider: 'model',
-      ...(queryFromInput ? { query: queryFromInput } : {}),
-      reason: 'provider_error',
-      message:
-        typeof providerError.errorCode === 'string'
-          ? `Provider web search failed: ${providerError.errorCode}`
-          : 'Provider web search failed.',
-    };
-  }
-  const action = (output as { action?: unknown }).action;
-  const sources = (output as { sources?: unknown }).sources;
-  let query = queryFromInput;
-  if (action && typeof action === 'object') {
-    const value = action as {
-      type?: unknown;
-      query?: unknown;
-      queries?: unknown;
-    };
-    if (Array.isArray(value.queries)) {
-      query = value.queries.filter((item): item is string => typeof item === 'string').join(' | ');
-    } else if (typeof value.query === 'string') {
-      query = value.query;
-    }
-  }
-  const rows: Array<{
-    title: string;
-    url: string;
-    snippet: string;
-    source: string;
-  }> = [];
-  if (Array.isArray(sources)) {
-    for (const source of sources) {
-      if (
-        !source ||
-        typeof source !== 'object' ||
-        (source as { type?: unknown }).type !== 'url' ||
-        typeof (source as { url?: unknown }).url !== 'string'
-      ) {
-        continue;
-      }
-      const url = (source as { url: string }).url;
-      try {
-        const parsed = new URL(url);
-        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') continue;
-        rows.push({
-          title: parsed.hostname,
-          url: parsed.toString(),
-          snippet: '',
-          source: parsed.hostname,
-        });
-      } catch {
-        // Provider source rows are untrusted; malformed URLs are dropped.
-      }
-    }
-  }
-  return { kind: 'web_search', provider: 'model', query, rows };
-}
-
-function providerWebSearchQuery(input: unknown): string {
-  let value = input;
-  if (typeof input === 'string') {
-    try {
-      value = JSON.parse(input);
-    } catch {
-      return '';
-    }
-  }
-  if (!value || typeof value !== 'object') return '';
-  const query = (value as { query?: unknown }).query;
-  return typeof query === 'string' ? query : '';
+  return { kind: 'json', value: output };
 }
 
 function mergeTextProviderOptions(
@@ -1484,7 +1357,6 @@ export class AiSdkTurn {
           let sealedThinkingRetryCount = 0;
           const returnedToolCalls: ToolCallPart[] = [];
           let providerToolActivityCount = 0;
-          const providerToolInputs = new Map<string, unknown>();
           let providerStepUsage: NormalizedUsage | undefined;
           for (;;) {
             providerRequestAbortController = new AbortController();
@@ -1962,7 +1834,6 @@ export class AiSdkTurn {
                 liveToolInput.delete(event.toolCall.toolCallId);
                 if (event.toolCall.providerExecuted) {
                   providerToolActivityCount += 1;
-                  providerToolInputs.set(event.toolCall.toolCallId, event.toolCall.input);
                   queue.push({
                     type: 'tool_start',
                     id: this.deps.newId(),
@@ -1972,8 +1843,6 @@ export class AiSdkTurn {
                     toolName: event.toolCall.toolName,
                     args: event.toolCall.input,
                     providerExecuted: true,
-                    activityKind: 'websearch',
-                    displayName: 'Web search',
                     stepId: currentStepMessageId,
                     ...(event.toolCall.providerOptions !== undefined
                       ? {
@@ -1997,13 +1866,8 @@ export class AiSdkTurn {
                   providerExecuted: true,
                   ...(providerOutput !== undefined ? { providerOutput } : {}),
                   isError: event.isError === true,
-                  content: providerToolResultContent(
-                    event.toolName,
-                    providerOutput,
-                    providerToolInputs.get(event.toolCallId),
-                  ),
+                  content: providerToolResultContent(event.toolName, providerOutput),
                 } satisfies ToolResultEvent);
-                providerToolInputs.delete(event.toolCallId);
               } else if (event.kind === 'step-finish' && !incompleteFinish) {
                 // The step's text/thinking deltas are all in (the stream is
                 // drained in order), so flush this step's AssistantMessage and

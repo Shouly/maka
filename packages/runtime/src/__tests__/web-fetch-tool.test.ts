@@ -20,26 +20,22 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ZodType } from 'zod';
-import { buildWebFetchTool, WEB_FETCH_MODEL_OUTPUT_MAX_BYTES } from '../web-fetch-tool.js';
 import type { MakaToolContext } from '../tool-runtime.js';
+import { buildWebFetchTool, WEB_FETCH_MODEL_OUTPUT_MAX_BYTES } from '../web-fetch-tool.js';
 
-test('WebFetch forwards the canonical URL to its executor', async () => {
+test('WebFetch returns the page the service read, under the address it read it at', async () => {
   let received: { url: string; sessionId: string; abortSignal?: AbortSignal } | undefined;
   const tool = buildWebFetchTool({
     fetch: async (input) => {
       received = input;
-      return 'page body';
+      return { url: 'https://example.com/moved', content: '# Page\n\nBody.' };
     },
   });
   const abort = new AbortController();
 
-  const result = await tool.impl(
-    { url: 'https://example.com/a/../page', prompt: 'What is on the page?' },
-    context(abort.signal),
-  );
+  const result = await tool.impl({ url: 'https://example.com/a/../page' }, context(abort.signal));
 
-  assert.match(String(result), /No summarising model is available/u);
-  assert.match(String(result), /page body$/u);
+  assert.equal(result, 'URL: https://example.com/moved\n\n# Page\n\nBody.');
   assert.deepEqual(received, {
     url: 'https://example.com/page',
     sessionId: 'session-1',
@@ -47,56 +43,34 @@ test('WebFetch forwards the canonical URL to its executor', async () => {
   });
 });
 
-test('WebFetch accepts only an HTTP or HTTPS url argument', () => {
-  const tool = buildWebFetchTool({ fetch: async () => 'unused' });
+test('WebFetch takes one HTTP or HTTPS url and nothing else', () => {
+  const tool = buildWebFetchTool({ fetch: async ({ url }) => ({ url, content: 'unused' }) });
   const parameters = tool.parameters as ZodType;
 
-  assert.deepEqual(parameters.parse({ url: 'https://example.com/page', prompt: 'summarise' }), {
+  assert.deepEqual(parameters.parse({ url: 'https://example.com/page' }), {
     url: 'https://example.com/page',
-    prompt: 'summarise',
   });
-  assert.throws(() => parameters.parse({ url: 'https://example.com/page' }));
-  assert.throws(() => parameters.parse({ url: 'file:///tmp/secret', prompt: 'x' }));
-  assert.throws(() => parameters.parse({ url: 'https://example.com', prompt: 'x', maxBytes: 1 }));
+  assert.throws(() => parameters.parse({}));
+  assert.throws(() => parameters.parse({ url: 'file:///tmp/secret' }));
+  assert.throws(() => parameters.parse({ url: 'https://example.com', prompt: 'summarise' }));
 });
 
-test('WebFetch bounds model output with a head-truncation marker', async () => {
-  const tool = buildWebFetchTool({ fetch: async () => `begin:${'x'.repeat(60 * 1024)}:end` });
+test('WebFetch bounds a long page with a truncation marker', async () => {
+  const tool = buildWebFetchTool({
+    fetch: async ({ url }) => ({ url, content: `begin:${'x'.repeat(60 * 1024)}:end` }),
+  });
 
   const result = await tool.impl(
-    { url: 'https://example.com/large', prompt: 'summarise' },
+    { url: 'https://example.com/large' },
     context(new AbortController().signal),
   );
 
   assert.ok(typeof result === 'string');
-  assert.match(result, /\n\nbegin:/);
+  assert.match(result, /^URL: https:\/\/example\.com\/large\n\nbegin:/);
   assert.doesNotMatch(result, /:end$/);
   assert.match(result, /WebFetch content truncated/);
   const content = result.slice(result.indexOf('\n\n') + 2);
   assert.ok(Buffer.byteLength(content, 'utf8') <= WEB_FETCH_MODEL_OUTPUT_MAX_BYTES);
-});
-
-test('WebFetch answers the prompt with the executor model when one is wired', async () => {
-  let asked: { url: string; prompt: string; content: string } | undefined;
-  const tool = buildWebFetchTool({
-    fetch: async () => 'the page says hello',
-    answer: async (input) => {
-      asked = { url: input.url, prompt: input.prompt, content: input.content };
-      return 'It says hello.';
-    },
-  });
-
-  const result = await tool.impl(
-    { url: 'https://example.com/page', prompt: 'What does it say?' },
-    context(new AbortController().signal),
-  );
-
-  assert.equal(result, 'It says hello.');
-  assert.deepEqual(asked, {
-    url: 'https://example.com/page',
-    prompt: 'What does it say?',
-    content: 'the page says hello',
-  });
 });
 
 function context(abortSignal: AbortSignal): MakaToolContext {

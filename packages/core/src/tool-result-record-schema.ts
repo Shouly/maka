@@ -100,7 +100,7 @@ const USER_FILE_DELIVERY_FILE_SHAPE = defineObjectShape<UserFileDeliveryFile>()(
 const USER_MESSAGE_SHAPE = defineObjectShape<Result<'user_message'>>()(['kind', 'message'], []);
 const WEB_SEARCH_ERROR_SHAPE = defineObjectShape<Result<'web_search_error'>>()(
   ['kind', 'ok', 'provider', 'reason', 'message'],
-  ['query', 'credentialSource'],
+  ['query'],
 );
 const SUBAGENT_SHAPE = defineObjectShape<Result<'subagent'>>()(
   ['kind', 'agentName', 'turnId', 'status', 'permissionMode', 'summary', 'artifactIds'],
@@ -311,8 +311,7 @@ function isNonShellToolResultContent(value: unknown): value is ToolResultContent
         typeof value.provider === 'string' &&
         isOptionalString(value.query) &&
         typeof value.reason === 'string' &&
-        typeof value.message === 'string' &&
-        isOptionalString(value.credentialSource)
+        typeof value.message === 'string'
       );
     case 'subagent':
       return (

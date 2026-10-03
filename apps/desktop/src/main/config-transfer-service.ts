@@ -54,7 +54,6 @@ const VALID_CREDENTIAL_KINDS: ReadonlySet<string> = new Set<CredentialKind>([
   'bot_token',
   'app_secret',
   'proxy_password',
-  'tavily_api_key',
 ]);
 
 export interface ConfigTransferDeps {

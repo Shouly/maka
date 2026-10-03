@@ -55,10 +55,6 @@ export type SettingsSharedCopy = {
   groups: {
     memorySources: string;
     memorySourcesHelp: string;
-    searchProvider: string;
-    searchProviderHelp: string;
-    searchBehavior: string;
-    searchBehaviorHelp: string;
     dataLocation: string;
     dataLocationHelp: string;
     reviewSchedule: string;
@@ -95,10 +91,6 @@ const SETTINGS_SHARED_COPY_BY_LOCALE = {
     groups: {
       memorySources: '记忆',
       memorySourcesHelp: '对话之后，值得记住的内容会整理成本机上的记忆文件，供之后的回答使用。',
-      searchProvider: '搜索服务商',
-      searchProviderHelp: '联网搜索使用的服务商与凭据。',
-      searchBehavior: '搜索行为',
-      searchBehaviorHelp: '什么时候发起搜索，以及每次取回多少结果。',
       dataLocation: '数据位置',
       dataLocationHelp: '任务、设置、使用统计与凭据都以文件形式存放在本机的这个位置。',
       reviewSchedule: '回顾计划',
@@ -133,10 +125,6 @@ const SETTINGS_SHARED_COPY_BY_LOCALE = {
     groups: {
       memorySources: '記憶',
       memorySourcesHelp: '對話之後，值得記住的內容會整理成本機上的記憶檔案，供之後的回答使用。',
-      searchProvider: '搜尋服務商',
-      searchProviderHelp: '聯網搜尋使用的服務商與憑據。',
-      searchBehavior: '搜尋行為',
-      searchBehaviorHelp: '什麼時候發起搜尋，以及每次取回多少結果。',
       dataLocation: '資料位置',
       dataLocationHelp: '任務、設定、使用統計與憑據都以檔案形式存放在本機的這個位置。',
       reviewSchedule: '回顧計劃',
@@ -174,10 +162,6 @@ const SETTINGS_SHARED_COPY_BY_LOCALE = {
       memorySources: 'Memory',
       memorySourcesHelp:
         'Maka remembers information you confirm in chat and uses it in later answers.',
-      searchProvider: 'Search provider',
-      searchProviderHelp: 'The provider and credentials web search uses.',
-      searchBehavior: 'Search behavior',
-      searchBehaviorHelp: 'When a search runs, and how many results it returns.',
       dataLocation: 'Data location',
       dataLocationHelp:
         'Tasks, settings, usage statistics, and credentials are stored as files in this location on your machine.',

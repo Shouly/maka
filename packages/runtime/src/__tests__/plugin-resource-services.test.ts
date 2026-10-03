@@ -50,7 +50,7 @@ test('resource services preserve the current Session and cancellation context', 
   web.bindRuntime({
     search: async (input) => {
       calls.push(`search:${input.query}:${input.sessionId}`);
-      return { ok: true, provider: 'tavily', results: [] };
+      return { ok: true, results: [] };
     },
     fetch: async (input) => {
       calls.push(`fetch:${input.url}:${input.sessionId}`);
@@ -111,7 +111,7 @@ test('Web custom cancellation cannot replace Host invocation cancellation', asyn
   web.bindRuntime({
     search: async (input) => {
       if (input.abortSignal) signals.push(input.abortSignal);
-      return { ok: true, provider: 'tavily', results: [] };
+      return { ok: true, results: [] };
     },
     fetch: async (input) => {
       if (input.abortSignal) signals.push(input.abortSignal);

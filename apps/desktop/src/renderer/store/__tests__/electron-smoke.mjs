@@ -1029,7 +1029,7 @@ try {
     '⌘, opens the Settings dialog over the window, its titlebar and sidebar toggle intact',
   );
 
-  // 5a.2 The nav hides the deferred pages and shows the fourteen that ship.
+  // 5a.2 The nav hides the deferred pages and shows the thirteen that ship.
   const navRows = page.locator('[data-maka-contract="settings-sidebar"] [data-settings-section]');
   const navSections = await navRows.evaluateAll((nodes) =>
     nodes.map((node) => node.getAttribute('data-settings-section')),
@@ -1041,7 +1041,6 @@ try {
     'models',
     'subagents',
     'memory',
-    'search',
     'bot-chat',
     'usage',
     'archived-tasks',
@@ -1167,7 +1166,7 @@ try {
   }
   checks.push('Projects, Usage, Data, Permissions and Health each render against the real Host');
 
-  // ── Phase 5b: Models, Subagents, Memory, Web Search ───────────────────────
+  // ── Phase 5b: Models, Subagents, Memory ───────────────────────────────────
 
   // 5b.1 Models lists the seeded connection and opens its detail.
   await openSettingsSection('Models', 'models');
@@ -1297,30 +1296,9 @@ try {
   await new Promise((settle) => setTimeout(settle, 300));
   await page.screenshot({ path: SHOT('phase5b-memory-light.png') });
 
-  // 5b.5 Web Search renders its credential test, and leaving Memory and coming
-  //      back re-reads the state from the Host rather than from a cache.
-  await openSettingsSection('Web Search', 'search');
-  await settings.getByRole('switch', { name: 'Enable web search', exact: true }).waitFor();
-  // The probe is on every source; it is the page's own test control, and it
-  // says Beta rather than pretending otherwise.
-  // The test is an act with results of its own, so it opens as a dialog.
-  await settings.getByRole('button', { name: 'Test…', exact: true }).click();
-  const searchTest = page.locator('[data-maka-contract="web-search-test"]');
-  await searchTest.getByLabel('Test search', { exact: true }).waitFor();
-  await searchTest.getByRole('button', { name: 'Search', exact: true }).waitFor();
-  // Escape belongs to the dialog on top once Settings knows it is under one.
-  await page.locator('[data-maka-contract="settings-surface"][data-nested-dialog-open]').waitFor();
-  await page.keyboard.press('Escape');
-  await searchTest.waitFor({ state: 'detached' });
-  // The credential test only exists for a source that HAS a credential: the
-  // default source is the task's own model connection, which carries none.
-  await settings.getByRole('combobox', { name: 'Search source', exact: true }).click();
-  await page.getByRole('option', { name: 'Tavily', exact: true }).click();
-  await settings.getByRole('button', { name: 'Test credentials', exact: true }).waitFor();
-  await new Promise((settle) => setTimeout(settle, 300));
-  await page.screenshot({ path: SHOT('phase5b-web-search-light.png') });
-  await settings.getByRole('combobox', { name: 'Search source', exact: true }).click();
-  await page.getByRole('option', { name: 'Current model', exact: true }).click();
+  // 5b.5 Leaving Memory and coming back re-reads the state from the Host
+  //      rather than from a cache.
+  await openSettingsSection('Subagents', 'subagents');
   await openSettingsSection('Memory', 'memory');
   for (const state of memoryStates) {
     await page.waitForFunction(
@@ -1333,9 +1311,7 @@ try {
       state,
     );
   }
-  checks.push(
-    'Memory persists every exposed switch through the Host across navigation; Web Search renders its test',
-  );
+  checks.push('Memory persists every exposed switch through the Host across navigation');
 
   // 5a.7 Archived tasks lists a task archived from the rail, and restores it.
   await page.keyboard.press('Escape');
@@ -1737,7 +1713,6 @@ try {
           'phase5b-provider-setup-light.png',
           'phase5b-subagents-light.png',
           'phase5b-memory-light.png',
-          'phase5b-web-search-light.png',
           'phase5b-skills-light.png',
           'phase5b-mcp-light.png',
           'phase5b-scheduled-light.png',

@@ -231,6 +231,25 @@ export type ConsoleErrorCode =
   | 'name_taken'
   | 'idempotency_conflict';
 
+/** The organization's web search service (`/admin/api/web-search`). */
+export interface ConsoleWebSearch {
+  readonly provider: 'tavily';
+  /** Whether a key is saved; nobody can search until one is. */
+  readonly configured: boolean;
+  readonly enabled: boolean;
+  /** 0 until a key is saved; sent back to change it. */
+  readonly revision: number;
+  readonly updatedAt?: number;
+}
+
+/** `PUT /admin/api/web-search`: the first save needs a key. */
+export interface ConsoleWebSearchPatch {
+  readonly expectedRevision: number;
+  /** Checked with the search service before it replaces the saved one. */
+  readonly apiKey?: string;
+  readonly enabled?: boolean;
+}
+
 export interface ConsoleQuotas {
   /** Null: no limit for that period. */
   readonly defaults: Readonly<Record<ConsoleQuotaPeriod, number | null>>;

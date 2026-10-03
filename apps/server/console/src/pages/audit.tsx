@@ -55,6 +55,7 @@ const FILTERS = [
   'model_provider.',
   'model.',
   'quota.',
+  'web_search.',
   'signin.',
 ] as const;
 
@@ -67,6 +68,7 @@ function targetOf(entry: ConsoleAuditEntry, copy: ConsoleCopy): string {
       scope === 'user_default' ? copy.audit.organizationDefault : (entry.targetLabel ?? scope);
     return `${who} · ${period === 'month' ? copy.quotas.month : copy.quotas.week}`;
   }
+  if (entry.targetType === 'web_search') return 'Tavily';
   if (entry.targetLabel) return entry.targetLabel;
   const detail = entry.detail as Record<string, unknown>;
   if (typeof detail.name === 'string') return detail.name;

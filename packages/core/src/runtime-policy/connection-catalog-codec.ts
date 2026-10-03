@@ -654,15 +654,7 @@ export function decodeConnectionModel(value: unknown): ConnectionModel {
     const raw = exactRecord(
       item.capabilities,
       'connection model capabilities',
-      [
-        'chat',
-        'vision',
-        'reasoning',
-        'functionCalling',
-        'parallelToolCalls',
-        'imageGeneration',
-        'webSearch',
-      ],
+      ['chat', 'vision', 'reasoning', 'functionCalling', 'parallelToolCalls', 'imageGeneration'],
       [],
     );
     capabilities = {};

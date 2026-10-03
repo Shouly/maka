@@ -45,7 +45,6 @@
     "src/renderer/bridge/startup.ts",
     "src/renderer/bridge/task-readiness.ts",
     "src/renderer/bridge/transcripts.ts",
-    "src/renderer/bridge/web-search.ts",
     "src/renderer/bridge/workspace.ts",
     "src/renderer/components/ErrorBoundary.tsx",
     "src/renderer/components/account/LoginScreen.tsx",
@@ -155,7 +154,6 @@
     "src/renderer/components/settings/SettingsView.tsx",
     "src/renderer/components/settings/SubagentsSettings.tsx",
     "src/renderer/components/settings/UsageSettings.tsx",
-    "src/renderer/components/settings/WebSearchSettings.tsx",
     "src/renderer/components/settings/WorkspaceSettings.tsx",
     "src/renderer/components/settings/account/AccountSettings.tsx",
     "src/renderer/components/settings/account/ProfileSection.tsx",
@@ -408,7 +406,6 @@
     "src/renderer/locales/settings-tasks-copy.ts",
     "src/renderer/locales/settings-test-result-copy.ts",
     "src/renderer/locales/settings-usage-copy.ts",
-    "src/renderer/locales/settings-web-search-copy.ts",
     "src/renderer/locales/shell-copy.ts",
     "src/renderer/locales/shell-remaining-copy.ts",
     "src/renderer/locales/sidebar-copy.ts",
@@ -1072,17 +1069,6 @@
       }
     },
     "src/renderer/bridge/transcripts.ts": {
-      "bridgePaths": {},
-      "environmentCapabilities": {},
-      "hookCalls": {},
-      "lifecycleMethods": {},
-      "unresolvedDependencies": 0,
-      "actionFactories": [],
-      "dependencyPaths": {
-        "./bridge.js": 1
-      }
-    },
-    "src/renderer/bridge/web-search.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {},
@@ -3666,7 +3652,6 @@
         "./SettingsNav.js": 1,
         "./SubagentsSettings.js": 1,
         "./UsageSettings.js": 1,
-        "./WebSearchSettings.js": 1,
         "./WorkspaceSettings.js": 1,
         "@maka/ui": 1,
         "@radix-ui/react-dialog": 1,
@@ -3737,40 +3722,6 @@
         "./settings-kit.js": 1,
         "./settings-row.js": 1,
         "@maka/core/usage-ledger-merge": 1,
-        "@maka/ui": 1,
-        "react": 1
-      }
-    },
-    "src/renderer/components/settings/WebSearchSettings.tsx": {
-      "bridgePaths": {},
-      "environmentCapabilities": {},
-      "hookCalls": {
-        "useHostSettings": 1,
-        "useSettingsErrorReporter": 1,
-        "useState": 7,
-        "useUiLocale": 1
-      },
-      "lifecycleMethods": {},
-      "unresolvedDependencies": 0,
-      "actionFactories": [],
-      "dependencyPaths": {
-        "../../bridge/external-links.js": 1,
-        "../../bridge/web-search.js": 1,
-        "../../hooks/use-settings.js": 1,
-        "../../locales/settings-shared-copy.js": 1,
-        "../../locales/settings-web-search-copy.js": 1,
-        "../../store/index.js": 1,
-        "../../store/toast-store.js": 1,
-        "../ui/button.js": 1,
-        "../ui/input.js": 1,
-        "../ui/select.js": 1,
-        "../ui/skeleton.js": 1,
-        "../ui/status-chip.js": 1,
-        "../ui/switch.js": 1,
-        "./settings-kit.js": 1,
-        "./settings-row.js": 1,
-        "@maka/core/search": 1,
-        "@maka/core/web-search": 1,
         "@maka/ui": 1,
         "react": 1
       }
@@ -7333,15 +7284,6 @@
       }
     },
     "src/renderer/locales/settings-usage-copy.ts": {
-      "bridgePaths": {},
-      "environmentCapabilities": {},
-      "hookCalls": {},
-      "lifecycleMethods": {},
-      "unresolvedDependencies": 0,
-      "actionFactories": [],
-      "dependencyPaths": {}
-    },
-    "src/renderer/locales/settings-web-search-copy.ts": {
       "bridgePaths": {},
       "environmentCapabilities": {},
       "hookCalls": {},

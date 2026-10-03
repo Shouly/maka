@@ -194,6 +194,15 @@ const MIGRATIONS: Record<string, Migration> = {
     `CREATE INDEX provider_catalog_snapshots_expiry ON provider_catalog_snapshots (expires_at)`,
     `CREATE TABLE model_catalog_state (id integer PRIMARY KEY CHECK (id = 1), revision integer NOT NULL)`,
     `INSERT INTO model_catalog_state VALUES (1, 1)`,
+    // The organization's web search service; the row exists once a key is saved.
+    `CREATE TABLE web_search_settings (
+      id integer PRIMARY KEY CHECK (id = 1),
+      provider text NOT NULL CHECK (provider IN ('tavily')),
+      credential_sealed text NOT NULL,
+      enabled boolean NOT NULL,
+      revision integer NOT NULL,
+      updated_at timestamptz NOT NULL
+    )`,
     `CREATE TABLE admin_mutations (
       id text PRIMARY KEY,
       actor_id text NOT NULL,

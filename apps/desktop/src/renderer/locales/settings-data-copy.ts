@@ -96,7 +96,7 @@ const SETTINGS_DATA_COPY = {
   'zh-CN': {
     categories: {
       connections: { label: '模型连接', detail: '供应商连接与默认模型（不含密钥）' },
-      settings: { label: '应用设置', detail: '常规、搜索、机器人、代理等设置' },
+      settings: { label: '应用设置', detail: '常规、机器人、代理等设置' },
       memory: { label: '记忆', detail: '本机的全部记忆文件' },
       credentials: {
         label: '凭据（API 密钥、令牌）',
@@ -188,7 +188,7 @@ const SETTINGS_DATA_COPY = {
   'zh-TW': {
     categories: {
       connections: { label: '模型連線', detail: '供應商連線與預設模型（不含金鑰）' },
-      settings: { label: '應用設定', detail: '常規、搜尋、機器人、代理等設定' },
+      settings: { label: '應用設定', detail: '常規、機器人、代理等設定' },
       memory: { label: '記憶', detail: '本機的全部記憶檔案' },
       credentials: {
         label: '憑據（API 金鑰、權杖）',
@@ -285,7 +285,7 @@ const SETTINGS_DATA_COPY = {
       },
       settings: {
         label: 'App settings',
-        detail: 'General, search, bot, proxy, and other settings',
+        detail: 'General, bot, proxy, and other settings',
       },
       memory: { label: 'Memory', detail: 'Every memory file on this machine' },
       credentials: {

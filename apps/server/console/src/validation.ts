@@ -93,6 +93,11 @@ export function isApiKey(value: string): boolean {
   return value.length <= API_KEY_MAX;
 }
 
+/** A search service key is printable ASCII without spaces, as the server checks. */
+export function isSearchKey(value: string): boolean {
+  return /^[\x21-\x7E]+$/.test(value);
+}
+
 export function isCostWeight(value: number): boolean {
   return Number.isFinite(value) && value >= 0 && value <= COST_WEIGHT_MAX;
 }

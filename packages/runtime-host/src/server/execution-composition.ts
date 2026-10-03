@@ -25,8 +25,6 @@ import { messageContentDigest, normalizeMessageContent } from '@maka/core/events
 import type { AttachmentRef } from '@maka/core/events';
 import type { ArtifactKind, ArtifactRecord } from '@maka/core/artifacts';
 import { NO_REAL_CONNECTION_CODE } from '@maka/core/connection-error-copy';
-import type { RuntimeExecutionConnection } from '@maka/core/llm-connections';
-import { lookupConnectionModelMetadata } from '@maka/core/model-metadata';
 import { generalizedErrorMessage } from '@maka/core/redaction';
 import { emptyPlanSessionState } from '@maka/core/plan';
 import { readLogicalRuntimeExecutionForRun } from '@maka/core/runtime-logical-execution';
@@ -37,7 +35,6 @@ import {
 } from '@maka/core/runtime-invocation';
 import {
   isDeepResearchSession,
-  type SessionHeader,
   WORKHUB_COORDINATION_SESSION_ID,
   WORKHUB_COORDINATION_REPLACEMENT_SCHEMA_VERSION,
 } from '@maka/core/session';
@@ -122,7 +119,6 @@ import { createGitWorktreeChildExecutor } from '@maka/storage/git-worktree-child
 import { runWithStorageRootLease } from '@maka/storage/root-authority';
 import { createInteractiveContextOffloadReader } from '@maka/storage/context-offload-store';
 import { openStorageWriterComposition } from '@maka/storage/storage-writer-composition';
-import type { RuntimePolicyStoresWriter } from '@maka/storage/runtime-policy-stores';
 import { resolveWorkspaceIdentity } from '@maka/storage/workspace-identity';
 import { CanonicalSessionProjectionReader } from './canonical-session-projection.js';
 import { HostPluginDataRuntime } from './plugin-data-runtime.js';
@@ -143,7 +139,6 @@ import { prepareHostAiSdkBackend } from './execution-model-composition.js';
 import {
   createInteractiveRunComposer,
   createInteractiveRunComposerFactory,
-  routeInteractiveRunToolSurface,
 } from './interactive-run-composer.js';
 
 import {
@@ -238,27 +233,17 @@ import { HostSessionTaskCoordinator } from './session-task-coordinator.js';
 import { HostTurnControlCoordinator } from './turn-control-coordinator.js';
 import type { TurnOperationHandlerMap } from './operation-dispatcher.js';
 import { HostUsagePricingCoordinator } from './usage-pricing-coordinator.js';
-import { HostWebSearchCoordinator } from './web-search-coordinator.js';
 import { HostWorkHubCoordinationCoordinator } from './workhub-coordination-coordinator.js';
 import {
   WorkHubActionEffectFailure,
   workHubResumedTurnId,
 } from './workhub-coordination-action-gate.js';
 
-type ExecutionConnectionRef = Parameters<
-  RuntimePolicyStoresWriter['operations']['resolveExecutionConnection']
->[0];
 import {
   createHostWebSearchService,
   createHostWebSearchToolFromService,
-  resolveHostTavilyWebSearchReadiness,
-  shouldResolveHostTavilyWebSearchReadiness,
 } from './web-search-tool.js';
-import {
-  createHostWebFetchService,
-  createHostWebFetchToolFromService,
-  type HostWebFetchAnswerModel,
-} from './web-fetch-tool.js';
+import { createHostWebFetchService, createHostWebFetchToolFromService } from './web-fetch-tool.js';
 import { createHostExecutionArtifactServices } from './execution-artifacts.js';
 import { openToolResultArchiveEvidenceReader } from '@maka/storage/tool-result-archive-evidence';
 import { createHostOrganizationSession } from './organization-session.js';
@@ -683,18 +668,17 @@ export async function createExecutionRuntimeHostComposition(
           pluginAttachmentRef,
         ),
     });
-    const webSearchService = createHostWebSearchService({
+    const webAccess = {
+      organizationSession: () => oauthCredentials.organizationSession(),
       policy: runtimePolicyStores.operations,
-    });
-    let webFetchAnswerModel: HostWebFetchAnswerModel | undefined;
-    const webFetchService = createHostWebFetchService({
-      policy: runtimePolicyStores.operations,
-      answerModel: () => webFetchAnswerModel,
-    });
+    };
+    const webSearchService = createHostWebSearchService(webAccess);
+    const webFetchService = createHostWebFetchService(webAccess);
     pluginWeb.bindRuntime({
       search: ({ query, limit, abortSignal }) =>
         webSearchService.search({ query, limit, ...(abortSignal ? { abortSignal } : {}) }),
-      fetch: (input) => webFetchService.fetch(input),
+      fetch: async ({ url, abortSignal }) =>
+        (await webFetchService.fetch({ url, ...(abortSignal ? { abortSignal } : {}) })).content,
     });
     const historyTools = buildHistoryTools({
       listSessions: () => requireSessionManager(manager).listSessions(),
@@ -1028,8 +1012,6 @@ export async function createExecutionRuntimeHostComposition(
         memory: memory,
         sessionTask,
         clientCapabilities: requireClientCapabilities(clientCapabilities),
-        resolveTavilyWebSearchReadiness: () =>
-          resolveHostTavilyWebSearchReadiness(runtimePolicyStores.operations),
         ...(scheduledTaskTools ? { scheduledTaskTools } : {}),
         planStore: openedPlanStore,
         deepResearchTools: requireDeepResearch(deepResearch).toolsForSession(
@@ -1100,55 +1082,6 @@ export async function createExecutionRuntimeHostComposition(
       stopSession: (sessionId, input) =>
         requireRootCoordinator(rootCoordinator).stopSession(sessionId, input),
     };
-    const resolveInteractiveToolSurface = async (input: {
-      readonly connectionRef?: ExecutionConnectionRef;
-      readonly modelId: string;
-      readonly hostTools: readonly MakaTool[];
-      readonly boundTools?: readonly MakaTool[];
-      readonly parentAgentTools?: readonly MakaTool[];
-    }) => {
-      const [runtimePolicy, resolved] = await Promise.all([
-        runtimePolicyStores.runtimePolicy.getSnapshot(),
-        input.connectionRef
-          ? runtimePolicyStores.operations.resolveExecutionConnection(input.connectionRef)
-          : Promise.resolve(undefined),
-      ]);
-      let connection: RuntimeExecutionConnection | undefined;
-      if (resolved?.kind === 'ready') {
-        const { models, ...configuration } = resolved.connection;
-        connection = {
-          ...configuration,
-          defaultModel: input.modelId,
-          ...(models ? { models: [...models] } : {}),
-        };
-      }
-      const tavilyReady =
-        connection && shouldResolveHostTavilyWebSearchReadiness(runtimePolicy.policy)
-          ? await resolveHostTavilyWebSearchReadiness(runtimePolicyStores.operations)
-          : false;
-      // The serving model's own cutoff, for <knowledge_cutoff>. A connection
-      // entry states it when the account advertises one; otherwise the models
-      // metadata snapshot does (for an organisation model, the entry its
-      // contract names). Unknown stays undefined — the section then omits the
-      // date rather than inventing one.
-      const knowledgeCutoff = connection
-        ? (connection.models?.find((model) => model.id === input.modelId)?.knowledgeCutoff ??
-          lookupConnectionModelMetadata(connection, input.modelId).knowledgeCutoff)
-        : undefined;
-      return {
-        runtimePolicy,
-        ...(knowledgeCutoff ? { knowledgeCutoff } : {}),
-        surface: routeInteractiveRunToolSurface({
-          runtimePolicy,
-          ...(connection ? { connection } : {}),
-          modelId: input.modelId,
-          hostTools: input.hostTools,
-          ...(input.boundTools ? { boundTools: input.boundTools } : {}),
-          ...(input.parentAgentTools ? { parentAgentTools: input.parentAgentTools } : {}),
-          tavilyReady,
-        }),
-      };
-    };
     resolveAvailableToolNames = async (sessionId: string): Promise<string[]> => {
       const header = await stores.sessionStore.readHeaderSnapshot(sessionId);
       if (header.subagentRuntime && !header.subagentParent) {
@@ -1161,16 +1094,11 @@ export async function createExecutionRuntimeHostComposition(
         requireClientCapabilities(clientCapabilities).snapshotForSession(sessionId);
       try {
         const planState = await openedPlanStore.readState(sessionId);
-        const { runtimePolicy, surface, knowledgeCutoff } = await resolveInteractiveToolSurface({
-          connectionRef: sessionExecutionConnectionRef(header),
-          modelId: header.model,
-          hostTools,
-          parentAgentTools,
-        });
+        // Which tools a session holds does not depend on its connection.
+        const runtimePolicy = await runtimePolicyStores.runtimePolicy.getSnapshot();
         const runProfile = hostedExecutionRunProfile(header.toolProfile);
         return createInteractiveRunComposer({
           runtimePolicy,
-          ...(knowledgeCutoff ? { knowledgeCutoff } : {}),
           shell: resolveTurnShellPlan(runtimePolicy.policy.shell),
           skills,
           memory: memory,
@@ -1180,10 +1108,10 @@ export async function createExecutionRuntimeHostComposition(
           ...(runProfile ? { toolProfile: header.toolProfile } : {}),
           ...(capabilitySnapshot ? { clientCapabilities: capabilitySnapshot } : {}),
           builtinTools,
-          hostTools: surface.hostTools,
+          hostTools,
           ...(scheduledTaskTools ? { scheduledTaskTools } : {}),
           goalTools: requireGoal(goal).tools,
-          ...(surface.parentAgentTools ? { parentAgentTools: surface.parentAgentTools } : {}),
+          ...(parentAgentTools ? { parentAgentTools } : {}),
           plan: {
             store: openedPlanStore,
             state: planState,
@@ -1214,27 +1142,7 @@ export async function createExecutionRuntimeHostComposition(
         const capabilitySnapshot =
           requireClientCapabilities(clientCapabilities).snapshotForSession(previewSessionId);
         try {
-          const catalog = await runtimePolicyStores.connectionCatalog.getSnapshot();
-          const target = catalog.defaultTarget;
-          const connection = target
-            ? catalog.connections.find(
-                (candidate) => candidate.connectionId === target.connectionId,
-              )
-            : undefined;
-          const { runtimePolicy, surface } = await resolveInteractiveToolSurface({
-            ...(connection
-              ? {
-                  connectionRef: {
-                    kind: 'bound' as const,
-                    connectionId: connection.connectionId,
-                    connectionSlug: connection.slug,
-                  },
-                }
-              : {}),
-            modelId: target?.modelId ?? '',
-            hostTools,
-            parentAgentTools,
-          });
+          const runtimePolicy = await runtimePolicyStores.runtimePolicy.getSnapshot();
           return createInteractiveRunComposer({
             runtimePolicy,
             shell: resolveTurnShellPlan(runtimePolicy.policy.shell),
@@ -1243,10 +1151,10 @@ export async function createExecutionRuntimeHostComposition(
             sessionTask,
             ...(capabilitySnapshot ? { clientCapabilities: capabilitySnapshot } : {}),
             builtinTools,
-            hostTools: surface.hostTools,
+            hostTools,
             ...(scheduledTaskTools ? { scheduledTaskTools } : {}),
             goalTools: requireGoal(goal).tools,
-            ...(surface.parentAgentTools ? { parentAgentTools: surface.parentAgentTools } : {}),
+            ...(parentAgentTools ? { parentAgentTools } : {}),
             plan: {
               store: openedPlanStore,
               state: emptyPlanSessionState(previewSessionId),
@@ -1475,7 +1383,6 @@ export async function createExecutionRuntimeHostComposition(
       // coordination, and legacy sessions the filtered catalog omits.
       async (sessionId) => (await stores.sessionStore.readHeaderSnapshot(sessionId)).name,
     );
-    const webSearch = new HostWebSearchCoordinator(webSearchService);
     const networkProxy = new HostNetworkProxyCoordinator(runtimePolicyStores.operations);
     const configuration = new HostConfigurationCoordinator(runtimePolicyStores.operations);
     const artifacts = new HostArtifactCoordinator(
@@ -1540,7 +1447,6 @@ export async function createExecutionRuntimeHostComposition(
       requestDrain: context.requestDrain,
       readSessionHeader: (sessionId) => stores.sessionStore.readHeaderSnapshot(sessionId),
     });
-    webFetchAnswerModel = pluginModel;
     pluginLlm.bindRuntime({
       generate: (input, invocation) =>
         pluginModel.generate({
@@ -2524,7 +2430,6 @@ export async function createExecutionRuntimeHostComposition(
           usagePricing.handlers,
           oauth.handlers,
           externalAgentSetup.handlers,
-          webSearch.handlers,
           networkProxy.handlers,
           configuration.handlers,
         ],
@@ -2958,18 +2863,6 @@ function isActiveWorkHubRoot(
     rootState.turnId === identity.turnId &&
     rootState.runId === identity.runId
   );
-}
-
-function sessionExecutionConnectionRef(
-  header: Pick<SessionHeader, 'llmConnectionId' | 'llmConnectionSlug'>,
-): ExecutionConnectionRef {
-  return header.llmConnectionId === undefined
-    ? { kind: 'catalog_slug', connectionSlug: header.llmConnectionSlug }
-    : {
-        kind: 'bound',
-        connectionId: header.llmConnectionId,
-        connectionSlug: header.llmConnectionSlug,
-      };
 }
 
 function requireRootCoordinator(coordinator: RootTurnCoordinator | undefined): RootTurnCoordinator {

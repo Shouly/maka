@@ -74,7 +74,6 @@ export function hasRuntimeHostSettingsPatch(
       patch.memory ||
       patch.workspaceInstructions ||
       patch.chatDefaults ||
-      patch.webSearch ||
       patch.subagents,
   );
 }

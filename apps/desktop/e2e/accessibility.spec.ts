@@ -57,7 +57,6 @@ test('native accessibility names cover the shell, transcript, settings and modul
     'models',
     'subagents',
     'memory',
-    'search',
     'usage',
     'archived-tasks',
     'data',

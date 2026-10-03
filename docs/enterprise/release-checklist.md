@@ -115,9 +115,9 @@ latest backup (upstream lists save/reset/restore), no open-folder or
 copy-path. Usage: no per-request log, filters, detail toggle or jump to the
 session; the tab choice is not persisted. Workspace: no project-directory
 editor, no "default project unavailable" notice, no refresh on Host changes.
-Web search: no reveal toggle on the API key. Archived tasks: no purge-all or
-purge-matching, no orphaned-subtask marker. Models: writes the whole
-`modelOverrides` table on every thinking-level or add-model change (core
+Archived tasks: no purge-all or purge-matching, no orphaned-subtask marker.
+Models: writes the whole `modelOverrides` table on every thinking-level or
+add-model change (core
 since #5225 documents that field as a full replacement for imports and offers
 a per-model `modelOverride` CAS input with `enable`; move the toggle and
 add-model there), no request-body overlay,
@@ -231,10 +231,8 @@ slot replaces the composer for all four kinds, so a boundary, capability or
 form request would otherwise trap a running turn just as completely.
 
 About offers install-now and retry-download; Data clears composer drafts;
-Permissions refreshes capabilities on its own; Web search keeps the credential
-verdict on the page and offers the live query for the model provider; the
-connection list has a per-connection enable switch and a global default-model
-selector.
+Permissions refreshes capabilities on its own; the connection list has a
+per-connection enable switch and a global default-model selector.
 
 The model-facing surface is ours since Phase 8 (2026-09-13): PascalCase tool
 names from one registry with legacy aliases at every read boundary, contract
@@ -277,9 +275,11 @@ now conflicts by design; resolve toward `TOOL_NAMES.*` and the resources under
   appear in Settings › Models, send a turn through the server's gateway); each
   of the three OAuth sign-ins including sign-out and the local `gh`
   credential import; a connection test and a model-catalog refetch against a
-  live provider; request headers against a real endpoint; a Tavily key saved and
-  probed; an MCP server added from the directory, tested and signed into; a
-  skill imported from a file; a scheduled task actually firing (Phase 5b).
+  live provider; request headers against a real endpoint; a Tavily key saved in
+  the admin console, then a WebSearch and a WebFetch through the server (and
+  both refused once the key is switched off); an MCP server added from the
+  directory, tested and signed into; a skill imported from a file; a scheduled
+  task actually firing (Phase 5b).
 
 ## How the gap list was measured (2026-09-12, against `c08626bf2`)
 

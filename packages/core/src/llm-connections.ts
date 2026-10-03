@@ -127,8 +127,6 @@ export interface ModelInfo {
     /** Whether one response may contain multiple independent tool calls. */
     parallelToolCalls?: boolean;
     imageGeneration?: boolean;
-    /** Provider-hosted live web search, using this exact model and connection. */
-    webSearch?: boolean;
   };
   /** Multimodal input/output support from provider catalog metadata. */
   modalities?: {

@@ -135,12 +135,6 @@ test("classifies only dispatched control connection loss for reconciliation", ()
       "dispatched",
       "connection_lost",
     ),
-    new RuntimeHostRequestInterruptedError(
-      "web-search.execute",
-      "command",
-      "dispatched",
-      "connection_lost",
-    ),
     new Error("ordinary failure"),
   ]) {
     assert.equal(predicate?.(error), false);

@@ -20,9 +20,10 @@
 // Which settings pages the nav offers, and in what order.
 //
 // `SETTINGS_SECTIONS` in `@maka/core/settings` stays the authority on which
-// ids exist — `maka://settings/<section>` is a public deep link and the
-// e2e fixture's `openSettingsSection` names one of them, so the enum must not
-// shrink. What the nav SHOWS is a different question, and it is answered here:
+// ids exist — `maka://settings/<section>` deep links and the e2e fixture's
+// `openSettingsSection` name them, and an id that is gone (a stale link, a
+// remembered section) falls back to `general`. What the nav SHOWS is a
+// different question, and it is answered here:
 // the deferred sections are scope-deferred for this rewrite (plan §3 "Defer"), and a
 // nav row that opens a page nobody wrote is worse than no row.
 //
@@ -54,7 +55,7 @@ export interface SettingsNavGroupModel {
 export const SETTINGS_NAV_GROUPS: readonly SettingsNavGroupModel[] = [
   // General, then Account. Appearance is a section of General.
   { group: 'preferences', sections: ['general', 'account', 'projects'] },
-  { group: 'capabilities', sections: ['models', 'subagents', 'memory', 'search', 'bot-chat'] },
+  { group: 'capabilities', sections: ['models', 'subagents', 'memory', 'bot-chat'] },
   { group: 'activity', sections: ['usage', 'archived-tasks', 'data'] },
   { group: 'system', sections: ['permissions', 'health', 'about'] },
 ];
@@ -71,7 +72,6 @@ export const SETTINGS_SECTION_ICONS: Record<SettingsSection, AnthropiconName> = 
   subagents: 'users',
   memory: 'memory',
   'daily-review': 'calendar',
-  search: 'globe',
   usage: 'usage',
   'archived-tasks': 'archive',
   'import-tasks': 'download',

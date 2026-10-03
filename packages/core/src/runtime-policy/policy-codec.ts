@@ -33,7 +33,6 @@ import {
   decodeCredentialVersionBasis,
   normalizeCredentialSecret,
 } from './credential-vault-codec.js';
-import { WEB_SEARCH_PROVIDERS } from '../web-search.js';
 import {
   assertCanonicalValue,
   booleanValue,
@@ -63,8 +62,13 @@ export function decodeRuntimePolicyV2(value: unknown): RuntimePolicy {
     'webSearch',
     'subagents',
   ]);
-  // The retired personalization and privacy blocks are dropped, not decoded.
-  const { personalization: _personalization, privacy: _privacy, ...current } = policy;
+  // The retired personalization, privacy and web search blocks are dropped, not decoded.
+  const {
+    personalization: _personalization,
+    privacy: _privacy,
+    webSearch: _webSearch,
+    ...current
+  } = policy;
   const decoded = normalizeRuntimePolicyFields(
     current,
     normalizeSubagentSettings(current.subagents),
@@ -182,7 +186,6 @@ function normalizeRuntimePolicy(value: unknown): RuntimePolicy {
     'memory',
     'workspaceInstructions',
     'chatDefaults',
-    'webSearch',
     'subagents',
     'shell',
     'externalAgents',
@@ -206,7 +209,6 @@ function normalizeRuntimePolicyFields(
     memory: normalizeMemory(policy.memory),
     workspaceInstructions: normalizeWorkspaceInstructions(policy.workspaceInstructions),
     chatDefaults: normalizeChatDefaults(policy.chatDefaults),
-    webSearch: normalizeWebSearch(policy.webSearch),
     subagents,
     shell,
     externalAgents,
@@ -228,8 +230,6 @@ function normalizeMutationOperation(operation: Record<string, unknown>): Runtime
       return { kind: operation.kind, value: normalizeWorkspaceInstructions(operation.value) };
     case 'set_chat_defaults':
       return { kind: operation.kind, value: normalizeChatDefaults(operation.value) };
-    case 'set_web_search':
-      return { kind: operation.kind, value: normalizeWebSearch(operation.value) };
     case 'set_subagents':
       return { kind: operation.kind, value: normalizeSubagentSettings(operation.value) };
     case 'set_external_agents':
@@ -262,7 +262,7 @@ function normalizeAgentRuntimeSettingsPatch(value: unknown): AgentRuntimeSetting
   const patch = exactRecord(
     value,
     'agent runtime settings patch',
-    ['memory', 'workspaceInstructions', 'webSearch'],
+    ['memory', 'workspaceInstructions'],
     [],
   );
   return {
@@ -275,9 +275,6 @@ function normalizeAgentRuntimeSettingsPatch(value: unknown): AgentRuntimeSetting
             'workspace instructions patch',
           ),
         }),
-    ...(patch.webSearch === undefined
-      ? {}
-      : { webSearch: normalizeEnabledPatch(patch.webSearch, 'web search patch') }),
   };
 }
 
@@ -371,23 +368,13 @@ function normalizeChatDefaults(value: unknown): RuntimePolicy['chatDefaults'] {
   };
 }
 
-function normalizeWebSearch(value: unknown): RuntimePolicy['webSearch'] {
-  const item = exactRecord(value, 'web search policy', ['enabled', 'defaultProvider']);
-  if (!(WEB_SEARCH_PROVIDERS as readonly unknown[]).includes(item.defaultProvider)) {
-    throw domainError('web search default provider is invalid');
-  }
-  return {
-    enabled: booleanValue(item.enabled, 'web search enabled'),
-    defaultProvider: item.defaultProvider as RuntimePolicy['webSearch']['defaultProvider'],
-  };
-}
-
 /** Read the previous document without loosening the current wire decoder. */
 export function decodeRuntimePolicyV3(value: unknown): RuntimePolicy {
-  // The retired personalization and privacy blocks are dropped, not decoded.
+  // The retired personalization, privacy and web search blocks are dropped, not decoded.
   const {
     personalization: _personalization,
     privacy: _privacy,
+    webSearch: _webSearch,
     ...old
   } = exactRecord(value, 'runtime policy v3', [
     'networkProxy',

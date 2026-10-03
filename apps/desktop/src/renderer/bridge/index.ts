@@ -57,7 +57,6 @@ export * as shellRuns from './shell-runs.js';
 export * as skills from './skills.js';
 export * as taskReadiness from './task-readiness.js';
 export * as transcripts from './transcripts.js';
-export * as webSearch from './web-search.js';
 export * as workspace from './workspace.js';
 
 export { BridgeUnavailableError, isBridgeAvailable } from './bridge.js';

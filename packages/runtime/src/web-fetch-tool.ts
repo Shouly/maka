@@ -18,6 +18,7 @@
  */
 
 import { TOOL_NAMES } from '@maka/core/tool-names';
+import { WEB_FETCH_URL_MAX_LENGTH } from '@maka/platform-protocol';
 import { z } from 'zod';
 import type { MakaTool } from './tool-runtime.js';
 
@@ -27,6 +28,7 @@ const WEB_FETCH_TRUNCATION_MARKER =
   '\n\n…[WebFetch content truncated to fit the 50 KB model-output limit]';
 const httpUrlSchema = z
   .string()
+  .max(WEB_FETCH_URL_MAX_LENGTH)
   .url()
   .refine((value) => {
     const protocol = new URL(value).protocol;
@@ -34,29 +36,15 @@ const httpUrlSchema = z
   }, 'URL must use HTTP or HTTPS.');
 
 export interface WebFetchExecutor {
+  /** The page as markdown, and the address it was read at; throws why it could not be read. */
   fetch(input: {
     readonly url: string;
     readonly sessionId: string;
     readonly abortSignal?: AbortSignal;
-  }): Promise<string>;
-  /**
-   * Answers `prompt` against the fetched page with a small, fast model, the
-   * way the reference harness does. Optional: a host without an auxiliary
-   * model returns the page itself, and the output says so.
-   */
-  answer?(input: {
-    readonly url: string;
-    readonly prompt: string;
-    readonly content: string;
-    readonly sessionId: string;
-    readonly abortSignal?: AbortSignal;
-  }): Promise<string>;
+  }): Promise<{ readonly url: string; readonly content: string }>;
 }
 
-const WEB_FETCH_NO_ANSWER_MODEL_NOTE =
-  'No summarising model is available in this session, so the page content follows instead of an answer to the prompt.';
-
-/** Builds the model-facing tool while the host owns policy and transport. */
+/** The model's WebFetch: the page itself, as the web service read it. */
 export function buildWebFetchTool(executor: WebFetchExecutor): MakaTool {
   return {
     name: WEB_FETCH_TOOL_NAME,
@@ -64,43 +52,24 @@ export function buildWebFetchTool(executor: WebFetchExecutor): MakaTool {
     categoryHint: 'web_read',
     displayName: 'Web fetch',
     description: [
-      'Fetches a URL, converts the page to markdown, and answers `prompt` against it using a small fast model.',
+      'Fetch a web page at a given URL and return its full extracted content.',
       '',
-      '- Fails on authenticated/private URLs — use an authenticated MCP tool for those instead.',
-      '- Fails on localhost and other hostnames without a dot; for a local server, use curl via Bash.',
-      '- Only http:// and https:// are accepted. Redirects are followed by the fetcher; the answer names the page it read.',
-      "- The answer is another model's reading of the page, not the page itself: when you need exact wording, ask for it verbatim in `prompt`.",
-      '- Do not work around a failed or blocked fetch with Bash, scripts, or a cache, archive or mirror of the same page; tell the user the content was not reachable.',
+      '- Only fetch EXACT URLs provided by the user or returned by WebSearch / WebFetch — never guess or construct a URL.',
+      '- Cannot access content behind authentication or login walls.',
+      '- If nothing can be extracted from the page, the call fails — fall back to WebSearch or tell the user.',
     ].join('\n'),
     parameters: z
       .object({
-        url: httpUrlSchema.describe('The URL to fetch content from'),
-        prompt: z
-          .string()
-          .trim()
-          .min(1)
-          .max(2_000)
-          .describe('The prompt to run on the fetched content'),
+        url: httpUrlSchema.describe('The exact URL of the web page to fetch.'),
       })
       .strict(),
-    impl: async ({ url, prompt }, context) => {
-      const canonicalUrl = new URL(httpUrlSchema.parse(url)).toString();
-      const content = await executor.fetch({
-        url: canonicalUrl,
+    impl: async ({ url }, context) => {
+      const page = await executor.fetch({
+        url: new URL(httpUrlSchema.parse(url)).toString(),
         sessionId: context.sessionId,
         ...(context.abortSignal ? { abortSignal: context.abortSignal } : {}),
       });
-      if (executor.answer) {
-        const answer = await executor.answer({
-          url: canonicalUrl,
-          prompt,
-          content: truncateWebFetchOutput(content),
-          sessionId: context.sessionId,
-          ...(context.abortSignal ? { abortSignal: context.abortSignal } : {}),
-        });
-        return answer;
-      }
-      return `${WEB_FETCH_NO_ANSWER_MODEL_NOTE}\n\n${truncateWebFetchOutput(content)}`;
+      return `URL: ${page.url}\n\n${truncateWebFetchOutput(page.content)}`;
     },
   };
 }

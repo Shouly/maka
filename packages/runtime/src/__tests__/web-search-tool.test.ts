@@ -44,7 +44,6 @@ test('WebSearch takes the reference parameters and forwards domain filters', asy
         ok: true,
         results: [
           {
-            provider: 'tavily',
             title: 'Maka',
             url: 'https://maka.example/current',
             snippet: 'Current information.',

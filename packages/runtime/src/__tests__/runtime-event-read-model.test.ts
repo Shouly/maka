@@ -383,7 +383,7 @@ describe('projectRuntimeEventsToStoredMessages', () => {
     assert.deepStrictEqual(out.diagnostics, []);
   });
 
-  test('projects provider-native search through the canonical read model while replay keeps raw output', () => {
+  test('projects a provider-executed result through the canonical read model while replay keeps raw output', () => {
     const rawProviderOutput = [
       {
         type: 'web_search_result',

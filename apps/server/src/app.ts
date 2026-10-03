@@ -31,6 +31,8 @@ import {
 import type { ServerContext } from './context.js';
 import { clientVersionGate, sendPlatformError } from './http/common.js';
 import { registerModelGateway } from './gateway/routes.js';
+import { registerWebSearch } from './web-search/routes.js';
+import type { WebSearchDeps } from './web-search/settings.js';
 import { ModelProviderTransport } from './gateway/model-providers.js';
 import type { CatalogDeps } from './admin-console/model-catalog.js';
 import type { AccessTokens } from './identity/access-tokens.js';
@@ -49,6 +51,8 @@ export interface ServerDependencies {
   readonly consoleDir?: string;
   /** Reads providers' model lists; tests stand in for the providers. */
   readonly catalog?: CatalogDeps;
+  /** Reaches the web search service; tests stand in for it. */
+  readonly webSearch?: WebSearchDeps;
 }
 
 /** A hop count becomes "trust the nearest N proxies"; addresses pass through. */
@@ -130,10 +134,12 @@ export async function buildServer(
   );
 
   registerIdentityRoutes(app, ctx, deps);
+  const webSearch = deps.webSearch ?? { fetch };
   const sendConsolePage = await registerAdminConsole(app, ctx, {
     providers: deps.providers,
     ...(deps.consoleDir ? { consoleDir: deps.consoleDir } : {}),
     catalog: deps.catalog ?? { fetch },
+    webSearch,
   });
   // A browser that opened an address the server does not have gets a page
   // saying so; a program gets the error in JSON, as everywhere else.
@@ -146,5 +152,6 @@ export async function buildServer(
     accessTokens: deps.accessTokens,
     transport: deps.transport ?? new ModelProviderTransport(ctx),
   });
+  registerWebSearch(app, ctx, { ...webSearch, accessTokens: deps.accessTokens });
   return app;
 }

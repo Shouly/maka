@@ -676,8 +676,6 @@ function organizationModelInfo(model: Record<string, unknown>): ModelInfo {
       reasoning: c.supportsReasoning,
       functionCalling: c.supportsTools,
       ...(c.parallelToolCalls === undefined ? {} : { parallelToolCalls: c.parallelToolCalls }),
-      // Search the provider runs is billed outside the gateway's allowance.
-      webSearch: false,
     },
     modalities: { input: [...c.inputModalities], output: ['text'] },
     ...advertisedThinking(c.thinkingLevels, c.defaultThinkingLevel),

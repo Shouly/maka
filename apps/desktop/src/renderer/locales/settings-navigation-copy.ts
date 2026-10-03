@@ -71,7 +71,6 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
         label: '远程接入',
         description: '通过 Telegram、飞书、微信等平台从其他设备与 Maka 对话。',
       },
-      search: { label: '联网搜索', description: '联网搜索供应商（如 Tavily）凭据与隐私边界。' },
       data: { label: '数据', description: '本地工作区路径、备份与恢复。' },
       permissions: {
         label: '权限与能力',
@@ -125,7 +124,6 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
         label: '遠端串接',
         description: '透過 Telegram、飛書、微信等平臺從其他裝置與 Maka 對話。',
       },
-      search: { label: '聯網搜尋', description: '聯網搜尋供應商（如 Tavily）憑據與隱私邊界。' },
       data: { label: '資料', description: '本地工作區路徑、備份與恢復。' },
       permissions: {
         label: '權限與能力',
@@ -190,10 +188,6 @@ const SETTINGS_NAVIGATION_COPY_BY_LOCALE = {
       'bot-chat': {
         label: 'Remote Access',
         description: 'Chat with Maka from other devices through Telegram, Feishu, or WeChat.',
-      },
-      search: {
-        label: 'Web Search',
-        description: 'Credentials and privacy boundaries for providers such as Tavily.',
       },
       data: { label: 'Data', description: 'Local workspace paths, backup, and restore.' },
       permissions: {

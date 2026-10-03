@@ -122,7 +122,11 @@ export type PlatformErrorCode =
   | 'rate_limited'
   | 'quota_exceeded'
   | 'model_not_allowed'
-  | 'upstream_unavailable';
+  | 'upstream_unavailable'
+  /** The organization has no web access: not set up, switched off, its key refused or its plan used up. */
+  | 'web_access_unavailable'
+  /** The web service could not read that page. */
+  | 'web_fetch_failed';
 
 /** The body of every non-OAuth error the server returns. */
 export interface PlatformErrorBody {
@@ -167,6 +171,48 @@ export interface PlatformModelCatalog {
   readonly schemaVersion: typeof GATEWAY_SCHEMA_VERSION;
   readonly revision: string;
   readonly models: readonly PlatformModel[];
+}
+
+// Web search: the desktop's WebSearch tool asks the server, which holds the
+// organization's web service key. Refusals are PlatformErrorBody.
+export const WEB_SEARCH_PATH = '/tools/web-search';
+export const WEB_SEARCH_QUERY_MAX_LENGTH = 200;
+export const WEB_SEARCH_DOMAINS_MAX = 20;
+export const WEB_SEARCH_LIMIT_MAX = 10;
+/** `POST /tools/web-search`. */
+export interface PlatformWebSearchRequest {
+  readonly query: string;
+  /** How many results, 1 to WEB_SEARCH_LIMIT_MAX; 5 when absent. */
+  readonly limit?: number;
+  /** Only results from these domains. */
+  readonly allowedDomains?: readonly string[];
+  /** No results from these domains. */
+  readonly blockedDomains?: readonly string[];
+}
+export interface PlatformWebSearchResult {
+  readonly title: string;
+  readonly url: string;
+  /** What the page says about the query; may be empty. */
+  readonly snippet: string;
+}
+export interface PlatformWebSearchResponse {
+  readonly results: readonly PlatformWebSearchResult[];
+}
+
+// Web fetch: the desktop's WebFetch tool reads a page through the same
+// service and key, and hands the page to the model as it came.
+export const WEB_FETCH_PATH = '/tools/web-fetch';
+export const WEB_FETCH_URL_MAX_LENGTH = 2048;
+export const WEB_FETCH_CONTENT_MAX_LENGTH = 200_000;
+/** `POST /tools/web-fetch`: one http(s) page. */
+export interface PlatformWebFetchRequest {
+  readonly url: string;
+}
+export interface PlatformWebFetchResponse {
+  /** The page that was read, as the service names it. */
+  readonly url: string;
+  /** The page as markdown, cut to WEB_FETCH_CONTENT_MAX_LENGTH characters. */
+  readonly content: string;
 }
 
 /** Decode a token answer from the wire, refusing anything that is not one. */

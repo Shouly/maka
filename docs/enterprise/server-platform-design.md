@@ -178,6 +178,7 @@ Maka 本地存储：现在的 `packages/storage/src/credential-store.ts` 是权�
 | `POST /model/gemini/...` | Gemini API、Google Vertex AI |
 | `GET /model/catalog` | 当前用户可用的模型 |
 | `POST /tools/web-search` | 公司采购的搜索服务（如 Tavily），由网关持有 key |
+| `POST /tools/web-fetch` | 用同一个服务读取网页正文，key 同样只在服务端 |
 
 同一家模型在不同上游，鉴权方式、请求地址和流式编码都不一样（例如 Bedrock 的流式响应不是 SSE）。这些差异由网关内的上游适配器抹平，Maka 看到的始终是原生协议。
 
@@ -209,18 +210,30 @@ Maka 的所有模型调用都走网关，包括后台调用：记忆整理、会
 
 - 新增一种 provider：组织账号。`authKind` 为组织会话，按模型所属协议路由到网关的对应路径，令牌自动刷新。
 - 模型列表直接取 `/model/catalog`。
-- 网页搜索改走 `/tools/web-search`。
+- 网页搜索改走 `/tools/web-search`，网页读取改走 `/tools/web-fetch`。
 - 替换现在需要手动填网址的 `relx-gateway` provider（`packages/core/src/provider-registry.ts`）。
 - 组织账号下的模型分属 Anthropic、OpenAI、Gemini 三种协议。Maka 已经支持按模型选协议（`ModelInfo.apiProtocol` + provider 的 `protocolAdapters`，`packages/runtime/src/model-runtime.ts`），还需要补两处：协议值里加上 Google；每种协议各有自己的网关地址（现在一个连接只有一个 baseUrl）。
 - 模型调用链路已经有按请求注入令牌的钩子（`ModelFactoryInput.fetch`），组织账号的 access token 从这里带上。Host 通过它向主进程调用服务的通道（`client-capability-coordinator` 的 `callService`）向主进程要令牌。
 - 保留员工自己添加模型连接的功能（D9）；那部分调用不经过网关，不计入公司额度。
 - 结果：员工电脑上不再保存公司的任何模型或搜索 API key。
 
-**实现状态（2026-09-29）**：组织账号 provider 已实现，先覆盖 Anthropic 协议；OpenAI、Gemini 协议和网页搜索随 M3 一起做。
+**实现状态（2026-10-02）**：组织账号 provider 已实现，Anthropic、OpenAI、Gemini 三种协议都走网关（见[模型接入与网关设计](model-gateway-refactor-design.md)）；网页搜索和读取已改走服务端，见下面的“网页搜索与读取”。
 - 登录后桌面端自动建一条"组织账号"连接（地址是服务器，不存 key），每次登录重新拉一次 `/model/catalog`，失败会隔一段时间自动重试。目录里的模型全部可用，管理员新开放的模型不用员工再勾选；员工还没有默认模型时才设为默认。退出登录保留连接，用它的任务再发送时提示重新登录。
 - Host 每次请求都向桌面端主进程要令牌（Host 不缓存，账号切换后不会带着上一个人的令牌），令牌只发给它所属的服务器；网关返回 401 时刷新一次再重试一次。拉目录和测试连接走同一条路径。
 - 网关错误按 `maka.code` 分类：额度用完（显示重置时间、不重试）、模型未开放、需要重新登录、版本过低各有专门提示；上游繁忙和上游不可用按原有规则重试。
 - 设置 › 模型把模型来源分成"组织账号"和"我自己的连接"两块。组织账号一块直接列出公司开放的模型，只有"刷新"；未登录时是一行"尚未登录组织账号"加登录入口。组织连接没有详情页，不能删除，名称、地址、key、请求头、模型列表都不能改；主进程同样拒绝这些修改，配置导入导出也不包含它。
+
+### 5.4 网页搜索与读取
+
+**实现状态（2026-10-02）**：WebSearch 和 WebFetch 都由服务端用公司的 Tavily 完成，员工电脑上不保存任何搜索配置或 key，也不在本机抓取网页。
+- 两个工具每轮都直接提供给模型（不经过 ToolSearch），不看用的是哪个模型、有没有登录，工具列表因此固定，不影响提示缓存。执行时 Host 带员工的令牌、经过员工设置的网络代理请求服务端：
+  - `POST /tools/web-search`：服务端调 Tavily `/search`（`search_depth: basic`，默认 5 条、最多 10 条），返回标题、地址、摘要。
+  - `POST /tools/web-fetch`：服务端调 Tavily `/extract`（`extract_depth: basic`，Markdown），返回读到的地址和正文（最多 20 万字符）；读不了的页面返回 422 `web_fetch_failed` 和 Tavily 给的原因。WebFetch 只有 `url` 一个参数，把实际读到的地址和正文直接交给模型（超过 50 KB 截断并注明），不再另调模型总结；做法与 relx-copilot 的 web_fetch 相同。
+  - 没登录、管理员没配置或停用、Tavily 拒绝 key 或额度用完时，工具返回说明原因的错误，由模型转告。Tavily 读不到内网和需要登录的页面，工具说明也这样告诉模型。
+- Tavily key 在管理后台“网页搜索与读取”页填写：先检查格式（只允许不含空格的可见字符），再用 Tavily 的 `GET /usage` 验证（不消耗额度），通过后加密保存；可以停用、更换，改动记审计日志。服务端用 `Authorization: Bearer` 调 Tavily；查询和地址都不记日志。
+- 桌面端不再有搜索设置，也不再在本机抓网页：设置 › 联网搜索、员工自己的 Tavily key、`TAVILY_API_KEY`、运行策略里的 `webSearch`、模型自带的搜索、本机抓取（Readability + Turndown）都已删除。
+- 计量暂不做；以后要按人限次数，加在这两个接口上。
+- 为什么不用模型自带的搜索：Vertex 上的 Claude 默认被组织策略禁用；Gemini 的搜索建议必须原样显示；OpenAI 在 `store: false` 下不回传搜索记录；OpenRouter 的新搜索工具还是 Beta；各家按次收费也算不进网关的计量。统一用 Tavily，行为一致、费用集中、数据只给一家。
 
 ## 6. 组织策略（阶段 2）
 

@@ -18,6 +18,7 @@
  */
 
 import { TOOL_NAMES } from '@maka/core/tool-names';
+import { WEB_SEARCH_DOMAINS_MAX } from '@maka/platform-protocol';
 import { z } from 'zod';
 import {
   WEB_SEARCH_DEFAULT_LIMIT,
@@ -31,6 +32,8 @@ import { toolResultOutput } from './tool-result-output.js';
 import type { MakaTool } from './tool-runtime.js';
 
 const WEB_SEARCH_TOOL_NAME = TOOL_NAMES.webSearch;
+/** Who searched, as the transcript records it: Tavily, through the organization server. */
+const WEB_SEARCH_PROVIDER = 'tavily';
 
 interface WebSearchExecutor {
   search(input: {
@@ -43,7 +46,10 @@ interface WebSearchExecutor {
   }): Promise<WebSearchResponse>;
 }
 
-const domainListSchema = z.array(z.string().trim().min(1).max(253)).max(20).optional();
+const domainListSchema = z
+  .array(z.string().trim().min(1).max(253))
+  .max(WEB_SEARCH_DOMAINS_MAX)
+  .optional();
 
 /**
  * What the model reads back. The shape follows the reference harness: a
@@ -82,7 +88,7 @@ export function webSearchToolResultToModelOutput(output: unknown): ToolResultOut
   return toolResultOutput(output, false);
 }
 
-/** Builds the canonical model tool while leaving policy and transport ownership to its executor. */
+/** The model's WebSearch; where the search runs is its executor's business. */
 export function buildWebSearchTool(executor: WebSearchExecutor): MakaTool {
   return {
     name: WEB_SEARCH_TOOL_NAME,
@@ -125,7 +131,7 @@ export function buildWebSearchTool(executor: WebSearchExecutor): MakaTool {
       if (!response.ok) return webSearchError(response.reason, response.message, normalizedQuery);
       return {
         kind: 'web_search' as const,
-        provider: response.provider ?? response.results[0]?.provider ?? ('tavily' as const),
+        provider: WEB_SEARCH_PROVIDER,
         query: normalizedQuery,
         rows: response.results.map((row) => ({
           title: row.title,
@@ -142,7 +148,7 @@ function webSearchError(reason: WebSearchErrorReason, message: string, query?: s
   return {
     kind: 'web_search_error' as const,
     ok: false as const,
-    provider: 'tavily' as const,
+    provider: WEB_SEARCH_PROVIDER,
     ...(query ? { query } : {}),
     reason,
     message,

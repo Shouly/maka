@@ -332,7 +332,7 @@ test('a real package reaches every scoped ctx service through one Agent Tool inv
     web.bindRuntime({
       search: async (input) => {
         calls.push(`web.search:${input.query}:${input.sessionId}`);
-        return { ok: true, provider: 'tavily', results: [] };
+        return { ok: true, results: [] };
       },
       fetch: async (input) => {
         calls.push(`web.fetch:${input.url}:${input.sessionId}`);

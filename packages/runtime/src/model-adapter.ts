@@ -19,7 +19,6 @@
 
 import type { ErrorEvent, CompleteEvent } from '@maka/core/events';
 import { openai } from '@ai-sdk/openai';
-import { anthropic } from '@ai-sdk/anthropic';
 import {
   providerAuthRequiresSecret,
   type RuntimeExecutionConnection,
@@ -1431,14 +1430,6 @@ function compileProviderTool(
   switch (tool.kind) {
     case 'openai-apply-patch':
       return openAiApplyPatchProviderTool;
-    case 'openai-web-search':
-      return openai.tools.webSearch({
-        ...(tool.searchContextSize ? { searchContextSize: tool.searchContextSize } : {}),
-      });
-    case 'anthropic-web-search-20250305':
-      return anthropic.tools.webSearch_20250305({
-        ...(tool.maxUses !== undefined ? { maxUses: tool.maxUses } : {}),
-      });
     // OpenAI's own search connector, executed here rather than at the provider:
     // the model asks, Runtime ranks, and the answer comes back as the tool
     // definitions the provider then loads. Declaring it this way is also what

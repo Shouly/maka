@@ -31,10 +31,18 @@ export type Route =
   | { readonly page: 'models' }
   | { readonly page: 'usage' }
   | { readonly page: 'audit' }
+  | { readonly page: 'web-search' }
   /** A console path that names no page. */
   | { readonly page: 'not-found' };
 
-export type Section = 'members' | 'quotas' | 'model-providers' | 'models' | 'usage' | 'audit';
+export type Section =
+  | 'members'
+  | 'quotas'
+  | 'model-providers'
+  | 'models'
+  | 'web-search'
+  | 'usage'
+  | 'audit';
 
 const BASE = '/admin';
 
@@ -61,6 +69,7 @@ export function parseRoute(pathname: string): Route {
     case 'quotas':
     case 'usage':
     case 'audit':
+    case 'web-search':
       return id ? { page: 'not-found' } : { page: head };
     case undefined:
       return { page: 'members' };

@@ -18,7 +18,6 @@
  */
 
 import { isThinkingLevel, type ThinkingLevel } from './model-thinking.js';
-import type { WebSearchSettingsPatch, WebSearchSettings } from './web-search.js';
 import type { BotChatSettings, BotChatSettingsPatch } from './bot-chat-settings.js';
 import {
   createDefaultBotChatSettings,
@@ -26,11 +25,6 @@ import {
   normalizeBotChatSettings,
 } from './bot-chat-settings.js';
 import type { MemorySettings } from './memory-filesystem.js';
-import {
-  defaultWebSearchSettings,
-  mergeWebSearchSettings,
-  normalizeWebSearchSettings,
-} from './web-search.js';
 import { defaultMemorySettings, normalizeMemorySettings } from './memory-filesystem.js';
 import type { PermissionMode } from './permission.js';
 import { decodePersistedPermissionMode } from './permission.js';
@@ -81,7 +75,6 @@ export const SETTINGS_SECTIONS = [
   'archived-tasks',
   'import-tasks',
   'bot-chat',
-  'search',
   'data',
   'permissions',
   'health',
@@ -499,7 +492,6 @@ export interface AppSettings {
   usage: UsageSettings;
   appearance: AppearanceSettings;
   personalization: PersonalizationSettings;
-  webSearch: WebSearchSettings;
   memory: MemorySettings;
   workspaceInstructions: WorkspaceInstructionsSettings;
   chatDefaults: ChatDefaultsSettings;
@@ -643,7 +635,6 @@ export type UpdateAppSettingsInput = Partial<{
   system: Partial<SystemSettings>;
   externalAgents: AppSettings['externalAgents'];
   shell: Partial<ShellSettings>;
-  webSearch: WebSearchSettingsPatch;
   subagents: SubagentSettings;
 }>;
 
@@ -699,7 +690,6 @@ export function createDefaultSettings(): AppSettings {
       uiLocale: 'auto',
       selectedPetId: null,
     },
-    webSearch: defaultWebSearchSettings(),
     memory: defaultMemorySettings(),
     workspaceInstructions: {
       enabled: true,
@@ -799,7 +789,6 @@ export function mergeSettings(current: AppSettings, patch: UpdateAppSettingsInpu
       ...current.shell,
       ...(patch.shell ?? {}),
     },
-    webSearch: mergeWebSearchSettings(current.webSearch, patch.webSearch),
     subagents:
       patch.subagents === undefined
         ? current.subagents
@@ -817,7 +806,6 @@ export function normalizeSettings(input: unknown): AppSettings {
     usage: value.usage,
     appearance: value.appearance,
     personalization: value.personalization,
-    webSearch: value.webSearch,
     memory: value.memory,
     workspaceInstructions: value.workspaceInstructions,
     chatDefaults: value.chatDefaults,
@@ -889,7 +877,6 @@ export function normalizeSettings(input: unknown): AppSettings {
       selectedPetId: normalizeSelectedPetId(base.personalization.selectedPetId),
     },
     botChat: normalizeBotChatSettings(base.botChat, value.botChat),
-    webSearch: normalizeWebSearchSettings(base.webSearch),
     memory: normalizeMemorySettings(base.memory),
     workspaceInstructions: normalizeWorkspaceInstructionsSettings(base.workspaceInstructions),
     projects: normalizeProjectPreferencesSettings(base.projects),

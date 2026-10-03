@@ -47,7 +47,7 @@ export interface PluginWebRuntime {
   }): Promise<string>;
 }
 
-/** Provider-policy-aware web search and fetch surface. */
+/** Plugins' web search and fetch, through the organization's web service like the tools. */
 export class PluginWebService extends Service {
   private webRuntime?: PluginWebRuntime;
 

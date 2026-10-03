@@ -79,14 +79,6 @@ export interface SearchRequest {
   refresh?: boolean;
 }
 
-export interface WebFetchRequest {
-  source: 'web_fetch';
-  url: string;
-  prompt?: string;
-  maxBytes: number;
-  refresh?: boolean;
-}
-
 /**
  * Optional navigation target for a `SearchResult`.
  *

@@ -34,7 +34,6 @@ const agentSettingsPatchSchema = z
   .object({
     memory: memoryPatchSchema.optional(),
     workspaceInstructions: enabledPatchSchema.optional(),
-    webSearch: enabledPatchSchema.optional(),
   })
   .strict();
 
@@ -55,7 +54,6 @@ export interface HostAgentSettingsToolAuthority {
 export interface AgentSettingsSnapshot {
   readonly memory: RuntimePolicy['memory'];
   readonly workspaceInstructions: RuntimePolicy['workspaceInstructions'];
-  readonly webSearch: Pick<RuntimePolicy['webSearch'], 'enabled'>;
 }
 
 type AgentSettingsUpdateResult =
@@ -177,7 +175,6 @@ function projectSettings(policy: RuntimePolicy): AgentSettingsSnapshot {
   return {
     memory: { ...policy.memory },
     workspaceInstructions: { ...policy.workspaceInstructions },
-    webSearch: { enabled: policy.webSearch.enabled },
   };
 }
 
@@ -190,7 +187,6 @@ function describeChanges(policy: RuntimePolicy, patch: AgentRuntimeSettingsPatch
     policy.workspaceInstructions.enabled,
     patch.workspaceInstructions?.enabled,
   );
-  compare(changes, 'Web search', policy.webSearch.enabled, patch.webSearch?.enabled);
   return changes;
 }
 

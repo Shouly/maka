@@ -17,26 +17,15 @@
  * under the License.
  */
 
-import { buildWebSearchTool } from '@maka/runtime/web-search-tool';
-import {
-  createProxiedFetchTransport,
-  type ProxiedFetchProxy,
-  type ProxiedFetchTransport,
-} from '@maka/runtime/network/scoped-fetch-transport';
-import { queryTavily } from '@maka/runtime/tavily-search';
-import { type MakaTool } from '@maka/runtime/tool-runtime';
-import type { WebSearchResponse } from '@maka/core/web-search';
-import type { RuntimePolicy } from '@maka/core/runtime-policy';
-import type {
-  ResolveWebSearchExecutionInput,
-  RuntimePolicyOperationCoordinator,
-} from '@maka/storage/runtime-policy-stores';
-import { toRuntimePolicyProxy } from './runtime-policy-proxy.js';
+// WebSearch, offered on every turn: the organisation server searches with
+// the organisation's key (web-access.ts). Without a signed-in account the
+// tool says so; it never searches anywhere else.
 
-interface HostWebSearchServiceInput {
-  readonly policy: Pick<RuntimePolicyOperationCoordinator, 'resolveWebSearchExecution'>;
-  readonly createFetchTransport?: (proxy: ProxiedFetchProxy | null) => ProxiedFetchTransport;
-}
+import type { WebSearchResponse } from '@maka/core/web-search';
+import { searchThroughOrganization } from '@maka/runtime/organization-web';
+import type { MakaTool } from '@maka/runtime/tool-runtime';
+import { buildWebSearchTool } from '@maka/runtime/web-search-tool';
+import { type HostWebAccessInput, openHostWebAccess } from './web-access.js';
 
 export interface HostWebSearchService {
   search(input: {
@@ -45,85 +34,31 @@ export interface HostWebSearchService {
     readonly allowedDomains?: readonly string[];
     readonly blockedDomains?: readonly string[];
     readonly abortSignal?: AbortSignal;
-    readonly policy?: ResolveWebSearchExecutionInput;
   }): Promise<WebSearchResponse>;
 }
 
-export function shouldResolveHostTavilyWebSearchReadiness(
-  policy: Pick<RuntimePolicy, 'webSearch'>,
-): boolean {
-  return policy.webSearch.enabled && policy.webSearch.defaultProvider === 'tavily';
-}
-
-export async function resolveHostTavilyWebSearchReadiness(
-  policy: Pick<RuntimePolicyOperationCoordinator, 'resolveWebSearchExecution'>,
-): Promise<boolean> {
-  return (await policy.resolveWebSearchExecution({ provider: 'tavily' })).kind === 'ready';
-}
-
-export function createHostWebSearchService(input: HostWebSearchServiceInput): HostWebSearchService {
-  const createFetchTransport = input.createFetchTransport ?? createProxiedFetchTransport;
+export function createHostWebSearchService(input: HostWebAccessInput): HostWebSearchService {
   return {
-    search: async ({ query, limit, allowedDomains, blockedDomains, abortSignal, policy }) => {
-      const resolved = await input.policy.resolveWebSearchExecution(policy);
-      switch (resolved.kind) {
-        case 'disabled':
-          return {
-            ok: false,
-            reason: 'not_configured',
-            message: 'Enable web search before using this tool.',
-          };
-        case 'model_native_only':
-          return {
-            ok: false,
-            reason: 'unsupported_provider',
-            message: 'Provider-native web search executes inside the primary model request.',
-          };
-        case 'credential_not_configured':
-          return {
-            ok: false,
-            reason: 'not_configured',
-            message:
-              resolved.status.locator.scope === 'network_proxy'
-                ? 'Configure the network proxy credential before using web search.'
-                : 'Configure a Tavily API key before using web search.',
-          };
-        case 'ready': {
-          if (resolved.provider !== 'tavily') {
-            return {
-              ok: false,
-              reason: 'unsupported_provider',
-              message: 'The configured web search provider is not supported by this Host.',
-            };
-          }
-          const apiKey = resolved.secretMaterial.webSearch.secret;
-          const transport = createFetchTransport(
-            toRuntimePolicyProxy(
-              resolved.networkProxy,
-              resolved.secretMaterial.networkProxy?.secret,
-            ),
-          );
-          try {
-            return await queryTavily({
-              apiKey,
-              query,
-              limit,
-              ...(allowedDomains ? { allowedDomains } : {}),
-              ...(blockedDomains ? { blockedDomains } : {}),
-              fetch: transport.fetch,
-              ...(abortSignal ? { abortSignal } : {}),
-            });
-          } finally {
-            await transport.close();
-          }
-        }
+    search: async ({ query, limit, allowedDomains, blockedDomains, abortSignal }) => {
+      const access = await openHostWebAccess(input);
+      if (!access.ok) return access;
+      try {
+        return await searchThroughOrganization({
+          account: access.account,
+          fetchFn: access.fetchFn,
+          request: {
+            query,
+            limit,
+            ...(allowedDomains ? { allowedDomains } : {}),
+            ...(blockedDomains ? { blockedDomains } : {}),
+          },
+          ...(abortSignal ? { signal: abortSignal } : {}),
+        });
+      } finally {
+        await access.close();
       }
     },
   };
-}
-
-export function createHostWebSearchTool(input: HostWebSearchServiceInput): MakaTool {
-  return createHostWebSearchToolFromService(createHostWebSearchService(input));
 }
 
 export function createHostWebSearchToolFromService(service: HostWebSearchService): MakaTool {

@@ -496,12 +496,12 @@ function buildStaticModelMetadata(active: ModelsDevMetadata): ModelsDevMetadata 
     'ollama-cloud': ollamaCloudThinkingModels(active),
     deepseek: {
       'deepseek-v4-flash': {
-        capabilities: { ...REASONING_FUNCTION_CALLING, webSearch: true },
+        capabilities: { ...REASONING_FUNCTION_CALLING },
         lastUpdated: '2026-08-24',
         thinkingOptions: { efforts: ['low', 'high', 'max'], toggle: true },
       },
       'deepseek-v4-flash-vision-exp': {
-        capabilities: { vision: true, ...REASONING_FUNCTION_CALLING, webSearch: true },
+        capabilities: { vision: true, ...REASONING_FUNCTION_CALLING },
         thinkingOptions: { efforts: ['low', 'high', 'max'], toggle: true },
         modalities: { input: ['text', 'image'], output: ['text'] },
         displayName: 'DeepSeek-V4-Flash-Vision-Exp',
@@ -513,7 +513,7 @@ function buildStaticModelMetadata(active: ModelsDevMetadata): ModelsDevMetadata 
         lastUpdated: '2026-08-21',
       },
       'deepseek-v4-pro': {
-        capabilities: { ...REASONING_FUNCTION_CALLING, webSearch: true },
+        capabilities: { ...REASONING_FUNCTION_CALLING },
         lastUpdated: '2026-08-13',
         thinkingOptions: { efforts: ['low', 'high', 'max'], toggle: true },
       },

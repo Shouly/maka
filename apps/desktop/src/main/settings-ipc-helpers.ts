@@ -34,7 +34,6 @@ import {
   type TestProxyResult,
 } from "@maka/core/settings/network-settings";
 import type { BotTestErrorCode, BotTestResult } from '@maka/runtime/bots';
-import { getTavilyCredentialSource } from "./web-search/credentials.js";
 
 export function proxyTestFailure(result: TestProxyResult): {
   code: SettingsTestResultCode;
@@ -105,21 +104,6 @@ export function maskAppSettings(
         ]),
       ) as AppSettings["botChat"]["channels"],
     },
-    // PR-WEB-SEARCH-TAVILY-0: Tavily API key is masked at the IPC
-    // store boundary. Renderer never sees the cleartext value;
-    // re-submitting the masked sentinel is treated as "keep current"
-    // in `mergeWebSearchSettings`.
-    webSearch: {
-      ...settings.webSearch,
-      providers: {
-        tavily: {
-          ...settings.webSearch.providers.tavily,
-          apiKey:
-            maskSensitive(settings.webSearch.providers.tavily.apiKey) ?? "",
-          credentialSource: getTavilyCredentialSource(settings),
-        },
-      },
-    },
   };
 }
 
@@ -128,7 +112,7 @@ export function maskAppSettings(
  * export that does NOT include the `credentials` category. The keys are
  * removed (not blanked to '') on purpose: `mergeSettings` deep-merges to the
  * leaf, so an absent key preserves the target machine's existing value on
- * import, whereas a '' would overwrite and wipe a working proxy/bot/search
+ * import, whereas a '' would overwrite and wipe a working proxy or bot
  * secret. Keep the field list in sync with `maskAppSettings`.
  */
 export function stripSettingsSecretsForExport(
@@ -146,20 +130,10 @@ export function stripSettingsSecretsForExport(
     channels[provider] = next;
   }
 
-  const tavily = { ...settings.webSearch.providers.tavily } as Record<
-    string,
-    unknown
-  >;
-  delete tavily.apiKey;
-
   return {
     ...settings,
     network: { ...settings.network, proxy },
     botChat: { ...settings.botChat, channels },
-    webSearch: {
-      ...settings.webSearch,
-      providers: { ...settings.webSearch.providers, tavily },
-    },
   };
 }
 

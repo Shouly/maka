@@ -108,6 +108,30 @@ test('a token for another server is never sent to this one', async () => {
   );
 });
 
+test('the account names its own server, for calls that are not bound to one', async () => {
+  const app = desktop([token('first', `${SERVER}/`), token('fresh', `${SERVER}/`)]);
+  const session = createHostOrganizationSession({ call: app.call });
+  assert.deepEqual(await session.account(), {
+    serverUrl: SERVER,
+    accessToken: 'first',
+    clientVersion: '0.2.0',
+  });
+  assert.equal((await session.account({ forceRefresh: true })).accessToken, 'fresh');
+  assert.deepEqual(app.calls[1]?.input, { forceRefresh: true });
+});
+
+test('an account and a token asked for at the same moment share one question', async () => {
+  const app = desktop([token('shared')]);
+  const session = createHostOrganizationSession({ call: app.call });
+  const [account, accessToken] = await Promise.all([
+    session.account(),
+    session.accessToken(SERVER),
+  ]);
+  assert.equal(account.accessToken, 'shared');
+  assert.equal(accessToken.accessToken, 'shared');
+  assert.equal(app.calls.length, 1);
+});
+
 test('the app says why it has no token, and a Host with no app to ask says so', async () => {
   const signedOut = createHostOrganizationSession({
     call: desktop([{ kind: 'unavailable', reason: 'signed_out' }]).call,

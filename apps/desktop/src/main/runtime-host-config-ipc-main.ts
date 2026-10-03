@@ -237,7 +237,7 @@ export async function gatherRuntimeHostConfig(
       ({ providerType }) => !providerUsesOrganizationAccount(providerType),
     );
   }
-  // Schema v1 stores the network-proxy password and Tavily key in the
+  // Schema v1 stores the network-proxy password in the
   // settings payload. Keep a credentials-only request lossless by making the
   // dependency explicit in the generated bundle.
   if (selected.has('settings')) {
@@ -441,7 +441,6 @@ function exportLocators(
       );
     }),
     { locator: { scope: 'network_proxy', kind: 'password' } },
-    { locator: { scope: 'web_search', provider: 'tavily', kind: 'api_key' } },
   ];
 }
 
@@ -498,10 +497,6 @@ function restoreHostSettingsSecrets(
   secrets: ReadonlyMap<string, string>,
 ): Record<string, unknown> {
   const proxy = secrets.get(locatorKey({ scope: 'network_proxy', kind: 'password' })) ?? '';
-  const webSearch =
-    secrets.get(
-      locatorKey({ scope: 'web_search', provider: 'tavily', kind: 'api_key' }),
-    ) ?? '';
   const {
     passwordConfigured: _passwordConfigured,
     ...proxySettings
@@ -513,15 +508,6 @@ function restoreHostSettingsSecrets(
     network: {
       proxy: { ...proxySettings, password: proxy },
     },
-    webSearch: {
-      ...settings.webSearch,
-      providers: {
-        tavily: {
-          ...settings.webSearch.providers.tavily,
-          apiKey: webSearch,
-        },
-      },
-    },
   };
 }
 
@@ -532,31 +518,14 @@ function projectHostSettingsSecrets(
   const proxy = secrets.get(
     locatorKey({ scope: 'network_proxy', kind: 'password' }),
   );
-  const tavily = secrets.get(
-    locatorKey({ scope: 'web_search', provider: 'tavily', kind: 'api_key' }),
-  );
-  if (proxy === undefined && tavily === undefined) return undefined;
-
+  if (proxy === undefined || proxyTarget === undefined) return undefined;
   return {
-    ...(proxy === undefined || proxyTarget === undefined
-      ? {}
-      : {
-          network: {
-            proxy: {
-              password: proxy,
-              credentialTarget: proxyTarget,
-            },
-          },
-        }),
-    ...(tavily === undefined
-      ? {}
-      : {
-          webSearch: {
-            providers: {
-              tavily: { apiKey: tavily },
-            },
-          },
-        }),
+    network: {
+      proxy: {
+        password: proxy,
+        credentialTarget: proxyTarget,
+      },
+    },
   };
 }
 

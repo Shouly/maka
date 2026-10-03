@@ -486,7 +486,6 @@ async function runOrganizationGateway(): Promise<void> {
       vision: true,
       reasoning: true,
       functionCalling: true,
-      webSearch: false,
     },
     thinkingLevels: ['low', 'high'],
     defaultThinkingLevel: 'high',

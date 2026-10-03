@@ -435,7 +435,6 @@ function mergeCapabilities(
     parallelToolCalls:
       providerCapabilities.parallelToolCalls ?? metadataCapabilities.parallelToolCalls,
     imageGeneration: providerCapabilities.imageGeneration ?? metadataCapabilities.imageGeneration,
-    webSearch: providerCapabilities.webSearch ?? metadataCapabilities.webSearch,
   };
 }
 

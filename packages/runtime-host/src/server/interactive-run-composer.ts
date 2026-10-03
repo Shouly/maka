@@ -31,7 +31,6 @@ import {
 import { activePlanExecution, type PlanSessionState, type PlanStore } from '@maka/core/plan';
 import type { PermissionMode } from '@maka/core/permission';
 import { createHash } from 'node:crypto';
-import type { RuntimeExecutionConnection } from '@maka/core/llm-connections';
 import { lookupConnectionModelMetadata } from '@maka/core/model-metadata';
 import type { RuntimePolicySnapshot } from '@maka/core/runtime-policy';
 import type { SessionToolProfile, SessionUserContext } from '@maka/core/session';
@@ -87,7 +86,6 @@ import {
   selectChildAgentTools,
 } from '@maka/runtime/agent-catalog';
 import { renderPlanModePrompt, selectCollaborationTools } from '@maka/runtime/plan-mode';
-import { routeWebSearchTools } from '@maka/runtime/native-web-search-tool';
 import { type MakaTool } from '@maka/runtime/tool-runtime';
 import type { PluginSkillService } from '@maka/runtime/plugin-skill-service';
 import type { ScannedSkill } from '@maka/runtime/skills';
@@ -111,7 +109,6 @@ import {
   hostedExecutionRunProfile,
   projectHostedExecutionTools,
 } from './hosted-execution-tool-profile.js';
-import { shouldResolveHostTavilyWebSearchReadiness } from './web-search-tool.js';
 
 const INTERACTIVE_RUN_COMPOSER_ID = 'maka.interactive';
 const INTERACTIVE_RUN_COMPOSER_REVISION = '1';
@@ -487,7 +484,6 @@ export interface InteractiveRunComposerFactoryInput
     'runtimePolicy' | 'boundTools' | 'clientCapabilities' | 'plan'
   > {
   readonly clientCapabilities: HostClientCapabilityCoordinator;
-  readonly resolveTavilyWebSearchReadiness: () => Promise<boolean>;
   readonly resolveRootTools?: (sessionId: string) => Promise<readonly MakaTool[]>;
   readonly resolvePluginTools?: (
     sessionId: string,
@@ -504,41 +500,6 @@ export interface InteractiveRunComposerFactoryInput
   readonly deepResearchTools?: readonly MakaTool[];
   /** Internal dependency seam for deterministic Host shell-resolution tests. */
   readonly resolveTurnShellPlan?: typeof resolveTurnShellPlan;
-}
-
-export interface InteractiveRunToolSurfaceInput {
-  readonly runtimePolicy: RuntimePolicySnapshot;
-  readonly connection?: RuntimeExecutionConnection;
-  readonly modelId: string;
-  readonly hostTools: readonly MakaTool[];
-  readonly boundTools?: readonly MakaTool[];
-  readonly parentAgentTools?: readonly MakaTool[];
-  readonly tavilyReady: boolean;
-}
-
-/** Routes every model-visible tool surface through the same policy and readiness snapshot. */
-export function routeInteractiveRunToolSurface(input: InteractiveRunToolSurfaceInput): {
-  readonly hostTools: readonly MakaTool[];
-  readonly boundTools?: readonly MakaTool[];
-  readonly parentAgentTools?: readonly MakaTool[];
-} {
-  const route = (tools: readonly MakaTool[]): MakaTool[] => {
-    if (!input.connection) {
-      return tools.filter((tool) => tool.name !== 'WebSearch');
-    }
-    return routeWebSearchTools({
-      tools,
-      settings: input.runtimePolicy.policy.webSearch,
-      connection: input.connection,
-      model: input.modelId,
-      tavilyReady: input.tavilyReady,
-    });
-  };
-  return {
-    hostTools: route(input.hostTools),
-    ...(input.boundTools ? { boundTools: route(input.boundTools) } : {}),
-    ...(input.parentAgentTools ? { parentAgentTools: input.parentAgentTools } : {}),
-  };
 }
 
 export function createInteractiveRunComposerFactory(
@@ -569,23 +530,9 @@ export function createInteractiveRunComposerFactory(
               backendContext.abortSignal,
             )
           : [];
-      const tavilyReady = shouldResolveHostTavilyWebSearchReadiness(runtimePolicy.policy)
-        ? await readDuringBackendCreation(
-            input.resolveTavilyWebSearchReadiness,
-            backendContext.abortSignal,
-          )
-        : false;
-      const candidateHostTools = [...(input.hostTools ?? []), ...rootTools];
-      const toolSurface = routeInteractiveRunToolSurface({
-        runtimePolicy,
-        connection,
-        modelId,
-        hostTools: candidateHostTools,
-        ...(backendContext.tools ? { boundTools: backendContext.tools } : {}),
-        ...(input.parentAgentTools ? { parentAgentTools: input.parentAgentTools } : {}),
-        tavilyReady,
-      });
-      const { hostTools, boundTools, parentAgentTools } = toolSurface;
+      const hostTools = [...(input.hostTools ?? []), ...rootTools];
+      const boundTools = backendContext.tools;
+      const parentAgentTools = input.parentAgentTools;
       // The model as the connection states it, else as the models metadata
       // does (an organisation model's, under the entry its contract names); an
       // unknown name or cutoff is left out rather than invented.
@@ -621,15 +568,8 @@ export function createInteractiveRunComposerFactory(
         ...(hostTools.length > 0 ? { hostTools } : {}),
         ...(input.resolvePluginTools && !backendContext.tools
           ? {
-              resolveAdditionalTools: (hostTools) => {
-                return routeInteractiveRunToolSurface({
-                  runtimePolicy,
-                  connection,
-                  modelId,
-                  hostTools: input.resolvePluginTools!(backendContext.sessionId, hostTools).tools,
-                  tavilyReady,
-                }).hostTools;
-              },
+              resolveAdditionalTools: (hostTools) =>
+                input.resolvePluginTools!(backendContext.sessionId, hostTools).tools,
             }
           : {}),
         ...(input.resolvePluginSystemPrompt && !backendContext.tools

@@ -1154,14 +1154,9 @@ export type ToolResultContent =
   | { kind: 'image'; mimeType: string; ref: StorageRef }
   | { kind: 'summary'; original: string; summarized: string; reason: 'too_large' }
   /**
-   * PR-CHAT-WEB-SEARCH-RENDER-0: structured tool-result for the gated
-   * WebSearch agent tool. The chat renderer surfaces these as plain
-   * text cards (title + url + snippet + source); never markdown, never
-   * HTML, matching the Settings → 联网搜索 live-query verification surface.
-   *
-   * Rows are an opaque `unknown[]` here so the storage layer does not
-   * need to import the `@maka/core/web-search` row type; the renderer
-   * narrows each row at render time.
+   * WebSearch's results: the chat renderer shows them as plain text cards
+   * (title + url + snippet + source), never markdown, never HTML. `provider`
+   * names the service that searched (Tavily, through the organization server).
    */
   | {
       kind: 'web_search';
@@ -1208,7 +1203,6 @@ export type ToolResultContent =
       query?: string;
       reason: string;
       message: string;
-      credentialSource?: string;
     }
   | {
       kind: 'subagent';

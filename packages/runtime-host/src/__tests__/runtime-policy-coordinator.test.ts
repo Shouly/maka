@@ -88,7 +88,7 @@ test('model settings tool confirms and atomically updates canonical Runtime Poli
     const result = await tool.impl(
       {
         memory: { enabled: false },
-        webSearch: { enabled: true },
+        workspaceInstructions: { enabled: false },
       },
       toolContext,
     );
@@ -98,7 +98,7 @@ test('model settings tool confirms and atomically updates canonical Runtime Poli
     const snapshot = await stores.runtimePolicy.getSnapshot();
     assert.equal(snapshot.revision, 1);
     assert.equal(snapshot.policy.memory.enabled, false);
-    assert.equal(snapshot.policy.webSearch.enabled, true);
+    assert.equal(snapshot.policy.workspaceInstructions.enabled, false);
   });
 });
 
