@@ -35,7 +35,7 @@
 //   why a command can never race the policy.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { revealSessionFile } from '../../bridge/app.js';
+import { revealSessionFile, revealToolResultFile } from '../../bridge/app.js';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import {
@@ -70,6 +70,7 @@ import {
 import { useTurnPresentation, pendingTurnActionKey } from '../../hooks/use-turn-presentation.js';
 import {
   activeSessionStore,
+  newTaskStore,
   planStore,
   revisionDraftStore,
   revisionActions,
@@ -77,6 +78,7 @@ import {
   turnActionsStore,
   uiStore,
 } from '../../store/index.js';
+import { savedOutputRevealer, sessionHostViewsClientPath } from '../../store/new-task-store.js';
 import { requestScheduledTaskFocus } from '../../store/scheduled-tasks-store.js';
 import { reviewableProposal } from '../../store/plan-store.js';
 import { revisionRefusalFor } from '../../store/revision-draft.js';
@@ -213,6 +215,18 @@ function SessionTranscript(props: SessionViewProps) {
     if (!row || linkedSubagentParentSessionId(row) === undefined) return undefined;
     return agentParentOf(row, new Map(state.sessions.map((session) => [session.id, session])))?.id;
   });
+  // A saved Bash output is on this disk only when the Host is: for a Host on
+  // another machine the block offers nothing to reveal.
+  const sessionHost = useStore(
+    sessionsStore,
+    useShallow((state) => {
+      const row = state.sessions.find((session) => session.id === sessionId);
+      return row ? { profileId: row.profileId, runtimeHostId: row.runtimeHostId } : undefined;
+    }),
+  );
+  const revealsLocalFiles = useStore(newTaskStore, (state) =>
+    sessionHostViewsClientPath(state.catalog, sessionHost),
+  );
   useEffect(() => {
     if (!hostAdmitted) {
       planStore.disconnect();
@@ -366,6 +380,23 @@ function SessionTranscript(props: SessionViewProps) {
           );
         });
       },
+      // A Bash output too long to show, saved under this session's temp
+      // folder: revealed in the file manager, never opened, and only the path
+      // main builds for this session. A temp file does not outlive a restart,
+      // so a missing one says why.
+      savedOutputReveal: savedOutputRevealer(sessionId, revealsLocalFiles, (path) => {
+        const saved = getTranscriptCopy(locale).result.savedOutput;
+        void revealToolResultFile(sessionId, path).then(
+          (result) => {
+            if (result.ok) return;
+            toastApi.error(
+              saved.openFailed,
+              result.reason === 'missing' ? saved.missing : undefined,
+            );
+          },
+          () => toastApi.error(saved.openFailed),
+        );
+      }),
       // Leaves the session for the page that owns the task. The id travels out
       // of band because the nav selection is persisted (see the store).
       onOpenScheduledTask: (taskId: string) => {
@@ -373,7 +404,7 @@ function SessionTranscript(props: SessionViewProps) {
         uiStore.navigate({ section: 'automations', module: 'scheduled-tasks' });
       },
     }),
-    [sessionId, locale],
+    [sessionId, locale, revealsLocalFiles],
   );
 
   // Read through a ref, so the callback stays one function while the turns

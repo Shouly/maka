@@ -40,7 +40,7 @@ import type { ChildFdInput } from './child-fd-input.js';
 import type { ShellPlan } from './shell-detect.js';
 import { isSupportedImagePath, isWorkspaceImage, readWorkspaceImage } from './image-file.js';
 import type { ImageMimeType } from './image-file.js';
-import { readTextLineWindowFacts, readTooLargeMessage } from './text-line-window.js';
+import { readFileLineWindow, readTextLineWindowFacts } from './text-line-window.js';
 import {
   applyGrepHeadLimit,
   buildRipgrepArgs,
@@ -100,8 +100,13 @@ export interface WorkspaceReadFileInput {
   offset?: number;
   /** Lines to return; missing or 0 runs to the end. */
   limit?: number;
-  /** Refuse, in the Read tool's words, when the text returned would be larger. */
-  maxBytes?: number;
+  /**
+   * Bound the answer as the Read tool does: a whole-file read past the token
+   * limit returns its first lines, and a named range past it is refused.
+   */
+  bounded?: boolean;
+  /** Stops a bounded read between chunks. */
+  abortSignal?: AbortSignal;
 }
 
 export interface WorkspaceReadTextResult {
@@ -112,6 +117,8 @@ export interface WorkspaceReadTextResult {
   totalLines?: number;
   /** `offset` named a line past the end. */
   beyondEnd?: boolean;
+  /** The count stopped short of the end: the file has more than `totalLines` lines. */
+  moreLines?: boolean;
 }
 
 export interface WorkspaceReadImageResult {
@@ -401,22 +408,15 @@ export class LocalWorkspaceExecutor implements WorkspaceExecutor {
     if (await isWorkspaceImage(input.path)) {
       return await readWorkspaceImage(input.path);
     }
-    if (input.maxBytes !== undefined && !input.limit && (input.offset ?? 1) <= 1) {
-      // The whole file is the answer, so its size decides before it is read.
-      const size = (await fs.stat(input.path)).size;
-      if (size > input.maxBytes) throw new Error(readTooLargeMessage(size));
-    }
-    const content = await fs.readFile(input.path, 'utf8');
-    const window = readTextLineWindowFacts(content, input.offset, input.limit);
-    if (input.maxBytes !== undefined) {
-      const bytes = Buffer.byteLength(window.content, 'utf8');
-      if (bytes > input.maxBytes) throw new Error(readTooLargeMessage(bytes));
-    }
+    const window = input.bounded
+      ? await readFileLineWindow(input.path, input.offset, input.limit, input.abortSignal)
+      : readTextLineWindowFacts(await fs.readFile(input.path, 'utf8'), input.offset, input.limit);
     return {
       content: window.content,
       startLine: window.startLine,
       totalLines: window.totalLines,
       ...(window.beyondEnd ? { beyondEnd: true } : {}),
+      ...('moreLines' in window && window.moreLines ? { moreLines: true } : {}),
     };
   }
 

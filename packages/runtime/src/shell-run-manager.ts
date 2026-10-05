@@ -79,6 +79,13 @@ import {
   type ShellRunWriteInput,
 } from './shell-run-contract.js';
 import { taskNotificationOwed } from './injection/task-notification.js';
+import {
+  BASH_MAX_OUTPUT_BYTES,
+  BASH_SAVED_PREVIEW_CHARS,
+  boundTerminalResult,
+} from './bash-output-limits.js';
+import { ShellOutputSpool } from './shell-output-spool.js';
+import { toolResultFilePath } from './tool-result-file.js';
 import { shellRunOutputFilePath, writeShellRunOutputFile } from './shell-run-output-file.js';
 import {
   compactShellRunContent,
@@ -218,6 +225,10 @@ interface LivePipeShellRun extends LiveShellRunBase {
   mode: 'pipes';
   driver: PipeProcessDriver;
   collector: PipeTailCollector;
+  /** A foreground run's whole output, kept on disk in case it is too long to show. */
+  spool?: ShellOutputSpool;
+  /** Bytes a foreground run has printed, counted against its kill limit. */
+  printedBytes: number;
   pendingFlushChars: number;
   forwardLive: boolean;
   liveEmitted: Record<'stdout' | 'stderr', number>;
@@ -274,6 +285,7 @@ export class ShellRunProcessManager
   private readonly flushBytes: number;
   private readonly maxRetainedChars: number;
   private readonly maxLiveEmitChars: number;
+  private readonly maxForegroundOutputBytes: number;
   private readonly killGraceMs: number;
   private readonly exitAcknowledgementMs: number;
   private readonly pipeOutputDrainMs: number;
@@ -290,6 +302,7 @@ export class ShellRunProcessManager
     this.flushBytes = input.flushBytes ?? DEFAULT_SHELL_RUN_FLUSH_BYTES;
     this.maxRetainedChars = input.maxRetainedChars ?? BASH_MAX_RETAINED_CHARS;
     this.maxLiveEmitChars = input.maxLiveEmitChars ?? BASH_MAX_LIVE_EMIT_CHARS;
+    this.maxForegroundOutputBytes = input.maxForegroundOutputBytes ?? BASH_MAX_OUTPUT_BYTES;
     this.killGraceMs = input.killGraceMs ?? DEFAULT_PROCESS_TERMINATION_GRACE_MS;
     this.exitAcknowledgementMs =
       input.exitAcknowledgementMs ?? DEFAULT_PROCESS_TERMINATION_GRACE_MS;
@@ -364,13 +377,14 @@ export class ShellRunProcessManager
           live = admitted;
           if (input.abortSignal?.aborted) cancel();
         });
-        return this.markObservedAndReturnTerminal(await live.finished.join());
+        return this.foregroundResult(live, await live.finished.join());
       });
     } catch (error) {
       notifyFailedStartup(onCompletion);
       throw error;
     } finally {
       input.abortSignal?.removeEventListener('abort', cancel);
+      if (live?.mode === 'pipes') await live.spool?.discard();
     }
   }
 
@@ -794,6 +808,10 @@ export class ShellRunProcessManager
     let live: LivePipeShellRun | undefined;
     let startingRecord: ShellRunRecord | undefined;
     let spawnAttempted = false;
+    const spool =
+      forwardLive && this.input.toolResultRoot !== undefined
+        ? await this.openSpool(shellRunId, this.input.toolResultRoot)
+        : undefined;
     const dispatch = (callback: (target: LivePipeShellRun) => void): void => {
       if (live) callback(live);
       else pending.push(callback);
@@ -825,7 +843,8 @@ export class ShellRunProcessManager
         ...((plan.env ?? input.env) ? { env: plan.env ?? input.env } : {}),
         ...(input.fdInputs ? { fdInputs: input.fdInputs } : {}),
         outputDrainMs: this.pipeOutputDrainMs,
-        onData: (stream, data) => dispatch((target) => this.onPipeData(target, stream, data)),
+        onData: (stream, data, bytes) =>
+          dispatch((target) => this.onPipeData(target, stream, data, bytes)),
         onRootExit: () => dispatch((target) => this.onNativeRootExit(target)),
         onExit: (exit) =>
           dispatch((target) => this.onDriverExit(target, { mode: 'pipes', value: exit })),
@@ -836,6 +855,8 @@ export class ShellRunProcessManager
         mode: 'pipes',
         driver,
         collector,
+        ...(spool ? { spool } : {}),
+        printedBytes: 0,
         pendingFlushChars: 0,
         forwardLive,
         liveEmitted: { stdout: 0, stderr: 0 },
@@ -855,8 +876,22 @@ export class ShellRunProcessManager
       return live;
     } catch (error) {
       if (!spawnAttempted) closeChildFdSources(input.fdInputs);
+      void spool?.discard();
       if (!startingRecord) throw error;
       throw await this.completeStartupFailure(live, startingRecord, error);
+    }
+  }
+
+  /**
+   * Working files for a foreground run's output, in the root of saved tool
+   * results; the Session's own folder is made only when something is saved.
+   * None when the root cannot be made: the run then keeps only its tail.
+   */
+  private async openSpool(shellRunId: string, root: string): Promise<ShellOutputSpool | undefined> {
+    try {
+      return await ShellOutputSpool.open(root, shellRunId);
+    } catch {
+      return undefined;
     }
   }
 
@@ -1056,9 +1091,30 @@ export class ShellRunProcessManager
     }
   }
 
-  private onPipeData(live: LivePipeShellRun, stream: 'stdout' | 'stderr', data: string): void {
+  private onPipeData(
+    live: LivePipeShellRun,
+    stream: 'stdout' | 'stderr',
+    data: string,
+    bytes: number,
+  ): void {
     if (live.driverExit || live.finalizeOnce) return;
     live.collector.accept(stream, data);
+    if (live.forwardLive) {
+      live.spool?.accept(stream, data);
+      // What the command printed, not its decoded text: an invalid byte
+      // decodes to a three-byte replacement character.
+      live.printedBytes += bytes;
+      if (live.printedBytes > this.maxForegroundOutputBytes && !live.integrityFailure) {
+        this.handleIntegrityFailure(
+          live,
+          new Error(
+            `Output passed ${formatOutputLimit(this.maxForegroundOutputBytes)}, so the command was killed`,
+          ),
+        );
+      }
+    }
+    // Bytes of a character not yet finished decode to nothing for now.
+    if (data === '') return;
     live.pendingFlushChars += data.length;
     this.emitLivePipeOutput(live, stream, data);
     this.scheduleAutomaticFlush(live);
@@ -1835,8 +1891,31 @@ export class ShellRunProcessManager
     return shellRunContent(record, { kind: 'stop', applied: false });
   }
 
-  private async markObservedAndReturnTerminal(record: ShellRunRecord): Promise<TerminalToolResult> {
-    return terminalContent(await this.markObserved(record));
+  /**
+   * A foreground run's result, bounded for the model: a valid output too long
+   * to show is saved to the Session's tool results and named by its path.
+   */
+  private async foregroundResult(
+    live: LiveShellRun,
+    record: ShellRunRecord,
+  ): Promise<TerminalToolResult> {
+    const content = terminalContent(await this.markObserved(record));
+    const spool = live.mode === 'pipes' ? live.spool : undefined;
+    const root = this.input.toolResultRoot;
+    return boundTerminalResult(
+      content,
+      spool && root !== undefined
+        ? {
+            // The ShellRun id is a fresh id per run, so the file is the run's own.
+            save: () =>
+              spool.save(
+                toolResultFilePath(root, record.sessionId, record.shellRunId),
+                BASH_SAVED_PREVIEW_CHARS,
+              ),
+            head: (maxChars) => spool.head(maxChars),
+          }
+        : undefined,
+    );
   }
 
   private async readDurableRecord(sessionId: string, shellRunId: string): Promise<ShellRunRecord> {
@@ -2113,6 +2192,18 @@ function naturalExitCode(exit: DriverExit | undefined): number {
   if (exit.value.exitCode !== null) return exit.value.exitCode;
   const signal = exit.value.signal;
   return signal ? 128 + (osConstants.signals[signal] ?? 0) : 1;
+}
+
+/** `5 GB`, `1 KB`, or bytes below that. */
+function formatOutputLimit(bytes: number): string {
+  for (const [unit, size] of [
+    ['GB', 1024 ** 3],
+    ['MB', 1024 ** 2],
+    ['KB', 1024],
+  ] as const) {
+    if (bytes >= size && bytes % size === 0) return `${bytes / size} ${unit}`;
+  }
+  return `${bytes} bytes`;
 }
 
 function safeFailureMessage(error: Error): string {

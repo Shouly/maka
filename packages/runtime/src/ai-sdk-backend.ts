@@ -44,7 +44,7 @@ import type {
 import type { SandboxBoundaryResponse } from '@maka/core/sandbox-boundary';
 import type { UserQuestionResponse } from '@maka/core/user-question';
 import type { EffectiveOrchestration } from '@maka/core/orchestration';
-import type { AttachmentByteReader } from '@maka/core/attachments';
+import type { AttachmentByteReader, AttachmentSizeReader } from '@maka/core/attachments';
 import { pricingModelKey } from '@maka/core/usage-stats/pricing';
 import type { PricingConfig, ToolInvocationRecord } from '@maka/core/usage-stats/types';
 import type {
@@ -243,6 +243,11 @@ export interface AiSdkBackendInput extends AiSdkCompactionCapabilities {
    * Caller wires this to the session ArtifactStore; runtime never imports storage.
    */
   readAttachmentBytes?: AttachmentByteReader;
+  /**
+   * Optional size lookup for stored images, read without their bytes. When
+   * set, an image a tool returned is read only by a request that sends it.
+   */
+  readAttachmentSize?: AttachmentSizeReader;
   /** Host-owned exact ref plan for inline images, persisted only after projection validation. */
   prepareDurableProjectionArtifact?: ToolRuntimeInput['prepareDurableProjectionArtifact'];
   /**
@@ -250,7 +255,10 @@ export interface AiSdkBackendInput extends AiSdkCompactionCapabilities {
    * image parts; false/unknown keep the attachment's model-facing Read reference.
    */
   supportsVision?: boolean;
+  /** Total image bytes one request may carry; defaults to MAX_PROVIDER_IMAGE_REQUEST_BYTES. */
   maxProviderImageRequestBytes?: number;
+  /** Images one request may carry; defaults to MAX_PROVIDER_IMAGE_REQUEST_COUNT. */
+  maxProviderImageRequestCount?: number;
   /** Host-owned background memory pass, told about each finished turn. */
   memoryPass?: MemoryPassCapability;
 }
@@ -427,7 +435,9 @@ export class AiSdkBackend implements AgentBackend {
       },
       supportsVision: input.supportsVision,
       readAttachmentBytes: input.readAttachmentBytes,
+      readAttachmentSize: input.readAttachmentSize,
       maxProviderImageRequestBytes: input.maxProviderImageRequestBytes,
+      maxProviderImageRequestCount: input.maxProviderImageRequestCount,
     });
     this.compaction = new AiSdkCompaction({
       input,
@@ -438,15 +448,9 @@ export class AiSdkBackend implements AgentBackend {
       modelAdapter: this.modelAdapter,
       createProviderRequestTracker: (trackerInput) =>
         this.providerTelemetry.createTracker(trackerInput),
-      materializeRuntimeReplayPlan: (
-        plan,
-        imageBudget,
-        checkpoint,
-        providerReasoningReplayEventIds,
-      ) =>
+      materializeRuntimeReplayPlan: (plan, checkpoint, providerReasoningReplayEventIds) =>
         this.messageProjection.materializeRuntimeReplayPlan(
           plan,
-          imageBudget,
           checkpoint,
           providerReasoningReplayEventIds,
         ),

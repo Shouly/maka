@@ -182,6 +182,8 @@ export interface HostClientCapabilityCoordinatorOptions {
     InteractiveInteractionStoreWriterFacade,
     'readClientCapabilitySessionGrant'
   >;
+  /** Where a tool result too long to show is saved for the model to Read. */
+  readonly toolResultRoot?: string;
 }
 
 export interface ClientCapabilityServiceInvocationInput {
@@ -213,6 +215,7 @@ export class HostClientCapabilityCoordinator implements ClientCapabilityService 
   readonly #onModelToolsChanged: () => void;
   readonly #interactions: HostClientCapabilityCoordinatorOptions['interactions'];
   readonly #grants: HostClientCapabilityCoordinatorOptions['grants'];
+  readonly #toolResultRoot: HostClientCapabilityCoordinatorOptions['toolResultRoot'];
   readonly #providers = new Map<string, ClientProviderState>();
   readonly #connections = new Map<string, ClientProviderConnection>();
   readonly #sessions = new Map<string, SessionCapabilityState>();
@@ -228,6 +231,7 @@ export class HostClientCapabilityCoordinator implements ClientCapabilityService 
     this.#onModelToolsChanged = options.onModelToolsChanged;
     this.#interactions = options.interactions;
     this.#grants = options.grants;
+    this.#toolResultRoot = options.toolResultRoot;
     this.#invocations = new ClientCapabilityInvocationBroker({
       senderFor: (connectionId) => {
         const connection = this.#connections.get(connectionId);
@@ -656,6 +660,7 @@ export class HostClientCapabilityCoordinator implements ClientCapabilityService 
         hostAdmission: 'client_capability',
         recoveryMode: 'outcome_unknown',
         executionLocation: 'remote',
+        ...(this.#toolResultRoot !== undefined ? { toolResultRoot: this.#toolResultRoot } : {}),
       }),
       ...buildMcpTools(this.#snapshotProvider(state?.initiatingProviderId, trusted), {
         callTimeoutMs: DEFAULT_CALL_TIMEOUT_MS,
@@ -664,6 +669,7 @@ export class HostClientCapabilityCoordinator implements ClientCapabilityService 
         recoveryMode: 'outcome_unknown',
         executionLocation: 'remote',
         activityKindForDescriptor: (descriptor) => trustedClientToolActivityKind(descriptor),
+        ...(this.#toolResultRoot !== undefined ? { toolResultRoot: this.#toolResultRoot } : {}),
       }),
     ];
     const groups = selected.map(({ offer: binding }) => ({

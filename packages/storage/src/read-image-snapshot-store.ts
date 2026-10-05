@@ -21,7 +21,9 @@ import { MAX_READ_IMAGE_BYTES } from '@maka/core/attachments';
 import {
   ReadImageSnapshotStoreError,
   type ContextOffloadReadResult,
+  type ContextOffloadStatResult,
   type ReadImageSnapshotReader,
+  type ReadImageSnapshotSizeReader,
   type ReadImageSnapshotStore,
   type SessionContextRef,
 } from '@maka/core/context-offload';
@@ -37,13 +39,26 @@ import {
 export function createReadImageSnapshotReader(
   reader: InteractiveContextOffloadReader,
   sessionId: string,
-): ReadImageSnapshotReader {
+): ReadImageSnapshotReader & ReadImageSnapshotSizeReader {
   const store = authenticateInteractiveContextOffloadReader(reader);
   if (!sessionId) throw new Error('Read image snapshot Session id is required');
   return Object.freeze({
     async read(input: SessionContextRef): Promise<ContextOffloadReadResult> {
       if (input.sessionId !== sessionId) return { ok: false, reason: 'session_mismatch' };
       const result = await store.read({
+        sessionId,
+        refId: input.refId,
+        maxBytes: MAX_READ_IMAGE_BYTES,
+      });
+      if (!result.ok) return result;
+      if (!result.record.mediaType.toLowerCase().startsWith('image/')) {
+        return { ok: false, reason: 'corrupt' };
+      }
+      return result;
+    },
+    async stat(input: SessionContextRef): Promise<ContextOffloadStatResult> {
+      if (input.sessionId !== sessionId) return { ok: false, reason: 'session_mismatch' };
+      const result = await store.stat({
         sessionId,
         refId: input.refId,
         maxBytes: MAX_READ_IMAGE_BYTES,

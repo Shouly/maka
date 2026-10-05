@@ -89,7 +89,7 @@ test('single-flights one limit-bound writer and snapshots admitted inputs', asyn
       const reader = createInteractiveContextOffloadReader(first);
       assert.strictEqual(createInteractiveContextOffloadReader(first), reader);
       assert.strictEqual(authenticateInteractiveContextOffloadReader(reader), reader);
-      assert.deepEqual(Object.keys(reader).sort(), ['access', 'kind', 'read']);
+      assert.deepEqual(Object.keys(reader).sort(), ['access', 'kind', 'read', 'stat']);
       assert.equal((await stat(join(root, CONTEXT_OFFLOAD_DATABASE_NAME))).isFile(), true);
 
       const bytes = new TextEncoder().encode('safe');

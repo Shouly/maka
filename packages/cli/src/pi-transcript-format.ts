@@ -23,7 +23,7 @@ import {
   wrapTextWithAnsi,
   type MarkdownTheme,
 } from '@earendil-works/pi-tui';
-import type { ToolResultContent } from '@maka/core/events';
+import type { TerminalSavedOutput, ToolResultContent } from '@maka/core/events';
 import { projectAgentSwarmResult } from '@maka/core/agent-swarm';
 import { ptyHumanTerminalText } from '@maka/core/pty-output-view';
 import { type ShellOutput } from '@maka/core/shell-run';
@@ -58,6 +58,7 @@ export function formatToolResultContent(content: ToolResultContent): string {
         `cwd: ${content.cwd}`,
         `status: ${content.status}`,
         content.exitCode !== undefined ? `exit: ${content.exitCode}` : '',
+        content.savedOutput ? savedTerminalOutputText(content.savedOutput) : '',
         formatShellOutput(content.output),
       ]
         .filter(Boolean)
@@ -135,6 +136,19 @@ export function formatToolResultContent(content: ToolResultContent): string {
     case 'rive_workflow':
       return content.summary;
   }
+}
+
+/**
+ * A Bash output too long to show: its size and the file it was saved to. The
+ * result's streams then hold only the start of it. A truncated file is not the
+ * whole output (cut at its size limit, or a line too long to keep left out);
+ * a marker in the file says where.
+ */
+export function savedTerminalOutputText(saved: TerminalSavedOutput): string {
+  const chars = `${saved.chars.toLocaleString('en-US')} chars`;
+  return saved.truncated
+    ? `Output too large to save whole: ${chars} of it saved to ${saved.path}, with a line marking what was left out`
+    : `Full output (${chars}) saved to ${saved.path}`;
 }
 
 function formatShellOutput(output: ShellOutput): string {

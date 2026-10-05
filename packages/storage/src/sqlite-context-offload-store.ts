@@ -33,6 +33,7 @@ import {
   type ContextOffloadReadResult,
   type ContextOffloadRecord,
   type ContextOffloadRetirementResult,
+  type ContextOffloadStatResult,
   type ContextOffloadStore,
   type ContextOffloadUsage,
 } from '@maka/core/context-offload';
@@ -228,6 +229,23 @@ export class SqliteContextOffloadStore implements ContextOffloadStore {
       const prepared = this.#readTransaction(() => this.#prepareRead(input));
       if ('ok' in prepared) return prepared;
       return await this.#readManagedFile(prepared);
+    } catch (error) {
+      this.#onUnavailable?.(error);
+      return { ok: false, reason: 'unavailable' };
+    }
+  }
+
+  async stat(input: {
+    readonly sessionId: string;
+    readonly refId: string;
+    readonly maxBytes: number;
+  }): Promise<ContextOffloadStatResult> {
+    assertBoundedIdentity(input.sessionId, 'Session id');
+    assertBoundedIdentity(input.refId, 'Context reference id');
+    assertNonNegativeSafeInteger(input.maxBytes, 'Context read byte limit');
+    try {
+      this.#assertOpen();
+      return this.#readTransaction(() => this.#prepareStat(input));
     } catch (error) {
       this.#onUnavailable?.(error);
       return { ok: false, reason: 'unavailable' };
@@ -834,6 +852,34 @@ export class SqliteContextOffloadStore implements ContextOffloadStore {
       return { ok: false, reason: 'corrupt' };
     }
     return { ok: true, record, bytes: value.bytes };
+  }
+
+  /** `#prepareRead`'s checks on the reference row alone; the blob is not read. */
+  #prepareStat(input: {
+    readonly sessionId: string;
+    readonly refId: string;
+    readonly maxBytes: number;
+  }): ContextOffloadStatResult {
+    const row = this.#database
+      .prepare(
+        `SELECT r.ref_id, r.session_id, r.owner_kind, r.owner_id, r.blob_id,
+                b.size_bytes, r.media_type, r.created_at
+         FROM context_refs r
+         JOIN context_blobs b ON b.blob_id = r.blob_id
+         WHERE r.ref_id = ?`,
+      )
+      .get(input.refId) as ContextReferenceRow | undefined;
+    if (!row) return { ok: false, reason: 'not_found' };
+    const record = decodeReferenceRow(row);
+    if (!record) return { ok: false, reason: 'corrupt' };
+    if (record.sessionId !== input.sessionId) return { ok: false, reason: 'session_mismatch' };
+    if (
+      record.sizeBytes > input.maxBytes ||
+      record.sizeBytes > this.#limits.ownerMaxBytes[record.owner.kind]
+    ) {
+      return { ok: false, reason: 'too_large' };
+    }
+    return { ok: true, record };
   }
 
   #readReferenceByOwner(

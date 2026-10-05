@@ -1074,6 +1074,12 @@ export class ToolOutcomeUnknownError extends Error {
   }
 }
 
+export interface TerminalSavedOutput {
+  path: string;
+  chars: number;
+  truncated: boolean;
+}
+
 export type ShellRunCompactResult = ShellRunResultMetadata &
   ({ mode: 'pipes'; output?: never } | { mode: 'pty'; output?: never });
 
@@ -1128,6 +1134,13 @@ export type ToolResultContent =
       exitCode?: number;
       failureMessage?: string;
       output: ShellOutput;
+      /**
+       * A result too long to show: the file its output was saved to, how many
+       * characters that file holds, and whether the file falls short of the
+       * whole output (cut at its size limit, or a line too long to keep left
+       * out). `output` then holds the preview the model was shown.
+       */
+      savedOutput?: TerminalSavedOutput;
       sandboxDenial?: SandboxDenialSignal | SandboxDenialRecovery;
     }
   | ShellRunToolResultContent

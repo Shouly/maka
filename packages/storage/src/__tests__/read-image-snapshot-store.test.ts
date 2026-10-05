@@ -91,7 +91,17 @@ test('snapshots one stable Read image identity and authorizes reads by Session',
       'session-1',
     );
     assert.deepEqual(await reader.read(ref), read);
-    assert.deepEqual(Object.keys(reader), ['read']);
+    assert.deepEqual(Object.keys(reader), ['read', 'stat']);
+    // The record a read returns, without its bytes.
+    assert.deepEqual(await reader.stat(ref), { ok: true, record: read.record });
+    assert.deepEqual(await reader.stat({ ...ref, sessionId: 'session-2' }), {
+      ok: false,
+      reason: 'session_mismatch',
+    });
+    assert.deepEqual(await reader.stat({ ...ref, refId: 'missing-ref' }), {
+      ok: false,
+      reason: 'not_found',
+    });
     assert.deepEqual(await images.read({ ...ref, sessionId: 'session-2' }), {
       ok: false,
       reason: 'session_mismatch',
@@ -164,6 +174,13 @@ test('maps configured quota failures and rejects non-image references', async ()
           sessionId: 'session-1',
           refId: json.record.refId,
         }),
+        { ok: false, reason: 'corrupt' },
+      );
+      assert.deepEqual(
+        await createReadImageSnapshotReader(
+          createInteractiveContextOffloadReader(writer),
+          'session-1',
+        ).stat({ kind: 'session_context', sessionId: 'session-1', refId: json.record.refId }),
         { ok: false, reason: 'corrupt' },
       );
     },

@@ -18,13 +18,8 @@
  */
 
 import type { AttachmentRef, DirectoryReference, QuoteRef, StorageRef } from '@maka/core/events';
-import {
-  MAX_PROVIDER_IMAGE_REQUEST_BYTES,
-  PROVIDER_IMAGE_BUDGET_EXCEEDED_MESSAGE,
-  type AttachmentByteReader,
-} from '@maka/core/attachments';
+import type { AttachmentByteReader, AttachmentSizeReader } from '@maka/core/attachments';
 import type { DurableToolResultProjection } from '@maka/core/durable-tool-result-projection';
-import type { ProviderImageBudget } from './ai-sdk-compaction.js';
 import {
   applyPatchReplayFactText,
   normalizeApplyPatchReplayInput,
@@ -49,12 +44,29 @@ import {
 } from './model-history.js';
 import type { ModelAdapter } from './model-adapter.js';
 import type {
+  FilePart,
   ModelMessage,
   ReasoningPart,
+  TextPart,
+  ToolResultContentPart,
   ToolResultOutput,
   UserContent,
 } from './model-protocol.js';
 import { openAiChatReasoningFieldFromProviderOptions } from './openai-chat-reasoning-transport.js';
+import {
+  countRemovedProviderRequestImages,
+  deferredImagePart,
+  deferredToolResultImagePart,
+  dropDeferredImages,
+  limitProviderRequestImages,
+  providerImageAttachmentTooLargeMessage,
+  providerImageRemovedMessage,
+  providerImageRequestLimits,
+  providerImageTooLargeMessage,
+  resolveDeferredImages,
+  type DeferredImageData,
+  type ProviderImageRequestLimits,
+} from './provider-image-limits.js';
 import {
   decodePlaintextResponsesReasoningState,
   replayPlaintextResponsesProviderOptions,
@@ -84,7 +96,14 @@ export interface AiSdkMessageProjectionInput {
   replayToolSearchReferences?: (activated: readonly string[]) => readonly string[] | undefined;
   supportsVision?: boolean;
   readAttachmentBytes?: AttachmentByteReader;
+  /**
+   * Looks up a stored tool image's size without reading it, so the image is
+   * read only if a request sends it. Without it, tool images are read when
+   * their result is materialized.
+   */
+  readAttachmentSize?: AttachmentSizeReader;
   maxProviderImageRequestBytes?: number;
+  maxProviderImageRequestCount?: number;
 }
 
 function isImageToolResult(
@@ -190,8 +209,159 @@ function durableApplyPatchReplayFactText(
  */
 export class AiSdkMessageProjection {
   private readonly memoryReplayMessageEvents = new WeakMap<ModelMessage, readonly string[]>();
+  private readonly imageLimits: ProviderImageRequestLimits;
 
-  constructor(private readonly input: AiSdkMessageProjectionInput) {}
+  constructor(private readonly input: AiSdkMessageProjectionInput) {
+    this.imageLimits = providerImageRequestLimits({
+      maxImages: input.maxProviderImageRequestCount,
+      maxBytes: input.maxProviderImageRequestBytes,
+    });
+  }
+
+  /**
+   * Keep a request within what it may carry in images by removing the oldest
+   * ones, a batch at a time (see `providerImageWindowStart`). Applied to the
+   * request before any stage shapes it, so every stage and every later step
+   * works on the same images, and again as it goes out, by
+   * `prepareRequestImages`.
+   */
+  limitRequestImages(messages: readonly ModelMessage[]): {
+    messages: ModelMessage[];
+    removedImages: number;
+  } {
+    return limitProviderRequestImages(messages, this.imageLimits);
+  }
+
+  /** How many images `limitRequestImages` would remove from these messages. */
+  countRemovedRequestImages(messages: readonly ModelMessage[]): number {
+    return countRemovedProviderRequestImages(messages, this.imageLimits);
+  }
+
+  /**
+   * Read the stored images these messages would still send, leaving the ones
+   * before their window deferred and counted by recorded size. Meant for the
+   * prior history, the prefix every request of a send repeats: its images are
+   * then read once per send, not once per request, and a later request's
+   * window starts no earlier than this one.
+   */
+  async readWindowImages(messages: readonly ModelMessage[]): Promise<ModelMessage[]> {
+    return await resolveDeferredImages(
+      messages,
+      (image, mediaType) => this.readDeferredImage(image, mediaType),
+      countRemovedProviderRequestImages(messages, this.imageLimits),
+    );
+  }
+
+  /**
+   * The request as it goes out: limited once more, which changes nothing
+   * already limited and limits a fold's replacement, materialized afresh; then
+   * the stored images it still carries are read. Those were chosen by their
+   * recorded size; a recorded size below the stored one is caught by a last
+   * limit, on what was read. Nothing deferred goes out.
+   */
+  async prepareRequestImages(messages: readonly ModelMessage[]): Promise<{
+    messages: ModelMessage[];
+    removedImages: number;
+  }> {
+    const limited = limitProviderRequestImages(messages, this.imageLimits);
+    const resolved = await resolveDeferredImages(limited.messages, (image, mediaType) =>
+      this.readDeferredImage(image, mediaType),
+    );
+    const relimited = resolved.every((message, index) => message === limited.messages[index])
+      ? { messages: resolved, removedImages: 0 }
+      : limitProviderRequestImages(resolved, this.imageLimits);
+    return {
+      messages: dropDeferredImages(
+        relimited.messages,
+        providerImageRemovedMessage(this.imageLimits),
+      ),
+      removedImages: limited.removedImages + relimited.removedImages,
+    };
+  }
+
+  /**
+   * Read a stored image for the request that sends it. An attachment goes out
+   * as bytes in the user's message; a tool's image as base64 in its result.
+   */
+  private async readDeferredImage(
+    image: DeferredImageData,
+    mediaType: string,
+  ): Promise<TextPart | FilePart> {
+    let read: Awaited<ReturnType<AttachmentByteReader>>;
+    try {
+      read = (await this.input.readAttachmentBytes?.(image.ref)) ?? {
+        ok: false,
+        reason: 'unavailable',
+      };
+    } catch {
+      read = { ok: false, reason: 'read_failed' };
+    }
+    if (image.source === 'tool_result') {
+      if (!read.ok) {
+        return {
+          type: 'text',
+          text: `Image could not be loaded from artifact storage: ${read.reason}.`,
+        };
+      }
+      if (read.bytes.length > this.imageLimits.maxBytes) {
+        return { type: 'text', text: providerImageTooLargeMessage(this.imageLimits) };
+      }
+      return {
+        type: 'file',
+        data: { type: 'data', data: Buffer.from(read.bytes).toString('base64') },
+        mediaType,
+      };
+    }
+    if (!read.ok) {
+      return {
+        type: 'text',
+        text: `Image attachment "${image.name}" could not be loaded: ${read.reason}.`,
+      };
+    }
+    if (read.bytes.length > this.imageLimits.maxBytes) {
+      return {
+        type: 'text',
+        text: providerImageAttachmentTooLargeMessage(image.name, this.imageLimits),
+      };
+    }
+    return { type: 'file', data: { type: 'data', data: read.bytes }, mediaType };
+  }
+
+  /**
+   * An image a tool returned, as its result carries it. With its stored size
+   * known it is deferred like an attachment and read only by the request that
+   * sends it; without a size lookup it is read now.
+   */
+  private async toolResultImagePart(
+    ref: StorageRef,
+    mediaType: string,
+  ): Promise<TextPart | Extract<ToolResultContentPart, { type: 'file' }>> {
+    if (this.input.readAttachmentSize) {
+      let size: Awaited<ReturnType<AttachmentSizeReader>>;
+      try {
+        size = await this.input.readAttachmentSize(ref);
+      } catch {
+        size = { ok: false, reason: 'read_failed' };
+      }
+      if (!size.ok) {
+        return {
+          type: 'text',
+          text: `Image could not be loaded from artifact storage: ${size.reason}.`,
+        };
+      }
+      if (size.bytes > this.imageLimits.maxBytes) {
+        return { type: 'text', text: providerImageTooLargeMessage(this.imageLimits) };
+      }
+      if (Number.isFinite(size.bytes) && size.bytes > 0) {
+        return deferredToolResultImagePart(ref, mediaType, size.bytes);
+      }
+    }
+    const read = await this.readDeferredImage(
+      { type: 'deferred', source: 'tool_result', ref, bytes: 0 },
+      mediaType,
+    );
+    return read as TextPart | Extract<ToolResultContentPart, { type: 'file' }>;
+  }
 
   canReplayProviderNative(plan: RuntimeEventModelReplayPlan): boolean {
     const support = this.input.modelAdapter.runtimeEventReplaySupport();
@@ -251,7 +421,6 @@ export class AiSdkMessageProjection {
    */
   async materializeRuntimeReplayPlan(
     plan: RuntimeEventModelReplayPlan,
-    budget: ProviderImageBudget,
     historyCompactCheckpoint: HistoryCompactCheckpoint | undefined,
     providerReasoningReplayEventIds: ReadonlySet<string>,
   ): Promise<ModelMessage[]> {
@@ -382,17 +551,8 @@ export class AiSdkMessageProjection {
       toolName: string,
     ): Promise<ToolResultOutput> => {
       const output = result.modelProjection
-        ? await this.materializeDurableToolResultProjection(
-            budget,
-            result.modelProjection,
-            `runtime-event:${result.eventId}:tool-result`,
-          )
-        : await this.materializeToolResultOutput(
-            budget,
-            result.output,
-            result.isError,
-            `runtime-event:${result.eventId}:tool-result`,
-          );
+        ? await this.materializeDurableToolResultProjection(result.modelProjection)
+        : await this.materializeToolResultOutput(result.output, result.isError);
       if (toolName === TOOL_SEARCH_NAME && !result.isError) {
         return replayToolSearchOutput(output, this.input.replayToolSearchReferences);
       }
@@ -523,7 +683,7 @@ export class AiSdkMessageProjection {
         continue;
       }
       if (entry.kind === 'text') {
-        push(await this.materializeRuntimeReplayItem(budget, entry.item), [entry.item.eventId]);
+        push(await this.materializeRuntimeReplayItem(entry.item), [entry.item.eventId]);
         continue;
       }
 
@@ -564,18 +724,15 @@ export class AiSdkMessageProjection {
   }
 
   async materializeRuntimeReplayTextOnly(
-    budget: ProviderImageBudget,
     plan: RuntimeEventModelReplayPlan,
     historyCompactCheckpoint?: HistoryCompactCheckpoint,
   ): Promise<ModelMessage[]> {
     const messages: ModelMessage[] = [];
     for (const item of plan.items) {
       if (item.kind === 'text')
-        this.pushMemoryIndexedMessage(
-          messages,
-          await this.materializeRuntimeReplayItem(budget, item),
-          [item.eventId],
-        );
+        this.pushMemoryIndexedMessage(messages, await this.materializeRuntimeReplayItem(item), [
+          item.eventId,
+        ]);
     }
     return this.prependProviderHistoryCompactMessage(messages, historyCompactCheckpoint);
   }
@@ -614,7 +771,6 @@ export class AiSdkMessageProjection {
   }
 
   private async materializeRuntimeReplayItem(
-    budget: ProviderImageBudget,
     item: Extract<RuntimeEventModelReplayItem, { kind: 'text' }>,
   ): Promise<ModelMessage> {
     if (item.role === 'user') {
@@ -622,12 +778,7 @@ export class AiSdkMessageProjection {
       // the same path the original request used — a steering replay that kept
       // only the envelope text would hand a recovery turn references without
       // the native images the first request received.
-      const content = await this.appendImageParts(
-        budget,
-        item.content,
-        item.attachments,
-        item.steering ? `steering:${item.steering.eventId}` : `runtime-event:${item.eventId}`,
-      );
+      const content = await this.appendImageParts(item.content, item.attachments);
       if (item.steering) {
         // Already envelope-wrapped by the plan; carry the structured identity
         // so injection dedupe recognizes the replayed message.
@@ -652,36 +803,16 @@ export class AiSdkMessageProjection {
     };
   }
 
-  /** A decision key deduplicates re-materialization; no key charges each occurrence. */
-  private chargeImageBudget(
-    budget: ProviderImageBudget,
-    bytes: number,
-    decisionKey?: string,
-  ): boolean {
-    if (decisionKey !== undefined) {
-      const cached = budget.decisions.get(decisionKey);
-      if (cached !== undefined) return cached;
-    }
-    const keep =
-      budget.used + bytes <=
-      (this.input.maxProviderImageRequestBytes ?? MAX_PROVIDER_IMAGE_REQUEST_BYTES);
-    if (keep) budget.used += bytes;
-    if (decisionKey !== undefined) budget.decisions.set(decisionKey, keep);
-    return keep;
-  }
-
   /**
    * Render provider-visible content for a user message: keep the given
    * (already-formatted) text, and append image attachments as provider image
    * parts only for explicitly vision-capable models. Non-image attachments stay
    * as placeholder refs in the text. Shared by the current turn and RuntimeEvent replay.
+   *
+   * An image with a recorded size is not read here: it stays deferred until
+   * the request it goes out in is known to send it (`prepareRequestImages`).
    */
-  async appendImageParts(
-    budget: ProviderImageBudget,
-    textContent: string,
-    attachments?: AttachmentRef[],
-    decisionKeyPrefix?: string,
-  ): Promise<UserContent> {
+  async appendImageParts(textContent: string, attachments?: AttachmentRef[]): Promise<UserContent> {
     const images = attachments?.filter((a) => a.kind === 'image') ?? [];
     if (images.length === 0) {
       return textContent;
@@ -695,16 +826,19 @@ export class AiSdkMessageProjection {
     if (!this.input.readAttachmentBytes) {
       return textContent;
     }
-    const parts: Array<
-      | { type: 'text'; text: string }
-      | {
-          type: 'file';
-          data: { type: 'data'; data: Uint8Array };
-          mediaType: string;
+    const parts: Array<TextPart | FilePart> = [{ type: 'text', text: textContent }];
+    for (const image of images) {
+      if (Number.isFinite(image.bytes) && image.bytes > 0) {
+        if (image.bytes > this.imageLimits.maxBytes) {
+          parts.push({
+            type: 'text',
+            text: providerImageAttachmentTooLargeMessage(image.name, this.imageLimits),
+          });
+        } else {
+          parts.push(deferredImagePart(image));
         }
-    > = [{ type: 'text', text: textContent }];
-    let omittedByBudget = 0;
-    for (const [index, image] of images.entries()) {
+        continue;
+      }
       const read = await this.input.readAttachmentBytes(image.ref);
       if (!read.ok) {
         parts.push({
@@ -713,10 +847,11 @@ export class AiSdkMessageProjection {
         });
         continue;
       }
-      const decisionKey =
-        decisionKeyPrefix === undefined ? undefined : `${decisionKeyPrefix}:image:${index}`;
-      if (!this.chargeImageBudget(budget, read.bytes.length, decisionKey)) {
-        omittedByBudget += 1;
+      if (read.bytes.length > this.imageLimits.maxBytes) {
+        parts.push({
+          type: 'text',
+          text: providerImageAttachmentTooLargeMessage(image.name, this.imageLimits),
+        });
         continue;
       }
       parts.push({
@@ -725,20 +860,12 @@ export class AiSdkMessageProjection {
         mediaType: image.mimeType,
       });
     }
-    if (omittedByBudget > 0) {
-      parts.push({
-        type: 'text',
-        text: `[${omittedByBudget} image attachment(s) omitted: the per-request image budget was exceeded. Earlier images were sent; ask the user to send fewer or smaller images.]`,
-      });
-    }
     return parts;
   }
 
   private async materializeToolResultOutput(
-    budget: ProviderImageBudget,
     output: unknown,
     isError: boolean,
-    decisionKey: string,
   ): Promise<ToolResultOutput> {
     if (isError || !isImageToolResult(output)) return toolResultOutput(output, isError);
     if (this.input.supportsVision !== true) {
@@ -747,45 +874,20 @@ export class AiSdkMessageProjection {
     if (!this.input.readAttachmentBytes) {
       return toolResultText('Image was read, but its stored bytes are unavailable.');
     }
-    if (budget && budget.decisions.get(decisionKey) === false) {
-      return toolResultText(PROVIDER_IMAGE_BUDGET_EXCEEDED_MESSAGE);
-    }
-    let read: Awaited<ReturnType<AttachmentByteReader>>;
-    try {
-      read = await this.input.readAttachmentBytes(output.ref);
-    } catch {
-      return toolResultText('Image could not be loaded from artifact storage: read_failed.');
-    }
-    if (!read.ok) {
-      return toolResultText(`Image could not be loaded from artifact storage: ${read.reason}.`);
-    }
-    if (!this.chargeImageBudget(budget, read.bytes.length, decisionKey)) {
-      return toolResultText(PROVIDER_IMAGE_BUDGET_EXCEEDED_MESSAGE);
-    }
+    const image = await this.toolResultImagePart(output.ref, output.mimeType);
+    if (image.type === 'text') return toolResultText(image.text);
     return {
       type: 'content',
-      value: [
-        { type: 'text', text: 'Image read successfully.' },
-        {
-          type: 'file',
-          data: {
-            type: 'data',
-            data: Buffer.from(read.bytes).toString('base64'),
-          },
-          mediaType: output.mimeType,
-        },
-      ],
+      value: [{ type: 'text', text: 'Image read successfully.' }, image],
     };
   }
 
   private async materializeDurableToolResultProjection(
-    budget: ProviderImageBudget,
     projection: DurableToolResultProjection,
-    decisionKey: string,
   ): Promise<ToolResultOutput> {
     if (projection.kind !== 'content') return durableProjectionToToolResultOutput(projection);
     const value: Extract<ToolResultOutput, { type: 'content' }>['value'] = [];
-    for (const [index, part] of projection.parts.entries()) {
+    for (const part of projection.parts) {
       if (part.kind === 'text') {
         value.push({ type: 'text', text: part.text });
         continue;
@@ -804,53 +906,24 @@ export class AiSdkMessageProjection {
         });
         continue;
       }
-      let read: Awaited<ReturnType<AttachmentByteReader>>;
-      try {
-        read = await this.input.readAttachmentBytes(part.ref);
-      } catch {
-        value.push({
-          type: 'text',
-          text: 'Image could not be loaded from artifact storage: read_failed.',
-        });
-        continue;
-      }
-      if (!read.ok) {
-        value.push({
-          type: 'text',
-          text: `Image could not be loaded from artifact storage: ${read.reason}.`,
-        });
-        continue;
-      }
-      if (!this.chargeImageBudget(budget, read.bytes.length, `${decisionKey}:artifact:${index}`)) {
-        value.push({ type: 'text', text: PROVIDER_IMAGE_BUDGET_EXCEEDED_MESSAGE });
-        continue;
-      }
-      value.push({
-        type: 'file',
-        data: { type: 'data', data: Buffer.from(read.bytes).toString('base64') },
-        mediaType: part.mediaType,
-      });
+      value.push(await this.toolResultImagePart(part.ref, part.mediaType));
     }
     return { type: 'content', value };
   }
 
   async buildCurrentUserContent(
-    budget: ProviderImageBudget,
     text: string,
     attachments?: AttachmentRef[],
     directoryReferences?: DirectoryReference[],
     quotes?: QuoteRef[],
-    runtimeEventId?: string,
   ): Promise<UserContent> {
     return await this.appendImageParts(
-      budget,
       formatTextWithInlineRefs(text, {
         ...(attachments !== undefined ? { attachments } : {}),
         ...(directoryReferences !== undefined ? { directoryReferences } : {}),
         ...(quotes !== undefined ? { quotes } : {}),
       }),
       attachments,
-      runtimeEventId === undefined ? undefined : `runtime-event:${runtimeEventId}`,
     );
   }
 }

@@ -20,6 +20,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { closeSync, fstatSync, openSync } from 'node:fs';
 import {
   access,
@@ -29,6 +30,7 @@ import {
   realpath,
   rm,
   symlink,
+  truncate,
   utimes,
   writeFile,
 } from 'node:fs/promises';
@@ -50,6 +52,7 @@ import { MacosSeatbeltBackend } from '../sandbox/macos-seatbelt.js';
 import { WindowsBrokerSandboxBackend } from '../sandbox/windows-sandbox.js';
 import { SandboxCommandError } from '../sandbox/errors.js';
 import type { ShellRunLauncher } from '../shell-tools.js';
+import { LINE_COUNT_MAX_BYTES } from '../text-line-window.js';
 import {
   MAX_SHELL_RUN_RESOURCE_REF_CHARS,
   SHELL_RUN_RESOURCE_PREFIX,
@@ -2011,7 +2014,7 @@ describe('builtin Bash streaming output', () => {
     );
   });
 
-  test('large output is bounded to a tail instead of being discarded', async () => {
+  test('a long output with nowhere to be saved is bounded to a head and a tail', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'maka-bash-'));
     const bash = buildBuiltinTools().find((tool) => tool.name === 'Bash');
     if (!bash) throw new Error('Bash tool missing');
@@ -2029,9 +2032,10 @@ describe('builtin Bash streaming output', () => {
     )) as { exitCode: number; output: { stdout: string; stdoutTruncated: boolean } };
 
     assert.strictEqual(result.exitCode, 0); // no reject — the old code threw away everything past the cap
-    assert.strictEqual(result.output.stdout.includes('line5000'), true); // tail preserved
-    assert.strictEqual(result.output.stdout.includes('truncated'), true); // truncation marker present
-    assert.strictEqual(result.output.stdout.includes('line1\n'), false); // head dropped, not the whole output
+    assert.strictEqual(result.output.stdout.startsWith('line1\nline2\n'), true); // head kept
+    assert.strictEqual(result.output.stdout.endsWith('line5000'), true); // tail kept
+    assert.match(result.output.stdout, /\n\[\.\.\. [\d,]+ characters omitted \.\.\.\]\n/u);
+    assert.ok(result.output.stdout.length < 30_100);
     assert.strictEqual(result.output.stdoutTruncated, true);
   });
 
@@ -2889,26 +2893,105 @@ describe('builtin file tools speak the reference argument names', () => {
     );
   });
 
-  test('Read has no line cap; the cap is 256KB of text', async () => {
+  test('Read has no line cap; a whole file over 25000 tokens returns its first page', async (t) => {
     const root = await mkdtemp(join(tmpdir(), 'maka-read-default-limit-'));
+    t.after(() => rm(root, { recursive: true, force: true }));
     const lines = Array.from({ length: 2_100 }, (_, index) => `line ${index + 1}`);
     await writeFile(join(root, 'big.txt'), `${lines.join('\n')}\n`, 'utf8');
+    // 5,296 lines of 99 characters: 529,600 bytes, far past 100,000 (25000 tokens).
     await writeFile(join(root, 'huge.txt'), `${'y'.repeat(99)}\n`.repeat(5_296), 'utf8');
     const read = tool('Read');
 
     const result = (await runTool(read, { file_path: 'big.txt' }, root)) as { content: string };
     assert.strictEqual(result.content.split('\n').length, 2_101);
+    assert.strictEqual((result as { partial?: boolean }).partial, undefined);
 
-    await expectRejects(
-      runTool(read, { file_path: 'huge.txt' }, root),
-      /^File content \(517\.2KB\) exceeds maximum allowed size \(256KB\)\. Use offset and limit parameters/,
+    // Numbered as the model reads them, 962 lines take 99,939 bytes and the
+    // 963rd would pass 100,000; a first page keeps room for its notice: 960.
+    const page = (await runTool(read, { file_path: 'huge.txt' }, root)) as {
+      content: string;
+      totalLines: number;
+      partial?: boolean;
+    };
+    assert.strictEqual(page.content.split('\n').length, 960);
+    assert.strictEqual(page.totalLines, 5_297);
+    assert.strictEqual(page.partial, true);
+    const text = modelText(read, { file_path: 'huge.txt' }, page);
+    assert.ok(text.startsWith(`1\t${'y'.repeat(99)}\n2\t`));
+    assert.ok(
+      text.endsWith(
+        `960\t${'y'.repeat(99)}\n\nPARTIAL view: lines 1-960 of 5297 are shown, because the whole file exceeds the maximum of 25000 tokens one Read can return. Read the rest with offset and limit, starting at offset 961.`,
+      ),
     );
-    // A window under the cap is fine; one over it is refused by its own size.
+    assert.ok(Buffer.byteLength(text, 'utf8') <= 100_000);
+
+    // A named range under the limit is fine; one over it is refused.
     await runTool(read, { file_path: 'huge.txt', offset: 1, limit: 10 }, root);
     await expectRejects(
       runTool(read, { file_path: 'huge.txt', offset: 1, limit: 4_000 }, root),
-      /^File content \(390\.6KB\) exceeds maximum allowed size \(256KB\)/,
+      /^The requested lines exceed the maximum of 25000 tokens one Read can return; only 962 lines from line 1 fit\. Read them with a limit of 962\. If line 963 alone exceeds the maximum, search for specific content with Grep instead\.$/,
     );
+    await expectRejects(
+      runTool(read, { file_path: 'huge.txt', offset: 2_000 }, root),
+      /^The lines from line 2000 to the end of the file exceed the maximum of 25000 tokens one Read can return; only 952 lines from line 2000 fit\. Read them with a limit of 952\./,
+    );
+  });
+
+  test('Read holds a file of empty or one-character lines to the limit as the model reads it', async (t) => {
+    const root = await mkdtemp(join(tmpdir(), 'maka-read-short-lines-'));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    await writeFile(join(root, 'newlines.txt'), '\n'.repeat(5_000_000), 'utf8');
+    await writeFile(join(root, 'tiny.txt'), 'x\n'.repeat(200_000), 'utf8');
+    const read = tool('Read');
+    for (const name of ['newlines.txt', 'tiny.txt']) {
+      const page = (await runTool(read, { file_path: name }, root)) as {
+        content: string;
+        totalLines: number;
+        partial?: boolean;
+      };
+      assert.strictEqual(page.partial, true, name);
+      const text = modelText(read, { file_path: name }, page);
+      assert.ok(Buffer.byteLength(text, 'utf8') <= 100_000, name);
+      assert.match(text, /\n\nPARTIAL view: lines 1-\d+ of \d+ are shown/u, name);
+      await expectRejects(
+        runTool(read, { file_path: name, offset: 1, limit: 1_000_000 }, root),
+        /^The requested lines exceed the maximum of 25000 tokens one Read can return; only \d+ lines from line 1 fit\./,
+      );
+    }
+  });
+
+  test('Read refuses a single line too large to show, whole-file or ranged', async (t) => {
+    const root = await mkdtemp(join(tmpdir(), 'maka-read-long-line-'));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    await writeFile(join(root, 'minified.js'), `${'z'.repeat(100_001)}\nshort\n`, 'utf8');
+    await writeFile(join(root, 'second.txt'), `short\n${'z'.repeat(100_001)}\n`, 'utf8');
+    const read = tool('Read');
+    const alone =
+      /^Line 1 alone exceeds the maximum of 25000 tokens one Read can return\. Search for specific content with Grep instead\.$/;
+
+    await expectRejects(runTool(read, { file_path: 'minified.js' }, root), alone);
+    await expectRejects(runTool(read, { file_path: 'minified.js', limit: 1 }, root), alone);
+    await expectRejects(
+      runTool(read, { file_path: 'second.txt', offset: 2, limit: 1 }, root),
+      /^Line 2 alone exceeds/,
+    );
+    // Whole-file: the first page is the line that fits.
+    const page = (await runTool(read, { file_path: 'second.txt' }, root)) as {
+      content: string;
+      partial?: boolean;
+    };
+    assert.strictEqual(page.content, 'short');
+    assert.strictEqual(page.partial, true);
+    // Exactly at the limit is not past it: 99,998 characters and the `1\t` in front.
+    await writeFile(join(root, 'exact.txt'), 'e'.repeat(99_998), 'utf8');
+    const exact = (await runTool(read, { file_path: 'exact.txt' }, root)) as {
+      content: string;
+      partial?: boolean;
+    };
+    assert.strictEqual(exact.content.length, 99_998);
+    assert.strictEqual(exact.partial, undefined);
+    await writeFile(join(root, 'past.txt'), 'e'.repeat(99_999), 'utf8');
+    await expectRejects(runTool(read, { file_path: 'past.txt' }, root), alone);
   });
 
   test('Read says when the offset is past the end, and refuses a binary file', async () => {
@@ -2946,6 +3029,41 @@ describe('builtin file tools speak the reference argument names', () => {
     assert.match(
       modelText(read, { file_path: 'empty.txt' }, empty),
       /Warning: the file exists but the contents are empty/,
+    );
+  });
+
+  test('Read refuses a named pipe without waiting on it, and a large file shows how many lines it has at least', {
+    skip: process.platform === 'win32' ? 'no named pipes' : false,
+    // A Read that opened the pipe would wait for a writer for ever.
+    timeout: 10_000,
+  }, async (t) => {
+    const root = await mkdtemp(join(tmpdir(), 'maka-read-special-'));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    execFileSync('mkfifo', [join(root, 'pipe')]);
+    const read = tool('Read');
+    await expectRejects(
+      runTool(read, { file_path: 'pipe' }, root),
+      /^Read cannot read '.*\/pipe': it is a named pipe, not a regular file\. Read reads only regular files;/,
+    );
+
+    // A first page, then a hole of zeros longer than the count goes past it.
+    const path = join(root, 'huge.log');
+    await writeFile(path, `${'y'.repeat(99)}\n`.repeat(2_000), 'utf8');
+    await truncate(path, LINE_COUNT_MAX_BYTES + 8 * 1024 * 1024);
+    const page = (await runTool(read, { file_path: 'huge.log' }, root)) as {
+      content: string;
+      totalLines: number;
+      moreLines?: boolean;
+      partial?: boolean;
+    };
+    assert.strictEqual(page.content.split('\n').length, 960);
+    assert.strictEqual(page.totalLines, 2_000);
+    assert.strictEqual(page.moreLines, true);
+    assert.strictEqual(page.partial, true);
+    assert.ok(
+      modelText(read, { file_path: 'huge.log' }, page).endsWith(
+        '\n\nPARTIAL view: lines 1-960 of more than 2000 are shown, because the whole file exceeds the maximum of 25000 tokens one Read can return. Read the rest with offset and limit, starting at offset 961.',
+      ),
     );
   });
 
@@ -3295,6 +3413,48 @@ describe('builtin file tools speak the reference argument names', () => {
     assert.strictEqual(
       modelText(grep, { pattern: 'absent', output_mode: 'content' }, none),
       'No matches found',
+    );
+  });
+
+  test('Grep cuts a content line past 2,000 characters and says how much it left out', async (t) => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'maka-grep-long-line-')));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    // One match in a minified file would otherwise be the whole file.
+    await writeFile(
+      join(root, 'app.min.js'),
+      `${'a'.repeat(50_000)}needle${'b'.repeat(250_000)}\nshort needle\n`,
+      'utf8',
+    );
+    const grep = tool('Grep');
+    const input = { pattern: 'needle', output_mode: 'content' };
+    const found = (await runTool(grep, input, root)) as { matches: string[] };
+    const prefix = `${join(root, 'app.min.js')}:1:`;
+    const line = `${prefix}${'a'.repeat(50_000)}needle${'b'.repeat(250_000)}`;
+    assert.deepStrictEqual(found.matches, [
+      `${line.slice(0, 2_000)} [... ${(line.length - 2_000).toLocaleString('en-US')} characters omitted ...]`,
+      `${join(root, 'app.min.js')}:2:short needle`,
+    ]);
+    assert.ok(modelText(grep, input, found).length < 2_200);
+  });
+
+  test('Read refuses a notebook too large to show whole, and says how else to read it', async (t) => {
+    const root = await mkdtemp(join(tmpdir(), 'maka-read-big-notebook-'));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const source = 'x'.repeat(300 * 1024);
+    await writeFile(
+      join(root, 'big.ipynb'),
+      JSON.stringify({
+        cells: [{ cell_type: 'code', source: [source], metadata: {}, outputs: [] }],
+        metadata: {},
+        nbformat: 4,
+        nbformat_minor: 5,
+      }),
+      'utf8',
+    );
+    const read = tool('Read');
+    await expectRejects(
+      runTool(read, { file_path: 'big.ipynb', offset: 1, limit: 10 }, root),
+      /^Notebook content \(300\.\d?KB\) exceeds the maximum size Read can show \(256KB\), and a notebook is only read whole\. Search its cells with Grep, or read part of it with Bash/,
     );
   });
 

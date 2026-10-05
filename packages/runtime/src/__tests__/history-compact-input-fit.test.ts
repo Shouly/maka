@@ -21,7 +21,10 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { stableJsonLength } from '../context-budget-helpers.js';
 import { HistoryCompactSummarizerError } from '../history-compact-error.js';
-import { fitHistoryCompactMessages } from '../history-compact-input-fit.js';
+import {
+  fitHistoryCompactMessages,
+  refitRejectedHistoryCompactMessages,
+} from '../history-compact-input-fit.js';
 import type { ModelMessage } from '../model-protocol.js';
 
 describe('history compaction input fitting', () => {
@@ -154,5 +157,64 @@ describe('history compaction input fitting', () => {
       }),
       messages,
     );
+  });
+
+  const toolResult = (toolCallId: string, value: string): ModelMessage => ({
+    role: 'tool',
+    content: [
+      { type: 'tool-result', toolCallId, toolName: 'Read', output: { type: 'text', value } },
+    ],
+  });
+  const outputs = (messages: readonly ModelMessage[]) =>
+    messages.flatMap((message) =>
+      message.role === 'tool'
+        ? message.content.map((part) =>
+            part.type === 'tool-result' && part.output.type === 'text' ? part.output.value : '',
+          )
+        : [],
+    );
+
+  test('a rejected request without a known size loses only its largest tool output', () => {
+    const messages = [
+      toolResult('call-1', 'a'.repeat(3_000)),
+      toolResult('call-2', 'b'.repeat(9_000)),
+      toolResult('call-3', 'c'.repeat(6_000)),
+    ];
+    const refit = refitRejectedHistoryCompactMessages(messages, {});
+
+    assert.equal(refit.omittedToolOutputs, 1);
+    assert.deepEqual(
+      outputs(refit.messages).map((value) => value.slice(0, 1)),
+      ['a', '[', 'c'],
+    );
+    // Messages it did not touch are the same objects.
+    assert.equal(refit.messages[0], messages[0]);
+    assert.equal(refit.messages[2], messages[2]);
+  });
+
+  test('a rejected request with a known size loses its largest outputs until it fits', () => {
+    const messages = [
+      toolResult('call-1', 'a'.repeat(3_000)),
+      toolResult('call-2', 'b'.repeat(9_000)),
+      toolResult('call-3', 'c'.repeat(6_000)),
+    ];
+    // A thousand tokens is four thousand bytes: the two largest must go.
+    const refit = refitRejectedHistoryCompactMessages(messages, { maxInputEstimatedTokens: 1_000 });
+
+    assert.equal(refit.omittedToolOutputs, 2);
+    assert.deepEqual(
+      outputs(refit.messages).map((value) => value.slice(0, 1)),
+      ['a', '[', '['],
+    );
+  });
+
+  test('a rejected request with no tool output has nothing to leave out', () => {
+    const messages: ModelMessage[] = [
+      { role: 'user', content: [{ type: 'text', text: 'x'.repeat(10_000) }] },
+    ];
+    const refit = refitRejectedHistoryCompactMessages(messages, { maxInputEstimatedTokens: 10 });
+
+    assert.equal(refit.omittedToolOutputs, 0);
+    assert.deepEqual(refit.messages, messages);
   });
 });

@@ -57,6 +57,17 @@ export interface HistoryCompactSummaryInput {
    * local estimate's (#4559).
    */
   maxOutputTokens?: number;
+  /**
+   * Input tokens of the last request this model accepted on this connection: a
+   * size proven to fit. Nothing is left out before the summarizer's own
+   * request is rejected as too long; after that rejection the text summarizer
+   * leaves the largest tool outputs out of what it reads until its request is
+   * estimated within this size, at least the largest one, and asks once more.
+   * The stored history and the main request never change.
+   */
+  acceptedInputTokens?: number;
+  /** Told how many tool outputs the summary was made without, when any were. */
+  onToolOutputsOmitted?: (count: number) => void;
   abortSignal?: AbortSignal;
   /**
    * Physical-call tracking for this summarization, built by the backend (#1679).

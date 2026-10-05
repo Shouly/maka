@@ -192,6 +192,7 @@ import { registerClientSettingsIpc } from "./client-settings-ipc-main.js";
 import { startClientSettingsWatcher } from "./client-settings-watcher.js";
 import { registerRuntimeHostGitHubCopilotIpc } from "./runtime-host-github-copilot-ipc-main.js";
 import { registerRuntimeHostArtifactsIpc } from "./runtime-host-artifacts-ipc-main.js";
+import { registerToolResultFileIpc } from "./tool-result-file-ipc-main.js";
 import { serveArtifactPreviewsFor } from "./artifact-preview-protocol.js";
 import type { DesktopRuntimeHostClient } from "./runtime-host-client.js";
 import type {
@@ -1266,6 +1267,7 @@ const startLocalRuntimeHostManager = () => startRuntimeHostDesktopManager(
               toolName: identified.toolName,
             })),
             dynamic: true as const,
+            mcpResults: true as const,
           })),
         ];
       },
@@ -1869,6 +1871,11 @@ function registerHostClientIpc(
     },
     scopedIpc,
   );
+  registerToolResultFileIpc({
+    ipcMain: scopedIpc,
+    shell,
+    allowLocalPaths: !usesHostWorkspace,
+  });
   registerWorkspaceSearchIpc({
     ipcMain: scopedIpc,
     getProjectRoot: async (sessionId, projectId) => {

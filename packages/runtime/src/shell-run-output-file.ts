@@ -27,6 +27,7 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { ShellRunRecord } from '@maka/core/shell-run';
+import { trimTrailingNewlines } from './bash-output-limits.js';
 
 /**
  * Both ids reach a path join, and one of them reaches a recursive delete, so
@@ -56,10 +57,10 @@ export function shellRunOutputFileContent(record: ShellRunRecord): string {
     output.mode === 'pty'
       ? output.screen
       : [output.stdout, output.stderr]
-          .map((part) => part.replace(/\n+$/u, ''))
+          .map(trimTrailingNewlines)
           .filter((part) => part !== '')
           .join('\n');
-  const trimmed = body.replace(/\n+$/u, '');
+  const trimmed = trimTrailingNewlines(body);
   const note = truncated(output)
     ? '\n[Output was truncated; only the tail is shown. Re-run narrowing the output to see more.]'
     : '';

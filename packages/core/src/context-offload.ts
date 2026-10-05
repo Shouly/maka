@@ -76,6 +76,14 @@ export type ContextOffloadReadResult =
       readonly reason: 'not_found' | 'session_mismatch' | 'too_large' | 'corrupt' | 'unavailable';
     };
 
+/** A reference's record without its bytes, failing as a read of it would. */
+export type ContextOffloadStatResult =
+  | { readonly ok: true; readonly record: ContextOffloadRecord }
+  | {
+      readonly ok: false;
+      readonly reason: 'not_found' | 'session_mismatch' | 'too_large' | 'corrupt' | 'unavailable';
+    };
+
 export interface ContextOffloadUsage {
   readonly references: number;
   readonly logicalBytes: number;
@@ -117,6 +125,11 @@ export interface ReadImageSnapshotReader {
   read(input: SessionContextRef): Promise<ContextOffloadReadResult>;
 }
 
+/** Looks up a Read image snapshot's record, its size among it, without reading it. */
+export interface ReadImageSnapshotSizeReader {
+  stat(input: SessionContextRef): Promise<ContextOffloadStatResult>;
+}
+
 export interface ReadImageSnapshotStore extends ReadImageSnapshotReader {
   snapshot(input: {
     /** Stable identity of the Read result within its Session. */
@@ -146,6 +159,13 @@ export interface ContextOffloadStore {
     readonly refId: string;
     readonly maxBytes: number;
   }): Promise<ContextOffloadReadResult>;
+
+  /** The record `read` would return with the same input, without reading the bytes. */
+  stat(input: {
+    readonly sessionId: string;
+    readonly refId: string;
+    readonly maxBytes: number;
+  }): Promise<ContextOffloadStatResult>;
 
   copyReferences(input: {
     readonly sourceSessionId: string;

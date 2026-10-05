@@ -30,11 +30,7 @@ import {
 } from '../apply-patch-file.js';
 
 import { computeEditedSource } from '../edit-replace.js';
-import {
-  READ_MAX_CONTENT_BYTES,
-  readTextLineWindowFacts,
-  readTooLargeMessage,
-} from '../text-line-window.js';
+import { ReadRefusedError, readFileLineWindow } from '../text-line-window.js';
 import { createEditUnifiedDiff, createUnifiedDiff } from '../unified-diff.js';
 import {
   compareAndDeleteEntry,
@@ -226,18 +222,14 @@ export async function executeFilesystemOperation(
           );
         }
       }
-      if (!operation.limit && (operation.offset ?? 1) <= 1) {
-        // The whole file is the answer, so its size decides before it is read.
-        const size = (await fs.stat(path)).size;
-        if (size > READ_MAX_CONTENT_BYTES) {
-          throw operationError('filesystem_error', readTooLargeMessage(size));
-        }
-      }
-      const content = await fs.readFile(path, 'utf8');
-      const window = readTextLineWindowFacts(content, operation.offset, operation.limit);
-      const bytes = Buffer.byteLength(window.content, 'utf8');
-      if (bytes > READ_MAX_CONTENT_BYTES) {
-        throw operationError('filesystem_error', readTooLargeMessage(bytes));
+      let window: Awaited<ReturnType<typeof readFileLineWindow>>;
+      try {
+        window = await readFileLineWindow(path, operation.offset, operation.limit);
+      } catch (error) {
+        // The refusal is the model's answer; a generic mapping would lose it.
+        if (error instanceof ReadRefusedError)
+          throw operationError('filesystem_error', error.message);
+        throw error;
       }
       return {
         kind: 'read',
@@ -245,6 +237,7 @@ export async function executeFilesystemOperation(
         startLine: window.startLine,
         totalLines: window.totalLines,
         ...(window.beyondEnd ? { beyondEnd: true } : {}),
+        ...(window.moreLines ? { moreLines: true } : {}),
       };
     }
     case 'write': {

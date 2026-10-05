@@ -55,6 +55,7 @@ import {
 import { type RuntimeCommitSink } from '@maka/runtime/runtime-commit-sink';
 import {
   createAttachmentByteReader,
+  createAttachmentSizeReader,
   createReadImageSnapshotPlanner,
   type InteractiveArtifactStoreWriter,
 } from '@maka/storage/artifact-stores';
@@ -107,7 +108,7 @@ type HostExecutionRuntimePolicyAuthority = {
 
 type HostExecutionArtifactAuthority = Pick<
   InteractiveArtifactStoreWriter,
-  'create' | 'readDurableAttachmentBinary'
+  'create' | 'readDurableAttachmentBinary' | 'readDurableAttachmentSize'
 >;
 
 type HostExecutionUsageAuthority = {
@@ -364,6 +365,20 @@ async function buildHostAiSdkBackend(
   const planProjectionImage = createReadImageSnapshotPlanner(input.artifacts);
 
   try {
+    // One snapshot reader serves both the bytes and the sizes of Read images.
+    const imageSnapshots = {
+      ...(input.contextOffload
+        ? {
+            readImageSnapshots: createReadImageSnapshotReader(
+              input.contextOffload,
+              input.context.sessionId,
+            ),
+          }
+        : {}),
+      ...(!input.contextOffload && input.contextOffloadUnavailable
+        ? { readImageSnapshotsUnavailable: true }
+        : {}),
+    };
     return new HostAiSdkBackend(
       {
         sessionId: input.context.sessionId,
@@ -427,17 +442,12 @@ async function buildHostAiSdkBackend(
         readAttachmentBytes: createAttachmentByteReader({
           artifactStore: input.artifacts,
           sessionId: input.context.sessionId,
-          ...(input.contextOffload
-            ? {
-                readImageSnapshots: createReadImageSnapshotReader(
-                  input.contextOffload,
-                  input.context.sessionId,
-                ),
-              }
-            : {}),
-          ...(!input.contextOffload && input.contextOffloadUnavailable
-            ? { readImageSnapshotsUnavailable: true }
-            : {}),
+          ...imageSnapshots,
+        }),
+        readAttachmentSize: createAttachmentSizeReader({
+          artifactStore: input.artifacts,
+          sessionId: input.context.sessionId,
+          ...imageSnapshots,
         }),
         prepareDurableProjectionArtifact: ({ turnId, bytes, mediaType }) =>
           planProjectionImage({

@@ -65,6 +65,9 @@ import { NARRATION_SHOW_THRESHOLD, scoreNarration } from '../../lib/narration-fo
 import { deriveTurnActivity, deriveWorkingMarkActivity } from '../../lib/turn-activity.js';
 import { JumpToLatest } from '../../components/session/HistoryControls.js';
 import { getTranscriptCopy } from '../../locales/transcript-copy.js';
+import { detectPlatform } from '../../lib/platform.js';
+import { savedOutputRevealer, sessionHostViewsClientPath } from '../new-task-store.js';
+import type { DesktopNewTaskCatalog } from '../../bridge/new-tasks.js';
 
 function render(text: string) {
   const html = renderToStaticMarkup(
@@ -1431,6 +1434,285 @@ test('a long tool output is watched at its tail while it runs, not only once it 
     note.compareDocumentPosition(body) & 4,
     4,
     'the note precedes the body, because what was dropped came before it',
+  );
+});
+
+// A Bash output too long to show is saved to a file, and its result holds only
+// the START of it. The block shows that start from its first line, says how
+// big the whole output is and that it is in a file, and offers the file. A
+// result with no saved file keeps the watched tail and the plain truncated
+// label, as before.
+function settledTerminal(
+  stdout: string,
+  savedOutput?: { path: string; chars: number; truncated: boolean },
+): ToolActivityItem {
+  return {
+    toolUseId: 'tool-saved',
+    toolName: 'Bash',
+    activityKind: 'command',
+    status: 'completed',
+    args: { command: 'npm test' },
+    result: {
+      kind: 'terminal',
+      cwd: '/workspace',
+      cmd: 'npm test',
+      status: 'completed',
+      exitCode: 0,
+      output: {
+        mode: 'pipes',
+        stdout,
+        stderr: '',
+        stdoutTruncated: true,
+        stderrTruncated: false,
+        redacted: false,
+      },
+      ...(savedOutput ? { savedOutput } : {}),
+    },
+  } as unknown as ToolActivityItem;
+}
+
+const SAVED_PATH = '/tmp/maka/tool-results/session-1/result.txt';
+
+// The reveal is offered through the decision the session view makes: only
+// when the session's Host is on this machine, and only for a file in that
+// session's own folder.
+const LOCAL_SESSION = { profileId: 'local', runtimeHostId: 'host-local' };
+const REMOTE_SESSION = { profileId: 'remote', runtimeHostId: 'host-remote' };
+const HOST_CATALOG = {
+  defaultProfileId: 'local',
+  hosts: [
+    {
+      profile: { id: 'local' },
+      hostId: 'host-local',
+      readiness: 'ready',
+      state: 'available',
+      capabilities: { viewClientPath: true },
+    },
+    {
+      profile: { id: 'remote' },
+      hostId: 'host-remote',
+      readiness: 'ready',
+      state: 'available',
+      capabilities: { viewClientPath: false },
+    },
+  ],
+} as unknown as DesktopNewTaskCatalog;
+
+function savedOutputContext(
+  session: { profileId: string; runtimeHostId: string },
+  revealed: string[] = [],
+  sessionId = 'session-1',
+) {
+  return {
+    onOpenExternal: () => {},
+    savedOutputReveal: savedOutputRevealer(
+      sessionId,
+      sessionHostViewsClientPath(HOST_CATALOG, session),
+      (path) => revealed.push(path),
+    ),
+  };
+}
+
+test('a saved Bash output shows its start, its size, and where the file is', () => {
+  const revealed: string[] = [];
+  const document = renderTree(
+    createElement(
+      Fragment,
+      null,
+      renderToolContent(
+        settledTerminal('> maka@1.0.0 test\nfirst result line', {
+          path: SAVED_PATH,
+          chars: 40_123,
+          truncated: false,
+        }),
+        savedOutputContext(LOCAL_SESSION, revealed),
+      ),
+    ),
+  );
+  const text = document.documentElement.textContent ?? '';
+  const copy = getTranscriptCopy('en').result.savedOutput;
+  assert.ok(text.includes('> maka@1.0.0 test'), 'the start of the output is on screen');
+  const line = document.querySelector('[data-maka-saved-output]');
+  assert.equal(line?.textContent, copy.full(40_123));
+  assert.ok(line?.textContent?.includes('40,123'), 'the size is grouped like other counts');
+  assert.ok(
+    !text.includes('Output truncated'),
+    'the saved line replaces the plain truncated label',
+  );
+  const buttons = [...document.querySelectorAll('[data-maka-tool-handoff]')];
+  assert.deepEqual(
+    buttons.map((button) => button.textContent),
+    [getTranscriptCopy('en').delivery.showIn[detectPlatform()]],
+    'one action, worded as the delivered-file card reveals a file',
+  );
+  assert.ok(!text.includes('Open file'), 'the block offers no way to open the file');
+  assert.equal(revealed.length, 0, 'nothing is revealed until the button is pressed');
+});
+
+test('a saved Bash output offers no reveal for a Host on another machine', () => {
+  const render = (context: ReturnType<typeof savedOutputContext>) =>
+    renderTree(
+      createElement(
+        Fragment,
+        null,
+        renderToolContent(
+          settledTerminal('head', { path: SAVED_PATH, chars: 40_123, truncated: false }),
+          context,
+        ),
+      ),
+    );
+  const remote = render(savedOutputContext(REMOTE_SESSION));
+  assert.equal(remote.querySelector('[data-maka-tool-handoff]'), null, 'remote: no button');
+  assert.ok(
+    remote.querySelector('[data-maka-saved-output]'),
+    'the saved line still says the output was saved',
+  );
+  assert.ok(render(savedOutputContext(LOCAL_SESSION)).querySelector('[data-maka-tool-handoff]'));
+
+  // Only the catalog's own, available Host for that profile counts as local.
+  assert.equal(sessionHostViewsClientPath(HOST_CATALOG, LOCAL_SESSION), true);
+  assert.equal(sessionHostViewsClientPath(HOST_CATALOG, REMOTE_SESSION), false);
+  assert.equal(
+    sessionHostViewsClientPath(HOST_CATALOG, { profileId: 'local', runtimeHostId: 'replaced' }),
+    false,
+    'a Session from a Host that has since been replaced',
+  );
+  assert.equal(sessionHostViewsClientPath(undefined, LOCAL_SESSION), false, 'no catalog yet');
+  assert.equal(sessionHostViewsClientPath(HOST_CATALOG, undefined), false, 'no Session row');
+  const reconnecting = {
+    defaultProfileId: 'local',
+    hosts: [{ profile: { id: 'local' }, readiness: 'reconnecting' }],
+  } as unknown as DesktopNewTaskCatalog;
+  assert.equal(sessionHostViewsClientPath(reconnecting, LOCAL_SESSION), false);
+});
+
+test('a saved output from the session a branch was made from offers no reveal', () => {
+  const render = (path: string, sessionId: string) =>
+    renderTree(
+      createElement(
+        Fragment,
+        null,
+        renderToolContent(
+          settledTerminal('head', { path, chars: 40_123, truncated: false }),
+          savedOutputContext(LOCAL_SESSION, [], sessionId),
+        ),
+      ),
+    );
+  // A branch keeps the results it was made from, and their files stay in the
+  // source session's folder, which main does not reveal for the branch.
+  const inherited = render(SAVED_PATH, 'branch-1');
+  assert.equal(inherited.querySelector('[data-maka-tool-handoff]'), null, 'no button');
+  assert.ok(
+    inherited.querySelector('[data-maka-saved-output]'),
+    'the saved line still says the output was saved',
+  );
+  assert.ok(render(SAVED_PATH, 'session-1').querySelector('[data-maka-tool-handoff]'));
+
+  const revealed: string[] = [];
+  const reveal = savedOutputRevealer('session-1', true, (path) => revealed.push(path));
+  reveal(SAVED_PATH)?.();
+  assert.deepEqual(revealed, [SAVED_PATH], 'the reveal is of the path the block shows');
+  const windowsPath = 'C:\\Users\\me\\AppData\\Local\\Temp\\maka\\tool-results\\session-1\\r.txt';
+  assert.ok(reveal(windowsPath), 'a Windows path is read by its folder too');
+  assert.equal(reveal('/tmp/maka/tool-results/other-session/result.txt'), undefined);
+  assert.equal(
+    reveal('/tmp/maka/tool-results/session-1'),
+    undefined,
+    'the folder itself is no file',
+  );
+  assert.equal(
+    savedOutputRevealer('session-1', false, () => assert.fail('never revealed'))(SAVED_PATH),
+    undefined,
+    'a Host on another machine reveals nothing',
+  );
+});
+
+test('a saved output not kept whole says so without naming a size limit', () => {
+  const document = renderTree(
+    createElement(
+      Fragment,
+      null,
+      renderToolContent(
+        settledTerminal('head', { path: SAVED_PATH, chars: 67_108_000, truncated: true }),
+        savedOutputContext(LOCAL_SESSION),
+      ),
+    ),
+  );
+  const en = getTranscriptCopy('en').result.savedOutput;
+  assert.equal(
+    document.querySelector('[data-maka-saved-output]')?.textContent,
+    en.truncated(67_108_000),
+  );
+  // A cut at the size limit and a long line left out read the same, and true.
+  assert.equal(
+    en.truncated(1_234),
+    'Showing the start. The output was too large to save whole: the file holds 1,234 characters of it, with a line marking what was left out.',
+  );
+  assert.equal(
+    getTranscriptCopy('zh-CN').result.savedOutput.truncated(1_234),
+    '仅显示开头。输出太大，没能完整保存：文件里保存了其中 1,234 个字符，缺少的部分有标记。',
+  );
+  assert.equal(
+    getTranscriptCopy('zh-TW').result.savedOutput.truncated(1_234),
+    '僅顯示開頭。輸出太大，沒能完整儲存：檔案裡儲存了其中 1,234 個字元，缺少的部分有標記。',
+  );
+  for (const locale of ['en', 'zh-CN', 'zh-TW'] as const) {
+    const copy = getTranscriptCopy(locale).result.savedOutput;
+    assert.doesNotMatch(copy.truncated(1_234), /MiB|64/u, `${locale}: no hard-coded size`);
+    assert.notEqual(copy.full(1_234), copy.truncated(1_234));
+  }
+  assert.equal(
+    en.full(1_234),
+    'Showing the start. The full output (1,234 characters) is saved to a file.',
+  );
+});
+
+test('a saved output too long for the block keeps its head, and an unsaved one its tail', () => {
+  const lines = Array.from({ length: TOOL_LINE_CAP + 40 }, (_, index) => `line ${index}`);
+  const first = lines[0]!;
+  const last = lines.at(-1)!;
+  const render = (savedOutput?: { path: string; chars: number; truncated: boolean }) => {
+    const document = renderTree(
+      createElement(
+        Fragment,
+        null,
+        renderToolContent(settledTerminal(lines.join('\n'), savedOutput), {
+          onOpenExternal: () => {},
+        }),
+      ),
+    );
+    // The command is the first code block, the output the second.
+    const body = document.querySelectorAll('.custom-code-highlight')[1];
+    assert.ok(body, 'the output body is on screen');
+    const shown = [...body.querySelectorAll('code')].map((line) => line.textContent ?? '');
+    const note = [...document.querySelectorAll('p')].find((row) =>
+      (row.textContent ?? '').includes('40 lines hidden'),
+    );
+    assert.ok(note, 'the dropped-line count is reported');
+    return { document, body, shown, note };
+  };
+
+  const saved = render({ path: SAVED_PATH, chars: 900_000, truncated: false });
+  assert.equal(saved.shown[0], first, 'a saved output is shown from its first line');
+  assert.ok(!saved.shown.includes(last), 'what the block drops is the end of the preview');
+  assert.equal(
+    saved.body.compareDocumentPosition(saved.note) & 4,
+    4,
+    'the note follows the body, because what was dropped came after it',
+  );
+
+  const unsaved = render();
+  assert.equal(unsaved.shown.at(-1), last, 'an unsaved output keeps its newest line');
+  assert.ok(!unsaved.shown.includes(first));
+  assert.equal(
+    unsaved.note.compareDocumentPosition(unsaved.body) & 4,
+    4,
+    'the note precedes the body, because what was dropped came before it',
+  );
+  assert.equal(unsaved.document.querySelector('[data-maka-saved-output]'), null);
+  assert.ok(
+    (unsaved.document.documentElement.textContent ?? '').includes('Output truncated'),
+    'the plain truncated label is unchanged',
   );
 });
 

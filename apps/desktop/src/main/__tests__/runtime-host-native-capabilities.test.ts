@@ -18,13 +18,25 @@
  */
 
 import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
+import type { McpCallResult, McpToolBinding } from '@maka/core/mcp';
 import { buildComputerUseTools, type ComputerUseToolSet } from '@maka/runtime/computer-use-tools';
 import { type CuDispatchBackend } from '@maka/runtime/computer-use-types';
+import {
+  buildMcpTools,
+  buildMcpToolsWithIdentities,
+  mcpResultFileText,
+  type McpToolProvider,
+} from '@maka/runtime/mcp-tools';
 import { type MakaTool, type MakaToolContext } from '@maka/runtime/tool-runtime';
 import type { ClientCapabilityProvider } from '@maka/runtime-host/client';
 import {
+  CLIENT_CAPABILITY_MAX_RESULT_BYTES,
   decodeClientCapabilityReplaceInput,
+  decodeClientCapabilityResult,
   type ClientCapabilityAdmissionEvidence,
   type ClientCapabilityCallFrame,
   type ClientCapabilityServiceCallFrame,
@@ -1395,5 +1407,182 @@ test('WorkHub groups receive their target epoch and join Desktop interaction tur
   const result = await call(provider, frame);
   assert.deepEqual(watched, [[frame.sessionId, frame.turnId]]);
   assert.deepEqual(result.content, [{ type: 'text', text: frame.sessionId }], 'WorkHub authority sees the real Host Session id, not a native resource alias');
+  await provider.close();
+});
+
+// An MCP tool connected on this Desktop runs here, and the Host bounds its
+// result: saves what is too long to show. So the result crosses whole.
+function mcpProvider(result: McpCallResult): McpToolProvider {
+  return {
+    toolSnapshot: () => ({
+      revision: 1,
+      tools: [
+        {
+          descriptor: { serverId: 'srv', name: 'fetch', inputSchema: { type: 'object' } },
+          binding: 'binding' as unknown as McpToolBinding,
+        },
+      ],
+    }),
+    callTool: async () => result,
+  };
+}
+
+function desktopMcpProvider(result: McpCallResult) {
+  const [identified] = buildMcpToolsWithIdentities(mcpProvider(result));
+  if (!identified) throw new Error('Expected an MCP tool');
+  return createDesktopNativeCapabilityProvider({
+    browserTools: [],
+    resolveBrowserUrl: () => 'https://example.com/',
+    releaseBrowserSession() {},
+    computerUseTools: [] as never,
+    releaseDesktopInteractionSession() {},
+    additionalGroups: () => [
+      {
+        offerId: 'desktop_mcp_srv',
+        label: 'MCP: srv',
+        description: 'MCP tools connected by this Desktop client.',
+        dynamic: true,
+        mcpResults: true,
+        tools: [{ tool: identified.tool, serverId: 'srv', toolName: 'fetch' }],
+      },
+    ],
+  });
+}
+
+const mcpFrame = capabilityFrame({
+  offerId: 'desktop_mcp_srv',
+  serverId: 'srv',
+  toolName: 'fetch',
+  arguments: {},
+});
+
+/** What the Host makes of a result it received: the model's text, and the saved file's. */
+async function hostBounds(received: McpCallResult): Promise<{ notice: string; file: string }> {
+  const root = await mkdtemp(join(tmpdir(), 'maka-desktop-mcp-'));
+  try {
+    const [hostTool] = buildMcpTools(mcpProvider(received), {
+      toolResultRoot: root,
+      executionLocation: 'remote',
+    });
+    const output = (await hostTool!.impl(
+      {},
+      {
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        cwd: '/workspace',
+        toolCallId: 'tool-call-1',
+        abortSignal: new AbortController().signal,
+        emitOutput() {},
+      },
+    )) as McpCallResult;
+    const notice = output.content[0]?.type === 'text' ? output.content[0].text : '';
+    const path = /saved to (\S+);/u.exec(notice)?.[1] ?? assert.fail(`Not saved: ${notice}`);
+    return { notice, file: await readFile(path, 'utf8') };
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+/** The result as the channel sends it and the Host decodes it. */
+function overTheWire(result: unknown): McpCallResult {
+  return decodeClientCapabilityResult(JSON.parse(JSON.stringify(result))) as McpCallResult;
+}
+
+test('a Desktop MCP result reaches the Host whole, and the Host saves all of it', async () => {
+  const result: McpCallResult = {
+    content: [
+      { type: 'text', text: 'line\n'.repeat(96_000) },
+      { type: 'resource', uri: 'file:///notes.md', mimeType: 'text/markdown', text: '# notes\nbody\n' },
+    ],
+    structuredContent: {
+      rows: Array.from({ length: 2_000 }, (_, index) => ({ index, label: `value ${index}` })),
+    },
+  };
+  const provider = desktopMcpProvider(result);
+  const sent = await call(provider, mcpFrame);
+  assert.deepEqual(sent, result, 'every block and structuredContent, as the server sent them');
+  const received = overTheWire(sent);
+  assert.deepEqual(received, result);
+
+  const { notice, file } = await hostBounds(received);
+  assert.match(notice, /^Output too long to show \([\d,]+ characters\)\. The full output is saved to /u);
+  assert.equal(file, mcpResultFileText(result).text);
+  assert.ok(file.startsWith(`--- text ---\n${'line\n'.repeat(96_000)}`));
+  assert.ok(file.includes('--- resource file:///notes.md (text/markdown) ---\n# notes\nbody\n'));
+  assert.ok(file.includes('"label": "value 1999"'));
+  assert.ok(!file.includes('truncated'));
+  await provider.close();
+});
+
+test('a Desktop MCP result the protocol cannot carry as it is reaches the Host as its saved text', async () => {
+  // More JSON nodes than the protocol takes in structuredContent.
+  const result: McpCallResult = {
+    content: [
+      { type: 'text', text: 'summary' },
+      { type: 'image', data: 'aW1n', mimeType: 'image/png' },
+    ],
+    structuredContent: {
+      rows: Array.from({ length: 3_000 }, (_, index) => ({ index, label: `value ${index}` })),
+    },
+  };
+  assert.throws(() => overTheWire(result));
+  const provider = desktopMcpProvider(result);
+  const sent = await call(provider, mcpFrame);
+  assert.deepEqual(sent, {
+    content: [
+      { type: 'text', text: mcpResultFileText(result).text },
+      { type: 'image', data: 'aW1n', mimeType: 'image/png' },
+    ],
+  });
+  assert.deepEqual(overTheWire(sent), sent);
+
+  // Without the image the Host saves it, every row in the file.
+  const textOnly: McpCallResult = { ...result, content: [{ type: 'text', text: 'summary' }] };
+  const fallback = overTheWire(await call(desktopMcpProvider(textOnly), mcpFrame));
+  const { file } = await hostBounds(fallback);
+  assert.ok(file.startsWith('--- text ---\n--- text ---\nsummary\n--- structuredContent ---\n{\n'));
+  assert.ok(file.includes('"label": "value 2999"'));
+  await provider.close();
+});
+
+test('a Desktop MCP result past the protocol byte limit fails the call', async () => {
+  const provider = desktopMcpProvider({
+    content: [{ type: 'text', text: 'x'.repeat(CLIENT_CAPABILITY_MAX_RESULT_BYTES) }],
+  });
+  await assert.rejects(call(provider, mcpFrame), /larger than the 24 MiB this Desktop client can return/u);
+  await provider.close();
+});
+
+test('a tool outside an MCP group still returns the text the model is shown', async () => {
+  const [identified] = buildMcpToolsWithIdentities(
+    mcpProvider({ content: [{ type: 'text', text: 'z'.repeat(150_000) }] }),
+  );
+  const provider = createDesktopNativeCapabilityProvider({
+    browserTools: [],
+    resolveBrowserUrl: () => 'https://example.com/',
+    releaseBrowserSession() {},
+    computerUseTools: [] as never,
+    releaseDesktopInteractionSession() {},
+    additionalGroups: () => [
+      {
+        offerId: 'desktop_settings',
+        label: 'Client settings',
+        description: 'Client settings',
+        tools: [identified!.tool],
+      },
+    ],
+  });
+  const published = provider.offers()[0]?.tools[0] ?? assert.fail('Expected the tool');
+  const sent = await call(
+    provider,
+    capabilityFrame({
+      offerId: 'desktop_settings',
+      serverId: published.serverId,
+      toolName: published.name,
+      arguments: {},
+    }),
+  );
+  assert.equal(sent.content.length, 1);
+  assert.ok(sent.content[0]?.type === 'text' && sent.content[0].text.length < 150_000);
   await provider.close();
 });

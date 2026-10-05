@@ -18,6 +18,7 @@
  */
 
 import { purgeSessionShellRunOutputFiles } from '@maka/runtime/shell-run-output-file';
+import { purgeSessionToolResultFiles } from '@maka/runtime/tool-result-file';
 import type { InteractiveArtifactStoreWriter } from '@maka/storage/artifact-stores';
 import type { InteractiveSessionTaskWriter } from '@maka/storage/session-task-authority';
 import type { InteractiveContextOffloadWriter } from '@maka/storage/context-offload-store';
@@ -29,6 +30,8 @@ export interface SessionSidecarPurgeAuthority {
   readonly purgeOperationalState: (sessionId: string) => Promise<void>;
   /** Where background command output was written for this Session to Read. */
   readonly taskOutputRoot?: string;
+  /** Where tool results too long to show were saved for this Session to Read. */
+  readonly toolResultRoot?: string;
 }
 
 export async function purgeSessionSidecars(
@@ -42,6 +45,9 @@ export async function purgeSessionSidecars(
     authority.purgeOperationalState(sessionId),
     ...(authority.taskOutputRoot !== undefined
       ? [purgeSessionShellRunOutputFiles(authority.taskOutputRoot, sessionId)]
+      : []),
+    ...(authority.toolResultRoot !== undefined
+      ? [purgeSessionToolResultFiles(authority.toolResultRoot, sessionId)]
       : []),
   ]);
   const failures = outcomes.flatMap((outcome) =>

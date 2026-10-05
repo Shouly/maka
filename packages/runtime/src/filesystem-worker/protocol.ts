@@ -20,10 +20,15 @@
 import { z } from 'zod';
 import { validateSandboxBoundaryExpansion } from '@maka/core/sandbox-boundary';
 
+// v12 bounds Read by tokens rather than bytes: a whole-file read past the
+// limit answers with its first page, and a named range past it is refused.
+// Past the lines shown the file is counted only so far; when the count stops
+// short, the answer carries `moreLines`. Only a regular file is read.
+//
 // v11 numbers Read from 1: `offset` is the first line's number, a file that
 // ends in a newline has an empty last line, and the answer carries
 // `startLine`, `totalLines` and `beyondEnd` in place of `truncated`. A read
-// larger than 256KB is refused. Grep searches hidden files, drops the
+// larger than 256KB was refused. Grep searches hidden files, drops the
 // per-file match cap and a required `limit`, and counts every file in count
 // mode. Write and Edit drop `allowOverwrite` and
 // `allowEdit`: a file the session never read may be written and edited, and
@@ -53,7 +58,7 @@ import { validateSandboxBoundaryExpansion } from '@maka/core/sandbox-boundary';
 // inode that was authorised at lock acquisition instead of only the path
 // string. The identity is carried as strings because bigint cannot cross the
 // JSON protocol boundary.
-export const FILESYSTEM_WORKER_PROTOCOL_VERSION = 11 as const;
+export const FILESYSTEM_WORKER_PROTOCOL_VERSION = 12 as const;
 
 /** Ripgrep output shapes the Grep tool can ask the worker for. */
 export const GREP_OUTPUT_MODES = ['content', 'files_with_matches', 'count'] as const;
@@ -256,6 +261,8 @@ export const FilesystemWorkerResultSchema = z.discriminatedUnion('kind', [
       totalLines: z.number().int().nonnegative(),
       /** `offset` named a line past the end, so nothing was returned. */
       beyondEnd: z.boolean().optional(),
+      /** The count stopped short of the end: the file has more than `totalLines` lines. */
+      moreLines: z.boolean().optional(),
     })
     .strict(),
   z

@@ -172,7 +172,14 @@ export const RUNTIME_HOST_PROTOCOL_VERSION = 0 as const;
 // and Artifact sources as closed lists and context budgets by their exact
 // keys, so it rejects an old Host's archived rows, archive Artifacts and
 // budgets that carry those fields.
-export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 170 as const;
+// 171: a Bash result too long to show is saved to a file. Its terminal result
+// may carry `savedOutput` (the file's path, its length, and whether it was
+// cut), with `output` holding the preview the model was shown. An old client
+// decodes terminal results by their exact keys and rejects it.
+// 172: a compaction decision in a context budget may carry
+// `summarizerOmittedToolOutputs`, the tool outputs a summary was made without.
+// An old client decodes context budgets by their exact keys and rejects it.
+export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 172 as const;
 // 155: A tool call is on the wire while the model is still writing it.
 // `subscription.session_event` carries `tool_input_start` and
 // `tool_input_delta`, which a Client that does not know them decodes as an

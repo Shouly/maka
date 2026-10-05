@@ -93,17 +93,6 @@ import {
 } from './provider-image-overflow-recovery.js';
 
 /**
- * Image byte allowance for one turn, accumulated across its provider steps.
- *
- * Charged while a request's content is materialized, so it belongs to the turn
- * issuing that request — never to the backend, which serves several turns.
- */
-export interface ProviderImageBudget {
-  used: number;
-  decisions: Map<string, boolean>;
-}
-
-/**
  * The turn a provider request is being built for.
  *
  * Compaction runs inside someone's turn but is owned by a Session-scoped
@@ -115,7 +104,6 @@ export interface ProviderImageBudget {
  */
 export interface ProviderRequestOrigin {
   runId: string | undefined;
-  imageBudget: ProviderImageBudget;
 }
 
 /** Constructor dependencies for AiSdkCompaction. */
@@ -138,14 +126,8 @@ export interface AiSdkCompactionDeps {
     runId: string | undefined;
     historyCompactRoute?: ModelCallAttempt['historyCompactRoute'];
   }) => ProviderRequestTracker | undefined;
-  /**
-   * Materialize a replay plan. The image budget belongs to the turn whose
-   * request this replacement is built for, so it is passed in rather than read
-   * from the backend, which may be serving several turns at once.
-   */
   materializeRuntimeReplayPlan: (
     plan: RuntimeEventModelReplayPlan,
-    imageBudget: ProviderImageBudget,
     checkpoint: HistoryCompactCheckpoint | undefined,
     providerReasoningReplayEventIds: ReadonlySet<string>,
   ) => Promise<ModelMessage[]>;
@@ -168,7 +150,6 @@ export class AiSdkCompaction {
   }) => ProviderRequestTracker | undefined;
   private readonly materializeRuntimeReplayPlan: (
     plan: RuntimeEventModelReplayPlan,
-    imageBudget: ProviderImageBudget,
     checkpoint: HistoryCompactCheckpoint | undefined,
     providerReasoningReplayEventIds: ReadonlySet<string>,
   ) => Promise<ModelMessage[]>;
@@ -278,6 +259,13 @@ export class AiSdkCompaction {
           ? { historyCompactRoute: this.input.historyCompactRoute }
           : {}),
       });
+      const acceptedInputTokens = persistedRequestAnchor(
+        input.runtimeContext,
+        input.runtimeContextInvocations ?? [],
+        this.input.modelId,
+        this.targetConnectionId,
+      )?.inputTokens;
+      let summarizerOmittedToolOutputs: number | undefined;
       const plan = await planHistoryCompaction({
         sessionId: this.sessionId,
         phase: 'standalone',
@@ -303,6 +291,7 @@ export class AiSdkCompaction {
           newlyFoldedRuntimeEvents,
           previousCheckpoint,
         }) => {
+          summarizerOmittedToolOutputs = undefined;
           return await this.summarizeWithFailureCircuit(summarizer, {
             sessionId: this.sessionId,
             turnId: input.turnId,
@@ -315,6 +304,10 @@ export class AiSdkCompaction {
             },
             newlyFoldedRuntimeEvents: [...newlyFoldedRuntimeEvents],
             ...(previousCheckpoint ? { previousCheckpoint } : {}),
+            ...(acceptedInputTokens !== undefined ? { acceptedInputTokens } : {}),
+            onToolOutputsOmitted: (count) => {
+              summarizerOmittedToolOutputs = count;
+            },
             abortSignal: historyCompactAbortController.signal,
             ...(tracker ? { providerRequestTracker: tracker } : {}),
           });
@@ -382,6 +375,7 @@ export class AiSdkCompaction {
             },
             estimatedTokensBefore: plan.estimatedTokensBefore,
             estimatedTokensAfter: plan.estimatedTokensAfter,
+            ...(summarizerOmittedToolOutputs !== undefined ? { summarizerOmittedToolOutputs } : {}),
           }),
         }),
       };
@@ -545,6 +539,7 @@ export class AiSdkCompaction {
     if (persisted) {
       state.baselineTokens = persisted.inputTokens + (persisted.outputTokens ?? 0);
       state.lastAcceptedTotalTokens = state.baselineTokens;
+      state.lastAcceptedInputTokens = persisted.inputTokens;
       state.priorAcceptedInputTokens = persisted.inputTokens;
     }
     if (persisted) state.replyReserveTokens = replyReserveTokens(persisted.outputTokens);
@@ -603,6 +598,7 @@ export class AiSdkCompaction {
         state.baselineTokens = usageBaselineTokens(lastUsage);
         if (state.baselineTokens !== undefined) {
           state.lastAcceptedTotalTokens = state.baselineTokens;
+          state.lastAcceptedInputTokens = lastUsage?.inputTokens;
           state.replyReserveTokens = replyReserveTokens(lastUsage?.outputTokens);
         }
       }
@@ -671,14 +667,7 @@ export class AiSdkCompaction {
         projectedMessages: outcome.replacementMessages,
       };
       state.replacedStepNumber = options.stepNumber;
-      onDiagnosticPatch(
-        buildActiveRequestCompactionDiagnosticPatch({
-          checkpoint: outcome.checkpoint,
-          estimatedTokensBefore: outcome.estimatedTokensBefore,
-          estimatedTokensAfter: outcome.estimatedTokensAfter,
-          reason: 'context_limit',
-        }),
-      );
+      onDiagnosticPatch(buildActiveRequestCompactionDiagnosticPatch(outcome, 'context_limit'));
       return { messages: outcome.replacementMessages };
     };
   }
@@ -789,6 +778,7 @@ export class AiSdkCompaction {
         diagnosticReason: 'head_anchor_not_durable',
       };
     }
+    let summarizerOmittedToolOutputs: number | undefined;
     const plan = await planHistoryCompaction({
       sessionId: this.sessionId,
       phase: input.phase ?? 'mid_turn',
@@ -807,6 +797,7 @@ export class AiSdkCompaction {
         : {}),
       ...(state.previousCheckpoint ? { previousCheckpoint: state.previousCheckpoint } : {}),
       summarize: async ({ coveredRuntimeEvents, newlyFoldedRuntimeEvents, previousCheckpoint }) => {
+        summarizerOmittedToolOutputs = undefined;
         return await this.summarizeWithFailureCircuit(summarizer, {
           sessionId: this.sessionId,
           turnId,
@@ -817,6 +808,12 @@ export class AiSdkCompaction {
           },
           ...(previousCheckpoint ? { previousCheckpoint } : {}),
           newlyFoldedRuntimeEvents: [...newlyFoldedRuntimeEvents],
+          ...(state.lastAcceptedInputTokens !== undefined
+            ? { acceptedInputTokens: state.lastAcceptedInputTokens }
+            : {}),
+          onToolOutputsOmitted: (count) => {
+            summarizerOmittedToolOutputs = count;
+          },
           ...(abortSignal ? { abortSignal } : {}),
           ...(midTurnTracker ? { providerRequestTracker: midTurnTracker } : {}),
         });
@@ -857,7 +854,6 @@ export class AiSdkCompaction {
     }
     const replacementMessages = await this.materializeRuntimeReplayPlan(
       replayPlan,
-      input.origin.imageBudget,
       plan.checkpoint,
       compatibleProviderReasoningReplayEventIds(
         plan.replacementEvents,
@@ -889,20 +885,23 @@ export class AiSdkCompaction {
       replacementMessages,
       estimatedTokensBefore: plan.estimatedTokensBefore,
       estimatedTokensAfter: plan.estimatedTokensAfter,
+      ...(summarizerOmittedToolOutputs !== undefined ? { summarizerOmittedToolOutputs } : {}),
     };
   }
 
   /**
    * Reactive overflow recovery (issue #882 PR 2): the second line of defense.
-   * When a provider rejects a request with a context-length error, fold the
-   * durable turn ledger once and resend once — a single compact-and-retry
-   * latch (pi's `_overflowRecoveryAttempted`). Returns the compacted messages
-   * to resend, or undefined when recovery is impossible or already spent, in
-   * which case the caller surfaces the real provider error rather than a
-   * fabricated success or a locally synthesized verdict (the provider — not the
-   * runtime — rejected the request). Non-context-length
-   * errors and turns without the mid-turn seam never reach compaction, so the
-   * default (no seam) behavior is already better than the old fake end_turn.
+   * When a provider rejects a request with a context-length error, give back
+   * the historical images it carries and resend; when there are none, or the
+   * request is rejected again without them, fold the durable turn ledger once
+   * and resend once — a single compact-and-retry latch (pi's
+   * `_overflowRecoveryAttempted`). Returns the messages to resend and which
+   * recovery made them, or undefined when recovery is impossible or already
+   * spent, in which case the caller surfaces the real provider error rather
+   * than a fabricated success or a locally synthesized verdict (the provider —
+   * not the runtime — rejected the request). Non-context-length errors and
+   * turns without the mid-turn seam never reach compaction, so the default (no
+   * seam) behavior is already better than the old fake end_turn.
    */
   public async recoverFromOverflowError(input: {
     error: unknown;
@@ -916,23 +915,28 @@ export class AiSdkCompaction {
     onDiagnosticPatch: (patch: Partial<ContextBudgetDiagnostic>) => void;
     origin: ProviderRequestOrigin;
     abortSignal?: AbortSignal;
-  }): Promise<{ messages: ModelMessage[] } | undefined> {
+  }): Promise<{ messages: ModelMessage[]; recovery: 'images' | 'fold' } | undefined> {
     const state = input.midTurnState;
-    if (input.retryAlreadyUsed || !state) return undefined;
+    if (!state) return undefined;
     if (this.modelAdapter.classifyError(input.error) !== 'context_overflow') return undefined;
 
-    const eligibleImages = collectHistoricalImageToolResults(state.priorContentEvents);
-    const imageOmission = omitHistoricalImageToolResults(input.currentMessages, eligibleImages);
-    if (imageOmission.omittedParts > 0) {
-      state.omittedImageToolResults = new Map(
-        [...imageOmission.omittedToolCallIds].flatMap((toolCallId) => {
+    // Giving back images costs no summary and loses no text, so it goes first,
+    // once per stretch; it does not spend the fold.
+    if (!state.imageOmissionAttemptedSinceAccepted) {
+      const eligibleImages = collectHistoricalImageToolResults(state.priorContentEvents);
+      const imageOmission = omitHistoricalImageToolResults(input.currentMessages, eligibleImages);
+      if (imageOmission.omittedParts > 0) {
+        state.imageOmissionAttemptedSinceAccepted = true;
+        for (const toolCallId of imageOmission.omittedToolCallIds) {
           const image = eligibleImages.get(toolCallId);
-          return image ? [[toolCallId, image] as const] : [];
-        }),
-      );
-      state.baselineTokens = undefined;
-      return { messages: imageOmission.messages };
+          if (image) state.omittedImageToolResults.set(toolCallId, image);
+        }
+        state.baselineTokens = undefined;
+        return { messages: imageOmission.messages, recovery: 'images' };
+      }
     }
+    // The fold is the stretch's one; a request it already shaped stands rejected.
+    if (input.retryAlreadyUsed) return undefined;
 
     const phase = state.compactionPhase(input.stepNumber);
     // Entering the module spends the stretch's one attempt whether or not a
@@ -972,18 +976,20 @@ export class AiSdkCompaction {
       });
       return undefined;
     }
-    input.onDiagnosticPatch(
-      buildActiveRequestCompactionDiagnosticPatch({
-        checkpoint: outcome.checkpoint,
-        estimatedTokensBefore: outcome.estimatedTokensBefore,
-        estimatedTokensAfter: outcome.estimatedTokensAfter,
-        reason: 'overflow',
-      }),
-    );
+    input.onDiagnosticPatch(buildActiveRequestCompactionDiagnosticPatch(outcome, 'overflow'));
     // The fold replaced the request; the baseline described the rejected one.
     state.compactionAppliedThisSend = true;
     state.baselineTokens = undefined;
-    return { messages: outcome.replacementMessages };
+    // The replacement is materialized from the ledger, so images already given
+    // back would return with any of its tail that holds them.
+    return {
+      messages:
+        projectHistoricalImageOmissions(
+          outcome.replacementMessages,
+          state.omittedImageToolResults,
+        ) ?? outcome.replacementMessages,
+      recovery: 'fold',
+    };
   }
 }
 
@@ -1081,6 +1087,12 @@ export class MidTurnCapacityCompactState {
    */
   lastAcceptedTotalTokens: number | undefined;
   /**
+   * Input tokens of the last request the provider accepted, as it counted
+   * them. Survives a fold like `lastAcceptedTotalTokens`: it is the size a
+   * summarizer request is proven to fit.
+   */
+  lastAcceptedInputTokens: number | undefined;
+  /**
    * Room the next reply may need: the model's declared output limit when the
    * connection or metadata states one, else 0. A provider fact, never an
    * estimate; it lets the trigger fire before a request that would otherwise
@@ -1106,6 +1118,12 @@ export class MidTurnCapacityCompactState {
   flushedSteps = 0;
   /** Exact historical image results omitted after a provider overflow. */
   omittedImageToolResults = new Map<string, HistoricalImageToolResult>();
+  /**
+   * Historical images were given back for a rejected request since the
+   * provider last accepted one. A request rejected again without them is
+   * folded, not retried the same way.
+   */
+  imageOmissionAttemptedSinceAccepted = false;
   /** Malformed summaries spend one bounded repair budget for this whole Turn. */
   summarizerFailure: string | undefined;
   /**
@@ -1250,6 +1268,8 @@ type ActiveRequestCompactionOutcome =
       replacementMessages: ModelMessage[];
       estimatedTokensBefore: number;
       estimatedTokensAfter: number;
+      /** Tool outputs the summary was made without; see `HistoryCompactSummaryInput`. */
+      summarizerOmittedToolOutputs?: number;
     };
 
 /**
@@ -1257,13 +1277,12 @@ type ActiveRequestCompactionOutcome =
  * shared by the proactive (`reason: 'context_limit'`) and reactive
  * (`reason: 'overflow'`) triggers so both report the fold identically.
  */
-function buildActiveRequestCompactionDiagnosticPatch(input: {
-  checkpoint: HistoryCompactCheckpoint;
-  estimatedTokensBefore: number;
-  estimatedTokensAfter: number;
-  reason: string;
-}): Partial<ContextBudgetDiagnostic> {
-  const { checkpoint, estimatedTokensBefore, estimatedTokensAfter, reason } = input;
+function buildActiveRequestCompactionDiagnosticPatch(
+  outcome: Extract<ActiveRequestCompactionOutcome, { decision: 'compacted' }>,
+  reason: string,
+): Partial<ContextBudgetDiagnostic> {
+  const { checkpoint, estimatedTokensBefore, estimatedTokensAfter, summarizerOmittedToolOutputs } =
+    outcome;
   return {
     ...compactionDecisionDiagnosticPatch({
       stage: 'activeStep',
@@ -1276,6 +1295,7 @@ function buildActiveRequestCompactionDiagnosticPatch(input: {
       reason,
       estimatedTokensBefore,
       estimatedTokensAfter,
+      ...(summarizerOmittedToolOutputs !== undefined ? { summarizerOmittedToolOutputs } : {}),
     }),
   };
 }

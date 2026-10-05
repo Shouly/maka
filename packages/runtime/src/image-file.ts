@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import { constants } from 'node:fs';
 import { open, stat, readFile } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { imageDimensionsFromData } from 'image-dimensions';
@@ -39,13 +40,18 @@ export function isSupportedImagePath(path: string): boolean {
  * Whether Read treats a file as an image: its extension says so, or, when the
  * name does not, its first bytes carry an image signature. Without the second
  * test an image with no image extension was decoded as UTF-8 text. A file that
- * cannot be opened is left to the text path, which reports it as it always has.
+ * cannot be opened, or is not a regular file, is left to the text path, which
+ * reports it. It is opened without waiting: opening a pipe to read otherwise
+ * waits for a writer.
  */
 export async function isWorkspaceImage(path: string): Promise<boolean> {
   if (isSupportedImagePath(path)) return true;
-  const file = await open(path, 'r').catch(() => undefined);
+  const file = await open(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0)).catch(
+    () => undefined,
+  );
   if (!file) return false;
   try {
+    if (!(await file.stat()).isFile()) return false;
     const prefix = Buffer.alloc(ATTACHMENT_MIME_SNIFF_BYTES);
     const { bytesRead } = await file.read(prefix, 0, prefix.length, 0);
     return sniffImageMime(prefix.subarray(0, bytesRead)) !== undefined;

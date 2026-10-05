@@ -19,6 +19,7 @@
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { Readable, Writable } from 'node:stream';
+import { StringDecoder } from 'node:string_decoder';
 
 import type { ShellSpawnPlan } from './shell-detect.js';
 import {
@@ -48,7 +49,8 @@ export interface PipeProcessDriverOptions {
   env?: NodeJS.ProcessEnv;
   fdInputs?: readonly ChildFdInput[];
   outputDrainMs: number;
-  onData: (stream: 'stdout' | 'stderr', data: string) => void;
+  /** Decoded text, and how many bytes the process wrote for it. */
+  onData: (stream: 'stdout' | 'stderr', data: string, bytes: number) => void;
   onRootExit: () => void;
   onExit: (exit: PipeProcessExit) => void;
   onFailure: (error: Error) => void;
@@ -63,6 +65,11 @@ export class PipeProcessDriver {
   private readonly stderr: Readable;
   private readonly stdin: Writable | undefined;
   private readonly outputDrain: CapturedOutputDrain<PipeOutputStream>;
+  // Decoded here rather than by the stream so that the bytes are counted too.
+  private readonly decoders = {
+    stdout: new StringDecoder('utf8'),
+    stderr: new StringDecoder('utf8'),
+  };
   private disposed = false;
   private settled = false;
   private outputDrainResult: CapturedOutputDrainResult<PipeOutputStream> | undefined;
@@ -98,10 +105,12 @@ export class PipeProcessDriver {
     }
     this.stdinSettled = this.stdin === undefined;
     this.pid = this.child.pid;
-    this.stdout.setEncoding('utf8');
-    this.stderr.setEncoding('utf8');
     this.stdout.on('data', this.onStdout);
     this.stderr.on('data', this.onStderr);
+    // Before the drain tracker's own listeners: the last partial character
+    // is delivered before the stream counts as ended.
+    this.stdout.on('end', this.onStdoutEnd);
+    this.stderr.on('end', this.onStderrEnd);
     this.outputDrain = trackCapturedOutputDrain(
       [
         { key: 'stdout', stream: this.stdout },
@@ -137,6 +146,8 @@ export class PipeProcessDriver {
     this.outputDrain.dispose();
     this.stdout.off('data', this.onStdout);
     this.stderr.off('data', this.onStderr);
+    this.stdout.off('end', this.onStdoutEnd);
+    this.stderr.off('end', this.onStderrEnd);
     this.child.off('exit', this.onRootExit);
     this.child.off('close', this.onCloseFallback);
     this.child.off('error', this.onError);
@@ -145,13 +156,22 @@ export class PipeProcessDriver {
     this.stderr.destroy();
   }
 
-  private readonly onStdout = (data: string): void => {
-    if (!this.disposed && !this.settled) this.options.onData('stdout', data);
-  };
+  private readonly onStdout = (chunk: Buffer): void => this.deliver('stdout', chunk);
 
-  private readonly onStderr = (data: string): void => {
-    if (!this.disposed && !this.settled) this.options.onData('stderr', data);
-  };
+  private readonly onStderr = (chunk: Buffer): void => this.deliver('stderr', chunk);
+
+  private readonly onStdoutEnd = (): void => this.deliver('stdout');
+
+  private readonly onStderrEnd = (): void => this.deliver('stderr');
+
+  /** A chunk as text, or, at the end of the stream, a character it left unfinished. */
+  private deliver(stream: PipeOutputStream, chunk?: Buffer): void {
+    if (this.disposed || this.settled) return;
+    const decoder = this.decoders[stream];
+    const data = chunk ? decoder.write(chunk) : decoder.end();
+    const bytes = chunk?.length ?? 0;
+    if (data !== '' || bytes > 0) this.options.onData(stream, data, bytes);
+  }
 
   private readonly onRootExit = (exitCode: number | null, signal: NodeJS.Signals | null): void => {
     if (this.disposed || this.rootExit) return;

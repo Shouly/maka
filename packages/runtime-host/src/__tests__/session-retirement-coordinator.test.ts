@@ -47,6 +47,7 @@ import { SessionAdmissionGate } from '../server/session-admission-gate.js';
 import { SessionOperationLane } from '../server/session-operation-lane.js';
 import { HostSessionRetirementCoordinator } from '../server/session-retirement-coordinator.js';
 import { purgeSessionSidecars } from '../server/session-sidecar-purge.js';
+import { saveToolResultText, toolResultFilePath } from '@maka/runtime/tool-result-file';
 import { waitFor as pollFor } from '@maka/core/test-only/async-primitives';
 
 const CONNECTION_CONTEXT: ConnectionContext = {
@@ -194,6 +195,34 @@ describe('Host Session retirement coordinator', () => {
 
     assert.deepEqual(contextActions, ['retire:session-context']);
     assert.equal(garbageBatches, 0);
+  });
+
+  test("takes a retired Session's saved tool results and task output with it, and no one else's", async () => {
+    const root = await mkdtemp(join(tmpdir(), 'maka-retired-results-'));
+    try {
+      const toolResultRoot = join(root, 'tool-results');
+      const taskOutputRoot = join(root, 'tasks');
+      await saveToolResultText(toolResultFilePath(toolResultRoot, 'retired', 'call-1'), 'gone');
+      await saveToolResultText(toolResultFilePath(toolResultRoot, 'kept', 'call-1'), 'kept');
+      await fsPromises.mkdir(join(taskOutputRoot, 'retired'), { recursive: true });
+      await fsPromises.writeFile(join(taskOutputRoot, 'retired', 'run.output'), 'gone');
+
+      await purgeSessionSidecars(
+        {
+          artifacts: { purgeSessionArtifacts: async () => {} },
+          sessionTask: { purgeSessionState: async () => {} },
+          purgeOperationalState: async () => {},
+          taskOutputRoot,
+          toolResultRoot,
+        },
+        'retired',
+      );
+
+      assert.deepEqual(await fsPromises.readdir(toolResultRoot), ['kept']);
+      assert.deepEqual(await fsPromises.readdir(taskOutputRoot), []);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   test('rejects ordinary archive and remove operations for the Coordination Session', async () => {

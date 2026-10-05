@@ -2625,10 +2625,10 @@
         "useLiveTurnSnapshot": 1,
         "useQuestionPin": 1,
         "useRef": 5,
-        "useShallow": 1,
+        "useShallow": 2,
         "useShellLiveTurn": 1,
         "useState": 1,
-        "useStore": 7,
+        "useStore": 9,
         "useTranscriptScrollAuthority": 1,
         "useTurnPresentation": 1,
         "useUiLocale": 1
@@ -2654,6 +2654,7 @@
         "../../locales/shell-copy.js": 1,
         "../../locales/transcript-copy.js": 1,
         "../../store/index.js": 1,
+        "../../store/new-task-store.js": 1,
         "../../store/plan-store.js": 1,
         "../../store/revision-draft.js": 1,
         "../../store/scheduled-tasks-store.js": 1,
@@ -3244,6 +3245,7 @@
       "actionFactories": [],
       "dependencyPaths": {
         "../../../../lib/cn.js": 1,
+        "../../../../lib/platform.js": 1,
         "../../../../locales/transcript-copy.js": 1,
         "../../../../locales/workbar-copy.js": 1,
         "../../../ui/CodeRenderer.js": 1,

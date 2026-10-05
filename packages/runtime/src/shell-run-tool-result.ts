@@ -56,6 +56,10 @@ export function shellRunUpdate(record: ShellRunRecord): ShellRunUpdate {
   };
 }
 
+/**
+ * A finished foreground run as a result, its output the whole retained
+ * window: `boundTerminalResult` decides how much of it the model is shown.
+ */
 export function terminalContent(record: ShellRunRecord): TerminalToolResult {
   if (isActiveShellRunStatus(record.status) || record.status === 'orphaned') {
     throw new Error(`ShellRun status ${record.status} cannot be returned as a terminal result`);
@@ -67,7 +71,7 @@ export function terminalContent(record: ShellRunRecord): TerminalToolResult {
     status: terminalResultStatus(record.status),
     ...(record.exitCode !== undefined ? { exitCode: record.exitCode } : {}),
     ...(record.failureMessage !== undefined ? { failureMessage: record.failureMessage } : {}),
-    output: projectShellOutputForModel(record.output),
+    output: record.output,
     ...(sandboxDenialForRecord(record) ? { sandboxDenial: sandboxDenialForRecord(record) } : {}),
   };
 }

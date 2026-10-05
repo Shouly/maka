@@ -115,6 +115,7 @@
     "./shell-detect": "./dist/shell-detect.js",
     "./shell-run-contract": "./dist/shell-run-contract.js",
     "./shell-run-output-file": "./dist/shell-run-output-file.js",
+    "./tool-result-file": "./dist/tool-result-file.js",
     "./agent-types-context": "./dist/agent-types-context.js",
     "./skill-invocation": "./dist/skill-invocation.js",
     "./skills": "./dist/skills.js",

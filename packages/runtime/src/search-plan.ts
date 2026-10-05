@@ -30,12 +30,19 @@ import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import type { GrepOutputMode } from './filesystem-worker/protocol.js';
+import { formatCount, sliceAtCharacter } from './tool-result-file.js';
 
 /** How many Glob paths are listed; the rest are counted, not listed. */
 export const GLOB_RESULT_LIMIT = 100;
 
 /** How long one Glob lets ripgrep run. */
 export const GLOB_TIMEOUT_MS = 20_000;
+
+/**
+ * A content line longer than this is cut: one match in a minified file is
+ * otherwise a whole file of text.
+ */
+export const GREP_LINE_MAX_CHARS = 2_000;
 
 export interface RipgrepPlanInput {
   readonly pattern: string;
@@ -116,7 +123,8 @@ export interface GrepHeadLimitResult {
 
 /**
  * Split ripgrep's stdout into lines and apply the head limit; a missing limit
- * returns them all.
+ * returns them all. In content mode a line past {@link GREP_LINE_MAX_CHARS} is
+ * cut, and says how much of it was left out.
  *
  * `offset` pages past a window the caller has already seen, so `omitted` counts
  * only what lies BEYOND the returned window: lines the caller deliberately
@@ -131,14 +139,20 @@ export function applyGrepHeadLimit(
 ): GrepHeadLimitResult {
   const lines = stdout.split('\n').filter(Boolean);
   const start = Math.min(Math.max(Math.trunc(offset) || 0, 0), lines.length);
-  const matches = lines.slice(start, limit === undefined ? undefined : start + limit);
-  const omitted = lines.length - start - matches.length;
+  const window = lines.slice(start, limit === undefined ? undefined : start + limit);
+  const omitted = lines.length - start - window.length;
   return {
-    matches,
+    matches: mode === 'content' ? window.map(capGrepLine) : window,
     truncated: omitted > 0,
     omitted,
     ...(mode === 'count' ? { countTotal: countTotals(lines) } : {}),
   };
+}
+
+function capGrepLine(line: string): string {
+  if (line.length <= GREP_LINE_MAX_CHARS) return line;
+  const kept = sliceAtCharacter(line, GREP_LINE_MAX_CHARS);
+  return `${kept} [... ${formatCount(line.length - kept.length)} characters omitted ...]`;
 }
 
 /** `path:count` lines summed: the totals the count answer states. */

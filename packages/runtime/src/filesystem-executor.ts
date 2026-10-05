@@ -50,7 +50,7 @@ import type {
   FilesystemWorkerClientOperation,
 } from './filesystem-worker/client.js';
 import { isSupportedImagePath, type ImageMimeType } from './image-file.js';
-import { READ_MAX_CONTENT_BYTES, readTextLineWindowFacts } from './text-line-window.js';
+import { readTextLineWindowFacts } from './text-line-window.js';
 import type { FilesystemWorkerResult } from './filesystem-worker/protocol.js';
 import { operationAccess } from './filesystem-worker/protocol.js';
 import { resolveCanonicalDirectoryEntryTarget } from './path-containment.js';
@@ -430,7 +430,8 @@ function createWorkspaceFilesystemExecutor(
             path,
             ...(operation.offset !== undefined ? { offset: operation.offset } : {}),
             ...(operation.limit !== undefined ? { limit: operation.limit } : {}),
-            maxBytes: READ_MAX_CONTENT_BYTES,
+            bounded: true,
+            ...(abortSignal ? { abortSignal } : {}),
           });
           if ('bytes' in result) {
             return { kind: 'read_image', bytes: result.bytes, mimeType: result.mimeType };
@@ -449,6 +450,7 @@ function createWorkspaceFilesystemExecutor(
             startLine: window.startLine,
             totalLines: window.totalLines,
             ...(window.beyondEnd ? { beyondEnd: true } : {}),
+            ...(result.moreLines ? { moreLines: true } : {}),
           };
         }
         case 'write': {

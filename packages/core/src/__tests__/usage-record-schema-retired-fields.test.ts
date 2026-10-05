@@ -53,3 +53,23 @@ test('accepts retired context-budget keys only as inert historical data', () => 
   );
   assert.equal(isContextBudgetDiagnostic({ ...currentDiagnostic, unknownFutureKey: true }), false);
 });
+
+test('a compaction decision carries how many tool outputs its summary was made without', () => {
+  const decision = {
+    stage: 'activeStep',
+    sourceKind: 'runtimeEvents',
+    decision: 'replaced',
+    summarizerOmittedToolOutputs: 2,
+  };
+  assert.equal(
+    isContextBudgetDiagnostic({ ...currentDiagnostic, compactionDecisions: [decision] }),
+    true,
+  );
+  assert.equal(
+    isContextBudgetDiagnostic({
+      ...currentDiagnostic,
+      compactionDecisions: [{ ...decision, summarizerOmittedToolOutputs: 'two' }],
+    }),
+    false,
+  );
+});

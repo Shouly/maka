@@ -90,6 +90,45 @@ export function newTaskTargetAvailable(
 }
 
 /**
+ * Whether a Session's files are on this disk: the catalog's Host for its
+ * profile is available, is the Session's own Host, and has the
+ * `viewClientPath` capability the project popover reads. A Host on another
+ * machine never has it, so nothing offers to show one of its files here.
+ */
+export function sessionHostViewsClientPath(
+  catalog: DesktopNewTaskCatalog | undefined,
+  session: { readonly profileId: string; readonly runtimeHostId: string } | undefined,
+): boolean {
+  if (!session) return false;
+  const host = catalog?.hosts.find((entry) => entry.profile.id === session.profileId);
+  return (
+    host?.readiness === 'ready' &&
+    host.state === 'available' &&
+    host.hostId === session.runtimeHostId &&
+    host.capabilities.viewClientPath
+  );
+}
+
+/**
+ * What a Session's saved tool output offers to reveal, file by file: the
+ * reveal, or nothing. Nothing when the Session's files are not on this disk
+ * (`hostViewsClientPath`, from {@link sessionHostViewsClientPath}), and
+ * nothing for a file outside the Session's own folder: a branched or revised
+ * Session carries the results it was made from, saved under the Session they
+ * came from, and main reveals only from the folder of the Session that asks.
+ */
+export function savedOutputRevealer(
+  sessionId: string,
+  hostViewsClientPath: boolean,
+  reveal: (path: string) => void,
+): (path: string) => (() => void) | undefined {
+  return (path) =>
+    hostViewsClientPath && path.split(/[\\/]/u).at(-2) === sessionId
+      ? () => reveal(path)
+      : undefined;
+}
+
+/**
  * What replaces a remembered target the catalog proves is gone for good, as
  * opposed to merely unreachable: its profile's Host answers, but as a
  * different Host (its State Root was replaced), or that Host answers without

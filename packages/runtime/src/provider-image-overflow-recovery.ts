@@ -61,7 +61,10 @@ export function collectHistoricalImageToolResults(
   return collected;
 }
 
-/** A `file` part carrying inline image bytes, not a URL the provider fetches. */
+/**
+ * A `file` part carrying image bytes, inline or still deferred until the
+ * request goes out, not a URL the provider fetches.
+ */
 export function isInlineImageFilePart(
   value: unknown,
 ): value is { type: 'file'; mediaType: string; data: object } {
@@ -74,7 +77,7 @@ export function isInlineImageFilePart(
   ) {
     return false;
   }
-  return value.data.type === 'data';
+  return value.data.type === 'data' || value.data.type === 'deferred';
 }
 
 function omissionText(image: HistoricalImageToolResult): UnknownRecord {

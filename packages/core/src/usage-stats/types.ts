@@ -300,6 +300,8 @@ export interface CompactionDecisionDiagnostic {
   compactCallCacheReadInputTokens?: number;
   compactCallCacheWriteInputTokens?: number;
   compactCallTotalTokens?: number;
+  /** Tool outputs the summary was made without, after its own request was rejected as too long. */
+  summarizerOmittedToolOutputs?: number;
   reason?: string;
   failOpenReason?: string;
   skippedReasonCounts?: Record<string, number>;

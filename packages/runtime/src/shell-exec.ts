@@ -45,8 +45,9 @@ import {
 } from './child-fd-input.js';
 
 // Per-stream cap on the output RETAINED for the result (~1MB). This only bounds
-// what is kept to return. The tool layer (truncateToolOutput) trims this further
-// to the model's budget. Shared so both Bash paths retain identically.
+// what is kept to return. The tool layer bounds it further for the model
+// (bash-output-limits for a finished command, truncateToolOutput for a
+// background one). Shared so both Bash paths retain identically.
 export const BASH_MAX_RETAINED_CHARS = 1024 * 1024;
 
 // Per-stream cap on output forwarded LIVE via emitOutput (~1MB). The command is
@@ -75,7 +76,9 @@ const UNSAFE_DROP_MARKER =
 export function shellTailValueWithUnsafeDropMarker(buf: BashTailBuffer): string {
   const text = buf.value(); // value() trims first, so the drop flag is current after it
   if (!buf.hasDroppedUnsafe()) return text;
-  // Append (not prepend) so a later tail-keeping truncateToolOutput retains it.
+  // Appended, not prepended: a background result keeps a stream's tail
+  // (truncateToolOutput), and a long foreground one keeps the end of its
+  // output beside the start, or saves all of it.
   return text ? `${text}\n${UNSAFE_DROP_MARKER}` : UNSAFE_DROP_MARKER;
 }
 

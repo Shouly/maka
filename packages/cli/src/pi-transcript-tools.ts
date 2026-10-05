@@ -39,6 +39,7 @@ import {
   formatUnknownInline,
   limitText,
   renderIndented,
+  savedTerminalOutputText,
 } from './pi-transcript-format.js';
 import {
   makaPiToolPresentationStatus,
@@ -357,6 +358,18 @@ function compactTerminalSummary(
     const rows = ptyTuiTerminalRows(content.output).length;
     return rows > 0 ? { text: linesText(rows), protect: true } : noOutput();
   }
+  // The streams hold only the start of a saved output, so their line count is
+  // not the output's. The size is; the path is in the expanded card.
+  const saved = content.savedOutput;
+  if (saved) {
+    const chars = `${saved.chars.toLocaleString('en-US')} chars`;
+    return {
+      text: saved.truncated
+        ? `partial output (${chars}) saved to a file`
+        : `${chars} saved to a file`,
+      protect: true,
+    };
+  }
   const lines = pipeOutputLineCount(content.output);
   return lines > 0 ? { text: linesText(lines), protect: true } : noOutput();
 }
@@ -631,13 +644,38 @@ function renderTerminalResult(
   if (content.output.mode === 'pty') {
     lines.push(...renderPtyTerminalRows(content.output, width));
   } else {
-    if (content.output.stdout) lines.push(...renderCappedResultText(content.output.stdout, width));
+    // A saved output's streams are its START, so they keep their head; the
+    // last lines of a preview are not where the command ended.
+    const saved = content.savedOutput;
+    const render = saved ? renderHeadResultText : renderCappedResultText;
+    if (content.output.stdout) lines.push(...render(content.output.stdout, width));
     if (content.output.stderr) {
       lines.push(...renderIndented(ansi.dim('[stderr]'), width, 2));
-      lines.push(...renderCappedResultText(content.output.stderr, width, ansi.dim));
+      lines.push(...render(content.output.stderr, width, ansi.dim));
     }
+    if (saved) lines.push(...renderIndented(ansi.dim(savedTerminalOutputText(saved)), width, 2));
   }
   return lines;
+}
+
+/**
+ * The first source lines of a text that is itself only the start of
+ * something, with a dim count of the lines after them.
+ */
+function renderHeadResultText(
+  text: string,
+  width: number,
+  style: (line: string) => string = (line) => line,
+): string[] {
+  const sourceLines = text.replace(/\n+$/, '').split('\n');
+  const keep = EXPANDED_TOOL_HEAD_LINES + EXPANDED_TOOL_TAIL_LINES;
+  if (sourceLines.length <= keep + 1)
+    return renderToolText(sourceLines.join('\n'), width).map(style);
+  const hidden = sourceLines.length - keep;
+  return [
+    ...renderToolText(sourceLines.slice(0, keep).join('\n'), width).map(style),
+    ...renderIndented(ansi.dim(`⋯ ${hidden} more lines ⋯`), width, 2),
+  ];
 }
 
 function renderPtyTerminalRows(output: PtyShellOutput, width: number): string[] {

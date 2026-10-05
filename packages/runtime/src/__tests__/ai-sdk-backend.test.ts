@@ -19,6 +19,7 @@
 
 import assert from 'node:assert/strict';
 import { projectBashToolResultForModel } from '../bash-model-output.js';
+import { buildManagedBashTool } from '../shell-tools.js';
 import { RunHandoffGate } from '../run-handoff-gate.js';
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
@@ -30,6 +31,11 @@ import { APICallError, type LanguageModelV4StreamPart } from '@ai-sdk/provider';
 import type { RuntimeInvocationRootAuthority } from '@maka/core/runtime-event';
 import type { RuntimeInvocationRecord } from '@maka/core/runtime-invocation';
 import type { AttachmentByteReader } from '@maka/core/attachments';
+import {
+  providerImageRemovedMessage,
+  providerImageRequestLimits,
+  providerImageTooLargeMessage,
+} from '../provider-image-limits.js';
 import type { BackendSendInput } from '@maka/core/backend-types';
 import type { LlmConnection } from '@maka/core/llm-connections';
 import { createWorkspaceWritePermissionProfile } from '@maka/core/permission-profile';
@@ -2204,7 +2210,7 @@ describe('AiSdkBackend model history', () => {
     assert.doesNotMatch(text, /switch to a vision-capable model/);
   });
 
-  test('reports unavailable attachment reads without consuming image budget', async () => {
+  test('reports an unavailable attachment read and still sends the readable image', async () => {
     const model = completionModel();
     const backend = createBackend({
       connection: connection(),
@@ -2212,7 +2218,7 @@ describe('AiSdkBackend model history', () => {
       modelFactory: () => model,
       tools: [],
       supportsVision: true,
-      maxProviderImageRequestBytes: 15,
+      maxProviderImageRequestBytes: 25,
       readAttachmentBytes: async (ref: StorageRef) =>
         ref.kind === 'session_file' && ref.relativePath === 'missing'
           ? { ok: false, reason: 'not_found' }
@@ -2249,7 +2255,48 @@ describe('AiSdkBackend model history', () => {
     assert.match(parts.map((part) => part.text ?? '').join('\n'), /missing\.png.*not_found/);
   });
 
-  test('charges attachment image budget from the bytes actually read', async () => {
+  test('chooses attachment images by their recorded size and reads only the ones it sends', async () => {
+    const model = completionModel();
+    const reads: string[] = [];
+    const backend = createBackend({
+      connection: connection(),
+      modelId: 'mock-model-id',
+      modelFactory: () => model,
+      tools: [],
+      supportsVision: true,
+      maxProviderImageRequestBytes: 25,
+      readAttachmentBytes: async (ref: StorageRef) => {
+        if (ref.kind === 'session_file') reads.push(ref.relativePath);
+        return { ok: true, bytes: new Uint8Array(10) };
+      },
+    } as never);
+    const attachment = (relativePath: string) => ({
+      kind: 'image' as const,
+      name: `${relativePath}.png`,
+      mimeType: 'image/png',
+      bytes: 10,
+      ref: { kind: 'session_file' as const, sessionId: 'session-1', relativePath },
+    });
+
+    await drain(
+      backend.send({
+        turnId: 'turn-current',
+        text: 'describe these charts',
+        attachments: [attachment('one'), attachment('two'), attachment('three')],
+        context: [],
+        runtimeContext: [],
+      }),
+    );
+
+    // Thirty recorded bytes pass twenty-five, so the two oldest are removed
+    // before anything is read, and only the image that goes out is read.
+    assert.deepEqual(reads, ['three']);
+    const prompt = JSON.stringify(compactPrompt(model));
+    assert.equal(prompt.match(/"mediaType":"image\/png"/g)?.length, 1);
+    assert.equal(prompt.split(removedNote({ maxBytes: 25 })).length - 1, 2);
+  });
+
+  test('an image larger than its recorded size is caught when it is read', async () => {
     const model = completionModel();
     const backend = createBackend({
       connection: connection(),
@@ -2258,7 +2305,7 @@ describe('AiSdkBackend model history', () => {
       tools: [],
       supportsVision: true,
       maxProviderImageRequestBytes: 15,
-      readAttachmentBytes: async () => ({ ok: true, bytes: new Uint8Array(10) }),
+      readAttachmentBytes: async () => ({ ok: true, bytes: new Uint8Array(20) }),
     } as never);
 
     await drain(
@@ -2270,7 +2317,7 @@ describe('AiSdkBackend model history', () => {
             kind: 'image',
             name: 'chart.png',
             mimeType: 'image/png',
-            bytes: 20,
+            bytes: 10,
             ref: { kind: 'session_file', sessionId: 'session-1', relativePath: 'chart' },
           },
         ],
@@ -2279,15 +2326,15 @@ describe('AiSdkBackend model history', () => {
       }),
     );
 
-    const prompt = compactPrompt(model) as Array<{ role: string; content: unknown }>;
-    const parts = prompt.at(-1)?.content as Array<{ type: string; mediaType?: string }>;
-    assert.equal(
-      parts.filter((part) => part.type !== 'text' && part.mediaType === 'image/png').length,
-      1,
+    const prompt = JSON.stringify(compactPrompt(model));
+    assert.equal(prompt.match(/"mediaType":"image\/png"/g), null);
+    assert.match(
+      prompt,
+      /Image attachment \\"chart\.png\\" was not sent: it is larger than the 15 bytes/,
     );
   });
 
-  test('degrades excess current-turn image attachments once the per-request budget is exceeded', async () => {
+  test('removes the oldest current-turn image attachments as a batch past the byte limit', async () => {
     const model = completionModel();
     const backend = createBackend({
       connection: connection(),
@@ -2296,7 +2343,10 @@ describe('AiSdkBackend model history', () => {
       tools: [],
       supportsVision: true,
       maxProviderImageRequestBytes: 25,
-      readAttachmentBytes: async () => ({ ok: true, bytes: new Uint8Array(10) }),
+      readAttachmentBytes: async (ref: StorageRef) => ({
+        ok: true,
+        bytes: new Uint8Array(10).fill(ref.kind === 'session_file' ? ref.relativePath.length : 0),
+      }),
     } as never);
 
     const attachment = (relativePath: string) => ({
@@ -2311,7 +2361,7 @@ describe('AiSdkBackend model history', () => {
       backend.send({
         turnId: 'turn-current',
         text: 'describe these charts',
-        attachments: [attachment('img-1'), attachment('img-2'), attachment('img-3')],
+        attachments: [attachment('img-1'), attachment('img-2'), attachment('img-third')],
         context: [],
         runtimeContext: [],
       }),
@@ -2319,18 +2369,28 @@ describe('AiSdkBackend model history', () => {
 
     const prompt = compactPrompt(model) as Array<{ role: string; content: unknown }>;
     const currentUser = prompt[prompt.length - 1];
-    const parts = currentUser.content as Array<{ type: string; mediaType?: string; text?: string }>;
+    const parts = currentUser.content as Array<{
+      type: string;
+      mediaType?: string;
+      text?: string;
+      data?: Uint8Array;
+    }>;
+    // Thirty bytes pass twenty-five; what is left must fit half of it, so the
+    // two oldest go and only the newest is sent.
     const imageParts = parts.filter((p) => p.type !== 'text' && p.mediaType === 'image/png');
-    assert.equal(imageParts.length, 2, `expected two image parts, got: ${JSON.stringify(parts)}`);
-    const text = parts.map((p) => p.text ?? '').join('\n');
-    assert.match(
-      text,
-      /1 image attachment\(s\) omitted.*image budget/,
-      `expected budget-omitted notice in: ${text}`,
+    assert.equal(imageParts.length, 1, `expected one image part, got: ${JSON.stringify(parts)}`);
+    const sentBytes = imageParts[0]?.data as unknown as { data?: Uint8Array } | undefined;
+    assert.equal(
+      (sentBytes?.data ?? (sentBytes as Uint8Array | undefined))?.[0],
+      'img-third'.length,
+    );
+    assert.equal(
+      parts.filter((p) => p.type === 'text' && p.text === removedNote({ maxBytes: 25 })).length,
+      2,
     );
   });
 
-  test('counts the same attachment ref separately in replay and the current turn', async () => {
+  test('keeps the current attachment and removes its replayed copy past the byte limit', async () => {
     const bytes = new Uint8Array(10);
     const model = completionModel();
     const backend = createBackend({
@@ -2375,27 +2435,33 @@ describe('AiSdkBackend model history', () => {
       }),
     );
 
+    // The same ref sent twice is two images: twenty bytes pass fifteen, and
+    // the older one goes.
     const prompt = compactPrompt(model) as Array<{ role: string; content: unknown }>;
     const imageParts = prompt
       .flatMap((message) => (Array.isArray(message.content) ? message.content : []))
       .filter((part: any) => part.type !== 'text' && part.mediaType === 'image/png');
-    assert.equal(
-      imageParts.length,
-      1,
-      `expected the repeated ref to consume budget twice: ${JSON.stringify(prompt)}`,
-    );
+    assert.equal(imageParts.length, 1, `expected one image part: ${JSON.stringify(prompt)}`);
     const currentUser = prompt[prompt.length - 1];
-    const currentText = (currentUser.content as Array<{ text?: string }>)
-      .map((part) => part.text ?? '')
-      .join('\n');
-    assert.match(
-      currentText,
-      /1 image attachment\(s\) omitted.*image budget/,
-      `expected current attachment omission: ${currentText}`,
+    assert.equal(
+      (currentUser.content as Array<{ mediaType?: string }>).some(
+        (part) => part.mediaType === 'image/png',
+      ),
+      true,
+    );
+    const replayedUser = prompt.find(
+      (message) => message.role === 'user' && message !== currentUser,
+    );
+    assert.ok(replayedUser);
+    assert.equal(
+      (replayedUser.content as Array<{ text?: string }>).some(
+        (part) => part.text === removedNote({ maxBytes: 15 }),
+      ),
+      true,
     );
   });
 
-  test('charges a durable current-turn image once when the first request reloads the ledger', async () => {
+  test('sends a durable current-turn image once when the first request reloads the ledger', async () => {
     const bytes = new Uint8Array(10);
     const model = completionModel();
     const attachment = {
@@ -2445,7 +2511,7 @@ describe('AiSdkBackend model history', () => {
     );
   });
 
-  test('degrades excess replayed image tool results once the per-request budget is exceeded', async () => {
+  test('removes the oldest replayed image tool results as a batch past the byte limit', async () => {
     const bytes = new Uint8Array(10);
     const model = completionModel();
     const backend = createBackend({
@@ -2514,25 +2580,18 @@ describe('AiSdkBackend model history', () => {
       .flatMap((message) => message.content as any[])
       .map((entry) => entry?.output)
       .filter((output) => output?.type === 'content');
-    const imageData = toolOutputs.filter((output) =>
-      output.value.some((part: any) => part.type === 'file' && part.mediaType === 'image/png'),
+    const sent = toolOutputs.map((output) =>
+      output.value.some((part: any) => part.type === 'file' && part.mediaType === 'image/png')
+        ? 'image'
+        : output.value.some((part: any) => part.text === removedNote({ maxBytes: 25 }))
+          ? 'removed'
+          : 'other',
     );
-    const degraded = toolOutputs.filter((output) =>
-      output.value.some((part: any) => part.type === 'text' && /image budget/.test(part.text)),
-    );
-    assert.equal(
-      imageData.length,
-      2,
-      `expected two hydrated image tool results, got: ${JSON.stringify(toolOutputs)}`,
-    );
-    assert.equal(
-      degraded.length,
-      1,
-      `expected one budget-degraded tool result, got: ${JSON.stringify(toolOutputs)}`,
-    );
+    // Thirty bytes pass twenty-five; the two oldest go, the newest is sent.
+    assert.deepEqual(sent, ['removed', 'removed', 'image'], JSON.stringify(toolOutputs));
   });
 
-  test('budgets replayed image tool results by durable occurrence instead of reused tool-call ids', async () => {
+  test('removes replayed image tool results by position even when tool-call ids repeat', async () => {
     const bytes = new Uint8Array(10);
     const model = completionModel();
     const backend = createBackend({
@@ -2614,17 +2673,185 @@ describe('AiSdkBackend model history', () => {
       .flatMap((message) => message.content)
       .map((entry) => entry?.output)
       .filter((output) => output?.type === 'content');
-    assert.equal(
-      outputs.filter((output) =>
-        output.value.some((part: any) => part.type === 'file' && part.mediaType === 'image/png'),
-      ).length,
-      1,
+    assert.deepEqual(
+      outputs.map((output) =>
+        output.value.some((part: any) => part.type === 'file' && part.mediaType === 'image/png')
+          ? 'image'
+          : output.value.some((part: any) => part.text === removedNote({ maxBytes: 15 }))
+            ? 'removed'
+            : 'other',
+      ),
+      ['removed', 'image'],
     );
-    assert.equal(
-      outputs.filter((output) =>
-        output.value.some((part: any) => part.type === 'text' && /image budget/.test(part.text)),
-      ).length,
-      1,
+  });
+
+  test('limits attachments again when they are read larger than recorded', async () => {
+    const model = completionModel();
+    const reads: string[] = [];
+    const backend = createBackend({
+      connection: connection(),
+      modelId: 'mock-model-id',
+      modelFactory: () => model,
+      tools: [],
+      supportsVision: true,
+      maxProviderImageRequestBytes: 25,
+      readAttachmentBytes: async (ref: StorageRef) => {
+        if (ref.kind === 'session_file') reads.push(ref.relativePath);
+        return { ok: true, bytes: new Uint8Array(15) };
+      },
+    } as never);
+    const attachment = (relativePath: string) => ({
+      kind: 'image' as const,
+      name: `${relativePath}.png`,
+      mimeType: 'image/png',
+      bytes: 10,
+      ref: { kind: 'session_file' as const, sessionId: 'session-1', relativePath },
+    });
+
+    await drain(
+      backend.send({
+        turnId: 'turn-current',
+        text: 'compare these charts',
+        attachments: [attachment('one'), attachment('two')],
+        context: [],
+        runtimeContext: [],
+      }),
+    );
+
+    // Recorded at ten bytes each, both fit twenty-five and both are read. Read
+    // at fifteen each they do not, so the older one is removed after all.
+    assert.deepEqual(reads, ['one', 'two']);
+    const prompt = JSON.stringify(compactPrompt(model));
+    assert.equal(prompt.match(/"mediaType":"image\/png"/g)?.length, 1);
+    assert.equal(prompt.split(removedNote({ maxBytes: 25 })).length - 1, 1);
+  });
+
+  test('limits tool images again when they are read larger than recorded', async () => {
+    // A screenshot taken this turn stays unread until a request sends it, so
+    // the window is chosen by recorded size and the bytes come after.
+    const { model, readsPerRequest } = await runScreenshotTurn({
+      shots: 2,
+      recordedBytes: 10,
+      storedBytes: 15,
+      maxProviderImageRequestBytes: 25,
+    });
+
+    const last = JSON.stringify(model.doStreamCalls[2]?.prompt);
+    // Recorded at ten bytes each, both fit twenty-five and both are read. Read
+    // at fifteen each they do not, so the older one is removed after all.
+    assert.equal(readsPerRequest[2], 2);
+    assert.equal(last.match(/"mediaType":"image\/png"/g)?.length, 1);
+    assert.equal(last.split(removedNote({ maxBytes: 25 })).length - 1, 1);
+  });
+
+  test('reads only the tool images a request sends, chosen by their stored size', async () => {
+    const model = completionModel();
+    const reads: string[] = [];
+    const sizes: string[] = [];
+    const path = (ref: StorageRef) => (ref.kind === 'session_file' ? ref.relativePath : '');
+    const backend = createBackend({
+      connection: connection(),
+      modelId: 'mock-model-id',
+      modelFactory: () => model,
+      tools: [],
+      supportsVision: true,
+      maxProviderImageRequestBytes: 25,
+      readAttachmentSize: async (ref: StorageRef) => {
+        sizes.push(path(ref));
+        return { ok: true, bytes: 10 };
+      },
+      readAttachmentBytes: async (ref: StorageRef) => {
+        reads.push(path(ref));
+        return { ok: true, bytes: new Uint8Array(10) };
+      },
+    } as never);
+    // The oldest is stored under a file path, the shape of an older Read
+    // result, which takes the other way into the request.
+    const shots = ['legacy/shot-1.png', 'shot-2', 'shot-3', 'shot-4', 'shot-5'];
+
+    await drain(
+      backend.send({
+        turnId: 'turn-current',
+        text: 'continue',
+        context: [],
+        runtimeContext: replayedImageReads(shots),
+      }),
+    );
+
+    assert.deepEqual([...new Set(sizes)].sort(), [...shots].sort());
+    // Fifty recorded bytes against twenty-five: the window keeps the newest.
+    assert.deepEqual(reads, ['shot-5']);
+    assert.deepEqual(replayedImageOutcomes(compactPrompt(model), { maxBytes: 25 }), [
+      'removed',
+      'removed',
+      'removed',
+      'removed',
+      'image',
+    ]);
+  });
+
+  test('a history of many tool images reads no more of them than one request sends', async () => {
+    const megabyte = 1024 * 1024;
+    const model = completionModel();
+    const stored = new Uint8Array(megabyte);
+    const sized = new Set<string>();
+    let readCount = 0;
+    let readBytes = 0;
+    const backend = createBackend({
+      connection: connection(),
+      modelId: 'mock-model-id',
+      modelFactory: () => model,
+      tools: [],
+      supportsVision: true,
+      readAttachmentSize: async (ref: StorageRef) => {
+        if (ref.kind === 'session_file') sized.add(ref.relativePath);
+        return { ok: true, bytes: megabyte };
+      },
+      readAttachmentBytes: async () => {
+        readCount += 1;
+        readBytes += stored.byteLength;
+        return { ok: true, bytes: stored };
+      },
+    } as never);
+    const shots = Array.from({ length: 200 }, (_, index) => `shot-${index + 1}`);
+
+    await drain(
+      backend.send({
+        turnId: 'turn-current',
+        text: 'continue',
+        context: [],
+        runtimeContext: replayedImageReads(shots),
+      }),
+    );
+
+    const outcomes = replayedImageOutcomes(compactPrompt(model), {});
+    const sent = outcomes.filter((outcome) => outcome === 'image').length;
+    assert.equal(sized.size, 200);
+    assert.equal(outcomes.length, 200);
+    assert.ok(sent > 0 && sent <= 12, `sent ${sent}`);
+    // Every image read is one the request sends: at most twelve megabytes,
+    // not the two hundred the history holds.
+    assert.equal(readCount, sent);
+    assert.ok(readBytes <= 12 * megabyte, `read ${readBytes}`);
+  });
+
+  test('each request of a turn reads only the screenshots it sends', async () => {
+    const { model, readsPerRequest } = await runScreenshotTurn({
+      shots: 7,
+      recordedBytes: 7,
+      storedBytes: 7,
+      maxProviderImageRequestCount: 4,
+    });
+
+    const sent = model.doStreamCalls.map(
+      (call) => JSON.stringify(call.prompt).match(/"mediaType":"image\/png"/g)?.length ?? 0,
+    );
+    assert.deepEqual(sent, [0, 1, 2, 3, 4, 2, 3, 4]);
+    // Every step rebuilds the turn from its ledger; the screenshots a request
+    // no longer carries are not read again for it.
+    assert.deepEqual(
+      Array.from({ length: sent.length }, (_, index) => readsPerRequest[index] ?? 0),
+      sent,
     );
   });
 
@@ -3272,6 +3499,435 @@ describe('AiSdkBackend model history', () => {
       result.value.some((part: any) => part.type === 'file' && part.mediaType === 'image/png'),
     );
     assert.equal(artifactReads, 1);
+  });
+
+  test('reads an earlier image attachment once per send, not once per request', async () => {
+    const reads: string[] = [];
+    let calls = 0;
+    const anchor = runtimeTextEvent({
+      id: 'runtime-user',
+      turnId: 'turn-1',
+      role: 'user',
+      author: 'user',
+      text: 'read two files',
+    });
+    const ledger: RuntimeEvent[] = [anchor];
+    const mappingMemory = createSessionEventMapMemory();
+    const mappingContext: RuntimeEventMapContext = {
+      sessionId: 'session-1',
+      invocationId: 'invocation-1',
+      runId: 'run-1',
+      turnId: 'turn-1',
+      now: monotonicClock(),
+    };
+    const model = new MockLanguageModelV4({
+      doStream: async () => {
+        calls += 1;
+        return {
+          stream: simulateReadableStream({
+            chunks: (calls <= 2
+              ? [
+                  { type: 'stream-start', warnings: [] },
+                  {
+                    type: 'tool-call',
+                    toolCallId: `tool-${calls}`,
+                    toolName: 'Read',
+                    input: JSON.stringify({ path: `file-${calls}.md` }),
+                  },
+                  {
+                    type: 'finish',
+                    finishReason: { unified: 'tool-calls', raw: 'tool_calls' },
+                    usage: emptyUsage(),
+                  },
+                ]
+              : [
+                  { type: 'stream-start', warnings: [] },
+                  {
+                    type: 'finish',
+                    finishReason: { unified: 'stop', raw: 'stop' },
+                    usage: emptyUsage(),
+                  },
+                ]) as LanguageModelV4StreamPart[],
+            initialDelayInMs: null,
+            chunkDelayInMs: null,
+          }),
+        };
+      },
+    });
+    const backend = createBackend({
+      connection: connection(),
+      modelId: 'mock-model-id',
+      modelFactory: () => model,
+      tools: [
+        {
+          name: 'Read',
+          description: 'read',
+          parameters: z.object({ path: z.string() }),
+          impl: async () => ({ body: 'text' }),
+        },
+      ],
+      supportsVision: true,
+      readAttachmentBytes: async (ref: StorageRef) => {
+        if (ref.kind === 'session_file') reads.push(ref.relativePath);
+        return { ok: true, bytes: new Uint8Array(10) };
+      },
+      loadTurnRuntimeEvents: async () => ledger,
+    });
+
+    for await (const event of backend.send({
+      turnId: 'turn-1',
+      text: 'read two files',
+      context: [],
+      headAnchorRuntimeEvent: anchor,
+      runtimeContext: [
+        runtimeEvent({
+          id: 'prior-user',
+          turnId: 'turn-0',
+          role: 'user',
+          author: 'user',
+          content: {
+            kind: 'text',
+            text: 'here is the chart',
+            attachments: [
+              {
+                kind: 'image',
+                name: 'chart.png',
+                mimeType: 'image/png',
+                bytes: 10,
+                ref: { kind: 'session_file', sessionId: 'session-1', relativePath: 'chart' },
+              },
+            ],
+          },
+        }),
+        runtimeTextEvent({
+          id: 'prior-model',
+          turnId: 'turn-0',
+          role: 'model',
+          author: 'agent',
+          text: 'got it',
+        }),
+      ],
+    })) {
+      const mapped = mapSessionEventToRuntimeEvent(event, mappingContext, mappingMemory);
+      if (mapped.partial !== true && mapped.content?.kind !== 'error') ledger.push(mapped);
+    }
+
+    assert.equal(model.doStreamCalls.length, 3);
+    for (const call of model.doStreamCalls) {
+      assert.equal(JSON.stringify(call.prompt).match(/"mediaType":"image\/png"/g)?.length, 1);
+    }
+    assert.deepEqual(reads, ['chart']);
+  });
+
+  test('removes the oldest images a batch at a time as a turn passes the image count', async () => {
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+    let calls = 0;
+    const anchor = runtimeTextEvent({
+      id: 'runtime-user',
+      turnId: 'turn-1',
+      role: 'user',
+      author: 'user',
+      text: 'take seven screenshots',
+    });
+    const ledger: RuntimeEvent[] = [anchor];
+    const mappingMemory = createSessionEventMapMemory();
+    const mappingContext: RuntimeEventMapContext = {
+      sessionId: 'session-1',
+      invocationId: 'invocation-1',
+      runId: 'run-1',
+      turnId: 'turn-1',
+      now: monotonicClock(),
+    };
+    const model = new MockLanguageModelV4({
+      doStream: async () => {
+        calls += 1;
+        return {
+          stream: simulateReadableStream({
+            chunks: (calls <= 7
+              ? [
+                  { type: 'stream-start', warnings: [] },
+                  {
+                    type: 'tool-call',
+                    toolCallId: `tool-${calls}`,
+                    toolName: 'Read',
+                    input: JSON.stringify({ path: `shot-${calls}.png` }),
+                  },
+                  {
+                    type: 'finish',
+                    finishReason: { unified: 'tool-calls', raw: 'tool_calls' },
+                    usage: emptyUsage(),
+                  },
+                ]
+              : [
+                  { type: 'stream-start', warnings: [] },
+                  {
+                    type: 'finish',
+                    finishReason: { unified: 'stop', raw: 'stop' },
+                    usage: emptyUsage(),
+                  },
+                ]) as LanguageModelV4StreamPart[],
+            initialDelayInMs: null,
+            chunkDelayInMs: null,
+          }),
+        };
+      },
+    });
+    const backend = createBackend({
+      connection: connection(),
+      modelId: 'mock-model-id',
+      modelFactory: () => model,
+      tools: [
+        {
+          name: 'Read',
+          description: 'read',
+          parameters: z.object({ path: z.string() }),
+          impl: async (args: { path: string }) => ({
+            kind: 'image',
+            mimeType: 'image/png',
+            ref: {
+              kind: 'session_file' as const,
+              sessionId: 'session-1',
+              relativePath: args.path.replace('.png', ''),
+            },
+          }),
+        },
+      ],
+      supportsVision: true,
+      maxProviderImageRequestCount: 4,
+      readAttachmentBytes: async () => ({ ok: true, bytes: pngBytes }),
+      loadTurnRuntimeEvents: async () => ledger,
+    });
+
+    for await (const event of backend.send({
+      turnId: 'turn-1',
+      text: 'take seven screenshots',
+      context: [],
+      headAnchorRuntimeEvent: anchor,
+    })) {
+      const mapped = mapSessionEventToRuntimeEvent(event, mappingContext, mappingMemory);
+      if (mapped.partial !== true && mapped.content?.kind !== 'error') ledger.push(mapped);
+    }
+
+    // Cache markers move with every request; the messages are what must hold.
+    const requests = model.doStreamCalls.map(
+      (call) =>
+        JSON.parse(
+          JSON.stringify(call.prompt, (key, value) =>
+            key === 'providerOptions' ? undefined : value,
+          ),
+        ) as unknown[],
+    );
+    assert.equal(requests.length, 8);
+    // The fifth image passes four and the three oldest go; the next two fit
+    // again without another drop.
+    assert.deepEqual(
+      requests.map(
+        (request) => JSON.stringify(request).match(/"mediaType":"image\/png"/g)?.length ?? 0,
+      ),
+      [0, 1, 2, 3, 4, 2, 3, 4],
+    );
+    assert.deepEqual(
+      requests.map(
+        (request) => JSON.stringify(request).split(removedNote({ maxImages: 4 })).length - 1,
+      ),
+      [0, 0, 0, 0, 0, 3, 3, 3],
+    );
+    // Every request repeats the one before it exactly, except the one that
+    // removed the batch.
+    assert.deepEqual(
+      requests.slice(1).map((request, index) => {
+        const previous = requests[index]!;
+        return JSON.stringify(request.slice(0, previous.length)) === JSON.stringify(previous);
+      }),
+      [true, true, true, true, false, true, true],
+    );
+  });
+
+  test('replaces an image too large for any request on its own instead of sending it', async () => {
+    const model = completionModel();
+    const backend = createBackend({
+      connection: connection(),
+      modelId: 'mock-model-id',
+      modelFactory: () => model,
+      tools: [],
+      supportsVision: true,
+      maxProviderImageRequestBytes: 5,
+      readAttachmentBytes: async () => ({ ok: true, bytes: new Uint8Array(10) }),
+    });
+
+    await drain(
+      backend.send({
+        turnId: 'turn-current',
+        text: 'compare with this',
+        attachments: [
+          {
+            kind: 'image',
+            name: 'chart.png',
+            mimeType: 'image/png',
+            bytes: 10,
+            ref: { kind: 'session_file', sessionId: 'session-1', relativePath: 'chart' },
+          },
+        ],
+        context: [],
+        runtimeContext: [
+          runtimeTextEvent({
+            id: 'rt-u',
+            turnId: 'turn-prev',
+            role: 'user',
+            author: 'user',
+            text: 'read it',
+          }),
+          runtimeEvent({
+            id: 'rt-call',
+            turnId: 'turn-prev',
+            role: 'model',
+            author: 'agent',
+            content: { kind: 'function_call', id: 'tool-1', name: 'Read', args: { path: 'a.png' } },
+          }),
+          runtimeEvent({
+            id: 'rt-result',
+            turnId: 'turn-prev',
+            role: 'tool',
+            author: 'tool',
+            content: {
+              kind: 'function_response',
+              id: 'tool-1',
+              name: 'Read',
+              isError: false,
+              result: {
+                kind: 'image',
+                mimeType: 'image/png',
+                ref: { kind: 'session_file', sessionId: 'session-1', relativePath: 'artifact-1' },
+              },
+            },
+          }),
+        ],
+      }),
+    );
+
+    const prompt = JSON.stringify(compactPrompt(model));
+    assert.equal(prompt.match(/"mediaType":"image\/png"/g), null);
+    assert.equal(
+      prompt.includes(providerImageTooLargeMessage(providerImageRequestLimits({ maxBytes: 5 }))),
+      true,
+    );
+    assert.match(prompt, /Image attachment \\"chart\.png\\" was not sent/);
+    assert.equal(prompt.includes(removedNote({ maxBytes: 5 })), false);
+  });
+
+  test('a tool result past 2,048 estimated tokens reaches the next step and the next turn verbatim', async () => {
+    // Under Bash's 30,000-character cap, over the 2,048 tokens past which an
+    // older Runtime archived a result: it is sent as produced, every time.
+    const stdout = Array.from({ length: 1_200 }, (_, index) => `row ${index}`).join('\n');
+    assert.ok(stdout.length > 2_048 * 4 && stdout.length < 30_000);
+    const expected = stdout;
+    let calls = 0;
+    const anchor = runtimeTextEvent({
+      id: 'runtime-user',
+      turnId: 'turn-1',
+      role: 'user',
+      author: 'user',
+      text: 'list the rows',
+    });
+    const ledger: RuntimeEvent[] = [anchor];
+    const mappingMemory = createSessionEventMapMemory();
+    const mappingContext: RuntimeEventMapContext = {
+      sessionId: 'session-1',
+      invocationId: 'invocation-1',
+      runId: 'run-1',
+      turnId: 'turn-1',
+      now: monotonicClock(),
+    };
+    const finish = (unified: 'tool-calls' | 'stop') =>
+      ({
+        type: 'finish',
+        finishReason: { unified, raw: unified === 'stop' ? 'stop' : 'tool_calls' },
+        usage: emptyUsage(),
+      }) as LanguageModelV4StreamPart;
+    const model = new MockLanguageModelV4({
+      doStream: async () => {
+        calls += 1;
+        return {
+          stream: simulateReadableStream({
+            chunks: (calls === 1
+              ? [
+                  { type: 'stream-start', warnings: [] },
+                  {
+                    type: 'tool-call',
+                    toolCallId: 'tool-1',
+                    toolName: 'Bash',
+                    input: JSON.stringify({ command: 'seq-rows' }),
+                  },
+                  finish('tool-calls'),
+                ]
+              : [
+                  { type: 'stream-start', warnings: [] },
+                  finish('stop'),
+                ]) as LanguageModelV4StreamPart[],
+            initialDelayInMs: null,
+            chunkDelayInMs: null,
+          }),
+        };
+      },
+    });
+    const bash = buildManagedBashTool(
+      {
+        runForegroundBash: async (input) => ({
+          kind: 'terminal',
+          cwd: input.cwd,
+          cmd: input.command,
+          status: 'completed',
+          exitCode: 0,
+          output: {
+            mode: 'pipes',
+            stdout,
+            stderr: '',
+            stdoutTruncated: false,
+            stderrTruncated: false,
+            redacted: false,
+          },
+        }),
+        runBackgroundBash: async () => {
+          throw new Error('not used');
+        },
+      },
+      { declareSandboxBoundary: false },
+    );
+    const backend = createBackend({
+      connection: connection(),
+      modelId: 'mock-model-id',
+      modelFactory: () => model,
+      tools: [bash],
+      loadTurnRuntimeEvents: async () => ledger,
+    });
+
+    for await (const event of backend.send({
+      turnId: 'turn-1',
+      text: 'list the rows',
+      context: [],
+      headAnchorRuntimeEvent: anchor,
+    })) {
+      const mapped = mapSessionEventToRuntimeEvent(event, mappingContext, mappingMemory);
+      if (mapped.partial !== true && mapped.content?.kind !== 'error') ledger.push(mapped);
+    }
+
+    const toolOutput = (prompt: unknown) =>
+      (prompt as Array<{ role: string; content: any[] }>).find((message) => message.role === 'tool')
+        ?.content[0]?.output;
+    assert.deepEqual(toolOutput(model.doStreamCalls[1]?.prompt), { type: 'text', value: expected });
+
+    // The next turn rebuilds its history from the durable ledger.
+    const nextTurn = createBackend({
+      connection: connection(),
+      modelId: 'mock-model-id',
+      modelFactory: () => model,
+      tools: [bash],
+    });
+    await drain(
+      nextTurn.send({ turnId: 'turn-2', text: 'and again', context: [], runtimeContext: ledger }),
+    );
+    assert.equal(model.doStreamCalls.length, 3);
+    assert.deepEqual(toolOutput(model.doStreamCalls[2]?.prompt), { type: 'text', value: expected });
   });
 
   test('a live Plugin can enable, execute, and disable a Tool within one Turn', async () => {
@@ -4194,6 +4850,106 @@ describe('AiSdkBackend model history', () => {
       ['old-user', 'old-model', 'recent-user', 'recent-model'],
       ['old-user', 'old-model', 'recent-user'],
     ]);
+  });
+
+  test('manual compactHistory refits its summarizer request to the persisted anchor after a rejection', async () => {
+    const summarizerRequests: string[] = [];
+    const recorded: HistoryCompactCheckpoint[] = [];
+    // Together far past what the summarizer's provider takes, and the larger
+    // one alone is not enough to leave out: only the anchor's size, the input
+    // this model last accepted, says to leave out both.
+    const largeOutput = 'LARGE_LOG_LINE_'.repeat(5_000);
+    const hugeOutput = 'HUGE_LOG_LINE_'.repeat(9_000);
+    const toolPair = (id: string, path: string, result: string) => [
+      runtimeEvent({
+        id: `${id}-call`,
+        turnId: 'turn-old',
+        role: 'model',
+        author: 'agent',
+        content: { kind: 'function_call', id, name: 'Read', args: { path } },
+      }),
+      runtimeEvent({
+        id: `${id}-result`,
+        turnId: 'turn-old',
+        role: 'tool',
+        author: 'tool',
+        content: { kind: 'function_response', id, name: 'Read', isError: false, result },
+      }),
+    ];
+    const backend = createBackend({
+      header: { ...header(), llmConnectionId: 'test-connection-id', model: 'mock-model-id' },
+      connection: connection(),
+      modelId: 'mock-model-id',
+      modelFactory: () => completionModel(),
+      tools: [],
+      contextBudget: { name: 'standalone-fit-test' },
+      summarizeHistoryCompact: buildLlmHistorySummarizer({
+        resolveModel: () => 'fake-model',
+        generateText: async (options) => {
+          const request = JSON.stringify(options.messages);
+          summarizerRequests.push(request);
+          if (request.length > 70_000) {
+            throw new Error('prompt is too long: 213462 tokens > 200000 maximum');
+          }
+          return { text: structuredSummary('STANDALONE_FIT_SENTINEL'), finishReason: 'stop' };
+        },
+      }),
+      recordHistoryCompactCheckpoint: (checkpoint) => {
+        recorded.push(checkpoint);
+      },
+    });
+
+    const result = await backend.compactHistory({
+      turnId: 'turn-compact',
+      runId: 'run-1',
+      runtimeContextInvocations: [
+        priorModelInvocation({ connectionId: 'test-connection-id', modelId: 'mock-model-id' }),
+      ],
+      runtimeContext: [
+        runtimeTextEvent({
+          id: 'old-user',
+          turnId: 'turn-old',
+          role: 'user',
+          author: 'user',
+          text: 'read the build logs',
+        }),
+        ...toolPair('large-call', 'a.log', largeOutput),
+        ...toolPair('huge-call', 'b.log', hugeOutput),
+        runtimeTextEvent({
+          id: 'old-model',
+          turnId: 'turn-old',
+          role: 'model',
+          author: 'agent',
+          text: 'the build failed on step 3',
+        }),
+        runtimeEvent({
+          id: 'old-usage',
+          turnId: 'turn-old',
+          role: 'system',
+          author: 'system',
+          actions: {
+            tokenUsage: {
+              input: 15_000,
+              output: 20,
+              lastRequestAnchor: { inputTokens: 15_000, outputTokens: 20 },
+            },
+          },
+        }),
+      ],
+    });
+
+    assert.equal(result.outcome.kind, 'compacted');
+    assert.equal(recorded.length, 1);
+    // The fold covers the outputs it could not read whole.
+    assert.equal(recorded[0]!.coverage.eventCount, 6);
+    assert.equal(recorded[0]!.coverage.through.runtimeEventId, 'old-model');
+    // Nothing is left out before the provider answers.
+    assert.equal(summarizerRequests.length, 2);
+    assert.equal(summarizerRequests[0]!.includes('HUGE_LOG_LINE_'), true);
+    assert.equal(summarizerRequests[1]!.includes('HUGE_LOG_LINE_'), false);
+    assert.equal(summarizerRequests[1]!.includes('LARGE_LOG_LINE_'), false);
+    assert.equal(summarizerRequests[1]!.includes('the build failed on step 3'), true);
+    assert.equal(result.contextBudget?.compactionDecisions?.[0]?.summarizerOmittedToolOutputs, 2);
   });
 
   test('manual compactHistory writes a V2 checkpoint without the legacy artifact writer', async () => {
@@ -16153,3 +16909,183 @@ test("an organisation model defers tools natively exactly as the same model on a
   assert.equal(organization.model, own.model);
   assert.deepEqual(organization.tools, own.tools);
 });
+
+function removedNote(limits: { maxImages?: number; maxBytes?: number }): string {
+  return providerImageRemovedMessage(providerImageRequestLimits(limits));
+}
+
+/**
+ * A turn in which the model reads one screenshot per step, `shots` steps, then
+ * answers. Each screenshot is recorded at `recordedBytes` and stored at
+ * `storedBytes`; reads are counted by the request they were made for.
+ */
+async function runScreenshotTurn(input: {
+  shots: number;
+  recordedBytes: number;
+  storedBytes: number;
+  maxProviderImageRequestBytes?: number;
+  maxProviderImageRequestCount?: number;
+}): Promise<{ model: MockLanguageModelV4; readsPerRequest: number[] }> {
+  let calls = 0;
+  const readsPerRequest: number[] = [];
+  const anchor = runtimeTextEvent({
+    id: 'runtime-user',
+    turnId: 'turn-1',
+    role: 'user',
+    author: 'user',
+    text: 'take screenshots',
+  });
+  const ledger: RuntimeEvent[] = [anchor];
+  const mappingMemory = createSessionEventMapMemory();
+  const mappingContext: RuntimeEventMapContext = {
+    sessionId: 'session-1',
+    invocationId: 'invocation-1',
+    runId: 'run-1',
+    turnId: 'turn-1',
+    now: monotonicClock(),
+  };
+  const model = new MockLanguageModelV4({
+    doStream: async () => {
+      calls += 1;
+      return {
+        stream: simulateReadableStream({
+          chunks: (calls <= input.shots
+            ? [
+                { type: 'stream-start', warnings: [] },
+                {
+                  type: 'tool-call',
+                  toolCallId: `tool-${calls}`,
+                  toolName: 'Read',
+                  input: JSON.stringify({ path: `shot-${calls}.png` }),
+                },
+                {
+                  type: 'finish',
+                  finishReason: { unified: 'tool-calls', raw: 'tool_calls' },
+                  usage: emptyUsage(),
+                },
+              ]
+            : [
+                { type: 'stream-start', warnings: [] },
+                {
+                  type: 'finish',
+                  finishReason: { unified: 'stop', raw: 'stop' },
+                  usage: emptyUsage(),
+                },
+              ]) as LanguageModelV4StreamPart[],
+          initialDelayInMs: null,
+          chunkDelayInMs: null,
+        }),
+      };
+    },
+  });
+  const backend = createBackend({
+    connection: connection(),
+    modelId: 'mock-model-id',
+    modelFactory: () => model,
+    tools: [
+      {
+        name: 'Read',
+        description: 'read',
+        parameters: z.object({ path: z.string() }),
+        impl: async (args: { path: string }) => ({
+          kind: 'image',
+          mimeType: 'image/png',
+          ref: {
+            kind: 'session_file' as const,
+            sessionId: 'session-1',
+            relativePath: args.path.replace('.png', ''),
+          },
+        }),
+      },
+    ],
+    supportsVision: true,
+    ...(input.maxProviderImageRequestBytes !== undefined
+      ? { maxProviderImageRequestBytes: input.maxProviderImageRequestBytes }
+      : {}),
+    ...(input.maxProviderImageRequestCount !== undefined
+      ? { maxProviderImageRequestCount: input.maxProviderImageRequestCount }
+      : {}),
+    readAttachmentSize: async () => ({ ok: true, bytes: input.recordedBytes }),
+    readAttachmentBytes: async () => {
+      // A request's images are read before it is sent.
+      const request = model.doStreamCalls.length;
+      readsPerRequest[request] = (readsPerRequest[request] ?? 0) + 1;
+      return { ok: true, bytes: new Uint8Array(input.storedBytes) };
+    },
+    loadTurnRuntimeEvents: async () => ledger,
+  });
+
+  for await (const event of backend.send({
+    turnId: 'turn-1',
+    text: 'take screenshots',
+    context: [],
+    headAnchorRuntimeEvent: anchor,
+  })) {
+    const mapped = mapSessionEventToRuntimeEvent(event, mappingContext, mappingMemory);
+    if (mapped.partial !== true && mapped.content?.kind !== 'error') ledger.push(mapped);
+  }
+  return { model, readsPerRequest };
+}
+
+/** A prior turn of Read calls, each answered with the stored image at one of these paths. */
+function replayedImageReads(relativePaths: readonly string[]): RuntimeEvent[] {
+  return [
+    runtimeTextEvent({
+      id: 'rt-images-user',
+      turnId: 'turn-prev',
+      role: 'user',
+      author: 'user',
+      text: 'read them',
+    }),
+    ...relativePaths.flatMap((relativePath, index) => [
+      runtimeEvent({
+        id: `rt-images-call-${index}`,
+        turnId: 'turn-prev',
+        role: 'model',
+        author: 'agent',
+        content: {
+          kind: 'function_call',
+          id: `image-tool-${index}`,
+          name: 'Read',
+          args: { path: `image-${index}.png` },
+        },
+      }),
+      runtimeEvent({
+        id: `rt-images-result-${index}`,
+        turnId: 'turn-prev',
+        role: 'tool',
+        author: 'tool',
+        content: {
+          kind: 'function_response',
+          id: `image-tool-${index}`,
+          name: 'Read',
+          isError: false,
+          result: {
+            kind: 'image',
+            mimeType: 'image/png',
+            ref: { kind: 'session_file', sessionId: 'session-1', relativePath },
+          },
+        },
+      }),
+    ]),
+  ];
+}
+
+/** What each replayed image result carried in a request: its image, the removal note, or else. */
+function replayedImageOutcomes(
+  prompt: unknown,
+  limits: { maxImages?: number; maxBytes?: number },
+): Array<'image' | 'removed' | 'other'> {
+  return (prompt as Array<{ role: string; content: any[] }>)
+    .filter((message) => message.role === 'tool')
+    .flatMap((message) => message.content)
+    .map((entry) => entry?.output)
+    .filter((output) => output?.type === 'content')
+    .map((output) =>
+      output.value.some((part: any) => part.type === 'file' && part.mediaType === 'image/png')
+        ? 'image'
+        : output.value.some((part: any) => part.text === removedNote(limits))
+          ? 'removed'
+          : 'other',
+    );
+}

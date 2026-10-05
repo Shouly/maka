@@ -24,6 +24,7 @@ import type { GrepOutputMode } from './filesystem-worker/protocol.js';
 import type { ToolResultOutput } from './model-protocol.js';
 import { isPathInside } from './path-containment.js';
 import { isShellRunResult, shellRunResultText } from './shell-run-model-output.js';
+import { partialViewNotice } from './text-line-window.js';
 import { toolResultOutput } from './tool-result-output.js';
 
 /**
@@ -79,18 +80,29 @@ export function readToolResultToModelOutput(
       value: `<system-reminder>Warning: the file exists but is shorter than the provided offset (${result.startLine}). The file has ${result.totalLines} lines.</system-reminder>`,
     };
   }
-  return { type: 'text', value: numberFileLines(result.content, result.startLine) };
+  const numbered = numberFileLines(result.content, result.startLine);
+  if (!result.partial) return { type: 'text', value: numbered };
+  const lastLine = result.startLine + result.content.split('\n').length - 1;
+  const notice = partialViewNotice(result.startLine, lastLine, result.totalLines, result.moreLines);
+  return { type: 'text', value: `${numbered}\n\n${notice}` };
 }
 
-function readResult(
-  output: unknown,
-): { content: string; startLine: number; totalLines: number; beyondEnd: boolean } | undefined {
+function readResult(output: unknown):
+  | {
+      content: string;
+      startLine: number;
+      totalLines: number;
+      beyondEnd: boolean;
+      partial: boolean;
+      moreLines: boolean;
+    }
+  | undefined {
   if (!isRecord(output)) return undefined;
   const keys = Object.keys(output);
   if (!keys.includes('content') || keys.some((key) => !READ_RESULT_KEYS.has(key))) {
     return undefined;
   }
-  const { content, startLine, totalLines, beyondEnd } = output;
+  const { content, startLine, totalLines, beyondEnd, partial, moreLines } = output;
   if (typeof content !== 'string') return undefined;
   return {
     content,
@@ -98,10 +110,19 @@ function readResult(
     // A result without the count is whole-file text; count it the same way.
     totalLines: typeof totalLines === 'number' ? totalLines : content === '' ? 0 : 1,
     beyondEnd: beyondEnd === true,
+    partial: partial === true,
+    moreLines: moreLines === true,
   };
 }
 
-const READ_RESULT_KEYS = new Set(['content', 'startLine', 'totalLines', 'beyondEnd']);
+const READ_RESULT_KEYS = new Set([
+  'content',
+  'startLine',
+  'totalLines',
+  'beyondEnd',
+  'partial',
+  'moreLines',
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);

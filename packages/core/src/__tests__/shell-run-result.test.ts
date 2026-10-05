@@ -220,6 +220,32 @@ describe('decodeCanonicalShellToolResultContent', () => {
     );
   });
 
+  it('accepts a saved output on a terminal result and rejects a malformed one', () => {
+    const saved = {
+      kind: 'terminal',
+      cwd: '/repo',
+      cmd: 'seq 100000',
+      status: 'completed',
+      exitCode: 0,
+      output: pipeOutput('1\n2\n3'),
+      savedOutput: { path: '/tmp/maka/tool-results/s/r.txt', chars: 588_895, truncated: false },
+    };
+    assert.equal(decodeCanonicalShellToolResultContent(saved).state, 'valid');
+    for (const savedOutput of [
+      { path: '', chars: 1, truncated: false },
+      { path: '/tmp/x.txt', chars: -1, truncated: false },
+      { path: '/tmp/x.txt', chars: 1 },
+      { path: '/tmp/x.txt', chars: 1, truncated: false, preview: 'x' },
+      '/tmp/x.txt',
+    ]) {
+      assert.equal(
+        decodeCanonicalShellToolResultContent({ ...saved, savedOutput }).state,
+        'invalid',
+        JSON.stringify(savedOutput),
+      );
+    }
+  });
+
   it('rejects non-canonical nested output and contradictory current state', () => {
     const valid = shellRun();
     assert.equal(decodeCanonicalShellToolResultContent(valid).state, 'valid');

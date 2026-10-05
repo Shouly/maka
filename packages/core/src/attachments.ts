@@ -25,6 +25,15 @@ export type AttachmentByteReader = (
   ref: StorageRef,
 ) => Promise<{ ok: true; bytes: Uint8Array } | { ok: false; reason: string }>;
 
+/**
+ * The size a stored image was recorded with, looked up without reading it, so
+ * a request's images can be chosen before any of them is read. Fails as
+ * `AttachmentByteReader` would for the same ref.
+ */
+export type AttachmentSizeReader = (
+  ref: StorageRef,
+) => Promise<{ ok: true; bytes: number } | { ok: false; reason: string }>;
+
 export const ATTACHMENT_RESOURCE_PREFIX = 'maka://runtime/attachments';
 
 /**
@@ -94,9 +103,19 @@ export const READ_IMAGE_TOO_LARGE_MESSAGE = `Image exceeds the ${MAX_READ_IMAGE_
  */
 export const MATERIALIZED_IMAGE_TOKENS = 2_000;
 
-/** Leaves room for Base64 expansion, text, and tool schemas under provider request limits. */
+/**
+ * Total image bytes one provider request may carry. Leaves room for Base64
+ * expansion, text, and tool schemas under provider request limits.
+ */
 export const MAX_PROVIDER_IMAGE_REQUEST_BYTES = 12 * 1024 * 1024;
-export const PROVIDER_IMAGE_BUDGET_EXCEEDED_MESSAGE = `Image was read, but the per-request image budget (${MAX_PROVIDER_IMAGE_REQUEST_BYTES / 1024 / 1024}MB across all images this turn) was exceeded; earlier images were sent and this one was omitted. Read fewer or smaller images.`;
+/**
+ * Images one provider request may carry, for every model and wire. A request
+ * past a provider's image count is rejected outright, and that rejection is
+ * not a context overflow anything recovers from, so the number is the one
+ * every provider takes rather than one read from model metadata, which is a
+ * hint and never a threshold.
+ */
+export const MAX_PROVIDER_IMAGE_REQUEST_COUNT = 100;
 
 const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
   png: 'image/png',

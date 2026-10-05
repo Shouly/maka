@@ -84,6 +84,12 @@ export interface ToolContentContext {
   readonly onOpenScheduledTask?: (taskId: string) => void;
   /** Reveals a delivered file, by the path it was sent from. */
   readonly onShowDeliveredFile?: (path: string | undefined) => void;
+  /**
+   * The reveal of the file a Bash output too long to show was saved to, or
+   * undefined when that file cannot be revealed from here (see
+   * `savedOutputRevealer`).
+   */
+  readonly savedOutputReveal?: (path: string) => (() => void) | undefined;
 }
 
 /**
@@ -127,6 +133,7 @@ export function renderToolContent(item: ToolActivityItem, context: ToolContentCo
           item={item}
           result={result}
           {...(context.onOpenTerminal ? { onOpenTerminal: context.onOpenTerminal } : {})}
+          {...(context.savedOutputReveal ? { savedOutputReveal: context.savedOutputReveal } : {})}
         />
       ) : null;
     case 'web_search':

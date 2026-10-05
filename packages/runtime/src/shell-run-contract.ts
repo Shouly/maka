@@ -86,6 +86,14 @@ export interface ShellRunProcessManagerInput {
    * (tests, embedded runs); those simply write no file.
    */
   taskOutputRoot?: string;
+  /**
+   * Directory a foreground command's output is saved under when it is too
+   * long to show, one folder per Session. Absent, nothing is saved and a long
+   * output is shown as a head and a tail.
+   */
+  toolResultRoot?: string;
+  /** A foreground command printing more than this many bytes is killed. Defaults to 5 GB. */
+  maxForegroundOutputBytes?: number;
   maxLiveShellRuns?: number;
   maxLivePtyRuns?: number;
   flushIntervalMs?: number;

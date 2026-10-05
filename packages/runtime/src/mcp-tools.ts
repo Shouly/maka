@@ -29,11 +29,21 @@ import type {
 import type { InteractionFormInput, InteractionFormResult } from '@maka/core/interaction';
 import type { PermissionMode, ToolCategory } from '@maka/core/permission';
 import { REQUEST_COMPOSITION_MAX_TOOL_DESCRIPTION_LENGTH } from '@maka/core/run-composition';
-import { truncateUtf16Safe } from '@maka/core/text-sanitize';
 import type { ExecutionBoundary } from '@maka/core/sandbox-boundary';
 import type { ToolRecoveryMode } from '@maka/core/runtime-event';
 import { modelFacingInputSchema } from './mcp-input-schema.js';
 import type { ToolResultContentPart, ToolResultOutput } from './model-protocol.js';
+import {
+  estimateTextTokens,
+  formatCount,
+  newToolResultFileName,
+  saveToolResultText,
+  savedToolResultNotice,
+  toolResultFilePath,
+  toolResultSaveTicket,
+  truncateUtf8,
+  type SavedToolResult,
+} from './tool-result-file.js';
 import type { MakaTool } from './tool-runtime.js';
 
 const MAX_PROVIDER_TOOL_NAME = 64;
@@ -41,7 +51,11 @@ const HASH_CHARS = 10;
 
 const MAX_NATIVE_IMAGE_BASE64_CHARS = 20_000_000;
 const MAX_NATIVE_IMAGES = 4;
-const MAX_MODEL_TEXT_CHARS = 200_000;
+/** The most text one result shows the model, in estimated tokens (UTF-8 bytes / 4). */
+export const MCP_MAX_RESULT_TOKENS = 25_000;
+/** A result with no image is saved to a file past this many characters, whatever its tokens. */
+export const MCP_MAX_INLINE_CHARS = 50_000;
+const MAX_MODEL_TEXT_BYTES = MCP_MAX_RESULT_TOKENS * 4;
 const MAX_SUMMARIZED_BLOCKS = 100;
 const TRUNCATION_MARKER = '\n…[truncated by Copilot]';
 
@@ -95,6 +109,11 @@ export interface BuildMcpToolsOptions {
   recoveryMode?: ToolRecoveryMode;
   executionLocation?: 'host' | 'remote';
   activityKindForDescriptor?: (descriptor: McpToolDescriptor) => ToolActivityKind | undefined;
+  /**
+   * Directory a result too long to show is saved under, one folder per
+   * Session. Absent, nothing is saved and the result's text is cut instead.
+   */
+  toolResultRoot?: string;
 }
 
 export interface McpIdentifiedTool {
@@ -159,24 +178,32 @@ export function buildMcpToolsWithIdentities(
                   },
                 });
                 return {
-                  execute: (executionContext) =>
-                    prepared.execute({
-                      ...(executionContext.emitProgress
-                        ? { emitProgress: executionContext.emitProgress }
-                        : {}),
-                      ...(executionContext.requestUserForm
-                        ? {
-                            requestInteraction: (form, interactionOptions) =>
-                              executionContext.requestUserForm!(form, interactionOptions),
-                          }
-                        : {}),
-                    }),
+                  execute: async (executionContext) => {
+                    const ticket = toolResultSaveTicket();
+                    return boundMcpResult(
+                      await prepared.execute({
+                        ...(executionContext.emitProgress
+                          ? { emitProgress: executionContext.emitProgress }
+                          : {}),
+                        ...(executionContext.requestUserForm
+                          ? {
+                              requestInteraction: (form, interactionOptions) =>
+                                executionContext.requestUserForm!(form, interactionOptions),
+                            }
+                          : {}),
+                      }),
+                      options.toolResultRoot,
+                      { sessionId: context.sessionId, origin: executionContext.origin },
+                      ticket,
+                    );
+                  },
                   cancel: () => prepared.cancel(),
                 };
               },
             }
           : {}),
         impl: async (args: unknown, context) => {
+          const ticket = toolResultSaveTicket();
           // Managed network authority applies equally to Direct and nested CodeMode dispatch.
           if (
             options.executionLocation !== 'remote' &&
@@ -194,7 +221,7 @@ export function buildMcpToolsWithIdentities(
               throw new Error('MCP network access denied');
             }
           }
-          return provider.callTool(binding, asArguments(args), {
+          const result = await provider.callTool(binding, asArguments(args), {
             signal: context.abortSignal,
             timeoutMs: options.callTimeoutMs,
             context: {
@@ -213,6 +240,7 @@ export function buildMcpToolsWithIdentities(
                 }
               : {}),
           });
+          return boundMcpResult(result, options.toolResultRoot, context, ticket);
         },
         toModelOutput: ({ output }) => mcpResultToModelOutput(output),
       } satisfies MakaTool,
@@ -252,24 +280,139 @@ function asArguments(value: unknown): Record<string, unknown> {
   throw new Error('MCP tool arguments must be an object');
 }
 
-function mcpResultToModelOutput(output: unknown): Extract<ToolResultOutput, { type: 'content' }> {
+/**
+ * A result the model would be shown more than it can take: past
+ * {@link MCP_MAX_INLINE_CHARS} characters or {@link MCP_MAX_RESULT_TOKENS}
+ * estimated tokens, every block counted, and with no image, it is saved to a
+ * file ({@link mcpResultFileText}) and the result becomes the sentence that
+ * names it. A result with an image stays, its text cut to the token limit
+ * when it is shown.
+ *
+ * Only a result the model reads is bounded here. A call from a Code Mode
+ * cell hands its result to the cell's code, which cannot read a file; it is
+ * held to the cell's own limit on a nested result instead, and what the cell
+ * returns is bounded as that call's result.
+ */
+async function boundMcpResult(
+  result: McpCallResult,
+  root: string | undefined,
+  context: { readonly sessionId: string; readonly origin?: 'provider' | 'code_mode' },
+  /** Taken when the call started: a Session retired since gets no file. */
+  ticket: number,
+): Promise<McpCallResult> {
+  if (root === undefined || context.origin === 'code_mode') return result;
+  const blocks = Array.isArray(result.content) ? result.content : [];
+  if (blocks.some((block) => block.type === 'image')) return result;
+  const text = mcpResultToModelOutput(result, {
+    textBytes: Number.POSITIVE_INFINITY,
+    summarizedBlocks: Number.POSITIVE_INFINITY,
+  })
+    .value.flatMap((part) => (part.type === 'text' ? [part.text] : []))
+    .join('\n');
+  if (text.length <= MCP_MAX_INLINE_CHARS && estimateTextTokens(text) <= MCP_MAX_RESULT_TOKENS) {
+    return result;
+  }
+  const file = mcpResultFileText(result);
+  try {
+    const saved = await saveToolResultText(
+      toolResultFilePath(root, context.sessionId, newToolResultFileName()),
+      file.text,
+      ticket,
+    );
+    const notice =
+      file.complete || saved.truncated ? savedToolResultNotice(saved) : partialFileNotice(saved);
+    return { content: [{ type: 'text', text: notice }] };
+  } catch {
+    return result;
+  }
+}
+
+function partialFileNotice(saved: SavedToolResult): string {
+  return `Output too long to show, and not all of it could be saved: ${saved.path} holds ${formatCount(saved.chars)} characters of it, and a line in the file marks what was left out. Read it with Read or search it with Grep.`;
+}
+
+/**
+ * A result as a saved file holds it, for Read to page and Grep to search:
+ * every block in order, each under a line that names it, then
+ * `structuredContent` under its own. Text is written as it is, and JSON laid
+ * out ({@link layOutJson}); binary data is described in its block's line, not
+ * written. `complete` is false when a part could not be written; a line says
+ * so where it would have been.
+ */
+export function mcpResultFileText(result: McpCallResult): { text: string; complete: boolean } {
+  const sections: string[] = [];
+  let complete = true;
+  const json = (value: unknown): string => {
+    try {
+      const text = JSON.stringify(value);
+      if (text !== undefined) return layOutJson(text) ?? text;
+    } catch {
+      // Written below as a part left out.
+    }
+    complete = false;
+    return '[This part could not be written.]';
+  };
+  const binary = (what: string, base64Chars: number) =>
+    `--- ${what}: binary, ${formatCount(base64Chars)} base64 characters, not written ---`;
+  for (const block of Array.isArray(result.content) ? result.content : []) {
+    switch (block.type) {
+      case 'text':
+        sections.push(`--- text ---\n${readableText(block.text)}`);
+        break;
+      case 'resource': {
+        const name = `resource ${block.uri}${block.mimeType ? ` (${block.mimeType})` : ''}`;
+        if (block.text !== undefined) sections.push(`--- ${name} ---\n${readableText(block.text)}`);
+        if (block.blob !== undefined) sections.push(binary(name, block.blob.length));
+        if (block.text === undefined && block.blob === undefined) sections.push(`--- ${name} ---`);
+        break;
+      }
+      case 'resource_link': {
+        const { type: _type, ...link } = block;
+        sections.push(`--- resource link ${block.uri} ---\n${json(link)}`);
+        break;
+      }
+      case 'image':
+      case 'audio':
+        sections.push(binary(`${block.type} (${block.mimeType})`, block.data.length));
+        break;
+      default:
+        sections.push(`--- block of an unknown type ---\n${json(block.value)}`);
+    }
+  }
+  if (result.structuredContent !== undefined) {
+    sections.push(`--- structuredContent ---\n${json(result.structuredContent)}`);
+  }
+  return { text: sections.join('\n'), complete };
+}
+
+function readableText(text: string): string {
+  return layOutJson(text) ?? text;
+}
+
+function mcpResultToModelOutput(
+  output: unknown,
+  limits: { readonly textBytes: number; readonly summarizedBlocks: number } = {
+    textBytes: MAX_MODEL_TEXT_BYTES,
+    summarizedBlocks: MAX_SUMMARIZED_BLOCKS,
+  },
+): Extract<ToolResultOutput, { type: 'content' }> {
   const result = output as Partial<McpCallResult>;
   const blocks = Array.isArray(result.content) ? result.content : [];
   const value: ToolResultContentPart[] = [];
   const nonVisual: unknown[] = [];
-  let remainingTextChars = MAX_MODEL_TEXT_CHARS;
+  let remainingTextBytes = limits.textBytes;
   let imageChars = 0;
   let imageCount = 0;
   let omittedSummaryBlocks = 0;
 
   const appendText = (text: string): void => {
-    if (remainingTextChars <= 0) return;
-    const clipped = clipModelText(text, remainingTextChars);
-    remainingTextChars -= clipped.length;
+    if (remainingTextBytes <= 0) return;
+    const clipped = clipModelText(text, remainingTextBytes);
+    remainingTextBytes -= Buffer.byteLength(clipped, 'utf8');
     value.push({ type: 'text', text: clipped });
   };
   const appendSummary = (summary: unknown): void => {
-    if (nonVisual.length < MAX_SUMMARIZED_BLOCKS) nonVisual.push(summary);
+    if (nonVisual.length < limits.summarizedBlocks) nonVisual.push(summary);
     else omittedSummaryBlocks += 1;
   };
 
@@ -287,7 +430,7 @@ function mcpResultToModelOutput(output: unknown): Extract<ToolResultOutput, { ty
       });
       imageCount += 1;
       imageChars += block.data.length;
-    } else appendSummary(summarizeNonVisualBlock(block));
+    } else appendSummary(summarizeNonVisualBlock(block, limits.textBytes));
   }
   if (nonVisual.length || omittedSummaryBlocks || result.structuredContent !== undefined) {
     appendText(
@@ -304,7 +447,10 @@ function mcpResultToModelOutput(output: unknown): Extract<ToolResultOutput, { ty
   return { type: 'content', value };
 }
 
-function summarizeNonVisualBlock(block: McpCallResult['content'][number]): unknown {
+function summarizeNonVisualBlock(
+  block: McpCallResult['content'][number],
+  maxTextBytes: number,
+): unknown {
   if (block.type === 'audio') {
     return {
       type: block.type,
@@ -315,7 +461,7 @@ function summarizeNonVisualBlock(block: McpCallResult['content'][number]): unkno
   if (block.type === 'resource') {
     return {
       ...block,
-      ...(block.text ? { text: clipModelText(block.text, MAX_MODEL_TEXT_CHARS) } : {}),
+      ...(block.text ? { text: clipModelText(block.text, maxTextBytes) } : {}),
       ...(block.blob ? { blob: undefined, base64Chars: block.blob.length } : {}),
     };
   }
@@ -331,11 +477,12 @@ function summarizeNonVisualBlock(block: McpCallResult['content'][number]): unkno
   return block;
 }
 
-function clipModelText(value: string, limit: number): string {
-  if (value.length <= limit) return value;
-  // The marker is all-BMP, so slicing it can't split a pair.
-  if (limit <= TRUNCATION_MARKER.length) return TRUNCATION_MARKER.slice(0, limit);
-  return `${truncateUtf16Safe(value, limit - TRUNCATION_MARKER.length)}${TRUNCATION_MARKER}`;
+/** At most `maxBytes` of UTF-8, the cut marked. */
+function clipModelText(value: string, maxBytes: number): string {
+  if (value.length <= maxBytes / 3 || Buffer.byteLength(value, 'utf8') <= maxBytes) return value;
+  const markerBytes = Buffer.byteLength(TRUNCATION_MARKER, 'utf8');
+  if (maxBytes <= markerBytes) return truncateUtf8(TRUNCATION_MARKER, maxBytes);
+  return `${truncateUtf8(value, maxBytes - markerBytes)}${TRUNCATION_MARKER}`;
 }
 
 function safeJsonStringify(value: unknown): string {
@@ -344,4 +491,63 @@ function safeJsonStringify(value: unknown): string {
   } catch {
     return '{"content":"MCP output could not be serialized"}';
   }
+}
+
+/**
+ * `text` laid out for a saved file when it is a JSON object or array;
+ * undefined when it is not. Two spaces to a level, and each `\n` in a string
+ * written as a line break, so that Grep finds one field to a line and Read
+ * pages a long string as the text it holds. Nothing else changes: the text is
+ * re-spaced, not re-serialized, so every number stays exactly as the server
+ * wrote it.
+ */
+export function layOutJson(text: string): string | undefined {
+  const start = text.trimStart()[0];
+  if (start !== '{' && start !== '[') return undefined;
+  try {
+    JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  let out = '';
+  let depth = 0;
+  const newline = () => `\n${'  '.repeat(depth)}`;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]!;
+    if (c === '"') {
+      let end = i + 1;
+      while (text[end] !== '"') end += text[end] === '\\' ? 2 : 1;
+      out += breakStringLines(text.slice(i, end + 1));
+      i = end;
+    } else if (c === '{' || c === '[') {
+      const close = c === '{' ? '}' : ']';
+      let next = i + 1;
+      while (/\s/u.test(text[next] ?? '')) next++;
+      if (text[next] === close) {
+        out += `${c}${close}`;
+        i = next;
+      } else {
+        depth++;
+        out += `${c}${newline()}`;
+      }
+    } else if (c === '}' || c === ']') {
+      depth--;
+      out += `${newline()}${c}`;
+    } else if (c === ',') out += `,${newline()}`;
+    else if (c === ':') out += ': ';
+    else if (!/\s/u.test(c)) out += c;
+  }
+  return out;
+}
+
+/**
+ * A JSON string token with each `\n` escape written as a line break, and
+ * `\r\n` as CR LF. Every other escape stays, `\\` among them, so an escaped
+ * backslash before an `n` is never taken for one.
+ */
+function breakStringLines(token: string): string {
+  if (!token.includes('\\')) return token;
+  return token.replace(/\\(?:r\\n|[\s\S])/gu, (escape) =>
+    escape === '\\n' ? '\n' : escape === '\\r\\n' ? '\r\n' : escape,
+  );
 }

@@ -2431,6 +2431,85 @@ describe('Maka Pi TUI transcript', () => {
     assert.equal(outputLines.filter((line) => line === 'step two').length, 1);
   });
 
+  test('a Bash output saved to a file reports its size and path, not the preview line count', () => {
+    const path = '/tmp/maka/tool-results/session-1/result.txt';
+    const preview = Array.from({ length: 20 }, (_, index) => `preview-${index}`).join('\n');
+    const state = createMakaPiTranscriptState();
+    applyMakaSessionEventToTranscript(
+      state,
+      event({
+        type: 'tool_start',
+        toolUseId: 'tool-saved',
+        toolName: 'Bash',
+        args: { command: 'npm test' },
+      }),
+    );
+    applyMakaSessionEventToTranscript(
+      state,
+      event({
+        type: 'tool_result',
+        toolUseId: 'tool-saved',
+        isError: false,
+        content: {
+          ...terminalResult(preview),
+          savedOutput: { path, chars: 40_123, truncated: false },
+        },
+      }),
+    );
+
+    const compact = renderMakaPiTranscript(state, meta(), 120).map(stripAnsi).join('\n');
+    assert.match(compact, /40,123 chars saved to a file/);
+    assert.doesNotMatch(compact, /20 lines/, 'the preview is not presented as the output');
+
+    assert.equal(toggleAllToolExpansion(state), true);
+    const expanded = renderMakaPiTranscript(state, meta(), 160).map(stripAnsi);
+    const savedLine = expanded.findIndex((line) =>
+      line.includes(`Full output (40,123 chars) saved to ${path}`),
+    );
+    assert.ok(savedLine >= 0, 'the expanded card names the file');
+    const firstLine = expanded.findIndex((line) => line.trim() === 'preview-0');
+    assert.ok(firstLine >= 0 && firstLine < savedLine, 'the start of the output comes first');
+    assert.ok(
+      !expanded.some((line) => line.trim() === 'preview-19'),
+      'the end of the preview is not shown as where the command ended',
+    );
+  });
+
+  test('a Bash output not saved whole says the file is partial, with no size limit named', () => {
+    const state = createMakaPiTranscriptState();
+    applyMakaSessionEventToTranscript(
+      state,
+      event({
+        type: 'tool_start',
+        toolUseId: 'tool-cut',
+        toolName: 'Bash',
+        args: { command: 'yes' },
+      }),
+    );
+    applyMakaSessionEventToTranscript(
+      state,
+      event({
+        type: 'tool_result',
+        toolUseId: 'tool-cut',
+        isError: false,
+        content: {
+          ...terminalResult('y\ny'),
+          savedOutput: { path: '/tmp/cut.txt', chars: 67_108_864, truncated: true },
+        },
+      }),
+    );
+    const compact = renderMakaPiTranscript(state, meta(), 120).map(stripAnsi).join('\n');
+    assert.match(compact, /partial output \(67,108,864 chars\) saved to a file/);
+    assert.equal(toggleAllToolExpansion(state), true);
+    const expanded = renderMakaPiTranscript(state, meta(), 160).map(stripAnsi).join('\n');
+    assert.match(
+      expanded,
+      /Output too large to save whole: 67,108,864 chars of it saved to \/tmp\/cut\.txt, with a line marking what was left out/,
+    );
+    // True for a cut at the size limit and for a long line left out alike.
+    assert.doesNotMatch(expanded, /MiB|first 67,108,864/);
+  });
+
   test('folds concurrent child lifecycles into their parent agent cards', () => {
     const state = createMakaPiTranscriptState();
     for (const [toolUseId, profile] of [

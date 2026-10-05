@@ -380,6 +380,77 @@ describe('filesystem worker operations', () => {
       });
   });
 
+  test('answers a Read past the token limit with its refusal, as a filesystem error', async () => {
+    const root = await temporaryDirectory('maka-worker-read-limit-');
+    const target = join(root, 'minified.js');
+    await writeFile(target, `${'z'.repeat(100_001)}\nshort\n`, 'utf8');
+
+    const refused = await executeFilesystemWorkerRequest(
+      await requestFor(
+        { kind: 'read', cwd: root, path: target },
+        { enforcementPath: target, access: 'read', scope: 'exact', targetType: 'file' },
+      ),
+    );
+    assert.equal(refused.ok, false);
+    if (!refused.ok) {
+      assert.equal(refused.error.code, 'filesystem_error');
+      assert.equal(
+        refused.error.message,
+        'Line 1 alone exceeds the maximum of 25000 tokens one Read can return. Search for specific content with Grep instead.',
+      );
+    }
+
+    const page = await executeFilesystemWorkerRequest(
+      await requestFor(
+        { kind: 'read', cwd: root, path: target, offset: 2 },
+        { enforcementPath: target, access: 'read', scope: 'exact', targetType: 'file' },
+      ),
+    );
+    assert.equal(page.ok, true);
+    if (page.ok)
+      assert.deepEqual(page.result, {
+        kind: 'read',
+        content: 'short\n',
+        startLine: 2,
+        totalLines: 3,
+      });
+  });
+
+  test('holds a Read of empty or one-character lines to the limit, each line with its number', async () => {
+    const root = await temporaryDirectory('maka-worker-read-short-lines-');
+    for (const [name, content, fit] of [
+      ['newlines.txt', '\n'.repeat(5_000_000), 15_840],
+      ['tiny.txt', 'x\n'.repeat(200_000), 13_860],
+    ] as const) {
+      const target = join(root, name);
+      await writeFile(target, content, 'utf8');
+      const page = await executeFilesystemWorkerRequest(
+        await requestFor(
+          { kind: 'read', cwd: root, path: target },
+          { enforcementPath: target, access: 'read', scope: 'exact', targetType: 'file' },
+        ),
+      );
+      assert.equal(page.ok, true, name);
+      if (page.ok && page.result.kind === 'read') {
+        assert.equal(page.result.content.split('\n').length, fit, name);
+        assert.equal(page.result.totalLines, content.length / (name === 'tiny.txt' ? 2 : 1) + 1);
+      }
+      const refused = await executeFilesystemWorkerRequest(
+        await requestFor(
+          { kind: 'read', cwd: root, path: target, offset: 1, limit: 1_000_000 },
+          { enforcementPath: target, access: 'read', scope: 'exact', targetType: 'file' },
+        ),
+      );
+      assert.equal(refused.ok, false, name);
+      if (!refused.ok) {
+        assert.match(
+          refused.error.message,
+          /^The requested lines exceed the maximum of 25000 tokens/u,
+        );
+      }
+    }
+  });
+
   test('classifies symlinks by their canonical target', async () => {
     const root = await temporaryDirectory('maka-worker-image-link-');
     const image = join(root, 'photo.png');

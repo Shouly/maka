@@ -63,7 +63,8 @@ export interface InteractiveContextOffloadWriter extends Omit<ContextOffloadStor
   close(): Promise<void>;
 }
 
-export interface InteractiveContextOffloadReader extends Pick<ContextOffloadStore, 'read'> {
+export interface InteractiveContextOffloadReader
+  extends Pick<ContextOffloadStore, 'read' | 'stat'> {
   readonly kind: 'interactive';
   readonly access: 'read';
   readonly [readerBrand]: true;
@@ -106,6 +107,8 @@ export function createInteractiveContextOffloadReader(
     [readerBrand]: true as const,
     read: (input: Parameters<ContextOffloadStore['read']>[0]) =>
       authenticated.read(Object.freeze({ ...input })),
+    stat: (input: Parameters<ContextOffloadStore['stat']>[0]) =>
+      authenticated.stat(Object.freeze({ ...input })),
   });
   readers.add(reader);
   readerByWriter.set(authenticated, reader);
@@ -213,6 +216,10 @@ function createWriterFacade(
     read: (input) => {
       const accepted = Object.freeze({ ...input });
       return run(() => store.read(accepted));
+    },
+    stat: (input) => {
+      const accepted = Object.freeze({ ...input });
+      return run(() => store.stat(accepted));
     },
     copyReferences: (input) => {
       const accepted = Object.freeze({

@@ -137,6 +137,14 @@ interface MidTurnFixtureOptions {
   priorShape?: 'text' | 'tool_heavy' | 'image_tool';
   /** Put one image attachment on the durable current-turn user anchor. */
   currentImage?: boolean;
+  /** The first Read returns an image instead of text. */
+  imageReadResult?: boolean;
+  /** The third Read (`rollingOverflow`) returns an image instead of text. */
+  imageRollingResult?: boolean;
+  /** Images one request may carry. */
+  maxProviderImageRequestCount?: number;
+  /** This logical request is rate-limited once and retried. */
+  rateLimitAtCall?: number;
   /** Exact first Read result for capacity-ordering regressions. */
   firstResult?: string;
   /** The model finishes on the second request instead of running three steps. */
@@ -202,6 +210,7 @@ function buildFixture(options: MidTurnFixtureOptions = {}): MidTurnFixture {
   }> = [];
   const summarizedSources: string[] = [];
   let recordedAtThirdRequest = false;
+  let rateLimitedCalls = 0;
   const fixture = { summarizerCalls: 0, ledgerReads: 0 };
   const usage = (input: number, output: number) => ({
     inputTokens: { total: input, noCache: input, cacheRead: 0, cacheWrite: 0 },
@@ -280,7 +289,15 @@ function buildFixture(options: MidTurnFixtureOptions = {}): MidTurnFixture {
       if (streamOptions.abortSignal?.aborted) {
         throw Object.assign(new Error('aborted'), { name: 'AbortError' });
       }
-      const call = model.doStreamCalls.length;
+      const call = model.doStreamCalls.length - rateLimitedCalls;
+      if (options.rateLimitAtCall === call && rateLimitedCalls === 0) {
+        rateLimitedCalls = 1;
+        throw Object.assign(new Error('too many requests'), {
+          name: 'AI_APICallError',
+          statusCode: 429,
+          responseHeaders: { 'retry-after-ms': '1' },
+        });
+      }
       if (call === 3) recordedAtThirdRequest = recorded.length > 0;
       const chunks = chunksForCall(call);
       return {
@@ -493,7 +510,14 @@ function buildFixture(options: MidTurnFixtureOptions = {}): MidTurnFixture {
     apiKey: 'sk-test',
     modelId: 'mock-model-id',
     modelFactory: () => model,
-    ...(options.priorShape === 'image_tool' || options.currentImage
+    ...(options.maxProviderImageRequestCount !== undefined
+      ? { maxProviderImageRequestCount: options.maxProviderImageRequestCount }
+      : {}),
+    ...(options.rateLimitAtCall !== undefined ? { providerRetrySleep: async () => {} } : {}),
+    ...(options.priorShape === 'image_tool' ||
+    options.currentImage ||
+    options.imageReadResult ||
+    options.imageRollingResult
       ? {
           supportsVision: true,
           readAttachmentBytes: async () => ({
@@ -509,10 +533,32 @@ function buildFixture(options: MidTurnFixtureOptions = {}): MidTurnFixture {
         parameters: z.object({ path: z.string() }),
         impl: async (args: { path: string }) => {
           toolExecutions.push(args.path);
+          if (args.path === 'one.md' && options.imageReadResult) {
+            return {
+              kind: 'image' as const,
+              mimeType: 'image/png',
+              ref: {
+                kind: 'session_file' as const,
+                sessionId: 'session-1',
+                relativePath: 'one-image',
+              },
+            };
+          }
           if (args.path === 'one.md')
             return {
               body: options.firstResult ?? RAW_SPAN_ONE,
             };
+          if (args.path === 'three.md' && options.imageRollingResult) {
+            return {
+              kind: 'image' as const,
+              mimeType: 'image/png',
+              ref: {
+                kind: 'session_file' as const,
+                sessionId: 'session-1',
+                relativePath: 'three-image',
+              },
+            };
+          }
           if (args.path === 'three.md') return { body: ROLLING_TAIL };
           return { body: RAW_SPAN_TWO };
         },
@@ -1051,6 +1097,78 @@ function defineMidTurnSuite(consumer: ConsumerMode): void {
     );
   });
 
+  test('does not report provider dropping when the step removed a batch of old images', async () => {
+    // The second request carries the prior screenshot and the new one, past a
+    // one-image limit, so the older goes out as a note. Maka removed it; the
+    // provider dropped nothing. With room for both the same usage is reported.
+    const dropping = async (maxProviderImageRequestCount: number, rateLimitAtCall?: number) => {
+      const fixture = buildFixture({
+        ollama: true,
+        contextWindow: 200,
+        finalAtSecondCall: true,
+        priorShape: 'image_tool',
+        imageReadResult: true,
+        maxProviderImageRequestCount,
+        firstStepUsage: { input: 100, output: 20 },
+        finalStepUsage: { input: 50, output: 10 },
+        ...(rateLimitAtCall !== undefined ? { rateLimitAtCall } : {}),
+      });
+      await runFixtureTurn(fixture, consumer);
+      const second = JSON.stringify(fixture.model.doStreamCalls.at(-1)?.prompt);
+      return {
+        images: second.match(/"mediaType":"image\/png"/g)?.length ?? 0,
+        reported: fixture.messages.some(
+          (message) => (message as { kind?: string }).kind === 'context_provider_dropping',
+        ),
+      };
+    };
+
+    assert.deepEqual(await dropping(1), { images: 1, reported: false });
+    assert.deepEqual(await dropping(2), { images: 2, reported: true });
+    // A transient failure resends the same request, already limited: the
+    // batch it removed still counts.
+    assert.deepEqual(await dropping(1, 2), { images: 1, reported: false });
+  });
+
+  test('does not report provider dropping when the step after a fold removes a batch of images', async () => {
+    // The fold replaces the request with one that carries fewer images, so
+    // the removed images are counted on that replacement, not on the request
+    // it replaced. The next step adds a screenshot past a one-image limit and
+    // removes the older one again: Maka removed it, and its smaller input is
+    // no sign of the provider dropping anything. With room for every image
+    // the same usage is reported.
+    const run = async (maxProviderImageRequestCount: number) => {
+      const fixture = buildFixture({
+        ollama: true,
+        rollingOverflow: true,
+        currentImage: true,
+        imageReadResult: true,
+        imageRollingResult: true,
+        maxProviderImageRequestCount,
+      });
+      await runFixtureTurn(fixture, consumer);
+      const prompts = fixture.model.doStreamCalls.map((call) => JSON.stringify(call.prompt));
+      return {
+        folded: prompts.map((prompt) => prompt.includes('maka_history_compact_checkpoint')),
+        removed: prompts.map((prompt) => prompt.split('[An image was removed').length - 1),
+        reported: fixture.messages.some(
+          (message) => (message as { kind?: string }).kind === 'context_provider_dropping',
+        ),
+      };
+    };
+
+    assert.deepEqual(await run(1), {
+      folded: [false, false, true, true],
+      removed: [0, 1, 0, 1],
+      reported: false,
+    });
+    assert.deepEqual(await run(100), {
+      folded: [false, false, true, true],
+      removed: [0, 0, 0, 0],
+      reported: true,
+    });
+  });
+
   test('fails closed before provider dispatch when the durable ledger read fails', async () => {
     const fixture = buildFixture();
     // Break the seam after construction: every trigger read now rejects.
@@ -1238,6 +1356,68 @@ function defineMidTurnSuite(consumer: ConsumerMode): void {
         (message as { kind?: string }).kind === 'context_provider_dropping',
     );
     assert.deepEqual(note?.data, { inputTokens: 3_716, priorInputTokens: 3_716 });
+  });
+
+  // A second screenshot in the prior turn: with room for one image, every
+  // request since has removed the older one.
+  const secondPriorImage: RuntimeEvent[] = [
+    {
+      ...runtimeTextEvent('prior-call-2', 'turn-0', 'model', ''),
+      content: {
+        kind: 'function_call' as const,
+        id: 'prior-image-tool-2',
+        name: 'Read',
+        args: { path: 'screenshot-2.png' },
+      },
+    },
+    {
+      ...runtimeTextEvent('prior-result-2', 'turn-0', 'model', ''),
+      role: 'tool' as const,
+      author: 'tool' as const,
+      content: {
+        kind: 'function_response' as const,
+        id: 'prior-image-tool-2',
+        name: 'Read',
+        result: {
+          kind: 'image' as const,
+          mimeType: 'image/png',
+          ref: { kind: 'session_file' as const, sessionId: 'session-1', relativePath: 'shot-2' },
+        },
+        isError: false,
+      },
+    },
+  ];
+  const droppingAcrossSendsWithImages = async (currentImage: boolean) => {
+    const fixture = buildFixture({
+      ollama: true,
+      withoutContextWindow: true,
+      singleRequest: true,
+      priorShape: 'image_tool',
+      currentImage,
+      maxProviderImageRequestCount: 1,
+      finalStepUsage: { input: 3_716, output: 10 },
+      extraPriorEvents: [
+        ...secondPriorImage,
+        priorUsageEvent({ inputTokens: 3_716, outputTokens: 12 }),
+      ],
+      priorInvocations: [priorRunInvocation()],
+    });
+    await runFixtureTurn(fixture, consumer);
+    return fixture.messages.some(
+      (message) => (message as { kind?: string }).kind === 'context_provider_dropping',
+    );
+  };
+
+  test('reports dropping across the boundary in a session that already removed images', async () => {
+    // The previous send's requests removed the older screenshot too, so this
+    // first request removed no new batch and the plateau is the provider's.
+    assert.equal(await droppingAcrossSendsWithImages(false), true);
+  });
+
+  test('does not report dropping across the boundary when the first request removed a new batch', async () => {
+    // The new attachment pushes one more screenshot out than the previous
+    // send's requests removed: Maka shrank this request, not the provider.
+    assert.equal(await droppingAcrossSendsWithImages(true), false);
   });
 
   test('does not report dropping across the boundary when the input grew', async () => {

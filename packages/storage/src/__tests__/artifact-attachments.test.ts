@@ -23,11 +23,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import { MAX_ATTACHMENT_BYTES } from '@maka/core/attachments';
-import type { ReadImageSnapshotReader } from '@maka/core/context-offload';
+import type {
+  ReadImageSnapshotReader,
+  ReadImageSnapshotSizeReader,
+} from '@maka/core/context-offload';
 import { type StorageRef } from '@maka/core/events';
 import {
   createArtifactAttachmentResourceReader,
   createAttachmentByteReader,
+  createAttachmentSizeReader,
   createReadImageSnapshotPlanner,
   createReadImageSnapshotter,
 } from '../artifact-attachments.js';
@@ -220,6 +224,97 @@ describe('artifact attachment authority', () => {
     });
   });
 
+  test('looks sizes up from the records without reading the stored bytes', async () => {
+    await withStore(async (store, root) => {
+      const record = await store.create({
+        id: 'image-1',
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        name: 'image.png',
+        kind: 'image',
+        content: png,
+        source: 'tool_result_projection',
+        now: 1,
+      });
+      const sizes = createAttachmentSizeReader({ artifactStore: store, sessionId: 'session-1' });
+      const bytes = createAttachmentByteReader({ artifactStore: store, sessionId: 'session-1' });
+      assert.deepEqual(await sizes(sessionFileRef('image-1')), { ok: true, bytes: png.byteLength });
+
+      // With the stored file gone a read fails while the size still answers:
+      // the lookup never opens the file.
+      await rm(join(root, 'artifacts', record.relativePath));
+      assert.equal((await bytes(sessionFileRef('image-1'))).ok, false);
+      assert.deepEqual(await sizes(sessionFileRef('image-1')), { ok: true, bytes: png.byteLength });
+
+      // The failures are the ones a read of the same ref would give first.
+      assert.deepEqual(await sizes(sessionFileRef('missing')), { ok: false, reason: 'not_found' });
+      assert.deepEqual(await sizes(sessionFileRef('image-1', 'other-session')), {
+        ok: false,
+        reason: 'session_mismatch',
+      });
+      assert.deepEqual(await sizes({ kind: 'workspace_file', relativePath: 'image.png' }), {
+        ok: false,
+        reason: 'unsupported_ref_kind',
+      });
+      assert.deepEqual(
+        await createAttachmentSizeReader({
+          artifactStore: store,
+          sessionId: 'session-1',
+          maxBytes: png.byteLength - 1,
+        })(sessionFileRef('image-1')),
+        { ok: false, reason: 'too_large' },
+      );
+    });
+  });
+
+  test('looks Read image snapshot sizes up through the Session-bound snapshot reader', async () => {
+    await withStore(async (store) => {
+      const stats: string[] = [];
+      const readImageSnapshots: ReadImageSnapshotSizeReader = {
+        async stat(ref) {
+          stats.push(ref.refId);
+          if (ref.refId === 'missing') return { ok: false, reason: 'not_found' };
+          return {
+            ok: true,
+            record: {
+              refId: ref.refId,
+              sessionId: ref.sessionId,
+              owner: { kind: 'read_image_snapshot', ownerId: 'owner-1' },
+              blobId: 'a'.repeat(64),
+              sizeBytes: 1234,
+              mediaType: 'image/png',
+              createdAt: 1,
+            },
+          };
+        },
+      };
+      const sizes = createAttachmentSizeReader({
+        artifactStore: store,
+        sessionId: 'session-1',
+        readImageSnapshots,
+      });
+
+      assert.deepEqual(await sizes(sessionContextRef('ref-1')), { ok: true, bytes: 1234 });
+      assert.deepEqual(await sizes(sessionContextRef('missing')), {
+        ok: false,
+        reason: 'not_found',
+      });
+      assert.deepEqual(await sizes(sessionContextRef('ref-2', 'other-session')), {
+        ok: false,
+        reason: 'session_mismatch',
+      });
+      assert.deepEqual(stats, ['ref-1', 'missing']);
+      assert.deepEqual(
+        await createAttachmentSizeReader({
+          artifactStore: store,
+          sessionId: 'session-1',
+          readImageSnapshotsUnavailable: true,
+        })(sessionContextRef('ref-1')),
+        { ok: false, reason: 'unavailable' },
+      );
+    });
+  });
+
   test('snapshotter rejects provider-unsafe images before publication', async () => {
     await withStore(async (store) => {
       await assert.rejects(
@@ -317,12 +412,14 @@ function sessionContextRef(refId: string, sessionId = 'session-1'): StorageRef {
   return { kind: 'session_context', sessionId, refId };
 }
 
-async function withStore(run: (store: ArtifactAuthorityStore) => Promise<void>): Promise<void> {
+async function withStore(
+  run: (store: ArtifactAuthorityStore, root: string) => Promise<void>,
+): Promise<void> {
   const root = await mkdtemp(join(tmpdir(), 'maka-artifact-attachment-'));
   const authority = createSqliteArtifactStoreWriteAuthority(root);
   try {
     const { store } = authority;
-    await run(store);
+    await run(store, root);
   } finally {
     authority.close();
     await rm(root, { recursive: true, force: true });

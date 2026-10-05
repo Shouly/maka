@@ -279,6 +279,23 @@ export interface TranscriptCopy {
     readonly imageAlt: (tool: string) => string;
     readonly failureClass: (value: string) => string;
     readonly pending: string;
+    /**
+     * A Bash output too long to show. The block holds its start; the rest is
+     * in a file the runtime saved, which the row can show in the file manager
+     * (`delivery.showIn`).
+     */
+    readonly savedOutput: {
+      /** The whole output is in the file. */
+      readonly full: (chars: number) => string;
+      /**
+       * The file is not the whole output: it was cut at its size limit, or a
+       * line too long to keep was left out. A marker in the file says where.
+       */
+      readonly truncated: (chars: number) => string;
+      readonly openFailed: string;
+      /** The file is gone: the temp folder was cleared, or the machine restarted. */
+      readonly missing: string;
+    };
   };
   /** SendUserFile's card strip. */
   readonly delivery: {
@@ -786,6 +803,14 @@ const TRANSCRIPT_COPY = {
       imageAlt: (tool) => `${tool} 返回的图片`,
       failureClass: (value) => `失败原因：${value}`,
       pending: '等待结果…',
+      savedOutput: {
+        full: (chars) =>
+          `仅显示开头。完整输出（${chars.toLocaleString('zh-CN')} 个字符）已保存到文件。`,
+        truncated: (chars) =>
+          `仅显示开头。输出太大，没能完整保存：文件里保存了其中 ${chars.toLocaleString('zh-CN')} 个字符，缺少的部分有标记。`,
+        openFailed: '打不开保存的输出',
+        missing: '文件已不存在。保存的输出是临时文件，可能已被清理。',
+      },
     },
     delivery: {
       filesLabel: '发来的文件',
@@ -1037,6 +1062,14 @@ const TRANSCRIPT_COPY = {
       imageAlt: (tool) => `${tool} 回傳的圖片`,
       failureClass: (value) => `失敗原因：${value}`,
       pending: '等待結果…',
+      savedOutput: {
+        full: (chars) =>
+          `僅顯示開頭。完整輸出（${chars.toLocaleString('zh-TW')} 個字元）已儲存到檔案。`,
+        truncated: (chars) =>
+          `僅顯示開頭。輸出太大，沒能完整儲存：檔案裡儲存了其中 ${chars.toLocaleString('zh-TW')} 個字元，缺少的部分有標記。`,
+        openFailed: '開不了儲存的輸出',
+        missing: '檔案已不存在。儲存的輸出是暫存檔，可能已被清除。',
+      },
     },
     delivery: {
       filesLabel: '傳來的檔案',
@@ -1337,6 +1370,14 @@ const TRANSCRIPT_COPY = {
       imageAlt: (tool) => `Image returned by ${tool}`,
       failureClass: (value) => `Failure: ${value}`,
       pending: 'Waiting for the result…',
+      savedOutput: {
+        full: (chars) =>
+          `Showing the start. The full output (${chars.toLocaleString('en-US')} characters) is saved to a file.`,
+        truncated: (chars) =>
+          `Showing the start. The output was too large to save whole: the file holds ${chars.toLocaleString('en-US')} characters of it, with a line marking what was left out.`,
+        openFailed: 'The saved output would not open',
+        missing: 'The file is gone. Saved outputs are temporary and may have been cleared.',
+      },
     },
     delivery: {
       filesLabel: 'Files sent to you',

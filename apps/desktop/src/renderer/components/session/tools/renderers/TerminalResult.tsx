@@ -26,6 +26,10 @@
 // what merges them, and it also carries the truncation and redaction hints
 // forward so a settled row does not silently lose the "[Redacted]" the live
 // one showed.
+//
+// A foreground output too long to show is saved to a file (`savedOutput`), and
+// the result then holds only the START of it. The block says so, with the
+// size, and shows where the file is, with the delivered-file card's wording.
 
 import { memo } from 'react';
 import { isShellOutput } from '@maka/core/shell-run';
@@ -40,6 +44,7 @@ import {
 import CodeRenderer from '../../../ui/CodeRenderer.js';
 import { cn } from '../../../../lib/cn.js';
 import { getTranscriptCopy } from '../../../../locales/transcript-copy.js';
+import { detectPlatform } from '../../../../lib/platform.js';
 import {
   ToolHandoffButton,
   ToolResultPanel,
@@ -81,6 +86,8 @@ export const TerminalResult = memo(function TerminalResult(props: {
   result: TerminalResultContent;
   /** Attaches the right pane's Terminal face to this run. Background runs only. */
   onOpenTerminal?: (ref: string) => void;
+  /** The reveal of the file a too-long output was saved to; none when it cannot be revealed here. */
+  savedOutputReveal?: (path: string) => (() => void) | undefined;
 }) {
   const locale = useUiLocale();
   const copy = getTranscriptCopy(locale).result;
@@ -92,6 +99,8 @@ export const TerminalResult = memo(function TerminalResult(props: {
     locale,
   }) as TerminalResultContent;
   const output = isShellOutput(merged.output) ? merged.output : undefined;
+  const saved = merged.kind === 'terminal' ? merged.savedOutput : undefined;
+  const revealSaved = saved ? props.savedOutputReveal?.(saved.path) : undefined;
 
   const streams: { label: string; text: string; tone: 'normal' | 'error' }[] = [];
   if (output?.mode === 'pipes') {
@@ -152,14 +161,24 @@ export const TerminalResult = memo(function TerminalResult(props: {
       <Block
         label={copy.output}
         action={
-          merged.exitCode !== undefined ? (
-            <span
-              className={cn(
-                'font-mono text-[0.6875rem] leading-none',
-                merged.exitCode === 0 ? 'text-text-muted' : 'text-danger',
+          saved || merged.exitCode !== undefined ? (
+            <span className="flex items-center gap-2">
+              {revealSaved && (
+                <ToolHandoffButton
+                  label={getTranscriptCopy(locale).delivery.showIn[detectPlatform()]}
+                  onClick={revealSaved}
+                />
               )}
-            >
-              {toolCopy.exitCode(merged.exitCode)}
+              {merged.exitCode !== undefined && (
+                <span
+                  className={cn(
+                    'font-mono text-[0.6875rem] leading-none',
+                    merged.exitCode === 0 ? 'text-text-muted' : 'text-danger',
+                  )}
+                >
+                  {toolCopy.exitCode(merged.exitCode)}
+                </span>
+              )}
             </span>
           ) : undefined
         }
@@ -172,14 +191,17 @@ export const TerminalResult = memo(function TerminalResult(props: {
           </p>
         ) : (
           streams.map((stream) => {
-            // The tail, not the head: a command is watched at the bottom, and
-            // what is dropped is what already scrolled past.
-            const { body, capped } = capLines(stream.text, 'tail');
+            // Without a saved file, the tail: a command is watched at the
+            // bottom, and what is dropped is what already scrolled past. A
+            // saved output's text is the START of it, so a cap keeps the head
+            // and says below what it dropped after.
+            const { body, capped } = capLines(stream.text, saved ? 'head' : 'tail');
+            const hidden = capped > 0 && (
+              <p className={toolResultBlockLabelClass}>{toolCopy.hiddenLines(capped)}</p>
+            );
             return (
               <div key={stream.label} className="flex min-w-0 flex-col gap-1">
-                {capped > 0 && (
-                  <p className={toolResultBlockLabelClass}>{toolCopy.hiddenLines(capped)}</p>
-                )}
+                {!saved && hidden}
                 <CodeRenderer
                   content={body}
                   language="bash"
@@ -187,6 +209,7 @@ export const TerminalResult = memo(function TerminalResult(props: {
                   fontSize="12px"
                   className={stream.tone === 'error' ? 'text-danger' : undefined}
                 />
+                {saved && hidden}
               </div>
             );
           })
@@ -195,9 +218,17 @@ export const TerminalResult = memo(function TerminalResult(props: {
           <p className="text-xs leading-5 text-danger">{merged.failureMessage}</p>
         )}
         {output?.redacted && <p className={toolResultBlockLabelClass}>{outputCopy.redacted}</p>}
-        {((output?.mode === 'pipes' && (output.stdoutTruncated || output.stderrTruncated)) ||
-          (output?.mode === 'pty' && output.truncated)) && (
-          <p className={toolResultBlockLabelClass}>{outputCopy.truncated}</p>
+        {saved ? (
+          <p className={cn(toolResultBlockLabelClass, 'leading-4')} data-maka-saved-output="">
+            {saved.truncated
+              ? copy.savedOutput.truncated(saved.chars)
+              : copy.savedOutput.full(saved.chars)}
+          </p>
+        ) : (
+          ((output?.mode === 'pipes' && (output.stdoutTruncated || output.stderrTruncated)) ||
+            (output?.mode === 'pty' && output.truncated)) && (
+            <p className={toolResultBlockLabelClass}>{outputCopy.truncated}</p>
+          )
         )}
       </Block>
     </ToolResultPanel>

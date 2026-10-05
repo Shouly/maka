@@ -17,8 +17,9 @@
  * under the License.
  */
 
-import { realpath, stat } from 'node:fs/promises';
-import { join, resolve, relative, sep } from 'node:path';
+import { lstat, realpath, stat } from 'node:fs/promises';
+import { basename, isAbsolute, join, resolve, relative, sep } from 'node:path';
+import { toolResultSessionFolder } from '@maka/runtime/tool-result-file';
 
 export type OpenPathKey = 'workspace' | 'skills' | 'memory' | 'project';
 
@@ -121,4 +122,58 @@ export async function resolveSessionFilePath(input: { root: string; path: string
   if (!targetStat) return { ok: false, reason: 'missing' };
   if (!targetStat.isFile()) return { ok: false, reason: 'not-a-file' };
   return { ok: true, path: target };
+}
+
+/** A saved tool result's file name: the runtime's own `<id>.txt`, nothing else. */
+const TOOL_RESULT_FILE_NAME = /^[A-Za-z0-9_-]{1,128}\.txt$/u;
+
+/**
+ * A tool result saved to a file because it was too long to show, for the
+ * output block's reveal action.
+ *
+ * The sandboxed command can write anywhere under the temp folder and is told
+ * the path, so nothing here trusts what is on disk to be what the runtime
+ * wrote. Main builds the path itself, from the root, the Session's own folder
+ * and the file name, and the renderer's path must be exactly that one. Then,
+ * without following a link: the Session folder is a real directory where it
+ * should be, and the file is a regular file. A symlink in either place is
+ * refused, even one pointing inside. The caller reveals the path built here,
+ * never opens it, so a file swapped after these checks is shown, not run.
+ */
+export async function resolveToolResultFilePath(input: {
+  root: string;
+  sessionId: string;
+  path: string;
+}): Promise<
+  { ok: true; path: string } | { ok: false; reason: 'not-allowed' | 'missing' | 'not-a-file' }
+> {
+  let folder: string;
+  try {
+    folder = toolResultSessionFolder(input.root, input.sessionId);
+  } catch {
+    return { ok: false, reason: 'not-allowed' };
+  }
+  if (!input.path || !isAbsolute(input.path)) return { ok: false, reason: 'not-allowed' };
+  const name = basename(input.path);
+  if (!TOOL_RESULT_FILE_NAME.test(name)) return { ok: false, reason: 'not-allowed' };
+  const expected = resolve(folder, name);
+  if (resolve(input.path) !== expected) return { ok: false, reason: 'not-allowed' };
+
+  const folderStat = await lstat(folder).catch(() => null);
+  if (!folderStat) return { ok: false, reason: 'missing' };
+  if (!folderStat.isDirectory()) return { ok: false, reason: 'not-allowed' };
+  let realRoot: string;
+  let realFolder: string;
+  try {
+    [realRoot, realFolder] = await Promise.all([realpath(input.root), realpath(folder)]);
+  } catch {
+    return { ok: false, reason: 'missing' };
+  }
+  if (realFolder !== join(realRoot, input.sessionId)) return { ok: false, reason: 'not-allowed' };
+
+  const fileStat = await lstat(expected).catch(() => null);
+  if (!fileStat) return { ok: false, reason: 'missing' };
+  if (fileStat.isSymbolicLink()) return { ok: false, reason: 'not-allowed' };
+  if (!fileStat.isFile()) return { ok: false, reason: 'not-a-file' };
+  return { ok: true, path: expected };
 }

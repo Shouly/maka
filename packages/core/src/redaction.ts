@@ -42,8 +42,13 @@ const AWS_SECRET_ACCESS_KEY_FLAG_SOURCE = posixContinuedTokenSource('--secret-ac
 const AWS_SECRET_ACCESS_KEY_ENV_SOURCE = posixContinuedTokenSource('AWS_SECRET_ACCESS_KEY');
 
 const QUOTED_SECRET_KEY_VALUE_PATTERN = /((?:"([^"\\]+)"\s*:\s*"))(?:\\.|[^"\\])*/g;
-const ASSIGNED_SECRET_KEY_VALUE_PATTERN =
-  /\b(([A-Za-z][A-Za-z0-9_-]*)(?:[ \t]|\\\r?\n)*[:=](?:[ \t]|\\\r?\n)*['"]?)(?:\\\r?\n|[^\s"'&<>])+/g;
+// `key=value` or `key: value`, found from its `:` or `=` with the key read
+// behind it: found from the key, a long run of key characters would be read
+// again from every word boundary in it. The key is read back at most 128
+// characters; a longer one is read as its last 128, which end in the words
+// that make a key sensitive.
+const ASSIGNED_SECRET_VALUE_PATTERN =
+  /[:=](?<=(\b[A-Za-z][A-Za-z0-9_-]{0,127}|(?<=[A-Za-z0-9_-])[A-Za-z0-9_-]{128})((?:[ \t]|\\\r?\n)*)[:=])((?:[ \t]|\\\r?\n)*['"]?)(?:\\\r?\n|[^\s"'&<>])+/g;
 const AUTHORIZATION_HEADER_PATTERN =
   /(^|[^A-Za-z0-9_])(['"]?(?:proxy[-_]?authorization|authorization)['"]?\s*:\s*['"]?(?:bearer|basic|token)\s+)[^\s"'<>]+/gim;
 const AWS_CLI_SPACE_SECRET_PATTERN = new RegExp(
@@ -68,7 +73,12 @@ export function redactSecrets(value: string): string {
   return json ?? redactTextSecrets(value);
 }
 
-function redactTextSecrets(value: string): string {
+/**
+ * {@link redactSecrets} for text read as text, even when it is valid JSON: a
+ * JSON document is not parsed and laid out again, so its lines stay as they
+ * are. A caller that needs the JSON reading as well applies it itself.
+ */
+export function redactTextSecrets(value: string): string {
   let next = value;
   next = redactUrlUserinfoSecrets(next);
   next = redactUrlQuerySecrets(next);
@@ -88,9 +98,7 @@ function redactTextSecrets(value: string): string {
     AWS_SECRET_ASSIGNMENT_PATTERN,
     (_match, prefix: string) => `${prefix}[redacted]`,
   );
-  next = next.replace(ASSIGNED_SECRET_KEY_VALUE_PATTERN, (match, prefix: string, key: string) =>
-    isAssignmentSensitiveKey(key) ? `${prefix}[redacted]` : match,
-  );
+  next = redactAssignedSecrets(next);
   for (const pattern of SECRET_PATTERNS) {
     // Each pattern's single capture group matches only the secret token, so the
     // replacement is always the full redaction marker. Never echo any part of
@@ -99,6 +107,33 @@ function redactTextSecrets(value: string): string {
     next = next.replace(pattern, () => '[redacted]');
   }
   return next;
+}
+
+/**
+ * The value of each assignment to a sensitive key, read left to right as a
+ * pattern starting at the key would read them: an assignment ends where its
+ * value does, so a word inside that value starts no assignment of its own.
+ */
+function redactAssignedSecrets(value: string): string {
+  const pattern = ASSIGNED_SECRET_VALUE_PATTERN;
+  const parts: string[] = [];
+  let copied = 0;
+  let previousEnd = 0;
+  pattern.lastIndex = 0;
+  for (let match = pattern.exec(value); match; match = pattern.exec(value)) {
+    const [text, key = '', separator = '', opening = ''] = match;
+    if (match.index - separator.length - key.length < previousEnd) {
+      pattern.lastIndex = match.index + 1;
+      continue;
+    }
+    previousEnd = pattern.lastIndex;
+    if (!isAssignmentSensitiveKey(key)) continue;
+    parts.push(value.slice(copied, match.index), `${text[0]}${opening}[redacted]`);
+    copied = pattern.lastIndex;
+  }
+  if (parts.length === 0) return value;
+  parts.push(value.slice(copied));
+  return parts.join('');
 }
 
 function posixContinuedTokenSource(token: string): string {
@@ -207,9 +242,11 @@ export function isSensitiveKey(key: string): boolean {
 }
 
 function sensitiveKeySegments(key: string): string[] {
+  // `APIKey` is `API Key`. One capital at a time: a run of them is not read
+  // again from each one.
   return key
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .replace(/([A-Z])(?=[A-Z][a-z])/g, '$1 ')
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter(Boolean);

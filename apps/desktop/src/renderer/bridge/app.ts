@@ -74,6 +74,18 @@ export function revealSessionFile(
   return app().revealSessionFile(sessionId, path);
 }
 
+/**
+ * A Bash output saved to a file because it was too long to show, revealed in
+ * the system's file manager, never opened. Main refuses a path that is not
+ * exactly that Session's saved file.
+ */
+export function revealToolResultFile(
+  sessionId: string,
+  path: string,
+): ReturnType<App['revealToolResultFile']> {
+  return app().revealToolResultFile(sessionId, path);
+}
+
 export function resolveProjectGitInfo(
   projectPath: string,
   host?: DesktopRuntimeHostRef,

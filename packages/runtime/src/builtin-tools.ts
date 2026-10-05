@@ -47,6 +47,7 @@ import {
   renderNotebookForRead,
   serializeNotebook,
 } from './notebook.js';
+import { READ_MAX_TOKENS } from './text-line-window.js';
 import { compilePermissionProfile } from '@maka/core/permission-profile-compiler';
 import { parseAttachmentResourceRef } from '@maka/core/attachments';
 import { type SandboxBoundaryExpansion } from '@maka/core/sandbox-boundary';
@@ -314,7 +315,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
     'Reads a file from the local filesystem.',
     '',
     '- `file_path` must be an absolute path.',
-    '- Reads up to 2000 lines by default.',
+    `- Reads the whole file by default. A file over ${READ_MAX_TOKENS} tokens returns its first lines with a PARTIAL view notice; read the rest with \`offset\` and \`limit\`. When the first line to be read alone exceeds ${READ_MAX_TOKENS} tokens, Read returns an error; search the file with Grep instead.`,
     '- When you already know which part of the file you need, only read that part. This can be important for larger files.',
     '- Results are returned using cat -n format, with line numbers starting at 1',
     // The reference also reads PDFs by page; Maka has no PDF renderer, so a
@@ -636,11 +637,21 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
           const parsed = parseNotebook(result.content);
           if (parsed) return { content: renderNotebookForRead(parsed), notebook: true as const };
         }
+        // A whole-file read answers with fewer lines than the file has only
+        // when the file passed the token limit: that answer is its first page.
+        const partial =
+          !notebook &&
+          !limit &&
+          (offset ?? 1) <= 1 &&
+          result.totalLines > 0 &&
+          (result.moreLines === true || lineCount(result.content) < result.totalLines);
         return {
           content: result.content,
           startLine: result.startLine,
           totalLines: result.totalLines,
           ...(result.beyondEnd ? { beyondEnd: true as const } : {}),
+          ...(result.moreLines ? { moreLines: true as const } : {}),
+          ...(partial ? { partial: true as const } : {}),
         };
       },
       toModelOutput: ({ input, output }) => readToolResultToModelOutput(input, output),
@@ -1616,6 +1627,13 @@ function completePreparedProfilePaths(paths: readonly PreparedProfilePath[]): vo
       // The target was already removed or changed; never delete an unverified replacement.
     }
   }
+}
+
+/** Lines in a Read's text, counted as Read counts them. */
+function lineCount(content: string): number {
+  let lines = 1;
+  for (let at = content.indexOf('\n'); at !== -1; at = content.indexOf('\n', at + 1)) lines++;
+  return lines;
 }
 
 function canonicalExistingPath(path: string): string {

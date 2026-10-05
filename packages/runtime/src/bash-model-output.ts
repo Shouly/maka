@@ -17,7 +17,14 @@
  * under the License.
  */
 
+import type { TerminalSavedOutput } from '@maka/core/events';
 import type { PipeShellOutput, PtyShellOutput } from '@maka/core/shell-run';
+import {
+  joinedStreams,
+  savedOutputText,
+  savedPreviewText,
+  trimTrailingNewlines,
+} from './bash-output-limits.js';
 import type { ToolResultOutput } from './model-protocol.js';
 import { isShellRunResult, shellRunResultText } from './shell-run-model-output.js';
 import { toolResultOutput } from './tool-result-output.js';
@@ -35,6 +42,10 @@ const NO_OUTPUT = '(no output)';
  * JSON carried that the model cannot act on — cwd, the echoed command, the
  * redaction and truncation bookkeeping — stays in the durable result, which is
  * what the UI renders.
+ *
+ * The output was bounded when the result was made (`bash-output-limits.ts`):
+ * what is here is what the model is shown, and an output too long to show
+ * stands as its saved file's path and a preview.
  *
  * A background run answers in text too (`shell-run-model-output.ts`): the ref
  * to keep when it starts, the output with a status line when it is read.
@@ -62,11 +73,14 @@ interface TerminalLikeResult {
   readonly exitCode?: unknown;
   readonly failureMessage?: unknown;
   readonly output?: unknown;
+  readonly savedOutput?: TerminalSavedOutput;
   readonly sandboxDenial?: unknown;
 }
 
 function terminalResultText(result: TerminalLikeResult): string {
-  const body = capturedOutput(result.output);
+  const body = result.savedOutput
+    ? savedOutputText(result.savedOutput, terminalOutput(result.output, savedPreviewText))
+    : terminalOutput(result.output, joinedStreams);
   const header = failureHeader(result);
   const denial = sandboxDenialNote(result.sandboxDenial);
   const lines = [...(header ? [header] : []), body || NO_OUTPUT, ...(denial ? [denial] : [])];
@@ -113,6 +127,21 @@ function failureHeader(result: TerminalLikeResult): string | undefined {
   return 'Command failed without reporting an exit code.';
 }
 
+/**
+ * A foreground command's output as it was bounded: any cut is already marked
+ * in the text itself, so no note is added here. A saved output's streams are
+ * the start of its file and are joined as they are.
+ */
+function terminalOutput(output: unknown, join: (stdout: string, stderr: string) => string): string {
+  if (!output || typeof output !== 'object') return '';
+  const shell = output as Partial<PipeShellOutput>;
+  if (shell.mode !== 'pipes') return capturedOutput(output);
+  return join(
+    typeof shell.stdout === 'string' ? shell.stdout : '',
+    typeof shell.stderr === 'string' ? shell.stderr : '',
+  );
+}
+
 /** stdout then stderr for a piped run; the visible screen for a PTY one. */
 export function capturedOutput(output: unknown): string {
   if (!output || typeof output !== 'object') return '';
@@ -136,8 +165,4 @@ function withTruncationNote(body: string, truncated: boolean): string {
   const note =
     '[Output was truncated; only the tail is shown. Re-run narrowing the output to see more.]';
   return body === '' ? note : `${body}\n${note}`;
-}
-
-function trimTrailingNewlines(value: string): string {
-  return value.replace(/\n+$/, '');
 }

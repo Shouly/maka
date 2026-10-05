@@ -38,6 +38,7 @@ import {
   isMalformedHistoryCompactSummaryReason,
 } from './history-compact-error.js';
 import { isTextHistoryCompactCheckpoint } from './history-compact-checkpoint.js';
+import { refitRejectedHistoryCompactMessages } from './history-compact-input-fit.js';
 import { normalizeAiSdkUsage, type AiSdkUsageLike } from './model-adapter.js';
 import { classifyError } from './provider-error-classification.js';
 import { withProviderGenerateTracking } from './provider-request-telemetry.js';
@@ -101,6 +102,10 @@ function shortenSummarizationPrompt(): string {
   ].join('\n');
 }
 
+// The instructions ride after the conversation in every attempt; a shortening
+// or repair attempt adds a few lines to them.
+const SUMMARY_INSTRUCTION_RESERVE_BYTES = Buffer.byteLength(SUMMARIZATION_PROMPT, 'utf8') + 1_024;
+
 function repairSummarizationPrompt(reason: string): string {
   return [
     SUMMARIZATION_PROMPT,
@@ -136,10 +141,11 @@ export function buildLlmHistorySummarizer(options: BuildLlmHistorySummarizerOpti
           ],
         });
       }
-      // Nothing is trimmed on a local estimate: whether this input fits the
-      // summarizer's window is its provider's answer (`input_too_large`, which
-      // the planner retreats on), and the output is capped outright (#4559).
+      // Nothing is trimmed on a local estimate before the provider has
+      // answered: whether this input fits the summarizer's window is the
+      // provider's answer, and the output is capped outright (#4559).
       const maxOutputTokens = input.maxOutputTokens ?? DEFAULT_HISTORY_COMPACT_MAX_OUTPUT_TOKENS;
+      let summaryMessages = projectedMessages;
       // Handed over whole by the backend, which owns every input a tracker
       // needs — including the run, which no summarizer wiring can know (#1679).
       const providerRequestTracker = input.providerRequestTracker;
@@ -202,12 +208,36 @@ export function buildLlmHistorySummarizer(options: BuildLlmHistorySummarizerOpti
         return { text: result.text, defect, truncated };
       };
 
-      let initial = await generateSummary(SUMMARIZATION_PROMPT, projectedMessages);
+      let initial: Awaited<ReturnType<typeof generateSummary>>;
+      try {
+        initial = await generateSummary(SUMMARIZATION_PROMPT, summaryMessages);
+      } catch (error) {
+        if (isAbortError(error) || classifyError(error) !== 'context_overflow') throw error;
+        // Rejected as too long. A tool output too large for this request is
+        // too large for every fold that covers it, and the planner's retreat
+        // leaves it in the tail, where no later fold reaches it either. So the
+        // largest tool outputs are left out of what the summary reads, down to
+        // the size this model last accepted, and the request goes once more.
+        // A second rejection, or nothing to leave out, is the planner's
+        // retreat signal (`input_too_large`).
+        const refit = refitRejectedHistoryCompactMessages(summaryMessages, {
+          ...(input.acceptedInputTokens !== undefined
+            ? { maxInputEstimatedTokens: input.acceptedInputTokens }
+            : {}),
+          fixedInputBytes: SUMMARY_INSTRUCTION_RESERVE_BYTES,
+        });
+        if (refit.omittedToolOutputs === 0) {
+          throw new HistoryCompactSummarizerError('input_too_large', { cause: error });
+        }
+        summaryMessages = refit.messages;
+        input.onToolOutputsOmitted?.(refit.omittedToolOutputs);
+        initial = await generateSummary(SUMMARIZATION_PROMPT, summaryMessages);
+      }
       if (initial.truncated) {
         // The provider cut the summary at the output cap. One shorter attempt;
         // a second cut is the provider saying this span will not summarize
         // inside the cap, and the fold fails open.
-        initial = await generateSummary(shortenSummarizationPrompt(), projectedMessages);
+        initial = await generateSummary(shortenSummarizationPrompt(), summaryMessages);
         if (initial.truncated) throw new HistoryCompactSummarizerError('output_length');
       }
       if (!initial.defect) return initial.text;
@@ -221,7 +251,7 @@ export function buildLlmHistorySummarizer(options: BuildLlmHistorySummarizerOpti
       const repairInstructions = repairSummarizationPrompt(initial.defect);
       let repaired: Awaited<ReturnType<typeof generateSummary>>;
       try {
-        repaired = await generateSummary(repairInstructions, projectedMessages);
+        repaired = await generateSummary(repairInstructions, summaryMessages);
         if (repaired.truncated) throw new HistoryCompactSummarizerError('output_length');
       } catch (error) {
         if (isAbortError(error)) throw error;

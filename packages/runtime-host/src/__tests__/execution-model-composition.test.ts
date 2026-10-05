@@ -151,8 +151,10 @@ const HEADLESS_CODING_V1_TOOLS_HASH =
   // (`file_path`, `timeout`, the ripgrep-shaped Grep switches). Glob's
   // description and parameters are verbatim from a measured reference capture,
   // and since 2026-09-24 so are Read's, Write's, Edit's and Grep's. ArchiveRead
-  // left the list on 2026-10-03.
-  'sha256:ae06e9a6cad46f5ab419fd62de48fcb55dd97df23bbb62bb5eb5558f1fccd7c9';
+  // left the list on 2026-10-03. On 2026-10-04 Read's description stated its
+  // token limit and first-page answer in place of a line count, and that a
+  // first line too large to read alone is an error.
+  'sha256:7d75f134d0f3a5be8d1f24c8c42a4e825dd0fb31f4c7acafb5d1b4aae91cb196';
 const execFileAsync = promisify(execFile);
 test('backend creation resolves a bound Session by immutable Connection identity', async () => {
   let observedRef: unknown;

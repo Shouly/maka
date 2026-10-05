@@ -78,6 +78,7 @@ import {
 } from '@maka/runtime/agent-swarm-status-tool';
 import { SessionActivityRegistry } from '@maka/runtime/goal-turn-lifecycle';
 import { ShellRunProcessManager } from '@maka/runtime/shell-run-manager';
+import { toolResultRoot } from '@maka/runtime/tool-result-file';
 import {
   resolveShellPlan,
   resolveTurnShellPlan,
@@ -451,6 +452,7 @@ export async function createExecutionRuntimeHostComposition(
       // the temp directory. Session ids are unique, so one root serves every
       // Session.
       taskOutputRoot: join(tmpdir(), 'maka', 'tasks'),
+      toolResultRoot: toolResultRoot(),
     });
     const sandboxManager = createBuiltinSandboxManager();
     const filesystemWorkerLaunchSpecProvider =
@@ -1317,6 +1319,7 @@ export async function createExecutionRuntimeHostComposition(
       onModelToolsChanged: registerBackendInvalidation,
       interactions,
       grants: stores.interactionStore,
+      toolResultRoot: toolResultRoot(),
     });
     externalAgentSetup = new HostExternalAgentSetupCoordinator({
       install: async (input) => {
@@ -2315,6 +2318,7 @@ export async function createExecutionRuntimeHostComposition(
       },
       worktrees: worktreeChildExecutor,
       taskOutputRoot: join(tmpdir(), 'maka', 'tasks'),
+      toolResultRoot: toolResultRoot(),
       requestDrain: context.requestDrain,
       sessionLane,
     });

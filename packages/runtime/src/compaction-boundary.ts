@@ -59,6 +59,8 @@ export interface CompactionDecision {
     cacheWriteInputTokens?: number;
     totalTokens?: number;
   };
+  /** Tool outputs the summary was made without, after its own request was rejected as too long. */
+  summarizerOmittedToolOutputs?: number;
   reason?: string;
   failOpenReason?: string;
   skippedReasonCounts?: Readonly<Record<string, number>>;
@@ -124,6 +126,9 @@ export function compactionDecisionToDiagnostic(
       : {}),
     ...(decision.compactCallUsage?.totalTokens !== undefined
       ? { compactCallTotalTokens: decision.compactCallUsage.totalTokens }
+      : {}),
+    ...(decision.summarizerOmittedToolOutputs !== undefined
+      ? { summarizerOmittedToolOutputs: decision.summarizerOmittedToolOutputs }
       : {}),
     ...(decision.reason ? { reason: decision.reason } : {}),
     ...(decision.failOpenReason ? { failOpenReason: decision.failOpenReason } : {}),

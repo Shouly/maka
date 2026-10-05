@@ -120,7 +120,6 @@ import {
   responsesReasoningItemId,
 } from './responses-reasoning-state.js';
 import { finitePositive } from './context-budget-helpers.js';
-import type { ProviderImageBudget } from './ai-sdk-compaction.js';
 import {
   contextDiagnosticsCompactionOf,
   type ContextDiagnosticsCompaction,
@@ -522,7 +521,6 @@ export class AiSdkTurn {
   private handoffPaused = false;
   watchdog: StreamWatchdog | null = null;
   runTrace: RunTrace | null = null;
-  readonly imageBudget: ProviderImageBudget = { used: 0, decisions: new Map() };
   injectedSteeringMessages: ModelMessage[] = [];
   /** A memory tool succeeded in this turn; the background pass leaves the turn alone. */
   memoryWritten = false;
@@ -959,7 +957,13 @@ export class AiSdkTurn {
       yield* this.drain(queue);
       return;
     }
-    const priorReplay = priorReplayResult;
+    // The prior history is the prefix every request of this send repeats, so
+    // the image attachments in it that a request can still send are read once,
+    // here, rather than at every request.
+    const priorReplay = {
+      ...priorReplayResult,
+      messages: await this.deps.messageProjection.readWindowImages(priorReplayResult.messages),
+    };
     // The transcript is what the provider reads to decide which deferred tools
     // it still holds expanded, so it is what this turn's activation map has to
     // agree with. A no-op unless the wire defers natively.
@@ -1068,12 +1072,10 @@ export class AiSdkTurn {
         const currentUserContent = input.continuation
           ? undefined
           : await this.deps.messageProjection.buildCurrentUserContent(
-              this.imageBudget,
               input.text,
               input.attachments,
               input.directoryReferences,
               input.quotes,
-              input.headAnchorRuntimeEvent?.id,
             );
         const messages =
           currentUserContent === undefined
@@ -1136,7 +1138,6 @@ export class AiSdkTurn {
           const currentTurnMessages =
             await this.deps.messageProjection.materializeRuntimeReplayPlan(
               replayPlan,
-              this.imageBudget,
               projectionCheckpoint,
               compatibleProviderReasoningReplayEventIds(
                 replayEvents,
@@ -1200,7 +1201,16 @@ export class AiSdkTurn {
         // consults the other, so a request still rejected after a fold reports
         // the oversized message instead of folding again (#4559). Both re-arm
         // at the next accepted request: a long turn may fill the window again.
+        // Giving back historical images first is not that entry: a request
+        // still rejected without them is folded.
         let overflowRetryUsed = false;
+        // Images the last accepted request no longer carried. Before this
+        // send's first one, that is the last request of the send before: its
+        // images are the prior history's, and the window over them is decided
+        // by that sequence alone, so it is counted here rather than recorded.
+        let acceptedRequestRemovedImages = this.deps.messageProjection.countRemovedRequestImages(
+          priorReplay.messages,
+        );
         let result: ModelStreamResult;
         let providerOutcome: ModelStepOutcome;
         let finishReason: ModelFinishReason = 'stop';
@@ -1272,7 +1282,14 @@ export class AiSdkTurn {
           // Everything the system says rides in the ledger and replays in
           // place (see `injection/`); the request is the history and the
           // current message, nothing appended per step.
-          const contextualRequestMessages = requestMessages;
+          //
+          // The image window is chosen here, before any stage shapes the
+          // request: an image omission or a fold below then works on the
+          // images this request keeps, and the next step, rebuilt from the same
+          // ledger, keeps the same ones instead of taking back older images
+          // the omission made room for.
+          const windowedRequest = this.deps.messageProjection.limitRequestImages(requestMessages);
+          const contextualRequestMessages = windowedRequest.messages;
           const shaped = requestProjection
             ? await requestProjection({
                 completedSteps: completedProviderSteps,
@@ -1300,6 +1317,17 @@ export class AiSdkTurn {
               : undefined;
           providerRequestTracker?.setStep(runtimeSteps, requestCompositionId);
           let attemptMessages = projectedMessages;
+          // Images the request going out no longer carries: those the window
+          // above removed, and those removed as it goes out. A retry resends
+          // messages already limited, which would count none, so the count is
+          // the largest any attempt of this request reached. A fold replaces
+          // the request with another sequence of images, the one the next
+          // step is built from, so it starts the count again from what that
+          // replacement removes.
+          const foldedByProjection =
+            midTurnState !== undefined && midTurnState.replacedStepNumber === runtimeSteps;
+          let windowRemovedImages = foldedByProjection ? 0 : windowedRequest.removedImages;
+          let requestRemovedImages = windowRemovedImages;
           let providerAttempt = 1;
           let idleWatchdogRetryCount = 0;
           let incompleteStreamRetryCount = 0;
@@ -1308,6 +1336,16 @@ export class AiSdkTurn {
           let providerToolActivityCount = 0;
           let providerStepUsage: NormalizedUsage | undefined;
           for (;;) {
+            // Last, after every stage that shapes the request: a fold's
+            // replacement is materialized afresh, and the image attachments
+            // kept are read only now, before the watchdog times the provider.
+            const outgoing =
+              await this.deps.messageProjection.prepareRequestImages(attemptMessages);
+            attemptMessages = outgoing.messages;
+            requestRemovedImages = Math.max(
+              requestRemovedImages,
+              windowRemovedImages + outgoing.removedImages,
+            );
             providerRequestAbortController = new AbortController();
             watchdogTimeoutState.current = null;
             startWatchdog();
@@ -1455,13 +1493,17 @@ export class AiSdkTurn {
                   // The provider accepted this request. That is progress, so
                   // the next overflow may fold again.
                   overflowRetryUsed = false;
-                  if (midTurnState) midTurnState.foldAttemptedSinceAccepted = false;
+                  if (midTurnState) {
+                    midTurnState.foldAttemptedSinceAccepted = false;
+                    midTurnState.imageOmissionAttemptedSinceAccepted = false;
+                  }
                   if (!stepUsage) sawUnusableStepUsage = true;
                   // Silent eviction / rewrite check (#4559): this step only
-                  // appended (no fold, no image omission) yet the provider
-                  // counted no more input tokens than for the previous
-                  // request. Not-greater, not strictly-fewer: a provider that
-                  // truncates to a fixed window (Ollama's `num_ctx`) reports the
+                  // appended (no fold, no image omission, no batch of old
+                  // images removed) yet the provider counted no more input
+                  // tokens than for the previous request. Not-greater, not
+                  // strictly-fewer: a provider that truncates to a fixed
+                  // window (Ollama's `num_ctx`) reports the
                   // same total on every later request while Maka keeps
                   // appending, so a plateau is the signal, and an equal count
                   // after an append is already impossible without provider-side
@@ -1476,6 +1518,10 @@ export class AiSdkTurn {
                   const toolSchemaShrank =
                     lastStepActiveToolCount !== undefined &&
                     activeToolsForRequest.length < lastStepActiveToolCount;
+                  // Removing a batch of old images shrinks the request the
+                  // same way; Maka removed them, the provider did not.
+                  const imageBatchRemoved = requestRemovedImages > acceptedRequestRemovedImages;
+                  acceptedRequestRemovedImages = requestRemovedImages;
                   // Across the send boundary the comparison is the same one,
                   // against the last request a provider accepted before this
                   // send. A provider that truncates to a fixed window reports
@@ -1497,6 +1543,7 @@ export class AiSdkTurn {
                     providerMayTruncateSilently(this.deps.backend.connection.providerType) &&
                     !this.deps.session.contextProviderDroppingReported &&
                     !toolSchemaShrank &&
+                    !imageBatchRemoved &&
                     midTurnState &&
                     priorInput !== undefined &&
                     midTurnState.replacedStepNumber !== completedRequestIndex &&
@@ -1892,7 +1939,11 @@ export class AiSdkTurn {
                     })
                   : undefined;
               if (recovered) {
-                overflowRetryUsed = true;
+                if (recovered.recovery === 'fold') {
+                  overflowRetryUsed = true;
+                  windowRemovedImages = 0;
+                  requestRemovedImages = 0;
+                }
                 attemptMessages = recovered.messages;
                 continue;
               }
@@ -2172,7 +2223,13 @@ export class AiSdkTurn {
               !this.loopStopRequested &&
               !this.aborted;
             if (continuationWillRun && providerOutcome.continuation === 'pending') {
-              const persistedProjection = await loadDurableTurnProjection();
+              // Prepared like the request was, so the two still share a prefix
+              // until the next batch of images is removed.
+              const persistedProjection = (
+                await this.deps.messageProjection.prepareRequestImages(
+                  await loadDurableTurnProjection(),
+                )
+              ).messages;
               const responseMessages = persistedOpenAiResponsesStepMessages(
                 attemptMessages,
                 persistedProjection,
@@ -2721,7 +2778,6 @@ export class AiSdkTurn {
       isProviderHistoryCompactCheckpoint(projectedHistoryCompactCheckpoint);
     const materializeReplayFallback = (): Promise<ModelMessage[]> =>
       this.deps.messageProjection.materializeRuntimeReplayTextOnly(
-        this.imageBudget,
         plan,
         projectedHistoryCompactCheckpoint,
       );
@@ -2756,7 +2812,6 @@ export class AiSdkTurn {
         status: 'ready',
         messages: await this.deps.messageProjection.materializeRuntimeReplayPlan(
           plan,
-          this.imageBudget,
           projectedHistoryCompactCheckpoint,
           providerReasoningReplayEventIds,
         ),
@@ -2780,7 +2835,6 @@ export class AiSdkTurn {
           degradedPlan.items.length > 0 || hasProviderHistoryCompactCheckpoint
             ? await this.deps.messageProjection.materializeRuntimeReplayPlan(
                 degradedPlan,
-                this.imageBudget,
                 projectedHistoryCompactCheckpoint,
                 providerReasoningReplayEventIds,
               )
@@ -2799,7 +2853,6 @@ export class AiSdkTurn {
       status: 'ready',
       messages: await this.deps.messageProjection.materializeRuntimeReplayPlan(
         plan,
-        this.imageBudget,
         projectedHistoryCompactCheckpoint,
         providerReasoningReplayEventIds,
       ),
@@ -2905,10 +2958,8 @@ export class AiSdkTurn {
         // After consumption there must be no fallible gap before ack/injection.
         const eventId = this.deps.newId();
         const providerContent = await this.deps.messageProjection.appendImageParts(
-          this.imageBudget,
           buildSteeringEnvelope(formatTextWithInlineRefs(lease.content.text, lease.content)),
           lease.content.attachments,
-          `steering:${eventId}`,
         );
         if (this.aborted || abortSignal?.aborted) {
           throw Object.assign(new Error('aborted before steering was pushed'), {

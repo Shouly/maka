@@ -1828,6 +1828,19 @@ export interface MakaBridge {
             | 'open-failed';
         }
     >;
+    /**
+     * Shows a Bash output saved to a file because it was too long to show in
+     * the system's file manager; never opens it. Main builds the path itself
+     * and refuses one that is not exactly that Session's saved file, or a
+     * Host on another machine.
+     */
+    revealToolResultFile(
+      sessionId: string,
+      path: string,
+    ): Promise<
+      | { ok: true }
+      | { ok: false; reason: 'not-allowed' | 'missing' | 'not-a-file' | 'open-failed' }
+    >;
     openPath(
       key: 'workspace' | 'skills' | 'memory' | 'project',
       sessionId?: string,

@@ -22,6 +22,7 @@ import {
   MAX_READ_IMAGE_BYTES,
   READ_IMAGE_TOO_LARGE_MESSAGE,
   type AttachmentByteReader,
+  type AttachmentSizeReader,
 } from '@maka/core/attachments';
 import {
   isArtifactTurnKey,
@@ -30,7 +31,10 @@ import {
 } from '@maka/core/artifacts';
 import { createHash } from 'node:crypto';
 import { type StorageRef, type ToolResultContent } from '@maka/core/events';
-import type { ReadImageSnapshotReader } from '@maka/core/context-offload';
+import type {
+  ReadImageSnapshotReader,
+  ReadImageSnapshotSizeReader,
+} from '@maka/core/context-offload';
 import type { ArtifactAuthorityStore, DurableArtifactAttachmentReader } from './artifact-store.js';
 import { sanitizeArtifactName } from './artifact-store.js';
 
@@ -111,6 +115,43 @@ export function createAttachmentByteReader(input: {
     return result.ok
       ? { ok: true, bytes: Buffer.from(result.base64, 'base64') }
       : { ok: false, reason: result.reason };
+  };
+}
+
+/**
+ * The sizes `createAttachmentByteReader` would read, from the records alone:
+ * Artifact metadata and Read image snapshot references. No bytes are read.
+ */
+export function createAttachmentSizeReader(input: {
+  artifactStore: Pick<DurableArtifactAttachmentReader, 'readDurableAttachmentSize'>;
+  sessionId: string;
+  readImageSnapshots?: ReadImageSnapshotSizeReader;
+  readImageSnapshotsUnavailable?: boolean;
+  maxBytes?: number;
+}): AttachmentSizeReader {
+  const maxBytes = input.maxBytes ?? MAX_ATTACHMENT_BYTES;
+  return async (ref) => {
+    if (ref.kind === 'session_context') {
+      if (ref.sessionId !== input.sessionId) return { ok: false, reason: 'session_mismatch' };
+      if (!input.readImageSnapshots) {
+        return {
+          ok: false,
+          reason: input.readImageSnapshotsUnavailable ? 'unavailable' : 'unsupported_ref_kind',
+        };
+      }
+      const result = await input.readImageSnapshots.stat(ref);
+      return result.ok
+        ? { ok: true, bytes: result.record.sizeBytes }
+        : { ok: false, reason: result.reason };
+    }
+    if (ref.kind !== 'session_file') return { ok: false, reason: 'unsupported_ref_kind' };
+    if (ref.sessionId !== input.sessionId) return { ok: false, reason: 'session_mismatch' };
+    const result = await input.artifactStore.readDurableAttachmentSize({
+      artifactId: ref.relativePath,
+      sessionId: input.sessionId,
+      maxBytes,
+    });
+    return result.ok ? { ok: true, bytes: result.sizeBytes } : { ok: false, reason: result.reason };
   };
 }
 

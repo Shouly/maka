@@ -3659,6 +3659,17 @@ const makaBridge = {
         ipcRenderer.invoke('app:revealSessionFile', session.scope, session.sessionId, path),
       );
     },
+    revealToolResultFile(
+      sessionId: string,
+      path: string,
+    ): Promise<
+      | { ok: true }
+      | { ok: false; reason: 'not-allowed' | 'missing' | 'not-a-file' | 'open-failed' }
+    > {
+      return runtimeHostSessionRef(sessionId).then((session) =>
+        ipcRenderer.invoke('app:revealToolResultFile', session.scope, session.sessionId, path),
+      );
+    },
     openPath(
       key: 'workspace' | 'skills' | 'memory' | 'project',
       sessionId?: string,

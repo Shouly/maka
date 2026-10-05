@@ -26,6 +26,7 @@ import type { LlmConnection } from '@maka/core/llm-connections';
 import type { SessionHeader } from '@maka/core/session';
 import type { SessionEvent } from '@maka/core/events';
 import type { RuntimeEvent } from '@maka/core/runtime-event';
+import type { CompactionDecisionDiagnostic } from '@maka/core/usage-stats/types';
 import type { RuntimeContinuationMetadata } from '@maka/core/backend-types';
 import { z } from 'zod';
 import type { ModelCallCommit } from '@maka/core/agent-run';
@@ -48,6 +49,8 @@ import {
   type HistoryCompactProviderState,
 } from '../history-compact-checkpoint.js';
 import { HistoryCompactSummarizerError } from '../history-compact-error.js';
+import { buildLlmHistorySummarizer } from '../history-compact-summarizer.js';
+import type { HistoryCompactSummaryInput } from '../ai-sdk-compaction-contract.js';
 import { createTestAiSdkBackend } from './execution-boundary-test-helpers.js';
 import { testInvocationOpening } from './invocation-fixture.js';
 
@@ -145,6 +148,18 @@ interface ReactiveFixtureOptions {
   currentImage?: boolean;
   /** Make Read return a newly produced image during this turn. */
   liveImageResult?: boolean;
+  /** A prior turn whose Reads return these texts, whatever their size. */
+  priorToolResults?: readonly string[];
+  /** A persisted anchor after the prior turn: its last request was accepted with this input. */
+  priorAnchorInputTokens?: number;
+  /** A prior turn of this many image Reads, oldest first. */
+  priorImageReads?: number;
+  /** Images one request may carry. */
+  maxProviderImageRequestCount?: number;
+  /** The handoff predecessor Reads an image after its steering message. */
+  handoffImageAfterSteering?: boolean;
+  /** Input tokens each accepted tool step reports, in place of 100. */
+  toolStepInputTokens?: number;
   summarize?: (input: {
     source: { foldedRuntimeEvents: RuntimeEvent[] };
   }) =>
@@ -252,7 +267,7 @@ function buildReactiveFixture(options: ReactiveFixtureOptions): ReactiveFixture 
       usage:
         options.firstStepUsageMissing && call === 1
           ? ({ inputTokens: {}, outputTokens: {} } as ReturnType<typeof usage>)
-          : usage(100, 20),
+          : usage(options.toolStepInputTokens ?? 100, 20),
     },
   ];
   const doneChunks = (): LanguageModelV4StreamPart[] => [
@@ -418,86 +433,159 @@ function buildReactiveFixture(options: ReactiveFixtureOptions): ReactiveFixture 
   });
 
   const priorChars = options.bigPriors ? 4_000 : 120;
+  const readPair = (
+    id: string,
+    turnId: string,
+    path: string,
+    result: unknown,
+    runId?: string,
+  ): RuntimeEvent[] => {
+    const run = runId ? { runId, invocationId: runId } : {};
+    return [
+      {
+        ...runtimeTextEvent(`${id}-call`, turnId, 'model', ''),
+        ...run,
+        content: { kind: 'function_call' as const, id, name: 'Read', args: { path } },
+      },
+      {
+        ...runtimeTextEvent(`${id}-result`, turnId, 'model', ''),
+        ...run,
+        role: 'tool' as const,
+        author: 'tool' as const,
+        content: {
+          kind: 'function_response' as const,
+          id,
+          name: 'Read',
+          result: result as string,
+          isError: false,
+        },
+      },
+    ];
+  };
+  const imageResult = (relativePath: string) => ({
+    kind: 'image' as const,
+    mimeType: 'image/png',
+    ref: { kind: 'session_file' as const, sessionId: 'session-1', relativePath },
+  });
   const priorEvents: RuntimeEvent[] = options.withoutPriorTurns
     ? []
-    : options.imagePrior
+    : options.priorToolResults !== undefined
       ? [
-          runtimeTextEvent('prior-user', 'turn-0', 'user', 'inspect the screenshot'),
-          {
-            ...runtimeTextEvent('prior-call', 'turn-0', 'model', ''),
-            content: {
-              kind: 'function_call' as const,
-              id: 'prior-image-call',
-              name: 'Read',
-              args: { path: 'screenshot.png' },
-            },
-          },
-          {
-            ...runtimeTextEvent('prior-result', 'turn-0', 'model', ''),
-            role: 'tool' as const,
-            author: 'tool' as const,
-            content: {
-              kind: 'function_response' as const,
-              id: 'prior-image-call',
-              name: 'Read',
-              result: {
-                kind: 'image' as const,
-                mimeType: 'image/png',
-                ref: {
-                  kind: 'session_file' as const,
-                  sessionId: 'session-1',
-                  relativePath: 'screenshot.png',
+          runtimeTextEvent('prior-user', 'turn-0', 'user', 'PRIOR_FACT inspect the log'),
+          ...options.priorToolResults.flatMap((result, index) =>
+            readPair(`prior-log-${index}`, 'turn-0', `build-${index}.log`, result),
+          ),
+          runtimeTextEvent('prior-model', 'turn-0', 'model', 'PRIOR_FACT log inspected'),
+        ]
+      : options.priorImageReads !== undefined
+        ? [
+            runtimeTextEvent('prior-user', 'turn-0', 'user', 'take the screenshots'),
+            ...Array.from({ length: options.priorImageReads }, (_, index) =>
+              readPair(
+                `prior-image-${index + 1}`,
+                'turn-0',
+                `shot-${index + 1}.png`,
+                imageResult(`shot-${index + 1}`),
+              ),
+            ).flat(),
+            runtimeTextEvent('prior-model', 'turn-0', 'model', 'screenshots taken'),
+          ]
+        : options.imagePrior
+          ? [
+              runtimeTextEvent('prior-user', 'turn-0', 'user', 'inspect the screenshot'),
+              {
+                ...runtimeTextEvent('prior-call', 'turn-0', 'model', ''),
+                content: {
+                  kind: 'function_call' as const,
+                  id: 'prior-image-call',
+                  name: 'Read',
+                  args: { path: 'screenshot.png' },
                 },
               },
-              isError: false,
-            },
-          },
-          runtimeTextEvent('prior-model', 'turn-0', 'model', 'screenshot inspected'),
-        ]
-      : [
-          runtimeTextEvent(
-            'prior-user',
-            'turn-0',
-            'user',
-            `PRIOR_FACT question ${'p'.repeat(priorChars)}`,
-          ),
-          runtimeTextEvent(
-            'prior-model',
-            'turn-0',
-            'model',
-            `PRIOR_FACT answer ${'q'.repeat(priorChars)}`,
-          ),
-          ...(options.reasoningReplayTail
-            ? [
-                {
-                  ...runtimeTextEvent('same-route-reasoning', 'turn-0', 'model', ''),
-                  runId: 'same-route-prior-run',
-                  invocationId: 'same-route-prior-run',
-                  content: {
-                    kind: 'thinking' as const,
-                    text: 'SAME_ROUTE_PRIVATE_REASONING',
-                    signature: 'same-route-signature',
+              {
+                ...runtimeTextEvent('prior-result', 'turn-0', 'model', ''),
+                role: 'tool' as const,
+                author: 'tool' as const,
+                content: {
+                  kind: 'function_response' as const,
+                  id: 'prior-image-call',
+                  name: 'Read',
+                  result: {
+                    kind: 'image' as const,
+                    mimeType: 'image/png',
+                    ref: {
+                      kind: 'session_file' as const,
+                      sessionId: 'session-1',
+                      relativePath: 'screenshot.png',
+                    },
                   },
+                  isError: false,
                 },
-                {
-                  ...runtimeTextEvent('prior-reasoning', 'turn-0', 'model', ''),
-                  runId: 'prior-run',
-                  invocationId: 'prior-run',
-                  content: {
-                    kind: 'thinking' as const,
-                    text: 'CROSS_ROUTE_PRIVATE_REASONING',
-                    signature: 'cross-route-signature',
-                  },
-                },
-              ]
-            : []),
-        ];
+              },
+              runtimeTextEvent('prior-model', 'turn-0', 'model', 'screenshot inspected'),
+            ]
+          : [
+              runtimeTextEvent(
+                'prior-user',
+                'turn-0',
+                'user',
+                `PRIOR_FACT question ${'p'.repeat(priorChars)}`,
+              ),
+              runtimeTextEvent(
+                'prior-model',
+                'turn-0',
+                'model',
+                `PRIOR_FACT answer ${'q'.repeat(priorChars)}`,
+              ),
+              ...(options.reasoningReplayTail
+                ? [
+                    {
+                      ...runtimeTextEvent('same-route-reasoning', 'turn-0', 'model', ''),
+                      runId: 'same-route-prior-run',
+                      invocationId: 'same-route-prior-run',
+                      content: {
+                        kind: 'thinking' as const,
+                        text: 'SAME_ROUTE_PRIVATE_REASONING',
+                        signature: 'same-route-signature',
+                      },
+                    },
+                    {
+                      ...runtimeTextEvent('prior-reasoning', 'turn-0', 'model', ''),
+                      runId: 'prior-run',
+                      invocationId: 'prior-run',
+                      content: {
+                        kind: 'thinking' as const,
+                        text: 'CROSS_ROUTE_PRIVATE_REASONING',
+                        signature: 'cross-route-signature',
+                      },
+                    },
+                  ]
+                : []),
+            ];
   const priorInvocations: RuntimeInvocationRecord[] = options.reasoningReplayTail
     ? [
         priorRunInvocation('same-route-prior-run', 'test-connection-id', 'mock-model-id'),
         priorRunInvocation('prior-run', 'source-connection-id', 'source-model-id'),
       ]
     : [];
+  if (options.priorAnchorInputTokens !== undefined) {
+    priorEvents.push({
+      ...runtimeTextEvent('prior-usage', 'turn-0', 'model', ''),
+      runId: 'anchor-run',
+      invocationId: 'anchor-run',
+      role: 'system',
+      author: 'system',
+      content: undefined,
+      actions: {
+        tokenUsage: {
+          input: options.priorAnchorInputTokens,
+          output: 20,
+          lastRequestAnchor: { inputTokens: options.priorAnchorInputTokens, outputTokens: 20 },
+        },
+      },
+    });
+    priorInvocations.push(priorRunInvocation('anchor-run', 'test-connection-id', 'mock-model-id'));
+  }
   const anchor: RuntimeEvent = {
     ...runtimeTextEvent('anchor-1', 'turn-1', 'user', ANCHOR_TEXT),
     ...(options.anchorAuthor ? { author: options.anchorAuthor } : {}),
@@ -564,6 +652,11 @@ function buildReactiveFixture(options: ReactiveFixtureOptions): ReactiveFixture 
       invocationId: 'run-intermediate',
       content: { kind: 'text', text: 'HANDOFF_TAIL_SENTINEL', steering: true },
     });
+    if (options.handoffImageAfterSteering) {
+      priorEvents.push(
+        ...readPair('late-image', 'turn-1', 'late.png', imageResult('late'), 'run-intermediate'),
+      );
+    }
   }
   // The successor's reader must never return predecessor events or the old
   // user anchor: those already belong to its authenticated replay prefix.
@@ -655,7 +748,11 @@ function buildReactiveFixture(options: ReactiveFixtureOptions): ReactiveFixture 
     ...(options.reasoningReplayTail ? { providerStateIdentity: PROVIDER_STATE_IDENTITY } : {}),
     modelId: 'mock-model-id',
     modelFactory: () => model,
-    ...(options.imagePrior || options.currentImage || options.liveImageResult
+    ...(options.imagePrior ||
+    options.currentImage ||
+    options.liveImageResult ||
+    options.priorImageReads !== undefined ||
+    options.handoffImageAfterSteering
       ? {
           supportsVision: true,
           readAttachmentBytes: async () => ({
@@ -665,6 +762,9 @@ function buildReactiveFixture(options: ReactiveFixtureOptions): ReactiveFixture 
         }
       : {}),
     ...(options.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
+    ...(options.maxProviderImageRequestCount !== undefined
+      ? { maxProviderImageRequestCount: options.maxProviderImageRequestCount }
+      : {}),
     tools: [
       {
         name: 'Read',
@@ -816,6 +916,16 @@ function boundariesOf(commits: readonly ModelCallCommit<ModelCallAttempt>[]) {
         type: LATEST_CONTEXT_PROJECTION_TYPE,
         data: commit.latestContext?.snapshot,
       })?.compaction,
+  );
+}
+
+/** The fold the turn's usage reports. */
+function llmContextDecision(fixture: ReactiveFixture): CompactionDecisionDiagnostic | undefined {
+  const usage = fixture.events.find((event) => event.type === 'token_usage') as
+    | { contextBudget?: { compactionDecisions?: CompactionDecisionDiagnostic[] } }
+    | undefined;
+  return usage?.contextBudget?.compactionDecisions?.find(
+    (decision) => decision.decision === 'replaced',
   );
 }
 
@@ -1220,18 +1330,175 @@ describe('reactive overflow recovery in the streaming backend', () => {
     );
   });
 
-  test('surfaces a retryable second overflow after the image-only retry without another loop', async () => {
+  test('folds when the request is rejected again after the image-only retry', async () => {
+    // The overflow was not the images' doing: giving them back is not enough,
+    // and the turn still gets its one fold rather than ending on the error.
     const fixture = buildReactiveFixture({
-      script: ['tool', 'overflow503', 'overflow503'],
+      script: ['tool', 'overflow503', 'overflow503', 'done'],
       imagePrior: true,
     });
     await runTurn(fixture);
 
-    assert.equal(fixture.model.doStreamCalls.length, 3);
+    assert.equal(fixture.model.doStreamCalls.length, 4);
+    assert.equal(complete(fixture)?.stopReason, 'end_turn');
+    assert.deepEqual(fixture.toolExecutions, ['one.md']);
+    assert.equal(fixture.summarizerCalls(), 1);
+    assert.equal(fixture.recorded.length, 1);
+    const imageRetry = JSON.stringify(fixture.model.doStreamCalls[2]?.prompt);
+    const foldRetry = JSON.stringify(fixture.model.doStreamCalls[3]?.prompt);
+    assert.match(imageRetry, /omitted after provider context overflow/);
+    assert.doesNotMatch(imageRetry, /REACTIVE_SUMMARY_SENTINEL/);
+    assert.match(foldRetry, /REACTIVE_SUMMARY_SENTINEL/);
+    assert.equal(foldRetry.match(/"mediaType":"image\/png"/g), null);
+  });
+
+  test('surfaces the overflow once the image-only retry and the fold are both rejected', async () => {
+    const fixture = buildReactiveFixture({
+      script: ['tool', 'overflow503', 'overflow503', 'overflow503', 'done'],
+      imagePrior: true,
+    });
+    await runTurn(fixture);
+
+    assert.equal(fixture.model.doStreamCalls.length, 4);
     assert.equal(complete(fixture)?.stopReason, 'error');
     assert.deepEqual(fixture.toolExecutions, ['one.md']);
-    assert.equal(fixture.summarizerCalls(), 0);
-    assert.equal(fixture.recorded.length, 0);
+    assert.equal(fixture.summarizerCalls(), 1);
+    const notes = fixture.messages
+      .filter((message) => (message as { type?: string }).type === 'system_note')
+      .map((message) => (message as { kind: string; data?: unknown }).kind);
+    assert.ok(notes.includes('context_window_suggestion'), JSON.stringify(notes));
+    assert.ok(notes.includes('context_overflow_after_compaction'), JSON.stringify(notes));
+  });
+
+  // A summarizer on the real text path whose provider rejects any request past
+  // 70,000 characters as too long.
+  const boundedTextSummarizer = (requests: string[]) => {
+    const summarize = buildLlmHistorySummarizer({
+      resolveModel: () => 'fake-model',
+      generateText: async (options) => {
+        const request = JSON.stringify(options.messages);
+        requests.push(request);
+        if (request.length > 70_000) throw new Error(OVERFLOW_MESSAGE);
+        return { text: sectionedSummary('REACTIVE_SUMMARY_SENTINEL'), finishReason: 'stop' };
+      },
+    });
+    return (input: unknown) => summarize(input as HistoryCompactSummaryInput);
+  };
+  // Together far past what the summarizer's provider takes, and the larger
+  // one alone is not enough to leave out: only the accepted size says to leave
+  // out both.
+  const LARGE_PRIOR_RESULT = 'LARGE_PRIOR_RESULT_'.repeat(4_000);
+  const HUGE_PRIOR_RESULT = 'HUGE_PRIOR_RESULT_'.repeat(7_000);
+
+  test('a pre-turn fold refits its summarizer request to the persisted anchor', async () => {
+    // No window is known and nothing is left out up front: the summarizer's
+    // provider rejects the first request, and the refit is sized by the input
+    // the previous turn's last request was accepted with. Without that, the
+    // fold would retreat to a span that leaves the outputs in the tail, where
+    // no fold can reach them.
+    const summarizerRequests: string[] = [];
+    const fixture = buildReactiveFixture({
+      script: ['overflow', 'done'],
+      withoutContextWindow: true,
+      priorToolResults: [LARGE_PRIOR_RESULT, HUGE_PRIOR_RESULT],
+      priorAnchorInputTokens: 15_000,
+      summarize: boundedTextSummarizer(summarizerRequests),
+    });
+    await runTurn(fixture);
+
+    assert.equal(fixture.model.doStreamCalls.length, 2);
+    assert.equal(complete(fixture)?.stopReason, 'end_turn');
+    assert.equal(fixture.recorded.length, 1);
+    assert.equal(fixture.recorded[0]!.phase, undefined);
+    assert.equal(summarizerRequests.length, 2);
+    assert.equal(summarizerRequests[0]!.includes('HUGE_PRIOR_RESULT_'), true);
+    assert.equal(summarizerRequests[1]!.includes('HUGE_PRIOR_RESULT_'), false);
+    assert.equal(summarizerRequests[1]!.includes('LARGE_PRIOR_RESULT_'), false);
+    assert.equal(summarizerRequests[1]!.includes('PRIOR_FACT inspect the log'), true);
+    const retry = JSON.stringify(fixture.model.doStreamCalls[1]?.prompt);
+    assert.match(retry, /REACTIVE_SUMMARY_SENTINEL/);
+    assert.equal(retry.includes('HUGE_PRIOR_RESULT_'), false);
+    assert.equal(retry.includes(ANCHOR_TEXT), true);
+    assert.equal(llmContextDecision(fixture)?.summarizerOmittedToolOutputs, 2);
+  });
+
+  test('a mid-turn fold refits its summarizer request to the input last accepted in the turn', async () => {
+    const summarizerRequests: string[] = [];
+    const fixture = buildReactiveFixture({
+      script: ['tool', 'overflow', 'done'],
+      withoutContextWindow: true,
+      toolStepInputTokens: 15_000,
+      priorToolResults: [LARGE_PRIOR_RESULT, HUGE_PRIOR_RESULT],
+      summarize: boundedTextSummarizer(summarizerRequests),
+    });
+    await runTurn(fixture);
+
+    assert.equal(fixture.model.doStreamCalls.length, 3);
+    assert.equal(complete(fixture)?.stopReason, 'end_turn');
+    assert.equal(fixture.recorded.length, 1);
+    assert.equal(fixture.recorded[0]!.phase, 'mid_turn');
+    // The first request carries the outputs and is rejected; the second is
+    // refit to the 15,000 tokens the main request was accepted with.
+    assert.equal(summarizerRequests.length, 2);
+    assert.equal(summarizerRequests[0]!.includes('HUGE_PRIOR_RESULT_'), true);
+    assert.equal(summarizerRequests[1]!.includes('HUGE_PRIOR_RESULT_'), false);
+    assert.equal(summarizerRequests[1]!.includes('LARGE_PRIOR_RESULT_'), false);
+    const retry = JSON.stringify(fixture.model.doStreamCalls[2]?.prompt);
+    assert.match(retry, /REACTIVE_SUMMARY_SENTINEL/);
+    assert.equal(retry.includes('HUGE_PRIOR_RESULT_'), false);
+    assert.deepEqual(fixture.toolExecutions, ['one.md']);
+  });
+
+  test('images given back for a rejected request stay out of the fold that follows', async () => {
+    // The predecessor's image comes after its steering message, which no fold
+    // covers, so it is still in the replacement the fold materializes from the
+    // ledger. The omission made for the rejected request must reach it there.
+    const fixture = buildReactiveFixture({
+      script: ['overflow503', 'overflow503', 'done'],
+      withoutPriorTurns: true,
+      handoff: true,
+      handoffImageAfterSteering: true,
+    });
+    await runTurn(fixture);
+
+    assert.equal(fixture.model.doStreamCalls.length, 3);
+    assert.equal(complete(fixture)?.stopReason, 'end_turn');
+    assert.equal(fixture.summarizerCalls(), 1);
+    const rejected = JSON.stringify(fixture.model.doStreamCalls[0]?.prompt);
+    const imageRetry = JSON.stringify(fixture.model.doStreamCalls[1]?.prompt);
+    const foldRetry = JSON.stringify(fixture.model.doStreamCalls[2]?.prompt);
+    assert.equal(rejected.match(/"mediaType":"image\/png"/g)?.length, 1);
+    assert.equal(imageRetry.match(/"mediaType":"image\/png"/g), null);
+    assert.match(foldRetry, /REACTIVE_SUMMARY_SENTINEL/);
+    // The fold kept the image's Read in its tail and still does not send it.
+    assert.equal(foldRetry.includes('late.png'), true);
+    assert.equal(foldRetry.match(/"mediaType":"image\/png"/g), null);
+    assert.match(foldRetry, /omitted after provider context overflow/);
+  });
+
+  test('images removed as a batch stay removed after an image omission', async () => {
+    // Five screenshots pass a limit of four, so the three oldest are removed
+    // and two are sent. The rejection gives those two back. The next step is
+    // rebuilt from the ledger with all five again: its window must still start
+    // after the three removed ones, not move back because two went missing.
+    const fixture = buildReactiveFixture({
+      script: ['overflow', 'tool', 'done'],
+      priorImageReads: 5,
+      maxProviderImageRequestCount: 4,
+      liveImageResult: true,
+    });
+    await runTurn(fixture);
+
+    assert.equal(fixture.model.doStreamCalls.length, 3);
+    assert.equal(complete(fixture)?.stopReason, 'end_turn');
+    const prompts = fixture.model.doStreamCalls.map((call) => JSON.stringify(call.prompt));
+    const images = (prompt: string) => prompt.match(/"mediaType":"image\/png"/g)?.length ?? 0;
+    const removed = (prompt: string) => prompt.split('[An image was removed').length - 1;
+    const omitted = (prompt: string) =>
+      prompt.split('omitted after provider context overflow').length - 1;
+    assert.deepEqual(prompts.map(images), [2, 0, 1]);
+    assert.deepEqual(prompts.map(removed), [3, 3, 3]);
+    assert.deepEqual(prompts.map(omitted), [0, 2, 2]);
   });
 
   test('keeps only the historical image omitted after the overflow retry returns a tool call', async () => {

@@ -18,7 +18,9 @@
  */
 
 import { Buffer } from "node:buffer";
+import type { McpCallResult } from '@maka/core/mcp';
 import type { ComputerUseToolSet } from '@maka/runtime/computer-use-tools';
+import { mcpResultFileText } from '@maka/runtime/mcp-tools';
 import type { MakaTool } from '@maka/runtime/tool-runtime';
 import {
   createOAuthPresentationClientProvider,
@@ -28,9 +30,11 @@ import {
 import {
   CLIENT_CAPABILITY_MAX_MANIFEST_BYTES,
   CLIENT_CAPABILITY_MAX_OFFERS,
+  CLIENT_CAPABILITY_MAX_RESULT_BYTES,
   CLIENT_CAPABILITY_MAX_TOOLS,
   CLIENT_CAPABILITY_MAX_TOOLS_PER_OFFER,
   decodeClientCapabilityReplaceInput,
+  decodeClientCapabilityResult,
   decodeClientCapabilityToolDescriptor,
   projectToolInputSchema,
   type ClientCapabilityCallFrame,
@@ -72,6 +76,12 @@ export interface DesktopCapabilityGroup {
    * Fixed groups never set this — their failures stay loud.
    */
   readonly dynamic?: boolean;
+  /**
+   * The tools are MCP proxies (`buildMcpTools`), each returning an MCP call
+   * result. The Host gets that result whole, to bound and save itself, not
+   * the text the model would be shown.
+   */
+  readonly mcpResults?: boolean;
 }
 
 interface PreparedDesktopCapabilityTool {
@@ -85,9 +95,13 @@ interface PreparedDesktopCapabilityGroup {
   readonly description: string;
   readonly tools: readonly PreparedDesktopCapabilityTool[];
   readonly dynamic?: boolean;
+  readonly mcpResults?: boolean;
 }
 
-type NativeToolBinding = Pick<PreparedDesktopCapabilityTool, "tool">;
+interface NativeToolBinding {
+  readonly tool: MakaTool;
+  readonly mcpResults: boolean;
+}
 
 type DesktopToolModelOutput = Awaited<
   ReturnType<NonNullable<MakaTool["toModelOutput"]>>
@@ -451,6 +465,7 @@ async function invokeNativeTool(
         execute,
       )
     : execute());
+  if (binding.mcpResults && isMcpCallResult(output)) return projectMcpResult(output);
   return projectToolResult(binding.tool, frame.toolCallId, args, output);
 }
 
@@ -712,7 +727,7 @@ function indexBindings(
           `Duplicate Desktop native capability tool: ${group.offerId}/${tool.name}`,
         );
       }
-      bindings.set(key, { tool });
+      bindings.set(key, { tool, mcpResults: group.mcpResults === true });
     }
   }
   return bindings;
@@ -722,6 +737,53 @@ function bindingKey(
   frame: Pick<ClientCapabilityCallFrame, "offerId" | "serverId" | "toolName">,
 ): string {
   return `${frame.offerId}\0${frame.serverId}\0${frame.toolName}`;
+}
+
+function isMcpCallResult(value: unknown): value is McpCallResult {
+  return isPlainRecord(value) && Array.isArray(value.content);
+}
+
+/**
+ * An MCP result as the Host takes it: whole, its blocks and
+ * `structuredContent` as the server sent them. One the protocol cannot carry
+ * as it is (more blocks, or a deeper or larger `structuredContent`, than it
+ * allows) goes as the text a saved file would hold for it, with its images
+ * when they fit; one past the protocol's byte limit even then fails the call.
+ */
+function projectMcpResult(result: McpCallResult): ClientCapabilityCallResult {
+  const whole: ClientCapabilityCallResult = {
+    content: result.content.map((block) => structuredClone(block)),
+    ...(result.structuredContent === undefined
+      ? {}
+      : { structuredContent: structuredClone(result.structuredContent) }),
+  };
+  if (fitsClientCapabilityResult(whole)) return whole;
+  const text: ClientCapabilityContentBlock = {
+    type: "text",
+    text: mcpResultFileText(result).text,
+  };
+  const images = whole.content.filter((block) => block.type === "image");
+  if (images.length > 0) {
+    const withImages = { content: [text, ...images] };
+    if (fitsClientCapabilityResult(withImages)) return withImages;
+  }
+  const textOnly = { content: [text] };
+  if (fitsClientCapabilityResult(textOnly)) return textOnly;
+  throw new Error(
+    `The MCP result is larger than the ${CLIENT_CAPABILITY_MAX_RESULT_BYTES / (1024 * 1024)} MiB this Desktop client can return`,
+  );
+}
+
+/** Whether the channel will send `result`: it decodes, and its JSON is within the byte limit. */
+function fitsClientCapabilityResult(result: ClientCapabilityCallResult): boolean {
+  try {
+    return (
+      Buffer.byteLength(JSON.stringify(decodeClientCapabilityResult(result)), "utf8") <=
+      CLIENT_CAPABILITY_MAX_RESULT_BYTES
+    );
+  } catch {
+    return false;
+  }
 }
 
 async function projectToolResult(

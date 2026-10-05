@@ -18,7 +18,10 @@
  */
 
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { after, test } from 'node:test';
 import { REQUEST_COMPOSITION_MAX_TOOL_DESCRIPTION_LENGTH } from '@maka/core/run-composition';
 import { createManagedExecutionBoundary } from '@maka/core/sandbox-boundary';
 import { createWorkspaceWritePermissionProfile } from '@maka/core/permission-profile';
@@ -35,6 +38,8 @@ import {
   type McpToolProvider,
 } from '../mcp-tools.js';
 import { selectCollaborationTools } from '../plan-mode.js';
+import { readFileLineWindow } from '../text-line-window.js';
+import { formatSyntheticToolErrorText, TOOL_ERROR_RESULT_MAX_CHARS } from '../tool-runtime.js';
 
 test('buildMcpTools projects discovery, abort, and rich model output', async () => {
   const readBinding = binding('internal-read-binding');
@@ -525,4 +530,364 @@ test('MCP descriptions are normalized to the Request Composition bound', () => {
     tool?.description,
     oversized.slice(0, REQUEST_COMPOSITION_MAX_TOOL_DESCRIPTION_LENGTH),
   );
+});
+
+const savedResultRoots: string[] = [];
+after(async () => {
+  await Promise.all(savedResultRoots.map((root) => rm(root, { recursive: true, force: true })));
+});
+
+async function toolResultRoot(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), 'maka-mcp-results-'));
+  savedResultRoots.push(root);
+  return root;
+}
+
+/** The one file saved under `root` for Session `s`. */
+async function savedFile(root: string): Promise<{ path: string; text: string }> {
+  const names = await readdir(join(root, 's'));
+  assert.equal(names.length, 1);
+  assert.match(names[0]!, /^[0-9a-f-]{36}\.txt$/u);
+  const path = join(root, 's', names[0]!);
+  return { path, text: await readFile(path, 'utf8') };
+}
+
+async function callBounded(
+  result: McpCallResult,
+  root: string | undefined,
+  options: { prepared?: boolean; origin?: 'provider' | 'code_mode' } = {},
+): Promise<{ output: unknown; text: string; parts: string[] }> {
+  const provider = fakeProvider(
+    [boundTool(descriptor('server', 'big'), binding('big-binding'))],
+    async () => result,
+  );
+  const [tool] = buildMcpTools(
+    options.prepared
+      ? {
+          ...provider,
+          prepareTool: async () => ({ execute: async () => result, cancel: () => undefined }),
+        }
+      : provider,
+    root === undefined ? {} : { toolResultRoot: root },
+  );
+  if (!tool) throw new Error('tool missing');
+  const context = {
+    sessionId: 's',
+    turnId: 't',
+    cwd: '/tmp',
+    toolCallId: 'call',
+    abortSignal: new AbortController().signal,
+    emitOutput() {},
+    ...(options.origin ? { origin: options.origin } : {}),
+  };
+  const output = options.prepared
+    ? await (await tool.prepareExecution!({}, context)).execute(context)
+    : await tool.impl({}, context);
+  const model = await tool.toModelOutput?.({ toolCallId: 'call', input: {}, output });
+  if (model?.type !== 'content') throw new Error('expected content tool output');
+  const parts = model.value.map((part) => part.type);
+  const text = model.value.map((part) => (part.type === 'text' ? part.text : '')).join('');
+  return { output, text, parts };
+}
+
+test('a text-only MCP result past 50,000 characters is saved and named by its path', async () => {
+  const root = await toolResultRoot();
+  const { output, text } = await callBounded(
+    { content: [{ type: 'text', text: 'r'.repeat(50_001) }] },
+    root,
+  );
+  const saved = await savedFile(root);
+  // The file is the block under the line that names it.
+  assert.equal(saved.text, `--- text ---\n${'r'.repeat(50_001)}`);
+  const notice = `Output too long to show (50,014 characters). The full output is saved to ${saved.path}; read it with Read or search it with Grep.`;
+  assert.deepEqual(output, { content: [{ type: 'text', text: notice }] });
+  assert.equal(text, notice);
+});
+
+test('two MCP results with the same call id are saved to two files', async () => {
+  const root = await toolResultRoot();
+  await callBounded({ content: [{ type: 'text', text: 'a'.repeat(60_000) }] }, root);
+  await callBounded({ content: [{ type: 'text', text: 'b'.repeat(60_000) }] }, root);
+  const names = await readdir(join(root, 's'));
+  assert.equal(names.length, 2);
+  const texts = await Promise.all(names.map((name) => readFile(join(root, 's', name), 'utf8')));
+  assert.deepEqual(texts.map((text) => text.split('\n')[1]![0]).sort(), ['a', 'b']);
+});
+
+test('a call from a Code Mode cell gets its whole result, unsaved', async () => {
+  const root = await toolResultRoot();
+  const items = Array.from({ length: 6_000 }, (_, index) => ({ id: index, name: `item-${index}` }));
+  const result: McpCallResult = {
+    content: [{ type: 'text', text: JSON.stringify({ items }) }],
+    structuredContent: { items },
+  };
+  const direct = await callBounded(result, root, { origin: 'code_mode' });
+  assert.equal(direct.output, result);
+  const prepared = await callBounded(result, root, { origin: 'code_mode', prepared: true });
+  assert.equal(prepared.output, result);
+  assert.deepEqual(await readdir(root), []);
+});
+
+test('a text-only MCP result of 50,000 characters stays inline', async () => {
+  const root = await toolResultRoot();
+  const result = { content: [{ type: 'text' as const, text: 'r'.repeat(50_000) }] };
+  const { output, text } = await callBounded(result, root);
+  assert.equal(output, result);
+  assert.equal(text, 'r'.repeat(50_000));
+  assert.deepEqual(await readdir(root), []);
+});
+
+test('a text-only MCP result over 25,000 estimated tokens is saved under 50,000 characters', async () => {
+  const root = await toolResultRoot();
+  // Three UTF-8 bytes a character: 33,333 is 99,999 bytes (25,000 tokens),
+  // 33,334 is 100,002 (25,001 tokens).
+  const under = await callBounded({ content: [{ type: 'text', text: '漢'.repeat(33_333) }] }, root);
+  assert.equal(under.text, '漢'.repeat(33_333));
+  const over = await callBounded({ content: [{ type: 'text', text: '漢'.repeat(33_334) }] }, root);
+  assert.match(
+    over.text,
+    /^Output too long to show \(33,347 characters\)\. The full output is saved to /u,
+  );
+  assert.equal((await savedFile(root)).text, `--- text ---\n${'漢'.repeat(33_334)}`);
+});
+
+test('a long structured MCP result is saved laid out a field to a line, for Read to page', async () => {
+  const root = await toolResultRoot();
+  const structuredContent = { rows: Array.from({ length: 6_000 }, (_, index) => `row-${index}`) };
+  const { text } = await callBounded({ content: [], structuredContent }, root);
+  assert.match(text, /^Output too long to show/u);
+  assert.equal(
+    (await savedFile(root)).text,
+    `--- structuredContent ---\n${JSON.stringify(structuredContent, undefined, 2)}`,
+  );
+});
+
+test('JSON text in a long MCP result is saved laid out, its numbers exactly as written', async () => {
+  const root = await toolResultRoot();
+  const rows = Array.from(
+    { length: 3_000 },
+    (_, index) =>
+      `{"id":12345678901234567890${index},"name":"row \\"${index}\\"","tags":[],"meta":{}}`,
+  );
+  const json = `{"rows":[${rows.join(',')}],"total":1.50}`;
+  const { text } = await callBounded(
+    {
+      content: [
+        { type: 'text', text: json },
+        { type: 'text', text: 'not json {' },
+      ],
+    },
+    root,
+  );
+  assert.match(text, /^Output too long to show/u);
+  const saved = (await savedFile(root)).text;
+  assert.ok(
+    saved.startsWith(
+      '--- text ---\n{\n  "rows": [\n    {\n      "id": 123456789012345678900,\n      "name": "row \\"0\\"",\n      "tags": [],\n      "meta": {}\n    },\n',
+    ),
+  );
+  assert.ok(saved.endsWith('\n  ],\n  "total": 1.50\n}\n--- text ---\nnot json {'));
+  assert.deepEqual(
+    JSON.parse(saved.slice('--- text ---\n'.length, saved.lastIndexOf('\n--- text ---\n'))),
+    JSON.parse(json),
+  );
+});
+
+test('a saved MCP file keeps every line break, so Read can page it', async () => {
+  const root = await toolResultRoot();
+  const markdown = 'some markdown line\n'.repeat(8_000);
+  const { text } = await callBounded(
+    {
+      content: [
+        { type: 'text', text: 'plain\nlines' },
+        { type: 'text', text: JSON.stringify({ markdown, path: 'C:\\new' }) },
+        { type: 'resource', uri: 'file:///a.md', mimeType: 'text/markdown', text: markdown },
+      ],
+      structuredContent: { markdown, crlf: 'one\r\ntwo' },
+    },
+    root,
+  );
+  assert.match(
+    text,
+    /^Output too long to show \([\d,]+ characters\)\. The full output is saved to /u,
+  );
+  const saved = await savedFile(root);
+  const lines = saved.text.split('\n');
+  assert.ok(Math.max(...lines.map((line) => line.length)) < 100, 'no line runs on');
+  // Each block under the line that names it, in order, then structuredContent.
+  assert.deepEqual(
+    lines.filter((line) => line.startsWith('--- ')),
+    [
+      '--- text ---',
+      '--- text ---',
+      '--- resource file:///a.md (text/markdown) ---',
+      '--- structuredContent ---',
+    ],
+  );
+  assert.ok(
+    saved.text.startsWith(
+      `--- text ---\nplain\nlines\n--- text ---\n{\n  "markdown": "some markdown line\nsome markdown line\n`,
+    ),
+  );
+  // A line break in a JSON string is written as one; every other escape stays,
+  // an escaped backslash before an `n` among them.
+  assert.ok(saved.text.includes('\n  "path": "C:\\\\new"\n}\n'));
+  assert.ok(saved.text.includes(`--- resource file:///a.md (text/markdown) ---\n${markdown}`));
+  assert.ok(saved.text.endsWith('\n  "crlf": "one\r\ntwo"\n}'));
+
+  const whole = await readFileLineWindow(saved.path);
+  assert.equal(whole.partial, true, 'a first page, not a refusal');
+  const page = await readFileLineWindow(saved.path, 8_010, 5);
+  assert.equal(page.content.split('\n').length, 5);
+  assert.equal(page.totalLines, lines.length);
+});
+
+test('a saved MCP file holds every block, past the 100 the model is shown a summary of', async () => {
+  const root = await toolResultRoot();
+  const content = Array.from({ length: 150 }, (_, index) => ({
+    type: 'resource' as const,
+    uri: `file:///${index}`,
+    text: `resource ${index} ${'x'.repeat(1_000)}`,
+  }));
+  const { text } = await callBounded({ content }, root);
+  assert.match(text, /The full output is saved to /u);
+  const saved = (await savedFile(root)).text;
+  for (let index = 0; index < 150; index++) {
+    assert.ok(
+      saved.includes(`--- resource file:///${index} ---\nresource ${index} x`),
+      `block ${index}`,
+    );
+  }
+  assert.ok(!saved.includes('omittedContentBlocks'));
+});
+
+test('many small MCP blocks are counted whole when deciding to save', async () => {
+  const root = await toolResultRoot();
+  // 150 blocks of 400 characters: the 100 the model is shown a summary of
+  // stay under 50,000 characters, all 150 do not.
+  const content = Array.from({ length: 150 }, (_, index) => ({
+    type: 'resource' as const,
+    uri: `file:///${index}`,
+    text: `${index} ${'y'.repeat(400)}`,
+  }));
+  const { text } = await callBounded({ content }, root);
+  assert.match(text, /^Output too long to show/u);
+  assert.ok((await savedFile(root)).text.includes('--- resource file:///149 ---'));
+});
+
+test('binary data in a saved MCP file is described on one line, not written', async () => {
+  const root = await toolResultRoot();
+  await callBounded(
+    {
+      content: [
+        { type: 'text', text: 't'.repeat(60_000) },
+        {
+          type: 'resource',
+          uri: 'file:///b.bin',
+          mimeType: 'application/octet-stream',
+          blob: 'AAAA'.repeat(1_000),
+        },
+        { type: 'audio', data: 'AAAA', mimeType: 'audio/wav' },
+        { type: 'resource_link', uri: 'file:///c.txt', name: 'c' },
+        { type: 'unknown', value: { kind: 'other', note: 'a\nb' } },
+      ],
+    },
+    root,
+  );
+  const saved = (await savedFile(root)).text;
+  assert.ok(
+    saved.endsWith(
+      [
+        '--- resource file:///b.bin (application/octet-stream): binary, 4,000 base64 characters, not written ---',
+        '--- audio (audio/wav): binary, 4 base64 characters, not written ---',
+        '--- resource link file:///c.txt ---',
+        '{\n  "uri": "file:///c.txt",\n  "name": "c"\n}',
+        '--- block of an unknown type ---',
+        '{\n  "kind": "other",\n  "note": "a\nb"\n}',
+      ].join('\n'),
+    ),
+  );
+  assert.ok(!saved.includes('AAAA'));
+});
+
+test('a part of an MCP result that cannot be written makes the notice say the file is partial', async () => {
+  const root = await toolResultRoot();
+  const { text } = await callBounded(
+    {
+      content: [{ type: 'text', text: 'w'.repeat(60_000) }],
+      structuredContent: { count: 1n },
+    },
+    root,
+  );
+  const saved = await savedFile(root);
+  assert.equal(
+    text,
+    `Output too long to show, and not all of it could be saved: ${saved.path} holds ${saved.text.length.toLocaleString('en-US')} characters of it, and a line in the file marks what was left out. Read it with Read or search it with Grep.`,
+  );
+  assert.ok(saved.text.endsWith('\n--- structuredContent ---\n[This part could not be written.]'));
+});
+
+test('a prepared MCP call is bounded the same way', async () => {
+  const root = await toolResultRoot();
+  const { text } = await callBounded(
+    { content: [{ type: 'text', text: 'p'.repeat(60_000) }] },
+    root,
+    { prepared: true },
+  );
+  assert.match(text, /^Output too long to show \(60,013 characters\)/u);
+});
+
+test('an MCP result with an image stays inline, its text cut at 25,000 tokens', async () => {
+  const root = await toolResultRoot();
+  const result: McpCallResult = {
+    content: [
+      { type: 'text', text: 'i'.repeat(120_000) },
+      { type: 'image', data: 'aW1n', mimeType: 'image/png' },
+    ],
+  };
+  const { output, text, parts } = await callBounded(result, root);
+  assert.equal(output, result);
+  assert.deepEqual(parts, ['text', 'file']);
+  assert.ok(Buffer.byteLength(text, 'utf8') <= 100_000);
+  assert.match(text, /^i+\n…\[truncated by Copilot\]$/u);
+  assert.deepEqual(await readdir(root), []);
+});
+
+test('with nowhere to save, a long MCP result is cut at 25,000 tokens', async () => {
+  const { text } = await callBounded(
+    { content: [{ type: 'text', text: 'n'.repeat(120_000) }] },
+    undefined,
+  );
+  assert.equal(Buffer.byteLength(text, 'utf8'), 100_000);
+  assert.match(text, /…\[truncated by Copilot\]$/u);
+});
+
+test('an MCP error is never saved; its text reaches the model capped far under the token limit', async () => {
+  const root = await toolResultRoot();
+  const failure = new Error('z'.repeat(60_000));
+  const provider = fakeProvider(
+    [boundTool(descriptor('server', 'failing'), binding('failing-binding'))],
+    async () => {
+      throw failure;
+    },
+  );
+  const [tool] = buildMcpTools(provider, { toolResultRoot: root });
+  await assert.rejects(
+    Promise.resolve(
+      tool?.impl(
+        {},
+        {
+          sessionId: 's',
+          turnId: 't',
+          cwd: '/tmp',
+          toolCallId: 'call',
+          abortSignal: new AbortController().signal,
+          emitOutput() {},
+        },
+      ),
+    ),
+    failure,
+  );
+  assert.deepEqual(await readdir(root), []);
+  assert.equal(formatSyntheticToolErrorText(failure).length, TOOL_ERROR_RESULT_MAX_CHARS);
 });

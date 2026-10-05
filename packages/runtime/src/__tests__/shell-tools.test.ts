@@ -309,7 +309,7 @@ describe('Bash provider-facing result projection', () => {
     );
   });
 
-  test('a truncated capture says so instead of reading as complete', async () => {
+  test('a cut capture reads as it was bounded, its own marker saying what was left out', async () => {
     const tool = buildManagedBashTool(fakeShellRuns());
     const output = await tool.toModelOutput?.({
       toolCallId: 'truncated',
@@ -317,7 +317,7 @@ describe('Bash provider-facing result projection', () => {
       output: terminalResult({
         output: {
           mode: 'pipes',
-          stdout: 'tail',
+          stdout: 'head\n[... 12,345 characters omitted ...]\ntail',
           stderr: '',
           stdoutTruncated: true,
           stderrTruncated: false,
@@ -325,8 +325,36 @@ describe('Bash provider-facing result projection', () => {
         },
       }),
     });
-    assert.equal(output?.type, 'text');
-    assert.match(String(output?.value), /^tail\n\[Output was truncated/);
+    assert.deepEqual(output, {
+      type: 'text',
+      value: 'head\n[... 12,345 characters omitted ...]\ntail',
+    });
+  });
+
+  test('a saved output reads as its path, how to reach it, and a preview', async () => {
+    const tool = buildManagedBashTool(fakeShellRuns());
+    const output = await tool.toModelOutput?.({
+      toolCallId: 'saved',
+      input: {},
+      output: {
+        ...terminalResult({
+          output: {
+            mode: 'pipes',
+            stdout: 'first lines',
+            stderr: '',
+            stdoutTruncated: true,
+            stderrTruncated: false,
+            redacted: false,
+          },
+        }),
+        savedOutput: { path: '/tmp/maka/tool-results/s/r.txt', chars: 45_678, truncated: false },
+      },
+    });
+    assert.deepEqual(output, {
+      type: 'text',
+      value:
+        'Output too long to show (45,678 characters). The full output is saved to /tmp/maka/tool-results/s/r.txt; read it with Read or search it with Grep.\n\nPreview (first 11 characters):\nfirst lines',
+    });
   });
 
   test('a background run answers with a sentence naming its ID', async () => {

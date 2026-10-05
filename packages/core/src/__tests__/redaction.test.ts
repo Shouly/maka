@@ -356,6 +356,66 @@ describe('redactSecrets', () => {
     assert.equal(text.includes('def'), false);
     assert.equal(text.includes('object value should not leak'), false);
   });
+
+  test('reads assignments left to right: a word in one value starts no assignment of its own', () => {
+    assert.equal(redactSecrets('user=name :password=hunter2'), 'user=name :password=[redacted]');
+    assert.equal(redactSecrets('user=token :visible'), 'user=token :visible');
+    assert.equal(
+      redactSecrets('--some-long-flag-name-api-token=hunter2'),
+      '--some-long-flag-name-api-token=[redacted]',
+    );
+  });
+
+  test('a key longer than 128 characters is read by its end', () => {
+    const key = `DATABASE_${'PRIMARY_'.repeat(16)}PASSWORD`;
+    assert.equal(redactSecrets(`${key}=SECRETVALUE`), `${key}=[redacted]`);
+    assert.equal(redactSecrets(`export ${key}: SECRETVALUE`), `export ${key}: [redacted]`);
+    assert.equal(redactSecrets(`${key}_HINT=visible`), `${key}_HINT=visible`);
+  });
+
+  test('a key spelled in capitals is read in words', () => {
+    assert.equal(
+      redactSecrets('{"APIKey": "abc"} "XMLHttpToken": "def"'),
+      '{"APIKey": "[redacted]"} "XMLHttpToken": "[redacted]"',
+    );
+  });
+});
+
+describe('redactSecrets on one very long line', () => {
+  const FOUR_MIB = 4 * 1024 * 1024;
+
+  /** Milliseconds `redactSecrets` takes over `text`. */
+  function timed(text: string): number {
+    const start = performance.now();
+    redactSecrets(text);
+    return performance.now() - start;
+  }
+
+  test('a run of words joined by hyphens takes under two seconds', () => {
+    assert.ok(timed('a-'.repeat(FOUR_MIB / 2)) < 2_000);
+    assert.ok(timed(`${'a-'.repeat(FOUR_MIB / 2)}=value`) < 2_000);
+  });
+
+  test('base64url data takes under two seconds', () => {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+    let seed = 1;
+    let text = '';
+    for (let index = 0; index < FOUR_MIB; index += 4_096) {
+      let block = '';
+      for (let char = 0; char < 4_096; char++) {
+        seed = (seed * 1_103_515_245 + 12_345) & 0x7fffffff;
+        block += alphabet[seed % 64];
+      }
+      text += block;
+    }
+    assert.ok(timed(text) < 2_000);
+  });
+
+  test('a long key in capitals takes under two seconds', () => {
+    const key = 'A'.repeat(FOUR_MIB);
+    assert.ok(timed(`"${key}": "value"`) < 2_000);
+    assert.ok(timed(`?${key}=value`) < 2_000);
+  });
 });
 
 describe('generalizedErrorMessageForLocale', () => {

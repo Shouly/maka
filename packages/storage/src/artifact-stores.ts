@@ -41,6 +41,7 @@ import {
 export {
   createArtifactAttachmentResourceReader,
   createAttachmentByteReader,
+  createAttachmentSizeReader,
   createReadImageSnapshotPlanner,
   createReadImageSnapshotter,
   type ArtifactAttachmentResourceReader,
@@ -146,6 +147,7 @@ function createWriterFacade(
     readChunkInSession: (sessionId, artifactId, options) =>
       run(() => store.readChunkInSession(sessionId, artifactId, options)),
     readDurableAttachmentBinary: (input) => run(() => store.readDurableAttachmentBinary(input)),
+    readDurableAttachmentSize: (input) => run(() => store.readDurableAttachmentSize(input)),
     create: (input) => {
       const acceptedInput = snapshotCreateInput(input);
       return run(() => store.create(acceptedInput));

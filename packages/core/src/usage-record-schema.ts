@@ -63,6 +63,7 @@ const COMPACTION_DECISION_SHAPE = defineObjectShape<CompactionDecisionDiagnostic
     'compactCallCacheReadInputTokens',
     'compactCallCacheWriteInputTokens',
     'compactCallTotalTokens',
+    'summarizerOmittedToolOutputs',
     'reason',
     'failOpenReason',
     'skippedReasonCounts',
@@ -212,6 +213,7 @@ const COMPACTION_NUMBERS = [
   'compactCallCacheReadInputTokens',
   'compactCallCacheWriteInputTokens',
   'compactCallTotalTokens',
+  'summarizerOmittedToolOutputs',
 ] as const;
 
 const CONTEXT_NUMBERS = ['maxHistoryEstimatedTokens', 'maxHistoryTurns'] as const;

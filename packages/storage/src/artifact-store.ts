@@ -161,12 +161,23 @@ export type DurableArtifactBinaryReadResult =
   | ArtifactBinaryReadResult
   | { ok: false; reason: 'session_mismatch' };
 
+/** The size an Artifact was recorded with, or why a read of it would fail first. */
+export type DurableArtifactSizeResult =
+  | { ok: true; sizeBytes: number }
+  | { ok: false; reason: 'not_found' | 'too_large' | 'session_mismatch' };
+
 export interface DurableArtifactAttachmentReader {
   readDurableAttachmentBinary(input: {
     artifactId: string;
     sessionId: string;
     maxBytes?: number;
   }): Promise<DurableArtifactBinaryReadResult>;
+  /** `readDurableAttachmentBinary`'s record checks, answered from metadata alone. */
+  readDurableAttachmentSize(input: {
+    artifactId: string;
+    sessionId: string;
+    maxBytes?: number;
+  }): Promise<DurableArtifactSizeResult>;
 }
 
 export type ArtifactUserDeleteResult =
@@ -726,6 +737,25 @@ class SqliteArtifactStore implements ArtifactAuthorityStore {
         input.maxBytes ?? ARTIFACT_BINARY_PREVIEW_LIMIT_BYTES,
       );
       return this.readPreparedBinary(prepared);
+    });
+  }
+
+  async readDurableAttachmentSize(input: {
+    artifactId: string;
+    sessionId: string;
+    maxBytes?: number;
+  }): Promise<DurableArtifactSizeResult> {
+    return this.enqueue(async () => {
+      await this.load();
+      const record = this.records.find((item) => item.id === input.artifactId);
+      if (!record) return { ok: false, reason: 'not_found' };
+      if (record.sessionId !== input.sessionId) {
+        return { ok: false, reason: 'session_mismatch' };
+      }
+      if (record.sizeBytes > (input.maxBytes ?? ARTIFACT_BINARY_PREVIEW_LIMIT_BYTES)) {
+        return { ok: false, reason: 'too_large' };
+      }
+      return { ok: true, sizeBytes: record.sizeBytes };
     });
   }
 

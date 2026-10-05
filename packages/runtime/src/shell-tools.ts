@@ -56,7 +56,7 @@ import {
   throwIfShellSetupFailed,
   type TurnShellPlan,
 } from './shell-detect.js';
-import { truncateToolOutput } from './tool-output.js';
+import { boundTerminalResultInline } from './bash-output-limits.js';
 import {
   DEFAULT_BASH_TIMEOUT_MS,
   MAX_PTY_COLS,
@@ -829,6 +829,10 @@ function isEmptyProviderSize(value: unknown): boolean {
   );
 }
 
+/**
+ * A command run without a ShellRun manager, as a result. Nothing is saved on
+ * this path, so a long output is bounded to a head and a tail.
+ */
 export function shapeTerminalResult(input: {
   cwd: string;
   command: string;
@@ -836,9 +840,7 @@ export function shapeTerminalResult(input: {
 }): TerminalToolResult {
   const stdout = redactSecrets(input.result.stdout);
   const stderr = redactSecrets(input.result.stderr);
-  const stdoutView = truncateToolOutput(stdout, { direction: 'tail' });
-  const stderrView = truncateToolOutput(stderr, { direction: 'tail' });
-  return {
+  return boundTerminalResultInline({
     kind: 'terminal',
     cwd: input.cwd,
     cmd: redactSecrets(input.command),
@@ -846,10 +848,10 @@ export function shapeTerminalResult(input: {
     exitCode: input.result.exitCode,
     output: {
       mode: 'pipes',
-      stdout: stdoutView.content,
-      stderr: stderrView.content,
-      stdoutTruncated: Boolean(input.result.stdoutTruncated) || stdoutView.truncated,
-      stderrTruncated: Boolean(input.result.stderrTruncated) || stderrView.truncated,
+      stdout,
+      stderr,
+      stdoutTruncated: Boolean(input.result.stdoutTruncated),
+      stderrTruncated: Boolean(input.result.stderrTruncated),
       redacted: stdout !== input.result.stdout || stderr !== input.result.stderr,
     },
     ...(isLikelySandboxDenial({
@@ -867,7 +869,7 @@ export function shapeTerminalResult(input: {
           },
         }
       : {}),
-  };
+  });
 }
 
 function terminalStatus(

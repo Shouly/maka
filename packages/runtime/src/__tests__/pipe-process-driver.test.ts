@@ -69,3 +69,46 @@ test('reports a partial stdin delivery failure before the child exit', async () 
     driver.dispose();
   }
 });
+
+test('hands over decoded text with the bytes the process wrote for it', async () => {
+  const received: Array<{ stream: string; data: string; bytes: number }> = [];
+  let resolveExit!: (exit: PipeProcessExit) => void;
+  const exited = new Promise<PipeProcessExit>((resolve) => {
+    resolveExit = resolve;
+  });
+  // A fox split across two writes, a byte that is not UTF-8, and a
+  // character the output never finishes.
+  const script = [
+    'process.stdout.write(Buffer.from([0xf0, 0x9f]));',
+    'setTimeout(() => {',
+    '  process.stdout.write(Buffer.from([0xa6, 0x8a, 0xff]));',
+    '  setTimeout(() => process.stdout.write(Buffer.from([0x61, 0xe6])), 20);',
+    '}, 20);',
+  ].join(' ');
+  const driver = new PipeProcessDriver({
+    plan: { file: process.execPath, args: ['-e', script], useShellOption: false },
+    cwd: process.cwd(),
+    outputDrainMs: 1_000,
+    onData(stream, data, bytes) {
+      received.push({ stream, data, bytes });
+    },
+    onRootExit() {},
+    onFailure() {},
+    onExit(exit) {
+      resolveExit(exit);
+    },
+  });
+  try {
+    driver.writeInputs();
+    await driver.ready;
+    await exited;
+    assert.equal(received.map((chunk) => chunk.data).join(''), '🦊\uFFFDa\uFFFD');
+    assert.equal(
+      received.reduce((total, chunk) => total + chunk.bytes, 0),
+      7,
+    );
+    assert.ok(received.every((chunk) => chunk.stream === 'stdout'));
+  } finally {
+    driver.dispose();
+  }
+});

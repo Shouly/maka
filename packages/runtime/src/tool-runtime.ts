@@ -311,6 +311,11 @@ export interface MakaToolContext {
   executionBoundary?: ExecutionBoundary;
   permissionMode?: PermissionMode;
   toolCallId: string;
+  /**
+   * Who made the call: the model (`provider`), or a Code Mode cell, whose
+   * code gets the result as data and never shows it to the model itself.
+   */
+  origin?: 'provider' | 'code_mode';
   /** Runtime-owned durable identity of this tool operation, when enabled. */
   operationId?: string;
   abortSignal: AbortSignal;
@@ -1808,6 +1813,7 @@ export class ToolRuntime {
           executionBoundary,
           permissionMode,
           toolCallId: toolUseId,
+          origin: ctx.origin,
           // The id the call event actually carries, not the candidate: by here
           // `prepareDurableToolAttempt` has pushed it on the dispatch lane.
           ...(callEvent?.operationId ? { operationId: callEvent.operationId } : {}),

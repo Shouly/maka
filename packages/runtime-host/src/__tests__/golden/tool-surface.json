@@ -354,7 +354,7 @@
   },
   {
     "name": "Read",
-    "description": "Reads a file from the local filesystem.\n\n- `file_path` must be an absolute path.\n- Reads up to 2000 lines by default.\n- When you already know which part of the file you need, only read that part. This can be important for larger files.\n- Results are returned using cat -n format, with line numbers starting at 1\n- Reads images (PNG, JPG, …) and presents them visually. Reads Jupyter notebooks (.ipynb) as cells with outputs.\n- Reading a directory, a missing file, or an empty file returns an error or system reminder rather than content.\n- Do NOT re-read a file you just edited to verify — Edit/Write would have errored if the change failed, and the harness tracks file state for you.",
+    "description": "Reads a file from the local filesystem.\n\n- `file_path` must be an absolute path.\n- Reads the whole file by default. A file over 25000 tokens returns its first lines with a PARTIAL view notice; read the rest with `offset` and `limit`. When the first line to be read alone exceeds 25000 tokens, Read returns an error; search the file with Grep instead.\n- When you already know which part of the file you need, only read that part. This can be important for larger files.\n- Results are returned using cat -n format, with line numbers starting at 1\n- Reads images (PNG, JPG, …) and presents them visually. Reads Jupyter notebooks (.ipynb) as cells with outputs.\n- Reading a directory, a missing file, or an empty file returns an error or system reminder rather than content.\n- Do NOT re-read a file you just edited to verify — Edit/Write would have errored if the change failed, and the harness tracks file state for you.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {

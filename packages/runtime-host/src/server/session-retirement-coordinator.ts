@@ -133,6 +133,8 @@ export interface HostSessionRetirementCoordinatorOptions {
   readonly purgeOperationalState: (sessionId: string) => Promise<void>;
   /** Where background command output is written, so a retired Session's goes with it. */
   readonly taskOutputRoot?: string;
+  /** Where tool results too long to show are saved, so a retired Session's go with it. */
+  readonly toolResultRoot?: string;
   readonly purgeAgentGraphState: (sessionId: string) => Promise<void>;
   readonly worktrees?: Pick<SubagentWorktreeExecutor, 'retire'>;
   readonly requestDrain: () => void;
@@ -206,6 +208,7 @@ export class HostSessionRetirementCoordinator {
   readonly #contextOffload: HostSessionRetirementCoordinatorOptions['contextOffload'];
   readonly #purgeOperationalState: HostSessionRetirementCoordinatorOptions['purgeOperationalState'];
   readonly #taskOutputRoot: HostSessionRetirementCoordinatorOptions['taskOutputRoot'];
+  readonly #toolResultRoot: HostSessionRetirementCoordinatorOptions['toolResultRoot'];
   readonly #purgeAgentGraphState: HostSessionRetirementCoordinatorOptions['purgeAgentGraphState'];
   readonly #worktrees: HostSessionRetirementCoordinatorOptions['worktrees'];
   readonly #requestDrain: () => void;
@@ -235,6 +238,7 @@ export class HostSessionRetirementCoordinator {
     this.#contextOffload = options.contextOffload;
     this.#purgeOperationalState = options.purgeOperationalState;
     this.#taskOutputRoot = options.taskOutputRoot;
+    this.#toolResultRoot = options.toolResultRoot;
     this.#purgeAgentGraphState = options.purgeAgentGraphState;
     this.#worktrees = options.worktrees;
     this.#requestDrain = options.requestDrain;
@@ -800,6 +804,7 @@ export class HostSessionRetirementCoordinator {
           ...(this.#contextOffload ? { contextOffload: this.#contextOffload } : {}),
           purgeOperationalState: this.#purgeOperationalState,
           ...(this.#taskOutputRoot !== undefined ? { taskOutputRoot: this.#taskOutputRoot } : {}),
+          ...(this.#toolResultRoot !== undefined ? { toolResultRoot: this.#toolResultRoot } : {}),
         },
         sessionId,
       ),

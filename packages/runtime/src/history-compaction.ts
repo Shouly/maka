@@ -325,8 +325,10 @@ export async function planHistoryCompaction(
       if (error instanceof HistoryCompactSummarizerError) {
         if (error.reason === 'input_too_large') {
           // The summarizer's provider said this span does not fit its own
-          // window; that is the only fit signal the fold listens to. Retreat to
-          // the span the last accepted request's input covered: that span was
+          // window, after the summarizer had asked once more without its
+          // largest tool outputs (or had none to leave out); nothing local
+          // judged the span before that. Retreat to the span the last
+          // accepted request's input covered: that span was
           // accepted by this model on this connection, so it is provably within
           // capacity, where halving the range is a guess that can overshoot
           // (throwing away verbatim history for nothing) or undershoot (paying

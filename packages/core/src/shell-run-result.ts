@@ -23,6 +23,7 @@ import type {
   ShellRunUpdate,
   SandboxDenialSignal,
   SandboxDenialRecovery,
+  TerminalSavedOutput,
   ToolResultContent,
 } from './events.js';
 import { defineObjectShape, hasExactShape } from './record-schema.js';
@@ -105,7 +106,12 @@ export type ShellToolResultNormalization =
 
 const CURRENT_TERMINAL_RESULT_SHAPE = defineObjectShape<TerminalToolResult>()(
   ['kind', 'cwd', 'cmd', 'status', 'output'],
-  ['exitCode', 'failureMessage', 'sandboxDenial'],
+  ['exitCode', 'failureMessage', 'savedOutput', 'sandboxDenial'],
+);
+
+const TERMINAL_SAVED_OUTPUT_SHAPE = defineObjectShape<TerminalSavedOutput>()(
+  ['path', 'chars', 'truncated'],
+  [],
 );
 
 const CURRENT_SHELL_RUN_RESULT_SHAPE = defineObjectShape<ShellRunToolResultRecord>()(
@@ -157,11 +163,25 @@ function currentTerminalResult(value: Record<string, unknown>): TerminalToolResu
     !isOptionalFiniteNumber(value.exitCode) ||
     !isOptionalString(value.failureMessage) ||
     !isOptionalSandboxDenial(value.sandboxDenial) ||
+    !isOptionalSavedOutput(value.savedOutput) ||
     !isShellOutput(value.output) ||
+    (value.savedOutput !== undefined && value.output.mode !== 'pipes') ||
     !isValidTerminalState(value)
   )
     return undefined;
   return value as TerminalToolResult;
+}
+
+function isOptionalSavedOutput(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (isRecord(value) &&
+      hasExactShape(value, TERMINAL_SAVED_OUTPUT_SHAPE) &&
+      typeof value.path === 'string' &&
+      value.path.length > 0 &&
+      isNonNegativeInteger(value.chars) &&
+      typeof value.truncated === 'boolean')
+  );
 }
 
 function isValidTerminalState(value: Record<string, unknown>): boolean {

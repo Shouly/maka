@@ -1258,6 +1258,168 @@ describe('buildLlmHistorySummarizer', () => {
     );
   });
 
+  const OMITTED_OUTPUT = 'Tool output omitted because it exceeded the compaction input budget.';
+  const toolEvents = (id: string, result: string): RuntimeEvent[] => [
+    ev({
+      role: 'model',
+      author: 'agent',
+      content: { kind: 'function_call', id, name: 'Read', args: { path: `${id}.log` } },
+    }),
+    ev({
+      role: 'tool',
+      author: 'tool',
+      content: { kind: 'function_response', id, name: 'Read', result, isError: false },
+    }),
+  ];
+  const eventsWithOutputs = (...outputs: Array<[string, string]>): RuntimeEvent[] => [
+    ev({ role: 'user', author: 'user', content: { kind: 'text', text: 'inspect the logs' } }),
+    ...outputs.flatMap(([id, result]) => toolEvents(id, result)),
+    ev({ role: 'model', author: 'agent', content: { kind: 'text', text: 'inspected' } }),
+  ];
+  const HUGE_OUTPUT = 'HUGE_OUTPUT_'.repeat(10_000);
+  // A provider that rejects any request past this many UTF-8 bytes as too long.
+  const boundedProvider = (requests: string[], maxBytes = 70_000): AiSdkGenerateTextLike => {
+    return async (opts) => {
+      const request = JSON.stringify(opts.messages);
+      requests.push(request);
+      if (Buffer.byteLength(request, 'utf8') > maxBytes) {
+        throw new Error('prompt is too long: 213462 tokens > 200000 maximum');
+      }
+      return { text: VALID_SUMMARY, finishReason: 'stop' };
+    };
+  };
+
+  test('leaves nothing out before its own request is rejected', async () => {
+    const requests: string[] = [];
+    const summarize = buildLlmHistorySummarizer({
+      resolveModel: () => 'fake-model',
+      generateText: boundedProvider(requests, 1_000_000),
+    });
+
+    assert.equal(
+      await summarize({
+        ...inputWith(eventsWithOutputs(['call-huge', HUGE_OUTPUT])),
+        acceptedInputTokens: 1_000,
+      }),
+      VALID_SUMMARY,
+    );
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0]!.includes('HUGE_OUTPUT_'), true);
+  });
+
+  test('refits once to the accepted input after its own request is rejected as too long', async () => {
+    const requests: string[] = [];
+    const omitted: number[] = [];
+    const summarize = buildLlmHistorySummarizer({
+      resolveModel: () => 'fake-model',
+      generateText: boundedProvider(requests),
+    });
+
+    const summary = await summarize({
+      ...inputWith(eventsWithOutputs(['call-huge', HUGE_OUTPUT])),
+      acceptedInputTokens: 15_000,
+      onToolOutputsOmitted: (count) => omitted.push(count),
+    });
+
+    assert.equal(summary, VALID_SUMMARY);
+    assert.equal(requests.length, 2);
+    assert.equal(requests[0]!.includes('HUGE_OUTPUT_'), true);
+    assert.equal(requests[1]!.includes('HUGE_OUTPUT_'), false);
+    assert.equal(requests[1]!.includes(OMITTED_OUTPUT), true);
+    // The rest of the conversation is still what the summary is made from.
+    assert.equal(requests[1]!.includes('inspect the logs'), true);
+    assert.equal(requests[1]!.includes('call-huge'), true);
+    assert.deepEqual(omitted, [1]);
+  });
+
+  test('leaves the largest tool outputs out first and keeps smaller earlier ones', async () => {
+    const requests: string[] = [];
+    const summarize = buildLlmHistorySummarizer({
+      resolveModel: () => 'fake-model',
+      generateText: boundedProvider(requests),
+    });
+
+    await summarize({
+      ...inputWith(
+        eventsWithOutputs(
+          ['call-small', 'SMALL_OUTPUT_'.repeat(1_000)],
+          ['call-medium', 'MEDIUM_OUTPUT_'.repeat(2_000)],
+          ['call-huge', HUGE_OUTPUT],
+        ),
+      ),
+      acceptedInputTokens: 15_000,
+    });
+
+    // Sixty thousand bytes of room: the huge output alone is enough to leave
+    // out, and the two earlier, smaller outputs stay.
+    assert.equal(requests.length, 2);
+    assert.equal(requests[1]!.includes('HUGE_OUTPUT_'), false);
+    assert.equal(requests[1]!.includes('SMALL_OUTPUT_'), true);
+    assert.equal(requests[1]!.includes('MEDIUM_OUTPUT_'), true);
+  });
+
+  test('measures a CJK-heavy output by its UTF-8 bytes when it refits', async () => {
+    const requests: string[] = [];
+    const summarize = buildLlmHistorySummarizer({
+      resolveModel: () => 'fake-model',
+      generateText: boundedProvider(requests, 100_000),
+    });
+
+    // 30,000 CJK characters are 90,000 bytes; the ASCII output is 40,000. By
+    // UTF-16 length the ASCII output looks the larger one and leaving it out
+    // looks like enough; by bytes the CJK output is the one in the way.
+    await summarize({
+      ...inputWith(
+        eventsWithOutputs(['call-cjk', '日志'.repeat(15_000)], ['call-ascii', 'A'.repeat(40_000)]),
+      ),
+      acceptedInputTokens: 15_000,
+    });
+
+    assert.equal(requests.length, 2);
+    assert.equal(requests[1]!.includes('日志'), false);
+    assert.equal(requests[1]!.includes('A'.repeat(40_000)), true);
+  });
+
+  test('leaves the largest tool output out even when the accepted size says the request fits', async () => {
+    // The provider already rejected it, which says the estimate runs low.
+    const requests: string[] = [];
+    const summarize = buildLlmHistorySummarizer({
+      resolveModel: () => 'fake-model',
+      generateText: boundedProvider(requests),
+    });
+
+    assert.equal(
+      await summarize({
+        ...inputWith(eventsWithOutputs(['call-huge', HUGE_OUTPUT])),
+        acceptedInputTokens: 1_000_000,
+      }),
+      VALID_SUMMARY,
+    );
+    assert.equal(requests.length, 2);
+    assert.equal(requests[1]!.includes('HUGE_OUTPUT_'), false);
+  });
+
+  test('a request rejected again after the refit is the planner retreat signal', async () => {
+    const requests: string[] = [];
+    const summarize = buildLlmHistorySummarizer({
+      resolveModel: () => 'fake-model',
+      generateText: async (opts) => {
+        requests.push(JSON.stringify(opts.messages));
+        throw new Error('prompt is too long: 213462 tokens > 200000 maximum');
+      },
+    });
+
+    await assert.rejects(
+      summarize({
+        ...inputWith(eventsWithOutputs(['call-huge', HUGE_OUTPUT])),
+        acceptedInputTokens: 15_000,
+      }),
+      (error: unknown) =>
+        error instanceof HistoryCompactSummarizerError && error.reason === 'input_too_large',
+    );
+    assert.equal(requests.length, 2);
+  });
+
   test('the usage floor judges an initial fold and stands down on a roll-forward', async () => {
     // On an initial fold the summarizer's input IS the covered span, so a
     // 50-token summary of a 20,000-token span is a fragment. On a roll-forward
