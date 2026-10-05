@@ -65,12 +65,6 @@ test('Agent Graph revision references preserve only exact terminal provenance', 
     [...accepted.references.get(CHILD_SESSION_ID)!.artifactIds],
     [CHILD_ARTIFACT_ID],
   );
-
-  const archived = await prepare({
-    messages: [],
-    archivedResults: [JSON.stringify(linkedResult().content)],
-  });
-  assert.equal(archived.ok, true);
 });
 
 test('Side Conversation references accept terminal linked children as snapshots', async () => {
@@ -312,7 +306,6 @@ test('Agent Graph revision admission includes only retained direct and reference
       requests: collectConversationCopyLinkedChildReferences({
         messages: [linkedResult()],
         runtimeEvents: [],
-        archivedResults: [],
       }),
     }),
     [CHILD_SESSION_ID],
@@ -322,7 +315,6 @@ test('Agent Graph revision admission includes only retained direct and reference
 interface PrepareOverrides {
   readonly kind?: 'branch' | 'revision' | 'side_conversation';
   readonly messages?: readonly StoredMessage[];
-  readonly archivedResults?: readonly string[];
   readonly sessionHeaders?: readonly SessionHeader[];
   readonly runs?: readonly RuntimeInvocationRecord[];
   readonly sessionGraphState?: 'absent' | 'live' | 'terminal';
@@ -345,7 +337,6 @@ async function prepare(overrides: PrepareOverrides = {}) {
       requests: collectConversationCopyLinkedChildReferences({
         messages,
         runtimeEvents: [],
-        archivedResults: overrides.archivedResults ?? [],
       }),
     },
     {

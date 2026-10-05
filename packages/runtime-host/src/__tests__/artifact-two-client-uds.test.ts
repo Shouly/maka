@@ -52,7 +52,7 @@ const BULK_ARTIFACT_SUMMARY = 's'.repeat(7 * 1024);
 const MAX_ARTIFACT_ID = 'a'.repeat(ARTIFACT_ENTITY_ID_MAX_CHARS);
 const PROTECTED_ARTIFACTS = [
   { id: 'deep-research-evidence', source: 'deep_research' },
-  { id: 'tool-result-archive', source: 'tool_result_archive' },
+  { id: 'session-effect', source: 'session_effect' },
 ] as const;
 
 test('production Host ignores Artifact publication residue and preserves deletes across owner death', {
@@ -102,7 +102,7 @@ test('production Host ignores Artifact publication residue and preserves deletes
           'small-text',
           'small-binary',
           'deep-research-evidence',
-          'tool-result-archive',
+          'session-effect',
           ...Array.from(
             { length: BULK_ARTIFACT_COUNT },
             (_, index) => `bulk-${index.toString().padStart(3, '0')}`,

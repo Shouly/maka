@@ -24,29 +24,10 @@ import { estimateRuntimeEventsTokens } from './model-history.js';
 // the ./context-budget subpath from leaking leaf-internal collaboration symbols.
 export { estimateTokens } from './context-budget-helpers.js';
 export { estimateRuntimeEventsTokens } from './model-history.js';
-export {
-  ARCHIVED_TOOL_RESULT_PLACEHOLDER_KIND,
-  ARCHIVED_TOOL_RESULT_REWRITE_VERSION,
-  isArchivedToolResultPlaceholder,
-  deserializeToolResultArchive,
-  serializeToolResultForArchive,
-} from './tool-result-archive.js';
-export type {
-  StaleToolResultPrunePolicy,
-  StaleToolResultArchiveCandidate,
-  ToolResultArchiveReader,
-  ToolResultArchiveReaderInput,
-  ToolResultArchiveReadFailureReason,
-  ToolResultArchiveReadResult,
-  ArchivedToolResultPlaceholder,
-} from './tool-result-archive.js';
-export type { ArchivedToolResultReason } from './tool-result-archive.js';
 export type {
   HistoryCompactionPolicy,
   HistoryCompactionReplayResult,
 } from './history-compaction.js';
-import type { StaleToolResultPrunePolicy } from './tool-result-archive.js';
-import { type ActiveToolResultPrunePolicy } from './active-tool-result-prune.js';
 import {
   applyRuntimeEventHistoryCompact as applyRuntimeEventHistoryCompactNarrow,
   isHistoryCompactContentEvent,
@@ -65,19 +46,11 @@ import type { HistoryCompactCheckpoint } from './history-compact-checkpoint.js';
 export interface ContextBudgetPolicy {
   name?: string;
   /**
-   * Chars-per-token conversion for the CONTENT policies below (how large one
-   * Tool Result may be before it is archived) and for diagnostics. It takes
-   * part in no context-fit decision: whether a request fits is the provider's
-   * answer (#4559). Defaults to 4.
+   * Chars-per-token conversion for local estimates (diagnostics and the
+   * summarizer's own input). It takes part in no context-fit decision: whether
+   * a request fits is the provider's answer (#4559). Defaults to 4.
    */
   charsPerToken?: number;
-  /** Optional replay-only pruning for stale oversized tool results before whole-turn compaction. */
-  staleToolResultPrune?: StaleToolResultPrunePolicy;
-  /**
-   * Optional current-turn, provider-visible tool-result pruning before the next
-   * AI SDK step. Defaults off and does not mutate persisted session messages.
-   */
-  activeToolResultPrune?: ActiveToolResultPrunePolicy;
   /** Latest checkpoint projection and automatic capacity settings. */
   historyCompact?: HistoryCompactionPolicy;
 }
@@ -102,12 +75,7 @@ export function applyRuntimeEventContextBudget(
   events: readonly RuntimeEvent[],
   policy: ContextBudgetPolicy | undefined,
 ): BudgetedRuntimeContext | undefined {
-  const prunePolicy = policy?.staleToolResultPrune;
-  const pruneEnabled = prunePolicy?.enabled === true;
-  const historyCompactEnabled = policy?.historyCompact?.enabled === true;
-  const enabled = pruneEnabled || historyCompactEnabled;
-  if (!enabled) return undefined;
-  if (!policy) return undefined;
+  if (!policy || policy.historyCompact?.enabled !== true) return undefined;
   const charsPerToken = policy?.charsPerToken ?? 4;
   const estimatedTokensBefore = estimateRuntimeEventsTokens(events, charsPerToken);
   const compacted = applyRuntimeEventHistoryCompactNarrow(
@@ -115,11 +83,6 @@ export function applyRuntimeEventContextBudget(
     policy?.historyCompact,
     charsPerToken,
   );
-  // Stale Tool Result pruning is no longer a step of the budget: it is a
-  // durable projection transition committed before this projection runs, and
-  // the events arriving here have already been folded through the reducer
-  // (#4283). A second rewrite here could only disagree with the ledger about
-  // what the model is allowed to see.
   const keptEvents = compacted.events;
   const keptTurnIds = new Set(keptEvents.map((event) => runtimeEventTurnKey(event)));
   const originalTurnIds = new Set(events.map((event) => runtimeEventTurnKey(event)));

@@ -86,7 +86,7 @@ describe('Artifact source policy', () => {
   test('includes produced outputs in child results without leaking internal artifacts', () => {
     assert.equal(isArtifactChildResultOutput({ source: 'tool_result' }), true);
     assert.equal(isArtifactChildResultOutput({ source: 'subagent_writeback' }), true);
-    assert.equal(isArtifactChildResultOutput({ source: 'tool_result_archive' }), false);
+    assert.equal(isArtifactChildResultOutput({ source: 'session_effect' }), false);
     assert.equal(isArtifactChildResultOutput({ source: 'user_upload' }), false);
   });
 

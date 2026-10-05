@@ -36,8 +36,7 @@ export interface BuildDefaultContextBudgetPolicyOptions {
  * reserve: whether a request fits is the provider's answer, and the only
  * proactive threshold is the context window the user declared for the model
  * (see `resolveDeclaredContextWindow`), read by the compaction seam itself.
- * What remains here are content policies — how one oversized Tool Result
- * enters the request — and the compaction switches (#4559).
+ * What remains here are the compaction switches (#4559).
  */
 export function buildDefaultContextBudgetPolicy(
   options: BuildDefaultContextBudgetPolicyOptions = {},
@@ -48,21 +47,10 @@ export function buildDefaultContextBudgetPolicy(
   );
   return {
     name: options.name ?? 'default-history-budget',
-    staleToolResultPrune: {
-      enabled: true,
-      maxResultEstimatedTokens: 2_048,
-      minRecentTurnsFull: 2,
-    },
     historyCompact: {
       enabled: true,
       highWaterName: `${surfaceName}-history-compact`,
       midTurn: { enabled: true },
-    },
-    activeToolResultPrune: {
-      enabled: true,
-      maxCurrentResultEstimatedTokens: 2_048,
-      minSupersededResultEstimatedTokens: 256,
-      minStepNumber: 1,
     },
   };
 }

@@ -50,17 +50,13 @@ import {
   LATEST_CONTEXT_PROJECTION_TYPE,
   readLatestContextSnapshot,
 } from '../latest-context-snapshot.js';
-import {
-  createTestAiSdkBackend,
-  testToolResultArchive,
-} from './execution-boundary-test-helpers.js';
+import { createTestAiSdkBackend } from './execution-boundary-test-helpers.js';
 import { testInvocationOpening } from './invocation-fixture.js';
 
 const RAW_SPAN_ONE = 'RAW_SPAN_ONE_'.repeat(24);
 const RAW_SPAN_TWO = 'RAW_SPAN_TWO_'.repeat(160);
 /** Third-step result big enough that even the rolled-forward fold cannot fit. */
 const ROLLING_TAIL = 'ROLLING_TAIL_'.repeat(740);
-const HUGE_RESULT = 'HUGE_RESULT_'.repeat(670);
 const ANCHOR_TEXT = 'compact this very long turn but keep my exact words';
 const BIG_ACTIVE_TOOL_SCHEMA_CHARS = 12_000;
 
@@ -126,8 +122,6 @@ interface MidTurnFixtureOptions {
   branch?: string;
   /** Omit the prior turns so the compaction pool has no safe completed span. */
   withoutPriorTurns?: boolean;
-  /** Enable the default-on active tool-result prune with a tiny threshold. */
-  activeToolResultPrune?: boolean;
   /**
    * Summarize through the real `buildLlmHistorySummarizer` against a mock
    * provider, so the compaction settles a canonical record instead of the
@@ -143,8 +137,6 @@ interface MidTurnFixtureOptions {
   priorShape?: 'text' | 'tool_heavy' | 'image_tool';
   /** Put one image attachment on the durable current-turn user anchor. */
   currentImage?: boolean;
-  /** First tool result is huge (finding C: prune must be able to rescue it). */
-  hugeFirstResult?: boolean;
   /** Exact first Read result for capacity-ordering regressions. */
   firstResult?: string;
   /** The model finishes on the second request instead of running three steps. */
@@ -519,7 +511,7 @@ function buildFixture(options: MidTurnFixtureOptions = {}): MidTurnFixture {
           toolExecutions.push(args.path);
           if (args.path === 'one.md')
             return {
-              body: options.firstResult ?? (options.hugeFirstResult ? HUGE_RESULT : RAW_SPAN_ONE),
+              body: options.firstResult ?? RAW_SPAN_ONE,
             };
           if (args.path === 'three.md') return { body: ROLLING_TAIL };
           return { body: RAW_SPAN_TWO };
@@ -563,22 +555,7 @@ function buildFixture(options: MidTurnFixtureOptions = {}): MidTurnFixture {
             enabled: true,
             midTurn: { enabled: true },
           },
-          ...(options.activeToolResultPrune
-            ? {
-                activeToolResultPrune: {
-                  enabled: true,
-                  maxCurrentResultEstimatedTokens: 30,
-                },
-              }
-            : {}),
         },
-    ...(options.activeToolResultPrune
-      ? {
-          toolResultArchive: testToolResultArchive({
-            archiveToolResult: () => ({ artifactId: 'artifact-archived-1' }),
-          }),
-        }
-      : {}),
     summarizeHistoryCompact: async (input) => {
       fixture.summarizerCalls += 1;
       summarizedSources.push(JSON.stringify(input.source.foldedRuntimeEvents));
@@ -1053,7 +1030,7 @@ function defineMidTurnSuite(consumer: ConsumerMode): void {
 
   test('does not report provider dropping when the step dropped its tool schemas', async () => {
     // A finalization step resolves an empty tool set, so its request loses
-    // several thousand schema tokens with no fold, prune or image omission.
+    // several thousand schema tokens with no fold or image omission.
     // Maka shaped that request; the provider dropped nothing.
     const fixture = buildFixture({
       ollama: true,
@@ -1094,25 +1071,6 @@ function defineMidTurnSuite(consumer: ConsumerMode): void {
     assert.equal(fixture.summarizerCalls, 0);
   });
 
-  test('active tool-result prune re-converges the rebuilt tail after a capacity replacement', async () => {
-    const fixture = buildFixture({ activeToolResultPrune: true });
-    await runFixtureTurn(fixture, consumer);
-
-    assert.equal(fixture.model.doStreamCalls.length, 3);
-    assert.equal(fixture.recorded.length, 1);
-    const thirdPrompt = promptJson(fixture, 2);
-    // Capacity compaction owns the projection: compact block + verbatim anchor.
-    assert.match(thirdPrompt, /maka_history_compact_checkpoint/);
-    assert.equal(thirdPrompt.includes(ANCHOR_TEXT), true);
-    assert.equal(thirdPrompt.includes('RAW_SPAN_ONE_'), false);
-    // The large tool result in the rebuilt tail is re-archived to a
-    // placeholder by the prune hook running AFTER the capacity hook — the
-    // capacity replacement must not resurrect the raw body.
-    assert.equal(thirdPrompt.includes('RAW_SPAN_TWO_'), false);
-    assert.match(thirdPrompt, /artifact-archived-1/);
-    assert.match(thirdPrompt, /active_current_turn_tool_result_pruned_before_next_step/);
-  });
-
   test('folds proactively at most once per send', async () => {
     // The proactive fold already covers everything except the live head. A
     // second fold in the same send would buy the small verbatim tail and cost
@@ -1123,34 +1081,6 @@ function defineMidTurnSuite(consumer: ConsumerMode): void {
 
     assert.equal(fixture.summarizerCalls, 1);
     assert.equal(fixture.recorded.length, 1);
-  });
-
-  test('a prune-rescuable step is rescued by the prune, not compacted (review finding C)', async () => {
-    // Review round-3 finding C repro: one huge tool result, no safe completed
-    // span for the capacity hook, but the active tool-result prune (which runs
-    // AFTER the capacity hook) archives the result down to a placeholder that
-    // fits the window.
-    const fixture = buildFixture({
-      contextWindow: 100,
-      withoutPriorTurns: true,
-      hugeFirstResult: true,
-      finalAtSecondCall: true,
-      activeToolResultPrune: true,
-    });
-    await runFixtureTurn(fixture, consumer);
-
-    const complete = fixture.events.find((event) => event.type === 'complete');
-    assert.equal(complete?.type === 'complete' ? complete.stopReason : undefined, 'end_turn');
-    assert.equal(fixture.model.doStreamCalls.length, 2);
-    // The second request carries the archive placeholder, not the raw body.
-    const secondPrompt = promptJson(fixture, 1);
-    assert.equal(secondPrompt.includes('HUGE_RESULT_'), false);
-    assert.match(secondPrompt, /artifact-archived-1/);
-    // The capacity hook's failure is a diagnostic, not a terminal outcome.
-    const failedOpen = compactionDecisions(fixture).find(
-      (decision) => decision.phase === 'mid_turn' && decision.decision === 'failedOpen',
-    );
-    assert.equal(failedOpen?.failOpenReason, 'no_safe_completed_span');
   });
 
   test('the trigger counts same-turn tool-schema growth from ToolSearch (review finding D)', async () => {
@@ -1432,27 +1362,6 @@ function defineMidTurnSuite(consumer: ConsumerMode): void {
         false,
       );
     }
-  });
-
-  test('does not call provider context dropping when active pruning explains the decrease', async () => {
-    const fixture = buildFixture({
-      ollama: true,
-      contextWindow: 200,
-      finalAtSecondCall: true,
-      hugeFirstResult: true,
-      activeToolResultPrune: true,
-      finalStepUsage: { input: 50, output: 10 },
-    });
-    await runFixtureTurn(fixture, consumer);
-
-    assert.equal(
-      fixture.messages.some(
-        (message) =>
-          (message as { type?: string; kind?: string }).type === 'system_note' &&
-          (message as { kind?: string }).kind === 'context_provider_dropping',
-      ),
-      false,
-    );
   });
 
   test('a provider output-limit finish does not fold', async () => {

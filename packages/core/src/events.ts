@@ -1121,26 +1121,6 @@ export type ToolResultContent =
       shownPath?: string;
     }
   | {
-      kind: 'archived_tool_result';
-      status: 'not_loaded' | 'missing' | 'corrupt';
-      runtimeEventId: string;
-      toolCallId: string;
-      toolName: string;
-      artifactId?: string;
-      resourceRef?: string;
-      bodySha256?: string;
-      originalEstimatedTokens: number;
-      originalBytes: number;
-      rewriteVersion: number;
-      /**
-       * Both prune paths now record the same durable projection transition
-       * (#4283), so the archived-result read model spans both reasons.
-       */
-      reason:
-        | 'stale_tool_result_pruned_before_compact'
-        | 'active_current_turn_tool_result_pruned_before_next_step';
-    }
-  | {
       kind: 'terminal';
       cwd: string;
       cmd: string;

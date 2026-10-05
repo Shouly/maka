@@ -17,7 +17,6 @@
  * under the License.
  */
 
-import { createHash } from 'node:crypto';
 import type { RuntimeEvent } from '@maka/core/runtime-event';
 
 /**
@@ -25,8 +24,8 @@ import type { RuntimeEvent } from '@maka/core/runtime-event';
  * domain. Extracted from `context-budget.ts` so sibling
  * modules can reuse them without a reverse import into `context-budget.ts`.
  *
- * These are intentionally dependency-free (only `node:crypto` and the
- * `RuntimeEvent` type); no domain policy types live here. Sizing a
+ * These are intentionally dependency-free (only the `RuntimeEvent` type); no
+ * domain policy types live here. Sizing a
  * RuntimeEvent is NOT such a helper — it must read the effective model
  * projection — so `estimateRuntimeEventChars`/`estimateRuntimeEventsTokens`/
  * `groupEventsByTurn` live with the reducer in `model-history.ts`.
@@ -50,16 +49,8 @@ export function turnKey(event: RuntimeEvent): string {
   return event.turnId || '<unknown-turn>';
 }
 
-export function sha256(text: string): string {
-  return createHash('sha256').update(text).digest('hex');
-}
-
 export function finitePositive(value: number | undefined): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
     ? Math.floor(value)
     : undefined;
-}
-
-export function utf8ByteLength(text: string): number {
-  return Buffer.byteLength(text, 'utf8');
 }

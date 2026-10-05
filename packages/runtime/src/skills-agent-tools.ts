@@ -52,9 +52,8 @@ import type { MakaTool, MakaToolContext } from './tool-runtime.js';
  * line, then what the reference injects as the next message — the skill's base
  * directory, the SKILL.md body without its front matter, and `ARGUMENTS:` when
  * arguments were passed. Keeping it in the tool result needs no second message
- * kind; the body is exempt from tool-result archiving instead
- * (`isUnarchivableToolResult`), because the model follows it for the rest of
- * the task.
+ * kind, and the body stays in context for the rest of the task like any other
+ * tool result.
  *
  * Depends on {@link skills-context} for instruction loading and search
  * ranking, and {@link skills-discovery} for scanning.

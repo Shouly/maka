@@ -121,7 +121,6 @@ export interface ToolExecutionFacts {
 export const BUILTIN_TOOL_CATEGORY: Record<string, ToolCategory> = {
   // read
   [TOOL_NAMES.read]: 'read',
-  [TOOL_NAMES.archiveRead]: 'read',
   search_files: 'read',
   [TOOL_NAMES.grep]: 'read',
   [TOOL_NAMES.glob]: 'read',

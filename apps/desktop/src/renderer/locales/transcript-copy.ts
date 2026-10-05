@@ -277,8 +277,6 @@ export interface TranscriptCopy {
     readonly linesAdded: (count: number) => string;
     readonly linesRemoved: (count: number) => string;
     readonly imageAlt: (tool: string) => string;
-    readonly archived: string;
-    readonly archivedDetail: (reason: string, bytes: string) => string;
     readonly failureClass: (value: string) => string;
     readonly pending: string;
   };
@@ -786,8 +784,6 @@ const TRANSCRIPT_COPY = {
       linesAdded: (count) => `+${count}`,
       linesRemoved: (count) => `-${count}`,
       imageAlt: (tool) => `${tool} 返回的图片`,
-      archived: '结果已归档',
-      archivedDetail: (reason, bytes) => `${reason} · 原始大小 ${bytes}`,
       failureClass: (value) => `失败原因：${value}`,
       pending: '等待结果…',
     },
@@ -1039,8 +1035,6 @@ const TRANSCRIPT_COPY = {
       linesAdded: (count) => `+${count}`,
       linesRemoved: (count) => `-${count}`,
       imageAlt: (tool) => `${tool} 回傳的圖片`,
-      archived: '結果已封存',
-      archivedDetail: (reason, bytes) => `${reason} · 原始大小 ${bytes}`,
       failureClass: (value) => `失敗原因：${value}`,
       pending: '等待結果…',
     },
@@ -1341,8 +1335,6 @@ const TRANSCRIPT_COPY = {
       linesAdded: (count) => `+${count}`,
       linesRemoved: (count) => `-${count}`,
       imageAlt: (tool) => `Image returned by ${tool}`,
-      archived: 'Result archived',
-      archivedDetail: (reason, bytes) => `${reason} · original size ${bytes}`,
       failureClass: (value) => `Failure: ${value}`,
       pending: 'Waiting for the result…',
     },

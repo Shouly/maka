@@ -208,50 +208,74 @@ test('stores managed binary values as durable file locators instead of SQLite pa
   afterGc.close();
 });
 
-test('repairs a missing managed blob when an inline owner retries identical bytes', async (t) => {
+test('promotes an upgraded inline blob and repairs a missing managed blob when identical bytes are put again', async (t) => {
   const fixture = await createFixture(t);
   const bytes = new TextEncoder().encode('shared-value');
-  const tool = await fixture.store.put({
-    sessionId: 'session-1',
-    owner: { kind: 'tool_result_archive', ownerId: 'tool-1' },
-    bytes,
-    mediaType: 'application/octet-stream',
-  });
-  const image = await fixture.store.put({
-    sessionId: 'session-1',
-    owner: { kind: 'read_image_snapshot', ownerId: 'read-1' },
-    bytes,
-    mediaType: 'image/png',
-  });
-  assert.equal(tool.ok, true);
-  assert.equal(image.ok, true);
-  if (!tool.ok || !image.ok) return;
-
   const blobId = sha256(bytes);
-  const valuePath = join(
-    fixture.root,
-    CONTEXT_OFFLOAD_VALUES_DIRECTORY_NAME,
-    `sha256/${blobId.slice(0, 2)}/${blobId}`,
-  );
-  await unlink(valuePath);
+  const locator = `sha256/${blobId.slice(0, 2)}/${blobId}`;
+  const valuePath = join(fixture.root, CONTEXT_OFFLOAD_VALUES_DIRECTORY_NAME, locator);
+  const readBack = (refId: string) =>
+    fixture.store.read({ sessionId: 'session-1', refId, maxBytes: bytes.byteLength });
 
-  assert.deepEqual(
-    await fixture.store.put({
-      sessionId: 'session-1',
-      owner: { kind: 'tool_result_archive', ownerId: 'tool-1' },
-      bytes,
-      mediaType: 'application/octet-stream',
-    }),
-    tool,
-  );
-  assert.deepEqual(
-    await fixture.store.read({
-      sessionId: 'session-1',
-      refId: tool.record.refId,
-      maxBytes: bytes.byteLength,
-    }),
-    { ok: true, record: tool.record, bytes },
-  );
+  const upgraded = await fixture.store.put(putInput('session-1', 'upgraded-1', bytes));
+  assert.equal(upgraded.ok, true);
+  if (!upgraded.ok) return;
+  await rewriteAsUpgradedInlineBlob(fixture, bytes);
+  assert.deepEqual(readBlobStorage(fixture.path, blobId), {
+    storageKind: 'inline',
+    payload: bytes,
+  });
+  assert.deepEqual(await readBack(upgraded.record.refId), {
+    ok: true,
+    record: upgraded.record,
+    bytes,
+  });
+
+  // A new owner of the same bytes moves the inline value out of SQLite.
+  const image = await fixture.store.put(putInput('session-1', 'read-1', bytes));
+  assert.equal(image.ok, true);
+  if (!image.ok) return;
+  assert.deepEqual(readBlobStorage(fixture.path, blobId), {
+    storageKind: 'managed_file',
+    payload: new TextEncoder().encode(locator),
+  });
+  assert.deepEqual(new Uint8Array(await readFile(valuePath)), bytes);
+  assert.deepEqual(await fixture.store.usage('session-1'), {
+    references: 2,
+    logicalBytes: 2 * bytes.byteLength,
+    physicalBytes: bytes.byteLength,
+  });
+  assert.equal(countRows(fixture.path, 'context_file_deletions'), 0);
+  assert.deepEqual(await readBack(upgraded.record.refId), {
+    ok: true,
+    record: upgraded.record,
+    bytes,
+  });
+  assert.deepEqual(await readBack(image.record.refId), { ok: true, record: image.record, bytes });
+
+  // The previously inline owner's retry republishes a managed file that went missing.
+  await unlink(valuePath);
+  assert.deepEqual(await fixture.store.put(putInput('session-1', 'upgraded-1', bytes)), upgraded);
+  assert.deepEqual(await readBack(upgraded.record.refId), {
+    ok: true,
+    record: upgraded.record,
+    bytes,
+  });
+
+  // An owner that already holds the inline value promotes it on its own retry too.
+  await rewriteAsUpgradedInlineBlob(fixture, bytes);
+  assert.deepEqual(await fixture.store.put(putInput('session-1', 'read-1', bytes)), image);
+  assert.deepEqual(readBlobStorage(fixture.path, blobId), {
+    storageKind: 'managed_file',
+    payload: new TextEncoder().encode(locator),
+  });
+  assert.deepEqual(new Uint8Array(await readFile(valuePath)), bytes);
+  assert.deepEqual(await readBack(image.record.refId), { ok: true, record: image.record, bytes });
+  assert.deepEqual(await fixture.store.usage('session-1'), {
+    references: 2,
+    logicalBytes: 2 * bytes.byteLength,
+    physicalBytes: bytes.byteLength,
+  });
 });
 
 test('removes managed publication state when quota admission fails', async (t) => {
@@ -450,7 +474,7 @@ test('rejects a managed-value directory that resolves outside the Storage Root',
 test('reopens durable records and preserves owner idempotency', async (t) => {
   const fixture = await createFixture(t);
   const bytes = new TextEncoder().encode('durable');
-  const first = await fixture.store.put(putInput('session-1', 'archive-1', bytes));
+  const first = await fixture.store.put(putInput('session-1', 'image-1', bytes));
   assert.equal(first.ok, true);
   if (!first.ok) return;
   fixture.store.close();
@@ -461,7 +485,7 @@ test('reopens durable records and preserves owner idempotency', async (t) => {
     idFactory: () => 'unexpected-new-reference',
   });
   t.after(() => reopened.close());
-  assert.deepEqual(await reopened.put(putInput('session-1', 'archive-1', bytes)), first);
+  assert.deepEqual(await reopened.put(putInput('session-1', 'image-1', bytes)), first);
   assert.deepEqual(
     await reopened.read({
       sessionId: 'session-1',
@@ -544,7 +568,7 @@ test('deduplicates physical bytes while quotas count each Session reference logi
 test('fails closed before returning bytes for Session mismatch and size limits', async (t) => {
   const fixture = await createFixture(t);
   const stored = await fixture.store.put(
-    putInput('session-1', 'archive-1', new TextEncoder().encode('archive')),
+    putInput('session-1', 'image-1', new TextEncoder().encode('content')),
   );
   assert.equal(stored.ok, true);
   if (!stored.ok) return;
@@ -576,10 +600,7 @@ test('fails closed before returning bytes for Session mismatch and size limits',
 });
 
 test('enforces configured owner hard caps before commit and return', async (t) => {
-  const ownerMaxBytes = {
-    read_image_snapshot: 5,
-    tool_result_archive: 7,
-  } as const;
+  const ownerMaxBytes = { read_image_snapshot: 5 } as const;
   const fixture = await createFixture(t, {
     ownerMaxBytes,
     sessionLogicalBytes: 32,
@@ -587,25 +608,9 @@ test('enforces configured owner hard caps before commit and return', async (t) =
   });
 
   assert.deepEqual(
-    await fixture.store.put({
-      ...putInput(
-        'session-1',
-        'large-image',
-        new Uint8Array(ownerMaxBytes.read_image_snapshot + 1),
-      ),
-      owner: { kind: 'read_image_snapshot', ownerId: 'large-image' },
-    }),
-    { ok: false, reason: 'too_large' },
-  );
-  assert.deepEqual(
-    await fixture.store.put({
-      ...putInput(
-        'session-1',
-        'large-archive',
-        new Uint8Array(ownerMaxBytes.tool_result_archive + 1),
-      ),
-      owner: { kind: 'tool_result_archive', ownerId: 'large-archive' },
-    }),
+    await fixture.store.put(
+      putInput('session-1', 'large-image', new Uint8Array(ownerMaxBytes.read_image_snapshot + 1)),
+    ),
     { ok: false, reason: 'too_large' },
   );
   assert.deepEqual(await fixture.store.usage(), {
@@ -615,7 +620,7 @@ test('enforces configured owner hard caps before commit and return', async (t) =
   });
 
   const accepted = await fixture.store.put(
-    putInput('session-1', 'accepted-archive', new Uint8Array(ownerMaxBytes.tool_result_archive)),
+    putInput('session-1', 'accepted-image', new Uint8Array(ownerMaxBytes.read_image_snapshot)),
   );
   assert.equal(accepted.ok, true);
   if (!accepted.ok) return;
@@ -624,7 +629,7 @@ test('enforces configured owner hard caps before commit and return', async (t) =
   const lowerReadLimit = new SqliteContextOffloadStore(fixture.path, {
     limits: {
       ...fixture.limits,
-      ownerMaxBytes: { ...ownerMaxBytes, tool_result_archive: 6 },
+      ownerMaxBytes: { read_image_snapshot: 4 },
     },
   });
   t.after(() => lowerReadLimit.close());
@@ -632,7 +637,7 @@ test('enforces configured owner hard caps before commit and return', async (t) =
     await lowerReadLimit.read({
       sessionId: 'session-1',
       refId: accepted.record.refId,
-      maxBytes: ownerMaxBytes.tool_result_archive,
+      maxBytes: ownerMaxBytes.read_image_snapshot,
     }),
     { ok: false, reason: 'too_large' },
   );
@@ -640,26 +645,29 @@ test('enforces configured owner hard caps before commit and return', async (t) =
 
 test('detects payload corruption instead of returning unverified bytes', async (t) => {
   const fixture = await createFixture(t);
-  const stored = await fixture.store.put(
-    putInput('session-1', 'archive-1', new TextEncoder().encode('original')),
-  );
+  const original = new TextEncoder().encode('original');
+  // Same length as the original, so only the content hash can tell them apart.
+  const tampered = new TextEncoder().encode('tampered');
+  const stored = await fixture.store.put(putInput('session-1', 'image-1', original));
   assert.equal(stored.ok, true);
   if (!stored.ok) return;
+  const readBack = () =>
+    fixture.store.read({ sessionId: 'session-1', refId: stored.record.refId, maxBytes: 100 });
 
   const database = new DatabaseSync(fixture.path);
-  database
-    .prepare('UPDATE context_blobs SET payload = ?')
-    .run(new TextEncoder().encode('tampered'));
-  database.close();
+  try {
+    // A managed locator that no longer names its blob.
+    database.prepare('UPDATE context_blobs SET payload = ?').run(tampered);
+    assert.deepEqual(await readBack(), { ok: false, reason: 'corrupt' });
 
-  assert.deepEqual(
-    await fixture.store.read({
-      sessionId: 'session-1',
-      refId: stored.record.refId,
-      maxBytes: 100,
-    }),
-    { ok: false, reason: 'corrupt' },
-  );
+    // An upgraded database still holds inline payloads; they are hash-verified too.
+    database.prepare("UPDATE context_blobs SET storage_kind = 'inline', payload = ?").run(original);
+    assert.deepEqual(await readBack(), { ok: true, record: stored.record, bytes: original });
+    database.prepare('UPDATE context_blobs SET payload = ?').run(tampered);
+    assert.deepEqual(await readBack(), { ok: false, reason: 'corrupt' });
+  } finally {
+    database.close();
+  }
 });
 
 test('rolls back blob and reference together when publication fails', async (t) => {
@@ -668,9 +676,7 @@ test('rolls back blob and reference together when publication fails', async (t) 
   });
 
   assert.deepEqual(
-    await fixture.store.put(
-      putInput('session-1', 'archive-1', new TextEncoder().encode('archive')),
-    ),
+    await fixture.store.put(putInput('session-1', 'image-1', new TextEncoder().encode('content'))),
     { ok: false, reason: 'unavailable' },
   );
   assert.deepEqual(await fixture.store.usage(), {
@@ -727,11 +733,11 @@ test('copies references atomically without copying physical bytes', async (t) =>
     references: [
       {
         sourceRefId: first.record.refId,
-        targetOwner: { kind: 'tool_result_archive' as const, ownerId: 'target-1' },
+        targetOwner: { kind: 'read_image_snapshot' as const, ownerId: 'target-1' },
       },
       {
         sourceRefId: second.record.refId,
-        targetOwner: { kind: 'tool_result_archive' as const, ownerId: 'target-2' },
+        targetOwner: { kind: 'read_image_snapshot' as const, ownerId: 'target-2' },
       },
     ],
   };
@@ -762,7 +768,7 @@ test('copies references atomically without copying physical bytes', async (t) =>
       references: [
         {
           sourceRefId: second.record.refId,
-          targetOwner: { kind: 'tool_result_archive', ownerId: 'target-over-quota' },
+          targetOwner: { kind: 'read_image_snapshot', ownerId: 'target-over-quota' },
         },
       ],
     }),
@@ -776,11 +782,11 @@ test('copies references atomically without copying physical bytes', async (t) =>
       references: [
         {
           sourceRefId: second.record.refId,
-          targetOwner: { kind: 'tool_result_archive', ownerId: 'new-before-conflict' },
+          targetOwner: { kind: 'read_image_snapshot', ownerId: 'new-before-conflict' },
         },
         {
           sourceRefId: second.record.refId,
-          targetOwner: { kind: 'tool_result_archive', ownerId: 'target-1' },
+          targetOwner: { kind: 'read_image_snapshot', ownerId: 'target-1' },
         },
       ],
     }),
@@ -793,7 +799,7 @@ test('copies references atomically without copying physical bytes', async (t) =>
       references: [
         {
           sourceRefId: third.record.refId,
-          targetOwner: { kind: 'tool_result_archive', ownerId: 'target-1' },
+          targetOwner: { kind: 'read_image_snapshot', ownerId: 'target-1' },
         },
       ],
     }),
@@ -806,11 +812,11 @@ test('copies references atomically without copying physical bytes', async (t) =>
       references: [
         {
           sourceRefId: first.record.refId,
-          targetOwner: { kind: 'tool_result_archive', ownerId: 'target-1' },
+          targetOwner: { kind: 'read_image_snapshot', ownerId: 'target-1' },
         },
         {
           sourceRefId: third.record.refId,
-          targetOwner: { kind: 'tool_result_archive', ownerId: 'target-1' },
+          targetOwner: { kind: 'read_image_snapshot', ownerId: 'target-1' },
         },
       ],
     }),
@@ -904,6 +910,10 @@ test('migrates v1 orphan blobs into the indexed garbage candidate set', async (t
   fixture.store.close();
 
   const database = new DatabaseSync(fixture.path);
+  // A v1 database held every value inline.
+  database
+    .prepare("UPDATE context_blobs SET storage_kind = 'inline', payload = ?")
+    .run(new TextEncoder().encode('orphan'));
   database.exec(
     'DROP TABLE context_gc_candidates; DROP TABLE context_file_deletions; PRAGMA user_version = 1',
   );
@@ -1082,9 +1092,9 @@ test('lifecycle queries use Session and garbage eligibility indexes', async (t) 
 function putInput(sessionId: string, ownerId: string, bytes: Uint8Array) {
   return {
     sessionId,
-    owner: { kind: 'tool_result_archive' as const, ownerId },
+    owner: { kind: 'read_image_snapshot' as const, ownerId },
     bytes,
-    mediaType: 'application/json',
+    mediaType: 'image/png',
   };
 }
 
@@ -1115,7 +1125,6 @@ async function createFixture(
 
 const TEST_OWNER_MAX_BYTES = Object.freeze({
   read_image_snapshot: 5 * 1024 * 1024,
-  tool_result_archive: 8 * 1024 * 1024,
 });
 
 function defaultLimits(): ContextOffloadLimits {
@@ -1128,6 +1137,62 @@ function defaultLimits(): ContextOffloadLimits {
 
 function sha256(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
+}
+
+/**
+ * Gives a stored value the shape the v2 -> v3 migration leaves behind: the
+ * bytes inline in SQLite and no managed file. No current writer produces it.
+ */
+async function rewriteAsUpgradedInlineBlob(
+  fixture: { readonly path: string; readonly root: string },
+  bytes: Uint8Array,
+): Promise<void> {
+  const blobId = sha256(bytes);
+  const database = new DatabaseSync(fixture.path);
+  try {
+    const updated = database
+      .prepare("UPDATE context_blobs SET storage_kind = 'inline', payload = ? WHERE blob_id = ?")
+      .run(bytes, Buffer.from(blobId, 'hex'));
+    assert.equal(updated.changes, 1);
+  } finally {
+    database.close();
+  }
+  await unlink(
+    join(
+      fixture.root,
+      CONTEXT_OFFLOAD_VALUES_DIRECTORY_NAME,
+      `sha256/${blobId.slice(0, 2)}/${blobId}`,
+    ),
+  );
+}
+
+function readBlobStorage(
+  path: string,
+  blobId: string,
+): { storageKind: unknown; payload: Uint8Array } | undefined {
+  const database = new DatabaseSync(path, { readOnly: true });
+  try {
+    const row = database
+      .prepare('SELECT storage_kind, payload FROM context_blobs WHERE blob_id = ?')
+      .get(Buffer.from(blobId, 'hex')) as
+      | { storage_kind: unknown; payload: Uint8Array }
+      | undefined;
+    return row && { storageKind: row.storage_kind, payload: new Uint8Array(row.payload) };
+  } finally {
+    database.close();
+  }
+}
+
+function countRows(path: string, table: string): number {
+  const database = new DatabaseSync(path, { readOnly: true });
+  try {
+    return Number(
+      (database.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: unknown })
+        .count,
+    );
+  } finally {
+    database.close();
+  }
 }
 
 function isNodeError(error: unknown, code: string): error is NodeJS.ErrnoException {

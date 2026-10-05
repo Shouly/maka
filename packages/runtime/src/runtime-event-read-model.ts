@@ -53,14 +53,12 @@ const SETTLED_SANDBOX_BOUNDARY_STATUSES: readonly SettledSandboxBoundaryStatus[]
   SANDBOX_BOUNDARY_REQUEST_STATUSES.filter(
     (status): status is SettledSandboxBoundaryStatus => status !== 'pending',
   );
-import { isArchivedToolResultPlaceholder } from './tool-result-archive.js';
 
 export type RuntimeEventReadModelDiagnosticCode =
   | 'partial_skipped'
   | 'unsupported_event'
   | 'unclaimed_control_fact'
   | 'incomplete_event'
-  | 'archived_tool_result_placeholder'
   | 'generated_id'
   | 'tool_use_id_mismatch'
   | 'unexpected_projected_message';
@@ -84,7 +82,6 @@ const RUNTIME_EVENT_READ_MODEL_DIAGNOSTIC_SEVERITY: Record<
   unsupported_event: 'hard',
   unclaimed_control_fact: 'soft',
   incomplete_event: 'hard',
-  archived_tool_result_placeholder: 'soft',
   generated_id: 'soft',
   tool_use_id_mismatch: 'hard',
   unexpected_projected_message: 'soft',
@@ -170,11 +167,6 @@ export interface ProjectRuntimeEventsToStoredMessagesOptions {
   invocations:
     | readonly RuntimeInvocationRecord[]
     | Readonly<Record<string, RuntimeInvocationRecord>>;
-}
-
-export interface ArchivedToolResultReadModelStatus {
-  runtimeEventId: string;
-  status: Extract<ToolResultContent, { kind: 'archived_tool_result' }>['status'];
 }
 
 export interface RuntimeEventTerminalFact {
@@ -499,56 +491,6 @@ function emptyAssistantText(thinking: RuntimeEvent): RuntimeEvent {
   };
 }
 
-export function projectRuntimeEventsToStoredMessagesWithArchiveStatuses(
-  events: readonly RuntimeEvent[],
-  options: ProjectRuntimeEventsToStoredMessagesOptions & {
-    archiveStatuses:
-      | readonly ArchivedToolResultReadModelStatus[]
-      | Readonly<Record<string, ArchivedToolResultReadModelStatus['status']>>;
-  },
-): RuntimeEventReadModelProjection {
-  return projectRuntimeEventsToStoredMessages(
-    applyArchivedToolResultReadModelStatuses(events, options.archiveStatuses),
-    options,
-  );
-}
-
-export function applyArchivedToolResultReadModelStatuses(
-  events: readonly RuntimeEvent[],
-  archiveStatuses:
-    | readonly ArchivedToolResultReadModelStatus[]
-    | Readonly<Record<string, ArchivedToolResultReadModelStatus['status']>>,
-): RuntimeEvent[] {
-  const statuses = normalizeArchiveStatuses(archiveStatuses);
-  if (statuses.size === 0) return [...events];
-  return events.map((event) => {
-    const status = statuses.get(event.id);
-    if (!status || event.content?.kind !== 'function_response') return event;
-    if (!isArchivedToolResultPlaceholder(event.content.result)) return event;
-    const placeholder = event.content.result;
-    return {
-      ...event,
-      content: {
-        ...event.content,
-        result: {
-          kind: 'archived_tool_result',
-          status,
-          runtimeEventId: placeholder.runtimeEventId,
-          toolCallId: placeholder.toolCallId,
-          toolName: placeholder.toolName,
-          artifactId: placeholder.artifactId,
-          ...(placeholder.rewriteVersion === 2 ? { resourceRef: placeholder.resourceRef } : {}),
-          bodySha256: placeholder.bodySha256,
-          originalEstimatedTokens: placeholder.originalEstimatedTokens,
-          originalBytes: placeholder.originalBytes,
-          rewriteVersion: placeholder.rewriteVersion,
-          reason: placeholder.reason,
-        } satisfies ToolResultContent,
-      },
-    };
-  });
-}
-
 export function classifyRuntimeEventTerminalFact(
   invocation: Pick<RuntimeInvocationRecord, 'sessionId' | 'runId' | 'turnId'>,
   events: readonly RuntimeEvent[],
@@ -767,24 +709,6 @@ function recordStepContentOrder(event: RuntimeEvent, state: ProjectionState): vo
   if (!order.includes(kind)) state.contentOrderByMessageId.set(messageId, [...order, kind]);
 }
 
-function normalizeArchiveStatuses(
-  archiveStatuses:
-    | readonly ArchivedToolResultReadModelStatus[]
-    | Readonly<Record<string, ArchivedToolResultReadModelStatus['status']>>,
-): Map<string, ArchivedToolResultReadModelStatus['status']> {
-  const map = new Map<string, ArchivedToolResultReadModelStatus['status']>();
-  if (Array.isArray(archiveStatuses)) {
-    for (const item of archiveStatuses) {
-      map.set(item.runtimeEventId, item.status);
-    }
-    return map;
-  }
-  for (const [runtimeEventId, status] of Object.entries(archiveStatuses)) {
-    map.set(runtimeEventId, status);
-  }
-  return map;
-}
-
 function projectThinking(
   event: RuntimeEvent,
   state: ProjectionState,
@@ -904,62 +828,23 @@ function projectFunctionResponse(
     ? { kind: 'json' as const, value: event.content.result }
     : undefined;
   const compatibleResult = legacyPlanResult ?? event.content.result;
-  const archivedPlaceholder = isArchivedToolResultPlaceholder(compatibleResult)
-    ? compatibleResult
-    : undefined;
-  let normalizedResult: ToolResultContent | undefined;
-  if (!archivedPlaceholder) {
-    try {
-      normalizedResult = decodePersistedToolResultContent(
-        markPersisted<ToolResultContent>(compatibleResult),
-      );
-    } catch (error) {
-      diagnostic(
-        state,
-        event,
-        'incomplete_event',
-        error instanceof Error && error.message === 'Invalid shell tool result content'
-          ? 'function_response contains an invalid shell tool result'
-          : 'function_response result is not a supported ToolResultContent',
-      );
-      return false;
-    }
-  }
-  if (archivedPlaceholder) {
+  let resultContent: ToolResultContent;
+  try {
+    resultContent = decodePersistedToolResultContent(
+      markPersisted<ToolResultContent>(compatibleResult),
+    );
+  } catch (error) {
     diagnostic(
       state,
       event,
-      'archived_tool_result_placeholder',
-      'function_response result is archived and not loaded in read model',
-      {
-        artifactId: archivedPlaceholder.artifactId,
-        runtimeEventId: archivedPlaceholder.runtimeEventId,
-        toolCallId: archivedPlaceholder.toolCallId,
-        toolName: archivedPlaceholder.toolName,
-        reason: archivedPlaceholder.reason,
-        rewriteVersion: archivedPlaceholder.rewriteVersion,
-      },
+      'incomplete_event',
+      error instanceof Error && error.message === 'Invalid shell tool result content'
+        ? 'function_response contains an invalid shell tool result'
+        : 'function_response result is not a supported ToolResultContent',
     );
+    return false;
   }
   if (event.content.name) state.toolNameByUseId.set(toolUseId, event.content.name);
-  const resultContent: ToolResultContent = archivedPlaceholder
-    ? {
-        kind: 'archived_tool_result',
-        status: 'not_loaded',
-        runtimeEventId: archivedPlaceholder.runtimeEventId,
-        toolCallId: archivedPlaceholder.toolCallId,
-        toolName: archivedPlaceholder.toolName,
-        artifactId: archivedPlaceholder.artifactId,
-        bodySha256: archivedPlaceholder.bodySha256,
-        ...(archivedPlaceholder.rewriteVersion === 2
-          ? { resourceRef: archivedPlaceholder.resourceRef }
-          : {}),
-        originalEstimatedTokens: archivedPlaceholder.originalEstimatedTokens,
-        originalBytes: archivedPlaceholder.originalBytes,
-        rewriteVersion: archivedPlaceholder.rewriteVersion,
-        reason: archivedPlaceholder.reason,
-      }
-    : normalizedResult!;
   messages.push({
     type: 'tool_result',
     id: stableMessageId(event, state, 'tool_result'),

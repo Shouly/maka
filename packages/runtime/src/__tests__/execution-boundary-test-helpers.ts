@@ -34,13 +34,7 @@ import {
   mapSessionEventToRuntimeEvent,
 } from '../session-event-runtime-mapper.js';
 import { projectRuntimeEventsToStoredMessages } from '../runtime-event-read-model.js';
-import {
-  createToolResultArchiveCapability,
-  type ToolResultArchiveCapability,
-  type ToolResultArchiveServices,
-} from '../tool-result-archive-capability.js';
 import { ToolRuntime, type ToolRuntimeInput } from '../tool-runtime.js';
-import type { ModelProjectionTransition } from '@maka/core/model-projection-transition';
 
 export const readExternalExecutionBoundary: AiSdkBackendInput['readExecutionBoundary'] = async () =>
   createExternalExecutionBoundary();
@@ -96,22 +90,9 @@ export function createTestAiSdkBackend(input: TestAiSdkBackendInput): AiSdkBacke
   const { testProjectionArtifacts, appendMessage, ...backendInput } = input;
   const artifacts = new Map<string, Uint8Array>();
   let nextArtifactId = 0;
-  // A whole transition ledger by default, for the same reason the archive
-  // capability above is whole: a lossy model-history rewrite is only allowed
-  // when it can be made durable, so a fixture without this seam would silently
-  // disable pruning rather than exercise it (#4283).
-  const transitions: ModelProjectionTransition[] = [];
   const backend = new AiSdkBackend({
     readExecutionBoundary: readExternalExecutionBoundary,
     readPermissionMode: async () => input.header.permissionMode,
-    loadModelProjectionTransitions: async () => ({
-      transitions: [...transitions],
-      unreadableTargets: new Set<string>(),
-      unscopedUnreadable: 0,
-    }),
-    recordModelProjectionTransition: async (transition) => {
-      transitions.push(transition);
-    },
     providerStateIdentity: `sha256:${'1'.repeat(64)}`,
     ...backendInput,
     ...(testProjectionArtifacts
@@ -143,23 +124,6 @@ export function createTestAiSdkBackend(input: TestAiSdkBackendInput): AiSdkBacke
       : {}),
   });
   return appendMessage ? teeProjectedTranscript(backend, input.sessionId, appendMessage) : backend;
-}
-
-/**
- * An archive capability for tests whose subject is the writer or the replay
- * reader. The unexercised halves resolve to `not_found` rather than being
- * absent: a test may leave a road untravelled, but the capability itself is
- * still whole, which is the invariant these fixtures used to be able to break.
- */
-export function testToolResultArchive(
-  services: Partial<ToolResultArchiveServices>,
-): ToolResultArchiveCapability {
-  return createToolResultArchiveCapability({
-    archiveToolResult: async () => undefined,
-    readToolResultArchive: async () => ({ ok: false, reason: 'not_found' }),
-    readArchivedToolResultResource: async () => ({ ok: false, reason: 'not_found' }),
-    ...services,
-  });
 }
 
 type TestToolRuntimeInput = Omit<

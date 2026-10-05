@@ -1075,7 +1075,7 @@ test(
       );
       const store = await openInteractiveContextOffloadStoreForWrite(owner.lease, {
         limits: {
-          ownerMaxBytes: { read_image_snapshot: 4096, tool_result_archive: 4096 },
+          ownerMaxBytes: { read_image_snapshot: 4096 },
           sessionLogicalBytes: 1_000_000,
           workspacePhysicalBytes: 10_000_000,
         },

@@ -200,7 +200,7 @@ test('preserves live supported v1 Artifacts when opening existing Sessions', asy
         1,
         'live',
         'session-1/legacy-artifact-result.txt',
-        '{"id":"legacy-artifact","sessionId":"session-1","turnId":"turn-1","createdAt":1,"name":"result.txt","kind":"file","sizeBytes":4,"relativePath":"session-1/legacy-artifact-result.txt","source":"tool_result_archive","status":"live"}'
+        '{"id":"legacy-artifact","sessionId":"session-1","turnId":"turn-1","createdAt":1,"name":"result.txt","kind":"file","sizeBytes":4,"relativePath":"session-1/legacy-artifact-result.txt","source":"tool_result","status":"live"}'
       );
       UPDATE operational_schema_migrations SET version = 1 WHERE scope = 'artifact';
     `);

@@ -31,7 +31,6 @@ import { findCheckpointSummaryDefect } from './history-compact-summary-validatio
 import {
   buildHistoryCompactCheckpoint,
   historyCompactCheckpointToRuntimeEvent,
-  historyCompactSourceDigest,
   matchHistoryCompactCheckpointPrefix,
   midTurnHeadAnchorEvent,
   projectHistoryCompactCheckpointReplay,
@@ -192,15 +191,6 @@ export interface PlanHistoryCompactionInput {
    */
   invocations?: readonly RuntimeInvocationRecord[];
   acceptedRoute?: { modelId: string; connectionId?: string };
-  /**
-   * Projects the covered span to its effective (transition-folded) view. When
-   * present, the summary is written from that view and its digest is pinned as
-   * `coverage.effectiveSourceDigest`, so a later projection transition
-   * invalidates the checkpoint instead of being restored by it (#4845 review).
-   */
-  projectEffectiveCoverage?: (
-    coveredRuntimeEvents: readonly RuntimeEvent[],
-  ) => Promise<readonly RuntimeEvent[]>;
   summarize: HistoryCompactionSummarizer;
 }
 
@@ -315,47 +305,18 @@ export async function planHistoryCompaction(
     const checkpointMatch = input.previousCheckpoint
       ? matchHistoryCompactCheckpointPrefix(input.previousCheckpoint, coveredRuntimeEvents)
       : undefined;
-    let previousCheckpoint =
+    const previousCheckpoint =
       checkpointMatch && !checkpointMatch.reason ? input.previousCheckpoint : undefined;
-    // Content-currency gate for roll-forward: the inherited summary or
-    // provider state describes the EFFECTIVE view of the previous coverage at
-    // its own creation. A projection transition committed since rewrites that
-    // view without touching the raw prefix, and reusing the stale content here
-    // would launder it into the new checkpoint under the current effective
-    // digest — later replay guards would then pass it (#4845 review). On
-    // drift, discard the checkpoint and re-summarize the whole effective span.
-    if (previousCheckpoint && checkpointMatch && input.projectEffectiveCoverage) {
-      const pinned = previousCheckpoint.coverage.effectiveSourceDigest;
-      const previousEffectiveCovered = await input.projectEffectiveCoverage(
-        checkpointMatch.coveredRuntimeEvents,
-      );
-      if (pinned === undefined || historyCompactSourceDigest(previousEffectiveCovered) !== pinned) {
-        previousCheckpoint = undefined;
-      }
-    }
     const newlyFoldedRuntimeEvents = previousCheckpoint
       ? checkpointMatch!.successorRuntimeEvents
       : coveredRuntimeEvents;
-
-    // The model-visible summary reads the effective (transition-folded) view
-    // of the covered span; the raw events keep the coverage identity.
-    const effectiveCoveredRuntimeEvents = input.projectEffectiveCoverage
-      ? [...(await input.projectEffectiveCoverage(coveredRuntimeEvents))]
-      : undefined;
-    const effectiveNewlyFoldedRuntimeEvents = effectiveCoveredRuntimeEvents
-      ? newlyFoldedRuntimeEvents.length === coveredRuntimeEvents.length
-        ? effectiveCoveredRuntimeEvents
-        : effectiveCoveredRuntimeEvents.slice(
-            effectiveCoveredRuntimeEvents.length - newlyFoldedRuntimeEvents.length,
-          )
-      : undefined;
 
     let compacted: string | HistoryCompactProviderState | undefined;
     try {
       compacted = await Promise.resolve(
         input.summarize({
-          coveredRuntimeEvents: effectiveCoveredRuntimeEvents ?? coveredRuntimeEvents,
-          newlyFoldedRuntimeEvents: effectiveNewlyFoldedRuntimeEvents ?? newlyFoldedRuntimeEvents,
+          coveredRuntimeEvents,
+          newlyFoldedRuntimeEvents,
           ...(previousCheckpoint ? { previousCheckpoint } : {}),
         }),
       );
@@ -414,7 +375,6 @@ export async function planHistoryCompaction(
     const checkpoint = buildHistoryCompactCheckpoint({
       sessionId: input.sessionId,
       coveredRuntimeEvents,
-      ...(effectiveCoveredRuntimeEvents ? { effectiveCoveredRuntimeEvents } : {}),
       ...(typeof compacted === 'string' ? { summary: compacted } : { providerState: compacted }),
       ...(phase === 'mid_turn'
         ? { phase: 'mid_turn' as const, headAnchor: input.headAnchor! }

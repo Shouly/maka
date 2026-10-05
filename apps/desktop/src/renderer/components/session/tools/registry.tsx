@@ -38,7 +38,6 @@ import { DiffResult } from './renderers/DiffResult.js';
 import { TerminalResult } from './renderers/TerminalResult.js';
 import { WebSearchErrorResult, WebSearchResult } from './renderers/WebSearchResult.js';
 import {
-  ArchivedResult,
   FileWriteResult,
   ImageResult,
   JsonResult,
@@ -146,8 +145,6 @@ export function renderToolContent(item: ToolActivityItem, context: ToolContentCo
           {...(context.onOpenFile ? { onOpenFile: context.onOpenFile } : {})}
         />
       ) : null;
-    case 'archived':
-      return result?.kind === 'archived_tool_result' ? <ArchivedResult result={result} /> : null;
     case 'workflow':
       return result?.kind === 'rive_workflow' ? <WorkflowResult result={result} /> : null;
     case 'text':

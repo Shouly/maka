@@ -128,7 +128,7 @@ describe('effective model history feeds budgeting and compaction', () => {
     // this checkpoint covered, so it must not replay over it.
     const projectionReplaced = [
       ...covered.slice(0, 2),
-      toolResultEvent('evt-3', RAW_SECRET, textProjection('[archived]')),
+      toolResultEvent('evt-3', RAW_SECRET, textProjection('a different projection')),
     ];
     assert.equal(
       matchHistoryCompactCheckpointPrefix(checkpoint, projectionReplaced).reason,

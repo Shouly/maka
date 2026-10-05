@@ -165,7 +165,14 @@ export const RUNTIME_HOST_PROTOCOL_VERSION = 0 as const;
 // error records with `credentialSource` by their exact keys; an old client
 // rejects a new Host's runtime policy snapshot, which lacks `webSearch`, and
 // calls an operation the new Host does not have.
-export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 169 as const;
+// 170: tool results are no longer archived. The `archived_tool_result` result
+// kind, the `tool_result_archive` Artifact source, the prune and archive
+// fields of a token usage's context budget and the ArchiveRead tool are gone,
+// so a new Host never writes any of them. A new client decodes result kinds
+// and Artifact sources as closed lists and context budgets by their exact
+// keys, so it rejects an old Host's archived rows, archive Artifacts and
+// budgets that carry those fields.
+export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 170 as const;
 // 155: A tool call is on the wire while the model is still writing it.
 // `subscription.session_event` carries `tool_input_start` and
 // `tool_input_delta`, which a Client that does not know them decodes as an

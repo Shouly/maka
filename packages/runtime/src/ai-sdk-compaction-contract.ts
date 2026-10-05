@@ -20,8 +20,6 @@
 import type { RuntimeExecutionConnection } from '@maka/core/llm-connections';
 import type { HistoryCompactRoute } from '@maka/core/model-call-attempt';
 import type { RuntimeEvent } from '@maka/core/runtime-event';
-import type { ModelProjectionTransition } from '@maka/core/model-projection-transition';
-import type { LoadedModelProjectionTransitions } from './model-projection-transition-ledger.js';
 import type { RuntimeInvocationRecord } from '@maka/core/runtime-invocation';
 
 import type { ProviderRequestTracker } from './provider-request-telemetry.js';
@@ -31,7 +29,6 @@ import type {
   HistoryCompactProviderState,
 } from './history-compact-checkpoint.js';
 import type { ModelFactory } from './model-adapter.js';
-import type { ToolResultArchiveCapability } from './tool-result-archive-capability.js';
 
 /**
  * Default output cap for a compaction summary. Measured summaries land around
@@ -97,11 +94,6 @@ export type HistoryCompactCheckpointRecorder = (
   checkpoint: HistoryCompactCheckpoint,
   turnId: string,
 ) => void | Promise<void>;
-export type ModelProjectionTransitionLoader = () => Promise<LoadedModelProjectionTransitions>;
-export type ModelProjectionTransitionLedgerRecorder = (
-  transition: ModelProjectionTransition,
-  turnId: string,
-) => Promise<void>;
 /** Provider and persistence capabilities used by the compaction collaborator. */
 export interface AiSdkCompactionCapabilities {
   connection: RuntimeExecutionConnection;
@@ -110,14 +102,6 @@ export interface AiSdkCompactionCapabilities {
   modelFactory: ModelFactory;
   /** Optional model-visible context budget and compaction policy. */
   contextBudget?: ContextBudgetPolicy;
-  /**
-   * The whole tool-result archive authority (#2026): the writer that durably
-   * stores a pruned body, the replay reader that hydrates it back, the
-   * ref-addressed reader, and the `ArchiveRead` decoder the placeholder names.
-   * Absent means this session archives nothing, which is a valid state — but
-   * it can no longer mean "archives without a way back".
-   */
-  toolResultArchive?: ToolResultArchiveCapability;
   /** Latest checkpoint loader. */
   loadHistoryCompactCheckpoint?: HistoryCompactCheckpointLoader;
   /** Produces a checkpoint value from prior state plus newly evicted RuntimeEvents. */
@@ -126,14 +110,6 @@ export interface AiSdkCompactionCapabilities {
   historyCompactRoute?: HistoryCompactRoute;
   /** Durable recorder for accepted checkpoints; persistence precedes projection. */
   recordHistoryCompactCheckpoint?: HistoryCompactCheckpointRecorder;
-  /**
-   * Session-scoped read of every committed model-projection transition (#4283).
-   * Absent means this session cannot make a lossy model-history change durable,
-   * and therefore must not make one at all.
-   */
-  loadModelProjectionTransitions?: ModelProjectionTransitionLoader;
-  /** Durable append for one transition; persistence precedes model-visible loss. */
-  recordModelProjectionTransition?: ModelProjectionTransitionLedgerRecorder;
   /**
    * Durable read of the given turn's persisted RuntimeEvents from the
    * authoritative run ledger. Mid-turn capacity compaction derives its

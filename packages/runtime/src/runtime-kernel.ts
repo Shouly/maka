@@ -93,8 +93,6 @@ import type { TaskNotificationLease } from '@maka/core/backend-types';
 import { renderTaskNotification } from './injection/task-notification.js';
 import { buildStatusPatch, normalizeStopSessionSource } from './session-projection-helpers.js';
 import { loadLatestHistoryCompactCheckpointFromRunLedger } from './history-compact-ledger.js';
-import { loadModelProjectionTransitionsFromRunLedger } from './model-projection-transition-ledger.js';
-import type { ModelProjectionTransition } from '@maka/core/model-projection-transition';
 import {
   canReplaceHistoryCompactCheckpoint,
   type HistoryCompactCheckpoint,
@@ -2522,13 +2520,6 @@ export class RuntimeKernel implements RuntimeKernelLike {
     );
   }
 
-  /** Every run this Session has opened, enumerated from the event spine. */
-  private async sessionRunIds(sessionId: string): Promise<string[]> {
-    const store = this.deps.runtimeEventStore;
-    if (!store) return [];
-    return (await store.listSessionInvocations(sessionId)).map((invocation) => invocation.runId);
-  }
-
   private buildBackendRecorderHooks(input: {
     sessionId: string;
   }): Pick<
@@ -2541,8 +2532,6 @@ export class RuntimeKernel implements RuntimeKernelLike {
     | 'recordRequestComposition'
     | 'loadHistoryCompactCheckpoint'
     | 'recordHistoryCompactCheckpoint'
-    | 'loadModelProjectionTransitions'
-    | 'recordModelProjectionTransition'
     | 'loadTurnRuntimeEvents'
   > {
     const { sessionId } = input;
@@ -2586,24 +2575,6 @@ export class RuntimeKernel implements RuntimeKernelLike {
               checkpoint: HistoryCompactCheckpoint,
               turnId: string,
             ) => this.historyCompactCoordinator.record(sessionId, checkpoint, runFor(turnId)),
-            loadModelProjectionTransitions: async () =>
-              loadModelProjectionTransitionsFromRunLedger(
-                this.deps.runStore!,
-                sessionId,
-                await this.sessionRunIds(sessionId),
-              ),
-            recordModelProjectionTransition: (
-              transition: ModelProjectionTransition,
-              turnId: string,
-            ) => {
-              const run = runFor(turnId);
-              if (!run) {
-                return Promise.reject(
-                  new Error('No active AgentRun for model projection transition'),
-                );
-              }
-              return run.recordModelProjectionTransition(transition);
-            },
           }
         : {}),
       ...(this.deps.runtimeEventStore

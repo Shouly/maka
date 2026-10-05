@@ -319,10 +319,6 @@ function compactToolSummary(entry: MakaPiToolEntry): CompactToolSummary | undefi
       return { text: `${count} file${count === 1 ? '' : 's'}`, protect: true };
   }
 
-  if (result?.kind === 'archived_tool_result') {
-    return { text: `archived: ${result.status}`, protect: true };
-  }
-
   const text = plainResultText(entry);
   if (!text) return result ? noOutput() : undefined;
   // Only a successful filesystem Read that carries real file content gets the
@@ -481,8 +477,8 @@ function isRuntimeResourceRead(entry: MakaPiToolEntry): boolean {
 
 /**
  * True only for the result shapes a filesystem Read uses to carry actual file
- * content. An `archived_tool_result` placeholder (or any other kind) is not a
- * read body, so it renders its own status instead of a fabricated line count.
+ * content. Any other kind is not a read body, so it renders its own shape
+ * instead of a fabricated line count.
  */
 function isReadBodyResult(result: ToolResultContent | undefined): boolean {
   if (result?.kind === 'text') return true;
@@ -549,9 +545,7 @@ function renderToolResult(entry: MakaPiToolEntry, width: number): string[] {
   // A successful filesystem Read that returned real file content pulled it into
   // the model's context; the transcript only needs to note that it happened, so
   // skip the content and keep a summary. Everything else falls through to render
-  // its content: a failed Read (its error), and — critically — an
-  // `archived_tool_result` placeholder, so its not_loaded/missing status stays
-  // visible instead of being mistaken for a one-line file.
+  // its content, such as a failed Read's error.
   if (
     entry.toolName === TOOL_NAMES.read &&
     makaPiToolPresentationStatus(entry) !== 'error' &&

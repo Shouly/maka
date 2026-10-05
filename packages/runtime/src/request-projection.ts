@@ -17,10 +17,9 @@
  * under the License.
  */
 
-import type { ModelMessage, NormalizedUsage, ToolCallPart } from './model-protocol.js';
+import type { ModelMessage, NormalizedUsage } from './model-protocol.js';
 
 export interface CompletedProviderStep {
-  toolCalls?: readonly ToolCallPart[];
   usage?: NormalizedUsage;
 }
 
@@ -57,23 +56,14 @@ export type RequestProjectionStage = (
 
 /**
  * Deterministic request-projection pipeline over ONE provider-visible request.
- * Order is a contract: mid-turn capacity compaction runs first among the
- * message-shaping hooks so every later mechanism operates on its projection —
- * active tool-result pruning re-archives large tool results in the rebuilt
- * tail.
- *
- * Every hook here only SHAPES the projection. The pass/terminate capacity
- * verdict is issued once, after the whole pipeline, by the final-request
- * estimate owner (buildMidTurnFinalRequestVerdict) over the actual outgoing
- * (messages, tools) payload — never by an individual hook over an intermediate
- * projection that a later hook could still rescue.
+ * Order is a contract: tool availability picks the active tool set first, and
+ * mid-turn capacity compaction then shapes the messages of that request.
  */
 export function composeRequestProjection(
   toolAvailability: RequestProjectionStage | undefined,
   midTurnCapacityCompact: RequestProjectionStage | undefined,
-  activeToolResultPrune: RequestProjectionStage | undefined,
 ): RequestProjectionStage | undefined {
-  const hooks = [toolAvailability, midTurnCapacityCompact, activeToolResultPrune].filter(
+  const hooks = [toolAvailability, midTurnCapacityCompact].filter(
     Boolean,
   ) as RequestProjectionStage[];
   if (hooks.length === 0) return undefined;

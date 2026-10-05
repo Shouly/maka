@@ -124,7 +124,6 @@ describe('interactive artifact store authority', () => {
       const retained = [
         'tool_result',
         'tool_result_projection',
-        'tool_result_archive',
         'subagent_writeback',
         'deep_research',
         'user_upload',

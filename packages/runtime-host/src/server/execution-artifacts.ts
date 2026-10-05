@@ -22,21 +22,8 @@ import { open, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 import type { ArtifactRecord } from '@maka/core/artifacts';
 import { MAX_ATTACHMENT_BYTES } from '@maka/core/attachments';
-import {
-  createToolResultArchiveCapability,
-  type ToolResultArchiveCapability,
-  type ToolResultArchiveRecorder,
-} from '@maka/runtime/tool-result-archive-capability';
 import { isPathInside } from '@maka/runtime/path-containment';
-import {
-  createLedgerArchivePreparer,
-  createLedgerArchiveResourceReader,
-  createLedgerToolResultArchiveReader,
-} from '@maka/runtime/ledger-tool-result-archive-reader';
-import type { ToolResultArchiveEvidenceReader } from '@maka/core/tool-result-archive-evidence';
 import { type ToolArtifactRecorderInput } from '@maka/runtime/tool-artifacts';
-import type { ToolResultArchiveReaderInput } from '@maka/runtime/context-budget';
-import { type ToolResultArchiveResourceReadInput } from '@maka/runtime/tool-result-archive-resource';
 import type { InteractiveArtifactStoreWriter } from '@maka/storage/artifact-stores';
 import type { SessionManagerDeps } from '@maka/runtime/session-manager';
 import type { SessionAdmissionGate } from './session-admission-gate.js';
@@ -52,11 +39,6 @@ export interface HostExecutionArtifactServices {
    */
   recordToolArtifacts(event: ToolArtifactRecorderInput): Promise<ArtifactRecord[]>;
   publishChildWorkspacePatch: NonNullable<SessionManagerDeps['publishChildWorkspacePatch']>;
-  /**
-   * New archives use the Session ledger. Legacy Artifact refs are retained as
-   * historical data but are deliberately unavailable through this capability.
-   */
-  toolResultArchive: ToolResultArchiveCapability;
 }
 
 export function createHostExecutionArtifactServices(input: {
@@ -64,7 +46,6 @@ export function createHostExecutionArtifactServices(input: {
   requestDrain: () => void;
   sessionAdmission: SessionAdmissionGate;
   sessions: SessionPresenceReader;
-  archiveEvidence?: ToolResultArchiveEvidenceReader;
 }): HostExecutionArtifactServices {
   const runWrite = async <T>(operation: () => Promise<T>): Promise<T> => {
     try {
@@ -107,32 +88,6 @@ export function createHostExecutionArtifactServices(input: {
     return recorded;
   };
 
-  const prepareLedger = input.archiveEvidence
-    ? createLedgerArchivePreparer(input.archiveEvidence)
-    : undefined;
-  const readLedger = input.archiveEvidence
-    ? createLedgerToolResultArchiveReader(input.archiveEvidence)
-    : undefined;
-  const readLedgerResource = input.archiveEvidence
-    ? createLedgerArchiveResourceReader(input.archiveEvidence)
-    : undefined;
-  const prepareLedgerForCommit: ToolResultArchiveRecorder = async (event) => {
-    const accepted = { ...event };
-    if (!prepareLedger || !(await prepareLedger(accepted))) return;
-    return {
-      ledger: true,
-      commitTransition: (transition, persist) =>
-        input.sessionAdmission.runOrJoin(accepted.sessionId, async () => {
-          if (
-            (await input.sessions.probeSessionRemoval(accepted.sessionId)).kind !== 'present' ||
-            !(await prepareLedger(accepted))
-          )
-            return false;
-          await persist(transition);
-          return true;
-        }),
-    };
-  };
   const services: HostExecutionArtifactServices = {
     recordToolArtifacts,
     publishChildWorkspacePatch: async ({ sessionId, turnId, binding, patch }) => {
@@ -151,17 +106,6 @@ export function createHostExecutionArtifactServices(input: {
         throw new Error(`Child Session ${sessionId} was retired before patch publication`);
       return artifact;
     },
-    toolResultArchive: createToolResultArchiveCapability({
-      archiveToolResult: prepareLedgerForCommit,
-      readToolResultArchive: (event: ToolResultArchiveReaderInput) =>
-        event.rewriteVersion === 2
-          ? (readLedger?.(event) ?? { ok: false, reason: 'read_failed' })
-          : { ok: false, reason: 'read_failed' },
-      readArchivedToolResultResource: (event: ToolResultArchiveResourceReadInput) =>
-        event.storage === 'ledger'
-          ? (readLedgerResource?.(event) ?? { ok: false, reason: 'read_failed' })
-          : { ok: false, reason: 'read_failed' },
-    }),
   };
   return Object.freeze(services);
 }

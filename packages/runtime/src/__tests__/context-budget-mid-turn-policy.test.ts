@@ -34,13 +34,6 @@ test('context policy is independent of process environment overrides', () => {
     MAKA_CONTEXT_HISTORY_COMPACT_MID_TURN: 'off',
     MAKA_CONTEXT_HISTORY_COMPACT_MID_TURN_TAIL_EVENTS: '99',
     MAKA_CONTEXT_HISTORY_COMPACT_RESERVE_TOKENS: '1',
-    MAKA_CONTEXT_STALE_TOOL_RESULT_PRUNE: 'off',
-    MAKA_CONTEXT_STALE_TOOL_RESULT_MAX_TOKENS: '1',
-    MAKA_CONTEXT_STALE_TOOL_RESULT_MIN_RECENT_TURNS: '99',
-    MAKA_CONTEXT_ACTIVE_TOOL_RESULT_PRUNE: 'off',
-    MAKA_CONTEXT_ACTIVE_TOOL_RESULT_MAX_ESTIMATED_TOKENS: '1',
-    MAKA_CONTEXT_ACTIVE_TOOL_RESULT_MIN_STEP_NUMBER: '99',
-    MAKA_CONTEXT_ACTIVE_TOOL_RESULT_MIN_SUPERSEDED_TOKENS: '1',
   } as const;
   const previous = Object.fromEntries(
     Object.keys(overrides).map((name) => [name, process.env[name]]),
@@ -63,23 +56,6 @@ describe('mid-turn history compact policy', () => {
     const policy = buildDefaultContextBudgetPolicy();
     assert.equal(policy?.historyCompact?.enabled, true);
     assert.deepEqual(policy?.historyCompact?.midTurn, { enabled: true });
-  });
-});
-
-describe('tool-result prune policy', () => {
-  test('uses bounded runtime defaults', () => {
-    const policy = buildDefaultContextBudgetPolicy();
-    assert.deepEqual(policy?.activeToolResultPrune, {
-      enabled: true,
-      maxCurrentResultEstimatedTokens: 2_048,
-      minSupersededResultEstimatedTokens: 256,
-      minStepNumber: 1,
-    });
-    assert.deepEqual(policy?.staleToolResultPrune, {
-      enabled: true,
-      maxResultEstimatedTokens: 2_048,
-      minRecentTurnsFull: 2,
-    });
   });
 });
 

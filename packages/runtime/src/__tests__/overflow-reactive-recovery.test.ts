@@ -48,10 +48,7 @@ import {
   type HistoryCompactProviderState,
 } from '../history-compact-checkpoint.js';
 import { HistoryCompactSummarizerError } from '../history-compact-error.js';
-import {
-  createTestAiSdkBackend,
-  testToolResultArchive,
-} from './execution-boundary-test-helpers.js';
+import { createTestAiSdkBackend } from './execution-boundary-test-helpers.js';
 import { testInvocationOpening } from './invocation-fixture.js';
 
 // The checkpoint write gate validates summary structure and floors the size
@@ -73,9 +70,6 @@ const PROVIDER_STATE_IDENTITY = `sha256:${'1'.repeat(64)}` as const;
  *  - 'tool'     → a Read tool call (completes a step, appends a durable pair)
  *  - 'bigtool'  → assistant text (sentinel) + a Read with a huge result, so the
  *                 proactive capacity trigger fires at this step's boundary
- *  - 'bigread'  → a pure Read with a huge result and NO step text, so the
- *                 durable pair is the trailing span a recovery fold must keep
- *                 verbatim in the tail (the prune-resurrection shape)
  *  - 'load'     → a `ToolSearch` call activating the deferred Big tool
  *  - 'gated'    → a call to the gated `Big` tool
  *  - 'done'     → final assistant text, finish stop
@@ -109,7 +103,6 @@ const PROVIDER_STATE_IDENTITY = `sha256:${'1'.repeat(64)}` as const;
 type CallKind =
   | 'tool'
   | 'bigtool'
-  | 'bigread'
   | 'load'
   | 'gated'
   | 'done'
@@ -173,8 +166,6 @@ interface ReactiveFixtureOptions {
    * request projection — the P1-A race window.
    */
   slowAppendMessage?: boolean;
-  /** Enable the active tool-result prune with a small threshold + archive seam. */
-  activeToolResultPrune?: boolean;
   /** Test-only gate before a numbered provider request starts. */
   beforeStream?: (call: number) => Promise<void>;
   /** Test-only replacement for the Runtime-owned retry clock. */
@@ -407,13 +398,11 @@ function buildReactiveFixture(options: ReactiveFixtureOptions): ReactiveFixture 
         ? toolCallChunks(call, 'Read', { path: 'one.md' })
         : kind === 'bigtool'
           ? toolCallChunks(call, 'Read', { path: 'big.md' }, RETRY_STEP_TEXT_SENTINEL)
-          : kind === 'bigread'
-            ? toolCallChunks(call, 'Read', { path: 'big.md' })
-            : kind === 'load'
-              ? toolCallChunks(call, 'ToolSearch', { query: 'Big' })
-              : kind === 'gated'
-                ? toolCallChunks(call, 'Big', { q: 'run' })
-                : doneChunks();
+          : kind === 'load'
+            ? toolCallChunks(call, 'ToolSearch', { query: 'Big' })
+            : kind === 'gated'
+              ? toolCallChunks(call, 'Big', { q: 'run' })
+              : doneChunks();
     return simulateReadableStream({ chunks, initialDelayInMs: null, chunkDelayInMs: null });
   };
   const model = new MockLanguageModelV4({
@@ -722,17 +711,7 @@ function buildReactiveFixture(options: ReactiveFixtureOptions): ReactiveFixture 
         enabled: true,
         ...(midTurnEnabled ? { midTurn: { enabled: true } } : {}),
       },
-      ...(options.activeToolResultPrune
-        ? { activeToolResultPrune: { enabled: true, maxCurrentResultEstimatedTokens: 100 } }
-        : {}),
     },
-    ...(options.activeToolResultPrune
-      ? {
-          toolResultArchive: testToolResultArchive({
-            archiveToolResult: () => ({ artifactId: 'artifact-archived-1' }),
-          }),
-        }
-      : {}),
     ...durableReader,
     ...compactionSeams,
     ...(options.canonicalAccounting
@@ -1781,38 +1760,6 @@ describe('reactive overflow recovery in the streaming backend', () => {
     assert.equal(retryRequestTools.includes('"Big"') || retryRequestTools.includes("'Big'"), true);
     // ...and it executes for real after the retry.
     assert.equal(fixture.toolExecutions.includes('BIG_EXEC'), true);
-  });
-
-  test('an actively pruned tool result stays a placeholder in the retry request (review round-3 P1)', async () => {
-    // Review round-3 P1 repro: active tool-result pruning derives eligible
-    // tool-call IDs from completed Runtime steps. Recovery rebuilds from the
-    // durable ledger — which holds
-    // the ORIGINAL raw result, not the provider-only placeholder. The retry
-    // request therefore resurrected the archived raw body, breaking the
-    // active-prune invariant (an archived result never re-enters provider
-    // context) and inviting a second overflow. Third instance of the same
-    // disease: request-local steps consumed as send-level state.
-    //
-    // 'bigread' keeps the step text-free so the durable pair is the POOL'S
-    // trailing span: the safe boundary cannot split the pair, retreats before
-    // the call, and the fold re-materializes the pair verbatim in the tail —
-    // from the ledger, which holds the raw body, not the placeholder.
-    const fixture = buildReactiveFixture({
-      script: ['bigread', 'overflow', 'done'],
-      bigPriors: true,
-      activeToolResultPrune: true,
-    });
-    await runTurn(fixture);
-
-    assert.equal(complete(fixture)?.stopReason, 'end_turn');
-    // The rejected request had already pruned the big result to a placeholder.
-    const overflowPrompt = JSON.stringify(fixture.model.doStreamCalls[1]?.prompt);
-    assert.equal(overflowPrompt.includes('BIG_RESULT_'), false);
-    assert.equal(overflowPrompt.includes('artifact-archived-1'), true);
-    // The retry request must keep the placeholder — never the raw body.
-    const retryPrompt = JSON.stringify(fixture.model.doStreamCalls[2]?.prompt);
-    assert.equal(retryPrompt.includes('BIG_RESULT_'), false);
-    assert.equal(retryPrompt.includes('artifact-archived-1'), true);
   });
 
   test('a second overflow after the single retry ends as a real error', async () => {

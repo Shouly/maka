@@ -245,7 +245,6 @@ import {
 } from './web-search-tool.js';
 import { createHostWebFetchService, createHostWebFetchToolFromService } from './web-fetch-tool.js';
 import { createHostExecutionArtifactServices } from './execution-artifacts.js';
-import { openToolResultArchiveEvidenceReader } from '@maka/storage/tool-result-archive-evidence';
 import { createHostOrganizationSession } from './organization-session.js';
 
 export interface ExecutionRuntimeHostComposition extends RuntimeHostComposition {
@@ -256,7 +255,6 @@ const GIBIBYTE = 1024 * 1024 * 1024;
 const CONTEXT_OFFLOAD_LIMITS: ContextOffloadLimits = Object.freeze({
   ownerMaxBytes: Object.freeze({
     read_image_snapshot: MAX_READ_IMAGE_BYTES,
-    tool_result_archive: 0,
   }),
   // Read images are bounded individually and logically per Session. Physical
   // bytes are content-addressed across Sessions and bounded per workspace.
@@ -324,7 +322,6 @@ export async function createExecutionRuntimeHostComposition(
   let manager: SessionManager | undefined;
   let modelMetadataRefresh: ReturnType<typeof startHostModelMetadataRefresh> | undefined;
   let modelInventoryRefresh: ReturnType<typeof startHostModelInventoryRefresh> | undefined;
-  let archiveEvidence: Awaited<ReturnType<typeof openToolResultArchiveEvidenceReader>> | undefined;
   try {
     const pluginRoot = new Context();
     const pluginAgents = new PluginAgentService(pluginRoot);
@@ -501,9 +498,7 @@ export async function createExecutionRuntimeHostComposition(
       onProjectionChanged: (update) =>
         requireContinuity(continuity).enqueueRuntimeResourceChanged(update),
     });
-    archiveEvidence = await openToolResultArchiveEvidenceReader(context.owner.lease);
     const executionArtifacts = createHostExecutionArtifactServices({
-      archiveEvidence,
       artifacts: openedArtifactStore,
       requestDrain: context.requestDrain,
       sessionAdmission,
@@ -2443,7 +2438,6 @@ export async function createExecutionRuntimeHostComposition(
           () => externalAgentSetup?.beginDrain(),
         ],
         close: [
-          () => archiveEvidence?.close(),
           () => modelMetadataRefresh?.close(),
           () => modelInventoryRefresh?.close(),
           () => connectionEffects.close(),
@@ -2747,7 +2741,6 @@ export async function createExecutionRuntimeHostComposition(
     };
   } catch (error) {
     const errors: unknown[] = [error];
-    archiveEvidence?.close();
     try {
       await modelMetadataRefresh?.close();
       await modelInventoryRefresh?.close();

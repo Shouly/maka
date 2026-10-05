@@ -44,7 +44,6 @@ import { decodePersistedToolResultContent } from '@maka/core/tool-result-record-
 
 import type { ToolResultOutput } from './model-protocol.js';
 import { toolResultOutput } from './tool-result-output.js';
-import { withToolResultArchiveResourceRef } from './tool-result-archive.js';
 import { projectBashToolResultForModel } from './bash-model-output.js';
 import { projectFileWriteToolResultForModel } from './file-tool-model-output.js';
 import { projectShellRunResultForModel } from './shell-run-model-output.js';
@@ -174,7 +173,7 @@ export interface MaterializedToolResultMedia {
 }
 
 /** The images the artifact parts of one durable projection put in the request. */
-export function projectionArtifactMedia(
+function projectionArtifactMedia(
   projection: DurableToolResultProjection,
 ): MaterializedToolResultMedia[] {
   if (projection.kind !== 'content') return [];
@@ -274,7 +273,7 @@ export function decodeEffectiveToolResultProjection(
     }
   }
 
-  let output = withToolResultArchiveResourceRef(content.result);
+  let output = content.result;
   if (isRetiredExploreAgentResult(output)) {
     try {
       output = decodePersistedToolResultContent(markPersisted<ToolResultContent>(output));

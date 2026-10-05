@@ -53,25 +53,8 @@ const READ_EMPTY_FILE_NOTE =
   '<system-reminder>Warning: the file exists but the contents are empty.</system-reminder>';
 
 /** Same range, same file, same turn: the earlier result already says it. */
-export const READ_UNCHANGED_NOTE =
+const READ_UNCHANGED_NOTE =
   'Wasted call — file unchanged since your last Read. Refer to that earlier tool_result instead.';
-
-/**
- * Whether a tool result is that pointer, in any of the shapes a result takes
- * on its way to the model. The pruner must never take it for a newer read of
- * the file: the result it points at would be archived, and the pointer would
- * point at nothing.
- */
-export function isReadUnchangedResult(value: unknown): boolean {
-  if (value === READ_UNCHANGED_NOTE) return true;
-  if (!value || typeof value !== 'object') return false;
-  const record = value as { unchanged?: unknown; text?: unknown; value?: unknown };
-  return (
-    record.unchanged === true ||
-    record.text === READ_UNCHANGED_NOTE ||
-    record.value === READ_UNCHANGED_NOTE
-  );
-}
 
 export function readToolResultToModelOutput(
   _input: unknown,

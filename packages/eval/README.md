@@ -187,9 +187,8 @@ system prompt, disables product identity/personalization/skills/workspace-memory
 admits only `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`, and `apply_patch` as tool candidates,
 and exposes a foreground-only Bash schema without `run_in_background` or `pty`. Provider-specific
 routing remains authoritative: DeepSeek Responses exposes `apply_patch` instead of `Write` and
-`Edit`, and Runtime-owned `ArchiveRead` remains available for archived tool results. A real
-`hosted.execution.start` regression test pins SHA-256 hashes for the first main provider request's
-developer prompt and complete tool schema.
+`Edit`. A real `hosted.execution.start` regression test pins SHA-256 hashes for the first main
+provider request's developer prompt and complete tool schema.
 
 Every benchmark subject removes `WebSearch`, `WebFetch`, and `FetchURL` from the provider-visible
 tool list. Maka enforces that through its Hosted Execution profile; external harnesses pass through

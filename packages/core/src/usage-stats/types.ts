@@ -315,18 +315,6 @@ export interface ContextBudgetDiagnostic {
   droppedTurns: number;
   keptEvents: number;
   droppedEvents: number;
-  prunedToolResults?: number;
-  prunedToolResultEstimatedTokensBefore?: number;
-  prunedToolResultEstimatedTokensAfter?: number;
-  archivePlaceholders?: number;
-  archiveWriteFailures?: number;
-  unarchivedToolResults?: number;
-  archivePlaceholderReasonCounts?: Record<string, number>;
-  activePrunedToolResults?: number;
-  activeSupersededToolResults?: number;
-  activeDuplicateToolResults?: number;
-  activeArchiveFailures?: number;
-  activeEstimatedTokensSaved?: number;
   compactionDecisions?: CompactionDecisionDiagnostic[];
 }
 

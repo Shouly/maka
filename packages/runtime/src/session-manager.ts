@@ -187,8 +187,6 @@ import { readLatestContextDiagnostics, type ContextDiagnostics } from './context
 import type { ModelCallCommit } from '@maka/core/agent-run';
 import type { ShellRunProcessManager } from './shell-run-manager.js';
 import type { HistoryCompactCheckpoint } from './history-compact-checkpoint.js';
-import type { ModelProjectionTransition } from '@maka/core/model-projection-transition';
-import type { LoadedModelProjectionTransitions } from './model-projection-transition-ledger.js';
 import type { RuntimeContinuationFailpoint } from './agent-run.js';
 import type { RuntimeCommitResult, RuntimeCommitSink } from './runtime-commit-sink.js';
 import {
@@ -746,14 +744,6 @@ export interface BackendFactoryContext {
    * activation. When present, a host may remove tools for stricter local
    * policy, but must never append, substitute, or otherwise expose an
    * agent-permission tool outside this exact set.
-   *
-   * Runtime protocol tools are outside that ceiling by construction (#2026).
-   * `ArchiveRead` decodes a placeholder the runtime itself generated during
-   * pruning; it grants no reach the parent did not already exercise, and
-   * withholding it only strands content the model was explicitly told to
-   * retrieve. The backend therefore binds it from the archive capability, not
-   * from this set, which is why narrowing a child's allowlist can no longer
-   * silently strip the decoder for placeholders that child will still receive.
    */
   tools?: readonly MakaTool[];
   /** Turn-scoped shell plan captured with a bound child tool ceiling. */
@@ -784,17 +774,6 @@ export interface BackendFactoryContext {
   loadHistoryCompactCheckpoint?: () => Promise<HistoryCompactCheckpoint | undefined>;
   recordHistoryCompactCheckpoint?: (
     checkpoint: HistoryCompactCheckpoint,
-    turnId: string,
-  ) => Promise<void>;
-  /**
-   * Session-scoped read of every committed model-projection transition (#4283).
-   * The reducer folds these onto the RuntimeEvent ledger, so a lossy rewrite
-   * survives the Turn that made it.
-   */
-  loadModelProjectionTransitions?: () => Promise<LoadedModelProjectionTransitions>;
-  /** Durable append for one transition; persistence precedes any model-visible loss. */
-  recordModelProjectionTransition?: (
-    transition: ModelProjectionTransition,
     turnId: string,
   ) => Promise<void>;
   /**

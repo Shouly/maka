@@ -49,10 +49,7 @@ export function createReadImageSnapshotReader(
         maxBytes: MAX_READ_IMAGE_BYTES,
       });
       if (!result.ok) return result;
-      if (
-        result.record.owner.kind !== 'read_image_snapshot' ||
-        !result.record.mediaType.toLowerCase().startsWith('image/')
-      ) {
+      if (!result.record.mediaType.toLowerCase().startsWith('image/')) {
         return { ok: false, reason: 'corrupt' };
       }
       return result;
@@ -95,7 +92,6 @@ export function createReadImageSnapshotStore(
       const { record } = result;
       if (
         record.sessionId !== accepted.sessionId ||
-        record.owner.kind !== 'read_image_snapshot' ||
         record.owner.ownerId !== accepted.ownerId ||
         record.mediaType !== accepted.mimeType ||
         record.sizeBytes !== accepted.bytes.byteLength

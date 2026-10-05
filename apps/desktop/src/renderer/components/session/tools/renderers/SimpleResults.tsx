@@ -18,8 +18,7 @@
  */
 
 // The result kinds whose whole body is a paragraph or a picture: text, JSON,
-// an image, an archived placeholder, a workflow, and the row that has no
-// result yet.
+// an image, a workflow, and the row that has no result yet.
 //
 // JSON never reaches the reader as escaped braces. `formatQuietJsonValue` is
 // the same formatter the CLI and the TUI use, so a tool's result reads the
@@ -30,7 +29,6 @@ import { memo } from 'react';
 import type { ToolResultContent } from '@maka/core/events';
 import {
   capLines,
-  formatBytes,
   formatQuietJsonValue,
   formatUserVisibleToolText,
   getToolActivityCopy,
@@ -164,23 +162,6 @@ export const ImageResult = memo(function ImageResult(props: {
         ) : (
           <p className="text-xs leading-5 text-text-muted">{copy.turn.attachmentUnavailable}</p>
         )}
-      </div>
-    </ToolResultPanel>
-  );
-});
-
-export const ArchivedResult = memo(function ArchivedResult(props: {
-  result: Extract<ToolResultContent, { kind: 'archived_tool_result' }>;
-}) {
-  const locale = useUiLocale();
-  const copy = getTranscriptCopy(locale).result;
-  return (
-    <ToolResultPanel>
-      <div className={toolResultBlockClass}>
-        <p className="text-xs leading-5 text-text-secondary">{copy.archived}</p>
-        <p className={toolResultBlockLabelClass}>
-          {copy.archivedDetail(props.result.status, formatBytes(props.result.originalBytes))}
-        </p>
       </div>
     </ToolResultPanel>
   );

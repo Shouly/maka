@@ -42,7 +42,7 @@ Runtime Host owns Session and Turn identity, agent lifecycle, continuation, tool
 
 ## Runtime layers
 
-1. Runtime Event Log is the canonical source for model messages, tool calls, tool results, and termination facts. Context pruning and compaction change provider input projections, not history.
+1. Runtime Event Log is the canonical source for model messages, tool calls, tool results, and termination facts. Context compaction changes provider input projections, not history.
 2. SessionManager and AgentRun own execution lifecycle. Runtime Host owns admission, client capabilities, interactions, and the public protocol.
 3. Agent Graph schedules dependent work using child Sessions and sends every activation back through the same Runtime.
 4. Storage owns interactive Runtime state. It has no Eval-specific root, TaskRun ledger, or experiment result authority.

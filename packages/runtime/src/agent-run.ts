@@ -50,10 +50,6 @@ import type {
   RuntimeEventInjectionContent,
   RuntimeInvocationLineage,
 } from '@maka/core/runtime-event';
-import {
-  MODEL_PROJECTION_TRANSITION_EVENT_TYPE,
-  type ModelProjectionTransition,
-} from '@maka/core/model-projection-transition';
 import { isTerminalRuntimeEvent, runtimePartialStreamKey } from '@maka/core/runtime-event';
 import {
   ToolLedgerCorruptionError,
@@ -782,37 +778,6 @@ export class AgentRun {
         { durable: true, ...(latestContext ? { latestContext } : {}) },
       );
     });
-  }
-
-  /**
-   * Durable append for one model-projection transition (#4283).
-   *
-   * Rethrows like the checkpoint recorder above: the caller may only show the
-   * replacement once the ledger holds the record, so a failed append must be a
-   * failed prune, not a silent one.
-   */
-  recordModelProjectionTransition(transition: ModelProjectionTransition): Promise<void> {
-    if (!this.input.runStore) return Promise.reject(new Error('AgentRun store is not configured'));
-    if (!this.runStoreAvailable) return Promise.reject(new Error('AgentRun store is unavailable'));
-    return this.enqueueRunStore(
-      'append model projection transition',
-      async () => {
-        await this.input.runStore?.appendEvent(this.sessionId, this.runId, {
-          type: MODEL_PROJECTION_TRANSITION_EVENT_TYPE,
-          id: transition.transitionId,
-          runId: this.runId,
-          sessionId: this.sessionId,
-          turnId: this.turnId,
-          ts: transition.createdAt,
-          data: {
-            runtimeEventId: transition.target.runtimeEventId,
-            part: transition.target.part,
-            transition,
-          },
-        });
-      },
-      { rethrow: true },
-    );
   }
 
   recordHistoryCompactCheckpoint(checkpoint: HistoryCompactCheckpoint): Promise<void> {

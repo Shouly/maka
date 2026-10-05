@@ -8,7 +8,6 @@
   "private": true,
   "exports": {
     "./durable-tool-result-projection": "./dist/durable-tool-result-projection.js",
-    "./model-projection-transition": "./dist/model-projection-transition.js",
     "./canonical-runtime-event": "./dist/canonical-runtime-event.js",
     "./canonical-json": "./dist/canonical-json.js",
     "./runtime-boundary": "./dist/runtime-boundary.js",
@@ -58,7 +57,6 @@
     "./user-question": "./dist/user-question.js",
     "./connections": "./dist/connections.js",
     "./context-offload": "./dist/context-offload.js",
-    "./tool-result-archive-evidence": "./dist/tool-result-archive-evidence.js",
     "./attachments": "./dist/attachments.js",
     "./artifacts": "./dist/artifacts.js",
     "./pet": "./dist/pet.js",

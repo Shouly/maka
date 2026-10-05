@@ -387,14 +387,6 @@ function validateLedgerContextRefs(root: string, context: DatabaseSync | undefin
         projection(item.modelProjection, sessionId);
       }
     }
-    for (const row of runtime
-      .prepare(
-        "SELECT session_id, record_json FROM core_agent_run_events WHERE event_type = 'model_projection_transition_recorded'",
-      )
-      .iterate()) {
-      const event = record(JSON.parse(String(row.record_json)));
-      projection(record(record(event.data).transition).replacement, String(row.session_id));
-    }
     const chunks = runtime.prepare(
       'SELECT data FROM session_message_chunks WHERE session_id = ? AND sequence = ? ORDER BY chunk_index',
     );

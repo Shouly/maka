@@ -110,8 +110,6 @@ interface ManagedFilePublication {
   readonly locator: string;
 }
 
-type ContextBlobStorageKind = 'inline' | 'managed_file';
-
 type PreparedContextRead =
   | ContextOffloadReadResult
   | {
@@ -191,27 +189,18 @@ export class SqliteContextOffloadStore implements ContextOffloadStore {
     }
 
     const operation = async (): Promise<ContextOffloadPutResult> => {
-      let publication: ManagedFilePublication | undefined;
       let deletionIntentLocator: string | undefined;
       try {
         this.#assertOpen();
-        const existingStorageKind = this.#readBlobStorageKind(blobId);
-        const storageKind =
-          preferredStorageKind(input.owner) === 'managed_file' ||
-          existingStorageKind === 'managed_file'
-            ? 'managed_file'
-            : 'inline';
-        if (storageKind === 'managed_file') {
-          const locator = managedFileLocator(blobId);
-          this.#recordManagedFileDeletionIntent(locator, bytes.byteLength);
-          deletionIntentLocator = locator;
-          publication = await this.#publishManagedFile(locator, blobId, bytes);
-          this.#failpoint?.('after_managed_file_publish');
-        }
+        const locator = managedFileLocator(blobId);
+        this.#recordManagedFileDeletionIntent(locator, bytes.byteLength);
+        deletionIntentLocator = locator;
+        const publication = await this.#publishManagedFile(locator, blobId, bytes);
+        this.#failpoint?.('after_managed_file_publish');
         const result = this.#writeTransaction(() =>
-          this.#put({ ...input, bytes, blobId, storageKind, publication }),
+          this.#put({ ...input, bytes, blobId, publication }),
         );
-        if (!result.ok && publication) {
+        if (!result.ok) {
           await this.#drainFileDeletion(publication.locator).catch(() => undefined);
         }
         return result;
@@ -533,25 +522,13 @@ export class SqliteContextOffloadStore implements ContextOffloadStore {
     this.#database.close();
   }
 
-  #readBlobStorageKind(blobId: string): ContextBlobStorageKind | undefined {
-    const row = this.#database
-      .prepare('SELECT storage_kind FROM context_blobs WHERE blob_id = ?')
-      .get(Buffer.from(blobId, 'hex')) as { storage_kind?: unknown } | undefined;
-    if (!row) return undefined;
-    if (row.storage_kind !== 'inline' && row.storage_kind !== 'managed_file') {
-      throw new Error('Invalid context blob storage kind');
-    }
-    return row.storage_kind;
-  }
-
   #put(input: {
     readonly sessionId: string;
     readonly owner: ContextOffloadOwner;
     readonly bytes: Uint8Array;
     readonly mediaType: string;
     readonly blobId: string;
-    readonly storageKind: ContextBlobStorageKind;
-    readonly publication?: ManagedFilePublication;
+    readonly publication: ManagedFilePublication;
   }): ContextOffloadPutResult {
     const existingReference = this.#readReferenceByOwner(input.sessionId, input.owner);
     if (existingReference) {
@@ -573,12 +550,9 @@ export class SqliteContextOffloadStore implements ContextOffloadStore {
       }
     }
 
-    if (input.storageKind === 'managed_file' && !input.publication) {
-      throw new Error('Managed context value was not durably published');
-    }
     if (existingReference) {
       this.#cancelPendingFileDeletion(input.publication, input.bytes.byteLength);
-      this.#promoteToManagedFile(existingBlob, input, blobIdBytes);
+      this.#promoteToManagedFile(existingBlob, input.publication, blobIdBytes);
       return { ok: true, record: existingReference };
     }
 
@@ -595,20 +569,12 @@ export class SqliteContextOffloadStore implements ContextOffloadStore {
         this.#readStoreUsage().physical_bytes,
         'Workspace physical bytes',
       );
-      const exceedsWorkspaceQuota =
-        input.storageKind === 'managed_file'
-          ? physicalBytes > this.#limits.workspacePhysicalBytes
-          : exceedsLimit(
-              physicalBytes,
-              input.bytes.byteLength,
-              this.#limits.workspacePhysicalBytes,
-            );
-      if (exceedsWorkspaceQuota) {
+      if (physicalBytes > this.#limits.workspacePhysicalBytes) {
         return { ok: false, reason: 'workspace_quota_exceeded' };
       }
     }
     this.#cancelPendingFileDeletion(input.publication, input.bytes.byteLength);
-    this.#promoteToManagedFile(existingBlob, input, blobIdBytes);
+    this.#promoteToManagedFile(existingBlob, input.publication, blobIdBytes);
 
     const createdAt = this.#readNow();
     const refId = this.#idFactory();
@@ -621,10 +587,8 @@ export class SqliteContextOffloadStore implements ContextOffloadStore {
         )
         .run(
           blobIdBytes,
-          input.storageKind,
-          input.storageKind === 'inline'
-            ? input.bytes
-            : Buffer.from(input.publication?.locator ?? '', 'utf8'),
+          'managed_file',
+          Buffer.from(input.publication.locator, 'utf8'),
           input.bytes.byteLength,
           createdAt,
         );
@@ -680,27 +644,20 @@ export class SqliteContextOffloadStore implements ContextOffloadStore {
 
   #promoteToManagedFile(
     existingBlob: ContextBlobRow | undefined,
-    input: {
-      readonly storageKind: ContextBlobStorageKind;
-      readonly publication?: ManagedFilePublication;
-    },
+    publication: ManagedFilePublication,
     blobId: Uint8Array,
   ): void {
-    if (existingBlob?.storage_kind !== 'inline' || input.storageKind !== 'managed_file') return;
+    if (existingBlob?.storage_kind !== 'inline') return;
     this.#database
       .prepare(
         `UPDATE context_blobs
          SET storage_kind = 'managed_file', payload = ?
          WHERE blob_id = ? AND storage_kind = 'inline'`,
       )
-      .run(Buffer.from(input.publication?.locator ?? '', 'utf8'), blobId);
+      .run(Buffer.from(publication.locator, 'utf8'), blobId);
   }
 
-  #cancelPendingFileDeletion(
-    publication: ManagedFilePublication | undefined,
-    sizeBytes: number,
-  ): void {
-    if (!publication) return;
+  #cancelPendingFileDeletion(publication: ManagedFilePublication, sizeBytes: number): void {
     const locator = Buffer.from(publication.locator, 'utf8');
     const row = this.#database
       .prepare('SELECT size_bytes FROM context_file_deletions WHERE locator = ?')
@@ -1368,10 +1325,8 @@ function usageFromRows(session: SessionUsageRow, store: StoreUsageRow): ContextO
 function validateLimits(limits: ContextOffloadLimits): ContextOffloadLimits {
   const ownerMaxBytes = {
     read_image_snapshot: limits.ownerMaxBytes?.read_image_snapshot,
-    tool_result_archive: limits.ownerMaxBytes?.tool_result_archive,
   };
   assertNonNegativeSafeInteger(ownerMaxBytes.read_image_snapshot, 'Read image snapshot byte limit');
-  assertNonNegativeSafeInteger(ownerMaxBytes.tool_result_archive, 'Tool Result archive byte limit');
   assertNonNegativeSafeInteger(limits.sessionLogicalBytes, 'Session context quota');
   assertNonNegativeSafeInteger(limits.workspacePhysicalBytes, 'Workspace context quota');
   return Object.freeze({
@@ -1386,16 +1341,12 @@ function assertOwner(owner: ContextOffloadOwner): void {
   assertBoundedIdentity(owner.ownerId, 'Context owner id');
 }
 
-function preferredStorageKind(owner: ContextOffloadOwner): ContextBlobStorageKind {
-  return owner.kind === 'read_image_snapshot' ? 'managed_file' : 'inline';
-}
-
 function managedFileStagingPath(target: string, blobId: string): string {
   return join(dirname(target), `.${blobId}.publish.tmp`);
 }
 
 function isOwnerKind(value: unknown): value is ContextOffloadOwner['kind'] {
-  return value === 'read_image_snapshot' || value === 'tool_result_archive';
+  return value === 'read_image_snapshot';
 }
 
 function assertBoundedIdentity(value: string, label: string): void {

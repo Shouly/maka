@@ -60,20 +60,6 @@ const FILE_WRITE_SHAPE = defineObjectShape<Result<'file_write'>>()(
   ['kind', 'path', 'bytes'],
   ['created', 'shownPath'],
 );
-const ARCHIVED_SHAPE = defineObjectShape<Result<'archived_tool_result'>>()(
-  [
-    'kind',
-    'status',
-    'runtimeEventId',
-    'toolCallId',
-    'toolName',
-    'originalEstimatedTokens',
-    'originalBytes',
-    'rewriteVersion',
-    'reason',
-  ],
-  ['artifactId', 'resourceRef', 'bodySha256'],
-);
 const IMAGE_SHAPE = defineObjectShape<Result<'image'>>()(['kind', 'mimeType', 'ref'], []);
 const SUMMARY_SHAPE = defineObjectShape<Result<'summary'>>()(
   ['kind', 'original', 'summarized', 'reason'],
@@ -254,22 +240,6 @@ function isNonShellToolResultContent(value: unknown): value is ToolResultContent
         isFiniteNumber(value.bytes) &&
         (value.created === undefined || typeof value.created === 'boolean') &&
         (value.shownPath === undefined || typeof value.shownPath === 'string')
-      );
-    case 'archived_tool_result':
-      return (
-        hasExactShape(value, ARCHIVED_SHAPE) &&
-        ['not_loaded', 'missing', 'corrupt'].includes(value.status as string) &&
-        typeof value.runtimeEventId === 'string' &&
-        typeof value.toolCallId === 'string' &&
-        typeof value.toolName === 'string' &&
-        isOptionalString(value.artifactId) &&
-        isOptionalString(value.resourceRef) &&
-        isOptionalString(value.bodySha256) &&
-        isFiniteNumber(value.originalEstimatedTokens) &&
-        isFiniteNumber(value.originalBytes) &&
-        isFiniteNumber(value.rewriteVersion) &&
-        (value.reason === 'stale_tool_result_pruned_before_compact' ||
-          value.reason === 'active_current_turn_tool_result_pruned_before_next_step')
       );
     case 'image':
       return (

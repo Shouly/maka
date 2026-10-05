@@ -30,7 +30,6 @@ const store = new SqliteContextOffloadStore(join(root, CONTEXT_OFFLOAD_DATABASE_
   limits: {
     ownerMaxBytes: {
       read_image_snapshot: 5 * 1024 * 1024,
-      tool_result_archive: 8 * 1024 * 1024,
     },
     sessionLogicalBytes: 16 * 1024 * 1024,
     workspacePhysicalBytes: 32 * 1024 * 1024,

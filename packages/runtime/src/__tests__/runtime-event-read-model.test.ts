@@ -30,7 +30,6 @@ import {
   isHardRuntimeEventReadModelDiagnostic,
   isUnclaimedRuntimeEventDiagnostic,
   projectRuntimeEventsToStoredMessages,
-  projectRuntimeEventsToStoredMessagesWithArchiveStatuses,
 } from '../runtime-event-read-model.js';
 import { buildRuntimeEventModelReplayPlan } from '../model-history.js';
 import { backfillRuntimeEventsFromStoredMessages } from '../runtime-event-backfill.js';
@@ -838,117 +837,6 @@ describe('projectRuntimeEventsToStoredMessages', () => {
       (assistant as unknown as { contentOrder?: string[] } | undefined)?.contentOrder,
       ['tools', 'thinking', 'text'],
     );
-  });
-
-  test('archived tool-result placeholders project to diagnostic tool-result rows', () => {
-    const events = baseEvents();
-    const toolResult = events.find((event) => event.id === 'evt-tool-result');
-    if (toolResult?.content?.kind !== 'function_response')
-      throw new Error('fixture missing tool result');
-    toolResult.content.result = {
-      kind: 'maka.archived_tool_result',
-      rewriteVersion: 1,
-      artifactId: 'artifact-tool-result',
-      runtimeEventId: 'evt-tool-result',
-      toolCallId: 'tool-1',
-      toolName: 'Read',
-      bodySha256: 'a'.repeat(64),
-      originalEstimatedTokens: 200,
-      originalBytes: 800,
-      reason: 'stale_tool_result_pruned_before_compact',
-    };
-
-    const out = projectRuntimeEventsToStoredMessages(events, { invocations: [invocation] });
-    const projected = out.messages.find((message) => message.type === 'tool_result');
-
-    assert.partialDeepStrictEqual(projected, { type: 'tool_result', toolUseId: 'tool-1' });
-    assert.deepStrictEqual((projected as { content?: unknown } | undefined)?.content, {
-      kind: 'archived_tool_result',
-      status: 'not_loaded',
-      artifactId: 'artifact-tool-result',
-      bodySha256: 'a'.repeat(64),
-      runtimeEventId: 'evt-tool-result',
-      toolCallId: 'tool-1',
-      toolName: 'Read',
-      originalEstimatedTokens: 200,
-      originalBytes: 800,
-      rewriteVersion: 1,
-      reason: 'stale_tool_result_pruned_before_compact',
-    });
-    assert.deepStrictEqual(
-      out.diagnostics.map((diag) => diag.code),
-      ['archived_tool_result_placeholder'],
-    );
-  });
-
-  test('legacy archived tool-result placeholders gain a deterministic ArchiveRead ref for replay', () => {
-    const events = baseEvents();
-    const toolResult = events.find((event) => event.id === 'evt-tool-result');
-    if (toolResult?.content?.kind !== 'function_response')
-      throw new Error('fixture missing tool result');
-    toolResult.content.result = {
-      kind: 'maka.archived_tool_result',
-      rewriteVersion: 1,
-      artifactId: 'artifact-tool-result',
-      runtimeEventId: 'evt-tool-result',
-      toolCallId: 'tool-1',
-      toolName: 'Read',
-      bodySha256: 'a'.repeat(64),
-      originalEstimatedTokens: 200,
-      originalBytes: 800,
-      reason: 'stale_tool_result_pruned_before_compact',
-    };
-
-    const replay = buildRuntimeEventModelReplayPlan(events);
-    const result = replay.items.find(
-      (item) => item.kind === 'tool_result' && item.toolCallId === 'tool-1',
-    );
-    assert.equal(
-      result?.kind === 'tool_result' && typeof result.output === 'object' && result.output !== null
-        ? (result.output as { resourceRef?: string }).resourceRef
-        : undefined,
-      `maka://archive/artifact-tool-result/${'a'.repeat(64)}/800`,
-    );
-  });
-
-  test('archive status wrapper can project missing and corrupt rows without changing sync defaults', () => {
-    const events = baseEvents();
-    const toolResult = events.find((event) => event.id === 'evt-tool-result');
-    if (toolResult?.content?.kind !== 'function_response')
-      throw new Error('fixture missing tool result');
-    toolResult.content.result = {
-      kind: 'maka.archived_tool_result',
-      rewriteVersion: 1,
-      artifactId: 'artifact-tool-result',
-      runtimeEventId: 'evt-tool-result',
-      toolCallId: 'tool-1',
-      toolName: 'Read',
-      bodySha256: 'a'.repeat(64),
-      originalEstimatedTokens: 200,
-      originalBytes: 800,
-      reason: 'stale_tool_result_pruned_before_compact',
-    };
-
-    const defaultOut = projectRuntimeEventsToStoredMessages(events, { invocations: [invocation] });
-    const defaultProjected = defaultOut.messages.find((message) => message.type === 'tool_result');
-    assert.partialDeepStrictEqual(defaultProjected, { type: 'tool_result' });
-    assert.strictEqual(archivedStatus(defaultProjected), 'not_loaded');
-
-    const missingOut = projectRuntimeEventsToStoredMessagesWithArchiveStatuses(events, {
-      invocations: [invocation],
-      archiveStatuses: { 'evt-tool-result': 'missing' },
-    });
-    const missingProjected = missingOut.messages.find((message) => message.type === 'tool_result');
-    assert.partialDeepStrictEqual(missingProjected, { type: 'tool_result' });
-    assert.strictEqual(archivedStatus(missingProjected), 'missing');
-
-    const corruptOut = projectRuntimeEventsToStoredMessagesWithArchiveStatuses(events, {
-      invocations: [invocation],
-      archiveStatuses: [{ runtimeEventId: 'evt-tool-result', status: 'corrupt' }],
-    });
-    const corruptProjected = corruptOut.messages.find((message) => message.type === 'tool_result');
-    assert.partialDeepStrictEqual(corruptProjected, { type: 'tool_result' });
-    assert.strictEqual(archivedStatus(corruptProjected), 'corrupt');
   });
 
   test('partial RuntimeEvents are excluded', () => {
@@ -2304,11 +2192,6 @@ async function expectRejects(promise: Promise<unknown>, pattern: RegExp): Promis
     return;
   }
   throw new Error(`Expected promise to reject with ${pattern}`);
-}
-
-function archivedStatus(message: StoredMessage | undefined): string | undefined {
-  if (message?.type !== 'tool_result') return undefined;
-  return message.content.kind === 'archived_tool_result' ? message.content.status : undefined;
 }
 
 function makeHeader(id: string): SessionHeader {

@@ -448,7 +448,6 @@ async function buildHostAiSdkBackend(
             mimeType: mediaType,
           }),
         recordToolArtifacts: input.executionArtifacts.recordToolArtifacts,
-        toolResultArchive: input.executionArtifacts.toolResultArchive,
         ...(!input.context.tools &&
         !input.context.header.subagentParent &&
         input.context.header.collaborationMode !== 'plan' &&
@@ -459,8 +458,6 @@ async function buildHostAiSdkBackend(
         summarizeHistoryCompact,
         historyCompactRoute,
         recordHistoryCompactCheckpoint: input.context.recordHistoryCompactCheckpoint,
-        loadModelProjectionTransitions: input.context.loadModelProjectionTransitions,
-        recordModelProjectionTransition: input.context.recordModelProjectionTransition,
         loadTurnRuntimeEvents: input.context.loadTurnRuntimeEvents,
         allowMidTurnHistoryCompaction: input.context.allowMidTurnHistoryCompaction,
         recordRunTrace: input.context.recordRunTrace,

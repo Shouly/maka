@@ -79,7 +79,7 @@ test('single-flights one limit-bound writer and snapshots admitted inputs', asyn
       }),
       /different limits/u,
     );
-    (mutableLimits.ownerMaxBytes as { tool_result_archive: number }).tool_result_archive = 0;
+    (mutableLimits.ownerMaxBytes as { read_image_snapshot: number }).read_image_snapshot = 0;
     (mutableLimits as { sessionLogicalBytes: number }).sessionLogicalBytes = 0;
     const [first, second] = await Promise.all([opening, concurrentOpening]);
     try {
@@ -95,7 +95,7 @@ test('single-flights one limit-bound writer and snapshots admitted inputs', asyn
       const bytes = new TextEncoder().encode('safe');
       const input = {
         sessionId: 'source',
-        owner: { kind: 'tool_result_archive' as const, ownerId: 'source-owner' },
+        owner: { kind: 'read_image_snapshot' as const, ownerId: 'source-owner' },
         bytes,
         mediaType: 'application/json',
       };
@@ -121,7 +121,7 @@ test('single-flights one limit-bound writer and snapshots admitted inputs', asyn
         references: [
           {
             sourceRefId: stored.record.refId,
-            targetOwner: { kind: 'tool_result_archive' as const, ownerId: 'target-owner' },
+            targetOwner: { kind: 'read_image_snapshot' as const, ownerId: 'target-owner' },
           },
         ],
       };
@@ -138,7 +138,7 @@ test('single-flights one limit-bound writer and snapshots admitted inputs', asyn
           references: [
             {
               sourceRefId: stored.record.refId,
-              targetOwner: { kind: 'tool_result_archive', ownerId: 'target-owner' },
+              targetOwner: { kind: 'read_image_snapshot', ownerId: 'target-owner' },
             },
           ],
         }),
@@ -215,7 +215,6 @@ function testLimits(): ContextOffloadLimits {
   return {
     ownerMaxBytes: {
       read_image_snapshot: 64,
-      tool_result_archive: 64,
     },
     sessionLogicalBytes: 64,
     workspacePhysicalBytes: 64,

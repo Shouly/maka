@@ -41,7 +41,7 @@ import {
 after(removeTrackedControlDirectories);
 
 const contextOffloadLimits: ContextOffloadLimits = Object.freeze({
-  ownerMaxBytes: Object.freeze({ read_image_snapshot: 1024, tool_result_archive: 1024 }),
+  ownerMaxBytes: Object.freeze({ read_image_snapshot: 1024 }),
   sessionLogicalBytes: 4096,
   workspacePhysicalBytes: 4096,
 });

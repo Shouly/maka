@@ -210,18 +210,6 @@ describe('builtin apply_patch', () => {
   });
 });
 
-describe('builtin ArchiveRead capabilities', () => {
-  test('is not a built-in tool', () => {
-    // The archive decoder travels with the archive capability and is bound by
-    // the backend (#2026). A host that assembles built-ins can no longer
-    // forget it, and can no longer register it without a writer behind it.
-    assert.equal(
-      buildBuiltinTools().find((tool) => tool.name === 'ArchiveRead'),
-      undefined,
-    );
-  });
-});
-
 describe('builtin tool executor facts', () => {
   test('attaches executor facts to every built-in tool', () => {
     const facts: WorkspaceExecutorFacts = {

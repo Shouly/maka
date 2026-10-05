@@ -41,7 +41,6 @@ export const TOOL_NAMES = {
   applyPatch: 'apply_patch',
   taskStop: 'TaskStop',
   taskInput: 'TaskInput',
-  archiveRead: 'ArchiveRead',
   // Interaction
   askUserQuestion: 'AskUserQuestion',
   requestAccess: 'RequestAccess',

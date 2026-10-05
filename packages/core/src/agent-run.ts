@@ -69,7 +69,6 @@ export const AGENT_RUN_EVENT_TYPES = [
   'request_composition_resolved',
   'model_call_attempt_recorded',
   'history_compact_checkpoint_recorded',
-  'model_projection_transition_recorded',
   'run_composition_recorded',
   'abort_requested',
   'trace_write_failed',

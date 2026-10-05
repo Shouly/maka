@@ -47,7 +47,6 @@ export const TOOL_SEARCH_MAX_SCHEMA_CHARS = 64 * 1024;
 const DIRECT_TOOL_NAMES: ReadonlySet<string> = new Set([
   TOOL_NAMES.bash,
   TOOL_NAMES.read,
-  TOOL_NAMES.archiveRead,
   TOOL_NAMES.write,
   TOOL_NAMES.edit,
   TOOL_NAMES.glob,

@@ -72,7 +72,6 @@ import { agentGraphIdForRootSession } from '@maka/runtime/stream-graph-coordinat
 import { resolveTurnShellPlan, ShellPreferenceError } from '@maka/runtime/shell-detect';
 import { buildParentAgentTools } from '@maka/runtime/subagent-tools';
 import { SESSION_RECAP_INSTRUCTION } from '@maka/runtime/session-recap';
-import { createToolResultArchiveCapability } from '@maka/runtime/tool-result-archive-capability';
 import { loadHistoryCompactCheckpointsFromRunLedger } from '@maka/runtime/history-compact-ledger';
 import { stableHash, toolCatalogHash } from '@maka/runtime/request-shape';
 import { toolAvailabilityHash } from '@maka/runtime/tool-availability';
@@ -151,8 +150,9 @@ const HEADLESS_CODING_V1_TOOLS_HASH =
   // shell and search tools were aligned with the reference parameter names
   // (`file_path`, `timeout`, the ripgrep-shaped Grep switches). Glob's
   // description and parameters are verbatim from a measured reference capture,
-  // and since 2026-09-24 so are Read's, Write's, Edit's and Grep's.
-  'sha256:f03f8043aab53ccc25f55bf5170a07fec0feb425c566613976f59a80ab6ea58d';
+  // and since 2026-09-24 so are Read's, Write's, Edit's and Grep's. ArchiveRead
+  // left the list on 2026-10-03.
+  'sha256:ae06e9a6cad46f5ab419fd62de48fcb55dd97df23bbb62bb5eb5558f1fccd7c9';
 const execFileAsync = promisify(execFile);
 test('backend creation resolves a bound Session by immutable Connection identity', async () => {
   let observedRef: unknown;
@@ -2563,7 +2563,6 @@ test('hosted execution freezes the headless coding provider wire contract', asyn
     assert.equal(stableHash(instructions), HEADLESS_CODING_V1_PROMPT_HASH);
     assert.equal(stableHash(tools), HEADLESS_CODING_V1_TOOLS_HASH);
     assert.deepEqual(responsesToolNames(request?.body), [
-      'ArchiveRead',
       'Bash',
       'Edit',
       'Glob',
@@ -2868,7 +2867,6 @@ test('production Host executes a canonical ai-sdk Session against a real provide
       // Launching an agent and listing the running ones are loaded directly,
       // as in the design; SendMessage waits behind ToolSearch.
       'Agent',
-      'ArchiveRead',
       'AskUserQuestion',
       'Bash',
       'Edit',
@@ -3156,7 +3154,6 @@ test('production Host runs a child agent on the main surface its type allows, an
     // no questions to the user, no memory writes.
     const childBody = childRequests[0]?.body;
     assert.deepEqual(toolNames(childBody), [
-      'ArchiveRead',
       'Bash',
       'Glob',
       'Grep',
@@ -4570,11 +4567,6 @@ function backendCreationFixture(input: {
     artifacts: input.artifacts ?? {},
     executionArtifacts: {
       recordToolArtifacts: async () => undefined,
-      toolResultArchive: createToolResultArchiveCapability({
-        archiveToolResult: async () => ({ artifactId: 'fixture-tool-result-archive' }),
-        readToolResultArchive: async () => ({ ok: false, reason: 'not_found' }),
-        readArchivedToolResultResource: async () => ({ ok: false, reason: 'not_found' }),
-      }),
     },
     usage: {
       pricing: {

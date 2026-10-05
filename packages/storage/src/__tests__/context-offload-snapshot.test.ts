@@ -45,7 +45,7 @@ import { after } from 'node:test';
 
 after(removeTrackedControlDirectories);
 const limits = {
-  ownerMaxBytes: { read_image_snapshot: 5 * 1024 * 1024, tool_result_archive: 4 * 1024 * 1024 },
+  ownerMaxBytes: { read_image_snapshot: 5 * 1024 * 1024 },
   sessionLogicalBytes: 1024 * 1024 * 1024,
   workspacePhysicalBytes: 20 * 1024 * 1024 * 1024,
 };
@@ -87,17 +87,16 @@ async function fixture(t: TestContext) {
   });
   const privateBytes = Buffer.from('OTHER-SESSION-PRIVATE-CONTEXT');
   const inlinePrivate = Buffer.from('OTHER-SESSION-PRIVATE-INLINE');
-  assert.equal(
-    (
-      await writer.put({
-        sessionId: other.id,
-        owner: { kind: 'tool_result_archive', ownerId: 'inline' },
-        bytes: inlinePrivate,
-        mediaType: 'application/json',
-      })
-    ).ok,
-    true,
-  );
+  const inlineStored = await writer.put({
+    sessionId: other.id,
+    owner: { kind: 'read_image_snapshot', ownerId: 'inline' },
+    bytes: inlinePrivate,
+    mediaType: 'image/png',
+  });
+  assert.equal(inlineStored.ok, true);
+  if (!inlineStored.ok) throw new Error('inline fixture value was not stored');
+  const inlineRef = inlineStored.record;
+  await rewriteAsUpgradedInlineBlob(root, inlinePrivate);
   const otherRef = await createReadImageSnapshotStore(writer, other.id).snapshot({
     ownerId: 'private',
     bytes: privateBytes,
@@ -181,6 +180,7 @@ async function fixture(t: TestContext) {
     bytes,
     privateBytes,
     inlinePrivate,
+    inlineRef,
     ref,
     otherRef,
     imagePath,
@@ -210,6 +210,13 @@ test('offline backup restores context refs and verified managed bytes into an em
     const read = await store.read({ sessionId: f.selected.id, refId: f.ref.refId, maxBytes: 1024 });
     assert.equal(read.ok, true);
     if (read.ok) assert.deepEqual(Buffer.from(read.bytes), f.bytes);
+    const inline = await store.read({
+      sessionId: f.other.id,
+      refId: f.inlineRef.refId,
+      maxBytes: 1024,
+    });
+    assert.equal(inline.ok, true);
+    if (inline.ok) assert.deepEqual(Buffer.from(inline.bytes), f.inlinePrivate);
     assert.equal((await store.usage()).references, 4);
     assert.equal(
       (await store.usage()).physicalBytes,
@@ -230,6 +237,11 @@ test('single-Session export contains only its refs and shared payload once, with
   };
   await assert.rejects(exportSessionBundleState(input), /offline Storage Root/);
   await f.close();
+  // The other Session's inline bytes live in the source database's own pages.
+  assert.equal(
+    (await readFile(join(f.root, 'context-offload.sqlite'))).includes(f.inlinePrivate),
+    true,
+  );
   const plan = await exportSessionBundleState(input);
   assert.ok(plan.includedEntries.includes('context-offload.sqlite'));
   const store = new SqliteContextOffloadStore(
@@ -261,6 +273,16 @@ test('single-Session export contains only its refs and shared payload once, with
 test('missing or corrupt context bytes never publish a successful backup', async (t) => {
   const f = await fixture(t);
   await f.close();
+  // Same length, so only the content hash can tell the inline payload was changed.
+  setInlinePayload(f.root, f.inlinePrivate, Buffer.alloc(f.inlinePrivate.length));
+  await assert.rejects(
+    createOperationalStateBackup({
+      stateRoot: f.root,
+      destinationRoot: join(f.base, 'corrupt-inline'),
+    }),
+    /inline payload size\/hash mismatch/,
+  );
+  setInlinePayload(f.root, f.inlinePrivate, f.inlinePrivate);
   const path = join(f.root, f.imagePath(f.bytes));
   await writeFile(path, Buffer.alloc(f.bytes.length));
   await assert.rejects(
@@ -376,3 +398,26 @@ test('context snapshot refuses a symlinked managed-value ancestor', async (t) =>
     /symlinks/,
   );
 });
+
+/**
+ * Gives a stored value the shape the v2 -> v3 migration leaves behind: the
+ * bytes inline in SQLite and no managed file. No current writer produces it.
+ */
+async function rewriteAsUpgradedInlineBlob(root: string, bytes: Buffer): Promise<void> {
+  setInlinePayload(root, bytes, bytes);
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  await rm(join(root, 'context-offload-values', 'sha256', hash.slice(0, 2), hash));
+}
+
+/** Stores `payload` inline for the blob that `bytes` identify. */
+function setInlinePayload(root: string, bytes: Buffer, payload: Buffer): void {
+  const database = new DatabaseSync(join(root, 'context-offload.sqlite'));
+  try {
+    const updated = database
+      .prepare("UPDATE context_blobs SET storage_kind = 'inline', payload = ? WHERE blob_id = ?")
+      .run(payload, createHash('sha256').update(bytes).digest());
+    assert.equal(updated.changes, 1);
+  } finally {
+    database.close();
+  }
+}

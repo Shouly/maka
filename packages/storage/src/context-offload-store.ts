@@ -271,10 +271,6 @@ function snapshotLimits(limits: ContextOffloadLimits): ContextOffloadLimits {
       limits.ownerMaxBytes?.read_image_snapshot,
       'Read image snapshot byte limit',
     ),
-    tool_result_archive: readLimit(
-      limits.ownerMaxBytes?.tool_result_archive,
-      'Tool Result archive byte limit',
-    ),
   }) satisfies Readonly<Record<ContextOffloadOwner['kind'], number>>;
   return Object.freeze({
     ownerMaxBytes,
@@ -293,7 +289,6 @@ function readLimit(value: unknown, label: string): number {
 function serializeLimits(limits: ContextOffloadLimits): string {
   return [
     limits.ownerMaxBytes.read_image_snapshot,
-    limits.ownerMaxBytes.tool_result_archive,
     limits.sessionLogicalBytes,
     limits.workspacePhysicalBytes,
   ].join(':');

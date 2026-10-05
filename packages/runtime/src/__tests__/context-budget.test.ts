@@ -46,7 +46,7 @@ test('capacity policy keeps the canonical ledger until a checkpoint replaces it'
   assert.deepEqual(result?.events, events);
 });
 
-test('checkpoint replay uses the canonical ledger before stale tool results are pruned', () => {
+test('checkpoint replay matches the canonical ledger, large tool results included', () => {
   const payload = 'large tool result '.repeat(200);
   const serializedPayload = JSON.stringify(payload);
   const coveredEvents = [
@@ -155,7 +155,7 @@ test('compaction notes fire for a fold made by the request hook, not only for a 
     shouldAppendContextCompactionFailedOpenNote(decision('priorReplay', 'replaced')),
     false,
   );
-  // A non-history boundary never speaks as a history compaction.
+  // A decision that names no history boundary never speaks as a history compaction.
   assert.equal(
     shouldAppendContextCompactedNote({
       ...shell,
@@ -164,10 +164,9 @@ test('compaction notes fire for a fold made by the request hook, not only for a 
           stage: 'activeStep',
           sourceKind: 'runtimeEvents',
           decision: 'replaced',
-          boundaryKind: 'activeToolResultPrune',
         },
       ],
-    } as never),
+    }),
     false,
   );
   assert.equal(shouldAppendContextCompactedNote(undefined), false);

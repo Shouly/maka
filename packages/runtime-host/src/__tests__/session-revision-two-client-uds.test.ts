@@ -20,7 +20,6 @@
 import { withTimeout } from '@maka/core/test-only/async-primitives';
 import assert from 'node:assert/strict';
 import { fork, type ChildProcess } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -76,7 +75,6 @@ const LINEAGE_BRANCH_TARGET_ID = 'lineage-branch-target';
 const GRAPH_REVISION_TARGET_ID = 'graph-revision-target';
 const GRAPH_SIDE_CONVERSATION_TARGET_ID = 'graph-side-conversation-target';
 const GRAPH_SIDE_CONVERSATION_REMOVAL_TARGET_ID = 'graph-side-conversation-removal-target';
-const ARCHIVED_SIDE_CONVERSATION_TARGET_ID = 'archived-side-conversation-target';
 const ACTIVE_SOURCE_SIDE_CONVERSATION_TARGET_ID = 'active-source-side-conversation-target';
 
 function sectionedSummary(goal: string): string {
@@ -96,7 +94,6 @@ test('two Clients share exact retryable Session branch and revision authority', 
     linkedChildSourceSessionId,
     metadataLinkedSourceSessionId,
     ordinaryLinkedChildSessionId,
-    archivedOwnedSourceSessionId,
     graphChildSessionId,
     continuationSourceSessionId,
   } = await seedSource(root, capability);
@@ -110,7 +107,6 @@ test('two Clients share exact retryable Session branch and revision authority', 
       linkedChildSourceSessionId,
       metadataLinkedSourceSessionId,
       ordinaryLinkedChildSessionId,
-      archivedOwnedSourceSessionId,
       graphChildSessionId,
       continuationSourceSessionId,
     );
@@ -137,7 +133,6 @@ test('two Clients share exact retryable Session branch and revision authority', 
       LINEAGE_BRANCH_TARGET_ID,
       GRAPH_REVISION_TARGET_ID,
       GRAPH_SIDE_CONVERSATION_TARGET_ID,
-      ARCHIVED_SIDE_CONVERSATION_TARGET_ID,
       ACTIVE_SOURCE_SIDE_CONVERSATION_TARGET_ID,
       graphChildSessionId,
     );
@@ -159,7 +154,6 @@ async function verifyConcurrentRevisionAuthority(
   linkedChildSourceSessionId: string,
   metadataLinkedSourceSessionId: string,
   ordinaryLinkedChildSessionId: string,
-  archivedOwnedSourceSessionId: string,
   graphChildSessionId: string,
   continuationSourceSessionId: string,
 ): Promise<void> {
@@ -355,41 +349,13 @@ async function verifyConcurrentRevisionAuthority(
       }),
       operationError('operation_conflict'),
     );
-    const archivedOwnedSource = await querySession(desktop, archivedOwnedSourceSessionId);
-    await assert.rejects(
-      desktop.request('session.branch.create', {
-        sourceSessionId: archivedOwnedSourceSessionId,
-        targetSessionId: 'archived-owned-copy-target',
-        sourceTurnId: 'archived-owned-turn',
-        expectedSourceRevision: archivedOwnedSource.revision,
-      }),
-      operationError('operation_unavailable'),
-    );
-    const archivedSideConversation = await desktop.request('session.branch.create', {
-      sourceSessionId: archivedOwnedSourceSessionId,
-      targetSessionId: ARCHIVED_SIDE_CONVERSATION_TARGET_ID,
-      sourceTurnId: 'archived-owned-turn',
-      expectedSourceRevision: archivedOwnedSource.revision,
-      intent: 'side_conversation',
-    });
-    assert.equal(archivedSideConversation.kind, 'committed');
     assert.deepEqual(
-      (
-        await tui.request('session.task.query', {
-          sessionId: ARCHIVED_SIDE_CONVERSATION_TARGET_ID,
-        })
-      ).items,
-      [],
+      await tui.request('session.catalog.query', {
+        kind: 'get',
+        sessionId: 'metadata-linked-copy-target',
+      }),
+      { kind: 'session', session: null },
     );
-    for (const sessionId of ['metadata-linked-copy-target', 'archived-owned-copy-target']) {
-      assert.deepEqual(
-        await tui.request('session.catalog.query', {
-          kind: 'get',
-          sessionId,
-        }),
-        { kind: 'session', session: null },
-      );
-    }
     const branchInput = {
       sourceSessionId,
       targetSessionId: 'branch-target',
@@ -801,7 +767,6 @@ async function seedSource(
   linkedChildSourceSessionId: string;
   metadataLinkedSourceSessionId: string;
   ordinaryLinkedChildSessionId: string;
-  archivedOwnedSourceSessionId: string;
   graphChildSessionId: string;
   continuationSourceSessionId: string;
 }> {
@@ -840,14 +805,6 @@ async function seedSource(
     const metadataLinkedSource = await execution.sessionStore.create({
       cwd: root,
       name: 'Metadata-linked Source Session',
-      llmConnectionId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-      llmConnectionSlug: 'fake',
-      model: 'fake-model',
-      permissionMode: 'ask',
-    });
-    const archivedOwnedSource = await execution.sessionStore.create({
-      cwd: root,
-      name: 'Archived-owned Source Session',
       llmConnectionId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
       llmConnectionSlug: 'fake',
       model: 'fake-model',
@@ -1407,135 +1364,6 @@ async function seedSource(
         initialRunId: 'metadata-child-run',
       },
     });
-    const archivedBody = JSON.stringify({
-      kind: 'subagent',
-      agentName: 'Worker',
-      turnId: 'archived-owned-child-turn',
-      runId: 'archived-owned-child-run',
-      status: 'completed',
-      permissionMode: 'ask',
-      summary: 'done',
-      artifactIds: [],
-    });
-    const archivedBodySha256 = createHash('sha256').update(archivedBody).digest('hex');
-    await artifacts.create({
-      id: 'archived-owned-result',
-      sessionId: archivedOwnedSource.id,
-      turnId: 'archived-owned-child-turn',
-      name: 'archived-owned-result.json',
-      kind: 'file',
-      content: archivedBody,
-      mimeType: 'application/json',
-      source: 'tool_result_archive',
-      now: 1,
-    });
-    const archivedOwnedRuns = [
-      agentRunHeader(
-        root,
-        archivedOwnedSource.id,
-        'archived-owned-parent-run',
-        'archived-owned-parent-invocation',
-        'archived-owned-turn',
-      ),
-      withParentRun(
-        agentRunHeader(
-          root,
-          archivedOwnedSource.id,
-          'archived-owned-child-run',
-          'archived-owned-child-invocation',
-          'archived-owned-child-turn',
-        ),
-        'archived-owned-parent-run',
-      ),
-    ];
-    for (const run of archivedOwnedRuns) await seedInvocation(execution.runtimeEventStore, run);
-    const archivedOwnedRuntimeEvents = [
-      runtimeEvent(
-        archivedOwnedSource.id,
-        'archived-owned-parent-run',
-        'archived-owned-parent-invocation',
-        'archived-owned-turn',
-        {
-          id: 'archived-owned-parent-user',
-          role: 'user',
-          author: 'user',
-          content: { kind: 'text', text: 'reuse the archived result' },
-        },
-      ),
-      runtimeEvent(
-        archivedOwnedSource.id,
-        'archived-owned-parent-run',
-        'archived-owned-parent-invocation',
-        'archived-owned-turn',
-        {
-          id: 'archived-owned-parent-terminal',
-          ts: 3,
-          status: 'completed',
-        },
-      ),
-      runtimeEvent(
-        archivedOwnedSource.id,
-        'archived-owned-child-run',
-        'archived-owned-child-invocation',
-        'archived-owned-child-turn',
-        {
-          id: 'archived-owned-child-call',
-          ts: 1.5,
-          role: 'model',
-          author: 'agent',
-          content: {
-            kind: 'function_call',
-            id: 'archived-owned-tool-call',
-            name: 'subagent',
-            args: { task: 'summarize' },
-          },
-        },
-      ),
-      runtimeEvent(
-        archivedOwnedSource.id,
-        'archived-owned-child-run',
-        'archived-owned-child-invocation',
-        'archived-owned-child-turn',
-        {
-          id: 'archived-owned-child-result',
-          ts: 2,
-          role: 'tool',
-          author: 'tool',
-          content: {
-            kind: 'function_response',
-            id: 'archived-owned-tool-call',
-            name: 'subagent',
-            isError: false,
-            result: {
-              kind: 'maka.archived_tool_result',
-              rewriteVersion: 1,
-              artifactId: 'archived-owned-result',
-              runtimeEventId: 'archived-owned-child-result',
-              toolCallId: 'archived-owned-tool-call',
-              toolName: 'subagent',
-              bodySha256: archivedBodySha256,
-              originalEstimatedTokens: 20,
-              originalBytes: Buffer.byteLength(archivedBody, 'utf8'),
-              reason: 'stale_tool_result_pruned_before_compact',
-            },
-          },
-        },
-      ),
-      runtimeEvent(
-        archivedOwnedSource.id,
-        'archived-owned-child-run',
-        'archived-owned-child-invocation',
-        'archived-owned-child-turn',
-        {
-          id: 'archived-owned-child-terminal',
-          ts: 2.5,
-          status: 'completed',
-        },
-      ),
-    ];
-    for (const event of archivedOwnedRuntimeEvents) {
-      await execution.runtimeEventStore.appendRuntimeEvent(event.sessionId, event.runId, event);
-    }
     const retained = await tasks.createTask(source.id, {
       subject: 'Retained task',
       description: 'Survives the branch copy',
@@ -1561,7 +1389,6 @@ async function seedSource(
       linkedChildSourceSessionId: linkedChildSource.id,
       metadataLinkedSourceSessionId: metadataLinkedSource.id,
       ordinaryLinkedChildSessionId: ordinaryLinkedChild.header.id,
-      archivedOwnedSourceSessionId: archivedOwnedSource.id,
       graphChildSessionId: graphChild.header.id,
       continuationSourceSessionId: continuationSource.id,
     };
@@ -1624,7 +1451,6 @@ async function verifyDurableBranch(
   lineageBranchTargetId: string,
   graphRevisionTargetId: string,
   graphSideConversationTargetId: string,
-  archivedSideConversationTargetId: string,
   activeSourceSideConversationTargetId: string,
   graphChildSessionId: string,
 ): Promise<void> {
@@ -1838,46 +1664,6 @@ async function verifyDurableBranch(
         text: 'graph child result',
       },
     );
-    const archivedSideConversationRuns = await execution.runtimeEventStore.listSessionInvocations(
-      archivedSideConversationTargetId,
-    );
-    const archivedSideConversationChildRun = archivedSideConversationRuns.find(
-      (run) => run.turnId === 'archived-owned-child-turn',
-    );
-    assert.ok(archivedSideConversationChildRun);
-    const archivedSideConversationResult = (
-      await execution.runtimeEventStore.readRuntimeEvents(
-        archivedSideConversationTargetId,
-        archivedSideConversationChildRun.runId,
-      )
-    ).find((event) => event.content?.kind === 'function_response')?.content;
-    assert.ok(archivedSideConversationResult?.kind === 'function_response');
-    if (archivedSideConversationResult?.kind !== 'function_response') {
-      assert.fail('Side Conversation must retain its archived tool result placeholder');
-    }
-    const archivedSideConversationContent = decodeCanonicalToolResultContent(
-      archivedSideConversationResult.result,
-    );
-    assert.equal(archivedSideConversationContent.kind, 'subagent');
-    if (archivedSideConversationContent.kind !== 'subagent') {
-      assert.fail('Copied archived child result must be restored as a static snapshot');
-    }
-    assert.notEqual(archivedSideConversationContent.runId, 'archived-owned-child-run');
-    assert.deepEqual(archivedSideConversationContent, {
-      kind: 'subagent',
-      agentName: 'Worker',
-      turnId: 'archived-owned-child-turn',
-      runId: archivedSideConversationChildRun.runId,
-      status: 'completed',
-      permissionMode: 'ask',
-      summary: 'done',
-      artifactIds: [],
-    });
-    const archivedSideConversationArtifacts = await artifacts.listPage(
-      archivedSideConversationTargetId,
-      { offset: 0, limit: 10 },
-    );
-    assert.equal(archivedSideConversationArtifacts.total, 0);
     const graphRevisionMessages = await readLedgerMessages(
       execution.runtimeEventStore,
       graphRevisionTargetId,

@@ -119,18 +119,13 @@ import {
   decodePlaintextResponsesReasoningState,
   responsesReasoningItemId,
 } from './responses-reasoning-state.js';
-import type { ActiveToolResultPruneDiagnosticPatch } from './active-tool-result-prune.js';
 import { finitePositive } from './context-budget-helpers.js';
 import type { ProviderImageBudget } from './ai-sdk-compaction.js';
 import {
   contextDiagnosticsCompactionOf,
   type ContextDiagnosticsCompaction,
 } from './context-diagnostics.js';
-import {
-  AiSdkCompaction,
-  hasActiveToolResultPruneDiagnosticPatch,
-  hasBlockingReplayDiagnostics,
-} from './ai-sdk-compaction.js';
+import { AiSdkCompaction, hasBlockingReplayDiagnostics } from './ai-sdk-compaction.js';
 import { RunTrace } from './run-trace.js';
 import {
   REQUEST_ACCESS_TOOL_NAME,
@@ -165,7 +160,6 @@ import { MEMORY_MUTATING_TOOL_NAMES } from './memory-tools.js';
 import { modelUsesNativeOpenAiResponses } from './model-runtime.js';
 import {
   applyRuntimeEventContextBudget,
-  buildContextBudgetDiagnosticShell,
   mergeContextBudgetDiagnostic,
   mergeContextBudgetDiagnosticPatches,
   minimalContextBudgetDiagnostic,
@@ -175,7 +169,6 @@ import {
 import { isHistoryCompactContentEvent } from './history-compaction.js';
 import {
   canContinueHistoryCompactCheckpointForModel,
-  historyCompactSourceDigest,
   isProviderHistoryCompactCheckpoint,
   matchHistoryCompactCheckpointPrefix,
   projectHistoryCompactCheckpointReplay,
@@ -819,10 +812,6 @@ export class AiSdkTurn {
         contextCompactedNoteWritten = await this.recordSystemNote('context_compacted', turnId);
       }
     };
-    // Request index (0-based) at which the active prune last rewrote the
-    // request. A step Maka pruned is not append-only, so usage may legitimately
-    // shrink.
-    let pruneAppliedAtStep: number | undefined;
     const trace = new RunTrace({
       sessionId: this.deps.backend.sessionId,
       turnId,
@@ -935,7 +924,6 @@ export class AiSdkTurn {
       return { plan, providerTools: plan.providerTools, modelTools, nestedTools };
     };
     let { plan, providerTools, modelTools, nestedTools } = snapshotStepTools();
-    let activeToolResultPruneDiagnosticPatch: ActiveToolResultPruneDiagnosticPatch = {};
     let midTurnCompactDiagnosticPatch: Partial<ContextBudgetDiagnostic> | undefined;
     // Tool names the repair path matches a mis-cased call against — follows the
     // current step's snapshot so a tool activated mid-turn is repairable on the
@@ -1108,55 +1096,31 @@ export class AiSdkTurn {
         const loadDurableTurnProjection = async (): Promise<ModelMessage[]> => {
           const turnEvents = await loadDurableTurnEvents();
           const projectionCheckpoint = midTurnState?.projectionCheckpoint;
-          const rawProjectionEvents = projectionCheckpoint
+          let replayEvents = projectionCheckpoint
             ? [
                 ...midTurnState.priorContentEvents,
                 ...turnEvents.filter(isHistoryCompactContentEvent),
               ]
             : turnEvents;
-          let replayEvents = rawProjectionEvents;
-          let effectiveProjectionCheckpoint = projectionCheckpoint;
           if (projectionCheckpoint) {
             const checkpointMatch = matchHistoryCompactCheckpointPrefix(
               projectionCheckpoint,
-              rawProjectionEvents,
+              replayEvents,
             );
             if (checkpointMatch.reason) {
               throw new Error(`durable checkpoint projection mismatch: ${checkpointMatch.reason}`);
             }
-            // Content-currency guard: the raw identity still matches, but a
-            // transition committed after this fold (e.g. an active-turn prune
-            // in this very send) changed the effective view the block was
-            // built from. Replay without the stale block — the provider
-            // decides fit and overflow recovery re-folds (#4845 review).
-            const pinnedEffectiveDigest = projectionCheckpoint.coverage.effectiveSourceDigest;
-            const coveredEffective = await this.deps.compaction.foldEffectiveModelHistory(
+            replayEvents = projectHistoryCompactCheckpointReplay(
+              projectionCheckpoint,
               checkpointMatch.coveredRuntimeEvents,
+              checkpointMatch.successorRuntimeEvents,
             );
-            if (
-              pinnedEffectiveDigest === undefined ||
-              historyCompactSourceDigest(coveredEffective) !== pinnedEffectiveDigest
-            ) {
-              effectiveProjectionCheckpoint = undefined;
-            } else {
-              replayEvents = projectHistoryCompactCheckpointReplay(
-                projectionCheckpoint,
-                checkpointMatch.coveredRuntimeEvents,
-                checkpointMatch.successorRuntimeEvents,
-              );
-            }
             // The checkpoint was capacity-validated before it was persisted.
             // Do not re-run that gate against a later, larger successor tail:
             // the active-step shaper must see that growth so it can roll the
             // checkpoint forward instead of resurrecting raw history.
           }
-          // The current Turn is model-visible history like any other, so it is
-          // folded through the same reducer before it becomes messages. Without
-          // this, a result archived at step N is rebuilt in full at step N+1 and
-          // the ledger's account of what the model sees stops being true.
-          const foldedReplayEvents =
-            await this.deps.compaction.foldEffectiveModelHistory(replayEvents);
-          const replayPlan = buildRuntimeEventModelReplayPlan(foldedReplayEvents, {
+          const replayPlan = buildRuntimeEventModelReplayPlan(replayEvents, {
             toolActivityTurnIds: collectToolActivityTurnIds([
               ...(input.runtimeContext ?? []),
               ...turnEvents,
@@ -1173,7 +1137,7 @@ export class AiSdkTurn {
             await this.deps.messageProjection.materializeRuntimeReplayPlan(
               replayPlan,
               this.imageBudget,
-              effectiveProjectionCheckpoint,
+              projectionCheckpoint,
               compatibleProviderReasoningReplayEventIds(
                 replayEvents,
                 input.runtimeContextInvocations,
@@ -1182,7 +1146,7 @@ export class AiSdkTurn {
                 this.runId,
               ),
             );
-          return effectiveProjectionCheckpoint
+          return projectionCheckpoint
             ? currentTurnMessages
             : [...priorReplay.messages, ...currentTurnMessages];
         };
@@ -1218,26 +1182,11 @@ export class AiSdkTurn {
           this,
           turnAbortController.signal,
         );
-        // When mid-turn capacity compaction is active, the prune must also cover
-        // the newest completed step; see collectPrunableCompletedStepToolCallIds.
-        const activeToolResultPruneIncludesNewestStep = midTurnState !== undefined;
-        const activeToolResultPruneHook = this.deps.compaction.buildActiveToolResultPruneProjection(
-          turnId,
-          activeToolResultPruneIncludesNewestStep,
-          (patch) => {
-            pruneAppliedAtStep = runtimeSteps;
-            activeToolResultPruneDiagnosticPatch = mergeActiveToolResultPruneDiagnosticPatches(
-              activeToolResultPruneDiagnosticPatch,
-              patch,
-            );
-          },
-        );
         const projectCurrentToolAvailability: RequestProjectionStage = (options) =>
           plan.projectActiveTools?.(options);
         const shapedProjection = composeRequestProjection(
           projectCurrentToolAvailability,
           midTurnCapacityHook,
-          activeToolResultPruneHook,
         );
         // Hooks shape; nothing measures the final payload. Whether it fits is
         // the provider's answer (#4559).
@@ -1509,8 +1458,8 @@ export class AiSdkTurn {
                   if (midTurnState) midTurnState.foldAttemptedSinceAccepted = false;
                   if (!stepUsage) sawUnusableStepUsage = true;
                   // Silent eviction / rewrite check (#4559): this step only
-                  // appended (no fold, no prune, no image omission) yet the
-                  // provider counted no more input tokens than for the previous
+                  // appended (no fold, no image omission) yet the provider
+                  // counted no more input tokens than for the previous
                   // request. Not-greater, not strictly-fewer: a provider that
                   // truncates to a fixed window (Ollama's `num_ctx`) reports the
                   // same total on every later request while Maka keeps
@@ -1522,8 +1471,8 @@ export class AiSdkTurn {
                   const completedRequestIndex = runtimeSteps - 1;
                   // A finalization step resolves an empty tool set, so its
                   // request legitimately drops several thousand schema tokens
-                  // with no fold, prune or image omission. Maka shaped that
-                  // request; the provider did not drop anything.
+                  // with no fold or image omission. Maka shaped that request;
+                  // the provider did not drop anything.
                   const toolSchemaShrank =
                     lastStepActiveToolCount !== undefined &&
                     activeToolsForRequest.length < lastStepActiveToolCount;
@@ -1551,7 +1500,6 @@ export class AiSdkTurn {
                     midTurnState &&
                     priorInput !== undefined &&
                     midTurnState.replacedStepNumber !== completedRequestIndex &&
-                    pruneAppliedAtStep !== completedRequestIndex &&
                     midTurnState.omittedImageToolResults.size === 0 &&
                     stepUsage !== undefined &&
                     Number.isFinite(stepUsage.inputTokens) &&
@@ -1945,21 +1893,7 @@ export class AiSdkTurn {
                   : undefined;
               if (recovered) {
                 overflowRetryUsed = true;
-                // Recovery rebuilds the request from the durable ledger, whose
-                // tool results intentionally retain their full bodies. Re-enter
-                // the active-result projection before dispatch so an archived
-                // result cannot reappear in provider context on the retry.
-                const recoveredProjection = activeToolResultPruneHook
-                  ? await activeToolResultPruneHook({
-                      completedSteps: completedProviderSteps,
-                      stepNumber: runtimeSteps,
-                      model,
-                      messages: recovered.messages,
-                      activeTools: activeToolsForRequest,
-                      resolveDispatch,
-                    })
-                  : undefined;
-                attemptMessages = recoveredProjection?.messages ?? recovered.messages;
+                attemptMessages = recovered.messages;
                 continue;
               }
               // Window suggestion (#4559): the provider rejected a request and
@@ -2252,10 +2186,7 @@ export class AiSdkTurn {
             }
           }
 
-          completedProviderSteps.push({
-            toolCalls: returnedToolCalls,
-            ...(providerStepUsage ? { usage: providerStepUsage } : {}),
-          });
+          completedProviderSteps.push(providerStepUsage ? { usage: providerStepUsage } : {});
           lastCompletedStepHadToolResult = returnedToolCalls.length > 0;
           const stepLimitReached = maxSteps !== undefined && runtimeSteps >= maxSteps;
           if (
@@ -2351,7 +2282,6 @@ export class AiSdkTurn {
             tokenUsageCostUsd = this.deps.providerTelemetry.normalizedUsageCostUsd(tokenUsage);
             const contextBudgetForUsage = contextBudgetWithRequestProjectionDiagnostics(
               contextBudgetForTelemetry,
-              activeToolResultPruneDiagnosticPatch,
               midTurnCompactDiagnosticPatch,
             );
             // Persisted alongside the live event so transcript rebuilds from
@@ -2527,7 +2457,6 @@ export class AiSdkTurn {
         if (this.watchdog === watchdogState.current) this.watchdog = null;
         contextBudgetForTelemetry = contextBudgetWithRequestProjectionDiagnostics(
           contextBudgetForTelemetry,
-          activeToolResultPruneDiagnosticPatch,
           midTurnCompactDiagnosticPatch,
         );
         // `tokenUsage` still backfills from the completed steps when the send
@@ -2756,46 +2685,20 @@ export class AiSdkTurn {
     }
     // A handoff changes the physical Run, not the logical Turn. Its admitted
     // replay is all predecessor history, including events with this turnId.
-    const rawPriorRuntimeContext = input.continuation
+    const priorRuntimeContext = input.continuation
       ? input.runtimeContext
       : input.runtimeContext.filter((event) => event.turnId !== input.turnId);
-    // Everything below reads EFFECTIVE model history: raw events folded through
-    // the durable projection-transition reducer (#4283). Replay, budgeting and
-    // compaction share one input, so no RuntimeEvent replay path can resurrect
-    // content a committed transition removed.
-    const preparedContextBudget = await this.deps.compaction.prepareContextBudgetPolicy(
-      rawPriorRuntimeContext,
-      input.turnId,
-    );
-    const priorRuntimeContext = preparedContextBudget.events;
     const providerReasoningReplayEventIds = compatibleProviderReasoningReplayEventIds(
       priorRuntimeContext,
       input.runtimeContextInvocations,
       this.deps.backend.providerStateIdentity,
       this.deps.backend.modelId,
     );
-    let contextBudget = preparedContextBudget.policy;
-    // Match the durable checkpoint against the RAW ledger prefix: every
-    // creation path (standalone compactHistory and the mid-turn state) pins
-    // its coverage digest on raw events, so matching the folded view here
-    // lets any durable projection transition inside the covered prefix orphan
-    // the checkpoint and silently fail open into a full-history replay
-    // (#4842). The projected [block, tail] is then folded through the
-    // transition reducer before it becomes messages, so a committed
-    // transition still cannot resurrect content for the model (#4283).
-    const budgeted = applyRuntimeEventContextBudget(rawPriorRuntimeContext, contextBudget);
-    let runtimeContext = await this.deps.compaction.foldEffectiveModelHistory(
-      budgeted?.events ?? rawPriorRuntimeContext,
-    );
-    let contextBudgetDiagnostic = budgeted?.diagnostic;
-    let projectedHistoryCompactCheckpoint = budgeted?.historyCompactCheckpoint;
-    if (preparedContextBudget.diagnosticPatch) {
-      contextBudgetDiagnostic = mergeContextBudgetDiagnostic(
-        contextBudgetDiagnostic ??
-          buildContextBudgetDiagnosticShell(priorRuntimeContext, runtimeContext, contextBudget),
-        preparedContextBudget.diagnosticPatch,
-      );
-    }
+    const contextBudget = await this.deps.compaction.prepareContextBudgetPolicy();
+    const budgeted = applyRuntimeEventContextBudget(priorRuntimeContext, contextBudget);
+    const runtimeContext = budgeted?.events ?? priorRuntimeContext;
+    const contextBudgetDiagnostic = budgeted?.diagnostic;
+    const projectedHistoryCompactCheckpoint = budgeted?.historyCompactCheckpoint;
 
     // No pre-turn estimate gate: the turn's first request is judged by the
     // request-projection hook from the previous request's real usage, and by
@@ -3170,19 +3073,6 @@ class ContinuationReplayEmptyError extends Error {
   }
 }
 
-function mergeActiveToolResultPruneDiagnosticPatches(
-  left: ActiveToolResultPruneDiagnosticPatch,
-  right: ActiveToolResultPruneDiagnosticPatch,
-): ActiveToolResultPruneDiagnosticPatch {
-  return {
-    ...sumOptionalCounts('activePrunedToolResults', left, right),
-    ...sumOptionalCounts('activeSupersededToolResults', left, right),
-    ...sumOptionalCounts('activeDuplicateToolResults', left, right),
-    ...sumOptionalCounts('activeArchiveFailures', left, right),
-    ...sumOptionalCounts('activeEstimatedTokensSaved', left, right),
-  };
-}
-
 function mergeNormalizedUsage(
   current: NormalizedAiSdkUsage | undefined,
   next: NormalizedAiSdkUsage,
@@ -3207,22 +3097,10 @@ function mergeNormalizedUsage(
   };
 }
 
-function sumOptionalCounts<K extends keyof ActiveToolResultPruneDiagnosticPatch>(
-  key: K,
-  left: ActiveToolResultPruneDiagnosticPatch,
-  right: ActiveToolResultPruneDiagnosticPatch,
-): Pick<ActiveToolResultPruneDiagnosticPatch, K> | Record<string, never> {
-  const total = (left[key] ?? 0) + (right[key] ?? 0);
-  return total > 0 ? ({ [key]: total } as Pick<ActiveToolResultPruneDiagnosticPatch, K>) : {};
-}
-
 function contextBudgetWithRequestProjectionDiagnostics(
   base: ContextBudgetDiagnostic | undefined,
-  patch: ActiveToolResultPruneDiagnosticPatch,
   compactionPatch: Partial<ContextBudgetDiagnostic> | undefined,
 ): ContextBudgetDiagnostic | undefined {
-  const prunePatch = hasActiveToolResultPruneDiagnosticPatch(patch) ? patch : undefined;
-  const mergedPatch = mergeContextBudgetDiagnosticPatches(prunePatch, compactionPatch);
-  if (!mergedPatch) return base;
-  return mergeContextBudgetDiagnostic(base ?? minimalContextBudgetDiagnostic(), mergedPatch);
+  if (!compactionPatch) return base;
+  return mergeContextBudgetDiagnostic(base ?? minimalContextBudgetDiagnostic(), compactionPatch);
 }

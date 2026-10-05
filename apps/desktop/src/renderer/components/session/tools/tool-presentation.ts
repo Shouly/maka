@@ -85,7 +85,6 @@ export type ToolRendererId =
   | 'web_search_error'
   | 'json'
   | 'image'
-  | 'archived'
   | 'workflow'
   | 'text'
   | 'user_file_delivery'
@@ -125,8 +124,6 @@ export function rendererForResultKind(kind: DurableToolResultKind): ToolRenderer
       return 'json';
     case 'image':
       return 'image';
-    case 'archived_tool_result':
-      return 'archived';
     case 'rive_workflow':
       return 'workflow';
     case 'text':

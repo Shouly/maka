@@ -131,12 +131,11 @@ test('snapshots one stable Read image identity and authorizes reads by Session',
   });
 });
 
-test('maps configured quota failures and rejects non-image owner references', async () => {
+test('maps configured quota failures and rejects non-image references', async () => {
   await withReadImageStore(
     {
       ownerMaxBytes: {
         read_image_snapshot: 4,
-        tool_result_archive: 64,
       },
       sessionLogicalBytes: 64,
       workspacePhysicalBytes: 64,
@@ -151,19 +150,19 @@ test('maps configured quota failures and rejects non-image owner references', as
         (error) => error instanceof ReadImageSnapshotStoreError && error.reason === 'too_large',
       );
 
-      const archive = await writer.put({
+      const json = await writer.put({
         sessionId: 'session-1',
-        owner: { kind: 'tool_result_archive', ownerId: 'archive-1' },
+        owner: { kind: 'read_image_snapshot', ownerId: 'json-1' },
         bytes: new TextEncoder().encode('{}'),
         mediaType: 'application/json',
       });
-      assert.equal(archive.ok, true);
-      if (!archive.ok) return;
+      assert.equal(json.ok, true);
+      if (!json.ok) return;
       assert.deepEqual(
         await images.read({
           kind: 'session_context',
           sessionId: 'session-1',
-          refId: archive.record.refId,
+          refId: json.record.refId,
         }),
         { ok: false, reason: 'corrupt' },
       );
@@ -175,7 +174,6 @@ test('enforces the Read image product cap before touching storage', async () => 
   const limits: ContextOffloadLimits = {
     ownerMaxBytes: {
       read_image_snapshot: MAX_READ_IMAGE_BYTES + 1,
-      tool_result_archive: 64,
     },
     sessionLogicalBytes: MAX_READ_IMAGE_BYTES + 1,
     workspacePhysicalBytes: MAX_READ_IMAGE_BYTES + 1,
@@ -201,7 +199,6 @@ function defaultLimits(): ContextOffloadLimits {
   return {
     ownerMaxBytes: {
       read_image_snapshot: MAX_READ_IMAGE_BYTES,
-      tool_result_archive: 64,
     },
     sessionLogicalBytes: MAX_READ_IMAGE_BYTES * 2,
     workspacePhysicalBytes: MAX_READ_IMAGE_BYTES * 2,

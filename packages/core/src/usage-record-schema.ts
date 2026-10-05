@@ -158,22 +158,7 @@ const CONTEXT_BUDGET_SHAPE = defineObjectShape<ContextBudgetDiagnostic>()(
     'keptEvents',
     'droppedEvents',
   ],
-  [
-    'policyName',
-    'prunedToolResults',
-    'prunedToolResultEstimatedTokensBefore',
-    'prunedToolResultEstimatedTokensAfter',
-    'archivePlaceholders',
-    'archiveWriteFailures',
-    'unarchivedToolResults',
-    'archivePlaceholderReasonCounts',
-    'activePrunedToolResults',
-    'activeSupersededToolResults',
-    'activeDuplicateToolResults',
-    'activeArchiveFailures',
-    'activeEstimatedTokensSaved',
-    'compactionDecisions',
-  ],
+  ['policyName', 'compactionDecisions'],
   RETIRED_CONTEXT_BUDGET_KEYS,
 );
 
@@ -229,23 +214,7 @@ const COMPACTION_NUMBERS = [
   'compactCallTotalTokens',
 ] as const;
 
-const CONTEXT_NUMBERS = [
-  'maxHistoryEstimatedTokens',
-  'maxHistoryTurns',
-  'prunedToolResults',
-  'prunedToolResultEstimatedTokensBefore',
-  'prunedToolResultEstimatedTokensAfter',
-  'archivePlaceholders',
-  'archiveWriteFailures',
-  'unarchivedToolResults',
-  'activePrunedToolResults',
-  'activeSupersededToolResults',
-  'activeDuplicateToolResults',
-  'activeArchiveFailures',
-  'activeEstimatedTokensSaved',
-] as const;
-
-const CONTEXT_REASON_COUNTS = ['archivePlaceholderReasonCounts'] as const;
+const CONTEXT_NUMBERS = ['maxHistoryEstimatedTokens', 'maxHistoryTurns'] as const;
 
 /**
  * Token-usage field bundle shared by the runtime-event, message, and event
@@ -380,10 +349,7 @@ export function isContextBudgetDiagnostic(value: unknown): value is ContextBudge
     !isFiniteNumber(value.droppedTurns) ||
     !isFiniteNumber(value.keptEvents) ||
     !isFiniteNumber(value.droppedEvents) ||
-    CONTEXT_NUMBERS.some((key) => !isOptionalFiniteNumber(value[key])) ||
-    CONTEXT_REASON_COUNTS.some(
-      (key) => value[key] !== undefined && !isStringNumberRecord(value[key]),
-    )
+    CONTEXT_NUMBERS.some((key) => !isOptionalFiniteNumber(value[key]))
   ) {
     return false;
   }

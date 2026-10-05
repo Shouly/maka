@@ -128,7 +128,6 @@ const RESULT_KINDS: readonly ToolResultContent['kind'][] = [
   'json',
   'file_diff',
   'file_write',
-  'archived_tool_result',
   'terminal',
   'shell_run',
   'image',
@@ -176,7 +175,7 @@ test('follows the reference glyph where a kind is too coarse for it', () => {
   assert.equal(toolRowIcon(t('Write', 'edit')), 'note');
   assert.equal(toolRowIcon(t('Edit', 'edit')), 'edit');
   assert.equal(toolRowIcon(t('Read', 'read')), 'code');
-  assert.equal(toolRowIcon(t('ArchiveRead', 'read')), 'file');
+  assert.equal(toolRowIcon(t('ReadHistory', 'read')), 'file');
   assert.equal(toolRowIcon(t('ToolSearch')), 'connectors');
   assert.equal(toolRowIcon(t('Skill')), 'scroll');
   assert.equal(toolRowIcon(t('SendUserFile')), 'file');

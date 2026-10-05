@@ -80,7 +80,6 @@ import type { MemoryPassCapability } from './memory-pass.js';
 import { resolveModelRuntime } from './model-runtime.js';
 import { resolveNativeToolDeferral, type NativeToolDeferral } from './native-tool-deferral.js';
 import { routeApplyPatchTools } from './apply-patch-profile.js';
-import { bindToolResultArchiveDecoder } from './tool-result-archive-capability.js';
 import { resolveSelectedModelContextWindow } from './context-budget-policy.js';
 export {
   MAX_ACTIVE_CHILD_AGENT_RUNS_PER_TURN,
@@ -464,7 +463,7 @@ export class AiSdkBackend implements AgentBackend {
     return {
       hostTools,
       runtime: new ToolAvailabilityRuntime(
-        bindToolResultArchiveDecoder(modelTools, this.input.toolResultArchive),
+        modelTools,
         // Deferral is a property of the wire, not of the Host's binding, so it
         // is decided here rather than travelling in the composed config.
         this.input.toolAvailability && this.nativeToolDeferral !== undefined

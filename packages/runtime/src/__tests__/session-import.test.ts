@@ -457,9 +457,7 @@ async function seedContext(
       CREATE TABLE context_refs (
         ref_id TEXT PRIMARY KEY,
         session_id TEXT NOT NULL,
-        owner_kind TEXT NOT NULL CHECK(
-          owner_kind IN ('read_image_snapshot', 'tool_result_archive')
-        ),
+        owner_kind TEXT NOT NULL CHECK(owner_kind = 'read_image_snapshot'),
         owner_id TEXT NOT NULL,
         blob_id BLOB NOT NULL REFERENCES context_blobs(blob_id) ON DELETE RESTRICT,
         media_type TEXT NOT NULL,

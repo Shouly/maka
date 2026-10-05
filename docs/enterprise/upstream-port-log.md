@@ -59,6 +59,14 @@ Signals in the tables:
 A conflict with `ours` = 0 means the commit depends on earlier upstream
 commits, not that it collides with our work.
 
+### Deleted here
+
+- 2026-10-03: tool-result archiving is gone: pruning old tool results into
+  archived placeholders, the ArchiveRead tool, and the projection-transition
+  ledger that recorded each rewrite. Archiving rewrites messages the model was
+  already sent, which breaks the prompt cache. An upstream change that only
+  touches them is not applicable here. History compaction stays.
+
 ## Batch 1: `09f0a5d36..99cfeb7e9` (208 commits, 2026-09-13 → 2026-09-25)
 
 Watermark after this batch: `99cfeb7e9`. Rows are proposed unless a
@@ -94,12 +102,14 @@ Watermark after this batch: `99cfeb7e9`. Rows are proposed unless a
   dispatch kept the hash of the source args. The copy now re-stamps the
   dispatch, but only when the source dispatch authenticated the source call; a
   corrupt source is still refused. Our Read does not page tool results, so
-  only ArchiveRead is affected.
+  only ArchiveRead is affected. Since 2026-10-03 ArchiveRead is deleted, and
+  the re-stamp with it.
 - `8b0db8be1` #5676: **upstream's bug does not exist here**. Our Read caps in
   bytes (256 KB, per the reference). The same mistake existed in tool-result
   pruning, which estimated tokens from UTF-16 length: Chinese results were
   priced at a quarter of their cost and escaped archiving. Pruning now
-  estimates from UTF-8 bytes. ASCII results are unchanged.
+  estimates from UTF-8 bytes. ASCII results are unchanged. Since 2026-10-03
+  the pruning is deleted with archiving.
 - `c6e3eb0cd` #5586: **bug confirmed**. On the OpenAI Chat wire the SDK
   JSON-stringifies a content tool result, so an image reached the model as
   base64 text. The OpenAI SDK types allow only text in a tool message and
@@ -269,7 +279,8 @@ Watermark after this batch: `99cfeb7e9`. Rows are proposed unless a
   happens only on a mode change.
 - `d05436cc0` #5295: **taken**. Archives are written to the Session ledger,
   and an Artifact-backed archive ref (rewrite version 1) now reads as
-  `read_failed` instead of reading the Artifact store.
+  `read_failed` instead of reading the Artifact store. Since 2026-10-03
+  archiving is deleted.
 - `c557cc41e` #5211: **bug confirmed, and it needs no crash**. Upstream
   describes a crash between the successor Root's admission and the retirement
   of the steering row. Here the ordinary path reaches the same state: a
@@ -311,7 +322,7 @@ Priority 1: failures a user hits.
 | `412dc0390` | #5658 | Stream deltas are capped at 4 KB, so long thinking shows "truncated" and loses text. Our `packages/ui/src/assistant-stream.ts` has the same cap. Deltas are now applied by offset, with one fold rule in core. | conflict / 3 | re-implement |
 | `1ae4d5b89` | #5319 | A long Turn that compacted once can never compact again, so it overflows. The budget is now per accepted step. | conflict / 3 | re-implement |
 | `2002f648e` | #5466 | Editing an earlier message fails with `canonical_args_hash_conflict` when the model had paged a truncated tool result. This hits our edit-and-resend. | conflict / 1 | check our Read paging, then re-implement |
-| `8b0db8be1` | #5676 | Read pages and tool-result pruning are capped in UTF-16 characters, so Chinese text costs about 3× the tokens. The cap is now in UTF-8 bytes. | conflict / 2 | adapt to our Read |
+| `8b0db8be1` | #5676 | Read pages and tool-result pruning are capped in UTF-16 characters, so Chinese text costs about 3× the tokens. The cap is now in UTF-8 bytes. | conflict / 2 | Read half only (pruning is deleted here) |
 | `f109ccde9` | #5270 | EOF, idle-timeout and transport failures recover under one budget, and interrupted response fragments are kept. | conflict / 15 | re-implement the runtime half; draw the interruption marker in our renderer |
 | `4a42aaeab` | #5287 | Main request settlement is unified, so completed provider responses are preserved. | conflict / 9 | after #5270 |
 | `b62ca805e` | #5610 | Interrupted tool calls are settled before an invocation's terminal event, so the ledger is never closed over an unsettled call. | conflict / 4 | re-implement |
@@ -379,7 +390,7 @@ Cleanups that follow upstream (product decisions):
 | `b48ae6c21` | #5554 | Retire the Deep Research workflow. | We still carry about 30 files. |
 | `8dfc68d23` | #5544 | Retire the built-in OpenCode Free provider. This also makes #5185 moot. | 7 files; touches the model line. |
 | `730713131` | #5300 | Remove the obsolete permission-mode compatibility path. | Done, see above. |
-| `d05436cc0` | #5295 | Close the legacy archive read path. | Done, see above. |
+| `d05436cc0` | #5295 | Close the legacy archive read path. | Done, see above; archiving is deleted since 2026-10-03. |
 
 ### Model line
 
@@ -407,7 +418,7 @@ These go to the model-thinking catalog redesign:
 | `331b24df1` | #5431 | New Sessions default to bypass. Our permission model is Codex-style. |
 | `87ff2799a` | #5468 | Removes Regenerate in favour of edit and resend. We keep Retry, as claude.ai does. |
 | `06823c96e` | #5336 | Approved Plan steps. Plan mode is being removed. |
-| `4cd71eaed`, `b37eb9639`, `a3ba6da59` | #5247, #5246, #5396 | Read/pruning, Grep/Glob errors, file-tool descriptions. Ours follow the reference report; #5676 is the part we take. |
+| `4cd71eaed`, `b37eb9639`, `a3ba6da59` | #5247, #5246, #5396 | Read/pruning, Grep/Glob errors, file-tool descriptions. Ours follow the reference report and pruning is deleted here; the Read half of #5676 is the part we take. |
 | `9982e86b1` | #5365 | The transcript advances per committed event (the running timer reset). Our renderer has its own live projection; only check whether we show the symptom. |
 | `846f4fbaa` | #5366 | Whole-transcript load and renderer virtualization. Our renderer pages its own way. |
 | `0a5b9dc95` | #5675 | Steering placed by its durable event. We fixed ordering with arrival stamps; the Host-side echo removal would change what we receive. |

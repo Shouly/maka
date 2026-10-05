@@ -534,9 +534,8 @@ async function filterBackedUpDatabase(
     }
     // Operational rows that describe a REQUEST rather than the conversation.
     // None of them reach the model, and in a real Session they are the large
-    // majority of this table. The two record kinds that do decide what the
-    // model reads -- history_compact_checkpoint_recorded and
-    // model_projection_transition_recorded -- are deliberately not here.
+    // majority of this table. history_compact_checkpoint_recorded, which does
+    // decide what the model reads, is deliberately not here.
     if (options.omitDiagnostics) {
       database
         .prepare(`

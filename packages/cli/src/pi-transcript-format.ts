@@ -134,8 +134,6 @@ export function formatToolResultContent(content: ToolResultContent): string {
     }
     case 'rive_workflow':
       return content.summary;
-    case 'archived_tool_result':
-      return `Archived tool result: ${content.status}`;
   }
 }
 

@@ -3220,7 +3220,7 @@
       "environmentCapabilities": {},
       "hookCalls": {
         "useAttachmentImageSource": 1,
-        "useUiLocale": 7
+        "useUiLocale": 6
       },
       "lifecycleMethods": {},
       "unresolvedDependencies": 0,

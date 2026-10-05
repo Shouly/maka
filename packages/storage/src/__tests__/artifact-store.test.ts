@@ -351,36 +351,6 @@ describe('SQLite Artifact store', () => {
     });
   });
 
-  test('excludes selected Artifacts from a conversation snapshot', async () => {
-    await withWorkspace(async (root) => {
-      const authority = createArtifactStoreWriteAuthority(root);
-      const { store } = authority;
-      await store.create({
-        ...artifactInput('retained-artifact', 'retained', 10),
-        turnId: 'turn-retained',
-      });
-      await store.create({
-        ...artifactInput('excluded-archive', 'archived child result', 11),
-        turnId: 'turn-retained',
-        source: 'tool_result_archive',
-      });
-
-      const copied = await store.copyConversationArtifacts({
-        sourceSessionId: 'session-1',
-        targetSessionId: 'session-copy',
-        turnIds: ['turn-retained'],
-        excludeArtifactIds: ['excluded-archive'],
-      });
-
-      assert.equal(copied.artifactIds.has('excluded-archive'), false);
-      assert.deepEqual(
-        (await listArtifacts(store, 'session-copy')).map((record) => record.name),
-        ['retained-artifact.txt'],
-      );
-      assert.equal((await getArtifact(store, 'excluded-archive'))?.sessionId, 'session-1');
-    });
-  });
-
   test('copies explicit linked child Artifacts into a conversation snapshot', async () => {
     await withWorkspace(async (root) => {
       const authority = createArtifactStoreWriteAuthority(root);
@@ -575,7 +545,7 @@ describe('SQLite Artifact store', () => {
     });
   });
 
-  test('persists complete canonical deep-research and archived tool-result records', async () => {
+  test('persists complete canonical deep-research records', async () => {
     await withWorkspace(async (root) => {
       const store = createArtifactStore(root);
       const report = await store.create({
@@ -591,29 +561,12 @@ describe('SQLite Artifact store', () => {
         deepResearchRole: 'report',
         now: 100,
       });
-      const archive = await store.create({
-        id: 'tool-archive',
-        sessionId: 'session-1',
-        turnId: 'turn-tool',
-        name: 'tool-result.json',
-        kind: 'file',
-        content: '{"ok":true}',
-        mimeType: 'application/json',
-        source: 'tool_result_archive',
-        summary: 'Archived tool result',
-        now: 200,
-      });
 
       const reopened = createArtifactStore(root);
       assert.deepEqual(await getArtifact(reopened, report.id), report);
-      assert.deepEqual(await getArtifact(reopened, archive.id), archive);
       assert.deepEqual(await readArtifactText(reopened, report.id), {
         ok: true,
         text: '<h1>Research</h1>',
-      });
-      assert.deepEqual(await readArtifactText(reopened, archive.id), {
-        ok: true,
-        text: '{"ok":true}',
       });
     });
   });
